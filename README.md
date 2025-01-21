@@ -1,5 +1,12 @@
 # ZDT&D Magisk Module
 
+<div align="center">
+    <img src="https://github.com/GAME-OVER-op/ZDT-D/blob/55786991b0acd7f16eeea0304bc583b82a6ce12a/Images/module_icon.png" alt="ZDT&D Logo" width="300">
+</div>
+
+For more information or support, join our [Telegram group](https://t.me/module_ggover).
+
+
 ## Description
 ZDT&D is a Magisk module designed to bypass DPI (Deep Packet Inspection) on the internet. It helps bypass service blocks and throttling for platforms like Discord, YouTube, and others. This module is tailored for users in Russia and comes with preconfigured settings to overcome restrictions.
 

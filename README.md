@@ -4,6 +4,12 @@
     <img src="https://github.com/GAME-OVER-op/ZDT-D/blob/55786991b0acd7f16eeea0304bc583b82a6ce12a/Images/module_icon.png" alt="ZDT&D Logo" width="300">
 </div>
 
+<div align="center">
+    <a href="https://github.com/GAME-OVER-op/ZDT-D/releases">
+        <img src="https://img.shields.io/github/downloads/GAME-OVER-op/ZDT-D/total?style=flat-square" alt="Downloads"/>
+    </a>
+</div>
+
 For more information or support, join our [Telegram group](https://t.me/module_ggover).
 
 

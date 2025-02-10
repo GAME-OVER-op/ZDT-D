@@ -56,4 +56,9 @@ This project is open for use, completely free, and will remain free forever.
 
 ---
 
+## Download releases 
+- [Realeses](https://github.com/GAME-OVER-op/ZDT-D/releases)
+
+---
+
 **Thank you for using ZDT&D!**

@@ -1,3 +1,9 @@
-1. The module structure has been redone.
-2. Moved dns script files to the module directory.
-3. The code has been reworked, now it will be a little easier to update it.
+### What's New:  
+- Fixed the issue with the web interface display for module configuration.  
+  *(Reminder: The web interface is not supported on all devices)*.  
+- Updated **zapret** configuration, which resolved issues with **Discord**.  
+- Minor code fixes to enhance stability.  
+
+📌 This is an intermediate update that includes some fixes from the previous version.  
+
+📥 Just update and enjoy the module's performance!

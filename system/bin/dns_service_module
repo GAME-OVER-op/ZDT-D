@@ -1,0 +1,82 @@
+#!/system/bin/sh
+
+# Переменные пути к файлу
+SETTING_START_PARAMS="/data/adb/params"
+
+# Проверяем команду
+if [ "$1" = "start" ]; then
+    # Установка правил iptables для перенаправления DNS-запросов
+    iptables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to-destination 127.0.0.1:5354
+    iptables -t nat -A OUTPUT -p udp --dport 53 -j DNAT --to-destination 127.0.0.1:5354
+
+    # Установка маскарадинга (замените wlan0 на ваш интерфейс)
+    iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
+
+    # Отключение IPv6
+    resetprop net.ipv6.conf.all.accept_redirects 0
+    resetprop net.ipv6.conf.all.disable_ipv6 1
+    resetprop net.ipv6.conf.default.accept_redirects 0
+    resetprop net.ipv6.conf.default.disable_ipv6 1
+
+    # Проверяем существование файла params
+    if [ -f "$SETTING_START_PARAMS" ]; then
+        while IFS='=' read -r key value || [ -n "$key" ]; do
+            key=$(echo "$key" | xargs)
+            value=$(echo "$value" | xargs)
+            
+            # Проверяем значение для notification
+            if [ "$key" = "notification" ]; then
+                notification="$value"
+            fi
+        done < "$SETTING_START_PARAMS"
+    else
+        echo "Файл $SETTING_START_PARAMS не найден."
+        exit 1
+    fi
+
+    # Если значение notification установлено, проверяем его
+    if [ "$notification" = "1" ]; then
+        echo "Уведомление включено"
+        su -lp 2000 -c "cmd notification post -S messaging --conversation 'System CLI' --message 'DPI Tunnel CLI: DNS включен.' -t 'DPI Tunnel CLI' 'Tag' 'Запуск успешен...'" >/dev/null 2>&1
+    elif [ "$notification" = "0" ]; then
+        echo "Уведомление выключено"
+    else
+        echo "Некорректное значение уведомления"
+    fi
+
+elif [ "$1" = "stop" ]; then
+    # Удаление правил iptables
+    iptables -t nat -D OUTPUT -p tcp --dport 53 -j DNAT --to-destination 127.0.0.1:5354 2>/dev/null
+    iptables -t nat -D OUTPUT -p udp --dport 53 -j DNAT --to-destination 127.0.0.1:5354 2>/dev/null
+    iptables -t nat -D POSTROUTING -o wlan0 -j MASQUERADE 2>/dev/null
+
+    # Проверяем существование файла params
+    if [ -f "$SETTING_START_PARAMS" ]; then
+        while IFS='=' read -r key value || [ -n "$key" ]; do
+            key=$(echo "$key" | xargs)
+            value=$(echo "$value" | xargs)
+            
+            # Проверяем значение для notification
+            if [ "$key" = "notification" ]; then
+                notification="$value"
+            fi
+        done < "$SETTING_START_PARAMS"
+    else
+        echo "Файл $SETTING_START_PARAMS не найден."
+        exit 1
+    fi
+
+    # Если значение notification установлено, проверяем его
+    if [ "$notification" = "1" ]; then
+        echo "Уведомление включено"
+        su -lp 2000 -c "cmd notification post -S messaging --conversation 'System CLI' --message 'DPI Tunnel CLI: DNS выключен.' -t 'DPI Tunnel CLI' 'Tag' 'Остановка успешна...'" >/dev/null 2>&1
+    elif [ "$notification" = "0" ]; then
+        echo "Уведомление выключено"
+    else
+        echo "Некорректное значение уведомления"
+    fi
+
+else
+    echo "Неверная команда. Используйте start или stop."
+    exit 1
+fi

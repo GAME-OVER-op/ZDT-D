@@ -4,20 +4,21 @@
     <img src="https://github.com/GAME-OVER-op/ZDT-D/blob/55786991b0acd7f16eeea0304bc583b82a6ce12a/Images/module_icon.png" alt="ZDT&D Logo" width="300">
 </div>
 
-<!-- Бейдж лицензии -->
-<a href="https://github.com/GAME-OVER-op/ZDT-D/blob/main/LICENSE">
-  <img src="https://img.shields.io/github/license/GAME-OVER-op/ZDT-D?style=flat-square" alt="License"/>
-</a>
+<p align="center">
+  <!-- Бейдж лицензии -->
+  <a href="https://github.com/GAME-OVER-op/ZDT-D/blob/main/LICENSE">
+    <img src="https://img.shields.io/github/license/GAME-OVER-op/ZDT-D?style=flat-square" alt="License"/>
+  </a>
+  <!-- Бейдж последнего релиза -->
+  <a href="https://github.com/GAME-OVER-op/ZDT-D/releases/latest">
+    <img src="https://img.shields.io/github/v/release/GAME-OVER-op/ZDT-D?style=flat-square" alt="Latest release"/>
+  </a>
+  <!-- Бейдж количества скачиваний -->
+  <a href="https://github.com/GAME-OVER-op/ZDT-D/releases">
+    <img src="https://img.shields.io/github/downloads/GAME-OVER-op/ZDT-D/total?style=flat-square" alt="Downloads"/>
+  </a>
+</p>
 
-<!-- Бейдж последнего релиза -->
-<a href="https://github.com/GAME-OVER-op/ZDT-D/releases/latest">
-  <img src="https://img.shields.io/github/v/release/GAME-OVER-op/ZDT-D?style=flat-square" alt="Latest release"/>
-</a>
-
-<!-- Бейдж количества скачиваний -->
-<a href="https://github.com/GAME-OVER-op/ZDT-D/releases">
-  <img src="https://img.shields.io/github/downloads/GAME-OVER-op/ZDT-D/total?style=flat-square" alt="Downloads"/>
-</a>
 
 
 For more information or support, join our [Telegram group](https://t.me/module_ggover).

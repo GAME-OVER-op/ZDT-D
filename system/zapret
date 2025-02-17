@@ -1,0 +1,159 @@
+
+# Проверяем команду
+if [ "$1" = "stop" ]; then
+  echo "Очищаем таблицы iptables nat и mangle..."
+
+  # Очищаем таблицы nat и mangle
+
+    
+    
+   
+   UID_OUTPUT_FILE="/data/adb/modules/ZDT-D/working_folder/uid_out0"
+    UID_OUTPUT_FILE1="/data/adb/modules/ZDT-D/working_folder/uid_out1"
+    UID_OUTPUT_FILE2="/data/adb/modules/ZDT-D/working_folder/zapret_uid_out"
+# Функция для удаления правила
+delete_rule() {
+    local uid=$1
+    local queue_num=200  # Укажите номер очереди, используемой в правилах
+
+    # Удаляем правила для исходящего и входящего трафика
+    for chain in OUTPUT INPUT; do
+        # Проверяем существование правила
+        iptables -t mangle -C "$chain" -m owner --uid-owner "$uid" -j NFQUEUE --queue-num "$queue_num" --queue-bypass 2>/dev/null
+        if [ $? -eq 0 ]; then
+            echo "Удаляю правило для $chain трафика UID $uid..."
+            iptables -t mangle -D "$chain" -m owner --uid-owner "$uid" -j NFQUEUE --queue-num "$queue_num" --queue-bypass
+        else
+            echo "Правило для $chain трафика UID $uid не найдено."
+        fi
+    done
+}
+
+    
+    # Чтение UIDs и удаление правил
+    while IFS='=' read app_name uid; do
+        if [ -z "$app_name" ] || [ -z "$uid" ]; then
+            continue
+        fi
+        echo "Обработка приложения $app_name с UID $uid для удаления..."
+        delete_rule "$uid"
+    done < "$UID_OUTPUT_FILE2"
+    
+    
+    
+# Функция для удаления правила
+delete_iptables_rule() {
+    uid="$1"
+    port="$2"
+    destination="127.0.0.1:1124"  # Измените порт, если нужно
+
+    # Проверяем и удаляем правило
+    iptables -t nat -C OUTPUT -p tcp --dport "$port" -m owner --uid-owner "$uid" -j DNAT --to-destination "$destination" 2>/dev/null
+    if [ $? -eq 0 ]; then
+        iptables -t nat -D OUTPUT -p tcp --dport "$port" -m owner --uid-owner "$uid" -j DNAT --to-destination "$destination"
+        echo "Удалено правило: UID=$uid, порт=$port -> $destination"
+    else
+        echo "Правило для UID=$uid, порт=$port не найдено"
+    fi
+}
+
+# Функция для обработки файла
+process_file() {
+    file="$1"
+
+    # Чтение файла построчно
+    while IFS='=' read -r app_name uid; do
+        # Проверка, что UID является числом
+        case "$uid" in
+            [0-9]*) 
+                for port in 80 443; do
+                    delete_iptables_rule "$uid" "$port"
+                done
+                ;;
+            *)
+                echo "Пропущена строка: $app_name=$uid"
+                ;;
+        esac
+    done < "$file"
+}
+
+
+
+# Обработка файлов
+process_file "$UID_OUTPUT_FILE"
+process_file "$UID_OUTPUT_FILE1"
+
+    
+    # Удаление правил в цепочке PREROUTING
+    for proto in udp tcp; do
+        for sport in 6969 443 8000 80; do
+            iptables -t mangle -C PREROUTING -p "$proto" --sport "$sport" -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num 200 --queue-bypass 2>/dev/null
+            if [ $? -eq 0 ]; then
+                iptables -t mangle -D PREROUTING -p "$proto" --sport "$sport" -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num 200 --queue-bypass
+                echo "Удалено правило в PREROUTING: $proto sport=$sport"
+            else
+                echo "Правило в PREROUTING для $proto sport=$sport не найдено"
+            fi
+        done
+    done
+    
+    # Удаление правил в цепочке POSTROUTING
+    for proto in udp tcp; do
+        for dport in 6969 443 8000 80; do
+            iptables -t mangle -C POSTROUTING -p "$proto" --dport "$dport" -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num 200 --queue-bypass 2>/dev/null
+            if [ $? -eq 0 ]; then
+                iptables -t mangle -D POSTROUTING -p "$proto" --dport "$dport" -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num 200 --queue-bypass
+                echo "Удалено правило в POSTROUTING: $proto dport=$dport"
+            else
+                echo "Правило в POSTROUTING для $proto dport=$dport не найдено"
+            fi
+        done
+    done
+
+    
+    
+      echo "Таблицы очищены."
+
+  # Ищем процесс dpi-tunnel.sh и убиваем его
+  PID=$(ps -ef | grep '[d]pi-tunnel.sh' | awk '{print $2}')
+  if [ -n "$PID" ]; then
+    echo "Процесс dpi-tunnel.sh найден, убиваем его (PID: $PID)..."
+    kill -9 $PID
+    echo "Процесс убит."
+  else
+    echo "Процесс dpi-tunnel.sh не найден."
+  fi
+  # Ищем процесс nfqws и убиваем его
+  PID=$(ps -ef | grep 'nfqws' | awk '{print $2}')
+  if [ -n "$PID" ]; then
+    echo "Процесс nfqws найден, убиваем его (PID: $PID)..."
+    kill -9 $PID
+    echo "Процесс убит."
+  else
+    echo "Процесс nfqws не найден."
+  fi
+  # Ищем процесс dpitunnel-cli и убиваем его
+  PID=$(ps -ef | grep 'dpitunnel-cli' | awk '{print $2}')
+  if [ -n "$PID" ]; then
+    echo "Процесс dpitunnel-cli найден, убиваем его (PID: $PID)..."
+    kill -9 $PID
+    echo "Процесс убит."
+  else
+    echo "Процесс dpitunnel-cli не найден."
+  fi
+
+setenforce 0
+/system/bin/am start -a android.intent.action.MAIN -e toasttext "ZDT&D: Сервис остановлен." -n bellavita.toast/.MainActivity
+setenforce 1
+elif [ "$1" = "start" ]; then
+  echo "Запускаем скрипт /data/adb/modules/ZDT-D/service.sh..."
+
+  # Запускаем скрипт service.sh
+  /data/adb/modules/ZDT-D/service.sh  > /dev/null 2>&1 &
+
+  echo "Скрипт /data/adb/modules/ZDT-D/service.sh запущен."
+  echo "Сервис будет запущен в течении 1 минуты."
+
+else
+  echo "Неверная команда. Используйте: zapret stop или zapret start"
+fi

@@ -19,12 +19,10 @@
   </a>
 </p>
 
-
-
 For more information or support, join our [Telegram group](https://t.me/module_ggover).
 
-
 ## Description
+
 ZDT&D is a Magisk module designed to bypass DPI (Deep Packet Inspection) on the internet. It helps bypass service blocks and throttling for platforms like Discord, YouTube, and others. This module is tailored for users in Russia and comes with preconfigured settings to overcome restrictions.
 
 ### Key Features:
@@ -43,6 +41,7 @@ Your antivirus may flag the module as suspicious. This is due to its functionali
 ---
 
 ## Installation
+
 During installation, the module automatically downloads:
 - Up-to-date block lists.
 - Binaries from verified repositories.
@@ -52,23 +51,27 @@ During installation, the module automatically downloads:
 ---
 
 ## Related Projects
+
 - [zapret](https://github.com/bol-van/zapret)  
 - [DPITunnel-cli](https://github.com/nomoresat/DPITunnel-cli)  
 
 ---
 
 ## Updates
+
 The module will be updated regularly to maintain its effectiveness and functionality.
 
 ---
 
 ### License
+
 This project is open for use, completely free, and will remain free forever.
 
 ---
 
 ## Download releases 
-- [Realeses](https://github.com/GAME-OVER-op/ZDT-D/releases)
+
+- [Releases](https://github.com/GAME-OVER-op/ZDT-D/releases)
 
 ---
 

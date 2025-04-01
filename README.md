@@ -1,7 +1,7 @@
 # ZDT&D Magisk Module
 
 <div align="center">
-    <img src="https://github.com/GAME-OVER-op/ZDT-D/blob/55786991b0acd7f16eeea0304bc583b82a6ce12a/Images/module_icon.png" alt="ZDT&D Logo" width="300">
+    <img src="https://github.com/GAME-OVER-op/ZDT-D/blob/main/images/module_icon.png" alt="ZDT&D Logo" width="300">
 </div>
 
 <p align="center">

@@ -1,18 +1,10 @@
-### What's New?
+🚀 **Update: Fixed iptables Rules Installation Conditions – Stable Release**
 
-- **Reworked iptables logic**  
-  The iptables functionality has been completely reworked to enhance network stability and performance.
+**What's New:**
 
-- **Reworked module launch logic**  
-  The module's startup process has been redesigned to ensure smoother and more reliable operation.
+- Fixed the condition for installing iptables rules.
+- Now, if the input file is empty, the UID iteration is skipped.
+- If the output file is empty, the rule will not be installed.
+- This resolves the issue where the existing logic would attempt to set traffic for the entire system when the output file was empty.
+- The fix ensures that the installation function only applies rules when the proper conditions are met.
 
-- **Major code refactoring for improved stability**  
-  Almost the entire codebase has been reworked to provide better overall stability and reliability.
-
-- **Web interface and slider fixes**  
-  Several fixes have been applied to the web interface and sliders in alternative mode, along with improvements to other interface elements.
-
-- **Adjusted application list**  
-  The list of applications has been updated to ensure better compatibility and performance.
-
-Please restart your device after the update to apply all changes.

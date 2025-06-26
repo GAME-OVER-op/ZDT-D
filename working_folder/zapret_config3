@@ -1,0 +1,3 @@
+--filter-tcp=443 --dpi-desync=multidisorder --dpi-desync-split-pos=1,midsld --dpi-desync-repeats=8 --orig-autottl=+1 --dup-autottl=-1 --dpi-desync-fake-tls=/data/adb/modules/ZDT-D/working_folder/bin/tls_clienthello_2.bin --dpi-desync-fake-tls=/data/adb/modules/ZDT-D/working_folder/bin/tls_clienthello_vk_com_kyber.bin \
+--new \
+--filter-udp=443 --dpi-desync=fake,multidisorder --dpi-desync-repeats=8 --dpi-desync-fake-quic=/data/adb/modules/ZDT-D/working_folder/bin/quic_initial_facebook_com_quiche.bin --new --filter-tcp=80 --dpi-desync=fake --dpi-desync-repeats=6 --orig-autottl=+1 --dup-autottl=-1 \

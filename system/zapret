@@ -1,159 +1,294 @@
+#!/system/bin/sh
+# File: zapret
+# Description: Управление сервисом ZDT-D — запуск, остановка, настройка и бэкап/восстановление.
 
-# Проверяем команду
-if [ "$1" = "stop" ]; then
-  echo "Очищаем таблицы iptables nat и mangle..."
-
-  # Очищаем таблицы nat и mangle
-
-    
-    
-   
-   UID_OUTPUT_FILE="/data/adb/modules/ZDT-D/working_folder/uid_out0"
-    UID_OUTPUT_FILE1="/data/adb/modules/ZDT-D/working_folder/uid_out1"
-    UID_OUTPUT_FILE2="/data/adb/modules/ZDT-D/working_folder/zapret_uid_out"
-# Функция для удаления правила
-delete_rule() {
-    local uid=$1
-    local queue_num=200  # Укажите номер очереди, используемой в правилах
-
-    # Удаляем правила для исходящего и входящего трафика
-    for chain in OUTPUT INPUT; do
-        # Проверяем существование правила
-        iptables -t mangle -C "$chain" -m owner --uid-owner "$uid" -j NFQUEUE --queue-num "$queue_num" --queue-bypass 2>/dev/null
-        if [ $? -eq 0 ]; then
-            echo "Удаляю правило для $chain трафика UID $uid..."
-            iptables -t mangle -D "$chain" -m owner --uid-owner "$uid" -j NFQUEUE --queue-num "$queue_num" --queue-bypass
-        else
-            echo "Правило для $chain трафика UID $uid не найдено."
-        fi
-    done
+# -----------------------------------------------------------------------------
+# 1) Функция запуска основного сервиса
+# -----------------------------------------------------------------------------
+start_service() {
+    echo "1) Запускаем сервис: /data/adb/modules/ZDT-D/service.sh"
+    /data/adb/modules/ZDT-D/service.sh > /dev/null 2>&1 &
+    echo "  → Сервис запущен в фоне."
+    echo "  (Он поднимется в течение ~1 минуты.)"
 }
 
-    
-    # Чтение UIDs и удаление правил
-    while IFS='=' read app_name uid; do
-        if [ -z "$app_name" ] || [ -z "$uid" ]; then
-            continue
-        fi
-        echo "Обработка приложения $app_name с UID $uid для удаления..."
-        delete_rule "$uid"
-    done < "$UID_OUTPUT_FILE2"
-    
-    
-    
-# Функция для удаления правила
-delete_iptables_rule() {
-    uid="$1"
-    port="$2"
-    destination="127.0.0.1:1124"  # Измените порт, если нужно
-
-    # Проверяем и удаляем правило
-    iptables -t nat -C OUTPUT -p tcp --dport "$port" -m owner --uid-owner "$uid" -j DNAT --to-destination "$destination" 2>/dev/null
-    if [ $? -eq 0 ]; then
-        iptables -t nat -D OUTPUT -p tcp --dport "$port" -m owner --uid-owner "$uid" -j DNAT --to-destination "$destination"
-        echo "Удалено правило: UID=$uid, порт=$port -> $destination"
+# -----------------------------------------------------------------------------
+# 2) Утилита для поиска и убийства процессов по шаблону в командной строке
+# -----------------------------------------------------------------------------
+kill_by_pattern() {
+    proc_name="$1"
+    # Используем ps, grep и awk для поиска PID
+    pid=$(ps -ef | grep "$proc_name" | grep -v grep | awk '{print $2}')
+    if [ -n "$pid" ]; then
+      echo "Процесс $proc_name найден (PID: $pid), убиваем его..."
+      kill -9 $pid
+      echo "Процесс $proc_name убит."
     else
-        echo "Правило для UID=$uid, порт=$port не найдено"
+      echo "Процесс $proc_name не найден."
     fi
+  }
+
+# -----------------------------------------------------------------------------
+# 3) Остановка сервиса: сброс iptables → убийство процессов → toast
+# -----------------------------------------------------------------------------
+do_stop() {
+    echo "1) Сбрасываем правила iptables (nat и mangle)…"
+    for tbl in nat mangle; do
+        iptables -t "$tbl" -F 2>/dev/null \
+            && echo "  • Таблица '$tbl' очищена." \
+            || echo "  • Ошибка очистки '$tbl'."
+    done
+
+    echo "2) Останавливаем фоновые процессы…"
+    kill_by_pattern "ZDT-D.sh"
+    kill_by_pattern "nfqws"
+    kill_by_pattern "dpitunnel-cli"
+
+    echo "3) Отправка Android-toast (SELinux permissive)…"
+    setenforce 0 2>/dev/null || echo "  • Не удалось переключить SELinux."
+    /system/bin/am start -a android.intent.action.MAIN \
+        -e toasttext "ZDT&D: Сервис остановлен." \
+        -n bellavita.toast/.MainActivity \
+        >/dev/null 2>&1 \
+        && echo "  • Toast отправлен." \
+        || echo "  • Ошибка отправки toast."
+    setenforce 1 2>/dev/null || echo "  • Не удалось вернуть SELinux."
+
+    echo "4) Сервис полностью остановлен."
 }
 
-# Функция для обработки файла
-process_file() {
-    file="$1"
+# -----------------------------------------------------------------------------
+# 4) Настройка списков UID/пакетов и параметров
+# -----------------------------------------------------------------------------
+configure_service() {
+    BASE_DIR="/data/adb/modules/ZDT-D/working_folder"
+    PARAMS="$BASE_DIR/params"
+    LIST0="$BASE_DIR/uid_program0"
+    LIST1="$BASE_DIR/uid_program1"
+    LISTZ1="$BASE_DIR/zapret_uid1"
+    LISTZ2="$BASE_DIR/zapret_uid2"
+    LISTZ3="$BASE_DIR/zapret_uid3"
+    LISTZ4="$BASE_DIR/zapret_uid4"
+    LISTZ5="$BASE_DIR/zapret_uid5"
+    LISTB="$BASE_DIR/bye_dpi"
 
-    # Чтение файла построчно
-    while IFS='=' read -r app_name uid; do
-        # Проверка, что UID является числом
-        case "$uid" in
-            [0-9]*) 
-                for port in 80 443; do
-                    delete_iptables_rule "$uid" "$port"
-                done
-                ;;
-            *)
-                echo "Пропущена строка: $app_name=$uid"
-                ;;
+    # Удаляет пустые строки и оставляет одну в конце
+    fix_file() {
+        file="$1"
+        sed -i '/^$/d' "$file"
+        echo "" >> "$file"
+    }
+
+    # Загружает key=value из PARAMS в переменные окружения
+    load_params() {
+        [ -f "$PARAMS" ] || touch "$PARAMS"
+        while IFS="=" read -r key val; do
+            [ -n "$key" ] && eval "$key=\$val"
+        done < "$PARAMS"
+    }
+
+    # Выводит нумерованный список из файла
+    show_list() {
+        file="$1"
+        [ -f "$file" ] || touch "$file"
+        awk '{print NR ") " $0}' "$file"
+    }
+
+    # Добавляет строку в файл
+    add_item() {
+        file="$1"
+        echo "Введите имя пакета/UID для добавления:"
+        read pkg
+        echo "$pkg" >> "$file"
+        fix_file "$file"
+        echo "  + Добавлено: $pkg"
+    }
+
+    # Удаляет выбранную строку по номеру
+    remove_item() {
+        file="$1"
+        show_list "$file"
+        echo "Введите номер для удаления (или Enter для отмены):"
+        read num
+        [ -z "$num" ] && return
+        sed -i "${num}d" "$file"
+        fix_file "$file"
+        echo "  – Удалено."
+    }
+
+    # Меню редактирования одного списка
+    edit_list() {
+        file="$1"
+        while true; do
+            echo "1) Добавить  2) Удалить  3) Назад"
+            echo "Выберите действие:"
+            read c
+            case "$c" in
+                1) add_item "$file" ;;
+                2) remove_item "$file" ;;
+                3) break ;;
+                *) echo "  Некорректно, повторите." ;;
+            esac
+        done
+    }
+
+    # Меняем логическое значение параметра в params
+    toggle_param() {
+        param="$1"
+        grep -q "^${param}=" "$PARAMS" || echo "${param}=0" >> "$PARAMS"
+        cur=$(grep "^${param}=" "$PARAMS" | cut -d= -f2)
+        new=$((1 - cur))
+        sed -i "/^${param}=/d" "$PARAMS"
+        echo "${param}=${new}" >> "$PARAMS"
+        fix_file "$PARAMS"
+        echo "  • ${param} → ${new}"
+    }
+
+    # Главное меню настроек
+    while true; do
+        load_params
+        echo "=== Настройка ZDT-D ==="
+        echo "1) DPI Tunnel 0         (список)"
+        echo "2) DPI Tunnel 1         (список)"
+        echo "3) Zapret UID 1         (список)"
+        echo "4) Zapret UID 2         (список)"
+        echo "5) Zapret UID 3         (список)"
+        echo "6) Zapret UID 4         (список)"
+        echo "7) Zapret UID 5         (список)"
+        echo "8) Bye DPI              (список)"
+        echo "9) Toggle сервис        (offonservice=$offonservice)"
+        echo "10) Toggle уведомл.      (notification=$notification)"
+        echo "11) Toggle alt.connect  (alternativel=$alternativel)"
+        echo "12) Toggle full_system  (full_system=$full_system)"
+        echo "13) Toggle dpi_tunnel_0 (dpi_tunnel_0=$dpi_tunnel_0)"
+        echo "14) Toggle dpi_tunnel_1 (dpi_tunnel_1=$dpi_tunnel_1)"
+        echo "15) Назад в главное меню"
+        echo "Выберите:"
+        read opt
+        case "$opt" in
+            1)  edit_list "$LIST0"    ;;
+            2)  edit_list "$LIST1"    ;;
+            3)  edit_list "$LISTZ1"   ;;
+            4)  edit_list "$LISTZ2"   ;;
+            5)  edit_list "$LISTZ3"   ;;
+            6)  edit_list "$LISTZ4"   ;;
+            7)  edit_list "$LISTZ5"   ;;
+            8)  edit_list "$LISTB"    ;;
+            9)  toggle_param "offonservice"   ;;
+            10)  toggle_param "notification"   ;;
+            11) toggle_param "alternativel"   ;;
+            12) toggle_param "full_system"    ;;
+            13) toggle_param "dpi_tunnel_0"   ;;
+            14) toggle_param "dpi_tunnel_1"   ;;
+            15) break ;;
+            *)   echo "  Неверно, повторите." ;;
         esac
-    done < "$file"
+    done
 }
 
+# -----------------------------------------------------------------------------
+# 5) Резервное копирование и восстановление (используется jq)
+# -----------------------------------------------------------------------------
+backup_restore_s() {
+    BASE_DIR="/data/adb/modules/ZDT-D/working_folder"
+    BACKUP_DIR="/storage/emulated/0"
+    PREFIX="ZDT_backup_"
+    FILES="\
+bye_dpi ciadpi.conf config0 config1 \
+ip_ranges3.txt ip_ranges4.txt uid_program0 uid_program1 \
+zapret_config0 zapret_config1 zapret_config2 zapret_config3 zapret_config4 \
+zapret_uid0 zapret_uid1 zapret_uid2 zapret_uid3 zapret_uid4 zapret_uid5 "
 
+    # Проверки
+    command -v jq >/dev/null 2>&1 || {
+        echo "Error: jq не установлен. Установите его и повторите." >&2
+        return 1
+    }
+    [ -d "$BASE_DIR" ] || { echo "Error: $BASE_DIR не найдена." >&2; return 1; }
+    [ -w "$BACKUP_DIR" ] || { echo "Error: $BACKUP_DIR не записываемый." >&2; return 1; }
 
-# Обработка файлов
-process_file "$UID_OUTPUT_FILE"
-process_file "$UID_OUTPUT_FILE1"
+    get_latest() {
+        find "$BACKUP_DIR" -maxdepth 1 -type f -name "${PREFIX}*.json" \
+            -printf '%T@ %p\n' 2>/dev/null | sort -nr | head -n1 | cut -d' ' -f2-
+    }
 
-    
-    # Удаление правил в цепочке PREROUTING
-    for proto in udp tcp; do
-        for sport in 6969 443 8000 80; do
-            iptables -t mangle -C PREROUTING -p "$proto" --sport "$sport" -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num 200 --queue-bypass 2>/dev/null
-            if [ $? -eq 0 ]; then
-                iptables -t mangle -D PREROUTING -p "$proto" --sport "$sport" -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num 200 --queue-bypass
-                echo "Удалено правило в PREROUTING: $proto sport=$sport"
+    do_backup() {
+        echo "[*] Старт бэкапа…"
+        ts=$(date +'%Y-%m-%d_%H-%M-%S')
+        out="$BACKUP_DIR/${PREFIX}${ts}.json"
+        tmp=$(mktemp) || return 1
+        echo '{}' > "$tmp"
+        for fn in $FILES; do
+            p="$BASE_DIR/$fn"
+            if [ -r "$p" ]; then
+                jq --rawfile content "$p" --arg name "$fn" \
+                   '. + {($name): $content}' "$tmp" > "${tmp}.new"
+                mv "${tmp}.new" "$tmp"
+                echo "  + $fn"
             else
-                echo "Правило в PREROUTING для $proto sport=$sport не найдено"
+                echo "  ! $fn недоступен" >&2
+                jq --arg name "$fn" '. + {($name): null}' "$tmp" > "${tmp}.new"
+                mv "${tmp}.new" "$tmp"
             fi
         done
-    done
-    
-    # Удаление правил в цепочке POSTROUTING
-    for proto in udp tcp; do
-        for dport in 6969 443 8000 80; do
-            iptables -t mangle -C POSTROUTING -p "$proto" --dport "$dport" -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num 200 --queue-bypass 2>/dev/null
-            if [ $? -eq 0 ]; then
-                iptables -t mangle -D POSTROUTING -p "$proto" --dport "$dport" -m mark ! --mark 0x40000000/0x40000000 -j NFQUEUE --queue-num 200 --queue-bypass
-                echo "Удалено правило в POSTROUTING: $proto dport=$dport"
+        mv "$tmp" "$out"
+        echo "[*] Бэкап сохранён: $out"
+    }
+
+    do_restore() {
+        latest=$(get_latest)
+        [ -n "$latest" ] || { echo "Нет бэкапов." >&2; return 1; }
+        echo "[*] Восстановление из $latest"
+        for fn in $FILES; do
+            val=$(jq -r --arg name "$fn" '.[$name] // "null"' "$latest")
+            if [ "$val" != "null" ]; then
+                echo "$val" > "$BASE_DIR/$fn"
+                echo "  + $fn"
             else
-                echo "Правило в POSTROUTING для $proto dport=$dport не найдено"
+                echo "  - $fn пропущен"
             fi
         done
-    done
+        echo "[*] Восстановление завершено."
+    }
 
-    
-    
-      echo "Таблицы очищены."
+    case "$1" in
+        b|backup)  do_backup  ;;
+        r|restore) do_restore ;;
+        *) echo "Usage: backup_restore_s [b|r]" ;;
+    esac
+}
 
-  # Ищем процесс dpi-tunnel.sh и убиваем его
-  PID=$(ps -ef | grep '[d]pi-tunnel.sh' | awk '{print $2}')
-  if [ -n "$PID" ]; then
-    echo "Процесс dpi-tunnel.sh найден, убиваем его (PID: $PID)..."
-    kill -9 $PID
-    echo "Процесс убит."
-  else
-    echo "Процесс dpi-tunnel.sh не найден."
-  fi
-  # Ищем процесс nfqws и убиваем его
-  PID=$(ps -ef | grep 'nfqws' | awk '{print $2}')
-  if [ -n "$PID" ]; then
-    echo "Процесс nfqws найден, убиваем его (PID: $PID)..."
-    kill -9 $PID
-    echo "Процесс убит."
-  else
-    echo "Процесс nfqws не найден."
-  fi
-  # Ищем процесс dpitunnel-cli и убиваем его
-  PID=$(ps -ef | grep 'dpitunnel-cli' | awk '{print $2}')
-  if [ -n "$PID" ]; then
-    echo "Процесс dpitunnel-cli найден, убиваем его (PID: $PID)..."
-    kill -9 $PID
-    echo "Процесс убит."
-  else
-    echo "Процесс dpitunnel-cli не найден."
-  fi
+# -----------------------------------------------------------------------------
+# 6) Помощь и разбор аргументов
+# -----------------------------------------------------------------------------
+show_help() {
+    cat <<- EOF
+Использование: zapret <команда>
 
-setenforce 0
-/system/bin/am start -a android.intent.action.MAIN -e toasttext "ZDT&D: Сервис остановлен." -n bellavita.toast/.MainActivity
-setenforce 1
-elif [ "$1" = "start" ]; then
-  echo "Запускаем скрипт /data/adb/modules/ZDT-D/service.sh..."
+Команды:
+  help       — эта справка
+  start      — запустить сервис
+  stop       — остановить сервис
+  setting    — настройки (списки и параметры)
+  backup     — создать резервную копию
+  recovery   — восстановить из последнего бэкапа
+EOF
+}
 
-  # Запускаем скрипт service.sh
-  /data/adb/modules/ZDT-D/service.sh  > /dev/null 2>&1 &
-
-  echo "Скрипт /data/adb/modules/ZDT-D/service.sh запущен."
-  echo "Сервис будет запущен в течении 1 минуты."
-
-else
-  echo "Неверная команда. Используйте: zapret stop или zapret start"
+# MAIN
+if [ $# -eq 0 ]; then
+    show_help
+    exit 1
 fi
+
+case "$1" in
+    help|-h|--help) show_help         ;;
+    start)          start_service     ;;
+    stop)           do_stop           ;;
+    setting)        configure_service ;;
+    backup)         backup_restore_s b;;
+    recovery)       backup_restore_s r;;
+    *) echo "Неизвестная команда: $1"; show_help; exit 1 ;;
+esac
+
+exit 0

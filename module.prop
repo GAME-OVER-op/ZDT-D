@@ -1,7 +1,7 @@
 id=ZDT-D
-name=Zapret DPI Tunnel and comss dns
-version=1.0.41
-versionCode=104100
+name=ZDT-D
+version=1.1.4
+versionCode=11400
 author=Ggover 
 description=DPI bypass tool.
 updateJson=https://raw.githubusercontent.com/GAME-OVER-op/ZDT-D/main/Update/update.json

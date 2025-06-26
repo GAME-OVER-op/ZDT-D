@@ -2,9 +2,11 @@
 MODDIR=${0%/*}
 LOGFILE="$MODDIR/log/service.log"
 LOGFILEPHP="$MODDIR/log/log_server_php.txt"
+LOGFILEBYE="$MODDIR/log/ciadpi.log"
 PHP_BINARY="$MODDIR/php7/files/bin/php"
 > "$LOGFILE"
 > "$LOGFILEPHP"
+> "$LOGFILEBYE"
 
 echo "$(date): Запуск service.sh" >> "$LOGFILE"
 
@@ -12,8 +14,8 @@ SCRIPT_PATH="$MODDIR/system/bin/script/ZDT-D.sh"
 
 if [ -f "$SCRIPT_PATH" ]; then
     chmod +x "$SCRIPT_PATH"
-    echo "$(date): Запуск dpi-tunnel.sh" >> "$LOGFILE"
-    "$SCRIPT_PATH" >> "$LOGFILE" 2>&1 &
+    echo "$(date): Запуск ZDT-D.sh" >> "$LOGFILE"
+    su -c "$SCRIPT_PATH" >> "$LOGFILE" 2>&1 &
 else
     echo "$(date): Скрипт $SCRIPT_PATH не найден." >> "$LOGFILE"
 fi

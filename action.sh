@@ -9,15 +9,15 @@ sleep 3
 /system/bin/am start -a android.intent.action.MAIN -e toasttext "Очистка таблицы iptables mangle" -n bellavita.toast/.MainActivity
 iptables -t mangle -F
 
-/system/bin/am start -a android.intent.action.MAIN -e toasttext "Останавливаю уже запуженные сервисы" -n bellavita.toast/.MainActivity
+/system/bin/am start -a android.intent.action.MAIN -e toasttext "Останавливаю уже запущенные сервисы" -n bellavita.toast/.MainActivity
 # Ищем процесс dpi-tunnel.sh и убиваем его
-PID=$(ps -ef | grep '[d]pi-tunnel.sh' | awk '{print $2}')
+PID=$(ps -ef | grep 'ZDT-D' | awk '{print $2}')
 if [ -n "$PID" ]; then
-echo "Процесс dpi-tunnel.sh найден, убиваем его (PID: $PID)..."
+echo "Процесс ZDT-D найден, убиваем его (PID: $PID)..."
 kill -9 $PID
 echo "Процесс убит."
 else
-echo "Процесс dpi-tunnel.sh не найден."
+echo "Процесс ZDT-D не найден."
 fi
 # Ищем процесс nfqws и убиваем его
 PID=$(ps -ef | grep 'nfqws' | awk '{print $2}')

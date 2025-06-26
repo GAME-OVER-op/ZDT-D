@@ -1,0 +1,126 @@
+/* Стили для оформления страницы */
+body {
+    background-color: #121212;
+    font-family: 'Arial', sans-serif;
+    color: white;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    min-height: 100vh;
+    flex-direction: column;
+    overflow-x: hidden; /* Отключает горизонтальную прокрутку */
+}
+
+header {
+    background-color: #1e1e1e;
+    padding: 5px; /* Ещё меньше padding */
+    text-align: center;
+    font-size: 1rem; /* Еще меньше размер шрифта */
+    font-weight: 600;
+    width: 100%; /* Занимает 100% ширины экрана */
+    box-sizing: border-box; /* Включает padding в размер элемента */
+}
+
+main {
+    flex: 1;
+    padding: 20px;
+    width: 100%;
+    max-width: 100%; /* Убираем ограничение ширины */
+    margin: 0 auto;
+    box-sizing: border-box;
+}
+
+.content-wrapper {
+    background-color: #333;
+    border-radius: 10px;
+    padding: 20px;
+    width: 100%; /* Занимает всю доступную ширину */
+    box-sizing: border-box;
+}
+
+ul {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+
+li {
+    background-color: #444;
+    margin-bottom: 10px;
+    border-radius: 8px;
+    box-sizing: border-box;
+}
+
+li a {
+    display: block;
+    padding: 10px;
+    text-decoration: none;
+    color: white;
+    font-size: 1.1rem;
+    width: 100%; /* Занимает всю ширину элемента */
+    box-sizing: border-box;
+}
+
+li a:hover {
+    background-color: #555;
+}
+
+footer {
+    background-color: #1e1e1e;
+    padding: 20px;
+    text-align: center;
+    font-size: 0.9rem;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+footer p {
+    color: #888;
+}
+
+/* Стили для селектора языка в правом верхнем углу */
+.language-selector {
+    position: absolute;
+    top: 5px; /* Еще выше */
+    right: 5px; /* Еще ближе к правому краю */
+    background-color: #333;
+    border: none;
+    border-radius: 5px;
+    padding: 3px; /* Еще меньше padding */
+    box-sizing: border-box;
+}
+
+.language-selector select {
+    background-color: #333;
+    color: white;
+    border: none;
+    font-size: 0.8rem; /* Меньше размер шрифта */
+    padding: 3px;
+    border-radius: 5px;
+    box-sizing: border-box;
+}
+
+/* Адаптивные стили для маленьких экранов */
+@media screen and (max-width: 768px) {
+    header {
+        font-size: 0.9rem; /* Меньше размер шрифта */
+        padding: 3px; /* Уменьшаем padding */
+    }
+
+    .language-selector {
+        top: 2px;
+        right: 2px;
+        padding: 2px; /* Еще меньше padding */
+    }
+
+    .language-selector select {
+        font-size: 0.7rem; /* Уменьшаем размер шрифта */
+        padding: 2px;
+    }
+
+    footer {
+        font-size: 0.8rem; /* Меньше размер шрифта */
+        padding: 15px; /* Меньше padding */
+    }
+}

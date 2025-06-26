@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BFM webui by ZAPBER</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #fff;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h1, h2, h3 {
+            color: #444;
+        }
+        pre {
+            background-color: #f4f4f4;
+            border: 1px solid #ddd;
+            padding: 10px;
+            overflow: auto;
+        }
+        code {
+            background-color: #f9f2f4;
+            color: #c7254e;
+            padding: 2px 4px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Custom Webui Box for KSU & magisk by ZAPBER</h1>
+        <p>WebUI ini bersifat universal untuk CFM dan BFR (default BFR) dan sudah include php yang dibutuhkan untuk webserver tanpa install melalui termux.</p>
+        
+        <h2>Pengenalan</h2>
+        <p>Fitur simple dengan fungsi seadanya dan belum sempurna.</p>
+        <h3>Fitur</h3>
+        <ul>
+            <li>0. File manager = tinyfm</li>
+            <li>1. YACD port default 9090</li>
+            <li>2. clash logs</li>
+            <li>3. clash command untuk start stop bfm clash via webui</li>
+            <li>4. ttyd - terminal emulator terhubung ke termux bash</li>
+            <li>5. monitor device</li>
+            <li>6. tombol reboot dari webui</li>
+            <li>7. dark mode- lightmode</li>
+        </ul>
+        <h3>Struktur file untuk akses di tab lain</h3>
+        <ul>
+            <li>0. tinifym file manager akses di /file.php</li>
+            <li>1. yacd clash dashboard > ip:9090/ui/#/proxies</li>
+            <li>2. untuk monitor /monitor/index.php</li>
+            <li>3. untuk akses terminal ip:3001</li>
+            <li>4. untuk clash logs akses di /logs.php</li>
+            <li>4. untuk command /executed.php</li>
+        </ul>
+        <h3>requirements</h3>
+        <ul>
+            <li>0. only magisk and termux</li>
+            <li>1. ttyd for termux</li>
+        </ul>
+        
+        <h3>installasi ttyd requirements</h3>
+        <p>ttyd adalah untuk terminal emulator dan bisa diakses melalui browser. installasinya dibawah ini</p>
+        <pre><code>pkg install php && pkg install ttyd</code></pre>
+        <h3>Install termux:boot</h3>
+        <p>termux:boot ini wajib jika ingin autostart ttyd ketika boot/reboot download di f-droid</p>
+        <h3>buat folder</h3>
+        <p>untuk membuat ttyd boot dan jalan ketika reboot, buat folder dulu seperti ini. ~/.termux/boot</p>
+        <pre><code>
+mkdir ~/.termux/boot
+        </code></pre>
+        <p>lalu pindah ke direktori boot yg sudah dibuat</p>
+        <pre><code>
+cd ~/.termux/boot
+        </code></pre>
+        <p>kemudian buat file ttyd.sh dengan isi seperti berikut</p>
+        <pre><code>nano ttyd.sh</code></pre>
+            <p>copas code dibawah</p>
+            <p>ganti port 3001 kalau mau default 3001, jika diganti maka harus ganti juga di file index.php</p>
+        <pre><code>
+#!/data/data/com.termux/files/usr/bin/sh
+termux-wake-lock
+echo "Running script at boot..."
+# Your commands go here
+ttyd -p 3001 -W -t enableTrzsz=true bash
+termux-wake-unlock
+        </code></pre>
+        
+        <h3>auto hotspot on</h3>
+        <p>buat file hotspoton.sh , berguna untuk auto onkan hotspot ketika setelah reboot, isi dengan code dibawah</p>
+        <pre><code>
+#!/system/bin/sh
+sleep 20
+am start -n com.android.settings/.TetherSettings
+sleep 5
+input keyevent 66
+sleep 5
+input keyevent 66
+sleep 5
+input keyevent 66
+sleep 3
+input key event 3
+        </code></pre>
+        <p>simpan di /data/adb/service.d, works mungkin di rom aosp rom lain atau stock belum coba, permission samakan dengan file yg lain agar tereksekusi dengan baik</p>
+        <h3>Credit</h3>
+        <p>Terima kasih untuk pembuat bfm webui pertama tidak ada di changelog</p>
+        <p>webui ini dibuat untuk mempersingkat dan memperindah tampilan webui untuk android bfm dibuat oleh MUHAMADD FAUZZI NURHAQQIN (FB)</p>
+        <h2>Conclusion</h2>
+        <p>openwrt member walaupun bukan untuk openwrt tapi tools bfm berguna untuk tethering ke router dengan usb to lan</p>
+    </div>
+</body>
+</html>

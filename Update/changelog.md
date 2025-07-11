@@ -1,7 +1,14 @@
-# Version 1.1.4  
+# Version 1.1.5  
 **Stable Release**
 
 ## What's New
-- Major refactor in `mobile_iptables_beta` function: the rule-adding logic has been moved into a new helper `add_rule(chain, cmd)`.  
-- In the ipset block, restored exactly four calls for both IPv4 and IPv6 (`PREROUTING` and `OUTPUT`).  
-- During IP iteration mode, preserved retry logic and notifications from the secondary script, while `add_rule` now guarantees at most two rules per IP.
+- Removed IPv6 support due to ongoing issues; IPv4 only.  
+- Added root‑manager feature showing total traffic processed by the module.  
+- Global fixes to iptables rule table.  
+- Updated dnscrypt settings: new DNS servers and port changed to 863.  
+- Partial code added for per‑interface iptables configuration (not yet implemented).  
+- Fixed zapret binary.  
+- Enhanced `zapret stop` command and added missing `zapret_uid0`.  
+- Updates to `post-fs-data.sh`.  
+- Refactored `ZDT-D.sh`: core settings preserved for initial boot application.  
+- Accelerated script performance and other optimizations.

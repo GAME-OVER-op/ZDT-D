@@ -1,8 +1,10 @@
-# Version 1.5.5  
+# Version 1.5.6  
 **Stable Release**
 
 ## What's New
-- Added various integrity checks.  
-- Web UI now displays additional useful information (may experience file‑deletion errors depending on WebUI capabilities).  
-- Fixed a ZDT-D.sh code issue that prevented the zapret service from starting.  
-- Module optimizations and general improvements.  
+- Refactored `load_config_dpi_tunnel`: unified parsing and rule installation logic.  
+- Fixed DPI tunnel 0 configuration bug (renamed `PORT` to `PORTS`).  
+- DNSCrypt tweaks and reliability improvements.  
+- 4PDA site compatibility fix.  
+- Increased buffer size for DPI tunnel—enhances service stability.  
+- Various script optimizations and general improvements.

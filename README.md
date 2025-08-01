@@ -65,6 +65,11 @@ During installation, the module automatically downloads:
 
 ---
 
+## Note
+Your antivirus may flag the module as suspicious. This is due to its functionality, not because it poses any threat. I assure you the module is safe and solely intended for bypassing restrictions.
+
+---
+
 ## Updates
 
 The module is updated regularly to maintain effectiveness and compatibility.

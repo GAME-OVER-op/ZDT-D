@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Управление файлами - zapret</title>
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #5e35b1;
+            --primary-light: #7e57c2;
+            --primary-dark: #4527a0;
+            --secondary: #26a69a;
+            --success: #43a047;
+            --error: #e53935;
+            --warning: #ff9800;
+            --surface: #ffffff;
+            --background: #f5f7fa;
+            --text-primary: #333333;
+            --text-secondary: #666666;
+            --border: #e0e0e0;
+            --shadow: rgba(94, 53, 177, 0.1);
+            --card-shadow: 0 10px 30px var(--shadow);
+            --nav-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            --transition: all 0.3s ease;
+            --border-radius: 20px;
+        }
+
+        /* Темная тема */
+        body.dark-theme {
+            --primary: #7e57c2;
+            --primary-light: #9575cd;
+            --primary-dark: #5e35b1;
+            --secondary: #26a69a;
+            --success: #66bb6a;
+            --error: #f44336;
+            --warning: #ffa726;
+            --surface: #121212;
+            --background: #1e1e1e;
+            --text-primary: #e0e0e0;
+            --text-secondary: #b0b0b0;
+            --border: #424242;
+            --shadow: rgba(0, 0, 0, 0.5);
+            --card-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+            --nav-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        }
+        
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            background: var(--background);
+            min-height: 100vh;
+            font-family: 'Roboto', sans-serif;
+            color: var(--text-primary);
+            line-height: 1.6;
+            display: flex;
+            flex-direction: column;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        
+        .container {
+            max-width: 1000px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 20px;
+            flex: 1;
+        }
+        
+        header {
+            text-align: center;
+            padding: 40px 20px 20px;
+            position: relative;
+        }
+        
+        .logo {
+            width: 80px;
+            height: 80px;
+            background: var(--primary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+            box-shadow: 0 5px 15px rgba(94, 53, 177, 0.3);
+        }
+        
+        .logo i {
+            font-size: 40px;
+            color: white;
+        }
+        
+        h1 {
+            font-size: 1.8rem;
+            color: var(--primary-dark);
+            font-weight: 700;
+            margin-bottom: 5px;
+        }
+        
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            font-weight: 400;
+        }
+        
+        nav {
+            display: flex;
+            justify-content: center;
+            margin: 25px 0;
+            background: var(--surface);
+            border-radius: 15px;
+            box-shadow: var(--nav-shadow);
+            overflow: hidden;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+        }
+        
+        .nav-item {
+            flex: 1 0 auto;
+            min-width: 100px;
+            text-align: center;
+            padding: 15px 8px;
+            text-decoration: none;
+            color: var(--text-secondary);
+            font-weight: 500;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transition: var(--transition);
+            white-space: nowrap;
+        }
+        
+        .nav-item i {
+            margin-bottom: 5px;
+            font-size: 20px;
+            transition: color 0.3s ease;
+        }
+        
+        .nav-item.active, .nav-item:hover {
+            background: var(--primary);
+            color: white;
+        }
+        
+        .nav-item.active i, .nav-item:hover i {
+            color: white;
+        }
+        
+        .file-manager {
+            background: var(--surface);
+            border-radius: var(--border-radius);
+            box-shadow: var(--card-shadow);
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        
+        .ip-manager {
+            background: var(--surface);
+            border-radius: var(--border-radius);
+            box-shadow: var(--card-shadow);
+            overflow: hidden;
+            margin-top: 10px;
+            display: none; /* Скрыт по умолчанию */
+        }
+        
+        .file-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        .file-header h2 {
+            font-size: 1.5rem;
+            color: var(--primary-dark);
+            font-weight: 600;
+        }
+        
+        .add-file-btn {
+            background: var(--success);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            padding: 10px 20px;
+            font-size: 1rem;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: var(--transition);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        
+        .add-file-btn:hover {
+            background: #388e3c;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
+        }
+        
+        .file-list {
+            padding: 20px;
+        }
+        
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.2s ease;
+        }
+        
+        .file-item:last-child {
+            border-bottom: none;
+        }
+        
+        .file-item:hover {
+            background: rgba(94, 53, 177, 0.03);
+        }
+        
+        .file-icon {
+            width: 40px;
+            height: 40px;
+            background: rgba(94, 53, 177, 0.1);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+        }
+        
+        .file-icon i {
+            color: var(--primary);
+            font-size: 20px;
+        }
+        
+        .file-info {
+            flex: 1;
+        }
+        
+        .file-name {
+            font-weight: 500;
+            margin-bottom: 3px;
+            word-break: break-all;
+        }
+        
+        .file-path {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+        
+        .file-actions {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .action-btn {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        
+        .action-btn:hover {
+            background: rgba(94, 53, 177, 0.05);
+            border-color: var(--primary-light);
+        }
+        
+        .action-btn.edit:hover {
+            background: rgba(33, 150, 243, 0.1);
+            border-color: #2196f3;
+        }
+        
+        .action-btn.delete:hover {
+            background: rgba(229, 57, 53, 0.1);
+            border-color: var(--error);
+        }
+        
+        .action-btn i {
+            font-size: 18px;
+            color: var(--text-secondary);
+        }
+        
+        .action-btn.edit:hover i {
+            color: #2196f3;
+        }
+        
+        .action-btn.delete:hover i {
+            color: var(--error);
+        }
+        
+        .add-file-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background: var(--surface);
+            border-radius: var(--border-radius);
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 15px 40px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+            animation: modalIn 0.3s ease-out;
+        }
+        
+        .modal-header {
+            background: var(--primary);
+            color: white;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-header h3 {
+            font-weight: 500;
+            font-size: 1.3rem;
+        }
+        
+        .close-modal {
+            background: transparent;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: background 0.2s ease;
+        }
+        
+        .close-modal:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .modal-body {
+            padding: 25px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        
+        .form-control {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            font-size: 1rem;
+            background: var(--surface);
+            color: var(--text-primary);
+            transition: border 0.2s ease;
+        }
+        
+        .form-control:focus {
+            outline: none;
+            border-color: var(--primary-light);
+            box-shadow: 0 0 0 2px rgba(94, 53, 177, 0.1);
+        }
+        
+        .modal-footer {
+            padding: 15px 25px 25px;
+            display: flex;
+            justify-content: flex-end;
+            gap: 15px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            border-radius: 50px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: var(--transition);
+            border: none;
+        }
+        
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 4px 6px rgba(94, 53, 177, 0.3);
+        }
+        
+        .btn-primary:hover {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(94, 53, 177, 0.4);
+        }
+        
+        .btn-secondary {
+            background: var(--surface);
+            color: var(--text-secondary);
+            border: 1px solid var(--border);
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(0, 0, 0, 0.05);
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-secondary);
+        }
+        
+        .empty-state i {
+            font-size: 60px;
+            color: rgba(94, 53, 177, 0.2);
+            margin-bottom: 20px;
+        }
+        
+        .empty-state p {
+            margin-top: 10px;
+            font-size: 1.1rem;
+        }
+        
+        @keyframes modalIn {
+            from { transform: translateY(30px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        
+        /* Стили для экрана загрузки */
+        #splash-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            z-index: 10000;
+            transition: opacity 0.5s ease, visibility 0.5s ease;
+        }
+        
+        .splash-logo {
+            width: 100px;
+            height: 100px;
+            background: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 30px;
+            animation: pulse 2s infinite;
+        }
+        
+        .splash-logo i {
+            font-size: 50px;
+            color: var(--primary);
+        }
+        
+        .splash-text {
+            color: white;
+            font-size: 1.5rem;
+            font-weight: 500;
+            margin-bottom: 20px;
+        }
+        
+        .progress-container {
+            width: 300px;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            width: 0;
+            background: white;
+            transition: width 0.3s ease;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
+        /* Убрать перенос навигации на мобильных */
+        @media (max-width: 768px) {
+            .container {
+                padding: 15px;
+            }
+            
+            .file-item {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
+            }
+            
+            .file-info {
+                width: 100%;
+            }
+            
+            .file-actions {
+                align-self: flex-end;
+            }
+            
+            nav {
+                overflow-x: auto;
+                justify-content: flex-start;
+                flex-wrap: nowrap;
+            }
+            
+            .nav-item {
+                min-width: 100px;
+                padding: 12px 10px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .file-header {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+            
+            .modal-footer {
+                flex-direction: column;
+            }
+            
+            .btn {
+                width: 100%;
+            }
+            
+            .nav-item span {
+                font-size: 0.8rem;
+            }
+        }
+        
+        /* Кнопка переключения темы */
+        .theme-toggle {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: var(--primary);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+            z-index: 100;
+            transition: transform 0.3s ease;
+        }
+        
+        .theme-toggle:hover {
+            transform: scale(1.1);
+        }
+    </style>
+    <script type="module">
+        import { exec } from '/kernelsu.js';
+        
+        // Пути к рабочим директориям
+        const WORKING_DIR = '/data/adb/modules/ZDT-D/working_folder/bin/';
+        const IP_LIST_DIR = '/storage/emulated/0/ZDT-D/';
+        
+        // Функция для получения списка файлов
+        async function getFileList(dir) {
+            try {
+                // Проверяем существование директории
+                await exec(`[ -d "${dir}" ]`);
+                
+                // Получаем список файлов в директории
+                const { stdout } = await exec(`ls -p "${dir}" | grep -v /`);
+                const files = stdout.split('\n')
+                    .filter(file => file.trim() !== '')
+                    .filter(file => file.endsWith('.txt'));
+                
+                return files;
+            } catch (error) {
+                // Если директория не существует - возвращаем пустой список
+                if (error.message.includes('exit code 1')) {
+                    return [];
+                }
+                console.error('Ошибка получения списка файлов:', error);
+                return [];
+            }
+        }
+        
+        // Функция для чтения содержимого файла
+        async function readFileContent(dir, fileName) {
+            try {
+                const { stdout } = await exec(`cat "${dir}${fileName}"`);
+                return stdout;
+            } catch (error) {
+                console.error('Ошибка чтения файла:', error);
+                return '';
+            }
+        }
+        
+        // Функция для записи содержимого в файл
+        async function writeFileContent(dir, fileName, content) {
+            try {
+                // Создаем директорию, если она не существует
+                await exec(`mkdir -p "${dir}"`);
+                
+                // Записываем содержимое
+                await exec(`echo "${content.replace(/"/g, '\\"')}" > "${dir}${fileName}"`);
+                return true;
+            } catch (error) {
+                console.error('Ошибка записи файла:', error);
+                return false;
+            }
+        }
+        
+        // Функция для создания файла
+        async function createFile(dir, fileName) {
+            try {
+                // Создаем директорию, если она не существует
+                await exec(`mkdir -p "${dir}"`);
+                
+                // Создаем пустой файл
+                await exec(`touch "${dir}${fileName}"`);
+                return true;
+            } catch (error) {
+                console.error('Ошибка создания файла:', error);
+                return false;
+            }
+        }
+        
+        // Функция для удаления файла
+        async function deleteFile(dir, fileName) {
+            try {
+                await exec(`rm -f "${dir}${fileName}"`);
+                return true;
+            } catch (error) {
+                console.error('Ошибка удаления файла:', error);
+                return false;
+            }
+        }
+        
+        // Функция для отображения списка файлов
+        async function displayFileList(dir, containerId, emptyStateId, loadingIndicatorId) {
+            const fileList = document.getElementById(containerId);
+            const loadingIndicator = document.getElementById(loadingIndicatorId);
+            const emptyState = document.getElementById(emptyStateId);
+            
+            // Показываем индикатор загрузки
+            loadingIndicator.style.display = 'block';
+            emptyState.style.display = 'none';
+            fileList.innerHTML = '';
+            
+            try {
+                const files = await getFileList(dir);
+                
+                // Скрываем индикатор загрузки
+                loadingIndicator.style.display = 'none';
+                
+                if (files.length === 0) {
+                    // Показываем состояние "пусто"
+                    emptyState.style.display = 'block';
+                    return;
+                }
+                
+                // Отображаем файлы
+                files.forEach(file => {
+                    const fileItem = document.createElement('div');
+                    fileItem.className = 'file-item';
+                    fileItem.innerHTML = `
+                        <div class="file-icon">
+                            <i class="material-icons">description</i>
+                        </div>
+                        <div class="file-info">
+                            <div class="file-name">${file}</div>
+                            <div class="file-path">${dir}${file}</div>
+                        </div>
+                        <div class="file-actions">
+                            <button class="action-btn edit" title="Редактировать" onclick="openEditModal('${dir}', '${file}')">
+                                <i class="material-icons">edit</i>
+                            </button>
+                            <button class="action-btn delete" title="Удалить" onclick="deleteFileHandler('${dir}', '${file}')">
+                                <i class="material-icons">delete</i>
+                            </button>
+                        </div>
+                    `;
+                    fileList.appendChild(fileItem);
+                });
+            } catch (error) {
+                console.error('Ошибка отображения файлов:', error);
+                loadingIndicator.style.display = 'none';
+                emptyState.style.display = 'block';
+            }
+        }
+        
+        // Функция для создания нового файла
+        async function createNewFile(dir) {
+            const fileNameInput = document.getElementById('fileName');
+            const fileName = fileNameInput.value.trim();
+            
+            if (!fileName) {
+                alert('Введите имя файла');
+                return;
+            }
+            
+            // Добавляем расширение .txt, если его нет
+            const fullFileName = fileName.endsWith('.txt') ? fileName : `${fileName}.txt`;
+            
+            try {
+                // Показываем индикатор сохранения
+                document.getElementById('createBtn').disabled = true;
+                document.getElementById('createBtn').innerHTML = '<div class="spinner"><i class="material-icons">sync</i></div> Создание...';
+                
+                // Создаем файл
+                const success = await createFile(dir, fullFileName);
+                
+                if (success) {
+                    // Закрываем модальное окно и обновляем список
+                    closeCreateModal();
+                    fileNameInput.value = '';
+                    
+                    if (dir === WORKING_DIR) {
+                        displayFileList(WORKING_DIR, 'fileList', 'emptyState', 'loadingIndicator');
+                    } else {
+                        displayFileList(IP_LIST_DIR, 'ipFileList', 'ipEmptyState', 'ipLoadingIndicator');
+                    }
+                    
+                    // Сообщение об успехе
+                    alert(`Файл "${fullFileName}" успешно создан`);
+                } else {
+                    alert('Не удалось создать файл. Проверьте права доступа.');
+                }
+            } catch (error) {
+                console.error('Ошибка создания файла:', error);
+                alert('Не удалось создать файл. Проверьте права доступа.');
+            } finally {
+                // Восстанавливаем кнопку
+                document.getElementById('createBtn').disabled = false;
+                document.getElementById('createBtn').innerHTML = 'Создать';
+            }
+        }
+        
+        // Функция для открытия модального окна редактирования
+        async function openEditModal(dir, fileName) {
+            try {
+                // Показываем индикатор загрузки
+                document.getElementById('editLoading').style.display = 'block';
+                document.getElementById('fileContent').style.display = 'none';
+                
+                // Загружаем содержимое файла
+                const content = await readFileContent(dir, fileName);
+                
+                // Устанавливаем значения в форму
+                document.getElementById('editFileName').value = fileName;
+                document.getElementById('editFileDir').value = dir;
+                document.getElementById('fileContent').value = content;
+                
+                // Показываем содержимое
+                document.getElementById('editLoading').style.display = 'none';
+                document.getElementById('fileContent').style.display = 'block';
+                
+                // Открываем модальное окно
+                document.getElementById('editFileModal').style.display = 'flex';
+            } catch (error) {
+                console.error('Ошибка открытия файла для редактирования:', error);
+                alert('Не удалось загрузить содержимое файла');
+            }
+        }
+        
+        // Функция для сохранения изменений в файле
+        async function saveFile() {
+            const fileName = document.getElementById('editFileName').value;
+            const dir = document.getElementById('editFileDir').value;
+            const content = document.getElementById('fileContent').value;
+            
+            try {
+                // Показываем индикатор сохранения
+                document.getElementById('saveBtn').disabled = true;
+                document.getElementById('saveBtn').innerHTML = '<div class="spinner"><i class="material-icons">sync</i></div> Сохранение...';
+                
+                // Сохраняем содержимое
+                const success = await writeFileContent(dir, fileName, content);
+                
+                if (success) {
+                    // Закрываем модальное окно
+                    closeEditModal();
+                    alert('Изменения успешно сохранены');
+                } else {
+                    alert('Ошибка при сохранении файла');
+                }
+            } catch (error) {
+                console.error('Ошибка сохранения файла:', error);
+                alert('Не удалось сохранить файл');
+            } finally {
+                // Восстанавливаем кнопку
+                document.getElementById('saveBtn').disabled = false;
+                document.getElementById('saveBtn').innerHTML = '<i class="material-icons">save</i> Сохранить';
+            }
+        }
+        
+        // Обработчик удаления файла
+        async function deleteFileHandler(dir, fileName) {
+            if (!confirm(`Вы уверены, что хотите удалить файл "${fileName}"?`)) {
+                return;
+            }
+            
+            const deleteBtn = event.target.closest('.action-btn.delete');
+            
+            try {
+                // Показываем индикатор удаления
+                if (deleteBtn) {
+                    deleteBtn.innerHTML = '<div class="spinner"><i class="material-icons">sync</i></div>';
+                    deleteBtn.disabled = true;
+                }
+                
+                // Выполняем удаление
+                const success = await deleteFile(dir, fileName);
+                
+                if (success) {
+                    // Обновляем список файлов
+                    if (dir === WORKING_DIR) {
+                        await displayFileList(WORKING_DIR, 'fileList', 'emptyState', 'loadingIndicator');
+                    } else {
+                        await displayFileList(IP_LIST_DIR, 'ipFileList', 'ipEmptyState', 'ipLoadingIndicator');
+                    }
+                    
+                    alert(`Файл "${fileName}" успешно удалён`);
+                } else {
+                    alert('Не удалось удалить файл. Проверьте права доступа.');
+                }
+            } catch (error) {
+                console.error('Ошибка удаления файла:', error);
+                alert('Не удалось удалить файл. Проверьте права доступа.');
+            } finally {
+                // Восстанавливаем кнопку
+                if (deleteBtn) {
+                    deleteBtn.innerHTML = '<i class="material-icons">delete</i>';
+                    deleteBtn.disabled = false;
+                }
+            }
+        }
+        
+        // Функции для работы с модальными окнами
+        function openCreateModal(dir) {
+            document.getElementById('fileDir').value = dir;
+            document.getElementById('addFileModal').style.display = 'flex';
+            document.getElementById('fileName').focus();
+        }
+        
+        function closeCreateModal() {
+            document.getElementById('addFileModal').style.display = 'none';
+            document.getElementById('fileName').value = '';
+        }
+        
+        function closeEditModal() {
+            document.getElementById('editFileModal').style.display = 'none';
+        }
+        
+        // Функция для переключения вкладок
+        function switchTab(tab) {
+            // Скрываем все вкладки
+            document.querySelector('.file-manager').style.display = 'none';
+            document.querySelector('.ip-manager').style.display = 'none';
+            
+            // Показываем выбранную вкладку
+            if (tab === 'domains') {
+                document.querySelector('.file-manager').style.display = 'block';
+                displayFileList(WORKING_DIR, 'fileList', 'emptyState', 'loadingIndicator');
+            } else if (tab === 'ip-lists') {
+                document.querySelector('.ip-manager').style.display = 'block';
+                displayFileList(IP_LIST_DIR, 'ipFileList', 'ipEmptyState', 'ipLoadingIndicator');
+            }
+            
+            // Обновляем активное состояние в навигации
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            event.currentTarget.classList.add('active');
+        }
+        
+        // Инициализация при загрузке страницы
+        document.addEventListener('DOMContentLoaded', () => {
+            // Показываем экран загрузки
+            const splashScreen = document.getElementById('splash-screen');
+            splashScreen.style.display = 'flex';
+            
+            // Анимация прогресс-бара
+            const progressBar = document.getElementById('progress-bar');
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += 5;
+                progressBar.style.width = `${progress}%`;
+                
+                if (progress >= 100) {
+                    clearInterval(interval);
+                    
+                    // Скрываем экран загрузки через 300 мс
+                    setTimeout(() => {
+                        splashScreen.style.opacity = '0';
+                        splashScreen.style.visibility = 'hidden';
+                        
+                        // Загружаем список файлов для доменов
+                        displayFileList(WORKING_DIR, 'fileList', 'emptyState', 'loadingIndicator');
+                    }, 300);
+                }
+            }, 100);
+            
+            // Назначаем обработчики событий
+            document.getElementById('addFileBtn').addEventListener('click', () => openCreateModal(WORKING_DIR));
+            document.getElementById('ipAddFileBtn').addEventListener('click', () => openCreateModal(IP_LIST_DIR));
+            
+            document.getElementById('closeCreateModal').addEventListener('click', closeCreateModal);
+            document.getElementById('cancelCreateBtn').addEventListener('click', closeCreateModal);
+            document.getElementById('createBtn').addEventListener('click', () => {
+                const dir = document.getElementById('fileDir').value;
+                createNewFile(dir);
+            });
+            
+            document.getElementById('closeEditModal').addEventListener('click', closeEditModal);
+            document.getElementById('cancelEditBtn').addEventListener('click', closeEditModal);
+            document.getElementById('saveBtn').addEventListener('click', saveFile);
+            
+            // Закрытие модальных окон при клике вне их
+            document.getElementById('addFileModal').addEventListener('click', (e) => {
+                if (e.target === document.getElementById('addFileModal')) {
+                    closeCreateModal();
+                }
+            });
+            
+            document.getElementById('editFileModal').addEventListener('click', (e) => {
+                if (e.target === document.getElementById('editFileModal')) {
+                    closeEditModal();
+                }
+            });
+            
+            // Создание файла по нажатию Enter
+            document.getElementById('fileName').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    const dir = document.getElementById('fileDir').value;
+                    createNewFile(dir);
+                }
+            });
+            
+            // Сохранение файла по Ctrl+Enter
+            document.getElementById('fileContent').addEventListener('keydown', (e) => {
+                if (e.ctrlKey && e.key === 'Enter') {
+                    saveFile();
+                }
+            });
+            
+            // Инициализация переключения вкладок
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    const tab = this.getAttribute('data-tab');
+                    switchTab(tab);
+                });
+            });
+        });
+        
+        // Делаем функции доступными глобально
+        window.openEditModal = openEditModal;
+        window.deleteFileHandler = deleteFileHandler;
+    </script>
+</head>
+<body>
+    <!-- Экран загрузки -->
+    <div id="splash-screen">
+        <div class="splash-logo">
+            <i class="material-icons">folder</i>
+        </div>
+        <div class="splash-text">Инициализация системы...</div>
+        <div class="progress-container">
+            <div id="progress-bar" class="progress-bar"></div>
+        </div>
+    </div>
+    
+    <div class="container">
+        <header>
+            <div class="logo">
+                <i class="material-icons">folder</i>
+            </div>
+            <h1>Управление файлами</h1>
+        </header>
+        
+        <nav>
+            <a href="index.html" class="nav-item">
+                <i class="material-icons">info</i>
+                <span>Состояние</span>
+            </a>
+            <a href="#" class="nav-item active" data-tab="domains">
+                <i class="material-icons">domain</i>
+                <span>Домены</span>
+            </a>
+            <a href="#" class="nav-item" data-tab="ip-lists">
+                <i class="material-icons">list</i>
+                <span>IP списки</span>
+            </a>
+            <a href="config.html" class="nav-item">
+                <i class="material-icons">build</i>
+                <span>Конфиг</span>
+            </a>
+            <a href="check.html" class="nav-item">
+                <i class="material-icons">monitoring</i>
+                <span>Мониторинг</span>
+            </a>
+            <a href="backup.html" class="nav-item">
+                <i class="material-icons">backup</i>
+                <span>Бэкап</span>
+            </a>
+        </nav>
+        
+        <!-- Вкладка для доменов -->
+        <div class="file-manager">
+            <div class="file-header">
+                <h2>Списки доменов</h2>
+                <button id="addFileBtn" class="add-file-btn">
+                    <i class="material-icons">add</i>
+                    Новый файл
+                </button>
+            </div>
+            
+            <div class="file-list">
+                <div id="loadingIndicator" style="text-align: center; padding: 30px; display: none;">
+                    <i class="material-icons" style="font-size: 40px; color: var(--primary); animation: spin 1.5s linear infinite;">sync</i>
+                    <p style="margin-top: 15px; color: var(--text-secondary);">Загрузка списка файлов...</p>
+                </div>
+                
+                <div id="fileList"></div>
+                
+                <div id="emptyState" class="empty-state">
+                    <i class="material-icons">folder_open</i>
+                    <h3>Файлы не найдены</h3>
+                    <p>В этой директории нет текстовых файлов (.txt)</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Вкладка для IP-списков -->
+        <div class="ip-manager">
+            <div class="file-header">
+                <h2>Списки IP-адресов</h2>
+                <button id="ipAddFileBtn" class="add-file-btn">
+                    <i class="material-icons">add</i>
+                    Создать файл
+                </button>
+            </div>
+            
+            <div class="file-list">
+                <div id="ipLoadingIndicator" style="text-align: center; padding: 30px; display: none;">
+                    <i class="material-icons" style="font-size: 40px; color: var(--primary); animation: spin 1.5s linear infinite;">sync</i>
+                    <p style="margin-top: 15px; color: var(--text-secondary);">Загрузка списка файлов...</p>
+                </div>
+                
+                <div id="ipFileList"></div>
+                
+                <div id="ipEmptyState" class="empty-state">
+                    <i class="material-icons">folder_open</i>
+                    <h3>Списки IP отсутствуют</h3>
+                    <p>Здесь вы можете добавить списки ipv4 (пример формата: 0.0.0.0/0)</p>
+                    <p>Они будут прописаны в zapret 5 aggressive</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Кнопка переключения темы -->
+    <div class="theme-toggle" id="themeToggle">
+        <i class="material-icons">brightness_4</i>
+    </div>
+    
+    <!-- Модальное окно для создания файла -->
+    <div id="addFileModal" class="add-file-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Создать новый файл</h3>
+                <button id="closeCreateModal" class="close-modal">
+                    <i class="material-icons">close</i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="fileDir" value="">
+                <div class="form-group">
+                    <label for="fileName">Имя файла</label>
+                    <input type="text" id="fileName" class="form-control" placeholder="Введите имя файла">
+                    <small style="display: block; margin-top: 5px; color: var(--text-secondary);">
+                        Будет автоматически добавлено расширение .txt
+                    </small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelCreateBtn" class="btn btn-secondary">Отмена</button>
+                <button id="createBtn" class="btn btn-primary">Создать</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Модальное окно для редактирования файла -->
+    <div id="editFileModal" class="add-file-modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3>Редактирование файла</h3>
+                <button id="closeEditModal" class="close-modal">
+                    <i class="material-icons">close</i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editFileDir" value="">
+                <div class="form-group">
+                    <label for="editFileName">Имя файла</label>
+                    <input type="text" id="editFileName" class="form-control" readonly>
+                </div>
+                
+                <div class="form-group">
+                    <label for="fileContent">Содержимое файла</label>
+                    <textarea id="fileContent" class="form-control" rows="15" style="font-family: monospace; resize: vertical;"></textarea>
+                    <small style="display: block; margin-top: 5px; color: var(--text-secondary);">
+                        Для сохранения используйте Ctrl+Enter или кнопку "Сохранить"
+                    </small>
+                </div>
+                
+                <div id="editLoading" style="text-align: center; padding: 20px; display: none;">
+                    <i class="material-icons" style="font-size: 40px; color: var(--primary); animation: spin 1.5s linear infinite;">sync</i>
+                    <p style="margin-top: 15px; color: var(--text-secondary);">Загрузка содержимого...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancelEditBtn" class="btn btn-secondary">Отмена</button>
+                <button id="saveBtn" class="btn btn-primary">
+                    <i class="material-icons">save</i> Сохранить
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Анимация вращения
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        `;
+        document.head.appendChild(style);
+        
+        // Функция для переключения темы
+        function toggleTheme() {
+            const body = document.body;
+            body.classList.toggle('dark-theme');
+            
+            // Сохраняем состояние темы в localStorage
+            const isDark = body.classList.contains('dark-theme');
+            localStorage.setItem('theme', isDark ? 'dark' : 'light');
+            
+            // Обновляем иконку кнопки
+            const themeIcon = document.querySelector('#themeToggle i');
+            themeIcon.textContent = isDark ? 'brightness_5' : 'brightness_4';
+        }
+        
+        // Инициализация темы при загрузке
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme');
+            const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            
+            // Если тема сохранена - используем ее, иначе - системную настройку
+            const isDark = savedTheme 
+                ? savedTheme === 'dark' 
+                : systemPrefersDark;
+            
+            if (isDark) {
+                document.body.classList.add('dark-theme');
+            }
+            
+            // Устанавливаем иконку в соответствии с темой
+            const themeIcon = document.querySelector('#themeToggle i');
+            themeIcon.textContent = isDark ? 'brightness_5' : 'brightness_4';
+            
+            // Добавляем обработчик клика
+            document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+        }
+        
+        // Инициализация темы
+        initTheme();
+    </script>
+</body>
+</html>

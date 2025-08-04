@@ -1,10 +1,13 @@
-# Version 1.5.6  
+# Version 1.5.7  
 **Stable Release**
 
 ## What's New
-- Refactored `load_config_dpi_tunnel`: unified parsing and rule installation logic.  
-- Fixed DPI tunnel 0 configuration bug (renamed `PORT` to `PORTS`).  
-- DNSCrypt tweaks and reliability improvements.  
-- 4PDA site compatibility fix.  
-- Increased buffer size for DPI tunnel—enhances service stability.  
-- Various script optimizations and general improvements.
+- Added **DPI tunnel 2**.  
+- Main page now displays module compatibility information.  
+- New configuration variable in DPI tunnel for capturing TCP/UDP traffic (see config for details).  
+- Ability to capture only ports **80/443** or **all ports**.  
+- Various fixes in the core service.  
+- In the Downloads section, you can now choose between:
+  - **Default version** (no ad-blocker, analytics, or extra scripts)  
+  - **Author’s version (block)**  
+- ⚠️ The author’s version heavily restricts Internet access; services like Yandex, VK, and others will not work.

@@ -1,13 +1,23 @@
-# Version 1.5.7  
+# Version 1.6.0  
 **Stable Release**
 
 ## What's New
-- Added **DPI tunnel 2**.  
-- Main page now displays module compatibility information.  
-- New configuration variable in DPI tunnel for capturing TCP/UDP traffic (see config for details).  
-- Ability to capture only ports **80/443** or **all ports**.  
-- Various fixes in the core service.  
-- In the Downloads section, you can now choose between:
-  - **Default version** (no ad-blocker, analytics, or extra scripts)  
-  - **Author’s version (block)**  
-- ⚠️ The author’s version heavily restricts Internet access; services like Yandex, VK, and others will not work.
+
+- **Fixed traffic accounting bug**  
+  Fixed an issue in traffic accounting: counters now report correctly across all supported platforms. The fixes address integer overflow / sign errors and aggregation mistakes that could lead to incorrect totals.
+
+- **Complete web interface redesign**  
+  Full redesign of the web interface: pages and navigation were reworked, status and log readability improved. The UI is now more modern and user-friendly — minor visual adjustments may still occur depending on the browser.
+
+- **Changed iptables logic (nat table)**  
+  The logic for building rules in the `nat` table has been revised: the order and types of applied rules were reviewed to ensure correct DNAT/REDIRECT behavior, reduce conflicts, and prevent accidental redirection of traffic system-wide.
+
+- **DPI tunnel configuration changes; zapret for Telegram**  
+  DPI tunnel settings updated — new/adjusted parameters for traffic capture (port/protocol/mode). A dedicated `zapret` configuration for Telegram was added to improve call quality and connection reliability under certain network conditions.
+
+- **Other tweaks — optimizations and stability**  
+  Miscellaneous fixes: script optimizations, improved service stability on start/stop, small bug fixes and overall stability improvements across different environments.
+
+---
+
+**Note:** It is recommended to restart the device after installing this update to ensure all changes (iptables rules, services and web UI assets) are fully applied.

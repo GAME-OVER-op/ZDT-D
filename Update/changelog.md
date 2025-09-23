@@ -1,12 +1,10 @@
-# Version 1.6.2  
+# Version 1.6.3  
 **Stable Release**
 
 ## What's New
-- Fixed traffic accounting issues.  
-- Updated DNSCrypt from **2.1.5** to **2.1.14**.  
-- DNSCrypt configuration updated — security-first settings may reduce internet speed in some networks.  
-- Optimized iptables DNS rules; added forwarding port **853** for DNS-over-TLS.  
-- Strategy updates and policy tweaks.  
-- Miscellaneous adjustments — optimizations and stability improvements.
-
-**Note:** Recommended to restart the device after installing to ensure all changes take effect.
+- DNSCrypt settings updated with documentation.  
+- Fixes to iptables RETURN rules to improve rule flow and avoid accidental matches.  
+- Important performance/efficiency update: some services are now pinned to three CPU cores (affinity to cores 1, 2, 5) for better energy efficiency and stability.  
+- Web UI improvements: added more monitoring information and several fixes/enhancements.  
+- Miscellaneous optimizations and stability improvements.
+- 

@@ -11,29 +11,30 @@ TMP_DIR="/data/local/tmp"
 
 CONFIG_FILE="$WORKING_FOLDER/config0"
 CONFIG_FILE1="$WORKING_FOLDER/config1"
-UID_INPUT_FILE="$WORKING_FOLDER/uid_program0"
-UID_INPUT_FILE1="$WORKING_FOLDER/uid_program1"
+CONFIG_FILE2="$WORKING_FOLDER/config2"
+UID_INPUT_FILES0="$WORKING_FOLDER/uid_program0"
+UID_INPUT_FILES1="$WORKING_FOLDER/uid_program1"
+UID_INPUT_FILES2="$WORKING_FOLDER/uid_program2"
 UID_INPUT_FILE2="$WORKING_FOLDER/zapret_uid0"
 UID_INPUT_FILE3="$WORKING_FOLDER/zapret_uid1"
 UID_INPUT_FILE4="$WORKING_FOLDER/zapret_uid2"
 UID_INPUT_FILE5="$WORKING_FOLDER/zapret_uid3"
 UID_INPUT_FILE6="$WORKING_FOLDER/zapret_uid4"
 UID_INPUT_FILE7="$WORKING_FOLDER/zapret_uid5"
+UID_INPUT_FILE8="$WORKING_FOLDER/zapret_uid_telegram"
 UID_INPUT_FILE_BYE="$WORKING_FOLDER/bye_dpi"
-UID_OUTPUT_FILE="$WORKING_FOLDER/uid_out0"
-UID_OUTPUT_FILE1="$WORKING_FOLDER/uid_out1"
+UID_OUTPUT_FILES0="$WORKING_FOLDER/uid_out0"
+UID_OUTPUT_FILES1="$WORKING_FOLDER/uid_out1"
+UID_OUTPUT_FILES2="$WORKING_FOLDER/uid_out2"
 UID_OUTPUT_FILE2="$WORKING_FOLDER/zapret_uid_out0"
 UID_OUTPUT_FILE3="$WORKING_FOLDER/zapret_uid_out1"
 UID_OUTPUT_FILE4="$WORKING_FOLDER/zapret_uid_out2"
 UID_OUTPUT_FILE5="$WORKING_FOLDER/zapret_uid_out3"
 UID_OUTPUT_FILE6="$WORKING_FOLDER/zapret_uid_out4"
 UID_OUTPUT_FILE7="$WORKING_FOLDER/zapret_uid_out5"
+UID_OUTPUT_FILE8="$WORKING_FOLDER/zapret_out_telegram"
 UID_OUTPUT_FILE_BYE="$WORKING_FOLDER/bye_dpi_out"
 ZAPRET_CONFIG_FILES_DATA="$WORKING_FOLDER/zapret_config"
-ZAPRET_DPI_TUNNEL="$WORKING_FOLDER/zapret_dpi"
-DPI_TUNNEL_ZAPRET="$WORKING_FOLDER/dpi_zapret"
-ZAPRET_DPI_TUNNEL_OUT="$WORKING_FOLDER/zapret_dpi_out"
-DPI_TUNNEL_ZAPRET_OUT="$WORKING_FOLDER/dpi_zapret_out"
 ARCH_DIR="$DAM/bin_zapret"
 MARKER_FILE="$DAM/arx_marker"
 ZAPRET_BIN_FILES_SYSTEM="$BIN_DIR/nfqws"
@@ -46,6 +47,7 @@ CONFIG_ZAPRET1="$WORKING_FOLDER/zapret_config1"
 CONFIG_ZAPRET2="$WORKING_FOLDER/zapret_config2"
 CONFIG_ZAPRET3="$WORKING_FOLDER/zapret_config3"
 CONFIG_ZAPRET4="$WORKING_FOLDER/zapret_config4"
+CONFIG_ZAPRET6="$WORKING_FOLDER/zapret_config6"
 SOURCE_FILE_ICON_MB="$DAM/icon.png"
 SOURCE_FILE_ICON_MB1="$DAM/icon1.png"
 SOURCE_FILE_ICON_MB2="$DAM/icon2.png"
@@ -67,7 +69,6 @@ IP_FILE3="$WORKING_FOLDER/ip_ranges3.txt"
 IP_FILE4="$WORKING_FOLDER/ip_ranges4.txt"
 # Префикс для всех уведомлений
 PREFIX="ZDT-D:"
-
 
 
 
@@ -341,6 +342,17 @@ start_system_final() {
 
 
 
+safestart_module() {
+    # если переменная safestart установлена в "1" — делаем паузу 180 секунд
+    if [ "${safestart:-0}" = "1" ]; then
+        sleep 180
+    fi
+}
+
+
+
+
+
 
 
 
@@ -388,6 +400,11 @@ notification_send() {
             local msg="$1"; shift
             BODY="$msg"
             TAG="info"
+            ;;
+        support)
+            local msg="$1"; shift
+            BODY="$msg"
+            TAG="support"
             ;;
         *)
             echo "[$(date '+%T')] Неверный тип уведомления: '$type'" >&2
@@ -456,145 +473,6 @@ notification_toast_start() {
 
 
 
-####################################
-# Функция проверки наличия интернета.
-# Параметры:
-#   $1 - задержка между попытками (сек)
-#   $2 - максимальное число попыток
-####################################
-internetcheck() {
-    local delay="$1"
-    local max_attempts="$2"
-    local attempt=0
-
-    while [ "$attempt" -lt "$max_attempts" ]; do
-        if ping -c 1 8.8.8.8 >/dev/null 2>&1; then
-            internet_echeck_status=1
-            echo "Интернет есть. internet_echeck_status=1"
-            return 0
-        else
-            echo "Интернет недоступен. Попытка $((attempt + 1)) из $max_attempts."
-            attempt=$((attempt + 1))
-            sleep "$delay"
-        fi
-    done
-
-    internet_echeck_status=0
-    echo "Интернет недоступен после $max_attempts попыток. internet_echeck_status=0"
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-####################################
-# Проверка наличия обновления
-# Если обновления есть, отправляем уведомление с ссылкой 
-####################################
-check_update() {
-    # Если не удалось изменить права, не прерываем работу
-    chmod 777 "$CURL_BINARIES" || true
-
-    # Функция для получения значений из module.prop
-    get_prop_value() {
-        grep "^$1=" "$MODULE_PROP" | cut -d'=' -f2
-    }
-
-    # Проверка наличия module.prop
-    if [ ! -f "$MODULE_PROP" ]; then
-        echo "Файл module.prop не найден. Пропускаем проверку обновлений."
-        return 0
-    fi
-
-    # Скачивание файла JSON с данными обновления
-    if command -v curl >/dev/null 2>&1; then
-        curl -fsSL "$UPDATE_JSON_URL" -o "$TEMP_JSON"
-    elif command -v wget >/dev/null 2>&1; then
-        wget -q "$UPDATE_JSON_URL" -O "$TEMP_JSON"
-    elif [ -x "$CURL_BINARIES" ]; then
-        $CURL_BINARIES -k -fsSL "$UPDATE_JSON_URL" -o "$TEMP_JSON"
-    else
-        echo "curl или wget не найдены. Пропускаем проверку обновлений."
-        return 0
-    fi
-
-    # Проверка, что JSON успешно загружен
-    if [ ! -f "$TEMP_JSON" ]; then
-        echo "Не удалось загрузить файл обновлений. Пропускаем проверку обновлений."
-        return 0
-    fi
-
-    # Проверка наличия утилиты jq
-    if ! command -v jq >/dev/null 2>&1; then
-        echo "Утилита jq не установлена. Пропускаем проверку обновлений."
-        rm -f "$TEMP_JSON"
-        return 0
-    fi
-
-    # Извлечение данных из module.prop
-    LOCAL_VERSION=$(get_prop_value "version")
-    LOCAL_VERSION_CODE=$(get_prop_value "versionCode")
-
-    # Извлечение данных из JSON с помощью jq
-    REMOTE_VERSION=$(jq -r '.version' "$TEMP_JSON")
-    REMOTE_VERSION_CODE=$(jq -r '.versionCode' "$TEMP_JSON")
-    NEW_UPDATE_URL=$(jq -r '.zipUrl' "$TEMP_JSON")
-    CHANGELOG_URL=$(jq -r '.changelog' "$TEMP_JSON")
-
-    # Удаление временного файла JSON
-    rm -f "$TEMP_JSON"
-
-    # Проверка корректности извлечённых данных
-    if [ -z "$LOCAL_VERSION_CODE" ] || [ -z "$REMOTE_VERSION_CODE" ]; then
-        echo "Ошибка извлечения версии. Пропускаем проверку обновлений."
-        return 0
-    fi
-
-    # Сравнение версий
-    if [ "$LOCAL_VERSION_CODE" -lt "$REMOTE_VERSION_CODE" ]; then
-        MESSAGE="Доступно обновление!: Текущая версия: $LOCAL_VERSION Новая версия: $REMOTE_VERSION."
-
-        # Отправка уведомления с помощью команды cmd
-        if command -v cmd >/dev/null 2>&1; then
-            su -lp 2000 -c "cmd notification post -i file:///data/local/tmp/icon1.png -I file:///data/local/tmp/icon2.png -S messaging --conversation 'ZDT-D' --message '$MESSAGE' --message 'Ссылка для скачивания: $NEW_UPDATE_URL' -t 'ZDT-D' 'UpdateCheck' 'Проверка обновлений завершена.'" >/dev/null 2>&1
-        else
-            echo "Команда cmd не найдена. Уведомление не может быть отправлено."
-            echo -e "$MESSAGE"
-        fi
-    else
-        echo "Обновлений нет."
-    fi
-}
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -624,15 +502,17 @@ read_params() {
             "full_system") full_system="$value" ;;
             "dpi_tunnel_0") dpi_tunnel_0="$value" ;;
             "dpi_tunnel_1") dpi_tunnel_1="$value" ;;
+            "dpi_tunnel_2") dpi_tunnel_2="$value" ;;
+            "port_preference") port_preference="$value" ;;
             "offonservice") offonservice="$value" ;;
             "notification") notification="$value" ;;
             "alternativel") alternativel="$value" ;;
             "zapretconfig") zapretconfig="$value" ;;
+            "safestart") safestart="$value" ;;
         esac
     done < "$SETTING_START_PARAMS"
     
 }
-
 
 
 
@@ -743,7 +623,7 @@ start_zapret() {
 start_zapret_agressive(){
 
 BASE=/data/adb/modules/ZDT-D/working_folder/bin
-PORTS=(20 21 22 23 25 53 67 68 69 80 110 119 123 135 137 138 139 143 161 162 389 443 3306 5222 7000 7500 7999 5432 5900 6379 6667 8080 8443 8888 1194 51820 500 4500 3478 5060 5061 6881 6883 6940 6970 6999 43 79 445 465 514 587 993 995 1521 1701 1723 1935 3268 3269 9200 11211 25565 27015 27017)
+PORTS=(20 21 22 23 25 53 67 68 69 80 110 119 123 135 137 138 139 143 161 162 389 443 3306 5222 7000 7500 7999 5432 5900 6379 6667 8080 8443 8888 1194 500 4500 3478 5060 5061 6881 6883 6940 6970 6999 43 79 445 465 514 587 993 995 1521 1701 1723 1935 3268 3269 9200 11211 25565 27015 27017 596 1400 35501 34503 35000-54000 )
 
 # Начальные опции
 args=(--uid=0:0 --qnum=205)
@@ -787,6 +667,40 @@ for p in "${PORTS[@]}"; do
   ##############################################################################
   args+=(--filter-tcp=${p})
   args+=(--hostlist=${BASE}/blocked.txt)
+  args+=(--new)
+  
+  # --- Cloudflare: fake TLS + fake QUIC (умеренные повторы)
+  args+=(--filter-tcp=${p})
+  args+=(--hostlist=${BASE}/cloudflare.txt)
+  args+=(--dpi-desync=fake)
+  args+=(--dpi-desync-fake-tls=${BASE}/tls_http_cloudflare.bin)
+  args+=(--dpi-desync-repeats=6)
+  args+=(--dpi-desync-autottl)
+  args+=(--dpi-desync-skip-nosni=1)
+  args+=(--new)
+    
+  args+=(--filter-udp=${p})
+  args+=(--hostlist=${BASE}/cloudflare.txt)
+  args+=(--dpi-desync=fake)
+  args+=(--dpi-desync-fake-quic=${BASE}/tls_http_cloudflare_ru.bin)
+  args+=(--dpi-desync-repeats=6)
+  args+=(--new)
+    
+  # --- Telegram: смешанный fake TLS и fake-unknown (MTProto-like)
+  args+=(--filter-tcp=${p})
+  args+=(--hostlist=${BASE}/telegram.txt)
+  args+=(--dpi-desync=fake)
+  args+=(--dpi-desync-fake-tls=${BASE}/tls_http_telegram.bin)
+  args+=(--dpi-desync-repeats=8)
+  args+=(--dpi-desync-autottl)
+  args+=(--new)
+    
+    # UDP вариант (если Telegram использует UDP на данном порту)
+  args+=(--filter-udp=${p})
+  args+=(--hostlist=${BASE}/telegram.txt)
+  args+=(--dpi-desync=fake)
+  args+=(--dpi-desync-fake-unknown=${BASE}/tls_http_telegram_ru.bin)
+  args+=(--dpi-desync-repeats=6)
   args+=(--new)
 
   ##############################################################################
@@ -857,6 +771,7 @@ for p in "${PORTS[@]}"; do
   args+=(--dpi-desync-fake-tls=${BASE}/tls_clienthello_www_google_com.bin)
   args+=(--new)
 
+
 done
 
 # Запускаем nfqws со всеми динамическими стратегиями
@@ -867,9 +782,6 @@ exec nfqws "${args[@]}" > /dev/null 2>&1 &
 
 
 
-AGR_ZAPRET_TXT=/storage/emulated/0/ZDT-D
-ZAPRETUID_CHECK=/data/adb/modules/ZDT-D/working_folder/zapret_uid_out5
-[ -n "$(find "$AGR_ZAPRET_TXT" -maxdepth 1 -type f -name '*.txt' -print -quit)" ] || [ -s "$ZAPRETUID_CHECK" ] && start_zapret_agressive
 
 
 
@@ -901,7 +813,7 @@ load_config() {
         # Назначение переменных с суффиксом, если он есть
         case "$key" in
             ip) eval "IP${suffix}=\"$value\"" ;;
-            port) eval "PORT${suffix}=\"$value\"" ;;
+            port) eval "PORTS${suffix}=\"$value\"" ;;
             mode) eval "MODE${suffix}=\"$value\"" ;;
             ca-bundle-path) eval "CA_BUNDLE_PATH${suffix}=\"$value\"" ;;
             pid) eval "PID${suffix}=\"$value\"" ;;
@@ -921,10 +833,10 @@ load_config() {
             builtin-dns) eval "BUILTIN_DNS${suffix}=\"$value\"" ;;
             builtin-dns-ip) eval "BUILTIN_DNS_IP${suffix}=\"$value\"" ;;
             builtin-dns-port) eval "BUILTIN_DNS_PORT${suffix}=\"$value\"" ;;
+            protocol-tcp-udp) eval "PROTOCOL_TRAFFIC${suffix}=\"$value\"" ;;
         esac
     done < "$config_file"
 }
-
 
 
 
@@ -950,7 +862,7 @@ start_load_config() {
     # Вызов функции для загрузки конфигураций
     if [ "$dpi_tunnel_0" = "1" ]; then
         echo "DPI tunnel 0 включён"
-        load_config "$CONFIG_FILE" ""
+        load_config "$CONFIG_FILE" "0"
         :
     elif [ "$dpi_tunnel_0" = "0" ]; then
         echo "DPI tunnel 0 выключен"
@@ -966,6 +878,16 @@ start_load_config() {
         echo "DPI tunnel 1 выключен"
     else
         echo "Некорректное значение для dpi_tunnel_1 или его нет"
+    fi
+    
+    if [ "$dpi_tunnel_2" = "1" ]; then
+        echo "DPI tunnel 2 включён"
+        load_config "$CONFIG_FILE2" "2"
+        :
+    elif [ "$dpi_tunnel_1" = "0" ]; then
+        echo "DPI tunnel 2 выключен"
+    else
+        echo "Некорректное значение для dpi_tunnel_2 или его нет"
     fi
 }
 
@@ -1029,6 +951,12 @@ unified_processing() {
     grep -v "^${file_key}=" "$SHA256_FLAG_FILE" > "$SHA256_FLAG_FILE.tmp"
     echo "${file_key}=${new_hash}" >> "$SHA256_FLAG_FILE.tmp"
     mv "$SHA256_FLAG_FILE.tmp" "$SHA256_FLAG_FILE"
+    
+    # Вызвать safestart_module ровно 1 раз
+    if [ -z "${SAFESTART_MODULE_CALLED}" ]; then
+        SAFESTART_MODULE_CALLED=1
+        safestart_module
+    fi
 
     ##############################
     # Проверка изменения SHA256 и вызов задержки, если требуется
@@ -1376,47 +1304,11 @@ iptables_zapret_default_full() {
         fi
     }
 
-    add_inbound_rule_uid_old() {
-        local uid="$1"
-        local rule="-m owner --uid-owner $uid -j NFQUEUE --queue-num $QUEUE --queue-bypass"
-        local added=1
-        for table in mangle nat; do
-            for chain in PREROUTING INPUT; do
-                if chain_supported "$table" "$chain"; then
-                    echo "Попытка добавить OLD inbound правило для UID $uid в таблице $table, цепочке $chain..."
-                    if add_rule "$table" "$chain" "$rule"; then
-                        added=0
-                        break 2
-                    fi
-                fi
-            done
-        done
-        return $added
-    }
-
-    add_inbound_rule_uid_new() {
-        local uid="$1"
-        local rule="-m owner --uid-owner $uid -m mark ! --mark $MARK/$MARK -j NFQUEUE --queue-num $QUEUE --queue-bypass"
-        local added=1
-        for table in mangle nat; do
-            for chain in PREROUTING INPUT; do
-                if chain_supported "$table" "$chain"; then
-                    echo "Попытка добавить NEW inbound правило для UID $uid в таблице $table, цепочке $chain..."
-                    if add_rule "$table" "$chain" "$rule"; then
-                        added=0
-                        break 2
-                    fi
-                fi
-            done
-        done
-        return $added
-    }
-
     add_outbound_rule_uid_old() {
         local uid="$1"
         local rule="-m owner --uid-owner $uid -j NFQUEUE --queue-num $QUEUE --queue-bypass"
         local added=1
-        for table in mangle nat; do
+        for table in mangle; do
             for chain in OUTPUT PREROUTING; do
                 if chain_supported "$table" "$chain"; then
                     echo "Попытка добавить OLD outbound правило для UID $uid в таблице $table, цепочке $chain..."
@@ -1434,7 +1326,7 @@ iptables_zapret_default_full() {
         local uid="$1"
         local rule="-m owner --uid-owner $uid -m mark ! --mark $MARK/$MARK -j NFQUEUE --queue-num $QUEUE --queue-bypass"
         local added=1
-        for table in mangle nat; do
+        for table in mangle; do
             for chain in OUTPUT PREROUTING; do
                 if chain_supported "$table" "$chain"; then
                     echo "Попытка добавить NEW outbound правило для UID $uid в таблице $table, цепочке $chain..."
@@ -1450,7 +1342,7 @@ iptables_zapret_default_full() {
 
     add_common_inbound_rule_fallback() {
         local rule="-m mark ! --mark $MARK/$MARK -j NFQUEUE --queue-num $QUEUE --queue-bypass"
-        for table in mangle nat; do
+        for table in mangle; do
             for chain in PREROUTING INPUT; do
                 if chain_supported "$table" "$chain"; then
                     echo "Попытка добавить общий inbound fallback правило в таблице $table, цепочке $chain..."
@@ -1465,7 +1357,7 @@ iptables_zapret_default_full() {
 
     add_common_outbound_rule_fallback() {
         local rule="-m mark ! --mark $MARK/$MARK -j NFQUEUE --queue-num $QUEUE --queue-bypass"
-        for table in mangle nat; do
+        for table in mangle; do
             for chain in OUTPUT PREROUTING; do
                 if chain_supported "$table" "$chain"; then
                     echo "Попытка добавить общий outbound fallback правило в таблице $table, цепочке $chain..."
@@ -1499,8 +1391,6 @@ iptables_zapret_default_full() {
     else
         echo "Переменная full_system не равна 1. Пытаемся установить правила для каждого UID индивидуально."
 
-        local INDIVIDUAL_INBOUND_TOTAL=0
-        local INDIVIDUAL_INBOUND_SUCCESS=0
         local INDIVIDUAL_OUTBOUND_TOTAL=0
         local INDIVIDUAL_OUTBOUND_SUCCESS=0
 
@@ -1508,20 +1398,6 @@ iptables_zapret_default_full() {
             [ -z "$app_name" ] && continue
             [ -z "$uid" ] && continue
             echo "Обработка приложения \"$app_name\" (UID: $uid)..."
-            
-            INDIVIDUAL_INBOUND_TOTAL=$((INDIVIDUAL_INBOUND_TOTAL+1))
-            if add_inbound_rule_uid_old "$uid"; then
-                echo "OLD inbound правило успешно добавлено для UID $uid."
-                INDIVIDUAL_INBOUND_SUCCESS=$((INDIVIDUAL_INBOUND_SUCCESS+1))
-            else
-                echo "OLD inbound правило не удалось для UID $uid, пробую NEW inbound..."
-                if add_inbound_rule_uid_new "$uid"; then
-                    echo "NEW inbound правило успешно добавлено для UID $uid."
-                    INDIVIDUAL_INBOUND_SUCCESS=$((INDIVIDUAL_INBOUND_SUCCESS+1))
-                else
-                    echo "Не удалось добавить индивидуальное inbound правило для UID $uid."
-                fi
-            fi
 
             INDIVIDUAL_OUTBOUND_TOTAL=$((INDIVIDUAL_OUTBOUND_TOTAL+1))
             if add_outbound_rule_uid_old "$uid"; then
@@ -1539,13 +1415,6 @@ iptables_zapret_default_full() {
 
         done < "$UID_FILE"
 
-        if [ "$INDIVIDUAL_INBOUND_SUCCESS" -lt 1 ]; then
-            echo "Индивидуальные inbound правила не установлены, пробую добавить общий inbound fallback..."
-            if ! add_common_inbound_rule_fallback; then
-                echo "❌ Не удалось добавить ни индивидуальное, ни общий inbound правило!"
-            fi
-        fi
-
         if [ "$INDIVIDUAL_OUTBOUND_SUCCESS" -lt 1 ]; then
             echo "Индивидуальные outbound правила не установлены, пробую добавить общий outbound fallback..."
             if ! add_common_outbound_rule_fallback; then
@@ -1553,9 +1422,100 @@ iptables_zapret_default_full() {
             fi
         fi
 
-        echo "✅ Завершено. Индивидуальные правила: inbound $INDIVIDUAL_INBOUND_SUCCESS/$INDIVIDUAL_INBOUND_TOTAL, outbound $INDIVIDUAL_OUTBOUND_SUCCESS/$INDIVIDUAL_OUTBOUND_TOTAL."
+        echo "✅ Завершено. Индивидуальные правила: outbound $INDIVIDUAL_OUTBOUND_SUCCESS/$INDIVIDUAL_OUTBOUND_TOTAL."
     fi
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+full_id_iptables() {
+    mode="$1"
+    queue="$2"
+    iface="$3"
+    uid_file="$4"
+
+    # 1. Проверяем обязательные параметры
+    if [ -z "$mode" ] || [ -z "$queue" ]; then
+        echo "Usage: full_id_iptables {full|no_full} <queue-num> [iface] [uid_file]"
+        return 1
+    fi
+
+    # 2. Опция интерфейса (или пусто для всех)
+    if [ -n "$iface" ]; then
+        iopt="-o $iface"
+    else
+        iopt=""
+    fi
+
+    # 3. Если указан файл UID и он существует — добавляем правила по UID
+    if [ -n "$uid_file" ] && [ -f "$uid_file" ]; then
+        while IFS='=' read -r _ uid; do
+            case "$uid" in
+                [0-9]*)
+                    if [ "$mode" = "full" ]; then
+                        iptables -t mangle -I OUTPUT $iopt \
+                            -m owner --uid-owner "$uid" \
+                            -j NFQUEUE --queue-num "$queue" --queue-bypass
+                    else
+                        # no_full: только HTTP/HTTPS
+                        iptables -t mangle -I OUTPUT $iopt \
+                            -p tcp --dport 80  -m owner --uid-owner "$uid" \
+                            -j NFQUEUE --queue-num "$queue" --queue-bypass
+                        iptables -t mangle -I OUTPUT $iopt \
+                            -p tcp --dport 443 -m owner --uid-owner "$uid" \
+                            -j NFQUEUE --queue-num "$queue" --queue-bypass
+                    fi
+                    ;;
+            esac
+        done < "$uid_file"
+        return 0
+    fi
+
+    # 4. Иначе — общие правила в зависимости от режима
+    case "$mode" in
+        full)
+            iptables -t mangle -I OUTPUT $iopt \
+                -j NFQUEUE --queue-num "$queue" --queue-bypass
+            ;;
+        no_full)
+            iptables -t mangle -I OUTPUT $iopt \
+                -p tcp --dport 80  -j NFQUEUE --queue-num "$queue" --queue-bypass
+            iptables -t mangle -I OUTPUT $iopt \
+                -p tcp --dport 443 -j NFQUEUE --queue-num "$queue" --queue-bypass
+            ;;
+        *)
+            echo "Invalid mode: $mode"
+            echo "Usage: full_id_iptables {full|no_full} <queue-num> [iface] [uid_file]"
+            return 1
+            ;;
+    esac
+
+    return 0
+}
+
+
+
+
+
+
 
 
 
@@ -1579,12 +1539,12 @@ iptables_zapret_default_full() {
 ####################################
 # Добавляю правило ip (IPv4/IPv6) с опциональной поддержкой ipset
 ####################################
-# --- Глобальные счётчики успехов/провалов для статистики ---
+
 success_count=0
 fail_count=0
 
 mobile_iptables_beta() {
-    # --- 1) Проверка флагов full_system и alternativel (как было) ---
+    # --- 1) Флаги полного или альтернативного режима ---
     full_system=${full_system:-0}
     alternativel=${alternativel:-0}
     if [ "$full_system" -eq 1 ] || [ "$alternativel" -eq 1 ]; then
@@ -1592,9 +1552,9 @@ mobile_iptables_beta() {
         return 0
     fi
 
-    # --- 2) Проверка входных параметров (порт + файл) ---
+    # --- 2) Проверка аргументов: порт + файл ---
     if [ -z "$1" ] || [ -z "$2" ]; then
-        echo "Ошибка: Не заданы параметры (порт и файл с IP-адресами)."
+        echo "Ошибка: Не заданы порт или файл с IP-адресами."
         notification_send error "$MSG_RULE_ERROR"
         return 1
     fi
@@ -1607,125 +1567,135 @@ mobile_iptables_beta() {
         return 1
     fi
 
-    # --- 3) Утилиты и вспомогательная функция добавления правил ---
-    # Единая функция add_rule() как в первом скрипте
+    # --- 3) Вспомогательная функция добавления правила в iptables ---
     add_rule() {
-        # $1 = цепочка (PREROUTING|INPUT|OUTPUT|POSTROUTING)
-        # $2 = команда iptables (iptables или ip6tables)
+        # $1 = цепочка, $2 = команда (iptables)
         $2 -t mangle -A "$1" -d "$IP" -j NFQUEUE --queue-num "$port" 2>/dev/null
         return $?
     }
 
-    # --- 4) Подготовка прогресса и уведомление о старте обработки ---
-    total=$(grep -cvE '^\s*(#|$)' "$ip_file" 2>/dev/null)
+    # --- 4) Подготовка к обработке и стартовое уведомление 0% ---
+    # считаем ТОЛЬКО IPv4-строки (пропускаем пустые, комменты и IPv6)
+    total=$(grep -E '^[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' "$ip_file" 2>/dev/null | grep -v ':' | grep -v '^[[:space:]]*#' | wc -l | tr -d ' ')
+    if [ -z "$total" ]; then
+        total=0
+    fi
+
     processed=0
     thresholds="10 25 50 75 100"
     next_threshold=$(echo $thresholds | cut -d' ' -f1)
-    notification_send processing "$ip_file" 0
+    sent_final=0
 
+    notification_send processing "$ip_file" 0
     echo "Начали обработку файла $ip_file — всего $total адресов"
 
-    # --- 5) Блок с ipset (если он есть) ---
-    if command -v ipset >/dev/null 2>&1; then
-        echo "ipset найден — используем наборы вместо множества правил"
-
-        set_v4="iplist_v4_$port"
-        set_v6="iplist_v6_$port"
-        ipset destroy "$set_v4" 2>/dev/null
-        ipset destroy "$set_v6" 2>/dev/null
-        ipset create  "$set_v4" hash:ip family inet   2>/dev/null
-        ipset create  "$set_v6" hash:ip family inet6  2>/dev/null
-
-        while IFS= read -r IP; do
-            [ -z "$IP" ] || [ "${IP#\#}" != "$IP" ] && continue
-            if echo "$IP" | grep -q ':'; then
-                ipset add "$set_v6" "$IP" 2>/dev/null
-            else
-                ipset add "$set_v4" "$IP" 2>/dev/null
-            fi
-        done < "$ip_file"
-
-        # --- здесь метод из 1-го: ровно 4 правила (v4 PREROUTING/OUTPUT + v6 PREROUTING/OUTPUT) ---
-        iptables  -t mangle -A PREROUTING  -m set --match-set "$set_v4" dst -j NFQUEUE --queue-num "$port"
-        iptables  -t mangle -A OUTPUT      -m set --match-set "$set_v4" dst -j NFQUEUE --queue-num "$port"
-        ip6tables -t mangle -A PREROUTING  -m set --match-set "$set_v6" dst -j NFQUEUE --queue-num "$port"
-        ip6tables -t mangle -A OUTPUT      -m set --match-set "$set_v6" dst -j NFQUEUE --queue-num "$port"
-
+    # если нет IPv4-адресов — аккуратно выйти, чтобы не делить на ноль
+    if [ "$total" -eq 0 ]; then
+        echo "Файл $ip_file не содержит IPv4-адресов для обработки. Пропускаем."
         notification_send processing "$ip_file" 100
-        echo "Готово: ipset-наборы созданы, правила NFQUEUE на порт $port"
         return 0
     fi
 
-    # --- 6) Старый режим: перебор по IP (без ipset) с retry-логикой ---
-    echo "ipset не найден — переходим к перебору по IP (старый режим)"
+    # --- 5) Режим ipset: создаём только IPv4-набор и правила iptables ---
+    if command -v ipset >/dev/null 2>&1; then
+        echo "ipset найден — создаём IPv4-набор и правило iptables"
+
+        set_v4="iplist_v4_$port"
+
+        # Убираем старый набор и создаём новый
+        ipset destroy "$set_v4" 2>/dev/null
+        ipset create  "$set_v4" hash:ip family inet  2>/dev/null
+
+        # Заполняем только IPv4: пропускаем строки с ':'
+        while IFS= read -r IP; do
+            [ -z "$IP" ] || [ "${IP#\#}" != "$IP" ] && continue
+            if echo "$IP" | grep -q ':'; then
+                echo "  Пропускаем IPv6 $IP"
+                continue
+            fi
+            ipset add "$set_v4" "$IP" 2>/dev/null
+        done < "$ip_file"
+
+        # Добавляем ровно 2 правила NFQUEUE для IPv4 (PREROUTING и OUTPUT)
+        iptables -t mangle -A PREROUTING -m set --match-set "$set_v4" dst -j NFQUEUE --queue-num "$port"
+        iptables -t mangle -A OUTPUT     -m set --match-set "$set_v4" dst -j NFQUEUE --queue-num "$port"
+
+        notification_send processing "$ip_file" 100
+        echo "Готово: ipset-набор создан, правила NFQUEUE на порт $port"
+        return 0
+    fi
+
+    # --- 6) Пошаговый режим без ipset: перебор по IPv4 и пропуск IPv6 ---
+    echo "ipset не найден — перебираем построчно, пропуская IPv6"
     while IFS= read -r IP; do
+        # Пропускаем пустые и комментарии
         [ -z "$IP" ] || [ "${IP#\#}" != "$IP" ] && continue
 
+        # Если это IPv6 (есть ':'), просто пропускаем
+        if echo "$IP" | grep -q ':'; then
+            echo "  Пропускаем IPv6 $IP"
+            continue
+        fi
+
+        echo "Обработка IPv4: $IP"
         ingress_success=0
         egress_success=0
 
-        if echo "$IP" | grep -q ':'; then
-            IPT_CMD="ip6tables"; FAMILY="IPv6"
-        else
-            IPT_CMD="iptables";  FAMILY="IPv4"
-        fi
-
-        echo "Обработка адреса: $IP ($FAMILY)"
-
-        # ——— ВХОД: PREROUTING → INPUT (как в 1-м) с retry из 2-го ———
-        if add_rule PREROUTING "$IPT_CMD"; then
-            echo "  ВХОД: правило добавлено в PREROUTING"
+        # Входящий (PREROUTING → INPUT) с retry
+        if add_rule PREROUTING iptables; then
+            echo "  ВХОД: PREROUTING OK"
             ingress_success=1
         else
-            notification_send error "Retry PREROUTING для $IP"
+            notification_send error "Retry PREROUTING $IP"
             sleep 3
-            if add_rule PREROUTING "$IPT_CMD"; then
-                echo "  ВХОД: PREROUTING после retry"
+            if add_rule PREROUTING iptables; then
+                echo "  ВХОД: PREROUTING после retry OK"
                 ingress_success=1
             else
-                echo "  ВХОД: PREROUTING не сработал, пробуем INPUT..."
-                if add_rule INPUT "$IPT_CMD"; then
-                    echo "  ВХОД: правило добавлено в INPUT"
+                echo "  ВХОД: пробуем INPUT…"
+                if add_rule INPUT iptables; then
+                    echo "  ВХОД: INPUT OK"
                     ingress_success=1
                 else
-                    notification_send error "Ошибка INPUT для $IP"
+                    notification_send error "Ошибка INPUT $IP"
                 fi
             fi
         fi
 
-        # ——— ИСХОД: OUTPUT → POSTROUTING (аналогично) ———
-        if add_rule OUTPUT "$IPT_CMD"; then
-            echo "  ИСХОД: правило добавлено в OUTPUT"
+        # Исходящий (OUTPUT → POSTROUTING) с retry
+        if add_rule OUTPUT iptables; then
+            echo "  ИСХОД: OUTPUT OK"
             egress_success=1
         else
-            notification_send error "Retry OUTPUT для $IP"
+            notification_send error "Retry OUTPUT $IP"
             sleep 3
-            if add_rule OUTPUT "$IPT_CMD"; then
-                echo "  ИСХОД: OUTPUT после retry"
+            if add_rule OUTPUT iptables; then
+                echo "  ИСХОД: OUTPUT после retry OK"
                 egress_success=1
             else
-                echo "  ИСХОД: OUTPUT не сработал, пробуем POSTROUTING..."
-                if add_rule POSTROUTING "$IPT_CMD"; then
-                    echo "  ИСХОД: правило добавлено в POSTROUTING"
+                echo "  ИСХОД: пробуем POSTROUTING…"
+                if add_rule POSTROUTING iptables; then
+                    echo "  ИСХОД: POSTROUTING OK"
                     egress_success=1
                 else
-                    notification_send error "Ошибка POSTROUTING для $IP"
+                    notification_send error "Ошибка POSTROUTING $IP"
                 fi
             fi
         fi
 
-        # ——— Учёт статистики ———
+        # Статистика
         if [ "$ingress_success" -eq 1 ] && [ "$egress_success" -eq 1 ]; then
             success_count=$((success_count + 1))
         else
             fail_count=$((fail_count + 1))
         fi
 
-        # ——— Обновление прогресса ———
+        # Прогресс
         processed=$((processed + 1))
         pct=$(( processed * 100 / total ))
         if [ "$pct" -ge "$next_threshold" ]; then
             notification_send processing "$ip_file" "$next_threshold"
+            [ "$next_threshold" -eq 100 ] && sent_final=1
             thresholds="${thresholds#* }"
             if [ -n "$thresholds" ]; then
                 next_threshold=$(echo $thresholds | cut -d' ' -f1)
@@ -1736,10 +1706,19 @@ mobile_iptables_beta() {
 
     done < "$ip_file"
 
-    # ——— Завершаем и даём время «уведомлениям» отработать ———
-    echo "Готово: обработано $processed/$total адресов, успехов: $success_count, ошибок: $fail_count"
-    sleep 5
+    # --- 7) Гарантируем уведомление 100%, если не было ---
+    if [ "$sent_final" -eq 0 ]; then
+        notification_send processing "$ip_file" 100
+    fi
+
+    echo "Готово: обработано $processed/$total IPv4-адресов, успехов: $success_count, ошибок: $fail_count"
+    return 0
 }
+
+
+
+
+
 
 
 
@@ -1894,7 +1873,7 @@ apply_iptables_rules() {
 
 check_and_restart_dpi_tunnel() {
     local pid="$1"
-    local port="$2"
+    local ports="$2"
     local ip="$3"
     local mode="$4"
     local profile="$5"
@@ -1913,15 +1892,15 @@ check_and_restart_dpi_tunnel() {
     local builtin_dns_ip="${18}"
     local builtin_dns_port="${19}"
 
-    if ! netstat -tuln | grep -q ":$port .*LISTEN"; then
-        echo "Порт $port не прослушивается. Перезапуск процесса..."
+    if ! netstat -tuln | grep -q ":$ports .*LISTEN"; then
+        echo "Порт $ports не прослушивается. Перезапуск процесса..."
 
         if /system/bin/dpitunnel-cli \
             --pid "$pid" \
             --daemon \
             --ca-bundle-path "$CA_BUNDLE_PATH" \
             --ip "$ip" \
-            --port "$port" \
+            --port "$ports" \
             --mode "$mode" \
             --profile "$profile" \
             --buffer-size "$buffer_size" \
@@ -1939,10 +1918,10 @@ check_and_restart_dpi_tunnel() {
             --builtin-dns-ip "$builtin_dns_ip" \
             --builtin-dns-port "$builtin_dns_port"; then
 
-            echo "DPI Tunnel на порту $port успешно перезапущен."
+            echo "DPI Tunnel на порту $ports успешно перезапущен."
             
         else
-            echo "Не удалось запустить DPI Tunnel на порту $port."
+            echo "Не удалось запустить DPI Tunnel на порту $ports."
             
         fi
     fi
@@ -1951,6 +1930,69 @@ check_and_restart_dpi_tunnel() {
 
 
 
+dns_redirect () {
+
+    # --- DNS: если dns=1, ставим mangle-исключения и NAT-DNS внутри NAT_DPI ---
+    if [ "${dns:-0}" = "1" ]; then
+        echo ">>> DNS режим включён: настраиваем mangle-исключения и NAT_DPI DNS-правила"
+
+        # Убедимся, что MANGLE_APP и джамп в OUTPUT есть (инициализация mangle)
+        iptables -t mangle -nL MANGLE_APP >/dev/null 2>&1 || iptables -t mangle -N MANGLE_APP
+        iptables -t mangle -C OUTPUT -j MANGLE_APP 2>/dev/null \
+            || iptables -t mangle -A OUTPUT -j MANGLE_APP
+
+        # 2.1) mangle-исключения DNS — пробуем multiport (53,443), если не получится — отдельные правила
+        for proto in udp tcp sctp; do
+            # сначала проверим, есть ли уже правило с multiport
+            if iptables -t mangle -C MANGLE_APP -p "$proto" -m multiport --dports 53,853 -j RETURN 2>/dev/null; then
+                : # уже есть multiport-правило — пропускаем
+            else
+                # попробуем вставить multiport-правило; если команда не поддерживается/падает — сделаем отдельные правила
+                if iptables -t mangle -I MANGLE_APP 1 -p "$proto" -m multiport --dports 53,853 -j RETURN 2>/dev/null; then
+                    echo ">>> mangle: добавлено multiport-исключение (53,443) для $proto"
+                else
+                    # fallback — отдельные правила для 53 и 443
+                    for p in 53 853; do
+                        iptables -t mangle -C MANGLE_APP -p "$proto" --dport "$p" -j RETURN 2>/dev/null \
+                            || iptables -t mangle -I MANGLE_APP 1 -p "$proto" --dport "$p" -j RETURN
+                    done
+                    echo ">>> mangle: multiport не доступен — добавлены отдельные исключения 53 и 443 для $proto"
+                fi
+            fi
+        done
+
+        echo ">>> mangle-исключение DNS добавлено в MANGLE_APP (функционально как -I OUTPUT ... RETURN)"
+
+        # 2.2) Удалим старые (возможные) глобальные DNS DNAT в nat OUTPUT для 53 и 443, чтобы не было дублирования
+        for port in 53 853; do
+            iptables -t nat -C OUTPUT -p udp --dport "$port" -j DNAT --to-destination 127.0.0.1:863 2>/dev/null \
+                && iptables -t nat -D OUTPUT -p udp --dport "$port" -j DNAT --to-destination 127.0.0.1:863 2>/dev/null
+            iptables -t nat -C OUTPUT -p tcp --dport "$port" -j DNAT --to-destination 127.0.0.1:863 2>/dev/null \
+                && iptables -t nat -D OUTPUT -p tcp --dport "$port" -j DNAT --to-destination 127.0.0.1:863 2>/dev/null
+        done
+
+        # 2.3) Добавим правила DNS внутрь NAT_DPI и поставим их первыми (insert)
+        # Попробуем multiport для каждой из proto; при неудаче — отдельные правила
+        for proto in udp tcp sctp; do
+            if iptables -t nat -C NAT_DPI -p "$proto" -m multiport --dports 53,853 -j DNAT --to-destination 127.0.0.1:863 2>/dev/null; then
+                : # уже есть
+            else
+                if iptables -t nat -I NAT_DPI 1 -p "$proto" -m multiport --dports 53,853 -j DNAT --to-destination 127.0.0.1:863 2>/dev/null; then
+                    echo ">>> nat: добавлено multiport DNAT (53,443) для $proto -> 127.0.0.1:863"
+                else
+                    for p in 53 853; do
+                        iptables -t nat -C NAT_DPI -p "$proto" --dport "$p" -j DNAT --to-destination 127.0.0.1:863 2>/dev/null \
+                            || iptables -t nat -I NAT_DPI 1 -p "$proto" --dport "$p" -j DNAT --to-destination 127.0.0.1:863
+                    done
+                    echo ">>> nat: multiport не доступен — добавлены отдельные DNAT 53 и 443 для $proto"
+                fi
+            fi
+        done
+
+        echo ">>> Нативные DNS правила (53,443 -> 127.0.0.1:863) расположены первыми внутри NAT_DPI"
+    fi
+
+}
 
 
 
@@ -1961,28 +2003,188 @@ check_and_restart_dpi_tunnel() {
 
 
 
+
+# $1 — файл с app_name=uid
+# $2 — порт назначения для nat (1123,1124 и т.п.)
+# $3 — protocol_choice: tcp | udp | tcp_udp (default: tcp)
+# Внешняя переменная: dpi_ports — строка портов/диапазонов, например:
+# "80 443 2710 6969 51413 6771 6881-6999 49152-65535"
 load_config_dpi_tunnel() {
-    # Параметры функции:
-    # $1 — Путь к файлу с UID
-    # $2 — Порт назначения для iptables (например, 1123 или 1124)
     local uid_file="$1"
     local dest_port="$2"
+    local proto_choice="${3:-tcp}"
+    port_preference="${port_preference:-0}"    # 0 → dpi_ports (по умолчанию 80,443), 1 → все порты
+    dpi_ports="80 443 2710 6969 51413 6771 6881-6999 49152-65535"
 
-    # Чтение файла построчно, где каждая строка имеет вид "app_name=uid"
+    echo ">>> port_preference = '$port_preference', protocol_choice = '$proto_choice', dns = '${dns:-0}'"
+    echo ">>> dpi_ports (raw) = '$dpi_ports'"
+
+    # init NAT_DPI
+    iptables -t nat -nL NAT_DPI >/dev/null 2>&1 || iptables -t nat -N NAT_DPI
+    iptables -t nat -C OUTPUT -j NAT_DPI 2>/dev/null || iptables -t nat -I OUTPUT 1 -j NAT_DPI
+    echo ">>> NAT_DPI ready"
+
+    # init MANGLE_APP
+    if [ -z "$_IPTABLES_DPI_TUNNEL_MANGLE_INIT" ]; then
+        iptables -t mangle -nL MANGLE_APP >/dev/null 2>&1 || iptables -t mangle -N MANGLE_APP
+        iptables -t mangle -C OUTPUT -j MANGLE_APP 2>/dev/null || iptables -t mangle -A OUTPUT -j MANGLE_APP
+        _IPTABLES_DPI_TUNNEL_MANGLE_INIT=1
+        echo ">>> MANGLE_APP ready"
+    fi
+
     while IFS='=' read -r app_name uid; do
-        # Проверяем, что переменная uid начинается с цифры (то есть, это число)
-        if [[ "$uid" == [0-9]* ]]; then
-            # Добавляем правила iptables для порта 80
-            iptables -t nat -A OUTPUT -p tcp --dport 80 -m owner --uid-owner "$uid" -j DNAT --to-destination 127.0.0.1:"$dest_port"
-            # Добавляем правила iptables для порта 443
-            iptables -t nat -A OUTPUT -p tcp --dport 443 -m owner --uid-owner "$uid" -j DNAT --to-destination 127.0.0.1:"$dest_port"
-            echo "Установлено правило для UID: $uid"
-        else
-            # Если строка не содержит корректное числовое значение для UID, выводим сообщение
-            echo "Пропущена строка без цифр: $app_name=$uid"
-        fi
+        [[ "$uid" != [0-9]* ]] && continue
+        iptables -t mangle -C MANGLE_APP -m owner --uid-owner "$uid" -j RETURN 2>/dev/null \
+            || iptables -t mangle -I MANGLE_APP -m owner --uid-owner "$uid" -j RETURN
+        echo "mangle-исключение для UID $uid"
     done < "$uid_file"
+
+    case "$proto_choice" in
+        tcp)     protos="tcp" ;;
+        udp)     protos="udp" ;;
+        tcp_udp) protos="tcp udp" ;;
+        *) echo "!!! неизвестный protocol_choice '$proto_choice', default tcp"; protos="tcp" ;;
+    esac
+
+    if [ "$port_preference" = "1" ]; then
+        echo ">>> Применяем DNAT на ВСЕ порты (${protos// /+})"
+        while IFS='=' read -r app_name uid; do
+            [[ "$uid" != [0-9]* ]] && continue
+            for proto in $protos; do
+                iptables -t nat -A NAT_DPI -p "$proto" -m owner --uid-owner "$uid" \
+                    -j DNAT --to-destination 127.0.0.1:"$dest_port"
+            done
+            echo "  NAT для UID $uid -> 127.0.0.1:$dest_port (all ports)"
+        done < "$uid_file"
+        echo ">>> Готово (all ports)"
+        return 0
+    fi
+
+    # Нормализуем разделители: пробелы -> запятые, убираем лишние запятые
+    ports_csv="$(echo "$dpi_ports" | tr ' ' ',' | sed 's/,,*/,/g' | sed 's/^,//;s/,$//')"
+    echo ">>> Нормализованные части портов: $ports_csv"
+
+    # Разбиваем на части (каждая часть — либо число, либо диапазон start-end)
+    # Считаем части и проверяем, есть ли диапазоны
+    parts_count=0
+    has_range=0
+    OLD_IFS="$IFS"
+    IFS=','
+    for token in $ports_csv; do
+        token="$(echo "$token" | tr -d '[:space:]')"
+        [ -z "$token" ] && continue
+        parts_count=$((parts_count + 1))
+        case "$token" in
+            *-*)
+                # диапазон вида a-b
+                has_range=1
+                ;;
+            *)
+                # одиночный порт — проверка числа
+                # если не число — пропускаем
+                if ! echo "$token" | grep -Eq '^[0-9]+$'; then
+                    echo "!!! Неверный токен портов: '$token' — пропускаем"
+                    parts_count=$((parts_count - 1))
+                fi
+                ;;
+        esac
+    done
+    IFS="$OLD_IFS"
+
+    # Проверка поддержки multiport (только применимо если нет диапазонов и количество частей <=15)
+    multiport_supported=0
+    if iptables -t nat -I NAT_DPI 1 -p tcp -m multiport --dports 1 -j RETURN >/dev/null 2>&1; then
+        iptables -t nat -D NAT_DPI -p tcp -m multiport --dports 1 -j RETURN >/dev/null 2>&1 || true
+        multiport_supported=1
+    fi
+
+    echo ">>> parts_count=$parts_count, has_range=$has_range, multiport_supported=$multiport_supported"
+
+    use_multiport=0
+    if [ "$has_range" -eq 0 ] && [ "$parts_count" -le 15 ] && [ "$multiport_supported" -eq 1 ]; then
+        use_multiport=1
+    fi
+
+    if [ "$use_multiport" -eq 1 ]; then
+        # собираем чистый список портов (без пробелов)
+        ports_for_multi="$(echo "$ports_csv" | tr -d '[:space:]')"
+        echo ">>> Используем multiport для портов: $ports_for_multi"
+        while IFS='=' read -r app_name uid; do
+            [[ "$uid" != [0-9]* ]] && continue
+            for proto in $protos; do
+                iptables -t nat -A NAT_DPI -p "$proto" -m owner --uid-owner "$uid" -m multiport --dports "$ports_for_multi" \
+                    -j DNAT --to-destination 127.0.0.1:"$dest_port"
+            done
+            echo "  NAT для UID $uid ->127.0.0.1:$dest_port (multiport: $ports_for_multi, $protos)"
+        done < "$uid_file"
+    else
+        # Если multiport не доступен или есть диапазоны или частей >15 — делаем по-элементно.
+        if [ "$multiport_supported" -ne 1 ]; then
+            if command -v notification_send >/dev/null 2>&1; then
+                notification_send support "Ваше устройство ограничено в возможностях, для полного запуска понадобится больше времени. Для решения этой проблемы, установите пакет iptables с поддержкой multiport."
+            else
+                echo "!!! notification_send не найдена — пропускаем уведомление"
+            fi
+            echo ">>> Переходим в fallback режим: добавляем правила по-элементно"
+        else
+            echo ">>> Решено не использовать multiport (есть диапазоны или частей >15). Добавляем правила по-элементно"
+        fi
+
+        # Проходим токен за токеном: одиночный порт -> --dport X; диапазон a-b -> --dport a:b
+        IFS=','
+        for token in $ports_csv; do
+            token="$(echo "$token" | tr -d '[:space:]')"
+            [ -z "$token" ] && continue
+            if echo "$token" | grep -Eq '^[0-9]+-[0-9]+$'; then
+                # диапазон
+                start="$(echo "$token" | cut -d- -f1)"
+                end="$(echo "$token" | cut -d- -f2)"
+                # валидация
+                if ! echo "$start" | grep -Eq '^[0-9]+$' || ! echo "$end" | grep -Eq '^[0-9]+$'; then
+                    echo "!!! Неверный диапазон '$token' — пропускаем"
+                    continue
+                fi
+                # swap если нужно
+                if [ "$start" -gt "$end" ]; then
+                    tmp="$start"; start="$end"; end="$tmp"
+                fi
+                # применяем одно правило на диапазон с использованием синтаксиса start:end
+                while IFS='=' read -r app_name uid; do
+                    [[ "$uid" != [0-9]* ]] && continue
+                    for proto in $protos; do
+                        iptables -t nat -A NAT_DPI -p "$proto" --dport "${start}:${end}" \
+                            -m owner --uid-owner "$uid" \
+                            -j DNAT --to-destination 127.0.0.1:"$dest_port"
+                    done
+                    echo "  NAT для UID $uid ->127.0.0.1:$dest_port (range ${start}:${end}, $protos)"
+                done < "$uid_file"
+            elif echo "$token" | grep -Eq '^[0-9]+$'; then
+                # одиночный порт
+                while IFS='=' read -r app_name uid; do
+                    [[ "$uid" != [0-9]* ]] && continue
+                    for proto in $protos; do
+                        iptables -t nat -A NAT_DPI -p "$proto" --dport "$token" \
+                            -m owner --uid-owner "$uid" \
+                            -j DNAT --to-destination 127.0.0.1:"$dest_port"
+                    done
+                    echo "  NAT для UID $uid ->127.0.0.1:$dest_port (port $token, $protos)"
+                done < "$uid_file"
+            else
+                echo "!!! Пропущен некорректный токен: '$token'"
+            fi
+        done
+        IFS="$OLD_IFS"
+    fi
+
+    echo ">>> Правила DNAT добавлены внутрь NAT_DPI."
 }
+
+
+
+
+
+
+
 
 
 
@@ -2040,40 +2242,29 @@ BYEDPI_RESTART() {
 
 
 restarting_dpi_tunnel() {
-    
-    # Проверка условий
-    if [ "$dpi_tunnel_0" = "1" ] || [ "$dpi_tunnel_1" = "1" ]; then
-            
-        # Основной цикл
-        while true; do
-            if [ "$dpi_tunnel_0" = "1" ]; then
-                check_and_restart_dpi_tunnel "$PID" "$PORT" "$IP" "$MODE" "$PROFILE" "$BUFFER_SIZE" "$DOH_SERVER" "$TTL" "$AUTO_TTL" "$MIN_TTL" "$DESYNC_ATTACKS" "$WSIZE" "$WSFACTOR" "$SPLIT_AT_SNI" "$SPLIT_POSITION" "$WRONG_SEQ" "$BUILTIN_DNS" "$BUILTIN_DNS_IP" "$BUILTIN_DNS_PORT"
-            elif [ "$dpi_tunnel_0" = "0" ]; then
-                # Убираем логирование при выключении
-                :
-            else
-                echo "Некорректное значение для dpi_tunnel_0 или его нет"
-            fi
-        
-            if [ "$dpi_tunnel_1" = "1" ]; then
-                check_and_restart_dpi_tunnel "$PID1" "$PORT1" "$IP1" "$MODE1" "$PROFILE1" "$BUFFER_SIZE1" "$DOH_SERVER1" "$TTL1" "$AUTO_TTL1" "$MIN_TTL1" "$DESYNC_ATTACKS1" "$WSIZE1" "$WSFACTOR1" "$SPLIT_AT_SNI1" "$SPLIT_POSITION1" "$WRONG_SEQ1" "$BUILTIN_DNS1" "$BUILTIN_DNS_IP1" "$BUILTIN_DNS_PORT1"
-            elif [ "$dpi_tunnel_1" = "0" ]; then
-                # Убираем логирование при выключении
-                :
-            else
-                echo "Некорректное значение для dpi_tunnel_1 или его нет"
-            fi
-        
-            # Ожидание 30 секунд перед следующей проверкой
-            sleep 30
-        done
-    
-    else
+    iptables -t nat -I NAT_DPI 1 -d 127.0.0.1 -j RETURN
+    iptables -t mangle -C MANGLE_APP -d 127.0.0.1 -j RETURN 2>/dev/null || iptables -t mangle -I MANGLE_APP 1 -d 127.0.0.1 -j RETURN
+    any=0
+    for i in 0 1 2; do
+        # достаём значение переменной dpi_tunnel_<i>
+        eval enabled=\"\$dpi_tunnel_${i}\"
+        if [ "$enabled" = "1" ]; then
+            any=1
+            # вызываем check_and_restart_dpi_tunnel с соответствующими параметрами
+            eval "check_and_restart_dpi_tunnel \"\$PID${i}\" \"\$PORTS${i}\" \"\$IP${i}\" \"\$MODE${i}\" \"\$PROFILE${i}\" \"\$BUFFER_SIZE${i}\" \"\$DOH_SERVER${i}\" \"\$TTL${i}\" \"\$AUTO_TTL${i}\" \"\$MIN_TTL${i}\" \"\$DESYNC_ATTACKS${i}\" \"\$WSIZE${i}\" \"\$WSFACTOR${i}\" \"\$SPLIT_AT_SNI${i}\" \"\$SPLIT_POSITION${i}\" \"\$WRONG_SEQ${i}\" \"\$BUILTIN_DNS${i}\" \"\$BUILTIN_DNS_IP${i}\" \"\$BUILTIN_DNS_PORT${i}\""
+        elif [ "$enabled" = "0" ]; then
+            : # ничего не делаем, отключён
+        else
+            echo "Некорректное значение для dpi_tunnel_${i} или его нет"
+        fi
+    done
+
+    if [ "$any" -eq 0 ]; then
         echo "Скрипт выключен"
         exit 0
     fi
-    
 }
+
 
 
 
@@ -2112,8 +2303,7 @@ restarting_dpi_tunnel() {
 # Ожидание завершения загрузки устройства
 boot_completed
 
-# Определям язык системы
-language_sustem
+
 
 # Проверка наличия конфликтующего модуля, который может помешать работе
 check_modules
@@ -2150,19 +2340,21 @@ start_stop_service
 # Запуск nfqws с использованием конфигурации (закомментировано, если не требуется)
 # start_zapret
 
+
 # Загрузка конфигурации для DPI туннеля
 start_load_config
-
 ##########################################
 # Этап 4: Обработка UID-файлов и запуск профилей zapret
 ##########################################
 
 # Первичная обработка UID-файлов (основной и дополнительный)
-unified_processing "$UID_OUTPUT_FILE" "$UID_INPUT_FILE"
-unified_processing "$UID_OUTPUT_FILE1" "$UID_INPUT_FILE1"
+for i in 0 1 2; do
+    eval "unified_processing \"\$UID_OUTPUT_FILES${i}\" \"\$UID_INPUT_FILES${i}\""
+done
+
 unified_processing "$UID_OUTPUT_FILE_BYE" "$UID_INPUT_FILE_BYE"
-unified_processing "$ZAPRET_DPI_TUNNEL_OUT" "$ZAPRET_DPI_TUNNEL"
-unified_processing "$DPI_TUNNEL_ZAPRET_OUT" "$DPI_TUNNEL_ZAPRET"
+# unified_processing "$ZAPRET_DPI_TUNNEL_OUT" "$ZAPRET_DPI_TUNNEL"
+# unified_processing "$DPI_TUNNEL_ZAPRET_OUT" "$DPI_TUNNEL_ZAPRET"
 # --- Обработка профилей zapret ---
 # Здесь для каждого профиля выполняется:
 #   1. Проверка наличия входного файла с UID (если файл не пустой, то профиль активен)
@@ -2170,67 +2362,110 @@ unified_processing "$DPI_TUNNEL_ZAPRET_OUT" "$DPI_TUNNEL_ZAPRET"
 #   3. Обработка файла с UID через функцию unified_processing
 #   4. Применение настроек iptables через функцию iptables_zapret_default_full
 
-#!/system/bin/sh
+AGR_ZAPRET_TXT=/storage/emulated/0/ZDT-D
+ZAPRETUID_CHECK=/data/adb/modules/ZDT-D/working_folder/zapret_uid_out5
+[ -n "$(find "$AGR_ZAPRET_TXT" -maxdepth 1 -type f -name '*.txt' -print -quit)" ] || [ -s "$ZAPRETUID_CHECK" ] && start_zapret_agressive
 
-# --- БЛОК 1: профили 2–6 (полная обработка) ---
-for i in 2 3 4 5 6; do
-    profile=$((i - 1))
-    input_var="UID_INPUT_FILE$i"
-    output_var="UID_OUTPUT_FILE$i"
-    eval input_val=\$$input_var
-    eval output_val=\$$output_var
 
-    # 1) unified_processing при непустом входе
-    if [ -s "$input_val" ]; then
-        echo "Профиль ${profile} (i=$i): запускаем unified_processing"
-        unified_processing "$output_val" "$input_val"
-    else
-        echo "Профиль ${profile} (i=$i): входной файл пуст → unified_processing пропущен."
-    fi
+# Unified script:
+# 1) unified_processing всех файлов
+# 2) full_id_iptables для Wi‑Fi/Mobile + iptables_zapret_default_full для UID‑профилей
+# 3) в конце — единожды start_zapret для каждого кода 200..204
 
-    # 2) start_zapret + iptables при непустом выходе
-    if [ -s "$output_val" ]; then
-        echo "Профиль ${profile} (i=$i): запускаем start_zapret + iptables"
+# --- Stage 1: unified_processing ---
 
-        code=$((200 + i - 2))
-        config_index=$((i - 2))
-        config_var="CONFIG_ZAPRET${config_index}"
-        eval config_val=\$$config_var
+# 1.1 Wi‑Fi и Mobile профили N=0..5
+for N in 0 1 2 3 4 5; do
+  IN_WIFI="$WORKING_FOLDER/zapret_wifi${N}"
+  OUT_WIFI="$WORKING_FOLDER/zapret_out_wifi${N}"
+  echo "Stage1: unified_processing Wi‑Fi N=$N"
+  unified_processing "$OUT_WIFI" "$IN_WIFI"
 
-        start_zapret "$code" "$config_val" "$input_val"
-        iptables_zapret_default_full "$code" "$output_val"
-    else
-        echo "Профиль ${profile} (i=$i): выходной файл пуст → start_zapret и iptables пропущены."
-    fi
+  IN_MOB="$WORKING_FOLDER/zapret_mobile${N}"
+  OUT_MOB="$WORKING_FOLDER/zapret_out_mobile${N}"
+  echo "Stage1: unified_processing Mobile N=$N"
+  unified_processing "$OUT_MOB" "$IN_MOB"
 done
 
-# --- БЛОК 2: профили 7–9 (unified_processing + только iptables) ---
-for i in 7; do
-    profile=$((i - 1))
-    input_var="UID_INPUT_FILE$i"
-    output_var="UID_OUTPUT_FILE$i"
-    eval input_val=\$$input_var
-    eval output_val=\$$output_var
+# 1.2 UID‑профили i=2..7
+for i in 2 3 4 5 6 7 8; do
+  idx=$((i - 1))
+  eval IN_UID=\$UID_INPUT_FILE$i
+  eval OUT_UID=\$UID_OUTPUT_FILE$i
 
-    # 1) unified_processing при непустом входе
-    if [ -s "$input_val" ]; then
-        echo "Профиль ${profile} (i=$i): запускаем unified_processing"
-        unified_processing "$output_val" "$input_val"
-    else
-        echo "Профиль ${profile} (i=$i): входной файл пуст → unified_processing пропущен."
-    fi
-
-    # 2) только iptables при непустом выходе
-    if [ -s "$output_val" ]; then
-        echo "Профиль ${profile} (i=$i): запускаем только iptables_zapret_default_full"
-
-        code=$((200 + i - 2))
-        iptables_zapret_default_full "$code" "$output_val"
-    else
-        echo "Профиль ${profile} (i=$i): выходной файл пуст → iptables пропущен."
-    fi
+  echo "Stage1: unified_processing UID profile $idx (i=$i)"
+  if [ -s "$IN_UID" ]; then
+    unified_processing "$OUT_UID" "$IN_UID"
+  else
+    echo "WARN: \$IN_UID ($IN_UID) пуст, пропускаем"
+    : > "$OUT_UID"
+  fi
 done
 
+# --- Stage 2: iptables наложение ---
+
+# 2.1 full_id_iptables для Wi‑Fi/Mobile
+for N in 0 1 2 3 4 5; do
+  PORT=$((200 + N))
+
+  OUT_WIFI="$WORKING_FOLDER/zapret_out_wifi${N}"
+  PARAM_WIFI="$WORKING_FOLDER/zapret_params_wifi${N}"
+  if [ -s "$OUT_WIFI" ]; then
+    read -r IFACE_WIFI < "$PARAM_WIFI"; IFACE_WIFI="${IFACE_WIFI%$'\r'}"
+    echo "LOG: full_id_iptables Wi‑Fi N=$N → port=$PORT iface=$IFACE_WIFI"
+    full_id_iptables "full" "$PORT" "$IFACE_WIFI" "$OUT_WIFI"
+  fi
+
+  OUT_MOB="$WORKING_FOLDER/zapret_out_mobile${N}"
+  PARAM_MOB="$WORKING_FOLDER/zapret_params_mobile${N}"
+  if [ -s "$OUT_MOB" ]; then
+    read -r IFACE_MOB < "$PARAM_MOB"; IFACE_MOB="${IFACE_MOB%$'\r'}"
+    echo "LOG: full_id_iptables Mobile N=$N → port=$PORT iface=$IFACE_MOB"
+    full_id_iptables "full" "$PORT" "$IFACE_MOB" "$OUT_MOB"
+  fi
+done
+
+# 2.2 iptables_zapret_default_full для UID‑профилей i=2..6
+for i in 2 3 4 5 6 7 8; do
+  code=$((200 + i - 2))
+  eval OUT_UID=\$UID_OUTPUT_FILE$i
+
+  if [ -s "$OUT_UID" ]; then
+    echo "LOG: UID profile i=$i: iptables_zapret_default_full code=$code"
+    iptables_zapret_default_full "$code" "$OUT_UID"
+  fi
+done
+
+# --- Stage 3: запускаем start_zapret **единожды** для каждого кода 200..204 ---
+
+for N in 0 1 2 3 4 6; do
+  code=$((200 + N))
+  cfg_var="CONFIG_ZAPRET$N"
+  eval CONFIG=\$$cfg_var
+
+  # определяем первый непустой файл в порядке UID → Wi‑Fi → Mobile
+  i=$((N + 2))
+  eval OUT_UID=\$UID_OUTPUT_FILE$i
+  OUT_WIFI="$WORKING_FOLDER/zapret_out_wifi${N}"
+  OUT_MOB="$WORKING_FOLDER/zapret_out_mobile${N}"
+
+  if [ -s "$OUT_UID" ]; then
+    INPUT_FILE="$OUT_UID"
+  elif [ -s "$OUT_WIFI" ]; then
+    INPUT_FILE="$OUT_WIFI"
+  elif [ -s "$OUT_MOB" ]; then
+    INPUT_FILE="$OUT_MOB"
+  else
+    INPUT_FILE=""
+  fi
+
+  if [ -n "$INPUT_FILE" ]; then
+    echo "LOG: start_zapret code=$code config='\$CONFIG' input='$INPUT_FILE'"
+    start_zapret "$code" "$CONFIG" "$INPUT_FILE"
+  else
+    echo "LOG: код=$code — нет непустых файлов, пропускаем start_zapret"
+  fi
+done
 
 # Дополнительная настройка iptables для мобильного, с передачей параметров
 # Массив профилей (0–2 пока не активны)
@@ -2250,18 +2485,6 @@ for p in $PROFILES; do
     fi
 done
 
-
-# Проверка доступности интернета с задержкой 15 секунд и интервалом проверки 5 секунд
-internetcheck "15" "5"
-
-# Если интернет доступен (индикатор равен 1), запускается проверка обновлений
-if [ "$internet_echeck_status" -eq 1 ]; then
-    echo "Интернет доступен, запускаем проверку обновлений..."
-    check_update
-else
-    echo "Интернет недоступен, обновление не будет выполнено."
-fi
-
 apply_zdt_rules
 
 
@@ -2276,10 +2499,13 @@ apply_zdt_rules
 if [ -s "$UID_OUTPUT_FILE_BYE" ]; then
     echo "Запуск Bye dpi"
     BYEDPI_RESTART "1125"
-    load_config_dpi_tunnel "$UID_OUTPUT_FILE_BYE" 1125
+    load_config_dpi_tunnel "$UID_OUTPUT_FILE_BYE" "1125" "tcp"
 else
     echo "Bye dpi не запущен"
 fi
+
+
+
 
 # DPI tunnel 0:
 # Если переменная dpi_tunnel_0 равна "1", то туннель включён и запускается соответствующая функция;
@@ -2287,7 +2513,7 @@ fi
 # в остальных случаях выводится сообщение об ошибке.
 if [ "$dpi_tunnel_0" = "1" ]; then
     echo "DPI tunnel 0 включён, запуск"
-    load_config_dpi_tunnel "$UID_OUTPUT_FILE" 1123
+    load_config_dpi_tunnel "$UID_OUTPUT_FILES0" "$PORTS0" "$PROTOCOL_TRAFFIC0"
 elif [ "$dpi_tunnel_0" = "0" ]; then
     echo "DPI tunnel 0 выключен."
 else
@@ -2297,13 +2523,25 @@ fi
 # DPI tunnel 1:
 if [ "$dpi_tunnel_1" = "1" ]; then
     echo "DPI tunnel 1 включён, запуск"
-    load_config_dpi_tunnel "$UID_OUTPUT_FILE1" 1124
+    load_config_dpi_tunnel "$UID_OUTPUT_FILES1" "$PORTS1" "$PROTOCOL_TRAFFIC1"
 elif [ "$dpi_tunnel_1" = "0" ]; then
     echo "DPI tunnel 1 выключен."
 else
     echo "Некорректное значение для dpi_tunnel_1 или его нет"
 fi
 
+# DPI tunnel 2:
+if [ "$dpi_tunnel_2" = "1" ]; then
+    echo "DPI tunnel 1 включён, запуск"
+    load_config_dpi_tunnel "$UID_OUTPUT_FILES2" "$PORTS2" "$PROTOCOL_TRAFFIC2"
+elif [ "$dpi_tunnel_1" = "0" ]; then
+    echo "DPI tunnel 1 выключен."
+else
+    echo "Некорректное значение для dpi_tunnel_1 или его нет"
+fi
+
+
+dns_redirect
 ##########################################
 # Этап 6: Финальные действия и обновления
 ##########################################
@@ -2316,8 +2554,15 @@ if [ "$SELINUX_STATE" = "Enforcing" ]; then
     setenforce 1
 fi
 
-# Проверка работоспособности сервиса DPI tunnel и его перезапуск при необходимости
+setsid $BIN_DIR/script/zdt-d_totall_traffic.sh >/dev/null >/dev/null 2>&1 &
+setsid $BIN_DIR/script/zdt-d_update.sh </dev/null >/dev/null 2>&1 &
+
+# Проверка работоспособности сервиса DPI tunnel
 restarting_dpi_tunnel
+
+setsid $BIN_DIR/script/zdt-d_cpu_control.sh </dev/null >/dev/null 2>&1 &
+
+
 
 
 

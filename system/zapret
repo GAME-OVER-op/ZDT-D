@@ -32,17 +32,25 @@ kill_by_pattern() {
 # 3) Остановка сервиса: сброс iptables → убийство процессов → toast
 # -----------------------------------------------------------------------------
 do_stop() {
-    echo "1) Сбрасываем правила iptables (nat и mangle)…"
-    for tbl in nat mangle; do
-        iptables -t "$tbl" -F 2>/dev/null \
-            && echo "  • Таблица '$tbl' очищена." \
-            || echo "  • Ошибка очистки '$tbl'."
-    done
-
-    echo "2) Останавливаем фоновые процессы…"
+    
+    echo "1) Останавливаем фоновые процессы…"
     kill_by_pattern "ZDT-D.sh"
     kill_by_pattern "nfqws"
     kill_by_pattern "dpitunnel-cli"
+    kill_by_pattern "zdt-d_totall_traffic.sh"
+    kill_by_pattern "dnscrypt-proxy.toml"
+    kill_by_pattern "ciadpi-zdt"
+    
+    echo "2) Сбрасываем правила iptables (nat и mangle)…"
+    for tbl in nat mangle; do
+        # запускаем сначала IPv4, затем IPv6; если обе команды отработали без ошибок — успех
+        if iptables -t "$tbl" -F 2>/dev/null && ip6tables -t "$tbl" -F 2>/dev/null; then
+            echo "  • Таблица '$tbl' (IPv4 и IPv6) очищена."
+        else
+            echo "  • Ошибка очистки таблицы '$tbl'."
+        fi
+    done
+
 
     echo "3) Отправка Android-toast (SELinux permissive)…"
     setenforce 0 2>/dev/null || echo "  • Не удалось переключить SELinux."
@@ -65,6 +73,7 @@ configure_service() {
     PARAMS="$BASE_DIR/params"
     LIST0="$BASE_DIR/uid_program0"
     LIST1="$BASE_DIR/uid_program1"
+    LISTZ0="$BASE_DIR/zapret_uid0"
     LISTZ1="$BASE_DIR/zapret_uid1"
     LISTZ2="$BASE_DIR/zapret_uid2"
     LISTZ3="$BASE_DIR/zapret_uid3"
@@ -150,41 +159,44 @@ configure_service() {
         echo "=== Настройка ZDT-D ==="
         echo "1) DPI Tunnel 0         (список)"
         echo "2) DPI Tunnel 1         (список)"
-        echo "3) Zapret UID 1         (список)"
-        echo "4) Zapret UID 2         (список)"
-        echo "5) Zapret UID 3         (список)"
-        echo "6) Zapret UID 4         (список)"
-        echo "7) Zapret UID 5         (список)"
-        echo "8) Bye DPI              (список)"
-        echo "9) Toggle сервис        (offonservice=$offonservice)"
-        echo "10) Toggle уведомл.      (notification=$notification)"
-        echo "11) Toggle alt.connect  (alternativel=$alternativel)"
-        echo "12) Toggle full_system  (full_system=$full_system)"
-        echo "13) Toggle dpi_tunnel_0 (dpi_tunnel_0=$dpi_tunnel_0)"
-        echo "14) Toggle dpi_tunnel_1 (dpi_tunnel_1=$dpi_tunnel_1)"
-        echo "15) Назад в главное меню"
+        echo "3) Zapret UID 0         (список)"
+        echo "4) Zapret UID 1         (список)"
+        echo "5) Zapret UID 2         (список)"
+        echo "6) Zapret UID 3         (список)"
+        echo "7) Zapret UID 4         (список)"
+        echo "8) Zapret UID 5         (список)"
+        echo "9) Bye DPI              (список)"
+        echo "10) Toggle сервис        (offonservice=$offonservice)"
+        echo "11) Toggle уведомл.      (notification=$notification)"
+        echo "12) Toggle alt.connect   (alternativel=$alternativel)"
+        echo "13) Toggle full_system   (full_system=$full_system)"
+        echo "14) Toggle dpi_tunnel_0  (dpi_tunnel_0=$dpi_tunnel_0)"
+        echo "15) Toggle dpi_tunnel_1  (dpi_tunnel_1=$dpi_tunnel_1)"
+        echo "16) Назад в главное меню"
         echo "Выберите:"
         read opt
         case "$opt" in
             1)  edit_list "$LIST0"    ;;
             2)  edit_list "$LIST1"    ;;
-            3)  edit_list "$LISTZ1"   ;;
-            4)  edit_list "$LISTZ2"   ;;
-            5)  edit_list "$LISTZ3"   ;;
-            6)  edit_list "$LISTZ4"   ;;
-            7)  edit_list "$LISTZ5"   ;;
-            8)  edit_list "$LISTB"    ;;
-            9)  toggle_param "offonservice"   ;;
-            10)  toggle_param "notification"   ;;
-            11) toggle_param "alternativel"   ;;
-            12) toggle_param "full_system"    ;;
-            13) toggle_param "dpi_tunnel_0"   ;;
-            14) toggle_param "dpi_tunnel_1"   ;;
-            15) break ;;
+            3)  edit_list "$LISTZ0"   ;;
+            4)  edit_list "$LISTZ1"   ;;
+            5)  edit_list "$LISTZ2"   ;;
+            6)  edit_list "$LISTZ3"   ;;
+            7)  edit_list "$LISTZ4"   ;;
+            8)  edit_list "$LISTZ5"   ;;
+            9)  edit_list "$LISTB"    ;;
+            10) toggle_param "offonservice"   ;;
+            11) toggle_param "notification"   ;;
+            12) toggle_param "alternativel"   ;;
+            13) toggle_param "full_system"    ;;
+            14) toggle_param "dpi_tunnel_0"   ;;
+            15) toggle_param "dpi_tunnel_1"   ;;
+            16) break ;;
             *)   echo "  Неверно, повторите." ;;
         esac
     done
 }
+
 
 # -----------------------------------------------------------------------------
 # 5) Резервное копирование и восстановление (используется jq)
@@ -193,11 +205,16 @@ backup_restore_s() {
     BASE_DIR="/data/adb/modules/ZDT-D/working_folder"
     BACKUP_DIR="/storage/emulated/0"
     PREFIX="ZDT_backup_"
-    FILES="\
+    # Список файлов для бэкапа
+FILES="\
 bye_dpi ciadpi.conf config0 config1 \
 ip_ranges3.txt ip_ranges4.txt uid_program0 uid_program1 \
 zapret_config0 zapret_config1 zapret_config2 zapret_config3 zapret_config4 \
-zapret_uid0 zapret_uid1 zapret_uid2 zapret_uid3 zapret_uid4 zapret_uid5 "
+zapret_uid0 zapret_uid1 zapret_uid2 zapret_uid3 zapret_uid4 zapret_uid5 \
+zapret_mobile0 zapret_mobile1 zapret_mobile2 zapret_mobile3 zapret_mobile4 zapret_mobile5 \
+zapret_wifi0 zapret_wifi1 zapret_wifi2 zapret_wifi3 zapret_wifi4 zapret_wifi5 \
+"
+
 
     # Проверки
     command -v jq >/dev/null 2>&1 || {
@@ -258,6 +275,12 @@ zapret_uid0 zapret_uid1 zapret_uid2 zapret_uid3 zapret_uid4 zapret_uid5 "
     esac
 }
 
+restart_service () {
+do_stop
+sleep 4
+start_service
+}
+
 # -----------------------------------------------------------------------------
 # 6) Помощь и разбор аргументов
 # -----------------------------------------------------------------------------
@@ -288,6 +311,7 @@ case "$1" in
     setting)        configure_service ;;
     backup)         backup_restore_s b;;
     recovery)       backup_restore_s r;;
+    restart)       restart_service r;;
     *) echo "Неизвестная команда: $1"; show_help; exit 1 ;;
 esac
 

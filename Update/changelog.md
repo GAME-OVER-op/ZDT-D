@@ -1,19 +1,17 @@
-# Version 1.6.5  
+# Version 1.6.6  
 **Stable Release**
 
 ## What's New
-- Many bug fixes; the codebase is undergoing gradual refactoring and cleanup to improve maintainability and reliability.
-- Web page code cleaned and optimized — faster loading and improved stability.
-- Added **Opera-proxy** program to the module, providing additional options to bypass regional blocks and improve access freedom.
-- Updated Bye DPI binaries from **16.6 → 17.3** and refreshed Bye DPI strategy.
-- New configuration variable: **demon** (service-related setting).
-- Replaced the previous Python traffic redirection tool with **T2S** — a transparent→SOCKS5 forwarder. T2S appears in the Monitoring section for real-time observation.
-- Backup lists extended to include new application/program list files.
-- Added a test command to temporarily **disable captive-portal detection while the service is running**; captive-portal is **re-enabled when the service stops** to allow network authorization where required.
-- Performance optimizations and other stability improvements.
+- **Code cleanup & optimizations**  
+  Major cleanup of the core code structure and optimizations to improve maintainability and runtime performance.
 
-## Notes & Compatibility
-- If the module reports incompatibility on your device, it does not necessarily mean it will not run — it may operate with limitations. This is intended to protect your device from bootloops and issues when required system utilities are missing.
-- **Author's "block" version:** this variant aggressively blocks ads, trackers and certain services (including some websites and apps). Use it only if you understand and accept these restrictions.
+- **Fixed zapret multiple-start bug**  
+  Fixed a critical issue where, under certain conditions, zapret was started 6 times instead of the single expected instance. The logic is corrected — now only **one** zapret instance starts when conditions require it.
 
-**Recommended:** Restart your device after the update to ensure iptables rules, services and web UI assets are applied correctly.
+- **Known issues**  
+  There may still be unaccounted-for edge cases and minor bugs. They will be addressed in upcoming releases.
+
+- **Documentation**  
+  Usage instructions and more detailed guides will be added to the GitHub repository gradually.
+
+**Note:** It's recommended to restart the device after installing this update so that all services and iptables rules initialize correctly.

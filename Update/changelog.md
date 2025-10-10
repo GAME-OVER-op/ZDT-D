@@ -1,17 +1,19 @@
-# Version 1.6.6  
+# Version 1.6.8  
 **Stable Release**
 
 ## What's New
-- **Code cleanup & optimizations**  
-  Major cleanup of the core code structure and optimizations to improve maintainability and runtime performance.
 
-- **Fixed zapret multiple-start bug**  
-  Fixed a critical issue where, under certain conditions, zapret was started 6 times instead of the single expected instance. The logic is corrected — now only **one** zapret instance starts when conditions require it.
+- **Battery consumption fix**  
+  Resolved an issue that caused elevated device battery drain.
 
-- **Known issues**  
-  There may still be unaccounted-for edge cases and minor bugs. They will be addressed in upcoming releases.
+- **Improved battery-saving script**  
+  The power-saving script has been enhanced to better manage module services and reduce energy usage.
 
-- **Documentation**  
-  Usage instructions and more detailed guides will be added to the GitHub repository gradually.
+- **Power-saving behavior (toggle-controlled)**  
+  - When the power-saving toggle is enabled and the screen is **off for 30 minutes**, module services are **frozen** to save battery.  
+  - When the screen is turned back on, services are **resumed**; wake-up time depends on the scenario (typically up to **30 seconds**).
 
-**Note:** It's recommended to restart the device after installing this update so that all services and iptables rules initialize correctly.
+- **Additional fixes and optimizations**  
+  Miscellaneous bug fixes and stability improvements related to power management and service handling.
+
+**Note:** Recommended to restart the device after installing to ensure updated service scheduling and power-management scripts are applied.

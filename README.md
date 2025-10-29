@@ -86,4 +86,12 @@ This project is open source and will remain free forever under the MIT License.
 
 ---
 
+---
+
+## Module instructions
+
+- [Follow](https://github.com/GAME-OVER-op/ZDT-D/instructions/Themainthing.md)
+
+---
+
 Thank you for using ZDT&D!  

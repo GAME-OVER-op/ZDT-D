@@ -1,19 +1,14 @@
-# Version 1.6.8  
+# Version 1.6.9  
 **Stable Release**
 
 ## What's New
 
-- **Battery consumption fix**  
-  Resolved an issue that caused elevated device battery drain.
+- Added additional optimizations and refined service start conditions.
+- Fixed an issue where OperaVPN would start with an empty application list — OperaVPN no longer starts without a valid list.
+- Fixed dnscrypt starting while the module was stopped — components now start only when the module is running.
+- Improved update-info retrieval performance and reliability.
+- Enhanced battery-saving logic and service management.
+- Fixed a T2S bug that could cause high CPU load due to excessive intermediary requests.
+- General logic improvements and performance optimizations.
 
-- **Improved battery-saving script**  
-  The power-saving script has been enhanced to better manage module services and reduce energy usage.
-
-- **Power-saving behavior (toggle-controlled)**  
-  - When the power-saving toggle is enabled and the screen is **off for 30 minutes**, module services are **frozen** to save battery.  
-  - When the screen is turned back on, services are **resumed**; wake-up time depends on the scenario (typically up to **30 seconds**).
-
-- **Additional fixes and optimizations**  
-  Miscellaneous bug fixes and stability improvements related to power management and service handling.
-
-**Note:** Recommended to restart the device after installing to ensure updated service scheduling and power-management scripts are applied.
+**Note:** It is recommended to restart the device after installation so updated services and rules initialize correctly.

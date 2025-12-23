@@ -2,7 +2,7 @@
   "name": "ZDT-D.sh",
   "deviceDir": "/data/adb/modules/ZDT-D/system/bin/script/",
   "githubDir": "https://github.com/GAME-OVER-op/ZDT-D/tree/main/system/bin/",
-  "sha256": "9f0a6b1f42df7cb183993323cb7c70b8e4dca7cbe7df52a25e1a540a352980b4",
+  "sha256": "1c228aaf532cc40ff50e4a6720a9a8522b49ebddfd737a830df33ef63aac7910",
   "infoPageGitHub": "https://github.com/GAME-OVER-op/ZDT-D/blob/main/Update/index.html",
   "infoPageDevice": "/data/adb/modules/ZDT-D-UPDATE/webroot/"
 }

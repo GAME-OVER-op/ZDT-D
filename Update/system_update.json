@@ -1,1 +1,13 @@
+{
+  "files": [
+    {
+      "name": "ZDT-D.sh",
+      "deviceDir": "/data/adb/modules/ZDT-D/system/bin/script/",
+      "githubDir": "https://github.com/GAME-OVER-op/ZDT-D/tree/main/system/bin/script/",
+      "sha256": "e166ccba06d1ce91fce26925c26463eeff1beca4f5693089ea16909411c6e966",
+      "infoPageGitHub": "https://github.com/GAME-OVER-op/ZDT-D/tree/main/Update/index.html",
+      "infoPageDevice": "/data/adb/modules/ZDT-D-UPDATE/webroot/"
+    }
+  ]
+}
 

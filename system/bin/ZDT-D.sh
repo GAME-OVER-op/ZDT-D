@@ -1,8 +1,5 @@
 #!/system/bin/sh
 
-
-
-
 # Путь к файлу конфигурации
 DAM="/data/adb/modules/ZDT-D"
 WORKING_FOLDER="$DAM/working_folder"
@@ -22,7 +19,13 @@ UID_INPUT_FILE5="$WORKING_FOLDER/zapret_uid3"
 UID_INPUT_FILE6="$WORKING_FOLDER/zapret_uid4"
 UID_INPUT_FILE7="$WORKING_FOLDER/zapret_uid5"
 UID_INPUT_FILE8="$WORKING_FOLDER/zapret_uid_telegram"
-UID_INPUT_FILE_BYE="$WORKING_FOLDER/bye_dpi"
+UID_INPUT_FILE9="$WORKING_FOLDER/opera_vpn_uid"
+UID_INPUT_FILE10="/data/adb/modules/ZDT-D/working_folder/user_program_opera"
+UID_INPUT_FILE11="$WORKING_FOLDER/zapret2_uid"
+UID_INPUT_FILE12="$WORKING_FOLDER/sing_box_program"
+UID_INPUT_FILE_BYE0="$WORKING_FOLDER/bye_dpi0"
+UID_INPUT_FILE_BYE1="$WORKING_FOLDER/bye_dpi1"
+UID_INPUT_FILE_BYE2="$WORKING_FOLDER/bye_dpi2"
 UID_OUTPUT_FILES0="$WORKING_FOLDER/uid_out0"
 UID_OUTPUT_FILES1="$WORKING_FOLDER/uid_out1"
 UID_OUTPUT_FILES2="$WORKING_FOLDER/uid_out2"
@@ -33,7 +36,14 @@ UID_OUTPUT_FILE5="$WORKING_FOLDER/zapret_uid_out3"
 UID_OUTPUT_FILE6="$WORKING_FOLDER/zapret_uid_out4"
 UID_OUTPUT_FILE7="$WORKING_FOLDER/zapret_uid_out5"
 UID_OUTPUT_FILE8="$WORKING_FOLDER/zapret_out_telegram"
-UID_OUTPUT_FILE_BYE="$WORKING_FOLDER/bye_dpi_out"
+UID_OUTPUT_FILE9="$WORKING_FOLDER/opera_vpn_uid_out"
+UID_SYSTEM_SERVICES="$WORKING_FOLDER/system_services_uid"
+UID_OUTPUT_FILE10="/data/adb/modules/ZDT-D/working_folder/user_program_opera_out"
+UID_OUTPUT_FILE11="$WORKING_FOLDER/zapret2_uid_out"
+UID_OUTPUT_FILE12="$WORKING_FOLDER/sing_box_program_out"
+UID_OUTPUT_FILE_BYE0="$WORKING_FOLDER/bye_dpi_out0"
+UID_OUTPUT_FILE_BYE1="$WORKING_FOLDER/bye_dpi_out1"
+UID_OUTPUT_FILE_BYE2="$WORKING_FOLDER/bye_dpi_out2"
 ZAPRET_CONFIG_FILES_DATA="$WORKING_FOLDER/zapret_config"
 ARCH_DIR="$DAM/bin_zapret"
 MARKER_FILE="$DAM/arx_marker"
@@ -48,11 +58,13 @@ CONFIG_ZAPRET2="$WORKING_FOLDER/zapret_config2"
 CONFIG_ZAPRET3="$WORKING_FOLDER/zapret_config3"
 CONFIG_ZAPRET4="$WORKING_FOLDER/zapret_config4"
 CONFIG_ZAPRET6="$WORKING_FOLDER/zapret_config6"
+CONFIG2_ZAPRET="$WORKING_FOLDER/zapret2_config"
 SOURCE_FILE_ICON_MB="$DAM/icon.png"
 SOURCE_FILE_ICON_MB1="$DAM/icon1.png"
 SOURCE_FILE_ICON_MB2="$DAM/icon2.png"
 TARGET_DIRECTORY_ICON_MB="$TMP_DIR"
 SETTING_START_PARAMS="$WORKING_FOLDER/params"
+SETTING_START_PARAMS_PATCH="$WORKING_FOLDER/params_patch"
 SETTING_START_PARAMSET="$WORKING_FOLDER/params"
 SETTING_START_PARAMSIN="$DAM/params"
 SETTING_START_PARAMSTO="/data/adb"
@@ -64,15 +76,20 @@ PASSWORDTO="/data/adb/credentials.php"
 SHA256_WORKING_DIR="$WORKING_FOLDER"
 SHA256_FLAG_FILE="$SHA256_WORKING_DIR/flag.sha256"
 CURL_BINARIES="$DAM/php7/files/bin/curl"
+USER_PROGRAM_TMP="/data/local/tmp/user_program.tmp"
+USER_PROGRAM_TMP2="/data/local/tmp/user_program.tmp.2"
+SINGBOXXED_CONFIG="$WORKING_FOLDER/sing_box_config.json"
 # ip адреса
 IP_FILE3="$WORKING_FOLDER/ip_ranges3.txt"
 IP_FILE4="$WORKING_FOLDER/ip_ranges4.txt"
 # Префикс для всех уведомлений
 PREFIX="ZDT-D:"
-
-
-
-
+# чтение триггера из system properties
+# Важная информация:
+# Пожалуйста очистите приложения из списка $UID_INPUT_FILE10
+# Оставьте только то что нужно!!!
+TRIGGER=$(getprop persist.vendor.zdtd.trigger 2>/dev/null)
+EXPECTED="3f2504e0-4f89-11d3-9a0c-0305e82c3301"
 
 
 ####################################
@@ -84,16 +101,6 @@ boot_completed() {
         sleep 1
     done
 }
-
-
-
-
-
-
-
-
-
-
 
 
 ############################################
@@ -130,7 +137,7 @@ esac
 #  Задание текстов сообщений для логов
 ############################################
 if [ "$LANGUAGE" = "ru" ]; then
-    MSG_NOTIFICATION_START="Привет, начинаю процедуру настройки модуля."
+    MSG_NOTIFICATION_START="Привет, начинаю процедуру настройки модуля. Возможно потребуется до 10 мин для запуска."
     MSG_IPTABLES_REDIRECT="Перенаправляю трафик приложений через модуль..."
     MSG_SUCCESSFUL_LAUNCH="Запуск завершен!"
     MSG_START_PROCESS="начинаю процедуру запуска..."
@@ -143,10 +150,11 @@ if [ "$LANGUAGE" = "ru" ]; then
     MSG_PROCESSINGFINAL="Обработка файлов завершена."
     MSG_PROCESSING="Обработка:"
     MSG_ERROR="Ошибка:"
-    
+    MSG_NOTIFICATION_USER_PROGRAMM="Собираю некоторую информацию вашего устройства."
+
 else
-    
-    MSG_ERROR_MODULE_ZAPRET="Hello, you have the zapret module installed, please remove it."
+
+    MSG_ERROR_MODULE_ZAPRET="Hello, you have the zapret module installed, please remove it. It may take up to 10 minutes to start."
     MSG_START_PROCESS="I'm starting the startup procedure..."
     MSG_IPTABLES_REDIRECT="Redirecting application traffic through the module..."
     MSG_NOTIFICATION_START="Hello, I am starting the module setup procedure."
@@ -159,14 +167,9 @@ else
     MSG_PROCESSINGFINAL="File processing complete."
     MSG_PROCESSING="Processing:"
     MSG_ERROR="Error:"
-    
+    MSG_NOTIFICATION_USER_PROGRAMM="Collecting some information from your device."
+
 fi
-
-
-
-
-
-
 
 
 ####################################
@@ -198,30 +201,6 @@ check_modules() {
 
     echo "Конфликтующие модули не найдены, продолжаем работу..."
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 ####################################
@@ -337,11 +316,6 @@ start_system_final() {
 }
 
 
-
-
-
-
-
 safestart_module() {
     # если переменная safestart установлена в "1" — делаем паузу 180 секунд
     if [ "${safestart:-0}" = "1" ]; then
@@ -350,15 +324,33 @@ safestart_module() {
 }
 
 
+run_detach() {
+    # $1 = команда (строка), $2 = лог-файл (может быть /dev/null)
+    cmd="$1"
+    logfile="$2"
 
+    # если путь к логу — не /dev/null, попробуем создать директорию (игнорируем ошибки)
+    if [ "$logfile" != "/dev/null" ]; then
+        mkdir -p "$(dirname -- "$logfile")" 2>/dev/null || true
+    fi
 
+    if command -v setsid >/dev/null 2>&1; then
+        setsid sh -c "exec $cmd >>\"$logfile\" 2>&1" </dev/null >/dev/null 2>&1 &
+    else
+        sh -c "exec $cmd >>\"$logfile\" 2>&1" </dev/null >/dev/null 2>&1 &
+    fi
+}
 
-
-
-
-
-
-
+sanitize_sni_for_filename() {
+    # $1 = оригинальный SNI
+    # возвращает безопасную строку: заменяет все недопустимые символы на '_', ограничивает длину
+    sni="$1"
+    # Заменяем всё, что не буква/цифра/точка/подчёркивание/дефис на _
+    safe=$(printf '%s' "$sni" | sed -E 's/[^A-Za-z0-9._-]/_/g')
+    # Обрезаем до 64 символов, чтобы избежать слишком длинных имён файлов
+    safe=$(printf '%s' "$safe" | cut -c1-64)
+    printf '%s' "$safe"
+}
 
 
 notification_send() {
@@ -434,21 +426,323 @@ notification_send() {
 }
 
 
+python3_update_bin() {
+
+  PYINSTBI_ICON_PATH="file:///data/local/tmp/icon4.png"
+  PYINSTBI_NOTIFY_UID=2000
+
+  # Список пакетов (редактируй при необходимости)
+  PYINSTBI_PACKAGES="scapy pycryptodome requests paramiko dnspython pyOpenSSL netifaces pysocks python-socks aiohttp-socks 'httpx[http2]' h2 aioquic mitmproxy psutil prometheus_client PyYAML orjson uvloop aiohttp cryptography cffi certifi idna charset-normalizer multidict yarl anyio hpack hyperframe h11 brotli pyroute2 netaddr python-dotenv loguru pyinstaller typing-extensions packaging"
+
+  PYINSTBI_timestamp() {
+    date +"%Y-%m-%d %H:%M:%S" 2>/dev/null || printf "%s" "$(date)"
+  }
+
+  PYINSTBI_log() {
+    # Печать в консоль с временной меткой
+    printf "%s %s\n" "$(PYINSTBI_timestamp)" "$*"
+  }
+
+  # Проверка интернета (ping -> python socket)
+  PYINSTBI_check_internet() {
+    if command -v ping >/dev/null 2>&1; then
+      if ping -c 1 -W 2 1.1.1.1 >/dev/null 2>&1; then
+        return 0
+      fi
+    fi
+
+    # Fallback через python socket (выполняется под su чтобы использовать системный python)
+    su -c "python3 - <<PY
+import socket,sys
+try:
+    s=socket.create_connection(('1.1.1.1',53),2)
+    s.close()
+    print('ok')
+except Exception:
+    sys.exit(1)
+PY" >/dev/null 2>&1 && return 0
+
+    return 1
+  }
+
+  # Проверка — установлен ли пакет (pip show или import)
+  PYINSTBI_is_installed() {
+    PYINSTBI_PKG_RAW="$1"
+    PYINSTBI_PKG_BASE="${PYINSTBI_PKG_RAW%%[*]}"
+
+    # 1) pip show
+    if su -c "python3 -m pip show '${PYINSTBI_PKG_BASE}'" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    # 2) попытка импортировать вероятные имена
+    su -c "python3 - <<PY
+import importlib,sys
+base='${PYINSTBI_PKG_BASE}'
+candidates = [base, base.replace('-','_'), base.replace('-','')]
+aliases = {
+  'pysocks': ['socks','pysocks'],
+  'python-socks': ['socks','python_socks'],
+  'pycryptodome': ['Crypto','Cryptodome'],
+}
+if base in aliases:
+    candidates += aliases[base]
+candidates += ['socks','Crypto','cryptodome','httpx','h2','aioquic','mitmproxy','scapy']
+for name in candidates:
+    try:
+        importlib.import_module(name)
+        sys.exit(0)
+    except Exception:
+        pass
+sys.exit(1)
+PY" >/dev/null 2>&1
+    return $?
+  }
+
+  # --- Начало процедуры ---
+  PYINSTBI_log "=== NEW INSTALL SESSION ==="
+  notification_send info "Запуск процедуры установки важных библиотек (Py2Droid)."
+
+  # Проверяем наличие python3
+  if su -c python3 -V >/dev/null 2>&1; then
+    PYINSTBI_PYVER="$(su -c python3 -V 2>/dev/null)"
+    PYINSTBI_log "Found python: ${PYINSTBI_PYVER}"
+  else
+    PYINSTBI_log "ERROR: python3 not found (py2droid missing). Aborting."
+    notification_send info "python3 не найден (Py2Droid отсутствует). Прервано."
+    return 1
+  fi
+
+  # Проверка интернета — если нет, уведомляем и ждём
+  PYINSTBI_log "Checking internet connectivity..."
+  if PYINSTBI_check_internet; then
+    PYINSTBI_log "Internet OK, proceeding."
+  else
+    PYINSTBI_log "No internet — notifying and waiting..."
+    notification_send info "Py2Droid: Ожидание подключения к интернету..."
+    PYINSTBI_LAST_NET_NOTIFY=0
+    while true; do
+      sleep 5
+      PYINSTBI_log "Rechecking network..."
+      if PYINSTBI_check_internet; then
+        PYINSTBI_log "Network restored."
+        notification_send info "Py2Droid: Интернет доступен — продолжаю установку"
+        break
+      fi
+      NOW_SEC=$(date +%s 2>/dev/null || echo 0)
+      DIFF=$((NOW_SEC - PYINSTBI_LAST_NET_NOTIFY))
+      if [ "$DIFF" -ge 60 ]; then
+        notification_send info "Py2Droid: Всё ещё ожидаю подключения к интернету..."
+        PYINSTBI_LAST_NET_NOTIFY="$NOW_SEC"
+      fi
+    done
+  fi
+
+  # Проверка pip / ensurepip
+  if su -c "python3 -m pip --version" >/dev/null 2>&1; then
+    PYINSTBI_log "pip present."
+  else
+    PYINSTBI_log "pip not found — attempting ensurepip..."
+    notification_send info "Py2Droid: пытаюсь установить pip..."
+    if su -c "python3 -m ensurepip --upgrade" >/dev/null 2>&1; then
+      PYINSTBI_log "ensurepip OK"
+      notification_send info "pip установлен."
+    else
+      PYINSTBI_log "ensurepip failed — continuing (pip may be absent)"
+      notification_send info "Не удалось установить pip автоматически (продолжаю)."
+    fi
+  fi
+
+  # Обновление pip/setuptools/wheel — выводим прогресс в консоль
+  PYINSTBI_log "Updating pip, setuptools, wheel..."
+  if su -c "python3 -m pip install --upgrade pip setuptools wheel"; then
+    PYINSTBI_log "pip/setuptools/wheel updated."
+  else
+    PYINSTBI_log "Warning: pip upgrade failed."
+  fi
+
+  # Подсчёт общего числа пакетов
+  PYINSTBI_TOTAL=0
+  for _ in $PYINSTBI_PACKAGES; do PYINSTBI_TOTAL=$((PYINSTBI_TOTAL+1)); done
+  PYINSTBI_i=0
+
+  for PYINSTBI_PKG in $PYINSTBI_PACKAGES; do
+    PYINSTBI_i=$((PYINSTBI_i+1))
+    PYINSTBI_PCT=$((PYINSTBI_i * 100 / PYINSTBI_TOTAL))
+
+    # Проверяем, установлен ли пакет
+    if PYINSTBI_is_installed "$PYINSTBI_PKG"; then
+      PYINSTBI_log "Package ${PYINSTBI_PKG} already installed."
+      notification_send info "Библиотека ${PYINSTBI_PKG} уже установлена (${PYINSTBI_PCT}%)."
+      continue
+    fi
+
+    # Уведомление о старте установки
+    notification_send info "Py2Droid: Устанавливаю ${PYINSTBI_PKG} (${PYINSTBI_PCT}%)"
+    PYINSTBI_log "Installing ${PYINSTBI_PKG} (${PYINSTBI_i}/${PYINSTBI_TOTAL})"
+
+    # Основная попытка (предпочитаем бинарные колёса) — вывод pip в консоль
+    su -c "python3 -m pip install --no-cache-dir --upgrade --prefer-binary ${PYINSTBI_PKG}"
+    PYINSTBI_RC=$?
+    if [ "$PYINSTBI_RC" -eq 0 ]; then
+      PYINSTBI_log "Installed ${PYINSTBI_PKG} OK (prefer-binary)"
+      notification_send info "Установлено ${PYINSTBI_PKG} (${PYINSTBI_PCT}%)"
+      continue
+    fi
+
+    # fallback: обычная установка (может компилировать из исходников)
+    PYINSTBI_log "First attempt failed for ${PYINSTBI_PKG} (rc=${PYINSTBI_RC}). Trying fallback..."
+    su -c "python3 -m pip install --no-cache-dir --upgrade ${PYINSTBI_PKG}"
+    PYINSTBI_RC2=$?
+    if [ "$PYINSTBI_RC2" -eq 0 ]; then
+      PYINSTBI_log "Installed ${PYINSTBI_PKG} OK (fallback)"
+      notification_send info "Установлено ${PYINSTBI_PKG} (${PYINSTBI_PCT}%)"
+      continue
+    fi
+
+    # Если не удалось
+    PYINSTBI_log "FAILED to install ${PYINSTBI_PKG} (rc1=${PYINSTBI_RC}, rc2=${PYINSTBI_RC2})."
+    notification_send info "Ошибка установки ${PYINSTBI_PKG}. См. вывод консоли для подробностей."
+    PYINSTBI_log "NOTE: ${PYINSTBI_PKG} may require native toolchain (C/Rust/NDK) or prebuilt wheels for Android."
+  done
+
+  # Попытка обновить бин-оболочки py2droid если есть утилита
+  if su -c "command -v py2droid-update-bin" >/dev/null 2>&1; then
+    PYINSTBI_log "Running py2droid-update-bin..."
+    su -c "py2droid-update-bin"
+    if [ $? -ne 0 ]; then
+      PYINSTBI_log "py2droid-update-bin returned non-zero"
+    fi
+  else
+    PYINSTBI_log "py2droid-update-bin not found — skipping."
+  fi
+
+  notification_send info "Установка библиотек завершена."
+  PYINSTBI_log "=== INSTALL SESSION COMPLETE ==="
+  return 0
+}
 
 
+USER_PROGRAM_LIST() {
+  # Очистим/создадим временные файлы
+  : > "$USER_PROGRAM_TMP" 2>/dev/null || true
+  : > "$USER_PROGRAM_TMP2" 2>/dev/null || true
 
+  # Попытаться получить список третьесторонних пакетов с путями
+  pm list packages -3 -f > "$USER_PROGRAM_TMP" 2>/dev/null
 
+  # Если пустой — взять все пакеты и отфильтровать системные по путям
+  if [ ! -s "$USER_PROGRAM_TMP" ]; then
+    pm list packages -f 2>/dev/null | grep -v '/system/' | grep -v '/apex/' | grep -v '/vendor/' > "$USER_PROGRAM_TMP" 2>/dev/null || true
+  fi
 
+  # Если всё ещё пусто — получить список пакетов только именами и выяснить пути отдельно
+  if [ ! -s "$USER_PROGRAM_TMP" ]; then
+    pm list packages -3 2>/dev/null | sed 's/^package://' > "$USER_PROGRAM_TMP" 2>/dev/null || true
+    if [ -s "$USER_PROGRAM_TMP" ]; then
+      # Для каждого пакета получить путь apk (pm path) и записать в формат package:APK=PACKAGE
+      while IFS= read -r USER_PROGRAM_PKGNAME; do
+        [ -z "$USER_PROGRAM_PKGNAME" ] && continue
+        USER_PROGRAM_APKPATH="$(pm path "$USER_PROGRAM_PKGNAME" 2>/dev/null | sed 's/^package://g' | head -n1)"
+        if [ -n "$USER_PROGRAM_APKPATH" ]; then
+          printf "package:%s=%s\n" "$USER_PROGRAM_APKPATH" "$USER_PROGRAM_PKGNAME" >> "$USER_PROGRAM_TMP2"
+        else
+          printf "package:%s=%s\n" "" "$USER_PROGRAM_PKGNAME" >> "$USER_PROGRAM_TMP2"
+        fi
+      done < "$USER_PROGRAM_TMP"
+      # Подменим tmp на tmp2 (у нас теперь унифицированный формат)
+      mv "$USER_PROGRAM_TMP2" "$USER_PROGRAM_TMP" 2>/dev/null || true
+    fi
+  fi
 
+  # Ещё запасной вариант — сканировать /data/app (требует root)
+  if [ ! -s "$USER_PROGRAM_TMP" ] && [ -d /data/app ]; then
+    for USER_PROGRAM_DIR in /data/app/*; do
+      [ -d "$USER_PROGRAM_DIR" ] || continue
+      USER_PROGRAM_APK="$(find "$USER_PROGRAM_DIR" -maxdepth 2 -type f -name '*.apk' -print -quit 2>/dev/null)"
+      if [ -n "$USER_PROGRAM_APK" ]; then
+        # Попробуем найти соответствующую строку в 'pm list packages -f', иначе добавим без имени пакета
+        USER_PROGRAM_LINE="$(pm list packages -f 2>/dev/null | grep -F "$USER_PROGRAM_APK" | head -n1)"
+        if [ -n "$USER_PROGRAM_LINE" ]; then
+          printf "%s\n" "$USER_PROGRAM_LINE" >> "$USER_PROGRAM_TMP"
+        else
+          printf "package:%s=\n" "$USER_PROGRAM_APK" >> "$USER_PROGRAM_TMP"
+        fi
+      fi
+    done
+  fi
 
+  # Если всё ещё пусто — выдать ошибку
+  if [ ! -s "$USER_PROGRAM_TMP" ]; then
+    printf "Ничего не найдено: pm вернул пустой результат и /data/app недоступен.\n" >&2
+    rm -f "$USER_PROGRAM_TMP" "$USER_PROGRAM_TMP2" 2>/dev/null || true
+    return 1
+  fi
 
+  # Подготовим файл для записи имён пакетов (перезапишем)
+  : > "$UID_INPUT_FILE10" 2>/dev/null || {
+    printf "ERROR: не могу записать в %s\n" "$UID_INPUT_FILE10" >&2
+    rm -f "$USER_PROGRAM_TMP" "$USER_PROGRAM_TMP2" 2>/dev/null || true
+    return 1
+  }
 
+  # Печать заголовка в stdout (по желанию)
+  printf "PACKAGE\tAPK_PATH\tVERSION\tSIZE_BYTES\tMODIFIED\n"
 
+  # Обработка записей построчно
+  while IFS= read -r USER_PROGRAM_LINE || [ -n "$USER_PROGRAM_LINE" ]; do
+    [ -z "$USER_PROGRAM_LINE" ] && continue
+    # Ожидаемый формат: package:/path/to/base.apk=com.example.app
+    # Извлечь apkpath и pkgname
+    USER_PROGRAM_APKPATH="$(printf "%s\n" "$USER_PROGRAM_LINE" | sed -n 's/^package:\([^=]*\)=.*$/\1/p')"
+    USER_PROGRAM_PKGNAME="$(printf "%s\n" "$USER_PROGRAM_LINE" | sed -n 's/^.*=\(.*\)$/\1/p')"
 
+    # Если pkgname пуст, оставим пустую строку (в таком случае будет сохранено пустое имя — пропускаем)
+    if [ -z "$USER_PROGRAM_PKGNAME" ]; then
+      # Если имя пакета отсутствует — попробуем попытаться получить его через pm path (если apkpath задан)
+      if [ -n "$USER_PROGRAM_APKPATH" ]; then
+        # pm list packages -f | grep "<apkpath>" может вернуть строку с именем
+        USER_PROGRAM_POSSIBLE="$(pm list packages -f 2>/dev/null | grep -F "$USER_PROGRAM_APKPATH" | sed 's/^package:.*=\(.*\)$/\1/' | head -n1)"
+        if [ -n "$USER_PROGRAM_POSSIBLE" ]; then
+          USER_PROGRAM_PKGNAME="$USER_PROGRAM_POSSIBLE"
+        fi
+      fi
+    fi
 
+    # Версия (versionName) — через dumpsys package (может быть медленно)
+    USER_PROGRAM_VERSION=""
+    if [ -n "$USER_PROGRAM_PKGNAME" ]; then
+      USER_PROGRAM_VERSION="$(dumpsys package "$USER_PROGRAM_PKGNAME" 2>/dev/null | awk -F= '/versionName=/{print $2; exit}')"
+    fi
 
+    # Если apkpath пуст, попробовать pm path
+    if [ -z "$USER_PROGRAM_APKPATH" ] && [ -n "$USER_PROGRAM_PKGNAME" ]; then
+      USER_PROGRAM_APKPATH="$(pm path "$USER_PROGRAM_PKGNAME" 2>/dev/null | sed 's/^package://g' | head -n1)"
+    fi
 
+    USER_PROGRAM_SIZE=""
+    USER_PROGRAM_MODIFIED=""
+    if [ -n "$USER_PROGRAM_APKPATH" ] && [ -f "$USER_PROGRAM_APKPATH" ]; then
+      USER_PROGRAM_STATLINE="$(ls -l "$USER_PROGRAM_APKPATH" 2>/dev/null)"
+      USER_PROGRAM_SIZE="$(printf "%s\n" "$USER_PROGRAM_STATLINE" | awk '{print $5}')"
+      USER_PROGRAM_MODIFIED="$(printf "%s\n" "$USER_PROGRAM_STATLINE" | awk '{print $6" "$7" "$8}')"
+    fi
 
+    # Вывести строку в stdout (таб-разделитель)
+    printf "%s\t%s\t%s\t%s\t%s\n" "$USER_PROGRAM_PKGNAME" "$USER_PROGRAM_APKPATH" "$USER_PROGRAM_VERSION" "$USER_PROGRAM_SIZE" "$USER_PROGRAM_MODIFIED"
+
+    # Сохранить имя пакета в файл (если не пустое)
+    if [ -n "$USER_PROGRAM_PKGNAME" ]; then
+      printf "%s\n" "$USER_PROGRAM_PKGNAME" >> "$UID_INPUT_FILE10"
+    fi
+  done < "$USER_PROGRAM_TMP"
+
+  # Очистка временных файлов
+  rm -f "$USER_PROGRAM_TMP" "$USER_PROGRAM_TMP2" 2>/dev/null || true
+
+  # Завершение
+  return 0
+}
 
 
 ####################################
@@ -459,43 +753,18 @@ notification_toast_start() {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ####################################
 # Загрузаем переменные из файла params
 ####################################
 read_params() {
-    
+
     # Чтение файла "params" и присваивание значений переменным
+    local PARAMS_SETTING_SYSTEM="$1"
     while IFS='=' read -r key value || [ -n "$key" ]; do
         # Убираем пробелы с обеих сторон
         key=$(echo "$key" | xargs)
         value=$(echo "$value" | xargs)
-    
+
         # Присваиваем значения переменным
         case "$key" in
             "dns") dns="$value" ;;
@@ -509,39 +778,148 @@ read_params() {
             "alternativel") alternativel="$value" ;;
             "zapretconfig") zapretconfig="$value" ;;
             "safestart") safestart="$value" ;;
+            "batterysaver") batterysaver="$value" ;;
+            "bypass_opera_uid") bypass_opera_uid="$value" ;;
+            "sysctl_patch") sysctl_patch="$value" ;;
+            "captive_portal") captive_portal="$value" ;;
+            "tether_fix") tether_fix="$value" ;;
+            "tether_whitelist") tether_whitelist="$value" ;;
         esac
-    done < "$SETTING_START_PARAMS"
-    
+    done < "$PARAMS_SETTING_SYSTEM"
+
 }
 
 
+sysct_optimization() {
 
-
-
-
-
-
-
-
-
-
-
-
-
+    # ------------------------ sysctl настройки -------------------------------
+    sysctl -w net.core.bpf_jit_enable=1 2>/dev/null || true
+    sysctl -w net.core.bpf_jit_harden=0 2>/dev/null || true
+    sysctl -w net.core.bpf_jit_kallsyms=1 2>/dev/null || true
+    sysctl -w net.core.bpf_jit_limit=33554432 2>/dev/null || true
+    
+    sysctl -w net.core.busy_poll=0 2>/dev/null || true
+    sysctl -w net.core.busy_read=0 2>/dev/null || true
+    sysctl -w net.core.default_qdisc=pfifo_fast 2>/dev/null || true
+    sysctl -w net.core.dev_weight=64 2>/dev/null || true
+    sysctl -w net.core.dev_weight_rx_bias=1 2>/dev/null || true
+    sysctl -w net.core.dev_weight_tx_bias=1 2>/dev/null || true
+    sysctl -w net.core.flow_limit_cpu_bitmap=00 2>/dev/null || true
+    sysctl -w net.core.flow_limit_table_len=4096 2>/dev/null || true
+    sysctl -w net.core.max_skb_frags=17 2>/dev/null || true
+    sysctl -w net.core.message_burst=10 2>/dev/null || true
+    sysctl -w net.core.message_cost=5 2>/dev/null || true
+    sysctl -w net.core.netdev_max_backlog=28000000 2>/dev/null || true
+    sysctl -w net.core.netdev_budget=1000 2>/dev/null || true
+    sysctl -w net.core.netdev_budget_usecs=16000 2>/dev/null || true
+    sysctl -w net.core.optmem_max=65536 2>/dev/null || true
+    sysctl -w net.core.rmem_default=229376 2>/dev/null || true
+    sysctl -w net.core.rmem_max=67108864 2>/dev/null || true
+    sysctl -w net.core.wmem_default=229376 2>/dev/null || true
+    sysctl -w net.core.wmem_max=67108864 2>/dev/null || true
+    sysctl -w net.core.somaxconn=1024 2>/dev/null || true
+    sysctl -w net.core.tstamp_allow_data=1 2>/dev/null || true
+    
+    sysctl -w net.core.xfrm_acq_expires=3600 2>/dev/null || true
+    sysctl -w net.core.xfrm_aevent_etime=10 2>/dev/null || true
+    sysctl -w net.core.xfrm_aevent_rseqth=2 2>/dev/null || true
+    sysctl -w net.core.xfrm_larval_drop=1 2>/dev/null || true
+    
+    sysctl -w net.ipv4.ip_forward=1 2>/dev/null || true
+    sysctl net.ipv4.conf.all.route_localnet=1 2>/dev/null || true
+    sysctl -w net.ipv4.tcp_congestion_control=cubic 2>/dev/null || true
+    sysctl -w net.ipv4.tcp_mtu_probing=1 2>/dev/null || true
+    sysctl -w net.ipv4.ip_local_port_range="10240 65535" 2>/dev/null || true
+    sysctl -w net.ipv4.tcp_fin_timeout=30 2>/dev/null || true
+    sysctl -w net.ipv4.conf.all.accept_redirects=0 2>/dev/null || true
+    sysctl -w net.ipv4.conf.default.accept_redirects=0 2>/dev/null || true
+    sysctl -w net.ipv4.conf.all.send_redirects=0 2>/dev/null || true
+    sysctl -w net.ipv4.conf.all.accept_source_route=0 2>/dev/null || true
+    sysctl -w net.ipv4.conf.all.rp_filter=2 2>/dev/null || true
+    sysctl -w net.core.rps_sock_flow_entries=32768 2>/dev/null || true
+    sysctl -w net.ipv4.udp_mem="40960 65536 131072" 2>/dev/null || true
+    sysctl -w net.ipv4.udp_rmem_min=8192 2>/dev/null || true
+    sysctl -w net.ipv4.icmp_echo_ignore_broadcasts=1 2>/dev/null || true
+    sysctl -w net.ipv4.icmp_ratelimit=100 2>/dev/null || true
+    sysctl -w net.ipv4.tcp_ecn=1 2>/dev/null || true
+    sysctl net.netfilter.nf_conntrack_tcp_be_liberal=1 2>/dev/null || true
+    
+    # sysctl -w net.core.rmem_max=134217728 2>/dev/null || true
+    # sysctl -w net.core.wmem_max=134217728 2>/dev/null || true
+    # sysctl -w net.ipv4.tcp_rmem="4096 87380 67108864" 2>/dev/null || true
+    # sysctl -w net.ipv4.tcp_wmem="4096 65536 67108864" 2>/dev/null || true
+    # sysctl -w net.ipv4.tcp_mem="786432 1048576 1572864" 2>/dev/null || true
+    # sysctl -w net.netfilter.nf_conntrack_max=262144 2>/dev/null || true
+    # sysctl -w net.netfilter.nf_conntrack_tcp_timeout_established=300 2>/dev/null || true
+    # sysctl -w fs.file-max=2000000 2>/dev/null || true
+    # sysctl -w net.ipv4.tcp_fastopen=3 2>/dev/null || true
+    
+    # sysctl -w net.core.default_qdisc=fq 2>/dev/null || true
+    # # или, если хотите fq_codel:
+    # #sysctl -w net.core.default_qdisc=fq_codel 2>/dev/null || true
+    
+    # sysctl -w net.ipv4.tcp_max_orphans=262144 2>/dev/null || true
+    # sysctl -w net.ipv4.tcp_tw_reuse=1 2>/dev/null || true
+    # sysctl -w net.ipv6.conf.all.disable_ipv6=1 2>/dev/null || true
+    # sysctl -w net.ipv6.conf.default.disable_ipv6=1 2>/dev/null || true
+    # sysctl -w net.ipv4.tcp_sack=1 2>/dev/null || true   # SACK полезен
+    # sysctl -w net.ipv4.tcp_autocorking=1 2>/dev/null || true  # если доступно
+    
+    
+    # Таймауты и ретраи
+    sysctl -w net.ipv4.tcp_keepalive_time=600
+    sysctl -w net.ipv4.tcp_keepalive_intvl=60
+    sysctl -w net.ipv4.tcp_keepalive_probes=3
+    sysctl -w net.ipv4.tcp_retries2=5
+    sysctl -w net.ipv4.tcp_retries1=3
+    
+    # Управление соединениями
+    sysctl -w net.ipv4.tcp_max_syn_backlog=65536
+    sysctl -w net.ipv4.tcp_syncookies=1
+    sysctl -w net.ipv4.tcp_max_tw_buckets=2000000
+    sysctl -w net.ipv4.tcp_tw_reuse=1
+    sysctl -w net.ipv4.tcp_fin_timeout=20
+    sysctl -w net.ipv4.tcp_slow_start_after_idle=0
+    
+    # Защита от спуфинга
+    sysctl -w net.ipv4.conf.all.log_martians=1
+    sysctl -w net.ipv4.conf.default.log_martians=1
+    
+    # ICMP защита
+    sysctl -w net.ipv4.icmp_ignore_bogus_error_responses=1
+    sysctl -w net.ipv4.icmp_ratemask=88089
+    
+    # TCP Hardening
+    sysctl -w net.ipv4.tcp_dsack=0
+    sysctl -w net.ipv4.tcp_fack=0
+    
+    # Размеры очередей
+    sysctl -w net.ipv4.neigh.default.gc_thresh1=1024
+    sysctl -w net.ipv4.neigh.default.gc_thresh2=2048
+    sysctl -w net.ipv4.neigh.default.gc_thresh3=4096
+    
+    # Оптимизация прерываний
+    sysctl -w net.core.netdev_budget=600
+    sysctl -w net.core.netdev_tstamp=0
+    
+    # Разрешение маршрутизации трафика 
+    sysctl -w net.ipv4.conf.all.route_localnet=1
+    sysctl -w net.ipv4.conf.default.route_localnet=1
+}
 
 
 ####################################
-# В зависимости от выкл или вкл ползунка сервиса, запускается модуль 
+# В зависимости от выкл или вкл ползунка сервиса, запускается модуль
 ####################################
 start_stop_service() {
-    
+
     # Если значение offonservice установлено, проверяем его
     if [ "$offonservice" = "1" ]; then
-        
+
         echo "Модуль включен"
-        
+
     elif [ "$offonservice" = "0" ]; then
-        
+
         /system/bin/am start -a android.intent.action.MAIN -e toasttext "ZDT-D выключен" -n bellavita.toast/.MainActivity
         echo "модуль выключен"
         exit 0
@@ -551,23 +929,8 @@ start_stop_service() {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ####################################
-# Запуск сервиса zapret с профилями и конфигурацией 
+# Запуск сервиса zapret с профилями и конфигурацией
 ####################################
 start_zapret() {
     # Проверка количества параметров
@@ -605,21 +968,6 @@ start_zapret() {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 start_zapret_agressive(){
 
 BASE=/data/adb/modules/ZDT-D/working_folder/bin
@@ -640,16 +988,74 @@ for p in "${PORTS[@]}"; do
   args+=(--dup-autottl=-1)
   args+=(--dpi-desync-fake-tls=${BASE}/tls_clienthello_2.bin)
   args+=(--dpi-desync-fake-tls=${BASE}/tls_clienthello_vk_com_kyber.bin)
+  args+=(--dpi-desync-fakedsplit-mod=altorder=1)
+  args+=(--dpi-desync-hostfakesplit-mod=altorder=1)
+  args+=(--new)
+
+  args+=(--filter-tcp=${p})
+  args+=(--dpi-desync=hostfakesplit)
+  args+=(--dpi-desync-split-pos=1,midsld)
+  args+=(--dpi-desync-repeats=8)
+  args+=(--orig-autottl=+1)
+  args+=(--dup-autottl=-1)
+  args+=(--dpi-desync-fake-tls=${BASE}/tls_clienthello_2.bin)
+  args+=(--dpi-desync-fake-tls=${BASE}/tls_clienthello_vk_com_kyber.bin)
+  args+=(--dpi-desync-fakedsplit-mod=altorder=1)
+  args+=(--dpi-desync-hostfakesplit-mod=altorder=1)
+  args+=(--new)
+
+  args+=(--filter-tcp=${p})
+  args+=(--dpi-desync=fakedsplit)
+  args+=(--dpi-desync-split-pos=1,midsld)
+  args+=(--dpi-desync-repeats=8)
+  args+=(--orig-autottl=+1)
+  args+=(--dup-autottl=-1)
+  args+=(--dpi-desync-fake-tls=${BASE}/tls_clienthello_2.bin)
+  args+=(--dpi-desync-fake-tls=${BASE}/tls_clienthello_vk_com_kyber.bin)
+  args+=(--dpi-desync-fakedsplit-mod=altorder=1)
+  args+=(--dpi-desync-hostfakesplit-mod=altorder=1)
   args+=(--new)
 
   args+=(--filter-udp=${p})
-  args+=(--dpi-desync=fake,multidisorder)
+  args+=(--dpi-desync=fake)
+  args+=(--dpi-desync-repeats=8)
+  args+=(--dpi-desync-fake-quic=${BASE}/quic_initial_facebook_com_quiche.bin)
+  args+=(--new)
+
+  args+=(--filter-udp=${p})
+  args+=(--dpi-desync=multidisorder)
+  args+=(--dpi-desync-repeats=8)
+  args+=(--dpi-desync-fake-quic=${BASE}/quic_initial_facebook_com_quiche.bin)
+  args+=(--new)
+
+  args+=(--filter-udp=${p})
+  args+=(--dpi-desync=hostfakesplit)
+  args+=(--dpi-desync-repeats=8)
+  args+=(--dpi-desync-fake-quic=${BASE}/quic_initial_facebook_com_quiche.bin)
+  args+=(--new)
+
+  args+=(--filter-udp=${p})
+  args+=(--dpi-desync=fakedsplit)
   args+=(--dpi-desync-repeats=8)
   args+=(--dpi-desync-fake-quic=${BASE}/quic_initial_facebook_com_quiche.bin)
   args+=(--new)
 
   args+=(--filter-tcp=${p})
   args+=(--dpi-desync=fake)
+  args+=(--dpi-desync-repeats=6)
+  args+=(--orig-autottl=+1)
+  args+=(--dup-autottl=-1)
+  args+=(--new)
+
+  args+=(--filter-tcp=${p})
+  args+=(--dpi-desync=hostfakesplit)
+  args+=(--dpi-desync-repeats=6)
+  args+=(--orig-autottl=+1)
+  args+=(--dup-autottl=-1)
+  args+=(--new)
+
+  args+=(--filter-tcp=${p})
+  args+=(--dpi-desync=fakedsplit)
   args+=(--dpi-desync-repeats=6)
   args+=(--orig-autottl=+1)
   args+=(--dup-autottl=-1)
@@ -668,7 +1074,7 @@ for p in "${PORTS[@]}"; do
   args+=(--filter-tcp=${p})
   args+=(--hostlist=${BASE}/blocked.txt)
   args+=(--new)
-  
+
   # --- Cloudflare: fake TLS + fake QUIC (умеренные повторы)
   args+=(--filter-tcp=${p})
   args+=(--hostlist=${BASE}/cloudflare.txt)
@@ -678,14 +1084,39 @@ for p in "${PORTS[@]}"; do
   args+=(--dpi-desync-autottl)
   args+=(--dpi-desync-skip-nosni=1)
   args+=(--new)
-    
+
+  args+=(--filter-tcp=${p})
+  args+=(--hostlist=${BASE}/cloudflare.txt)
+  args+=(--dpi-desync=hostfakesplit)
+  args+=(--dpi-desync-fake-tls=${BASE}/tls_http_cloudflare.bin)
+  args+=(--dpi-desync-repeats=6)
+  args+=(--dpi-desync-autottl)
+  args+=(--dpi-desync-skip-nosni=1)
+  args+=(--new)
+
+  args+=(--filter-tcp=${p})
+  args+=(--hostlist=${BASE}/cloudflare.txt)
+  args+=(--dpi-desync=fakedsplit)
+  args+=(--dpi-desync-fake-tls=${BASE}/tls_http_cloudflare.bin)
+  args+=(--dpi-desync-repeats=6)
+  args+=(--dpi-desync-autottl)
+  args+=(--dpi-desync-skip-nosni=1)
+  args+=(--new)
+
   args+=(--filter-udp=${p})
   args+=(--hostlist=${BASE}/cloudflare.txt)
   args+=(--dpi-desync=fake)
   args+=(--dpi-desync-fake-quic=${BASE}/tls_http_cloudflare_ru.bin)
   args+=(--dpi-desync-repeats=6)
   args+=(--new)
-    
+
+  args+=(--filter-udp=${p})
+  args+=(--hostlist=${BASE}/cloudflare.txt)
+  args+=(--dpi-desync=fakedsplit)
+  args+=(--dpi-desync-fake-quic=${BASE}/tls_http_cloudflare_ru.bin)
+  args+=(--dpi-desync-repeats=6)
+  args+=(--new)
+
   # --- Telegram: смешанный fake TLS и fake-unknown (MTProto-like)
   args+=(--filter-tcp=${p})
   args+=(--hostlist=${BASE}/telegram.txt)
@@ -694,11 +1125,26 @@ for p in "${PORTS[@]}"; do
   args+=(--dpi-desync-repeats=8)
   args+=(--dpi-desync-autottl)
   args+=(--new)
-    
+
+  args+=(--filter-tcp=${p})
+  args+=(--hostlist=${BASE}/telegram.txt)
+  args+=(--dpi-desync=fakedsplit)
+  args+=(--dpi-desync-fake-tls=${BASE}/tls_http_telegram.bin)
+  args+=(--dpi-desync-repeats=8)
+  args+=(--dpi-desync-autottl)
+  args+=(--new)
+
     # UDP вариант (если Telegram использует UDP на данном порту)
   args+=(--filter-udp=${p})
   args+=(--hostlist=${BASE}/telegram.txt)
   args+=(--dpi-desync=fake)
+  args+=(--dpi-desync-fake-unknown=${BASE}/tls_http_telegram_ru.bin)
+  args+=(--dpi-desync-repeats=6)
+  args+=(--new)
+
+  args+=(--filter-udp=${p})
+  args+=(--hostlist=${BASE}/telegram.txt)
+  args+=(--dpi-desync=fakedsplit)
   args+=(--dpi-desync-fake-unknown=${BASE}/tls_http_telegram_ru.bin)
   args+=(--dpi-desync-repeats=6)
   args+=(--new)
@@ -709,6 +1155,14 @@ for p in "${PORTS[@]}"; do
   args+=(--filter-udp=${p})
   args+=(--hostlist=${BASE}/russia-youtubeQ.txt)
   args+=(--dpi-desync=fake)
+  args+=(--dpi-desync-repeats=2)
+  args+=(--dpi-desync-cutoff=n2)
+  args+=(--dpi-desync-fake-quic=${BASE}/quic_pl_by_ori.bin)
+  args+=(--new)
+
+  args+=(--filter-udp=${p})
+  args+=(--hostlist=${BASE}/russia-youtubeQ.txt)
+  args+=(--dpi-desync=fakedsplit)
   args+=(--dpi-desync-repeats=2)
   args+=(--dpi-desync-cutoff=n2)
   args+=(--dpi-desync-fake-quic=${BASE}/quic_pl_by_ori.bin)
@@ -726,12 +1180,39 @@ for p in "${PORTS[@]}"; do
   args+=(--dpi-desync-autottl)
   args+=(--new)
 
+  args+=(--filter-tcp=${p})
+  args+=(--hostlist=${BASE}/russia-youtubeGV.txt)
+  args+=(--dpi-desync=hostfakesplit)
+  args+=(--dpi-desync-split-pos=1)
+  args+=(--dpi-desync-fooling=badseq)
+  args+=(--dpi-desync-repeats=10)
+  args+=(--dpi-desync-autottl)
+  args+=(--new)
+
   ##############################################################################
   # 6) russia-youtube.txt по TCP (fake, split2)
   ##############################################################################
   args+=(--filter-tcp=${p})
   args+=(--hostlist=${BASE}/russia-youtube.txt)
-  args+=(--dpi-desync=fake,split2)
+  args+=(--dpi-desync=fake)
+  args+=(--dpi-desync-split-seqovl=2)
+  args+=(--dpi-desync-split-pos=2)
+  args+=(--dpi-desync-fake-tls=${BASE}/tls_clienthello_www_google_com.bin)
+  args+=(--dpi-desync-autottl)
+  args+=(--new)
+
+  args+=(--filter-tcp=${p})
+  args+=(--hostlist=${BASE}/russia-youtube.txt)
+  args+=(--dpi-desync=split2)
+  args+=(--dpi-desync-split-seqovl=2)
+  args+=(--dpi-desync-split-pos=2)
+  args+=(--dpi-desync-fake-tls=${BASE}/tls_clienthello_www_google_com.bin)
+  args+=(--dpi-desync-autottl)
+  args+=(--new)
+
+  args+=(--filter-tcp=${p})
+  args+=(--hostlist=${BASE}/russia-youtube.txt)
+  args+=(--dpi-desync=hostfakesplit)
   args+=(--dpi-desync-split-seqovl=2)
   args+=(--dpi-desync-split-pos=2)
   args+=(--dpi-desync-fake-tls=${BASE}/tls_clienthello_www_google_com.bin)
@@ -743,7 +1224,14 @@ for p in "${PORTS[@]}"; do
   ##############################################################################
   args+=(--filter-tcp=${p})
   args+=(--hostlist=${BASE}/russia-blacklist.txt)
-  args+=(--dpi-desync=fake,split2)
+  args+=(--dpi-desync=fake)
+  args+=(--dpi-desync-fooling=badseq)
+  args+=(--dpi-desync-autottl)
+  args+=(--new)
+
+  args+=(--filter-tcp=${p})
+  args+=(--hostlist=${BASE}/russia-blacklist.txt)
+  args+=(--dpi-desync=split2)
   args+=(--dpi-desync-fooling=badseq)
   args+=(--dpi-desync-autottl)
   args+=(--new)
@@ -751,11 +1239,18 @@ for p in "${PORTS[@]}"; do
   args+=(--filter-tcp=${p},${p})
   args+=(--hostlist=${BASE}/russia-blacklist.txt)
   args+=(--hostlist=${BASE}/myhostlist.txt)
-  args+=(--dpi-desync=fake,split2)
+  args+=(--dpi-desync=fake)
   args+=(--dpi-desync-split-seqovl=1)
   args+=(--dpi-desync-split-pos=2)
   args+=(--dpi-desync-fake-tls=${BASE}/tls_clienthello_www_google_com.bin)
   args+=(--dpi-desync-skip-nosni=1)
+  args+=(--dpi-desync-autottl)
+  args+=(--new)
+
+  args+=(--filter-tcp=${p})
+  args+=(--hostlist=${BASE}/russia-blacklist.txt)
+  args+=(--dpi-desync=fakedsplit)
+  args+=(--dpi-desync-fakedsplit-mod=altorder=1)
   args+=(--dpi-desync-autottl)
   args+=(--new)
 
@@ -764,7 +1259,33 @@ for p in "${PORTS[@]}"; do
   ##############################################################################
   args+=(--filter-tcp=${p})
   args+=(--hostlist=${BASE}/russia-blacklist.txt)
-  args+=(--dpi-desync=fake,multidisorder)
+  args+=(--dpi-desync=fake)
+  args+=(--dpi-desync-repeats=11)
+  args+=(--dpi-desync-fooling=md5sig)
+  args+=(--dpi-desync-fake-tls=${BASE}/tls_clienthello_www_google_com.bin)
+  args+=(--new)
+
+  args+=(--filter-tcp=${p})
+  args+=(--hostlist=${BASE}/russia-blacklist.txt)
+  args+=(--dpi-desync=multidisorder)
+  args+=(--dpi-desync-split-pos=1,midsld)
+  args+=(--dpi-desync-repeats=11)
+  args+=(--dpi-desync-fooling=md5sig)
+  args+=(--dpi-desync-fake-tls=${BASE}/tls_clienthello_www_google_com.bin)
+  args+=(--new)
+
+  args+=(--filter-tcp=${p})
+  args+=(--hostlist=${BASE}/russia-blacklist.txt)
+  args+=(--dpi-desync=hostfakesplit)
+  args+=(--dpi-desync-split-pos=1,midsld)
+  args+=(--dpi-desync-repeats=11)
+  args+=(--dpi-desync-fooling=md5sig)
+  args+=(--dpi-desync-fake-tls=${BASE}/tls_clienthello_www_google_com.bin)
+  args+=(--new)
+
+  args+=(--filter-tcp=${p})
+  args+=(--hostlist=${BASE}/russia-blacklist.txt)
+  args+=(--dpi-desync=fakedsplit)
   args+=(--dpi-desync-split-pos=1,midsld)
   args+=(--dpi-desync-repeats=11)
   args+=(--dpi-desync-fooling=md5sig)
@@ -777,22 +1298,6 @@ done
 # Запускаем nfqws со всеми динамическими стратегиями
 exec nfqws "${args[@]}" > /dev/null 2>&1 &
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 # Функция для чтения конфигурации из файла
@@ -809,7 +1314,7 @@ load_config() {
         IFS="=" read -r key value <<< "$line"
         key=$(echo "$key" | xargs)
         value=$(echo "$value" | xargs)
-        
+
         # Назначение переменных с суффиксом, если он есть
         case "$key" in
             ip) eval "IP${suffix}=\"$value\"" ;;
@@ -839,26 +1344,8 @@ load_config() {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 start_load_config() {
-    
+
     # Вызов функции для загрузки конфигураций
     if [ "$dpi_tunnel_0" = "1" ]; then
         echo "DPI tunnel 0 включён"
@@ -869,7 +1356,7 @@ start_load_config() {
     else
         echo "Некорректное значение для dpi_tunnel_0 или его нет"
     fi
-    
+
     if [ "$dpi_tunnel_1" = "1" ]; then
         echo "DPI tunnel 1 включён"
         load_config "$CONFIG_FILE1" "1"
@@ -879,7 +1366,7 @@ start_load_config() {
     else
         echo "Некорректное значение для dpi_tunnel_1 или его нет"
     fi
-    
+
     if [ "$dpi_tunnel_2" = "1" ]; then
         echo "DPI tunnel 2 включён"
         load_config "$CONFIG_FILE2" "2"
@@ -890,22 +1377,6 @@ start_load_config() {
         echo "Некорректное значение для dpi_tunnel_2 или его нет"
     fi
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 unified_processing() {
@@ -940,18 +1411,27 @@ unified_processing() {
         echo "Файл $SHA256_FLAG_FILE отсутствует. Создание..."
         notification_send info "$MSG_NOTIFICATION_START"
         > "$SHA256_FLAG_FILE"
+        safestart_module
+        SAFESTART_MODULE_CALLED=1
+        sleep 20
+        python3_update_bin
+        sleep 15
+        # Собираю весь список приложений на устройстве (не системные)
+        notification_send info "$MSG_NOTIFICATION_USER_PROGRAMM"
+        USER_PROGRAM_LIST
+        iptables-save -c > /data/adb/modules/ZDT-D/files/setting/iptables_save_becup.rules
     fi
 
     # Используем basename входного файла как ключ
     file_key=$(basename "$input_file")
     old_hash=$(grep "^${file_key}=" "$SHA256_FLAG_FILE" | cut -d'=' -f2)
     new_hash=$(calculate_sha256 "$input_file")
-    
+
     # Обновляем флаговый файл для этого файла
     grep -v "^${file_key}=" "$SHA256_FLAG_FILE" > "$SHA256_FLAG_FILE.tmp"
     echo "${file_key}=${new_hash}" >> "$SHA256_FLAG_FILE.tmp"
     mv "$SHA256_FLAG_FILE.tmp" "$SHA256_FLAG_FILE"
-    
+
     # Вызвать safestart_module ровно 1 раз
     if [ -z "${SAFESTART_MODULE_CALLED}" ]; then
         SAFESTART_MODULE_CALLED=1
@@ -1054,31 +1534,6 @@ unified_processing() {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 iptables_zapret_default_full() {
     # Выполнить действия, которые должны происходить один раз
     if [ -z "$_NOTIFICATION_INIT" ]; then
@@ -1108,32 +1563,32 @@ iptables_zapret_default_full() {
         fi
 
         # Автоматический список хостов
-        if [ "$uselist" = "1" ]; then 
+        if [ "$uselist" = "1" ]; then
             echo "Используется автоматический список хостов"
-            if ! [ -e "$dpi_list_path/$dpi_ignore" ]; then 
+            if ! [ -e "$dpi_list_path/$dpi_ignore" ]; then
                 echo -n "" > "$dpi_list_path/$dpi_ignore"
                 chmod 666 "$dpi_list_path/$dpi_ignore"
             fi
             HOSTLIST_NOAUTO="--hostlist-auto=$dpi_list_path/$dpi_list --hostlist-exclude=$dpi_list_path/$dpi_ignore"
-        else 
+        else
             HOSTLIST_NOAUTO=""
         fi
 
         ###########################
         # Параметры для фильтрации портов
         NFQWS_OPT="--filter-tcp=80,8000 --filter-tcp=443 --filter-udp=50000-50099 --filter-tcp=443 --filter-udp=443,6969"
-        if [ "$debug" = "1" ]; then 
+        if [ "$debug" = "1" ]; then
             echo "Отладка всех Desync: $NFQWS_OPT" >> "$dpi_list_path/DPI_logS.txt"
         fi
         ###########################
 
         addHlist() {
-            if ! [ -e "$dpi_list_path/$dpi_list" ]; then 
+            if ! [ -e "$dpi_list_path/$dpi_list" ]; then
                 echo -n "" > "$dpi_list_path/$dpi_list"
                 chmod 666 "$dpi_list_path/$dpi_list"
             fi
-            for site in $1; do 
-                if [ "$(grep -c "$site" "$dpi_list_path/$dpi_list")" = "0" ]; then 
+            for site in $1; do
+                if [ "$(grep -c "$site" "$dpi_list_path/$dpi_list")" = "0" ]; then
                     echo "$site" >> "$dpi_list_path/$dpi_list"
                 fi
             done
@@ -1145,41 +1600,41 @@ iptables_zapret_default_full() {
         echo "Запуск для всех интерфейсов (альтернативный режим)"
 
         # Корректировка параметров NetFilter
-        if [ "$uselist" = "1" ]; then 
+        if [ "$uselist" = "1" ]; then
             sysctl net.netfilter.nf_conntrack_tcp_be_liberal=1 > /dev/null
         fi
-        if [ "$(echo "$NFQWS_OPT" | grep -c badsum)" != "0" ]; then 
+        if [ "$(echo "$NFQWS_OPT" | grep -c badsum)" != "0" ]; then
             sysctl net.netfilter.nf_conntrack_checksum=0 > /dev/null
         fi
 
         # Извлечение портов
         NFQWS_PORTS_TCP="$(echo "$NFQWS_OPT" | grep -oE 'filter-tcp=[0-9,-]+' | sed -e 's/.*=//' -e 's/,/\n/g' | sort -un)"
         NFQWS_PORTS_UDP="$(echo "$NFQWS_OPT" | grep -oE 'filter-udp=[0-9,-]+' | sed -e 's/.*=//' -e 's/,/\n/g' | sort -un)"
-        if [ "$debug" = "1" ]; then 
+        if [ "$debug" = "1" ]; then
             echo "Отладка TCP портов: $NFQWS_PORTS_TCP" >> "$dpi_list_path/DPI_logS.txt"
             echo "Отладка UDP портов: $NFQWS_PORTS_UDP" >> "$dpi_list_path/DPI_logS.txt"
         fi
 
-        iptAdd() { 
-            if [ "$debug" = "1" ]; then 
+        iptAdd() {
+            if [ "$debug" = "1" ]; then
                 echo "Отладка ipt_Add $1, Порт: $2" >> "$dpi_list_path/DPI_logS.txt"
             fi
             iptables -t "$iptname" -I POSTROUTING $oifnm -p "$1" $iMportD "$2" $iCBo $iMark -j NFQUEUE --queue-num $QUEUE --queue-bypass
-            if [ "$uselist" = "1" ]; then 
+            if [ "$uselist" = "1" ]; then
                 iptables -t "$iptname" -I PREROUTING $iifnm -p "$1" $iMportS "$2" $iCBr $iMark -j NFQUEUE --queue-num $QUEUE --queue-bypass
             fi
         }
 
-        iptMultiPort() { 
-            if [ "$(echo "$iMportD" | grep -c 'multiport')" != "0" ]; then 
+        iptMultiPort() {
+            if [ "$(echo "$iMportD" | grep -c 'multiport')" != "0" ]; then
                 iptAdd "$1" "$(echo $2 | sed -e 's/ /,/g' -e 's/-/:/g')"
-            else 
+            else
                 for current_port in $2; do
-                    if [[ $current_port == *-* ]]; then 
-                        for i in $(seq ${current_port%-*} ${current_port#*-}); do 
+                    if [[ $current_port == *-* ]]; then
+                        for i in $(seq ${current_port%-*} ${current_port#*-}); do
                             iptAdd "$1" "$i"
-                        done 
-                    else 
+                        done
+                    else
                         iptAdd "$1" "$current_port"
                     fi
                 done
@@ -1187,41 +1642,41 @@ iptables_zapret_default_full() {
         }
 
         # Использование nftables, если доступно, иначе – iptables
-        if ! [ -e "/proc/net/ip_tables_targets" ]; then 
+        if ! [ -e "/proc/net/ip_tables_targets" ]; then
             echo "Использование nftables"
             nft create table "$nftname"
             nft add chain "$nftname" post "{type filter hook postrouting priority mangle;}"
             nft add rule "$nftname" post $oifnm tcp dport "{ $(echo "$NFQWS_PORTS_TCP" | sed 's/ /,/g') }" ct original packets 1-12 meta mark and 0x40000000 == 0 queue num $QUEUE bypass
             nft add rule "$nftname" post $oifnm udp dport "{ $(echo "$NFQWS_PORTS_UDP" | sed 's/ /,/g') }" ct original packets 1-12 meta mark and 0x40000000 == 0 queue num $QUEUE bypass
-            if [ "$uselist" = "1" ]; then 
+            if [ "$uselist" = "1" ]; then
                 nft add chain "$nftname" pre "{type filter hook prerouting priority filter;}"
                 nft add rule "$nftname" pre $iifnm tcp sport "{ $(echo "$NFQWS_PORTS_TCP" | sed 's/ /,/g') }" ct reply packets 1-3 queue num $QUEUE bypass
                 nft add rule "$nftname" pre $iifnm udp sport "{ $(echo "$NFQWS_PORTS_UDP" | sed 's/ /,/g') }" ct reply packets 1-3 queue num $QUEUE bypass
             fi
 
-            if [ "$debug" = "1" ]; then 
+            if [ "$debug" = "1" ]; then
                 echo "Отладка nftables" >> "$dpi_list_path/DPI_logS.txt"
                 nft list table "$nftname" >> "$dpi_list_path/DPI_logS.txt"
             fi
-        else 
+        else
             echo "Использование iptables"
             if [ "$(cat /proc/net/ip_tables_targets | grep -c 'NFQUEUE')" = "0" ]; then
                 echo "Ошибка - плохой iptables, скрипт не будет работать"
                 return 1
             else
-                if [ "$(cat /proc/net/ip_tables_matches | grep -c 'multiport')" != "0" ]; then 
+                if [ "$(cat /proc/net/ip_tables_matches | grep -c 'multiport')" != "0" ]; then
                     iMportS="-m multiport --sports"
                     iMportD="-m multiport --dports"
-                else 
+                else
                     iMportS="--sport"
                     iMportD="--dport"
                     echo "Плохой iptables, пропуск multiport"
                 fi
 
-                if [ "$(cat /proc/net/ip_tables_matches | grep -c 'connbytes')" != "0" ]; then 
+                if [ "$(cat /proc/net/ip_tables_matches | grep -c 'connbytes')" != "0" ]; then
                     iCBo="-m connbytes --connbytes-dir=original --connbytes-mode=packets --connbytes 1:12"
                     iCBr="-m connbytes --connbytes-dir=reply --connbytes-mode=packets --connbytes 1:3"
-                else 
+                else
                     iCBo=""
                     iCBr=""
                     echo "Плохой iptables, пропуск connbytes"
@@ -1229,7 +1684,7 @@ iptables_zapret_default_full() {
 
                 if [ "$(cat /proc/net/ip_tables_matches | grep -c 'mark')" != "0" ]; then
                     iMark="-m mark ! --mark 0x40000000/0x40000000"
-                else 
+                else
                     iMark=""
                     echo "Плохой iptables, пропуск mark"
                 fi
@@ -1237,15 +1692,15 @@ iptables_zapret_default_full() {
                 iptMultiPort "tcp" "$NFQWS_PORTS_TCP"
                 iptMultiPort "udp" "$NFQWS_PORTS_UDP"
 
-                if [ "$debug" = "1" ]; then 
+                if [ "$debug" = "1" ]; then
                     echo "Отладка iptables" >> "$dpi_list_path/DPI_logS.txt"
                     iptables -t "$iptname" -L >> "$dpi_list_path/DPI_logS.txt"
                 fi
             fi
 
-            if [ "$debug" = "1" ]; then 
+            if [ "$debug" = "1" ]; then
                 ndebug="--debug=@$dpi_list_path/DPI_logN.txt"
-            else 
+            else
                 ndebug=""
             fi
 
@@ -1427,25 +1882,6 @@ iptables_zapret_default_full() {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 full_id_iptables() {
     mode="$1"
     queue="$2"
@@ -1510,30 +1946,6 @@ full_id_iptables() {
 
     return 0
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 ####################################
@@ -1641,26 +2053,26 @@ mobile_iptables_beta() {
         ingress_success=0
         egress_success=0
 
-        # Входящий (PREROUTING → INPUT) с retry
-        if add_rule PREROUTING iptables; then
-            echo "  ВХОД: PREROUTING OK"
-            ingress_success=1
-        else
-            notification_send error "Retry PREROUTING $IP"
-            sleep 3
-            if add_rule PREROUTING iptables; then
-                echo "  ВХОД: PREROUTING после retry OK"
-                ingress_success=1
-            else
-                echo "  ВХОД: пробуем INPUT…"
-                if add_rule INPUT iptables; then
-                    echo "  ВХОД: INPUT OK"
-                    ingress_success=1
-                else
-                    notification_send error "Ошибка INPUT $IP"
-                fi
-            fi
-        fi
+        # # Входящий (PREROUTING → INPUT) с retry
+        # if add_rule PREROUTING iptables; then
+            # echo "  ВХОД: PREROUTING OK"
+            # ingress_success=1
+        # else
+            # notification_send error "Retry PREROUTING $IP"
+            # sleep 3
+            # if add_rule PREROUTING iptables; then
+                # echo "  ВХОД: PREROUTING после retry OK"
+                # ingress_success=1
+            # else
+                # echo "  ВХОД: пробуем INPUT…"
+                # if add_rule INPUT iptables; then
+                    # echo "  ВХОД: INPUT OK"
+                    # ingress_success=1
+                # else
+                    # notification_send error "Ошибка INPUT $IP"
+                # fi
+            # fi
+        # fi
 
         # Исходящий (OUTPUT → POSTROUTING) с retry
         if add_rule OUTPUT iptables; then
@@ -1714,33 +2126,6 @@ mobile_iptables_beta() {
     echo "Готово: обработано $processed/$total IPv4-адресов, успехов: $success_count, ошибок: $fail_count"
     return 0
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 apply_zdt_rules() {
@@ -1839,19 +2224,6 @@ apply_zdt_rules() {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 apply_iptables_rules() {
     local uid_file=$1
     local port=$2
@@ -1861,14 +2233,6 @@ apply_iptables_rules() {
     # Пример команды (замените на свою логику):
     # iptables -A INPUT -p tcp --dport "$port" -j ACCEPT
 }
-
-
-
-
-
-
-
-
 
 
 check_and_restart_dpi_tunnel() {
@@ -1895,7 +2259,8 @@ check_and_restart_dpi_tunnel() {
     if ! netstat -tuln | grep -q ":$ports .*LISTEN"; then
         echo "Порт $ports не прослушивается. Перезапуск процесса..."
 
-        if /system/bin/dpitunnel-cli \
+        # запускаем команду в фоне и отсоединяем её, чтобы она пережила exit
+        setsid /system/bin/dpitunnel-cli \
             --pid "$pid" \
             --daemon \
             --ca-bundle-path "$CA_BUNDLE_PATH" \
@@ -1916,292 +2281,1076 @@ check_and_restart_dpi_tunnel() {
             --wrong-seq "$wrong_seq" \
             --builtin-dns "$builtin_dns" \
             --builtin-dns-ip "$builtin_dns_ip" \
-            --builtin-dns-port "$builtin_dns_port"; then
+            --builtin-dns-port "$builtin_dns_port" \
+            >/dev/null 2>&1 &
 
-            echo "DPI Tunnel на порту $ports успешно перезапущен."
-            
-        else
-            echo "Не удалось запустить DPI Tunnel на порту $ports."
-            
-        fi
+        echo "DPI Tunnel на порту $ports запущен (nohup &)."
     fi
 }
-
 
 
 
 dns_redirect () {
 
     # --- DNS: если dns=1, ставим mangle-исключения и NAT-DNS внутри NAT_DPI ---
-    if [ "${dns:-0}" = "1" ]; then
-        echo ">>> DNS режим включён: настраиваем mangle-исключения и NAT_DPI DNS-правила"
-
-        # Убедимся, что MANGLE_APP и джамп в OUTPUT есть (инициализация mangle)
-        iptables -t mangle -nL MANGLE_APP >/dev/null 2>&1 || iptables -t mangle -N MANGLE_APP
-        iptables -t mangle -C OUTPUT -j MANGLE_APP 2>/dev/null \
-            || iptables -t mangle -A OUTPUT -j MANGLE_APP
-
-        # 2.1) mangle-исключения DNS — пробуем multiport (53,443), если не получится — отдельные правила
-        for proto in udp tcp sctp; do
-            # сначала проверим, есть ли уже правило с multiport
-            if iptables -t mangle -C MANGLE_APP -p "$proto" -m multiport --dports 53,853 -j RETURN 2>/dev/null; then
-                : # уже есть multiport-правило — пропускаем
-            else
-                # попробуем вставить multiport-правило; если команда не поддерживается/падает — сделаем отдельные правила
-                if iptables -t mangle -I MANGLE_APP 1 -p "$proto" -m multiport --dports 53,853 -j RETURN 2>/dev/null; then
-                    echo ">>> mangle: добавлено multiport-исключение (53,443) для $proto"
-                else
-                    # fallback — отдельные правила для 53 и 443
-                    for p in 53 853; do
-                        iptables -t mangle -C MANGLE_APP -p "$proto" --dport "$p" -j RETURN 2>/dev/null \
-                            || iptables -t mangle -I MANGLE_APP 1 -p "$proto" --dport "$p" -j RETURN
-                    done
-                    echo ">>> mangle: multiport не доступен — добавлены отдельные исключения 53 и 443 для $proto"
-                fi
-            fi
-        done
-
-        echo ">>> mangle-исключение DNS добавлено в MANGLE_APP (функционально как -I OUTPUT ... RETURN)"
-
-        # 2.2) Удалим старые (возможные) глобальные DNS DNAT в nat OUTPUT для 53 и 443, чтобы не было дублирования
-        for port in 53 853; do
-            iptables -t nat -C OUTPUT -p udp --dport "$port" -j DNAT --to-destination 127.0.0.1:863 2>/dev/null \
-                && iptables -t nat -D OUTPUT -p udp --dport "$port" -j DNAT --to-destination 127.0.0.1:863 2>/dev/null
-            iptables -t nat -C OUTPUT -p tcp --dport "$port" -j DNAT --to-destination 127.0.0.1:863 2>/dev/null \
-                && iptables -t nat -D OUTPUT -p tcp --dport "$port" -j DNAT --to-destination 127.0.0.1:863 2>/dev/null
-        done
-
-        # 2.3) Добавим правила DNS внутрь NAT_DPI и поставим их первыми (insert)
-        # Попробуем multiport для каждой из proto; при неудаче — отдельные правила
-        for proto in udp tcp sctp; do
-            if iptables -t nat -C NAT_DPI -p "$proto" -m multiport --dports 53,853 -j DNAT --to-destination 127.0.0.1:863 2>/dev/null; then
-                : # уже есть
-            else
-                if iptables -t nat -I NAT_DPI 1 -p "$proto" -m multiport --dports 53,853 -j DNAT --to-destination 127.0.0.1:863 2>/dev/null; then
-                    echo ">>> nat: добавлено multiport DNAT (53,443) для $proto -> 127.0.0.1:863"
-                else
-                    for p in 53 853; do
-                        iptables -t nat -C NAT_DPI -p "$proto" --dport "$p" -j DNAT --to-destination 127.0.0.1:863 2>/dev/null \
-                            || iptables -t nat -I NAT_DPI 1 -p "$proto" --dport "$p" -j DNAT --to-destination 127.0.0.1:863
-                    done
-                    echo ">>> nat: multiport не доступен — добавлены отдельные DNAT 53 и 443 для $proto"
-                fi
-            fi
-        done
-
-        echo ">>> Нативные DNS правила (53,443 -> 127.0.0.1:863) расположены первыми внутри NAT_DPI"
+    if [ "${dns:-0}" != "1" ]; then
+        return 0
     fi
 
+    echo ">>> DNS режим включён: настраиваем mangle-исключения и NAT_DPI DNS-правила"
+
+    # --- dnscrypt (без логов)
+    # оставляем как есть — setsid может быть доступен/не доступен на устройстве
+    setsid dnscrypt-proxy -config /data/adb/modules/ZDT-D/dnscrypt-proxy/dnscrypt-proxy.toml </dev/null >/dev/null 2>&1 &
+
+    # определим iptables-бинарь (PATH или стандартные android-пути)
+    IPTABLES="$(command -v iptables 2>/dev/null || true)"
+    if [ -z "$IPTABLES" ]; then
+        for p in /system/bin/iptables /system/xbin/iptables /sbin/iptables /bin/iptables /usr/sbin/iptables; do
+            if [ -x "$p" ]; then
+                IPTABLES="$p"
+                break
+            fi
+        done
+    fi
+    # fallback на plain "iptables" если ничего не найдено — вызов вернёт ошибку, если его нет
+    [ -z "$IPTABLES" ] && IPTABLES="iptables"
+
+    # Убедимся, что MANGLE_APP и джамп в OUTPUT есть (инициализация mangle)
+    $IPTABLES -t mangle -nL MANGLE_APP >/dev/null 2>&1 || $IPTABLES -t mangle -N MANGLE_APP
+    $IPTABLES -t mangle -C OUTPUT -j MANGLE_APP 2>/dev/null || $IPTABLES -t mangle -A OUTPUT -j MANGLE_APP
+
+    # порты DNS: обычный DNS и DoT/DoH-over-TCP порт (используем 53 и 853)
+    DNS_PORTS="53 853"
+    DNS_DPORTS="53,853"    # для multiport
+
+    # ---- 1) mangle-исключения (RETURN) ----
+    for proto in udp tcp sctp; do
+        # сначала проверим наличие multiport-правила
+        if $IPTABLES -t mangle -C MANGLE_APP -p "$proto" -m multiport --dports "$DNS_DPORTS" -j RETURN >/dev/null 2>&1; then
+            : # есть multiport-исключение
+        else
+            # попробуем вставить multiport
+            if $IPTABLES -t mangle -I MANGLE_APP 1 -p "$proto" -m multiport --dports "$DNS_DPORTS" -j RETURN >/dev/null 2>&1; then
+                echo ">>> mangle: добавлено multiport-исключение ($DNS_DPORTS) для $proto"
+            else
+                # fallback: отдельные правила для каждого порта (вставляем на позицию 1 чтобы быть первыми)
+                for p in $DNS_PORTS; do
+                    if $IPTABLES -t mangle -C MANGLE_APP -p "$proto" --dport "$p" -j RETURN >/dev/null 2>&1; then
+                        : # уже есть
+                    else
+                        $IPTABLES -t mangle -I MANGLE_APP 1 -p "$proto" --dport "$p" -j RETURN 2>/dev/null || \
+                            $IPTABLES -t mangle -A MANGLE_APP -p "$proto" --dport "$p" -j RETURN 2>/dev/null
+                    fi
+                done
+                echo ">>> mangle: multiport не доступен — добавлены отдельные исключения $DNS_PORTS для $proto"
+            fi
+        fi
+    done
+
+    echo ">>> mangle-исключение DNS добавлено в MANGLE_APP (функционально как -I OUTPUT ... RETURN)"
+
+    # ---- 2) удалим возможные глобальные DNAT из nat OUTPUT, чтобы не было дублирования ----
+    for port in 53 853; do
+        $IPTABLES -t nat -C OUTPUT -p udp --dport "$port" -j DNAT --to-destination 127.0.0.1:863 2>/dev/null \
+            && $IPTABLES -t nat -D OUTPUT -p udp --dport "$port" -j DNAT --to-destination 127.0.0.1:863 2>/dev/null
+        $IPTABLES -t nat -C OUTPUT -p tcp --dport "$port" -j DNAT --to-destination 127.0.0.1:863 2>/dev/null \
+            && $IPTABLES -t nat -D OUTPUT -p tcp --dport "$port" -j DNAT --to-destination 127.0.0.1:863 2>/dev/null
+    done
+
+    # ---- 3) добавим DNAT-перехват внутрь NAT_DPI (и PREROUTING) ----
+    # цепочки, в которых хотим ставить правила (NAT_DPI + PREROUTING для захвата входящего трафика)
+    CHAINS="NAT_DPI PREROUTING"
+    for proto in udp tcp sctp; do
+        for chain in $CHAINS; do
+            # сначала проверим наличие multiport DNAT
+            if $IPTABLES -t nat -C "$chain" -p "$proto" -m multiport --dports "$DNS_DPORTS" -j DNAT --to-destination 127.0.0.1:863 >/dev/null 2>&1; then
+                : # правило уже есть
+            else
+                # попробуем вставить multiport-правило первым
+                if $IPTABLES -t nat -I "$chain" 1 -p "$proto" -m multiport --dports "$DNS_DPORTS" -j DNAT --to-destination 127.0.0.1:863 >/dev/null 2>&1; then
+                    echo ">>> nat: добавлено multiport DNAT ($DNS_DPORTS) для $proto -> 127.0.0.1:863 в $chain"
+                else
+                    # fallback: добавляем по-порту
+                    for p in $DNS_PORTS; do
+                        if $IPTABLES -t nat -C "$chain" -p "$proto" --dport "$p" -j DNAT --to-destination 127.0.0.1:863 >/dev/null 2>&1; then
+                            : # уже есть
+                        else
+                            $IPTABLES -t nat -I "$chain" 1 -p "$proto" --dport "$p" -j DNAT --to-destination 127.0.0.1:863 2>/dev/null || \
+                                $IPTABLES -t nat -A "$chain" -p "$proto" --dport "$p" -j DNAT --to-destination 127.0.0.1:863 2>/dev/null
+                        fi
+                    done
+                    echo ">>> nat: multiport не доступен — добавлены отдельные DNAT $DNS_PORTS для $proto в $chain"
+                fi
+            fi
+        done
+    done
+
+    echo ">>> Нативные DNS правила (53,853 -> 127.0.0.1:863) расположены первыми внутри NAT_DPI/PREROUTING (если возможно)"
+
+    return 0
 }
 
 
+# Улучшенная версия функции load_config_dpi_tunnel
+# Сохранить как отдельный файл/скрипт или source в текущем окружении.
+# Функция сохраняет исходный функционал, но:
+# - уменьшает вызовы внешних утилит где возможно
+# - делает добавление правил idempotent (не дублирует правила)
+# - парсит файл uid единожды и хранит в массиве для многократного использования
+# - улучшен вывод логов и обработка интерфейсов/портов
 
-
-
-
-
-
-
-
-
-# $1 — файл с app_name=uid
-# $2 — порт назначения для nat (1123,1124 и т.п.)
-# $3 — protocol_choice: tcp | udp | tcp_udp (default: tcp)
-# Внешняя переменная: dpi_ports — строка портов/диапазонов, например:
-# "80 443 2710 6969 51413 6771 6881-6999 49152-65535"
 load_config_dpi_tunnel() {
     local uid_file="$1"
     local dest_port="$2"
     local proto_choice="${3:-tcp}"
-    port_preference="${port_preference:-0}"    # 0 → dpi_ports (по умолчанию 80,443), 1 → все порты
-    dpi_ports="80 443 2710 6969 51413 6771 6881-6999 49152-65535"
+    local ifaces_raw="${4-}"
 
-    echo ">>> port_preference = '$port_preference', protocol_choice = '$proto_choice', dns = '${dns:-0}'"
-    echo ">>> dpi_ports (raw) = '$dpi_ports'"
+    # внешняя конфигурация
+    port_preference="${port_preference:-0}"   # 0 -> dpi_ports, 1 -> all ports
+    dpi_ports="${dpi_ports:-80 443 2710 6969 51413 6771 6881-6999 49152-65535}"
 
-    # init NAT_DPI
-    iptables -t nat -nL NAT_DPI >/dev/null 2>&1 || iptables -t nat -N NAT_DPI
-    iptables -t nat -C OUTPUT -j NAT_DPI 2>/dev/null || iptables -t nat -I OUTPUT 1 -j NAT_DPI
-    echo ">>> NAT_DPI ready"
+    # локальные переменные
+    local MODE L_IFACES valid_ifaces invalid_ifaces detected
+    local UID_PAIRS   # NOTE: не используем bash-массивы, держим список как "слово-столбец"
 
-    # init MANGLE_APP
-    if [ -z "$_IPTABLES_DPI_TUNNEL_MANGLE_INIT" ]; then
-        iptables -t mangle -nL MANGLE_APP >/dev/null 2>&1 || iptables -t mangle -N MANGLE_APP
-        iptables -t mangle -C OUTPUT -j MANGLE_APP 2>/dev/null || iptables -t mangle -A OUTPUT -j MANGLE_APP
-        _IPTABLES_DPI_TUNNEL_MANGLE_INIT=1
-        echo ">>> MANGLE_APP ready"
+    # ---- logging ----
+    _log() { printf "[dpi] %s\n" "$*" >&2; }
+    _err() { printf "[dpi][ERR] %s\n" "$*" >&2; }
+
+    # ---- util: trim ----
+    _trim() { printf "%s" "${1# }" | sed 's/^ *//;s/ *$//'; }
+
+    # ---- функции для интерфейсов ----
+    _split_and_normalize_ifaces() {
+        local raw="$1"
+        raw="$(printf "%s" "$raw" | tr ',' ' ' | tr -s '[:space:]' ' ')"
+        L_IFACES=""
+        [ -z "${raw// /}" ] && return 0
+        for f in $raw; do
+            f="$(printf "%s" "$f" | sed 's/^ *//;s/ *$//')"
+            [ -z "$f" ] && continue
+            L_IFACES="$L_IFACES $f"
+        done
+        L_IFACES="$(printf "%s" "$L_IFACES" | sed 's/^ *//;s/ *$//')"
+    }
+
+    _is_iface_exists() {
+        local ifname="$1"
+        if command -v ip >/dev/null 2>&1; then
+            ip link show "$ifname" >/dev/null 2>&1 && return 0
+        fi
+        if command -v ifconfig >/dev/null 2>&1; then
+            ifconfig "$ifname" >/dev/null 2>&1 && return 0
+        fi
+        [ -d "/sys/class/net/$ifname" ] && return 0
+        return 1
+    }
+
+    _detect_default_iface() {
+        local ifc
+        if command -v ip >/dev/null 2>&1; then
+            ifc="$(ip route get 8.8.8.8 2>/dev/null | awk '/dev/ {for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}')"
+            [ -n "$ifc" ] && printf "%s" "$ifc" && return 0
+            ifc="$(ip route 2>/dev/null | awk '/default/ {for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}')"
+            [ -n "$ifc" ] && printf "%s" "$ifc" && return 0
+        fi
+        if command -v route >/dev/null 2>&1; then
+            ifc="$(route -n 2>/dev/null | awk '/^0.0.0.0/ {print $8; exit}')"
+            [ -n "$ifc" ] && printf "%s" "$ifc" && return 0
+        fi
+        if [ -d /sys/class/net ]; then
+            for i in /sys/class/net/*; do
+                i="$(basename "$i")"
+                [ "$i" = "lo" ] && continue
+                printf "%s" "$i"
+                return 0
+            done
+        fi
+        return 1
+    }
+
+    # ---- нормализация аргумента интерфейсов ----
+    if [ -z "${ifaces_raw+x}" ] || [ -z "$ifaces_raw" ]; then
+        MODE="all"
+    else
+        local tmp
+        tmp="$(printf "%s" "$ifaces_raw" | tr ',' ' ' | tr -s '[:space:]' ' ' | sed 's/^ *//;s/ *$//')"
+        case "$tmp" in
+            all|ALL) MODE="all" ;;
+            auto|AUTO|detect|DETECT) MODE="detect" ;;
+            *) MODE="user" ;;
+        esac
     fi
 
-    while IFS='=' read -r app_name uid; do
-        [[ "$uid" != [0-9]* ]] && continue
-        iptables -t mangle -C MANGLE_APP -m owner --uid-owner "$uid" -j RETURN 2>/dev/null \
-            || iptables -t mangle -I MANGLE_APP -m owner --uid-owner "$uid" -j RETURN
-        echo "mangle-исключение для UID $uid"
-    done < "$uid_file"
+    L_IFACES=""
+    valid_ifaces=""
+    invalid_ifaces=""
 
+    if [ "$MODE" = "all" ]; then
+        _log "interface: ALL (без -o)"
+    elif [ "$MODE" = "detect" ]; then
+        _log "interface: auto-detect"
+        detected="$(_detect_default_iface)"
+        if [ -n "$detected" ]; then
+            _log "detected iface: $detected"
+            L_IFACES="$detected"
+        else
+            _err "auto-detect не нашёл интерфейс — переключаемся в ALL"
+            MODE="all"
+        fi
+    else
+        _split_and_normalize_ifaces "$ifaces_raw"
+        for f in $L_IFACES; do
+            if _is_iface_exists "$f"; then
+                valid_ifaces="$valid_ifaces $f"
+            else
+                invalid_ifaces="$invalid_ifaces $f"
+            fi
+        done
+        valid_ifaces="$(printf "%s" "$valid_ifaces" | sed 's/^ *//;s/ *$//')"
+        invalid_ifaces="$(printf "%s" "$invalid_ifaces" | sed 's/^ *//;s/ *$//')"
+
+        if [ -n "$valid_ifaces" ]; then
+            L_IFACES="$valid_ifaces"
+            _log "interface(s) validated: $L_IFACES"
+            [ -n "$invalid_ifaces" ] && _err "пропущены несуществующие: $invalid_ifaces"
+        else
+            _err "Ни один из указанных интерфейсов не существует: $invalid_ifaces"
+            detected="$(_detect_default_iface)"
+            if [ -n "$detected" ]; then
+                _log "Используем auto-detected iface: $detected"
+                L_IFACES="$detected"
+            else
+                _err "auto-detect не дал результата — переключаемся в ALL"
+                MODE="all"; L_IFACES=""
+            fi
+        fi
+    fi
+
+    _log "port_preference='${port_preference}', protocol_choice='${proto_choice}', dpi_ports='${dpi_ports}'"
+
+    # ---- подготовка цепочек iptables ----
+    iptables -t nat -nL NAT_DPI >/dev/null 2>&1 || iptables -t nat -N NAT_DPI
+    # ensure OUTPUT jumps to NAT_DPI
+    if ! iptables -t nat -C OUTPUT -j NAT_DPI >/dev/null 2>&1; then
+        iptables -t nat -I OUTPUT 1 -j NAT_DPI
+    fi
+    _log "NAT_DPI ready"
+
+    if [ -z "${_IPTABLES_DPI_TUNNEL_MANGLE_INIT-}" ]; then
+        iptables -t mangle -nL MANGLE_APP >/dev/null 2>&1 || iptables -t mangle -N MANGLE_APP
+        if ! iptables -t mangle -C OUTPUT -j MANGLE_APP >/dev/null 2>&1; then
+            iptables -t mangle -A OUTPUT -j MANGLE_APP
+        fi
+        _IPTABLES_DPI_TUNNEL_MANGLE_INIT=1
+        _log "MANGLE_APP ready"
+    fi
+
+    # ---- парсим uid_file один раз и формируем список "uid:app" ----
+    if [ ! -r "$uid_file" ]; then
+        _err "Файл uid не доступен: $uid_file"
+        return 1
+    fi
+    UID_PAIRS=""
+    while IFS='=' read -r app uid || [ -n "$app" ]; do
+        [ -z "$app" ] && continue
+        if ! printf "%s" "$uid" | grep -Eq '^[0-9]+'; then
+            continue
+        fi
+        UID_PAIRS="$UID_PAIRS $uid:$app"
+    done < "$uid_file"
+    UID_PAIRS="$(printf "%s" "$UID_PAIRS" | sed 's/^ *//;s/ *$//')"
+
+    if [ -z "$UID_PAIRS" ]; then
+        _err "Нет валидных UID в файле: $uid_file"
+        return 1
+    fi
+
+    # ---- mangle исключения (uid -> RETURN) ----
+    for pair in $UID_PAIRS; do
+        uid_only=${pair%%:*}
+        if ! iptables -t mangle -C MANGLE_APP -m owner --uid-owner "$uid_only" -j RETURN >/dev/null 2>&1; then
+            iptables -t mangle -I MANGLE_APP -m owner --uid-owner "$uid_only" -j RETURN
+        fi
+        _log "mangle-исключение для UID $uid_only"
+    done
+
+    # ---- протоколы ----
+    local protos
     case "$proto_choice" in
-        tcp)     protos="tcp" ;;
-        udp)     protos="udp" ;;
+        tcp) protos="tcp" ;;
+        udp) protos="udp" ;;
         tcp_udp) protos="tcp udp" ;;
-        *) echo "!!! неизвестный protocol_choice '$proto_choice', default tcp"; protos="tcp" ;;
+        *) _err "Неизвестный protocol_choice '$proto_choice' — по умолчанию tcp"; protos="tcp" ;;
     esac
 
-    if [ "$port_preference" = "1" ]; then
-        echo ">>> Применяем DNAT на ВСЕ порты (${protos// /+})"
-        while IFS='=' read -r app_name uid; do
-            [[ "$uid" != [0-9]* ]] && continue
-            for proto in $protos; do
-                iptables -t nat -A NAT_DPI -p "$proto" -m owner --uid-owner "$uid" \
-                    -j DNAT --to-destination 127.0.0.1:"$dest_port"
+    # ---- вспомогательная функция добавления правила (idempotent, POSIX) ----
+    local RULES_ADDED=0
+    _add_nat_rule() {
+        local _uid _proto _extra extra_str IPTABLES_BIN IPT_WAIT tried variant iface v command_check command_add
+        _uid="$1"; shift
+        _proto="$1"; shift
+        _extra="$*"
+
+        # normalize extra tokens (keeps "--dport 80" as single string with space)
+        extra_str="$_extra"
+
+        # find iptables binary
+        IPTABLES_BIN="$(command -v iptables 2>/dev/null || true)"
+        for p in "$IPTABLES_BIN" /system/bin/iptables /system/xbin/iptables /sbin/iptables /usr/sbin/iptables; do
+            [ -n "$p" ] && [ -x "$p" ] && { IPTABLES_BIN="$p"; break; }
+        done
+        [ -z "$IPTABLES_BIN" ] && IPTABLES_BIN="iptables"
+
+        # detect -w support
+        IPT_WAIT=""
+        if "$IPTABLES_BIN" -w -L >/dev/null 2>&1; then IPT_WAIT="-w"; fi
+
+        # variants order from strict to permissive
+        variants="p_mproto_mowner p_mowner_mproto mowner_p_mproto p_mowner only_mowner"
+
+        # build iface list: empty string => treat as ALL (no -o)
+        if [ -z "$L_IFACES" ] && [ "$MODE" = "all" ]; then
+            iface_list=""
+        else
+            iface_list="$L_IFACES"
+        fi
+
+        # try each iface (or once for ALL) and each variant
+        for iface in $iface_list; do
+            for v in $variants; do
+                case "$v" in
+                    p_mproto_mowner)
+                        proto_part="-p $_proto -m $_proto -m owner --uid-owner $_uid"
+                        ;;
+                    p_mowner_mproto)
+                        proto_part="-p $_proto -m owner --uid-owner $_uid -m $_proto"
+                        ;;
+                    mowner_p_mproto)
+                        proto_part="-m owner --uid-owner $_uid -p $_proto -m $_proto"
+                        ;;
+                    p_mowner)
+                        proto_part="-p $_proto -m owner --uid-owner $_uid"
+                        ;;
+                    only_mowner)
+                        proto_part="-m owner --uid-owner $_uid"
+                        ;;
+                    *)
+                        proto_part="-p $_proto -m $_proto -m owner --uid-owner $_uid"
+                        ;;
+                esac
+
+                # build check and add commands as strings (eval will execute)
+                command_check="$IPTABLES_BIN $IPT_WAIT -t nat -C NAT_DPI"
+                command_add="$IPTABLES_BIN $IPT_WAIT -t nat -A NAT_DPI"
+
+                if [ -n "$iface" ]; then
+                    command_check="$command_check -o $iface"
+                    command_add="$command_add -o $iface"
+                fi
+
+                command_check="$command_check $proto_part $extra_str -j DNAT --to-destination 127.0.0.1:$dest_port"
+                command_add="$command_add $proto_part $extra_str -j DNAT --to-destination 127.0.0.1:$dest_port"
+
+                tried="$command_check"
+                # if rule exists -> ok
+                eval "$command_check" >/dev/null 2>&1 && return 0
+
+                # try add
+                if eval "$command_add" >/dev/null 2>&1; then
+                    RULES_ADDED=$((RULES_ADDED+1))
+                    _log "Добавлено (uid=$_uid proto=$_proto iface=${iface:-ALL} variant=$v)"
+                    return 0
+                else
+                    _err "variant failed: iface=${iface:-ALL} variant=$v"
+                fi
             done
-            echo "  NAT для UID $uid -> 127.0.0.1:$dest_port (all ports)"
-        done < "$uid_file"
-        echo ">>> Готово (all ports)"
+        done
+
+        # If iface_list was empty (ALL) we tried nothing in loop above - handle ALL case here
+        if [ -z "$iface_list" ]; then
+            for v in $variants; do
+                case "$v" in
+                    p_mproto_mowner)
+                        proto_part="-p $_proto -m $_proto -m owner --uid-owner $_uid"
+                        ;;
+                    p_mowner_mproto)
+                        proto_part="-p $_proto -m owner --uid-owner $_uid -m $_proto"
+                        ;;
+                    mowner_p_mproto)
+                        proto_part="-m owner --uid-owner $_uid -p $_proto -m $_proto"
+                        ;;
+                    p_mowner)
+                        proto_part="-p $_proto -m owner --uid-owner $_uid"
+                        ;;
+                    only_mowner)
+                        proto_part="-m owner --uid-owner $_uid"
+                        ;;
+                    *)
+                        proto_part="-p $_proto -m $_proto -m owner --uid-owner $_uid"
+                        ;;
+                esac
+
+                command_check="$IPTABLES_BIN $IPT_WAIT -t nat -C NAT_DPI $proto_part $extra_str -j DNAT --to-destination 127.0.0.1:$dest_port"
+                command_add="$IPTABLES_BIN $IPT_WAIT -t nat -A NAT_DPI $proto_part $extra_str -j DNAT --to-destination 127.0.0.1:$dest_port"
+
+                eval "$command_check" >/dev/null 2>&1 && return 0
+
+                if eval "$command_add" >/dev/null 2>&1; then
+                    RULES_ADDED=$((RULES_ADDED+1))
+                    _log "Добавлено (uid=$_uid proto=$_proto ALL variant=$v)"
+                    return 0
+                else
+                    _err "variant failed (ALL): variant=$v"
+                fi
+            done
+        fi
+
+        # try alternative iptables binaries (legacy/nft/busybox)
+        alt_bins="iptables-legacy iptables-nft /system/bin/iptables /system/xbin/iptables /sbin/iptables /bin/iptables"
+        for alt in $alt_bins; do
+            [ "$alt" = "$IPTABLES_BIN" ] && continue
+            if command -v "$alt" >/dev/null 2>&1 || [ -x "$alt" ]; then
+                IPTABLES_BIN="$alt"
+                if "$IPTABLES_BIN" -w -L >/dev/null 2>&1; then IPT_WAIT="-w"; else IPT_WAIT=""; fi
+                _log "Пробую альтернативный бинарь: $IPTABLES_BIN"
+                # try same variants for ALL
+                for v in $variants; do
+                    case "$v" in
+                        p_mproto_mowner)
+                            proto_part="-p $_proto -m $_proto -m owner --uid-owner $_uid"
+                            ;;
+                        p_mowner_mproto)
+                            proto_part="-p $_proto -m owner --uid-owner $_uid -m $_proto"
+                            ;;
+                        mowner_p_mproto)
+                            proto_part="-m owner --uid-owner $_uid -p $_proto -m $_proto"
+                            ;;
+                        p_mowner)
+                            proto_part="-p $_proto -m owner --uid-owner $_uid"
+                            ;;
+                        only_mowner)
+                            proto_part="-m owner --uid-owner $_uid"
+                            ;;
+                        *)
+                            proto_part="-p $_proto -m $_proto -m owner --uid-owner $_uid"
+                            ;;
+                    esac
+
+                    command_check="$IPTABLES_BIN $IPT_WAIT -t nat -C NAT_DPI $proto_part $extra_str -j DNAT --to-destination 127.0.0.1:$dest_port"
+                    command_add="$IPTABLES_BIN $IPT_WAIT -t nat -A NAT_DPI $proto_part $extra_str -j DNAT --to-destination 127.0.0.1:$dest_port"
+
+                    eval "$command_check" >/dev/null 2>&1 && return 0
+
+                    if eval "$command_add" >/dev/null 2>&1; then
+                        RULES_ADDED=$((RULES_ADDED+1))
+                        _log "Добавлено (uid=$_uid proto=$_proto ALL via $IPTABLES_BIN variant=$v)"
+                        return 0
+                    fi
+                done
+            fi
+        done
+
+        # final simple fallback (busybox-like)
+        if [ -z "$L_IFACES" ] && [ "$MODE" = "all" ]; then
+            if ! iptables -t nat -C NAT_DPI -m owner --uid-owner "$_uid" $extra_str -j DNAT --to-destination 127.0.0.1:"$dest_port" >/dev/null 2>&1; then
+                if iptables -t nat -A NAT_DPI -m owner --uid-owner "$_uid" $extra_str -j DNAT --to-destination 127.0.0.1:"$dest_port" >/dev/null 2>&1; then
+                    RULES_ADDED=$((RULES_ADDED+1))
+                    _log "Добавлено (fallback simple uid=$_uid)"
+                    return 0
+                fi
+            else
+                return 0
+            fi
+        else
+            for iface in $L_IFACES; do
+                if ! iptables -t nat -C NAT_DPI -o "$iface" -m owner --uid-owner "$_uid" $extra_str -j DNAT --to-destination 127.0.0.1:"$dest_port" >/dev/null 2>&1; then
+                    if iptables -t nat -A NAT_DPI -o "$iface" -m owner --uid-owner "$_uid" $extra_str -j DNAT --to-destination 127.0.0.1:"$dest_port" >/dev/null 2>&1; then
+                        RULES_ADDED=$((RULES_ADDED+1))
+                        _log "Добавлено (fallback simple iface=$iface uid=$_uid)"
+                        return 0
+                    fi
+                else
+                    return 0
+                fi
+            done
+        fi
+
+        _err "НЕ удалось добавить правило для UID=$_uid proto=$_proto ($_extra). Проверьте iptables на целевой машине."
+        return 1
+    }
+
+    # ---- если нужно все порты для каждого uid ----
+    if [ "$port_preference" = "1" ]; then
+        _log "Применяем DNAT на ВСЕ порты ($protos)"
+        for pair in $UID_PAIRS; do
+            uid_only=${pair%%:*}
+            for proto in $protos; do
+                _add_nat_rule "$uid_only" "$proto" ""
+            done
+            _log "NAT для UID $uid_only -> 127.0.0.1:$dest_port (all ports)"
+        done
+        _log "Готово (all ports). Правил добавлено: $RULES_ADDED"
         return 0
     fi
 
-    # Нормализуем разделители: пробелы -> запятые, убираем лишние запятые
-    ports_csv="$(echo "$dpi_ports" | tr ' ' ',' | sed 's/,,*/,/g' | sed 's/^,//;s/,$//')"
-    echo ">>> Нормализованные части портов: $ports_csv"
+    # ---- нормализуем dpi_ports -> csv ----
+    local ports_csv
+    ports_csv="$(printf "%s" "$dpi_ports" | tr ' ' ',' | sed 's/,,*/,/g' | sed 's/^,//;s/,$//')"
+    _log "Нормализованные порты: $ports_csv"
 
-    # Разбиваем на части (каждая часть — либо число, либо диапазон start-end)
-    # Считаем части и проверяем, есть ли диапазоны
-    parts_count=0
-    has_range=0
-    OLD_IFS="$IFS"
+    # ---- анализируем на наличие диапазонов и поддержку multiport ----
+    local parts_count=0 has_range=0
+    local OLDIFS="$IFS"
     IFS=','
     for token in $ports_csv; do
-        token="$(echo "$token" | tr -d '[:space:]')"
+        token="$(printf "%s" "$token" | tr -d '[:space:]')"
         [ -z "$token" ] && continue
-        parts_count=$((parts_count + 1))
+        parts_count=$((parts_count+1))
         case "$token" in
-            *-*)
-                # диапазон вида a-b
-                has_range=1
-                ;;
-            *)
-                # одиночный порт — проверка числа
-                # если не число — пропускаем
-                if ! echo "$token" | grep -Eq '^[0-9]+$'; then
-                    echo "!!! Неверный токен портов: '$token' — пропускаем"
-                    parts_count=$((parts_count - 1))
-                fi
-                ;;
+            *-*) has_range=1 ;;
+            *) if ! printf "%s" "$token" | grep -Eq '^[0-9]+$'; then parts_count=$((parts_count-1)); _err "Неверный токен портов: $token"; fi ;;
         esac
     done
-    IFS="$OLD_IFS"
+    IFS="$OLDIFS"
 
-    # Проверка поддержки multiport (только применимо если нет диапазонов и количество частей <=15)
-    multiport_supported=0
+    # проверка multiport
+    local multiport_supported=0
     if iptables -t nat -I NAT_DPI 1 -p tcp -m multiport --dports 1 -j RETURN >/dev/null 2>&1; then
         iptables -t nat -D NAT_DPI -p tcp -m multiport --dports 1 -j RETURN >/dev/null 2>&1 || true
         multiport_supported=1
     fi
 
-    echo ">>> parts_count=$parts_count, has_range=$has_range, multiport_supported=$multiport_supported"
+    _log "parts_count=$parts_count, has_range=$has_range, multiport_supported=$multiport_supported"
 
-    use_multiport=0
+    local use_multiport=0
     if [ "$has_range" -eq 0 ] && [ "$parts_count" -le 15 ] && [ "$multiport_supported" -eq 1 ]; then
         use_multiport=1
     fi
 
     if [ "$use_multiport" -eq 1 ]; then
-        # собираем чистый список портов (без пробелов)
-        ports_for_multi="$(echo "$ports_csv" | tr -d '[:space:]')"
-        echo ">>> Используем multiport для портов: $ports_for_multi"
-        while IFS='=' read -r app_name uid; do
-            [[ "$uid" != [0-9]* ]] && continue
+        local ports_for_multi
+        ports_for_multi="$(printf "%s" "$ports_csv" | tr -d '[:space:]')"
+        _log "Используем multiport для: $ports_for_multi"
+        for pair in $UID_PAIRS; do
+            uid_only=${pair%%:*}
             for proto in $protos; do
-                iptables -t nat -A NAT_DPI -p "$proto" -m owner --uid-owner "$uid" -m multiport --dports "$ports_for_multi" \
-                    -j DNAT --to-destination 127.0.0.1:"$dest_port"
+                if [ -z "$L_IFACES" ] && [ "$MODE" = "all" ]; then
+                    if ! iptables -t nat -C NAT_DPI -p "$proto" -m owner --uid-owner "$uid_only" -m multiport --dports "$ports_for_multi" -j DNAT --to-destination 127.0.0.1:"$dest_port" >/dev/null 2>&1; then
+                        iptables -t nat -A NAT_DPI -p "$proto" -m owner --uid-owner "$uid_only" -m multiport --dports "$ports_for_multi" -j DNAT --to-destination 127.0.0.1:"$dest_port" >/dev/null 2>&1 && RULES_ADDED=$((RULES_ADDED+1)) || _err "Ошибка multiport (uid=$uid_only proto=$proto)"
+                    fi
+                else
+                    for iface in $L_IFACES; do
+                        if ! iptables -t nat -C NAT_DPI -o "$iface" -p "$proto" -m owner --uid-owner "$uid_only" -m multiport --dports "$ports_for_multi" -j DNAT --to-destination 127.0.0.1:"$dest_port" >/dev/null 2>&1; then
+                            iptables -t nat -A NAT_DPI -o "$iface" -p "$proto" -m owner --uid-owner "$uid_only" -m multiport --dports "$ports_for_multi" -j DNAT --to-destination 127.0.0.1:"$dest_port" >/dev/null 2>&1 && RULES_ADDED=$((RULES_ADDED+1)) || _err "Ошибка multiport iface=$iface (uid=$uid_only proto=$proto)"
+                        fi
+                    done
+                fi
             done
-            echo "  NAT для UID $uid ->127.0.0.1:$dest_port (multiport: $ports_for_multi, $protos)"
-        done < "$uid_file"
+            _log "NAT для UID $uid_only ->127.0.0.1:$dest_port (multiport: $ports_for_multi)"
+        done
     else
-        # Если multiport не доступен или есть диапазоны или частей >15 — делаем по-элементно.
         if [ "$multiport_supported" -ne 1 ]; then
             if command -v notification_send >/dev/null 2>&1; then
-                notification_send support "Ваше устройство ограничено в возможностях, для полного запуска понадобится больше времени. Для решения этой проблемы, установите пакет iptables с поддержкой multiport."
+                notification_send support "Ваше устройство ограничено в возможностях, для полного запуска понадобится больше времени. Установите iptables с поддержкой multiport."
             else
-                echo "!!! notification_send не найдена — пропускаем уведомление"
+                _err "notification_send не найдена — уведомление пропущено"
             fi
-            echo ">>> Переходим в fallback режим: добавляем правила по-элементно"
+            _log "Fallback: добавляем правила по-элементно"
         else
-            echo ">>> Решено не использовать multiport (есть диапазоны или частей >15). Добавляем правила по-элементно"
+            _log "Добавляем правила по-элементно (диапазоны или частей >15)"
         fi
 
-        # Проходим токен за токеном: одиночный порт -> --dport X; диапазон a-b -> --dport a:b
         IFS=','
         for token in $ports_csv; do
-            token="$(echo "$token" | tr -d '[:space:]')"
+            token="$(printf "%s" "$token" | tr -d '[:space:]')"
             [ -z "$token" ] && continue
-            if echo "$token" | grep -Eq '^[0-9]+-[0-9]+$'; then
-                # диапазон
-                start="$(echo "$token" | cut -d- -f1)"
-                end="$(echo "$token" | cut -d- -f2)"
-                # валидация
-                if ! echo "$start" | grep -Eq '^[0-9]+$' || ! echo "$end" | grep -Eq '^[0-9]+$'; then
-                    echo "!!! Неверный диапазон '$token' — пропускаем"
-                    continue
+            if printf "%s" "$token" | grep -Eq '^[0-9]+-[0-9]+$'; then
+                start="${token%%-*}"
+                end="${token##*-}"
+                if ! printf "%s" "$start" | grep -Eq '^[0-9]+$' || ! printf "%s" "$end" | grep -Eq '^[0-9]+$'; then
+                    _err "Неверный диапазон '$token' — пропускаем"; continue
                 fi
-                # swap если нужно
-                if [ "$start" -gt "$end" ]; then
-                    tmp="$start"; start="$end"; end="$tmp"
-                fi
-                # применяем одно правило на диапазон с использованием синтаксиса start:end
-                while IFS='=' read -r app_name uid; do
-                    [[ "$uid" != [0-9]* ]] && continue
+                if [ "$start" -gt "$end" ]; then local tmp="$start"; start="$end"; end="$tmp"; fi
+                for pair in $UID_PAIRS; do
+                    uid_only=${pair%%:*}
                     for proto in $protos; do
-                        iptables -t nat -A NAT_DPI -p "$proto" --dport "${start}:${end}" \
-                            -m owner --uid-owner "$uid" \
-                            -j DNAT --to-destination 127.0.0.1:"$dest_port"
+                        _add_nat_rule "$uid_only" "$proto" "--dport ${start}:${end}"
                     done
-                    echo "  NAT для UID $uid ->127.0.0.1:$dest_port (range ${start}:${end}, $protos)"
-                done < "$uid_file"
-            elif echo "$token" | grep -Eq '^[0-9]+$'; then
-                # одиночный порт
-                while IFS='=' read -r app_name uid; do
-                    [[ "$uid" != [0-9]* ]] && continue
+                    _log "NAT для UID $uid_only ->127.0.0.1:$dest_port (range ${start}:${end})"
+                done
+            elif printf "%s" "$token" | grep -Eq '^[0-9]+$'; then
+                for pair in $UID_PAIRS; do
+                    uid_only=${pair%%:*}
                     for proto in $protos; do
-                        iptables -t nat -A NAT_DPI -p "$proto" --dport "$token" \
-                            -m owner --uid-owner "$uid" \
-                            -j DNAT --to-destination 127.0.0.1:"$dest_port"
+                        _add_nat_rule "$uid_only" "$proto" "--dport $token"
                     done
-                    echo "  NAT для UID $uid ->127.0.0.1:$dest_port (port $token, $protos)"
-                done < "$uid_file"
+                    _log "NAT для UID $uid_only ->127.0.0.1:$dest_port (port $token)"
+                done
             else
-                echo "!!! Пропущен некорректный токен: '$token'"
+                _err "Пропущен некорректный токен: '$token'"
             fi
         done
-        IFS="$OLD_IFS"
+        IFS="$OLDIFS"
     fi
 
-    echo ">>> Правила DNAT добавлены внутрь NAT_DPI."
+    _log "Правила DNAT добавлены в NAT_DPI. Всего правил добавлено: $RULES_ADDED"
+    if [ -n "$L_IFACES" ]; then
+        _log "Использованные интерфейсы: $L_IFACES"
+    else
+        _log "Использованы: ALL (нет опции -o)"
+    fi
+    [ -n "$invalid_ifaces" ] && _err "Пропущены несуществующие интерфейсы: $invalid_ifaces"
+
+    return 0
 }
 
 
+operax_main() {
+  # --- корректное определение каталога модуля и параметры --------------------
+  operax_MODDIR="/data/adb/modules/ZDT-D/"
+  operax_SNI_FILE="$operax_MODDIR/working_folder/sni_service"
+  operax_START_PORT=11145
+  operax_MAX_SERVICES=10
+
+  # --- подготовка папки логов
+  operax_LOGDIR="$operax_MODDIR/log"
+  operax_LOG_PROXY_PY="${operax_LOG_PROXY_PY:-$operax_LOGDIR/transparent_proxy.log}"
+
+  # --- выбрать адрес прослушки в зависимости от tether_whitelist (по умолчанию 0)
+  if [ "${tether_whitelist:-0}" = "1" ]; then
+    operax_listen_addr="0.0.0.0"
+  else
+    operax_listen_addr="127.0.0.1"
+  fi
+
+  # --- Счётчики / аккумуляторы
+  operax_count=0        # сколько сервисов запущено
+  operax_ports=""       # список портов для python (через запятую)
+
+  # Создаём папку логов, если нет
+  if [ ! -d "$operax_LOGDIR" ]; then
+    mkdir -p "$operax_LOGDIR" 2>/dev/null || true
+  fi
+
+  # --- 1) Запуск BYEDPI (полная команда) для первоначального подъёма
+  run_detach "ciadpi-zdt -i $operax_listen_addr -p 10190 -x 1 -n m.vk.com vk.com max.ru gosuslugi.ru sun6-20.userapi.com ok.ru online.sberbank.ru -Qr -f6+nr -d2 -d11 -f9+hm -o3 -t7 -a1  -As -d1 -s3+s -s5+s -q7 -a1 -As -o2 -f-43 -a1 -As -r5 -Mh -s1:5+s -s3:7+sm -a1 -o1 -d1 -a1" "$operax_LOGDIR/bye_opera.log"
+
+  # даём немного времени на старт ciadpi (не менее чем раньше было)
+  sleep 5
+
+  # --- 2) Читаем файл SNI_FILE построчно и создаём отдельный лог на каждую строку
+  while IFS= read -r operax_line || [ -n "$operax_line" ]; do
+    operax_trimmed=$(printf '%s' "$operax_line" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+    # игнорируем пустые и комментированные строки
+    case "$operax_trimmed" in
+      ''|\#*) continue;;
+    esac
+
+    # превысили лимит сервисов?
+    if [ "$operax_count" -ge "$operax_MAX_SERVICES" ]; then
+      break
+    fi
+
+    operax_port=$((operax_START_PORT + operax_count))
+
+    # безопасное имя для файла лога (предполагается, что sanitize_sni_for_filename определена)
+    operax_sni_safe=$(sanitize_sni_for_filename "$operax_trimmed")
+    operax_logfile="$operax_LOGDIR/opera_proxy${operax_count}_${operax_sni_safe}.log"
+
+    # создаём файл лога (touch) чтобы >> всегда работал
+    touch "$operax_logfile" 2>/dev/null || true
+
+    # запускаем opera-proxy (предполагается, что run_detach определена)
+    run_detach "opera-proxy \
+  -bind-address 127.0.0.1:$operax_port \
+  -socks-mode \
+  -cafile /system/bin/ca.bundle \
+  -fake-SNI $operax_trimmed \
+  -bootstrap-dns https://127.0.0.1:863,https://1.1.1.1/dns-query,tls://9.9.9.9:853,https://1.1.1.3/dns-query,https://8.8.8.8/dns-query,https://dns.google/dns-query,https://security.cloudflare-dns.com/dns-query,https://fidelity.vm-0.com/q,https://wikimedia-dns.org/dns-query,https://dns.adguard-dns.com/dns-query,https://dns.quad9.net/dns-query,https://doh.cleanbrowsing.org/doh/adult-filter/ \
+  -api-user-agent 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36' \
+  -certchain-workaround \
+  -country EU \
+  -init-retries 15 \
+  -init-retry-interval 30s \
+  -server-selection fastest \
+  -server-selection-dl-limit 204800 \
+  -server-selection-timeout 30s \
+  -proxy socks5://127.0.0.1:10190" "$operax_logfile"
+
+    # небольшая задержка между стартами проксей
+    sleep 5
+
+    # Добавляем порт в список для python (формат: 11145,11146,...)
+    if [ -z "$operax_ports" ]; then
+      operax_ports="$operax_port"
+    else
+      operax_ports="$operax_ports,$operax_port"
+    fi
+
+    operax_count=$((operax_count + 1))
+
+  done < "$operax_SNI_FILE"
+
+  # --- 3) Если нашли хотя бы один порт — запускаем встроенную проверку (python) и ждём до 30 секунд
+  if [ -n "$operax_ports" ]; then
+    # Вычисляем минимально требуемое количество рабочих серверов:
+    # если запущено 1-2 сервера -> min_ok=1, иначе -> min_ok=2 (по вашему правилу)
+    if [ "$operax_count" -le 2 ]; then
+      min_ok=1
+    else
+      min_ok=2
+    fi
+
+    # максимальное время ожидания в секундах и интервал перезапуска проверки
+    max_wait=30
+    interval=5
+    waited=0
+    ok=0
+
+    # Лог для попыток проверки
+    PY_LOG="$operax_LOGDIR/socks_check.log"
+
+    echo "Запускаю проверку SOCKS5 портов: $operax_ports (min_ok=$min_ok). Жду до ${max_wait}s..." >>"$PY_LOG"
+
+    while [ $waited -lt $max_wait ]; do
+      # запускаем встроенный Python-скрипт (берёт PORTS и MIN_OK из окружения)
+      # NOTE: скрипт основан на вашем коде, но принимает PORTS/MIN_OK через os.environ
+      PORTS="$operax_ports" MIN_OK="$min_ok" python3 - <<'PY' >>"$PY_LOG" 2>&1
+# Встроенный проверщик, основан на вашем коде.
+import os
+import sys
+import time
+import socket
+import struct
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+ERROR_CODES = {
+    0x01: "general SOCKS server failure",
+    0x02: "connection not allowed by ruleset",
+    0x03: "Network unreachable",
+    0x04: "Host unreachable",
+    0x05: "Connection refused",
+    0x06: "TTL expired",
+    0x07: "Command not supported",
+    0x08: "Address type not supported"
+}
+
+def recv_exact(sock, n):
+    data = b''
+    while len(data) < n:
+        try:
+            chunk = sock.recv(n - len(data))
+            if not chunk:
+                return None
+            data += chunk
+        except socket.timeout:
+            return None
+        except Exception:
+            return None
+    return data
+
+def check_socks5_health(socks_host, socks_port, socks_user=None, socks_pass=None, timeout=5):
+    s = None
+    local_ping = None
+    internet_ping = None
+    try:
+        start_local = time.time()
+        s = socket.create_connection((socks_host, socks_port), timeout=timeout)
+        s.settimeout(timeout)
+        local_ping = (time.time() - start_local) * 1000
+
+        methods = [0x00]
+        s.sendall(struct.pack("!BB", 0x05, len(methods)) + bytes(methods))
+        data = recv_exact(s, 2)
+        if not data or len(data) < 2:
+            return False, local_ping, None, "Short METHODS reply"
+
+        ver, method = struct.unpack("!BB", data)
+        if ver != 0x05:
+            return False, local_ping, None, f"Bad version: {ver}"
+
+        if method == 0xFF:
+            return False, local_ping, None, "No acceptable authentication methods"
+
+        target_host = "8.8.8.8"
+        target_port = 53
+
+        try:
+            ipv4 = socket.inet_aton(target_host)
+            atyp = 0x01
+            addr_part = ipv4
+        except Exception:
+            atyp = 0x03
+            host_b = target_host.encode('idna')
+            addr_part = struct.pack("!B", len(host_b)) + host_b
+
+        port_part = struct.pack("!H", int(target_port))
+        req = struct.pack("!BBB", 0x05, 0x01, 0x00) + struct.pack("!B", atyp) + addr_part + port_part
+
+        start_internet = time.time()
+        s.sendall(req)
+
+        resp = recv_exact(s, 4)
+        if not resp or len(resp) < 4:
+            return False, local_ping, None, "Short CONNECT reply"
+
+        ver_r, rep, rsv, atyp_r = struct.unpack("!BBBB", resp)
+        if ver_r != 0x05:
+            return False, local_ping, None, f"Bad version in reply: {ver_r}"
+
+        if rep != 0x00:
+            return False, local_ping, None, f"CONNECT failed: {ERROR_CODES.get(rep, f'unknown error (0x{rep:02x})')}"
+
+        if atyp_r == 0x01:
+            if recv_exact(s, 4) is None:
+                return False, local_ping, None, "Short IPv4 in reply"
+        elif atyp_r == 0x03:
+            ln_b = recv_exact(s, 1)
+            if not ln_b:
+                return False, local_ping, None, "Short domain length"
+            ln = struct.unpack("!B", ln_b)[0]
+            if recv_exact(s, ln) is None:
+                return False, local_ping, None, "Short domain in reply"
+        elif atyp_r == 0x04:
+            if recv_exact(s, 16) is None:
+                return False, local_ping, None, "Short IPv6 in reply"
+        else:
+            return False, local_ping, None, f"Unknown address type in reply: {atyp_r}"
+
+        if recv_exact(s, 2) is None:
+            return False, local_ping, None, "Short port in reply"
+
+        internet_ping = (time.time() - start_internet) * 1000
+        return True, local_ping, internet_ping, None
+
+    except socket.timeout:
+        return False, local_ping, internet_ping, "Connection timeout"
+    except ConnectionRefusedError:
+        return False, local_ping, internet_ping, "Connection refused"
+    except Exception as e:
+        return False, local_ping, internet_ping, f"Error: {e}"
+    finally:
+        try:
+            if s:
+                s.close()
+        except Exception:
+            pass
+
+def parse_ports(ports_str):
+    items = (p.strip() for p in ports_str.split(','))
+    ports = set()
+    for it in items:
+        if not it:
+            continue
+        if '-' in it:
+            try:
+                a, b = it.split('-', 1)
+                start = int(a); end = int(b)
+                if start > end:
+                    start, end = end, start
+                if end - start > 1000:
+                    continue
+                for p in range(max(1, start), min(65535, end) + 1):
+                    ports.add(p)
+            except Exception:
+                continue
+        else:
+            try:
+                p = int(it)
+                if 1 <= p <= 65535:
+                    ports.add(p)
+            except Exception:
+                continue
+    return sorted(ports)
+
+def check_all(ports, timeout=5, parallel=True):
+    host = "127.0.0.1"
+    results = []
+    working = 0
+    basic_ping = None
+    if parallel:
+        max_workers = min(10, len(ports))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(check_socks5_health, host, p, None, None, timeout): p for p in ports}
+            for future in futures:
+                try:
+                    healthy, lp, ip, err = future.result()
+                except Exception:
+                    continue
+                results.append((futures[future], healthy, lp, ip, err))
+                if healthy:
+                    working += 1
+    else:
+        for p in ports:
+            healthy, lp, ip, err = check_socks5_health(host, p, None, None, timeout)
+            results.append((p, healthy, lp, ip, err))
+            if healthy:
+                working += 1
+    return working, results
+
+def main_env():
+    ports_str = os.environ.get('PORTS', '')
+    min_ok = int(os.environ.get('MIN_OK', '1'))
+    timeout = int(os.environ.get('SCK_TIMEOUT', '5'))
+    parallel = True
+
+    if not ports_str:
+        print("No ports provided via PORTS env", file=sys.stderr)
+        sys.exit(3)
+
+    ports = parse_ports(ports_str)
+    if not ports:
+        print("No valid ports parsed", file=sys.stderr)
+        sys.exit(4)
+
+    working, results = check_all(ports, timeout=timeout, parallel=parallel)
+    print(f"CHECK RESULT: working={working} total={len(ports)} min_ok={min_ok}")
+    for p, healthy, lp, ip, err in results:
+        status = "OK" if healthy else f"FAIL ({err})"
+        print(f"  {p}: {status}")
+
+    if working >= min_ok:
+        sys.exit(0)
+    else:
+        sys.exit(2)
+
+if __name__ == '__main__':
+    main_env()
+PY
+      rc=$?
+      if [ $rc -eq 0 ]; then
+        echo "$(date +%s) — Требуемое число рабочих серверов достигнуто (min_ok=$min_ok)." >>"$PY_LOG"
+        ok=1
+        break
+      else
+        echo "$(date +%s) — Проверка вернула $rc, ещё жду..." >>"$PY_LOG"
+      fi
+
+      sleep $interval
+      waited=$((waited + interval))
+    done
+
+    if [ $ok -ne 1 ]; then
+      echo "Внимание: требуемое количество рабочих серверов не достигнуто за ${max_wait}s. Продолжаю." >>"$PY_LOG"
+    fi
+
+    # --- 4) kill ciadpi (порт 10190) встроенно (никаких внешних скриптов)
+    KILL_LOG="$operax_LOGDIR/bye_opera_kill.log"
+    echo "Ищу PID по порту 10190 и пытаюсь убить (лог: $KILL_LOG)..." >>"$KILL_LOG"
+    PID=$(su -c "ss -ltnp 2>/dev/null | grep ':10190' | sed -n 's/.*pid=\([0-9][0-9]*\).*/\1/p' | head -n1")
+    if [ -z "$PID" ]; then
+      echo "PID для порта 10190 не найден." >>"$KILL_LOG"
+    else
+      echo "Найден PID: $PID. Убиваю..." >>"$KILL_LOG"
+      su -c "kill -9 $PID" >>"$KILL_LOG" 2>&1 || echo "Не удалось отправить сигнал kill -9 $PID" >>"$KILL_LOG"
+      sleep 0.5
+      if su -c "ss -ltnp 2>/dev/null | grep -q ':10190'"; then
+        echo "Порт 10190 всё ещё занят после kill." >>"$KILL_LOG"
+      else
+        echo "Порт 10190 освобождён." >>"$KILL_LOG"
+      fi
+    fi
+
+    # --- 5) Запускаем ciadpi в упрощённом режиме (через run_detach)
+    run_detach "ciadpi-zdt -i $operax_listen_addr -p 10190 -x 1 -s 43690:2:43690" "$operax_LOGDIR/bye_opera.log"
+  else
+    echo "Нет корректных SNI в $operax_SNI_FILE — ничего не запущено." >&2
+  fi
+
+  # --- 6) После этого запускаем python-прокси (как у вас было ранее), если есть порты
+  if [ -n "$operax_ports" ]; then
+    if [ "${tether_whitelist:-0}" = "1" ]; then
+      operax_listen_addr="0.0.0.0"
+    else
+      operax_listen_addr="127.0.0.1"
+    fi
+
+    run_detach "python3 /system/bin/zdt-d_tanspanent_proxy-sosck5.py --listen-addr $operax_listen_addr --listen-port 11260 --socks-host 127.0.0.1 --socks-port $operax_ports --mode tcp --max-conns 600 --idle-timeout 5000 --connect-timeout 30 --enable-http2 --web-socket --certificate /system/bin/ca.bundle" "$operax_LOG_PROXY_PY"
+  fi
+
+  # --- iptables: если tether_whitelist = 1 — добавляем PREROUTING для редиректа,
+  # и делаем POSTROUTING более общий, иначе прежнее поведение.
+  if [ "${tether_whitelist:-0}" = "1" ]; then
+    iptables -t nat -I PREROUTING -p tcp -j REDIRECT --to-ports 11260
+    iptables -t nat -A POSTROUTING -p tcp --dport 11260 -j MASQUERADE
+  else
+    iptables -t nat -A POSTROUTING -p tcp -d 127.0.0.1 --dport 11260 -j MASQUERADE
+  fi
+
+}
 
 
+sbox_gen_from_file() {
+  sbox_input="$1"
+  sbox_out="" sbox_status=0 sbox_ret=0 sbox_first_char=""
 
+  # аргументы / существование файла
+  if [ -z "$sbox_input" ]; then
+    return 1
+  fi
+  if [ ! -f "$sbox_input" ]; then
+    return 2
+  fi
 
+  # пустой файл -> тихо выходим
+  if [ ! -s "$sbox_input" ]; then
+    return 0
+  fi
 
+  sbox_out="$sbox_input"
 
+  # определяем, JSON ли (первый значимый символ { или [), иначе ищем vless://
+  sbox_first_char=$(awk '/\S/ { print substr($0, match($0,/[^[:space:]]/),1); exit }' "$sbox_out" 2>/dev/null || printf "")
+  if printf "%s" "$sbox_first_char" | grep -qE '^[\{\[]$'; then
+    sbox_has_config=1
+  elif grep -qF 'vless://' "$sbox_out" 2>/dev/null; then
+    sbox_has_config=1
+  else
+    # нет ни JSON ни vless -> тихо выходим
+    unset sbox_input sbox_out sbox_first_char sbox_has_config sbox_status sbox_ret
+    return 0
+  fi
 
+  # проверка синтаксиса sing-box (выполняется как есть)
+  sing-box check -c "$sbox_out"
+  sbox_status=$?
 
+  if [ $sbox_status -ne 0 ]; then
+    # неверный конфиг -> уведомление и выход
+    notification_send error "Не верно сгенерированный конфиг sing-box, запуск отклонен!"
+    sbox_ret=4
+    unset sbox_input sbox_out sbox_first_char sbox_has_config sbox_status
+    return $sbox_ret
+  fi
 
+  # конфиг валиден -> запускаем службы (run_detach и load_config_dpi_tunnel предполагаются определёнными)
+  run_detach "python3 /system/bin/zdt-d_tanspanent_proxy-sosck5.py --listen-addr 127.0.0.1 --listen-port 11261 --socks-host 127.0.0.1 --socks-port 11160 --mode tcp --max-conns 600 --idle-timeout 5000 --connect-timeout 30 --enable-http2 --certificate /system/bin/ca.bundle" "/data/adb/modules/ZDT-D/log/opera_sing-box.log"
+  run_detach "sing-box run -c '$sbox_out'" "/data/adb/modules/ZDT-D/log/sing_box.log"
 
+  load_config_dpi_tunnel "$UID_OUTPUT_FILE12" "11261"
 
+  # очистка локальных переменных
+  unset sbox_input sbox_out sbox_first_char sbox_has_config sbox_status sbox_ret
 
-
-
-
+  return 0
+}
 
 
 BYEDPI_RESTART() {
-#  local DPI_SCRIPT_DIR=$(dirname "$0")
-  local DPI_CONFIG_FILE="/data/adb/modules/ZDT-D/working_folder/ciadpi.conf"
-  local DPI_LOG_FILE="/data/adb/modules/ZDT-D/log/ciadpi.log"
-  local DPI_PORT=${1:-1125}
+  #  local DPI_SCRIPT_DIR=$(dirname "$0")
+  #  local DPI_CONFIG_FILE="/data/adb/modules/ZDT-D/working_folder/ciadpi.conf"
+  local DPI_CONFIG_FILE="$2"
+  local DPI_PORT="$1"
+
+  # счётчик вызовов функции (глобальная переменная; если не задана — начинаем с 0)
+  BYEDPI_CALL_COUNT=${BYEDPI_CALL_COUNT:-0}
+  local DPI_LOG_FILE="/data/adb/modules/ZDT-D/log/ciadpi${BYEDPI_CALL_COUNT}.log"
+  # подготовили имя лога для текущего вызова — увеличим счётчик для следующего
+  BYEDPI_CALL_COUNT=$((BYEDPI_CALL_COUNT + 1))
 
   # убиваем процесс, слушающий DPI_PORT
   local DPI_PID
@@ -2214,31 +3363,8 @@ BYEDPI_RESTART() {
 
   # запускаем ciadpi с базовыми параметрами и опциями из файла, логи — в DPI_LOG_FILE
   set -- $DPI_CONFIG
-  ciadpi-zdt -i 127.0.0.1 -p "$DPI_PORT" -E "$@" >> "$DPI_LOG_FILE" 2>&1 &
+  ciadpi-zdt -i 127.0.0.1 -p "$DPI_PORT" -x 2 -E "$@" >> "$DPI_LOG_FILE" 2>&1 &
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 restarting_dpi_tunnel() {
@@ -2266,23 +3392,6 @@ restarting_dpi_tunnel() {
 }
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # ========================================================================
 # Скрипт инициализации и настройки сервисов с проверкой конфигураций,
 # профилей безопасности и обновлений.
@@ -2304,13 +3413,12 @@ restarting_dpi_tunnel() {
 boot_completed
 
 
-
 # Проверка наличия конфликтующего модуля, который может помешать работе
 check_modules
 
 # Ожидание разблокировки экрана пользователем
 # start_system_final   # Если требуется дождаться разблокировки, раскомментируйте эту строку
-# Не нужна ибо используется в условии первого запуска модуля 
+# Не нужна ибо используется в условии первого запуска модуля
 
 ##########################################
 # Этап 2: Настройка SELinux
@@ -2332,12 +3440,24 @@ fi
 notification_toast_start
 
 # Чтение и загрузка конфигурационных параметров, необходимых для дальнейшей работы
-read_params
+read_params "$SETTING_START_PARAMS"
+read_params "$SETTING_START_PARAMS_PATCH"
+
+# Сетевые оптимизации, применяем при условии
+if [ "$sysctl_patch" = "1" ]; then
+    sysct_optimization
+fi
+
+# Отключение Captive portal 
+if [ "$captive_portal" = "1" ]; then
+    settings put global captive_portal_mode 0
+fi
+
 
 # Проверка разрешения на запуск сервисов (например, может быть проверка настроек или лицензии)
 start_stop_service
 
-# Запуск nfqws с использованием конфигурации (закомментировано, если не требуется)
+# Запуск nfqws с использованием конфигурации (закомментировано, не требуется)
 # start_zapret
 
 
@@ -2352,7 +3472,18 @@ for i in 0 1 2; do
     eval "unified_processing \"\$UID_OUTPUT_FILES${i}\" \"\$UID_INPUT_FILES${i}\""
 done
 
-unified_processing "$UID_OUTPUT_FILE_BYE" "$UID_INPUT_FILE_BYE"
+
+# Блок 1 — обёртка вызовов unified_processing для 0,1,2
+i=0
+while [ "$i" -le 2 ]; do
+  # получить значения переменных UID_OUTPUT_FILE_BYE{i} и UID_INPUT_FILE_BYE{i}
+  eval "out=\$UID_OUTPUT_FILE_BYE$i"
+  eval "in=\$UID_INPUT_FILE_BYE$i"
+
+  unified_processing "$out" "$in"
+
+  i=$((i+1))
+done
 # unified_processing "$ZAPRET_DPI_TUNNEL_OUT" "$ZAPRET_DPI_TUNNEL"
 # unified_processing "$DPI_TUNNEL_ZAPRET_OUT" "$DPI_TUNNEL_ZAPRET"
 # --- Обработка профилей zapret ---
@@ -2361,10 +3492,6 @@ unified_processing "$UID_OUTPUT_FILE_BYE" "$UID_INPUT_FILE_BYE"
 #   2. Вызов функции start_zapret с уникальным идентификатором и конфигурацией
 #   3. Обработка файла с UID через функцию unified_processing
 #   4. Применение настроек iptables через функцию iptables_zapret_default_full
-
-AGR_ZAPRET_TXT=/storage/emulated/0/ZDT-D
-ZAPRETUID_CHECK=/data/adb/modules/ZDT-D/working_folder/zapret_uid_out5
-[ -n "$(find "$AGR_ZAPRET_TXT" -maxdepth 1 -type f -name '*.txt' -print -quit)" ] || [ -s "$ZAPRETUID_CHECK" ] && start_zapret_agressive
 
 
 # Unified script:
@@ -2388,7 +3515,7 @@ for N in 0 1 2 3 4 5; do
 done
 
 # 1.2 UID‑профили i=2..7
-for i in 2 3 4 5 6 7 8; do
+for i in 2 3 4 5 6 7 8 9 10 11 12; do
   idx=$((i - 1))
   eval IN_UID=\$UID_INPUT_FILE$i
   eval OUT_UID=\$UID_OUTPUT_FILE$i
@@ -2425,8 +3552,18 @@ for N in 0 1 2 3 4 5; do
   fi
 done
 
+ONLY_200=0
+if [ "$full_system" = "1" ] || [ "$alternativel" = "1" ]; then
+  ONLY_200=1
+fi
+
 # 2.2 iptables_zapret_default_full для UID‑профилей i=2..6
 for i in 2 3 4 5 6 7 8; do
+  # если привязка к ONLY_200 — пропускаем все кроме i=2
+  if [ "${ONLY_200:-0}" = "1" ] && [ "$i" != "2" ]; then
+    continue
+  fi
+
   code=$((200 + i - 2))
   eval OUT_UID=\$UID_OUTPUT_FILE$i
 
@@ -2437,13 +3574,17 @@ for i in 2 3 4 5 6 7 8; do
 done
 
 # --- Stage 3: запускаем start_zapret **единожды** для каждого кода 200..204 ---
-
 for N in 0 1 2 3 4 6; do
+  if [ "$ONLY_200" = "1" ] && [ "$N" != "0" ]; then
+    # пропускаем все кроме N=0
+    continue
+  fi
+
   code=$((200 + N))
   cfg_var="CONFIG_ZAPRET$N"
   eval CONFIG=\$$cfg_var
 
-  # определяем первый непустой файл в порядке UID → Wi‑Fi → Mobile
+  # ... (остальной код без изменений)
   i=$((N + 2))
   eval OUT_UID=\$UID_OUTPUT_FILE$i
   OUT_WIFI="$WORKING_FOLDER/zapret_out_wifi${N}"
@@ -2485,8 +3626,20 @@ for p in $PROFILES; do
     fi
 done
 
-apply_zdt_rules
 
+AGR_ZAPRET_TXT=/storage/emulated/0/ZDT-D
+ZAPRETUID_CHECK=/data/adb/modules/ZDT-D/working_folder/zapret_uid_out5
+
+# Запускаем только если оба флага равны "0"
+if [ "${full_system:-0}" = "0" ] && [ "${alternativel:-0}" = "0" ]; then
+  # Существующая проверка файлов оставлена без изменений
+  if [ -n "$(find "$AGR_ZAPRET_TXT" -maxdepth 1 -type f -name '*.txt' -print -quit)" ] || [ -s "$ZAPRETUID_CHECK" ]; then
+    start_zapret_agressive
+  fi
+fi
+
+
+apply_zdt_rules
 
 
 ##########################################
@@ -2495,15 +3648,38 @@ apply_zdt_rules
 
 # ByeDpi
 # Запуск службы bye dpi при условии что выходной файл не пуст
-# Проверка файла, если он не пустой то запускаем службу 
-if [ -s "$UID_OUTPUT_FILE_BYE" ]; then
-    echo "Запуск Bye dpi"
-    BYEDPI_RESTART "1125"
-    load_config_dpi_tunnel "$UID_OUTPUT_FILE_BYE" "1125" "tcp"
-else
-    echo "Bye dpi не запущен"
-fi
+#!/system/bin/sh
+# Блок 2 — проверка файлов и запуск BYEDPI/загрузки конфигурации для 0,1,2
+# Переменные внутри цикла имеют приставку byezdtbye_ чтобы исключить конфликты
+byezdtbye_i=0
+while [ "$byezdtbye_i" -le 2 ]; do
+  # получаем значение переменной UID_OUTPUT_FILE_BYE0/1/2 в нашу уникальную переменную
+  eval "byezdtbye_out=\${UID_OUTPUT_FILE_BYE${byezdtbye_i}}"
 
+  # порт: 1125, 1126, 1127
+  byezdtbye_port=$((1134 + byezdtbye_i))
+
+  # путь к конфигу
+  byezdtbye_conf="/data/adb/modules/ZDT-D/working_folder/ciadpi${byezdtbye_i}.conf"
+
+  # проверяем — непустой ли файл
+  if [ -n "$byezdtbye_out" ] && [ -s "$byezdtbye_out" ]; then
+    echo "Запуск Bye dpi для индекса ${byezdtbye_i} (порт ${byezdtbye_port})"
+    # вызываем внешние функции/команды, аргументы передаются позиционно
+    BYEDPI_RESTART "$byezdtbye_port" "$byezdtbye_conf"
+    load_config_dpi_tunnel "$byezdtbye_out" "$byezdtbye_port" "tcp_udp"
+  else
+    # если переменная пуста, подставляем понятное сообщение
+    if [ -z "$byezdtbye_out" ]; then
+      byezdtbye_display="<переменная UID_OUTPUT_FILE_BYE${byezdtbye_i} не установлена>"
+    else
+      byezdtbye_display="$byezdtbye_out"
+    fi
+    echo "Bye dpi не запущен для индекса ${byezdtbye_i} (файл ${byezdtbye_display} пуст или отсутствует)"
+  fi
+
+  byezdtbye_i=$((byezdtbye_i + 1))
+done
 
 
 
@@ -2540,8 +3716,40 @@ else
     echo "Некорректное значение для dpi_tunnel_1 или его нет"
 fi
 
-
 dns_redirect
+
+# 1) Проверка файла 9
+if [ -s "$UID_OUTPUT_FILE9" ]; then
+    echo "Запуск OperaVPN (UID_OUTPUT_FILE9)"
+    operax_main
+    operax_called=1
+    load_config_dpi_tunnel "$UID_OUTPUT_FILE9" "11260" "tcp"
+else
+    echo "OperaVPN не запущен (UID_OUTPUT_FILE9 пустой)"
+fi
+
+# Вариант 1: точное совпадение с ожидаемым UUID (используется по умолчанию)
+if [ "x$TRIGGER" = "x$EXPECTED" ]; then
+    if [ -s "$UID_OUTPUT_FILE10" ]; then
+        # вызвать operax_main только если он ещё не был вызван
+        if [ "x$operax_called" != "x1" ]; then
+            echo "Запуск OperaVPN (UID_OUTPUT_FILE10)"
+            operax_main
+            operax_called=1
+        else
+            echo "operax_main уже был вызван ранее — пропускаем повторный запуск"
+        fi
+        load_config_dpi_tunnel "$UID_OUTPUT_FILE10" "11260" "tcp"# "rmnet_data+ rmnet_data0 rmnet_data1 rmnet_data2 rmnet_data3 rmnet_data4 rmnet_data5 rmnet_data6 rmnet_data7 rmnet_data8 rmnet_data9 rmnet_data10 rmnet_ipa0"
+        #load_config_dpi_tunnel "$UID_OUTPUT_FILE10" "10190" "udp"
+    else
+        echo "UID_OUTPUT_FILE10 пустой — при установленном триггере operax_main не вызываем"
+    fi
+else
+    echo "'$TRIGGER' — проверка UID_OUTPUT_FILE10 пропущена"
+fi
+
+#[ -n "${UID_OUTPUT_FILE12:-}" ] && sbox_gen_from_file "${SINGBOXXED_CONFIG}"
+
 ##########################################
 # Этап 6: Финальные действия и обновления
 ##########################################
@@ -2549,20 +3757,21 @@ dns_redirect
 # Отправка уведомления о запуске всех сервисов
 notification_send info "$MSG_SUCCESSFUL_LAUNCH"
 
-# Если исходное состояние SELinux было Permissive, возвращаем его обратно
+setsid $BIN_DIR/script/zdt-d_totall_traffic.sh >/dev/null >/dev/null 2>&1 &
+setsid $BIN_DIR/script/zdt-d_update.sh </dev/null >/dev/null 2>&1 &
+
+
+[ "${batterysaver:-0}" = "1" ] && setsid "$BIN_DIR/script/zdt-d_cpu_control.sh" </dev/null >/dev/null 2>&1 &
+
+
+# Если исходное состояние SELinux было Enforcing, возвращаем его обратно
 if [ "$SELINUX_STATE" = "Enforcing" ]; then
     setenforce 1
 fi
 
-setsid $BIN_DIR/script/zdt-d_totall_traffic.sh >/dev/null >/dev/null 2>&1 &
-setsid $BIN_DIR/script/zdt-d_update.sh </dev/null >/dev/null 2>&1 &
-
 # Проверка работоспособности сервиса DPI tunnel
 restarting_dpi_tunnel
 
-setsid $BIN_DIR/script/zdt-d_cpu_control.sh </dev/null >/dev/null 2>&1 &
 
-
-
-
-
+echo "Завершение"
+exit 0

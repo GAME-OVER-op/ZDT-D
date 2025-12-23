@@ -3758,8 +3758,8 @@ fi
 notification_send info "$MSG_SUCCESSFUL_LAUNCH"
 
 setsid $BIN_DIR/script/zdt-d_totall_traffic.sh >/dev/null >/dev/null 2>&1 &
-setsid $BIN_DIR/script/zdt-d_update.sh </dev/null >/dev/null 2>&1 &
-setsid $BIN_DIR/script/zdt-d_system_update.sh >> /data/adb/modules/ZDT-D/log/system_update.log
+setsid $BIN_DIR/script/zdt-d_update.sh >/dev/null >/dev/null 2>&1 &
+setsid $BIN_DIR/script/zdt-d_system_update.sh >/dev/null >/dev/null 2>&1 &
 
 
 [ "${batterysaver:-0}" = "1" ] && setsid "$BIN_DIR/script/zdt-d_cpu_control.sh" </dev/null >/dev/null 2>&1 &

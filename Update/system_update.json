@@ -1,8 +1,22 @@
 {
-  "name": "ZDT-D.sh",
-  "deviceDir": "/data/adb/modules/ZDT-D/system/bin/script/",
-  "githubDir": "https://github.com/GAME-OVER-op/ZDT-D/tree/main/system/bin/",
-  "sha256": "1c228aaf532cc40ff50e4a6720a9a8522b49ebddfd737a830df33ef63aac7910",
-  "infoPageGitHub": "https://github.com/GAME-OVER-op/ZDT-D/blob/main/Update/index.html",
-  "infoPageDevice": "/data/adb/modules/ZDT-D-UPDATE/webroot/"
+  "files": [
+    {
+      "name": "ZDT-D.sh",
+      "deviceDir": "/data/adb/modules/ZDT-D/system/bin/script/",
+      "rawUrl": "https://raw.githubusercontent.com/GAME-OVER-op/ZDT-D/main/system/bin/ZDT-D.sh",
+      "sha256": "e166ccba06d1ce91fce26925c26463eeff1beca4f5693089ea16909411c6e966",
+      "mode": "0755",
+      "infoPageGitHub": "https://github.com/GAME-OVER-op/ZDT-D/blob/main/Update/index.html",
+      "infoPageDevice": "/data/adb/modules/ZDT-D-UPDATE/webroot/"
+    },
+    {
+      "name": "zdt-d_tanspanent_proxy-sosck5.py",
+      "deviceDir": "/data/adb/modules/ZDT-D/system/bin/",
+      "rawUrl": "https://raw.githubusercontent.com/GAME-OVER-op/ZDT-D/main/system/zdt-d_tanspanent_proxy-sosck5.py",
+      "sha256": "337e0bcd166ebdf587c585f20e21cc13084fbc9cf8f36a55441fc05afa859e6a",
+      "mode": "0755",
+      "infoPageGitHub": "https://github.com/GAME-OVER-op/ZDT-D/blob/main/Update/index.html",
+      "infoPageDevice": "/data/adb/modules/ZDT-D-UPDATE/webroot/"
+    }
+  ]
 }

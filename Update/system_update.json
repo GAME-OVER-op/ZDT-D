@@ -1,40 +1,34 @@
 {
+  "infoPageGitHub": "https://github.com/GAME-OVER-op/ZDT-D/blob/main/Update/index.html",
+  "infoPageDevice": "/data/adb/modules/ZDT-D-UPDATE/webroot/",
   "files": [
     {
       "name": "ZDT-D.sh",
       "deviceDir": "/data/adb/modules/ZDT-D/system/bin/script/",
       "rawUrl": "https://raw.githubusercontent.com/GAME-OVER-op/ZDT-D/main/system/bin/ZDT-D.sh",
       "sha256": "051340dc39ce9dbd72c3677f54aa4556d0769398630dd09fd2ace910e2746685",
-      "mode": "0755",
-      "infoPageGitHub": "https://github.com/GAME-OVER-op/ZDT-D/blob/main/Update/index.html",
-      "infoPageDevice": "/data/adb/modules/ZDT-D-UPDATE/webroot/"
+      "mode": "0755"
     },
     {
       "name": "zdt-d_tanspanent_proxy-sosck5.py",
       "deviceDir": "/data/adb/modules/ZDT-D/system/bin/",
       "rawUrl": "https://raw.githubusercontent.com/GAME-OVER-op/ZDT-D/main/system/zdt-d_tanspanent_proxy-sosck5.py",
       "sha256": "337e0bcd166ebdf587c585f20e21cc13084fbc9cf8f36a55441fc05afa859e6a",
-      "mode": "0755",
-      "infoPageGitHub": "https://github.com/GAME-OVER-op/ZDT-D/blob/main/Update/index.html",
-      "infoPageDevice": "/data/adb/modules/ZDT-D-UPDATE/webroot/"
+      "mode": "0755"
     },
     {
       "name": "service.sh",
       "deviceDir": "/data/adb/modules/ZDT-D/",
       "rawUrl": "https://raw.githubusercontent.com/GAME-OVER-op/ZDT-D/main/service.sh",
       "sha256": "9265c4cb09bbe508e2b62999cc0b48334c4fdf79f8193d0a46794f206e0a7f4d",
-      "mode": "0755",
-      "infoPageGitHub": "https://github.com/GAME-OVER-op/ZDT-D/blob/main/Update/index.html",
-      "infoPageDevice": "/data/adb/modules/ZDT-D-UPDATE/webroot/"
+      "mode": "0755"
     },
     {
       "name": "zdt-d_system_update.sh",
       "deviceDir": "/data/adb/modules/ZDT-D/system/bin/script/",
-      "rawUrl": "https://raw.githubusercontent.com/GAME-OVER-op/ZDT-D/main/system/bin/zdt-d_system_update.sh",
+      "rawUrl": "https://raw.githubusercontent.com/GAME-OVER-op/ZDT-D/main/system/bin/script/zdt-d_system_update.sh",
       "sha256": "976fc5b1c744dbcb01ac447799494725e6958513d4fbc08da533a4954d1cb014",
-      "mode": "0755",
-      "infoPageGitHub": "https://github.com/GAME-OVER-op/ZDT-D/blob/main/Update/index.html",
-      "infoPageDevice": "/data/adb/modules/ZDT-D-UPDATE/webroot/"
-    },
+      "mode": "0755"
+    }
   ]
 }

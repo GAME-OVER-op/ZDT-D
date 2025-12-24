@@ -3739,7 +3739,7 @@ if [ "x$TRIGGER" = "x$EXPECTED" ]; then
         else
             echo "operax_main уже был вызван ранее — пропускаем повторный запуск"
         fi
-        load_config_dpi_tunnel "$UID_OUTPUT_FILE10" "11260" "tcp"# "rmnet_data+ rmnet_data0 rmnet_data1 rmnet_data2 rmnet_data3 rmnet_data4 rmnet_data5 rmnet_data6 rmnet_data7 rmnet_data8 rmnet_data9 rmnet_data10 rmnet_ipa0"
+        load_config_dpi_tunnel "$UID_OUTPUT_FILE10" "11260" "tcp" "rmnet_data+ rmnet_data0 rmnet_data1 rmnet_data2 rmnet_data3 rmnet_data4 rmnet_data5 rmnet_data6 rmnet_data7 rmnet_data8 rmnet_data9 rmnet_data10 rmnet_ipa0"
         #load_config_dpi_tunnel "$UID_OUTPUT_FILE10" "10190" "udp"
     else
         echo "UID_OUTPUT_FILE10 пустой — при установленном триггере operax_main не вызываем"

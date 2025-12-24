@@ -1,6 +1,13 @@
 #!/system/bin/sh
-# zdt-d_system_update_daemon_v2.sh
-# Ежедневно в 02:00: скачать/установить/уведомить, потом UX показ WebUI по правилам.
+# zdt-d_system_update_daemon_v3.sh
+# Daily updater + WebUI show flow (KernelSU WebUI).
+# - Run once per day after RUN_HHMM (default 02:00)
+# - Download manifest + files into /data/adb/modules/ZDT-D/download/
+# - Verify sha256, install to device paths
+# - Download index.html into ZDT-D-UPDATE/webroot/
+# - Notify: install done -> wait OFF 5m -> wait ON 7s -> notify "please wait" -> open WebUI after 15s
+# - Delete /data/adb/modules/ZDT-D-UPDATE/ 15s after open (guarded: only if WebUI process detected)
+# - Adaptive daemon sleep: 5h / 3h / 2h / 1h / 30m / 10m / 20s
 
 LOGTAG="ZDT-D-update-daemon"
 PING_TARGET="8.8.8.8"
@@ -17,45 +24,52 @@ DOWNLOAD_DIR="$DAM/download"
 REMOTE_MANIFEST_URL="https://raw.githubusercontent.com/GAME-OVER-op/ZDT-D/main/Update/system_update.json"
 LOCAL_MANIFEST="$DAM/files/system_update.json"
 
-# tmp файлы — только в download/
+# tmp files — only in download/
 TMP_MANIFEST="$DOWNLOAD_DIR/system_update.json"
 ENTRIES_FILE="$DOWNLOAD_DIR/system_update.entries.jsonl"
 TOINSTALL_LIST="$DOWNLOAD_DIR/system_update.toinstall.list"
 INDEX_TMP="$DOWNLOAD_DIR/index.html"
 
-INDEX_REMOTE_URL="https://raw.githubusercontent.com/GAME-OVER-op/ZDT-D/main/Update/index.html"
-INDEX_LOCAL_PATH="$UPDATE_MOD/webroot/index.html"
+# Defaults for info page (can be overridden from manifest: infoPageGitHub/infoPageDevice)
+INDEX_REMOTE_URL_DEFAULT="https://raw.githubusercontent.com/GAME-OVER-op/ZDT-D/main/Update/index.html"
+INDEX_LOCAL_PATH_DEFAULT="$UPDATE_MOD/webroot/index.html"
+INDEX_REMOTE_URL="$INDEX_REMOTE_URL_DEFAULT"
+INDEX_LOCAL_PATH="$INDEX_LOCAL_PATH_DEFAULT"
 
 LOCKDIR="$WORKING/.update_lock"
 
-# Расписание
-RUN_HHMM="${RUN_HHMM:-0200}"  # 02:00 ежедневно
+# Schedule
+RUN_HHMM="${RUN_HHMM:-0200}"  # 02:00 daily
 
-# Интернет-ретраи
-NET_RETRY_COUNT="${NET_RETRY_COUNT:-2}"    # 2 попытки
-NET_RETRY_SLEEP="${NET_RETRY_SLEEP:-1800}" # 30 минут между попытками
+# Internet retries (inside daily cycle)
+NET_RETRY_COUNT="${NET_RETRY_COUNT:-2}"
+NET_RETRY_SLEEP="${NET_RETRY_SLEEP:-1800}" # 30 min
 
-# UX условия
-WAIT_OFF_AFTER_INSTALL_SEC="${WAIT_OFF_AFTER_INSTALL_SEC:-300}" # 5 минут OFF после установки
-ON_STABLE_SEC="${ON_STABLE_SEC:-7}"                             # экран ON 7 сек (перед "Подождите...")
-OPEN_AFTER_SEC="${OPEN_AFTER_SEC:-15}"                          # открыть через 15 сек после "Подождите..."
-DELETE_UPDATE_MOD_AFTER_OPEN_SEC="${DELETE_UPDATE_MOD_AFTER_OPEN_SEC:-15}" # удалить муляж через 15 сек после открытия
+# UX rules
+WAIT_OFF_AFTER_INSTALL_SEC="${WAIT_OFF_AFTER_INSTALL_SEC:-300}"  # 5 min screen OFF after install
+ON_STABLE_SEC="${ON_STABLE_SEC:-7}"                              # screen ON 7 sec
+OPEN_AFTER_SEC="${OPEN_AFTER_SEC:-15}"                           # open after 15 sec
+DELETE_UPDATE_MOD_AFTER_OPEN_SEC="${DELETE_UPDATE_MOD_AFTER_OPEN_SEC:-15}"
 
-# Таймауты ожиданий (чтобы не зависать бесконечно)
-WAIT_OFF_MAX_SEC="${WAIT_OFF_MAX_SEC:-43200}" # максимум 12 часов ждать OFF 5 минут
-WAIT_ON_MAX_SEC="${WAIT_ON_MAX_SEC:-43200}"   # максимум 12 часов ждать ON 7 секунд
+# Max wait windows
+WAIT_OFF_MAX_SEC="${WAIT_OFF_MAX_SEC:-43200}" # 12h
+WAIT_ON_MAX_SEC="${WAIT_ON_MAX_SEC:-43200}"   # 12h
 
 DEFAULT_MODE_SH="0755"
 
+# Logging
+LOG_TO_STDERR="${LOG_TO_STDERR:-1}"
+
 now() { date '+%Y-%m-%d %H:%M:%S'; }
 mkdir_p() { [ -d "$1" ] || mkdir -p "$1" >/dev/null 2>&1 || true; }
+have_cmd() { command -v "$1" >/dev/null 2>&1; }
 
 log() {
   mkdir_p "$LOGDIR"
-  printf "%s [%s] %s\n" "$(now)" "$LOGTAG" "$*" >>"$LOGFILE" 2>/dev/null || true
+  line="$(now) [$LOGTAG] $*"
+  printf "%s\n" "$line" >>"$LOGFILE" 2>/dev/null || true
+  [ "$LOG_TO_STDERR" = "1" ] && printf "%s\n" "$line" >&2
 }
-
-have_cmd() { command -v "$1" >/dev/null 2>&1; }
 
 cleanup_lock() { [ -d "$LOCKDIR" ] && rm -rf "$LOCKDIR" >/dev/null 2>&1 || true; }
 trap cleanup_lock EXIT HUP INT TERM
@@ -70,6 +84,55 @@ acquire_lock() {
   oldpid="$(cat "$LOCKDIR/pid" 2>/dev/null || true)"
   log "LOCK busy: $LOCKDIR (pid=${oldpid:-unknown}) -> skip"
   return 1
+}
+
+# ---------------- Time helpers ----------------
+hm_to_minutes() {
+  hm="$1"
+  hh="${hm%??}"
+  mm="${hm#??}"
+  # force base-10
+  echo $((10#$hh * 60 + 10#$mm))
+}
+
+now_minutes() {
+  h="$(date +%H 2>/dev/null || echo 0)"
+  m="$(date +%M 2>/dev/null || echo 0)"
+  echo $((10#$h * 60 + 10#$m))
+}
+
+mins_until_next_run() {
+  nm="$(now_minutes)"
+  rm="$(hm_to_minutes "$RUN_HHMM")"
+  if [ "$nm" -le "$rm" ]; then
+    echo $((rm - nm))
+  else
+    echo $((1440 - (nm - rm)))
+  fi
+}
+
+choose_daemon_sleep_sec() {
+  mins="$1"
+  # requested steps: 5h, 3h, 2h, 1h, 30m, 10m, else 20s
+  if [ "$mins" -gt 300 ] 2>/dev/null; then sec=18000
+  elif [ "$mins" -gt 180 ] 2>/dev/null; then sec=10800
+  elif [ "$mins" -gt 120 ] 2>/dev/null; then sec=7200
+  elif [ "$mins" -gt 60 ] 2>/dev/null; then sec=3600
+  elif [ "$mins" -gt 30 ] 2>/dev/null; then sec=1800
+  elif [ "$mins" -gt 10 ] 2>/dev/null; then sec=600
+  else sec=20
+  fi
+
+  # never oversleep past run moment (keep 5s margin), unless we're in 20s mode anyway
+  maxsec=$((mins * 60 - 5))
+  if [ "$maxsec" -gt 0 ] 2>/dev/null; then
+    if [ "$sec" -gt "$maxsec" ] 2>/dev/null; then sec="$maxsec"; fi
+  else
+    # if already at/after run, keep short sleep
+    [ "$sec" -gt 20 ] && sec=20
+  fi
+  [ "$sec" -lt 5 ] 2>/dev/null && sec=5
+  echo "$sec"
 }
 
 # ---------------- Internet ----------------
@@ -106,35 +169,64 @@ sha256_file() {
 looks_like_html_or_error() {
   f="$1"
   head256="$(head -c 256 "$f" 2>/dev/null | tr -d '\r')"
-  echo "$head256" | grep -qiE '<!doctype html|<html|<head|<body|404: Not Found|Access denied|captcha' && return 0
+  echo "$head256" | grep -qiE '<!doctype html|<html|<head|<body|404: Not Found|Access denied|captcha|cloudflare|Just a moment' && return 0
   return 1
 }
 
-# ---------------- Download ----------------
+strip_utf8_bom_if_any() {
+  f="$1"
+  # detect BOM by first 3 bytes = ef bb bf
+  if have_cmd od && have_cmd dd && have_cmd tail; then
+    sig="$(dd if="$f" bs=3 count=1 2>/dev/null | od -An -tx1 2>/dev/null | tr -d ' \n')"
+    if [ "$sig" = "efbbbf" ]; then
+      tmp="$DOWNLOAD_DIR/.nobom.$$"
+      tail -c +4 "$f" >"$tmp" 2>/dev/null || { rm -f "$tmp" >/dev/null 2>&1 || true; return 1; }
+      mv -f "$tmp" "$f" >/dev/null 2>&1 || true
+      log "SANITIZE: stripped UTF-8 BOM"
+    fi
+  fi
+  return 0
+}
+
+sanitize_json_inplace() {
+  f="$1"
+  [ -f "$f" ] || return 1
+  tmp="$DOWNLOAD_DIR/.san.$$"
+  # remove NUL + CR (some proxies inject), keep LF
+  LC_ALL=C tr -d '\000\r' <"$f" >"$tmp" 2>/dev/null || { rm -f "$tmp" >/dev/null 2>&1 || true; return 1; }
+  mv -f "$tmp" "$f" >/dev/null 2>&1 || true
+  strip_utf8_bom_if_any "$f" || true
+  return 0
+}
+
+# ---------------- Download (curl/wget/busybox + python3 fallback) ----------------
 download_with_py3() {
   url="$1"; out="$2"
-  if have_cmd python3; then
-    python3 - "$url" "$out" <<'PY'
+  py="$DOWNLOAD_DIR/.py_dl.$$"
+  cat >"$py" <<'PY'
 import sys, urllib.request
 url=sys.argv[1]; out=sys.argv[2]
-with urllib.request.urlopen(url, timeout=45) as r:
+with urllib.request.urlopen(url, timeout=60) as r:
     data=r.read()
 with open(out,"wb") as f:
     f.write(data)
 PY
-    return $?
+
+  if have_cmd python3; then
+    python3 "$py" "$url" "$out" >/dev/null 2>&1
+    rc=$?
+    rm -f "$py" >/dev/null 2>&1 || true
+    return $rc
   fi
+
   if have_cmd su && su -c "command -v python3" >/dev/null 2>&1; then
-    su -c "python3 - '$url' '$out' <<'PY'
-import sys, urllib.request
-url=sys.argv[1]; out=sys.argv[2]
-with urllib.request.urlopen(url, timeout=45) as r:
-    data=r.read()
-with open(out,'wb') as f:
-    f.write(data)
-PY"
-    return $?
+    su -c "python3 '$py' '$url' '$out'" >/dev/null 2>&1
+    rc=$?
+    rm -f "$py" >/dev/null 2>&1 || true
+    return $rc
   fi
+
+  rm -f "$py" >/dev/null 2>&1 || true
   return 1
 }
 
@@ -194,8 +286,14 @@ EOF
   fi
 }
 
+github_to_raw_url() {
+  u="$1"
+  # github blob/tree -> raw
+  printf '%s' "$u" | sed -e 's#^https://github.com/#https://raw.githubusercontent.com/#' -e 's#/blob/#/#' -e 's#/tree/#/#'
+}
+
 refresh_webui_index_via_download() {
-  log "Скачиваю index.html (WebUI)"
+  log "Скачиваю index.html (WebUI) -> $INDEX_LOCAL_PATH"
   rm -f "$INDEX_TMP" >/dev/null 2>&1 || true
   if ! download_url "$INDEX_REMOTE_URL" "$INDEX_TMP"; then
     log "WARN: не удалось скачать index.html"
@@ -205,6 +303,36 @@ refresh_webui_index_via_download() {
   mv -f "$INDEX_TMP" "$INDEX_LOCAL_PATH" >/dev/null 2>&1 || true
   log "OK: index.html обновлён -> $INDEX_LOCAL_PATH"
   return 0
+}
+
+load_infopage_from_manifest() {
+  f="$1"
+  INDEX_REMOTE_URL="$INDEX_REMOTE_URL_DEFAULT"
+  INDEX_LOCAL_PATH="$INDEX_LOCAL_PATH_DEFAULT"
+
+  if have_cmd jq; then
+    ipg="$(jq -r '.infoPageGitHub // (.files[0].infoPageGitHub // empty) // empty' "$f" 2>/dev/null)"
+    ipd="$(jq -r '.infoPageDevice // (.files[0].infoPageDevice // empty) // empty' "$f" 2>/dev/null)"
+
+    if [ -n "$ipg" ] && [ "$ipg" != "null" ]; then
+      # if they give github blob url, convert to raw
+      case "$ipg" in
+        https://raw.githubusercontent.com/*|http://raw.githubusercontent.com/*) INDEX_REMOTE_URL="$ipg" ;;
+        https://github.com/*) INDEX_REMOTE_URL="$(github_to_raw_url "$ipg")" ;;
+        *) INDEX_REMOTE_URL="$ipg" ;;
+      esac
+    fi
+
+    if [ -n "$ipd" ] && [ "$ipd" != "null" ]; then
+      case "$ipd" in
+        */) INDEX_LOCAL_PATH="${ipd}index.html" ;;
+        *)  INDEX_LOCAL_PATH="${ipd%/}/index.html" ;;
+      esac
+    fi
+  fi
+
+  log "INFO PAGE: remote=$INDEX_REMOTE_URL"
+  log "INFO PAGE: local =$INDEX_LOCAL_PATH"
 }
 
 # ---------------- JSON entries ----------------
@@ -220,13 +348,19 @@ derive_raw_url() {
 
 prepare_entries_from_manifest() {
   f="$1"
+
   if ! have_cmd jq; then
     log "ERROR: jq не найден"
     return 11
   fi
+
+  sanitize_json_inplace "$f" || true
+
   if ! jq -e '.' "$f" >/dev/null 2>&1; then
-    log "ERROR: manifest не JSON (jq parse failed)"
-    log "head: $(head -c 180 "$f" 2>/dev/null | tr '\r\n' ' ')"
+    errline="$(jq -e '.' "$f" 2>&1 | head -n 1)"
+    log "ERROR: manifest не JSON (jq parse failed): $errline"
+    log "MANIFEST size: $(wc -c <"$f" 2>/dev/null || echo 0) bytes"
+    log "head: $(head -c 220 "$f" 2>/dev/null | tr '\r\n' ' ')"
     return 12
   fi
 
@@ -250,38 +384,40 @@ prepare_entries_from_manifest() {
   return 0
 }
 
-# ---------------- Notifications (с tag) ----------------
+# ---------------- Notifications (tag + proper who:text) ----------------
 send_notification() {
   # $1 msg, $2 tag, $3 title
   msg="$1"
   tag="${2:-UpdateInfo}"
   title="${3:-ZDT-D}"
 
-  PREFIX="ZDT-D:"
-  BODY="${PREFIX}${msg}"
+  # Messaging style expects --message <who>:<text>
+  # Force "who" = ZDT-D so Android won't show "You"
+  body="ZDT-D:${msg}"
 
   ICON1="file:///data/local/tmp/icon1.png"
   ICON2="file:///data/local/tmp/icon2.png"
   ICON_ARG=""
   [ -f "/data/local/tmp/icon1.png" ] && [ -f "/data/local/tmp/icon2.png" ] && ICON_ARG="-i $ICON1 -I $ICON2"
 
-  # a'b -> a'"'"'b
+  # escape for single quotes inside '...'
   esc_sq() { printf '%s' "$1" | sed "s/'/'\"'\"'/g"; }
 
-  BODY_ESC="$(esc_sq "$BODY")"
-  TAG_ESC="$(esc_sq "$tag")"
-  TITLE_ESC="$(esc_sq "$title")"
+  body_esc="$(esc_sq "$body")"
+  tag_esc="$(esc_sq "$tag")"
+  title_esc="$(esc_sq "$title")"
 
   if have_cmd su; then
-    NOTIF_CMD="cmd notification post $ICON_ARG -S messaging --conversation 'ZDT-D' --message '$BODY_ESC' -t '$TITLE_ESC' '$TAG_ESC' '$BODY_ESC'"
+    # last arg = TEXT (use same body so list view shows correct text)
+    NOTIF_CMD="cmd notification post $ICON_ARG -S messaging --conversation 'ZDT-D' --message '$body_esc' -t '$title_esc' '$tag_esc' '$body_esc'"
     su -lp 2000 -c "$NOTIF_CMD" >/dev/null 2>&1
     rc=$?
     [ $rc -eq 0 ] && log "OK: уведомление отправлено (tag=$tag)" || log "WARN: уведомление не отправилось (rc=$rc)"
-  else
-    log "WARN: su не найден — уведомление не отправлено"
-    return 1
+    return $rc
   fi
-  return 0
+
+  log "WARN: su не найден — уведомление не отправлено"
+  return 1
 }
 
 # ---------------- Screen state ----------------
@@ -427,14 +563,18 @@ download_all_needed() {
 
     [ -z "$name" ] && continue
 
-    if [ -n "$devicePathIn" ]; then
+    if [ -n "$devicePathIn" ] && [ "$devicePathIn" != "null" ]; then
       devicePath="$devicePathIn"
     else
       deviceDir="${deviceDir%/}"
       devicePath="$deviceDir/$name"
     fi
 
-    [ -z "$rawUrlIn" ] && rawUrl="$(derive_raw_url "$githubDir" "$name")" || rawUrl="$rawUrlIn"
+    if [ -n "$rawUrlIn" ] && [ "$rawUrlIn" != "null" ]; then
+      rawUrl="$rawUrlIn"
+    else
+      rawUrl="$(derive_raw_url "$githubDir" "$name")"
+    fi
 
     localSha=""
     [ -f "$devicePath" ] && localSha="$(sha256_file "$devicePath")"
@@ -460,7 +600,7 @@ download_all_needed() {
     fi
 
     case "$name" in
-      *.sh|*.py|*.json|*.conf|*.ini|*.txt|*.list)
+      *.sh|*.py|*.json|*.conf|*.ini|*.txt|*.list|*.html)
         if looks_like_html_or_error "$outPart"; then
           log "ERROR: скачалось похоже HTML/ошибка -> $name"
           mv -f "$outPart" "$DOWNLOAD_DIR/$name.bad" >/dev/null 2>&1 || true
@@ -481,6 +621,7 @@ download_all_needed() {
     fi
 
     mv -f "$outPart" "$outReady" >/dev/null 2>&1 || true
+    [ -z "$mode" ] || [ "$mode" = "null" ] && mode=""
     [ -z "$mode" ] && mode="$DEFAULT_MODE_SH"
 
     printf '%s|%s|%s\n' "$name" "$devicePath" "$mode" | tr -d '\r' >> "$TOINSTALL_LIST" 2>/dev/null || true
@@ -499,7 +640,9 @@ install_all() {
   failed=0
 
   log "INSTALL LIST:"
-  nl -ba "$TOINSTALL_LIST" 2>/dev/null | head -n 50 >&2 || true
+  if [ -f "$TOINSTALL_LIST" ]; then
+    awk '{print "  " NR ": " $0}' "$TOINSTALL_LIST" 2>/dev/null | head -n 60 >&2 || true
+  fi
 
   while IFS='|' read -r name devicePath mode || [ -n "$name" ]; do
     [ -z "$name" ] && continue
@@ -559,6 +702,7 @@ run_daily_cycle() {
     return 0
   fi
 
+  # Download manifest
   log "Скачиваю manifest -> $TMP_MANIFEST"
   if ! download_url "$REMOTE_MANIFEST_URL" "$TMP_MANIFEST"; then
     log "ERROR: не удалось скачать manifest"
@@ -574,16 +718,34 @@ run_daily_cycle() {
     return 0
   fi
 
+  sanitize_json_inplace "$TMP_MANIFEST" || true
+
   mkdir_p "$(dirname "$LOCAL_MANIFEST")"
   cp -f "$TMP_MANIFEST" "$LOCAL_MANIFEST" >/dev/null 2>&1 || true
   log "Manifest сохранён локально: $LOCAL_MANIFEST"
 
+  # Parse entries (retry once if jq fails due to BOM/truncation)
   if ! prepare_entries_from_manifest "$LOCAL_MANIFEST"; then
-    log "ERROR: manifest parse/prepare failed"
-    cleanup_lock
-    log "=== DAILY CYCLE END (bad manifest) ==="
-    return 0
+    log "WARN: manifest parse failed -> retry download once"
+    if download_url "$REMOTE_MANIFEST_URL" "$TMP_MANIFEST"; then
+      sanitize_json_inplace "$TMP_MANIFEST" || true
+      cp -f "$TMP_MANIFEST" "$LOCAL_MANIFEST" >/dev/null 2>&1 || true
+      if ! prepare_entries_from_manifest "$LOCAL_MANIFEST"; then
+        log "ERROR: manifest parse/prepare failed (after retry)"
+        cleanup_lock
+        log "=== DAILY CYCLE END (bad manifest) ==="
+        return 0
+      fi
+    else
+      log "ERROR: retry download manifest failed"
+      cleanup_lock
+      log "=== DAILY CYCLE END (bad manifest) ==="
+      return 0
+    fi
   fi
+
+  # Load infoPageGitHub/infoPageDevice (if present)
+  load_infopage_from_manifest "$LOCAL_MANIFEST"
 
   download_all_needed
   dl_rc=$?
@@ -610,35 +772,35 @@ run_daily_cycle() {
     return 0
   fi
 
-  # Готовим WebUI + index.html
+  # Prepare WebUI + index.html
   ensure_update_webui_skeleton
   refresh_webui_index_via_download || true
 
-  # Удаляем download после успешной установки
+  # Remove download dir after successful install
   log "Удаляю папку download: $DOWNLOAD_DIR"
   rm -rf "$DOWNLOAD_DIR" >/dev/null 2>&1 || true
 
-  # Уведомление "установка выполнена"
-  send_notification "Произведена установка важных обновлений" "UpdateDone" "Установка завершена"
+  # Notify install done
+  send_notification "Произведена установка важных обновлений" "UpdateDone" "Установка завершена" || true
 
-  # Освобождаем lock — дальше только UX-показ
+  # Release lock (UX flow no longer needs lock)
   cleanup_lock
 
-  # Теперь ждём OFF 5 минут (после установки), затем ON 7 сек -> "Подождите..." -> открыть
+  # UX: wait OFF 5 min, then ON 7 sec, then notify + open WebUI
   log "Теперь жду OFF ${WAIT_OFF_AFTER_INSTALL_SEC}s (после установки), чтобы не мешать..."
   if ! wait_screen_off_stable "$WAIT_OFF_AFTER_INSTALL_SEC" "$WAIT_OFF_MAX_SEC"; then
-    log "Не дождался OFF 5 минут за окно ожидания -> показ страницы отменён."
+    log "Не дождался OFF окна -> показ страницы отменён."
     log "=== DAILY CYCLE END (no OFF window for UX) ==="
     return 0
   fi
 
   if ! wait_screen_on_stable "$ON_STABLE_SEC" "$WAIT_ON_MAX_SEC"; then
-    log "Не дождался ON 7 секунд -> показ страницы отменён."
+    log "Не дождался ON окна -> показ страницы отменён."
     log "=== DAILY CYCLE END (no ON window for UX) ==="
     return 0
   fi
 
-  send_notification "Подождите пожалуйста, сейчас откроется страница с информацией об обновлениях" "UpdateOpen" "Информация об обновлениях"
+  send_notification "Подождите пожалуйста, сейчас откроется страница с информацией об обновлениях" "UpdateOpen" "Информация об обновлениях" || true
   log "Жду ${OPEN_AFTER_SEC}s перед открытием WebUI..."
   sleep "$OPEN_AFTER_SEC"
   open_webui
@@ -648,104 +810,27 @@ run_daily_cycle() {
   return 0
 }
 
-# ---------------- Adaptive sleep helpers ----------------
-minutes_until_run() {
-  # minutes until next RUN_HHMM (0..1439)
-  now_h="$(date +%H 2>/dev/null || echo 0)"
-  now_m="$(date +%M 2>/dev/null || echo 0)"
-
-  run_h="${RUN_HHMM%??}"
-  run_m="${RUN_HHMM#??}"
-
-  now=$((10#$now_h * 60 + 10#$now_m))
-  target=$((10#$run_h * 60 + 10#$run_m))
-
-  if [ "$now" -lt "$target" ]; then
-    echo $((target - now))
-  else
-    echo $((1440 - now + target))
-  fi
-}
-
-now_minutes() {
-  h="$(date +%H 2>/dev/null || echo 0)"
-  m="$(date +%M 2>/dev/null || echo 0)"
-  echo $((10#$h * 60 + 10#$m))
-}
-
-run_minutes() {
-  rh="${RUN_HHMM%??}"
-  rm="${RUN_HHMM#??}"
-  echo $((10#$rh * 60 + 10#$rm))
-}
-
-pick_sleep_sec() {
-  mins="$1"
-
-  # Таблица, как ты просил: 5ч / 3ч / 2ч / 1ч / 30м / 10м, дальше 20s
-  # mins_left > 300  -> 5h
-  # mins_left > 180  -> 3h
-  # mins_left > 120  -> 2h
-  # mins_left > 60   -> 1h
-  # mins_left > 30   -> 30m
-  # mins_left > 10   -> 10m
-  # иначе -> 20s
-
-  if [ "$mins" -gt 300 ] 2>/dev/null; then echo 18000; return; fi
-  if [ "$mins" -gt 180 ] 2>/dev/null; then echo 10800; return; fi
-  if [ "$mins" -gt 120 ] 2>/dev/null; then echo 7200;  return; fi
-  if [ "$mins" -gt 60  ] 2>/dev/null; then echo 3600;  return; fi
-  if [ "$mins" -gt 30  ] 2>/dev/null; then echo 1800;  return; fi
-  if [ "$mins" -gt 10  ] 2>/dev/null; then echo 600;   return; fi
-  echo 20
-}
-
-clamp_sleep_to_not_miss() {
-  # $1 proposed_sleep_sec, $2 mins_left
-  ss="$1"
-  mins="$2"
-
-  # максимум: до триггера минус 5 секунд
-  max_allowed=$((mins * 60 - 5))
-  [ "$max_allowed" -lt 5 ] 2>/dev/null && max_allowed=5
-
-  if [ "$ss" -gt "$max_allowed" ] 2>/dev/null; then
-    echo "$max_allowed"
-  else
-    echo "$ss"
-  fi
-}
-
 # ---------------- Daemon loop ----------------
 log "Daemon start. Run time HHMM=$RUN_HHMM (daily)."
 
 LAST_RUN_DATE=""
-LAST_SLEEP_SEC=""
 
 while true; do
   cur_date="$(date +%F 2>/dev/null || echo "")"
-
-  # Триггер: если уже ПОСЛЕ RUN_HHMM и сегодня ещё не запускали — запускаем.
-  # Это защищает от длинного сна (не пропустим 02:00).
   nm="$(now_minutes)"
-  rm="$(run_minutes)"
+  rm="$(hm_to_minutes "$RUN_HHMM")"
 
-  if [ -n "$cur_date" ] && [ "$LAST_RUN_DATE" != "$cur_date" ] && [ "$nm" -ge "$rm" ] 2>/dev/null; then
-    LAST_RUN_DATE="$cur_date"
-    log "Trigger: $cur_date (now_minutes=$nm run_minutes=$rm)"
-    run_daily_cycle
+  # Trigger once per date, when now >= run_time (also works if started late)
+  if [ -n "$cur_date" ] && [ "$nm" -ge "$rm" ] 2>/dev/null; then
+    if [ "$LAST_RUN_DATE" != "$cur_date" ]; then
+      LAST_RUN_DATE="$cur_date"
+      log "Trigger: $cur_date (now_minutes=$nm run_minutes=$rm)"
+      run_daily_cycle
+    fi
   fi
 
-  mins_left="$(minutes_until_run)"
-  sleep_sec="$(pick_sleep_sec "$mins_left")"
-  sleep_sec="$(clamp_sleep_to_not_miss "$sleep_sec" "$mins_left")"
-  [ -z "$sleep_sec" ] && sleep_sec=600
-
-  # Логируем только при смене интервала сна, чтобы не спамить лог.
-  if [ "$LAST_SLEEP_SEC" != "$sleep_sec" ]; then
-    LAST_SLEEP_SEC="$sleep_sec"
-    log "Sleep plan: mins_until_run=${mins_left} -> sleep=${sleep_sec}s"
-  fi
-
-  sleep "$sleep_sec"
+  mins="$(mins_until_next_run)"
+  sleepsec="$(choose_daemon_sleep_sec "$mins")"
+  log "Sleep plan: mins_until_run=$mins -> sleep=${sleepsec}s"
+  sleep "$sleepsec"
 done

@@ -288,6 +288,85 @@ from collections import deque as _deque
 _SSE_INTERVAL = 1  # будет перезаписан из cfg в main
 _TTL_SAMPLE_WINDOW = 150        # сколько TTL сэмплов хранить на backend
 
+# Switch display to MB/s when speed exceeds ~2 Mbit/s (in bytes/sec)
+_SPEED_MB_SWITCH_BPS = int(2 * 1024 * 1024 / 8)
+
+# Download speed limiting (remote -> client), configured in Mbit/s (0 = unlimited)
+_download_limit_lock = threading.Lock()
+_download_limit_mbit = 0.0
+_download_limit_bps = 0.0
+_download_limit_tokens = 0.0
+_download_limit_last = time.monotonic()
+_download_limit_capacity = 0.0
+
+def get_download_limit_mbit() -> float:
+    with _download_limit_lock:
+        return float(_download_limit_mbit)
+
+def set_download_limit_mbit(mbit) -> float:
+    """Set global download limit in Mbit/s (0 or <=0 disables). Returns normalized value."""
+    global _download_limit_mbit, _download_limit_bps, _download_limit_tokens, _download_limit_last, _download_limit_capacity
+    try:
+        m = float(mbit)
+    except Exception:
+        m = 0.0
+    if m < 0:
+        m = 0.0
+    # Convert Mbit/s -> bytes/s using 1024-based megabit
+    bps = (m * 1024.0 * 1024.0) / 8.0 if m > 0 else 0.0
+    with _download_limit_lock:
+        _download_limit_mbit = m
+        _download_limit_bps = bps
+        _download_limit_capacity = max(bps, 1024.0 * 1024.0) if bps > 0 else 0.0
+        _download_limit_tokens = min(_download_limit_tokens, _download_limit_capacity) if _download_limit_capacity > 0 else 0.0
+        _download_limit_last = time.monotonic()
+    return m
+
+def _throttle_download(nbytes: int):
+    """Global token-bucket throttle for download direction (remote->client)."""
+    global _download_limit_tokens, _download_limit_last
+    if nbytes <= 0:
+        return
+    while not shutdown_event.is_set():
+        with _download_limit_lock:
+            bps = _download_limit_bps
+            if not bps or bps <= 0:
+                return
+            now = time.monotonic()
+            elapsed = now - _download_limit_last
+            if elapsed > 0:
+                # refill
+                _download_limit_tokens = min(_download_limit_capacity, _download_limit_tokens + elapsed * bps)
+                _download_limit_last = now
+            if _download_limit_tokens >= nbytes:
+                _download_limit_tokens -= nbytes
+                return
+            missing = nbytes - _download_limit_tokens
+            wait_s = missing / bps if bps > 0 else 0.0
+        # sleep outside lock; cap to react quickly to config changes
+        if wait_s > 0:
+            time.sleep(min(wait_s, 0.5))
+        else:
+            return
+
+def _sendall_with_download_limit(sock: socket.socket, data: bytes, chunk_size: int = 16 * 1024):
+    """sendall with throttling; splits data so low limits don't stall forever."""
+    if not data:
+        return
+    with _download_limit_lock:
+        bps = _download_limit_bps
+    if not bps or bps <= 0:
+        return sock.sendall(data)
+    mv = memoryview(data)
+    off = 0
+    ln = len(data)
+    while off < ln and not shutdown_event.is_set():
+        part = mv[off:off + chunk_size]
+        _throttle_download(len(part))
+        sock.sendall(part)
+        off += len(part)
+
+
 def _read_proc_mem():
     """Fallback: read VmRSS (kB) from /proc/self/status"""
     try:
@@ -2276,7 +2355,10 @@ def forward_loop(a: socket.socket, b: socket.socket, client_addr, cfg, stats, co
             direction = 'client->remote' if s is a else 'remote->client'
             logger.debug("[%s] chunk %d bytes %s", client_addr, len(data), direction)
             try:
-                dst.sendall(data)
+                if s is a:
+                    dst.sendall(data)
+                else:
+                    _sendall_with_download_limit(dst, data)
             except BrokenPipeError:
                 logger.debug("[%s] BrokenPipe writing", client_addr)
                 return
@@ -2928,6 +3010,7 @@ def udp_server_loop(listen_addr: str, listen_port: int, socks_host: str, socks_p
                 if res:
                     src_host, src_port, payload = res
                     try:
+                        _throttle_download(len(payload))
                         sock.sendto(payload, client_k)
                         logger.debug("UDP reply to %s from %s:%d (%d bytes) via %s", client_k, src_host, src_port, len(payload), "direct" if s.use_direct else "SOCKS5")
                     except Exception as e:
@@ -3090,7 +3173,7 @@ class EnhancedStatsHandler(BaseHTTPRequestHandler):
                 if speed is None or speed <= 0:
                     speed_str = "0 KB/s"
                 else:
-                    if speed > 2 * 1024 * 1024:
+                    if speed > _SPEED_MB_SWITCH_BPS:
                         speed_str = f"{speed / (1024*1024):.2f} MB/s"
                     else:
                         speed_str = f"{speed / 1024:.1f} KB/s"
@@ -3205,24 +3288,42 @@ class EnhancedStatsHandler(BaseHTTPRequestHandler):
                 def make_snapshot():
                     with _stats_lock:
                         s = dict(_stats)
-                    total_speed_bps = 0.0
-                    backend_speed_sum_bps = 0.0
+
+                    now_ts = time.time()
+                    uptime_seconds = max(0.0, now_ts - START_TIME)
+
+                    # Snapshot backends without changing lock order (avoid deadlocks)
+                    with _backend_lock:
+                        backend_list = list(_socks5_backends)
+                        ext_map = dict(_backend_extended_status)
                     with _backend_stats_lock:
-                        bs = {}
-                        for b, st in _backend_stats.items():
-                            speed = st.get('ema_speed') or st.get('speed_bps') or 0.0
-                            backend_speed_sum_bps += speed
-                            bs[f"{b[0]}:{b[1]}"] = {
-                                'speed_bps': speed,
-                                'rtt_ms': st.get('last_response_ms'),
-                                'ttl_integrity': int(st.get('ttl_integrity', 0)) if st.get('ttl_integrity') is not None else None,
-                                'total_bytes': st.get('total_bytes', 0),
-                            }
+                        stats_map = dict(_backend_stats)
+
+                    bs = {}
+                    backend_speed_sum_bps = 0.0
+                    for b in backend_list:
+                        st = stats_map.get(b) or {}
+                        ext = ext_map.get(b) or {}
+                        speed = st.get('ema_speed') or st.get('speed_bps') or 0.0
+                        backend_speed_sum_bps += float(speed or 0.0)
+                        bs[f"{b[0]}:{b[1]}"] = {
+                            'speed_bps': float(speed or 0.0),
+                            'rtt_ms': st.get('last_response_ms'),
+                            'ttl_integrity': int(st.get('ttl_integrity', 0)) if st.get('ttl_integrity') is not None else None,
+                            'total_bytes': int(st.get('total_bytes', 0) or 0),
+                            'healthy': bool(ext.get('healthy', False)),
+                            'has_internet': bool(ext.get('has_internet', False)),
+                            'server_ping': ext.get('server_ping'),
+                            'internet_ping': ext.get('internet_ping'),
+                            'last_check': ext.get('last_check'),
+                        }
+
                     with _system_stats_lock:
                         sys = dict(_system_stats)
-                    # compute overall throughput from total bytes delta (more accurate than per-backend EMA)
+
+                    # compute overall throughput from total bytes delta
+                    total_speed_bps = 0.0
                     try:
-                        now_ts = time.time()
                         with _throughput_lock:
                             last_ts = float(_throughput_state.get('last_ts', now_ts) or now_ts)
                             last_total = int(_throughput_state.get('last_total_bytes', 0) or 0)
@@ -3236,9 +3337,21 @@ class EnhancedStatsHandler(BaseHTTPRequestHandler):
                             _throughput_state['last_total_bytes'] = current_total
                     except Exception:
                         total_speed_bps = float(backend_speed_sum_bps)
-                    return {'ts': time.time(), 'stats': s, 'backends': bs, 'system': sys, 'total_speed_bps': total_speed_bps}
 
-                # stream loop
+                    total_traffic_bytes = int(s.get('total_bytes_client_to_remote', 0) or 0) + int(s.get('total_bytes_remote_to_client', 0) or 0)
+
+                    return {
+                        'ts': now_ts,
+                        'stats': s,
+                        'backends': bs,
+                        'system': sys,
+                        'total_speed_bps': float(total_speed_bps or 0.0),
+                        'uptime_seconds': float(uptime_seconds),
+                        'total_traffic_bytes': total_traffic_bytes,
+                        'download_limit_mbit': get_download_limit_mbit(),
+                    }
+
+# stream loop
                 while not shutdown_event.is_set():
                     snap = make_snapshot()
                     payload = json.dumps(snap, default=str).replace('\n', '\\n')
@@ -3357,7 +3470,20 @@ class EnhancedStatsHandler(BaseHTTPRequestHandler):
                 return self._write_json({'result': 'ok'})
             except Exception as e:
                 return self._write_json({'error': str(e)}, code=500)
-        
+
+        elif self.path == '/api/config/set':
+            length = int(self.headers.get('Content-Length', 0))
+            body = self.rfile.read(length) if length else b''
+            try:
+                data = json.loads(body.decode('utf-8')) if body else {}
+                if not isinstance(data, dict):
+                    return self._write_json({'error': 'invalid json'}, 400)
+                if 'download_limit_mbit' in data:
+                    set_download_limit_mbit(data.get('download_limit_mbit', 0.0))
+                return self._write_json({'result': 'ok', 'download_limit_mbit': get_download_limit_mbit()})
+            except Exception as e:
+                return self._write_json({'error': str(e)}, code=500)
+
         else:
             self.send_response(404)
             self.end_headers()
@@ -3380,13 +3506,15 @@ class EnhancedStatsHandler(BaseHTTPRequestHandler):
                         stats_snapshot.get('total_bytes_remote_to_client', 0))
         total_traffic_str = self._format_bytes(total_traffic)
         
+        dl_limit_mbit = get_download_limit_mbit()
+        dl_limit_str = "∞" if dl_limit_mbit <= 0 else f"{dl_limit_mbit:.2f} Mbit/s"
+        
         html = []
         html.append("<!DOCTYPE html>")
         html.append("<html lang='en'><head><meta charset='utf-8'>")
         html.append("<title>Transparent SOCKS5 Proxy - Enhanced Dashboard</title>")
         html.append("<meta name='viewport' content='width=device-width, initial-scale=1'>")
-        html.append('<meta http-equiv="refresh" content="30">')  # Увеличен интервал обновления
-        
+                
         # CSS Styles with dark/light theme support and improved layout
         html.append("""
         <style>
@@ -3740,22 +3868,138 @@ class EnhancedStatsHandler(BaseHTTPRequestHandler):
         }
         
         document.addEventListener('DOMContentLoaded', initTheme);
-        </script>
+        
+
+function setDownloadLimit() {
+    const el = document.getElementById('dl_limit_input');
+    if (!el) return;
+    let v = parseFloat(el.value);
+    if (isNaN(v) || v < 0) v = 0;
+    fetch('/api/config/set', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({download_limit_mbit: v})
+    }).then(r => r.json()).then(j => {
+        if (j && j.result === 'ok') {
+            showMessage('Download limit updated', 'success');
+        } else {
+            showMessage('Error: ' + ((j && j.error) || 'unknown'), 'error');
+        }
+    }).catch(e => showMessage('Request failed: ' + e, 'error'));
+}
+</script>
         """)
         
         # D — Добавляем ссылку на `/events` в HTML
         html.append("""
         <script>
         (function(){
+          function fmtRate(bps){
+            const sw = 262144; // bytes/sec ~ 2 Mbit/s
+            if (!bps || bps <= 0) return '0 KB/s';
+            if (bps >= sw) return (bps/(1024*1024)).toFixed(2) + ' MB/s';
+            return (bps/1024).toFixed(1) + ' KB/s';
+          }
+          function fmtBytes(n){
+            n = Number(n||0);
+            if (n < 1024) return n.toFixed(0) + ' B';
+            const k = 1024;
+            const sizes = ['KB','MB','GB','TB'];
+            let i = -1;
+            do { n = n / k; i++; } while (n >= k && i < sizes.length-1);
+            return n.toFixed(i===0?1:2) + ' ' + sizes[i];
+          }
+          function fmtUptime(sec){
+            sec = Math.max(0, Math.floor(Number(sec||0)));
+            const d = Math.floor(sec/86400); sec %= 86400;
+            const h = Math.floor(sec/3600); sec %= 3600;
+            const m = Math.floor(sec/60); const s = sec % 60;
+            const parts = [];
+            if (d) parts.push(d + 'd');
+            if (h || d) parts.push(h + 'h');
+            parts.push(String(m).padStart(2,'0') + 'm');
+            parts.push(String(s).padStart(2,'0') + 's');
+            return parts.join(' ');
+          }
+          function setText(id, txt){
+            const el = document.getElementById(id);
+            if (!el) return;
+            const s = String(txt);
+            if (el.textContent !== s) el.textContent = s;
+          }
+          function setHTML(id, html){
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (el.innerHTML !== html) el.innerHTML = html;
+          }
+          function backendKey(hostPort){
+            return String(hostPort||'').replace(/[^a-zA-Z0-9_]/g,'_').replace(/:/g,'_');
+          }
+
           if (!!window.EventSource) {
             const es = new EventSource('/events');
             es.onmessage = function(e) {
               try {
-                const d = JSON.parse(e.data);
+                const d = JSON.parse(e.data || '{}');
                 const totalSpeedBps = d.total_speed_bps || 0;
-                const el = document.getElementById('total_speed');
-                if (el) {
-                  el.textContent = totalSpeedBps > 0 ? ((totalSpeedBps/1024).toFixed(1) + ' KB/s') : '0 KB/s';
+                setText('total_speed', fmtRate(totalSpeedBps));
+
+                const s = d.stats || {};
+                setText('stat_active_connections', s.active_connections ?? '');
+                setText('stat_total_connections', s.total_connections ?? '');
+                setText('stat_active_udp_sessions', s.active_udp_sessions ?? '');
+                setText('stat_cache_hits', s.enhanced_cache_hits ?? '');
+
+                if (d.uptime_seconds != null) setText('stat_uptime', fmtUptime(d.uptime_seconds));
+                if (d.total_traffic_bytes != null) setText('stat_total_traffic', fmtBytes(d.total_traffic_bytes));
+
+                const dl = Number(d.download_limit_mbit || 0);
+                const dlStr = (dl && dl > 0) ? dl.toFixed(2) + ' Mbit/s' : '∞';
+                setText('stat_download_limit', dlStr);
+                setText('dl_limit_current', dlStr);
+
+                const sys = d.system || {};
+                if (sys.cpu_percent != null) setText('stat_cpu_percent', Number(sys.cpu_percent).toFixed(1) + '%');
+                const memp = (sys.memory_usage_percent != null) ? Number(sys.memory_usage_percent) : (sys.memory_usage != null ? Number(sys.memory_usage) : 0);
+                if (!isNaN(memp)) setText('stat_mem_percent', memp.toFixed(1) + '%');
+                if (sys.network_io) {
+                  if (sys.network_io.bytes_sent != null) setText('stat_net_sent', fmtBytes(sys.network_io.bytes_sent));
+                  if (sys.network_io.bytes_recv != null) setText('stat_net_recv', fmtBytes(sys.network_io.bytes_recv));
+                }
+
+                const bs = d.backends || {};
+                let topKey = null, topBytes = -1;
+                for (const k in bs) {
+                  const tb = Number(bs[k]?.total_bytes || 0);
+                  if (tb > topBytes) { topBytes = tb; topKey = k; }
+                }
+                for (const k in bs) {
+                  const key = backendKey(k);
+                  const b = bs[k] || {};
+                  const healthy = !!b.healthy;
+                  const hasInternet = !!b.has_internet;
+                  let color = healthy ? (hasInternet ? 'green' : 'yellow') : 'red';
+                  let statusText = healthy ? 'HEALTHY' : 'UNHEALTHY';
+                  if (k === topKey && topBytes > 0) statusText += ' 🎯 IN USE';
+                  setHTML('backend_status_' + key, "<span class='status-circle status-" + color + "'></span>" + statusText);
+
+                  const sp = (b.server_ping != null && b.server_ping !== false) ? (Number(b.server_ping).toFixed(0) + " ms") : "N/A";
+                  const ip = (b.internet_ping != null && b.internet_ping !== false) ? (Number(b.internet_ping).toFixed(0) + " ms") : "N/A";
+                  setText('backend_server_ping_' + key, sp);
+                  setText('backend_internet_ping_' + key, ip);
+
+                  const ttl = (b.ttl_integrity != null) ? (Number(b.ttl_integrity).toFixed(0) + '%') : 'N/A';
+                  setText('backend_ttl_' + key, ttl);
+
+                  let rttPct = 'N/A';
+                  if (b.server_ping != null && b.server_ping !== false) {
+                    const rtt = Math.max(0, Math.min(1000, Number(b.server_ping)));
+                    const pct = Math.max(0, Math.min(100, 100 - (rtt/10)));
+                    rttPct = pct.toFixed(0) + '%';
+                  }
+                  setText('backend_rtt_' + key, rttPct);
+
+                  setText('backend_traffic_' + key, fmtBytes(b.total_bytes || 0));
                 }
               } catch (err) { console.debug(err); }
             };
@@ -3771,7 +4015,7 @@ class EnhancedStatsHandler(BaseHTTPRequestHandler):
         html.append("<div class='proxy-card'>")
         html.append("<div class='left'>")
         html.append("<div class='proxy-title'>🚀 Transparent SOCKS5 Proxy</div>")
-        html.append(f"<div class='proxy-sub'>Server Uptime: {uptime_str} | Total Traffic: {total_traffic_str}</div>")
+        html.append(f"<div class='proxy-sub'>Server Uptime: <span id='stat_uptime'>{uptime_str}</span> | Total Traffic: <span id='stat_total_traffic'>{total_traffic_str}</span> | Download Limit: <span id='stat_download_limit'>{dl_limit_str}</span></div>")
         html.append("</div>")
         html.append("<div class='proxy-actions'>")
         html.append("<button class='btn' onclick='toggleTheme()' aria-label='Toggle theme'>🌓 Toggle Theme</button>")
@@ -3783,34 +4027,45 @@ class EnhancedStatsHandler(BaseHTTPRequestHandler):
         html.append("</div>")
         html.append("</div>")
         html.append("</div>")
-        
+
+
+        # Download limit control (runtime)
+        html.append("<div style='margin-left:1rem;'>")
+        html.append("<div style='font-size:0.95rem;color:var(--text-secondary)'>Download limit (Mbit/s)</div>")
+        html.append("<div style='display:flex;gap:0.4rem;align-items:center;margin-top:0.2rem;'>")
+        html.append(f"<input type='number' id='dl_limit_input' class='form-input' value='{dl_limit_mbit if dl_limit_mbit>0 else 0}' min='0' step='0.1' style='width:120px;padding:0.35rem 0.5rem;' placeholder='0 = unlimited'>")
+        html.append("<button class='btn secondary' onclick='setDownloadLimit()'>Apply</button>")
+        html.append("</div>")
+        html.append(f"<div style='font-size:0.85rem;color:var(--text-secondary);margin-top:0.2rem;'>Current: <span id='dl_limit_current'>{dl_limit_str}</span></div>")
+        html.append("</div>")
+
         # Quick stats grid (kept compact)
         html.append("<div class='stats-grid'>")
         html.append(f"""
             <div class='stat-card'>
                 <h3>Active Connections</h3>
-                <div class='stat-value'>{stats_snapshot.get('active_connections', 0)}</div>
+                <div class='stat-value' id='stat_active_connections'>{stats_snapshot.get('active_connections', 0)}</div>
                 <div class='stat-desc'>Current TCP sessions</div>
             </div>
         """)
         html.append(f"""
             <div class='stat-card'>
                 <h3>Total Connections</h3>
-                <div class='stat-value'>{stats_snapshot.get('total_connections', 0)}</div>
+                <div class='stat-value' id='stat_total_connections'>{stats_snapshot.get('total_connections', 0)}</div>
                 <div class='stat-desc'>Lifetime connections</div>
             </div>
         """)
         html.append(f"""
             <div class='stat-card'>
                 <h3>UDP Sessions</h3>
-                <div class='stat-value'>{stats_snapshot.get('active_udp_sessions', 0)}</div>
+                <div class='stat-value' id='stat_active_udp_sessions'>{stats_snapshot.get('active_udp_sessions', 0)}</div>
                 <div class='stat-desc'>Active UDP sessions</div>
             </div>
         """)
         html.append(f"""
             <div class='stat-card'>
                 <h3>Cache Hits</h3>
-                <div class='stat-value'>{stats_snapshot.get('enhanced_cache_hits', 0)}</div>
+                <div class='stat-value' id='stat_cache_hits'>{stats_snapshot.get('enhanced_cache_hits', 0)}</div>
                 <div class='stat-desc'>Enhanced cache performance</div>
             </div>
         """)
@@ -3824,7 +4079,7 @@ class EnhancedStatsHandler(BaseHTTPRequestHandler):
             html.append(f"""
                 <div class='stat-card'>
                     <h3>CPU Usage</h3>
-                    <div class='stat-value'>{system_snapshot.get('cpu_percent', 0):.1f}%</div>
+                    <div class='stat-value' id='stat_cpu_percent'>{system_snapshot.get('cpu_percent', 0):.1f}%</div>
                     <div class='stat-desc'>Current CPU utilization</div>
                 </div>
             """)
@@ -3833,21 +4088,21 @@ class EnhancedStatsHandler(BaseHTTPRequestHandler):
             html.append(f"""
                 <div class='stat-card'>
                     <h3>Memory Usage</h3>
-                    <div class='stat-value'>{memory_percent:.1f}%</div>
+                    <div class='stat-value' id='stat_mem_percent'>{memory_percent:.1f}%</div>
                     <div class='stat-desc'>{self._format_bytes(memory_rss)} RSS</div>
                 </div>
             """)
             html.append(f"""
                 <div class='stat-card'>
                     <h3>Network Sent</h3>
-                    <div class='stat-value'>{self._format_bytes(system_snapshot.get('network_io', {}).get('bytes_sent', 0))}</div>
+                    <div class='stat-value' id='stat_net_sent'>{self._format_bytes(system_snapshot.get('network_io', {}).get('bytes_sent', 0))}</div>
                     <div class='stat-desc'>Total bytes sent</div>
                 </div>
             """)
             html.append(f"""
                 <div class='stat-card'>
                     <h3>Network Received</h3>
-                    <div class='stat-value'>{self._format_bytes(system_snapshot.get('network_io', {}).get('bytes_recv', 0))}</div>
+                    <div class='stat-value' id='stat_net_recv'>{self._format_bytes(system_snapshot.get('network_io', {}).get('bytes_recv', 0))}</div>
                     <div class='stat-desc'>Total bytes received</div>
                 </div>
             """)
@@ -3896,16 +4151,17 @@ class EnhancedStatsHandler(BaseHTTPRequestHandler):
                 else:
                     last_check = 'N/A'
                 use_marker = " 🎯 IN USE" if backend.get('in_use') else ""
+                backend_key = re.sub(r'[^a-zA-Z0-9_]', '_', f"{backend['host']}_{backend['port']}")
                 
                 html.append("<tr>")
                 html.append(f"<td><strong>{backend['host']}</strong></td>")
                 html.append(f"<td>{backend['port']}</td>")
-                html.append(f"<td><span class='{status_circle_class}'></span>{status_text}{use_marker}</td>")
-                html.append(f"<td>{backend['server_ping']}</td>")
-                html.append(f"<td>{backend['internet_ping']}</td>")
-                html.append(f"<td>{backend['ttl_integrity_percent']}</td>")
-                html.append(f"<td>{backend['rtt_health_percent']}</td>")
-                html.append(f"<td>{backend['traffic']}</td>")
+                html.append(f"<td id='backend_status_{backend_key}'><span class='{status_circle_class}'></span>{status_text}{use_marker}</td>")
+                html.append(f"<td id='backend_server_ping_{backend_key}'>{backend['server_ping']}</td>")
+                html.append(f"<td id='backend_internet_ping_{backend_key}'>{backend['internet_ping']}</td>")
+                html.append(f"<td id='backend_ttl_{backend_key}'>{backend['ttl_integrity_percent']}</td>")
+                html.append(f"<td id='backend_rtt_{backend_key}'>{backend['rtt_health_percent']}</td>")
+                html.append(f"<td id='backend_traffic_{backend_key}'>{backend['traffic']}</td>")
                 html.append(f"<td class='backend-actions'><button class='btn danger small' onclick='removeBackend(\"{backend['host']}\", {backend['port']})'>Remove</button></td>")
                 html.append("</tr>")
             html.append("</table></div>")
@@ -4230,7 +4486,6 @@ class SimpleStatsHandler(BaseHTTPRequestHandler):
             conns_snapshot = dict(_conns)
         html = []
         html.append("<html><head><meta charset='utf-8'><title>t2s stats</title>")
-        html.append('<meta http-equiv="refresh" content="30">')  # Увеличен интервал обновления
         html.append("<style>")
         html.append("body { font-family: Arial, sans-serif; margin: 20px; }")
         html.append("table { border-collapse: collapse; width: 100%; }")
@@ -4686,6 +4941,7 @@ class ConfigManager:
             'dns_ttl': 600,
             'cache_ttl': 600,
             'sse_interval': 1,
+            'download_limit_mbit': 0.0,
             'enable_ttl_monitor': False,
         }
 
@@ -4758,6 +5014,7 @@ class ConfigManager:
             'dns_ttl': int(self.get('dns_ttl')),
             'cache_ttl': int(self.get('cache_ttl')),
             'sse_interval': int(self.get('sse_interval')),
+            'download_limit_mbit': float(self.get('download_limit_mbit')),
             'enable_ttl_monitor': bool(self.get('enable_ttl_monitor')),
         }
         return d
@@ -4806,6 +5063,7 @@ def parse_args():
     p.add_argument("--dns-ttl", type=int, default=600, help="DNS cache TTL seconds (overrides default)")
     p.add_argument("--cache-ttl", type=int, default=600, help="HTTP cache TTL seconds (overrides default)")
     p.add_argument("--sse-interval", type=int, default=1, help="SSE events interval in seconds for /events")
+    p.add_argument("--download-limit-mbit", type=float, default=None, help="Global download limit in Mbit/s (0 = unlimited)")
     p.add_argument("--enable-ttl-monitor", action='store_true', help="Try to monitor TTL from UDP packets (platform dependent)")
     return p.parse_args()
 
@@ -4921,6 +5179,12 @@ if __name__ == "__main__":
         _SSE_INTERVAL = 1
     # Add +5 seconds to SSE interval as requested
     _SSE_INTERVAL = max(1, _SSE_INTERVAL)
+
+    # Set global download limit (Mbit/s)
+    try:
+        set_download_limit_mbit(cfg.get('download_limit_mbit', 0.0))
+    except Exception:
+        set_download_limit_mbit(0.0)
     
     # TTL sample window configurable?
     # _TTL_SAMPLE_WINDOW = cfg.get('ttl_sample_window', _TTL_SAMPLE_WINDOW)

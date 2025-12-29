@@ -27,7 +27,7 @@
       "name": "zdt-d_system_update.sh",
       "deviceDir": "/data/adb/modules/ZDT-D/system/bin/script/",
       "rawUrl": "https://raw.githubusercontent.com/GAME-OVER-op/ZDT-D/main/system/bin/zdt-d_system_update.sh",
-      "sha256": "e5ed053d0287b8c64234eff4619d2e9c6a9b47bbedc887efe0bb38b97b36c0c6",
+      "sha256": "d233b6b2d64d313409c7180c955e0d4546c15c122ef183ca3e9b88a2a256940d",
       "mode": "0755"
     }
   ]

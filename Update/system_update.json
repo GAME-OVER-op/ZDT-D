@@ -20,7 +20,7 @@
       "name": "service.sh",
       "deviceDir": "/data/adb/modules/ZDT-D/",
       "rawUrl": "https://raw.githubusercontent.com/GAME-OVER-op/ZDT-D/main/service.sh",
-      "sha256": "9265c4cb09bbe508e2b62999cc0b48334c4fdf79f8193d0a46794f206e0a7f4d",
+      "sha256": "4499d532971202cbbe4d2547f4708d61bd245ea528692843c93de282d8486783",
       "mode": "0755"
     },
     {

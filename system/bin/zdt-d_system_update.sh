@@ -95,6 +95,15 @@ hm_to_minutes() {
   echo $((10#$hh * 60 + 10#$mm))
 }
 
+# ---------------- Startup cleanup ----------------
+startup_cleanup_update_module() {
+  if [ -d "$UPDATE_MOD" ]; then
+    log "STARTUP: найден каталог обновляющего модуля: $UPDATE_MOD -> удаляю"
+    rm -rf "$UPDATE_MOD" >/dev/null 2>&1 || true
+    log "STARTUP: удаление завершено: $UPDATE_MOD"
+  fi
+}
+
 now_minutes() {
   h="$(date +%H 2>/dev/null || echo 0)"
   m="$(date +%M 2>/dev/null || echo 0)"
@@ -812,6 +821,7 @@ run_daily_cycle() {
 
 # ---------------- Daemon loop ----------------
 log "Daemon start. Run time HHMM=$RUN_HHMM (daily)."
+startup_cleanup_update_module
 
 LAST_RUN_DATE=""
 

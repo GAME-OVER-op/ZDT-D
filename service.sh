@@ -53,7 +53,7 @@ else
     echo "$(date): Скрипт $SCRIPT_PATH не найден." >> "$LOG_SUPERVISOR"
 fi
 
-# Подиена региона
+# Подмена региона
 resetprop -n gsm.sim.operator.iso-country eu.eu
 
 echo "$(date): Все службы запущены (детачены). Завершение service.sh" >> "$LOG_SUPERVISOR"

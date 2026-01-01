@@ -54,7 +54,7 @@ else
 fi
 
 # Подмена региона
-resetprop -n gsm.sim.operator.iso-country eu.eu
+resetprop -n gsm.sim.operator.iso-country eu
 
 echo "$(date): Все службы запущены (детачены). Завершение service.sh" >> "$LOG_SUPERVISOR"
 

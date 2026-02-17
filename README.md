@@ -1,23 +1,19 @@
-# ZDT&D Magisk Module
+# ZDT-D Root Module (Magisk / KernelSU / APatch)
 
 <div align="center">
-  <img src="https://github.com/GAME-OVER-op/ZDT-D/blob/main/images/module_icon.png" alt="ZDT&D Logo" width="300" />
+  <img src="https://github.com/GAME-OVER-op/ZDT-D/blob/main/images/module_icon.png" alt="ZDT-D Logo" width="300" />
 </div>
 
 <p align="center">
-  <!-- License badge -->
   <a href="https://github.com/GAME-OVER-op/ZDT-D/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/GAME-OVER-op/ZDT-D?style=flat-square" alt="License" />
   </a>
-  <!-- Latest release badge -->
   <a href="https://github.com/GAME-OVER-op/ZDT-D/releases/latest">
     <img src="https://img.shields.io/github/v/release/GAME-OVER-op/ZDT-D?style=flat-square" alt="Latest Release" />
   </a>
-  <!-- Total downloads badge -->
   <a href="https://github.com/GAME-OVER-op/ZDT-D/releases">
     <img src="https://img.shields.io/github/downloads/GAME-OVER-op/ZDT-D/total?style=flat-square" alt="Downloads" />
   </a>
-  <!-- Telegram badge -->
   <a href="https://t.me/module_ggover">
     <img src="https://img.shields.io/badge/Telegram–Join%20Group-blue?style=flat-square&logo=telegram" alt="Telegram Group" />
   </a>
@@ -25,73 +21,63 @@
 
 ## Description
 
-ZDT&D is a Magisk module designed to bypass DPI (Deep Packet Inspection) on the internet. It helps bypass service blocks and throttling for platforms like Discord, YouTube, and others. This module is tailored for users in Russia and comes with preconfigured settings to overcome restrictions.
+**ZDT-D** is a root module (Magisk / KernelSU / APatch and forks) designed to help handle networks with DPI or aggressive filtering.
+It ships a local daemon and an **Android app** for managing profiles, app lists, and services.
 
-### Key Features
+> Note: Some texts / defaults are currently oriented for Russian-speaking users (temporary).
 
-- **Bypass blocks** and **service throttling**  
-- User-friendly graphical interface for configuration (not supported on all devices)  
-- Automatic download of up-to-date block lists and binaries from trusted repositories  
+## Key Features
 
-### Highlights
+- Manage multiple DPI-circumvention tools from a single Android app (profiles, per-app routing lists)
+- Quick toggling (including Quick Settings tile)
+- Module update flow with **settings migration**
+- **Backup / restore / import** of configuration
+- Optional **service state notifications** (toggle in app settings)
+- Manual program updates from official upstream repositories (on demand)
 
-- **Privacy and Security**: The module does not collect any personal data and does not harm your device's functionality.  
-- **Free and Open**: Completely free and will remain so.  
-- **Community Support**: Suggestions and feedback welcome in the “Complaint” section.  
+## Included Tools
 
-> **Note:** Your antivirus may flag the module as suspicious due to its function. Rest assured, it is safe and intended solely for bypassing restrictions.
+| Program | Description | Repository |
+|---|---|---|
+| zapret (nfqws) | DPI circumvention tool | https://github.com/bol-van/zapret |
+| zapret2 (nfqws2 + lua) | zapret2 engine + lua scripts | https://github.com/bol-van/zapret2 |
+| byedpi | DPI circumvention utility | https://github.com/hufrea/byedpi |
+| DPITunnel-cli | Desync-based DPI tool | https://github.com/nomoresat/DPITunnel-cli |
+| dnscrypt-proxy | Encrypted DNS proxy | https://github.com/DNSCrypt/dnscrypt-proxy |
+| opera-proxy | Standalone Opera VPN client/proxy | https://github.com/Snawoot/opera-proxy |
 
----
+## Requirements
 
-## Used Tools
-
-| Program                                      | Description                                                                                                 | Repository                                                                  | Downloads                                                                                           |
-|----------------------------------------------|-------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
-| **DPI Tunnel**                               | Serverless proxy for Linux/Android using desync attacks to fool DPI filters.                                | [nomoresat/DPITunnel-cli](https://github.com/nomoresat/DPITunnel-cli)       | ![Downloads](https://img.shields.io/github/downloads/nomoresat/DPITunnel-android/total?style=flat-square) |
-| **zapret**                                   | Multi-platform DPI bypass tool with preconfigured block lists and filtering rules.                         | [bol-van/zapret](https://github.com/bol-van/zapret)                          | ![Downloads](https://img.shields.io/github/downloads/bol-van/zapret/total?style=flat-square)          |
-| **ByeDPI (Android)**                         | Android app running a local VPN service and SOCKS5 proxy to redirect traffic through ByeDPI.                | [dovecoteescapee/ByeDPIAndroid](https://github.com/dovecoteescapee/ByeDPIAndroid) | ![Downloads](https://img.shields.io/github/downloads/dovecoteescapee/ByeDPIAndroid/total?style=flat-square) |
-| **dnscrypt-proxy**                           | DNS encryption proxy for DNS-over-HTTPS/DNS-over-TLS with DNSSEC validation.                               | [DNSCrypt/dnscrypt-proxy](https://github.com/DNSCrypt/dnscrypt-proxy)        | ![Downloads](https://img.shields.io/github/downloads/DNSCrypt/dnscrypt-proxy/total?style=flat-square)    |
-| **opera-proxy**                             | Standalone Opera VPN client — запускает локальный HTTP-прокси (по умолчанию 127.0.0.1:18080) и пересылает трафик через Opera-VPN прокси; кросс-платформенный, zero-config. | [Snawoot/opera-proxy](https://github.com/Snawoot/opera-proxy) | ![Downloads](https://img.shields.io/github/downloads/Snawoot/opera-proxy/total?style=flat-square) |
-| **py2droid (Magisk)**                       | Magisk-модуль для установки Python 3 на Android — system-level, лёгкая минимальная сборка Python для использования в системных скриптах/модулях (не замена Termux). | [Mrakorez/py2droid](https://github.com/Mrakorez/py2droid)    | ![Downloads](https://img.shields.io/github/downloads/Mrakorez/py2droid/total?style=flat-square)      |
-
-
----
+- **Root**: Magisk / KernelSU / APatch (or forks)
+- **Architecture**: **arm64-v8a only**
+- **Android**: **11+ supported**
+  - Earlier Android versions may be forced to install, but **functionality is not guaranteed**
+- Device/ROM limitations may vary depending on the root manager and its environment.
 
 ## Installation
 
-During installation, the module automatically downloads:
+1. Install the Android app.
+2. Install/Update the module from the app (the app will guide you).
+3. Reboot when prompted (required after module updates).
 
-- Up-to-date block lists  
-- Binaries from verified repositories  
-
-⚠️ **Important**: Avoid modifying the module’s archive content to ensure proper functionality.
-
----
+⚠️ Do not modify release archives manually unless you know what you are doing.
 
 ## Updates
 
-The module is updated regularly to maintain effectiveness and compatibility.
+- **Module update**: triggered from the Android app. A reboot is required after installation.
+- **Program updates (zapret / zapret2)**: manual, on demand, from official GitHub releases via the app.
+  - zapret: updates `nfqws`
+  - zapret2: updates `nfqws2` + `lua` scripts
 
----
+## Privacy & Safety
+
+- ZDT-D does not collect personal data.
+- Some antivirus apps may flag DPI-related tools due to their behavior. This project is intended for network compatibility/management and is open source.
 
 ## License
 
-This project is open source and will remain free forever under the MIT License.
+MIT License — see [LICENSE](https://github.com/GAME-OVER-op/ZDT-D/blob/main/LICENSE)
 
----
-
-## Download Releases
+## Downloads
 
 - [Releases](https://github.com/GAME-OVER-op/ZDT-D/releases)
-
----
-
----
-
-## Module instructions
-
-- [Follow](https://github.com/GAME-OVER-op/ZDT-D/instructions/Themainthing.md)
-
----
-
-Thank you for using ZDT&D!  

@@ -1,0 +1,100 @@
+plugins {
+  id 'com.android.application'
+  id 'org.jetbrains.kotlin.android'
+}
+
+android {
+  namespace 'com.android.zdtd.service'
+  compileSdk 34
+
+  defaultConfig {
+    applicationId 'com.android.zdtd.service'
+    minSdk 26
+    targetSdk 34
+        versionCode 24000
+        versionName '2.4.0'
+  }
+
+  buildTypes {
+    release {
+      minifyEnabled false
+      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+    }
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+
+  kotlinOptions {
+    jvmTarget = '17'
+  }
+
+  buildFeatures {
+    // Some environments disable BuildConfig generation via global defaults.
+    // We rely on BuildConfig.VERSION_CODE/NAME and APPLICATION_ID, so force-enable it.
+    buildConfig true
+    viewBinding false
+    compose true
+  }
+
+  composeOptions {
+    // Kotlin 1.9.22
+    kotlinCompilerExtensionVersion '1.5.8'
+  }
+}
+
+// Ensure the embedded Magisk module package exists even if it wasn't provided yet.
+// This avoids Gradle failing during asset merging when the file is missing.
+def zdtModuleZip = file('src/main/assets/zdt_module.zip')
+tasks.register('ensureZdtModuleZip') {
+  doLast {
+    if (!zdtModuleZip.exists()) {
+      zdtModuleZip.parentFile.mkdirs()
+      def fos = new FileOutputStream(zdtModuleZip)
+      def zos = new java.util.zip.ZipOutputStream(fos)
+      try {
+        def entry = new java.util.zip.ZipEntry('PLACEHOLDER.txt')
+        zos.putNextEntry(entry)
+        zos.write('Replace this file with the real ZDT-D Magisk module zip.'.getBytes('UTF-8'))
+        zos.closeEntry()
+      } finally {
+        zos.close()
+        fos.close()
+      }
+    }
+  }
+}
+
+// Run before building so assets are always present.
+tasks.named('preBuild') { dependsOn('ensureZdtModuleZip') }
+
+dependencies {
+  implementation 'androidx.core:core-ktx:1.12.0'
+  implementation 'androidx.appcompat:appcompat:1.6.1'
+  implementation 'androidx.activity:activity-compose:1.8.2'
+
+  // Compose
+  implementation platform('androidx.compose:compose-bom:2024.02.00')
+  implementation 'androidx.compose.ui:ui'
+  implementation 'androidx.compose.ui:ui-tooling-preview'
+  implementation 'androidx.compose.foundation:foundation'
+  implementation 'androidx.compose.material3:material3'
+  implementation 'androidx.compose.animation:animation'
+  implementation 'androidx.compose.material:material-icons-extended'
+
+  // Lifecycle / coroutines helpers
+  implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+  implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
+  implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0'
+  implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.7.0'
+
+  // Networking
+  implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+
+  // Root shell helper (Magisk author)
+  implementation 'com.github.topjohnwu.libsu:core:5.2.2'
+
+  debugImplementation 'androidx.compose.ui:ui-tooling'
+}

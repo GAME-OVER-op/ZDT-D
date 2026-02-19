@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!--
+  Desktop-first viewport:
+  - Forces a "PC-like" layout viewport on phones (similar to "Request desktop site"),
+    so the full dashboard fits on screen.
+  - User can still zoom (and can adjust UI scale from the top bar).
+-->
+<meta name="viewport" content="width=1100, user-scalable=yes">
+<title>t2s</title>
+<style>
+:root{
+  --bg: #000;
+  --panel: #0a0a0a;
+  --panel2: #0f0f0f;
+  --text: #e8e8e8;
+  --muted: #9aa0a6;
+  --border: rgba(255,255,255,.08);
+
+  --red: #ff2d2d;
+  --yellow: #ffd400;
+  --blue: #2d7dff;
+
+  --shadow-red: 0 0 18px rgba(255,45,45,.25);
+  --shadow-yellow: 0 0 18px rgba(255,212,0,.18);
+  --shadow-blue: 0 0 18px rgba(45,125,255,.18);
+
+  --radius: 16px;
+
+  /* UI controls */
+  --ui-scale: 1;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  background: radial-gradient(1200px 600px at 20% 10%, rgba(255,45,45,.08), transparent 60%),
+              radial-gradient(1200px 600px at 80% 10%, rgba(45,125,255,.08), transparent 60%),
+              var(--bg);
+  color:var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans", "Liberation Sans", sans-serif;
+}
+
+/* Scale the whole app (user-adjustable). */
+.container{
+  max-width:1200px;margin:0 auto;padding:18px;
+  transform: scale(var(--ui-scale));
+  transform-origin: top center;
+  width: calc(100% / var(--ui-scale));
+}
+
+/* Horizontal scrolling helpers (for very small screens / browsers that ignore the desktop viewport). */
+.hscroll{
+  overflow-x:auto;
+  -webkit-overflow-scrolling: touch;
+}
+.hscroll > .grid{
+  min-width: 1040px;
+}
+
+.tablewrap{
+  overflow-x:auto;
+  -webkit-overflow-scrolling: touch;
+}
+.table.wide{min-width: 980px;}
+
+.ui_ctrl{
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+}
+.ui_ctrl .input{
+  padding:8px 10px;
+  border-radius:12px;
+}
+
+/* (container definition is above) */
+.topbar{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  margin-bottom:14px;
+}
+.brand{
+  display:flex;align-items:baseline;gap:10px;
+}
+.brand h1{margin:0;font-size:20px;letter-spacing:.5px}
+.badge{
+  padding:6px 10px;border:1px solid var(--border);border-radius:999px;
+  color:var(--muted);font-size:12px;
+  background: rgba(255,255,255,.03);
+}
+.grid{
+  display:grid;
+  grid-template-columns: 1fr;
+  gap:14px;
+}
+.card{
+  background: linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.01));
+  border:1px solid var(--border);
+  border-radius: var(--radius);
+  padding:14px;
+  box-shadow: 0 12px 30px rgba(0,0,0,.45);
+}
+.card h2{
+  margin:0 0 10px 0;
+  font-size:14px;
+  letter-spacing:.6px;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.kv{min-width:180px}
+.kv .k{font-size:12px;color:var(--muted)}
+.kv .v{font-size:16px;font-weight:700;margin-top:2px}
+
+.btn{
+  appearance:none;border:1px solid var(--border);
+  background: rgba(255,255,255,.03);
+  color:var(--text);
+  padding:10px 12px;border-radius:12px;
+  cursor:pointer;
+  transition: transform .08s ease, border-color .15s ease, box-shadow .15s ease;
+  font-weight:650;
+}
+.btn:hover{
+  border-color: rgba(255,45,45,.5);
+  box-shadow: var(--shadow-red);
+}
+.btn.secondary:hover{
+  border-color: rgba(45,125,255,.55);
+  box-shadow: var(--shadow-blue);
+}
+.btn.danger:hover{
+  border-color: rgba(255,45,45,.8);
+  box-shadow: 0 0 22px rgba(255,45,45,.35);
+}
+.input{
+  width:100%;
+  border:1px solid var(--border);
+  background: rgba(0,0,0,.25);
+  color: var(--text);
+  padding:10px 12px;border-radius:12px;
+  outline:none;
+}
+.input:focus{
+  border-color: rgba(255,212,0,.55);
+  box-shadow: var(--shadow-yellow);
+}
+.small{font-size:12px;color:var(--muted)}
+.split{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:12px;
+}
+
+/* Density modes */
+body.dense .card{padding:10px}
+body.dense .btn{padding:8px 10px;border-radius:10px}
+body.dense .kv{min-width:160px}
+body.dense .kv .v{font-size:15px}
+body.dense .table th, body.dense .table td{padding:7px 8px;font-size:12px}
+body.dense .badge{padding:5px 9px}
+body.dense .container{padding:12px}
+.table{
+  width:100%;
+  border-collapse: collapse;
+  overflow:hidden;
+  border-radius: 14px;
+  border:1px solid var(--border);
+}
+.table.fixed{table-layout: fixed;}
+.table.fixed td.trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.table.fixed td.center{text-align:center;}
+.table th,.table td{
+  padding:10px 10px;
+  border-bottom:1px solid rgba(255,255,255,.06);
+  font-size:13px;
+  vertical-align: middle;
+}
+.table th{
+  text-align:left;
+  color:var(--muted);
+  font-weight:650;
+  background: rgba(255,255,255,.02);
+}
+.table tr:hover td{
+  background: rgba(255,255,255,.02);
+}
+.pill{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:6px 10px;border-radius:999px;
+  border:1px solid var(--border);
+  font-size:12px;color:var(--muted);
+}
+.tag{display:inline-flex;align-items:center;justify-content:center;
+  padding:2px 6px;border-radius:8px;font-size:10px;
+  border:1px solid var(--border);margin-right:6px;line-height:1.2;
+  color:var(--muted);
+}
+.tag.int{border-color: rgba(60,120,255,.35); color:#a9c7ff;}
+.tag.ext{border-color: rgba(255,208,70,.35); color:#ffe4a6;}
+.dot{width:8px;height:8px;border-radius:50%}
+.dot.ok{background:var(--blue); box-shadow: var(--shadow-blue)}
+.dot.bad{background:var(--red); box-shadow: var(--shadow-red)}
+.dot.warn{background:var(--yellow); box-shadow: var(--shadow-yellow)}
+hr.sep{border:0;border-top:1px solid rgba(255,255,255,.06); margin:12px 0}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="topbar">
+    <div class="brand">
+      <h1>t2s</h1>
+      <div class="muted" id="build_tag"></div>
+      <div class="badge" id="sock_status">SOCKS: …</div>
+      <div class="badge" id="ws_status">WS: …</div>
+    </div>
+    <div class="row">
+      <div class="ui_ctrl">
+        <div class="pill">
+          <span class="small">Scale</span>
+          <select class="input" id="ui_scale" style="width:110px;">
+            <option value="0.85">85%</option>
+            <option value="0.9">90%</option>
+            <option value="0.95">95%</option>
+            <option value="1" selected>100%</option>
+            <option value="1.05">105%</option>
+            <option value="1.1">110%</option>
+          </select>
+        </div>
+        <button class="btn secondary" id="btn_density">Density: Comfortable</button>
+        <button class="btn secondary" id="btn_refresh">Refresh</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="hscroll">
+  <div class="grid">
+    <div class="card">
+      <h2>Traffic</h2>
+      <div class="split">
+        <div class="kv"><div class="k">Active connections</div><div class="v" id="stat_active">0</div></div>
+        <div class="kv"><div class="k">Errors</div><div class="v" id="stat_errors">0</div></div>
+        <div class="kv"><div class="k">Upload</div><div class="v" id="stat_up">0 B</div></div>
+        <div class="kv"><div class="k">Download</div><div class="v" id="stat_down">0 B</div></div>
+        <div class="kv"><div class="k">SOCKS OK</div><div class="v" id="stat_socks_ok">0</div></div>
+        <div class="kv"><div class="k">SOCKS FAIL</div><div class="v" id="stat_socks_fail">0</div></div>
+      </div>
+      <hr class="sep">
+      <div class="row">
+        <div class="pill"><span class="dot ok" id="dot_speed_int"></span><span>Internal speed: <b id="rt_speed_int">0 KB/s</b></span></div>
+        <div class="pill" id="ext_speed_pill" style="display:none"><span class="dot ok" id="dot_speed_ext"></span><span>External speed: <b id="rt_speed_ext">0 KB/s</b></span></div>
+        <div class="pill"><span class="dot" style="background:var(--yellow);box-shadow:var(--shadow-yellow)"></span><span>Policy drops: <b id="stat_policy_drop">0</b></span></div>
+      </div>
+
+      <hr class="sep">
+      <table class="table" style="margin-top:8px;">
+        <thead><tr><th>Port</th><th>Listen</th><th>Active</th><th>Up/Down</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Internal</td>
+            <td id="p_int_listen">—</td>
+            <td id="p_int_active">0</td>
+            <td id="p_int_ud">↑ 0 B / ↓ 0 B</td>
+          </tr>
+          <tr id="p_ext_row" style="display:none">
+            <td>External</td>
+            <td id="p_ext_listen">—</td>
+            <td id="p_ext_active">0</td>
+            <td id="p_ext_ud">↑ 0 B / ↓ 0 B</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- FIX: Speed limit is a proper card (not a floating div) -->
+    <div class="card">
+      <h2>Speed limit</h2>
+      <div class="small">0 = unlimited. Applies to downstream (remote → client).</div>
+      <div class="row" style="margin-top:10px;">
+        <div style="flex:1;min-width:180px;">
+          <input class="input" type="number" id="dl_limit_input" placeholder="Mbit/s (0 = ∞)">
+        </div>
+        <button class="btn" id="btn_apply_dl">Apply</button>
+      </div>
+      <div class="small" style="margin-top:10px;">Current: <b id="dl_limit_current">∞</b></div>
+      <hr class="sep">
+      <h2>System</h2>
+      <div class="split">
+        <div class="kv"><div class="k">CPU</div><div class="v" id="sys_cpu">0%</div></div>
+        <div class="kv"><div class="k">RAM used</div><div class="v" id="sys_mem">0%</div></div>
+        <div class="kv"><div class="k">Process RSS</div><div class="v" id="sys_rss">0 KB</div></div>
+        <div class="kv"><div class="k">Net RX / TX</div><div class="v"><span id="sys_rx">0 B</span> / <span id="sys_tx">0 B</span></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>SOCKS backends</h2>
+      <div class="row" style="margin-bottom:10px;">
+        <input class="input" id="be_host" placeholder="host" style="flex:1;min-width:140px;">
+        <input class="input" id="be_port" placeholder="port" type="number" style="width:110px;">
+        <button class="btn secondary" id="btn_add_be">Add</button>
+        <button class="btn danger" id="btn_rm_be">Remove</button>
+        <div class="muted" id="be_total" style="margin-left:auto;"></div>
+      </div>
+      <div class="tablewrap">
+      <table class="table wide">
+        <thead><tr><th>Backend</th><th>Status</th><th>SOCKS RTT</th><th>Internet RTT</th><th>RTT integrity</th><th>Internet TTL</th><th>Traffic</th></tr></thead>
+        <tbody id="backend_list"></tbody>
+      </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Connections</h2>
+      <div class="row" style="margin-bottom:10px;">
+        <select class="input" id="conn_filter" style="width:170px;">
+          <option value="all">All ports</option>
+          <option value="internal">Internal</option>
+          <option value="external">External</option>
+        </select>
+      </div>
+      <div class="tablewrap">
+      <table class="table fixed wide">
+        <thead><tr><th>Domain</th><th>Peer</th><th>Destination IP</th><th>Mode</th><th>Up/Down</th><th>Server</th><th></th></tr></thead>
+        <tbody id="conn_list"></tbody>
+      </table>
+      </div>
+    </div>
+  </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const $ = (id)=>document.getElementById(id);
+
+  // --- UI prefs (desktop-first + density/scale) ---
+  const LS_SCALE = 't2s_ui_scale';
+  const LS_DENSE = 't2s_ui_dense';
+
+  function clamp(n, a, b){ return Math.max(a, Math.min(b, n)); }
+
+  function applyScale(v){
+    const s = clamp(Number(v||1), 0.75, 1.25);
+    document.documentElement.style.setProperty('--ui-scale', String(s));
+    try{ localStorage.setItem(LS_SCALE, String(s)); }catch(_e){}
+  }
+
+  function applyDense(on){
+    document.body.classList.toggle('dense', !!on);
+    try{ localStorage.setItem(LS_DENSE, on ? '1' : '0'); }catch(_e){}
+    const b = $('btn_density');
+    if(b) b.textContent = on ? 'Density: Compact' : 'Density: Comfortable';
+  }
+
+  // Init UI prefs
+  try{
+    const savedScale = Number((localStorage.getItem(LS_SCALE) || '1'));
+    const scaleSel = $('ui_scale');
+    applyScale(savedScale);
+    if(scaleSel){
+      // pick the closest option if saved value isn't an exact match
+      const options = Array.from(scaleSel.options).map(o=>Number(o.value)).filter(n=>Number.isFinite(n));
+      let best = options[0] || 1;
+      for(const o of options){ if(Math.abs(o - savedScale) < Math.abs(best - savedScale)) best = o; }
+      scaleSel.value = String(best);
+      scaleSel.addEventListener('change', ()=>applyScale(scaleSel.value));
+    }
+
+    const dense = (localStorage.getItem(LS_DENSE) === '1');
+    applyDense(dense);
+    const denseBtn = $('btn_density');
+    if(denseBtn){
+      denseBtn.addEventListener('click', ()=>{
+        applyDense(!document.body.classList.contains('dense'));
+      });
+    }
+  }catch(_e){}
+
+  // Build tag (useful to confirm you are running the latest binary)
+  try{
+    const el = $('build_tag');
+    if(el){
+      el.textContent = 'build: …';
+      fetch('/api/version').then(r=>r.json()).then(j=>{
+        el.textContent = 'build: ' + (j.build || '?');
+      }).catch(()=>{ el.textContent = 'build: (version unavailable)'; });
+    }
+  }catch(_e){}
+  const fmtBytes = (n)=>{
+    n = Number(n||0);
+    const k=1024;
+    if(n<k) return n.toFixed(0)+' B';
+    const sizes=['KB','MB','GB','TB'];
+    let i=-1;
+    do{ n/=k; i++; }while(n>=k && i<sizes.length-1);
+    return n.toFixed(i===0?1:2)+' '+sizes[i];
+  };
+
+  let last = null;
+  let lastState = null;
+  let connFilter = 'all';
+
+  const fmtSpeed = (bps)=>{
+    bps = Number(bps||0);
+    if(bps >= 1024*1024) return (bps/(1024*1024)).toFixed(2)+' MB/s';
+    if(bps >= 1024) return (bps/1024).toFixed(1)+' KB/s';
+    return bps.toFixed(0)+' B/s';
+  };
+
+  function updateSpeeds(cur){
+    if(!last){ last = cur; return; }
+    const dt = Math.max(1, (cur.ts - last.ts));
+
+    const curInt = (cur.ports && cur.ports.internal) ? (Number(cur.ports.internal.bytes_up||0) + Number(cur.ports.internal.bytes_down||0)) : 0;
+    const lastInt = (last.ports && last.ports.internal) ? (Number(last.ports.internal.bytes_up||0) + Number(last.ports.internal.bytes_down||0)) : 0;
+    const intBps = Math.max(0, (curInt - lastInt)) / dt;
+    $('rt_speed_int').textContent = fmtSpeed(intBps);
+    $('dot_speed_int').className = 'dot ok';
+
+    if(cur.ports && cur.ports.external){
+      const curExt = Number(cur.ports.external.bytes_up||0) + Number(cur.ports.external.bytes_down||0);
+      const lastExt = (last.ports && last.ports.external) ? (Number(last.ports.external.bytes_up||0) + Number(last.ports.external.bytes_down||0)) : 0;
+      const extBps = Math.max(0, (curExt - lastExt)) / dt;
+      $('ext_speed_pill').style.display = '';
+      $('rt_speed_ext').textContent = fmtSpeed(extBps);
+      $('dot_speed_ext').className = 'dot ok';
+    } else {
+      $('ext_speed_pill').style.display = 'none';
+    }
+    last = cur;
+  }
+
+  function setSockStatus(backends){
+    const total = backends.length;
+    const healthy = backends.filter(b=>b.healthy).length;
+    $('sock_status').textContent = `SOCKS: ${healthy}/${total} healthy`;
+  }
+
+  function setBackends(backends){
+    const tbody = $('backend_list');
+    tbody.innerHTML = '';
+    let sum = 0;
+    for(const b of backends){
+      sum += Number(b.total_bytes||0);
+      const tr = document.createElement('tr');
+      let st = '';
+      const state = String(b.state||'red');
+      if(state==='green') st = '<span class="pill"><span class="dot ok"></span>GREEN</span>';
+      else if(state==='yellow') st = '<span class="pill"><span class="dot warn"></span>NO INET</span>';
+      else st = '<span class="pill"><span class="dot bad"></span>DOWN</span>';
+      const socks = (b.socks_ping_ms==null) ? '' : (Number(b.socks_ping_ms).toFixed(1)+' ms');
+      const inet = (b.internet_ping_ms==null) ? '' : (Number(b.internet_ping_ms).toFixed(1)+' ms');
+      const rtti = (b.rtt_integrity==null) ? '' : (Number(b.rtt_integrity).toFixed(0)+'%');
+      let ttl = '';
+      if(b.ttl_min!=null){
+        if(b.ttl_max!=null && Number(b.ttl_max) !== Number(b.ttl_min)) ttl = `${b.ttl_min}–${b.ttl_max}`;
+        else ttl = String(b.ttl_min);
+      }
+      const trf = (b.total_bytes==null) ? '' : fmtBytes(b.total_bytes);
+      tr.innerHTML = `<td>${b.addr}</td><td>${st}</td><td>${socks}</td><td>${inet}</td><td>${rtti}</td><td>${ttl}</td><td>${trf}</td>`;
+      tbody.appendChild(tr);
+    }
+    const totalEl = $('be_total');
+    if(totalEl){
+      totalEl.textContent = `Total: ${fmtBytes(sum)}`;
+    }
+  }
+
+  function setConns(conns){
+    const tbody = $('conn_list');
+    tbody.innerHTML = '';
+    const list = (conns || []).filter(c=> (connFilter==='all') || (c.ingress===connFilter));
+    for(const c of list){
+      const tr = document.createElement('tr');
+      const domain = c.domain || 'Domain not resolved';
+      const tag = (c.ingress === 'external') ? '<span class="tag ext">EXT</span>' : '<span class="tag int">INT</span>';
+      const peer = c.peer || '';
+      const dst = c.dst_ip || '';
+      const mode = c.mode || '';
+      const server = c.server || '';
+      const updown = `↑ ${fmtBytes(c.bytes_up)} / ↓ ${fmtBytes(c.bytes_down)}`;
+      tr.innerHTML = `
+        <td class="trunc" title="${domain}">${tag}<span>${domain}</span></td>
+        <td class="trunc" title="${peer}">${peer}</td>
+        <td class="trunc" title="${dst}">${dst}</td>
+        <td class="center">${mode}</td>
+        <td class="trunc" title="${updown}">${updown}</td>
+        <td class="center" title="${server}">${server}</td>
+      `;
+      const tdBtn = document.createElement('td');
+      const btn = document.createElement('button');
+      btn.className='btn danger';
+      btn.textContent='Kill';
+      btn.onclick = ()=>killConn(c.cid);
+      tdBtn.appendChild(btn);
+      tr.appendChild(tdBtn);
+      tbody.appendChild(tr);
+    }
+  }
+
+  function setPorts(ports){
+    if(!ports || !ports.internal) return;
+    $('p_int_listen').textContent = ports.internal.listen || '—';
+    $('p_int_active').textContent = ports.internal.active_connections ?? 0;
+    $('p_int_ud').textContent = `↑ ${fmtBytes(ports.internal.bytes_up)} / ↓ ${fmtBytes(ports.internal.bytes_down)}`;
+
+    const optExt = document.querySelector('#conn_filter option[value="external"]');
+    if(ports.external){
+      $('p_ext_row').style.display = '';
+      $('p_ext_listen').textContent = ports.external.listen || '—';
+      $('p_ext_active').textContent = ports.external.active_connections ?? 0;
+      $('p_ext_ud').textContent = `↑ ${fmtBytes(ports.external.bytes_up)} / ↓ ${fmtBytes(ports.external.bytes_down)}`;
+      if(optExt) optExt.disabled = false;
+    } else {
+      $('p_ext_row').style.display = 'none';
+      if(connFilter==='external') connFilter = 'all';
+      if(optExt) optExt.disabled = true;
+    }
+  }
+
+  function setSystem(sys){
+    $('sys_cpu').textContent = (Number(sys.cpu_percent||0)).toFixed(1)+'%';
+    $('sys_mem').textContent = (Number(sys.mem_used_percent||0)).toFixed(1)+'%';
+    $('sys_rss').textContent = (Number(sys.proc_rss_kb||0)).toFixed(0)+' KB';
+    $('sys_rx').textContent = fmtBytes(sys.net_rx_bytes||0);
+    $('sys_tx').textContent = fmtBytes(sys.net_tx_bytes||0);
+  }
+
+  function setDownloadLimit(mbit){
+    const dl = Number(mbit||0);
+    $('dl_limit_current').textContent = (dl>0) ? dl.toFixed(2)+' Mbit/s' : '∞';
+    $('dl_limit_input').value = (dl>0) ? dl.toFixed(2) : '';
+  }
+
+  function applyState(s){
+    lastState = s;
+    $('stat_active').textContent = s.active_connections;
+    $('stat_errors').textContent = s.stats.errors;
+    $('stat_up').textContent = fmtBytes(s.stats.bytes_up);
+    $('stat_down').textContent = fmtBytes(s.stats.bytes_down);
+    $('stat_socks_ok').textContent = s.stats.socks_ok;
+    $('stat_socks_fail').textContent = s.stats.socks_fail;
+    $('stat_policy_drop').textContent = s.stats.policy_drop;
+
+    setPorts(s.ports || {});
+    setDownloadLimit(s.download_limit_mbit);
+    setSystem(s.system || {});
+    setSockStatus(s.backends || []);
+    setBackends(s.backends || []);
+    setConns(s.conns || []);
+    updateSpeeds(s);
+  }
+
+  async function fetchState(){
+    const r = await fetch('/api/state', {cache:'no-store'});
+    const s = await r.json();
+    applyState(s);
+  }
+
+  async function setDl(){
+    const v = Number($('dl_limit_input').value || 0);
+    await fetch('/api/download_limit', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({mbit: v})
+    });
+    await fetchState();
+  }
+
+  async function addBackend(){
+    const host = $('be_host').value.trim();
+    const port = Number($('be_port').value || 0);
+    if(!host || !port) return;
+    await fetch('/api/backends/add', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({host, port})
+    });
+    await fetchState();
+  }
+
+  async function rmBackend(){
+    const host = $('be_host').value.trim();
+    const port = Number($('be_port').value || 0);
+    if(!host || !port) return;
+    await fetch('/api/backends/remove', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({host, port})
+    });
+    await fetchState();
+  }
+
+  async function killConn(cid){
+    await fetch('/api/kill', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({cid})
+    });
+    await fetchState();
+  }
+
+  function connectWS(){
+    let proto = (location.protocol === 'https:') ? 'wss' : 'ws';
+    const ws = new WebSocket(`${proto}://${location.host}/ws`);
+    $('ws_status').textContent = 'WS: connecting…';
+    ws.onopen = ()=>{ $('ws_status').textContent = 'WS: connected'; };
+    ws.onclose = ()=>{ $('ws_status').textContent = 'WS: closed'; setTimeout(connectWS, 800); };
+    ws.onerror = ()=>{ $('ws_status').textContent = 'WS: error'; };
+    ws.onmessage = (ev)=>{
+      try{ applyState(JSON.parse(ev.data)); }catch(e){}
+    };
+  }
+
+  $('btn_apply_dl').onclick = setDl;
+  $('btn_add_be').onclick = addBackend;
+  $('btn_rm_be').onclick = rmBackend;
+  $('btn_refresh').onclick = fetchState;
+
+  $('conn_filter').onchange = (ev)=>{
+    connFilter = ev.target.value;
+    if(lastState) setConns(lastState.conns || []);
+  };
+
+  fetchState().catch(()=>{});
+  connectWS();
+})();
+</script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 
 use anyhow::{Context, Result};
 use log::{info, warn};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeSet,
     fs::{self, OpenOptions},
@@ -27,7 +27,7 @@ const BIN_DIR: &str = "/data/adb/modules/ZDT-D/bin";
 const OPERA_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/operaproxy";
 const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/operaproxy/active.json";
 const PORT_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/operaproxy/port.json";
-const SNI_TXT: &str = "/data/adb/modules/ZDT-D/working_folder/operaproxy/config/sni.txt";
+const SNI_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/operaproxy/config/sni.json";
 const SERVER_TXT: &str = "/data/adb/modules/ZDT-D/working_folder/operaproxy/config/server.txt";
 // Opera-proxy CA bundle for certificate verification. We keep it fixed to prevent config tampering.
 const OPERA_CAFILE: &str = "/data/adb/modules/ZDT-D/strategic/certificate/ca.bundle";
@@ -67,8 +67,6 @@ struct PortJson {
     opera_start_port: u16,
     // byedpi (ciadpi-zdt) local socks upstream
     byedpi_port: u16,
-    // Max number of opera-proxy instances to start (hard limit 4)
-    max_services: usize,
 
     // Optional interface names for per-interface app lists.
     // Defaults to "auto" for backwards compatibility.
@@ -76,6 +74,14 @@ struct PortJson {
     iface_mobile: String,
     #[serde(default = "default_iface")]
     iface_wifi: String,
+}
+
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct OperaSniEntry {
+    sni: String,
+    #[serde(default)]
+    use_byedpi: bool,
 }
 
 pub fn start_if_enabled() -> Result<()> {
@@ -135,12 +141,12 @@ pub fn start_if_enabled() -> Result<()> {
     }
 
     // sni list required
-    let sni_path = Path::new(SNI_TXT);
+    let sni_path = Path::new(SNI_JSON);
     if !sni_path.is_file() {
-        warn!("operaproxy: sni.txt not found -> skip");
+        warn!("operaproxy: sni.json not found -> skip");
         return Ok(());
     }
-    let sni_list = read_sni_list(sni_path, 4)?;
+    let sni_list = read_sni_entries(sni_path)?;
     if sni_list.is_empty() {
         warn!("operaproxy: no valid SNI entries -> skip");
         return Ok(());
@@ -152,8 +158,8 @@ pub fn start_if_enabled() -> Result<()> {
     // opera-proxy region (EU/AS/AM) from config/server.txt, validated against whitelist
     let country = read_server_region(Path::new(SERVER_TXT));
 
-    let max_services = port_cfg.max_services.min(4).max(1);
-    let service_count = max_services.min(sni_list.len());
+    let service_count = sni_list.len();
+    let any_uses_byedpi = sni_list.iter().any(|x| x.use_byedpi);
 
     // Port intersection guard: byedpi, t2s, and all opera ports must be unique
     if has_port_intersection(&port_cfg, service_count) {
@@ -168,18 +174,26 @@ pub fn start_if_enabled() -> Result<()> {
     let log_dir = Path::new(OPERA_ROOT).join("log");
     fs::create_dir_all(&log_dir).with_context(|| format!("mkdir {}", log_dir.display()))?;
 
-    // 1) Start byedpi (initial)
-    let byedpi_bin = find_bin("byedpi")?;
+    // 1) Start byedpi (initial) only if at least one SNI entry requests it.
+    let mut byedpi_bin_opt: Option<PathBuf> = None;
     let bye_log = log_dir.join("bye_opera.log");
-    truncate_file(&bye_log)?;
-    let start_args = normalize_config_args(&fs::read_to_string(BYEDPI_START_TXT)
-        .with_context(|| format!("read {}", BYEDPI_START_TXT))?);
+    let mut byedpi_start_pid: Option<u32> = None;
+    if any_uses_byedpi {
+        let byedpi_bin = find_bin("byedpi")?;
+        byedpi_bin_opt = Some(byedpi_bin.clone());
+        truncate_file(&bye_log)?;
+        let start_args = normalize_config_args(&fs::read_to_string(BYEDPI_START_TXT)
+            .with_context(|| format!("read {}", BYEDPI_START_TXT))?);
 
-    let byedpi_start_pid = spawn_byedpi(&byedpi_bin, port_cfg.byedpi_port, &start_args, &bye_log)?;
-    info!("operaproxy: byedpi started on port {}", port_cfg.byedpi_port);
+        let pid = spawn_byedpi(&byedpi_bin, port_cfg.byedpi_port, &start_args, &bye_log)?;
+        byedpi_start_pid = Some(pid);
+        info!("operaproxy: byedpi started on port {}", port_cfg.byedpi_port);
 
-    // warmup pause (reduced)
-    std::thread::sleep(Duration::from_millis(1500));
+        // warmup pause (reduced)
+        std::thread::sleep(Duration::from_millis(1500));
+    } else {
+        info!("operaproxy: all sni entries use direct mode (without byedpi upstream)");
+    }
 
     crate::logging::user_info("Opera: opera-proxy");
     // 2) Start opera-proxy instances
@@ -187,19 +201,19 @@ pub fn start_if_enabled() -> Result<()> {
     let mut socks_ports: Vec<u16> = Vec::new();
 
     let bootstrap_dns = build_bootstrap_dns_list()?;
-    for (idx, sni) in sni_list.iter().take(service_count).enumerate() {
+    for (idx, entry) in sni_list.iter().take(service_count).enumerate() {
         let port = port_cfg.opera_start_port.saturating_add(idx as u16);
         socks_ports.push(port);
 
-        let safe = sanitize_for_filename(sni);
+        let safe = sanitize_for_filename(&entry.sni);
         let log_path = log_dir.join(format!("opera_proxy{}_{}.log", idx, safe));
         truncate_file(&log_path)?;
 
         spawn_opera_proxy(
             &opera_bin,
             port,
-            sni,
-            port_cfg.byedpi_port,
+            &entry.sni,
+            if entry.use_byedpi { Some(port_cfg.byedpi_port) } else { None },
             &country,
             &bootstrap_dns,
             &log_path,
@@ -227,33 +241,32 @@ pub fn start_if_enabled() -> Result<()> {
         warn!("operaproxy: required working socks servers not reached (min_ok={}) -> continue", min_ok);
     }
 
-    crate::logging::user_info("Opera: byedpi (restart)");
-    // 4) Kill byedpi by port and restart in simplified mode
-    let kill_log = log_dir.join("bye_opera_kill.log");
-    truncate_file(&kill_log)?;
-    // Note: we must kill only the byedpi instance we started for operaproxy,
-    // and MUST NOT touch other byedpi processes on other ports.
-    if let Ok(Some(ss_pid)) = find_pid_by_listen_port(port_cfg.byedpi_port, &kill_log) {
-        if ss_pid != byedpi_start_pid.to_string() {
-            warn!("operaproxy: ss reports pid={} on :{}, but our started pid={} -> will kill only started pid",
-                ss_pid, port_cfg.byedpi_port, byedpi_start_pid);
+    if any_uses_byedpi {
+        crate::logging::user_info("Opera: byedpi (restart)");
+        let kill_log = log_dir.join("bye_opera_kill.log");
+        truncate_file(&kill_log)?;
+        if let Some(start_pid) = byedpi_start_pid {
+            if let Ok(Some(ss_pid)) = find_pid_by_listen_port(port_cfg.byedpi_port, &kill_log) {
+                if ss_pid != start_pid.to_string() {
+                    warn!("operaproxy: ss reports pid={} on :{}, but our started pid={} -> will kill only started pid",
+                        ss_pid, port_cfg.byedpi_port, start_pid);
+                }
+            }
+
+            let _ = shell::run("kill", &["-9", &start_pid.to_string()], Capture::None);
+            std::thread::sleep(Duration::from_millis(200));
+            let _ = find_pid_by_listen_port(port_cfg.byedpi_port, &kill_log);
+
+            if let Some(ref byedpi_bin) = byedpi_bin_opt {
+                let restart_args = normalize_config_args(&fs::read_to_string(BYEDPI_RESTART_TXT)
+                    .with_context(|| format!("read {}", BYEDPI_RESTART_TXT))?);
+                let _byedpi_restart_pid = spawn_byedpi(byedpi_bin, port_cfg.byedpi_port, &restart_args, &bye_log)?;
+                info!("operaproxy: byedpi restarted");
+            }
         }
+    } else {
+        info!("operaproxy: skipping byedpi restart (no sni entries require byedpi)");
     }
-
-    let _ = shell::run(
-        "kill",
-        &["-9", &byedpi_start_pid.to_string()],
-        Capture::None,
-    );
-
-    std::thread::sleep(Duration::from_millis(200));
-    let _ = find_pid_by_listen_port(port_cfg.byedpi_port, &kill_log);
-
-
-    let restart_args = normalize_config_args(&fs::read_to_string(BYEDPI_RESTART_TXT)
-        .with_context(|| format!("read {}", BYEDPI_RESTART_TXT))?);
-    let _byedpi_restart_pid = spawn_byedpi(&byedpi_bin, port_cfg.byedpi_port, &restart_args, &bye_log)?;
-    info!("operaproxy: byedpi restarted");
 
     crate::logging::user_info("Opera: t2s");
     // 5) Start t2s (hardcoded args + dynamic listen port + socks ports)
@@ -353,18 +366,17 @@ fn build_bootstrap_dns_list() -> Result<String> {
     }
 }
 
-fn read_sni_list(path: &Path, max: usize) -> Result<Vec<String>> {
+fn read_sni_entries(path: &Path) -> Result<Vec<OperaSniEntry>> {
     let s = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let parsed = serde_json::from_str::<Vec<OperaSniEntry>>(&s)
+        .with_context(|| format!("parse {}", path.display()))?;
     let mut out = Vec::new();
-    for line in s.lines() {
-        let t = line.trim();
-        if t.is_empty() || t.starts_with('#') {
+    for item in parsed {
+        let t = item.sni.trim();
+        if t.is_empty() {
             continue;
         }
-        out.push(t.to_string());
-        if out.len() >= max {
-            break;
-        }
+        out.push(OperaSniEntry { sni: t.to_string(), use_byedpi: item.use_byedpi });
     }
     Ok(out)
 }
@@ -455,7 +467,7 @@ fn spawn_opera_proxy(
     bin: &Path,
     bind_port: u16,
     fake_sni: &str,
-    upstream_byedpi_port: u16,
+    upstream_byedpi_port: Option<u16>,
     country: &str,
     bootstrap_dns: &str,
     log_path: &Path,
@@ -468,7 +480,7 @@ fn spawn_opera_proxy(
         .with_context(|| format!("open log {}", log_path.display()))?;
     let logf_err = logf.try_clone().with_context(|| "clone log file")?;
 
-    let upstream = format!("socks5://127.0.0.1:{}", upstream_byedpi_port);
+    let upstream = upstream_byedpi_port.map(|p| format!("socks5://127.0.0.1:{}", p));
     let bind = format!("127.0.0.1:{}", bind_port);
 
     let mut cmd = Command::new(bin);
@@ -495,10 +507,11 @@ fn spawn_opera_proxy(
         .arg("-server-selection-dl-limit")
         .arg("204800")
         .arg("-server-selection-timeout")
-        .arg("60s")
-        .arg("-proxy")
-        .arg(upstream)
-        .stdin(Stdio::null())
+        .arg("60s");
+    if let Some(ref upstream) = upstream {
+        cmd.arg("-proxy").arg(upstream);
+    }
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::from(logf))
         .stderr(Stdio::from(logf_err));
 

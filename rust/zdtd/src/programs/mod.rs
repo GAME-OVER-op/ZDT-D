@@ -5,3 +5,4 @@ pub mod byedpi;
 pub mod dpitunnel;
 pub mod dnscrypt;
 pub mod operaproxy;
+pub mod singbox;

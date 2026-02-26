@@ -21,11 +21,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.zdtd.service.R
 import com.android.zdtd.service.UiState
@@ -57,6 +58,8 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
   val on = ApiModels.isServiceOn(status)
   val scale by animateFloatAsState(targetValue = if (busy) 0.98f else 1.0f, label = "busyScale")
 
+  // NOTE: stage16 had a simple image-based power button without transition animations.
+
   Column(
     Modifier
       .fillMaxSize()
@@ -68,7 +71,10 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
     // Status pill
     AssistChip(
       onClick = { actions.refreshStatus() },
-      label = { Text("daemon status: ${if (online) "online" else "offline"}") },
+      label = {
+        val st = if (online) stringResource(R.string.home_online) else stringResource(R.string.home_offline)
+        Text(stringResource(R.string.home_daemon_status_fmt, st))
+      },
       leadingIcon = {
         val c = if (online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
         Box(Modifier.size(10.dp).clip(CircleShape).background(c))
@@ -77,7 +83,7 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
 
     Spacer(Modifier.height(18.dp))
 
-    // Power button (image-based)
+    // Power button (image-based) — same as stage16
     val powerPainter = remember(on) {
       if (on) R.drawable.power_on else R.drawable.power_off
     }
@@ -90,8 +96,7 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
         .clip(CircleShape)
         .clickable(enabled = !busy) { actions.toggleService() },
     ) {
-      // The images already include the full button styling (glow/ring),
-      // so we render them directly without extra gradients/borders.
+      // The images already include the full button styling (glow/ring).
       Image(
         painter = painterResource(powerPainter),
         contentDescription = null,
@@ -104,14 +109,14 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
     Spacer(Modifier.height(18.dp))
 
     Text(
-      if (on) "ON • running" else "OFF • idle",
+      if (on) stringResource(R.string.home_power_running) else stringResource(R.string.home_power_stopped),
       style = MaterialTheme.typography.titleLarge,
       fontWeight = FontWeight.SemiBold,
     )
     Spacer(Modifier.height(6.dp))
     Text(
-      if (on) "Служба активна. Изменения настроек применяются после stop/start."
-      else "Служба выключена. Нажми кнопку для запуска.",
+      if (on) stringResource(R.string.home_service_active_hint)
+      else stringResource(R.string.home_service_stopped_hint),
       style = MaterialTheme.typography.bodyMedium,
       color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
     )
@@ -119,10 +124,11 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
     Spacer(Modifier.height(18.dp))
 
     // Daemon logs card (tail)
-    val lines: List<String> = remember(logTail) {
+    val noLogDataText = stringResource(R.string.home_no_log_data)
+    val lines: List<String> = remember(logTail, noLogDataText) {
       val t = logTail.trimEnd()
       if (t.isBlank()) {
-        listOf("(no log data)")
+        listOf(noLogDataText)
       } else {
         // Keep only a small tail for smoother UI.
         t.split('\n').takeLast(260)
@@ -144,7 +150,7 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
       border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
     ) {
       Column(Modifier.padding(14.dp)) {
-        Text("Daemon logs", fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.home_daemon_logs_title), fontWeight = FontWeight.SemiBold)
 
         Spacer(Modifier.height(2.dp))
         Crossfade(targetState = lastLine, animationSpec = tween(durationMillis = 180), label = "lastLine") { line ->

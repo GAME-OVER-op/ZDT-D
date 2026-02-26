@@ -18,11 +18,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
 import kotlinx.coroutines.launch
 
@@ -34,14 +36,14 @@ fun ZapretStrategicFiles(
 ) {
   Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
     Text(
-      "Files under /data/adb/modules/ZDT-D/strategic/ (apply after stop/start).",
+      stringResource(R.string.strategic_files_hint),
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
     )
 
     StrategicTextDirSection(
       dir = "list",
-      title = "Lists",
+      title = stringResource(R.string.strategic_lists_title),
       actions = actions,
       snackHost = snackHost,
       allowCreate = true,
@@ -53,7 +55,7 @@ fun ZapretStrategicFiles(
     if (programId == "nfqws2") {
       StrategicTextDirSection(
         dir = "lua",
-        title = "Lua scripts (nfqws2)",
+        title = stringResource(R.string.strategic_lua_title),
         actions = actions,
         snackHost = snackHost,
         allowCreate = true,
@@ -65,7 +67,7 @@ fun ZapretStrategicFiles(
 
     StrategicBinDirSection(
       dir = "bin",
-      title = "Binaries",
+      title = stringResource(R.string.strategic_binaries_title),
       actions = actions,
       snackHost = snackHost,
     )
@@ -85,6 +87,18 @@ private fun StrategicTextDirSection(
 ) {
   val scope = rememberCoroutineScope()
   val ctx = LocalContext.current
+  // Snackbar messages must be resolved in a composable context.
+  val msgCantReadFile = stringResource(R.string.common_cant_read_file)
+  val msgUploaded = stringResource(R.string.common_uploaded)
+  val msgUploadFailed = stringResource(R.string.common_upload_failed)
+  val msgCreated = stringResource(R.string.common_created)
+  val msgCreateFailed = stringResource(R.string.common_create_failed)
+  val msgCantLoadFile = stringResource(R.string.common_cant_load_file)
+  val msgDeleted = stringResource(R.string.common_deleted)
+  val msgDeleteFailed = stringResource(R.string.common_delete_failed)
+  val msgSaved = stringResource(R.string.common_saved)
+  val msgSaveFailed = stringResource(R.string.editor_save_failed)
+
 
   var files by remember { mutableStateOf<List<String>>(emptyList()) }
   var sizes by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
@@ -132,11 +146,11 @@ private fun StrategicTextDirSection(
       val name = uriDisplayName(ctx, uri) ?: "file.txt"
       val bytes = runCatching { ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
       if (bytes == null) {
-        showSnack("Can't read file")
+        showSnack(msgCantReadFile)
         return@rememberLauncherForActivityResult
       }
       actions.uploadStrategicFile(dir, name, bytes) { ok ->
-        showSnack(if (ok) "Uploaded" else "Upload failed")
+        showSnack(if (ok) msgUploaded else msgUploadFailed)
         if (ok) refresh()
       }
     }
@@ -144,12 +158,12 @@ private fun StrategicTextDirSection(
 
   if (showCreate) {
     CreateFileDialog(
-      title = "Create file",
+      title = stringResource(R.string.common_create_file),
       onDismiss = { showCreate = false },
       onCreate = { name ->
         showCreate = false
         actions.saveStrategicText(dir, name, "") { ok ->
-          showSnack(if (ok) "Created" else "Create failed")
+          showSnack(if (ok) msgCreated else msgCreateFailed)
           if (ok) refresh()
         }
       }
@@ -161,21 +175,21 @@ private fun StrategicTextDirSection(
       Row(verticalAlignment = Alignment.CenterVertically) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.weight(1f))
-        IconButton(onClick = { refresh() }) { Icon(Icons.Default.Refresh, contentDescription = "Refresh") }
+        IconButton(onClick = { refresh() }) { Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.common_refresh_cd)) }
         if (allowUpload) {
           IconButton(onClick = { uploadLauncher.launch(arrayOf("*/*")) }) {
-            Icon(Icons.Default.CloudUpload, contentDescription = "Upload")
+            Icon(Icons.Default.CloudUpload, contentDescription = stringResource(R.string.common_upload_cd))
           }
         }
         if (allowCreate) {
-          IconButton(onClick = { showCreate = true }) { Icon(Icons.Default.Add, contentDescription = "New") }
+          IconButton(onClick = { showCreate = true }) { Icon(Icons.Default.Add, contentDescription = stringResource(R.string.common_new_cd)) }
         }
       }
 
       if (listLoading) {
         LinearProgressIndicator(Modifier.fillMaxWidth())
       } else if (files.isEmpty()) {
-        Text("No files", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+        Text(stringResource(R.string.common_no_files), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
       } else {
         files.forEach { f ->
           Column {
@@ -202,7 +216,7 @@ private fun StrategicTextDirSection(
                       fileLoading = true
                       actions.loadStrategicText(dir, f) { content ->
                         if (content == null) {
-                          loadError = "Can't load file (maybe too large or server error)."
+                          loadError = msgCantLoadFile
                           text = ""
                         } else {
                           text = content
@@ -236,7 +250,7 @@ private fun StrategicTextDirSection(
                 IconButton(
                   onClick = {
                     actions.deleteStrategicFile(dir, f) { ok ->
-                      showSnack(if (ok) "Deleted" else "Delete failed")
+                      showSnack(if (ok) msgDeleted else msgDeleteFailed)
                       if (ok) {
                         if (expanded == f) {
                           expanded = null
@@ -246,7 +260,7 @@ private fun StrategicTextDirSection(
                       }
                     }
                   }
-                ) { Icon(Icons.Default.Delete, contentDescription = "Delete") }
+                ) { Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.common_delete_cd)) }
               }
             }
 
@@ -257,10 +271,22 @@ private fun StrategicTextDirSection(
                 if (tooLarge) {
                   val size = sizes[f] ?: -1L
                   Text(
-                    "Editing is disabled: file is larger than ${limitBytes} bytes.\n" +
-                      "Use upload/replace or edit externally.\n\n" +
-                      "Path:\n/data/adb/modules/ZDT-D/strategic/$dir/$f\n" +
-                      (if (size >= 0) "\nSize: ${size} bytes" else ""),
+                    if (size >= 0) {
+                      stringResource(
+                        R.string.strategic_edit_disabled_too_large_with_size_fmt,
+                        limitBytes,
+                        dir,
+                        f,
+                        size,
+                      )
+                    } else {
+                      stringResource(
+                        R.string.strategic_edit_disabled_too_large_no_size_fmt,
+                        limitBytes,
+                        dir,
+                        f,
+                      )
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
                     fontFamily = FontFamily.Monospace,
@@ -268,7 +294,7 @@ private fun StrategicTextDirSection(
                   )
                 } else if (loadError != null) {
                   Text(
-                    loadError ?: "Error",
+                    loadError ?: stringResource(R.string.common_error),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.fillMaxWidth().padding(8.dp)
@@ -281,7 +307,7 @@ private fun StrategicTextDirSection(
                     minLines = 6,
                     maxLines = 18,
                     enabled = allowEdit && !saving,
-                    label = { Text("Content") },
+                    label = { Text(stringResource(R.string.common_content)) },
                     textStyle = LocalTextStyle.current.copy(fontFamily = FontFamily.Monospace),
                   )
 
@@ -294,11 +320,11 @@ private fun StrategicTextDirSection(
                           saving = true
                           actions.saveStrategicText(dir, f, text) { ok ->
                             saving = false
-                            showSnack(if (ok) "Saved" else "Save failed")
+                            showSnack(if (ok) msgSaved else msgSaveFailed)
                           }
                         },
                         enabled = !saving
-                      ) { Text("Save") }
+                      ) { Text(stringResource(R.string.common_save)) }
                     }
                   }
                 }
@@ -322,6 +348,17 @@ private fun StrategicBinDirSection(
 ) {
   val scope = rememberCoroutineScope()
   val ctx = LocalContext.current
+  val msgCantReadFile = stringResource(R.string.common_cant_read_file)
+  val msgUploaded = stringResource(R.string.common_uploaded)
+  val msgUploadFailed = stringResource(R.string.common_upload_failed)
+  val msgCreated = stringResource(R.string.common_created)
+  val msgCreateFailed = stringResource(R.string.common_create_failed)
+  val msgCantLoadFile = stringResource(R.string.common_cant_load_file)
+  val msgDeleted = stringResource(R.string.common_deleted)
+  val msgDeleteFailed = stringResource(R.string.common_delete_failed)
+  val msgSaved = stringResource(R.string.common_saved)
+  val msgSaveFailed = stringResource(R.string.editor_save_failed)
+
 
   var files by remember { mutableStateOf<List<String>>(emptyList()) }
   var listLoading by remember { mutableStateOf(true) }
@@ -347,11 +384,11 @@ private fun StrategicBinDirSection(
       val name = uriDisplayName(ctx, uri) ?: "file.bin"
       val bytes = runCatching { ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
       if (bytes == null) {
-        showSnack("Can't read file")
+        showSnack(msgCantReadFile)
         return@rememberLauncherForActivityResult
       }
       actions.uploadStrategicFile(dir, name, bytes) { ok ->
-        showSnack(if (ok) "Uploaded" else "Upload failed")
+        showSnack(if (ok) msgUploaded else msgUploadFailed)
         if (ok) refresh()
       }
     }
@@ -362,14 +399,14 @@ private fun StrategicBinDirSection(
       Row(verticalAlignment = Alignment.CenterVertically) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.weight(1f))
-        IconButton(onClick = { refresh() }) { Icon(Icons.Default.Refresh, contentDescription = "Refresh") }
-        IconButton(onClick = { uploadLauncher.launch(arrayOf("*/*")) }) { Icon(Icons.Default.CloudUpload, contentDescription = "Upload") }
+        IconButton(onClick = { refresh() }) { Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.common_refresh_cd)) }
+        IconButton(onClick = { uploadLauncher.launch(arrayOf("*/*")) }) { Icon(Icons.Default.CloudUpload, contentDescription = stringResource(R.string.common_upload_cd)) }
       }
 
       if (listLoading) {
         LinearProgressIndicator(Modifier.fillMaxWidth())
       } else if (files.isEmpty()) {
-        Text("No files", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+        Text(stringResource(R.string.common_no_files), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
       } else {
         files.forEach { f ->
           Row(
@@ -380,11 +417,11 @@ private fun StrategicBinDirSection(
             IconButton(
               onClick = {
                 actions.deleteStrategicFile(dir, f) { ok ->
-                  showSnack(if (ok) "Deleted" else "Delete failed")
+                  showSnack(if (ok) msgDeleted else msgDeleteFailed)
                   if (ok) refresh()
                 }
               }
-            ) { Icon(Icons.Default.Delete, contentDescription = "Delete") }
+            ) { Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.common_delete_cd)) }
           }
         }
       }
@@ -409,21 +446,21 @@ private fun CreateFileDialog(
           value = name,
           onValueChange = { name = it },
           modifier = Modifier.fillMaxWidth(),
-          label = { Text("File name") },
+          label = { Text(stringResource(R.string.common_file_name)) },
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
           singleLine = true,
         )
         Text(
-          "Use a safe name (letters, digits, dot, dash, underscore).",
+          stringResource(R.string.common_safe_file_name_hint),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f)
         )
       }
     },
     confirmButton = {
-      Button(onClick = { onCreate(name.trim()) }, enabled = name.trim().isNotEmpty()) { Text("Create") }
+      Button(onClick = { onCreate(name.trim()) }, enabled = name.trim().isNotEmpty()) { Text(stringResource(R.string.common_create)) }
     },
-    dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } }
   )
 }
 

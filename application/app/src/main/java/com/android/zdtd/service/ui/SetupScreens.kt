@@ -12,9 +12,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
+import com.android.zdtd.service.R
 import com.android.zdtd.service.RootState
 import com.android.zdtd.service.SetupUiState
 import com.android.zdtd.service.MigrationDialog
@@ -30,7 +32,7 @@ private fun SetupScaffold(content: @Composable (PaddingValues) -> Unit) {
   Scaffold(
     topBar = {
       CenterAlignedTopAppBar(
-        title = { Text("ZDT-D", letterSpacing = 2.sp, fontWeight = FontWeight.SemiBold) },
+        title = { Text(stringResource(R.string.app_name), letterSpacing = 2.sp, fontWeight = FontWeight.SemiBold) },
       )
     },
     content = content,
@@ -55,48 +57,47 @@ fun WelcomeScreen(onAccept: () -> Unit) {
         horizontalAlignment = Alignment.Start,
       ) {
         Text(
-          text = "Добро пожаловать",
+          text = stringResource(R.string.setup_welcome_title),
           style = MaterialTheme.typography.headlineSmall,
           fontWeight = FontWeight.SemiBold,
         )
         Spacer(Modifier.height(12.dp))
         Text(
-          text = "ZDT-D — это root-модуль (Magisk / KernelSU / APatch), предназначенный для обхода DPI (глубокого анализа пакетов) в интернете. " +
-            "Он помогает обходить блокировки сервисов и ограничения скорости.",
+          text = stringResource(R.string.setup_welcome_body),
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
         )
         Spacer(Modifier.height(16.dp))
 
-        Text("Основные характеристики", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.setup_features_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
         Text(
-          text = "• Обход блокировок и ограничений скорости\n" +
-            "• Удобный графический интерфейс для настройки",
+          text = stringResource(R.string.setup_features_body),
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
         )
 
         Spacer(Modifier.height(16.dp))
-        Text("Основные моменты", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.setup_notes_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(8.dp))
         Text(
-          text = "• Конфиденциальность и безопасность: модуль не собирает персональные данные и не вредит функциональности устройства.\n" +
-            "• Свобода и открытость: полностью бесплатно и останется таковым.",
+          text = stringResource(R.string.setup_notes_body),
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
         )
 
         Spacer(Modifier.height(22.dp))
         Button(onClick = onAccept, enabled = arm64Ok, modifier = Modifier.fillMaxWidth()) {
-          Text("Продолжить")
+          Text(stringResource(R.string.common_continue))
         }
 
         if (!arm64Ok) {
           Spacer(Modifier.height(10.dp))
           Text(
-            text = "Неподдерживаемая архитектура. ZDT-D работает только на arm64-v8a. " +
-              "Текущее устройство: ${Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"}.",
+            text = stringResource(
+              R.string.setup_arch_unsupported_fmt,
+              Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown",
+            ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
           )
@@ -130,17 +131,13 @@ fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit) {
         )
         Spacer(Modifier.height(10.dp))
         Text(
-          text = "Нужен Root-доступ",
+          text = stringResource(R.string.setup_root_title),
           style = MaterialTheme.typography.titleLarge,
           fontWeight = FontWeight.SemiBold,
         )
         Spacer(Modifier.height(10.dp))
         Text(
-          text = "ZDT-D — это root-модуль (Magisk / KernelSU / APatch) для обхода DPI-блокировок и ограничений трафика. " +
-            "Root нужен, потому что модуль запускает системные скрипты и сетевые компоненты на уровне ОС — " +
-            "то, что обычным приложениям недоступно.\n\n" +
-            "Также root используется для установки/обновления модуля, управления демоном и чтения файлов модуля (токен и логи). " +
-            "Запрос root всегда подтверждается через ваш root-менеджер (Magisk / KernelSU / APatch), а разрешение можно отозвать в любой момент.",
+          text = stringResource(R.string.setup_root_body),
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
         )
@@ -152,7 +149,7 @@ fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit) {
             CircularProgressIndicator()
             Spacer(Modifier.height(12.dp))
             Text(
-              text = "Ожидание ответа от root-менеджера…",
+              text = stringResource(R.string.setup_root_waiting),
               style = MaterialTheme.typography.bodyMedium,
               color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
             )
@@ -163,13 +160,15 @@ fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit) {
               onClick = onRequest,
               enabled = enabled,
               modifier = Modifier.fillMaxWidth(),
-            ) { Text("Запросить Root") }
+            ) { Text(stringResource(R.string.setup_request_root)) }
 
             if (!arm64Ok) {
               Spacer(Modifier.height(10.dp))
               Text(
-                text = "Неподдерживаемая архитектура. ZDT-D работает только на arm64-v8a. " +
-                  "Текущее устройство: ${Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"}.",
+                text = stringResource(
+                  R.string.setup_arch_unsupported_fmt,
+                  Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown",
+                ),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
               )
@@ -177,7 +176,7 @@ fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit) {
             if (rootState == RootState.DENIED) {
               Spacer(Modifier.height(10.dp))
               Text(
-                text = "Root не предоставлен. Если вы нажали «Отказать», попробуйте ещё раз.",
+                text = stringResource(R.string.setup_root_denied),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.error,
               )
@@ -221,27 +220,27 @@ fun RebootRequiredScreen(
         )
         Spacer(Modifier.height(10.dp))
         Text(
-          text = "Требуется перезагрузка",
+          text = stringResource(R.string.setup_reboot_required_title),
           style = MaterialTheme.typography.titleLarge,
           fontWeight = FontWeight.SemiBold,
         )
         Spacer(Modifier.height(10.dp))
         Text(
           text = if (text.isBlank()) {
-            "Для завершения установки/обновления модуля необходимо перезагрузить устройство."
+            stringResource(R.string.setup_reboot_required_body_default)
           } else text,
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
         )
         Spacer(Modifier.height(18.dp))
 
-        if (setup.migrationAvailable) {
+        if (setup.migrationAvailable && !setup.moduleReinstallRequired && !setup.tamperReinstallPendingReboot) {
           SettingsMigrationSection(setup = setup, onRequest = onRequestMigration)
           Spacer(Modifier.height(14.dp))
         }
 
         val rebootEnabled = setup.migrationDialog != MigrationDialog.PROGRESS || setup.migrationFinished
-        Button(onClick = onReboot, enabled = rebootEnabled, modifier = Modifier.fillMaxWidth()) { Text("Перезагрузить") }
+        Button(onClick = onReboot, enabled = rebootEnabled, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.common_reboot)) }
 
         SettingsMigrationDialogs(
           setup = setup,
@@ -271,19 +270,19 @@ fun InstallModuleScreen(
   val arm64Ok = remember { isArm64OnlySupported() }
   if (arm64Ok && setup.showManualDialog) {
     val extra = if (setup.oldVersionDetected) {
-      "\n\nСтарая версия модуля будет удалена перед установкой."
+      "\n\n" + stringResource(R.string.setup_manual_old_version_extra)
     } else {
       ""
     }
     AlertDialog(
       onDismissRequest = onManualDismiss,
-      title = { Text("Внимание") },
+      title = { Text(stringResource(R.string.common_attention)) },
       text = { Text(setup.manualDialogText + extra) },
       confirmButton = {
-        TextButton(onClick = onManualConfirm) { Text("Сохранить ZIP") }
+        TextButton(onClick = onManualConfirm) { Text(stringResource(R.string.setup_save_zip)) }
       },
       dismissButton = {
-        TextButton(onClick = onManualDismiss) { Text("Отмена") }
+        TextButton(onClick = onManualDismiss) { Text(stringResource(R.string.common_cancel)) }
       },
     )
   }
@@ -309,14 +308,13 @@ fun InstallModuleScreen(
         )
         Spacer(Modifier.height(10.dp))
         Text(
-          text = "Установка модуля",
+          text = stringResource(R.string.setup_install_title),
           style = MaterialTheme.typography.titleLarge,
           fontWeight = FontWeight.SemiBold,
         )
         Spacer(Modifier.height(10.dp))
         Text(
-          text = "Нажмите «Установить», чтобы установить модуль ZDT-D из встроенного пакета приложения. " +
-            "Если обнаружен установщик (Magisk / KernelSU / APatch), установка пройдёт автоматически.",
+          text = stringResource(R.string.setup_install_body),
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
         )
@@ -332,7 +330,7 @@ fun InstallModuleScreen(
               verticalAlignment = Alignment.CenterVertically,
             ) {
               Text(
-                text = "Метод установки:",
+                text = stringResource(R.string.setup_install_method),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
               )
@@ -369,13 +367,17 @@ fun InstallModuleScreen(
           onClick = onInstall,
           enabled = canInstall,
           modifier = Modifier.fillMaxWidth(),
-        ) { Text(if (setup.installing) "Установка…" else "Установить") }
+        ) {
+          Text(if (setup.installing) stringResource(R.string.common_installing) else stringResource(R.string.common_install))
+        }
 
         if (!arm64Ok) {
           Spacer(Modifier.height(10.dp))
           Text(
-            text = "Неподдерживаемая архитектура. ZDT-D работает только на arm64-v8a. " +
-              "Текущее устройство: ${Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown"}.",
+            text = stringResource(
+              R.string.setup_arch_unsupported_fmt,
+              Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown",
+            ),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
           )
@@ -390,22 +392,22 @@ fun InstallModuleScreen(
           Spacer(Modifier.height(18.dp))
           Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(14.dp)) {
-              Text("Модуль установлен", fontWeight = FontWeight.SemiBold)
+              Text(stringResource(R.string.setup_module_installed_title), fontWeight = FontWeight.SemiBold)
               Spacer(Modifier.height(6.dp))
               Text(
-                "Для применения изменений требуется перезагрузка устройства.",
+                stringResource(R.string.setup_module_installed_body),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
               )
               Spacer(Modifier.height(12.dp))
 
-              if (setup.migrationAvailable) {
+              if (setup.migrationAvailable && !setup.moduleReinstallRequired && !setup.tamperReinstallPendingReboot) {
                 SettingsMigrationSection(setup = setup, onRequest = onRequestMigration)
                 Spacer(Modifier.height(12.dp))
               }
 
               val rebootEnabled = setup.migrationDialog != MigrationDialog.PROGRESS || setup.migrationFinished
-              Button(onClick = onReboot, enabled = rebootEnabled, modifier = Modifier.fillMaxWidth()) { Text("Перезагрузить") }
+              Button(onClick = onReboot, enabled = rebootEnabled, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.common_reboot)) }
 
               SettingsMigrationDialogs(
                 setup = setup,
@@ -424,16 +426,16 @@ fun InstallModuleScreen(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
           ) {
             Column(Modifier.padding(14.dp)) {
-              Text("ZIP сохранён", fontWeight = FontWeight.SemiBold)
+              Text(stringResource(R.string.setup_zip_saved_title), fontWeight = FontWeight.SemiBold)
               Spacer(Modifier.height(6.dp))
               Text(
-                "Путь: ${setup.manualZipPath}",
+                stringResource(R.string.setup_zip_saved_path_fmt, setup.manualZipPath),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
               Spacer(Modifier.height(6.dp))
               Text(
-                "Откройте ваш root-менеджер (Magisk / KernelSU / APatch) и установите этот ZIP как модуль.",
+                stringResource(R.string.setup_zip_saved_body),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
               )
@@ -444,7 +446,7 @@ fun InstallModuleScreen(
         if (!setup.installError.isNullOrBlank()) {
           Spacer(Modifier.height(12.dp))
           Text(
-            text = setup.installError ?: "Ошибка",
+            text = setup.installError ?: stringResource(R.string.common_error),
             color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodyMedium,
           )
@@ -452,7 +454,7 @@ fun InstallModuleScreen(
 
         if (setup.installLog.isNotBlank()) {
           Spacer(Modifier.height(18.dp))
-          Text("Лог установки", style = MaterialTheme.typography.titleSmall)
+          Text(stringResource(R.string.setup_install_log_title), style = MaterialTheme.typography.titleSmall)
           Spacer(Modifier.height(8.dp))
           Card(Modifier.fillMaxWidth()) {
             Text(
@@ -475,11 +477,10 @@ private fun SettingsMigrationSection(setup: SetupUiState, onRequest: () -> Unit)
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
   ) {
     Column(Modifier.padding(14.dp)) {
-      Text("Миграция настроек", fontWeight = FontWeight.SemiBold)
+      Text(stringResource(R.string.setup_migration_title), fontWeight = FontWeight.SemiBold)
       Spacer(Modifier.height(6.dp))
       Text(
-        text = "Перенесёт ваши ранее настроенные программы и профили в новую версию модуля. " +
-          "После обновления и перезагрузки всё будет готово — без повторной настройки.",
+        text = stringResource(R.string.setup_migration_body),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
       )
@@ -494,7 +495,7 @@ private fun SettingsMigrationSection(setup: SetupUiState, onRequest: () -> Unit)
       }
 
       Spacer(Modifier.height(12.dp))
-      val btnText = if (setup.migrationDone) "Настройки уже перенесены" else "Произвести миграцию"
+      val btnText = if (setup.migrationDone) stringResource(R.string.setup_migration_done) else stringResource(R.string.setup_migration_action)
       Button(
         onClick = onRequest,
         enabled = setup.migrationButtonEnabled && !setup.migrationDone,
@@ -517,16 +518,14 @@ private fun SettingsMigrationDialogs(
     MigrationDialog.MAGISK_CONFIRM -> {
       AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Подтвердите действие") },
+        title = { Text(stringResource(R.string.common_confirm_action)) },
         text = {
           Text(
-            "Запустить перенос настроек в обновлённый модуль?\n\n" +
-              "Мы скопируем все папки из working_folder старой версии в working_folder обновления.\n" +
-              "Содержимое папки обновления будет перезаписано."
+            stringResource(R.string.setup_migration_confirm_body)
           )
         },
-        confirmButton = { TextButton(onClick = onConfirm) { Text("Да") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Нет") } },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.common_yes)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_no)) } },
         properties = androidx.compose.ui.window.DialogProperties(
           dismissOnBackPress = true,
           dismissOnClickOutside = true,
@@ -537,15 +536,14 @@ private fun SettingsMigrationDialogs(
     MigrationDialog.NONMAGISK_WARN -> {
       AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Внимание") },
+        title = { Text(stringResource(R.string.common_attention)) },
         text = {
           Text(
-            "Из-за различий в менеджере root перенос может отработать не идеально.\n\n" +
-              "Продолжить?"
+            stringResource(R.string.setup_migration_nonmagisk_warn)
           )
         },
-        confirmButton = { TextButton(onClick = onConfirm) { Text("Подтверждаю") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Нет") } },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.common_confirm)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_no)) } },
         properties = androidx.compose.ui.window.DialogProperties(
           dismissOnBackPress = true,
           dismissOnClickOutside = true,
@@ -556,10 +554,10 @@ private fun SettingsMigrationDialogs(
     MigrationDialog.NONMAGISK_CONFIRM -> {
       AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Последнее подтверждение") },
-        text = { Text("Вы уверены в своём выборе?") },
-        confirmButton = { TextButton(onClick = onConfirm) { Text("Да") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Нет") } },
+        title = { Text(stringResource(R.string.setup_migration_last_confirm_title)) },
+        text = { Text(stringResource(R.string.setup_migration_last_confirm_body)) },
+        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.common_yes)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_no)) } },
         properties = androidx.compose.ui.window.DialogProperties(
           dismissOnBackPress = true,
           dismissOnClickOutside = true,
@@ -572,14 +570,14 @@ private fun SettingsMigrationDialogs(
       val err = setup.migrationError
       AlertDialog(
         onDismissRequest = { if (finished) onCloseProgress() },
-        title = { Text(if (err != null) "Ошибка" else "Перенос настроек") },
+        title = { Text(if (err != null) stringResource(R.string.common_error) else stringResource(R.string.setup_migration_progress_title)) },
         text = {
           Column {
             if (err != null) {
               Text(err)
             } else {
               val pct = setup.migrationPercent.coerceIn(0, 100)
-              Text(setup.migrationProgressText.ifBlank { "Выполняется…" })
+              Text(setup.migrationProgressText.ifBlank { stringResource(R.string.common_in_progress) })
               Spacer(Modifier.height(10.dp))
               LinearProgressIndicator(progress = pct / 100f, modifier = Modifier.fillMaxWidth())
               Spacer(Modifier.height(6.dp))
@@ -589,7 +587,7 @@ private fun SettingsMigrationDialogs(
         },
         confirmButton = {
           if (finished) {
-            TextButton(onClick = onCloseProgress) { Text("Завершить") }
+            TextButton(onClick = onCloseProgress) { Text(stringResource(R.string.common_finish)) }
           }
         },
         dismissButton = {},

@@ -10,10 +10,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
+import com.android.zdtd.service.R
 
 @Composable
 fun ProfileScreen(
@@ -35,22 +37,22 @@ fun ProfileScreen(
   Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
     Text("$programId / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
     Text(
-      "Changes apply after stop/start.",
+      stringResource(R.string.changes_apply_after_restart),
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
     )
 
     EnabledCard(
-      title = "Profile enabled",
+      title = stringResource(R.string.profile_enabled),
       checked = prof?.enabled ?: false,
       onCheckedChange = { v -> actions.setProfileEnabled(programId, profile, v) },
     )
 
     TabRow(selectedTabIndex = tab) {
-      Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Apps") })
-      Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Config") })
+      Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(stringResource(R.string.tab_apps)) })
+      Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.tab_config)) })
       if (programId == "operaproxy") {
-        Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("SNI") })
+        Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(stringResource(R.string.tab_sni)) })
       }
     }
 
@@ -71,8 +73,8 @@ fun ProfileScreen(
               NfqwsAppListsSection(pfx = pfx, actions = actions, snackHost = snackHost)
             } else {
               AppListPickerCard(
-                title = "Apps (common)",
-                desc = "Select installed apps; package names are saved automatically.",
+                title = stringResource(R.string.apps_common_title),
+                desc = stringResource(R.string.apps_common_desc),
                 path = "$pfx/apps/user",
                 actions = actions,
                 snackHost = snackHost,
@@ -90,8 +92,8 @@ fun ProfileScreen(
               )
             } else {
               TextEditorCard(
-                title = "config.txt",
-                desc = "Profile config.",
+                title = stringResource(R.string.profile_config_txt_title),
+                desc = stringResource(R.string.profile_config_desc),
                 path = "$pfx/config",
                 actions = actions,
                 snackHost = snackHost,
@@ -101,8 +103,8 @@ fun ProfileScreen(
           2 -> {
             if (programId == "operaproxy") {
               TextEditorCard(
-                title = "fake_sni.txt",
-                desc = "Profile fake SNI list.",
+                title = stringResource(R.string.profile_fake_sni_txt_title),
+                desc = stringResource(R.string.profile_fake_sni_desc),
                 path = "$pfx/sni",
                 actions = actions,
                 snackHost = snackHost,

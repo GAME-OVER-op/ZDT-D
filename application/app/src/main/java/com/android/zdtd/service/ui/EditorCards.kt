@@ -5,9 +5,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -20,6 +22,10 @@ fun TextEditorCard(
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
+  // Snackbar messages must be resolved in a composable context.
+  val msgSavedApplyRestart = stringResource(R.string.editor_saved_apply_restart)
+  val msgSaveFailed = stringResource(R.string.editor_save_failed)
+
   var text by remember(path) { mutableStateOf("") }
   var lastLoaded by remember(path) { mutableStateOf("") }
   var loading by remember(path) { mutableStateOf(true) }
@@ -50,13 +56,13 @@ fun TextEditorCard(
               saving = false
               if (ok) lastLoaded = text
               scope.launch {
-                snackHost.showSnackbar(if (ok) "Saved (apply after stop/start)" else "Save failed")
+                snackHost.showSnackbar(if (ok) msgSavedApplyRestart else msgSaveFailed)
               }
             }
           },
           enabled = !loading && !saving && text != lastLoaded,
         ) {
-          Text(if (saving) "..." else "Save")
+          Text(if (saving) stringResource(R.string.common_ellipsis) else stringResource(R.string.common_save))
         }
       }
 
@@ -67,7 +73,7 @@ fun TextEditorCard(
         onValueChange = { text = it },
         modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
         enabled = !loading && !saving,
-        label = { Text(if (loading) "Loading..." else "") },
+        label = { Text(if (loading) stringResource(R.string.common_loading) else "") },
         maxLines = 24,
       )
     }
@@ -82,6 +88,11 @@ fun JsonEditorCard(
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
+  // Snackbar messages must be resolved in a composable context.
+  val msgSavedApplyRestart = stringResource(R.string.editor_saved_apply_restart)
+  val msgSaveFailed = stringResource(R.string.editor_save_failed)
+  val msgInvalidJson = stringResource(R.string.editor_invalid_json)
+
   var text by remember(path) { mutableStateOf("{}") }
   var lastLoaded by remember(path) { mutableStateOf("{}") }
   var loading by remember(path) { mutableStateOf(true) }
@@ -110,7 +121,7 @@ fun JsonEditorCard(
           onClick = {
             val parsed = runCatching { JSONObject(text) }.getOrNull()
             if (parsed == null) {
-              scope.launch { snackHost.showSnackbar("Invalid JSON") }
+              scope.launch { snackHost.showSnackbar(msgInvalidJson) }
               return@Button
             }
             saving = true
@@ -118,13 +129,13 @@ fun JsonEditorCard(
               saving = false
               if (ok) lastLoaded = JSONObject(text).toString(2)
               scope.launch {
-                snackHost.showSnackbar(if (ok) "Saved (apply after stop/start)" else "Save failed")
+                snackHost.showSnackbar(if (ok) msgSavedApplyRestart else msgSaveFailed)
               }
             }
           },
           enabled = !loading && !saving && text != lastLoaded,
         ) {
-          Text(if (saving) "..." else "Save")
+          Text(if (saving) stringResource(R.string.common_ellipsis) else stringResource(R.string.common_save))
         }
       }
 
@@ -135,7 +146,7 @@ fun JsonEditorCard(
         onValueChange = { text = it },
         modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp),
         enabled = !loading && !saving,
-        label = { Text(if (loading) "Loading..." else "") },
+        label = { Text(if (loading) stringResource(R.string.common_loading) else "") },
         maxLines = 28,
         keyboardOptions = KeyboardOptions(
           keyboardType = KeyboardType.Text,

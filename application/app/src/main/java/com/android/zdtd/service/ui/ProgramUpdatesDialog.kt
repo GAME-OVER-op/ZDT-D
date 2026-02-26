@@ -23,10 +23,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.android.zdtd.service.R
 import com.android.zdtd.service.ProgramUpdateItemUi
 import com.android.zdtd.service.ProgramReleaseUi
 import com.android.zdtd.service.ProgramUpdatesUiState
@@ -55,16 +57,16 @@ fun ProgramUpdatesDialog(
     ) {
       Column(Modifier.padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-          Text("Обновление программ", style = MaterialTheme.typography.titleLarge)
+          Text(stringResource(R.string.program_updates_title), style = MaterialTheme.typography.titleLarge)
           Spacer(Modifier.weight(1f))
           IconButton(onClick = actions::resetProgramUpdatesUi) {
-            Icon(Icons.Filled.Refresh, contentDescription = "Reset")
+            Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.program_updates_reset_cd))
           }
         }
 
         Spacer(Modifier.height(6.dp))
         Text(
-          "Обновляет nfqws / nfqws2 и Lua-файлы прямо из GitHub releases. Проверка выполняется только по нажатию.",
+          stringResource(R.string.program_updates_desc),
           style = MaterialTheme.typography.bodySmall,
         )
 
@@ -72,10 +74,10 @@ fun ProgramUpdatesDialog(
           Spacer(Modifier.height(12.dp))
           Card(colors = CardDefaults.cardColors()) {
             Column(Modifier.padding(12.dp)) {
-              Text("Сервис запущен", fontWeight = FontWeight.SemiBold)
+              Text(stringResource(R.string.program_updates_service_running_title), fontWeight = FontWeight.SemiBold)
               Spacer(Modifier.height(6.dp))
               Text(
-                "Перед проверкой/обновлением остановите сервис. Это нужно, чтобы правила и процессы не использовали файлы во время замены.",
+                stringResource(R.string.program_updates_service_running_desc),
                 style = MaterialTheme.typography.bodySmall,
               )
               Spacer(Modifier.height(10.dp))
@@ -83,7 +85,7 @@ fun ProgramUpdatesDialog(
                 onClick = actions::stopServiceForProgramUpdatesAndCheck,
                 enabled = !state.stoppingService,
               ) {
-                Text(if (state.stoppingService) "Останавливаю…" else "Остановить и проверить")
+                Text(if (state.stoppingService) stringResource(R.string.program_updates_stopping) else stringResource(R.string.program_updates_stop_and_check))
               }
             }
           }
@@ -115,7 +117,7 @@ fun ProgramUpdatesDialog(
 
         Spacer(Modifier.height(14.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-          TextButton(onClick = onDismiss) { Text("Закрыть") }
+          TextButton(onClick = onDismiss) { Text(stringResource(R.string.backup_close)) }
         }
       }
     }
@@ -126,7 +128,7 @@ fun ProgramUpdatesDialog(
   if (pick != null) {
     val item = if (pick == "zapret") state.zapret else state.zapret2
     ReleasePickerDialog(
-      title = if (pick == "zapret") "Версии Zapret" else "Версии Zapret2",
+      title = if (pick == "zapret") stringResource(R.string.program_updates_pick_zapret_title) else stringResource(R.string.program_updates_pick_zapret2_title),
       stateItem = item,
       minVersion = if (pick == "zapret") "v71.4" else "v0.8.6",
       onRefresh = {
@@ -158,10 +160,10 @@ private fun ProgramUpdateCard(
   Card(colors = CardDefaults.cardColors(), modifier = Modifier.fillMaxWidth()) {
     Column(Modifier.padding(12.dp)) {
       Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(item.title, fontWeight = FontWeight.SemiBold)
+        Text(item.titleRes?.let { stringResource(it) } ?: item.title, fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.weight(1f))
         IconButton(onClick = onPickVersion, enabled = enabled) {
-          Icon(Icons.Filled.MoreVert, contentDescription = "Select version")
+          Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.program_updates_select_version_cd))
         }
         if (item.updateAvailable) {
           Icon(Icons.Filled.SystemUpdateAlt, contentDescription = null)
@@ -170,15 +172,24 @@ private fun ProgramUpdateCard(
 
       Spacer(Modifier.height(6.dp))
       Text(
-        "Установлено: ${item.installedVersion ?: "—"}   •   Latest: ${item.latestVersion ?: "—"}",
+        stringResource(
+          R.string.program_updates_installed_latest_fmt,
+          item.installedVersion ?: "—",
+          item.latestVersion ?: "—",
+        ),
         style = MaterialTheme.typography.bodySmall,
       )
 
       val target = item.selectedVersion ?: item.latestVersion
       if (target != null) {
         Spacer(Modifier.height(4.dp))
+        val suffix = if (item.selectedVersion != null) {
+          stringResource(R.string.program_updates_target_selected_suffix)
+        } else {
+          stringResource(R.string.program_updates_target_latest_suffix)
+        }
         Text(
-          "Цель: ${target}${if (item.selectedVersion != null) " (выбрано)" else " (latest)"}",
+          stringResource(R.string.program_updates_target_fmt, target, suffix),
           style = MaterialTheme.typography.bodySmall,
         )
       }
@@ -209,13 +220,13 @@ private fun ProgramUpdateCard(
       Spacer(Modifier.height(10.dp))
       Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedButton(onClick = onCheck, enabled = enabled) {
-          Text(if (item.checking) "Checking…" else "Check")
+          Text(if (item.checking) stringResource(R.string.program_updates_checking) else stringResource(R.string.program_updates_check))
         }
         Button(
           onClick = onUpdate,
           enabled = enabled && item.updateAvailable,
         ) {
-          Text(if (item.updating) "Updating…" else "Update")
+          Text(if (item.updating) stringResource(R.string.program_updates_updating) else stringResource(R.string.program_updates_update))
         }
       }
     }
@@ -239,9 +250,9 @@ private fun ReleasePickerDialog(
   if (showWarn && pending != null) {
     AlertDialog(
       onDismissRequest = { showWarn = false; pending = null },
-      title = { Text("Предупреждение") },
+      title = { Text(stringResource(R.string.program_updates_warning_title)) },
       text = {
-        Text("Вы выбрали ${pending!!.version}, что ниже $minVersion. Возможны проблемы с запуском, и заготовленные стратегии могут не работать.")
+        Text(stringResource(R.string.program_updates_warning_text_fmt, pending!!.version, minVersion))
       },
       confirmButton = {
         TextButton(onClick = {
@@ -249,10 +260,10 @@ private fun ReleasePickerDialog(
           showWarn = false
           pending = null
           if (p != null) onSelectRelease(p.version, p.downloadUrl)
-        }) { Text("Продолжить") }
+        }) { Text(stringResource(R.string.program_updates_continue)) }
       },
       dismissButton = {
-        TextButton(onClick = { showWarn = false; pending = null }) { Text("Отмена") }
+        TextButton(onClick = { showWarn = false; pending = null }) { Text(stringResource(R.string.backup_cancel)) }
       }
     )
   }
@@ -272,11 +283,11 @@ private fun ReleasePickerDialog(
         Row(verticalAlignment = Alignment.CenterVertically) {
           Text(title, style = MaterialTheme.typography.titleLarge)
           Spacer(Modifier.weight(1f))
-          IconButton(onClick = onRefresh) { Icon(Icons.Filled.Refresh, contentDescription = "Refresh") }
+          IconButton(onClick = onRefresh) { Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.program_updates_refresh_cd)) }
         }
 
         Spacer(Modifier.height(6.dp))
-        Text("Выберите версию для установки. Рекомендуется Latest (auto).", style = MaterialTheme.typography.bodySmall)
+        Text(stringResource(R.string.program_updates_choose_version_hint), style = MaterialTheme.typography.bodySmall)
 
         if (stateItem.releasesLoading) {
           Spacer(Modifier.height(10.dp))
@@ -303,10 +314,10 @@ private fun ReleasePickerDialog(
                 verticalAlignment = Alignment.CenterVertically,
               ) {
                 Column(Modifier.weight(1f)) {
-                  Text("Latest (auto)", fontWeight = FontWeight.SemiBold)
-                  Text("Использовать самый последний релиз GitHub", style = MaterialTheme.typography.bodySmall)
+                  Text(stringResource(R.string.program_updates_latest_auto_title), fontWeight = FontWeight.SemiBold)
+                  Text(stringResource(R.string.program_updates_latest_auto_desc), style = MaterialTheme.typography.bodySmall)
                 }
-                Button(onClick = onSelectLatest) { Text("Выбрать") }
+                Button(onClick = onSelectLatest) { Text(stringResource(R.string.program_updates_select)) }
               }
             }
           }
@@ -325,7 +336,7 @@ private fun ReleasePickerDialog(
                   if (date.isNotBlank()) Text(date, style = MaterialTheme.typography.bodySmall)
                 }
                 val isSelected = stateItem.selectedVersion == r.version
-                val label = if (isSelected) "Выбрано" else "Выбрать"
+                val label = if (isSelected) stringResource(R.string.program_updates_selected) else stringResource(R.string.program_updates_select)
                 Button(onClick = {
                   if (isBelowMin(r.version, minVersion)) {
                     pending = r
@@ -341,7 +352,7 @@ private fun ReleasePickerDialog(
 
         Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-          TextButton(onClick = onDismiss) { Text("Закрыть") }
+          TextButton(onClick = onDismiss) { Text(stringResource(R.string.backup_close)) }
         }
       }
     }

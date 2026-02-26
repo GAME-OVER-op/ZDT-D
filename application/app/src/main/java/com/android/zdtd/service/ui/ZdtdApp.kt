@@ -30,6 +30,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,6 +39,7 @@ import com.android.zdtd.service.LogLine
 import com.android.zdtd.service.AppUpdateUiState
 import com.android.zdtd.service.BackupUiState
 import com.android.zdtd.service.ProgramUpdatesUiState
+import com.android.zdtd.service.R
 import com.android.zdtd.service.RootState
 import com.android.zdtd.service.SetupStep
 import com.android.zdtd.service.SetupUiState
@@ -45,6 +47,7 @@ import com.android.zdtd.service.UiState
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.delay
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import com.android.zdtd.service.ui.AppUpdateBanner
@@ -129,14 +132,19 @@ private fun UpdatePromptDialog(setup: SetupUiState, onUpdate: () -> Unit, onSkip
   val mandatory = setup.updatePromptMandatory
   AlertDialog(
     onDismissRequest = { if (!mandatory) onSkip() },
-    title = { Text(if (setup.updatePromptTitle.isBlank()) "Обновление" else setup.updatePromptTitle) },
+    title = {
+      Text(
+        if (setup.updatePromptTitle.isBlank()) stringResource(R.string.update_prompt_title_default)
+        else setup.updatePromptTitle
+      )
+    },
     text = { Text(setup.updatePromptText) },
     confirmButton = {
-      TextButton(onClick = onUpdate) { Text("Обновить") }
+      TextButton(onClick = onUpdate) { Text(stringResource(R.string.update_prompt_update)) }
     },
     dismissButton = {
       if (!mandatory) {
-        TextButton(onClick = onSkip) { Text("Пропустить") }
+        TextButton(onClick = onSkip) { Text(stringResource(R.string.update_prompt_skip)) }
       }
     },
     properties = androidx.compose.ui.window.DialogProperties(
@@ -163,6 +171,8 @@ private fun MainShell(
   var showLogs by remember { mutableStateOf(false) }
   var showBackup by remember { mutableStateOf(false) }
   var showProgramUpdates by remember { mutableStateOf(false) }
+  var showDeleteModule by remember { mutableStateOf(false) }
+  var showDeleteModuleNext by remember { mutableStateOf(false) }
   var showSettings by remember { mutableStateOf(false) }
 
   // System Back behavior:
@@ -171,11 +181,20 @@ private fun MainShell(
   // - Inside Programs (Program/Profile) -> go back within the Programs stack
   // - From Home -> default system behavior (finish activity)
   // - If logs sheet is open -> close it
-  val activity = LocalContext.current as? Activity
-  val handleBack = remember(tab, appsRoute, showLogs, showBackup, showProgramUpdates, showSettings) {
-    tab != Tab.HOME || showLogs || showBackup || showProgramUpdates || showSettings || (tab == Tab.APPS && appsRoute != AppsRoute.List)
+  val ctx = LocalContext.current
+  val activity = ctx as? Activity
+  val handleBack = remember(tab, appsRoute, showLogs, showBackup, showProgramUpdates, showSettings, showDeleteModule, showDeleteModuleNext) {
+    tab != Tab.HOME || showLogs || showBackup || showProgramUpdates || showSettings || showDeleteModule || showDeleteModuleNext || (tab == Tab.APPS && appsRoute != AppsRoute.List)
   }
   BackHandler(enabled = handleBack) {
+    if (showDeleteModuleNext) {
+      showDeleteModuleNext = false
+      return@BackHandler
+    }
+    if (showDeleteModule) {
+      showDeleteModule = false
+      return@BackHandler
+    }
     if (showSettings) {
       showSettings = false
       return@BackHandler
@@ -219,6 +238,11 @@ private fun MainShell(
   }
 
   val snackHost = remember { SnackbarHostState() }
+  val uiState by uiStateFlow.collectAsStateWithLifecycle()
+
+  var deleteModulePreparing by remember { mutableStateOf(false) }
+  var deleteModulePrepareError by remember { mutableStateOf<String?>(null) }
+  var deleteModulePrepareRequested by remember { mutableStateOf(false) }
 
   // When user opens the Programs tab, refresh programs once (no manual refresh buttons in UI).
   LaunchedEffect(tab) {
@@ -248,7 +272,6 @@ private fun MainShell(
   }
 
   if (showProgramUpdates) {
-    val uiState by uiStateFlow.collectAsStateWithLifecycle()
     val pu by programUpdatesFlow.collectAsStateWithLifecycle()
     ProgramUpdatesDialog(
       state = pu,
@@ -272,10 +295,73 @@ private fun MainShell(
         onCheckNow = actions::checkAppUpdateNow,
         daemonNotificationEnabled = appUpdate.daemonStatusNotificationEnabled,
         onToggleDaemonNotification = actions::setDaemonStatusNotificationsEnabled,
+        languageMode = appUpdate.languageMode,
+        onLanguageModeChange = actions::setAppLanguageMode,
+        onDeleteModule = {
+          showSettings = false
+          showDeleteModule = true
+        },
       )
       Spacer(Modifier.height(16.dp))
     }
   }
+
+  DeleteModuleConfirmDialog(
+    visible = showDeleteModule,
+    onConfirm = {
+      showDeleteModule = false
+      val serviceRunning = ApiModels.isServiceOn(uiState.status)
+      if (serviceRunning) {
+        deleteModulePrepareError = null
+        deleteModulePreparing = true
+        deleteModulePrepareRequested = true
+      } else {
+        actions.beginModuleRemoval()
+        showDeleteModuleNext = true
+      }
+    },
+    onDismiss = { showDeleteModule = false },
+  )
+
+  if (deleteModulePrepareRequested) {
+    LaunchedEffect(deleteModulePrepareRequested) {
+      deleteModulePrepareError = null
+      actions.toggleService()
+      var stopped = false
+      var tries = 0
+      while (tries < 20) {
+        delay(500)
+        actions.refreshStatus()
+        delay(500)
+        stopped = !ApiModels.isServiceOn(uiState.status)
+        if (stopped) break
+        tries++
+      }
+      deleteModulePreparing = false
+      deleteModulePrepareRequested = false
+      if (stopped) {
+        actions.beginModuleRemoval()
+        showDeleteModuleNext = true
+      } else {
+        deleteModulePrepareError = ctx.getString(R.string.mv_auto_054)
+      }
+    }
+  }
+
+  DeleteModulePreparingDialog(
+    visible = deleteModulePreparing,
+    errorText = deleteModulePrepareError,
+    onDismiss = {
+      deleteModulePreparing = false
+      deleteModulePrepareRequested = false
+      deleteModulePrepareError = null
+    },
+  )
+
+  DeleteModuleNextStepDialog(
+    visible = showDeleteModuleNext,
+    onDismiss = { showDeleteModuleNext = false },
+  )
 
   UnknownSourcesPermissionDialog(
     visible = appUpdate.needsUnknownSourcesPermission,
@@ -285,13 +371,13 @@ private fun MainShell(
 
   val canGoBack = tab == Tab.APPS && appsRoute != AppsRoute.List
   val title = when {
-    tab == Tab.HOME -> "ZDT-D"
-    tab == Tab.STATS -> "Stats"
-    tab == Tab.SUPPORT -> "Support"
-    tab == Tab.APPS && appsRoute == AppsRoute.List -> "Programs"
-    tab == Tab.APPS && appsRoute is AppsRoute.Program -> "Program"
-    tab == Tab.APPS && appsRoute is AppsRoute.Profile -> "Profile"
-    else -> "ZDT-D"
+    tab == Tab.HOME -> stringResource(R.string.app_name)
+    tab == Tab.STATS -> stringResource(R.string.nav_stats)
+    tab == Tab.SUPPORT -> stringResource(R.string.nav_support)
+    tab == Tab.APPS && appsRoute == AppsRoute.List -> stringResource(R.string.nav_programs)
+    tab == Tab.APPS && appsRoute is AppsRoute.Program -> stringResource(R.string.title_program)
+    tab == Tab.APPS && appsRoute is AppsRoute.Profile -> stringResource(R.string.title_profile)
+    else -> stringResource(R.string.app_name)
   }
 
   Scaffold(
@@ -306,17 +392,17 @@ private fun MainShell(
                 is AppsRoute.Program -> AppsRoute.List
                 AppsRoute.List -> AppsRoute.List
               }
-            }) { Icon(Icons.Filled.ArrowBack, contentDescription = "Back") }
+            }) { Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back)) }
           }
         },
         actions = {
-            IconButton(onClick = { showLogs = true }) { Icon(Icons.Filled.BugReport, contentDescription = "Logs") }
-            IconButton(onClick = { showBackup = true }) { Icon(Icons.Filled.CloudDownload, contentDescription = "Backup") }
+            IconButton(onClick = { showLogs = true }) { Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs)) }
+            IconButton(onClick = { showBackup = true }) { Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup)) }
             IconButton(onClick = {
               showProgramUpdates = true
               actions.resetProgramUpdatesUi()
-            }) { Icon(Icons.Filled.SystemUpdateAlt, contentDescription = "Program updates") }
-            IconButton(onClick = { showSettings = true }) { Icon(Icons.Filled.Settings, contentDescription = "Settings") }
+            }) { Icon(Icons.Filled.SystemUpdateAlt, contentDescription = stringResource(R.string.cd_program_updates)) }
+            IconButton(onClick = { showSettings = true }) { Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings)) }
         }
       )
     },
@@ -326,26 +412,26 @@ private fun MainShell(
           selected = tab == Tab.HOME,
           onClick = { tab = Tab.HOME },
           icon = { Icon(Icons.Filled.Power, contentDescription = null) },
-          label = { Text("Home") },
+          label = { Text(stringResource(R.string.nav_home)) },
         )
         NavigationBarItem(
           selected = tab == Tab.STATS,
           onClick = { tab = Tab.STATS },
           icon = { Icon(Icons.Filled.Equalizer, contentDescription = null) },
-          label = { Text("Stats") },
+          label = { Text(stringResource(R.string.nav_stats)) },
         )
         NavigationBarItem(
           selected = tab == Tab.APPS,
           onClick = { tab = Tab.APPS },
           icon = { Icon(Icons.Filled.Apps, contentDescription = null) },
-          label = { Text("Programs") },
+          label = { Text(stringResource(R.string.nav_programs)) },
         )
 
         NavigationBarItem(
           selected = tab == Tab.SUPPORT,
           onClick = { tab = Tab.SUPPORT },
           icon = { Icon(Icons.Filled.Info, contentDescription = null) },
-          label = { Text("Support") },
+          label = { Text(stringResource(R.string.nav_support)) },
         )
       }
     },

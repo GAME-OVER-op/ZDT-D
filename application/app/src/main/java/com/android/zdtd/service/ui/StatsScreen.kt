@@ -1,22 +1,21 @@
 package com.android.zdtd.service.ui
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Surface
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Speed
@@ -24,21 +23,24 @@ import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.android.zdtd.service.R
 import com.android.zdtd.service.UiState
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
@@ -89,19 +91,24 @@ fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
 
   val rows = remember(showRep) {
     listOf(
-    ProcRow("zdt-d", showRep?.zdtd ?: ApiModels.ProcAgg()),
-    ProcRow("zapret", showRep?.zapret ?: ApiModels.ProcAgg()),
-    ProcRow("zapret2", showRep?.zapret2 ?: ApiModels.ProcAgg()),
-    ProcRow("byedpi", showRep?.byedpi ?: ApiModels.ProcAgg()),
-    ProcRow("dpitunnel", showRep?.dpitunnel ?: ApiModels.ProcAgg()),
-    ProcRow("dnscrypt", showRep?.dnscrypt ?: ApiModels.ProcAgg()),
-    ProcRow("opera-proxy", showRep?.opera?.opera ?: ApiModels.ProcAgg()),
-    ProcRow("t2s", showRep?.opera?.t2s ?: ApiModels.ProcAgg()),
+      ProcRow("zdt-d", showRep?.zdtd ?: ApiModels.ProcAgg()),
+      ProcRow("zapret", showRep?.zapret ?: ApiModels.ProcAgg()),
+      ProcRow("zapret2", showRep?.zapret2 ?: ApiModels.ProcAgg()),
+      ProcRow("byedpi", showRep?.byedpi ?: ApiModels.ProcAgg()),
+      ProcRow("dpitunnel", showRep?.dpitunnel ?: ApiModels.ProcAgg()),
+      ProcRow("dnscrypt", showRep?.dnscrypt ?: ApiModels.ProcAgg()),
+      ProcRow("sing-box", showRep?.singBox ?: ApiModels.ProcAgg()),
+      ProcRow("opera-proxy", showRep?.opera?.opera ?: ApiModels.ProcAgg()),
+      ProcRow("t2s", showRep?.t2s ?: ApiModels.ProcAgg()),
       ProcRow("opera-byedpi", showRep?.opera?.byedpi ?: ApiModels.ProcAgg()),
     )
   }
 
   val runningCount = rows.count { it.agg.count > 0 }
+
+  val cpuTitle = stringResource(R.string.stats_cpu_title)
+  val cpuUnknown = stringResource(R.string.stats_unknown_cpu)
+  val memTitle = stringResource(R.string.stats_memory_title)
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
@@ -121,29 +128,41 @@ fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
         MetricCard(
           modifier = Modifier.weight(1f),
           icon = { Icon(Icons.Outlined.Speed, contentDescription = null) },
-          title = "CPU",
-          subtitle = device.cpuName.ifBlank { "Unknown CPU" },
+          title = cpuTitle,
+          subtitle = device.cpuName?.takeIf { it.isNotBlank() } ?: cpuUnknown,
           value = "${fmtPct(cpuTotalShown)}%",
           progress = cpuProgress,
-          footnote = if (cpuTotalRaw > 100.0) "Clamped from ${fmtPct(cpuTotalRaw)}%" else null,
+          footnote = if (cpuTotalRaw > 100.0) {
+            stringResource(R.string.stats_clamped_from, fmtPct(cpuTotalRaw))
+          } else null,
         )
 
         MetricCard(
           modifier = Modifier.weight(1f),
           icon = { Icon(Icons.Outlined.Memory, contentDescription = null) },
-          title = "Memory",
-          subtitle = if (totalRamMb != null) "Total: ${mbToHuman(totalRamMb)}" else "Total: —",
+          title = memTitle,
+          subtitle = if (totalRamMb != null) {
+            stringResource(R.string.stats_total_fmt, mbToHuman(totalRamMb))
+          } else {
+            stringResource(R.string.stats_total_unknown)
+          },
           value = mbToHuman(usedMb),
           progress = usedFrac,
-          footnote = if (totalRamMb != null) "Free: ${mbToHuman(freeMb ?: 0.0)}" else null,
+          footnote = if (totalRamMb != null) {
+            stringResource(R.string.stats_free_fmt, mbToHuman(freeMb ?: 0.0))
+          } else null,
         )
       }
     }
 
     item {
       SectionHeader(
-        title = "Processes",
-        trailing = if (daemonOnline) "$runningCount running" else "offline",
+        title = stringResource(R.string.stats_processes_title),
+        trailing = if (daemonOnline) {
+          stringResource(R.string.stats_running_count, runningCount)
+        } else {
+          stringResource(R.string.stats_offline)
+        },
       )
     }
 
@@ -165,15 +184,30 @@ private fun StatusCard(daemonOnline: Boolean, runningServices: Int) {
     colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
   ) {
     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-        Text("Daemon", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        StatusPill(text = if (daemonOnline) "ONLINE" else "OFFLINE", good = daemonOnline)
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = Modifier.fillMaxWidth(),
+      ) {
+        Text(
+          stringResource(R.string.stats_daemon_title),
+          style = MaterialTheme.typography.titleMedium,
+          fontWeight = FontWeight.SemiBold,
+        )
+        StatusPill(
+          text = if (daemonOnline) stringResource(R.string.stats_online_upper) else stringResource(R.string.stats_offline_upper),
+          good = daemonOnline,
+        )
       }
 
       Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Icon(Icons.Outlined.Storage, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f))
         Text(
-          text = if (daemonOnline) "$runningServices running service(s)" else "No connection to API",
+          text = if (daemonOnline) {
+            stringResource(R.string.stats_running_services, runningServices)
+          } else {
+            stringResource(R.string.stats_no_connection)
+          },
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
         )
       }
@@ -248,7 +282,10 @@ private fun ProcCard(name: String, agg: ApiModels.ProcAgg, totalRamMb: Double?) 
         Text(name, fontWeight = FontWeight.SemiBold)
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-          TinyPill(text = if (running) "running" else "stopped", good = running)
+          TinyPill(
+            text = if (running) stringResource(R.string.stats_running_lower) else stringResource(R.string.stats_stopped_lower),
+            good = running,
+          )
           TinyPill(text = "x${agg.count}", good = true, strong = false)
         }
       }
@@ -257,7 +294,7 @@ private fun ProcCard(name: String, agg: ApiModels.ProcAgg, totalRamMb: Double?) 
       Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           Icon(Icons.Outlined.Speed, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f))
-          Text("CPU", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+          Text(stringResource(R.string.stats_cpu_label), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
         }
         Text("${fmtPct(agg.cpuPercent)}%", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
       }
@@ -267,7 +304,7 @@ private fun ProcCard(name: String, agg: ApiModels.ProcAgg, totalRamMb: Double?) 
       Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           Icon(Icons.Outlined.Memory, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f))
-          Text("RAM", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+          Text(stringResource(R.string.stats_ram_label), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
         }
         Text(mbToHuman(agg.rssMb), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
       }

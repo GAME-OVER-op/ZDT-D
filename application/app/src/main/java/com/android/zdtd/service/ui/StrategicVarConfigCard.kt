@@ -28,8 +28,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.launch
@@ -62,6 +65,7 @@ fun StrategicVarConfigCard(
   var applying by remember(programId, profile) { mutableStateOf(false) }
 
   val scope = rememberCoroutineScope()
+  val ctx = LocalContext.current
 
   fun reloadConfig() {
     loading = true
@@ -89,10 +93,10 @@ fun StrategicVarConfigCard(
   }
 
   val strategyLabel = when {
-    variantsLoading -> "Strategies: loading..."
-    variants.isEmpty() -> "Strategies: none"
-    matched != null -> "Strategy: ${matched.name.removeSuffix(".txt")}" 
-    else -> "User config"
+    variantsLoading -> stringResource(R.string.strategic_strategies_loading)
+    variants.isEmpty() -> stringResource(R.string.strategic_strategies_none)
+    matched != null -> stringResource(R.string.strategic_strategy_selected, matched.name.removeSuffix(".txt"))
+    else -> stringResource(R.string.strategic_user_config)
   }
   val isUserConfig = !variantsLoading && variants.isNotEmpty() && matched == null
 
@@ -100,10 +104,10 @@ fun StrategicVarConfigCard(
     Column(Modifier.padding(12.dp)) {
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Column(Modifier.weight(1f)) {
-          Text("config.txt", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+          Text(stringResource(R.string.strategic_config_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
           Spacer(Modifier.height(2.dp))
           Text(
-            "Profile config. You can use a prebuilt strategy or keep your own.",
+            stringResource(R.string.strategic_config_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
           )
@@ -115,13 +119,13 @@ fun StrategicVarConfigCard(
               saving = false
               if (ok) lastLoaded = text
               scope.launch {
-                snackHost.showSnackbar(if (ok) "Saved (apply after stop/start)" else "Save failed")
+                snackHost.showSnackbar(if (ok) ctx.getString(R.string.editor_saved_apply_restart) else ctx.getString(R.string.editor_save_failed))
               }
             }
           },
           enabled = !loading && !saving && !applying && text != lastLoaded,
         ) {
-          Text(if (saving) "..." else "Save")
+          Text(if (saving) stringResource(R.string.common_ellipsis) else stringResource(R.string.common_save))
         }
       }
 
@@ -146,7 +150,7 @@ fun StrategicVarConfigCard(
             onClick = { menuOpen = true },
             enabled = !loading && !saving && !applying && !variantsLoading && variants.isNotEmpty(),
           ) {
-            Text(if (applying) "..." else "Choose")
+            Text(if (applying) stringResource(R.string.common_ellipsis) else stringResource(R.string.common_choose))
           }
           DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
             variants.forEach { v ->
@@ -161,7 +165,10 @@ fun StrategicVarConfigCard(
                       reloadConfig()
                     }
                     scope.launch {
-                      snackHost.showSnackbar(if (ok) "Applied: ${v.name.removeSuffix(".txt")}" else "Apply failed")
+                      snackHost.showSnackbar(
+                        if (ok) ctx.getString(R.string.common_applied_with_value, v.name.removeSuffix(".txt"))
+                        else ctx.getString(R.string.common_apply_failed)
+                      )
                     }
                   }
                 }
@@ -178,7 +185,7 @@ fun StrategicVarConfigCard(
         onValueChange = { text = it },
         modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
         enabled = !loading && !saving && !applying,
-        label = { Text(if (loading) "Loading..." else "") },
+        label = { Text(if (loading) stringResource(R.string.common_loading) else "") },
         maxLines = 24,
       )
     }

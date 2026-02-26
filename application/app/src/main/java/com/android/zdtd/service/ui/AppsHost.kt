@@ -17,7 +17,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.android.zdtd.service.R
 import com.android.zdtd.service.UiState
 import com.android.zdtd.service.ZdtdActions
 import kotlinx.coroutines.flow.StateFlow
@@ -83,7 +85,7 @@ fun AppsHost(
         actions = actions,
         snackHost = snackHost,
       )
-      else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Unknown route") }
+      else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(stringResource(R.string.apps_host_unknown_route)) }
     }
   }
 }

@@ -26,8 +26,8 @@ import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -40,8 +40,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.android.zdtd.service.R
 import com.android.zdtd.service.api.ApiModels
 import java.util.Locale
 
@@ -99,13 +101,13 @@ fun AppsListScreen(
             IconButton(onClick = { query = "" }) {
               Icon(
                 imageVector = Icons.Outlined.Close,
-                contentDescription = "Clear",
+                contentDescription = stringResource(R.string.apps_list_clear),
                 modifier = Modifier.size(20.dp),
               )
             }
           }
         },
-        label = { Text("Search programs") },
+        label = { Text(stringResource(R.string.apps_list_search_programs)) },
         modifier = Modifier
           .fillMaxWidth()
           .padding(horizontal = 16.dp),
@@ -115,11 +117,11 @@ fun AppsListScreen(
     if (all.isEmpty()) {
       item {
         EmptyState(
-          title = "No programs",
-      hint = if (daemonOnline) {
-            "The daemon is online, but it returned an empty program list."
+          title = stringResource(R.string.apps_list_no_programs_title),
+          hint = if (daemonOnline) {
+            stringResource(R.string.apps_list_no_programs_daemon_online)
           } else {
-            "The daemon is offline. Start ZDT-D first."
+            stringResource(R.string.apps_list_no_programs_daemon_offline)
           },
         )
       }
@@ -129,8 +131,8 @@ fun AppsListScreen(
     if (filtered.isEmpty()) {
       item {
         EmptyState(
-          title = "Nothing found",
-          hint = "Try another search query.",
+          title = stringResource(R.string.apps_list_nothing_found_title),
+          hint = stringResource(R.string.apps_list_nothing_found_hint),
         )
       }
       return@LazyColumn
@@ -140,7 +142,10 @@ fun AppsListScreen(
       // NOTE: We intentionally avoid LazyListScope.stickyHeader to stay compatible
       // with older Compose Foundation versions used in some Android toolchains.
       item(key = "hdr_core") {
-        SectionHeader(title = "Core", subtitle = "${core.size} item(s)")
+        SectionHeader(
+          title = stringResource(R.string.apps_list_section_core),
+          subtitle = stringResource(R.string.apps_list_items_count, core.size),
+        )
       }
       items(core, key = { it.id }) { p ->
         ProgramCard(program = p, onClick = { onOpenProgram(p.id) })
@@ -149,7 +154,10 @@ fun AppsListScreen(
 
     if (prof.isNotEmpty()) {
       item(key = "hdr_profiles") {
-        SectionHeader(title = "Profiles", subtitle = "${prof.size} item(s)")
+        SectionHeader(
+          title = stringResource(R.string.apps_list_section_profiles),
+          subtitle = stringResource(R.string.apps_list_items_count, prof.size),
+        )
       }
       items(prof, key = { it.id }) { p ->
         ProgramCard(program = p, onClick = { onOpenProgram(p.id) })
@@ -174,8 +182,8 @@ private fun ProgramsHeaderCard(daemonOnline: Boolean, total: Int, shown: Int) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        Text("Programs", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        val label = if (daemonOnline) "ONLINE" else "OFFLINE"
+        Text(stringResource(R.string.apps_list_programs_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        val label = if (daemonOnline) stringResource(R.string.apps_list_online_upper) else stringResource(R.string.apps_list_offline_upper)
         AssistChip(
           onClick = {},
           label = { Text(label) },
@@ -187,11 +195,15 @@ private fun ProgramsHeaderCard(daemonOnline: Boolean, total: Int, shown: Int) {
       }
 
       Text(
-        text = "Open a program to edit configs, profiles and app lists.",
+        text = stringResource(R.string.apps_list_header_hint),
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
       )
 
-      val line = if (total == shown) "Total: $total" else "Showing: $shown / $total"
+      val line = if (total == shown) {
+        stringResource(R.string.apps_list_total_fmt, total)
+      } else {
+        stringResource(R.string.apps_list_showing_fmt, shown, total)
+      }
       Text(line, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
     }
   }
@@ -238,8 +250,17 @@ private fun ProgramCard(program: ApiModels.Program, onClick: () -> Unit) {
   val profilesTotal = program.profiles.size
   val profilesEnabled = program.profiles.count { it.enabled }
 
-  val primaryChip = if (isProfiles) "profiles $profilesTotal" else if (program.enabled) "enabled" else "disabled"
-  val secondaryChip = if (isProfiles) "enabled $profilesEnabled" else null
+  val primaryChip = if (isProfiles) {
+    stringResource(R.string.apps_list_chip_profiles, profilesTotal)
+  } else if (program.enabled) {
+    stringResource(R.string.apps_list_chip_enabled)
+  } else {
+    stringResource(R.string.apps_list_chip_disabled)
+  }
+
+  val secondaryChip = if (isProfiles) {
+    stringResource(R.string.apps_list_chip_enabled_count, profilesEnabled)
+  } else null
 
   val chipColor = if (isProfiles) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
   else if (program.enabled) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.18f)
@@ -300,15 +321,16 @@ private fun ProgramCard(program: ApiModels.Program, onClick: () -> Unit) {
   }
 }
 
+@Composable
 private fun programDescription(id: String): String {
   return when (id) {
-    "dnscrypt" -> "Local encrypted DNS resolver"
-    "operaproxy" -> "byedpi \u2192 opera-proxy \u2192 t2s chain"
-    "nfqws" -> "zapret NFQUEUE DPI bypass"
-    "nfqws2" -> "zapret2 NFQUEUE DPI bypass"
-    "byedpi" -> "Local TCP proxy"
-    "dpitunnel" -> "TCP+UDP tunnel"
-    else -> "Configure and manage"
+    "dnscrypt" -> stringResource(R.string.apps_list_desc_dnscrypt)
+    "operaproxy" -> stringResource(R.string.apps_list_desc_operaproxy)
+    "nfqws" -> stringResource(R.string.apps_list_desc_nfqws)
+    "nfqws2" -> stringResource(R.string.apps_list_desc_nfqws2)
+    "byedpi" -> stringResource(R.string.apps_list_desc_byedpi)
+    "dpitunnel" -> stringResource(R.string.apps_list_desc_dpitunnel)
+    else -> stringResource(R.string.apps_list_desc_default)
   }
 }
 

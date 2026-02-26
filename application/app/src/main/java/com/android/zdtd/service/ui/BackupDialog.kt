@@ -25,10 +25,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.android.zdtd.service.R
 import com.android.zdtd.service.BackupItem
 import com.android.zdtd.service.BackupUiState
 import com.android.zdtd.service.ZdtdActions
@@ -42,11 +44,25 @@ fun BackupDialog(
 ) {
   var confirmRestore by remember { mutableStateOf<BackupItem?>(null) }
   var confirmDelete by remember { mutableStateOf<BackupItem?>(null) }
+  var requireReopenAfterRestore by remember { mutableStateOf(false) }
+  var confirmForceRestore by remember { mutableStateOf<String?>(null) }
+  var confirmForceRestoreFinal by remember { mutableStateOf<String?>(null) }
+
+  LaunchedEffect(state.progressVisible, state.progressFinished, state.progressError) {
+    if (state.progressVisible && state.progressFinished && state.progressError == null) {
+      // Avoid immediate repeated restore in the same open dialog session: some devices keep
+      // a stale restore state until the dialog is reopened.
+      requireReopenAfterRestore = true
+    }
+  }
 
   Dialog(
     onDismissRequest = {
       // While an operation is running, keep the user inside the dialog.
-      if (!state.progressVisible || state.progressFinished) onDismiss()
+      if (!state.progressVisible || state.progressFinished) {
+        requireReopenAfterRestore = false
+        onDismiss()
+      }
     },
     properties = DialogProperties(dismissOnClickOutside = !state.progressVisible || state.progressFinished)
   ) {
@@ -59,17 +75,16 @@ fun BackupDialog(
     ) {
       Column(Modifier.padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-          Text("Бэкап настроек", style = MaterialTheme.typography.titleLarge)
+          Text(stringResource(R.string.backup_title), style = MaterialTheme.typography.titleLarge)
           Spacer(Modifier.weight(1f))
-          IconButton(onClick = { actions.refreshBackups() }) {
-            Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+          IconButton(onClick = { requireReopenAfterRestore = false; actions.refreshBackups() }) {
+            Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.backup_refresh_cd))
           }
         }
 
         Spacer(Modifier.height(6.dp))
         Text(
-          "Сохраните все папки из working_folder в один архив, а затем при необходимости восстановите их обратно. " +
-            "Файл flag.sha256 не переносится.",
+          stringResource(R.string.backup_desc),
           style = MaterialTheme.typography.bodySmall,
         )
 
@@ -78,13 +93,13 @@ fun BackupDialog(
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
           Button(
             onClick = { actions.createBackup() },
-            enabled = !state.progressVisible || state.progressFinished,
-          ) { Text("Создать бэкап") }
+            enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,
+          ) { Text(stringResource(R.string.backup_create)) }
 
           OutlinedButton(
             onClick = { actions.requestBackupImport() },
-            enabled = !state.progressVisible || state.progressFinished,
-          ) { Text("Импортировать") }
+            enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,
+          ) { Text(stringResource(R.string.backup_import)) }
         }
 
         if (state.error != null) {
@@ -101,14 +116,14 @@ fun BackupDialog(
               horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
               CircularProgressIndicator(modifier = Modifier.size(18.dp))
-              Text("Загрузка списка…")
+              Text(stringResource(R.string.backup_loading_list))
             }
           }
           state.items.isEmpty() -> {
-            Text("Бэкапы не найдены в /storage/emulated/0/ZDT-D_Backups")
+            Text(stringResource(R.string.backup_none_found))
           }
           else -> {
-            Text("Ваши бэкапы", fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.backup_yours), fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.height(8.dp))
             LazyColumn(
               modifier = Modifier
@@ -119,7 +134,7 @@ fun BackupDialog(
               items(state.items, key = { it.name }) { item ->
                 BackupItemCard(
                   item = item,
-                  enabled = !state.progressVisible || state.progressFinished,
+                  enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,
                   onRestore = { confirmRestore = item },
                   onShare = { actions.shareBackup(item.name) },
                   onDelete = { confirmDelete = item },
@@ -130,11 +145,19 @@ fun BackupDialog(
         }
 
         Spacer(Modifier.height(12.dp))
+        if (requireReopenAfterRestore && !state.progressVisible) {
+          Text(
+            stringResource(R.string.mv_backup_restore_reopen_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.primary,
+          )
+          Spacer(Modifier.height(8.dp))
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
           TextButton(
-            onClick = onDismiss,
+            onClick = { requireReopenAfterRestore = false; onDismiss() },
             enabled = !state.progressVisible || state.progressFinished,
-          ) { Text("Закрыть") }
+          ) { Text(stringResource(R.string.backup_close)) }
         }
       }
     }
@@ -144,21 +167,20 @@ fun BackupDialog(
     val item = confirmRestore!!
     AlertDialog(
       onDismissRequest = { confirmRestore = null },
-      title = { Text("Восстановить бэкап?") },
+      title = { Text(stringResource(R.string.backup_restore_confirm_title)) },
       text = {
         Text(
-          "Текущие настройки будут полностью заменены содержимым архива. " +
-            "Сервис будет остановлен на время операции."
+          stringResource(R.string.backup_restore_confirm_text)
         )
       },
       confirmButton = {
         TextButton(onClick = {
           confirmRestore = null
           actions.restoreBackup(item.name)
-        }) { Text("Восстановить") }
+        }) { Text(stringResource(R.string.backup_restore)) }
       },
       dismissButton = {
-        TextButton(onClick = { confirmRestore = null }) { Text("Отмена") }
+        TextButton(onClick = { confirmRestore = null }) { Text(stringResource(R.string.backup_cancel)) }
       },
     )
   }
@@ -167,22 +189,67 @@ fun BackupDialog(
     val item = confirmDelete!!
     AlertDialog(
       onDismissRequest = { confirmDelete = null },
-      title = { Text("Удалить бэкап?") },
-      text = { Text("Файл будет удалён без возможности восстановления.") },
+      title = { Text(stringResource(R.string.backup_delete_confirm_title)) },
+      text = { Text(stringResource(R.string.backup_delete_confirm_text)) },
       confirmButton = {
         TextButton(onClick = {
           confirmDelete = null
           actions.deleteBackup(item.name)
-        }) { Text("Удалить") }
+        }) { Text(stringResource(R.string.backup_delete)) }
       },
       dismissButton = {
-        TextButton(onClick = { confirmDelete = null }) { Text("Отмена") }
+        TextButton(onClick = { confirmDelete = null }) { Text(stringResource(R.string.backup_cancel)) }
+      },
+    )
+  }
+
+
+  if (confirmForceRestore != null) {
+    val name = confirmForceRestore!!
+    AlertDialog(
+      onDismissRequest = { confirmForceRestore = null },
+      title = { Text(stringResource(R.string.backup_force_restore_title)) },
+      text = { Text(stringResource(R.string.backup_force_restore_text)) },
+      confirmButton = {
+        TextButton(onClick = {
+          confirmForceRestore = null
+          confirmForceRestoreFinal = name
+        }) { Text(stringResource(R.string.backup_force_restore_continue)) }
+      },
+      dismissButton = {
+        TextButton(onClick = { confirmForceRestore = null }) { Text(stringResource(R.string.backup_back)) }
+      },
+    )
+  }
+
+  if (confirmForceRestoreFinal != null) {
+    val name = confirmForceRestoreFinal!!
+    AlertDialog(
+      onDismissRequest = { confirmForceRestoreFinal = null },
+      title = { Text(stringResource(R.string.backup_force_restore_confirm_title)) },
+      text = { Text(stringResource(R.string.backup_force_restore_confirm_text)) },
+      confirmButton = {
+        TextButton(onClick = {
+          confirmForceRestoreFinal = null
+          actions.restoreBackup(name, ignoreVersionCode = true)
+        }) { Text(stringResource(R.string.backup_force_restore_confirm_btn)) }
+      },
+      dismissButton = {
+        TextButton(onClick = { confirmForceRestoreFinal = null }) { Text(stringResource(R.string.backup_back)) }
       },
     )
   }
 
   if (state.progressVisible) {
-    BackupProgressDialog(state = state, onClose = actions::closeBackupProgress)
+    BackupProgressDialog(
+      state = state,
+      onClose = actions::closeBackupProgress,
+      onForceRestore = {
+        // Close current error dialog first, then show force-restore warning.
+        actions.closeBackupProgress()
+        confirmForceRestore = state.forceRestoreName
+      },
+    )
   }
 }
 
@@ -217,16 +284,16 @@ private fun BackupItemCard(
         OutlinedButton(onClick = onRestore, enabled = enabled) {
           Icon(Icons.Filled.Restore, contentDescription = null)
           Spacer(Modifier.width(6.dp))
-          Text("Восстановить")
+          Text(stringResource(R.string.backup_item_restore))
         }
 
         Spacer(Modifier.weight(1f))
 
         IconButton(onClick = onShare, enabled = enabled) {
-          Icon(Icons.Filled.Share, contentDescription = "Share")
+          Icon(Icons.Filled.Share, contentDescription = stringResource(R.string.backup_share_cd))
         }
         IconButton(onClick = onDelete, enabled = enabled) {
-          Icon(Icons.Filled.Delete, contentDescription = "Delete")
+          Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.backup_delete_cd))
         }
       }
     }
@@ -239,12 +306,13 @@ private fun BackupItemCard(
 private fun BackupProgressDialog(
   state: BackupUiState,
   onClose: () -> Unit,
+  onForceRestore: () -> Unit,
 ) {
   AlertDialog(
     onDismissRequest = {
       if (state.progressFinished) onClose()
     },
-    title = { Text(if (state.progressTitle.isBlank()) "Операция" else state.progressTitle) },
+    title = { Text(if (state.progressTitle.isBlank()) stringResource(R.string.backup_progress_default_title) else state.progressTitle) },
     text = {
       Column(Modifier.fillMaxWidth()) {
         if (state.progressText.isNotBlank()) {
@@ -267,7 +335,16 @@ private fun BackupProgressDialog(
     },
     confirmButton = {
       if (state.progressFinished) {
-        TextButton(onClick = onClose) { Text("Закрыть") }
+        if (state.forceRestoreAvailable) {
+          TextButton(onClick = onForceRestore) { Text(stringResource(R.string.backup_restore_anyway)) }
+        } else {
+          TextButton(onClick = onClose) { Text(stringResource(R.string.backup_close)) }
+        }
+      }
+    },
+    dismissButton = {
+      if (state.progressFinished && state.forceRestoreAvailable) {
+        TextButton(onClick = onClose) { Text(stringResource(R.string.backup_back)) }
       }
     },
     properties = DialogProperties(

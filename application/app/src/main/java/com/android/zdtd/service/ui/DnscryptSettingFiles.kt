@@ -6,9 +6,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -36,6 +39,7 @@ fun DnscryptSettingFilesSection(
   var fileTooLargeSize by remember { mutableStateOf<Long?>(null) }
 
   val scope = rememberCoroutineScope()
+  val ctx = LocalContext.current
 
   fun loadList() {
     listLoading = true
@@ -60,10 +64,10 @@ fun DnscryptSettingFilesSection(
     Column(Modifier.padding(12.dp)) {
       Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-          Text("Additional setting files", style = MaterialTheme.typography.titleSmall)
+          Text(stringResource(R.string.dnscrypt_setting_files_title), style = MaterialTheme.typography.titleSmall)
           Spacer(Modifier.height(2.dp))
           Text(
-            "Files from dnscrypt/setting (edit existing files only).",
+            stringResource(R.string.dnscrypt_setting_files_desc),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
           )
@@ -72,7 +76,7 @@ fun DnscryptSettingFilesSection(
           onClick = { loadList() },
           enabled = !listLoading && !fileLoading && !fileSaving,
         ) {
-          Text("Refresh")
+          Text(stringResource(R.string.dnscrypt_setting_files_refresh))
         }
       }
 
@@ -85,7 +89,7 @@ fun DnscryptSettingFilesSection(
 
       if (!listLoading && files.isEmpty()) {
         Text(
-          "No additional files found in dnscrypt/setting.",
+          stringResource(R.string.dnscrypt_setting_files_empty),
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
         )
         return@Column
@@ -162,7 +166,7 @@ fun DnscryptSettingFilesSection(
               if (!isEditable) {
                 Spacer(Modifier.width(8.dp))
                 Text(
-                  "TOO LARGE",
+                  stringResource(R.string.dnscrypt_setting_files_too_large),
                   style = MaterialTheme.typography.labelSmall,
                   color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                 )
@@ -186,24 +190,24 @@ fun DnscryptSettingFilesSection(
                   val fullPath = "/data/adb/modules/ZDT-D/working_folder/dnscrypt/setting/$name"
                   val szText = fileTooLargeSize?.toString() ?: (sz?.toString() ?: "?")
                   Text(
-                    "Editing is disabled for this file because it exceeds the size limit (${limitBytes} bytes).",
+                    stringResource(R.string.dnscrypt_setting_files_edit_disabled_fmt, limitBytes),
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.80f),
                   )
                   Spacer(Modifier.height(6.dp))
                   Text(
-                    "File: $fullPath\nSize: $szText bytes\nUse another editor to modify it.",
+                    stringResource(R.string.dnscrypt_setting_files_file_info_fmt, fullPath, szText),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                     fontFamily = FontFamily.Monospace,
                   )
                 } else if (!fileLoadedOk) {
                   Text(
-                    "Failed to load file content.",
+                    stringResource(R.string.dnscrypt_setting_files_load_failed),
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.80f),
                   )
                   Spacer(Modifier.height(6.dp))
                   Text(
-                    "Try Refresh or reopen this file.",
+                    stringResource(R.string.dnscrypt_setting_files_try_refresh),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                   )
@@ -229,13 +233,13 @@ fun DnscryptSettingFilesSection(
                         fileSaving = false
                         if (ok) lastLoaded = fileText
                         scope.launch {
-                          snackHost.showSnackbar(if (ok) "Saved (apply after stop/start)" else "Save failed")
+                          snackHost.showSnackbar(if (ok) ctx.getString(R.string.dnscrypt_setting_files_saved_snack) else ctx.getString(R.string.dnscrypt_setting_files_save_failed_snack))
                         }
                       }
                     },
                     enabled = fileLoadedOk && !fileTooLarge && !fileLoading && !fileSaving && fileText != lastLoaded,
                   ) {
-                    Text(if (fileSaving) "..." else "Save")
+                    Text(if (fileSaving) stringResource(R.string.dnscrypt_setting_files_saving) else stringResource(R.string.dnscrypt_setting_files_save))
                   }
                 }
               }

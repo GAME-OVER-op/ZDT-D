@@ -8,6 +8,8 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -29,11 +31,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import com.android.zdtd.service.AppUpdateUiState
+import com.android.zdtd.service.R
 import kotlin.math.roundToInt
 
 @Composable
@@ -64,7 +68,7 @@ fun AppUpdateBanner(
         ) {
           Column(Modifier.weight(1f)) {
             Text(
-              text = if (state.urgent) "Срочное обновление" else "Доступно обновление",
+              text = if (state.urgent) stringResource(R.string.app_update_urgent_title) else stringResource(R.string.app_update_available_title),
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.SemiBold,
             )
@@ -73,9 +77,9 @@ fun AppUpdateBanner(
             if (ver != null || code != null) {
               Text(
                 text = buildString {
-                  append("Доступно: ")
+                  append(stringResource(R.string.app_update_available_version_prefix))
                   if (ver != null) append(ver)
-                  if (code != null) append(" (code=").append(code).append(")")
+                  if (code != null) append(stringResource(R.string.app_update_available_version_code_fmt, code))
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
@@ -83,14 +87,14 @@ fun AppUpdateBanner(
             }
           }
           IconButton(onClick = onDismiss) {
-            Icon(Icons.Filled.Close, contentDescription = "Close")
+            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_close))
           }
         }
 
         if (state.urgent) {
           Spacer(Modifier.height(6.dp))
           Text(
-            text = "Исправление ошибок предыдущего обновления.",
+            text = stringResource(R.string.app_update_urgent_body),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
           )
@@ -119,11 +123,11 @@ fun AppUpdateBanner(
           }
           Spacer(Modifier.height(8.dp))
           OutlinedButton(onClick = onUpdate, modifier = Modifier.fillMaxWidth()) {
-            Text("Отмена")
+            Text(stringResource(R.string.common_cancel))
           }
         } else {
           Button(onClick = onUpdate, modifier = Modifier.fillMaxWidth()) {
-            Text("Обновить")
+            Text(stringResource(R.string.common_update))
           }
         }
       }
@@ -138,15 +142,25 @@ fun AppUpdateSettings(
   onCheckNow: () -> Unit,
   daemonNotificationEnabled: Boolean,
   onToggleDaemonNotification: (Boolean) -> Unit,
+  languageMode: String,
+  onLanguageModeChange: (String) -> Unit,
+  onDeleteModule: () -> Unit,
 ) {
-  Column(Modifier.fillMaxWidth().padding(16.dp)) {
-    Text("Настройки", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+  // BottomSheet content may not have enough height on small screens.
+  // Make it scrollable so the Language section is always reachable.
+  Column(
+    Modifier
+      .fillMaxWidth()
+      .verticalScroll(rememberScrollState())
+      .padding(16.dp)
+  ) {
+    Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
     Spacer(Modifier.height(12.dp))
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
       Column(Modifier.weight(1f).padding(end = 12.dp)) {
-        Text("Проверять обновления", style = MaterialTheme.typography.bodyLarge)
+        Text(stringResource(R.string.app_update_check_title), style = MaterialTheme.typography.bodyLarge)
         Text(
-          "Проверка выполняется в фоне при открытии приложения (не чаще 1 раза в 12 часов).",
+          stringResource(R.string.app_update_check_body),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
         )
@@ -155,7 +169,7 @@ fun AppUpdateSettings(
     }
     Spacer(Modifier.height(12.dp))
     OutlinedButton(onClick = onCheckNow, modifier = Modifier.fillMaxWidth()) {
-      Text("Проверить сейчас")
+      Text(stringResource(R.string.app_update_check_now))
     }
 
     Spacer(Modifier.height(18.dp))
@@ -166,15 +180,70 @@ fun AppUpdateSettings(
       horizontalArrangement = Arrangement.SpaceBetween,
     ) {
       Column(Modifier.weight(1f).padding(end = 12.dp)) {
-        Text("Уведомления", style = MaterialTheme.typography.bodyLarge)
+        Text(stringResource(R.string.settings_notifications_title), style = MaterialTheme.typography.bodyLarge)
         Text(
-          "Показывать уведомление о состоянии службы (запущена / остановлена).",
+          stringResource(R.string.settings_notifications_body),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
         )
       }
       Switch(checked = daemonNotificationEnabled, onCheckedChange = onToggleDaemonNotification)
     }
+
+    Spacer(Modifier.height(18.dp))
+
+    Column(Modifier.fillMaxWidth()) {
+      Text(stringResource(R.string.settings_language_title), style = MaterialTheme.typography.bodyLarge)
+      Text(
+        stringResource(R.string.settings_language_body),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+      )
+
+      Spacer(Modifier.height(10.dp))
+
+      val selected = languageMode.lowercase().ifBlank { "auto" }
+      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        val isAuto = selected == "auto"
+        val isRu = selected == "ru"
+        val isEn = selected == "en"
+
+        if (isAuto) {
+          Button(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_auto)) }
+        } else {
+          OutlinedButton(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_auto)) }
+        }
+
+        if (isRu) {
+          Button(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_ru)) }
+        } else {
+          OutlinedButton(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_ru)) }
+        }
+
+        if (isEn) {
+          Button(onClick = { onLanguageModeChange("en") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_en)) }
+        } else {
+          OutlinedButton(onClick = { onLanguageModeChange("en") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_en)) }
+        }
+      }
+    }
+
+
+    Spacer(Modifier.height(18.dp))
+
+    Column(Modifier.fillMaxWidth()) {
+      Text(stringResource(R.string.settings_delete_module_title), style = MaterialTheme.typography.bodyLarge)
+      Text(
+        stringResource(R.string.settings_delete_module_body),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+      )
+      Spacer(Modifier.height(10.dp))
+      OutlinedButton(onClick = onDeleteModule, modifier = Modifier.fillMaxWidth()) {
+        Text(stringResource(R.string.settings_delete_module_action))
+      }
+    }
+
   }
 }
 
@@ -187,26 +256,26 @@ fun UnknownSourcesPermissionDialog(
   if (!visible) return
   AlertDialog(
     onDismissRequest = onDecline,
-    title = { Text("Разрешение требуется") },
+    title = { Text(stringResource(R.string.permission_required_title)) },
     text = {
       Text(
-        "Для онлайн-обновления приложения требуется разрешить установку обновлений из этого приложения. " +
-          "Это нужно только для установки APK после загрузки."
+        stringResource(R.string.permission_required_body)
       )
     },
     confirmButton = {
-      Button(onClick = onAllow) { Text("Разрешить") }
+      Button(onClick = onAllow) { Text(stringResource(R.string.common_allow)) }
     },
     dismissButton = {
-      OutlinedButton(onClick = onDecline) { Text("Нет") }
+      OutlinedButton(onClick = onDecline) { Text(stringResource(R.string.common_no)) }
     }
   )
 }
 
+@Composable
 private fun formatSpeed(bps: Long): String {
-  if (bps <= 0) return "0 KB/s"
+  if (bps <= 0) return stringResource(R.string.app_speed_zero)
   val kb = bps.toDouble() / 1024.0
-  if (kb < 1024.0) return "${kb.roundToInt()} KB/s"
+  if (kb < 1024.0) return stringResource(R.string.app_speed_kbps_fmt, kb.roundToInt())
   val mb = kb / 1024.0
-  return String.format("%.1f MB/s", mb)
+  return stringResource(R.string.app_speed_mbps_fmt, mb)
 }

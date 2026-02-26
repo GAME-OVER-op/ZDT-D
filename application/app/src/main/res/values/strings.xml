@@ -1,9 +1,556 @@
 <resources>
     <string name="app_name">ZDT-D</string>
-
     <string name="qs_tile_label">ZDT-D</string>
-
     <string name="root_required_title">Root access required</string>
-    <string name="root_required_body">This app needs root permissions to work.\n\nPlease grant root access (Magisk prompt) and tap Retry.</string>
+    <string name="root_required_body">This app needs root permissions to work.
+
+Please grant root access (Magisk prompt) and tap Retry.</string>
     <string name="retry">Retry</string>
+    <string name="ma_share_backup">Share backup</string>
+    <string name="ma_share_failed">Couldn’t share the file</string>
+    <string name="notif_service_running">Service is running</string>
+    <string name="notif_service_stopped">Service is stopped</string>
+    <string name="notif_channel_desc">ZDT-D service status</string>
+    <string name="tile_root_required">Root required</string>
+    <string name="tile_started">ZDT-D started</string>
+    <string name="tile_stopped">ZDT-D stopped</string>
+    <string name="tile_start_failed">Start failed</string>
+    <string name="tile_stop_failed">Stop failed</string>
+    <string name="mv_reboot_pending_update">A module update is staged (versionCode=%1$d).
+
+Reboot the device so Magisk can apply the new version.</string>
+    <string name="mv_reboot_pending_install">A module install/update is staged.
+
+Reboot the device so Magisk can apply the changes.</string>
+    <string name="mv_module_update_available">Module update available</string>
+    <string name="mv_module_update_prompt_text">Installed module version: versionCode=%1$d.
+Bundled with app: versionCode=%2$d.
+
+Updating is recommended for best compatibility. You may skip, but some features may be unavailable and API mismatch errors are possible.</string>
+    <string name="mv_module_version_unsupported">The installed module version is no longer supported (versionCode=%1$d). To continue using ZDT-D, update the module.</string>
+    <string name="mv_backup_list_read_error">Couldn’t read backup list: %1$s</string>
+    <string name="mv_backup_settings_folder_missing">Settings folder not found: %1$s.</string>
+    <string name="mv_copying_name">Copying: %1$s</string>
+    <string name="mv_copy_error_with_detail">Copy error (%1$s): %2$s</string>
+    <string name="mv_backup_archive_create_failed">Couldn’t create archive: %1$s</string>
+    <string name="mv_backup_compress_failed">Couldn’t compress/save backup: %1$s</string>
+    <string name="mv_backup_extract_failed">Extraction error: %1$s</string>
+    <string name="mv_backup_import_save_failed">Couldn’t save imported backup: %1$s</string>
+    <string name="mv_backup_not_created_no_folders_short">Backup not created: no folders were added to the archive.</string>
+    <string name="mv_backup_not_created_no_folders_detail">Backup not created: no folders were added to the archive. %1$s</string>
+    <string name="mv_backup_done_name">Done: %1$s</string>
+    <string name="mv_backup_done_with_warning">Done: %1$s (with warning)</string>
+    <string name="mv_backup_created_with_warning">Backup created, but tar reported a warning: %1$s</string>
+    <string name="mv_backup_import_done">Import finished: %1$s</string>
+    <string name="mv_backup_file_not_found">Backup file not found: %1$s</string>
+    <string name="mv_backup_suspicious_path">Archive contains a suspicious path: %1$s</string>
+    <string name="mv_copied_count">Copied: %1$d of %2$d</string>
+    <string name="mv_error_with_detail">Error: %1$s</string>
+    <string name="mv_version_below_min_warning">You selected a version below %1$s. Startup issues are possible, and built-in strategies may not work.</string>
+
+    <string name="mv_auto_001">Update checks are disabled</string>
+    <string name="mv_auto_002">No internet connection</string>
+    <string name="mv_auto_003">Update check failed</string>
+    <string name="mv_auto_004">Update temporarily unavailable</string>
+    <string name="mv_auto_005">No update required</string>
+    <string name="mv_auto_006">Critical update available</string>
+    <string name="mv_auto_007">Update available</string>
+    <string name="mv_auto_008">
+          Incomplete module installation/update detected.
+
+          Reboot is required for Magisk to apply changes.
+          </string>
+    <string name="mv_auto_009">Legacy or non-standard module structure detected (system folder).</string>
+    <string name="mv_auto_010">It may be a fake or incompatible version. Reinstall the module for safe and correct operation.</string>
+    <string name="mv_auto_011">To keep using ZDT-D, you need to update the module.</string>
+    <string name="mv_auto_012">Module update available</string>
+    <string name="mv_auto_013">KernelSU (or fork)</string>
+    <string name="mv_auto_014">Manual install</string>
+    <string name="mv_auto_015">Installer not detected. Automatic installation is not possible.</string>
+    <string name="mv_auto_016">We can save the module archive to /sdcard, then you can install it manually in your root manager.</string>
+    <string name="mv_auto_017">Installation failed</string>
+    <string name="mv_auto_018">Automatic installation failed.</string>
+    <string name="mv_auto_019">We can save the module archive to /sdcard for manual installation.</string>
+    <string name="mv_auto_020">If an old version is installed, it will be removed before installation.</string>
+    <string name="mv_auto_021">Couldn’t save ZIP</string>
+    <string name="mv_auto_022">Root access required.</string>
+    <string name="mv_auto_023">Creating backup</string>
+    <string name="mv_auto_024">Preparing…</string>
+    <string name="mv_auto_025">No data to back up: no folders found in working_folder.</string>
+    <string name="mv_auto_026">Couldn’t create backup manifest file.</string>
+    <string name="mv_auto_027">Creating archive…</string>
+    <string name="mv_auto_028">Compressing…</string>
+    <string name="mv_auto_029">Root is required to import a backup</string>
+    <string name="mv_auto_030">Import cancelled</string>
+    <string name="mv_auto_031">Importing backup</string>
+    <string name="mv_auto_032">Copying file…</string>
+    <string name="mv_auto_033">Couldn’t read the selected file.</string>
+    <string name="mv_auto_034">Checking…</string>
+    <string name="mv_auto_035">This is not a ZDT-D backup</string>
+    <string name="mv_auto_036">Saving…</string>
+    <string name="mv_auto_037">Restoring backup</string>
+    <string name="mv_auto_038">Stopping service…</string>
+    <string name="mv_auto_039">Couldn’t send stop command. Try again later.</string>
+    <string name="mv_auto_040">Waiting for stop confirmation…</string>
+    <string name="mv_auto_041">Couldn’t wait for the service to stop. Try again later.</string>
+    <string name="mv_auto_042">Clearing settings…</string>
+    <string name="mv_auto_043">Couldn’t clear working_folder</string>
+    <string name="mv_auto_044">Extracting archive…</string>
+    <string name="mv_auto_045">No folders found in the backup.</string>
+    <string name="mv_auto_046">Waiting before start…</string>
+    <string name="mv_auto_047">Starting service…</string>
+    <string name="mv_auto_048">Settings restored, but the service didn’t start.</string>
+    <string name="mv_auto_049">Done. Settings restored.</string>
+    <string name="mv_auto_050">Couldn’t delete backup</string>
+    <string name="mv_auto_051">Backup file not found</string>
+    <string name="mv_auto_052">Couldn’t prepare backup for sharing</string>
+    <string name="mv_auto_053">Couldn’t stop service</string>
+    <string name="mv_auto_054">Stop the service before updating</string>
+    <string name="mv_auto_055">Checking…</string>
+    <string name="mv_auto_056">Downloading…</string>
+    <string name="mv_auto_057">Extracting…</string>
+    <string name="mv_auto_058">Installing…</string>
+    <string name="mv_auto_059">No staged module update found. Install the module update first and wait for the reboot prompt.</string>
+    <string name="mv_auto_060">Finish</string>
+    <string name="mv_auto_061">Done. Settings migrated.</string>
+    <string name="mv_auto_062">Settings are already migrated.</string>
+    <string name="mv_auto_063">No staged module update found.</string>
+    <string name="mv_auto_064">No previous version settings found (working_folder folder is missing).</string>
+    <string name="mv_auto_065">No data to migrate: no folders found in working_folder.</string>
+    <string name="mv_auto_066">No staged module update found (modules_update/ZDT-D is missing).</string>
+
+    <!-- Common -->
+    <string name="common_close">Close</string>
+    <string name="common_cancel">Cancel</string>
+    <string name="common_update">Update</string>
+    <string name="common_allow">Allow</string>
+    <string name="common_no">No</string>
+    <string name="common_yes">Yes</string>
+    <string name="common_confirm">I confirm</string>
+    <string name="common_confirm_action">Confirm action</string>
+    <string name="common_continue">Continue</string>
+    <string name="common_reboot">Reboot</string>
+    <string name="common_install">Install</string>
+    <string name="common_installing">Installing…</string>
+    <string name="common_error">Error</string>
+    <string name="common_in_progress">In progress…</string>
+    <string name="common_finish">Finish</string>
+    <string name="common_attention">Attention</string>
+
+    <!-- Actions -->
+    <string name="action_save">Save</string>
+
+    <!-- App update UI -->
+    <string name="app_update_urgent_title">Urgent update</string>
+    <string name="app_update_available_title">Update available</string>
+    <string name="app_update_available_version_prefix">Available: </string>
+    <string name="app_update_available_version_code_fmt"> (code=%1$d)</string>
+    <string name="app_update_urgent_body">Bugfix for the previous update.</string>
+    <string name="settings_title">Settings</string>
+    <string name="app_update_check_title">Check for updates</string>
+    <string name="app_update_check_body">Checks are performed in the background when you open the app (no more than once every 12 hours).</string>
+    <string name="app_update_check_now">Check now</string>
+    <string name="settings_notifications_title">Notifications</string>
+    <string name="settings_notifications_body">Show a notification about the service status (running / stopped).</string>
+    <string name="settings_language_title">Language</string>
+    <string name="settings_language_body">Auto: Russian if your system language is Russian, otherwise English.</string>
+    <string name="language_auto">Auto</string>
+    <string name="language_ru">RU</string>
+    <string name="language_en">EN</string>
+    <string name="permission_required_title">Permission required</string>
+    <string name="permission_required_body">To update the app online, you need to allow installing updates from this app. This is only required to install the APK after download.</string>
+    <string name="app_speed_zero">0 KB/s</string>
+    <string name="app_speed_kbps_fmt">%1$d KB/s</string>
+    <string name="app_speed_mbps_fmt">%1$.1f MB/s</string>
+
+    <!-- Home -->
+    <string name="home_online">online</string>
+    <string name="home_offline">offline</string>
+    <string name="home_daemon_status_fmt">daemon status: %1$s</string>
+    <string name="home_power_running">ON • running</string>
+    <string name="home_power_stopped">OFF • idle</string>
+    <string name="home_power_starting">STARTING…</string>
+    <string name="home_power_stopping">STOPPING…</string>
+    <string name="home_service_active_hint">Service is active. Settings changes apply after stop/start.</string>
+    <string name="home_service_stopped_hint">Service is stopped. Tap the button to start.</string>
+    <string name="home_no_log_data">(no log data)</string>
+    <string name="home_daemon_logs_title">Daemon logs</string>
+
+    <!-- Setup -->
+    <string name="setup_welcome_title">Welcome</string>
+    <string name="setup_welcome_body">ZDT-D is a root module (Magisk / KernelSU / APatch) designed to bypass DPI (deep packet inspection) on the internet. It helps bypass service blocks and throttling.</string>
+    <string name="setup_features_title">Key features</string>
+    <string name="setup_features_body">• Bypass blocks and speed limits\n• Convenient graphical interface for configuration</string>
+    <string name="setup_notes_title">Important notes</string>
+    <string name="setup_notes_body">• Privacy &amp; security: the module does not collect personal data and does not harm device functionality.\n• Freedom &amp; openness: completely free and will remain so.</string>
+    <string name="setup_arch_unsupported_fmt">Unsupported architecture. ZDT-D works only on arm64-v8a. Current device: %1$s.</string>
+    <string name="setup_root_title">Root access required</string>
+    <string name="setup_root_body">ZDT-D is a root module (Magisk / KernelSU / APatch) to bypass DPI blocks and traffic restrictions. Root is required because the module runs system scripts and networking components at OS level — something regular apps can’t do.\n\nRoot is also used to install/update the module, control the daemon, and read module files (token and logs). Root requests are always confirmed via your root manager, and permissions can be revoked at any time.</string>
+    <string name="setup_root_waiting">Waiting for the root manager response…</string>
+    <string name="setup_request_root">Request root</string>
+    <string name="setup_root_denied">Root not granted. If you tapped “Deny”, try again.</string>
+    <string name="setup_reboot_required_title">Reboot required</string>
+    <string name="setup_reboot_required_body_default">To complete module installation/update, you need to reboot the device.</string>
+    <string name="setup_manual_old_version_extra">The old module version will be removed before installation.</string>
+    <string name="setup_save_zip">Save ZIP</string>
+    <string name="setup_install_title">Module installation</string>
+    <string name="setup_install_body">Tap “Install” to install the ZDT-D module from the app package. If an installer is detected (Magisk / KernelSU / APatch), installation will be automatic.</string>
+    <string name="setup_install_method">Install method:</string>
+    <string name="setup_module_installed_title">Module installed</string>
+    <string name="setup_module_installed_body">A reboot is required to apply changes.</string>
+    <string name="setup_zip_saved_title">ZIP saved</string>
+    <string name="setup_zip_saved_path_fmt">Path: %1$s</string>
+    <string name="setup_zip_saved_body">Open your root manager (Magisk / KernelSU / APatch) and install this ZIP as a module.</string>
+    <string name="setup_install_log_title">Install log</string>
+    <string name="setup_migration_title">Settings migration</string>
+    <string name="setup_migration_body">Migrates your previously configured programs and profiles to the new module version. After updating and rebooting, everything will be ready — no need to reconfigure.</string>
+    <string name="setup_migration_done">Settings already migrated</string>
+    <string name="setup_migration_action">Run migration</string>
+    <string name="setup_migration_confirm_body">Start migrating settings into the updated module?\n\nWe will copy all folders from the old version’s working_folder into the update working_folder. The update folder content will be overwritten.</string>
+    <string name="setup_migration_nonmagisk_warn">Because root managers differ, the migration may not work perfectly.\n\nContinue?</string>
+    <string name="setup_migration_last_confirm_title">Final confirmation</string>
+    <string name="setup_migration_last_confirm_body">Are you sure about your choice?</string>
+    <string name="setup_migration_progress_title">Settings migration</string>
+
+    <!-- Program updates (MainViewModel) -->
+    <string name="prog_update_status_ready">Ready</string>
+    <string name="prog_update_status_already_installed">Already installed</string>
+    <string name="prog_update_status_downloading_pct_fmt">Downloading… %1$d%%</string>
+    <string name="prog_update_error_download_failed">Download failed</string>
+    <string name="prog_update_error_archive_changed">Archive structure changed. Automatic update is not possible.</string>
+    <string name="prog_update_error_install_failed">Install failed</string>
+    <string name="prog_update_status_installed">Installed</string>
+    <string name="mv_auto_067">No previous version settings found (modules/ZDT-D/working_folder is missing).</string>
+    <string name="mv_auto_068">ZIP saved: </string>
+    <string name="mv_auto_069">Next, install this archive in your root manager (Magisk / KernelSU / APatch) as a regular module.</string>
+    <string name="mv_auto_070">Couldn’t read archive (tar -t).</string>
+    <string name="mv_auto_071">Manifest file not found in the archive. This is not a ZDT-D backup.</string>
+    <string name="mv_auto_072">Manifest file is empty or can’t be read.</string>
+    <string name="mv_auto_073">Invalid backup format (magic mismatch).</string>
+    <string name="mv_auto_074">Notification permission required</string>
+    <string name="mv_auto_075">Download error</string>
+    <string name="mv_auto_076">Notifications enabled</string>
+    <string name="mv_auto_077">Notification permission not granted</string>
+
+    <!-- ZdtdApp.kt -->
+    <string name="update_prompt_title_default">Update</string>
+    <string name="update_prompt_update">Update</string>
+    <string name="update_prompt_skip">Skip</string>
+
+    <string name="nav_home">Home</string>
+    <string name="nav_stats">Stats</string>
+    <string name="nav_programs">Programs</string>
+    <string name="nav_support">Support</string>
+
+    <string name="title_program">Program</string>
+    <string name="title_profile">Profile</string>
+
+    <string name="cd_back">Back</string>
+    <string name="cd_logs">Logs</string>
+    <string name="cd_backup">Backup</string>
+    <string name="cd_program_updates">Program updates</string>
+    <string name="cd_settings">Settings</string>
+
+    <!-- LogsBottomSheet.kt -->
+    <string name="logs_title">Logs</string>
+    <string name="logs_empty">(empty)</string>
+
+    <!-- Shared actions -->
+    <string name="action_clear">Clear</string>
+    <string name="action_close">Close</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_add">Add</string>
+    <string name="action_create">Create</string>
+
+    <!-- ProfileScreen.kt / ProgramScreen.kt -->
+    <string name="changes_apply_after_restart">Changes apply after stop/start.</string>
+    <string name="apply_after_restart_short">Apply after stop/start</string>
+
+    <string name="profile_enabled">Profile enabled</string>
+    <string name="tab_apps">Apps</string>
+    <string name="tab_config">Config</string>
+    <string name="tab_sni">SNI</string>
+    <string name="apps_common_title">Apps (common)</string>
+    <string name="apps_common_desc">Select installed apps; package names are saved automatically.</string>
+    <string name="profile_config_desc">Profile config.</string>
+    <string name="profile_fake_sni_desc">Profile fake SNI list.</string>
+
+    <string name="program_not_found">Program not found</string>
+    <string name="enabled">Enabled</string>
+    <string name="tab_profiles">Profiles</string>
+    <string name="tab_files">Files</string>
+    <string name="deleted">Deleted</string>
+    <string name="delete_failed">Delete failed</string>
+    <string name="create_failed">Create failed</string>
+    <string name="profile_created_fmt">Profile created: %1$s</string>
+
+    <string name="dnscrypt_main_config_desc">Edit main config; restart required.</string>
+
+    <string name="not_implemented_yet">Not implemented yet</string>
+    <string name="not_implemented_yet_desc">This module does not have a native form yet. We can add it later per your instructions.</string>
+
+    <string name="delete_profile_title">Delete profile</string>
+    <string name="cd_delete">Delete</string>
+
+    <string name="create_profile_title">Create profile</string>
+    <string name="create_profile_rules">Name: English only, no spaces (spaces become _), max 10 chars.</string>
+    <string name="profile_name_label">Profile name</string>
+    <string name="allowed_chars_hint">Allowed: a-z 0-9 _ -</string>
+    <string name="profile_name_len_fmt">%1$d/10</string>
+    <string name="enter_a_name">Enter a name</string>
+    <string name="invalid_profile_name">Invalid profile name</string>
+    <string name="profile_already_exists">Profile already exists</string>
+
+    <string name="opera_proxy_title">Opera Proxy</string>
+    <string name="tab_byedpi">Byedpi</string>
+    <string name="tab_servers">Servers</string>
+    <string name="byedpi_start_args_desc">Arguments for byedpi start.</string>
+    <string name="byedpi_restart_args_desc">Arguments for byedpi restart.</string>
+    <string name="opera_ports_desc">Ports map.</string>
+    <string name="fake_sni_desc">Fake SNI list.</string>
+
+    <string name="opera_server_region_desc">Select Opera server region used by opera-proxy (-country).</string>
+    <string name="region_europe">Europe</string>
+    <string name="region_asia">Asia</string>
+    <string name="region_america">America</string>
+    <string name="saved">Saved</string>
+    <string name="save_failed">Save failed</string>
+    <string name="current_value_fmt">Current: %1$s</string>
+
+    <string name="stats_cpu_title">CPU</string>
+    <string name="stats_unknown_cpu">Unknown CPU</string>
+    <string name="stats_clamped_from">Clamped from %1$s%%</string>
+    <string name="stats_memory_title">Memory</string>
+    <string name="stats_total_fmt">Total: %1$s</string>
+    <string name="stats_total_unknown">Total: —</string>
+    <string name="stats_free_fmt">Free: %1$s</string>
+    <string name="stats_processes_title">Processes</string>
+    <string name="stats_running_count">%1$d running</string>
+    <string name="stats_offline">offline</string>
+    <string name="stats_daemon_title">Daemon</string>
+    <string name="stats_online_upper">ONLINE</string>
+    <string name="stats_offline_upper">OFFLINE</string>
+    <string name="stats_running_services">%1$d running service(s)</string>
+    <string name="stats_no_connection">No connection to API</string>
+    <string name="stats_running_lower">running</string>
+    <string name="stats_stopped_lower">stopped</string>
+    <string name="stats_cpu_label">CPU</string>
+    <string name="stats_ram_label">RAM</string>
+
+    <string name="support_title">Support</string>
+    <string name="support_subtitle">Links to the project, releases, community and author support.</string>
+    <string name="support_open">Open</string>
+    <string name="support_link_github_subtitle">Source code, issues, docs</string>
+    <string name="support_link_releases_title">Releases</string>
+    <string name="support_link_releases_subtitle">Latest builds and changelogs</string>
+    <string name="support_link_telegram_subtitle">News &amp; community: @module_ggover</string>
+    <string name="support_link_support_author_title">Support the author</string>
+    <string name="support_link_support_author_subtitle">YooMoney donation link</string>
+
+    <string name="app_picker_saved_apply">Saved (apply after stop/start)</string>
+    <string name="app_picker_save_failed">Save failed</string>
+    <string name="app_picker_select">Select</string>
+    <string name="app_picker_empty">(empty)</string>
+    <string name="app_picker_selected_count">Selected: %1$d</string>
+    <string name="app_picker_apps_common_title">Apps (common)</string>
+    <string name="app_picker_apps_common_desc">Common list (user_program).</string>
+    <string name="app_picker_apps_mobile_title">Apps (mobile)</string>
+    <string name="app_picker_apps_mobile_desc">Mobile list.</string>
+    <string name="app_picker_apps_wifi_title">Apps (Wi‑Fi)</string>
+    <string name="app_picker_apps_wifi_desc">Wi‑Fi list.</string>
+    <string name="app_picker_cancel">Cancel</string>
+    <string name="app_picker_save">Save</string>
+    <string name="app_picker_search">Search</string>
+    <string name="app_picker_selected_header">Selected (%1$d)</string>
+    <string name="app_picker_none">(none)</string>
+    <string name="app_picker_all_apps_title">All apps</string>
+    <string name="app_picker_all_apps_hint">Tap to add. (No checkmarks here — remove from the top list.)</string>
+    <string name="app_picker_system_label">system</string>
+
+    <string name="apps_list_clear">Clear</string>
+    <string name="apps_list_search_programs">Search programs</string>
+    <string name="apps_list_no_programs_title">No programs</string>
+    <string name="apps_list_no_programs_daemon_online">The daemon is online, but it returned an empty program list.</string>
+    <string name="apps_list_no_programs_daemon_offline">The daemon is offline. Start ZDT-D first.</string>
+    <string name="apps_list_nothing_found_title">Nothing found</string>
+    <string name="apps_list_nothing_found_hint">Try another search query.</string>
+    <string name="apps_list_section_core">Core</string>
+    <string name="apps_list_section_profiles">Profiles</string>
+    <string name="apps_list_items_count">%1$d item(s)</string>
+    <string name="apps_list_programs_title">Programs</string>
+    <string name="apps_list_online_upper">ONLINE</string>
+    <string name="apps_list_offline_upper">OFFLINE</string>
+    <string name="apps_list_header_hint">Open a program to edit configs, profiles and app lists.</string>
+    <string name="apps_list_total_fmt">Total: %1$d</string>
+    <string name="apps_list_showing_fmt">Showing: %1$d / %2$d</string>
+    <string name="apps_list_chip_profiles">profiles %1$d</string>
+    <string name="apps_list_chip_enabled">enabled</string>
+    <string name="apps_list_chip_disabled">disabled</string>
+    <string name="apps_list_chip_enabled_count">enabled %1$d</string>
+    <string name="apps_list_desc_dnscrypt">Local encrypted DNS resolver</string>
+    <string name="apps_list_desc_operaproxy">byedpi → opera-proxy → t2s chain</string>
+    <string name="apps_list_desc_nfqws">zapret NFQUEUE DPI bypass</string>
+    <string name="apps_list_desc_nfqws2">zapret2 NFQUEUE DPI bypass</string>
+    <string name="apps_list_desc_byedpi">Local TCP proxy</string>
+    <string name="apps_list_desc_dpitunnel">TCP+UDP tunnel</string>
+    <string name="apps_list_desc_default">Configure and manage</string>
+
+    <string name="apps_host_unknown_route">Unknown route</string>
+    <string name="backup_title">Settings backup</string>
+    <string name="backup_refresh_cd">Refresh</string>
+    <string name="backup_desc">Save all folders from working_folder into a single archive, then restore them if needed. The flag.sha256 file is not included.</string>
+    <string name="backup_create">Create backup</string>
+    <string name="backup_import">Import</string>
+    <string name="backup_loading_list">Loading list…</string>
+    <string name="backup_none_found">No backups found in /storage/emulated/0/ZDT-D_Backups</string>
+    <string name="backup_yours">Your backups</string>
+    <string name="backup_close">Close</string>
+    <string name="backup_restore_confirm_title">Restore backup?</string>
+    <string name="backup_restore_confirm_text">Current settings will be completely replaced with the contents of the archive. The service will be stopped during the operation.</string>
+    <string name="backup_restore">Restore</string>
+    <string name="backup_cancel">Cancel</string>
+    <string name="backup_delete_confirm_title">Delete backup?</string>
+    <string name="backup_delete_confirm_text">The file will be deleted and cannot be recovered.</string>
+    <string name="backup_delete">Delete</string>
+    <string name="backup_share_cd">Share</string>
+    <string name="backup_delete_cd">Delete</string>
+    <string name="backup_item_restore">Restore</string>
+    <string name="backup_progress_default_title">Operation</string>
+    <string name="program_updates_title">Program updates</string>
+    <string name="program_updates_reset_cd">Reset</string>
+    <string name="program_updates_desc">Updates nfqws / nfqws2 and Lua files directly from GitHub releases. Check is performed only when you tap the button.</string>
+    <string name="program_updates_service_running_title">Service is running</string>
+    <string name="program_updates_service_running_desc">Stop the service before checking/updating. This is required so rules and processes don’t use the files during replacement.</string>
+    <string name="program_updates_stopping">Stopping…</string>
+    <string name="program_updates_stop_and_check">Stop and check</string>
+    <string name="program_updates_pick_zapret_title">Zapret versions</string>
+    <string name="program_updates_pick_zapret2_title">Zapret2 versions</string>
+    <string name="program_updates_select_version_cd">Select version</string>
+    <string name="program_updates_installed_latest_fmt">Installed: %1$s   •   Latest: %2$s</string>
+    <string name="program_updates_target_fmt">Target: %1$s%2$s</string>
+    <string name="program_updates_target_selected_suffix"> (selected)</string>
+    <string name="program_updates_target_latest_suffix"> (latest)</string>
+    <string name="program_updates_check">Check</string>
+    <string name="program_updates_checking">Checking…</string>
+    <string name="program_updates_update">Update</string>
+    <string name="program_updates_updating">Updating…</string>
+    <string name="program_updates_warning_title">Warning</string>
+    <string name="program_updates_warning_text_fmt">You selected %1$s, which is below %2$s. Startup issues are possible, and built-in strategies may not work.</string>
+    <string name="program_updates_continue">Continue</string>
+    <string name="program_updates_choose_version_hint">Choose a version to install. Latest (auto) is recommended.</string>
+    <string name="program_updates_latest_auto_title">Latest (auto)</string>
+    <string name="program_updates_latest_auto_desc">Use the most recent GitHub release</string>
+    <string name="program_updates_select">Select</string>
+    <string name="program_updates_selected">Selected</string>
+    <string name="program_updates_refresh_cd">Refresh</string>
+    <string name="dnscrypt_setting_files_title">Additional setting files</string>
+    <string name="dnscrypt_setting_files_desc">Files from dnscrypt/setting (edit existing files only).</string>
+    <string name="dnscrypt_setting_files_refresh">Refresh</string>
+    <string name="dnscrypt_setting_files_empty">No additional files found in dnscrypt/setting.</string>
+    <string name="dnscrypt_setting_files_too_large">TOO LARGE</string>
+    <string name="dnscrypt_setting_files_edit_disabled_fmt">Editing is disabled for this file because it exceeds the size limit (%1$d bytes).</string>
+    <string name="dnscrypt_setting_files_file_info_fmt">File: %1$s
+Size: %2$s bytes
+Use another editor to modify it.</string>
+    <string name="dnscrypt_setting_files_load_failed">Failed to load file content.</string>
+    <string name="dnscrypt_setting_files_try_refresh">Try Refresh or reopen this file.</string>
+    <string name="dnscrypt_setting_files_saved_snack">Saved (apply after stop/start)</string>
+    <string name="dnscrypt_setting_files_save_failed_snack">Save failed</string>
+    <string name="dnscrypt_setting_files_save">Save</string>
+    <string name="dnscrypt_setting_files_saving">...</string>
+
+    <!-- Common / shared -->
+    <string name="common_save">Save</string>
+    <string name="common_saved">Saved</string><string name="common_create">Create</string>
+    <string name="common_choose">Choose</string>
+    <string name="common_loading">Loading…</string>
+    <string name="common_ellipsis">…</string><string name="common_refresh_cd">Refresh</string>
+    <string name="common_upload_cd">Upload</string>
+    <string name="common_new_cd">New</string>
+    <string name="common_delete_cd">Delete</string>
+    <string name="common_no_files">No files</string>
+    <string name="common_cant_read_file">Can’t read file</string>
+    <string name="common_cant_load_file">Can’t load file (maybe too large or server error).</string>
+    <string name="common_uploaded">Uploaded</string>
+    <string name="common_upload_failed">Upload failed</string>
+    <string name="common_created">Created</string>
+    <string name="common_create_failed">Create failed</string>
+    <string name="common_deleted">Deleted</string>
+    <string name="common_delete_failed">Delete failed</string>
+    <string name="common_file_name">File name</string>
+    <string name="common_safe_file_name_hint">Use a safe name (letters, digits, dot, dash, underscore).</string>
+    <string name="common_content">Content</string>
+    <string name="common_applied_with_value">Applied: %1$s</string>
+    <string name="common_apply_failed">Apply failed</string>
+    <string name="common_create_file">Create file</string>
+
+    <!-- Editor -->
+    <string name="editor_saved_apply_restart">Saved (apply after stop/start)</string>
+    <string name="editor_save_failed">Save failed</string>
+    <string name="editor_invalid_json">Invalid JSON</string>
+
+    <!-- Strategic files / variants -->
+    <string name="strategic_files_hint">Files under /data/adb/modules/ZDT-D/strategic/ (apply after stop/start).</string>
+    <string name="strategic_lists_title">Lists</string>
+    <string name="strategic_lua_title">Lua scripts (nfqws2)</string>
+    <string name="strategic_binaries_title">Binaries</string>
+    <string name="strategic_edit_disabled_too_large_no_size_fmt">Editing is disabled: file is larger than %1$d bytes.\nUse upload/replace or edit externally.\n\nPath:\n/data/adb/modules/ZDT-D/strategic/%2$s/%3$s</string>
+    <string name="strategic_edit_disabled_too_large_with_size_fmt">Editing is disabled: file is larger than %1$d bytes.\nUse upload/replace or edit externally.\n\nPath:\n/data/adb/modules/ZDT-D/strategic/%2$s/%3$s\n\nSize: %4$d bytes</string>
+    <string name="strategic_config_title">config.txt</string>
+    <string name="strategic_config_desc">Profile config. You can use a prebuilt strategy or keep your own.</string>
+    <string name="strategic_strategies_loading">Strategies: loading…</string>
+    <string name="strategic_strategies_none">Strategies: none</string>
+    <string name="strategic_strategy_selected">Strategy: %1$s</string>
+    <string name="strategic_user_config">User config</string>
+    <string name="enabled_card_apply_hint">Apply after stop/start</string>
+    <string name="byedpi_start_args_title">Start arguments</string>
+    <string name="byedpi_restart_args_title">Restart arguments</string>
+    <string name="opera_ports_title">Ports</string>
+    <string name="profile_config_txt_title">config.txt</string>
+    <string name="profile_fake_sni_txt_title">fake_sni.txt</string>
+    <string name="program_updates_zapret_title">Zapret (nfqws)</string>
+    <string name="program_updates_zapret2_title">Zapret2 (nfqws2 + lua)</string>
+    <string name="program_updates_err_service_running">Service is still running. Stop it and try again.</string>
+    <string name="program_updates_err_detect_installed">Failed to detect installed version</string>
+    <string name="program_updates_err_check_latest">Failed to check latest release</string>
+    <string name="program_updates_err_no_internet">No internet connection</string>
+    <string name="program_updates_err_load_releases">Failed to load releases</string>
+    <!-- App logs (internal app events shown in UI) -->
+    <string name="log_root_access_required">Root access required</string>
+    <string name="log_api_token_missing_fmt">API token missing. Check %1$s</string>
+    <string name="log_logs_cleared">Logs cleared</string>
+    <string name="log_service_started">Service started</string>
+    <string name="log_service_stopped">Service stopped</string>
+
+    <string name="mv_backup_restore_reopen_hint">Select the backup again (or reopen this window) before restoring again.</string>
+    <string name="settings_delete_module_title">Module removal</string>
+    <string name="settings_delete_module_body">Remove the module and uninstall the app from this device.</string>
+    <string name="settings_delete_module_action">Delete module</string>
+    <string name="delete_module_title">Confirm deletion</string>
+    <string name="delete_module_confirm_text">Do you confirm deletion of the module and the app?</string>
+    <string name="delete_module_warning_reboot">After uninstalling the app, the device will reboot automatically to complete the module removal.</string>
+    <string name="delete_module_goodbye">Thank you for using this app. You can always come back — we will be waiting for you!</string>
+    <string name="delete_module_yes">Yes</string>
+    <string name="cd_goodbye_image">Goodbye</string>
+    <string name="delete_module_next_title">Remove the app</string>
+    <string name="delete_module_next_body">Please uninstall the app manually. After the app is removed, cleanup of the app and module will continue, then the device will reboot automatically.</string>
+    <string name="common_ok">OK</string>
+    <string name="delete_module_prepare_title">Please wait</string>
+    <string name="delete_module_prepare_body">Preparing for removal: stopping services and checking status...</string>
+    <string name="delete_module_prepare_error_title">Preparation error</string>
+    <string name="mv_backup_version_mismatch">Backup is not supported because the versionCode differs (backup: %1$s, module: %2$s). Due to differences in file locations between versions, restore is available only when versionCode matches. A clean setup is recommended to avoid version mismatch issues.</string>
+
+  <string name="backup_restore_anyway">Restore anyway</string>
+  <string name="backup_back">Back</string>
+  <string name="backup_force_restore_title">Restore is not recommended</string>
+  <string name="backup_force_restore_text">This backup was created for a different module version. You can try restoring it anyway, but it may break the service due to differences in the module architecture.</string>
+  <string name="backup_force_restore_continue">Continue</string>
+  <string name="backup_force_restore_confirm_title">Proceed with force restore?</string>
+  <string name="backup_force_restore_confirm_text">Possible issues: the daemon may fail to start, programs may not work, or settings may be corrupted. If anything goes wrong, the only fix may be a clean module install.
+
+By continuing, you agree to restore the backup while ignoring the versionCode check.</string>
+  <string name="backup_force_restore_confirm_btn">I understand, restore</string>
+    <string name="mv_backup_min_supported_version">Backup is not supported because it was created by an old module architecture (versionCode: %1$s). Minimum supported backup versionCode is %2$s.</string>
+    <string name="mv_restore_min_supported_current_version">Restore is not supported because the currently installed module/app architecture is too old (versionCode: %1$s). Minimum supported versionCode is %2$s.</string>
 </resources>

@@ -6,7 +6,7 @@ import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
 import android.os.Build
-import androidx.activity.ComponentActivity
+import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -18,13 +18,17 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.FileProvider
+import androidx.core.os.LocaleListCompat
+import android.content.res.Resources
 import com.android.zdtd.service.ui.ZdtdApp
 import com.android.zdtd.service.ui.theme.ZdtdTheme
 import java.io.File
 import kotlinx.coroutines.launch
+import java.util.Locale
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
 
   private val vm: MainViewModel by viewModels()
 
@@ -49,6 +53,22 @@ class MainActivity : ComponentActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+
+    // Apply persisted app language before composing UI.
+runCatching {
+  val root = RootConfigManager(applicationContext)
+  val mode = root.getAppLanguageMode().trim().lowercase()
+  when (mode) {
+    // Auto: clear overrides so the app follows the system locale.
+    // With only EN (default) + RU resources this matches the rule:
+    // system ru -> RU, any other -> EN (fallback).
+    "auto", "" -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
+    "ru" -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("ru"))
+    "en" -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("en"))
+    else -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
+  }
+}
+
     enableEdgeToEdge()
 
     // Capture crashes to a local file so we can diagnose issues even without logcat.
@@ -160,9 +180,9 @@ class MainActivity : ComponentActivity() {
         putExtra(Intent.EXTRA_STREAM, uri)
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
       }
-      startActivity(Intent.createChooser(i, "Поделиться бэкапом"))
+      startActivity(Intent.createChooser(i, getString(R.string.ma_share_backup)))
     }.onFailure {
-      Toast.makeText(this, "Не удалось поделиться файлом", Toast.LENGTH_SHORT).show()
+      Toast.makeText(this, getString(R.string.ma_share_failed), Toast.LENGTH_SHORT).show()
     }
   }
 

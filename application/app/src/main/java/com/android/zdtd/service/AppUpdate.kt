@@ -5,6 +5,8 @@ package com.android.zdtd.service
  */
 data class AppUpdateUiState(
   val enabled: Boolean = true,
+  /** App UI language mode: auto | ru | en */
+  val languageMode: String = "auto",
   // App-owned notification about daemon status (running/stopped).
   val daemonStatusNotificationEnabled: Boolean = false,
   val checking: Boolean = false,

@@ -8,6 +8,9 @@ import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.content.pm.PackageManager
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
+import android.content.res.Resources
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.core.content.ContextCompat
@@ -38,10 +41,12 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Locale
 import java.net.URLEncoder
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.max
+import androidx.annotation.StringRes
 
 enum class RootState {
   CHECKING,
@@ -90,6 +95,9 @@ data class SetupUiState(
   val rebootRequiredText: String = "",
 
   val oldVersionDetected: Boolean = false,
+  // True when active module state is invalid/tampered and user must reinstall.
+  val moduleReinstallRequired: Boolean = false,
+  val tamperReinstallPendingReboot: Boolean = false,
   val installOk: Boolean = false,
   val installError: String? = null,
 
@@ -144,6 +152,10 @@ data class BackupUiState(
   val progressPercent: Int = 0,
   val progressFinished: Boolean = false,
   val progressError: String? = null,
+
+  // Version mismatch: allow user to force restore (advanced).
+  val forceRestoreAvailable: Boolean = false,
+  val forceRestoreName: String? = null,
 )
 
 
@@ -157,6 +169,7 @@ data class ProgramReleaseUi(
 
 data class ProgramUpdateItemUi(
   val title: String,
+  val titleRes: Int? = null,
   val installedVersion: String? = null,
   val latestVersion: String? = null,
   val latestDownloadUrl: String? = null,
@@ -177,8 +190,8 @@ data class ProgramUpdateItemUi(
 
 data class ProgramUpdatesUiState(
   val stoppingService: Boolean = false,
-  val zapret: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "Zapret (nfqws)"),
-  val zapret2: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "Zapret2 (nfqws2 + lua)"),
+  val zapret: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_zapret_title),
+  val zapret2: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_zapret2_title),
 )
 
 sealed class BackupEvent {
@@ -189,6 +202,10 @@ sealed class BackupEvent {
 class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
 
   private val ctx: Context = app.applicationContext
+
+  private fun str(@StringRes id: Int, vararg args: Any): String =
+    getApplication<Application>().getString(id, *args)
+
   private val root = RootConfigManager(ctx)
   private val api = ApiClient(
     rootManager = root,
@@ -243,6 +260,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   private val _appUpdate = MutableStateFlow(
     AppUpdateUiState(
       enabled = root.isAppUpdateCheckEnabled(),
+      languageMode = root.getAppLanguageMode(),
       daemonStatusNotificationEnabled = root.isDaemonStatusNotificationEnabled(),
     )
   )
@@ -330,6 +348,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     return parseVersion(text) to parseVersionCode(text)
   }
 
+  private fun readInstalledModuleVersionCode(): Int? {
+    val text = runCatching {
+      root.readTextFile("/data/adb/modules/ZDT-D/module.prop")
+    }.getOrNull() ?: return null
+    return parseVersionCode(text)
+  }
+
+
   private fun isNetworkAvailable(): Boolean {
     val cm = runCatching { ctx.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager }.getOrNull()
       ?: return false
@@ -382,11 +408,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   private suspend fun checkAppUpdateInternal(force: Boolean) {
     val manual = force
     if (!root.isAppUpdateCheckEnabled()) {
-      if (manual) toast("Проверка обновлений отключена")
+      if (manual) toast(str(R.string.mv_auto_001))
       return
     }
     if (!isNetworkAvailable()) {
-      if (manual) toast("Нет подключения к интернету")
+      if (manual) toast(str(R.string.mv_auto_002))
       return
     }
 
@@ -407,7 +433,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     val (codeRel, bodyRel, newEtagRel) = runCatching { httpGetMaybeCached(latestUrl, etagRel) }
       .getOrElse {
         _appUpdate.update { it.copy(checking = false) }
-        if (manual) toast("Ошибка проверки обновлений")
+        if (manual) toast(str(R.string.mv_auto_003))
         return
       }
 
@@ -428,14 +454,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       }
       else -> {
         _appUpdate.update { it.copy(checking = false) }
-        if (manual) toast("Ошибка проверки обновлений")
+        if (manual) toast(str(R.string.mv_auto_003))
         return
       }
     }
 
     if (tag.isNullOrBlank()) {
       _appUpdate.update { it.copy(checking = false) }
-      if (manual) toast("Ошибка проверки обновлений")
+      if (manual) toast(str(R.string.mv_auto_003))
       return
     }
 
@@ -445,7 +471,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     val (codeProp, bodyProp, newEtagProp) = runCatching { httpGetMaybeCached(modulePropUrl, etagProp) }
       .getOrElse {
         _appUpdate.update { it.copy(checking = false) }
-        if (manual) toast("Ошибка проверки обновлений")
+        if (manual) toast(str(R.string.mv_auto_003))
         return
       }
 
@@ -467,14 +493,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       }
       else -> {
         _appUpdate.update { it.copy(checking = false) }
-        if (manual) toast("Ошибка проверки обновлений")
+        if (manual) toast(str(R.string.mv_auto_003))
         return
       }
     }
 
     if (remoteVersion.isNullOrBlank() || remoteCode == null || remoteCode <= 0) {
       _appUpdate.update { it.copy(checking = false) }
-      if (manual) toast("Ошибка проверки обновлений")
+      if (manual) toast(str(R.string.mv_auto_003))
       return
     }
 
@@ -488,7 +514,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       root.setAppUpdateLastCheckTs(now) // still rate-limit to avoid spamming
       root.clearCachedAppUpdate()
       _appUpdate.update { it.copy(checking = false) }
-      if (manual) toast("Обновление временно недоступно")
+      if (manual) toast(str(R.string.mv_auto_004))
       return
     }
 
@@ -517,7 +543,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
         downloadUrl = downloadUrl,
         errorText = null,
       ) }
-      if (manual) toast("Обновление не требуется")
+      if (manual) toast(str(R.string.mv_auto_005))
       return
     }
 
@@ -550,7 +576,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     ) }
 
     if (manual) {
-      toast(if (urgent) "Доступно срочное обновление" else "Доступно обновление")
+      toast(if (urgent) str(R.string.mv_auto_006) else str(R.string.mv_auto_007))
     }
   }
 
@@ -714,21 +740,37 @@ private fun clearDownloadedUpdateApk() {
     return dest.absolutePath
   }
 
+  private suspend fun readBootIdRoot(): String {
+    val r = root.execRootSh("cat /proc/sys/kernel/random/boot_id 2>/dev/null || true")
+    return r.out.joinToString("\n").trim()
+  }
+
+  private suspend fun snapshotAndUpdateBootState(): Boolean {
+    val current = runCatching { readBootIdRoot() }.getOrDefault("")
+    if (current.isBlank()) return false
+    val prev = runCatching { root.getLastSeenBootId() }.getOrNull()?.trim().orEmpty()
+    val changed = prev.isNotBlank() && prev != current
+    if (prev != current) runCatching { root.setLastSeenBootId(current) }
+    return changed
+  }
+
   fun ensureRootAndLoadToken() {
     if (_rootState.value != RootState.CHECKING) return
     launchIO {
       val ok = runCatching { root.testRoot() }.getOrDefault(false)
       if (!ok) {
         _rootState.value = RootState.DENIED
-        log("ERR", "root access required")
+        log("ERR", str(R.string.log_root_access_required))
         return@launchIO
       }
       _rootState.value = RootState.GRANTED
 
+      val bootChanged = snapshotAndUpdateBootState()
+
       val token = runCatching { root.readApiToken() }.getOrDefault("")
       _uiState.update { it.copy(token = token) }
       if (token.isBlank()) {
-        log("WARN", "API token missing. Check /data/adb/modules/ZDT-D/api/token")
+        log("WARN", str(R.string.log_api_token_missing_fmt, "/data/adb/modules/ZDT-D/api/token"))
       }
 
       val id = "ZDT-D"
@@ -739,17 +781,9 @@ private fun clearDownloadedUpdateApk() {
         val pendingText = runCatching { root.readTextFile("/data/adb/modules_update/${id}/module.prop") }.getOrDefault("")
         val pendingCode = parseVersionCode(pendingText)
         val reason = if (pendingCode != null) {
-          """
-          Обнаружено незавершённое обновление модуля (versionCode=$pendingCode).
-
-          Для корректной работы необходимо перезагрузить устройство, чтобы Magisk применил новую версию.
-          """.trimIndent()
+          str(R.string.mv_reboot_pending_update, pendingCode)
         } else {
-          """
-          Обнаружена незавершённая установка/обновление модуля.
-
-          Для корректной работы необходимо перезагрузить устройство, чтобы Magisk применил изменения.
-          """.trimIndent()
+          str(R.string.mv_reboot_pending_install)
         }
         _setup.update { st ->
           st.copy(
@@ -759,6 +793,8 @@ private fun clearDownloadedUpdateApk() {
             updatePromptMandatory = false,
             updatePromptTitle = "",
             updatePromptText = "",
+            moduleReinstallRequired = false,
+            tamperReinstallPendingReboot = runCatching { root.isTamperReinstallPendingReboot() }.getOrDefault(false),
           )
         }
         refreshMigrationUiState()
@@ -782,6 +818,8 @@ private fun clearDownloadedUpdateApk() {
             step = SetupStep.INSTALL,
             oldVersionDetected = oldVer,
             showUpdatePrompt = false,
+            moduleReinstallRequired = false,
+            tamperReinstallPendingReboot = runCatching { root.isTamperReinstallPendingReboot() }.getOrDefault(false),
           )
         }
         return@launchIO
@@ -793,13 +831,16 @@ private fun clearDownloadedUpdateApk() {
       // 3) Anti-tamper / legacy layout detection.
       val legacyLayout = runCatching { root.hasLegacySystemDir() }.getOrDefault(false)
       if (legacyLayout) {
+        runCatching { root.setTamperReinstallPendingReboot(true) }
         _setup.update { st ->
           st.copy(
             step = SetupStep.INSTALL,
             oldVersionDetected = oldVer,
-            preInstallWarning = "Обнаружена старая или нестандартная структура модуля (папка system). " +
-              "Это может быть подделка или несовместимая версия. Для безопасной и корректной работы переустановите модуль заново.",
+            preInstallWarning = str(R.string.mv_auto_009) +
+              str(R.string.mv_auto_010),
             showUpdatePrompt = false,
+            moduleReinstallRequired = true,
+            tamperReinstallPendingReboot = true,
           )
         }
         return@launchIO
@@ -808,20 +849,28 @@ private fun clearDownloadedUpdateApk() {
       // 4) Version gate.
       val installedText = runCatching { root.readTextFile("/data/adb/modules/${id}/module.prop") }.getOrDefault("")
       val installedCode = parseVersionCode(installedText)
-      val minSupported = 20000
+      val minSupported = 25000
 
       if (installedCode != null && installedCode < minSupported) {
+        runCatching { root.setTamperReinstallPendingReboot(true) }
         _setup.update { st ->
           st.copy(
             step = SetupStep.INSTALL,
             oldVersionDetected = oldVer,
-            preInstallWarning = "Установленная версия модуля больше не поддерживается (versionCode=$installedCode). " +
-              "Чтобы продолжить пользоваться ZDT-D, необходимо обновить модуль.",
+            preInstallWarning = str(R.string.mv_module_version_unsupported, installedCode),
             showUpdatePrompt = false,
+            moduleReinstallRequired = true,
+            tamperReinstallPendingReboot = true,
           )
         }
         return@launchIO
       }
+
+      // Clear sticky anti-tamper reinstall state after a real reboot if module is clean again.
+      if (bootChanged) {
+        runCatching { root.setTamperReinstallPendingReboot(false) }
+      }
+      val stickyTamperPending = runCatching { root.isTamperReinstallPendingReboot() }.getOrDefault(false)
 
       // 5) Optional update prompt (shown only on a cold start from launcher).
       val bundledCode = readBundledModuleVersionCode()
@@ -835,12 +884,11 @@ private fun clearDownloadedUpdateApk() {
           rebootRequiredText = "",
           showUpdatePrompt = showOptional,
           updatePromptMandatory = false,
-          updatePromptTitle = if (showOptional) "Доступно обновление модуля" else "",
+          updatePromptTitle = if (showOptional) str(R.string.mv_module_update_available) else "",
+          moduleReinstallRequired = false,
+          tamperReinstallPendingReboot = stickyTamperPending,
           updatePromptText = if (showOptional) {
-            """Установлена версия модуля: versionCode=$installedCode.
-В составе приложения: versionCode=$bundledCode.
-
-Рекомендуется обновиться для максимальной совместимости. Можно пропустить, но часть функций может быть недоступна, а также возможны ошибки из-за разницы API.""".trimIndent()
+            str(R.string.mv_module_update_prompt_text, installedCode ?: -1, bundledCode ?: -1)
           } else "",
         )
       }
@@ -902,9 +950,9 @@ private fun clearDownloadedUpdateApk() {
       val installer = runCatching { root.detectModuleInstaller() }.getOrDefault(RootConfigManager.ModuleInstaller.UNKNOWN)
       val label = when (installer) {
         RootConfigManager.ModuleInstaller.MAGISK -> "Magisk"
-        RootConfigManager.ModuleInstaller.KSU -> "KernelSU (или форк)"
+        RootConfigManager.ModuleInstaller.KSU -> str(R.string.mv_auto_013)
         RootConfigManager.ModuleInstaller.APATCH -> "APatch"
-        RootConfigManager.ModuleInstaller.UNKNOWN -> "Ручная установка"
+        RootConfigManager.ModuleInstaller.UNKNOWN -> str(R.string.mv_auto_014)
       }
 
       // If we can't detect an installer, ask the user and export the zip to /sdcard.
@@ -917,8 +965,8 @@ private fun clearDownloadedUpdateApk() {
             manualZipPath = "",
             showManualDialog = true,
             oldVersionDetected = oldVer,
-            manualDialogText = "Установщик не определен. Автоматическая установка невозможна. " +
-              "Мы можем сохранить архив модуля в /sdcard, после чего вы сможете установить его вручную в вашем root-менеджере.",
+            manualDialogText = str(R.string.mv_auto_015) +
+              str(R.string.mv_auto_016),
           )
         }
         return@launchIO
@@ -953,14 +1001,14 @@ private fun clearDownloadedUpdateApk() {
         _setup.update {
           it.copy(
             installing = false,
-            installError = "Установка не удалась",
+            installError = str(R.string.mv_auto_017),
             installLog = out,
             showManualDialog = true,
             manualZipSaved = false,
             manualZipPath = "",
-            manualDialogText = "Автоматическая установка не удалась. " +
-              "Мы можем сохранить архив модуля в /sdcard для ручной установки. " +
-              "Если установлена старая версия — она будет удалена перед установкой.",
+            manualDialogText = str(R.string.mv_auto_018) +
+              str(R.string.mv_auto_019) +
+              str(R.string.mv_auto_020),
           )
         }
       }
@@ -1015,14 +1063,73 @@ private fun clearDownloadedUpdateApk() {
           )
         }
       } else {
-        _setup.update { it.copy(installing = false, installError = "Не удалось сохранить ZIP", installLog = out) }
+        _setup.update { it.copy(installing = false, installError = str(R.string.mv_auto_021), installLog = out) }
       }
     }
+  }
+
+  override fun beginModuleRemoval() {
+    // 1) Mark Magisk module for removal.
+    // 2) Start a small root watcher that waits until the app is uninstalled, then reboots.
+    // 3) UI shows instructions to uninstall the app manually.
+    val pkg = ctx.packageName
+    launchIO {
+      // Create Magisk remove marker.
+      root.execRootSh("mkdir -p /data/adb/modules/ZDT-D && : > /data/adb/modules/ZDT-D/remove")
+
+      val scriptPath = "/data/local/tmp/zdtd_uninstall_watch.sh"
+      val logPath = "/data/local/tmp/zdtd_uninstall_watch.log"
+      val script = """#!/system/bin/sh
+PKG="$pkg"
+LOG="$logPath"
+
+echo "[\$(date)] watch start: ${'$'}PKG" >> "${'$'}LOG"
+
+# Wait up to 15 minutes (180 * 5s)
+i=0
+while [ ${'$'}i -lt 180 ]; do
+  if pm path "${'$'}PKG" >/dev/null 2>&1; then
+    sleep 5
+  else
+    echo "[\$(date)] package removed, rebooting" >> "${'$'}LOG"
+    sleep 5
+    svc power reboot >/dev/null 2>&1 || reboot >/dev/null 2>&1
+    exit 0
+  fi
+  i=${'$'}((i+1))
+done
+
+echo "[\$(date)] timeout waiting for uninstall" >> "${'$'}LOG"
+exit 0
+"""
+
+      // Write script (safe heredoc) and chmod.
+      root.execRootSh(
+        """cat > '$scriptPath' <<'EOF'
+$script
+EOF
+chmod 700 '$scriptPath'"""
+      )
+
+      // Run watcher detached.
+      root.execRootSh(
+        """if command -v setsid >/dev/null 2>&1; then
+  setsid sh '$scriptPath' >/dev/null 2>&1 </dev/null &
+elif toybox setsid >/dev/null 2>&1; then
+  toybox setsid sh '$scriptPath' >/dev/null 2>&1 </dev/null &
+else
+  sh '$scriptPath' >/dev/null 2>&1 </dev/null &
+fi""".trimIndent()
+      )
+    }
+
+
   }
 
   override fun rebootNow() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO {
+      runCatching { root.setTamperReinstallPendingReboot(false) }
       root.execRoot("sh -c 'svc power reboot'")
     }
   }
@@ -1077,7 +1184,7 @@ private fun clearDownloadedUpdateApk() {
 
   override fun refreshBackups() {
     if (_rootState.value != RootState.GRANTED) {
-      _backup.update { it.copy(loading = false, items = emptyList(), error = "Требуются root-права.") }
+      _backup.update { it.copy(loading = false, items = emptyList(), error = str(R.string.mv_auto_022)) }
       return
     }
     launchIO {
@@ -1116,7 +1223,7 @@ private fun clearDownloadedUpdateApk() {
 
         _backup.update { it.copy(loading = false, items = items, error = null) }
       }.onFailure { e ->
-        _backup.update { it.copy(loading = false, error = "Не удалось прочитать список бэкапов: ${e.message ?: e}") }
+        _backup.update { it.copy(loading = false, error = str(R.string.mv_backup_list_read_error, (e.message ?: e.toString()))) }
       }
     }
   }
@@ -1127,16 +1234,16 @@ private fun clearDownloadedUpdateApk() {
   if (_backup.value.progressVisible && !_backup.value.progressFinished) return
 
   launchIO {
-    showBackupProgress(title = "Создание бэкапа", text = "Подготовка…", percent = 0)
+    showBackupProgress(title = str(R.string.mv_auto_023), text = str(R.string.mv_auto_024), percent = 0)
 
     // Pre-check source.
     if (!rootPathExists(workingFolderPath)) {
-      finishBackupProgress(error = "Не найдена папка настроек: ${workingFolderPath}.")
+      finishBackupProgress(error = str(R.string.mv_backup_settings_folder_missing, workingFolderPath))
       return@launchIO
     }
     val dirsFull = listSubdirs(workingFolderPath)
     if (dirsFull.isEmpty()) {
-      finishBackupProgress(error = "Нет данных для бэкапа: в working_folder не найдено ни одной папки.")
+      finishBackupProgress(error = str(R.string.mv_auto_025))
       return@launchIO
     }
 
@@ -1161,7 +1268,7 @@ private fun clearDownloadedUpdateApk() {
     val wrote = runCatching { root.writeTextFile("${tmpStage}/zdt_backup_manifest.json", manifest) }.getOrDefault(false)
     if (!wrote) {
       root.execRootSh("rm -rf ${shQuote(tmpStage)} 2>/dev/null || true")
-      finishBackupProgress(error = "Не удалось создать manifest файла бэкапа.")
+      finishBackupProgress(error = str(R.string.mv_auto_026))
       return@launchIO
     }
     // Ensure manifest stays readable across different root managers / shells.
@@ -1185,13 +1292,14 @@ private fun clearDownloadedUpdateApk() {
       val name = d.substringAfterLast('/').ifBlank { "folder" }
 
       val pct = ((done * 80L) / total).toInt().coerceIn(0, 80)
-      _backup.update { st -> st.copy(progressText = "Копирование: $name", progressPercent = pct) }
+      _backup.update { st -> st.copy(progressText = str(R.string.mv_copying_name, name), progressPercent = pct) }
 
       val rCopy = root.execRootSh("cp -a ${shQuote(d)} ${shQuote(tmpStage)}/ 2>/dev/null || cp -r ${shQuote(d)} ${shQuote(tmpStage)}/")
       if (!rCopy.isSuccess) {
         val err = (rCopy.out + rCopy.err).joinToString("\n").trim()
         root.execRootSh("rm -rf ${shQuote(tmpStage)} 2>/dev/null || true")
-        finishBackupProgress(error = "Ошибка копирования ($name): ${if (err.isBlank()) "cp failed" else err}")
+        val detail = if (err.isBlank()) "cp failed" else err
+        finishBackupProgress(error = str(R.string.mv_copy_error_with_detail, name, detail))
         return@launchIO
       }
 
@@ -1199,7 +1307,7 @@ private fun clearDownloadedUpdateApk() {
       done += if (w > 0L) w else 1L
     }
 
-    _backup.update { st -> st.copy(progressText = "Создание архива…", progressPercent = 85) }
+    _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_027), progressPercent = 85) }
     val rTar = root.execRootSh("tar -cf ${shQuote(tmpTar)} -C ${shQuote(tmpStage)} .")
     if (!rTar.isSuccess) {
       val code = runCatching { rTar.code }.getOrDefault(-1)
@@ -1208,7 +1316,8 @@ private fun clearDownloadedUpdateApk() {
         warnings += (if (err.isBlank()) "tar warning" else err)
       } else {
         root.execRootSh("rm -rf ${shQuote(tmpStage)} 2>/dev/null || true; rm -f ${shQuote(tmpTar)} 2>/dev/null || true")
-        finishBackupProgress(error = "Не удалось создать архив: ${if (err.isBlank()) "tar failed (code=$code)" else err}")
+        val detail = if (err.isBlank()) "tar failed (code=$code)" else err
+        finishBackupProgress(error = str(R.string.mv_backup_archive_create_failed, detail))
         return@launchIO
       }
     }
@@ -1225,11 +1334,13 @@ private fun clearDownloadedUpdateApk() {
     if (!hasOther) {
       val err = (rTar.out + rTar.err).joinToString("\n").trim()
       root.execRootSh("rm -rf ${shQuote(tmpStage)} 2>/dev/null || true; rm -f ${shQuote(tmpTar)} 2>/dev/null || true")
-      finishBackupProgress(error = "Бэкап не создан: в архив не добавились папки. ${if (err.isBlank()) "" else err.take(200)}".trim())
+      val detail = if (err.isBlank()) "" else err.take(200)
+      val msg = if (detail.isBlank()) str(R.string.mv_backup_not_created_no_folders_short) else str(R.string.mv_backup_not_created_no_folders_detail, detail)
+      finishBackupProgress(error = msg.trim())
       return@launchIO
     }
 
-    _backup.update { st -> st.copy(progressText = "Сжатие…", progressPercent = 95) }
+    _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_028), progressPercent = 95) }
     val gzipScript = buildString {
       append("rm -f ")
       append(shQuote(dest))
@@ -1260,23 +1371,24 @@ private fun clearDownloadedUpdateApk() {
       val err = (rGz.out + rGz.err).joinToString("\n").trim()
       // Cleanup stage/tar even on failure.
       root.execRootSh("rm -rf ${shQuote(tmpStage)} 2>/dev/null || true; rm -f ${shQuote(tmpTar)} 2>/dev/null || true")
-      finishBackupProgress(error = "Не удалось сжать/сохранить бэкап: ${if (err.isBlank()) "gzip failed" else err}")
+      val detail = if (err.isBlank()) "gzip failed" else err
+      finishBackupProgress(error = str(R.string.mv_backup_compress_failed, detail))
       return@launchIO
     }
 
     if (warnings.isNotEmpty()) {
       val first = warnings.first().lineSequence().firstOrNull()?.take(200).orEmpty()
-      finishBackupProgress(text = "Готово: $backupName (с предупреждением)", percent = 100)
-      if (first.isNotBlank()) toast("Бэкап создан, но tar сообщил предупреждение: $first")
+      finishBackupProgress(text = str(R.string.mv_backup_done_with_warning, backupName), percent = 100)
+      if (first.isNotBlank()) toast(str(R.string.mv_backup_created_with_warning, first))
     } else {
-      finishBackupProgress(text = "Готово: $backupName", percent = 100)
+      finishBackupProgress(text = str(R.string.mv_backup_done_name, backupName), percent = 100)
     }
     refreshBackups()
   }
 }
   override fun requestBackupImport() {
     if (_rootState.value != RootState.GRANTED) {
-      toast("Нужен root для импорта бэкапа")
+      toast(str(R.string.mv_auto_029))
       return
     }
     _backupEvents.tryEmit(BackupEvent.RequestImport)
@@ -1285,13 +1397,13 @@ private fun clearDownloadedUpdateApk() {
   override fun onBackupImportResult(uri: Uri?) {
     if (_rootState.value != RootState.GRANTED) return
     if (uri == null) {
-      toast("Импорт отменён")
+      toast(str(R.string.mv_auto_030))
       return
     }
     if (_backup.value.progressVisible && !_backup.value.progressFinished) return
 
     launchIO {
-      showBackupProgress(title = "Импорт бэкапа", text = "Копирование файла…", percent = 5)
+      showBackupProgress(title = str(R.string.mv_auto_031), text = str(R.string.mv_auto_032), percent = 5)
       val tmp = File(ctx.cacheDir, "zdtb_import_${System.currentTimeMillis()}.zdtb")
       val okCopy = runCatching {
         ctx.contentResolver.openInputStream(uri)?.use { input ->
@@ -1303,15 +1415,15 @@ private fun clearDownloadedUpdateApk() {
       }.getOrDefault(false)
 
       if (!okCopy || !tmp.exists()) {
-        finishBackupProgress(error = "Не удалось прочитать выбранный файл.")
+        finishBackupProgress(error = str(R.string.mv_auto_033))
         runCatching { tmp.delete() }
         return@launchIO
       }
 
-      _backup.update { st -> st.copy(progressText = "Проверка…", progressPercent = 20) }
-      val (valid, errMsg) = validateBackupFile(tmp.absolutePath)
-      if (!valid) {
-        finishBackupProgress(error = errMsg ?: "Это не бэкап ZDT-D")
+      _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_034), progressPercent = 20) }
+      val v = validateBackupFile(tmp.absolutePath)
+      if (!v.ok) {
+        finishBackupProgress(error = v.error ?: str(R.string.mv_auto_035))
         runCatching { tmp.delete() }
         return@launchIO
       }
@@ -1320,50 +1432,57 @@ private fun clearDownloadedUpdateApk() {
       val tsForFile = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
       val name = "ZDT-D_backup_${tsForFile}_import.zdtb"
       val dest = "${backupDirPath}/${name}"
-      _backup.update { st -> st.copy(progressText = "Сохранение…", progressPercent = 60) }
+      _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_036), progressPercent = 60) }
 
       val r = root.execRootSh("cp -f ${shQuote(tmp.absolutePath)} ${shQuote(dest)} 2>/dev/null || cat ${shQuote(tmp.absolutePath)} > ${shQuote(dest)}; chmod 0644 ${shQuote(dest)} 2>/dev/null || true")
       runCatching { tmp.delete() }
       if (!r.isSuccess) {
         val err = (r.out + r.err).joinToString("\n").trim()
-        finishBackupProgress(error = "Не удалось сохранить импортированный бэкап: ${if (err.isBlank()) "copy failed" else err}")
+        val detail = if (err.isBlank()) "copy failed" else err
+        finishBackupProgress(error = str(R.string.mv_backup_import_save_failed, detail))
         return@launchIO
       }
 
-      finishBackupProgress(text = "Импорт завершён: $name", percent = 100)
+      finishBackupProgress(text = str(R.string.mv_backup_import_done, name), percent = 100)
       refreshBackups()
     }
   }
 
-  override fun restoreBackup(name: String) {
+  override fun restoreBackup(name: String, ignoreVersionCode: Boolean) {
     if (_rootState.value != RootState.GRANTED) return
     if (_backup.value.progressVisible && !_backup.value.progressFinished) return
 
     launchIO {
-      showBackupProgress(title = "Восстановление бэкапа", text = "Проверка…", percent = 0)
+      showBackupProgress(title = str(R.string.mv_auto_037), text = str(R.string.mv_auto_034), percent = 0)
       val path = "${backupDirPath}/${name}"
 
       if (!rootPathExists(path)) {
-        finishBackupProgress(error = "Файл бэкапа не найден: $name")
+        finishBackupProgress(error = str(R.string.mv_backup_file_not_found, name))
         return@launchIO
       }
 
-      val (valid, errMsg) = validateBackupFile(path)
-      if (!valid) {
-        finishBackupProgress(error = errMsg ?: "Это не бэкап ZDT-D")
+      val v = validateBackupFile(path, ignoreVersionCode = ignoreVersionCode)
+      if (!v.ok) {
+        // If this is a versionCode mismatch, offer "Restore anyway" in UI.
+        val canForce = v.versionMismatch && !ignoreVersionCode
+        finishBackupProgress(
+          error = v.error ?: str(R.string.mv_auto_035),
+          forceRestoreAvailable = canForce,
+          forceRestoreName = if (canForce) name else null,
+        )
         return@launchIO
       }
 
       // Stop is async: after /api/stop the processes may still be shutting down and API may temporarily reject start.
       // We must wait until /api/status confirms everything is stopped.
-      _backup.update { st -> st.copy(progressText = "Остановка сервиса…", progressPercent = 5) }
+      _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_038), progressPercent = 5) }
       val stopOk = runCatching { api.stopService() }.getOrDefault(false)
       if (!stopOk) {
-        finishBackupProgress(error = "Не удалось отправить команду остановки. Повторите попытку позже.")
+        finishBackupProgress(error = str(R.string.mv_auto_039))
         return@launchIO
       }
 
-      _backup.update { st -> st.copy(progressText = "Ожидание подтверждения остановки…", progressPercent = 8) }
+      _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_040), progressPercent = 8) }
       val waitStart = System.currentTimeMillis()
       val waitTimeoutMs = 30_000L
       val pollMs = 1_000L
@@ -1379,34 +1498,41 @@ private fun clearDownloadedUpdateApk() {
         delay(pollMs)
       }
       if (stoppedAt == null) {
-        finishBackupProgress(error = "Не удалось дождаться остановки сервиса. Повторите попытку позже.")
+        finishBackupProgress(error = str(R.string.mv_auto_041))
         return@launchIO
       }
 
-      _backup.update { st -> st.copy(progressText = "Очистка настроек…", progressPercent = 10) }
-      val wipe = root.execRootSh("mkdir -p ${shQuote(workingFolderPath)}; rm -rf ${shQuote(workingFolderPath)}/* ${shQuote(workingFolderPath)}/.[!.]* ${shQuote(workingFolderPath)}/..?* 2>/dev/null || true")
+      _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_042), progressPercent = 10) }
+      val wipe = root.execRootSh("rm -rf ${shQuote(workingFolderPath)} 2>/dev/null || true; mkdir -p ${shQuote(workingFolderPath)} 2>/dev/null || true")
       if (!wipe.isSuccess) {
-        finishBackupProgress(error = "Не удалось очистить working_folder")
+        finishBackupProgress(error = str(R.string.mv_auto_043))
         return@launchIO
       }
 
       // Extract into temp dir first to avoid polluting working_folder with manifest.
       val tmpDir = "/data/local/tmp/zdt_restore_${System.currentTimeMillis()}"
-      _backup.update { st -> st.copy(progressText = "Распаковка архива…", progressPercent = 20) }
+      _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_044), progressPercent = 20) }
       root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true; mkdir -p ${shQuote(tmpDir)}")
-      val rExtract = root.execRootSh("tar -xzf ${shQuote(path)} -C ${shQuote(tmpDir)} 2>/dev/null")
+      val rExtract = root.execRootSh("cd ${shQuote(tmpDir)} && tar -xzf ${shQuote(path)} 2>/dev/null")
       if (!rExtract.isSuccess) {
         val err = (rExtract.out + rExtract.err).joinToString("\n").trim()
         root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
-        finishBackupProgress(error = "Ошибка распаковки: ${if (err.isBlank()) "tar failed" else err}")
+        val detail = if (err.isBlank()) "tar failed" else err
+        finishBackupProgress(error = str(R.string.mv_backup_extract_failed, detail))
         return@launchIO
       }
-      root.execRootSh("rm -f ${shQuote(tmpDir)}/zdt_backup_manifest.json 2>/dev/null || true")
+      val rMf = root.execRootSh(
+  "find ${shQuote(tmpDir)} -maxdepth 10 -name zdt_backup_manifest.json -type f -print -quit 2>/dev/null || true"
+)
+val mf = rMf.out.joinToString("\n").trim()
+if (mf.isNotBlank()) {
+  root.execRootSh("rm -f ${shQuote(mf)} 2>/dev/null || true")
+}
 
       val dirs = listSubdirs(tmpDir)
       if (dirs.isEmpty()) {
         root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
-        finishBackupProgress(error = "В бэкапе не найдено ни одной папки.")
+        finishBackupProgress(error = str(R.string.mv_auto_045))
         return@launchIO
       }
 
@@ -1425,20 +1551,21 @@ private fun clearDownloadedUpdateApk() {
         val folderName = d.substringAfterLast('/').ifBlank { "folder" }
 
         val pct = 20 + ((done * 75L) / total).toInt().coerceIn(0, 75)
-        _backup.update { st -> st.copy(progressText = "Копирование: $folderName", progressPercent = pct) }
+        _backup.update { st -> st.copy(progressText = str(R.string.mv_copying_name, folderName), progressPercent = pct) }
 
         val rCopy = root.execRootSh("cp -a ${shQuote(d)} ${shQuote(workingFolderPath)}/ 2>/dev/null || cp -r ${shQuote(d)} ${shQuote(workingFolderPath)}/")
         if (!rCopy.isSuccess) {
           val err = (rCopy.out + rCopy.err).joinToString("\n").trim()
           root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
-          finishBackupProgress(error = "Ошибка копирования ($folderName): ${if (err.isBlank()) "cp failed" else err}")
+          val detail = if (err.isBlank()) "cp failed" else err
+          finishBackupProgress(error = str(R.string.mv_copy_error_with_detail, folderName, detail))
           return@launchIO
         }
 
         val w = sizes[d] ?: 0L
         done += if (w > 0L) w else 1L
         val pct2 = 20 + ((done * 75L) / total).toInt().coerceIn(0, 75)
-        _backup.update { st -> st.copy(progressText = "Скопировано: ${i + 1} из ${dirs.size}", progressPercent = pct2) }
+        _backup.update { st -> st.copy(progressText = str(R.string.mv_copied_count, i + 1, dirs.size), progressPercent = pct2) }
       }
 
       root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
@@ -1449,19 +1576,19 @@ private fun clearDownloadedUpdateApk() {
       val coolDownMs = 5_000L
       if (elapsedSinceStopped < coolDownMs) {
         val remain = coolDownMs - elapsedSinceStopped
-        _backup.update { st -> st.copy(progressText = "Ожидание перед запуском…", progressPercent = 96) }
+        _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_046), progressPercent = 96) }
         delay(remain)
       }
 
-      _backup.update { st -> st.copy(progressText = "Запуск сервиса…", progressPercent = 97) }
+      _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_047), progressPercent = 97) }
       // Per requirement: send start only once (no retries/spam).
       val started = runCatching { api.startService() }.getOrDefault(false)
       if (!started) {
-        finishBackupProgress(error = "Настройки восстановлены, но сервис не запустился.")
+        finishBackupProgress(error = str(R.string.mv_auto_048))
         return@launchIO
       }
 
-      finishBackupProgress(text = "Готово. Настройки восстановлены.", percent = 100)
+      finishBackupProgress(text = str(R.string.mv_auto_049), percent = 100)
     }
   }
 
@@ -1470,7 +1597,7 @@ private fun clearDownloadedUpdateApk() {
     launchIO {
       val path = "${backupDirPath}/${name}"
       val r = root.execRootSh("rm -f ${shQuote(path)} 2>/dev/null || true")
-      if (!r.isSuccess) toast("Не удалось удалить бэкап")
+      if (!r.isSuccess) toast(str(R.string.mv_auto_050))
       refreshBackups()
     }
   }
@@ -1480,13 +1607,13 @@ private fun clearDownloadedUpdateApk() {
     launchIO {
       val src = "${backupDirPath}/${name}"
       if (!rootPathExists(src)) {
-        toast("Файл бэкапа не найден")
+        toast(str(R.string.mv_auto_051))
         return@launchIO
       }
       val outFile = File(ctx.cacheDir, "zdtb_share_${System.currentTimeMillis()}.zdtb")
       val r = root.execRootSh("cp -f ${shQuote(src)} ${shQuote(outFile.absolutePath)} 2>/dev/null || cat ${shQuote(src)} > ${shQuote(outFile.absolutePath)}; chmod 0644 ${shQuote(outFile.absolutePath)} 2>/dev/null || true")
       if (!r.isSuccess) {
-        toast("Не удалось подготовить бэкап для отправки")
+        toast(str(R.string.mv_auto_052))
         return@launchIO
       }
       _backupEvents.tryEmit(BackupEvent.ShareFile(outFile.absolutePath, "application/octet-stream"))
@@ -1502,6 +1629,8 @@ private fun clearDownloadedUpdateApk() {
         progressPercent = 0,
         progressFinished = false,
         progressError = null,
+        forceRestoreAvailable = false,
+        forceRestoreName = null,
       )
     }
   }
@@ -1559,11 +1688,11 @@ private fun clearDownloadedUpdateApk() {
           delay(800)
         }
         if (ApiModels.isServiceOn(_uiState.value.status)) {
-          toast("Не удалось остановить сервис")
+          toast(str(R.string.mv_auto_053))
           _programUpdates.update { st ->
             st.copy(
-              zapret = st.zapret.copy(errorText = "Service is still running. Stop it and try again."),
-              zapret2 = st.zapret2.copy(errorText = "Service is still running. Stop it and try again."),
+              zapret = st.zapret.copy(errorText = str(R.string.program_updates_err_service_running)),
+              zapret2 = st.zapret2.copy(errorText = str(R.string.program_updates_err_service_running)),
             )
           }
           return@launchIO
@@ -1646,7 +1775,7 @@ private fun clearDownloadedUpdateApk() {
   private fun requireServiceStoppedForUpdates(): Boolean {
     val on = ApiModels.isServiceOn(_uiState.value.status)
     if (on) {
-      toast("Остановите сервис перед обновлением")
+      toast(str(R.string.mv_auto_054))
     }
     return !on
   }
@@ -1654,12 +1783,12 @@ private fun clearDownloadedUpdateApk() {
   private suspend fun checkZapretInternal() {
     if (!requireServiceStoppedForUpdates()) return
     if (!isNetworkAvailable()) {
-      toast("Нет подключения к интернету")
+      toast(str(R.string.mv_auto_002))
       return
     }
 
     _programUpdates.update { st ->
-      st.copy(zapret = st.zapret.copy(checking = true, errorText = null, statusText = "Checking…", progressPercent = 0))
+      st.copy(zapret = st.zapret.copy(checking = true, errorText = null, statusText = str(R.string.mv_auto_055), progressPercent = 0))
     }
 
     val installed = runCatching {
@@ -1672,7 +1801,7 @@ private fun clearDownloadedUpdateApk() {
     }.getOrNull()
     if (installed.isNullOrBlank()) {
       _programUpdates.update { st ->
-        st.copy(zapret = st.zapret.copy(checking = false, installedVersion = null, errorText = "Failed to detect installed version", statusText = ""))
+        st.copy(zapret = st.zapret.copy(checking = false, installedVersion = null, errorText = str(R.string.program_updates_err_detect_installed), statusText = ""))
       }
       return
     }
@@ -1680,7 +1809,7 @@ private fun clearDownloadedUpdateApk() {
     val latest = fetchLatestZapretAsset()
     if (latest == null) {
       _programUpdates.update { st ->
-        st.copy(zapret = st.zapret.copy(checking = false, installedVersion = installed, errorText = "Failed to check latest release", statusText = ""))
+        st.copy(zapret = st.zapret.copy(checking = false, installedVersion = installed, errorText = str(R.string.program_updates_err_check_latest), statusText = ""))
       }
       return
     }
@@ -1699,7 +1828,7 @@ private fun clearDownloadedUpdateApk() {
           latestDownloadUrl = latestUrl,
           warningText = warn,
           updateAvailable = updAvail,
-          statusText = if (updAvail) "Ready" else "Already installed",
+          statusText = if (updAvail) str(R.string.prog_update_status_ready) else str(R.string.prog_update_status_already_installed),
           errorText = null,
         )
       )
@@ -1709,12 +1838,12 @@ private fun clearDownloadedUpdateApk() {
   private suspend fun checkZapret2Internal() {
     if (!requireServiceStoppedForUpdates()) return
     if (!isNetworkAvailable()) {
-      toast("Нет подключения к интернету")
+      toast(str(R.string.mv_auto_002))
       return
     }
 
     _programUpdates.update { st ->
-      st.copy(zapret2 = st.zapret2.copy(checking = true, errorText = null, statusText = "Checking…", progressPercent = 0))
+      st.copy(zapret2 = st.zapret2.copy(checking = true, errorText = null, statusText = str(R.string.mv_auto_055), progressPercent = 0))
     }
 
     val installed = runCatching {
@@ -1727,7 +1856,7 @@ private fun clearDownloadedUpdateApk() {
     }.getOrNull()
     if (installed.isNullOrBlank()) {
       _programUpdates.update { st ->
-        st.copy(zapret2 = st.zapret2.copy(checking = false, installedVersion = null, errorText = "Failed to detect installed version", statusText = ""))
+        st.copy(zapret2 = st.zapret2.copy(checking = false, installedVersion = null, errorText = str(R.string.program_updates_err_detect_installed), statusText = ""))
       }
       return
     }
@@ -1735,7 +1864,7 @@ private fun clearDownloadedUpdateApk() {
     val latest = fetchLatestZapret2Asset()
     if (latest == null) {
       _programUpdates.update { st ->
-        st.copy(zapret2 = st.zapret2.copy(checking = false, installedVersion = installed, errorText = "Failed to check latest release", statusText = ""))
+        st.copy(zapret2 = st.zapret2.copy(checking = false, installedVersion = installed, errorText = str(R.string.program_updates_err_check_latest), statusText = ""))
       }
       return
     }
@@ -1754,7 +1883,7 @@ private fun clearDownloadedUpdateApk() {
           latestDownloadUrl = latestUrl,
           warningText = warn,
           updateAvailable = updAvail,
-          statusText = if (updAvail) "Ready" else "Already installed",
+          statusText = if (updAvail) str(R.string.prog_update_status_ready) else str(R.string.prog_update_status_already_installed),
           errorText = null,
         )
       )
@@ -1774,7 +1903,7 @@ private fun clearDownloadedUpdateApk() {
     if (url.isNullOrBlank() || targetVer.isNullOrBlank()) return
 
     _programUpdates.update { st ->
-      st.copy(zapret = st.zapret.copy(updating = true, progressPercent = 0, errorText = null, statusText = "Downloading…"))
+      st.copy(zapret = st.zapret.copy(updating = true, progressPercent = 0, errorText = null, statusText = str(R.string.mv_auto_056)))
     }
 
     val zipFile = File(ctx.cacheDir, "zapret_target.zip")
@@ -1785,29 +1914,29 @@ private fun clearDownloadedUpdateApk() {
     val okDl = downloadToFileWithProgress(url, zipFile) { pct ->
       _programUpdates.update { st ->
         val cur = st.zapret
-        if (cur.progressPercent == pct) st else st.copy(zapret = cur.copy(progressPercent = pct, statusText = "Downloading… ${pct}%"))
+        if (cur.progressPercent == pct) st else st.copy(zapret = cur.copy(progressPercent = pct, statusText = str(R.string.prog_update_status_downloading_pct_fmt, pct)))
       }
     }
     if (!okDl) {
-      _programUpdates.update { st -> st.copy(zapret = st.zapret.copy(updating = false, errorText = "Download failed", statusText = "")) }
+      _programUpdates.update { st -> st.copy(zapret = st.zapret.copy(updating = false, errorText = str(R.string.prog_update_error_download_failed), statusText = "")) }
       return
     }
 
-    _programUpdates.update { st -> st.copy(zapret = st.zapret.copy(statusText = "Extracting…")) }
+    _programUpdates.update { st -> st.copy(zapret = st.zapret.copy(statusText = str(R.string.mv_auto_057))) }
     val okExtract = extractZipSingle(zipFile, { name -> name.endsWith("/binaries/android-arm64/nfqws") }, extracted)
     if (!okExtract) {
-      _programUpdates.update { st -> st.copy(zapret = st.zapret.copy(updating = false, errorText = "Archive structure changed. Automatic update is not possible.", statusText = "")) }
+      _programUpdates.update { st -> st.copy(zapret = st.zapret.copy(updating = false, errorText = str(R.string.prog_update_error_archive_changed), statusText = "")) }
       runCatching { zipFile.delete() }
       return
     }
 
-    _programUpdates.update { st -> st.copy(zapret = st.zapret.copy(statusText = "Installing…", progressPercent = 100)) }
+    _programUpdates.update { st -> st.copy(zapret = st.zapret.copy(statusText = str(R.string.mv_auto_058), progressPercent = 100)) }
     val okInstall = installZapretBinary(extracted)
     runCatching { zipFile.delete() }
     runCatching { extracted.delete() }
 
     if (!okInstall) {
-      _programUpdates.update { st -> st.copy(zapret = st.zapret.copy(updating = false, errorText = "Install failed", statusText = "")) }
+      _programUpdates.update { st -> st.copy(zapret = st.zapret.copy(updating = false, errorText = str(R.string.prog_update_error_install_failed), statusText = "")) }
       return
     }
 
@@ -1828,7 +1957,7 @@ private fun clearDownloadedUpdateApk() {
           installedVersion = installed ?: st.zapret.installedVersion,
           updateAvailable = updAvail,
           warningText = warn,
-          statusText = "Installed",
+          statusText = str(R.string.prog_update_status_installed),
           errorText = null,
         )
       )
@@ -1847,7 +1976,7 @@ private fun clearDownloadedUpdateApk() {
     if (url.isNullOrBlank() || targetVer.isNullOrBlank()) return
 
     _programUpdates.update { st ->
-      st.copy(zapret2 = st.zapret2.copy(updating = true, progressPercent = 0, errorText = null, statusText = "Downloading…"))
+      st.copy(zapret2 = st.zapret2.copy(updating = true, progressPercent = 0, errorText = null, statusText = str(R.string.mv_auto_056)))
     }
 
     val zipFile = File(ctx.cacheDir, "zapret2_target.zip")
@@ -1859,32 +1988,32 @@ private fun clearDownloadedUpdateApk() {
     val okDl = downloadToFileWithProgress(url, zipFile) { pct ->
       _programUpdates.update { st ->
         val cur = st.zapret2
-        if (cur.progressPercent == pct) st else st.copy(zapret2 = cur.copy(progressPercent = pct, statusText = "Downloading… ${pct}%"))
+        if (cur.progressPercent == pct) st else st.copy(zapret2 = cur.copy(progressPercent = pct, statusText = str(R.string.prog_update_status_downloading_pct_fmt, pct)))
       }
     }
     if (!okDl) {
-      _programUpdates.update { st -> st.copy(zapret2 = st.zapret2.copy(updating = false, errorText = "Download failed", statusText = "")) }
+      _programUpdates.update { st -> st.copy(zapret2 = st.zapret2.copy(updating = false, errorText = str(R.string.prog_update_error_download_failed), statusText = "")) }
       return
     }
 
-    _programUpdates.update { st -> st.copy(zapret2 = st.zapret2.copy(statusText = "Extracting…")) }
+    _programUpdates.update { st -> st.copy(zapret2 = st.zapret2.copy(statusText = str(R.string.mv_auto_057))) }
     val binOut = File(extractDir, "nfqws2")
     val luaOut = File(extractDir, "lua")
     val okExtractBin = extractZipSingle(zipFile, { name -> name.endsWith("/binaries/android-arm64/nfqws2") }, binOut)
     val okExtractLua = extractZipTree(zipFile, subDirSuffix = "/lua/", outDir = luaOut)
     if (!okExtractBin || !okExtractLua) {
-      _programUpdates.update { st -> st.copy(zapret2 = st.zapret2.copy(updating = false, errorText = "Archive structure changed. Automatic update is not possible.", statusText = "")) }
+      _programUpdates.update { st -> st.copy(zapret2 = st.zapret2.copy(updating = false, errorText = str(R.string.prog_update_error_archive_changed), statusText = "")) }
       runCatching { zipFile.delete() }
       runCatching { extractDir.deleteRecursively() }
       return
     }
 
-    _programUpdates.update { st -> st.copy(zapret2 = st.zapret2.copy(statusText = "Installing…", progressPercent = 100)) }
+    _programUpdates.update { st -> st.copy(zapret2 = st.zapret2.copy(statusText = str(R.string.mv_auto_058), progressPercent = 100)) }
     val okInstall = installZapret2(binOut, luaOut)
     runCatching { zipFile.delete() }
     runCatching { extractDir.deleteRecursively() }
     if (!okInstall) {
-      _programUpdates.update { st -> st.copy(zapret2 = st.zapret2.copy(updating = false, errorText = "Install failed", statusText = "")) }
+      _programUpdates.update { st -> st.copy(zapret2 = st.zapret2.copy(updating = false, errorText = str(R.string.prog_update_error_install_failed), statusText = "")) }
       return
     }
 
@@ -1905,7 +2034,7 @@ private fun clearDownloadedUpdateApk() {
           installedVersion = installed ?: st.zapret2.installedVersion,
           updateAvailable = updAvail,
           warningText = warn,
-          statusText = "Installed",
+          statusText = str(R.string.prog_update_status_installed),
           errorText = null,
         )
       )
@@ -1914,11 +2043,11 @@ private fun clearDownloadedUpdateApk() {
 
   private suspend fun loadReleasesInternal(which: String) {
     if (!isNetworkAvailable()) {
-      toast("Нет подключения к интернету")
+      toast(str(R.string.mv_auto_002))
       _programUpdates.update { st ->
         when (which) {
-          "zapret" -> st.copy(zapret = st.zapret.copy(releasesLoading = false, releasesError = "No internet connection"))
-          "zapret2" -> st.copy(zapret2 = st.zapret2.copy(releasesLoading = false, releasesError = "No internet connection"))
+          "zapret" -> st.copy(zapret = st.zapret.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_no_internet)))
+          "zapret2" -> st.copy(zapret2 = st.zapret2.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_no_internet)))
           else -> st
         }
       }
@@ -1943,8 +2072,8 @@ private fun clearDownloadedUpdateApk() {
     if (releases == null || releases.isEmpty()) {
       _programUpdates.update { st ->
         when (which) {
-          "zapret" -> st.copy(zapret = st.zapret.copy(releasesLoading = false, releasesError = "Failed to load releases"))
-          "zapret2" -> st.copy(zapret2 = st.zapret2.copy(releasesLoading = false, releasesError = "Failed to load releases"))
+          "zapret" -> st.copy(zapret = st.zapret.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_load_releases)))
+          "zapret2" -> st.copy(zapret2 = st.zapret2.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_load_releases)))
           else -> st
         }
       }
@@ -2120,7 +2249,7 @@ private fun clearDownloadedUpdateApk() {
       else -> return null
     }
     return if (compareVersions(targetVersion, min) < 0) {
-      "Вы выбрали версию ниже $min. Возможны проблемы с запуском, и заготовленные стратегии могут не работать."
+      str(R.string.mv_version_below_min_warning, min)
     } else null
   }
 
@@ -2262,7 +2391,7 @@ private fun clearDownloadedUpdateApk() {
             migrationPercent = 0,
             migrationProgressText = "",
             migrationFinished = true,
-            migrationError = "Не найдено подготовленное обновление модуля. Сначала установите обновление модуля и дождитесь появления запроса на перезагрузку.",
+            migrationError = str(R.string.mv_auto_059),
           )
         }
         return@launchIO
@@ -2272,7 +2401,7 @@ private fun clearDownloadedUpdateApk() {
         st.copy(
           migrationDialog = MigrationDialog.PROGRESS,
           migrationPercent = 0,
-          migrationProgressText = "Подготовка…",
+          migrationProgressText = str(R.string.mv_auto_024),
           migrationFinished = false,
           migrationError = null,
         )
@@ -2280,12 +2409,12 @@ private fun clearDownloadedUpdateApk() {
 
       val ok = performSettingsMigration(updateId)
       if (ok) {
-        // Keep dialog open; UI shows "Завершить".
+        // Keep dialog open; UI shows str(R.string.mv_auto_060).
         _setup.update { st ->
           st.copy(
             migrationFinished = true,
             migrationError = null,
-            migrationProgressText = "Готово. Настройки перенесены.",
+            migrationProgressText = str(R.string.mv_auto_061),
             migrationPercent = 100,
           )
         }
@@ -2309,6 +2438,8 @@ private fun clearDownloadedUpdateApk() {
           migrationProgressText = if (st.migrationDialog == MigrationDialog.PROGRESS) st.migrationProgressText else "",
           migrationFinished = if (st.migrationDialog == MigrationDialog.PROGRESS) st.migrationFinished else false,
           migrationError = if (st.migrationDialog == MigrationDialog.PROGRESS) st.migrationError else null,
+          moduleReinstallRequired = false,
+          tamperReinstallPendingReboot = false,
         )
       }
       return
@@ -2325,6 +2456,23 @@ private fun clearDownloadedUpdateApk() {
           migrationButtonEnabled = false,
           migrationHintText = "",
           migrationIsMagisk = false,
+          tamperReinstallPendingReboot = runCatching { root.isTamperReinstallPendingReboot() }.getOrDefault(false),
+        )
+      }
+      return
+    }
+
+    val stickyTamperPending = runCatching { root.isTamperReinstallPendingReboot() }.getOrDefault(false)
+
+    if (_setup.value.moduleReinstallRequired || stickyTamperPending) {
+      _setup.update { st ->
+        st.copy(
+          migrationAvailable = false,
+          migrationDone = false,
+          migrationButtonEnabled = false,
+          migrationHintText = "",
+          migrationIsMagisk = false,
+          tamperReinstallPendingReboot = stickyTamperPending,
         )
       }
       return
@@ -2345,20 +2493,20 @@ private fun clearDownloadedUpdateApk() {
 
     if (done) {
       enabled = false
-      hint = "Настройки уже перенесены."
+      hint = str(R.string.mv_auto_062)
     } else {
       val updateDirOk = rootPathExists(dstRoot)
       if (!updateDirOk) {
         enabled = false
-        hint = "Не найдено подготовленное обновление модуля."
+        hint = str(R.string.mv_auto_063)
       } else if (!rootPathExists(src)) {
         enabled = false
-        hint = "Не найдены настройки предыдущей версии (папка working_folder отсутствует)."
+        hint = str(R.string.mv_auto_064)
       } else {
         val dirs = listSubdirs(src)
         if (dirs.isEmpty()) {
           enabled = false
-          hint = "Нет данных для переноса: в working_folder не найдено ни одной папки."
+          hint = str(R.string.mv_auto_065)
         } else {
           enabled = true
           hint = ""
@@ -2373,6 +2521,7 @@ private fun clearDownloadedUpdateApk() {
         migrationButtonEnabled = enabled,
         migrationHintText = hint,
         migrationIsMagisk = isMagisk,
+        tamperReinstallPendingReboot = stickyTamperPending,
       )
     }
   }
@@ -2428,7 +2577,7 @@ private fun clearDownloadedUpdateApk() {
     if (!rootPathExists(dstRoot)) {
       _setup.update { st ->
         st.copy(
-          migrationError = "Не найдено подготовленное обновление модуля (modules_update/ZDT-D отсутствует).",
+          migrationError = str(R.string.mv_auto_066),
           migrationFinished = true,
         )
       }
@@ -2437,7 +2586,7 @@ private fun clearDownloadedUpdateApk() {
     if (!rootPathExists(src)) {
       _setup.update { st ->
         st.copy(
-          migrationError = "Не найдены настройки предыдущей версии (modules/ZDT-D/working_folder отсутствует).",
+          migrationError = str(R.string.mv_auto_067),
           migrationFinished = true,
         )
       }
@@ -2448,7 +2597,7 @@ private fun clearDownloadedUpdateApk() {
     if (dirs.isEmpty()) {
       _setup.update { st ->
         st.copy(
-          migrationError = "Нет данных для переноса: в working_folder не найдено ни одной папки.",
+          migrationError = str(R.string.mv_auto_065),
           migrationFinished = true,
         )
       }
@@ -2475,7 +2624,7 @@ private fun clearDownloadedUpdateApk() {
       val name = d.substringAfterLast('/').ifBlank { "folder" }
       _setup.update { st ->
         st.copy(
-          migrationProgressText = "Копирование: $name",
+          migrationProgressText = str(R.string.mv_copying_name, name),
           migrationPercent = ((done * 100L) / total).toInt().coerceIn(0, 99),
         )
       }
@@ -2486,7 +2635,10 @@ private fun clearDownloadedUpdateApk() {
         val err = (r.out + r.err).joinToString("\n").trim()
         _setup.update { st ->
           st.copy(
-            migrationError = "Ошибка копирования ($name): ${if (err.isBlank()) "cp failed" else err}",
+            migrationError = run {
+              val detail = if (err.isBlank()) "cp failed" else err
+              str(R.string.mv_copy_error_with_detail, name, detail)
+            },
             migrationFinished = true,
           )
         }
@@ -2499,7 +2651,7 @@ private fun clearDownloadedUpdateApk() {
       _setup.update { st ->
         st.copy(
           migrationPercent = pct,
-          migrationProgressText = "Скопировано: ${i + 1} из ${dirs.size}",
+          migrationProgressText = str(R.string.mv_copied_count, i + 1, dirs.size),
         )
       }
     }
@@ -2511,7 +2663,7 @@ private fun clearDownloadedUpdateApk() {
       st.copy(
         migrationDone = true,
         migrationButtonEnabled = false,
-        migrationHintText = "Настройки уже перенесены.",
+        migrationHintText = str(R.string.mv_auto_062),
       )
     }
     return true
@@ -2526,6 +2678,7 @@ private fun clearDownloadedUpdateApk() {
         updatePromptMandatory = false,
         updatePromptTitle = "",
         updatePromptText = "",
+        moduleReinstallRequired = false,
       )
     }
   }
@@ -2587,8 +2740,8 @@ private fun clearDownloadedUpdateApk() {
     if (!copyRes.isSuccess) return Triple(false, out, dst)
 
     val msg = buildString {
-      append("ZIP сохранён: ").append(dst).append("\n\n")
-      append("Дальше установите этот архив в вашем root-менеджере (Magisk / KernelSU / APatch) как обычный модуль.")
+      append(str(R.string.mv_auto_068)).append(dst).append("\n\n")
+      append(str(R.string.mv_auto_069))
     }
     return Triple(true, (out + "\n" + msg).trim(), dst)
   }
@@ -2711,11 +2864,19 @@ private fun clearDownloadedUpdateApk() {
         progressPercent = percent.coerceIn(0, 100),
         progressFinished = false,
         progressError = null,
+        forceRestoreAvailable = false,
+        forceRestoreName = null,
       )
     }
   }
 
-  private fun finishBackupProgress(text: String? = null, percent: Int = 100, error: String? = null) {
+  private fun finishBackupProgress(
+    text: String? = null,
+    percent: Int = 100,
+    error: String? = null,
+    forceRestoreName: String? = null,
+    forceRestoreAvailable: Boolean = false,
+  ) {
     _backup.update { st ->
       st.copy(
         progressVisible = true,
@@ -2723,6 +2884,8 @@ private fun clearDownloadedUpdateApk() {
         progressPercent = percent.coerceIn(0, 100),
         progressFinished = true,
         progressError = error,
+        forceRestoreAvailable = forceRestoreAvailable,
+        forceRestoreName = forceRestoreName,
       )
     }
   }
@@ -2752,13 +2915,15 @@ private fun clearDownloadedUpdateApk() {
       .put("module_id", "ZDT-D")
       .put("created_at", createdAt)
       .put("app_version", BuildConfig.VERSION_NAME)
-      .put("app_version_code", BuildConfig.VERSION_CODE)
+      .put("app_version_code", readInstalledModuleVersionCode() ?: readBundledModuleVersionCode() ?: BuildConfig.VERSION_CODE)
       .put("folders", folders)
 
     return obj.toString(2)
   }
 
-  private suspend fun validateBackupFile(path: String): Pair<Boolean, String?> {
+  private data class BackupValidation(val ok: Boolean, val error: String? = null, val versionMismatch: Boolean = false)
+
+  private suspend fun validateBackupFile(path: String, ignoreVersionCode: Boolean = false): BackupValidation {
     // Quick list to detect bad paths (zip-slip style) and to ensure tar is readable.
     val rList = root.execRootSh("tar -tzf ${shQuote(path)} 2>/dev/null || true")
     val entries = rList.out
@@ -2768,48 +2933,76 @@ private fun clearDownloadedUpdateApk() {
       .filter { it.isNotEmpty() }
       .take(5000)
       .toList()
+
     if (entries.isEmpty()) {
-      return false to "Не удалось прочитать архив (tar -t)."
-    }
-    val bad = entries.firstOrNull { e ->
-      e.startsWith("/") || e.startsWith("\\") || e.contains("../") || e.contains("..\\") || e.contains("/..") || e.contains("\\..")
-    }
-    if (bad != null) {
-      return false to "Архив содержит подозрительный путь: $bad"
+      return BackupValidation(false, str(R.string.mv_auto_070))
     }
 
-    // Read manifest. Prefer "tar -xO" (to stdout) to avoid file permission quirks and
-    // to handle tar implementations that return 0 even when the requested entry isn't extracted.
+    val bad = entries.firstOrNull { e ->
+      e.startsWith("/") || e.startsWith("\\") ||
+        e.contains("../") || e.contains("..\\") ||
+        e.contains("/..") || e.contains("\\..")
+    }
+    if (bad != null) {
+      return BackupValidation(false, str(R.string.mv_backup_suspicious_path, bad))
+    }
+
+    // Manifest path can vary across tar writers (for example: "././zdt_backup_manifest.json").
+    // Toybox tar (especially older builds) may fail when we request a different path than the one stored.
+    val manifestInTar = entries.firstOrNull { it.endsWith("zdt_backup_manifest.json") }
+    if (manifestInTar == null) {
+      return BackupValidation(false, str(R.string.mv_auto_071))
+    }
+
+    fun normalizeTarPath(p: String): String {
+      var s = p.trim()
+      while (s.startsWith("./")) s = s.removePrefix("./")
+      while (s.startsWith("/")) s = s.removePrefix("/")
+      return s
+    }
+
+    val manifestNorm = normalizeTarPath(manifestInTar)
+    val candidates = listOf(
+      manifestInTar,
+      manifestNorm,
+      "./$manifestNorm",
+      "zdt_backup_manifest.json",
+      "./zdt_backup_manifest.json"
+    ).distinct()
+
+    // Read manifest. Prefer "tar -xO" (to stdout) to avoid file permission quirks.
     val rStdout = root.execRootSh(
-      "(tar -xOzf ${shQuote(path)} zdt_backup_manifest.json 2>/dev/null || " +
-        "tar -xOzf ${shQuote(path)} ./zdt_backup_manifest.json 2>/dev/null || true)"
+      "(" + candidates.joinToString(" || ") { cand ->
+        "tar -xOzf ${shQuote(path)} ${shQuote(cand)} 2>/dev/null"
+      } + " || true)"
     )
     var manifestText = rStdout.out.joinToString("\n").trim()
 
     if (manifestText.isBlank()) {
       // Fallback: extract to temp dir and verify file existence+size.
+      // Avoid using tar -C (it is flaky on some older Toybox builds): use "cd tmp && tar -xzf".
       val tmpDir = "/data/local/tmp/zdtb_chk_${System.currentTimeMillis()}"
       root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true; mkdir -p ${shQuote(tmpDir)}")
 
-      // Extract just the manifest (some tar builds store it under ./)
-      root.execRootSh("tar -xzf ${shQuote(path)} -C ${shQuote(tmpDir)} zdt_backup_manifest.json 2>/dev/null || true")
-      root.execRootSh("tar -xzf ${shQuote(path)} -C ${shQuote(tmpDir)} ./zdt_backup_manifest.json 2>/dev/null || true")
+      for (cand in candidates) {
+        root.execRootSh("cd ${shQuote(tmpDir)} && tar -xzf ${shQuote(path)} ${shQuote(cand)} 2>/dev/null || true")
+      }
 
       // Find the manifest robustly (in case tar created nested ./ paths).
       val rFind = root.execRootSh(
-        "find ${shQuote(tmpDir)} -maxdepth 3 -name zdt_backup_manifest.json -type f -print -quit 2>/dev/null || true"
+        "find ${shQuote(tmpDir)} -maxdepth 10 -name zdt_backup_manifest.json -type f -print -quit 2>/dev/null || true"
       )
       val found = rFind.out.joinToString("\n").trim()
       if (found.isBlank()) {
         root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
-        return false to "В архиве нет manifest файла. Это не бэкап ZDT-D."
+        return BackupValidation(false, str(R.string.mv_auto_071))
       }
 
       // Ensure it is non-empty before reading.
       val rSizeOk = root.execRootSh("test -s ${shQuote(found)}")
       if (!rSizeOk.isSuccess) {
         root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
-        return false to "Manifest файл пустой или не читается."
+        return BackupValidation(false, str(R.string.mv_auto_072))
       }
 
       val rCat = root.execRootSh("cat ${shQuote(found)} 2>/dev/null || true")
@@ -2817,16 +3010,65 @@ private fun clearDownloadedUpdateApk() {
       root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
     }
 
-    if (manifestText.isBlank()) return false to "Manifest файл пустой или не читается."
+    if (manifestText.isBlank()) return BackupValidation(false, str(R.string.mv_auto_072))
     val magic = runCatching { JSONObject(manifestText).optString("magic", "") }.getOrDefault("")
     if (magic != "ZDTD_BACKUP_V1") {
-      return false to "Неверный формат бэкапа (magic не совпадает)."
+      return BackupValidation(false, str(R.string.mv_auto_073))
     }
 
-    return true to null
+    val manifestObj = runCatching { JSONObject(manifestText) }.getOrNull()
+      ?: return BackupValidation(false, str(R.string.mv_auto_073))
+    val backupVersionCode = when {
+      manifestObj.has("app_version_code") -> manifestObj.optInt("app_version_code", -1)
+      else -> -1
+    }
+    // Current module/app versionCode used for backup compatibility checks.
+    // Use installed module versionCode if available, otherwise fall back to bundled/build version.
+    val currentVersionCode = readInstalledModuleVersionCode() ?: readBundledModuleVersionCode() ?: BuildConfig.VERSION_CODE
+    val minSupportedBackupVersionCode = 25000
+
+    // Block restore when the currently installed module/app is below the minimum supported architecture.
+    // Requirement: versions below 25000 are not supported for restore in either direction.
+    if (currentVersionCode in 1 until minSupportedBackupVersionCode) {
+      return BackupValidation(
+        ok = false,
+        error = str(
+          R.string.mv_restore_min_supported_current_version,
+          currentVersionCode.toString(),
+          minSupportedBackupVersionCode.toString()
+        ),
+        versionMismatch = false,
+      )
+    }
+    if (backupVersionCode in 1 until minSupportedBackupVersionCode) {
+      return BackupValidation(
+        ok = false,
+        error = str(
+          R.string.mv_backup_min_supported_version,
+          backupVersionCode.toString(),
+          minSupportedBackupVersionCode.toString()
+        ),
+        versionMismatch = false,
+      )
+    }
+    // Version mismatch: allow "Restore anyway" (ignoreVersionCode=true) for any mismatch direction
+    // as long as both versions are within supported architecture range.
+    if (!ignoreVersionCode && (backupVersionCode <= 0 || backupVersionCode != currentVersionCode)) {
+      return BackupValidation(
+        ok = false,
+        error = str(
+          R.string.mv_backup_version_mismatch,
+          if (backupVersionCode > 0) backupVersionCode.toString() else "?",
+          currentVersionCode.toString()
+        ),
+        versionMismatch = true,
+      )
+    }
+
+    return BackupValidation(true, null)
   }
 
-  private fun shQuote(s: String): String {
+private fun shQuote(s: String): String {
     return "'" + s.replace("'", "'\\''") + "'"
   }
 
@@ -2900,7 +3142,7 @@ private fun clearDownloadedUpdateApk() {
 
   override fun clearLogs() {
     _logs.update { emptyList() }
-    log("OK", "logs cleared")
+    log("OK", str(R.string.log_logs_cleared))
   }
 
   private fun log(level: String, msg: String) {
@@ -2947,7 +3189,9 @@ private fun clearDownloadedUpdateApk() {
         val on = ApiModels.isServiceOn(_uiState.value.status)
         val ok = if (on) api.stopService() else api.startService()
         if (ok) root.setCachedServiceOn(!on)
-        if (ok) log("OK", if (on) "service stopped" else "service started")
+        if (ok) {
+          log("OK", str(if (on) R.string.log_service_stopped else R.string.log_service_started))
+        }
         else log("ERR", if (on) "/api/stop failed" else "/api/start failed")
       } catch (e: Throwable) {
         log("ERR", "toggle failed: ${e.message ?: e}")
@@ -3221,6 +3465,19 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
 
   // ----- App update (GitHub) -----
 
+  private fun applyAppLanguageMode(mode: String) {
+  val m = mode.trim().lowercase()
+  when (m) {
+    // Auto: clear overrides so the app follows the system locale.
+    // With only EN (default) + RU resources this matches the rule:
+    // system ru -> RU, any other -> EN (fallback).
+    "auto", "" -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
+    "ru" -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("ru"))
+    "en" -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("en"))
+    else -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
+  }
+}
+
   override fun setAppUpdateChecksEnabled(enabled: Boolean) {
     root.setAppUpdateCheckEnabled(enabled)
     _appUpdate.update { st ->
@@ -3254,13 +3511,19 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     if (!hasPostNotificationsPermission()) {
       pendingEnableDaemonNotification = true
       _notificationEvents.tryEmit(NotificationEvent.RequestPostNotificationsPermission)
-      toast("Нужно разрешение на уведомления")
+      toast(str(R.string.mv_auto_074))
       return
     }
 
     pendingEnableDaemonNotification = false
     root.setDaemonStatusNotificationEnabled(true)
     _appUpdate.update { it.copy(daemonStatusNotificationEnabled = true) }
+  }
+
+  override fun setAppLanguageMode(mode: String) {
+    root.setAppLanguageMode(mode)
+    applyAppLanguageMode(root.getAppLanguageMode())
+    _appUpdate.update { it.copy(languageMode = root.getAppLanguageMode()) }
   }
 
   override fun checkAppUpdateNow() {
@@ -3289,7 +3552,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         val path = downloadLatestApk(url)
         if (!currentCoroutineContext().isActive) return@launch
         if (path.isNullOrBlank()) {
-          updateDownloadUi(downloading = false, percent = 0, speedBps = 0, path = null, err = "Ошибка загрузки")
+          updateDownloadUi(downloading = false, percent = 0, speedBps = 0, path = null, err = str(R.string.mv_auto_075))
           return@launch
         }
         updateDownloadUi(downloading = false, percent = 100, speedBps = 0, path = path, err = null)
@@ -3303,7 +3566,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         // cancelled
         updateDownloadUi(downloading = false, percent = 0, speedBps = 0, path = null, err = null)
       } catch (e: Throwable) {
-        updateDownloadUi(downloading = false, percent = 0, speedBps = 0, path = null, err = "Ошибка: ${e.message ?: e}")
+        updateDownloadUi(downloading = false, percent = 0, speedBps = 0, path = null, err = str(R.string.mv_error_with_detail, (e.message ?: e.toString())))
       }
     }
   }
@@ -3349,11 +3612,11 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     if (granted) {
       root.setDaemonStatusNotificationEnabled(true)
       _appUpdate.update { it.copy(daemonStatusNotificationEnabled = true) }
-      toast("Уведомления включены")
+      toast(str(R.string.mv_auto_076))
     } else {
       root.setDaemonStatusNotificationEnabled(false)
       _appUpdate.update { it.copy(daemonStatusNotificationEnabled = false) }
-      toast("Разрешение на уведомления не выдано")
+      toast(str(R.string.mv_auto_077))
     }
   }
 
@@ -3394,7 +3657,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     readCpuInfoLine("Processor")?.let { return it }
 
     val hw = Build.HARDWARE?.trim().orEmpty()
-    return hw.ifBlank { "Unknown CPU" }
+    return hw.ifBlank { str(R.string.stats_unknown_cpu) }
   }
 
   private fun tryGetBuildField(fieldName: String): String? {

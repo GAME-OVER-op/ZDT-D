@@ -1,5 +1,7 @@
 package com.android.zdtd.service
 
+import com.android.zdtd.service.R
+
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -36,7 +38,7 @@ object DaemonStatusNotifier {
 
     ensureChannel(context)
 
-    val text = if (running) "Служба запущена" else "Служба остановлена"
+    val text = if (running) context.getString(R.string.notif_service_running) else context.getString(R.string.notif_service_stopped)
 
     val openIntent = Intent(context, MainActivity::class.java).apply {
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -73,7 +75,7 @@ object DaemonStatusNotifier {
       CHANNEL_NAME,
       NotificationManager.IMPORTANCE_LOW
     ).apply {
-      description = "Статус службы ZDT-D"
+      description = context.getString(R.string.notif_channel_desc)
       setShowBadge(false)
     }
     nm.createNotificationChannel(ch)

@@ -13,6 +13,9 @@ interface ZdtdActions {
   fun confirmManualInstall()
   fun dismissManualInstallDialog()
   fun continueAfterInstall()
+
+  /** Remove module and uninstall the app (with reboot after uninstall). */
+  fun beginModuleRemoval()
   fun rebootNow()
 
   // ----- Settings migration (after module update) -----
@@ -42,7 +45,7 @@ interface ZdtdActions {
   fun onBackupImportResult(uri: android.net.Uri?)
 
   /** Restore (apply) the selected backup file. */
-  fun restoreBackup(name: String)
+  fun restoreBackup(name: String, ignoreVersionCode: Boolean = false)
 
   /** Delete the selected backup file. */
   fun deleteBackup(name: String)
@@ -164,6 +167,9 @@ interface ZdtdActions {
 
   /** Show/hide the app-owned notification about daemon status (running/stopped). */
   fun setDaemonStatusNotificationsEnabled(enabled: Boolean)
+
+  /** Set app UI language: auto | ru | en. */
+  fun setAppLanguageMode(mode: String)
 
   /** Trigger an immediate update check (ignores the 12h cooldown). */
   fun checkAppUpdateNow()

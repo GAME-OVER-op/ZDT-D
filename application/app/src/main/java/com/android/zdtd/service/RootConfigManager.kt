@@ -50,6 +50,16 @@ class RootConfigManager(private val context: Context) {
         prefs.edit().putBoolean("daemon_status_notification_enabled", enabled).apply()
     }
 
+    // ----- App language -----
+    /** "auto" | "ru" | "en" */
+    fun getAppLanguageMode(): String = prefs.getString("app_language_mode", "auto") ?: "auto"
+
+    fun setAppLanguageMode(mode: String) {
+        val v = mode.trim().lowercase()
+        val safe = if (v == "ru" || v == "en" || v == "auto") v else "auto"
+        prefs.edit().putString("app_language_mode", safe).apply()
+    }
+
     fun getAppUpdateLastCheckTs(): Long = prefs.getLong("app_update_last_check_ts", 0L)
 
     fun setAppUpdateLastCheckTs(ts: Long) {
@@ -187,6 +197,22 @@ class RootConfigManager(private val context: Context) {
 
     fun clearMigrationDoneUpdateId() {
         prefs.edit().remove("migration_done_update_id").commit()
+    }
+
+
+    // ----- Sticky anti-tamper reinstall state (until reboot) -----
+
+    fun isTamperReinstallPendingReboot(): Boolean =
+        prefs.getBoolean("tamper_reinstall_pending_reboot", false)
+
+    fun setTamperReinstallPendingReboot(pending: Boolean) {
+        prefs.edit().putBoolean("tamper_reinstall_pending_reboot", pending).commit()
+    }
+
+    fun getLastSeenBootId(): String? = prefs.getString("last_seen_boot_id", null)
+
+    fun setLastSeenBootId(bootId: String) {
+        prefs.edit().putString("last_seen_boot_id", bootId.trim()).commit()
     }
 
     // ----- Module / installer helpers (root) -----

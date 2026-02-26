@@ -154,6 +154,3 @@ Observed main endpoints:
 - The HTTP server is implemented manually over `TcpListener`/`TcpStream`, so route changes should be made carefully.
 - Many operations are intentionally best-effort to keep the daemon resilient on device-specific firmware variations.
 
-## License
-
-Add your license here.

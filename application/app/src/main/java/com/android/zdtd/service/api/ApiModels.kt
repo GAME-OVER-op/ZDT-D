@@ -27,6 +27,8 @@ object ApiModels {
     val byedpi: ProcAgg = ProcAgg(),
     val dnscrypt: ProcAgg = ProcAgg(),
     val dpitunnel: ProcAgg = ProcAgg(),
+    val singBox: ProcAgg = ProcAgg(),
+    val t2s: ProcAgg = ProcAgg(),
     val opera: OperaAgg? = null,
   )
 
@@ -77,6 +79,8 @@ object ApiModels {
       byedpi = parseProcAgg(o.optJSONObject("byedpi")),
       dnscrypt = parseProcAgg(o.optJSONObject("dnscrypt")),
       dpitunnel = parseProcAgg(o.optJSONObject("dpitunnel")),
+      singBox = parseProcAgg(o.optJSONObject("sing_box")),
+      t2s = parseProcAgg(o.optJSONObject("t2s")),
       opera = opera,
     )
   }
@@ -84,8 +88,8 @@ object ApiModels {
   fun isServiceOn(r: StatusReport?): Boolean {
     if (r == null) return false
     val opera = r.opera
-    val sum = r.zapret.count + r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.dpitunnel.count +
-      (opera?.opera?.count ?: 0) + (opera?.t2s?.count ?: 0) + (opera?.byedpi?.count ?: 0)
+    val sum = r.zapret.count + r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.dpitunnel.count + r.singBox.count +
+      (opera?.opera?.count ?: 0) + r.t2s.count + (opera?.byedpi?.count ?: 0)
     return sum > 0
   }
 
@@ -98,9 +102,10 @@ object ApiModels {
       add(r.byedpi)
       add(r.dnscrypt)
       add(r.dpitunnel)
+      add(r.singBox)
+      add(r.t2s)
       r.opera?.let { o ->
         add(o.opera)
-        add(o.t2s)
         add(o.byedpi)
       }
     }

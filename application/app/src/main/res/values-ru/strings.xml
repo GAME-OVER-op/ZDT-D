@@ -1,0 +1,554 @@
+<resources>
+    <string name="app_name">ZDT-D</string>
+    <string name="qs_tile_label">ZDT-D</string>
+    <string name="root_required_title">Требуются root-права</string>
+    <string name="root_required_body">Для работы приложению нужны root-права.
+
+Предоставьте доступ (окно Magisk) и нажмите «Повторить».</string>
+    <string name="retry">Повторить</string>
+    <string name="ma_share_backup">Поделиться бэкапом</string>
+    <string name="ma_share_failed">Не удалось поделиться файлом</string>
+    <string name="notif_service_running">Служба запущена</string>
+    <string name="notif_service_stopped">Служба остановлена</string>
+    <string name="notif_channel_desc">Статус службы ZDT-D</string>
+    <string name="tile_root_required">Нужен root</string>
+    <string name="tile_started">ZDT-D запущен</string>
+    <string name="tile_stopped">ZDT-D остановлен</string>
+    <string name="tile_start_failed">Не удалось запустить</string>
+    <string name="tile_stop_failed">Не удалось остановить</string>
+    <string name="mv_reboot_pending_update">Обнаружено незавершённое обновление модуля (versionCode=%1$d).
+
+Для корректной работы необходимо перезагрузить устройство, чтобы Magisk применил новую версию.</string>
+    <string name="mv_reboot_pending_install">Обнаружена незавершённая установка/обновление модуля.
+
+Для корректной работы необходимо перезагрузить устройство, чтобы Magisk применил изменения.</string>
+    <string name="mv_module_update_available">Доступно обновление модуля</string>
+    <string name="mv_module_update_prompt_text">Установлена версия модуля: versionCode=%1$d.
+В составе приложения: versionCode=%2$d.
+
+Рекомендуется обновиться для максимальной совместимости. Можно пропустить, но часть функций может быть недоступна, а также возможны ошибки из-за разницы API.</string>
+    <string name="mv_module_version_unsupported">Установленная версия модуля больше не поддерживается (versionCode=%1$d). Чтобы продолжить пользоваться ZDT-D, необходимо обновить модуль.</string>
+    <string name="mv_backup_list_read_error">Не удалось прочитать список бэкапов: %1$s</string>
+    <string name="mv_backup_settings_folder_missing">Не найдена папка настроек: %1$s.</string>
+    <string name="mv_copying_name">Копирование: %1$s</string>
+    <string name="mv_copy_error_with_detail">Ошибка копирования (%1$s): %2$s</string>
+    <string name="mv_backup_archive_create_failed">Не удалось создать архив: %1$s</string>
+    <string name="mv_backup_compress_failed">Не удалось сжать/сохранить бэкап: %1$s</string>
+    <string name="mv_backup_extract_failed">Ошибка распаковки: %1$s</string>
+    <string name="mv_backup_import_save_failed">Не удалось сохранить импортированный бэкап: %1$s</string>
+    <string name="mv_backup_not_created_no_folders_short">Бэкап не создан: в архив не добавились папки.</string>
+    <string name="mv_backup_not_created_no_folders_detail">Бэкап не создан: в архив не добавились папки. %1$s</string>
+    <string name="mv_backup_done_name">Готово: %1$s</string>
+    <string name="mv_backup_done_with_warning">Готово: %1$s (с предупреждением)</string>
+    <string name="mv_backup_created_with_warning">Бэкап создан, но tar сообщил предупреждение: %1$s</string>
+    <string name="mv_backup_import_done">Импорт завершён: %1$s</string>
+    <string name="mv_backup_file_not_found">Файл бэкапа не найден: %1$s</string>
+    <string name="mv_backup_suspicious_path">Архив содержит подозрительный путь: %1$s</string>
+    <string name="mv_copied_count">Скопировано: %1$d из %2$d</string>
+    <string name="mv_error_with_detail">Ошибка: %1$s</string>
+    <string name="mv_version_below_min_warning">Вы выбрали версию ниже %1$s. Возможны проблемы с запуском, и заготовленные стратегии могут не работать.</string>
+    <string name="mv_auto_001">Проверка обновлений отключена</string>
+    <string name="mv_auto_002">Нет подключения к интернету</string>
+    <string name="mv_auto_003">Ошибка проверки обновлений</string>
+    <string name="mv_auto_004">Обновление временно недоступно</string>
+    <string name="mv_auto_005">Обновление не требуется</string>
+    <string name="mv_auto_006">Доступно срочное обновление</string>
+    <string name="mv_auto_007">Доступно обновление</string>
+    <string name="mv_auto_008">
+          Обнаружена незавершённая установка/обновление модуля.
+
+          Для корректной работы необходимо перезагрузить устройство, чтобы Magisk применил изменения.
+          </string>
+    <string name="mv_auto_009">Обнаружена старая или нестандартная структура модуля (папка system). </string>
+    <string name="mv_auto_010">Это может быть подделка или несовместимая версия. Для безопасной и корректной работы переустановите модуль заново.</string>
+    <string name="mv_auto_011">Чтобы продолжить пользоваться ZDT-D, необходимо обновить модуль.</string>
+    <string name="mv_auto_012">Доступно обновление модуля</string>
+    <string name="mv_auto_013">KernelSU (или форк)</string>
+    <string name="mv_auto_014">Ручная установка</string>
+    <string name="mv_auto_015">Установщик не определен. Автоматическая установка невозможна. </string>
+    <string name="mv_auto_016">Мы можем сохранить архив модуля в /sdcard, после чего вы сможете установить его вручную в вашем root-менеджере.</string>
+    <string name="mv_auto_017">Установка не удалась</string>
+    <string name="mv_auto_018">Автоматическая установка не удалась. </string>
+    <string name="mv_auto_019">Мы можем сохранить архив модуля в /sdcard для ручной установки. </string>
+    <string name="mv_auto_020">Если установлена старая версия — она будет удалена перед установкой.</string>
+    <string name="mv_auto_021">Не удалось сохранить ZIP</string>
+    <string name="mv_auto_022">Требуются root-права.</string>
+    <string name="mv_auto_023">Создание бэкапа</string>
+    <string name="mv_auto_024">Подготовка…</string>
+    <string name="mv_auto_025">Нет данных для бэкапа: в working_folder не найдено ни одной папки.</string>
+    <string name="mv_auto_026">Не удалось создать manifest файла бэкапа.</string>
+    <string name="mv_auto_027">Создание архива…</string>
+    <string name="mv_auto_028">Сжатие…</string>
+    <string name="mv_auto_029">Нужен root для импорта бэкапа</string>
+    <string name="mv_auto_030">Импорт отменён</string>
+    <string name="mv_auto_031">Импорт бэкапа</string>
+    <string name="mv_auto_032">Копирование файла…</string>
+    <string name="mv_auto_033">Не удалось прочитать выбранный файл.</string>
+    <string name="mv_auto_034">Проверка…</string>
+    <string name="mv_auto_035">Это не бэкап ZDT-D</string>
+    <string name="mv_auto_036">Сохранение…</string>
+    <string name="mv_auto_037">Восстановление бэкапа</string>
+    <string name="mv_auto_038">Остановка сервиса…</string>
+    <string name="mv_auto_039">Не удалось отправить команду остановки. Повторите попытку позже.</string>
+    <string name="mv_auto_040">Ожидание подтверждения остановки…</string>
+    <string name="mv_auto_041">Не удалось дождаться остановки сервиса. Повторите попытку позже.</string>
+    <string name="mv_auto_042">Очистка настроек…</string>
+    <string name="mv_auto_043">Не удалось очистить working_folder</string>
+    <string name="mv_auto_044">Распаковка архива…</string>
+    <string name="mv_auto_045">В бэкапе не найдено ни одной папки.</string>
+    <string name="mv_auto_046">Ожидание перед запуском…</string>
+    <string name="mv_auto_047">Запуск сервиса…</string>
+    <string name="mv_auto_048">Настройки восстановлены, но сервис не запустился.</string>
+    <string name="mv_auto_049">Готово. Настройки восстановлены.</string>
+    <string name="mv_auto_050">Не удалось удалить бэкап</string>
+    <string name="mv_auto_051">Файл бэкапа не найден</string>
+    <string name="mv_auto_052">Не удалось подготовить бэкап для отправки</string>
+    <string name="mv_auto_053">Не удалось остановить сервис</string>
+    <string name="mv_auto_054">Остановите сервис перед обновлением</string>
+    <string name="mv_auto_055">Checking…</string>
+    <string name="mv_auto_056">Downloading…</string>
+    <string name="mv_auto_057">Extracting…</string>
+    <string name="mv_auto_058">Installing…</string>
+    <string name="mv_auto_059">Не найдено подготовленное обновление модуля. Сначала установите обновление модуля и дождитесь появления запроса на перезагрузку.</string>
+    <string name="mv_auto_060">Завершить</string>
+    <string name="mv_auto_061">Готово. Настройки перенесены.</string>
+    <string name="mv_auto_062">Настройки уже перенесены.</string>
+    <string name="mv_auto_063">Не найдено подготовленное обновление модуля.</string>
+    <string name="mv_auto_064">Не найдены настройки предыдущей версии (папка working_folder отсутствует).</string>
+    <string name="mv_auto_065">Нет данных для переноса: в working_folder не найдено ни одной папки.</string>
+    <string name="mv_auto_066">Не найдено подготовленное обновление модуля (modules_update/ZDT-D отсутствует).</string>
+    <string name="mv_auto_067">Не найдены настройки предыдущей версии (modules/ZDT-D/working_folder отсутствует).</string>
+    <string name="mv_auto_068">ZIP сохранён: </string>
+    <string name="mv_auto_069">Дальше установите этот архив в вашем root-менеджере (Magisk / KernelSU / APatch) как обычный модуль.</string>
+    <string name="mv_auto_070">Не удалось прочитать архив (tar -t).</string>
+    <string name="mv_auto_071">В архиве нет manifest файла. Это не бэкап ZDT-D.</string>
+    <string name="mv_auto_072">Manifest файл пустой или не читается.</string>
+    <string name="mv_auto_073">Неверный формат бэкапа (magic не совпадает).</string>
+    <string name="mv_auto_074">Нужно разрешение на уведомления</string>
+    <string name="mv_auto_075">Ошибка загрузки</string>
+    <string name="mv_auto_076">Уведомления включены</string>
+    <string name="mv_auto_077">Разрешение на уведомления не выдано</string>
+
+    <!-- ZdtdApp.kt -->
+    <string name="update_prompt_title_default">Обновление</string>
+    <string name="update_prompt_update">Обновить</string>
+    <string name="update_prompt_skip">Пропустить</string>
+
+    <string name="nav_home">Главная</string>
+    <string name="nav_stats">Статистика</string>
+    <string name="nav_programs">Программы</string>
+    <string name="nav_support">Поддержка</string>
+
+    <string name="title_program">Программа</string>
+    <string name="title_profile">Профиль</string>
+
+    <string name="cd_back">Назад</string>
+    <string name="cd_logs">Логи</string>
+    <string name="cd_backup">Бэкап</string>
+    <string name="cd_program_updates">Обновления программ</string>
+    <string name="cd_settings">Настройки</string>
+
+    <!-- LogsBottomSheet.kt -->
+    <string name="logs_title">Логи</string>
+    <string name="logs_empty">(пусто)</string>
+
+    <!-- Shared actions -->
+    <string name="action_clear">Очистить</string>
+    <string name="action_close">Закрыть</string>
+    <string name="action_cancel">Отмена</string>
+    <string name="action_delete">Удалить</string>
+    <string name="action_add">Добавить</string>
+    <string name="action_create">Создать</string>
+
+    <!-- ProfileScreen.kt / ProgramScreen.kt -->
+    <string name="changes_apply_after_restart">Изменения применяются после остановки/запуска.</string>
+    <string name="apply_after_restart_short">Применится после остановки/запуска</string>
+
+    <string name="profile_enabled">Профиль включён</string>
+    <string name="tab_apps">Приложения</string>
+    <string name="tab_config">Конфиг</string>
+    <string name="tab_sni">SNI</string>
+    <string name="apps_common_title">Приложения (общий список)</string>
+    <string name="apps_common_desc">Выберите установленные приложения; имена пакетов сохраняются автоматически.</string>
+    <string name="profile_config_desc">Конфиг профиля.</string>
+    <string name="profile_fake_sni_desc">Список fake SNI для профиля.</string>
+
+    <string name="program_not_found">Программа не найдена</string>
+    <string name="enabled">Включено</string>
+    <string name="tab_profiles">Профили</string>
+    <string name="tab_files">Файлы</string>
+    <string name="deleted">Удалено</string>
+    <string name="delete_failed">Не удалось удалить</string>
+    <string name="create_failed">Не удалось создать</string>
+    <string name="profile_created_fmt">Профиль создан: %1$s</string>
+
+    <string name="dnscrypt_main_config_desc">Редактирование основного конфига; требуется перезапуск.</string>
+
+    <string name="not_implemented_yet">Пока не реализовано</string>
+    <string name="not_implemented_yet_desc">Для этого модуля пока нет нативной формы. Можно добавить позже по твоим указаниям.</string>
+
+    <string name="delete_profile_title">Удалить профиль</string>
+    <string name="cd_delete">Удалить</string>
+
+    <string name="create_profile_title">Создать профиль</string>
+    <string name="create_profile_rules">Имя: только английские символы, без пробелов (пробелы заменяются на _), максимум 10 символов.</string>
+    <string name="profile_name_label">Имя профиля</string>
+    <string name="allowed_chars_hint">Разрешено: a-z 0-9 _ -</string>
+    <string name="profile_name_len_fmt">%1$d/10</string>
+    <string name="enter_a_name">Введите имя</string>
+    <string name="invalid_profile_name">Неверное имя профиля</string>
+    <string name="profile_already_exists">Профиль уже существует</string>
+
+    <string name="opera_proxy_title">Opera Proxy</string>
+    <string name="tab_byedpi">Byedpi</string>
+    <string name="tab_servers">Серверы</string>
+    <string name="byedpi_start_args_desc">Аргументы запуска byedpi.</string>
+    <string name="byedpi_restart_args_desc">Аргументы перезапуска byedpi.</string>
+    <string name="opera_ports_desc">Карта портов.</string>
+    <string name="fake_sni_desc">Список fake SNI.</string>
+
+    <string name="opera_server_region_desc">Выберите регион сервера Opera, используемый opera-proxy (-country).</string>
+    <string name="region_europe">Европа</string>
+    <string name="region_asia">Азия</string>
+    <string name="region_america">Америка</string>
+    <string name="saved">Сохранено</string>
+    <string name="save_failed">Не удалось сохранить</string>
+    <string name="current_value_fmt">Текущий: %1$s</string>
+    <string name="stats_cpu_title">ЦП</string>
+    <string name="stats_unknown_cpu">Неизвестный процессор</string>
+    <string name="stats_clamped_from">Ограничено с %1$s%%</string>
+    <string name="stats_memory_title">Память</string>
+    <string name="stats_total_fmt">Всего: %1$s</string>
+    <string name="stats_total_unknown">Всего: —</string>
+    <string name="stats_free_fmt">Свободно: %1$s</string>
+    <string name="stats_processes_title">Процессы</string>
+    <string name="stats_running_count">Работает: %1$d</string>
+    <string name="stats_offline">офлайн</string>
+    <string name="stats_daemon_title">Демон</string>
+    <string name="stats_online_upper">ОНЛАЙН</string>
+    <string name="stats_offline_upper">ОФЛАЙН</string>
+    <string name="stats_running_services">Запущено служб: %1$d</string>
+    <string name="stats_no_connection">Нет подключения к API</string>
+    <string name="stats_running_lower">работает</string>
+    <string name="stats_stopped_lower">остановлено</string>
+    <string name="stats_cpu_label">ЦП</string>
+    <string name="stats_ram_label">ОЗУ</string>
+
+    <string name="support_title">Поддержка</string>
+    <string name="support_subtitle">Ссылки на проект, релизы, сообщество и поддержку автора.</string>
+    <string name="support_open">Открыть</string>
+    <string name="support_link_github_subtitle">Исходный код, ошибки, документация</string>
+    <string name="support_link_releases_title">Релизы</string>
+    <string name="support_link_releases_subtitle">Последние сборки и список изменений</string>
+    <string name="support_link_telegram_subtitle">Новости и сообщество: @module_ggover</string>
+    <string name="support_link_support_author_title">Поддержать автора</string>
+    <string name="support_link_support_author_subtitle">Ссылка на донат YooMoney</string>
+
+    <string name="app_picker_saved_apply">Сохранено (применится после стоп/старт)</string>
+    <string name="app_picker_save_failed">Не удалось сохранить</string>
+    <string name="app_picker_select">Выбрать</string>
+    <string name="app_picker_empty">(пусто)</string>
+    <string name="app_picker_selected_count">Выбрано: %1$d</string>
+    <string name="app_picker_apps_common_title">Приложения (общие)</string>
+    <string name="app_picker_apps_common_desc">Общий список (user_program).</string>
+    <string name="app_picker_apps_mobile_title">Приложения (мобильные)</string>
+    <string name="app_picker_apps_mobile_desc">Список для мобильной сети.</string>
+    <string name="app_picker_apps_wifi_title">Приложения (Wi‑Fi)</string>
+    <string name="app_picker_apps_wifi_desc">Список для Wi‑Fi.</string>
+    <string name="app_picker_cancel">Отмена</string>
+    <string name="app_picker_save">Сохранить</string>
+    <string name="app_picker_search">Поиск</string>
+    <string name="app_picker_selected_header">Выбрано (%1$d)</string>
+    <string name="app_picker_none">(нет)</string>
+    <string name="app_picker_all_apps_title">Все приложения</string>
+    <string name="app_picker_all_apps_hint">Нажмите, чтобы добавить. (Здесь нет галочек — удаление в верхнем списке.)</string>
+    <string name="app_picker_system_label">системное</string>
+
+    <string name="apps_list_clear">Очистить</string>
+    <string name="apps_list_search_programs">Поиск программ</string>
+    <string name="apps_list_no_programs_title">Нет программ</string>
+    <string name="apps_list_no_programs_daemon_online">Демон онлайн, но список программ пустой.</string>
+    <string name="apps_list_no_programs_daemon_offline">Демон офлайн. Сначала запустите ZDT-D.</string>
+    <string name="apps_list_nothing_found_title">Ничего не найдено</string>
+    <string name="apps_list_nothing_found_hint">Попробуйте другой запрос.</string>
+    <string name="apps_list_section_core">Основное</string>
+    <string name="apps_list_section_profiles">Профили</string>
+    <string name="apps_list_items_count">%1$d шт.</string>
+    <string name="apps_list_programs_title">Программы</string>
+    <string name="apps_list_online_upper">ОНЛАЙН</string>
+    <string name="apps_list_offline_upper">ОФЛАЙН</string>
+    <string name="apps_list_header_hint">Откройте программу для редактирования конфигов, профилей и списков приложений.</string>
+    <string name="apps_list_total_fmt">Всего: %1$d</string>
+    <string name="apps_list_showing_fmt">Показано: %1$d / %2$d</string>
+    <string name="apps_list_chip_profiles">профили %1$d</string>
+    <string name="apps_list_chip_enabled">включено</string>
+    <string name="apps_list_chip_disabled">выключено</string>
+    <string name="apps_list_chip_enabled_count">включено %1$d</string>
+    <string name="apps_list_desc_dnscrypt">Локальный шифрованный DNS‑резолвер</string>
+    <string name="apps_list_desc_operaproxy">цепочка byedpi → opera-proxy → t2s</string>
+    <string name="apps_list_desc_nfqws">zapret NFQUEUE обход DPI</string>
+    <string name="apps_list_desc_nfqws2">zapret2 NFQUEUE обход DPI</string>
+    <string name="apps_list_desc_byedpi">Локальный TCP‑прокси</string>
+    <string name="apps_list_desc_dpitunnel">TCP+UDP туннель</string>
+    <string name="apps_list_desc_default">Настройка и управление</string>
+
+    <string name="apps_host_unknown_route">Неизвестный маршрут</string>
+    <string name="backup_title">Бэкап настроек</string>
+    <string name="backup_refresh_cd">Обновить</string>
+    <string name="backup_desc">Сохраните все папки из working_folder в один архив, а затем при необходимости восстановите их обратно. Файл flag.sha256 не переносится.</string>
+    <string name="backup_create">Создать бэкап</string>
+    <string name="backup_import">Импортировать</string>
+    <string name="backup_loading_list">Загрузка списка…</string>
+    <string name="backup_none_found">Бэкапы не найдены в /storage/emulated/0/ZDT-D_Backups</string>
+    <string name="backup_yours">Ваши бэкапы</string>
+    <string name="backup_close">Закрыть</string>
+    <string name="backup_restore_confirm_title">Восстановить бэкап?</string>
+    <string name="backup_restore_confirm_text">Текущие настройки будут полностью заменены содержимым архива. Сервис будет остановлен на время операции.</string>
+    <string name="backup_restore">Восстановить</string>
+    <string name="backup_cancel">Отмена</string>
+    <string name="backup_delete_confirm_title">Удалить бэкап?</string>
+    <string name="backup_delete_confirm_text">Файл будет удалён без возможности восстановления.</string>
+    <string name="backup_delete">Удалить</string>
+    <string name="backup_share_cd">Поделиться</string>
+    <string name="backup_delete_cd">Удалить</string>
+    <string name="backup_item_restore">Восстановить</string>
+    <string name="backup_progress_default_title">Операция</string>
+    <string name="program_updates_title">Обновление программ</string>
+    <string name="program_updates_reset_cd">Сброс</string>
+    <string name="program_updates_desc">Обновляет nfqws / nfqws2 и Lua-файлы прямо из GitHub releases. Проверка выполняется только по нажатию.</string>
+    <string name="program_updates_service_running_title">Сервис запущен</string>
+    <string name="program_updates_service_running_desc">Перед проверкой/обновлением остановите сервис. Это нужно, чтобы правила и процессы не использовали файлы во время замены.</string>
+    <string name="program_updates_stopping">Останавливаю…</string>
+    <string name="program_updates_stop_and_check">Остановить и проверить</string>
+    <string name="program_updates_pick_zapret_title">Версии Zapret</string>
+    <string name="program_updates_pick_zapret2_title">Версии Zapret2</string>
+    <string name="program_updates_select_version_cd">Выбрать версию</string>
+    <string name="program_updates_installed_latest_fmt">Установлено: %1$s   •   Последняя: %2$s</string>
+    <string name="program_updates_target_fmt">Цель: %1$s%2$s</string>
+    <string name="program_updates_target_selected_suffix"> (выбрано)</string>
+    <string name="program_updates_target_latest_suffix"> (последняя)</string>
+    <string name="program_updates_check">Проверить</string>
+    <string name="program_updates_checking">Проверяю…</string>
+    <string name="program_updates_update">Обновить</string>
+    <string name="program_updates_updating">Обновляю…</string>
+    <string name="program_updates_warning_title">Предупреждение</string>
+    <string name="program_updates_warning_text_fmt">Вы выбрали %1$s, что ниже %2$s. Возможны проблемы с запуском, и заготовленные стратегии могут не работать.</string>
+    <string name="program_updates_continue">Продолжить</string>
+    <string name="program_updates_choose_version_hint">Выберите версию для установки. Рекомендуется Latest (auto).</string>
+    <string name="program_updates_latest_auto_title">Latest (auto)</string>
+    <string name="program_updates_latest_auto_desc">Использовать самый последний релиз GitHub</string>
+    <string name="program_updates_select">Выбрать</string>
+    <string name="program_updates_selected">Выбрано</string>
+    <string name="program_updates_refresh_cd">Обновить</string>
+    <string name="dnscrypt_setting_files_title">Дополнительные файлы настроек</string>
+    <string name="dnscrypt_setting_files_desc">Файлы из dnscrypt/setting (можно редактировать только существующие).</string>
+    <string name="dnscrypt_setting_files_refresh">Обновить</string>
+    <string name="dnscrypt_setting_files_empty">Дополнительные файлы в dnscrypt/setting не найдены.</string>
+    <string name="dnscrypt_setting_files_too_large">СЛИШКОМ БОЛЬШОЙ</string>
+    <string name="dnscrypt_setting_files_edit_disabled_fmt">Редактирование отключено, потому что файл превышает лимит размера (%1$d байт).</string>
+    <string name="dnscrypt_setting_files_file_info_fmt">Файл: %1$s
+Размер: %2$s байт
+Используйте другой редактор для изменения.</string>
+    <string name="dnscrypt_setting_files_load_failed">Не удалось загрузить содержимое файла.</string>
+    <string name="dnscrypt_setting_files_try_refresh">Нажмите «Обновить» или откройте файл заново.</string>
+    <string name="dnscrypt_setting_files_saved_snack">Сохранено (применится после stop/start)</string>
+    <string name="dnscrypt_setting_files_save_failed_snack">Не удалось сохранить</string>
+    <string name="dnscrypt_setting_files_save">Сохранить</string>
+    <string name="dnscrypt_setting_files_saving">...</string>
+
+    <!-- Common / shared -->
+    <string name="common_save">Сохранить</string>
+    <string name="common_saved">Сохранено</string>
+    <string name="common_cancel">Отмена</string>
+    <string name="common_create">Создать</string>
+    <string name="common_choose">Выбрать</string>
+    <string name="common_loading">Загрузка…</string>
+    <string name="common_ellipsis">…</string>
+    <string name="common_error">Ошибка</string>
+    <string name="common_refresh_cd">Обновить</string>
+    <string name="common_upload_cd">Загрузить</string>
+    <string name="common_new_cd">Новый</string>
+    <string name="common_delete_cd">Удалить</string>
+    <string name="common_no_files">Нет файлов</string>
+    <string name="common_cant_read_file">Не удалось прочитать файл</string>
+    <string name="common_cant_load_file">Не удалось загрузить файл (возможно, он слишком большой или ошибка сервера).</string>
+    <string name="common_uploaded">Загружено</string>
+    <string name="common_upload_failed">Ошибка загрузки</string>
+    <string name="common_created">Создано</string>
+    <string name="common_create_failed">Не удалось создать</string>
+    <string name="common_deleted">Удалено</string>
+    <string name="common_delete_failed">Не удалось удалить</string>
+    <string name="common_file_name">Имя файла</string>
+    <string name="common_safe_file_name_hint">Используйте безопасное имя (буквы, цифры, точка, дефис, подчёркивание).</string>
+    <string name="common_content">Содержимое</string>
+    <string name="common_applied_with_value">Применено: %1$s</string>
+    <string name="common_apply_failed">Не удалось применить</string>
+    <string name="common_create_file">Создать файл</string>
+
+    <!-- Editor -->
+    <string name="editor_saved_apply_restart">Сохранено (применится после stop/start)</string>
+    <string name="editor_save_failed">Не удалось сохранить</string>
+    <string name="editor_invalid_json">Некорректный JSON</string>
+
+    <!-- Strategic files / variants -->
+    <string name="strategic_files_hint">Файлы из /data/adb/modules/ZDT-D/strategic/ (применится после stop/start).</string>
+    <string name="strategic_lists_title">Списки</string>
+    <string name="strategic_lua_title">Lua-скрипты (nfqws2)</string>
+    <string name="strategic_binaries_title">Бинарники</string>
+    <string name="strategic_edit_disabled_too_large_no_size_fmt">Редактирование отключено: файл больше %1$d байт.\nИспользуйте загрузку/замену или редактируйте извне.\n\nПуть:\n/data/adb/modules/ZDT-D/strategic/%2$s/%3$s</string>
+    <string name="strategic_edit_disabled_too_large_with_size_fmt">Редактирование отключено: файл больше %1$d байт.\nИспользуйте загрузку/замену или редактируйте извне.\n\nПуть:\n/data/adb/modules/ZDT-D/strategic/%2$s/%3$s\n\nРазмер: %4$d байт</string>
+    <string name="strategic_config_title">config.txt</string>
+    <string name="strategic_config_desc">Конфиг профиля. Можно выбрать готовую стратегию или оставить свой конфиг.</string>
+    <string name="strategic_strategies_loading">Стратегии: загрузка…</string>
+    <string name="strategic_strategies_none">Стратегии: нет</string>
+    <string name="strategic_strategy_selected">Стратегия: %1$s</string>
+    <string name="strategic_user_config">Пользовательский конфиг</string>
+
+    <!-- Common -->
+    <string name="common_close">Закрыть</string><string name="common_update">Обновить</string>
+    <string name="common_allow">Разрешить</string>
+    <string name="common_no">Нет</string>
+    <string name="common_yes">Да</string>
+    <string name="common_confirm">Подтверждаю</string>
+    <string name="common_confirm_action">Подтвердите действие</string>
+    <string name="common_continue">Продолжить</string>
+    <string name="common_reboot">Перезагрузить</string>
+    <string name="common_install">Установить</string>
+    <string name="common_installing">Установка…</string><string name="common_in_progress">Выполняется…</string>
+    <string name="common_finish">Завершить</string>
+    <string name="common_attention">Внимание</string>
+
+    <!-- Actions -->
+    <string name="action_save">Сохранить</string>
+
+    <!-- App update UI -->
+    <string name="app_update_urgent_title">Срочное обновление</string>
+    <string name="app_update_available_title">Доступно обновление</string>
+    <string name="app_update_available_version_prefix">Доступно: </string>
+    <string name="app_update_available_version_code_fmt"> (code=%1$d)</string>
+    <string name="app_update_urgent_body">Исправление ошибок предыдущего обновления.</string>
+    <string name="settings_title">Настройки</string>
+    <string name="app_update_check_title">Проверять обновления</string>
+    <string name="app_update_check_body">Проверка выполняется в фоне при открытии приложения (не чаще 1 раза в 12 часов).</string>
+    <string name="app_update_check_now">Проверить сейчас</string>
+    <string name="settings_notifications_title">Уведомления</string>
+    <string name="settings_notifications_body">Показывать уведомление о состоянии службы (запущена / остановлена).</string>
+    <string name="settings_language_title">Язык</string>
+    <string name="settings_language_body">Авто: русский, если системный язык — русский, иначе английский.</string>
+    <string name="language_auto">Авто</string>
+    <string name="language_ru">RU</string>
+    <string name="language_en">EN</string>
+    <string name="permission_required_title">Разрешение требуется</string>
+    <string name="permission_required_body">Для онлайн-обновления приложения требуется разрешить установку обновлений из этого приложения. Это нужно только для установки APK после загрузки.</string>
+    <string name="app_speed_zero">0 КБ/с</string>
+    <string name="app_speed_kbps_fmt">%1$d КБ/с</string>
+    <string name="app_speed_mbps_fmt">%1$.1f МБ/с</string>
+
+    <!-- Home -->
+    <string name="home_online">онлайн</string>
+    <string name="home_offline">офлайн</string>
+    <string name="home_daemon_status_fmt">статус демона: %1$s</string>
+    <string name="home_power_running">ВКЛ • работает</string>
+    <string name="home_power_stopped">ВЫКЛ • ожидание</string>
+    <string name="home_power_starting">ЗАПУСК…</string>
+    <string name="home_power_stopping">ОСТАНОВКА…</string>
+    <string name="home_service_active_hint">Служба активна. Изменения настроек применяются после stop/start.</string>
+    <string name="home_service_stopped_hint">Служба выключена. Нажми кнопку для запуска.</string>
+    <string name="home_no_log_data">(нет данных лога)</string>
+    <string name="home_daemon_logs_title">Логи демона</string>
+
+    <!-- Setup -->
+    <string name="setup_welcome_title">Добро пожаловать</string>
+    <string name="setup_welcome_body">ZDT-D — это root-модуль (Magisk / KernelSU / APatch), предназначенный для обхода DPI (глубокого анализа пакетов) в интернете. Он помогает обходить блокировки сервисов и ограничения скорости.</string>
+    <string name="setup_features_title">Основные характеристики</string>
+    <string name="setup_features_body">• Обход блокировок и ограничений скорости\n• Удобный графический интерфейс для настройки</string>
+    <string name="setup_notes_title">Основные моменты</string>
+    <string name="setup_notes_body">• Конфиденциальность и безопасность: модуль не собирает персональные данные и не вредит функциональности устройства.\n• Свобода и открытость: полностью бесплатно и останется таковым.</string>
+    <string name="setup_arch_unsupported_fmt">Неподдерживаемая архитектура. ZDT-D работает только на arm64-v8a. Текущее устройство: %1$s.</string>
+    <string name="setup_root_title">Нужен Root-доступ</string>
+    <string name="setup_root_body">ZDT-D — это root-модуль (Magisk / KernelSU / APatch) для обхода DPI-блокировок и ограничений трафика. Root нужен, потому что модуль запускает системные скрипты и сетевые компоненты на уровне ОС — то, что обычным приложениям недоступно.\n\nТакже root используется для установки/обновления модуля, управления демоном и чтения файлов модуля (токен и логи). Запрос root всегда подтверждается через ваш root-менеджер (Magisk / KernelSU / APatch), а разрешение можно отозвать в любой момент.</string>
+    <string name="setup_root_waiting">Ожидание ответа от root-менеджера…</string>
+    <string name="setup_request_root">Запросить Root</string>
+    <string name="setup_root_denied">Root не предоставлен. Если вы нажали «Отказать», попробуйте ещё раз.</string>
+    <string name="setup_reboot_required_title">Требуется перезагрузка</string>
+    <string name="setup_reboot_required_body_default">Для завершения установки/обновления модуля необходимо перезагрузить устройство.</string>
+    <string name="setup_manual_old_version_extra">Старая версия модуля будет удалена перед установкой.</string>
+    <string name="setup_save_zip">Сохранить ZIP</string>
+    <string name="setup_install_title">Установка модуля</string>
+    <string name="setup_install_body">Нажмите «Установить», чтобы установить модуль ZDT-D из встроенного пакета приложения. Если обнаружен установщик (Magisk / KernelSU / APatch), установка пройдёт автоматически.</string>
+    <string name="setup_install_method">Метод установки:</string>
+    <string name="setup_module_installed_title">Модуль установлен</string>
+    <string name="setup_module_installed_body">Для применения изменений требуется перезагрузка устройства.</string>
+    <string name="setup_zip_saved_title">ZIP сохранён</string>
+    <string name="setup_zip_saved_path_fmt">Путь: %1$s</string>
+    <string name="setup_zip_saved_body">Откройте ваш root-менеджер (Magisk / KernelSU / APatch) и установите этот ZIP как модуль.</string>
+    <string name="setup_install_log_title">Лог установки</string>
+    <string name="setup_migration_title">Миграция настроек</string>
+    <string name="setup_migration_body">Перенесёт ваши ранее настроенные программы и профили в новую версию модуля. После обновления и перезагрузки всё будет готово — без повторной настройки.</string>
+    <string name="setup_migration_done">Настройки уже перенесены</string>
+    <string name="setup_migration_action">Произвести миграцию</string>
+    <string name="setup_migration_confirm_body">Запустить перенос настроек в обновлённый модуль?\n\nМы скопируем все папки из working_folder старой версии в working_folder обновления. Содержимое папки обновления будет перезаписано.</string>
+    <string name="setup_migration_nonmagisk_warn">Из-за различий в менеджере root перенос может отработать не идеально.\n\nПродолжить?</string>
+    <string name="setup_migration_last_confirm_title">Последнее подтверждение</string>
+    <string name="setup_migration_last_confirm_body">Вы уверены в своём выборе?</string>
+    <string name="setup_migration_progress_title">Перенос настроек</string>
+
+    <!-- Program updates (MainViewModel) -->
+    <string name="prog_update_status_ready">Готово</string>
+    <string name="prog_update_status_already_installed">Уже установлено</string>
+    <string name="prog_update_status_downloading_pct_fmt">Загрузка… %1$d%%</string>
+    <string name="prog_update_error_download_failed">Не удалось скачать</string>
+    <string name="prog_update_error_archive_changed">Структура архива изменилась. Автообновление невозможно.</string>
+    <string name="prog_update_error_install_failed">Не удалось установить</string>
+    <string name="prog_update_status_installed">Установлено</string>
+    <string name="enabled_card_apply_hint">Применится после остановки/запуска</string>
+    <string name="byedpi_start_args_title">Аргументы запуска</string>
+    <string name="byedpi_restart_args_title">Аргументы перезапуска</string>
+    <string name="opera_ports_title">Порты</string>
+    <string name="profile_config_txt_title">config.txt</string>
+    <string name="profile_fake_sni_txt_title">fake_sni.txt</string>
+    <string name="program_updates_zapret_title">Zapret (nfqws)</string>
+    <string name="program_updates_zapret2_title">Zapret2 (nfqws2 + lua)</string>
+    <string name="program_updates_err_service_running">Служба всё ещё работает. Остановите её и попробуйте снова.</string>
+    <string name="program_updates_err_detect_installed">Не удалось определить установленную версию</string>
+    <string name="program_updates_err_check_latest">Не удалось проверить последнюю версию</string>
+    <string name="program_updates_err_no_internet">Нет подключения к интернету</string>
+    <string name="program_updates_err_load_releases">Не удалось загрузить релизы</string>
+    <!-- App logs (internal app events shown in UI) -->
+    <string name="log_root_access_required">Требуются root-права</string>
+    <string name="log_api_token_missing_fmt">Не найден API-токен. Проверьте %1$s</string>
+    <string name="log_logs_cleared">Логи очищены</string>
+    <string name="log_service_started">Служба запущена</string>
+    <string name="log_service_stopped">Служба остановлена</string>
+
+    <string name="mv_backup_restore_reopen_hint">Перед повторным восстановлением заново выберите бэкап (или переоткройте это окно).</string>
+    <string name="settings_delete_module_title">Удаление</string>
+    <string name="settings_delete_module_body">Удалить модуль и удалить приложение с устройства.</string>
+    <string name="settings_delete_module_action">Удалить модуль</string>
+    <string name="delete_module_title">Подтверждение удаления</string>
+    <string name="delete_module_confirm_text">Вы подтверждаете удаление модуля и приложения?</string>
+    <string name="delete_module_warning_reboot">После удаления приложения устройство будет перезагружено автоматически, чтобы завершить удаление модуля.</string>
+    <string name="delete_module_goodbye">Спасибо что воспользовались данным приложением, вы можете всегда вернуться, будем вас ждать!</string>
+    <string name="delete_module_yes">Да</string>
+    <string name="cd_goodbye_image">Прощание</string>
+    <string name="delete_module_next_title">Удалите приложение</string>
+    <string name="delete_module_next_body">Пожалуйста, удалите приложение вручную. После удаления будет выполнена очистка приложения и модуля, затем устройство будет перезагружено автоматически.</string>
+    <string name="common_ok">OK</string>
+    <string name="delete_module_prepare_title">Пожалуйста, подождите</string>
+    <string name="delete_module_prepare_body">Идёт подготовка к удалению: остановка служб и проверка статуса...</string>
+    <string name="delete_module_prepare_error_title">Ошибка подготовки</string>
+    <string name="mv_backup_version_mismatch">Бэкап не поддерживается из-за различия versionCode (бэкап: %1$s, модуль: %2$s). Из-за различий расположения файлов между версиями восстановление доступно только при совпадении versionCode. Рекомендуется выполнить чистую настройку, чтобы избежать проблем различий версий.</string>
+
+  <string name="backup_restore_anyway">Всё равно восстановить</string>
+  <string name="backup_back">Назад</string>
+  <string name="backup_force_restore_title">Восстановление не рекомендуется</string>
+  <string name="backup_force_restore_text">Этот бэкап был создан для другой версии модуля. Можно попробовать восстановить его, но из-за различий в архитектуре модуля возможны ошибки в работе.</string>
+  <string name="backup_force_restore_continue">Продолжить</string>
+  <string name="backup_force_restore_confirm_title">Продолжить принудительное восстановление?</string>
+  <string name="backup_force_restore_confirm_text">Возможные проблемы: сервис может не запуститься, программы могут работать некорректно, настройки могут повредиться. Если что-то пойдёт не так, помочь может только чистая установка модуля.
+
+Продолжая, вы соглашаетесь восстановить бэкап, игнорируя проверку versionCode.</string>
+  <string name="backup_force_restore_confirm_btn">Понимаю, восстановить</string>
+    <string name="mv_backup_min_supported_version">Бэкап не поддерживается, потому что он создан старой архитектурой модуля (versionCode: %1$s). Минимально поддерживаемый versionCode бэкапа: %2$s.</string>
+    <string name="mv_restore_min_supported_current_version">Восстановление не поддерживается, потому что установленная версия модуля/приложения использует слишком старую архитектуру (versionCode: %1$s). Минимально поддерживаемый versionCode: %2$s.</string>
+</resources>

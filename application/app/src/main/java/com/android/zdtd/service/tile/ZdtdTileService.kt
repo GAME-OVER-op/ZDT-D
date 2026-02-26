@@ -53,7 +53,7 @@ class ZdtdTileService : TileService() {
       val rootOk = runCatching { root.testRoot() }.getOrDefault(false)
       if (!rootOk) {
         withContext(Dispatchers.Main.immediate) {
-          Toast.makeText(this@ZdtdTileService, "Root required", Toast.LENGTH_SHORT).show()
+          Toast.makeText(this@ZdtdTileService, getString(R.string.tile_root_required), Toast.LENGTH_SHORT).show()
           qsTile?.label = getString(R.string.qs_tile_label)
           qsTile?.state = Tile.STATE_UNAVAILABLE
           qsTile?.updateTile()
@@ -74,14 +74,14 @@ class ZdtdTileService : TileService() {
           qsTile?.updateTile()
           Toast.makeText(
             this@ZdtdTileService,
-            if (nowOn) "ZDT-D started" else "ZDT-D stopped",
+            if (nowOn) getString(R.string.tile_started) else getString(R.string.tile_stopped),
             Toast.LENGTH_SHORT
           ).show()
         } else {
           // Keep state unchanged.
           Toast.makeText(
             this@ZdtdTileService,
-            if (wasOn) "Stop failed" else "Start failed",
+            if (wasOn) getString(R.string.tile_stop_failed) else getString(R.string.tile_start_failed),
             Toast.LENGTH_SHORT
           ).show()
           updateTileFromCache()

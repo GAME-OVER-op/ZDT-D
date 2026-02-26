@@ -102,6 +102,22 @@ fn collect_reserved_ports() -> BTreeSet<u16> {
     used
 }
 
+/// Collect all ports currently used by other programs/services.
+///
+/// This is intended for *conflict checks* by programs that manage their own ports
+/// outside of the standard `*/port.json` profile layout (e.g. sing-box).
+pub fn collect_used_ports_for_conflict_check() -> Result<BTreeSet<u16>> {
+    let mut used = collect_reserved_ports();
+
+    // Add current ports from editable profile-based programs.
+    for e in collect_adjustable_ports()? {
+        if e.port != 0 {
+            used.insert(e.port);
+        }
+    }
+    Ok(used)
+}
+
 fn collect_adjustable_ports() -> Result<Vec<PortEntry>> {
     let mut out = Vec::new();
 

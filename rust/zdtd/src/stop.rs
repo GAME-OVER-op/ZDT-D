@@ -109,6 +109,7 @@ pub fn stop_services_and_restore_iptables() -> Result<()> {
     kill_by_name("byedpi")?;
     kill_by_name("t2s")?;
     kill_by_name("opera-proxy")?;
+    kill_by_name("sing-box")?;
 
     // 2) iptables: flush nat/mangle then restore baseline backup
     if crate::settings::iptables_backup_path().exists() {

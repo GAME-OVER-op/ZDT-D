@@ -5,6 +5,7 @@ use crate::{
     android::{boot, selinux::SelinuxGuard},
     iptables_backup,
     programs::{byedpi, dnscrypt, dpitunnel, nfqws, nfqws2, operaproxy},
+    programs::singbox,
     stats,
     settings,
     shell,
@@ -55,6 +56,9 @@ pub fn start_full() -> Result<()> {
     nfqws2::start_active_profiles()?;
     byedpi::start_active_profiles()?;
     dpitunnel::start_active_profiles()?;
+
+    // sing-box (may start multiple profiles + optional t2s)
+    singbox::start_if_enabled()?;
 
     // Opera-proxy pipeline (may use local dnscrypt port if running).
     // Start it last to avoid interfering with other startup logic.
@@ -122,12 +126,13 @@ fn any_main_service_running() -> bool {
     let dnscrypt_expected = dnscrypt::active_listen_port().ok().flatten().is_some();
 
     // Give processes a short moment to initialize; some binaries may exit immediately on bad args.
-    for _ in 0..8 {
+    for _ in 0..20 {
         if let Ok(r) = stats::collect_status() {
             if r.zapret.count > 0
                 || r.zapret2.count > 0
                 || r.byedpi.count > 0
                 || r.dpitunnel.count > 0
+                || r.sing_box.count > 0
                 || r.opera.opera.count > 0
                 || (dnscrypt_expected && r.dnscrypt.count > 0)
             {

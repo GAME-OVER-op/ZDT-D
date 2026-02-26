@@ -762,6 +762,92 @@ fn normalize_profile_name(input: &str) -> Result<String> {
     Ok(s)
 }
 
+fn is_valid_singbox_profile_name(name: &str) -> bool {
+    if name.is_empty() || name.len() > 64 {
+        return false;
+    }
+    // Match Android sing-box UI validation: English symbols, no spaces.
+    name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+}
+
+fn ensure_valid_singbox_profile_name(name: &str) -> Result<()> {
+    if !is_valid_singbox_profile_name(name) {
+        anyhow::bail!("invalid profile name");
+    }
+    Ok(())
+}
+
+fn load_or_init_singbox_setting(p: &Path) -> serde_json::Value {
+    read_json(p).unwrap_or_else(|_| json!({
+        "enabled": false,
+        "mode": "socks5",
+        "t2s_port": 12345,
+        "t2s_web_port": 8001,
+        "active_transparent_profile": "",
+        "profiles": []
+    }))
+}
+
+fn create_singbox_profile_named(requested: &str) -> Result<String> {
+    let name = requested.trim();
+    ensure_valid_singbox_profile_name(name)?;
+
+    let root = program_root("singbox");
+    fs::create_dir_all(&root).ok();
+    let setting_path = root.join("setting.json");
+
+    let mut v = load_or_init_singbox_setting(&setting_path);
+    let arr = v
+        .get_mut("profiles")
+        .and_then(|x| x.as_array_mut())
+        .ok_or_else(|| anyhow::anyhow!("profiles must be array"))?;
+
+    if arr
+        .iter()
+        .any(|x| x.get("name").and_then(|y| y.as_str()) == Some(name))
+    {
+        anyhow::bail!("profile already exists");
+    }
+
+    // Default values are placeholders. User will adjust ports and config.json in the app.
+    arr.push(json!({
+        "name": name,
+        "enabled": false,
+        "port": 1080,
+        "capture": "tcp"
+    }));
+
+    write_json_pretty(&setting_path, &v)?;
+
+    // Ensure profile folder exists and create empty config.json if missing.
+    let dir = root.join(name);
+    fs::create_dir_all(&dir).ok();
+    let cfg = dir.join("config.json");
+    if !cfg.exists() {
+        let _ = write_text_atomic(&cfg, "");
+    }
+    Ok(name.to_string())
+}
+
+fn create_singbox_profile_next() -> Result<String> {
+    let root = program_root("singbox");
+    fs::create_dir_all(&root).ok();
+    let setting_path = root.join("setting.json");
+    let v = load_or_init_singbox_setting(&setting_path);
+    let arr = v.get("profiles").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+
+    let mut max_n = 0u32;
+    for it in &arr {
+        let Some(nm) = it.get("name").and_then(|y| y.as_str()) else { continue };
+        if let Ok(n) = nm.parse::<u32>() {
+            max_n = max_n.max(n);
+        }
+    }
+    let next = (max_n + 1).to_string();
+    create_singbox_profile_named(&next)?;
+    Ok(next)
+}
+
 fn create_named_profile(program_id: &str, requested: &str) -> Result<String> {
     ensure_safe_segment(program_id, "program id")?;
     if !matches!(program_id, "nfqws" | "nfqws2" | "byedpi" | "dpitunnel") {
@@ -906,6 +992,34 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
         }));
     }
 
+    // sing-box (custom settings + profiles stored in setting.json)
+    {
+        let id = "sing-box";
+        let p = program_root("singbox").join("setting.json");
+        let v: serde_json::Value = read_json(&p).unwrap_or_else(|_| json!({
+            "enabled": false,
+            "mode": "socks5",
+            "t2s_port": 12345,
+            "t2s_web_port": 8001,
+            "active_transparent_profile": "",
+            "profiles": []
+        }));
+        // Expose minimal top-level fields for UI hint.
+        let enabled = v.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false);
+        let mode = v.get("mode").and_then(|x| x.as_str()).unwrap_or("socks5");
+        let profiles = v.get("profiles").cloned().unwrap_or_else(|| json!([]));
+
+        out.push(json!({
+            "id": id,
+            "name": id,
+            "type": "singbox",
+            "enabled": enabled,
+            "mode": mode,
+            "profiles": profiles,
+            "active_transparent_profile": v.get("active_transparent_profile").cloned().unwrap_or(json!(""))
+        }));
+    }
+
     write_json(stream, 200, json!({"ok": true, "data": out}))
 }
 
@@ -943,29 +1057,60 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
             let res = (|| -> Result<()> {
                 ensure_safe_segment(id, "program id")?;
                 ensure_safe_segment(profile, "profile name")?;
-                if !matches!(*id, "nfqws" | "nfqws2" | "byedpi" | "dpitunnel") {
-                    anyhow::bail!("program has no profiles");
-                }
-                let p = active_json_path(id);
-                let mut active: ProfilesActive = read_json(&p)?;
-                if active.profiles.remove(*profile).is_none() {
-                    anyhow::bail!("profile not found");
-                }
-                // Persist first, so it won't be started after restart even if FS operation fails.
-                write_json_pretty(&p, &active)?;
+                if *id == "sing-box" {
+                    // sing-box profiles are stored inside singbox/setting.json.
+                    let root = program_root("singbox");
+                    fs::create_dir_all(&root).ok();
+                    let setting_path = root.join("setting.json");
+                    let mut v = load_or_init_singbox_setting(&setting_path);
+                    let arr = v
+                        .get_mut("profiles")
+                        .and_then(|x| x.as_array_mut())
+                        .ok_or_else(|| anyhow::anyhow!("profiles must be array"))?;
+                    let before = arr.len();
+                    arr.retain(|x| x.get("name").and_then(|y| y.as_str()) != Some(profile));
+                    if arr.len() == before {
+                        anyhow::bail!("profile not found");
+                    }
+                    write_json_pretty(&setting_path, &v)?;
 
-                // Move profile dir away (do not rm -rf to avoid breaking running processes).
-                let src = profile_root(id, profile);
-                if src.exists() {
-                    let deleted_dir = program_root(id).join(".deleted");
-                    fs::create_dir_all(&deleted_dir).ok();
-                    let ts = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs();
-                    let dst = deleted_dir.join(format!("{profile}.{ts}"));
-                    fs::rename(&src, &dst)
-                        .map_err(|e| anyhow::anyhow!("move failed {} -> {}: {e}", src.display(), dst.display()))?;
+                    // Move profile dir away.
+                    let src = program_root("singbox").join(profile);
+                    if src.exists() {
+                        let deleted_dir = program_root("singbox").join(".deleted");
+                        fs::create_dir_all(&deleted_dir).ok();
+                        let ts = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
+                        let dst = deleted_dir.join(format!("{profile}.{ts}"));
+                        let _ = fs::rename(&src, &dst);
+                    }
+                } else {
+                    if !matches!(*id, "nfqws" | "nfqws2" | "byedpi" | "dpitunnel") {
+                        anyhow::bail!("program has no profiles");
+                    }
+                    let p = active_json_path(id);
+                    let mut active: ProfilesActive = read_json(&p)?;
+                    if active.profiles.remove(*profile).is_none() {
+                        anyhow::bail!("profile not found");
+                    }
+                    // Persist first, so it won't be started after restart even if FS operation fails.
+                    write_json_pretty(&p, &active)?;
+
+                    // Move profile dir away (do not rm -rf to avoid breaking running processes).
+                    let src = profile_root(id, profile);
+                    if src.exists() {
+                        let deleted_dir = program_root(id).join(".deleted");
+                        fs::create_dir_all(&deleted_dir).ok();
+                        let ts = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs();
+                        let dst = deleted_dir.join(format!("{profile}.{ts}"));
+                        fs::rename(&src, &dst)
+                            .map_err(|e| anyhow::anyhow!("move failed {} -> {}: {e}", src.display(), dst.display()))?;
+                    }
                 }
                 Ok(())
             })();
@@ -980,11 +1125,21 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
             let res = (|| -> Result<String> {
                 ensure_safe_segment(id, "program id")?;
                 ensure_safe_segment(profile, "profile name")?;
-                if !matches!(*id, "nfqws" | "nfqws2" | "byedpi" | "dpitunnel") {
-                    anyhow::bail!("program has no profiles");
+                if *id == "sing-box" {
+                    let dir = program_root("singbox").join(profile);
+                    fs::create_dir_all(&dir).ok();
+                    let p = dir.join("config.json");
+                    if !p.exists() {
+                        let _ = write_text_atomic(&p, "");
+                    }
+                    read_text_or_empty(&p)
+                } else {
+                    if !matches!(*id, "nfqws" | "nfqws2" | "byedpi" | "dpitunnel") {
+                        anyhow::bail!("program has no profiles");
+                    }
+                    let p = profile_root(id, profile).join("config/config.txt");
+                    read_text(&p)
                 }
-                let p = profile_root(id, profile).join("config/config.txt");
-                read_text(&p)
             })();
             match res {
                 Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
@@ -995,13 +1150,20 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
             let res = (|| -> Result<()> {
                 ensure_safe_segment(id, "program id")?;
                 ensure_safe_segment(profile, "profile name")?;
-                if !matches!(*id, "nfqws" | "nfqws2" | "byedpi" | "dpitunnel") {
-                    anyhow::bail!("program has no profiles");
-                }
                 let req: ContentReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                let p = profile_root(id, profile).join("config/config.txt");
-                write_text_atomic(&p, &req.content)?;
+                if *id == "sing-box" {
+                    let dir = program_root("singbox").join(profile);
+                    fs::create_dir_all(&dir).ok();
+                    let p = dir.join("config.json");
+                    write_text_atomic(&p, &req.content)?;
+                } else {
+                    if !matches!(*id, "nfqws" | "nfqws2" | "byedpi" | "dpitunnel") {
+                        anyhow::bail!("program has no profiles");
+                    }
+                    let p = profile_root(id, profile).join("config/config.txt");
+                    write_text_atomic(&p, &req.content)?;
+                }
                 Ok(())
             })();
             match res {
@@ -1309,9 +1471,9 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
             }
         }
 
-        // --- operaproxy sni.txt
+        // --- operaproxy sni.json
         ("GET", ["api", "programs", "operaproxy", "sni"]) => {
-            let p = program_root("operaproxy").join("config/sni.txt");
+            let p = program_root("operaproxy").join("config/sni.json");
             let res = read_text(&p);
             match res {
                 Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
@@ -1322,7 +1484,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
             let res = (|| -> Result<()> {
                 let req: ContentReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                let p = program_root("operaproxy").join("config/sni.txt");
+                let p = program_root("operaproxy").join("config/sni.json");
                 write_text_atomic(&p, &req.content)?;
                 Ok(())
             })();
@@ -1439,6 +1601,175 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
                 let p = program_root("operaproxy").join("port.json");
                 write_json_pretty(&p, &v)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
+        // --- sing-box setting.json (JSON)
+        ("GET", ["api", "programs", "sing-box", "setting"]) => {
+            let p = program_root("singbox").join("setting.json");
+            let res: Result<serde_json::Value> = read_json(&p);
+            match res {
+                Ok(v) => write_json(stream, 200, json!({"ok": true, "data": v})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "sing-box", "setting"]) => {
+            let res = (|| -> Result<()> {
+                let v: serde_json::Value = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let root = program_root("singbox");
+                fs::create_dir_all(&root).ok();
+                let p = root.join("setting.json");
+                write_json_pretty(&p, &v)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
+        // --- sing-box profiles CRUD (stored inside setting.json)
+        ("POST", ["api", "programs", "sing-box", "profiles"]) => {
+            let res = (|| -> Result<()> {
+                #[derive(Deserialize)]
+                struct Req { name: String }
+                let req: Req = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let name = req.name.trim();
+                ensure_safe_segment(name, "profile name")?;
+                let root = program_root("singbox");
+                fs::create_dir_all(&root).ok();
+                let p = root.join("setting.json");
+                let mut v: serde_json::Value = read_json(&p).unwrap_or_else(|_| json!({
+                    "enabled": false,
+                    "mode": "socks5",
+                    "t2s_port": 12345,
+                    "t2s_web_port": 8001,
+                    "active_transparent_profile": "",
+                    "profiles": []
+                }));
+                let arr = v.get_mut("profiles").and_then(|x| x.as_array_mut()).ok_or_else(|| anyhow::anyhow!("profiles must be array"))?;
+                if arr.iter().any(|x| x.get("name").and_then(|y| y.as_str()) == Some(name)) {
+                    anyhow::bail!("profile already exists");
+                }
+                arr.push(json!({
+                    "name": name,
+                    "enabled": false,
+                    "port": 1080,
+                    "capture": "tcp"
+                }));
+
+                write_json_pretty(&p, &v)?;
+
+                // Create directory and an empty config.json if missing.
+                // (User will edit it manually; we don't generate contents.)
+                let dir = root.join(name);
+                fs::create_dir_all(&dir).ok();
+                let cfg = dir.join("config.json");
+                if !cfg.exists() {
+                    let _ = write_text_atomic(&cfg, "");
+                }
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
+        // --- sing-box apps list (packages) -> app/uid/user_program
+        ("GET", ["api", "programs", "sing-box", "apps", "user"]) => {
+            let p = program_root("singbox").join("app/uid/user_program");
+            let res = read_text_or_empty(&p);
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "sing-box", "apps", "user"]) => {
+            let res = (|| -> Result<()> {
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let p = program_root("singbox").join("app/uid/user_program");
+                write_text_atomic(&p, &req.content)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("DELETE", ["api", "programs", "sing-box", "profiles", profile]) => {
+            let res = (|| -> Result<()> {
+                ensure_safe_segment(profile, "profile name")?;
+                let root = program_root("singbox");
+                let p = root.join("setting.json");
+                let mut v: serde_json::Value = read_json(&p)?;
+                let arr = v.get_mut("profiles").and_then(|x| x.as_array_mut()).ok_or_else(|| anyhow::anyhow!("profiles must be array"))?;
+                let before = arr.len();
+                arr.retain(|x| x.get("name").and_then(|y| y.as_str()) != Some(*profile));
+                if arr.len() == before {
+                    anyhow::bail!("profile not found");
+                }
+
+                // If it was active transparent -> clear.
+                if v.get("active_transparent_profile").and_then(|x| x.as_str()) == Some(*profile) {
+                    if let Some(obj) = v.as_object_mut() {
+                        obj.insert("active_transparent_profile".to_string(), json!(""));
+                    }
+                }
+                write_json_pretty(&p, &v)?;
+
+                // Move profile folder to .deleted (best-effort; do not delete hard)
+                let src = root.join(profile);
+                if src.exists() {
+                    let deleted_dir = root.join(".deleted");
+                    fs::create_dir_all(&deleted_dir).ok();
+                    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                    let dst = deleted_dir.join(format!("{profile}.{ts}"));
+                    let _ = fs::rename(&src, &dst);
+                }
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
+        // --- sing-box profile config.json editor (plain text)
+        ("GET", ["api", "programs", "sing-box", "profiles", profile, "config"]) => {
+            let res = (|| -> Result<String> {
+                ensure_safe_segment(profile, "profile name")?;
+                let dir = program_root("singbox").join(profile);
+                fs::create_dir_all(&dir).ok();
+                let p = dir.join("config.json");
+                // Create empty file if missing.
+                if !p.exists() {
+                    let _ = write_text_atomic(&p, "");
+                }
+                read_text_or_empty(&p)
+            })();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "sing-box", "profiles", profile, "config"]) => {
+            let res = (|| -> Result<()> {
+                ensure_safe_segment(profile, "profile name")?;
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let dir = program_root("singbox").join(profile);
+                fs::create_dir_all(&dir).ok();
+                let p = dir.join("config.json");
+                write_text_atomic(&p, &req.content)?;
                 Ok(())
             })();
             match res {
@@ -1565,9 +1896,16 @@ match (method.as_str(), path.as_str()) {
                 let req: NewProfileReq = serde_json::from_slice(&body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
                 let program = req.program.trim();
-                let name = match req.profile.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
-                    Some(p) => create_named_profile(program, p)?,
-                    None => create_next_profile(program)?,
+                let name = if program == "sing-box" {
+                    match req.profile.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                        Some(p) => create_singbox_profile_named(p)?,
+                        None => create_singbox_profile_next()?,
+                    }
+                } else {
+                    match req.profile.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                        Some(p) => create_named_profile(program, p)?,
+                        None => create_next_profile(program)?,
+                    }
                 };
                 Ok(json!({"ok": true, "profile": name}))
             })();

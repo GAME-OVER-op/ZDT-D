@@ -11,8 +11,8 @@ android {
     applicationId 'com.android.zdtd.service'
     minSdk 26
     targetSdk 34
-        versionCode 24000
-        versionName '2.4.0'
+        versionCode 25002
+        versionName '2.5.0'
   }
 
   buildTypes {

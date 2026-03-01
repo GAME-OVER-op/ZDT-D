@@ -24,7 +24,7 @@
 **ZDT-D** is a root module (Magisk / KernelSU / APatch and forks) designed to help handle networks with DPI or aggressive filtering.
 It ships a local daemon and an **Android app** for managing profiles, app lists, and services.
 
-> Note: Some texts / defaults are currently oriented for Russian-speaking users (temporary).
+> Note: The app is available in **two languages**: Russian and English.
 
 ## Key Features
 
@@ -37,14 +37,15 @@ It ships a local daemon and an **Android app** for managing profiles, app lists,
 
 ## Included Tools
 
-| Program | Description | Repository |
-|---|---|---|
-| zapret (nfqws) | DPI circumvention tool | https://github.com/bol-van/zapret |
-| zapret2 (nfqws2 + lua) | zapret2 engine + lua scripts | https://github.com/bol-van/zapret2 |
-| byedpi | DPI circumvention utility | https://github.com/hufrea/byedpi |
-| DPITunnel-cli | Desync-based DPI tool | https://github.com/nomoresat/DPITunnel-cli |
-| dnscrypt-proxy | Encrypted DNS proxy | https://github.com/DNSCrypt/dnscrypt-proxy |
-| opera-proxy | Standalone Opera VPN client/proxy | https://github.com/Snawoot/opera-proxy |
+| Program             | Description                  | Repository                                                     |
+|---------------------|------------------------------|---------------------------------------------------------------|
+| zapret (nfqws)      | DPI circumvention tool        | [https://github.com/bol-van/zapret](https://github.com/bol-van/zapret) |
+| zapret2 (nfqws2 + lua) | zapret2 engine + lua scripts | [https://github.com/bol-van/zapret2](https://github.com/bol-van/zapret2) |
+| byedpi              | DPI circumvention utility     | [https://github.com/hufrea/byedpi](https://github.com/hufrea/byedpi) |
+| DPITunnel-cli       | Desync-based DPI tool         | [https://github.com/nomoresat/DPITunnel-cli](https://github.com/nomoresat/DPITunnel-cli) |
+| dnscrypt-proxy      | Encrypted DNS proxy           | [https://github.com/DNSCrypt/dnscrypt-proxy](https://github.com/DNSCrypt/dnscrypt-proxy) |
+| opera-proxy         | Standalone Opera VPN client/proxy | [https://github.com/Snawoot/opera-proxy](https://github.com/Snawoot/opera-proxy) |
+| sing-box            | Multi-protocol proxy tool     | [https://github.com/SagerNet/sing-box](https://github.com/SagerNet/sing-box) |
 
 ## Requirements
 

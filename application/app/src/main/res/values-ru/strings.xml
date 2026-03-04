@@ -483,15 +483,6 @@
     <string name="setup_zip_saved_path_fmt">Путь: %1$s</string>
     <string name="setup_zip_saved_body">Откройте ваш root-менеджер (Magisk / KernelSU / APatch) и установите этот ZIP как модуль.</string>
     <string name="setup_install_log_title">Лог установки</string>
-    <string name="setup_migration_title">Миграция настроек</string>
-    <string name="setup_migration_body">Перенесёт ваши ранее настроенные программы и профили в новую версию модуля. После обновления и перезагрузки всё будет готово — без повторной настройки.</string>
-    <string name="setup_migration_done">Настройки уже перенесены</string>
-    <string name="setup_migration_action">Произвести миграцию</string>
-    <string name="setup_migration_confirm_body">Запустить перенос настроек в обновлённый модуль?\n\nМы скопируем все папки из working_folder старой версии в working_folder обновления. Содержимое папки обновления будет перезаписано.</string>
-    <string name="setup_migration_nonmagisk_warn">Из-за различий в менеджере root перенос может отработать не идеально.\n\nПродолжить?</string>
-    <string name="setup_migration_last_confirm_title">Последнее подтверждение</string>
-    <string name="setup_migration_last_confirm_body">Вы уверены в своём выборе?</string>
-    <string name="setup_migration_progress_title">Перенос настроек</string>
 
     <!-- Program updates (MainViewModel) -->
     <string name="prog_update_status_ready">Готово</string>
@@ -551,4 +542,60 @@
   <string name="backup_force_restore_confirm_btn">Понимаю, восстановить</string>
     <string name="mv_backup_min_supported_version">Бэкап не поддерживается, потому что он создан старой архитектурой модуля (versionCode: %1$s). Минимально поддерживаемый versionCode бэкапа: %2$s.</string>
     <string name="mv_restore_min_supported_current_version">Восстановление не поддерживается, потому что установленная версия модуля/приложения использует слишком старую архитектуру (versionCode: %1$s). Минимально поддерживаемый versionCode: %2$s.</string>
+    <string name="common_retry">Повторить</string>
+    <string name="startup_dialog_title">Подключение к модулю</string>
+    <string name="startup_dialog_subtitle">Пожалуйста, подождите</string>
+    <string name="startup_dialog_error_title">Демон недоступен</string>
+    <string name="startup_stage_connecting">1-й этап: подключение к демону</string>
+    <string name="startup_stage_loading">2-й этап: загрузка информации от демона</string>
+    <string name="startup_reinstall_module">Переустановить модуль</string>
+    <string name="startup_daemon_failed_module_found">Не удалось подключиться к демону.
+Модуль найден, но, возможно, работает некорректно.
+Рекомендуется переустановить модуль.</string>
+    <string name="startup_daemon_failed_module_broken">Не удалось подключиться к демону.
+Модуль найден, но его структура выглядит некорректной.
+Рекомендуется переустановить модуль.</string>
+    <string name="startup_daemon_failed_module_missing">Не удалось подключиться к демону.
+Каталог модуля не найден.
+Установите модуль повторно.</string>
+
+    <string name="daemon_runtime_unavailable_title">Служба недоступна</string>
+    <string name="daemon_runtime_unavailable_body">Служба была приостановлена или остановлена. Управление временно недоступно. Приложение автоматически проверяет восстановление подключения.</string>
+
+
+    <string name="common_port">Порт</string>
+    <string name="singbox_port_sync_title">Синхронизация порта</string>
+    <string name="singbox_mode_title">Режим</string>
+    <string name="singbox_mode_socks5">socks5</string>
+    <string name="singbox_mode_transparent">transparent</string>
+    <string name="singbox_t2s_port_label">t2s_port</string>
+    <string name="singbox_t2s_web_port_label">t2s_web_port</string>
+    <string name="singbox_active_transparent_profile_label">active_transparent_profile</string>
+    <string name="singbox_enabled_only_in_socks5_mode">Переключатель «Включено» используется только в режиме socks5.</string>
+    <string name="singbox_capture_tcp">TCP</string>
+    <string name="singbox_capture_tcp_udp">TCP+UDP</string>
+    <string name="singbox_transparent_unavailable_message">Эта функция сейчас перерабатывается и временно недоступна.</string>
+    <string name="singbox_auto_save_failed">Не удалось выполнить автосохранение</string>
+    <string name="singbox_listen_port_update_failed">Не удалось обновить listen_port в config.json</string>
+    <string name="singbox_config_saved_port_update_failed">Конфиг сохранён, но порт профиля обновить не удалось</string>
+    <string name="singbox_invalid_json_fmt">Некорректный JSON: %1$s</string>
+    <string name="singbox_parse_error">ошибка разбора</string>
+    <string name="singbox_invalid_profile_name_fmt">Некорректное имя профиля: %1$s</string>
+    <string name="singbox_invalid_port_for_profile_fmt">Некорректный порт для профиля %1$s</string>
+    <string name="singbox_invalid_capture_for_profile_fmt">Некорректный capture для профиля %1$s</string>
+    <string name="singbox_profile_ports_must_be_unique">Порты профилей должны быть уникальны</string>
+    <string name="singbox_select_mode">Выберите режим</string>
+    <string name="singbox_fill_t2s_port">Заполните t2s_port</string>
+    <string name="singbox_fill_t2s_web_port">Заполните t2s_web_port</string>
+    <string name="singbox_enable_at_least_one_profile">Включите хотя бы один профиль</string>
+    <string name="singbox_select_active_transparent_profile">Выберите active_transparent_profile</string>
+    <string name="singbox_active_transparent_profile_not_found">Активный transparent-профиль не найден</string>
+    <string name="operaproxy_sni_section_desc">JSON-записи для opera-proxy. Для каждой записи можно включить или отключить использование byedpi.</string>
+    <string name="operaproxy_sni_create_new">Создать новую запись SNI</string>
+    <string name="operaproxy_sni_empty">Список пуст (sni.json пуст). Добавьте запись.</string>
+    <string name="operaproxy_sni_entry_title_fmt">Запись #%1$d</string>
+    <string name="operaproxy_sni_placeholder">example.com</string>
+    <string name="operaproxy_sni_use_byedpi">Использовать byedpi?</string>
+    <string name="operaproxy_sni_use_byedpi_desc">Добавлять upstream -proxy socks5://127.0.0.1:&lt;BYEDPI_PORT&gt;</string>
+
 </resources>

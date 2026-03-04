@@ -202,15 +202,6 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="setup_zip_saved_path_fmt">Path: %1$s</string>
     <string name="setup_zip_saved_body">Open your root manager (Magisk / KernelSU / APatch) and install this ZIP as a module.</string>
     <string name="setup_install_log_title">Install log</string>
-    <string name="setup_migration_title">Settings migration</string>
-    <string name="setup_migration_body">Migrates your previously configured programs and profiles to the new module version. After updating and rebooting, everything will be ready — no need to reconfigure.</string>
-    <string name="setup_migration_done">Settings already migrated</string>
-    <string name="setup_migration_action">Run migration</string>
-    <string name="setup_migration_confirm_body">Start migrating settings into the updated module?\n\nWe will copy all folders from the old version’s working_folder into the update working_folder. The update folder content will be overwritten.</string>
-    <string name="setup_migration_nonmagisk_warn">Because root managers differ, the migration may not work perfectly.\n\nContinue?</string>
-    <string name="setup_migration_last_confirm_title">Final confirmation</string>
-    <string name="setup_migration_last_confirm_body">Are you sure about your choice?</string>
-    <string name="setup_migration_progress_title">Settings migration</string>
 
     <!-- Program updates (MainViewModel) -->
     <string name="prog_update_status_ready">Ready</string>
@@ -553,4 +544,60 @@ By continuing, you agree to restore the backup while ignoring the versionCode ch
   <string name="backup_force_restore_confirm_btn">I understand, restore</string>
     <string name="mv_backup_min_supported_version">Backup is not supported because it was created by an old module architecture (versionCode: %1$s). Minimum supported backup versionCode is %2$s.</string>
     <string name="mv_restore_min_supported_current_version">Restore is not supported because the currently installed module/app architecture is too old (versionCode: %1$s). Minimum supported versionCode is %2$s.</string>
+    <string name="common_retry">Retry</string>
+    <string name="startup_dialog_title">Connecting to module</string>
+    <string name="startup_dialog_subtitle">Please wait</string>
+    <string name="startup_dialog_error_title">Daemon unavailable</string>
+    <string name="startup_stage_connecting">Stage 1: Connecting to daemon</string>
+    <string name="startup_stage_loading">Stage 2: Loading information from daemon</string>
+    <string name="startup_reinstall_module">Reinstall module</string>
+    <string name="startup_daemon_failed_module_found">Failed to connect to the daemon.
+Module found, but it may be working incorrectly.
+It is recommended to reinstall the module.</string>
+    <string name="startup_daemon_failed_module_broken">Failed to connect to the daemon.
+Module found, but its structure looks incorrect.
+It is recommended to reinstall the module.</string>
+    <string name="startup_daemon_failed_module_missing">Failed to connect to the daemon.
+The module directory was not found.
+Install the module again.</string>
+
+    <string name="daemon_runtime_unavailable_title">Service unavailable</string>
+    <string name="daemon_runtime_unavailable_body">The service was paused or stopped. Controls are temporarily unavailable. The app is automatically checking whether the connection is restored.</string>
+
+
+    <string name="common_port">Port</string>
+    <string name="singbox_port_sync_title">Port sync</string>
+    <string name="singbox_mode_title">Mode</string>
+    <string name="singbox_mode_socks5">socks5</string>
+    <string name="singbox_mode_transparent">transparent</string>
+    <string name="singbox_t2s_port_label">t2s_port</string>
+    <string name="singbox_t2s_web_port_label">t2s_web_port</string>
+    <string name="singbox_active_transparent_profile_label">active_transparent_profile</string>
+    <string name="singbox_enabled_only_in_socks5_mode">The Enabled switch is used only in socks5 mode.</string>
+    <string name="singbox_capture_tcp">TCP</string>
+    <string name="singbox_capture_tcp_udp">TCP+UDP</string>
+    <string name="singbox_transparent_unavailable_message">This function is currently being reworked and is temporarily unavailable.</string>
+    <string name="singbox_auto_save_failed">Auto-save failed</string>
+    <string name="singbox_listen_port_update_failed">Failed to update listen_port in config.json</string>
+    <string name="singbox_config_saved_port_update_failed">Config saved, but the profile port update failed</string>
+    <string name="singbox_invalid_json_fmt">Invalid JSON: %1$s</string>
+    <string name="singbox_parse_error">parse error</string>
+    <string name="singbox_invalid_profile_name_fmt">Invalid profile name: %1$s</string>
+    <string name="singbox_invalid_port_for_profile_fmt">Invalid port for profile %1$s</string>
+    <string name="singbox_invalid_capture_for_profile_fmt">Invalid capture for profile %1$s</string>
+    <string name="singbox_profile_ports_must_be_unique">Profile ports must be unique</string>
+    <string name="singbox_select_mode">Select a mode</string>
+    <string name="singbox_fill_t2s_port">Fill t2s_port</string>
+    <string name="singbox_fill_t2s_web_port">Fill t2s_web_port</string>
+    <string name="singbox_enable_at_least_one_profile">Enable at least one profile</string>
+    <string name="singbox_select_active_transparent_profile">Select active_transparent_profile</string>
+    <string name="singbox_active_transparent_profile_not_found">The active transparent profile was not found</string>
+    <string name="operaproxy_sni_section_desc">JSON entries for opera-proxy. For each entry, you can enable or disable byedpi.</string>
+    <string name="operaproxy_sni_create_new">Create a new SNI entry</string>
+    <string name="operaproxy_sni_empty">The list is empty (sni.json is empty). Add an entry.</string>
+    <string name="operaproxy_sni_entry_title_fmt">Entry #%1$d</string>
+    <string name="operaproxy_sni_placeholder">example.com</string>
+    <string name="operaproxy_sni_use_byedpi">Use byedpi?</string>
+    <string name="operaproxy_sni_use_byedpi_desc">Add upstream -proxy socks5://127.0.0.1:&lt;BYEDPI_PORT&gt;</string>
+
 </resources>

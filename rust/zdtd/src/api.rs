@@ -950,6 +950,36 @@ fn write_json_pretty<T: Serialize>(p: &Path, v: &T) -> Result<()> {
     write_text_atomic(p, &txt)
 }
 
+fn validate_sing_box_setting(v: &serde_json::Value) -> Result<()> {
+    let profiles = v
+        .get("profiles")
+        .and_then(|x| x.as_array())
+        .ok_or_else(|| anyhow::anyhow!("setting.json: profiles array is required"))?;
+
+    let mut ports = std::collections::HashSet::new();
+    for profile in profiles {
+        let name = profile
+            .get("name")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .trim();
+        if name.is_empty() {
+            anyhow::bail!("setting.json: profile name is empty");
+        }
+        let port = profile
+            .get("port")
+            .and_then(|x| x.as_i64())
+            .ok_or_else(|| anyhow::anyhow!("setting.json: profile {name} is missing port"))?;
+        if !(1..=65535).contains(&port) {
+            anyhow::bail!("setting.json: invalid port {port} for profile {name}");
+        }
+        if !ports.insert(port) {
+            anyhow::bail!("setting.json: duplicate profile port {port}");
+        }
+    }
+    Ok(())
+}
+
 fn write_ok(mut stream: TcpStream) -> Result<()> {
     write_json(stream, 200, json!({"ok": true}))
 }
@@ -1622,6 +1652,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
             let res = (|| -> Result<()> {
                 let v: serde_json::Value = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                validate_sing_box_setting(&v)?;
                 let root = program_root("singbox");
                 fs::create_dir_all(&root).ok();
                 let p = root.join("setting.json");

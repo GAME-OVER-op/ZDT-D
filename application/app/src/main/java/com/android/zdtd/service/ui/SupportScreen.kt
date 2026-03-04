@@ -45,6 +45,8 @@ import com.android.zdtd.service.R
 @Composable
 fun SupportScreen() {
   val context = LocalContext.current
+  val isCompactWidth = rememberIsCompactWidth()
+  val isNarrowWidth = rememberIsNarrowWidth()
 
   val links = remember {
     listOf(
@@ -82,7 +84,7 @@ fun SupportScreen() {
   LazyColumn(
     modifier = Modifier
       .fillMaxSize()
-      .padding(16.dp),
+      .padding(rememberAdaptiveScreenPadding()),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     item {
@@ -108,6 +110,8 @@ fun SupportScreen() {
 
     items(links) { link ->
       SupportLinkCard(
+        compact = isCompactWidth,
+        narrow = isNarrowWidth,
         link = link,
         onOpen = {
           runCatching {
@@ -131,7 +135,7 @@ private data class SupportLink(
 )
 
 @Composable
-private fun SupportLinkCard(link: SupportLink, onOpen: () -> Unit) {
+private fun SupportLinkCard(compact: Boolean, narrow: Boolean, link: SupportLink, onOpen: () -> Unit) {
   val title = link.titleRaw ?: stringResource(link.titleRes ?: R.string.support_title)
 
   ElevatedCard(
@@ -140,56 +144,160 @@ private fun SupportLinkCard(link: SupportLink, onOpen: () -> Unit) {
       .clickable { onOpen() },
     shape = RoundedCornerShape(18.dp),
   ) {
-    Row(
-      modifier = Modifier
-        .fillMaxWidth()
-        .padding(14.dp),
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Box(
+    if (compact) {
+      Column(
         modifier = Modifier
-          .size(44.dp)
-          .clip(CircleShape)
-          .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
-        contentAlignment = Alignment.Center,
+          .fillMaxWidth()
+          .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
       ) {
-        Icon(
-          imageVector = link.icon,
-          contentDescription = null,
-          tint = MaterialTheme.colorScheme.primary,
-        )
-      }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Box(
+            modifier = Modifier
+              .size(44.dp)
+              .clip(CircleShape)
+              .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center,
+          ) {
+            Icon(imageVector = link.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+          }
 
-      Spacer(Modifier.width(12.dp))
+          Spacer(Modifier.width(12.dp))
 
-      Column(modifier = Modifier.weight(1f)) {
-        Text(
-          text = title,
-          style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.SemiBold,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.height(2.dp))
-        Text(
-          text = stringResource(link.subtitleRes),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
-        Spacer(Modifier.height(6.dp))
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = title,
+              style = MaterialTheme.typography.titleMedium,
+              fontWeight = FontWeight.SemiBold,
+              maxLines = 2,
+              overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+              text = stringResource(link.subtitleRes),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+              maxLines = 2,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
+
         Text(
           text = link.url,
           style = MaterialTheme.typography.labelSmall,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-          maxLines = 1,
+          maxLines = 2,
           overflow = TextOverflow.Ellipsis,
         )
-      }
 
-      TextButton(onClick = onOpen) {
-        Text(stringResource(R.string.support_open))
+        TextButton(onClick = onOpen, modifier = Modifier.align(Alignment.End)) {
+          Text(stringResource(R.string.support_open))
+        }
+      }
+    } else if (narrow) {
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Box(
+            modifier = Modifier
+              .size(44.dp)
+              .clip(CircleShape)
+              .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center,
+          ) {
+            Icon(imageVector = link.icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+          }
+
+          Spacer(Modifier.width(12.dp))
+
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = title,
+              style = MaterialTheme.typography.titleMedium,
+              fontWeight = FontWeight.SemiBold,
+              maxLines = 2,
+              overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+              text = stringResource(link.subtitleRes),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+              maxLines = 2,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
+
+        Text(
+          text = link.url,
+          style = MaterialTheme.typography.labelSmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
+        )
+
+        TextButton(onClick = onOpen, modifier = Modifier.align(Alignment.End)) {
+          Text(stringResource(R.string.support_open))
+        }
+      }
+    } else {
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Box(
+          modifier = Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
+          contentAlignment = Alignment.Center,
+        ) {
+          Icon(
+            imageVector = link.icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+          )
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Spacer(Modifier.height(2.dp))
+          Text(
+            text = stringResource(link.subtitleRes),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Spacer(Modifier.height(6.dp))
+          Text(
+            text = link.url,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+
+        TextButton(onClick = onOpen) {
+          Text(stringResource(R.string.support_open))
+        }
       }
     }
   }

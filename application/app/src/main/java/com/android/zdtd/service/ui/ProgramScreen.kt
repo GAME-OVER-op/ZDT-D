@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -18,6 +19,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -34,6 +36,9 @@ fun ProgramScreen(
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
+  val compact = rememberIsCompactWidth()
+  val useScrollableTabs = rememberUseScrollableTabs()
+  val narrow = rememberIsNarrowWidth()
   val program = programs.firstOrNull { it.id == programId }
   if (program == null) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(stringResource(R.string.program_not_found)) }
@@ -81,11 +86,11 @@ fun ProgramScreen(
   }
 
   LazyColumn(
-    modifier = Modifier.fillMaxSize().padding(16.dp),
+    modifier = Modifier.fillMaxSize().padding(if (compact) 12.dp else 16.dp),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     item {
-      Text(program.name ?: program.id, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+      Text(program.name ?: program.id, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 2)
       Spacer(Modifier.height(4.dp))
       Text(
         stringResource(R.string.changes_apply_after_restart),
@@ -113,9 +118,16 @@ fun ProgramScreen(
 program.type == "profiles" -> {
         item {
           if (hasStrategicFiles) {
-            TabRow(selectedTabIndex = programTab) {
-              Tab(selected = programTab == 0, onClick = { programTab = 0 }, text = { Text(stringResource(R.string.tab_profiles)) })
-              Tab(selected = programTab == 1, onClick = { programTab = 1 }, text = { Text(stringResource(R.string.tab_files)) })
+            if (useScrollableTabs) {
+              ScrollableTabRow(selectedTabIndex = programTab, edgePadding = 12.dp) {
+                Tab(selected = programTab == 0, onClick = { programTab = 0 }, text = { Text(stringResource(R.string.tab_profiles), maxLines = 2) })
+                Tab(selected = programTab == 1, onClick = { programTab = 1 }, text = { Text(stringResource(R.string.tab_files), maxLines = 2) })
+              }
+            } else {
+              TabRow(selectedTabIndex = programTab) {
+                Tab(selected = programTab == 0, onClick = { programTab = 0 }, text = { Text(stringResource(R.string.tab_profiles), maxLines = 2) })
+                Tab(selected = programTab == 1, onClick = { programTab = 1 }, text = { Text(stringResource(R.string.tab_files), maxLines = 2) })
+              }
             }
             Spacer(Modifier.height(10.dp))
           }
@@ -283,6 +295,83 @@ private fun isValidPort(v: Int?): Boolean {
   return v in 1..65535
 }
 
+private data class SingConfigPortPlan(
+  val profileName: String,
+  val originalConfig: String,
+  val detectedPort: Int,
+  val applyPortToProfile: Boolean,
+  val conflictProfileName: String? = null,
+  val replacementPort: Int? = null,
+)
+
+private fun findSingMixedInboundPort(configText: String): Int? {
+  val root = runCatching { JSONObject(configText) }.getOrNull() ?: return null
+  val inbounds = root.optJSONArray("inbounds") ?: return null
+
+  fun extractPort(obj: JSONObject?): Int? = obj?.optInt("listen_port", 0)?.takeIf { it in 1..65535 }
+
+  for (i in 0 until inbounds.length()) {
+    val inbound = inbounds.optJSONObject(i) ?: continue
+    if (inbound.optString("type") == "mixed" && inbound.optString("tag") == "mixed-in") {
+      return extractPort(inbound)
+    }
+  }
+  for (i in 0 until inbounds.length()) {
+    val inbound = inbounds.optJSONObject(i) ?: continue
+    if (inbound.optString("type") == "mixed") {
+      return extractPort(inbound)
+    }
+  }
+  return null
+}
+
+private fun replaceSingMixedInboundPort(configText: String, newPort: Int): String? {
+  if (newPort !in 1..65535) return null
+  val root = runCatching { JSONObject(configText) }.getOrNull() ?: return null
+  val inbounds = root.optJSONArray("inbounds") ?: return null
+
+  fun replaceAt(index: Int): String {
+    val inbound = inbounds.optJSONObject(index) ?: JSONObject()
+    inbound.put("listen_port", newPort)
+    inbounds.put(index, inbound)
+    root.put("inbounds", inbounds)
+    return root.toString(2)
+  }
+
+  for (i in 0 until inbounds.length()) {
+    val inbound = inbounds.optJSONObject(i) ?: continue
+    if (inbound.optString("type") == "mixed" && inbound.optString("tag") == "mixed-in") {
+      return replaceAt(i)
+    }
+  }
+  for (i in 0 until inbounds.length()) {
+    val inbound = inbounds.optJSONObject(i) ?: continue
+    if (inbound.optString("type") == "mixed") {
+      return replaceAt(i)
+    }
+  }
+  return null
+}
+
+private fun findNextAvailableSingPort(profiles: List<SingProfile>, preferredPort: Int): Int {
+  val used = profiles.mapNotNull { it.port }.toMutableSet()
+  if (preferredPort in 1..65535 && preferredPort !in used) return preferredPort
+  var port = preferredPort.coerceIn(1, 65535)
+  while (port in used && port < 65535) port += 1
+  if (port !in used && port in 1..65535) return port
+  port = 1
+  while (port in used && port < 65535) port += 1
+  return port.coerceIn(1, 65535)
+}
+
+private fun updateSingProfilePort(setting: SingSetting, profileName: String, newPort: Int): SingSetting =
+  setting.copy(
+    profiles = setting.profiles.map { profile ->
+      if (profile.name == profileName) profile.copy(port = newPort) else profile
+    }
+  )
+
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SingBoxSection(
@@ -290,7 +379,9 @@ private fun SingBoxSection(
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
+  val context = LocalContext.current
   val scope = rememberCoroutineScope()
+  val narrow = rememberIsNarrowWidth()
   fun showSnack(msg: String) { scope.launch { snackHost.showSnackbar(msg) } }
 
   var rawJson by remember { mutableStateOf<JSONObject?>(null) }
@@ -312,7 +403,7 @@ private fun SingBoxSection(
         showCreate = false
         actions.createNamedProfile("sing-box", name) { created ->
           if (created != null) {
-            showSnack("Profile created: $created")
+            showSnack(context.getString(R.string.profile_created_fmt, created))
             // Refresh setting.
             loading = true
             actions.loadJsonData("/api/programs/sing-box/setting") { obj ->
@@ -321,7 +412,7 @@ private fun SingBoxSection(
               setting = parseSingSetting(obj)
             }
           } else {
-            showSnack("Create failed")
+            showSnack(context.getString(R.string.create_failed))
           }
         }
       },
@@ -339,10 +430,62 @@ private fun SingBoxSection(
     }
   }
 
+  var pendingConfigPortPlan by remember { mutableStateOf<SingConfigPortPlan?>(null) }
+
+  fun applyConfigSavePlan(plan: SingConfigPortPlan) {
+    val updatedConfig = when {
+      plan.replacementPort != null -> replaceSingMixedInboundPort(plan.originalConfig, plan.replacementPort)
+      else -> plan.originalConfig
+    }
+    if (updatedConfig == null) {
+      showSnack(context.getString(R.string.singbox_listen_port_update_failed))
+      return
+    }
+
+    val profEnc = URLEncoder.encode(plan.profileName, "UTF-8")
+    editLoading = true
+    actions.saveText("/api/programs/sing-box/profiles/$profEnc/config", updatedConfig) { ok ->
+      if (!ok) {
+        editLoading = false
+        showSnack(context.getString(R.string.save_failed))
+        return@saveText
+      }
+
+      val currentSetting = setting
+      val portToSave = when {
+        plan.replacementPort != null -> plan.replacementPort
+        plan.applyPortToProfile -> plan.detectedPort
+        else -> null
+      }
+      if (currentSetting == null || portToSave == null) {
+        editLoading = false
+        editText = updatedConfig
+        showSnack(context.getString(R.string.saved))
+        editProfile = null
+        return@saveText
+      }
+
+      val updatedSetting = updateSingProfilePort(currentSetting, plan.profileName, portToSave)
+      val obj = buildSingSettingJson(updatedSetting)
+      actions.saveJsonData("/api/programs/sing-box/setting", obj) { settingOk ->
+        editLoading = false
+        if (settingOk) {
+          setting = updatedSetting
+          rawJson = obj
+          editText = updatedConfig
+          showSnack(context.getString(R.string.saved))
+          editProfile = null
+        } else {
+          showSnack(context.getString(R.string.singbox_config_saved_port_update_failed))
+        }
+      }
+    }
+  }
+
   // Editor dialog
   if (editProfile != null) {
     AlertDialog(
-      onDismissRequest = { editProfile = null },
+      onDismissRequest = { if (!editLoading) editProfile = null },
       title = { Text("config.json / ${editProfile}") },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -359,23 +502,77 @@ private fun SingBoxSection(
         }
       },
       confirmButton = {
-        Button(onClick = {
+        Button(enabled = !editLoading, onClick = {
           val prof = editProfile ?: return@Button
-          val profEnc = URLEncoder.encode(prof, "UTF-8")
-          editLoading = true
-          actions.saveText("/api/programs/sing-box/profiles/$profEnc/config", editText) { ok ->
-            editLoading = false
-            if (ok) {
-              showSnack("Saved")
-              editProfile = null
-            } else {
-              showSnack("Save failed")
-            }
+          val parsed = runCatching { JSONObject(editText.trim()) }.getOrElse {
+            showSnack(context.getString(R.string.singbox_invalid_json_fmt, it.message ?: context.getString(R.string.singbox_parse_error)))
+            return@Button
+          }
+          val normalizedText = parsed.toString(2)
+          val detectedPort = findSingMixedInboundPort(normalizedText)
+          val currentSetting = setting
+          val currentProfile = currentSetting?.profiles?.firstOrNull { it.name == prof }
+
+          if (detectedPort == null || currentSetting == null || currentProfile == null) {
+            applyConfigSavePlan(SingConfigPortPlan(prof, normalizedText, currentProfile?.port ?: 0, false))
+            return@Button
+          }
+
+          if (currentProfile.port == detectedPort) {
+            applyConfigSavePlan(SingConfigPortPlan(prof, normalizedText, detectedPort, false))
+            return@Button
+          }
+
+          val conflict = currentSetting.profiles.firstOrNull { it.name != prof && it.port == detectedPort }
+          pendingConfigPortPlan = if (conflict == null) {
+            SingConfigPortPlan(
+              profileName = prof,
+              originalConfig = normalizedText,
+              detectedPort = detectedPort,
+              applyPortToProfile = true,
+            )
+          } else {
+            SingConfigPortPlan(
+              profileName = prof,
+              originalConfig = normalizedText,
+              detectedPort = detectedPort,
+              applyPortToProfile = true,
+              conflictProfileName = conflict.name,
+              replacementPort = findNextAvailableSingPort(currentSetting.profiles, detectedPort),
+            )
           }
         }) { Text(stringResource(R.string.action_save)) }
       },
       dismissButton = {
-        TextButton(onClick = { editProfile = null }) { Text(stringResource(R.string.action_cancel)) }
+        TextButton(enabled = !editLoading, onClick = { editProfile = null }) { Text(stringResource(R.string.action_cancel)) }
+      }
+    )
+  }
+
+  pendingConfigPortPlan?.let { plan ->
+    val message = if (plan.conflictProfileName == null) {
+      "В config.json найден listen_port ${plan.detectedPort}. Сохранить этот порт в профиль ${plan.profileName}?"
+    } else {
+      "Порт ${plan.detectedPort} уже используется профилем ${plan.conflictProfileName}. Предлагаемый свободный порт: ${plan.replacementPort}. Заменить порт в config.json и сохранить его в профиль ${plan.profileName}?"
+    }
+    AlertDialog(
+      onDismissRequest = { pendingConfigPortPlan = null },
+      title = { Text(stringResource(R.string.singbox_port_sync_title)) },
+      text = { Text(message) },
+      confirmButton = {
+        Button(onClick = {
+          pendingConfigPortPlan = null
+          applyConfigSavePlan(plan)
+        }) { Text(if (plan.conflictProfileName == null) "Сохранить" else "Заменить и сохранить") }
+      },
+      dismissButton = {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          TextButton(onClick = {
+            pendingConfigPortPlan = null
+            applyConfigSavePlan(plan.copy(applyPortToProfile = false, replacementPort = null))
+          }) { Text(if (plan.conflictProfileName == null) "Не менять профиль" else "Сохранить только config") }
+          TextButton(onClick = { pendingConfigPortPlan = null }) { Text(stringResource(R.string.action_cancel)) }
+        }
       }
     )
   }
@@ -401,61 +598,66 @@ private fun SingBoxSection(
   var t2sWebPortTxt by remember(s0.t2sWebPort) { mutableStateOf((s0.t2sWebPort ?: 8001).toString()) }
   var activeTransparent by remember(s0.activeTransparentProfile) { mutableStateOf(s0.activeTransparentProfile) }
   var profiles by remember(s0.profiles) { mutableStateOf(s0.profiles) }
+  var lastSavedSettingJson by remember(s0) { mutableStateOf(buildSingSettingJson(s0).toString()) }
+  var showTransparentUnavailableDialog by remember { mutableStateOf(false) }
+  var autoSaveInFlight by remember { mutableStateOf(false) }
+  var pendingAutoSave by remember { mutableStateOf(false) }
+  var autoSaveRetryTick by remember { mutableStateOf(0) }
 
-  fun validateAndBuild(): SingSetting? {
+  fun validateAndBuild(showErrors: Boolean = true): SingSetting? {
     val t2sPort = t2sPortTxt.trim().toIntOrNull()
     val t2sWebPort = t2sWebPortTxt.trim().toIntOrNull()
 
     // Profile validation
     for (p in profiles) {
       if (!isValidProfileName(p.name)) {
-        showSnack("Invalid profile name: ${p.name}")
+        if (showErrors) showSnack(context.getString(R.string.singbox_invalid_profile_name_fmt, p.name))
         return null
       }
       if (!isValidPort(p.port)) {
-        showSnack("Invalid port for profile ${p.name}")
+        if (showErrors) showSnack(context.getString(R.string.singbox_invalid_port_for_profile_fmt, p.name))
         return null
       }
       val cap = p.capture ?: "tcp"
       if (cap != "tcp" && cap != "tcp_udp") {
-        showSnack("Invalid capture for profile ${p.name}")
+        if (showErrors) showSnack(context.getString(R.string.singbox_invalid_capture_for_profile_fmt, p.name))
         return null
       }
     }
     val ports = profiles.mapNotNull { it.port }
     if (ports.size != ports.distinct().size) {
-      showSnack("Profile ports must be unique")
+      if (showErrors) showSnack(context.getString(R.string.singbox_profile_ports_must_be_unique))
       return null
     }
 
     if (mode != "socks5" && mode != "transparent") {
-      showSnack("Select mode")
+      if (showErrors) showSnack(context.getString(R.string.singbox_select_mode))
       return null
     }
 
     if (mode == "socks5") {
       if (!isValidPort(t2sPort)) {
-        showSnack("Fill t2s_port")
+        if (showErrors) showSnack(context.getString(R.string.singbox_fill_t2s_port))
         return null
       }
       if (!isValidPort(t2sWebPort)) {
-        showSnack("Fill t2s_web_port")
+        if (showErrors) showSnack(context.getString(R.string.singbox_fill_t2s_web_port))
         return null
       }
       // Must have at least one enabled profile in socks5
       if (profiles.none { it.enabled }) {
-        showSnack("Enable at least one profile")
+        if (showErrors) showSnack(context.getString(R.string.singbox_enable_at_least_one_profile))
         return null
       }
     }
 
     if (mode == "transparent") {
       if (activeTransparent.isBlank()) {
-        showSnack("Select active_transparent_profile")
+        if (showErrors) showSnack(context.getString(R.string.singbox_select_active_transparent_profile))
         return null
       }
       if (profiles.none { it.name == activeTransparent }) {
-        showSnack("Active transparent profile not found")
+        if (showErrors) showSnack(context.getString(R.string.singbox_active_transparent_profile_not_found))
         return null
       }
     }
@@ -470,6 +672,50 @@ private fun SingBoxSection(
     )
   }
 
+  if (showTransparentUnavailableDialog) {
+    AlertDialog(
+      onDismissRequest = { showTransparentUnavailableDialog = false },
+      title = { Text(stringResource(R.string.singbox_mode_transparent)) },
+      text = { Text(stringResource(R.string.singbox_transparent_unavailable_message)) },
+      confirmButton = {
+        Button(onClick = { showTransparentUnavailableDialog = false }) {
+          Text(stringResource(R.string.common_ok))
+        }
+      },
+    )
+  }
+
+  LaunchedEffect(mode, t2sPortTxt, t2sWebPortTxt, activeTransparent, profiles, autoSaveRetryTick) {
+    delay(400)
+    val candidate = validateAndBuild(showErrors = false) ?: return@LaunchedEffect
+    val obj = buildSingSettingJson(candidate)
+    val json = obj.toString()
+    if (json == lastSavedSettingJson) return@LaunchedEffect
+    if (autoSaveInFlight) {
+      pendingAutoSave = true
+      return@LaunchedEffect
+    }
+    autoSaveInFlight = true
+    pendingAutoSave = false
+    actions.saveJsonData("/api/programs/sing-box/setting", obj) { ok ->
+      autoSaveInFlight = false
+      if (ok) {
+        setting = candidate
+        rawJson = obj
+        lastSavedSettingJson = json
+      } else {
+        showSnack(context.getString(R.string.singbox_auto_save_failed))
+      }
+      val latestCandidate = validateAndBuild(showErrors = false)
+      val latestJson = latestCandidate?.let { buildSingSettingJson(it).toString() }
+      if (pendingAutoSave || (latestJson != null && latestJson != lastSavedSettingJson)) {
+        pendingAutoSave = false
+        autoSaveRetryTick += 1
+      }
+    }
+  }
+
+
   Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
     EnabledCard(
       title = stringResource(R.string.enabled),
@@ -482,9 +728,10 @@ private fun SingBoxSection(
         actions.saveJsonData("/api/programs/sing-box/setting", obj) { ok ->
           if (!ok) {
             enabled = prev
-            showSnack("Save failed")
+            showSnack(context.getString(R.string.save_failed))
           } else {
             rawJson = obj
+            lastSavedSettingJson = obj.toString()
             // Refresh program list so the Programs screen reflects enabled state immediately.
             actions.refreshPrograms()
           }
@@ -494,40 +741,63 @@ private fun SingBoxSection(
 
     Card {
       Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Mode", fontWeight = FontWeight.SemiBold)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-          FilterChip(
+        Text(stringResource(R.string.singbox_mode_title), fontWeight = FontWeight.SemiBold)
+        if (narrow) {
+          Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            FilterChip(
             selected = mode == "socks5",
             onClick = { mode = "socks5" },
             colors = FilterChipDefaults.filterChipColors(
               selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
               selectedLabelColor = MaterialTheme.colorScheme.error,
             ),
-            label = { Text("socks5") },
+            label = { Text(stringResource(R.string.singbox_mode_socks5)) },
           )
           FilterChip(
             selected = mode == "transparent",
-            onClick = { mode = "transparent" },
+            onClick = { showTransparentUnavailableDialog = true },
             colors = FilterChipDefaults.filterChipColors(
               selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
               selectedLabelColor = MaterialTheme.colorScheme.error,
             ),
-            label = { Text("transparent") },
+            label = { Text(stringResource(R.string.singbox_mode_transparent)) },
           )
+          }
+        } else {
+          Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            FilterChip(
+              selected = mode == "socks5",
+              onClick = { mode = "socks5" },
+              colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
+                selectedLabelColor = MaterialTheme.colorScheme.error,
+              ),
+              label = { Text(stringResource(R.string.singbox_mode_socks5)) },
+            )
+            FilterChip(
+              selected = mode == "transparent",
+              onClick = { showTransparentUnavailableDialog = true },
+              colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
+                selectedLabelColor = MaterialTheme.colorScheme.error,
+              ),
+              label = { Text(stringResource(R.string.singbox_mode_transparent)) },
+            )
+          }
         }
 
         if (mode == "socks5") {
           OutlinedTextField(
             value = t2sPortTxt,
             onValueChange = { t2sPortTxt = it },
-            label = { Text("t2s_port") },
+            label = { Text(stringResource(R.string.singbox_t2s_port_label)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth(),
           )
           OutlinedTextField(
             value = t2sWebPortTxt,
             onValueChange = { t2sWebPortTxt = it },
-            label = { Text("t2s_web_port") },
+            label = { Text(stringResource(R.string.singbox_t2s_web_port_label)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth(),
           )
@@ -548,7 +818,7 @@ private fun SingBoxSection(
               onValueChange = {},
               readOnly = true,
               modifier = Modifier.menuAnchor().fillMaxWidth(),
-              label = { Text("active_transparent_profile") },
+              label = { Text(stringResource(R.string.singbox_active_transparent_profile_label)) },
             )
             ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
               names.forEach { n ->
@@ -578,75 +848,138 @@ private fun SingBoxSection(
     // Profiles
     Card {
       Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-          Text(stringResource(R.string.tab_profiles), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-          FilledTonalButton(onClick = { showCreate = true }) {
-            Icon(Icons.Filled.Add, contentDescription = null)
-            Spacer(Modifier.width(6.dp))
-            Text(stringResource(R.string.action_add))
+        val compactProfiles = rememberIsCompactWidth()
+        if (compactProfiles) {
+          Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(stringResource(R.string.tab_profiles), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            FilledTonalButton(onClick = { showCreate = true }, modifier = Modifier.fillMaxWidth()) {
+              Icon(Icons.Filled.Add, contentDescription = null)
+              Spacer(Modifier.width(6.dp))
+              Text(stringResource(R.string.action_add))
+            }
+          }
+        } else {
+          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.tab_profiles), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            FilledTonalButton(onClick = { showCreate = true }) {
+              Icon(Icons.Filled.Add, contentDescription = null)
+              Spacer(Modifier.width(6.dp))
+              Text(stringResource(R.string.action_add))
+            }
           }
         }
 
         profiles.forEach { p ->
           Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-              Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(p.name, fontWeight = FontWeight.SemiBold)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                  IconButton(onClick = {
-                    val prof = p.name
-                    editProfile = prof
-                    editLoading = true
-                    val profEnc = URLEncoder.encode(prof, "UTF-8")
-                    actions.loadText("/api/programs/sing-box/profiles/$profEnc/config") { txt ->
-                      editLoading = false
-                      editText = txt ?: ""
-                    }
-                  }) {
-                    Icon(Icons.Filled.Edit, contentDescription = null)
-                  }
-                  IconButton(onClick = {
-                    actions.deleteProfile("sing-box", p.name) { ok ->
-                      if (ok) {
-                        showSnack("Deleted")
-                        // Update local state immediately.
-                        profiles = profiles.filterNot { it.name == p.name }
-                        if (activeTransparent == p.name) activeTransparent = ""
-                        // Keep rawJson in sync to avoid resurrecting deleted profiles on the next save.
-                        rawJson = (rawJson ?: JSONObject()).also { obj ->
-                          val arr = obj.optJSONArray("profiles")
-                          if (arr != null) {
-                            val newArr = org.json.JSONArray()
-                            for (i in 0 until arr.length()) {
-                              val item = arr.optJSONObject(i) ?: continue
-                              if (item.optString("name") != p.name) newArr.put(item)
-                            }
-                            obj.put("profiles", newArr)
-                          }
-                          if (obj.optString("active_transparent_profile") == p.name) {
-                            obj.put("active_transparent_profile", "")
-                          }
-                        }
-                        // Reload from server (authoritative).
-                        loading = true
-                        actions.loadJsonData("/api/programs/sing-box/setting") { obj ->
-                          loading = false
-                          rawJson = obj
-                          setting = parseSingSetting(obj)
-                        }
-                      } else {
-                        showSnack("Delete failed")
+              val compactRow = rememberIsCompactWidth()
+              if (compactRow) {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                  Text(p.name, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = {
+                      val prof = p.name
+                      editProfile = prof
+                      editLoading = true
+                      val profEnc = URLEncoder.encode(prof, "UTF-8")
+                      actions.loadText("/api/programs/sing-box/profiles/$profEnc/config") { txt ->
+                        editLoading = false
+                        editText = txt ?: ""
                       }
+                    }) {
+                      Icon(Icons.Filled.Edit, contentDescription = null)
                     }
-                  }) {
-                    Icon(Icons.Filled.Delete, contentDescription = null)
+                    IconButton(onClick = {
+                      actions.deleteProfile("sing-box", p.name) { ok ->
+                        if (ok) {
+                          showSnack(context.getString(R.string.deleted))
+                          profiles = profiles.filterNot { it.name == p.name }
+                          if (activeTransparent == p.name) activeTransparent = ""
+                          rawJson = (rawJson ?: JSONObject()).also { obj ->
+                            val arr = obj.optJSONArray("profiles")
+                            if (arr != null) {
+                              val newArr = org.json.JSONArray()
+                              for (i in 0 until arr.length()) {
+                                val item = arr.optJSONObject(i) ?: continue
+                                if (item.optString("name") != p.name) newArr.put(item)
+                              }
+                              obj.put("profiles", newArr)
+                            }
+                            if (obj.optString("active_transparent_profile") == p.name) {
+                              obj.put("active_transparent_profile", "")
+                            }
+                          }
+                          loading = true
+                          actions.loadJsonData("/api/programs/sing-box/setting") { obj ->
+                            loading = false
+                            rawJson = obj
+                            setting = parseSingSetting(obj)
+                          }
+                        } else {
+                          showSnack(context.getString(R.string.delete_failed))
+                        }
+                      }
+                    }) {
+                      Icon(Icons.Filled.Delete, contentDescription = null)
+                    }
+                  }
+                }
+              } else {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                  Text(p.name, fontWeight = FontWeight.SemiBold, maxLines = 2)
+                  Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = {
+                      val prof = p.name
+                      editProfile = prof
+                      editLoading = true
+                      val profEnc = URLEncoder.encode(prof, "UTF-8")
+                      actions.loadText("/api/programs/sing-box/profiles/$profEnc/config") { txt ->
+                        editLoading = false
+                        editText = txt ?: ""
+                      }
+                    }) {
+                      Icon(Icons.Filled.Edit, contentDescription = null)
+                    }
+                    IconButton(onClick = {
+                      actions.deleteProfile("sing-box", p.name) { ok ->
+                        if (ok) {
+                          showSnack(context.getString(R.string.deleted))
+                          profiles = profiles.filterNot { it.name == p.name }
+                          if (activeTransparent == p.name) activeTransparent = ""
+                          rawJson = (rawJson ?: JSONObject()).also { obj ->
+                            val arr = obj.optJSONArray("profiles")
+                            if (arr != null) {
+                              val newArr = org.json.JSONArray()
+                              for (i in 0 until arr.length()) {
+                                val item = arr.optJSONObject(i) ?: continue
+                                if (item.optString("name") != p.name) newArr.put(item)
+                              }
+                              obj.put("profiles", newArr)
+                            }
+                            if (obj.optString("active_transparent_profile") == p.name) {
+                              obj.put("active_transparent_profile", "")
+                            }
+                          }
+                          loading = true
+                          actions.loadJsonData("/api/programs/sing-box/setting") { obj ->
+                            loading = false
+                            rawJson = obj
+                            setting = parseSingSetting(obj)
+                          }
+                        } else {
+                          showSnack(context.getString(R.string.delete_failed))
+                        }
+                      }
+                    }) {
+                      Icon(Icons.Filled.Delete, contentDescription = null)
+                    }
                   }
                 }
               }
 
               if (mode == "socks5") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                  Text("Enabled")
+                  Text(stringResource(R.string.enabled))
                   Switch(
                     checked = p.enabled,
                     onCheckedChange = { v ->
@@ -656,7 +989,7 @@ private fun SingBoxSection(
                 }
               } else {
                 Text(
-                  "Enabled switch is used only in socks5 mode",
+                  stringResource(R.string.singbox_enabled_only_in_socks5_mode),
                   color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                   style = MaterialTheme.typography.bodySmall,
                 )
@@ -668,25 +1001,55 @@ private fun SingBoxSection(
                   val v = txt.trim().toIntOrNull()
                   profiles = profiles.map { if (it.name == p.name) it.copy(port = v) else it }
                 },
-                label = { Text("port") },
+                label = { Text(stringResource(R.string.common_port)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
               )
 
               if (mode == "transparent" && activeTransparent == p.name) {
-                // capture selector for active profile
                 val cap = (p.capture ?: "tcp")
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                  FilterChip(
-                    selected = cap == "tcp",
-                    onClick = { profiles = profiles.map { if (it.name == p.name) it.copy(capture = "tcp") else it } },
-                    label = { Text("TCP") },
-                  )
-                  FilterChip(
-                    selected = cap == "tcp_udp",
-                    onClick = { profiles = profiles.map { if (it.name == p.name) it.copy(capture = "tcp_udp") else it } },
-                    label = { Text("TCP+UDP") },
-                  )
+                if (compactRow) {
+                  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                      selected = cap == "tcp",
+                      onClick = { profiles = profiles.map { if (it.name == p.name) it.copy(capture = "tcp") else it } },
+                      colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.error,
+                      ),
+                      label = { Text(stringResource(R.string.singbox_capture_tcp)) },
+                    )
+                    FilterChip(
+                      selected = cap == "tcp_udp",
+                      onClick = { profiles = profiles.map { if (it.name == p.name) it.copy(capture = "tcp_udp") else it } },
+                      colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.error,
+                      ),
+                      label = { Text(stringResource(R.string.singbox_capture_tcp_udp)) },
+                    )
+                  }
+                } else {
+                  Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FilterChip(
+                      selected = cap == "tcp",
+                      onClick = { profiles = profiles.map { if (it.name == p.name) it.copy(capture = "tcp") else it } },
+                      colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.error,
+                      ),
+                      label = { Text(stringResource(R.string.singbox_capture_tcp)) },
+                    )
+                    FilterChip(
+                      selected = cap == "tcp_udp",
+                      onClick = { profiles = profiles.map { if (it.name == p.name) it.copy(capture = "tcp_udp") else it } },
+                      colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.error,
+                      ),
+                      label = { Text(stringResource(R.string.singbox_capture_tcp_udp)) },
+                    )
+                  }
                 }
               }
             }
@@ -694,31 +1057,29 @@ private fun SingBoxSection(
         }
       }
     }
-
-    // Save button
-    Button(
-      onClick = {
-        val built = validateAndBuild() ?: return@Button
-        val obj = buildSingSettingJson(built)
-        actions.saveJsonData("/api/programs/sing-box/setting", obj) { ok ->
-          if (ok) showSnack("Saved") else showSnack("Save failed")
-        }
-      },
-      modifier = Modifier.fillMaxWidth(),
-    ) {
-      Text(stringResource(R.string.action_save))
-    }
   }
 }
 
 @Composable
 private fun ProfilesHeader(onAdd: () -> Unit) {
-  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-    Text(stringResource(R.string.tab_profiles), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-    FilledTonalButton(onClick = onAdd) {
-      Icon(Icons.Filled.Add, contentDescription = null)
-      Spacer(Modifier.width(6.dp))
-      Text(stringResource(R.string.action_add))
+  val compact = rememberIsCompactWidth()
+  if (compact) {
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Text(stringResource(R.string.tab_profiles), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+      FilledTonalButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) {
+        Icon(Icons.Filled.Add, contentDescription = null)
+        Spacer(Modifier.width(6.dp))
+        Text(stringResource(R.string.action_add))
+      }
+    }
+  } else {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+      Text(stringResource(R.string.tab_profiles), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+      FilledTonalButton(onClick = onAdd) {
+        Icon(Icons.Filled.Add, contentDescription = null)
+        Spacer(Modifier.width(6.dp))
+        Text(stringResource(R.string.action_add))
+      }
     }
   }
 }
@@ -762,24 +1123,48 @@ private fun ProfileRow(
     )
   }
 
+  val compact = rememberIsCompactWidth()
   Card(
     onClick = onOpen,
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
   ) {
-    Row(
-      Modifier.fillMaxWidth().padding(12.dp),
-      horizontalArrangement = Arrangement.SpaceBetween,
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
-      Column(Modifier.weight(1f)) {
-        Text(profile.name, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(2.dp))
-        Text(stringResource(R.string.apply_after_restart_short), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+    if (compact) {
+      Column(
+        Modifier.fillMaxWidth().padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        Column {
+          Text(profile.name, fontWeight = FontWeight.SemiBold, maxLines = 2)
+          Spacer(Modifier.height(2.dp))
+          Text(stringResource(R.string.apply_after_restart_short), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+          Switch(checked = profile.enabled, onCheckedChange = onToggle)
+          if (deletable) {
+            IconButton(onClick = { askDelete = true }) {
+              Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.cd_delete))
+            }
+          } else {
+            Spacer(Modifier.width(48.dp))
+          }
+        }
       }
-      Switch(checked = profile.enabled, onCheckedChange = onToggle)
-      if (deletable) {
-        IconButton(onClick = { askDelete = true }) {
-          Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.cd_delete))
+    } else {
+      Row(
+        Modifier.fillMaxWidth().padding(12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Column(Modifier.weight(1f)) {
+          Text(profile.name, fontWeight = FontWeight.SemiBold, maxLines = 2)
+          Spacer(Modifier.height(2.dp))
+          Text(stringResource(R.string.apply_after_restart_short), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+        }
+        Switch(checked = profile.enabled, onCheckedChange = onToggle)
+        if (deletable) {
+          IconButton(onClick = { askDelete = true }) {
+            Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.cd_delete))
+          }
         }
       }
     }
@@ -827,7 +1212,8 @@ private fun CreateProfileDialog(
             error = null
           },
           label = { Text(stringResource(R.string.profile_name_label)) },
-          singleLine = true,
+          singleLine = false,
+          maxLines = 2,
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
           supportingText = {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -891,17 +1277,27 @@ private fun normalizeProfileName(input: String): String {
 @Composable
 private fun OperaProxySection(actions: ZdtdActions, snackHost: SnackbarHostState) {
   var tab by remember { mutableStateOf(0) }
+  val useScrollableTabs = rememberUseScrollableTabs()
 
   val scope = rememberCoroutineScope()
   fun snack(msg: String) { scope.launch { snackHost.showSnackbar(msg) } }
 
   Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
     Text(stringResource(R.string.opera_proxy_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-    TabRow(selectedTabIndex = tab) {
-      Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(stringResource(R.string.tab_apps)) })
-      Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.tab_byedpi)) })
-      Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(stringResource(R.string.tab_sni)) })
-      Tab(selected = tab == 3, onClick = { tab = 3 }, text = { Text(stringResource(R.string.tab_servers)) })
+    if (useScrollableTabs) {
+      ScrollableTabRow(selectedTabIndex = tab, edgePadding = 12.dp) {
+        Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(stringResource(R.string.tab_apps), maxLines = 2) })
+        Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.tab_byedpi), maxLines = 2) })
+        Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(stringResource(R.string.tab_sni), maxLines = 2) })
+        Tab(selected = tab == 3, onClick = { tab = 3 }, text = { Text(stringResource(R.string.tab_servers), maxLines = 2) })
+      }
+    } else {
+      TabRow(selectedTabIndex = tab) {
+        Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(stringResource(R.string.tab_apps), maxLines = 2) })
+        Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.tab_byedpi), maxLines = 2) })
+        Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(stringResource(R.string.tab_sni), maxLines = 2) })
+        Tab(selected = tab == 3, onClick = { tab = 3 }, text = { Text(stringResource(R.string.tab_servers), maxLines = 2) })
+      }
     }
 
     when (tab) {
@@ -1007,9 +1403,9 @@ private fun OperaSniJsonSection(
       modifier = Modifier.padding(16.dp),
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-      Text("SNI", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+      Text(stringResource(R.string.tab_sni), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
       Text(
-        "JSON записи для opera-proxy. Для каждой записи можно включить/отключить использование byedpi.",
+        stringResource(R.string.operaproxy_sni_section_desc),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
       )
@@ -1019,7 +1415,7 @@ private fun OperaSniJsonSection(
       ) {
         Icon(Icons.Default.Add, contentDescription = null)
         Spacer(Modifier.width(8.dp))
-        Text("Создать новую запись SNI")
+        Text(stringResource(R.string.operaproxy_sni_create_new))
       }
 
       if (!loaded) {
@@ -1028,7 +1424,7 @@ private fun OperaSniJsonSection(
 
       if (loaded && items.isEmpty()) {
         Text(
-          "Список пуст (sni.json пуст). Добавьте запись.",
+          stringResource(R.string.operaproxy_sni_empty),
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
         )
@@ -1048,7 +1444,7 @@ private fun OperaSniJsonSection(
               horizontalArrangement = Arrangement.SpaceBetween,
               verticalAlignment = Alignment.CenterVertically,
             ) {
-              Text("Запись #${index + 1}", fontWeight = FontWeight.SemiBold)
+              Text(stringResource(R.string.operaproxy_sni_entry_title_fmt, index + 1), fontWeight = FontWeight.SemiBold)
               IconButton(onClick = { items = items.toMutableList().also { it.removeAt(index) } }) {
                 Icon(Icons.Default.Delete, contentDescription = null)
               }
@@ -1060,9 +1456,10 @@ private fun OperaSniJsonSection(
                 items = items.toMutableList().also { it[index] = item.copy(sni = v) }
               },
               modifier = Modifier.fillMaxWidth(),
-              singleLine = true,
+              singleLine = false,
+              maxLines = 2,
               label = { Text("SNI") },
-              placeholder = { Text("example.com") },
+              placeholder = { Text(stringResource(R.string.operaproxy_sni_placeholder)) },
             )
 
             Row(
@@ -1071,9 +1468,9 @@ private fun OperaSniJsonSection(
               verticalAlignment = Alignment.CenterVertically,
             ) {
               Column(modifier = Modifier.weight(1f)) {
-                Text("Использовать byedpi?", fontWeight = FontWeight.Medium)
+                Text(stringResource(R.string.operaproxy_sni_use_byedpi), fontWeight = FontWeight.Medium)
                 Text(
-                  "Добавлять upstream -proxy socks5://127.0.0.1:<BYEDPI_PORT>",
+                  stringResource(R.string.operaproxy_sni_use_byedpi_desc),
                   style = MaterialTheme.typography.bodySmall,
                   color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                 )
@@ -1097,7 +1494,7 @@ private fun OperaSniJsonSection(
           }
         },
         enabled = loaded,
-      ) { Text("Save") }
+      ) { Text(stringResource(R.string.common_save)) }
     }
   }
 }
@@ -1107,6 +1504,7 @@ private fun OperaServerSection(
   actions: ZdtdActions,
   snack: (String) -> Unit,
 ) {
+  val compact = rememberIsCompactWidth()
   val apiPath = "/api/programs/operaproxy/server"
   val savedMsg = stringResource(R.string.saved)
   val saveFailedMsg = stringResource(R.string.save_failed)
@@ -1141,39 +1539,73 @@ private fun OperaServerSection(
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
       )
 
-      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        RegionButton(label = stringResource(R.string.region_europe), code = "EU", selected = value == "EU") {
-          actions.saveText(apiPath, "EU\n") { ok ->
-            if (ok) {
-              value = "EU"
-              snack(savedMsg)
-            } else {
-              snack(saveFailedMsg)
+      if (compact) {
+        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          RegionButton(label = stringResource(R.string.region_europe), code = "EU", selected = value == "EU", modifier = Modifier.fillMaxWidth()) {
+            actions.saveText(apiPath, "EU\n") { ok ->
+              if (ok) {
+                value = "EU"
+                snack(savedMsg)
+              } else {
+                snack(saveFailedMsg)
+              }
+            }
+          }
+          RegionButton(label = stringResource(R.string.region_asia), code = "AS", selected = value == "AS", modifier = Modifier.fillMaxWidth()) {
+            actions.saveText(apiPath, "AS\n") { ok ->
+              if (ok) {
+                value = "AS"
+                snack(savedMsg)
+              } else {
+                snack(saveFailedMsg)
+              }
+            }
+          }
+          RegionButton(label = stringResource(R.string.region_america), code = "AM", selected = value == "AM", modifier = Modifier.fillMaxWidth()) {
+            actions.saveText(apiPath, "AM\n") { ok ->
+              if (ok) {
+                value = "AM"
+                snack(savedMsg)
+              } else {
+                snack(saveFailedMsg)
+              }
             }
           }
         }
-        RegionButton(label = stringResource(R.string.region_asia), code = "AS", selected = value == "AS") {
-          actions.saveText(apiPath, "AS\n") { ok ->
-            if (ok) {
-              value = "AS"
-              snack(savedMsg)
-            } else {
-              snack(saveFailedMsg)
+      } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          RegionButton(label = stringResource(R.string.region_europe), code = "EU", selected = value == "EU") {
+            actions.saveText(apiPath, "EU\n") { ok ->
+              if (ok) {
+                value = "EU"
+                snack(savedMsg)
+              } else {
+                snack(saveFailedMsg)
+              }
             }
           }
-        }
-        RegionButton(label = stringResource(R.string.region_america), code = "AM", selected = value == "AM") {
-          actions.saveText(apiPath, "AM\n") { ok ->
-            if (ok) {
-              value = "AM"
-              snack(savedMsg)
-            } else {
-              snack(saveFailedMsg)
+          RegionButton(label = stringResource(R.string.region_asia), code = "AS", selected = value == "AS") {
+            actions.saveText(apiPath, "AS\n") { ok ->
+              if (ok) {
+                value = "AS"
+                snack(savedMsg)
+              } else {
+                snack(saveFailedMsg)
+              }
+            }
+          }
+          RegionButton(label = stringResource(R.string.region_america), code = "AM", selected = value == "AM") {
+            actions.saveText(apiPath, "AM\n") { ok ->
+              if (ok) {
+                value = "AM"
+                snack(savedMsg)
+              } else {
+                snack(saveFailedMsg)
+              }
             }
           }
         }
       }
-
       if (!loaded) {
         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
       } else {
@@ -1192,11 +1624,12 @@ private fun RegionButton(
   label: String,
   code: String,
   selected: Boolean,
+  modifier: Modifier = Modifier,
   onClick: () -> Unit,
 ) {
   if (selected) {
-    Button(onClick = onClick) { Text(label) }
+    Button(onClick = onClick, modifier = modifier) { Text(label) }
   } else {
-    OutlinedButton(onClick = onClick) { Text(label) }
+    OutlinedButton(onClick = onClick, modifier = modifier) { Text(label) }
   }
 }

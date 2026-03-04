@@ -42,6 +42,7 @@ fun ProgramUpdatesDialog(
   onDismiss: () -> Unit,
   actions: ZdtdActions,
 ) {
+  val compact = rememberIsCompactWidth() || rememberIsShortHeight()
   var picking by remember { mutableStateOf<String?>(null) } // "zapret" | "zapret2"
 
   Dialog(
@@ -53,13 +54,13 @@ fun ProgramUpdatesDialog(
       tonalElevation = 8.dp,
       modifier = Modifier
         .fillMaxWidth()
-        .padding(16.dp)
+        .widthIn(max = 640.dp)
+        .padding(if (compact) 12.dp else 16.dp)
     ) {
-      Column(Modifier.padding(16.dp)) {
+      Column(Modifier.padding(if (compact) 12.dp else 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-          Text(stringResource(R.string.program_updates_title), style = MaterialTheme.typography.titleLarge)
-          Spacer(Modifier.weight(1f))
-          IconButton(onClick = actions::resetProgramUpdatesUi) {
+          Text(stringResource(R.string.program_updates_title), style = MaterialTheme.typography.titleLarge, maxLines = 2, modifier = Modifier.weight(1f))
+                    IconButton(onClick = actions::resetProgramUpdatesUi) {
             Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.program_updates_reset_cd))
           }
         }
@@ -84,6 +85,7 @@ fun ProgramUpdatesDialog(
               Button(
                 onClick = actions::stopServiceForProgramUpdatesAndCheck,
                 enabled = !state.stoppingService,
+                modifier = if (compact) Modifier.fillMaxWidth() else Modifier,
               ) {
                 Text(if (state.stoppingService) stringResource(R.string.program_updates_stopping) else stringResource(R.string.program_updates_stop_and_check))
               }
@@ -160,9 +162,8 @@ private fun ProgramUpdateCard(
   Card(colors = CardDefaults.cardColors(), modifier = Modifier.fillMaxWidth()) {
     Column(Modifier.padding(12.dp)) {
       Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(item.titleRes?.let { stringResource(it) } ?: item.title, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.weight(1f))
-        IconButton(onClick = onPickVersion, enabled = enabled) {
+        Text(item.titleRes?.let { stringResource(it) } ?: item.title, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 2)
+                IconButton(onClick = onPickVersion, enabled = enabled) {
           Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.program_updates_select_version_cd))
         }
         if (item.updateAvailable) {
@@ -218,15 +219,33 @@ private fun ProgramUpdateCard(
       }
 
       Spacer(Modifier.height(10.dp))
-      Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedButton(onClick = onCheck, enabled = enabled) {
-          Text(if (item.checking) stringResource(R.string.program_updates_checking) else stringResource(R.string.program_updates_check))
-        }
-        Button(
-          onClick = onUpdate,
-          enabled = enabled && item.updateAvailable,
+      if (rememberIsCompactWidth()) {
+        Column(
+          modifier = Modifier.fillMaxWidth(),
+          verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-          Text(if (item.updating) stringResource(R.string.program_updates_updating) else stringResource(R.string.program_updates_update))
+          OutlinedButton(onClick = onCheck, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+            Text(if (item.checking) stringResource(R.string.program_updates_checking) else stringResource(R.string.program_updates_check))
+          }
+          Button(
+            onClick = onUpdate,
+            enabled = enabled && item.updateAvailable,
+            modifier = Modifier.fillMaxWidth(),
+          ) {
+            Text(if (item.updating) stringResource(R.string.program_updates_updating) else stringResource(R.string.program_updates_update))
+          }
+        }
+      } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+          OutlinedButton(onClick = onCheck, enabled = enabled) {
+            Text(if (item.checking) stringResource(R.string.program_updates_checking) else stringResource(R.string.program_updates_check))
+          }
+          Button(
+            onClick = onUpdate,
+            enabled = enabled && item.updateAvailable,
+          ) {
+            Text(if (item.updating) stringResource(R.string.program_updates_updating) else stringResource(R.string.program_updates_update))
+          }
         }
       }
     }
@@ -244,6 +263,7 @@ private fun ReleasePickerDialog(
   onSelectRelease: (String, String) -> Unit,
   onDismiss: () -> Unit,
 ) {
+  val compact = rememberIsCompactWidth() || rememberIsShortHeight()
   var pending by remember { mutableStateOf<ProgramReleaseUi?>(null) }
   var showWarn by remember { mutableStateOf(false) }
 
@@ -277,13 +297,13 @@ private fun ReleasePickerDialog(
       tonalElevation = 8.dp,
       modifier = Modifier
         .fillMaxWidth()
-        .padding(16.dp)
+        .widthIn(max = 640.dp)
+        .padding(if (compact) 12.dp else 16.dp)
     ) {
-      Column(Modifier.padding(16.dp)) {
+      Column(Modifier.padding(if (compact) 12.dp else 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-          Text(title, style = MaterialTheme.typography.titleLarge)
-          Spacer(Modifier.weight(1f))
-          IconButton(onClick = onRefresh) { Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.program_updates_refresh_cd)) }
+          Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 2, modifier = Modifier.weight(1f))
+                    IconButton(onClick = onRefresh) { Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.program_updates_refresh_cd)) }
         }
 
         Spacer(Modifier.height(6.dp))
@@ -302,49 +322,87 @@ private fun ReleasePickerDialog(
         LazyColumn(
           modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = 420.dp),
+            .heightIn(max = if (compact) 320.dp else 420.dp),
           verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
           item {
             Card(colors = CardDefaults.cardColors(), modifier = Modifier.fillMaxWidth()) {
-              Row(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-              ) {
-                Column(Modifier.weight(1f)) {
-                  Text(stringResource(R.string.program_updates_latest_auto_title), fontWeight = FontWeight.SemiBold)
-                  Text(stringResource(R.string.program_updates_latest_auto_desc), style = MaterialTheme.typography.bodySmall)
+              if (compact) {
+                Column(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                  verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                  Column {
+                    Text(stringResource(R.string.program_updates_latest_auto_title), fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.program_updates_latest_auto_desc), style = MaterialTheme.typography.bodySmall)
+                  }
+                  Button(onClick = onSelectLatest, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.program_updates_select)) }
                 }
-                Button(onClick = onSelectLatest) { Text(stringResource(R.string.program_updates_select)) }
+              } else {
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.program_updates_latest_auto_title), fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.program_updates_latest_auto_desc), style = MaterialTheme.typography.bodySmall)
+                  }
+                  Button(onClick = onSelectLatest) { Text(stringResource(R.string.program_updates_select)) }
+                }
               }
             }
           }
 
           items(stateItem.releases) { r ->
             Card(colors = CardDefaults.cardColors(), modifier = Modifier.fillMaxWidth()) {
-              Row(
-                modifier = Modifier
-                  .fillMaxWidth()
-                  .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-              ) {
-                Column(Modifier.weight(1f)) {
-                  Text(r.version, fontWeight = FontWeight.SemiBold)
-                  val date = r.publishedAt.take(10)
-                  if (date.isNotBlank()) Text(date, style = MaterialTheme.typography.bodySmall)
-                }
-                val isSelected = stateItem.selectedVersion == r.version
-                val label = if (isSelected) stringResource(R.string.program_updates_selected) else stringResource(R.string.program_updates_select)
-                Button(onClick = {
-                  if (isBelowMin(r.version, minVersion)) {
-                    pending = r
-                    showWarn = true
-                  } else {
-                    onSelectRelease(r.version, r.downloadUrl)
+              val isSelected = stateItem.selectedVersion == r.version
+              val label = if (isSelected) stringResource(R.string.program_updates_selected) else stringResource(R.string.program_updates_select)
+              if (compact) {
+                Column(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                  verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                  Column {
+                    Text(r.version, fontWeight = FontWeight.SemiBold)
+                    val date = r.publishedAt.take(10)
+                    if (date.isNotBlank()) Text(date, style = MaterialTheme.typography.bodySmall)
                   }
-                }) { Text(label) }
+                  Button(onClick = {
+                    if (isBelowMin(r.version, minVersion)) {
+                      pending = r
+                      showWarn = true
+                    } else {
+                      onSelectRelease(r.version, r.downloadUrl)
+                    }
+                  }, modifier = Modifier.fillMaxWidth()) { Text(label) }
+                }
+              } else {
+                Row(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  Column(Modifier.weight(1f)) {
+                    Text(r.version, fontWeight = FontWeight.SemiBold)
+                    val date = r.publishedAt.take(10)
+                    if (date.isNotBlank()) Text(date, style = MaterialTheme.typography.bodySmall)
+                  }
+                  Button(onClick = {
+                    if (isBelowMin(r.version, minVersion)) {
+                      pending = r
+                      showWarn = true
+                    } else {
+                      onSelectRelease(r.version, r.downloadUrl)
+                    }
+                  }) { Text(label) }
+                }
               }
             }
           }

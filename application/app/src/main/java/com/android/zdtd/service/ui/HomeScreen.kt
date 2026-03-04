@@ -9,6 +9,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -57,16 +59,21 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
 
   val on = ApiModels.isServiceOn(status)
   val scale by animateFloatAsState(targetValue = if (busy) 0.98f else 1.0f, label = "busyScale")
+  val powerButtonSize = rememberAdaptivePowerButtonSize()
+  val isCompactWidth = rememberIsCompactWidth()
+  val isShortHeight = rememberIsShortHeight()
+  val contentSpacing = if (isShortHeight) 12.dp else 18.dp
 
   // NOTE: stage16 had a simple image-based power button without transition animations.
 
   Column(
     Modifier
       .fillMaxSize()
-      .padding(16.dp),
+      .verticalScroll(rememberScrollState())
+      .padding(horizontal = 16.dp, vertical = 12.dp),
     horizontalAlignment = Alignment.CenterHorizontally,
   ) {
-    Spacer(Modifier.height(12.dp))
+    Spacer(Modifier.height(if (isShortHeight) 4.dp else 12.dp))
 
     // Status pill
     AssistChip(
@@ -81,7 +88,7 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
       },
     )
 
-    Spacer(Modifier.height(18.dp))
+    Spacer(Modifier.height(contentSpacing))
 
     // Power button (image-based) — same as stage16
     val powerPainter = remember(on) {
@@ -91,7 +98,7 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
     Box(
       contentAlignment = Alignment.Center,
       modifier = Modifier
-        .size(226.dp)
+        .size(powerButtonSize)
         .scale(scale)
         .clip(CircleShape)
         .clickable(enabled = !busy) { actions.toggleService() },
@@ -106,12 +113,13 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
       )
     }
 
-    Spacer(Modifier.height(18.dp))
+    Spacer(Modifier.height(contentSpacing))
 
     Text(
       if (on) stringResource(R.string.home_power_running) else stringResource(R.string.home_power_stopped),
       style = MaterialTheme.typography.titleLarge,
       fontWeight = FontWeight.SemiBold,
+      textAlign = androidx.compose.ui.text.style.TextAlign.Center,
     )
     Spacer(Modifier.height(6.dp))
     Text(
@@ -119,9 +127,10 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
       else stringResource(R.string.home_service_stopped_hint),
       style = MaterialTheme.typography.bodyMedium,
       color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+      textAlign = androidx.compose.ui.text.style.TextAlign.Center,
     )
 
-    Spacer(Modifier.height(18.dp))
+    Spacer(Modifier.height(contentSpacing))
 
     // Daemon logs card (tail)
     val noLogDataText = stringResource(R.string.home_no_log_data)
@@ -160,7 +169,7 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
               style = MaterialTheme.typography.bodySmall,
               fontFamily = FontFamily.Monospace,
               color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-              maxLines = 1,
+              maxLines = if (isCompactWidth) 2 else 1,
               overflow = TextOverflow.Ellipsis,
             )
           } else {
@@ -178,7 +187,7 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
           LazyColumn(
             modifier = Modifier
               .fillMaxWidth()
-              .heightIn(min = 120.dp, max = 220.dp)
+              .heightIn(min = if (isShortHeight) 104.dp else 120.dp, max = if (isShortHeight) 168.dp else 220.dp)
               .padding(horizontal = 10.dp, vertical = 8.dp),
             state = listState,
             reverseLayout = true,
@@ -196,7 +205,7 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                maxLines = 1,
+                maxLines = if (isCompactWidth) 2 else 1,
                 overflow = TextOverflow.Ellipsis,
               )
             }

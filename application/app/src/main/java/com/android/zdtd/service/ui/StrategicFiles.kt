@@ -98,7 +98,7 @@ private fun StrategicTextDirSection(
   val msgDeleteFailed = stringResource(R.string.common_delete_failed)
   val msgSaved = stringResource(R.string.common_saved)
   val msgSaveFailed = stringResource(R.string.editor_save_failed)
-
+  val compactWidth = rememberIsCompactWidth()
 
   var files by remember { mutableStateOf<List<String>>(emptyList()) }
   var sizes by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
@@ -172,17 +172,38 @@ private fun StrategicTextDirSection(
 
   Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f))) {
     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.weight(1f))
-        IconButton(onClick = { refresh() }) { Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.common_refresh_cd)) }
-        if (allowUpload) {
-          IconButton(onClick = { uploadLauncher.launch(arrayOf("*/*")) }) {
-            Icon(Icons.Default.CloudUpload, contentDescription = stringResource(R.string.common_upload_cd))
+      if (compactWidth) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text(title, style = MaterialTheme.typography.titleMedium)
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            IconButton(onClick = { refresh() }) { Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.common_refresh_cd)) }
+            if (allowUpload) {
+              IconButton(onClick = { uploadLauncher.launch(arrayOf("*/*")) }) {
+                Icon(Icons.Default.CloudUpload, contentDescription = stringResource(R.string.common_upload_cd))
+              }
+            }
+            if (allowCreate) {
+              IconButton(onClick = { showCreate = true }) { Icon(Icons.Default.Add, contentDescription = stringResource(R.string.common_new_cd)) }
+            }
           }
         }
-        if (allowCreate) {
-          IconButton(onClick = { showCreate = true }) { Icon(Icons.Default.Add, contentDescription = stringResource(R.string.common_new_cd)) }
+      } else {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Text(title, style = MaterialTheme.typography.titleMedium)
+          Spacer(Modifier.weight(1f))
+          IconButton(onClick = { refresh() }) { Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.common_refresh_cd)) }
+          if (allowUpload) {
+            IconButton(onClick = { uploadLauncher.launch(arrayOf("*/*")) }) {
+              Icon(Icons.Default.CloudUpload, contentDescription = stringResource(R.string.common_upload_cd))
+            }
+          }
+          if (allowCreate) {
+            IconButton(onClick = { showCreate = true }) { Icon(Icons.Default.Add, contentDescription = stringResource(R.string.common_new_cd)) }
+          }
         }
       }
 
@@ -229,38 +250,72 @@ private fun StrategicTextDirSection(
                 .padding(vertical = 6.dp),
               verticalAlignment = Alignment.CenterVertically,
             ) {
-              Text(
-                f,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-              )
-
-              val sz = sizes[f]
-              if (sz != null && sz >= 0) {
-                Text(
-                  "${sz}B",
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                  modifier = Modifier.padding(start = 8.dp)
-                )
-              }
-
-              if (allowDelete) {
-                IconButton(
-                  onClick = {
-                    actions.deleteStrategicFile(dir, f) { ok ->
-                      showSnack(if (ok) msgDeleted else msgDeleteFailed)
-                      if (ok) {
-                        if (expanded == f) {
-                          expanded = null
-                          text = ""
+              if (compactWidth) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                  Text(
+                    f,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                  )
+                  val sz = sizes[f]
+                  if (sz != null && sz >= 0) {
+                    Text(
+                      "${sz}B",
+                      style = MaterialTheme.typography.bodySmall,
+                      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                    )
+                  }
+                }
+                if (allowDelete) {
+                  IconButton(
+                    onClick = {
+                      actions.deleteStrategicFile(dir, f) { ok ->
+                        showSnack(if (ok) msgDeleted else msgDeleteFailed)
+                        if (ok) {
+                          if (expanded == f) {
+                            expanded = null
+                            text = ""
+                          }
+                          refresh()
                         }
-                        refresh()
                       }
                     }
-                  }
-                ) { Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.common_delete_cd)) }
+                  ) { Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.common_delete_cd)) }
+                }
+              } else {
+                Text(
+                  f,
+                  maxLines = 2,
+                  overflow = TextOverflow.Ellipsis,
+                  modifier = Modifier.weight(1f),
+                )
+
+                val sz = sizes[f]
+                if (sz != null && sz >= 0) {
+                  Text(
+                    "${sz}B",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                    modifier = Modifier.padding(start = 8.dp)
+                  )
+                }
+
+                if (allowDelete) {
+                  IconButton(
+                    onClick = {
+                      actions.deleteStrategicFile(dir, f) { ok ->
+                        showSnack(if (ok) msgDeleted else msgDeleteFailed)
+                        if (ok) {
+                          if (expanded == f) {
+                            expanded = null
+                            text = ""
+                          }
+                          refresh()
+                        }
+                      }
+                    }
+                  ) { Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.common_delete_cd)) }
+                }
               }
             }
 
@@ -313,8 +368,11 @@ private fun StrategicTextDirSection(
 
                   Spacer(Modifier.height(8.dp))
 
-                  Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (allowEdit) {
+                  if (allowEdit) {
+                    Row(
+                      modifier = Modifier.fillMaxWidth(),
+                      horizontalArrangement = if (compactWidth) Arrangement.Center else Arrangement.Start,
+                    ) {
                       Button(
                         onClick = {
                           saving = true
@@ -323,7 +381,8 @@ private fun StrategicTextDirSection(
                             showSnack(if (ok) msgSaved else msgSaveFailed)
                           }
                         },
-                        enabled = !saving
+                        enabled = !saving,
+                        modifier = if (compactWidth) Modifier.fillMaxWidth() else Modifier,
                       ) { Text(stringResource(R.string.common_save)) }
                     }
                   }
@@ -358,7 +417,7 @@ private fun StrategicBinDirSection(
   val msgDeleteFailed = stringResource(R.string.common_delete_failed)
   val msgSaved = stringResource(R.string.common_saved)
   val msgSaveFailed = stringResource(R.string.editor_save_failed)
-
+  val compactWidth = rememberIsCompactWidth()
 
   var files by remember { mutableStateOf<List<String>>(emptyList()) }
   var listLoading by remember { mutableStateOf(true) }
@@ -396,11 +455,25 @@ private fun StrategicBinDirSection(
 
   Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f))) {
     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.weight(1f))
-        IconButton(onClick = { refresh() }) { Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.common_refresh_cd)) }
-        IconButton(onClick = { uploadLauncher.launch(arrayOf("*/*")) }) { Icon(Icons.Default.CloudUpload, contentDescription = stringResource(R.string.common_upload_cd)) }
+      if (compactWidth) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text(title, style = MaterialTheme.typography.titleMedium)
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            IconButton(onClick = { refresh() }) { Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.common_refresh_cd)) }
+            IconButton(onClick = { uploadLauncher.launch(arrayOf("*/*")) }) { Icon(Icons.Default.CloudUpload, contentDescription = stringResource(R.string.common_upload_cd)) }
+          }
+        }
+      } else {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Text(title, style = MaterialTheme.typography.titleMedium)
+          Spacer(Modifier.weight(1f))
+          IconButton(onClick = { refresh() }) { Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.common_refresh_cd)) }
+          IconButton(onClick = { uploadLauncher.launch(arrayOf("*/*")) }) { Icon(Icons.Default.CloudUpload, contentDescription = stringResource(R.string.common_upload_cd)) }
+        }
       }
 
       if (listLoading) {
@@ -413,7 +486,7 @@ private fun StrategicBinDirSection(
             modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
           ) {
-            Text(f, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Text(f, maxLines = if (compactWidth) 2 else 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             IconButton(
               onClick = {
                 actions.deleteStrategicFile(dir, f) { ok ->
@@ -448,7 +521,8 @@ private fun CreateFileDialog(
           modifier = Modifier.fillMaxWidth(),
           label = { Text(stringResource(R.string.common_file_name)) },
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-          singleLine = true,
+          singleLine = false,
+          maxLines = 2,
         )
         Text(
           stringResource(R.string.common_safe_file_name_hint),

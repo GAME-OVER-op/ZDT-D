@@ -1,9 +1,28 @@
 package com.android.zdtd.service.ui
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -22,7 +41,8 @@ fun TextEditorCard(
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
-  // Snackbar messages must be resolved in a composable context.
+  val compactWidth = rememberIsCompactWidth()
+  val shortHeight = rememberIsShortHeight()
   val msgSavedApplyRestart = stringResource(R.string.editor_saved_apply_restart)
   val msgSaveFailed = stringResource(R.string.editor_save_failed)
 
@@ -41,28 +61,38 @@ fun TextEditorCard(
     }
   }
 
+  fun save() {
+    saving = true
+    actions.saveText(path, text) { ok ->
+      saving = false
+      if (ok) lastLoaded = text
+      scope.launch { snackHost.showSnackbar(if (ok) msgSavedApplyRestart else msgSaveFailed) }
+    }
+  }
+
   Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f))) {
     Column(Modifier.padding(12.dp)) {
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Column(Modifier.weight(1f)) {
-          Text(title, style = MaterialTheme.typography.titleSmall)
-          Spacer(Modifier.height(2.dp))
-          Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+      if (compactWidth) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Column(Modifier.fillMaxWidth()) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(2.dp))
+            Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+          }
+          Button(onClick = { save() }, enabled = !loading && !saving && text != lastLoaded, modifier = Modifier.fillMaxWidth()) {
+            Text(if (saving) stringResource(R.string.common_ellipsis) else stringResource(R.string.common_save))
+          }
         }
-        Button(
-          onClick = {
-            saving = true
-            actions.saveText(path, text) { ok ->
-              saving = false
-              if (ok) lastLoaded = text
-              scope.launch {
-                snackHost.showSnackbar(if (ok) msgSavedApplyRestart else msgSaveFailed)
-              }
-            }
-          },
-          enabled = !loading && !saving && text != lastLoaded,
-        ) {
-          Text(if (saving) stringResource(R.string.common_ellipsis) else stringResource(R.string.common_save))
+      } else {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+          Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(2.dp))
+            Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+          }
+          Button(onClick = { save() }, enabled = !loading && !saving && text != lastLoaded) {
+            Text(if (saving) stringResource(R.string.common_ellipsis) else stringResource(R.string.common_save))
+          }
         }
       }
 
@@ -71,7 +101,7 @@ fun TextEditorCard(
       OutlinedTextField(
         value = text,
         onValueChange = { text = it },
-        modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = if (shortHeight) 120.dp else 140.dp),
         enabled = !loading && !saving,
         label = { Text(if (loading) stringResource(R.string.common_loading) else "") },
         maxLines = 24,
@@ -88,7 +118,8 @@ fun JsonEditorCard(
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
-  // Snackbar messages must be resolved in a composable context.
+  val compactWidth = rememberIsCompactWidth()
+  val shortHeight = rememberIsShortHeight()
   val msgSavedApplyRestart = stringResource(R.string.editor_saved_apply_restart)
   val msgSaveFailed = stringResource(R.string.editor_save_failed)
   val msgInvalidJson = stringResource(R.string.editor_invalid_json)
@@ -109,33 +140,43 @@ fun JsonEditorCard(
     }
   }
 
+  fun save() {
+    val parsed = runCatching { JSONObject(text) }.getOrNull()
+    if (parsed == null) {
+      scope.launch { snackHost.showSnackbar(msgInvalidJson) }
+      return
+    }
+    saving = true
+    actions.saveJsonData(path, parsed) { ok ->
+      saving = false
+      if (ok) lastLoaded = parsed.toString(2)
+      scope.launch { snackHost.showSnackbar(if (ok) msgSavedApplyRestart else msgSaveFailed) }
+    }
+  }
+
   Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f))) {
     Column(Modifier.padding(12.dp)) {
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Column(Modifier.weight(1f)) {
-          Text(title, style = MaterialTheme.typography.titleSmall)
-          Spacer(Modifier.height(2.dp))
-          Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+      if (compactWidth) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Column(Modifier.fillMaxWidth()) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(2.dp))
+            Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+          }
+          Button(onClick = { save() }, enabled = !loading && !saving && text != lastLoaded, modifier = Modifier.fillMaxWidth()) {
+            Text(if (saving) stringResource(R.string.common_ellipsis) else stringResource(R.string.common_save))
+          }
         }
-        Button(
-          onClick = {
-            val parsed = runCatching { JSONObject(text) }.getOrNull()
-            if (parsed == null) {
-              scope.launch { snackHost.showSnackbar(msgInvalidJson) }
-              return@Button
-            }
-            saving = true
-            actions.saveJsonData(path, parsed) { ok ->
-              saving = false
-              if (ok) lastLoaded = JSONObject(text).toString(2)
-              scope.launch {
-                snackHost.showSnackbar(if (ok) msgSavedApplyRestart else msgSaveFailed)
-              }
-            }
-          },
-          enabled = !loading && !saving && text != lastLoaded,
-        ) {
-          Text(if (saving) stringResource(R.string.common_ellipsis) else stringResource(R.string.common_save))
+      } else {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+          Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(2.dp))
+            Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+          }
+          Button(onClick = { save() }, enabled = !loading && !saving && text != lastLoaded) {
+            Text(if (saving) stringResource(R.string.common_ellipsis) else stringResource(R.string.common_save))
+          }
         }
       }
 
@@ -144,7 +185,7 @@ fun JsonEditorCard(
       OutlinedTextField(
         value = text,
         onValueChange = { text = it },
-        modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = if (shortHeight) 128.dp else 160.dp),
         enabled = !loading && !saving,
         label = { Text(if (loading) stringResource(R.string.common_loading) else "") },
         maxLines = 28,

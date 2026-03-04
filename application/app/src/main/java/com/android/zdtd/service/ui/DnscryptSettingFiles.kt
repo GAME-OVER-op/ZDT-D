@@ -23,6 +23,9 @@ fun DnscryptSettingFilesSection(
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
+  val compactWidth = rememberIsCompactWidth()
+  val shortHeight = rememberIsShortHeight()
+
   var files by remember { mutableStateOf<List<String>>(emptyList()) }
   var sizes by remember { mutableStateOf<Map<String, Long>>(emptyMap()) }
   var editable by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
@@ -62,21 +65,42 @@ fun DnscryptSettingFilesSection(
 
   Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f))) {
     Column(Modifier.padding(12.dp)) {
-      Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-          Text(stringResource(R.string.dnscrypt_setting_files_title), style = MaterialTheme.typography.titleSmall)
-          Spacer(Modifier.height(2.dp))
-          Text(
-            stringResource(R.string.dnscrypt_setting_files_desc),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-          )
+      if (compactWidth) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Column(Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.dnscrypt_setting_files_title), style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(2.dp))
+            Text(
+              stringResource(R.string.dnscrypt_setting_files_desc),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+            )
+          }
+          TextButton(
+            onClick = { loadList() },
+            enabled = !listLoading && !fileLoading && !fileSaving,
+            modifier = Modifier.fillMaxWidth(),
+          ) {
+            Text(stringResource(R.string.dnscrypt_setting_files_refresh))
+          }
         }
-        TextButton(
-          onClick = { loadList() },
-          enabled = !listLoading && !fileLoading && !fileSaving,
-        ) {
-          Text(stringResource(R.string.dnscrypt_setting_files_refresh))
+      } else {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+          Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.dnscrypt_setting_files_title), style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(2.dp))
+            Text(
+              stringResource(R.string.dnscrypt_setting_files_desc),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+            )
+          }
+          TextButton(
+            onClick = { loadList() },
+            enabled = !listLoading && !fileLoading && !fileSaving,
+          ) {
+            Text(stringResource(R.string.dnscrypt_setting_files_refresh))
+          }
         }
       }
 
@@ -159,7 +183,7 @@ fun DnscryptSettingFilesSection(
                 name,
                 fontFamily = FontFamily.Monospace,
                 style = MaterialTheme.typography.bodyMedium,
-                maxLines = 1,
+                maxLines = if (compactWidth) 2 else 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
               )
@@ -215,7 +239,7 @@ fun DnscryptSettingFilesSection(
                   OutlinedTextField(
                     value = fileText,
                     onValueChange = { fileText = it },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = if (shortHeight) 120.dp else 140.dp),
                     enabled = !fileLoading && !fileSaving,
                     maxLines = 24,
                   )
@@ -223,7 +247,10 @@ fun DnscryptSettingFilesSection(
 
                 Spacer(Modifier.height(10.dp))
 
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                Row(
+                  Modifier.fillMaxWidth(),
+                  horizontalArrangement = if (compactWidth) Arrangement.Center else Arrangement.End,
+                ) {
                   Button(
                     onClick = {
                       fileSaving = true
@@ -238,6 +265,7 @@ fun DnscryptSettingFilesSection(
                       }
                     },
                     enabled = fileLoadedOk && !fileTooLarge && !fileLoading && !fileSaving && fileText != lastLoaded,
+                    modifier = if (compactWidth) Modifier.fillMaxWidth() else Modifier,
                   ) {
                     Text(if (fileSaving) stringResource(R.string.dnscrypt_setting_files_saving) else stringResource(R.string.dnscrypt_setting_files_save))
                   }

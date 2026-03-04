@@ -14,12 +14,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.RootState
 import com.android.zdtd.service.SetupUiState
-import com.android.zdtd.service.MigrationDialog
 
 private fun isArm64OnlySupported(): Boolean {
   // Module binaries are built for arm64-v8a only.
@@ -32,7 +33,16 @@ private fun SetupScaffold(content: @Composable (PaddingValues) -> Unit) {
   Scaffold(
     topBar = {
       CenterAlignedTopAppBar(
-        title = { Text(stringResource(R.string.app_name), letterSpacing = 2.sp, fontWeight = FontWeight.SemiBold) },
+        title = {
+          Text(
+            stringResource(R.string.app_name),
+            letterSpacing = 2.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+          )
+        },
       )
     },
     content = content,
@@ -42,6 +52,7 @@ private fun SetupScaffold(content: @Composable (PaddingValues) -> Unit) {
 @Composable
 fun WelcomeScreen(onAccept: () -> Unit) {
   val arm64Ok = remember { isArm64OnlySupported() }
+  val screenPadding = rememberAdaptiveScreenPadding()
   SetupScaffold { padding ->
     Box(
       Modifier
@@ -51,7 +62,7 @@ fun WelcomeScreen(onAccept: () -> Unit) {
     ) {
       Column(
         modifier = Modifier
-          .padding(24.dp)
+          .padding(screenPadding)
           .fillMaxWidth()
           .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.Start,
@@ -66,6 +77,7 @@ fun WelcomeScreen(onAccept: () -> Unit) {
           text = stringResource(R.string.setup_welcome_body),
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+          textAlign = TextAlign.Start,
         )
         Spacer(Modifier.height(16.dp))
 
@@ -75,6 +87,7 @@ fun WelcomeScreen(onAccept: () -> Unit) {
           text = stringResource(R.string.setup_features_body),
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+          textAlign = TextAlign.Start,
         )
 
         Spacer(Modifier.height(16.dp))
@@ -110,6 +123,7 @@ fun WelcomeScreen(onAccept: () -> Unit) {
 @Composable
 fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit) {
   val arm64Ok = remember { isArm64OnlySupported() }
+  val screenPadding = rememberAdaptiveScreenPadding()
   SetupScaffold { padding ->
     Box(
       Modifier
@@ -119,7 +133,7 @@ fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit) {
     ) {
       Column(
         modifier = Modifier
-          .padding(24.dp)
+          .padding(screenPadding)
           .fillMaxWidth()
           .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -194,11 +208,8 @@ fun RebootRequiredScreen(
   setup: SetupUiState,
   text: String,
   onReboot: () -> Unit,
-  onRequestMigration: () -> Unit,
-  onDismissMigrationDialog: () -> Unit,
-  onConfirmMigrationDialog: () -> Unit,
-  onCloseMigrationProgress: () -> Unit,
 ) {
+  val screenPadding = rememberAdaptiveScreenPadding()
   SetupScaffold { padding ->
     Box(
       Modifier
@@ -208,7 +219,7 @@ fun RebootRequiredScreen(
     ) {
       Column(
         modifier = Modifier
-          .padding(24.dp)
+          .padding(screenPadding)
           .fillMaxWidth()
           .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -231,23 +242,12 @@ fun RebootRequiredScreen(
           } else text,
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+          textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(18.dp))
 
-        if (setup.migrationAvailable && !setup.moduleReinstallRequired && !setup.tamperReinstallPendingReboot) {
-          SettingsMigrationSection(setup = setup, onRequest = onRequestMigration)
-          Spacer(Modifier.height(14.dp))
-        }
 
-        val rebootEnabled = setup.migrationDialog != MigrationDialog.PROGRESS || setup.migrationFinished
-        Button(onClick = onReboot, enabled = rebootEnabled, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.common_reboot)) }
-
-        SettingsMigrationDialogs(
-          setup = setup,
-          onDismiss = onDismissMigrationDialog,
-          onConfirm = onConfirmMigrationDialog,
-          onCloseProgress = onCloseMigrationProgress,
-        )
+        Button(onClick = onReboot, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.common_reboot)) }
       }
     }
   }
@@ -262,12 +262,10 @@ fun InstallModuleScreen(
   onManualDismiss: () -> Unit,
   onContinue: () -> Unit,
   onReboot: () -> Unit,
-  onRequestMigration: () -> Unit,
-  onDismissMigrationDialog: () -> Unit,
-  onConfirmMigrationDialog: () -> Unit,
-  onCloseMigrationProgress: () -> Unit,
 ) {
   val arm64Ok = remember { isArm64OnlySupported() }
+  val compact = rememberIsCompactWidth()
+  val screenPadding = rememberAdaptiveScreenPadding()
   if (arm64Ok && setup.showManualDialog) {
     val extra = if (setup.oldVersionDetected) {
       "\n\n" + stringResource(R.string.setup_manual_old_version_extra)
@@ -296,7 +294,7 @@ fun InstallModuleScreen(
     ) {
       Column(
         modifier = Modifier
-          .padding(24.dp)
+          .padding(screenPadding)
           .fillMaxWidth()
           .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -317,6 +315,7 @@ fun InstallModuleScreen(
           text = stringResource(R.string.setup_install_body),
           style = MaterialTheme.typography.bodyMedium,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+          textAlign = TextAlign.Center,
         )
 
         if (setup.installerLabel.isNotBlank()) {
@@ -325,22 +324,38 @@ fun InstallModuleScreen(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
           ) {
-            Row(
-              modifier = Modifier.padding(12.dp),
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Text(
-                text = stringResource(R.string.setup_install_method),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-              )
-              Spacer(Modifier.width(8.dp))
-              Text(
-                text = setup.installerLabel,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
+            if (compact) {
+              Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                  text = stringResource(R.string.setup_install_method),
+                  style = MaterialTheme.typography.bodyMedium,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                )
+                Text(
+                  text = setup.installerLabel,
+                  style = MaterialTheme.typography.bodyMedium,
+                  fontWeight = FontWeight.SemiBold,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
+            } else {
+              Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                Text(
+                  text = stringResource(R.string.setup_install_method),
+                  style = MaterialTheme.typography.bodyMedium,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(
+                  text = setup.installerLabel,
+                  style = MaterialTheme.typography.bodyMedium,
+                  fontWeight = FontWeight.SemiBold,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
             }
           }
         }
@@ -401,20 +416,7 @@ fun InstallModuleScreen(
               )
               Spacer(Modifier.height(12.dp))
 
-              if (setup.migrationAvailable && !setup.moduleReinstallRequired && !setup.tamperReinstallPendingReboot) {
-                SettingsMigrationSection(setup = setup, onRequest = onRequestMigration)
-                Spacer(Modifier.height(12.dp))
-              }
-
-              val rebootEnabled = setup.migrationDialog != MigrationDialog.PROGRESS || setup.migrationFinished
-              Button(onClick = onReboot, enabled = rebootEnabled, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.common_reboot)) }
-
-              SettingsMigrationDialogs(
-                setup = setup,
-                onDismiss = onDismissMigrationDialog,
-                onConfirm = onConfirmMigrationDialog,
-                onCloseProgress = onCloseMigrationProgress,
-              )
+              Button(onClick = onReboot, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.common_reboot)) }
             }
           }
         }
@@ -470,132 +472,3 @@ fun InstallModuleScreen(
 }
 
 
-@Composable
-private fun SettingsMigrationSection(setup: SetupUiState, onRequest: () -> Unit) {
-  Card(
-    modifier = Modifier.fillMaxWidth(),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-  ) {
-    Column(Modifier.padding(14.dp)) {
-      Text(stringResource(R.string.setup_migration_title), fontWeight = FontWeight.SemiBold)
-      Spacer(Modifier.height(6.dp))
-      Text(
-        text = stringResource(R.string.setup_migration_body),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-      )
-
-      if (setup.migrationHintText.isNotBlank() && !setup.migrationDone) {
-        Spacer(Modifier.height(8.dp))
-        Text(
-          text = setup.migrationHintText,
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-        )
-      }
-
-      Spacer(Modifier.height(12.dp))
-      val btnText = if (setup.migrationDone) stringResource(R.string.setup_migration_done) else stringResource(R.string.setup_migration_action)
-      Button(
-        onClick = onRequest,
-        enabled = setup.migrationButtonEnabled && !setup.migrationDone,
-        modifier = Modifier.fillMaxWidth(),
-      ) { Text(btnText) }
-    }
-  }
-}
-
-@Composable
-private fun SettingsMigrationDialogs(
-  setup: SetupUiState,
-  onDismiss: () -> Unit,
-  onConfirm: () -> Unit,
-  onCloseProgress: () -> Unit,
-) {
-  when (setup.migrationDialog) {
-    MigrationDialog.NONE -> Unit
-
-    MigrationDialog.MAGISK_CONFIRM -> {
-      AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.common_confirm_action)) },
-        text = {
-          Text(
-            stringResource(R.string.setup_migration_confirm_body)
-          )
-        },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.common_yes)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_no)) } },
-        properties = androidx.compose.ui.window.DialogProperties(
-          dismissOnBackPress = true,
-          dismissOnClickOutside = true,
-        )
-      )
-    }
-
-    MigrationDialog.NONMAGISK_WARN -> {
-      AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.common_attention)) },
-        text = {
-          Text(
-            stringResource(R.string.setup_migration_nonmagisk_warn)
-          )
-        },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.common_confirm)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_no)) } },
-        properties = androidx.compose.ui.window.DialogProperties(
-          dismissOnBackPress = true,
-          dismissOnClickOutside = true,
-        )
-      )
-    }
-
-    MigrationDialog.NONMAGISK_CONFIRM -> {
-      AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.setup_migration_last_confirm_title)) },
-        text = { Text(stringResource(R.string.setup_migration_last_confirm_body)) },
-        confirmButton = { TextButton(onClick = onConfirm) { Text(stringResource(R.string.common_yes)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_no)) } },
-        properties = androidx.compose.ui.window.DialogProperties(
-          dismissOnBackPress = true,
-          dismissOnClickOutside = true,
-        )
-      )
-    }
-
-    MigrationDialog.PROGRESS -> {
-      val finished = setup.migrationFinished
-      val err = setup.migrationError
-      AlertDialog(
-        onDismissRequest = { if (finished) onCloseProgress() },
-        title = { Text(if (err != null) stringResource(R.string.common_error) else stringResource(R.string.setup_migration_progress_title)) },
-        text = {
-          Column {
-            if (err != null) {
-              Text(err)
-            } else {
-              val pct = setup.migrationPercent.coerceIn(0, 100)
-              Text(setup.migrationProgressText.ifBlank { stringResource(R.string.common_in_progress) })
-              Spacer(Modifier.height(10.dp))
-              LinearProgressIndicator(progress = pct / 100f, modifier = Modifier.fillMaxWidth())
-              Spacer(Modifier.height(6.dp))
-              Text("$pct%", style = MaterialTheme.typography.bodySmall)
-            }
-          }
-        },
-        confirmButton = {
-          if (finished) {
-            TextButton(onClick = onCloseProgress) { Text(stringResource(R.string.common_finish)) }
-          }
-        },
-        dismissButton = {},
-        properties = androidx.compose.ui.window.DialogProperties(
-          dismissOnBackPress = finished,
-          dismissOnClickOutside = finished,
-        )
-      )
-    }
-  }
-}

@@ -46,6 +46,7 @@ fun AppUpdateBanner(
   onDismiss: () -> Unit,
   onUpdate: () -> Unit,
 ) {
+  val compactWidth = rememberIsCompactWidth()
   AnimatedVisibility(
     visible = state.bannerVisible,
     enter = slideInVertically(
@@ -62,7 +63,7 @@ fun AppUpdateBanner(
     ) {
       Column(Modifier.fillMaxWidth().padding(12.dp)) {
         Row(
-          verticalAlignment = Alignment.CenterVertically,
+          verticalAlignment = Alignment.Top,
           horizontalArrangement = Arrangement.SpaceBetween,
           modifier = Modifier.fillMaxWidth(),
         ) {
@@ -83,6 +84,7 @@ fun AppUpdateBanner(
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                maxLines = if (compactWidth) 2 else 1,
               )
             }
           }
@@ -117,9 +119,16 @@ fun AppUpdateBanner(
             modifier = Modifier.fillMaxWidth(),
           )
           Spacer(Modifier.height(8.dp))
-          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(text = "${state.downloadPercent.coerceIn(0,100)}%", style = MaterialTheme.typography.bodySmall)
-            Text(text = formatSpeed(state.downloadSpeedBytesPerSec), style = MaterialTheme.typography.bodySmall)
+          if (compactWidth) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+              Text(text = "${state.downloadPercent.coerceIn(0,100)}%", style = MaterialTheme.typography.bodySmall)
+              Text(text = formatSpeed(state.downloadSpeedBytesPerSec), style = MaterialTheme.typography.bodySmall)
+            }
+          } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+              Text(text = "${state.downloadPercent.coerceIn(0,100)}%", style = MaterialTheme.typography.bodySmall)
+              Text(text = formatSpeed(state.downloadSpeedBytesPerSec), style = MaterialTheme.typography.bodySmall)
+            }
           }
           Spacer(Modifier.height(8.dp))
           OutlinedButton(onClick = onUpdate, modifier = Modifier.fillMaxWidth()) {
@@ -146,6 +155,7 @@ fun AppUpdateSettings(
   onLanguageModeChange: (String) -> Unit,
   onDeleteModule: () -> Unit,
 ) {
+  val compactWidth = rememberIsCompactWidth()
   // BottomSheet content may not have enough height on small screens.
   // Make it scrollable so the Language section is always reachable.
   Column(
@@ -156,16 +166,30 @@ fun AppUpdateSettings(
   ) {
     Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
     Spacer(Modifier.height(12.dp))
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-      Column(Modifier.weight(1f).padding(end = 12.dp)) {
-        Text(stringResource(R.string.app_update_check_title), style = MaterialTheme.typography.bodyLarge)
-        Text(
-          stringResource(R.string.app_update_check_body),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-        )
+    if (compactWidth) {
+      Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.fillMaxWidth()) {
+          Text(stringResource(R.string.app_update_check_title), style = MaterialTheme.typography.bodyLarge)
+          Text(
+            stringResource(R.string.app_update_check_body),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+          )
+        }
+        Switch(checked = enabled, onCheckedChange = onToggle)
       }
-      Switch(checked = enabled, onCheckedChange = onToggle)
+    } else {
+      Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+          Text(stringResource(R.string.app_update_check_title), style = MaterialTheme.typography.bodyLarge)
+          Text(
+            stringResource(R.string.app_update_check_body),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+          )
+        }
+        Switch(checked = enabled, onCheckedChange = onToggle)
+      }
     }
     Spacer(Modifier.height(12.dp))
     OutlinedButton(onClick = onCheckNow, modifier = Modifier.fillMaxWidth()) {
@@ -174,20 +198,34 @@ fun AppUpdateSettings(
 
     Spacer(Modifier.height(18.dp))
 
-    Row(
-      Modifier.fillMaxWidth(),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-      Column(Modifier.weight(1f).padding(end = 12.dp)) {
-        Text(stringResource(R.string.settings_notifications_title), style = MaterialTheme.typography.bodyLarge)
-        Text(
-          stringResource(R.string.settings_notifications_body),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-        )
+    if (compactWidth) {
+      Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.fillMaxWidth()) {
+          Text(stringResource(R.string.settings_notifications_title), style = MaterialTheme.typography.bodyLarge)
+          Text(
+            stringResource(R.string.settings_notifications_body),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+          )
+        }
+        Switch(checked = daemonNotificationEnabled, onCheckedChange = onToggleDaemonNotification)
       }
-      Switch(checked = daemonNotificationEnabled, onCheckedChange = onToggleDaemonNotification)
+    } else {
+      Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+      ) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+          Text(stringResource(R.string.settings_notifications_title), style = MaterialTheme.typography.bodyLarge)
+          Text(
+            stringResource(R.string.settings_notifications_body),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+          )
+        }
+        Switch(checked = daemonNotificationEnabled, onCheckedChange = onToggleDaemonNotification)
+      }
     }
 
     Spacer(Modifier.height(18.dp))
@@ -203,27 +241,47 @@ fun AppUpdateSettings(
       Spacer(Modifier.height(10.dp))
 
       val selected = languageMode.lowercase().ifBlank { "auto" }
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        val isAuto = selected == "auto"
-        val isRu = selected == "ru"
-        val isEn = selected == "en"
+      val isAuto = selected == "auto"
+      val isRu = selected == "ru"
+      val isEn = selected == "en"
 
-        if (isAuto) {
-          Button(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_auto)) }
-        } else {
-          OutlinedButton(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_auto)) }
+      if (compactWidth) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          if (isAuto) {
+            Button(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_auto)) }
+          } else {
+            OutlinedButton(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_auto)) }
+          }
+          if (isRu) {
+            Button(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_ru)) }
+          } else {
+            OutlinedButton(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_ru)) }
+          }
+          if (isEn) {
+            Button(onClick = { onLanguageModeChange("en") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_en)) }
+          } else {
+            OutlinedButton(onClick = { onLanguageModeChange("en") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_en)) }
+          }
         }
+      } else {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+          if (isAuto) {
+            Button(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_auto)) }
+          } else {
+            OutlinedButton(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_auto)) }
+          }
 
-        if (isRu) {
-          Button(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_ru)) }
-        } else {
-          OutlinedButton(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_ru)) }
-        }
+          if (isRu) {
+            Button(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_ru)) }
+          } else {
+            OutlinedButton(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_ru)) }
+          }
 
-        if (isEn) {
-          Button(onClick = { onLanguageModeChange("en") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_en)) }
-        } else {
-          OutlinedButton(onClick = { onLanguageModeChange("en") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_en)) }
+          if (isEn) {
+            Button(onClick = { onLanguageModeChange("en") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_en)) }
+          } else {
+            OutlinedButton(onClick = { onLanguageModeChange("en") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_en)) }
+          }
         }
       }
     }

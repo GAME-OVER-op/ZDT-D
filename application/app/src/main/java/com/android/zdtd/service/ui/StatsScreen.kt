@@ -107,6 +107,7 @@ fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
   val runningCount = rows.count { it.agg.count > 0 }
 
   val cpuTitle = stringResource(R.string.stats_cpu_title)
+  val isNarrowWidth = rememberIsNarrowWidth()
   val cpuUnknown = stringResource(R.string.stats_unknown_cpu)
   val memTitle = stringResource(R.string.stats_memory_title)
 
@@ -124,34 +125,66 @@ fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
     }
 
     item {
-      Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-        MetricCard(
-          modifier = Modifier.weight(1f),
-          icon = { Icon(Icons.Outlined.Speed, contentDescription = null) },
-          title = cpuTitle,
-          subtitle = device.cpuName?.takeIf { it.isNotBlank() } ?: cpuUnknown,
-          value = "${fmtPct(cpuTotalShown)}%",
-          progress = cpuProgress,
-          footnote = if (cpuTotalRaw > 100.0) {
-            stringResource(R.string.stats_clamped_from, fmtPct(cpuTotalRaw))
-          } else null,
-        )
+      if (isNarrowWidth) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+          MetricCard(
+            modifier = Modifier.fillMaxWidth(),
+            icon = { Icon(Icons.Outlined.Speed, contentDescription = null) },
+            title = cpuTitle,
+            subtitle = device.cpuName?.takeIf { it.isNotBlank() } ?: cpuUnknown,
+            value = "${fmtPct(cpuTotalShown)}%",
+            progress = cpuProgress,
+            footnote = if (cpuTotalRaw > 100.0) {
+              stringResource(R.string.stats_clamped_from, fmtPct(cpuTotalRaw))
+            } else null,
+          )
 
-        MetricCard(
-          modifier = Modifier.weight(1f),
-          icon = { Icon(Icons.Outlined.Memory, contentDescription = null) },
-          title = memTitle,
-          subtitle = if (totalRamMb != null) {
-            stringResource(R.string.stats_total_fmt, mbToHuman(totalRamMb))
-          } else {
-            stringResource(R.string.stats_total_unknown)
-          },
-          value = mbToHuman(usedMb),
-          progress = usedFrac,
-          footnote = if (totalRamMb != null) {
-            stringResource(R.string.stats_free_fmt, mbToHuman(freeMb ?: 0.0))
-          } else null,
-        )
+          MetricCard(
+            modifier = Modifier.fillMaxWidth(),
+            icon = { Icon(Icons.Outlined.Memory, contentDescription = null) },
+            title = memTitle,
+            subtitle = if (totalRamMb != null) {
+              stringResource(R.string.stats_total_fmt, mbToHuman(totalRamMb))
+            } else {
+              stringResource(R.string.stats_total_unknown)
+            },
+            value = mbToHuman(usedMb),
+            progress = usedFrac,
+            footnote = if (totalRamMb != null) {
+              stringResource(R.string.stats_free_fmt, mbToHuman(freeMb ?: 0.0))
+            } else null,
+          )
+        }
+      } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+          MetricCard(
+            modifier = Modifier.weight(1f),
+            icon = { Icon(Icons.Outlined.Speed, contentDescription = null) },
+            title = cpuTitle,
+            subtitle = device.cpuName?.takeIf { it.isNotBlank() } ?: cpuUnknown,
+            value = "${fmtPct(cpuTotalShown)}%",
+            progress = cpuProgress,
+            footnote = if (cpuTotalRaw > 100.0) {
+              stringResource(R.string.stats_clamped_from, fmtPct(cpuTotalRaw))
+            } else null,
+          )
+
+          MetricCard(
+            modifier = Modifier.weight(1f),
+            icon = { Icon(Icons.Outlined.Memory, contentDescription = null) },
+            title = memTitle,
+            subtitle = if (totalRamMb != null) {
+              stringResource(R.string.stats_total_fmt, mbToHuman(totalRamMb))
+            } else {
+              stringResource(R.string.stats_total_unknown)
+            },
+            value = mbToHuman(usedMb),
+            progress = usedFrac,
+            footnote = if (totalRamMb != null) {
+              stringResource(R.string.stats_free_fmt, mbToHuman(freeMb ?: 0.0))
+            } else null,
+          )
+        }
       }
     }
 
@@ -248,7 +281,7 @@ private fun MetricCard(
         icon()
         Column(Modifier.weight(1f)) {
           Text(title, fontWeight = FontWeight.SemiBold)
-          Text(subtitle, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), maxLines = 1)
+          Text(subtitle, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), maxLines = 2)
         }
       }
 

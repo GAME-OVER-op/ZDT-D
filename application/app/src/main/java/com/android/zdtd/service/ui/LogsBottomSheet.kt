@@ -19,13 +19,24 @@ fun LogsBottomSheet(
   onClear: () -> Unit,
   onDismiss: () -> Unit,
 ) {
+  val compact = rememberIsCompactWidth() || rememberIsShortHeight()
   ModalBottomSheet(onDismissRequest = onDismiss) {
     Column(Modifier.fillMaxWidth().padding(16.dp)) {
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(stringResource(R.string.logs_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-          OutlinedButton(onClick = onClear) { Text(stringResource(R.string.action_clear)) }
-          Button(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+      if (compact) {
+        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          Text(stringResource(R.string.logs_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+          Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_clear)) }
+            Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_close)) }
+          }
+        }
+      } else {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+          Text(stringResource(R.string.logs_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+          Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(onClick = onClear) { Text(stringResource(R.string.action_clear)) }
+            Button(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+          }
         }
       }
       Spacer(Modifier.height(12.dp))
@@ -35,7 +46,7 @@ fun LogsBottomSheet(
       } else {
         LazyColumn(
           verticalArrangement = Arrangement.spacedBy(8.dp),
-          modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
+          modifier = Modifier.fillMaxWidth().heightIn(max = if (compact) 360.dp else 520.dp),
         ) {
           items(logs, key = { it.ts + it.msg }) { l ->
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.65f))) {

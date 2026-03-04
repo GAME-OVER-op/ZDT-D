@@ -3,10 +3,14 @@ package com.android.zdtd.service.ui
 import android.app.Activity
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -24,6 +28,9 @@ import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,10 +52,13 @@ import com.android.zdtd.service.RootState
 import com.android.zdtd.service.SetupStep
 import com.android.zdtd.service.SetupUiState
 import com.android.zdtd.service.UiState
+import com.android.zdtd.service.StartupStage
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.delay
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.rememberModalBottomSheetState
 import com.android.zdtd.service.ui.AppUpdateBanner
@@ -78,10 +89,6 @@ fun ZdtdApp(
       onManualDismiss = actions::dismissManualInstallDialog,
       onContinue = actions::continueAfterInstall,
       onReboot = actions::rebootNow,
-      onRequestMigration = actions::requestSettingsMigration,
-      onDismissMigrationDialog = actions::dismissSettingsMigrationDialog,
-      onConfirmMigrationDialog = actions::confirmSettingsMigrationDialog,
-      onCloseMigrationProgress = actions::closeSettingsMigrationProgress,
     )
     SetupStep.REBOOT -> {
       when (rootState) {
@@ -91,10 +98,6 @@ fun ZdtdApp(
           setup = setup,
           text = setup.rebootRequiredText,
           onReboot = actions::rebootNow,
-          onRequestMigration = actions::requestSettingsMigration,
-          onDismissMigrationDialog = actions::dismissSettingsMigrationDialog,
-          onConfirmMigrationDialog = actions::confirmSettingsMigrationDialog,
-          onCloseMigrationProgress = actions::closeSettingsMigrationProgress,
         )
       }
     }
@@ -125,6 +128,224 @@ private fun SplashScreen() {
   }
 }
 
+
+@Composable
+private fun StartupDialogHost(
+  uiState: UiState,
+  onRetry: () -> Unit,
+  onReinstall: () -> Unit,
+) {
+  val startup = uiState.startup
+  if (!startup.visible) return
+
+  Dialog(
+    onDismissRequest = {},
+    properties = DialogProperties(
+      dismissOnBackPress = false,
+      dismissOnClickOutside = false,
+    )
+  ) {
+    Surface(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 24.dp),
+      shape = MaterialTheme.shapes.extraLarge,
+      tonalElevation = 6.dp,
+      shadowElevation = 12.dp,
+      color = MaterialTheme.colorScheme.surface,
+    ) {
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .heightIn(min = 280.dp),
+        contentAlignment = Alignment.Center,
+      ) {
+      AnimatedContent(
+        targetState = startup.stage,
+        transitionSpec = {
+          (fadeIn(animationSpec = tween(220)) + scaleIn(initialScale = 0.98f, animationSpec = tween(220))) togetherWith
+            (fadeOut(animationSpec = tween(180)) + scaleOut(targetScale = 0.98f, animationSpec = tween(180)))
+        },
+        label = "startup_state",
+      ) { stage ->
+        when (stage) {
+          StartupStage.CONNECTING_DAEMON, StartupStage.LOADING_STATUS -> {
+            Column(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 22.dp),
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+              CircularProgressIndicator()
+              Text(
+                text = stringResource(R.string.startup_dialog_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+              )
+              Text(
+                text = stringResource(R.string.startup_dialog_subtitle),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+              Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                  containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f)
+                )
+              ) {
+                Column(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+                  verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                  StartupStepRow(
+                    text = stringResource(R.string.startup_stage_connecting),
+                    active = stage == StartupStage.CONNECTING_DAEMON,
+                    done = stage == StartupStage.LOADING_STATUS,
+                  )
+                  StartupStepRow(
+                    text = stringResource(R.string.startup_stage_loading),
+                    active = stage == StartupStage.LOADING_STATUS,
+                    done = false,
+                  )
+                }
+              }
+            }
+          }
+          StartupStage.FAILED -> {
+            Column(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp, vertical = 22.dp),
+              horizontalAlignment = Alignment.CenterHorizontally,
+              verticalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+              Icon(
+                imageVector = Icons.Filled.ErrorOutline,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(28.dp),
+              )
+              Text(
+                text = stringResource(R.string.startup_dialog_error_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+              )
+              Text(
+                text = startup.errorText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+              ) {
+                TextButton(onClick = onRetry) { Text(stringResource(R.string.common_retry)) }
+                TextButton(onClick = onReinstall) { Text(stringResource(R.string.startup_reinstall_module)) }
+              }
+            }
+          }
+          StartupStage.IDLE -> Unit
+        }
+      }
+      }
+    }
+  }
+}
+
+@Composable
+private fun StartupStepRow(text: String, active: Boolean, done: Boolean) {
+  val alpha = when {
+    active || done -> 1f
+    else -> 0.68f
+  }
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .alpha(alpha),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(12.dp),
+  ) {
+    Crossfade(targetState = when {
+      done -> "done"
+      active -> "active"
+      else -> "idle"
+    }, animationSpec = tween(220), label = "startup_step_icon") { state ->
+      when (state) {
+        "done" -> Icon(
+          imageVector = Icons.Filled.CheckCircle,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.primary,
+          modifier = Modifier.size(20.dp),
+        )
+        "active" -> CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+        else -> Icon(
+          imageVector = Icons.Filled.RadioButtonUnchecked,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier.size(20.dp),
+        )
+      }
+    }
+    Text(
+      text = text,
+      style = MaterialTheme.typography.bodyMedium,
+      color = if (active) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+      fontWeight = if (active) FontWeight.Medium else FontWeight.Normal,
+    )
+  }
+}
+
+@Composable
+private fun DaemonUnavailableDialogHost(uiState: UiState) {
+  if (!uiState.daemonUnavailableVisible) return
+
+  Dialog(
+    onDismissRequest = {},
+    properties = DialogProperties(
+      dismissOnBackPress = false,
+      dismissOnClickOutside = false,
+    )
+  ) {
+    Surface(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 24.dp),
+      shape = MaterialTheme.shapes.extraLarge,
+      tonalElevation = 6.dp,
+      shadowElevation = 12.dp,
+      color = MaterialTheme.colorScheme.surface,
+    ) {
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 24.dp, vertical = 22.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+      ) {
+        Icon(
+          imageVector = Icons.Filled.ErrorOutline,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.error,
+          modifier = Modifier.size(28.dp),
+        )
+        Text(
+          text = stringResource(R.string.daemon_runtime_unavailable_title),
+          style = MaterialTheme.typography.titleMedium,
+          fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+          text = stringResource(R.string.daemon_runtime_unavailable_body),
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        CircularProgressIndicator()
+      }
+    }
+  }
+}
 
 @Composable
 private fun UpdatePromptDialog(setup: SetupUiState, onUpdate: () -> Unit, onSkip: () -> Unit) {
@@ -239,6 +460,13 @@ private fun MainShell(
 
   val snackHost = remember { SnackbarHostState() }
   val uiState by uiStateFlow.collectAsStateWithLifecycle()
+
+  StartupDialogHost(
+    uiState = uiState,
+    onRetry = actions::retryDaemonStartup,
+    onReinstall = actions::openModuleInstaller,
+  )
+  DaemonUnavailableDialogHost(uiState = uiState)
 
   var deleteModulePreparing by remember { mutableStateOf(false) }
   var deleteModulePrepareError by remember { mutableStateOf<String?>(null) }
@@ -369,6 +597,7 @@ private fun MainShell(
     onDecline = actions::declineUnknownSourcesPermission,
   )
 
+  val isCompactWidth = rememberIsCompactWidth()
   val canGoBack = tab == Tab.APPS && appsRoute != AppsRoute.List
   val title = when {
     tab == Tab.HOME -> stringResource(R.string.app_name)
@@ -413,18 +642,21 @@ private fun MainShell(
           onClick = { tab = Tab.HOME },
           icon = { Icon(Icons.Filled.Power, contentDescription = null) },
           label = { Text(stringResource(R.string.nav_home)) },
+          alwaysShowLabel = !isCompactWidth,
         )
         NavigationBarItem(
           selected = tab == Tab.STATS,
           onClick = { tab = Tab.STATS },
           icon = { Icon(Icons.Filled.Equalizer, contentDescription = null) },
           label = { Text(stringResource(R.string.nav_stats)) },
+          alwaysShowLabel = !isCompactWidth,
         )
         NavigationBarItem(
           selected = tab == Tab.APPS,
           onClick = { tab = Tab.APPS },
           icon = { Icon(Icons.Filled.Apps, contentDescription = null) },
           label = { Text(stringResource(R.string.nav_programs)) },
+          alwaysShowLabel = !isCompactWidth,
         )
 
         NavigationBarItem(
@@ -432,12 +664,17 @@ private fun MainShell(
           onClick = { tab = Tab.SUPPORT },
           icon = { Icon(Icons.Filled.Info, contentDescription = null) },
           label = { Text(stringResource(R.string.nav_support)) },
+          alwaysShowLabel = !isCompactWidth,
         )
       }
     },
     snackbarHost = { SnackbarHost(snackHost) },
   ) { padding ->
-    Column(Modifier.fillMaxSize().padding(padding)) {
+    Column(
+      Modifier
+        .fillMaxSize()
+        .padding(padding),
+    ) {
       AppUpdateBanner(
         state = appUpdate,
         onDismiss = actions::dismissAppUpdateBanner,

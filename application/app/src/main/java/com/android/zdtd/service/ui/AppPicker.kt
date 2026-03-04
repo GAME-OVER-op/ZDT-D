@@ -234,20 +234,33 @@ private fun AppPickerSheet(
     filtered.filter { it.packageName !in selected }
   }
 
+  val isCompactWidth = rememberIsCompactWidth()
+  val isShortHeight = rememberIsShortHeight()
+
   ModalBottomSheet(
     onDismissRequest = onDismiss,
     dragHandle = { BottomSheetDefaults.DragHandle() },
   ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-      Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          TextButton(onClick = onDismiss) { Text(stringResource(R.string.app_picker_cancel)) }
-          Button(onClick = { onSave(selected) }) { Text(stringResource(R.string.app_picker_save)) }
+      if (isCompactWidth) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.app_picker_cancel)) }
+            Button(onClick = { onSave(selected) }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.app_picker_save)) }
+          }
+        }
+      } else {
+        Row(
+          Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.app_picker_cancel)) }
+            Button(onClick = { onSave(selected) }) { Text(stringResource(R.string.app_picker_save)) }
+          }
         }
       }
 
@@ -265,7 +278,7 @@ private fun AppPickerSheet(
       LazyColumn(
         modifier = Modifier
           .fillMaxWidth()
-          .heightIn(min = 280.dp, max = 620.dp),
+          .heightIn(min = if (isShortHeight) 220.dp else 280.dp, max = if (isShortHeight) 420.dp else 620.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
       ) {
         item {
@@ -308,13 +321,13 @@ private fun AppPickerSheet(
                   },
                 )
                 Column(Modifier.weight(1f)) {
-                  Text(app.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                  Text(app.label, maxLines = if (isCompactWidth) 2 else 1, overflow = TextOverflow.Ellipsis)
                   Text(
                     app.packageName,
                     style = MaterialTheme.typography.bodySmall,
                     fontFamily = FontFamily.Monospace,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
-                    maxLines = 1,
+                    maxLines = if (isCompactWidth) 2 else 1,
                     overflow = TextOverflow.Ellipsis,
                   )
                 }
@@ -357,13 +370,13 @@ private fun AppPickerSheet(
               AppIcon(packageName = app.packageName, cache = iconCache)
               Spacer(Modifier.width(10.dp))
               Column(Modifier.weight(1f)) {
-                Text(app.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(app.label, maxLines = if (isCompactWidth) 2 else 1, overflow = TextOverflow.Ellipsis)
                 Text(
                   app.packageName,
                   style = MaterialTheme.typography.bodySmall,
                   fontFamily = FontFamily.Monospace,
                   color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
-                  maxLines = 1,
+                  maxLines = if (isCompactWidth) 2 else 1,
                   overflow = TextOverflow.Ellipsis,
                 )
               }

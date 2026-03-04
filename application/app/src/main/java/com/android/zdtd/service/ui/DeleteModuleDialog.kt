@@ -4,12 +4,15 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -34,6 +37,8 @@ fun DeleteModuleConfirmDialog(
 ) {
   if (!visible) return
 
+  val compact = rememberIsCompactWidth() || rememberIsShortHeight()
+
   Dialog(
     onDismissRequest = onDismiss,
     properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -42,13 +47,14 @@ fun DeleteModuleConfirmDialog(
       Column(
         modifier = Modifier
           .fillMaxSize()
-          .padding(horizontal = 20.dp, vertical = 18.dp),
+          .verticalScroll(rememberScrollState())
+          .padding(horizontal = if (compact) 16.dp else 20.dp, vertical = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
       ) {
         Image(
           painter = painterResource(R.drawable.zdtd_goodbye),
           contentDescription = stringResource(R.string.cd_goodbye_image),
-          modifier = Modifier.size(220.dp),
+          modifier = Modifier.size(if (compact) 168.dp else 220.dp),
         )
 
         Spacer(Modifier.height(12.dp))
@@ -82,22 +88,43 @@ fun DeleteModuleConfirmDialog(
 
         Spacer(Modifier.weight(1f))
 
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-          OutlinedButton(
-            onClick = onDismiss,
-            modifier = Modifier.weight(1f),
+        if (compact) {
+          Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
           ) {
-            Text(stringResource(R.string.common_cancel))
-          }
+            OutlinedButton(
+              onClick = onDismiss,
+              modifier = Modifier.fillMaxWidth(),
+            ) {
+              Text(stringResource(R.string.common_cancel))
+            }
 
-          Button(
-            onClick = onConfirm,
-            modifier = Modifier.weight(1f),
+            Button(
+              onClick = onConfirm,
+              modifier = Modifier.fillMaxWidth(),
+            ) {
+              Text(stringResource(R.string.delete_module_yes))
+            }
+          }
+        } else {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
           ) {
-            Text(stringResource(R.string.delete_module_yes))
+            OutlinedButton(
+              onClick = onDismiss,
+              modifier = Modifier.weight(1f),
+            ) {
+              Text(stringResource(R.string.common_cancel))
+            }
+
+            Button(
+              onClick = onConfirm,
+              modifier = Modifier.weight(1f),
+            ) {
+              Text(stringResource(R.string.delete_module_yes))
+            }
           }
         }
       }
@@ -113,6 +140,8 @@ fun DeleteModuleNextStepDialog(
 ) {
   if (!visible) return
 
+  val compact = rememberIsCompactWidth() || rememberIsShortHeight()
+
   Dialog(
     onDismissRequest = onDismiss,
     properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -121,13 +150,14 @@ fun DeleteModuleNextStepDialog(
       Column(
         modifier = Modifier
           .fillMaxSize()
-          .padding(horizontal = 20.dp, vertical = 18.dp),
+          .verticalScroll(rememberScrollState())
+          .padding(horizontal = if (compact) 16.dp else 20.dp, vertical = 18.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
       ) {
         Image(
           painter = painterResource(R.drawable.zdtd_goodbye),
           contentDescription = stringResource(R.string.cd_goodbye_image),
-          modifier = Modifier.size(220.dp),
+          modifier = Modifier.size(if (compact) 168.dp else 220.dp),
         )
 
         Spacer(Modifier.height(12.dp))
@@ -174,6 +204,8 @@ fun DeleteModulePreparingDialog(
 ) {
   if (!visible && errorText == null) return
 
+  val compact = rememberIsCompactWidth() || rememberIsShortHeight()
+
   Dialog(
     onDismissRequest = onDismiss,
     properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -182,7 +214,8 @@ fun DeleteModulePreparingDialog(
       Column(
         modifier = Modifier
           .fillMaxSize()
-          .padding(horizontal = 20.dp, vertical = 18.dp),
+          .padding(horizontal = if (compact) 16.dp else 20.dp, vertical = 18.dp)
+          .widthIn(max = 560.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
       ) {

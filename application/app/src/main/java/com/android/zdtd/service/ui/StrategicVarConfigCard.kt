@@ -22,10 +22,10 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -54,6 +54,9 @@ fun StrategicVarConfigCard(
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
+  val compactWidth = rememberIsCompactWidth()
+  val shortHeight = rememberIsShortHeight()
+
   var text by remember(configPath) { mutableStateOf("") }
   var lastLoaded by remember(configPath) { mutableStateOf("") }
   var loading by remember(configPath) { mutableStateOf(true) }
@@ -100,79 +103,144 @@ fun StrategicVarConfigCard(
   }
   val isUserConfig = !variantsLoading && variants.isNotEmpty() && matched == null
 
+  fun saveConfig() {
+    saving = true
+    actions.saveText(configPath, text) { ok ->
+      saving = false
+      if (ok) lastLoaded = text
+      scope.launch {
+        snackHost.showSnackbar(
+          if (ok) ctx.getString(R.string.editor_saved_apply_restart)
+          else ctx.getString(R.string.editor_save_failed)
+        )
+      }
+    }
+  }
+
   Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f))) {
     Column(Modifier.padding(12.dp)) {
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Column(Modifier.weight(1f)) {
-          Text(stringResource(R.string.strategic_config_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-          Spacer(Modifier.height(2.dp))
-          Text(
-            stringResource(R.string.strategic_config_desc),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-          )
+      if (compactWidth) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Column(Modifier.fillMaxWidth()) {
+            Text(
+              stringResource(R.string.strategic_config_title),
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+              stringResource(R.string.strategic_config_desc),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+            )
+          }
+          Button(
+            onClick = { saveConfig() },
+            enabled = !loading && !saving && !applying && text != lastLoaded,
+            modifier = Modifier.fillMaxWidth(),
+          ) {
+            Text(if (saving) stringResource(R.string.common_ellipsis) else stringResource(R.string.common_save))
+          }
         }
-        Button(
-          onClick = {
-            saving = true
-            actions.saveText(configPath, text) { ok ->
-              saving = false
-              if (ok) lastLoaded = text
-              scope.launch {
-                snackHost.showSnackbar(if (ok) ctx.getString(R.string.editor_saved_apply_restart) else ctx.getString(R.string.editor_save_failed))
-              }
-            }
-          },
-          enabled = !loading && !saving && !applying && text != lastLoaded,
-        ) {
-          Text(if (saving) stringResource(R.string.common_ellipsis) else stringResource(R.string.common_save))
+      } else {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+          Column(Modifier.weight(1f)) {
+            Text(
+              stringResource(R.string.strategic_config_title),
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+              stringResource(R.string.strategic_config_desc),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+            )
+          }
+          Button(
+            onClick = { saveConfig() },
+            enabled = !loading && !saving && !applying && text != lastLoaded,
+          ) {
+            Text(if (saving) stringResource(R.string.common_ellipsis) else stringResource(R.string.common_save))
+          }
         }
       }
 
       Spacer(Modifier.height(10.dp))
 
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        AssistChip(
-          onClick = { },
-          label = { Text(strategyLabel) },
-          colors = if (isUserConfig) {
-            AssistChipDefaults.assistChipColors(
-              containerColor = MaterialTheme.colorScheme.errorContainer,
-              labelColor = MaterialTheme.colorScheme.onErrorContainer,
-            )
-          } else {
-            AssistChipDefaults.assistChipColors()
-          }
+      val chipColors = if (isUserConfig) {
+        AssistChipDefaults.assistChipColors(
+          containerColor = MaterialTheme.colorScheme.errorContainer,
+          labelColor = MaterialTheme.colorScheme.onErrorContainer,
         )
+      } else {
+        AssistChipDefaults.assistChipColors()
+      }
 
-        Box {
-          Button(
-            onClick = { menuOpen = true },
-            enabled = !loading && !saving && !applying && !variantsLoading && variants.isNotEmpty(),
-          ) {
-            Text(if (applying) stringResource(R.string.common_ellipsis) else stringResource(R.string.common_choose))
-          }
-          DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-            variants.forEach { v ->
-              DropdownMenuItem(
-                text = { Text(v.name.removeSuffix(".txt")) },
-                onClick = {
-                  menuOpen = false
-                  applying = true
-                  actions.applyStrategicVariant(programId, profile, v.name) { ok ->
-                    applying = false
-                    if (ok) {
-                      reloadConfig()
-                    }
-                    scope.launch {
-                      snackHost.showSnackbar(
-                        if (ok) ctx.getString(R.string.common_applied_with_value, v.name.removeSuffix(".txt"))
-                        else ctx.getString(R.string.common_apply_failed)
-                      )
+      if (compactWidth) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          AssistChip(onClick = { }, label = { Text(strategyLabel) }, colors = chipColors)
+          Box {
+            Button(
+              onClick = { menuOpen = true },
+              enabled = !loading && !saving && !applying && !variantsLoading && variants.isNotEmpty(),
+              modifier = Modifier.fillMaxWidth(),
+            ) {
+              Text(if (applying) stringResource(R.string.common_ellipsis) else stringResource(R.string.common_choose))
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+              variants.forEach { v ->
+                DropdownMenuItem(
+                  text = { Text(v.name.removeSuffix(".txt")) },
+                  onClick = {
+                    menuOpen = false
+                    applying = true
+                    actions.applyStrategicVariant(programId, profile, v.name) { ok ->
+                      applying = false
+                      if (ok) reloadConfig()
+                      scope.launch {
+                        snackHost.showSnackbar(
+                          if (ok) ctx.getString(R.string.common_applied_with_value, v.name.removeSuffix(".txt"))
+                          else ctx.getString(R.string.common_apply_failed)
+                        )
+                      }
                     }
                   }
-                }
-              )
+                )
+              }
+            }
+          }
+        }
+      } else {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+          AssistChip(onClick = { }, label = { Text(strategyLabel) }, colors = chipColors)
+          Box {
+            Button(
+              onClick = { menuOpen = true },
+              enabled = !loading && !saving && !applying && !variantsLoading && variants.isNotEmpty(),
+            ) {
+              Text(if (applying) stringResource(R.string.common_ellipsis) else stringResource(R.string.common_choose))
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+              variants.forEach { v ->
+                DropdownMenuItem(
+                  text = { Text(v.name.removeSuffix(".txt")) },
+                  onClick = {
+                    menuOpen = false
+                    applying = true
+                    actions.applyStrategicVariant(programId, profile, v.name) { ok ->
+                      applying = false
+                      if (ok) reloadConfig()
+                      scope.launch {
+                        snackHost.showSnackbar(
+                          if (ok) ctx.getString(R.string.common_applied_with_value, v.name.removeSuffix(".txt"))
+                          else ctx.getString(R.string.common_apply_failed)
+                        )
+                      }
+                    }
+                  }
+                )
+              }
             }
           }
         }
@@ -183,7 +251,7 @@ fun StrategicVarConfigCard(
       OutlinedTextField(
         value = text,
         onValueChange = { text = it },
-        modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
+        modifier = Modifier.fillMaxWidth().heightIn(min = if (shortHeight) 120.dp else 140.dp),
         enabled = !loading && !saving && !applying,
         label = { Text(if (loading) stringResource(R.string.common_loading) else "") },
         maxLines = 24,

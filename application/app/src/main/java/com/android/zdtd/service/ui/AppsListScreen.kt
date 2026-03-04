@@ -54,6 +54,7 @@ fun AppsListScreen(
   onOpenProgram: (String) -> Unit,
 ) {
 
+  val isCompactWidth = rememberIsCompactWidth()
   var query by rememberSaveable { mutableStateOf("") }
   val q = query.trim()
 
@@ -84,6 +85,7 @@ fun AppsListScreen(
   ) {
     item {
       ProgramsHeaderCard(
+        compact = isCompactWidth,
         daemonOnline = daemonOnline,
         total = all.size,
         shown = filtered.size,
@@ -148,7 +150,7 @@ fun AppsListScreen(
         )
       }
       items(core, key = { it.id }) { p ->
-        ProgramCard(program = p, onClick = { onOpenProgram(p.id) })
+        ProgramCard(compact = isCompactWidth, program = p, onClick = { onOpenProgram(p.id) })
       }
     }
 
@@ -160,7 +162,7 @@ fun AppsListScreen(
         )
       }
       items(prof, key = { it.id }) { p ->
-        ProgramCard(program = p, onClick = { onOpenProgram(p.id) })
+        ProgramCard(compact = isCompactWidth, program = p, onClick = { onOpenProgram(p.id) })
       }
     }
 
@@ -169,7 +171,7 @@ fun AppsListScreen(
 }
 
 @Composable
-private fun ProgramsHeaderCard(daemonOnline: Boolean, total: Int, shown: Int) {
+private fun ProgramsHeaderCard(compact: Boolean, daemonOnline: Boolean, total: Int, shown: Int) {
   ElevatedCard(
     colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f)),
     modifier = Modifier
@@ -177,21 +179,36 @@ private fun ProgramsHeaderCard(daemonOnline: Boolean, total: Int, shown: Int) {
       .padding(horizontal = 16.dp, vertical = 16.dp),
   ) {
     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Text(stringResource(R.string.apps_list_programs_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        val label = if (daemonOnline) stringResource(R.string.apps_list_online_upper) else stringResource(R.string.apps_list_offline_upper)
-        AssistChip(
-          onClick = {},
-          label = { Text(label) },
-          colors = AssistChipDefaults.assistChipColors(
-            containerColor = if (daemonOnline) MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f)
-            else MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
-          ),
-        )
+      if (compact) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+          Text(stringResource(R.string.apps_list_programs_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+          val label = if (daemonOnline) stringResource(R.string.apps_list_online_upper) else stringResource(R.string.apps_list_offline_upper)
+          AssistChip(
+            onClick = {},
+            label = { Text(label) },
+            colors = AssistChipDefaults.assistChipColors(
+              containerColor = if (daemonOnline) MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f)
+              else MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+            ),
+          )
+        }
+      } else {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(stringResource(R.string.apps_list_programs_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+          val label = if (daemonOnline) stringResource(R.string.apps_list_online_upper) else stringResource(R.string.apps_list_offline_upper)
+          AssistChip(
+            onClick = {},
+            label = { Text(label) },
+            colors = AssistChipDefaults.assistChipColors(
+              containerColor = if (daemonOnline) MaterialTheme.colorScheme.secondary.copy(alpha = 0.25f)
+              else MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+            ),
+          )
+        }
       }
 
       Text(
@@ -242,7 +259,7 @@ private fun EmptyState(title: String, hint: String) {
 }
 
 @Composable
-private fun ProgramCard(program: ApiModels.Program, onClick: () -> Unit) {
+private fun ProgramCard(compact: Boolean, program: ApiModels.Program, onClick: () -> Unit) {
   val title = program.name ?: program.id
   val subtitle = programDescription(program.id)
 
@@ -277,21 +294,26 @@ private fun ProgramCard(program: ApiModels.Program, onClick: () -> Unit) {
       Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = if (compact) Alignment.Top else Alignment.CenterVertically,
       ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+          modifier = Modifier.weight(1f),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
           Icon(
             imageVector = programIcon(program.id),
             contentDescription = null,
             tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f),
             modifier = Modifier.size(22.dp),
           )
-          Column {
-            Text(title, fontWeight = FontWeight.SemiBold)
+          Column(modifier = Modifier.weight(1f)) {
+            Text(title, fontWeight = FontWeight.SemiBold, maxLines = if (compact) 2 else 1)
             Text(
               subtitle,
               color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
               style = MaterialTheme.typography.bodySmall,
+              maxLines = if (compact) 2 else 1,
             )
           }
         }
@@ -303,18 +325,35 @@ private fun ProgramCard(program: ApiModels.Program, onClick: () -> Unit) {
         )
       }
 
-      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        AssistChip(
-          onClick = {},
-          label = { Text(primaryChip) },
-          colors = AssistChipDefaults.assistChipColors(containerColor = chipColor),
-        )
-        if (!secondaryChip.isNullOrBlank()) {
+      if (compact) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
           AssistChip(
             onClick = {},
-            label = { Text(secondaryChip) },
-            colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)),
+            label = { Text(primaryChip) },
+            colors = AssistChipDefaults.assistChipColors(containerColor = chipColor),
           )
+          if (!secondaryChip.isNullOrBlank()) {
+            AssistChip(
+              onClick = {},
+              label = { Text(secondaryChip) },
+              colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)),
+            )
+          }
+        }
+      } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          AssistChip(
+            onClick = {},
+            label = { Text(primaryChip) },
+            colors = AssistChipDefaults.assistChipColors(containerColor = chipColor),
+          )
+          if (!secondaryChip.isNullOrBlank()) {
+            AssistChip(
+              onClick = {},
+              label = { Text(secondaryChip) },
+              colors = AssistChipDefaults.assistChipColors(containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.18f)),
+            )
+          }
         }
       }
     }

@@ -4,6 +4,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,6 +26,8 @@ fun ProfileScreen(
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
+  val compact = rememberIsCompactWidth()
+  val useScrollableTabs = rememberUseScrollableTabs()
   val program = programs.firstOrNull { it.id == programId }
   val prof = program?.profiles?.firstOrNull { it.name == profile }
 
@@ -33,9 +36,16 @@ fun ProfileScreen(
   // Default open: Apps tab (Danil request).
   var tab by remember { mutableStateOf(0) }
   val contentScroll = rememberScrollState()
+  val screenScroll = rememberScrollState()
 
-  Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-    Text("$programId / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+  Column(
+    Modifier
+      .fillMaxSize()
+      .padding(if (compact) 12.dp else 16.dp)
+      .then(if (compact) Modifier.verticalScroll(screenScroll) else Modifier),
+    verticalArrangement = Arrangement.spacedBy(12.dp)
+  ) {
+    Text("$programId / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 2)
     Text(
       stringResource(R.string.changes_apply_after_restart),
       style = MaterialTheme.typography.bodySmall,
@@ -48,23 +58,39 @@ fun ProfileScreen(
       onCheckedChange = { v -> actions.setProfileEnabled(programId, profile, v) },
     )
 
-    TabRow(selectedTabIndex = tab) {
-      Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(stringResource(R.string.tab_apps)) })
-      Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.tab_config)) })
-      if (programId == "operaproxy") {
-        Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(stringResource(R.string.tab_sni)) })
+    if (useScrollableTabs) {
+      ScrollableTabRow(selectedTabIndex = tab, edgePadding = 12.dp) {
+        Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(stringResource(R.string.tab_apps), maxLines = 2) })
+        Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.tab_config), maxLines = 2) })
+        if (programId == "operaproxy") {
+          Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(stringResource(R.string.tab_sni), maxLines = 2) })
+        }
+      }
+    } else {
+      TabRow(selectedTabIndex = tab) {
+        Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(stringResource(R.string.tab_apps), maxLines = 2) })
+        Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.tab_config), maxLines = 2) })
+        if (programId == "operaproxy") {
+          Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(stringResource(R.string.tab_sni), maxLines = 2) })
+        }
       }
     }
 
-    // On small screens, tab content may not fit (e.g. Apps common/mobile/Wi‑Fi lists).
-    // Make the tab content scrollable while keeping header + tabs visible.
-    Box(
-      modifier = Modifier
+    // On compact screens, scroll the whole screen instead of a weighted inner box.
+    // This avoids the tab content collapsing to an almost empty area under the profile switch.
+    val contentModifier = if (compact) {
+      Modifier
+        .fillMaxWidth()
+        .navigationBarsPadding()
+    } else {
+      Modifier
         .fillMaxWidth()
         .weight(1f, fill = true)
         .verticalScroll(contentScroll)
-        .navigationBarsPadding(),
-    ) {
+        .navigationBarsPadding()
+    }
+
+    Box(modifier = contentModifier) {
       Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         when (tab) {
           0 -> {

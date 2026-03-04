@@ -182,24 +182,6 @@ class RootConfigManager(private val context: Context) {
     }
 
 
-    // ----- Settings migration (after module update) -----
-
-    /**
-     * Stores the update-id for which settings migration has been successfully completed.
-     * The id is derived from the staged module update under /data/adb/modules_update/ZDT-D.
-     */
-    fun getMigrationDoneUpdateId(): String? = prefs.getString("migration_done_update_id", null)
-
-    fun setMigrationDoneUpdateId(updateId: String) {
-        // commit() so we don't lose it if the user reboots right after migration.
-        prefs.edit().putString("migration_done_update_id", updateId).commit()
-    }
-
-    fun clearMigrationDoneUpdateId() {
-        prefs.edit().remove("migration_done_update_id").commit()
-    }
-
-
     // ----- Sticky anti-tamper reinstall state (until reboot) -----
 
     fun isTamperReinstallPendingReboot(): Boolean =
@@ -213,6 +195,87 @@ class RootConfigManager(private val context: Context) {
 
     fun setLastSeenBootId(bootId: String) {
         prefs.edit().putString("last_seen_boot_id", bootId.trim()).commit()
+    }
+
+
+
+    // ----- Pending staged module action marker -----
+
+    enum class PendingModuleAction {
+        INSTALL,
+        UPDATE,
+        REINSTALL,
+        NONE,
+    }
+
+    private fun pendingActionPath(id: String = "ZDT-D"): String = "/data/adb/modules_update/${id}/.zdt_action"
+    private fun activePendingActionPath(id: String = "ZDT-D"): String = "/data/adb/modules/${id}/.zdt_action"
+    private fun pendingActionPrefKey(id: String = "ZDT-D"): String = "pending_module_action_${id}"
+
+    private fun pendingActionFromString(raw: String?): PendingModuleAction {
+        return when (raw?.trim()?.lowercase()) {
+            "install" -> PendingModuleAction.INSTALL
+            "update" -> PendingModuleAction.UPDATE
+            "reinstall" -> PendingModuleAction.REINSTALL
+            else -> PendingModuleAction.NONE
+        }
+    }
+
+    private fun pendingActionToString(action: PendingModuleAction): String? {
+        return when (action) {
+            PendingModuleAction.INSTALL -> "install"
+            PendingModuleAction.UPDATE -> "update"
+            PendingModuleAction.REINSTALL -> "reinstall"
+            PendingModuleAction.NONE -> null
+        }
+    }
+
+    fun readPendingModuleAction(id: String = "ZDT-D"): PendingModuleAction {
+        val script = "cat ${pendingActionPath(id)} 2>/dev/null || cat ${activePendingActionPath(id)} 2>/dev/null || true"
+        val txt = runCatching { execRootSh(script).out.joinToString("\n").trim() }.getOrDefault("")
+        val fromFile = pendingActionFromString(txt)
+        if (fromFile != PendingModuleAction.NONE) {
+            prefs.edit().putString(pendingActionPrefKey(id), pendingActionToString(fromFile)).commit()
+            return fromFile
+        }
+        val fromPrefs = prefs.getString(pendingActionPrefKey(id), null)
+        return pendingActionFromString(fromPrefs)
+    }
+
+    fun writePendingModuleAction(action: PendingModuleAction, id: String = "ZDT-D"): Boolean {
+        val value = pendingActionToString(action) ?: return clearPendingModuleAction(id)
+        val dir = "/data/adb/modules_update/${id}"
+        val path = pendingActionPath(id)
+        val activeDir = "/data/adb/modules/${id}"
+        val activePath = activePendingActionPath(id)
+        val script = buildString {
+            append("mkdir -p ")
+            append(shQuote(dir))
+            append(" && printf %s ")
+            append(shQuote(value))
+            append(" > ")
+            append(shQuote(path))
+            append(" && chmod 644 ")
+            append(shQuote(path))
+            append(" ; if test -d ")
+            append(shQuote(activeDir))
+            append("; then printf %s ")
+            append(shQuote(value))
+            append(" > ")
+            append(shQuote(activePath))
+            append(" && chmod 644 ")
+            append(shQuote(activePath))
+            append("; fi")
+        }
+        val ok = Shell.cmd(script).exec().isSuccess
+        prefs.edit().putString(pendingActionPrefKey(id), value).commit()
+        return ok
+    }
+
+    fun clearPendingModuleAction(id: String = "ZDT-D"): Boolean {
+        prefs.edit().remove(pendingActionPrefKey(id)).commit()
+        val cmd = "rm -f ${shQuote(pendingActionPath(id))} ${shQuote(activePendingActionPath(id))}"
+        return Shell.cmd(cmd).exec().isSuccess
     }
 
     // ----- Module / installer helpers (root) -----

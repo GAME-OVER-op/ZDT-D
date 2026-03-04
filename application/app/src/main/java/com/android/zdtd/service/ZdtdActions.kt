@@ -18,18 +18,6 @@ interface ZdtdActions {
   fun beginModuleRemoval()
   fun rebootNow()
 
-  // ----- Settings migration (after module update) -----
-  /** User clicked the "Migrate settings" button. */
-  fun requestSettingsMigration()
-
-  /** Dismiss the current migration dialog (treated as "No"). */
-  fun dismissSettingsMigrationDialog()
-
-  /** Confirm the current migration dialog (advances to next step or starts migration). */
-  fun confirmSettingsMigrationDialog()
-
-  /** Close the migration progress dialog after completion/error. */
-  fun closeSettingsMigrationProgress()
 
   // ----- Backup / Restore (working_folder) -----
   /** Refresh list of local backups from /storage/emulated/0/ZDT-D_Backups. */
@@ -97,6 +85,9 @@ interface ZdtdActions {
 
   /** Dismiss the optional "Update available" prompt (shown again on next cold start). */
   fun dismissUpdatePrompt()
+
+  /** Retry the daemon startup handshake shown after app launch. */
+  fun retryDaemonStartup()
 
   fun retryRoot()
   fun toggleService()

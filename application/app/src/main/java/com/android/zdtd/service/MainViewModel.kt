@@ -62,13 +62,6 @@ enum class SetupStep {
   DONE,
 }
 
-enum class MigrationDialog {
-  NONE,
-  MAGISK_CONFIRM,
-  NONMAGISK_WARN,
-  NONMAGISK_CONFIRM,
-  PROGRESS,
-}
 
 data class SetupUiState(
   val step: SetupStep = SetupStep.WELCOME,
@@ -93,25 +86,31 @@ data class SetupUiState(
 
   // Reboot required screen text
   val rebootRequiredText: String = "",
+  val rebootPendingIsUpdate: Boolean = false,
 
   val oldVersionDetected: Boolean = false,
   // True when active module state is invalid/tampered and user must reinstall.
   val moduleReinstallRequired: Boolean = false,
   val tamperReinstallPendingReboot: Boolean = false,
+  // True when the user explicitly opened the installer as a reinstall action.
+  val explicitReinstallRequested: Boolean = false,
   val installOk: Boolean = false,
   val installError: String? = null,
+)
 
-  // ----- Settings migration (after module update) -----
-  val migrationAvailable: Boolean = false,
-  val migrationDone: Boolean = false,
-  val migrationButtonEnabled: Boolean = false,
-  val migrationHintText: String = "",
-  val migrationIsMagisk: Boolean = false,
-  val migrationDialog: MigrationDialog = MigrationDialog.NONE,
-  val migrationPercent: Int = 0,
-  val migrationProgressText: String = "",
-  val migrationFinished: Boolean = false,
-  val migrationError: String? = null,
+enum class StartupStage {
+  IDLE,
+  CONNECTING_DAEMON,
+  LOADING_STATUS,
+  FAILED,
+}
+
+data class StartupUiState(
+  val visible: Boolean = false,
+  val stage: StartupStage = StartupStage.IDLE,
+  val errorText: String = "",
+  val moduleFound: Boolean = false,
+  val moduleStructureOk: Boolean = true,
 )
 
 data class UiState(
@@ -121,6 +120,8 @@ data class UiState(
   val status: ApiModels.StatusReport? = null,
   // True when the daemon API responds successfully (e.g., /api/status returns 2xx).
   val daemonOnline: Boolean = false,
+  val startup: StartupUiState = StartupUiState(),
+  val daemonUnavailableVisible: Boolean = false,
   val programs: List<ApiModels.Program> = emptyList(),
   val busy: Boolean = false,
   val daemonLogTail: String = "",
@@ -288,7 +289,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
 
   private var statusJob: Job? = null
   private var daemonLogJob: Job? = null
+  private var startupJob: Job? = null
   private var appVisible: Boolean = false
+  private var startupCompleted: Boolean = false
 
   private var didInit: Boolean = false
   private var appUpdateBannerDismissedThisSession: Boolean = false
@@ -754,6 +757,47 @@ private fun clearDownloadedUpdateApk() {
     return changed
   }
 
+
+  private suspend fun determinePendingModuleAction(activeInstalled: Boolean): RootConfigManager.PendingModuleAction {
+    val marked = runCatching { root.readPendingModuleAction("ZDT-D") }.getOrDefault(RootConfigManager.PendingModuleAction.NONE)
+    if (marked != RootConfigManager.PendingModuleAction.NONE) return marked
+    return if (activeInstalled) RootConfigManager.PendingModuleAction.UPDATE else RootConfigManager.PendingModuleAction.INSTALL
+  }
+
+  private suspend fun isRealModuleUpdate(pendingCode: Int?): Boolean {
+    val marked = runCatching { root.readPendingModuleAction("ZDT-D") }.getOrDefault(RootConfigManager.PendingModuleAction.NONE)
+    if (marked == RootConfigManager.PendingModuleAction.INSTALL || marked == RootConfigManager.PendingModuleAction.REINSTALL) return false
+    if (marked == RootConfigManager.PendingModuleAction.UPDATE) return true
+
+    // Heuristic fallback:
+    // If a module is already installed AND there is a staged module under modules_update,
+    // treat the flow as UPDATE even when versionCode is missing (some module.prop variants
+    // may not include it). Reinstall flows are excluded by the markers above and by
+    // moduleReinstallRequired / tamper flags in UI gating.
+    val hasActive = runCatching { root.execRoot("sh -c 'test -f /data/adb/modules/ZDT-D/module.prop'").isSuccess }.getOrDefault(false)
+    val hasStaged = runCatching { root.execRoot("sh -c 'test -f /data/adb/modules_update/ZDT-D/module.prop'").isSuccess }.getOrDefault(false)
+    if (hasActive && hasStaged) {
+      val activeText = runCatching { root.readTextFile("/data/adb/modules/ZDT-D/module.prop") }.getOrDefault("")
+      val activeCode = parseVersionCode(activeText)
+      // If either side lacks versionCode, assume it's an update (but only when module is already installed).
+      if (activeCode == null || pendingCode == null) return true
+      return pendingCode > activeCode
+    }
+
+    val activeText = runCatching { root.readTextFile("/data/adb/modules/ZDT-D/module.prop") }.getOrDefault("")
+    val activeCode = parseVersionCode(activeText)
+    if (activeCode == null || pendingCode == null) return false
+    return pendingCode > activeCode
+  }
+
+  private suspend fun rememberPendingModuleAction(action: RootConfigManager.PendingModuleAction) {
+    runCatching { root.writePendingModuleAction(action, "ZDT-D") }
+  }
+
+  private suspend fun clearPendingModuleActionIfApplied() {
+    runCatching { root.clearPendingModuleAction("ZDT-D") }
+  }
+
   fun ensureRootAndLoadToken() {
     if (_rootState.value != RootState.CHECKING) return
     launchIO {
@@ -774,13 +818,24 @@ private fun clearDownloadedUpdateApk() {
       }
 
       val id = "ZDT-D"
+      val activeInstalled = runCatching {
+        root.execRoot("sh -c 'test -f /data/adb/modules/${id}/module.prop'").isSuccess
+      }.getOrDefault(false)
 
       // 1) If an update is staged, the device must reboot so Magisk can apply it.
       val updatePending = runCatching { root.isModuleUpdatePending() }.getOrDefault(false)
       if (updatePending) {
         val pendingText = runCatching { root.readTextFile("/data/adb/modules_update/${id}/module.prop") }.getOrDefault("")
         val pendingCode = parseVersionCode(pendingText)
-        val reason = if (pendingCode != null) {
+        val pendingAction = runCatching { root.readPendingModuleAction("ZDT-D") }.getOrDefault(RootConfigManager.PendingModuleAction.NONE)
+        val stagedUpdateIsRealUpdate = when (pendingAction) {
+          RootConfigManager.PendingModuleAction.UPDATE -> true
+          RootConfigManager.PendingModuleAction.INSTALL,
+          RootConfigManager.PendingModuleAction.REINSTALL -> false
+          RootConfigManager.PendingModuleAction.NONE -> isRealModuleUpdate(pendingCode)
+        }
+        val isProblemReinstall = pendingAction == RootConfigManager.PendingModuleAction.REINSTALL
+        val reason = if (stagedUpdateIsRealUpdate && pendingCode != null) {
           str(R.string.mv_reboot_pending_update, pendingCode)
         } else {
           str(R.string.mv_reboot_pending_install)
@@ -789,26 +844,25 @@ private fun clearDownloadedUpdateApk() {
           st.copy(
             step = SetupStep.REBOOT,
             rebootRequiredText = reason,
+            rebootPendingIsUpdate = stagedUpdateIsRealUpdate,
             showUpdatePrompt = false,
             updatePromptMandatory = false,
             updatePromptTitle = "",
             updatePromptText = "",
-            moduleReinstallRequired = false,
-            tamperReinstallPendingReboot = runCatching { root.isTamperReinstallPendingReboot() }.getOrDefault(false),
+            moduleReinstallRequired = isProblemReinstall,
+            tamperReinstallPendingReboot = if (stagedUpdateIsRealUpdate) false else runCatching { root.isTamperReinstallPendingReboot() }.getOrDefault(false),
+            explicitReinstallRequested = isProblemReinstall,
           )
         }
-        refreshMigrationUiState()
         return@launchIO
       }
 
-
-      // Update migration UI state (clears any stale flags when no staged update exists).
-      refreshMigrationUiState()
 
       // 2) Check if module is installed in the active directory (modules).
       val installed = runCatching {
         root.execRoot("sh -c 'test -f /data/adb/modules/${id}/module.prop'").isSuccess
       }.getOrDefault(false)
+      if (installed) clearPendingModuleActionIfApplied()
 
       val oldVer = runCatching { root.hasOldModuleVersionWebroot() }.getOrDefault(false)
 
@@ -820,6 +874,7 @@ private fun clearDownloadedUpdateApk() {
             showUpdatePrompt = false,
             moduleReinstallRequired = false,
             tamperReinstallPendingReboot = runCatching { root.isTamperReinstallPendingReboot() }.getOrDefault(false),
+            explicitReinstallRequested = false,
           )
         }
         return@launchIO
@@ -841,6 +896,7 @@ private fun clearDownloadedUpdateApk() {
             showUpdatePrompt = false,
             moduleReinstallRequired = true,
             tamperReinstallPendingReboot = true,
+            explicitReinstallRequested = false,
           )
         }
         return@launchIO
@@ -861,6 +917,7 @@ private fun clearDownloadedUpdateApk() {
             showUpdatePrompt = false,
             moduleReinstallRequired = true,
             tamperReinstallPendingReboot = true,
+            explicitReinstallRequested = false,
           )
         }
         return@launchIO
@@ -883,6 +940,7 @@ private fun clearDownloadedUpdateApk() {
           preInstallWarning = null,
           rebootRequiredText = "",
           showUpdatePrompt = showOptional,
+          explicitReinstallRequested = false,
           updatePromptMandatory = false,
           updatePromptTitle = if (showOptional) str(R.string.mv_module_update_available) else "",
           moduleReinstallRequired = false,
@@ -893,7 +951,7 @@ private fun clearDownloadedUpdateApk() {
         )
       }
 
-      // Start polling only after setup is complete.
+      // Start daemon handshake / polling only after setup is complete.
       maybeStartForegroundJobs()
     }
   }
@@ -905,8 +963,11 @@ private fun clearDownloadedUpdateApk() {
   fun setAppVisible(visible: Boolean) {
     appVisible = visible
     if (!visible) {
+      startupJob?.cancel(); startupJob = null
       statusJob?.cancel(); statusJob = null
       daemonLogJob?.cancel(); daemonLogJob = null
+      startupCompleted = false
+      _uiState.update { it.copy(startup = StartupUiState()) }
       return
     }
 
@@ -917,12 +978,106 @@ private fun clearDownloadedUpdateApk() {
     if (!appVisible) return
     if (_rootState.value != RootState.GRANTED) return
     if (!isSetupDone()) return
-    startStatusPolling()
-    startDaemonLogPolling()
-    refreshPrograms()
 
     // Background update check (non-blocking).
     maybeCheckAppUpdate(force = false)
+
+    if (startupCompleted) {
+      startStatusPolling()
+      startDaemonLogPolling()
+      refreshPrograms()
+      return
+    }
+
+    if (startupJob?.isActive == true) return
+    startStartupHandshake()
+  }
+
+  private fun moduleDirExists(): Boolean = runCatching {
+    root.execRoot("sh -c 'test -d /data/adb/modules/ZDT-D'").isSuccess
+  }.getOrDefault(false)
+
+  private fun moduleStructureLooksValid(): Boolean = runCatching {
+    root.execRoot(
+      "sh -c 'test -f /data/adb/modules/ZDT-D/module.prop && test -d /data/adb/modules/ZDT-D/api && test -d /data/adb/modules/ZDT-D/working_folder && test -f /data/adb/modules/ZDT-D/service.sh'"
+    ).isSuccess
+  }.getOrDefault(false)
+
+  private fun setStartupStage(stage: StartupStage) {
+    _uiState.update { st ->
+      st.copy(startup = st.startup.copy(visible = true, stage = stage, errorText = ""))
+    }
+  }
+
+  private fun finishStartupHandshake() {
+    startupCompleted = true
+    startupJob = null
+    _uiState.update { it.copy(startup = StartupUiState(), daemonUnavailableVisible = false) }
+    startStatusPolling()
+    startDaemonLogPolling()
+    refreshPrograms()
+  }
+
+
+  private fun handleDaemonUnreachable() {
+    _uiState.update { st ->
+      val showOverlay = startupCompleted && appVisible
+      val nextVisible = if (showOverlay) true else st.daemonUnavailableVisible
+      if (!st.daemonOnline && st.daemonUnavailableVisible == nextVisible) st
+      else st.copy(daemonOnline = false, daemonUnavailableVisible = nextVisible)
+    }
+  }
+
+  private fun failStartupHandshake() {
+    startupCompleted = false
+    startupJob = null
+    val moduleFound = moduleDirExists()
+    val structureOk = if (moduleFound) moduleStructureLooksValid() else false
+    val msg = if (moduleFound) {
+      if (structureOk) str(R.string.startup_daemon_failed_module_found)
+      else str(R.string.startup_daemon_failed_module_broken)
+    } else {
+      str(R.string.startup_daemon_failed_module_missing)
+    }
+    _uiState.update { st ->
+      st.copy(
+        daemonOnline = false,
+        startup = StartupUiState(
+          visible = true,
+          stage = StartupStage.FAILED,
+          errorText = msg,
+          moduleFound = moduleFound,
+          moduleStructureOk = structureOk,
+        )
+      )
+    }
+  }
+
+  private fun startStartupHandshake() {
+    startupJob?.cancel()
+    startupJob = launchIO {
+      startupCompleted = false
+      setStartupStage(StartupStage.CONNECTING_DAEMON)
+      val deadline = System.currentTimeMillis() + 10_000L
+      while (isActive && System.currentTimeMillis() < deadline) {
+        try {
+          val rep = api.getStatus()
+          _uiState.update { it.copy(status = rep, daemonOnline = true, daemonUnavailableVisible = false) }
+          root.setCachedServiceOn(ApiModels.isServiceOn(rep))
+          setStartupStage(StartupStage.LOADING_STATUS)
+          finishStartupHandshake()
+          return@launchIO
+        } catch (_: Throwable) {
+        }
+        delay(700)
+      }
+      failStartupHandshake()
+    }
+  }
+
+  override fun retryDaemonStartup() {
+    if (_rootState.value != RootState.GRANTED || !isSetupDone() || !appVisible) return
+    startStartupHandshake()
   }
 
   override fun retryRoot() {
@@ -985,6 +1140,12 @@ private fun clearDownloadedUpdateApk() {
         )
       }
 
+      val pendingAction = when {
+        _setup.value.explicitReinstallRequested || _setup.value.moduleReinstallRequired || _setup.value.tamperReinstallPendingReboot -> RootConfigManager.PendingModuleAction.REINSTALL
+        runCatching { root.execRoot("sh -c 'test -f /data/adb/modules/ZDT-D/module.prop'").isSuccess }.getOrDefault(false) -> RootConfigManager.PendingModuleAction.UPDATE
+        else -> RootConfigManager.PendingModuleAction.INSTALL
+      }
+
       val (ok, out) = when (installer) {
         RootConfigManager.ModuleInstaller.MAGISK -> installViaMagisk()
         RootConfigManager.ModuleInstaller.KSU -> installViaKsu()
@@ -995,8 +1156,8 @@ private fun clearDownloadedUpdateApk() {
       if (ok) {
         // Mark setup as completed so we don't show the installer again after reboot.
         root.setSetupDone(true)
-        _setup.update { it.copy(installing = false, installOk = true, installLog = out) }
-        refreshMigrationUiState()
+        rememberPendingModuleAction(pendingAction)
+        _setup.update { it.copy(installing = false, installOk = true, installLog = out, explicitReinstallRequested = false) }
       } else {
         _setup.update {
           it.copy(
@@ -1132,48 +1293,6 @@ fi""".trimIndent()
       runCatching { root.setTamperReinstallPendingReboot(false) }
       root.execRoot("sh -c 'svc power reboot'")
     }
-  }
-
-
-  // ----- Settings migration (after module update) -----
-
-  override fun requestSettingsMigration() {
-    if (_rootState.value != RootState.GRANTED) return
-    if (!_setup.value.migrationAvailable || !_setup.value.migrationButtonEnabled || _setup.value.migrationDone) return
-    launchIO {
-      // Refresh installer type right before showing dialogs.
-      val installer = runCatching { root.detectModuleInstaller() }.getOrDefault(RootConfigManager.ModuleInstaller.UNKNOWN)
-      val isMagisk = installer == RootConfigManager.ModuleInstaller.MAGISK
-      _setup.update { st ->
-        st.copy(
-          migrationIsMagisk = isMagisk,
-          migrationDialog = if (isMagisk) MigrationDialog.MAGISK_CONFIRM else MigrationDialog.NONMAGISK_WARN,
-          migrationError = null,
-          migrationFinished = false,
-        )
-      }
-    }
-  }
-
-  override fun dismissSettingsMigrationDialog() {
-    _setup.update { st ->
-      st.copy(migrationDialog = MigrationDialog.NONE)
-    }
-  }
-
-  override fun confirmSettingsMigrationDialog() {
-    when (val d = _setup.value.migrationDialog) {
-      MigrationDialog.MAGISK_CONFIRM -> startSettingsMigration()
-      MigrationDialog.NONMAGISK_WARN -> {
-        _setup.update { st -> st.copy(migrationDialog = MigrationDialog.NONMAGISK_CONFIRM) }
-      }
-      MigrationDialog.NONMAGISK_CONFIRM -> startSettingsMigration()
-      MigrationDialog.PROGRESS, MigrationDialog.NONE -> { /* no-op */ }
-    }
-  }
-
-  override fun closeSettingsMigrationProgress() {
-    _setup.update { st -> st.copy(migrationDialog = MigrationDialog.NONE) }
   }
 
 
@@ -2375,301 +2494,6 @@ if (mf.isNotBlank()) {
   }
 
 
-  private fun startSettingsMigration() {
-    if (_rootState.value != RootState.GRANTED) return
-    if (_setup.value.migrationDialog == MigrationDialog.PROGRESS) return
-
-    launchIO {
-      // Always refresh availability before starting.
-      refreshMigrationUiState()
-
-      val updateId = computeStagedUpdateId()
-      if (updateId.isNullOrBlank()) {
-        _setup.update { st ->
-          st.copy(
-            migrationDialog = MigrationDialog.PROGRESS,
-            migrationPercent = 0,
-            migrationProgressText = "",
-            migrationFinished = true,
-            migrationError = str(R.string.mv_auto_059),
-          )
-        }
-        return@launchIO
-      }
-
-      _setup.update { st ->
-        st.copy(
-          migrationDialog = MigrationDialog.PROGRESS,
-          migrationPercent = 0,
-          migrationProgressText = str(R.string.mv_auto_024),
-          migrationFinished = false,
-          migrationError = null,
-        )
-      }
-
-      val ok = performSettingsMigration(updateId)
-      if (ok) {
-        // Keep dialog open; UI shows str(R.string.mv_auto_060).
-        _setup.update { st ->
-          st.copy(
-            migrationFinished = true,
-            migrationError = null,
-            migrationProgressText = str(R.string.mv_auto_061),
-            migrationPercent = 100,
-          )
-        }
-      }
-      // Refresh button state (done/disabled).
-      refreshMigrationUiState()
-    }
-  }
-
-  private suspend fun refreshMigrationUiState() {
-    if (_rootState.value != RootState.GRANTED) {
-      _setup.update { st ->
-        st.copy(
-          migrationAvailable = false,
-          migrationDone = false,
-          migrationButtonEnabled = false,
-          migrationHintText = "",
-          migrationIsMagisk = false,
-          migrationDialog = if (st.migrationDialog == MigrationDialog.PROGRESS) st.migrationDialog else MigrationDialog.NONE,
-          migrationPercent = if (st.migrationDialog == MigrationDialog.PROGRESS) st.migrationPercent else 0,
-          migrationProgressText = if (st.migrationDialog == MigrationDialog.PROGRESS) st.migrationProgressText else "",
-          migrationFinished = if (st.migrationDialog == MigrationDialog.PROGRESS) st.migrationFinished else false,
-          migrationError = if (st.migrationDialog == MigrationDialog.PROGRESS) st.migrationError else null,
-          moduleReinstallRequired = false,
-          tamperReinstallPendingReboot = false,
-        )
-      }
-      return
-    }
-
-    val updateId = computeStagedUpdateId()
-    if (updateId.isNullOrBlank()) {
-      // No staged update: hide the section and clear any remembered id.
-      runCatching { root.clearMigrationDoneUpdateId() }
-      _setup.update { st ->
-        st.copy(
-          migrationAvailable = false,
-          migrationDone = false,
-          migrationButtonEnabled = false,
-          migrationHintText = "",
-          migrationIsMagisk = false,
-          tamperReinstallPendingReboot = runCatching { root.isTamperReinstallPendingReboot() }.getOrDefault(false),
-        )
-      }
-      return
-    }
-
-    val stickyTamperPending = runCatching { root.isTamperReinstallPendingReboot() }.getOrDefault(false)
-
-    if (_setup.value.moduleReinstallRequired || stickyTamperPending) {
-      _setup.update { st ->
-        st.copy(
-          migrationAvailable = false,
-          migrationDone = false,
-          migrationButtonEnabled = false,
-          migrationHintText = "",
-          migrationIsMagisk = false,
-          tamperReinstallPendingReboot = stickyTamperPending,
-        )
-      }
-      return
-    }
-
-    val stored = runCatching { root.getMigrationDoneUpdateId() }.getOrNull()
-    val done = stored != null && stored == updateId
-
-    val installer = runCatching { root.detectModuleInstaller() }.getOrDefault(RootConfigManager.ModuleInstaller.UNKNOWN)
-    val isMagisk = installer == RootConfigManager.ModuleInstaller.MAGISK
-
-    val src = "/data/adb/modules/ZDT-D/working_folder"
-    val dstRoot = "/data/adb/modules_update/ZDT-D"
-    val dst = "$dstRoot/working_folder"
-
-    var enabled = false
-    var hint = ""
-
-    if (done) {
-      enabled = false
-      hint = str(R.string.mv_auto_062)
-    } else {
-      val updateDirOk = rootPathExists(dstRoot)
-      if (!updateDirOk) {
-        enabled = false
-        hint = str(R.string.mv_auto_063)
-      } else if (!rootPathExists(src)) {
-        enabled = false
-        hint = str(R.string.mv_auto_064)
-      } else {
-        val dirs = listSubdirs(src)
-        if (dirs.isEmpty()) {
-          enabled = false
-          hint = str(R.string.mv_auto_065)
-        } else {
-          enabled = true
-          hint = ""
-        }
-      }
-    }
-
-    _setup.update { st ->
-      st.copy(
-        migrationAvailable = true,
-        migrationDone = done,
-        migrationButtonEnabled = enabled,
-        migrationHintText = hint,
-        migrationIsMagisk = isMagisk,
-        tamperReinstallPendingReboot = stickyTamperPending,
-      )
-    }
-  }
-
-  private suspend fun computeStagedUpdateId(): String? {
-    val id = "ZDT-D"
-    val propPath = "/data/adb/modules_update/$id/module.prop"
-    val propText = runCatching { root.readTextFile(propPath) }.getOrDefault("")
-    val code = parseVersionCode(propText)
-    if (code != null) return "vc:$code"
-
-    // Fallback: short sha256 of module.prop (if available)
-    val hash = runCatching {
-      val script = "(sha256sum ${shQuote(propPath)} 2>/dev/null || /system/bin/toybox sha256sum ${shQuote(propPath)} 2>/dev/null || true) | head -n 1 | cut -d ' ' -f 1"
-      val r = root.execRootSh(script)
-      r.out.joinToString("\n").trim()
-    }.getOrDefault("")
-    if (hash.isNotBlank()) return "sha:${hash.take(16)}"
-
-    // Fallback: marker file (generic pending update).
-    val marker = "/data/adb/modules/$id/update"
-    return if (rootPathExists(marker)) "pending_update" else null
-  }
-
-  private suspend fun rootPathExists(path: String): Boolean {
-    val r = root.execRootSh("test -e ${shQuote(path)}")
-    return r.isSuccess
-  }
-
-  private suspend fun listSubdirs(parent: String): List<String> {
-    val script = "find ${shQuote(parent)} -mindepth 1 -maxdepth 1 -type d 2>/dev/null || true"
-    val r = root.execRootSh(script)
-    val out = (r.out + r.err).joinToString("\n")
-    return out.lineSequence()
-      .map { it.trim() }
-      .filter { it.isNotEmpty() }
-      .toList()
-  }
-
-  private suspend fun duKb(path: String): Long {
-    val script = "set -- $(du -sk ${shQuote(path)} 2>/dev/null); echo ${'$'}{1:-0}"
-    val r = root.execRootSh(script)
-    val s = r.out.joinToString("\n").trim()
-    return s.toLongOrNull() ?: 0L
-  }
-
-  private suspend fun performSettingsMigration(updateId: String): Boolean {
-    val src = "/data/adb/modules/ZDT-D/working_folder"
-    val dst = "/data/adb/modules_update/ZDT-D/working_folder"
-    val dstRoot = "/data/adb/modules_update/ZDT-D"
-
-    // Pre-checks (paths must exist).
-    if (!rootPathExists(dstRoot)) {
-      _setup.update { st ->
-        st.copy(
-          migrationError = str(R.string.mv_auto_066),
-          migrationFinished = true,
-        )
-      }
-      return false
-    }
-    if (!rootPathExists(src)) {
-      _setup.update { st ->
-        st.copy(
-          migrationError = str(R.string.mv_auto_067),
-          migrationFinished = true,
-        )
-      }
-      return false
-    }
-
-    val dirs = listSubdirs(src)
-    if (dirs.isEmpty()) {
-      _setup.update { st ->
-        st.copy(
-          migrationError = str(R.string.mv_auto_065),
-          migrationFinished = true,
-        )
-      }
-      return false
-    }
-
-    // Compute weights for progress.
-    val sizes = mutableMapOf<String, Long>()
-    var total = 0L
-    for (d in dirs) {
-      val sz = duKb(d)
-      sizes[d] = sz
-      total += sz
-    }
-    if (total <= 0L) total = dirs.size.toLong().coerceAtLeast(1L)
-
-    // Clean destination and copy.
-    val cleanScript = "mkdir -p ${shQuote(dst)}; rm -rf ${shQuote(dst)}/* ${shQuote(dst)}/.[!.]* ${shQuote(dst)}/..?* 2>/dev/null || true"
-    root.execRootSh(cleanScript)
-
-    var done = 0L
-    for ((i, d) in dirs.withIndex()) {
-      currentCoroutineContext().ensureActive()
-      val name = d.substringAfterLast('/').ifBlank { "folder" }
-      _setup.update { st ->
-        st.copy(
-          migrationProgressText = str(R.string.mv_copying_name, name),
-          migrationPercent = ((done * 100L) / total).toInt().coerceIn(0, 99),
-        )
-      }
-
-      val copyScript = "cp -a ${shQuote(d)} ${shQuote(dst)}/ 2>/dev/null || cp -r ${shQuote(d)} ${shQuote(dst)}/"
-      val r = root.execRootSh(copyScript)
-      if (!r.isSuccess) {
-        val err = (r.out + r.err).joinToString("\n").trim()
-        _setup.update { st ->
-          st.copy(
-            migrationError = run {
-              val detail = if (err.isBlank()) "cp failed" else err
-              str(R.string.mv_copy_error_with_detail, name, detail)
-            },
-            migrationFinished = true,
-          )
-        }
-        return false
-      }
-
-      val w = sizes[d] ?: 0L
-      done += if (w > 0L) w else 1L
-      val pct = ((done * 100L) / total).toInt().coerceIn(0, 100)
-      _setup.update { st ->
-        st.copy(
-          migrationPercent = pct,
-          migrationProgressText = str(R.string.mv_copied_count, i + 1, dirs.size),
-        )
-      }
-    }
-
-    // Persist "done" for this update.
-    runCatching { root.setMigrationDoneUpdateId(updateId) }
-
-    _setup.update { st ->
-      st.copy(
-        migrationDone = true,
-        migrationButtonEnabled = false,
-        migrationHintText = str(R.string.mv_auto_062),
-      )
-    }
-    return true
-  }
-
-
   override fun openModuleInstaller() {
     _setup.update { st ->
       st.copy(
@@ -2679,6 +2503,7 @@ if (mf.isNotBlank()) {
         updatePromptTitle = "",
         updatePromptText = "",
         moduleReinstallRequired = false,
+        explicitReinstallRequested = true,
       )
     }
   }
@@ -3118,10 +2943,10 @@ private fun shQuote(s: String): String {
         try {
           fetchAndUpdateStatus()
         } catch (e: Throwable) {
-          _uiState.update { st -> if (!st.daemonOnline) st else st.copy(daemonOnline = false) }
+          handleDaemonUnreachable()
           log("ERR", "status poll failed: ${e.message ?: e}")
         }
-        delay(2200)
+        delay(5200)
       }
     }
   }
@@ -3168,7 +2993,7 @@ private fun shQuote(s: String): String {
       try {
         fetchAndUpdateStatus()
       } catch (e: Throwable) {
-        _uiState.update { st -> if (!st.daemonOnline) st else st.copy(daemonOnline = false) }
+        handleDaemonUnreachable()
         log("ERR", "status failed: ${e.message ?: e}")
       }
     }
@@ -3176,7 +3001,7 @@ private fun shQuote(s: String): String {
 
   private suspend fun fetchAndUpdateStatus() {
     val rep = api.getStatus()
-    _uiState.update { it.copy(status = rep, daemonOnline = true) }
+    _uiState.update { it.copy(status = rep, daemonOnline = true, daemonUnavailableVisible = false) }
     // Cache last-known state for the Quick Settings tile.
     root.setCachedServiceOn(ApiModels.isServiceOn(rep))
   }
@@ -3620,6 +3445,30 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     }
   }
 
+
+
+
+  private suspend fun rootPathExists(path: String): Boolean {
+    val r = root.execRootSh("test -e ${shQuote(path)}")
+    return r.isSuccess
+  }
+
+  private suspend fun listSubdirs(parent: String): List<String> {
+    val script = "find ${shQuote(parent)} -mindepth 1 -maxdepth 1 -type d 2>/dev/null || true"
+    val r = root.execRootSh(script)
+    val out = (r.out + r.err).joinToString("\n")
+    return out.lineSequence()
+      .map { it.trim() }
+      .filter { it.isNotEmpty() }
+      .toList()
+  }
+
+  private suspend fun duKb(path: String): Long {
+    val script = "set -- $(du -sk ${shQuote(path)} 2>/dev/null); echo ${'$'}{1:-0}"
+    val r = root.execRootSh(script)
+    val s = r.out.joinToString("\n").trim()
+    return s.toLongOrNull() ?: 0L
+  }
 
   private fun detectDeviceInfo(): DeviceInfo {
     val cpu = detectCpuName()

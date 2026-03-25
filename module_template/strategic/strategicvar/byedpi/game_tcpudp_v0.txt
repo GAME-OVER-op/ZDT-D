@@ -1,0 +1,1 @@
+-Kt -d3 -An -d1+s -Ar -f-3 -n vk.com -q1 -Qr -t12 -As -f-5 -r1+s -t15 -S -n google.com -Ku -a5 -An

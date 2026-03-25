@@ -1,0 +1,7 @@
+{
+  "byedpi_port": 10190,
+  "iface_mobile": "rmnet_data0",
+  "iface_wifi": "wlan0",
+  "opera_start_port": 11145,
+  "t2s_port": 11260
+}

@@ -1,0 +1,13 @@
+REGISTER sip:192.168.1.1 SIP/2.0
+Via: SIP/2.0/UDP 192.168.1.2:42931;rport;branch=z9hG4bKPj3fd2e8713ffcd90c43f6ce69f6c98461
+Max-Forwards: 50
+From: <sip:703@192.168.1.1>;tag=ca565d7bd4e24a6d80c631d395ee117e
+To: <sip:703@192.168.1.1>
+Call-ID: dfec38302b8cea3d83c1452527c895c1
+CSeq: 26139 REGISTER
+User-Agent: MicroSIP/3.21.5
+Contact: <sip:703@192.168.1.2:42931;ob>
+Expires: 300
+Allow: PRACK, INVITE, ACK, BYE, CANCEL, UPDATE, INFO, SUBSCRIBE, NOTIFY, REFER, MESSAGE, OPTIONS
+Content-Length:  0
+

@@ -1,0 +1,8 @@
+--lua-init=@/data/adb/modules/ZDT-D/strategic/lua/zapret-lib.lua --lua-init=@/data/adb/modules/ZDT-D/strategic/lua/zapret-antidpi.lua \
+--blob=quic_google:@/data/adb/modules/ZDT-D/strategic/bin/quic_initial_www_google_com.bin \
+--blob=tls_google:@/data/adb/modules/ZDT-D/strategic/bin/tls_clienthello_www_google_com.bin \
+--blob=zero4:0x00000000 \
+--blob=pattern_random:@/data/adb/modules/ZDT-D/strategic/bin/random_pattern.bin \
+--filter-udp=443 --hostlist=/data/adb/modules/ZDT-D/strategic/list/default.txt --hostlist=/data/adb/modules/ZDT-D/strategic/list/custom.txt --hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt --ipset-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt --lua-desync=fake:blob=quic_google:repeats=6 --new \
+--filter-tcp=80,443 --hostlist=/data/adb/modules/ZDT-D/strategic/list/default.txt --hostlist=/data/adb/modules/ZDT-D/strategic/list/custom.txt --hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt --ipset-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt --lua-desync=fake:blob=tls_google:repeats=4:tcp_seq=2:tls_mod=none --lua-desync=multisplit:pos=16,48:seqovl=4:seqovl_pattern=zero4 --new \
+--filter-tcp=80,443 --ipset=/data/adb/modules/ZDT-D/strategic/list/ipset.txt --ipset=/data/adb/modules/ZDT-D/strategic/list/custom.txt --hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt --ipset-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt --lua-desync=fake:blob=tls_google:repeats=4:tcp_seq=2:tls_mod=none --lua-desync=multisplit:pos=24,56:seqovl=6:seqovl_pattern=pattern_random --new

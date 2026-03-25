@@ -1,0 +1,10 @@
+[
+  {
+    "sni": "m.vk.com",
+    "use_byedpi": true
+  },
+  {
+    "sni": "m.vk.com",
+    "use_byedpi": false
+  }
+]

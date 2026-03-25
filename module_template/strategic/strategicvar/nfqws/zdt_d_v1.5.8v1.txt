@@ -1,0 +1,74 @@
+--hostlist-auto=/data/adb/modules/ZDT-D/strategic/list/autohostlist.txt \
+--hostlist-auto-fail-threshold=3 \
+--hostlist-auto-fail-time=45 \
+--hostlist-auto-retrans-threshold=2 \
+--orig-autottl=+5:3-64 \
+--dpi-desync-autottl=-1:3-20 \
+--new \
+  --filter-tcp=80,443 \
+  --hostlist=/data/adb/modules/ZDT-D/strategic/list/netrogat.txt \
+--new \
+  --filter-tcp=443 \
+  --hostlist=/data/adb/modules/ZDT-D/strategic/list/russia-youtube.txt \
+  --hostlist=/data/adb/modules/ZDT-D/strategic/list/russia-youtubeQ.txt \
+  --hostlist=/data/adb/modules/ZDT-D/strategic/list/russia-youtubeGV.txt \
+  --dpi-desync=multidisorder \
+  --dpi-desync-split-pos=1,midsld \
+  --dpi-desync-repeats=12 \
+  --dpi-desync-fooling=md5sig,badseq \
+  --dpi-desync-fake-tls=/data/adb/modules/ZDT-D/strategic/bin/tls_clienthello_www_google_com.bin \
+--new \
+  --filter-tcp=80,443 \
+  --hostlist=/data/adb/modules/ZDT-D/strategic/list/russia-blacklist.txt \
+  --hostlist=/data/adb/modules/ZDT-D/strategic/list/myhostlist.txt \
+  --dpi-desync=fakeddisorder \
+  --dpi-desync-split-pos=method+2,midsld \
+  --dpi-desync-repeats=10 \
+  --dpi-desync-fooling=md5sig,badseq \
+  --dpi-desync-fake-tls=/data/adb/modules/ZDT-D/strategic/bin/tls_clienthello_www_google_com.bin \
+--new \
+  --filter-tcp=443 \
+  --filter-udp=443,50000-50200 \
+  --hostlist=/data/adb/modules/ZDT-D/strategic/list/russia-discord.txt \
+  --ipset=/data/adb/modules/ZDT-D/strategic/list/ipset-discord.txt \
+  --dpi-desync=fake,multidisorder \
+  --dpi-desync-any-protocol \
+  --dpi-desync-repeats=8 \
+  --dpi-desync-fake-quic=/data/adb/modules/ZDT-D/strategic/bin/quic_initial_www_google_com.bin \
+  --dpi-desync-cutoff=d3 \
+--new \
+  --filter-tcp=80,443 \
+  --filter-udp=443 \
+  --hostlist=/data/adb/modules/ZDT-D/strategic/list/ips.txt \
+  --hostlist=/data/adb/modules/ZDT-D/strategic/list/general.txt \
+  --dpi-desync=multidisorder \
+  --dpi-desync-repeats=10 \
+  --dpi-desync-fooling=md5sig,badseq \
+  --dpi-desync-fake-tls=/data/adb/modules/ZDT-D/strategic/bin/tls_clienthello_www_google_com.bin \
+  --dpi-desync-fake-quic=/data/adb/modules/ZDT-D/strategic/bin/quic_initial_www_google_com.bin \
+--new \
+  --filter-udp=443 \
+  --hostlist=/data/adb/modules/ZDT-D/strategic/list/Instagram.list.txt \
+  --dpi-desync=fake \
+  --dpi-desync-repeats=9 \
+  --dpi-desync-cutoff=n2 \
+  --dpi-desync-fake-quic=/data/adb/modules/ZDT-D/strategic/bin/quic_initial_www_google_com.bin \
+--new \
+  --filter-l3=ipv4 \
+  --filter-tcp=443 \
+  --dpi-desync=syndata \
+  --wssize=1:6 \
+--new \
+  --filter-udp=443 \
+  --dpi-desync=fake \
+  --dpi-desync-repeats=6 \
+  --dpi-desync-any-protocol \
+--new \
+  --filter-tcp=443 \
+  --hostlist-auto=/data/adb/modules/ZDT-D/strategic/list/autohostlist.txt \
+  --hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/netrogat.txt \
+  --dpi-desync=split \
+  --dpi-desync-split-pos=1 \
+  --dpi-desync-fooling=badseq \
+  --dpi-desync-repeats=10 \
+  --dpi-desync-autottl

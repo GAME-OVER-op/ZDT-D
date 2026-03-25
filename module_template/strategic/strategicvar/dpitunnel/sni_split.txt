@@ -1,0 +1,3 @@
+--mode transparent --profile default --buffer-size 1024 \
+--split-at-sni --split-position 16 \
+--desync-attacks split

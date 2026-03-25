@@ -1,0 +1,4 @@
+--mode transparent --profile default --buffer-size 1024 \
+--desync-attacks disorder_fake \
+--split-at-sni --split-position 16 \
+--ttl 13 --auto-ttl 1-4-10 --min-ttl 3

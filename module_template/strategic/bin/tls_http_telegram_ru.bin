@@ -1,0 +1,8 @@
+GET / HTTP/1.1
+Host: telegram.org
+Connection: keep-alive
+User-Agent: TelegramBot (Android) 9.0
+Accept: */*
+Accept-Encoding: gzip, deflate
+Accept-Language: ru-RU,ru;q=0.9
+

@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.AW22xxxConfig" parent="Theme.AppCompat.DayNight.NoActionBar" />
+</resources>

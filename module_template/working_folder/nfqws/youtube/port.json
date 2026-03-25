@@ -1,0 +1,5 @@
+{
+  "iface_mobile": "rmnet_data0",
+  "iface_wifi": "wlan0",
+  "port": 200
+}

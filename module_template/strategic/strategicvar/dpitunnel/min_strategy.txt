@@ -1,0 +1,3 @@
+--mode transparent --profile default --buffer-size 512 \
+--split-at-sni --split-position 3 \
+--desync-attacks split_fake

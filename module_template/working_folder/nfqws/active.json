@@ -1,0 +1,7 @@
+{
+  "profiles": {
+    "youtube": {
+      "enabled": true
+    }
+  }
+}

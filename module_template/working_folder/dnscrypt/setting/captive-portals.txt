@@ -1,0 +1,21 @@
+# Android
+connectivitycheck.android.com
+connectivitycheck.gstatic.com
+clients3.google.com
+clients4.google.com
+
+# Apple
+captive.apple.com
+www.apple.com
+
+# Windows
+msftconnecttest.com
+www.msftconnecttest.com
+ipv6.msftconnecttest.com
+msftncsi.com
+www.msftncsi.com
+dns.msftncsi.com
+
+# Linux
+network-test.debian.org
+nmcheck.gnome.org

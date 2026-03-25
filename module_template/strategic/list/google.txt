@@ -1,0 +1,16 @@
+connectivitycheck.gstatic.com
+play.google.com
+googlevideo.com
+youtu.be
+youtube.com
+youtubei.googleapis.com
+youtubeembeddedplayer.googleapis.com
+ytimg.l.google.com
+ytimg.com
+jnn-pa.googleapis.com
+youtube-nocookie.com
+youtube-ui.l.google.com
+yt-video-upload.l.google.com
+wide-youtube.l.google.com
+youtubekids.com
+ggpht.com

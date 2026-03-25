@@ -1,0 +1,312 @@
+googleads.g.doubleclick.net
+static.doubleclick.net
+td.doubleclick.net
+9212252.fls.doubleclick.net
+vortex.data.microsoft.com
+imagedelivery.net
+cm.g.doubleclick.net
+securepubads.g.doubleclick.net
+6a3a8b8cb06718e4e1a3a79c174a340c.safeframe.googlesyndication.com
+stats.g.doubleclick.net
+ad.doubleclick.net
+adservice.google.com
+9572106.fls.doubleclick.net
+pagead2.googlesyndication.com
+bid.g.doubleclick.net
+8571173.fls.doubleclick.net
+ruwf.vkplay.ru
+5922505.fls.doubleclick.net
+browser-intake-datadoghq.com
+12392359.fls.doubleclick.net
+ru.warface.com
+queuev4.vk.com
+5fc36a743c2d4bf1c354ff1eacf92131.safeframe.googlesyndication.com
+d2e4b0b4dfec6fc6f64166867db330cc.safeframe.googlesyndication.com
+32f51d1595f054e0107b5c36f170c35b.safeframe.googlesyndication.com
+tpc.googlesyndication.com
+e3256ee10a86bd891f5336457c6d6af0.safeframe.googlesyndication.com
+cm.mgid.com
+cloudflare-ech.com
+9910737.fls.doubleclick.net
+10810778.fls.doubleclick.net
+9c671a60c2a9f51b7a91a6394125182f.safeframe.googlesyndication.com
+11572030.fls.doubleclick.net
+otxataba.net
+xatab-repacks.games
+vpngate.net
+whoer.net
+chatgpt.com
+discord.com
+gateway.discord.gg
+cdn.discordapp.com
+discordapp.net
+discordapp.com
+discord.gg
+media.discordapp.net
+images-ext-1.discordapp.net
+www.discord.com
+www.discord.app
+discord.app
+*.discord.com
+*.discord.gg
+*.discordapp.com
+*.discordapp.net
+discord.media
+*.discord.media
+discordcdn.com
+discord.dev
+discord.new
+discord.gift
+discordstatus.com
+dis.gd
+discord.co
+discord-attachments-uploads-prd.storage.googleapis.com
+chatgpt.com
+ab.chatgpt.com
+auth.openai.com
+auth0.openai.com
+platform.openai.com
+cdn.oaistatic.com
+files.oaiusercontent.com
+cdn.auth0.com
+tcr9i.chat.openai.com
+webrtc.chatgpt.com
+android.chat.openai.com
+gemini.google.com
+aistudio.google.com
+generativelanguage.googleapis.com
+alkalimakersuite-pa.clients6.google.com
+copilot.microsoft.com
+sydney.bing.com
+edgeservices.bing.com
+claude.ai
+aitestkitchen.withgoogle.com
+aisandbox-pa.googleapis.com
+o.pki.goog
+www.googleapis.com
+speechs3proto2-pa.googleapis.com
+firebaseinstallations.googleapis.com
+proactivebackend-pa.googleapis.com
+geller-pa.googleapis.com
+assistantfrontend-pa.googleapis.com
+assistant-s3-pa.googleapis.com
+searchnotifications-pa.googleapis.com
+notifications-pa.googleapis.com
+update.googleapis.com
+lamssettings-pa.googleapis.com
+taskassist-pa.googleapis.com
+play.geforcenow.com
+geforcenow.com
+static-login.nvidia.com
+login.nvgs.nvidia.com
+*.nvgs.nvidia.com
+*.geforcenow.com
+static-login.nvidia.com/*
+login.nvgs.nvidia.com
+*.nvgs.nvidia.com
+*.nvgs.nvidia.com/*
+v3.astar.bz
+astar.bz
+104.26.0.243
+api.cloudflareclient.com
+*.cloudflareclient.com
+api.cloudflareclient.com
+api.cloudflareclient.com/*
+*.cloudflareclient.com
+*.cloudflareclient.com/*
+104.18.32.47
+
+
+
+chatgpt.com
+ab.chatgpt.com
+auth.openai.com
+auth0.openai.com
+platform.openai.com
+cdn.oaistatic.com
+files.oaiusercontent.com
+cdn.auth0.com
+tcr9i.chat.openai.com
+webrtc.chatgpt.com
+android.chat.openai.com
+gemini.google.com
+aistudio.google.com
+generativelanguage.googleapis.com
+alkalimakersuite-pa.clients6.google.com
+copilot.microsoft.com
+sydney.bing.com
+edgeservices.bing.com
+claude.ai
+aitestkitchen.withgoogle.com
+aisandbox-pa.googleapis.com
+o.pki.goog
+www.googleapis.com
+speechs3proto2-pa.googleapis.com
+firebaseinstallations.googleapis.com
+proactivebackend-pa.googleapis.com
+geller-pa.googleapis.com
+assistantfrontend-pa.googleapis.com
+assistant-s3-pa.googleapis.com
+searchnotifications-pa.googleapis.com
+notifications-pa.googleapis.com
+update.googleapis.com
+lamssettings-pa.googleapis.com
+taskassist-pa.googleapis.com
+play.geforcenow.com
+geforcenow.com
+static-login.nvidia.com
+login.nvgs.nvidia.com
+*.nvgs.nvidia.com
+*.geforcenow.com
+static-login.nvidia.com/*
+login.nvgs.nvidia.com
+*.nvgs.nvidia.com
+*.nvgs.nvidia.com/*
+185.136.70.146
+events.gfe.nvidia.com
+events.gfe.nvidia.com/*
+*.gfe.nvidia.com
+*.gfe.nvidia.com/*
+prod.otel.kaizen.nvidia.com
+*.otel.kaizen.nvidia.com
+prod.otel.kaizen.nvidia.com/*
+*.otel.kaizen.nvidia.com/*
+gx-target-survey-frontend-api.gx.nvidia.com
+gx-target-survey-frontend-api.gx.nvidia.com/*
+gx.nvidia.com
+*.gx.nvidia.com
+*.gx.nvidia.com/*
+telemetry.gfe.nvidia.com
+*.gfe.nvidia.com
+telemetry.gfe.nvidia.com/*
+*.gfe.nvidia.com/*
+pcs.geforcenow.com
+pcs.geforcenow.com/*
+*.geforcenow.com
+*.geforcenow.com/*
+public.games.geforce.com
+*.games.geforce.com
+public.games.geforce.com/*
+*.games.geforce.com/*
+eu-northeast.cloudmatchbeta.nvidiagrid.net
+eu-northeast.cloudmatchbeta.nvidiagrid.net/*
+*.cloudmatchbeta.nvidiagrid.net
+*.cloudmatchbeta.nvidiagrid.net/*
+api.cloudflareclient.com
+api.cloudflareclient.com/*
+*.cloudflareclient.com
+*.cloudflareclient.com/*
+104.17.143.163
+104.26.0.243
+188.114.98.229
+v3.astar.bz
+anistar.org
+www.api.anixart.tv
+api.anixart.tv
+gx-target-experiments-frontend-api.gx.nvidia.com
+ca-east.cloudmatchbeta.nvidiagrid.net
+games.geforce.com
+pns.geforcenow.com
+eu-east.cloudmatchbeta.nvidiagrid.net
+mes.geforcenow.com
+eu-central.cloudmatchbeta.nvidiagrid.net
+eu-southwest.cloudmatchbeta.nvidiagrid.net
+eu-southeast.cloudmatchbeta.nvidiagrid.net
+80.84.172.142
+eu-west.cloudmatchbeta.nvidiagrid.net
+us-southeast.cloudmatchbeta.nvidiagrid.net
+us-south.cloudmatchbeta.nvidiagrid.net
+us-northeast.cloudmatchbeta.nvidiagrid.net
+
+204.12.192.219 chatgpt.com
+204.12.192.219 ab.chatgpt.com
+204.12.192.219 auth.openai.com
+204.12.192.219 auth0.openai.com
+204.12.192.219 platform.openai.com
+204.12.192.219 cdn.oaistatic.com
+204.12.192.219 files.oaiusercontent.com
+204.12.192.219 cdn.auth0.com
+204.12.192.219 tcr9i.chat.openai.com
+204.12.192.219 webrtc.chatgpt.com
+204.12.192.219 android.chat.openai.com
+204.12.192.219 gemini.google.com
+204.12.192.219 aistudio.google.com
+204.12.192.219 generativelanguage.googleapis.com
+204.12.192.219 alkalimakersuite-pa.clients6.google.com
+204.12.192.219 copilot.microsoft.com
+204.12.192.219 sydney.bing.com
+204.12.192.219 edgeservices.bing.com
+204.12.192.219 claude.ai
+204.12.192.219 aitestkitchen.withgoogle.com
+204.12.192.219 aisandbox-pa.googleapis.com
+204.12.192.219 o.pki.goog
+204.12.192.219 www.googleapis.com
+204.12.192.219 speechs3proto2-pa.googleapis.com
+204.12.192.219 firebaseinstallations.googleapis.com
+204.12.192.219 proactivebackend-pa.googleapis.com
+204.12.192.219 geller-pa.googleapis.com
+204.12.192.219 assistantfrontend-pa.googleapis.com
+204.12.192.219 assistant-s3-pa.googleapis.com
+204.12.192.219 searchnotifications-pa.googleapis.com
+204.12.192.219 notifications-pa.googleapis.com
+204.12.192.219 update.googleapis.com
+204.12.192.219 lamssettings-pa.googleapis.com
+204.12.192.219 taskassist-pa.googleapis.com
+204.12.192.219 play.geforcenow.com
+204.12.192.219 geforcenow.com
+204.12.192.219 static-login.nvidia.com
+204.12.192.219 login.nvgs.nvidia.com
+204.12.192.219 *.nvgs.nvidia.com
+204.12.192.219 *.geforcenow.com
+204.12.192.219 static-login.nvidia.com/*
+204.12.192.219 login.nvgs.nvidia.com
+204.12.192.219 *.nvgs.nvidia.com
+204.12.192.219 *.nvgs.nvidia.com/*
+204.12.192.219 185.136.70.146
+204.12.192.219 events.gfe.nvidia.com
+204.12.192.219 events.gfe.nvidia.com/*
+204.12.192.219 *.gfe.nvidia.com
+204.12.192.219 *.gfe.nvidia.com/*
+204.12.192.219 prod.otel.kaizen.nvidia.com
+204.12.192.219 *.otel.kaizen.nvidia.com
+204.12.192.219 prod.otel.kaizen.nvidia.com/*
+204.12.192.219 *.otel.kaizen.nvidia.com/*
+204.12.192.219 gx-target-survey-frontend-api.gx.nvidia.com
+204.12.192.219 gx-target-survey-frontend-api.gx.nvidia.com/*
+204.12.192.219 gx.nvidia.com
+204.12.192.219 *.gx.nvidia.com
+204.12.192.219 *.gx.nvidia.com/*
+204.12.192.219 telemetry.gfe.nvidia.com
+204.12.192.219 *.gfe.nvidia.com
+204.12.192.219 telemetry.gfe.nvidia.com/*
+204.12.192.219 *.gfe.nvidia.com/*
+204.12.192.219 pcs.geforcenow.com
+204.12.192.219 pcs.geforcenow.com/*
+204.12.192.219 *.geforcenow.com
+204.12.192.219 *.geforcenow.com/*
+204.12.192.219 public.games.geforce.com
+204.12.192.219 *.games.geforce.com
+204.12.192.219 public.games.geforce.com/*
+204.12.192.219 *.games.geforce.com/*
+204.12.192.219 eu-northeast.cloudmatchbeta.nvidiagrid.net
+204.12.192.219 eu-northeast.cloudmatchbeta.nvidiagrid.net/*
+204.12.192.219 *.cloudmatchbeta.nvidiagrid.net
+204.12.192.219 *.cloudmatchbeta.nvidiagrid.net/*
+204.12.192.219 api.cloudflareclient.com
+204.12.192.219 api.cloudflareclient.com/*
+204.12.192.219 *.cloudflareclient.com
+204.12.192.219 *.cloudflareclient.com/*
+204.12.192.219 gx-target-experiments-frontend-api.gx.nvidia.com
+204.12.192.219 ca-east.cloudmatchbeta.nvidiagrid.net
+204.12.192.219 games.geforce.com
+204.12.192.219 pns.geforcenow.com
+204.12.192.219 eu-east.cloudmatchbeta.nvidiagrid.net
+204.12.192.219 mes.geforcenow.com
+204.12.192.219 eu-central.cloudmatchbeta.nvidiagrid.net
+204.12.192.219 eu-southwest.cloudmatchbeta.nvidiagrid.net
+204.12.192.219 eu-southeast.cloudmatchbeta.nvidiagrid.net
+204.12.192.219 80.84.172.142
+204.12.192.219 eu-west.cloudmatchbeta.nvidiagrid.net
+204.12.192.219 us-southeast.cloudmatchbeta.nvidiagrid.net
+204.12.192.219 us-south.cloudmatchbeta.nvidiagrid.net
+204.12.192.219 us-northeast.cloudmatchbeta.nvidiagrid.net

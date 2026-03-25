@@ -1,0 +1,1 @@
+--mode transparent --ca-bundle-path /data/adb/modules/ZDT-D/strategic/certificate/ca.bundle --profile default --buffer-size 1024 --doh-server https://dns.google/dns-query --ttl 19 --auto-ttl 8-26-49 --min-ttl 5 --desync-attacks disorder --wsize 3 --wsfactor 5 --split-at-sni --split-position 16 --wrong-seq

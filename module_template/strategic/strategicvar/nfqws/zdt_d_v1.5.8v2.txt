@@ -1,0 +1,13 @@
+--filter-udp=80,443,3478,19302,19305,19309,1400-64000 \
+  --filter-tcp=80,443,5222 \
+  --ipset=/data/adb/modules/ZDT-D/strategic/list/ip-telegram.txt \
+  --dpi-desync=fake,multidisorder \
+  --dpi-desync-split-pos=method+3,host-5 \
+  --dpi-desync-repeats=4 \
+  --dpi-desync-fake-stun=0x00000100040100000000000000000000000000000000000000000000 \
+  --dpi-desync-fake-tls=/data/adb/modules/ZDT-D/strategic/bin/tls_http_telegram.bin \
+  --dpi-desync-cutoff=n8 \
+  --orig-autottl=+6:10-64 \
+  --ctrack-timeouts=40:300:40:60 \
+  --hostlist-auto=/data/adb/modules/ZDT-D/strategic/list/telegram-auto-hostlist.txt \
+  --hostlist-auto-fail-threshold=2

@@ -1,0 +1,347 @@
+# -----------------------------------------------------------------------------
+# Краткая документация (коротко — суть)
+#
+# dnscrypt-proxy — локальный DNS-прокси/резолвер:
+# - Поддерживает зашифрованные протоколы: DNSCrypt v2, DoH (DNS over HTTPS), ODoH, DoH over HTTP/3 (экспериментально).
+# - Делает кэширование DNS-ответов, фильтрацию (блок-листы), cloaking (подмена/перенаправление имён) и anonymized DNS через relays.
+# - Может брать списки резолверов из удалённых источников (sources) и проверять их подлинность minisign-ключом.
+# - Имеет web-интерфейс мониторинга (monitoring_ui), логирование и ротацию логов.
+#
+# Как использовать этот файл:
+# 1) Скопировать как dnscrypt-proxy.toml в конфигурационную папку dnscrypt-proxy.
+# 2) Не менять строки конфигурации без понимания — параметры влияют на приватность, совместимость и доступность upstream.
+# 3) Для отладки включите логи и monitoring_ui на localhost, проверьте права на log_file (особенно на Android).
+#
+# -----------------------------------------------------------------------------
+# Развёрнутый справочник: что делает каждая секция и параметр (детально)
+#
+# Формат: для каждой опции сначала пояснение (комментарием), затем исходная строка конфигурации (оставлена нетронутой).
+# Комментарии дают: тип значения, назначение, влияние, примеры и рекомендации.
+#
+# -----------------------------------------------------------------------------
+
+##############################################
+#                                            #
+#        dnscrypt-proxy configuration        #
+#                                            #
+##############################################
+
+## Список резолверов (имена из секций static и remote)
+# Тип: массив строк
+# Назначение: список имён upstream-резолверов, которые dnscrypt-proxy будет использовать для ответа.
+# Примечание: имена должны соответствовать секциям [static.'name'] или именам из загруженных sources (public-resolvers).
+# Если список пуст — может выбираться автоматически (зависит от настроек). Явный список фиксирует используемые upstream.
+# Что можно настроить: изменить порядок (приоритет), добавить/удалить имена, подставить только trusted-резолверы.
+# Примеры допустимых значений для одного элемента: 'cloudflare', 'google', 'adguard-dns', 'nextdns' и т.д.
+server_names = ['comss.one', 'adguard-dns', 'dns.watch', 'uncensoreddns', 'opendns', 'cloudflare', 'google', 'adfilter-adl', 'brahma-world', 'deffer-dns.au', 'scaleway-ams', 'serbica', 'mullvad', 'controld', 'cs-sydney', 'cs-sk', 'cs-ro', 'cs-sk', 'cs-ore', 'cs-tokyo', 'cs-il', 'cs-hungary', 'cs-ga', 'nextdns', 'qihoo360-doh', 'uncensoreddns-ipv4']
+
+
+## Слушаем все DNS-запросы на localhost:863
+# Тип: массив строк (адрес:порт)
+# Назначение: где dnscrypt-proxy принимает клиентские DNS-запросы.
+# Важно: не должен конфликтовать с systemd-resolved, dnsmasq, unbound и т.п.
+# Рекомендации: локально обычно '127.0.0.1:53' или нестандартный порт (863) для coexistence. Для внешнего доступа — 0.0.0.0:53 (опасно).
+listen_addresses = ['127.0.0.1:863', '[::1]:863']
+
+# Максимальное число одновременно обслуживаемых клиентов.
+# Тип: integer
+# Рекомендации: ставьте в зависимости от ресурсов устройства (на Android-устройстве 2000 может быть много, но обычно OK).
+max_clients = 2000
+
+## Require servers (from remote sources) to satisfy specific properties
+# Эти флаги говорят dnscrypt-proxy фильтровать remote-сервера (из sources) по поддержке протоколов и IP-стека.
+
+# Разрешать IPv4-серверы (true/false). Если false — IPv4-сервера исключаются.
+ipv4_servers = true
+# Разрешать IPv6-серверы (true/false). Если false — IPv6-серверы исключаются.
+ipv6_servers = true
+# Требовать поддержку DNSCrypt.
+dnscrypt_servers = true
+# Требовать поддержку DoH (DNS over HTTPS).
+doh_servers = true
+# Требовать поддержку ODoH (Oblivious DoH).
+odoh_servers = true
+
+## Require servers defined by remote sources to satisfy specific properties
+# (дополнительный комментарий — дубликат описания выше; обычно используется для пояснения в конфиге)
+
+## Путь до файла логов
+# Тип: строка (путь)
+# Назначение: куда записывать лог dnscrypt-proxy.
+# Примечание: убедитесь, что путь доступен для записи и есть место — особенно важно для Android (SELinux, права).
+log_file = '/data/adb/modules/ZDT-D/working_folder/dnscrypt/log/dnscrypt-proxy.log'
+
+# Требовать DNSSEC-валидированных апстримов (true/false).
+# Если true — будут отфильтрованы серверы, которые не поддерживают DNSSEC.
+require_dnssec = false
+# Требовать, чтобы серверы отмечались как не логирующие (nolog).
+require_nolog = true
+# Требовать, чтобы серверы не применяли фильтры (nofilter).
+require_nofilter = false
+# Список отключённых имён серверов (пустой массив = ничего не отключено).
+disabled_server_names = []
+
+## Always use TCP to connect to upstream servers.
+# Если true — все обращения к upstream пойдут через TCP (вместо UDP или DoH).
+# Плюсы: надёжность, обход некоторых блокировок. Минусы: более высокий overhead и задержки.
+force_tcp = false
+
+## Enable *experimental* support for HTTP/3 (DoH3, HTTP over QUIC)
+# Включение HTTP/3 (QUIC) — экспериментально, зависит от поддержки на стороне сервера.
+# http3_probe = true — при выборе сервера дополнительно проверять совместимость HTTP/3.
+http3 = true
+http3_probe = true
+
+## How long a DNS query will wait for a response, in milliseconds.
+# timeout в миллисекундах — определяет сколько ждать upstream перед таймаутом.
+# Пример: 9000 = 9 секунд.
+timeout = 9000
+# keepalive: время (в секундах) для удержания TCP-сессий/keepalive.
+keepalive = 25
+
+## Response for blocked queries.
+# Как отвечать на заблокированные запросы:
+# - 'refused' — просто отказ.
+# - 'hinfo' — возвращать HINFO-запись (иногда совместима с Android).
+# - 'a:<IP>' или 'aaaa:<IP>' — вернуть конкретный IP (перенаправление).
+blocked_query_response = 'hinfo'
+
+## Delay, in minutes, after which certificates are reloaded
+# cert_refresh_delay в минутах: периодическое обновление сертификатов (DoH/DoT/etc).
+cert_refresh_delay = 480
+
+## DNSCrypt: Create a new, unique key for every single DNS query
+# Эпhemeral ключи повышают приватность (меньше связности), но увеличивают нагрузку.
+dnscrypt_ephemeral_keys = true
+
+## Bootstrap resolvers
+# Список нешифрованных резолверов (IP:порт), используемых только для BOOTSTRAP (разрешение адресов DoH/DNSCrypt серверов).
+# По ним НЕ идут обычные пользовательские запросы (они используются лишь на этапе инициализации).
+bootstrap_resolvers = ['9.9.9.9:53', '9.9.9.11:53', '1.1.1.1:53', '8.8.8.8:53', '8.8.4.4:53', '94.140.14.14:53', '84.200.69.80:53', '91.239.100.100:53', '95.85.95.85:53', '8.26.56.26:53', '149.112.112.112:53', '156.154.70.1:53']
+# Игнорировать системные DNS-настройки (например /etc/resolv.conf). Рекомендуется true для избежания утечек.
+ignore_system_dns = true
+
+## Maximum time (in seconds) to wait for network connectivity before
+## initializing the proxy.
+# netprobe_timeout — сколько секунд ждать ответа от netprobe_address перед инициализацией.
+netprobe_timeout = 120
+# netprobe_address — адрес, по которому проверяется доступность интернета (формат IP:порт).
+# Лучше ставить надёжный адрес в вашей сети.
+netprobe_address = '8.8.4.4:53'
+
+## Automatic log files rotation
+# Ротация логов: размер в МБ, возраст в днях, число бэкапов.
+log_files_max_size = 1
+log_files_max_age = 3
+log_files_max_backups = 0
+
+#########################
+#        Filters        #
+#########################
+
+# block_ipv6 = true — блокировать AAAA-ответы (IPv6).
+# Используется, если сеть не поддерживает IPv6 или чтобы избежать IPv6-утечек.
+block_ipv6 = false
+# block_unqualified = true — блокировать неквалифицированные имена (без TLD).
+block_unqualified = true
+# block_undelegated = true — блокировать ответы из зон без делегирования.
+block_undelegated = true
+# reject_ttl — TTL для ответов отказа/блокировки (в секундах).
+reject_ttl = 65
+
+###########################
+#        DNS cache        #
+###########################
+
+# cache = true — включить кэширование DNS-ответов.
+cache = true
+# cache_size — максимальное число записей в кэше.
+cache_size = 20000
+# cache_min_ttl — минимальный TTL (в секундах) для положительных записей.
+cache_min_ttl = 1200
+# cache_max_ttl — максимальный TTL (в секундах) для положительных записей.
+cache_max_ttl = 7200
+# cache_neg_min_ttl — минимальный TTL для негативных ответов (NXDOMAIN).
+cache_neg_min_ttl = 3600
+# cache_neg_max_ttl — максимальный TTL для негативных ответов.
+cache_neg_max_ttl = 86400
+
+# lb_estimator = false — собирать метрики для балансировщика (если true — более интеллектуальный выбор сервера).
+lb_estimator = false
+
+# tls_cipher_suite — идентификаторы cipher suites для TLS/QUIC (можно настроить для ограничения используемых шифров).
+#tls_cipher_suite = [52392, 49199]
+
+
+# cloaking_rules — файл с правилами cloaking (замена/переписывание имен).
+# Формат: строка имя -> заменённое имя/IP. Используется для internal overrides.
+cloaking_rules = 'cloaking-rules.txt'
+# cloak_ptr — контролирует поведение PTR при cloaking.
+cloak_ptr = false
+# forwarding_rules — файл с правилами форвардинга (напрямую на определённые upstream).
+forwarding_rules = 'forwarding-rules.txt'
+######################################################
+#        Pattern-based blocking (blocklists)         #
+######################################################
+
+[captive_portals]
+
+## Файл, содержащий набор имён, используемых операционными системами для
+## проверки соединения и captive-порталов, вместе с жёстко заданными
+## IP-адресами для возврата.
+# map_file = 'captive-portals.txt'
+# Примечание: если у вас кастомная сеть, перечислите в файле имена, которые OS использует для проверки интернет-доступа,
+# чтобы не ломать поведение проверки captive portal.
+
+[anonymized_dns]
+# routes — маршруты для анонимизированного DNS (Anonymized DNSCrypt / relays).
+# Формат элементов: { server_name = '<имя шаблона или *>', via = ['anon-relay1', 'anon-relay2', ...] }
+# Поведение: запросы к server_name будут направляться через перечисленные relays (увеличивая приватность).
+routes = [
+    { server_name = '*', via = ['anon-cs-tokyo', 'anon-cs-caeast', 'anon-cs-belgium', 'anon-cs-barcelona', 'anon-serbica', 'anon-ibksturm', 'anon-cs-austria', 'anon-cs-montreal', 'anon-cs-hungary', 'anon-cs-dus'] }
+]
+
+[blocked_names]
+# blocked_names_file — файл со списком доменных имён/шаблонов для блокировки (pattern-based).
+blocked_names_file = 'blocked-names.txt'
+
+###########################################################
+#        Pattern-based IP blocking (IP blocklists)        #
+###########################################################
+
+[blocked_ips]
+# blocked_ips_file — файл со списком IP или CIDR для блокировки.
+blocked_ips_file = 'blocked-ips.txt'
+
+[broken_implementations]
+fragments_blocked = ['cisco', 'cisco-ipv6', 'cisco-familyshield', 'cisco-familyshield-ipv6', 'cisco-sandbox', 'cleanbrowsing-adult', 'cleanbrowsing-adult-ipv6', 'cleanbrowsing-family', 'cleanbrowsing-family-ipv6', 'cleanbrowsing-security', 'cleanbrowsing-security-ipv6']
+
+######################################################
+#   Pattern-based allow lists (blocklists bypass)    #
+######################################################
+
+[allowed_names]
+# allowed_names_file — файл со списком имён, которые всегда разрешаются (override blocked_names).
+allowed_names_file = 'allowed-names.txt'
+
+#########################################################
+#   Pattern-based allowed IPs lists (blocklists bypass) #
+#########################################################
+
+[allowed_ips]
+# allowed_ips_file — файл со списком IP, которые всегда разрешаются (override blocked_ips).
+allowed_ips_file = 'allowed-ips.txt'
+
+
+[monitoring_ui]
+
+## Enable the monitoring UI
+# enabled = true — включает локальный web-интерфейс для мониторинга работы proxy.
+enabled = false
+
+## Listen address for the monitoring UI
+# listen_address = "127.0.0.1:8080" — где доступен интерфейс. Не ставьте 0.0.0.0 без auth.
+listen_address = "127.0.0.1:8080"
+
+## Optional username and password for basic authentication
+## To disable authentication, set username to an empty string: username = ""
+## If both username and password are empty, no authentication is required
+# username/password — базовая аутентификация. На Android: не оставляйте 'changeme' в продуктиве.
+username = "admin"
+password = "changeme"
+
+#########################
+#        Servers        #
+#########################
+
+[sources]
+# Источники (sources) — удалённые файлы со списками резолверов/релей с подписью (minisign).
+# Полезно для автоматического обновления списка доступных upstream.
+
+  [sources.public-resolvers]
+    # urls — откуда скачивать список публичных резолверов.
+    urls = ['https://raw.githubusercontent.com/DNSCrypt/dnscrypt-resolvers/master/v3/public-resolvers.md', 'https://download.dnscrypt.info/resolvers-list/v3/public-resolvers.md']
+    # cache_file — локальный файл-кэш для загруженного списка.
+    cache_file = 'public-resolvers.md'
+    # minisign_key — публичный minisign-ключ для проверки подписи скачанного файла.
+    minisign_key = 'RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3'
+    # refresh_delay — как часто обновлять (в часах). Пример: 72 часа.
+    refresh_delay = 72
+    # prefix — префикс (если нужно фильтровать имена или добавлять префикс).
+    prefix = ''
+
+  [sources.relays]
+    urls = ['https://raw.githubusercontent.com/DNSCrypt/dnscrypt-resolvers/master/v3/relays.md', 'https://download.dnscrypt.info/resolvers-list/v3/relays.md']
+    cache_file = 'relays.md'
+    minisign_key = 'RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3'
+    refresh_delay = 72
+    prefix = ''
+
+########################################
+#            Static entries            #
+########################################
+
+[static]
+# Секция static — жёстко фиксированные, заранее заданные резолверы.
+# Полезно, если вы доверяете конкретному stamp и не хотите зависеть от sources.
+
+[static.'comss.one']
+# stamp — SDNS stamp: кодированная строка, указывающая протокол, адрес, публичный ключ и путь.
+# Используйте stamp, если хотите гарантированно подключаться к конкретному endpoint.
+stamp = 'sdns://AgMAAAAAAAAADjgzLjIyMC4xNjkuMTU1IOVh_sR8Wh3NwumyfOVEFrzdxzIG9bZ6Vl2nNfJprop5DWRucy5jb21zcy5vbmUKL2Rucy1xdWVyeQ'
+
+# -----------------------------------------------------------------------------
+# Раздел: Что можно изменить / примеры альтернативных значений (коротко)
+#
+# - server_names:
+#     * Можно задать только один доверенный сервер: ['cloudflare']
+#     * Можно указать только DoH- или только DNSCrypt-резолверы (в зависимости от require_*).
+#
+# - listen_addresses:
+#     * '127.0.0.1:53' — стандартный порт (заменит локальный system resolver)
+#     * '0.0.0.0:53' — слушать на всех интерфейсах (опасно без firewall/auth)
+#     * '::1:53' — IPv6 локальный адрес
+#
+# - ipv6_servers / block_ipv6:
+#     * Если сеть поддерживает IPv6: включить ipv6_servers=true и block_ipv6=false
+#
+# - force_tcp:
+#     * true — если сеть режет UDP DNS или нужно обойти NAT/фрагментацию
+#
+# - blocked_query_response:
+#     * 'refused' — явный отказ (многие приложения корректно обрабатывают)
+#     * 'a:127.0.0.1' — возвращать localhost (может ломать некоторые приложения)
+#     * 'hinfo' — совместимость с некоторыми версиями Android
+#
+# - dnscrypt_ephemeral_keys:
+#     * true — лучший privacy при DNSCrypt (каждый запрос с новым ключом)
+#     * false — меньше CPU, но меньше unlinkability
+#
+# - http3 / http3_probe:
+#     * включать если ваши upstream и сеть поддерживают HTTP/3 (QUIC)
+#
+# - bootstrap_resolvers:
+#     * указывайте несколько надёжных публичных IPv4 адресов; можно добавить локальные DNS провайдера, если доверяете.
+#
+# - log_file / rотация:
+#     * На Android: проверяйте права доступа и SELinux; лог-путь должен быть доступен модулю/приложению.
+#
+# - cloaking_rules / forwarding_rules:
+#     * cloaking использут для подмены имени (например internal.host -> 10.0.0.5)
+#     * forwarding направляет некоторые домены прямо на указанный upstream/resolver
+#
+# - sources:
+#     * refresh_delay можно уменьшить (например 24) для более частых обновлений, но это увеличит трафик.
+#
+# -----------------------------------------------------------------------------
+# Советы по отладке и проверке
+#
+# 1) Запустите dnscrypt-proxy в debug-режиме (если доступно) и смотрите лог file.
+# 2) Проверяйте, что listen_addresses не пересекается с другими сервисами.
+# 3) Убедитесь, что bootstrap_resolvers доступны (не блокируются межсетевым фильтром).
+# 4) Если нет доступных upstream после включения require_* опций — временно отключите требование и посмотрите логи.
+# 5) На Android: используйте правильные права и проверяйте SELinux (если модуль в Magisk/adb-modules).
+#
+# -----------------------------------------------------------------------------
+# Конец файла с полной информацией и исходной конфигурацией (все строки конфигурации сохранены).
+# -----------------------------------------------------------------------------

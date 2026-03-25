@@ -1,0 +1,176 @@
+plugins {
+  id 'com.android.application'
+  id 'org.jetbrains.kotlin.android'
+}
+
+
+def keystorePropsFile = file('../keystore.properties')
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+  keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+
+def defaultStoreFile = file('../.tools/signing/debug.keystore')
+def defaultStorePassword = 'android'
+def defaultKeyAlias = 'androiddebugkey'
+def defaultKeyPassword = 'android'
+
+def rootModuleProp = file('../../module.prop')
+def moduleProps = new Properties()
+if (!rootModuleProp.exists()) {
+  throw new GradleException("Root module.prop not found: ${rootModuleProp}")
+}
+rootModuleProp.withInputStream { moduleProps.load(it) }
+
+def moduleVersionCode = (moduleProps.getProperty('versionCode') ?: '1').trim().toInteger()
+def moduleVersionName = (moduleProps.getProperty('version') ?: '1.0').trim()
+def generatedAssetsDir = file("$buildDir/generated/zdt-assets/main")
+def generatedModuleZip = file('../../out/module/zdt_module.zip')
+def zdtModuleZip = file("$generatedAssetsDir/zdt_module.zip")
+def bundledModuleProp = file("$generatedAssetsDir/module.prop")
+
+android {
+  namespace 'com.android.zdtd.service'
+  compileSdk 34
+
+  defaultConfig {
+    applicationId 'com.android.zdtd.service'
+    minSdk 26
+    targetSdk 34
+    versionCode moduleVersionCode
+    versionName moduleVersionName
+  }
+
+  signingConfigs {
+    zdt {
+      def resolvedStoreFile = keystoreProps.getProperty('storeFile') ?: defaultStoreFile.absolutePath
+      storeFile file(resolvedStoreFile)
+      storePassword keystoreProps.getProperty('storePassword') ?: defaultStorePassword
+      keyAlias keystoreProps.getProperty('keyAlias') ?: defaultKeyAlias
+      keyPassword keystoreProps.getProperty('keyPassword') ?: defaultKeyPassword
+      enableV1Signing true
+      enableV2Signing true
+      enableV3Signing true
+    }
+  }
+
+  buildTypes {
+    debug {
+      minifyEnabled false
+      signingConfig signingConfigs.zdt
+      debuggable true
+    }
+    release {
+      minifyEnabled false
+      signingConfig signingConfigs.zdt
+      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+    }
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+
+  kotlinOptions {
+    jvmTarget = '17'
+  }
+
+  buildFeatures {
+    // Some environments disable BuildConfig generation via global defaults.
+    // We rely on BuildConfig.VERSION_CODE/NAME and APPLICATION_ID, so force-enable it.
+    buildConfig true
+    viewBinding false
+    compose true
+  }
+
+  composeOptions {
+    // Kotlin 1.9.22
+    kotlinCompilerExtensionVersion '1.5.8'
+  }
+
+  sourceSets {
+    main {
+      assets.srcDirs += generatedAssetsDir
+    }
+  }
+}
+
+// Sync generated module payload from the repo root when it already exists.
+// module.prop is always taken from the single source of truth in ../../module.prop
+// and copied into generated assets only for packaging into the APK.
+tasks.register('syncGeneratedModuleAssets') {
+  doLast {
+    generatedAssetsDir.mkdirs()
+    if (generatedModuleZip.exists()) {
+      ant.copy(file: generatedModuleZip, tofile: zdtModuleZip, overwrite: true)
+      println("[ZDT-D] synced generated module zip: ${generatedModuleZip}")
+    }
+    ant.copy(file: rootModuleProp, tofile: bundledModuleProp, overwrite: true)
+    println("[ZDT-D] synced module.prop from root: ${rootModuleProp}")
+  }
+}
+
+// Fallback placeholder so Android build does not fail when the module archive was not generated yet.
+tasks.register('ensureZdtModuleZip') {
+  doLast {
+    generatedAssetsDir.mkdirs()
+    if (!zdtModuleZip.exists()) {
+      def fos = new FileOutputStream(zdtModuleZip)
+      def zos = new java.util.zip.ZipOutputStream(fos)
+      try {
+        def entry = new java.util.zip.ZipEntry('PLACEHOLDER.txt')
+        zos.putNextEntry(entry)
+        zos.write('Replace this file with the real ZDT-D Magisk module zip.'.getBytes('UTF-8'))
+        zos.closeEntry()
+      } finally {
+        zos.close()
+        fos.close()
+      }
+    }
+    if (!bundledModuleProp.exists()) {
+      ant.copy(file: rootModuleProp, tofile: bundledModuleProp, overwrite: true)
+    }
+  }
+}
+
+// Run before building so generated assets are always present.
+tasks.named('preBuild') {
+  dependsOn('syncGeneratedModuleAssets')
+  dependsOn('ensureZdtModuleZip')
+}
+
+android.applicationVariants.all { variant ->
+  variant.outputs.all {
+    outputFileName = 'app-release.apk'
+  }
+}
+
+dependencies {
+  implementation 'androidx.core:core-ktx:1.12.0'
+  implementation 'androidx.appcompat:appcompat:1.6.1'
+  implementation 'androidx.activity:activity-compose:1.8.2'
+
+  // Compose
+  implementation platform('androidx.compose:compose-bom:2024.02.00')
+  implementation 'androidx.compose.ui:ui'
+  implementation 'androidx.compose.ui:ui-tooling-preview'
+  implementation 'androidx.compose.foundation:foundation'
+  implementation 'androidx.compose.material3:material3'
+  implementation 'androidx.compose.animation:animation'
+  implementation 'androidx.compose.material:material-icons-extended'
+
+  // Lifecycle / coroutines helpers
+  implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+  implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
+  implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0'
+  implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.7.0'
+
+  // Networking
+  implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+
+  // Root shell helper (Magisk author)
+  implementation 'com.github.topjohnwu.libsu:core:5.2.2'
+
+  debugImplementation 'androidx.compose.ui:ui-tooling'
+}

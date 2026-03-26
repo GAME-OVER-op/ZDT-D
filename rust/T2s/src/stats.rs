@@ -75,6 +75,9 @@ pub struct RuntimeConfig {
 
     /// Deduplicate forced health refreshes triggered by new connections.
     pub refresh_lock: tokio::sync::Mutex<()>,
+
+    /// Last time we attempted a best-effort ICMP TTL sample for UI diagnostics.
+    pub last_ttl_ping_ts: AtomicU64,
 }
 
 impl Default for RuntimeConfig {
@@ -85,6 +88,7 @@ impl Default for RuntimeConfig {
             wakeup: tokio::sync::Notify::new(),
             direct_cooldown_until_ts: AtomicU64::new(0),
             refresh_lock: tokio::sync::Mutex::new(()),
+            last_ttl_ping_ts: AtomicU64::new(0),
         }
     }
 }
@@ -234,7 +238,9 @@ pub struct SocksBackends {
     rtt_hist: Vec<VecDeque<f64>>,
     runtime_fail_streak: Vec<u8>,
     last_runtime_fail_ts: Vec<u64>,
+    last_full_probe: Vec<u64>,
     rr: usize,
+    check_rr: usize,
 }
 
 impl SocksBackends {
@@ -291,12 +297,30 @@ impl SocksBackends {
         let rtt_hist = vec![VecDeque::new(); addrs.len()];
         let runtime_fail_streak = vec![0; addrs.len()];
         let last_runtime_fail_ts = vec![0; addrs.len()];
+        let last_full_probe = vec![0; addrs.len()];
 
-        Ok(Self{ addrs, status, ttl_hist, rtt_hist, runtime_fail_streak, last_runtime_fail_ts, rr: 0 })
+        Ok(Self{ addrs, status, ttl_hist, rtt_hist, runtime_fail_streak, last_runtime_fail_ts, last_full_probe, rr: 0, check_rr: 0 })
     }
 
     pub fn len(&self) -> usize { self.addrs.len() }
     pub fn addr_at(&self, idx: usize) -> Option<SocketAddr> { self.addrs.get(idx).copied() }
+
+    pub fn next_check_index(&mut self) -> Option<usize> {
+        if self.addrs.is_empty() {
+            return None;
+        }
+        let idx = self.check_rr % self.addrs.len();
+        self.check_rr = (self.check_rr + 1) % self.addrs.len();
+        Some(idx)
+    }
+
+    pub fn state_at(&self, idx: usize) -> Option<BackendState> {
+        self.status.get(idx).map(|s| s.state)
+    }
+
+    pub fn last_full_probe_at(&self, idx: usize) -> Option<u64> {
+        self.last_full_probe.get(idx).copied()
+    }
 
     pub fn any_healthy(&self) -> bool {
         self.status.iter().any(|s| s.healthy)
@@ -372,6 +396,7 @@ impl SocksBackends {
         self.rtt_hist.push(VecDeque::new());
         self.runtime_fail_streak.push(0);
         self.last_runtime_fail_ts.push(0);
+        self.last_full_probe.push(0);
     }
 
     pub fn remove(&mut self, addr: SocketAddr) {
@@ -382,7 +407,9 @@ impl SocksBackends {
             if pos < self.rtt_hist.len() { self.rtt_hist.remove(pos); }
             if pos < self.runtime_fail_streak.len() { self.runtime_fail_streak.remove(pos); }
             if pos < self.last_runtime_fail_ts.len() { self.last_runtime_fail_ts.remove(pos); }
+            if pos < self.last_full_probe.len() { self.last_full_probe.remove(pos); }
             if self.rr >= self.addrs.len() { self.rr = 0; }
+            if self.check_rr >= self.addrs.len() { self.check_rr = 0; }
         }
     }
 pub fn select_rr(&mut self) -> Result<SocketAddr> {
@@ -402,32 +429,52 @@ pub fn select_rr(&mut self) -> Result<SocketAddr> {
         socks_ping_ms: Option<f64>,
         internet_ping_ms: Option<f64>,
         internet_ttl: Option<u32>,
-    ) {
-        if idx >= self.status.len() { return; }
-        // Derive tri-state health:
-        // - Red: backend not responding (SOCKS connect/greeting failed)
-        // - Yellow: backend responds, but cannot reach the Internet (probe failed)
-        // - Green: backend responds and Internet probe succeeds
+        full_probe: bool,
+    ) -> bool {
+        if idx >= self.status.len() { return false; }
+        let prev = self.status[idx].clone();
+        let now = now_ts();
+
         let state = if socks_ping_ms.is_none() {
             BackendState::Red
-        } else if internet_ping_ms.is_some() {
+        } else if full_probe {
+            if internet_ping_ms.is_some() {
+                BackendState::Green
+            } else {
+                BackendState::Yellow
+            }
+        } else if prev.state == BackendState::Green {
             BackendState::Green
         } else {
             BackendState::Yellow
         };
+
         self.status[idx].state = state;
         self.status[idx].healthy = state == BackendState::Green;
-        self.status[idx].last_check = now_ts();
+        self.status[idx].last_check = now;
         if idx < self.runtime_fail_streak.len() {
             self.runtime_fail_streak[idx] = 0;
         }
         if idx < self.last_runtime_fail_ts.len() {
             self.last_runtime_fail_ts[idx] = 0;
         }
-        self.status[idx].last_error = err;
 
         self.status[idx].socks_ping_ms = socks_ping_ms;
-        self.status[idx].internet_ping_ms = internet_ping_ms;
+        if full_probe {
+            if idx < self.last_full_probe.len() {
+                self.last_full_probe[idx] = now;
+            }
+            self.status[idx].internet_ping_ms = internet_ping_ms;
+            self.status[idx].last_error = err;
+        } else {
+            if state == BackendState::Red {
+                self.status[idx].internet_ping_ms = None;
+                self.status[idx].last_error = err;
+            } else {
+                // Keep last heavy-probe result for stable green backends during light checks.
+                self.status[idx].last_error = if prev.state == BackendState::Green { prev.last_error.clone() } else { None };
+            }
+        }
 
         // RTT integrity based on recent internet RTT samples.
         if idx < self.rtt_hist.len() {
@@ -465,6 +512,14 @@ pub fn select_rr(&mut self) -> Result<SocketAddr> {
                 self.status[idx].ttl_max = Some(max_t);
             }
         }
+
+        prev.state != self.status[idx].state
+            || prev.healthy != self.status[idx].healthy
+            || prev.last_error != self.status[idx].last_error
+            || prev.socks_ping_ms != self.status[idx].socks_ping_ms
+            || prev.internet_ping_ms != self.status[idx].internet_ping_ms
+            || prev.ttl_min != self.status[idx].ttl_min
+            || prev.ttl_max != self.status[idx].ttl_max
     }
 
     /// Adds proxied bytes for a backend (TCP, both directions).
@@ -653,15 +708,47 @@ fn rand_u64() -> u64 {
     rng.next_u64()
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HealthRefreshMode {
+    FullSweep,
+    RoundRobinOne,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProbeMode {
+    Light,
+    Full,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TrafficCadence {
+    High,
+    Normal,
+    Quiet60,
+    Quiet120,
+}
+
+impl TrafficCadence {
+    fn interval(self) -> Duration {
+        match self {
+            TrafficCadence::High => Duration::from_secs(30),
+            TrafficCadence::Normal => Duration::from_secs(35),
+            TrafficCadence::Quiet60 => Duration::from_secs(60),
+            TrafficCadence::Quiet120 => Duration::from_secs(120),
+        }
+    }
+}
+
 async fn probe_backend_once(
     backend: SocketAddr,
     timeout: Duration,
     auth: Option<(String, String)>,
     internet_ttl: Option<u32>,
+    probe_mode: ProbeMode,
 ) -> (Option<String>, Option<f64>, Option<f64>, Option<u32>) {
     let socks_ping_ms = check_backend_rtt(backend, timeout, auth.clone()).await;
     let mut err = if socks_ping_ms.is_some() { None } else { Some("connect/greeting/auth failed".to_string()) };
-    let internet_ping_ms = if socks_ping_ms.is_some() {
+    let internet_ping_ms = if socks_ping_ms.is_some() && probe_mode == ProbeMode::Full {
         let summary = check_internet_via_backend(backend, timeout, auth).await;
         if summary.ok {
             summary.best_ping_ms
@@ -672,15 +759,70 @@ async fn probe_backend_once(
     } else {
         None
     };
-    (err, socks_ping_ms, internet_ping_ms, internet_ttl)
+    let ttl = if probe_mode == ProbeMode::Full { internet_ttl } else { None };
+    (err, socks_ping_ms, internet_ping_ms, ttl)
+}
+
+fn health_timeout(state: &crate::AppState) -> Duration {
+    Duration::from_millis(((state.args.connect_timeout as u64) * 1000).clamp(1200, 3000))
+}
+
+fn total_traffic_bytes(state: &crate::AppState) -> u64 {
+    state.stats.bytes_up.load(Ordering::Relaxed)
+        .saturating_add(state.stats.bytes_down.load(Ordering::Relaxed))
+}
+
+async fn maybe_sample_internet_ttl(state: &crate::AppState) -> Option<u32> {
+    let now = now_ts();
+    let ui_open = state.runtime.ui_clients.load(Ordering::Relaxed) > 0;
+    let min_gap_secs = if ui_open { 5 * 60 } else { 20 * 60 };
+    let last = state.runtime.last_ttl_ping_ts.load(Ordering::Relaxed);
+    if last != 0 && now.saturating_sub(last) < min_gap_secs {
+        return None;
+    }
+
+    // Throttle attempts as well, not only successful samples.
+    state.runtime.last_ttl_ping_ts.store(now, Ordering::Relaxed);
+
+    match ping_once("1.1.1.1".to_string()).await {
+        Ok(Some((_ms, ttl))) if ttl > 0 => Some(ttl),
+        _ => None,
+    }
+}
+
+async fn refresh_backend_index_once(
+    state: crate::AppState,
+    idx: usize,
+    timeout: Duration,
+    internet_ttl: Option<u32>,
+    auth: Option<(String, String)>,
+    probe_mode: ProbeMode,
+) -> bool {
+    let backend = {
+        let b = state.backends.lock();
+        b.addr_at(idx)
+    };
+
+    let Some(backend) = backend else { return false; };
+
+    let (err, socks_ping_ms, internet_ping_ms, ttl) =
+        probe_backend_once(backend, timeout, auth, internet_ttl, probe_mode).await;
+
+    let mut b = state.backends.lock();
+    let changed = b.update(idx, socks_ping_ms.is_some(), err, socks_ping_ms, internet_ping_ms, ttl, probe_mode == ProbeMode::Full);
+    if b.any_green() {
+        state.runtime.clear_direct_cooldown();
+    }
+    drop(b);
+    if changed {
+        state.runtime.wake();
+    }
+    true
 }
 
 pub async fn refresh_backends_once(state: crate::AppState, timeout: Duration) {
     let _guard = state.runtime.refresh_lock.lock().await;
-    let internet_ttl = match ping_once("1.1.1.1".to_string()).await {
-        Ok(Some((_ms, ttl))) => Some(ttl as u32),
-        _ => None,
-    };
+    let internet_ttl = maybe_sample_internet_ttl(&state).await;
     let auth = match (state.args.socks_user.clone(), state.args.socks_pass.clone()) {
         (Some(u), Some(p)) => Some((u, p)),
         _ => None,
@@ -689,50 +831,147 @@ pub async fn refresh_backends_once(state: crate::AppState, timeout: Duration) {
         let b = state.backends.lock();
         (0..b.len()).filter_map(|idx| b.addr_at(idx).map(|a| (idx, a))).collect()
     };
-    let futs = addrs.iter().map(|(_, backend)| probe_backend_once(*backend, timeout, auth.clone(), internet_ttl));
-    let results = futures::future::join_all(futs).await;
-    let mut b = state.backends.lock();
-    for ((idx, _backend), (err, socks_ping_ms, internet_ping_ms, ttl)) in addrs.into_iter().zip(results.into_iter()) {
-        b.update(idx, socks_ping_ms.is_some(), err, socks_ping_ms, internet_ping_ms, ttl);
+
+    for (idx, _backend) in addrs {
+        let _ = refresh_backend_index_once(
+            state.clone(),
+            idx,
+            timeout,
+            internet_ttl,
+            auth.clone(),
+            ProbeMode::Full,
+        ).await;
     }
-    if b.any_green() {
-        state.runtime.clear_direct_cooldown();
-    }
+}
+
+pub async fn refresh_one_backend_once_rr(state: crate::AppState, timeout: Duration) -> bool {
+    let _guard = state.runtime.refresh_lock.lock().await;
+    let auth = match (state.args.socks_user.clone(), state.args.socks_pass.clone()) {
+        (Some(u), Some(p)) => Some((u, p)),
+        _ => None,
+    };
+    let (idx, probe_mode) = {
+        let mut b = state.backends.lock();
+        let idx = b.next_check_index();
+        let Some(idx) = idx else { return false; };
+        let state_at = b.state_at(idx).unwrap_or(BackendState::Red);
+        let last_full_probe = b.last_full_probe_at(idx).unwrap_or(0);
+        let now = now_ts();
+        let full_probe_due = last_full_probe == 0 || now.saturating_sub(last_full_probe) >= 15 * 60;
+        let probe_mode = if state_at == BackendState::Green && !full_probe_due {
+            ProbeMode::Light
+        } else {
+            ProbeMode::Full
+        };
+        (Some(idx), probe_mode)
+    };
+
+    let Some(idx) = idx else { return false; };
+    let internet_ttl = if probe_mode == ProbeMode::Full {
+        maybe_sample_internet_ttl(&state).await
+    } else {
+        None
+    };
+    refresh_backend_index_once(state.clone(), idx, timeout, internet_ttl, auth, probe_mode).await
 }
 
 // --- background tasks
 
 pub async fn backend_health_loop(state: crate::AppState) {
-    let mut idle_since: Option<tokio::time::Instant> = None;
+    let mut last_total_bytes = total_traffic_bytes(&state);
+    let mut last_sample_at = tokio::time::Instant::now();
+    let mut no_traffic_since: Option<tokio::time::Instant> = None;
+    let mut force_full_sweep = true;
+    let mut recent_bps: VecDeque<f64> = VecDeque::with_capacity(3);
+    let mut desired_cadence = TrafficCadence::Normal;
+    let mut applied_cadence = TrafficCadence::Normal;
+    let mut cadence_streak: u8 = 0;
 
     loop {
-        let timeout = Duration::from_millis(((state.args.connect_timeout as u64) * 1000).clamp(1200, 3000));
-        refresh_backends_once(state.clone(), timeout).await;
+        let now = tokio::time::Instant::now();
+        let total_bytes = total_traffic_bytes(&state);
+        let delta_bytes = total_bytes.saturating_sub(last_total_bytes);
+        let elapsed = now.saturating_duration_since(last_sample_at);
+        let elapsed_secs = elapsed.as_secs_f64().max(0.001);
+        let bytes_per_sec = (delta_bytes as f64) / elapsed_secs;
+        let had_traffic = delta_bytes > 0;
 
-        let ui = state.runtime.ui_clients.load(Ordering::Relaxed);
-        let active = state.conns.len();
-        let is_idle = ui == 0 && active == 0;
+        recent_bps.push_back(bytes_per_sec);
+        while recent_bps.len() > 3 { recent_bps.pop_front(); }
+        let avg_bps = if recent_bps.is_empty() {
+            0.0
+        } else {
+            recent_bps.iter().copied().sum::<f64>() / (recent_bps.len() as f64)
+        };
 
-        let interval = if is_idle {
-            if idle_since.is_none() {
-                idle_since = Some(tokio::time::Instant::now());
+        let woke_from_quiet = if had_traffic {
+            let quiet = no_traffic_since
+                .map(|ts| now.saturating_duration_since(ts) >= Duration::from_secs(60))
+                .unwrap_or(false);
+            no_traffic_since = None;
+            quiet
+        } else {
+            if no_traffic_since.is_none() {
+                no_traffic_since = Some(now);
             }
-            let idle_for = idle_since.unwrap().elapsed();
-            if idle_for < Duration::from_secs(8 * 60) {
-                Duration::from_secs(20)
-            } else if idle_for < Duration::from_secs(25 * 60) {
-                Duration::from_secs(45)
+            false
+        };
+
+        let current_desired = if had_traffic {
+            if avg_bps >= 100.0 * 1024.0 {
+                TrafficCadence::High
             } else {
-                Duration::from_secs(90)
+                TrafficCadence::Normal
             }
         } else {
-            idle_since = None;
-            Duration::from_secs(2)
+            let quiet_for = no_traffic_since
+                .map(|ts| now.saturating_duration_since(ts))
+                .unwrap_or_default();
+            if quiet_for >= Duration::from_secs(10 * 60) {
+                TrafficCadence::Quiet120
+            } else {
+                TrafficCadence::Quiet60
+            }
         };
+
+        if current_desired == desired_cadence {
+            cadence_streak = cadence_streak.saturating_add(1);
+        } else {
+            desired_cadence = current_desired;
+            cadence_streak = 1;
+        }
+        if current_desired == applied_cadence || cadence_streak >= 2 {
+            applied_cadence = current_desired;
+        }
+
+        let green_available = state.backends.lock().any_green();
+        let refresh_mode = if force_full_sweep || !green_available || woke_from_quiet {
+            HealthRefreshMode::FullSweep
+        } else {
+            HealthRefreshMode::RoundRobinOne
+        };
+
+        let timeout = health_timeout(&state);
+        match refresh_mode {
+            HealthRefreshMode::FullSweep => refresh_backends_once(state.clone(), timeout).await,
+            HealthRefreshMode::RoundRobinOne => {
+                let _ = refresh_one_backend_once_rr(state.clone(), timeout).await;
+            }
+        }
+        force_full_sweep = false;
+
+        let interval = applied_cadence.interval();
+
+        last_total_bytes = total_bytes;
+        last_sample_at = now;
 
         tokio::select! {
             _ = tokio::time::sleep(interval) => {},
-            _ = state.runtime.wakeup.notified() => { idle_since = None; }
+            _ = state.runtime.wakeup.notified() => {
+                if no_traffic_since.is_some() {
+                    force_full_sweep = true;
+                }
+            }
         }
     }
 }
@@ -763,11 +1002,24 @@ async fn first_successful_probe(
     timeout: Duration,
     auth: Option<(String, String)>,
     targets: Vec<TargetAddr>,
+    stop_after: usize,
 ) -> (usize, Option<f64>) {
-    let futs = targets.into_iter().map(|target| probe_one_target(backend, target, timeout, auth.clone()));
-    let results = futures::future::join_all(futs).await;
-    let ok_count = results.iter().filter(|r| r.is_some()).count();
-    let best = results.into_iter().flatten().min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let mut ok_count = 0usize;
+    let mut best: Option<f64> = None;
+
+    for target in targets {
+        if let Some(ping_ms) = probe_one_target(backend, target, timeout, auth.clone()).await {
+            ok_count += 1;
+            best = Some(match best {
+                Some(prev) => prev.min(ping_ms),
+                None => ping_ms,
+            });
+            if ok_count >= stop_after {
+                break;
+            }
+        }
+    }
+
     (ok_count, best)
 }
 
@@ -812,13 +1064,13 @@ pub async fn proxy_enforce_loop(state: crate::AppState) {
             // While sleeping, enforce rarely (there should be no conns anyway).
             let idle_for = idle_since.unwrap().elapsed();
             if idle_for < Duration::from_secs(10 * 60) {
-                Duration::from_secs(15)
+                Duration::from_secs(60)
             } else {
-                Duration::from_secs(30)
+                Duration::from_secs(120)
             }
         } else {
             idle_since = None;
-            Duration::from_secs(2)
+            Duration::from_secs(40)
         };
 
         tokio::select! {
@@ -872,13 +1124,10 @@ async fn check_internet_via_backend(
     timeout: Duration,
     auth: Option<(String, String)>,
 ) -> InternetProbeSummary {
-    // Several parallel checks reduce false positives and false negatives:
-    // 1) raw IP connectivity via SOCKS CONNECT
-    // 2) remote-DNS/domain connectivity via SOCKS CONNECT with DOMAIN target
-    // A backend is considered internet-usable only if either:
-    // - at least one IP probe AND at least one domain probe succeed, or
-    // - at least two different IP probes succeed
-    // This avoids "GREEN" on backends that only answer SOCKS locally or only reach a single target.
+    // Probe sequentially to avoid bursty network wakeups on phones.
+    // Consider backend internet-usable if either:
+    // - at least one raw IP probe AND at least one domain probe succeed, or
+    // - at least two different IP probes succeed.
     let per_probe_timeout = timeout.min(Duration::from_millis(1500));
 
     let ip_targets = vec![
@@ -891,10 +1140,12 @@ async fn check_internet_via_backend(
         TargetAddr::Domain("cloudflare.com".to_string(), 443),
     ];
 
-    let ((ip_ok, ip_best), (domain_ok, domain_best)) = tokio::join!(
-        first_successful_probe(backend, per_probe_timeout, auth.clone(), ip_targets),
-        first_successful_probe(backend, per_probe_timeout, auth, domain_targets),
-    );
+    let (ip_ok, ip_best) = first_successful_probe(backend, per_probe_timeout, auth.clone(), ip_targets, 2).await;
+    let (domain_ok, domain_best) = if ip_ok >= 2 {
+        (0usize, None)
+    } else {
+        first_successful_probe(backend, per_probe_timeout, auth, domain_targets, 1).await
+    };
 
     let ok = (ip_ok >= 1 && domain_ok >= 1) || ip_ok >= 2;
     let best_ping_ms = match (ip_best, domain_best) {
@@ -905,7 +1156,11 @@ async fn check_internet_via_backend(
     };
 
     let error_summary = if ok {
-        format!("probe ok (ip={}/3, domain={}/2)", ip_ok, domain_ok)
+        if ip_ok >= 2 {
+            format!("probe ok (ip={}/3, domain=skipped)", ip_ok)
+        } else {
+            format!("probe ok (ip={}/3, domain={}/2)", ip_ok, domain_ok)
+        }
     } else if ip_ok >= 1 && domain_ok == 0 {
         format!("internet probes weak: raw IP works (ip={}/3) but domain/DNS failed (domain=0/2)", ip_ok)
     } else if ip_ok == 0 && domain_ok >= 1 {
@@ -917,12 +1172,12 @@ async fn check_internet_via_backend(
     InternetProbeSummary { ok, best_ping_ms, error_summary }
 }
 
-/// Best-effort one-shot ICMP ping.
+
+
+/// Best-effort one-shot ICMP ping used only for occasional Internet TTL sampling.
 /// Returns (rtt_ms, ttl).
 async fn ping_once(host: String) -> Result<Option<(f64, u32)>> {
-    // ping is blocking; run it off the core.
     tokio::task::spawn_blocking(move || {
-        // On Android, `ping` usually supports: ping -n -c 1 -W 1 <host>
         let out = std::process::Command::new("ping")
             .args(["-n", "-c", "1", "-W", "1", &host])
             .output();
@@ -931,21 +1186,29 @@ async fn ping_once(host: String) -> Result<Option<(f64, u32)>> {
         if !out.status.success() {
             return Ok(None);
         }
+
         let s = String::from_utf8_lossy(&out.stdout);
-        // Example: "ttl=117 time=14.0 ms"
         let re = regex::Regex::new(r"ttl=(\d+).*time=([0-9.]+)\s*ms").unwrap();
         if let Some(c) = re.captures(&s) {
             let ttl: u32 = c.get(1).unwrap().as_str().parse().unwrap_or(0);
             let ms: f64 = c.get(2).unwrap().as_str().parse().unwrap_or(0.0);
             return Ok(Some((ms, ttl)));
         }
-        // Some ping versions use "time<1ms" and may not include ttl in same order.
+
         let re2 = regex::Regex::new(r"time=([0-9.]+)\s*ms").unwrap();
-        let ms = re2.captures(&s).and_then(|c| c.get(1)).and_then(|m| m.as_str().parse().ok());
+        let ms = re2
+            .captures(&s)
+            .and_then(|c| c.get(1))
+            .and_then(|m| m.as_str().parse().ok());
         let re3 = regex::Regex::new(r"ttl=(\d+)").unwrap();
-        let ttl = re3.captures(&s).and_then(|c| c.get(1)).and_then(|m| m.as_str().parse().ok());
+        let ttl = re3
+            .captures(&s)
+            .and_then(|c| c.get(1))
+            .and_then(|m| m.as_str().parse().ok());
         Ok(ms.zip(ttl))
-    }).await.context("spawn_blocking ping")?
+    })
+    .await
+    .context("spawn_blocking ping")?
 }
 
 pub async fn wait_for_backend_recovery(state: crate::AppState, max_wait: Duration) -> bool {

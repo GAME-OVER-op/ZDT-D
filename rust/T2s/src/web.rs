@@ -8,11 +8,11 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::{net::SocketAddr, time::Duration};
+use std::{hash::{Hash, Hasher}, net::SocketAddr, time::Duration};
 use tokio::time::Instant;
 
 const INDEX_HTML: &str = include_str!("web_ui.html");
-const BUILD_TAG: &str = "tcp-only-green-only-sleep";
+const BUILD_TAG: &str = "tcp-only-green-only-smart-energy-v2";
 
 #[derive(Debug, Deserialize)]
 struct DownloadLimitReq {
@@ -187,6 +187,52 @@ fn parse_cid(s: &str) -> Option<u64> {
     t.parse::<u64>().ok()
 }
 
+fn state_fingerprint(st: &ApiState) -> u64 {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    st.active_connections.hash(&mut hasher);
+    st.stats.bytes_up.hash(&mut hasher);
+    st.stats.bytes_down.hash(&mut hasher);
+    st.stats.errors.hash(&mut hasher);
+    st.stats.socks_ok.hash(&mut hasher);
+    st.stats.socks_fail.hash(&mut hasher);
+    st.stats.policy_drop.hash(&mut hasher);
+    st.stats.internal.bytes_up.hash(&mut hasher);
+    st.stats.internal.bytes_down.hash(&mut hasher);
+    st.stats.external.bytes_up.hash(&mut hasher);
+    st.stats.external.bytes_down.hash(&mut hasher);
+    st.system.cpu_percent.to_bits().hash(&mut hasher);
+    st.system.mem_total_kb.hash(&mut hasher);
+    st.system.mem_avail_kb.hash(&mut hasher);
+    st.system.mem_used_percent.to_bits().hash(&mut hasher);
+    st.system.proc_rss_kb.hash(&mut hasher);
+    st.system.net_rx_bytes.hash(&mut hasher);
+    st.system.net_tx_bytes.hash(&mut hasher);
+    for b in &st.backends {
+        b.addr.hash(&mut hasher);
+        (b.state as u8).hash(&mut hasher);
+        b.healthy.hash(&mut hasher);
+        b.last_error.hash(&mut hasher);
+        b.socks_ping_ms.map(f64::to_bits).hash(&mut hasher);
+        b.internet_ping_ms.map(f64::to_bits).hash(&mut hasher);
+        b.rtt_integrity.map(f64::to_bits).hash(&mut hasher);
+        b.ttl_min.hash(&mut hasher);
+        b.ttl_max.hash(&mut hasher);
+        b.total_bytes.hash(&mut hasher);
+    }
+    for c in &st.conns {
+        c.cid.hash(&mut hasher);
+        c.ingress.hash(&mut hasher);
+        c.domain.hash(&mut hasher);
+        c.peer.hash(&mut hasher);
+        c.dst_ip.hash(&mut hasher);
+        c.mode.hash(&mut hasher);
+        c.bytes_up.hash(&mut hasher);
+        c.bytes_down.hash(&mut hasher);
+        c.server.hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
 async fn ws_upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| ws_handle(socket, state))
 }
@@ -206,20 +252,64 @@ async fn ws_handle(mut socket: WebSocket, state: AppState) {
     state.runtime.wake();
     let _guard = UiGuard { rt: state.runtime.clone() };
 
-    // Push state snapshots every 1s. Also accept pings from client.
-    let mut tick = tokio::time::interval(Duration::from_secs(1));
-    let mut last_sent = Instant::now();
+    // Event-driven updates with slow polling for backend/system changes and a rare keepalive.
+    let mut poll_tick = tokio::time::interval(Duration::from_secs(15));
+    let mut keepalive_tick = tokio::time::interval(Duration::from_secs(30));
+    let mut events_rx = state.events.subscribe();
+    let mut last_sent = Instant::now() - Duration::from_secs(31);
+    let mut last_fp: Option<u64> = None;
+
+    let initial = build_state(&state);
+    let initial_fp = state_fingerprint(&initial);
+    if let Ok(txt) = serde_json::to_string(&initial) {
+        if socket.send(Message::Text(txt)).await.is_err() { return; }
+    }
+    last_sent = Instant::now();
+    last_fp = Some(initial_fp);
 
     loop {
         tokio::select! {
-            _ = tick.tick() => {
-                // avoid burst at start
-                if last_sent.elapsed() < Duration::from_millis(300) { continue; }
+            _ = poll_tick.tick() => {
                 let st = build_state(&state);
-                if let Ok(txt) = serde_json::to_string(&st) {
-                    if socket.send(Message::Text(txt)).await.is_err() { break; }
+                let fp = state_fingerprint(&st);
+                let changed = last_fp.map(|prev| prev != fp).unwrap_or(true);
+                if changed || last_sent.elapsed() >= Duration::from_secs(30) {
+                    if let Ok(txt) = serde_json::to_string(&st) {
+                        if socket.send(Message::Text(txt)).await.is_err() { break; }
+                    }
+                    last_sent = Instant::now();
+                    last_fp = Some(fp);
                 }
-                last_sent = Instant::now();
+            }
+            _ = keepalive_tick.tick() => {
+                if last_sent.elapsed() >= Duration::from_secs(30) {
+                    let st = build_state(&state);
+                    let fp = state_fingerprint(&st);
+                    if let Ok(txt) = serde_json::to_string(&st) {
+                        if socket.send(Message::Text(txt)).await.is_err() { break; }
+                    }
+                    last_sent = Instant::now();
+                    last_fp = Some(fp);
+                }
+            }
+            evt = events_rx.recv() => {
+                match evt {
+                    Ok(_evt) => {
+                        if last_sent.elapsed() < Duration::from_millis(300) { continue; }
+                        let st = build_state(&state);
+                        let fp = state_fingerprint(&st);
+                        let changed = last_fp.map(|prev| prev != fp).unwrap_or(true);
+                        if changed {
+                            if let Ok(txt) = serde_json::to_string(&st) {
+                                if socket.send(Message::Text(txt)).await.is_err() { break; }
+                            }
+                            last_sent = Instant::now();
+                            last_fp = Some(fp);
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
             }
             msg = socket.recv() => {
                 match msg {

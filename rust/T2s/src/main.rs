@@ -101,13 +101,13 @@ async fn main() -> Result<()> {
                     }
                     let idle_for = idle_since.unwrap().elapsed();
                     if idle_for < Duration::from_secs(10 * 60) {
-                        Duration::from_secs(3)
+                        Duration::from_secs(20)
                     } else {
-                        Duration::from_secs(10)
+                        Duration::from_secs(40)
                     }
                 } else {
                     idle_since = None;
-                    Duration::from_secs(1)
+                    Duration::from_secs(10)
                 };
 
                 tokio::select! {

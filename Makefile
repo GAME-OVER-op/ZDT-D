@@ -1,4 +1,4 @@
-.PHONY: all auto apk module clean doctor setup bootstrap setup-termux setup-gradle setup-android patch-paths
+.PHONY: all auto apk module clean clear doctor keystore setup bootstrap setup-termux setup-gradle setup-android patch-paths
 
 all: apk
 auto: apk
@@ -11,6 +11,9 @@ module:
 
 doctor:
 	./build.sh doctor
+
+keystore:
+	./build.sh keystore
 
 setup: bootstrap
 
@@ -31,3 +34,6 @@ patch-paths:
 
 clean:
 	./build.sh clean
+
+clear:
+	./build.sh clear

@@ -162,6 +162,12 @@ interface ZdtdActions {
   /** Set app UI language: auto | ru | en. */
   fun setAppLanguageMode(mode: String)
 
+  /** Reload module protector mode from daemon settings. */
+  fun refreshProtectorMode()
+
+  /** Set module protector mode: off | on | auto. */
+  fun setProtectorMode(mode: String)
+
   /** Trigger an immediate update check (ignores the 12h cooldown). */
   fun checkAppUpdateNow()
 

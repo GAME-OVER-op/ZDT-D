@@ -7,6 +7,8 @@ data class AppUpdateUiState(
   val enabled: Boolean = true,
   /** App UI language mode: auto | ru | en */
   val languageMode: String = "auto",
+  /** Module protector mode: off | on | auto */
+  val protectorMode: String = "off",
   // App-owned notification about daemon status (running/stopped).
   val daemonStatusNotificationEnabled: Boolean = false,
   val checking: Boolean = false,

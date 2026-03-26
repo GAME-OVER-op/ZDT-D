@@ -598,4 +598,16 @@
     <string name="operaproxy_sni_use_byedpi">Использовать byedpi?</string>
     <string name="operaproxy_sni_use_byedpi_desc">Добавлять upstream -proxy socks5://127.0.0.1:&lt;BYEDPI_PORT&gt;</string>
 
+
+    <string name="settings_protector_title">Режим защиты модуля</string>
+    <string name="settings_protector_body">Управляет тем, как модуль снимает ограничения сна и памяти.</string>
+    <string name="settings_protector_on">On</string>
+    <string name="settings_protector_off">Off</string>
+    <string name="settings_protector_auto">Auto</string>
+    <string name="settings_protector_on_desc">Расход может вырасти, но стабильность работы заметно выше.</string>
+    <string name="settings_protector_off_desc">Защита отключена. Если появятся проблемы, включите её.</string>
+    <string name="settings_protector_auto_desc">Работает только если модуль получает корректное состояние экрана из системы.</string>
+    <string name="settings_protector_saved">Режим защиты сохранён</string>
+    <string name="settings_protector_save_failed">Не удалось сохранить режим защиты</string>
+
 </resources>

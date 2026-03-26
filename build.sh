@@ -35,8 +35,8 @@ LOCAL_PROPERTIES_FILE="$APP_DIR/local.properties"
 MODE="${1:-apk}"
 BUILD_TYPE="${BUILD_TYPE:-Debug}"
 GRADLE_TASK="assemble${BUILD_TYPE}"
-SIGNING_DIR="$TOOLS_DIR/signing"
-DEBUG_KEYSTORE_PATH="$SIGNING_DIR/debug.keystore"
+KEYSTORE_DIR="$ROOT_DIR/keystores"
+DEBUG_KEYSTORE_PATH="${DEBUG_KEYSTORE_PATH:-$KEYSTORE_DIR/zdt-debug.keystore}"
 DEBUG_KEY_ALIAS="androiddebugkey"
 DEBUG_KEYSTORE_PASSWORD="android"
 DEBUG_KEY_PASSWORD="android"
@@ -330,7 +330,7 @@ ensure_debug_keystore() {
     return 0
   fi
   need_cmd keytool
-  mkdir -p "$SIGNING_DIR"
+  mkdir -p "$(dirname "$DEBUG_KEYSTORE_PATH")"
   msg "Создаю базовый debug keystore: $DEBUG_KEYSTORE_PATH"
   keytool -genkeypair     -keystore "$DEBUG_KEYSTORE_PATH"     -storepass "$DEBUG_KEYSTORE_PASSWORD"     -keypass "$DEBUG_KEY_PASSWORD"     -alias "$DEBUG_KEY_ALIAS"     -keyalg RSA     -keysize 2048     -validity 10000     -dname "CN=Android Debug,O=Android,C=US"     >/dev/null 2>&1
   [[ -f "$DEBUG_KEYSTORE_PATH" ]] || fail "Не удалось создать keystore: $DEBUG_KEYSTORE_PATH"
@@ -625,9 +625,17 @@ build_apk() {
 }
 
 clean_all() {
-  rm -rf "$OUT_DIR" "$APP_DIR/app/build" "$RUST_DIR/target"
+  rm -rf "$OUT_DIR" "$APP_DIR/app/build" "$APP_DIR/build" "$RUST_DIR/target"
   rm -rf "$APP_DIR/app/build/generated/zdt-assets"
-  msg 'Очистка завершена'
+  msg 'Build outputs cleaned'
+}
+
+clear_all() {
+  rm -rf     "$OUT_DIR"     "$RUST_DIR/target"     "$ROOT_DIR/.gradle"     "$APP_DIR/.gradle"     "$APP_DIR/.kotlin"     "$APP_DIR/build"     "$APP_DIR/app/build"     "$APP_DIR/app/.cxx"     "$TOOLS_DIR/signing"
+
+  rm -f     "$APP_DIR/local.properties"     "$APP_DIR/keystore.properties"     "$APP_MODULE_DIR/src/main/assets/zdt_module.zip"     "$APP_MODULE_DIR/src/main/assets/module.prop"
+
+  msg 'Project cleared: removed compiled outputs, generated assets, and local build properties. Persistent keystores in ./keystores are preserved'
 }
 
 usage() {
@@ -637,7 +645,9 @@ usage() {
   ./build.sh apk              # собрать модуль и APK (по умолчанию Debug -> app-release.apk)
   ./build.sh module           # собрать только zdt_module.zip
   ./build.sh doctor           # проверка окружения
-  ./build.sh clean            # очистка
+  ./build.sh keystore         # create or reuse the persistent keystore in ./keystores
+  ./build.sh clean            # clean standard build outputs
+  ./build.sh clear            # deep clear: remove compiled outputs and generated files, but keep ./keystores intact
   ./build.sh setup-all        # Termux bootstrap: пакеты + Gradle $GRADLE_VERSION + Android SDK $ANDROID_API_LEVEL
   ./build.sh setup-termux     # установить Termux-пакеты (openjdk-17, rust, clang, unzip, zip, curl, wget, make, git, aapt2)
   ./build.sh setup-gradle     # скачать локальный Gradle $GRADLE_VERSION
@@ -678,8 +688,16 @@ case "$MODE" in
   doctor)
     doctor
     ;;
+  keystore)
+    ensure_debug_keystore
+    write_signing_properties
+    msg "Persistent keystore ready: $DEBUG_KEYSTORE_PATH"
+    ;;
   clean)
     clean_all
+    ;;
+  clear)
+    clear_all
     ;;
   setup-all)
     setup_all

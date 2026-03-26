@@ -262,6 +262,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     AppUpdateUiState(
       enabled = root.isAppUpdateCheckEnabled(),
       languageMode = root.getAppLanguageMode(),
+      protectorMode = "off",
       daemonStatusNotificationEnabled = root.isDaemonStatusNotificationEnabled(),
     )
   )
@@ -1016,6 +1017,7 @@ private fun clearDownloadedUpdateApk() {
     startStatusPolling()
     startDaemonLogPolling()
     refreshPrograms()
+    refreshProtectorMode()
   }
 
 
@@ -3349,6 +3351,35 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     root.setAppLanguageMode(mode)
     applyAppLanguageMode(root.getAppLanguageMode())
     _appUpdate.update { it.copy(languageMode = root.getAppLanguageMode()) }
+  }
+
+  override fun refreshProtectorMode() {
+    launchIO {
+      val mode = runCatching { api.getProtectorSetting().protectorMode }.getOrDefault("off")
+      _appUpdate.update { it.copy(protectorMode = mode) }
+    }
+  }
+
+  override fun setProtectorMode(mode: String) {
+    val safe = when (mode.trim().lowercase()) {
+      "on", "off", "auto" -> mode.trim().lowercase()
+      else -> "off"
+    }
+    _appUpdate.update { it.copy(protectorMode = safe) }
+    launchIO {
+      val applied = runCatching { api.setProtectorMode(safe).protectorMode }.getOrElse {
+        log("ERR", "protector mode failed: ${it.message ?: it}")
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_protector_save_failed))
+        }
+        refreshProtectorMode()
+        return@launchIO
+      }
+      _appUpdate.update { it.copy(protectorMode = applied) }
+      withContext(Dispatchers.Main.immediate) {
+        toast(str(R.string.settings_protector_saved))
+      }
+    }
   }
 
   override fun checkAppUpdateNow() {

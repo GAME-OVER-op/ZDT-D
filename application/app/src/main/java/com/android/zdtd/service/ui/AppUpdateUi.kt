@@ -8,15 +8,19 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ElevatedCard
@@ -24,6 +28,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.Switch
@@ -31,10 +36,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Close
 import com.android.zdtd.service.AppUpdateUiState
 import com.android.zdtd.service.R
@@ -153,6 +164,8 @@ fun AppUpdateSettings(
   onToggleDaemonNotification: (Boolean) -> Unit,
   languageMode: String,
   onLanguageModeChange: (String) -> Unit,
+  protectorMode: String,
+  onProtectorModeChange: (String) -> Unit,
   onDeleteModule: () -> Unit,
 ) {
   val compactWidth = rememberIsCompactWidth()
@@ -230,6 +243,13 @@ fun AppUpdateSettings(
 
     Spacer(Modifier.height(18.dp))
 
+    ProtectorModeSection(
+      selectedMode = protectorMode,
+      onModeSelected = onProtectorModeChange,
+    )
+
+    Spacer(Modifier.height(18.dp))
+
     Column(Modifier.fillMaxWidth()) {
       Text(stringResource(R.string.settings_language_title), style = MaterialTheme.typography.bodyLarge)
       Text(
@@ -302,6 +322,136 @@ fun AppUpdateSettings(
       }
     }
 
+  }
+}
+
+
+private data class ProtectorModeOption(
+  val value: String,
+  val titleRes: Int,
+  val descRes: Int,
+  val icon: androidx.compose.ui.graphics.vector.ImageVector,
+  val color: Color,
+)
+
+@Composable
+private fun ProtectorModeSection(
+  selectedMode: String,
+  onModeSelected: (String) -> Unit,
+) {
+  val safeMode = selectedMode.lowercase().ifBlank { "off" }.let { mode ->
+    when (mode) {
+      "on", "off", "auto" -> mode
+      else -> "off"
+    }
+  }
+
+  val options = listOf(
+    ProtectorModeOption(
+      value = "on",
+      titleRes = R.string.settings_protector_on,
+      descRes = R.string.settings_protector_on_desc,
+      icon = Icons.Filled.BatteryChargingFull,
+      color = Color(0xFFD84B4B),
+    ),
+    ProtectorModeOption(
+      value = "off",
+      titleRes = R.string.settings_protector_off,
+      descRes = R.string.settings_protector_off_desc,
+      icon = Icons.Filled.BatteryFull,
+      color = Color(0xFF34A853),
+    ),
+    ProtectorModeOption(
+      value = "auto",
+      titleRes = R.string.settings_protector_auto,
+      descRes = R.string.settings_protector_auto_desc,
+      icon = Icons.Filled.AddCircle,
+      color = Color(0xFFF4B400),
+    ),
+  )
+
+  val active = options.firstOrNull { it.value == safeMode } ?: options[1]
+
+  Column(Modifier.fillMaxWidth()) {
+    Text(stringResource(R.string.settings_protector_title), style = MaterialTheme.typography.bodyLarge)
+    Text(
+      stringResource(R.string.settings_protector_body),
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+    )
+
+    Spacer(Modifier.height(10.dp))
+
+    Surface(
+      modifier = Modifier.fillMaxWidth(),
+      shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+      color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+        options.forEach { option ->
+          ProtectorModeChip(
+            option = option,
+            selected = option.value == active.value,
+            onClick = { onModeSelected(option.value) },
+            modifier = Modifier.weight(1f),
+          )
+        }
+      }
+    }
+
+    Spacer(Modifier.height(10.dp))
+
+    Text(
+      text = stringResource(active.descRes),
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+    )
+  }
+}
+
+@Composable
+private fun ProtectorModeChip(
+  option: ProtectorModeOption,
+  selected: Boolean,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val bg = if (selected) option.color.copy(alpha = 0.18f) else Color.Transparent
+  val iconBg = if (selected) option.color else MaterialTheme.colorScheme.surface
+  val iconTint = if (selected) Color.White else option.color
+
+  Column(
+    modifier = modifier
+      .clip(androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
+      .background(bg)
+      .clickable(onClick = onClick)
+      .padding(vertical = 10.dp, horizontal = 6.dp),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.spacedBy(6.dp),
+  ) {
+    Box(
+      modifier = Modifier
+        .size(40.dp)
+        .clip(androidx.compose.foundation.shape.CircleShape)
+        .background(iconBg),
+      contentAlignment = Alignment.Center,
+    ) {
+      Icon(
+        imageVector = option.icon,
+        contentDescription = stringResource(option.titleRes),
+        tint = iconTint,
+      )
+    }
+    Text(
+      text = stringResource(option.titleRes),
+      style = MaterialTheme.typography.labelMedium,
+      fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+      textAlign = TextAlign.Center,
+      color = MaterialTheme.colorScheme.onSurface,
+    )
   }
 }
 

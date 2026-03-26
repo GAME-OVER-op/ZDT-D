@@ -84,6 +84,20 @@ class ApiClient(
     return requestOk("PUT", path, body)
   }
 
+  fun getProtectorSetting(): ApiModels.ProtectorSetting {
+    val obj = requestJson("GET", "/api/setting", null)
+    return ApiModels.parseProtectorSetting(obj)
+  }
+
+  fun setProtectorMode(mode: String): ApiModels.ProtectorSetting {
+    val safe = when (mode.trim().lowercase()) {
+      "on", "off", "auto" -> mode.trim().lowercase()
+      else -> "off"
+    }
+    val obj = requestJson("POST", "/api/setting", JSONObject().put("protector_mode", safe))
+    return ApiModels.parseProtectorSetting(obj)
+  }
+
   fun getJsonData(path: String): JSONObject {
     val obj = requestJson("GET", path, null) ?: return JSONObject()
     // Prefer wrapped payload when server uses { data: {...} }, otherwise return the object as-is.

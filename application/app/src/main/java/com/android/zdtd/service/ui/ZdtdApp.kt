@@ -512,6 +512,9 @@ private fun MainShell(
   val appUpdate by appUpdateFlow.collectAsStateWithLifecycle()
 
   if (showSettings) {
+    LaunchedEffect(Unit) {
+      actions.refreshProtectorMode()
+    }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
       onDismissRequest = { showSettings = false },
@@ -525,6 +528,8 @@ private fun MainShell(
         onToggleDaemonNotification = actions::setDaemonStatusNotificationsEnabled,
         languageMode = appUpdate.languageMode,
         onLanguageModeChange = actions::setAppLanguageMode,
+        protectorMode = appUpdate.protectorMode,
+        onProtectorModeChange = actions::setProtectorMode,
         onDeleteModule = {
           showSettings = false
           showDeleteModule = true

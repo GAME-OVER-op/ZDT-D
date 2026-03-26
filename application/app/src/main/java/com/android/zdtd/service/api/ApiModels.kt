@@ -51,6 +51,10 @@ object ApiModels {
     val sha256: String? = null,
   )
 
+  data class ProtectorSetting(
+    val protectorMode: String = "off",
+  )
+
   fun parseProcAgg(o: JSONObject?): ProcAgg {
     if (o == null) return ProcAgg()
     return ProcAgg(
@@ -116,6 +120,20 @@ object ApiModels {
       ram += p.rssMb
     }
     return ProcAgg(count = 0, cpuPercent = cpu, rssMb = ram)
+  }
+
+  fun parseProtectorSetting(wrapper: JSONObject?): ProtectorSetting {
+    val setting = wrapper?.optJSONObject("setting")
+    val mode = setting?.optString("protector_mode", "off")
+      ?.trim()
+      ?.lowercase(Locale.ROOT)
+      .takeUnless { it.isNullOrBlank() }
+      ?: "off"
+    val safe = when (mode) {
+      "on", "off", "auto" -> mode
+      else -> "off"
+    }
+    return ProtectorSetting(protectorMode = safe)
   }
 
   fun parsePrograms(wrapper: JSONObject?): List<Program> {

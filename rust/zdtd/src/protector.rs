@@ -15,8 +15,12 @@ use crate::settings::{self, ProtectorMode};
 const WAKE_LOCK_NAME: &str = "zdtd-protect";
 const TARGET_OOM_SCORE_ADJ: &[u8] = b"-1000\n";
 const DEFAULT_OOM_SCORE_ADJ: &[u8] = b"0\n";
-const AUTO_SCREEN_OFF_DELAY: Duration = Duration::from_secs(120);
-const AUTO_SCREEN_ON_CONFIRM: Duration = Duration::from_secs(10);
+const AUTO_SCREEN_ON_POLL_INTERVAL: Duration = Duration::from_secs(600);
+const AUTO_SCREEN_OFF_POLL_INTERVAL: Duration = Duration::from_secs(300);
+const AUTO_SCREEN_OFF_CONFIRM_STEP: Duration = Duration::from_secs(15);
+const AUTO_SCREEN_OFF_CONFIRM_SAMPLES: u32 = 2;
+const AUTO_SCREEN_ON_CONFIRM_STEP: Duration = Duration::from_secs(5);
+const AUTO_SCREEN_ON_CONFIRM_SAMPLES: u32 = 2;
 
 #[derive(Default)]
 struct ProtectorState {
@@ -111,33 +115,89 @@ fn stop_auto_monitor() {
 
 fn auto_monitor_loop(probe: screen::ScreenProbe, token: u64) {
     let mut stable_on = screen::raw_screen_on(&probe);
-    let mut stable_since = Instant::now();
+    if stable_on {
+        release_protection();
+    } else {
+        apply_protection();
+    }
 
     loop {
-        if AUTO_MONITOR_TOKEN.load(Ordering::SeqCst) != token {
-            break;
-        }
+        let poll_interval = if stable_on {
+            AUTO_SCREEN_ON_POLL_INTERVAL
+        } else {
+            AUTO_SCREEN_OFF_POLL_INTERVAL
+        };
 
-        if stable_on {
-            if stable_since.elapsed() >= AUTO_SCREEN_ON_CONFIRM {
-                release_protection();
-            }
-        } else if stable_since.elapsed() >= AUTO_SCREEN_OFF_DELAY {
-            apply_protection();
-        }
-
-        thread::sleep(Duration::from_secs(1));
-
-        if AUTO_MONITOR_TOKEN.load(Ordering::SeqCst) != token {
+        if !interruptible_sleep(poll_interval, token) {
             break;
         }
 
         let current_on = screen::raw_screen_on(&probe);
-        if current_on != stable_on {
-            stable_on = current_on;
-            stable_since = Instant::now();
+        if current_on == stable_on {
+            continue;
+        }
+
+        let confirmed = if current_on {
+            confirm_screen_state(
+                &probe,
+                token,
+                true,
+                AUTO_SCREEN_ON_CONFIRM_STEP,
+                AUTO_SCREEN_ON_CONFIRM_SAMPLES,
+            )
+        } else {
+            confirm_screen_state(
+                &probe,
+                token,
+                false,
+                AUTO_SCREEN_OFF_CONFIRM_STEP,
+                AUTO_SCREEN_OFF_CONFIRM_SAMPLES,
+            )
+        };
+
+        match confirmed {
+            Some(true) => {
+                stable_on = current_on;
+                if stable_on {
+                    release_protection();
+                } else {
+                    apply_protection();
+                }
+            }
+            Some(false) => {}
+            None => break,
         }
     }
+}
+
+fn confirm_screen_state(
+    probe: &screen::ScreenProbe,
+    token: u64,
+    expected_on: bool,
+    step: Duration,
+    samples: u32,
+) -> Option<bool> {
+    for _ in 0..samples {
+        if !interruptible_sleep(step, token) {
+            return None;
+        }
+        if screen::raw_screen_on(probe) != expected_on {
+            return Some(false);
+        }
+    }
+    Some(true)
+}
+
+fn interruptible_sleep(total: Duration, token: u64) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < total {
+        if AUTO_MONITOR_TOKEN.load(Ordering::SeqCst) != token {
+            return false;
+        }
+        let remaining = total.saturating_sub(start.elapsed());
+        thread::sleep(remaining.min(Duration::from_secs(1)));
+    }
+    AUTO_MONITOR_TOKEN.load(Ordering::SeqCst) == token
 }
 
 fn apply_protection() {

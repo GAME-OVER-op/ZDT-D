@@ -1,9 +1,11 @@
-# Local tools, keys and machine-specific files
+# Local tools and downloaded build utilities
 /.tools/
+
+# Local Android config
 /application/local.properties
 /application/keystore.properties
 
-# Gradle caches and Android build outputs
+# Gradle and Android build outputs
 /.gradle/
 /application/.gradle/
 /application/.kotlin/
@@ -17,14 +19,17 @@
 # Project output artifacts
 /out/
 
-# Generated assets kept out of source control
+# Generated assets
 /application/app/src/main/assets/zdt_module.zip
 /application/app/src/main/assets/module.prop
 
-# Binary artifacts and signing files
+# Signing keys
+/keystores/*.keystore
+/keystores/*.jks
+!/keystores/.gitkeep
+
+# Binary artifacts
 *.apk
 *.aab
 *.ap_
 *.idsig
-*.keystore
-*.jks

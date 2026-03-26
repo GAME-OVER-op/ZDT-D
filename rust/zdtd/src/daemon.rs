@@ -39,6 +39,9 @@ pub fn run(_cfg: &Config) -> Result<()> {
     // Ensure token exists and write api info (no token in API responses).
     let token = settings::read_or_create_token()?;
     settings::write_api_info(&settings::api_info_path(), "127.0.0.1:1006")?;
+    if let Err(e) = settings::load_api_settings() {
+        logging::warn(&format!("failed to init api/setting.json: {e:#}"));
+    }
 
     // Truncate main log at each daemon start.
     logging::truncate_main_log()?;

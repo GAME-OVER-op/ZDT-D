@@ -1,0 +1,30 @@
+# Local tools, keys and machine-specific files
+/.tools/
+/application/local.properties
+/application/keystore.properties
+
+# Gradle caches and Android build outputs
+/.gradle/
+/application/.gradle/
+/application/.kotlin/
+/application/build/
+/application/app/build/
+/application/app/.cxx/
+
+# Rust build outputs
+/rust/target/
+
+# Project output artifacts
+/out/
+
+# Generated assets kept out of source control
+/application/app/src/main/assets/zdt_module.zip
+/application/app/src/main/assets/module.prop
+
+# Binary artifacts and signing files
+*.apk
+*.aab
+*.ap_
+*.idsig
+*.keystore
+*.jks

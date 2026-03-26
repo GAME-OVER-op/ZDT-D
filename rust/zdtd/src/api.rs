@@ -14,7 +14,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crate::{daemon, daemon::SharedState, settings, stats};
+use crate::{daemon, daemon::SharedState, protector, settings, stats};
 
 const MAX_HEADER: usize = 16 * 1024;
 // Allow uploading strategic files (including binaries). The API is local-only and authenticated,
@@ -1881,6 +1881,18 @@ match (method.as_str(), path.as_str()) {
         ("GET", "/api/status") => {
             let report = stats::collect_report(services_running)?;
             write_json(stream, 200, serde_json::to_value(report)?)
+        }
+
+        ("GET", "/api/setting") => {
+            let setting = settings::load_api_settings()?;
+            write_json(stream, 200, json!({"ok": true, "setting": setting}))
+        }
+        ("POST", "/api/setting") => {
+            let setting: settings::ApiSettings = serde_json::from_slice(&body)
+                .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+            settings::save_api_settings(&setting)?;
+            protector::refresh(services_running);
+            write_json(stream, 200, json!({"ok": true, "setting": setting}))
         }
 
         ("POST", "/api/fs/read_text") => {

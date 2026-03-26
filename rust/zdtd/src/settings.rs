@@ -24,6 +24,56 @@ pub fn api_token_path() -> PathBuf {
     Path::new(API_DIR).join("token")
 }
 
+pub fn api_setting_json_path() -> PathBuf {
+    Path::new(API_DIR).join("setting.json")
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ProtectorMode {
+    Off,
+    On,
+    Auto,
+}
+
+impl Default for ProtectorMode {
+    fn default() -> Self {
+        Self::Off
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiSettings {
+    #[serde(default, alias = "mode", alias = "protection_mode")]
+    pub protector_mode: ProtectorMode,
+}
+
+impl Default for ApiSettings {
+    fn default() -> Self {
+        Self { protector_mode: ProtectorMode::Off }
+    }
+}
+
+pub fn load_api_settings() -> Result<ApiSettings> {
+    ensure_dirs()?;
+    let path = api_setting_json_path();
+    if !path.exists() {
+        let s = serde_json::to_string_pretty(&ApiSettings::default())?;
+        fs::write(&path, s).with_context(|| format!("write {}", path.display()))?;
+    }
+    let raw = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    let st: ApiSettings = serde_json::from_str(&raw).with_context(|| format!("parse {}", path.display()))?;
+    Ok(st)
+}
+
+pub fn save_api_settings(st: &ApiSettings) -> Result<()> {
+    ensure_dirs()?;
+    let path = api_setting_json_path();
+    let s = serde_json::to_string_pretty(st)?;
+    fs::write(&path, s).with_context(|| format!("write {}", path.display()))?;
+    Ok(())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StartSettings {
     pub enabled: bool,

@@ -78,24 +78,30 @@ async fn main() -> Result<()> {
         });
     }
 
-    // Background: system stats collector (/proc), optimized for Android
+    // Background: system stats collector (/proc), optimized for Android.
+    // To save battery on weaker phones, we only collect expensive /proc stats while the Web UI is open.
     {
         let st = state.clone();
         tokio::spawn(async move {
             let mut prev = None;
             let mut idle_since: Option<tokio::time::Instant> = None;
             loop {
+                let ui = st.runtime.ui_clients.load(std::sync::atomic::Ordering::Relaxed);
+                if ui == 0 {
+                    idle_since = None;
+                    tokio::select! {
+                        _ = st.runtime.wakeup.notified() => {},
+                        _ = tokio::time::sleep(Duration::from_secs(60)) => {},
+                    }
+                    continue;
+                }
+
                 let (s, cpu) = system::collect(prev);
                 prev = Some(cpu);
                 *st.system.lock() = s;
 
-                // "Sleep" optimization: when there are no active connections and no UI clients,
-                // collect /proc stats less frequently to reduce battery usage.
-                let ui = st.runtime.ui_clients.load(std::sync::atomic::Ordering::Relaxed);
                 let active = st.conns.len();
-                let is_idle = ui == 0 && active == 0;
-
-                let interval = if is_idle {
+                let interval = if active == 0 {
                     if idle_since.is_none() {
                         idle_since = Some(tokio::time::Instant::now());
                     }
@@ -112,7 +118,7 @@ async fn main() -> Result<()> {
 
                 tokio::select! {
                     _ = tokio::time::sleep(interval) => {},
-                    _ = st.runtime.wakeup.notified() => { idle_since = None; }
+                    _ = st.runtime.wakeup.notified() => {},
                 }
             }
         });

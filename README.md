@@ -279,7 +279,7 @@ If the application connects to external resources, it does so only for actions e
 
 ## License
 
-MIT License — see [LICENSE](https://github.com/GAME-OVER-op/ZDT-D/blob/main/LICENSE)
+GPL-3.0 License — see [LICENSE](https://github.com/GAME-OVER-op/ZDT-D/blob/main/LICENSE)
 
 ## Downloads
 

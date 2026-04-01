@@ -388,46 +388,46 @@ private fun SingBoxSection(
   var setting by remember { mutableStateOf<SingSetting?>(null) }
   var loading by remember { mutableStateOf(false) }
 
-  // Config editor dialog state.
   var editProfile by remember { mutableStateOf<String?>(null) }
   var editText by remember { mutableStateOf("") }
   var editLoading by remember { mutableStateOf(false) }
 
-  // Create profile dialog
   var showCreate by remember { mutableStateOf(false) }
-  if (showCreate) {
-    CreateProfileDialog(
-      existing = (setting?.profiles ?: emptyList()).map { it.name },
-      onDismiss = { showCreate = false },
-      onCreate = { name ->
-        showCreate = false
-        actions.createNamedProfile("sing-box", name) { created ->
-          if (created != null) {
-            showSnack(context.getString(R.string.profile_created_fmt, created))
-            // Refresh setting.
-            loading = true
-            actions.loadJsonData("/api/programs/sing-box/setting") { obj ->
-              loading = false
-              rawJson = obj
-              setting = parseSingSetting(obj)
-            }
-          } else {
-            showSnack(context.getString(R.string.create_failed))
-          }
-        }
-      },
-      snackHost = snackHost,
-    )
-  }
+  var showImport by remember { mutableStateOf(false) }
 
-  // Initial load
-  LaunchedEffect(Unit) {
+  fun refreshSetting(onDone: (() -> Unit)? = null) {
     loading = true
     actions.loadJsonData("/api/programs/sing-box/setting") { obj ->
       loading = false
       rawJson = obj
       setting = parseSingSetting(obj)
+      onDone?.invoke()
     }
+  }
+
+  fun openEditor(profileName: String) {
+    editProfile = profileName
+    editLoading = true
+    val profEnc = URLEncoder.encode(profileName, "UTF-8")
+    actions.loadText("/api/programs/sing-box/profiles/$profEnc/config") { txt ->
+      editLoading = false
+      editText = txt ?: ""
+    }
+  }
+
+  fun deleteServer(profileName: String) {
+    actions.deleteProfile("sing-box", profileName) { ok ->
+      if (ok) {
+        showSnack(context.getString(R.string.deleted))
+        refreshSetting()
+      } else {
+        showSnack(context.getString(R.string.delete_failed))
+      }
+    }
+  }
+
+  LaunchedEffect(Unit) {
+    refreshSetting()
   }
 
   var pendingConfigPortPlan by remember { mutableStateOf<SingConfigPortPlan?>(null) }
@@ -482,11 +482,111 @@ private fun SingBoxSection(
     }
   }
 
-  // Editor dialog
+  if (showCreate) {
+    CreateProfileDialog(
+      existing = (setting?.profiles ?: emptyList()).map { it.name },
+      onDismiss = { showCreate = false },
+      onCreate = { name ->
+        showCreate = false
+        actions.createNamedProfile("sing-box", name) { created ->
+          if (created != null) {
+            showSnack(context.getString(R.string.singbox_server_created_fmt, created))
+            refreshSetting()
+          } else {
+            showSnack(context.getString(R.string.create_failed))
+          }
+        }
+      },
+      snackHost = snackHost,
+      titleRes = R.string.singbox_create_server_title,
+      rulesRes = R.string.singbox_create_server_rules,
+      nameLabelRes = R.string.singbox_server_name_label,
+      existsErrorRes = R.string.singbox_server_already_exists,
+      invalidNameRes = R.string.singbox_invalid_server_name,
+    )
+  }
+
+  val currentSetting = setting
+  if (showImport && currentSetting != null) {
+    SingBoxImportServerDialog(
+      existing = currentSetting.profiles.map { it.name },
+      suggestedPort = findNextAvailableSingPort(currentSetting.profiles, 2080),
+      onDismiss = { showImport = false },
+      onGenerate = { serverName, sourceText ->
+        val preferredPort = findNextAvailableSingPort(currentSetting.profiles, 2080)
+        val imported = runCatching { com.android.zdtd.service.singbox.importer.SingBoxOneLineImporter.import(sourceText, preferredPort) }
+          .getOrElse {
+            showSnack(context.getString(R.string.singbox_import_failed_fmt, it.message ?: context.getString(R.string.singbox_parse_error)))
+            return@SingBoxImportServerDialog
+          }
+
+        var configToSave = imported.configJson
+        val detectedPort = findSingMixedInboundPort(configToSave)
+        val resolvedPort = when {
+          detectedPort == null -> preferredPort
+          currentSetting.profiles.none { it.port == detectedPort } -> detectedPort
+          else -> {
+            val next = findNextAvailableSingPort(currentSetting.profiles, detectedPort)
+            configToSave = replaceSingMixedInboundPort(configToSave, next) ?: configToSave
+            next
+          }
+        }
+
+        showImport = false
+        actions.createNamedProfile("sing-box", serverName) { created ->
+          if (created == null) {
+            showSnack(context.getString(R.string.create_failed))
+            return@createNamedProfile
+          }
+          val encoded = URLEncoder.encode(created, "UTF-8")
+          actions.saveText("/api/programs/sing-box/profiles/$encoded/config", configToSave) { configOk ->
+            if (!configOk) {
+              showSnack(context.getString(R.string.save_failed))
+              refreshSetting()
+              return@saveText
+            }
+
+            actions.loadJsonData("/api/programs/sing-box/setting") { latestObj ->
+              val latestSetting = parseSingSetting(latestObj) ?: currentSetting
+              val nextProfiles = if (latestSetting.profiles.any { it.name == created }) {
+                latestSetting.profiles.map {
+                  if (it.name == created) it.copy(enabled = true, port = resolvedPort, capture = "tcp") else it
+                }
+              } else {
+                latestSetting.profiles + SingProfile(
+                  name = created,
+                  enabled = true,
+                  port = resolvedPort,
+                  capture = "tcp",
+                )
+              }
+              val updatedSetting = latestSetting.copy(
+                activeTransparentProfile = if (latestSetting.activeTransparentProfile.isBlank()) created else latestSetting.activeTransparentProfile,
+                profiles = nextProfiles,
+              )
+              val obj = buildSingSettingJson(updatedSetting)
+              actions.saveJsonData("/api/programs/sing-box/setting", obj) { settingOk ->
+                if (settingOk) {
+                  setting = updatedSetting
+                  rawJson = obj
+                  showSnack(context.getString(R.string.singbox_import_created_fmt, created, resolvedPort))
+                } else {
+                  showSnack(context.getString(R.string.singbox_config_saved_port_update_failed))
+                  refreshSetting()
+                }
+              }
+            }
+          }
+        }
+      },
+      snackHost = snackHost,
+    )
+  }
+
   if (editProfile != null) {
     AlertDialog(
       onDismissRequest = { if (!editLoading) editProfile = null },
-      title = { Text("config.json / ${editProfile}") },
+      title = { Text(stringResource(R.string.singbox_editor_title_fmt, editProfile ?: "")) },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
           if (editLoading) {
@@ -497,7 +597,7 @@ private fun SingBoxSection(
             onValueChange = { editText = it },
             modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp),
             singleLine = false,
-            label = { Text("config.json") },
+            label = { Text(stringResource(R.string.singbox_editor_label)) },
           )
         }
       },
@@ -510,10 +610,10 @@ private fun SingBoxSection(
           }
           val normalizedText = parsed.toString(2)
           val detectedPort = findSingMixedInboundPort(normalizedText)
-          val currentSetting = setting
-          val currentProfile = currentSetting?.profiles?.firstOrNull { it.name == prof }
+          val localSetting = setting
+          val currentProfile = localSetting?.profiles?.firstOrNull { it.name == prof }
 
-          if (detectedPort == null || currentSetting == null || currentProfile == null) {
+          if (detectedPort == null || localSetting == null || currentProfile == null) {
             applyConfigSavePlan(SingConfigPortPlan(prof, normalizedText, currentProfile?.port ?: 0, false))
             return@Button
           }
@@ -523,7 +623,7 @@ private fun SingBoxSection(
             return@Button
           }
 
-          val conflict = currentSetting.profiles.firstOrNull { it.name != prof && it.port == detectedPort }
+          val conflict = localSetting.profiles.firstOrNull { it.name != prof && it.port == detectedPort }
           pendingConfigPortPlan = if (conflict == null) {
             SingConfigPortPlan(
               profileName = prof,
@@ -538,7 +638,7 @@ private fun SingBoxSection(
               detectedPort = detectedPort,
               applyPortToProfile = true,
               conflictProfileName = conflict.name,
-              replacementPort = findNextAvailableSingPort(currentSetting.profiles, detectedPort),
+              replacementPort = findNextAvailableSingPort(localSetting.profiles, detectedPort),
             )
           }
         }) { Text(stringResource(R.string.action_save)) }
@@ -551,9 +651,15 @@ private fun SingBoxSection(
 
   pendingConfigPortPlan?.let { plan ->
     val message = if (plan.conflictProfileName == null) {
-      "В config.json найден listen_port ${plan.detectedPort}. Сохранить этот порт в профиль ${plan.profileName}?"
+      context.getString(R.string.singbox_port_sync_found_fmt, plan.detectedPort, plan.profileName)
     } else {
-      "Порт ${plan.detectedPort} уже используется профилем ${plan.conflictProfileName}. Предлагаемый свободный порт: ${plan.replacementPort}. Заменить порт в config.json и сохранить его в профиль ${plan.profileName}?"
+      context.getString(
+        R.string.singbox_port_sync_conflict_fmt,
+        plan.detectedPort,
+        plan.conflictProfileName,
+        plan.replacementPort ?: plan.detectedPort,
+        plan.profileName,
+      )
     }
     AlertDialog(
       onDismissRequest = { pendingConfigPortPlan = null },
@@ -563,14 +669,24 @@ private fun SingBoxSection(
         Button(onClick = {
           pendingConfigPortPlan = null
           applyConfigSavePlan(plan)
-        }) { Text(if (plan.conflictProfileName == null) "Сохранить" else "Заменить и сохранить") }
+        }) {
+          Text(
+            if (plan.conflictProfileName == null) stringResource(R.string.singbox_port_sync_apply)
+            else stringResource(R.string.singbox_port_sync_replace_and_apply)
+          )
+        }
       },
       dismissButton = {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           TextButton(onClick = {
             pendingConfigPortPlan = null
             applyConfigSavePlan(plan.copy(applyPortToProfile = false, replacementPort = null))
-          }) { Text(if (plan.conflictProfileName == null) "Не менять профиль" else "Сохранить только config") }
+          }) {
+            Text(
+              if (plan.conflictProfileName == null) stringResource(R.string.singbox_port_sync_skip_profile)
+              else stringResource(R.string.singbox_port_sync_save_config_only)
+            )
+          }
           TextButton(onClick = { pendingConfigPortPlan = null }) { Text(stringResource(R.string.action_cancel)) }
         }
       }
@@ -581,10 +697,10 @@ private fun SingBoxSection(
   if (s0 == null) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f))) {
       Column(Modifier.padding(12.dp)) {
-        Text("sing-box", fontWeight = FontWeight.SemiBold)
+        Text(program.name ?: "sing-box", fontWeight = FontWeight.SemiBold)
         Spacer(Modifier.height(6.dp))
         Text(
-          if (loading) "Loading..." else "Failed to load setting.json",
+          if (loading) stringResource(R.string.singbox_loading) else stringResource(R.string.singbox_failed_to_load_setting),
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
         )
       }
@@ -608,7 +724,6 @@ private fun SingBoxSection(
     val t2sPort = t2sPortTxt.trim().toIntOrNull()
     val t2sWebPort = t2sWebPortTxt.trim().toIntOrNull()
 
-    // Profile validation
     for (p in profiles) {
       if (!isValidProfileName(p.name)) {
         if (showErrors) showSnack(context.getString(R.string.singbox_invalid_profile_name_fmt, p.name))
@@ -644,7 +759,6 @@ private fun SingBoxSection(
         if (showErrors) showSnack(context.getString(R.string.singbox_fill_t2s_web_port))
         return null
       }
-      // Must have at least one enabled profile in socks5
       if (profiles.none { it.enabled }) {
         if (showErrors) showSnack(context.getString(R.string.singbox_enable_at_least_one_profile))
         return null
@@ -715,13 +829,11 @@ private fun SingBoxSection(
     }
   }
 
-
   Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
     EnabledCard(
       title = stringResource(R.string.enabled),
       checked = enabled,
       onCheckedChange = { v ->
-        // Spec: top Enabled switch must update setting.json immediately, without pressing Save.
         val prev = enabled
         enabled = v
         val obj = (rawJson ?: JSONObject()).also { it.put("enabled", v) }
@@ -732,7 +844,6 @@ private fun SingBoxSection(
           } else {
             rawJson = obj
             lastSavedSettingJson = obj.toString()
-            // Refresh program list so the Programs screen reflects enabled state immediately.
             actions.refreshPrograms()
           }
         }
@@ -742,26 +853,31 @@ private fun SingBoxSection(
     Card {
       Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(stringResource(R.string.singbox_mode_title), fontWeight = FontWeight.SemiBold)
+        Text(
+          stringResource(R.string.singbox_settings_desc),
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+          style = MaterialTheme.typography.bodySmall,
+        )
         if (narrow) {
           Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             FilterChip(
-            selected = mode == "socks5",
-            onClick = { mode = "socks5" },
-            colors = FilterChipDefaults.filterChipColors(
-              selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
-              selectedLabelColor = MaterialTheme.colorScheme.error,
-            ),
-            label = { Text(stringResource(R.string.singbox_mode_socks5)) },
-          )
-          FilterChip(
-            selected = mode == "transparent",
-            onClick = { showTransparentUnavailableDialog = true },
-            colors = FilterChipDefaults.filterChipColors(
-              selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
-              selectedLabelColor = MaterialTheme.colorScheme.error,
-            ),
-            label = { Text(stringResource(R.string.singbox_mode_transparent)) },
-          )
+              selected = mode == "socks5",
+              onClick = { mode = "socks5" },
+              colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
+                selectedLabelColor = MaterialTheme.colorScheme.error,
+              ),
+              label = { Text(stringResource(R.string.singbox_mode_socks5)) },
+            )
+            FilterChip(
+              selected = mode == "transparent",
+              onClick = { showTransparentUnavailableDialog = true },
+              colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
+                selectedLabelColor = MaterialTheme.colorScheme.error,
+              ),
+              label = { Text(stringResource(R.string.singbox_mode_transparent)) },
+            )
           }
         } else {
           Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -802,14 +918,13 @@ private fun SingBoxSection(
             modifier = Modifier.fillMaxWidth(),
           )
           Text(
-            "Capture: TCP only (always)",
+            stringResource(R.string.singbox_capture_tcp_only),
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
             style = MaterialTheme.typography.bodySmall,
           )
         }
 
         if (mode == "transparent") {
-          // Active profile selector
           val names = profiles.map { it.name }
           var expanded by remember { mutableStateOf(false) }
           ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
@@ -836,7 +951,8 @@ private fun SingBoxSection(
       }
     }
 
-    // Global apps list (common only)
+    SingBoxImportCard(onClick = { showImport = true })
+
     AppListPickerCard(
       title = stringResource(R.string.apps_common_title),
       desc = stringResource(R.string.apps_common_desc),
@@ -845,13 +961,17 @@ private fun SingBoxSection(
       snackHost = snackHost,
     )
 
-    // Profiles
     Card {
-      Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        val compactProfiles = rememberIsCompactWidth()
-        if (compactProfiles) {
+      Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        val compactHeader = rememberIsCompactWidth()
+        if (compactHeader) {
           Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.tab_profiles), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.singbox_servers_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+              stringResource(R.string.singbox_servers_desc),
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+              style = MaterialTheme.typography.bodySmall,
+            )
             FilledTonalButton(onClick = { showCreate = true }, modifier = Modifier.fillMaxWidth()) {
               Icon(Icons.Filled.Add, contentDescription = null)
               Spacer(Modifier.width(6.dp))
@@ -859,205 +979,257 @@ private fun SingBoxSection(
             }
           }
         } else {
-          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.tab_profiles), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-            FilledTonalButton(onClick = { showCreate = true }) {
-              Icon(Icons.Filled.Add, contentDescription = null)
-              Spacer(Modifier.width(6.dp))
-              Text(stringResource(R.string.action_add))
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+              Text(stringResource(R.string.singbox_servers_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+              FilledTonalButton(onClick = { showCreate = true }) {
+                Icon(Icons.Filled.Add, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.action_add))
+              }
             }
+            Text(
+              stringResource(R.string.singbox_servers_desc),
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+              style = MaterialTheme.typography.bodySmall,
+            )
           }
         }
 
-        profiles.forEach { p ->
-          Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-              val compactRow = rememberIsCompactWidth()
-              if (compactRow) {
-                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                  Text(p.name, fontWeight = FontWeight.SemiBold, maxLines = 2)
-                  Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = {
-                      val prof = p.name
-                      editProfile = prof
-                      editLoading = true
-                      val profEnc = URLEncoder.encode(prof, "UTF-8")
-                      actions.loadText("/api/programs/sing-box/profiles/$profEnc/config") { txt ->
-                        editLoading = false
-                        editText = txt ?: ""
-                      }
-                    }) {
-                      Icon(Icons.Filled.Edit, contentDescription = null)
-                    }
-                    IconButton(onClick = {
-                      actions.deleteProfile("sing-box", p.name) { ok ->
-                        if (ok) {
-                          showSnack(context.getString(R.string.deleted))
-                          profiles = profiles.filterNot { it.name == p.name }
-                          if (activeTransparent == p.name) activeTransparent = ""
-                          rawJson = (rawJson ?: JSONObject()).also { obj ->
-                            val arr = obj.optJSONArray("profiles")
-                            if (arr != null) {
-                              val newArr = org.json.JSONArray()
-                              for (i in 0 until arr.length()) {
-                                val item = arr.optJSONObject(i) ?: continue
-                                if (item.optString("name") != p.name) newArr.put(item)
-                              }
-                              obj.put("profiles", newArr)
-                            }
-                            if (obj.optString("active_transparent_profile") == p.name) {
-                              obj.put("active_transparent_profile", "")
-                            }
-                          }
-                          loading = true
-                          actions.loadJsonData("/api/programs/sing-box/setting") { obj ->
-                            loading = false
-                            rawJson = obj
-                            setting = parseSingSetting(obj)
-                          }
-                        } else {
-                          showSnack(context.getString(R.string.delete_failed))
-                        }
-                      }
-                    }) {
-                      Icon(Icons.Filled.Delete, contentDescription = null)
-                    }
-                  }
-                }
-              } else {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                  Text(p.name, fontWeight = FontWeight.SemiBold, maxLines = 2)
-                  Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = {
-                      val prof = p.name
-                      editProfile = prof
-                      editLoading = true
-                      val profEnc = URLEncoder.encode(prof, "UTF-8")
-                      actions.loadText("/api/programs/sing-box/profiles/$profEnc/config") { txt ->
-                        editLoading = false
-                        editText = txt ?: ""
-                      }
-                    }) {
-                      Icon(Icons.Filled.Edit, contentDescription = null)
-                    }
-                    IconButton(onClick = {
-                      actions.deleteProfile("sing-box", p.name) { ok ->
-                        if (ok) {
-                          showSnack(context.getString(R.string.deleted))
-                          profiles = profiles.filterNot { it.name == p.name }
-                          if (activeTransparent == p.name) activeTransparent = ""
-                          rawJson = (rawJson ?: JSONObject()).also { obj ->
-                            val arr = obj.optJSONArray("profiles")
-                            if (arr != null) {
-                              val newArr = org.json.JSONArray()
-                              for (i in 0 until arr.length()) {
-                                val item = arr.optJSONObject(i) ?: continue
-                                if (item.optString("name") != p.name) newArr.put(item)
-                              }
-                              obj.put("profiles", newArr)
-                            }
-                            if (obj.optString("active_transparent_profile") == p.name) {
-                              obj.put("active_transparent_profile", "")
-                            }
-                          }
-                          loading = true
-                          actions.loadJsonData("/api/programs/sing-box/setting") { obj ->
-                            loading = false
-                            rawJson = obj
-                            setting = parseSingSetting(obj)
-                          }
-                        } else {
-                          showSnack(context.getString(R.string.delete_failed))
-                        }
-                      }
-                    }) {
-                      Icon(Icons.Filled.Delete, contentDescription = null)
-                    }
-                  }
-                }
-              }
-
-              if (mode == "socks5") {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                  Text(stringResource(R.string.enabled))
-                  Switch(
-                    checked = p.enabled,
-                    onCheckedChange = { v ->
-                      profiles = profiles.map { if (it.name == p.name) it.copy(enabled = v) else it }
-                    },
-                  )
-                }
-              } else {
-                Text(
-                  stringResource(R.string.singbox_enabled_only_in_socks5_mode),
-                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                  style = MaterialTheme.typography.bodySmall,
-                )
-              }
-
-              OutlinedTextField(
-                value = (p.port ?: 0).toString(),
-                onValueChange = { txt ->
-                  val v = txt.trim().toIntOrNull()
-                  profiles = profiles.map { if (it.name == p.name) it.copy(port = v) else it }
-                },
-                label = { Text(stringResource(R.string.common_port)) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth(),
-              )
-
-              if (mode == "transparent" && activeTransparent == p.name) {
-                val cap = (p.capture ?: "tcp")
-                if (compactRow) {
-                  Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(
-                      selected = cap == "tcp",
-                      onClick = { profiles = profiles.map { if (it.name == p.name) it.copy(capture = "tcp") else it } },
-                      colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.error,
-                      ),
-                      label = { Text(stringResource(R.string.singbox_capture_tcp)) },
-                    )
-                    FilterChip(
-                      selected = cap == "tcp_udp",
-                      onClick = { profiles = profiles.map { if (it.name == p.name) it.copy(capture = "tcp_udp") else it } },
-                      colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.error,
-                      ),
-                      label = { Text(stringResource(R.string.singbox_capture_tcp_udp)) },
-                    )
-                  }
-                } else {
-                  Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    FilterChip(
-                      selected = cap == "tcp",
-                      onClick = { profiles = profiles.map { if (it.name == p.name) it.copy(capture = "tcp") else it } },
-                      colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.error,
-                      ),
-                      label = { Text(stringResource(R.string.singbox_capture_tcp)) },
-                    )
-                    FilterChip(
-                      selected = cap == "tcp_udp",
-                      onClick = { profiles = profiles.map { if (it.name == p.name) it.copy(capture = "tcp_udp") else it } },
-                      colors = FilterChipDefaults.filterChipColors(
-                        selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
-                        selectedLabelColor = MaterialTheme.colorScheme.error,
-                      ),
-                      label = { Text(stringResource(R.string.singbox_capture_tcp_udp)) },
-                    )
-                  }
-                }
-              }
-            }
-          }
+        profiles.forEach { profile ->
+          SingBoxServerCard(
+            profile = profile,
+            mode = mode,
+            isActiveTransparent = activeTransparent == profile.name,
+            onEdit = { openEditor(profile.name) },
+            onDelete = { deleteServer(profile.name) },
+            onToggleEnabled = { value ->
+              profiles = profiles.map { if (it.name == profile.name) it.copy(enabled = value) else it }
+            },
+            onPortChange = { value ->
+              profiles = profiles.map { if (it.name == profile.name) it.copy(port = value) else it }
+            },
+            onCaptureChange = { value ->
+              profiles = profiles.map { if (it.name == profile.name) it.copy(capture = value) else it }
+            },
+          )
         }
       }
     }
   }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SingBoxImportCard(onClick: () -> Unit) {
+  Card(onClick = onClick) {
+    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      Text(stringResource(R.string.singbox_import_card_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+      Text(
+        stringResource(R.string.singbox_import_card_desc),
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+      )
+      Text(
+        stringResource(R.string.singbox_import_card_warning),
+        color = MaterialTheme.colorScheme.error,
+        style = MaterialTheme.typography.bodySmall,
+      )
+      Button(onClick = onClick) {
+        Text(stringResource(R.string.singbox_import_action))
+      }
+    }
+  }
+}
+
+@Composable
+private fun SingBoxServerCard(
+  profile: SingProfile,
+  mode: String,
+  isActiveTransparent: Boolean,
+  onEdit: () -> Unit,
+  onDelete: () -> Unit,
+  onToggleEnabled: (Boolean) -> Unit,
+  onPortChange: (Int?) -> Unit,
+  onCaptureChange: (String) -> Unit,
+) {
+  val compact = rememberIsCompactWidth()
+  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.8f))) {
+    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      if (compact) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text(profile.name, fontWeight = FontWeight.SemiBold, maxLines = 2)
+          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, contentDescription = null) }
+            IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = null) }
+          }
+        }
+      } else {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+          Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(profile.name, fontWeight = FontWeight.SemiBold, maxLines = 2)
+            Text(
+              stringResource(R.string.apply_after_restart_short),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+            )
+          }
+          Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, contentDescription = null) }
+            IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = null) }
+          }
+        }
+      }
+
+      if (mode == "socks5") {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+          Text(stringResource(R.string.enabled))
+          Switch(checked = profile.enabled, onCheckedChange = onToggleEnabled)
+        }
+      } else {
+        Text(
+          stringResource(R.string.singbox_enabled_only_in_socks5_mode),
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+          style = MaterialTheme.typography.bodySmall,
+        )
+      }
+
+      OutlinedTextField(
+        value = (profile.port ?: 0).toString(),
+        onValueChange = { txt -> onPortChange(txt.trim().toIntOrNull()) },
+        label = { Text(stringResource(R.string.common_port)) },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = Modifier.fillMaxWidth(),
+      )
+
+      if (mode == "transparent" && isActiveTransparent) {
+        val cap = profile.capture ?: "tcp"
+        val chips: @Composable () -> Unit = {
+          FilterChip(
+            selected = cap == "tcp",
+            onClick = { onCaptureChange("tcp") },
+            colors = FilterChipDefaults.filterChipColors(
+              selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
+              selectedLabelColor = MaterialTheme.colorScheme.error,
+            ),
+            label = { Text(stringResource(R.string.singbox_capture_tcp)) },
+          )
+          FilterChip(
+            selected = cap == "tcp_udp",
+            onClick = { onCaptureChange("tcp_udp") },
+            colors = FilterChipDefaults.filterChipColors(
+              selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
+              selectedLabelColor = MaterialTheme.colorScheme.error,
+            ),
+            label = { Text(stringResource(R.string.singbox_capture_tcp_udp)) },
+          )
+        }
+        if (compact) {
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { chips() }
+        } else {
+          Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { chips() }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun SingBoxImportServerDialog(
+  existing: List<String>,
+  suggestedPort: Int,
+  onDismiss: () -> Unit,
+  onGenerate: (String, String) -> Unit,
+  snackHost: SnackbarHostState,
+) {
+  val scope = rememberCoroutineScope()
+  val existingNorm = remember(existing) { existing.map { normalizeProfileName(it) }.toSet() }
+  var rawName by remember { mutableStateOf("") }
+  val name = remember(rawName) { normalizeProfileName(rawName) }
+  var source by remember { mutableStateOf("") }
+  var error by remember { mutableStateOf<String?>(null) }
+
+  fun snack(msg: String) { scope.launch { snackHost.showSnackbar(msg) } }
+
+  val enterNameErr = stringResource(R.string.enter_a_name)
+  val invalidServerErr = stringResource(R.string.singbox_invalid_server_name)
+  val serverExistsErr = stringResource(R.string.singbox_server_already_exists)
+  val sourceRequiredErr = stringResource(R.string.singbox_import_source_required)
+
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(stringResource(R.string.singbox_import_dialog_title)) },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+          stringResource(R.string.singbox_import_dialog_beta_warning),
+          color = MaterialTheme.colorScheme.error,
+          style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+          stringResource(R.string.singbox_import_dialog_desc),
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+          style = MaterialTheme.typography.bodySmall,
+        )
+        OutlinedTextField(
+          value = name,
+          onValueChange = {
+            rawName = it
+            error = null
+          },
+          label = { Text(stringResource(R.string.singbox_server_name_label)) },
+          singleLine = false,
+          maxLines = 2,
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+          supportingText = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+              Text(stringResource(R.string.singbox_create_server_rules))
+              Text(stringResource(R.string.singbox_import_auto_port_hint, suggestedPort))
+            }
+          },
+          isError = error != null,
+        )
+        OutlinedTextField(
+          value = source,
+          onValueChange = {
+            source = it
+            error = null
+          },
+          label = { Text(stringResource(R.string.singbox_import_source_label)) },
+          modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp),
+          singleLine = false,
+          supportingText = { Text(stringResource(R.string.singbox_import_source_support_hint)) },
+          isError = error != null,
+        )
+        error?.let {
+          Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+      }
+    },
+    confirmButton = {
+      Button(onClick = {
+        when {
+          name.isBlank() -> {
+            error = enterNameErr
+            snack(invalidServerErr)
+          }
+          existingNorm.contains(name) -> {
+            error = serverExistsErr
+            snack(serverExistsErr)
+          }
+          source.trim().isBlank() -> {
+            error = sourceRequiredErr
+            snack(sourceRequiredErr)
+          }
+          else -> onGenerate(name, source)
+        }
+      }) {
+        Text(stringResource(R.string.singbox_import_action))
+      }
+    },
+    dismissButton = {
+      OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+    },
+  )
 }
 
 @Composable
@@ -1177,6 +1349,11 @@ private fun CreateProfileDialog(
   onDismiss: () -> Unit,
   onCreate: (String) -> Unit,
   snackHost: SnackbarHostState,
+  titleRes: Int = R.string.create_profile_title,
+  rulesRes: Int = R.string.create_profile_rules,
+  nameLabelRes: Int = R.string.profile_name_label,
+  existsErrorRes: Int = R.string.profile_already_exists,
+  invalidNameRes: Int = R.string.invalid_profile_name,
 ) {
   val scope = rememberCoroutineScope()
   val existingNorm = remember(existing) { existing.map { normalizeProfileName(it) }.toSet() }
@@ -1190,16 +1367,16 @@ private fun CreateProfileDialog(
   }
 
   val enterNameErr = stringResource(R.string.enter_a_name)
-  val invalidNameSnack = stringResource(R.string.invalid_profile_name)
-  val profileExistsErr = stringResource(R.string.profile_already_exists)
+  val invalidNameSnack = stringResource(invalidNameRes)
+  val profileExistsErr = stringResource(existsErrorRes)
 
   AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text(stringResource(R.string.create_profile_title)) },
+    title = { Text(stringResource(titleRes)) },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-          stringResource(R.string.create_profile_rules),
+          stringResource(rulesRes),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
         )
@@ -1211,7 +1388,7 @@ private fun CreateProfileDialog(
             raw = v
             error = null
           },
-          label = { Text(stringResource(R.string.profile_name_label)) },
+          label = { Text(stringResource(nameLabelRes)) },
           singleLine = false,
           maxLines = 2,
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),

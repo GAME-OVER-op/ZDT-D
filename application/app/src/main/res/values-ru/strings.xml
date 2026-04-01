@@ -610,4 +610,39 @@
     <string name="settings_protector_saved">Режим защиты сохранён</string>
     <string name="settings_protector_save_failed">Не удалось сохранить режим защиты</string>
 
+
+    <string name="singbox_settings_desc">Управляйте режимом, портами, импортом ссылок и карточками серверов в одном месте.</string>
+    <string name="singbox_capture_tcp_only">Capture: только TCP (всегда)</string>
+    <string name="singbox_loading">Загрузка…</string>
+    <string name="singbox_failed_to_load_setting">Не удалось загрузить setting.json</string>
+    <string name="singbox_editor_title_fmt">config.json / %1$s</string>
+    <string name="singbox_editor_label">config.json</string>
+    <string name="singbox_servers_title">Серверы</string>
+    <string name="singbox_servers_desc">У каждого сервера своя карточка, конфиг и настройки порта.</string>
+    <string name="singbox_server_created_fmt">Сервер создан: %1$s</string>
+    <string name="singbox_create_server_title">Создать сервер</string>
+    <string name="singbox_create_server_rules">Имя: только английские символы, без пробелов (пробелы заменяются на _), максимум 10 символов.</string>
+    <string name="singbox_server_name_label">Имя сервера</string>
+    <string name="singbox_invalid_server_name">Некорректное имя сервера</string>
+    <string name="singbox_server_already_exists">Сервер уже существует</string>
+    <string name="singbox_import_card_title">Импорт сервера из однострочника</string>
+    <string name="singbox_import_card_desc">Автоматически создаёт новый сервер sing-box из однострочной ссылки без ручного редактирования JSON.</string>
+    <string name="singbox_import_card_warning">Бета-функция: на некоторых ссылках или редких параметрах возможны ошибки разбора.</string>
+    <string name="singbox_import_action">Сгенерировать сервер</string>
+    <string name="singbox_import_dialog_title">Генерация сервера sing-box</string>
+    <string name="singbox_import_dialog_beta_warning">Бета-функция. Если используете редкие параметры, внимательно проверьте результат.</string>
+    <string name="singbox_import_dialog_desc">Вставьте однострочный конфиг вида vless://, vmess://, trojan://, ss:// или socks://. Новый сервер и его настройки будут созданы автоматически.</string>
+    <string name="singbox_import_auto_port_hint">Свободный mixed-in порт будет назначен автоматически. Предлагаемый порт: %1$d.</string>
+    <string name="singbox_import_source_label">Однострочный конфиг</string>
+    <string name="singbox_import_source_support_hint">Поддерживается: vless, vmess, trojan, shadowsocks, socks. Полный JSON тоже принимается.</string>
+    <string name="singbox_import_source_required">Сначала вставьте конфиг</string>
+    <string name="singbox_import_failed_fmt">Импорт не удался: %1$s</string>
+    <string name="singbox_import_created_fmt">Сервер создан: %1$s (порт %2$d)</string>
+    <string name="singbox_port_sync_found_fmt">В config.json найден listen_port %1$d. Сохранить этот порт в сервер %2$s?</string>
+    <string name="singbox_port_sync_conflict_fmt">Порт %1$d уже используется сервером %2$s. Предлагаемый свободный порт: %3$d. Заменить порт в config.json и сохранить его в сервер %4$s?</string>
+    <string name="singbox_port_sync_apply">Сохранить</string>
+    <string name="singbox_port_sync_replace_and_apply">Заменить и сохранить</string>
+    <string name="singbox_port_sync_skip_profile">Не менять сервер</string>
+    <string name="singbox_port_sync_save_config_only">Сохранить только config</string>
+
 </resources>

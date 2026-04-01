@@ -612,4 +612,39 @@ Install the module again.</string>
     <string name="settings_protector_saved">Protection mode saved</string>
     <string name="settings_protector_save_failed">Failed to save protection mode</string>
 
+
+    <string name="singbox_settings_desc">Manage mode, ports, imported links, and server cards from one place.</string>
+    <string name="singbox_capture_tcp_only">Capture: TCP only (always)</string>
+    <string name="singbox_loading">Loading…</string>
+    <string name="singbox_failed_to_load_setting">Failed to load setting.json</string>
+    <string name="singbox_editor_title_fmt">config.json / %1$s</string>
+    <string name="singbox_editor_label">config.json</string>
+    <string name="singbox_servers_title">Servers</string>
+    <string name="singbox_servers_desc">Each server has its own card, config, and port settings.</string>
+    <string name="singbox_server_created_fmt">Server created: %1$s</string>
+    <string name="singbox_create_server_title">Create server</string>
+    <string name="singbox_create_server_rules">Name: English characters only, no spaces (spaces become _), maximum 10 characters.</string>
+    <string name="singbox_server_name_label">Server name</string>
+    <string name="singbox_invalid_server_name">Invalid server name</string>
+    <string name="singbox_server_already_exists">Server already exists</string>
+    <string name="singbox_import_card_title">Import server from one-line config</string>
+    <string name="singbox_import_card_desc">Create a new sing-box server automatically from a one-line link without editing JSON manually.</string>
+    <string name="singbox_import_card_warning">Beta feature: parsing may fail for some links or uncommon parameters.</string>
+    <string name="singbox_import_action">Generate server</string>
+    <string name="singbox_import_dialog_title">Generate sing-box server</string>
+    <string name="singbox_import_dialog_beta_warning">Beta feature. Review the result carefully if you use uncommon parameters.</string>
+    <string name="singbox_import_dialog_desc">Paste a one-line config such as vless://, vmess://, trojan://, ss:// or socks://. A new server and its settings will be created automatically.</string>
+    <string name="singbox_import_auto_port_hint">A free mixed-in port will be assigned automatically. Suggested port: %1$d.</string>
+    <string name="singbox_import_source_label">One-line config</string>
+    <string name="singbox_import_source_support_hint">Supported: vless, vmess, trojan, shadowsocks, socks. Full JSON is also accepted.</string>
+    <string name="singbox_import_source_required">Paste a config first</string>
+    <string name="singbox_import_failed_fmt">Import failed: %1$s</string>
+    <string name="singbox_import_created_fmt">Server created: %1$s (port %2$d)</string>
+    <string name="singbox_port_sync_found_fmt">listen_port %1$d was found in config.json. Save this port to server %2$s?</string>
+    <string name="singbox_port_sync_conflict_fmt">Port %1$d is already used by server %2$s. Suggested free port: %3$d. Replace the port inside config.json and save it to server %4$s?</string>
+    <string name="singbox_port_sync_apply">Save</string>
+    <string name="singbox_port_sync_replace_and_apply">Replace and save</string>
+    <string name="singbox_port_sync_skip_profile">Don’t change server</string>
+    <string name="singbox_port_sync_save_config_only">Save config only</string>
+
 </resources>

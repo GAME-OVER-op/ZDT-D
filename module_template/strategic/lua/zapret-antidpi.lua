@@ -54,7 +54,7 @@ standard rawsend :
 
 standard payload :
 
-* payload - comma separarated list of allowed payload types. if not present - allow non-empty known payloads.
+* payload - comma separated list of allowed payload types. if not present - allow non-empty known payloads.
 
 standard ip_id :
 
@@ -65,8 +65,10 @@ standard ipfrag :
 
 * ipfrag[=frag_function] - ipfrag function name. "ipfrag2" by default if empty
 * ipfrag_disorder - send fragments from last to first
-* ipfrag2 : ipfrag_pos_udp - udp frag position. ipv4 : starting from L4 header. ipb6: starting from fragmentable part. must be multiple of 8. default 8
-* ipfrag2 : ipfrag_pos_tcp - tcp frag position. ipv4 : starting from L4 header. ipb6: starting from fragmentable part. must be multiple of 8. default 32
+* ipfrag2 : ipfrag_pos_tcp - tcp frag position. ipv4 : starting from L4 header. ipv6: starting from fragmentable part. must be multiple of 8. default 32
+* ipfrag2 : ipfrag_pos_udp - udp frag position. ipv4 : starting from L4 header. ipv6: starting from fragmentable part. must be multiple of 8. default 8
+* ipfrag2 : ipfrag_pos_icmp - icmp frag position. ipv4 : starting from L4 header. ipv6: starting from fragmentable part. must be multiple of 8. default 8
+* ipfrag2 : ipfrag_pos - frag position for other L4. ipv4 : starting from L4 header. ipv6: starting from fragmentable part. must be multiple of 8. default 32
 * ipfrag2 : ipfrag_next - next protocol field in ipv6 fragment extenstion header of the second fragment. same as first by default.
 
 ]]
@@ -114,7 +116,8 @@ end
 -- standard args : direction
 function http_domcase(ctx, desync)
 	if not desync.dis.tcp then
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 		return
 	end
 	direction_cutoff_opposite(ctx, desync)
@@ -122,7 +125,7 @@ function http_domcase(ctx, desync)
 		local host_range = resolve_multi_pos(desync.dis.payload,desync.l7payload,"host,endhost")
 		if #host_range == 2 then
 			local host = string.sub(desync.dis.payload,host_range[1],host_range[2]-1)
-			local newhost="", i
+			local newhost=""
 			for i = 1, #host do
 				newhost=newhost..((i%2)==0 and string.lower(string.sub(host,i,i)) or string.upper(string.sub(host,i,i)))
 			end
@@ -140,7 +143,8 @@ end
 -- arg : spell=<str> . spelling of the "Host" header. must be exactly 4 chars long
 function http_hostcase(ctx, desync)
 	if not desync.dis.tcp then
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 		return
 	end
 	direction_cutoff_opposite(ctx, desync)
@@ -171,7 +175,8 @@ end
 -- NOTE : if using with other http tampering methodeol should be the last !
 function http_methodeol(ctx, desync)
 	if not desync.dis.tcp then
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 		return
 	end
 	direction_cutoff_opposite(ctx, desync)
@@ -202,7 +207,8 @@ end
 -- standard args : direction
 function http_unixeol(ctx, desync)
 	if not desync.dis.tcp then
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 		return
 	end
 	direction_cutoff_opposite(ctx, desync)
@@ -215,7 +221,7 @@ function http_unixeol(ctx, desync)
 				if #http < #desync.dis.payload then
 					hdis.headers[idx_ua].value = hdis.headers[idx_ua].value .. string.rep(" ", #desync.dis.payload - #http)
 				end
-				local http = http_reconstruct_req(hdis, true)
+				http = http_reconstruct_req(hdis, true)
 				if #http==#desync.dis.payload then
 					desync.dis.payload = http
 					DLOG("http_unixeol: applied")
@@ -271,7 +277,8 @@ function synack_split(ctx, desync)
 			instance_cutoff_shim(ctx, desync) -- mission complete
 		end
 	else
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 	end
 end
 
@@ -288,7 +295,8 @@ function synack(ctx, desync)
 			instance_cutoff_shim(ctx, desync) -- mission complete
 		end
 	else
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 	end
 end
 
@@ -306,7 +314,8 @@ function wsize(ctx, desync)
 			instance_cutoff_shim(ctx, desync) -- mission complete
 		end
 	else
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 	end
 end
 
@@ -317,7 +326,8 @@ end
 -- arg : forced_cutoff=<list> - comma separated list of payloads that trigger forced wssize cutoff. by default - any non-empty payload
 function wssize(ctx, desync)
 	if not desync.dis.tcp then
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 		return
 	end
 	local verdict = VERDICT_PASS
@@ -346,7 +356,8 @@ end
 -- arg: sni_last - add name to the end
 function tls_client_hello_clone(ctx, desync)
 	if not desync.dis.tcp then
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 		return
 	end
 	direction_cutoff_opposite(ctx, desync)
@@ -378,7 +389,8 @@ function syndata(ctx, desync)
 			dis.payload = blob(desync, desync.arg.blob, "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
 			apply_fooling(desync, dis)
 			if desync.arg.tls_mod then
-				dis.payload = tls_mod_shim(desync, dis.payload, desync.arg.tls_mod, nil)
+				local pl = tls_mod_shim(desync, dis.payload, desync.arg.tls_mod, nil)
+				if pl then dis.payload = pl end
 			end
 			if b_debug then DLOG("syndata: "..hexdump_dlog(dis.payload)) end
 			if rawsend_dissect_ipfrag(dis, desync_opts(desync)) then
@@ -388,7 +400,8 @@ function syndata(ctx, desync)
 			instance_cutoff_shim(ctx, desync) -- mission complete
 		end
 	else
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 	end
 end
 
@@ -397,7 +410,8 @@ end
 -- arg : rstack - send RST,ACK instead of RST
 function rst(ctx, desync)
 	if not desync.dis.tcp then
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 		return
 	end
 	direction_cutoff_opposite(ctx, desync)
@@ -424,8 +438,8 @@ end
 -- arg : tls_mod=<list> - comma separated list of tls mods : rnd,rndsni,sni=<str>,dupsid,padencap . sni=%var is supported
 function fake(ctx, desync)
 	direction_cutoff_opposite(ctx, desync)
-	-- by default process only outgoing known payloads
-	if direction_check(desync) and payload_check(desync) then
+	-- by default process only outgoing known payloads. works only for tcp and udp
+	if (desync.dis.tcp or desync.dis.udp) and direction_check(desync) and payload_check(desync) then
 		if replay_first(desync) then
 			if not desync.arg.blob then
 				error("fake: 'blob' arg required")
@@ -436,7 +450,8 @@ function fake(ctx, desync)
 			end
 			local fake_payload = blob(desync, desync.arg.blob)
 			if desync.reasm_data and desync.arg.tls_mod then
-				fake_payload = tls_mod_shim(desync, fake_payload, desync.arg.tls_mod, desync.reasm_data)
+				local pl = tls_mod_shim(desync, fake_payload, desync.arg.tls_mod, desync.reasm_data)
+				if pl then fake_payload = pl end
 			end
 			-- check debug to save CPU
 			if b_debug then DLOG("fake: "..hexdump_dlog(fake_payload)) end
@@ -457,7 +472,8 @@ end
 -- arg : nodrop - do not drop current dissect
 function multisplit(ctx, desync)
 	if not desync.dis.tcp then
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 		return
 	end
 	direction_cutoff_opposite(ctx, desync)
@@ -570,7 +586,8 @@ end
 -- arg : nodrop - do not drop current dissect
 function multidisorder(ctx, desync)
 	if not desync.dis.tcp then
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 		return
 	end
 	direction_cutoff_opposite(ctx, desync)
@@ -621,7 +638,8 @@ end
 -- arg : optional - use zero pattern if seqovl_pattern blob is absent
 function multidisorder_legacy(ctx, desync)
 	if not desync.dis.tcp then
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 		return
 	end
 	direction_cutoff_opposite(ctx, desync)
@@ -678,7 +696,8 @@ end
 -- arg : nodrop - do not drop current dissect
 function hostfakesplit(ctx, desync)
 	if not desync.dis.tcp then
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 		return
 	end
 	direction_cutoff_opposite(ctx, desync)
@@ -712,13 +731,14 @@ function hostfakesplit(ctx, desync)
 				local midhost
 				if desync.arg.midhost then
 					midhost = resolve_pos(data,desync.l7payload,desync.arg.midhost)
-					if not midhost then
+					if midhost then
+						DLOG("hosfakesplit: midhost marker resolved to "..midhost)
+						if midhost<=pos[1] or midhost>pos[2] then
+							DLOG("hostfakesplit: midhost is not inside the host range")
+							midhost = nil
+						end
+					else
 						DLOG("hostfakesplit: cannot resolve midhost marker '"..desync.arg.midhost.."'")
-					end
-					DLOG("hosfakesplit: midhost marker resolved to "..midhost)
-					if midhost<=pos[1] or midhost>pos[2] then
-						DLOG("hostfakesplit: midhost is not inside the host range")
-						midhost = nil
 					end
 				end
 				-- if present apply ipfrag only to real host parts. fakes and parts outside of the host must be visible to DPI.
@@ -795,7 +815,8 @@ end
 -- arg : nodrop - do not drop current dissect
 function fakedsplit(ctx, desync)
 	if not desync.dis.tcp then
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 		return
 	end
 	direction_cutoff_opposite(ctx, desync)
@@ -875,7 +896,7 @@ function fakedsplit(ctx, desync)
 					return desync.arg.nodrop and VERDICT_PASS or VERDICT_DROP
 				end
 			else
-				DLOG("fakedsplit: cannot resolve pos '"..desync.arg.pos.."'")
+				DLOG("fakedsplit: cannot resolve pos '"..spos.."'")
 			end
 		else
 			DLOG("fakedsplit: not acting on further replay pieces")
@@ -899,7 +920,8 @@ end
 -- arg : nodrop - do not drop current dissect
 function fakeddisorder(ctx, desync)
 	if not desync.dis.tcp then
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 		return
 	end
 	direction_cutoff_opposite(ctx, desync)
@@ -919,11 +941,11 @@ function fakeddisorder(ctx, desync)
 					if b_debug then DLOG("fakeddisorder: resolved split pos: "..tostring(pos-1)) end
 
 					-- do not apply fooling to original parts except tcp_ts_up but apply ip_id
-					local fake, part, pat
+					local fake, part
 					local opts_orig = {rawsend = rawsend_opts_base(desync), reconstruct = {}, ipfrag = {}, ipid = desync.arg, fooling = {tcp_ts_up = desync.arg.tcp_ts_up}}
 					local opts_fake = {rawsend = rawsend_opts(desync), reconstruct = reconstruct_opts(desync), ipfrag = {}, ipid = desync.arg, fooling = desync.arg}
 
-					fakepat = desync.arg.pattern and blob(desync,desync.arg.pattern) or "\x00"
+					local fakepat = desync.arg.pattern and blob(desync,desync.arg.pattern) or "\x00"
 
 					-- second fake
 					fake = pattern(fakepat,pos,#data-pos+1)
@@ -989,7 +1011,7 @@ function fakeddisorder(ctx, desync)
 					return desync.arg.nodrop and VERDICT_PASS or VERDICT_DROP
 				end
 			else
-				DLOG("fakeddisorder: cannot resolve pos '"..desync.arg.pos.."'")
+				DLOG("fakeddisorder: cannot resolve pos '"..spos.."'")
 			end
 		else
 			DLOG("fakeddisorder: not acting on further replay pieces")
@@ -1010,7 +1032,8 @@ end
 -- arg : optional - skip if blob is absent. use zero pattern if seqovl_pattern blob is absent
 function tcpseg(ctx, desync)
 	if not desync.dis.tcp then
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 		return
 	end
 	direction_cutoff_opposite(ctx, desync)
@@ -1064,7 +1087,8 @@ end
 function oob(ctx, desync)
 	if not desync.track then return end
 	if not desync.dis.tcp then
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 		return
 	end
 	local key = desync.func_instance.."_syn"
@@ -1106,12 +1130,12 @@ function oob(ctx, desync)
 					dis_oob.tcp.th_urp = urp
 				else
 					urp = resolve_pos(data, desync.l7payload, desync.arg.urp)
-					DLOG("oob: resolved urp marker to "..urp-1)
 					if not urp then
 						DLOG("oob: cannot resolve urp marker '"..desync.arg.urp.."'")
 						instance_cutoff_shim(ctx, desync)
 						return
 					end
+					DLOG("oob: resolved urp marker to "..urp-1)
 					dis_oob.tcp.th_urp = urp
 				end
 				DLOG("oob: th_urp "..dis_oob.tcp.th_urp)
@@ -1163,7 +1187,8 @@ end
 -- arg : pattern_offset=N . offset in the pattern. 0 by default
 function udplen(ctx, desync)
 	if not desync.dis.udp then
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 		return
 	end
 	direction_cutoff_opposite(ctx, desync)
@@ -1187,8 +1212,8 @@ function udplen(ctx, desync)
 				else
 					desync.dis.payload = string.sub(desync.dis.payload,1,len+inc)
 					DLOG("udplen: "..len.." => "..#desync.dis.payload)
+					return VERDICT_MODIFY
 				end
-				return VERDICT_MODIFY
 			end
 		end
 	end
@@ -1199,7 +1224,8 @@ end
 -- arg : dn=N - message starts from "dN". 3 by default
 function dht_dn(ctx, desync)
 	if not desync.dis.udp then
-		instance_cutoff_shim(ctx, desync)
+		-- do not cutoff on related icmp
+		if not desync.dis.icmp then instance_cutoff_shim(ctx, desync) end
 		return
 	end
 	direction_cutoff_opposite(ctx, desync)

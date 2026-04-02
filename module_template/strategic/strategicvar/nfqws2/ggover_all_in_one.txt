@@ -50,7 +50,6 @@
 --ipset=/data/adb/modules/ZDT-D/strategic/list/ipset.txt \
 --ipset-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt \
 --ipset=/data/adb/modules/ZDT-D/strategic/list/ipset-v4.txt \
---ipset=/data/adb/modules/ZDT-D/strategic/list/cloudfare-list.txt \
 --hostlist=/data/adb/modules/ZDT-D/strategic/list/russia-blacklist.txt \
 --hostlist=/data/adb/modules/ZDT-D/strategic/list/default.txt \
 --hostlist=/data/adb/modules/ZDT-D/strategic/list/custom.txt \

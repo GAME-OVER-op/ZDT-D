@@ -107,10 +107,10 @@ end
 -- hostname is original hostname
 function is_dpi_redirect(hostname, location)
 	local ds = dissect_url(location)
-	if ds.domain then
+	if ds and ds.domain then
 		local sld1 = dissect_nld(hostname,2)
 		local sld2 = dissect_nld(ds.domain,2)
-		return sld2 and sld1~=sld2
+		return sld2 and sld1~=sld2 and true or false
 	end
 	return false
 end
@@ -179,7 +179,7 @@ function standard_failure_detector(desync, crec)
 						DLOG("standard_failure_detector: not counting incoming RST s"..seq.." beyond s"..arg.inseq)
 					end
 				end
-			elseif not arg.no_http_redirect and desync.l7payload=="http_reply" and desync.track and desync.track.hostname then
+			elseif not arg.no_http_redirect and desync.l7payload=="http_reply" and desync.track.hostname then
 				local hdis = http_dissect_reply(desync.dis.payload)
 				if hdis and (hdis.code==302 or hdis.code==307) then
 					local idx_loc = array_field_search(hdis.headers, "header_low", "location")
@@ -313,7 +313,7 @@ function circular(ctx, desync)
 	local function count_strategies(hrec)
 		if not hrec.ctstrategy then
 			local uniq={}
-			local n=0
+			local n
 			for i,instance in pairs(desync.plan) do
 				if instance.arg.strategy then
 					n = tonumber(instance.arg.strategy)
@@ -403,8 +403,36 @@ function cond_payload_str(desync)
 	if not desync.arg.pattern then
 		error("cond_payload_str: missing 'pattern'")
 	end
-	return string.find(desync.dis.payload,desync.arg.pattern,1,true)
+	return desync.dis.payload and string.find(desync.dis.payload,desync.arg.pattern,1,true)
 end
+-- true if dissect is tcp and timestamp tcp option is present
+function cond_tcp_has_ts(desync)
+	return desync.dis.tcp and find_tcp_option(desync.dis.tcp.options, TCP_KIND_TS)
+end
+-- exec lua code in "code" arg and return it's result
+function cond_lua(desync)
+	if not desync.arg.cond_code then
+		error("cond_lua: no 'cond_code' parameter")
+	end
+	local fname = desync.func_instance.."_cond_cond_code"
+	if not _G[fname] then
+		local err
+		_G[fname], err = load(desync.arg.cond_code, fname)
+		if not _G[fname] then
+			error(err)
+			return
+		end
+	end
+	-- allow dynamic cond_code to access desync
+	_G.desync = desync
+	local res, v = pcall(_G[fname])
+	_G.desync = nil
+	if not res then
+		error(v);
+	end
+	return v
+end
+
 -- check iff function available. error if not
 function require_iff(desync, name)
 	if not desync.arg.iff then
@@ -418,18 +446,57 @@ end
 -- for example, this can be used by custom protocol detectors
 -- arg: iff - condition function. takes desync as arg and returns bool. (cant use 'if' because of reserved word)
 -- arg: neg - invert condition function result
+-- arg: instances - how many instances execute conditionally. all if not defined
 -- test case : --lua-desync=condition:iff=cond_random --lua-desync=argdebug:testarg=1 --lua-desync=argdebug:testarg=2:morearg=xyz
 function condition(ctx, desync)
 	require_iff(desync, "condition")
 	orchestrate(ctx, desync)
 	if logical_xor(_G[desync.arg.iff](desync), desync.arg.neg) then
 		DLOG("condition: true")
-		return replay_execution_plan(desync)
 	else
 		DLOG("condition: false")
-		plan_clear(desync)
+		plan_clear(desync, tonumber(desync.arg.instances))
+		if #desync.plan>0 then
+			DLOG("condition: executing remaining "..#desync.plan.." instance(s)")
+		end
 	end
+	return replay_execution_plan(desync)
 end
+-- execute further desync instances.
+-- each instance may have "cond" and "cond_neg" args.
+-- "cond" - condition function.  "neg" - invert condition function result
+-- arg: instances - how many instances execute conditionally. all if not defined
+function per_instance_condition(ctx, desync)
+	orchestrate(ctx, desync)
+
+	local verdict = VERDICT_PASS
+	local n = 0
+	local max = tonumber(desync.arg.instances)
+	while not max or n<max do
+		local instance = plan_instance_pop(desync)
+		if not instance then break end
+		if instance.arg.cond then
+			if type(_G[instance.arg.cond])~="function" then
+				error("per_instance_condition: invalid 'iff' function '"..instance.arg.cond.."'")
+			end
+			-- preapply exec plan to feed cond function correct args
+			apply_execution_plan(desync, instance)
+			if logical_xor(_G[instance.arg.cond](desync), instance.arg.cond_neg) then
+				verdict = plan_instance_execute_preapplied(desync, verdict, instance)
+			else
+				DLOG("per_instance_condition: condition not satisfied. skipping '"..instance.func_instance.."'")
+			end
+		else
+			DLOG("per_instance_condition: no 'cond' arg in '"..instance.func_instance.."'. skipping")
+		end
+		n = n + 1
+	end
+	if #desync.plan>0 then
+		DLOG("per_instance_condition: executing remaining "..#desync.plan.." instance(s) unconditionally")
+	end
+	return verdict_aggregate(verdict, replay_execution_plan(desync))
+end
+
 -- clear execution plan if user provided 'iff' functions returns true
 -- can be used with other orchestrators to stop execution conditionally
 -- arg: iff - condition function. takes desync as arg and returns bool. (cant use 'if' because of reserved word)
@@ -458,13 +525,17 @@ end
 function repeater(ctx, desync)
 	local repeats = tonumber(desync.arg.repeats)
 	if not repeats then
-		error("repeat: missing 'repeats'")
+		error("repeater: missing 'repeats'")
 	end
 	local iff = desync.arg.iff or "cond_true"
 	if type(_G[iff])~="function" then
-		error(name..": invalid 'iff' function '"..iff.."'")
+		error("repeater: invalid 'iff' function '"..iff.."'")
 	end
 	orchestrate(ctx, desync)
+	if #desync.plan==0 then
+		DLOG("repeater: execution plan is empty - nothing to repeat")
+		return
+	end
 	local neg = desync.arg.neg
 	local stop = desync.arg.stop
 	local clear = desync.arg.clear

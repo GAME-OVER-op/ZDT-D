@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +26,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Divider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -50,6 +53,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -235,19 +241,48 @@ private fun AppPickerSheet(
   }
 
   val isCompactWidth = rememberIsCompactWidth()
+  val isNarrowWidth = rememberIsNarrowWidth()
   val isShortHeight = rememberIsShortHeight()
+  val useCompactHeader = isShortHeight || isNarrowWidth
 
   ModalBottomSheet(
     onDismissRequest = onDismiss,
     dragHandle = { BottomSheetDefaults.DragHandle() },
   ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
-      if (isCompactWidth) {
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.app_picker_cancel)) }
-            Button(onClick = { onSave(selected) }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.app_picker_save)) }
+      if (useCompactHeader) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          Text(
+            title,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)) {
+              IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
+                Icon(
+                  imageVector = Icons.Default.Close,
+                  contentDescription = stringResource(R.string.app_picker_cancel),
+                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
+            }
+            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
+              IconButton(onClick = { onSave(selected) }, modifier = Modifier.size(40.dp)) {
+                Icon(
+                  imageVector = Icons.Default.Check,
+                  contentDescription = stringResource(R.string.app_picker_save),
+                  tint = MaterialTheme.colorScheme.onPrimary,
+                )
+              }
+            }
           }
         }
       } else {
@@ -256,7 +291,15 @@ private fun AppPickerSheet(
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically,
         ) {
-          Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+          Text(
+            title,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Spacer(Modifier.width(12.dp))
           Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.app_picker_cancel)) }
             Button(onClick = { onSave(selected) }) { Text(stringResource(R.string.app_picker_save)) }

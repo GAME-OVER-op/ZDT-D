@@ -263,6 +263,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       enabled = root.isAppUpdateCheckEnabled(),
       languageMode = root.getAppLanguageMode(),
       protectorMode = "off",
+      hotspotT2sEnabled = false,
+      hotspotT2sTarget = "",
       daemonStatusNotificationEnabled = root.isDaemonStatusNotificationEnabled(),
     )
   )
@@ -287,6 +289,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   private var appUpdateDownloadJob: Job? = null
 
   private var pendingEnableDaemonNotification: Boolean = false
+
+  private val moduleIdentifierFlagPath = "/data/adb/modules/ZDT-D/working_folder/flag.sha256"
 
   private var statusJob: Job? = null
   private var daemonLogJob: Job? = null
@@ -1017,7 +1021,7 @@ private fun clearDownloadedUpdateApk() {
     startStatusPolling()
     startDaemonLogPolling()
     refreshPrograms()
-    refreshProtectorMode()
+    refreshDaemonSettings()
   }
 
 
@@ -3353,10 +3357,17 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     _appUpdate.update { it.copy(languageMode = root.getAppLanguageMode()) }
   }
 
-  override fun refreshProtectorMode() {
+  override fun refreshDaemonSettings() {
     launchIO {
-      val mode = runCatching { api.getProtectorSetting().protectorMode }.getOrDefault("off")
-      _appUpdate.update { it.copy(protectorMode = mode) }
+      val settings = runCatching { api.getDaemonSettings() }
+        .getOrDefault(com.android.zdtd.service.api.ApiModels.DaemonSettings())
+      _appUpdate.update {
+        it.copy(
+          protectorMode = settings.protectorMode,
+          hotspotT2sEnabled = settings.hotspotT2sEnabled,
+          hotspotT2sTarget = settings.hotspotT2sTarget,
+        )
+      }
     }
   }
 
@@ -3367,17 +3378,167 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     }
     _appUpdate.update { it.copy(protectorMode = safe) }
     launchIO {
-      val applied = runCatching { api.setProtectorMode(safe).protectorMode }.getOrElse {
+      val applied = runCatching { api.setProtectorMode(safe) }.getOrElse {
         log("ERR", "protector mode failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
           toast(str(R.string.settings_protector_save_failed))
         }
-        refreshProtectorMode()
+        refreshDaemonSettings()
         return@launchIO
       }
-      _appUpdate.update { it.copy(protectorMode = applied) }
+      _appUpdate.update {
+        it.copy(
+          protectorMode = applied.protectorMode,
+          hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotT2sTarget = applied.hotspotT2sTarget,
+        )
+      }
       withContext(Dispatchers.Main.immediate) {
         toast(str(R.string.settings_protector_saved))
+      }
+    }
+  }
+
+  override fun setHotspotT2sEnabled(enabled: Boolean) {
+    val current = _appUpdate.value
+    val target = when (current.hotspotT2sTarget.trim().lowercase()) {
+      "operaproxy", "singbox" -> current.hotspotT2sTarget.trim().lowercase()
+      else -> "operaproxy"
+    }
+    _appUpdate.update { it.copy(hotspotT2sEnabled = enabled, hotspotT2sTarget = target) }
+    launchIO {
+      val applied = runCatching { api.setHotspotT2s(enabled = enabled, target = target) }.getOrElse {
+        log("ERR", "hotspot t2s toggle failed: ${it.message ?: it}")
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_hotspot_save_failed))
+        }
+        refreshDaemonSettings()
+        return@launchIO
+      }
+      _appUpdate.update {
+        it.copy(
+          protectorMode = applied.protectorMode,
+          hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotT2sTarget = applied.hotspotT2sTarget,
+        )
+      }
+      withContext(Dispatchers.Main.immediate) {
+        toast(str(R.string.settings_hotspot_saved))
+      }
+    }
+  }
+
+  override fun setHotspotT2sTarget(target: String) {
+    val safeTarget = when (target.trim().lowercase()) {
+      "operaproxy", "singbox" -> target.trim().lowercase()
+      else -> "operaproxy"
+    }
+    val enabled = _appUpdate.value.hotspotT2sEnabled
+    _appUpdate.update { it.copy(hotspotT2sTarget = safeTarget) }
+    launchIO {
+      val applied = runCatching { api.setHotspotT2s(enabled = enabled, target = safeTarget) }.getOrElse {
+        log("ERR", "hotspot t2s target failed: ${it.message ?: it}")
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_hotspot_save_failed))
+        }
+        refreshDaemonSettings()
+        return@launchIO
+      }
+      _appUpdate.update {
+        it.copy(
+          protectorMode = applied.protectorMode,
+          hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotT2sTarget = applied.hotspotT2sTarget,
+        )
+      }
+      withContext(Dispatchers.Main.immediate) {
+        toast(str(R.string.settings_hotspot_saved))
+      }
+    }
+  }
+
+  override fun resetModuleIdentifier() {
+    if (_rootState.value != RootState.GRANTED) return
+    if (_appUpdate.value.resettingModuleIdentifier) return
+
+    launchIO {
+      val serviceWasRunning = runCatching { api.getStatus() }
+        .map { ApiModels.isServiceOn(it) }
+        .getOrElse { ApiModels.isServiceOn(_uiState.value.status) }
+
+      if (!serviceWasRunning) {
+        val removed = root.execRootSh("rm -f ${shQuote(moduleIdentifierFlagPath)} 2>/dev/null || true")
+        if (removed.isSuccess) {
+          withContext(Dispatchers.Main.immediate) {
+            toast(str(R.string.settings_reset_identifier_done))
+          }
+        } else {
+          withContext(Dispatchers.Main.immediate) {
+            toast(str(R.string.settings_reset_identifier_failed))
+          }
+        }
+        return@launchIO
+      }
+
+      _appUpdate.update { it.copy(resettingModuleIdentifier = true) }
+      try {
+        val stopOk = runCatching { api.stopService() }.getOrDefault(false)
+        if (!stopOk) {
+          withContext(Dispatchers.Main.immediate) {
+            toast(str(R.string.settings_reset_identifier_failed))
+          }
+          return@launchIO
+        }
+
+        val waitStart = System.currentTimeMillis()
+        val waitTimeoutMs = 30_000L
+        val pollMs = 1_000L
+        var stoppedAt: Long? = null
+        while (System.currentTimeMillis() - waitStart < waitTimeoutMs) {
+          currentCoroutineContext().ensureActive()
+          val report = runCatching { api.getStatus() }.getOrNull()
+          if (report != null && !ApiModels.isServiceOn(report)) {
+            stoppedAt = System.currentTimeMillis()
+            break
+          }
+          delay(pollMs)
+        }
+        if (stoppedAt == null) {
+          withContext(Dispatchers.Main.immediate) {
+            toast(str(R.string.settings_reset_identifier_failed))
+          }
+          return@launchIO
+        }
+
+        val removed = root.execRootSh("rm -f ${shQuote(moduleIdentifierFlagPath)} 2>/dev/null || true")
+        if (!removed.isSuccess) {
+          withContext(Dispatchers.Main.immediate) {
+            toast(str(R.string.settings_reset_identifier_failed))
+          }
+          return@launchIO
+        }
+
+        val elapsedSinceStopped = System.currentTimeMillis() - (stoppedAt ?: System.currentTimeMillis())
+        val coolDownMs = 5_000L
+        if (elapsedSinceStopped < coolDownMs) {
+          delay(coolDownMs - elapsedSinceStopped)
+        }
+
+        val started = runCatching { api.startService() }.getOrDefault(false)
+        if (!started) {
+          withContext(Dispatchers.Main.immediate) {
+            toast(str(R.string.settings_reset_identifier_failed))
+          }
+          return@launchIO
+        }
+
+        root.setCachedServiceOn(true)
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_reset_identifier_done))
+        }
+      } finally {
+        _appUpdate.update { it.copy(resettingModuleIdentifier = false) }
+        refreshStatus()
       }
     }
   }

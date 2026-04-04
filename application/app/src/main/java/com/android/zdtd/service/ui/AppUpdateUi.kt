@@ -22,8 +22,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -33,7 +38,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -166,9 +174,17 @@ fun AppUpdateSettings(
   onLanguageModeChange: (String) -> Unit,
   protectorMode: String,
   onProtectorModeChange: (String) -> Unit,
+  hotspotT2sEnabled: Boolean,
+  hotspotT2sTarget: String,
+  onHotspotT2sEnabledChange: (Boolean) -> Unit,
+  onHotspotT2sTargetChange: (String) -> Unit,
+  resettingModuleIdentifier: Boolean,
+  onResetModuleIdentifier: () -> Unit,
   onDeleteModule: () -> Unit,
 ) {
   val compactWidth = rememberIsCompactWidth()
+  var showHotspotWarning by remember { mutableStateOf(false) }
+  var showResetIdentifierConfirm by remember { mutableStateOf(false) }
   // BottomSheet content may not have enough height on small screens.
   // Make it scrollable so the Language section is always reachable.
   Column(
@@ -250,6 +266,43 @@ fun AppUpdateSettings(
 
     Spacer(Modifier.height(18.dp))
 
+    HotspotT2sSection(
+      enabled = hotspotT2sEnabled,
+      target = hotspotT2sTarget,
+      compactWidth = compactWidth,
+      onEnabledChange = { checked ->
+        if (checked && !hotspotT2sEnabled) {
+          showHotspotWarning = true
+        } else {
+          onHotspotT2sEnabledChange(checked)
+        }
+      },
+      onTargetChange = onHotspotT2sTargetChange,
+    )
+
+    if (showHotspotWarning) {
+      AlertDialog(
+        onDismissRequest = { showHotspotWarning = false },
+        title = { Text(stringResource(R.string.settings_hotspot_warning_title)) },
+        text = { Text(stringResource(R.string.settings_hotspot_warning_body)) },
+        dismissButton = {
+          OutlinedButton(onClick = { showHotspotWarning = false }) {
+            Text(stringResource(R.string.common_cancel))
+          }
+        },
+        confirmButton = {
+          Button(onClick = {
+            showHotspotWarning = false
+            onHotspotT2sEnabledChange(true)
+          }) {
+            Text(stringResource(R.string.settings_hotspot_warning_accept))
+          }
+        },
+      )
+    }
+
+    Spacer(Modifier.height(18.dp))
+
     Column(Modifier.fillMaxWidth()) {
       Text(stringResource(R.string.settings_language_title), style = MaterialTheme.typography.bodyLarge)
       Text(
@@ -310,6 +363,49 @@ fun AppUpdateSettings(
     Spacer(Modifier.height(18.dp))
 
     Column(Modifier.fillMaxWidth()) {
+      Text(stringResource(R.string.settings_reset_identifier_title), style = MaterialTheme.typography.bodyLarge)
+      Text(
+        stringResource(R.string.settings_reset_identifier_body),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+      )
+      Spacer(Modifier.height(10.dp))
+      OutlinedButton(
+        onClick = { showResetIdentifierConfirm = true },
+        modifier = Modifier.fillMaxWidth(),
+        enabled = !resettingModuleIdentifier,
+      ) {
+        Text(stringResource(R.string.settings_reset_identifier_action))
+      }
+    }
+
+    if (showResetIdentifierConfirm) {
+      AlertDialog(
+        onDismissRequest = { showResetIdentifierConfirm = false },
+        title = { Text(stringResource(R.string.settings_reset_identifier_title)) },
+        text = { Text(stringResource(R.string.settings_reset_identifier_confirm_body)) },
+        dismissButton = {
+          OutlinedButton(onClick = { showResetIdentifierConfirm = false }) {
+            Text(stringResource(R.string.common_cancel))
+          }
+        },
+        confirmButton = {
+          Button(onClick = {
+            showResetIdentifierConfirm = false
+            onResetModuleIdentifier()
+          }) {
+            Text(stringResource(R.string.settings_reset_identifier_confirm_action))
+          }
+        },
+      )
+    }
+
+    ModuleIdentifierResetProgressDialog(visible = resettingModuleIdentifier)
+
+
+    Spacer(Modifier.height(18.dp))
+
+    Column(Modifier.fillMaxWidth()) {
       Text(stringResource(R.string.settings_delete_module_title), style = MaterialTheme.typography.bodyLarge)
       Text(
         stringResource(R.string.settings_delete_module_body),
@@ -325,6 +421,78 @@ fun AppUpdateSettings(
   }
 }
 
+
+@Composable
+private fun HotspotT2sSection(
+  enabled: Boolean,
+  target: String,
+  compactWidth: Boolean,
+  onEnabledChange: (Boolean) -> Unit,
+  onTargetChange: (String) -> Unit,
+) {
+  val safeTarget = when (target.trim().lowercase()) {
+    "operaproxy" -> "operaproxy"
+    "singbox" -> "singbox"
+    else -> "operaproxy"
+  }
+
+  if (compactWidth) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      Column(Modifier.fillMaxWidth()) {
+        Text(stringResource(R.string.settings_hotspot_title), style = MaterialTheme.typography.bodyLarge)
+        Text(
+          stringResource(R.string.settings_hotspot_body),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+        )
+      }
+      Switch(checked = enabled, onCheckedChange = onEnabledChange)
+    }
+  } else {
+    Row(
+      Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+      Column(Modifier.weight(1f).padding(end = 12.dp)) {
+        Text(stringResource(R.string.settings_hotspot_title), style = MaterialTheme.typography.bodyLarge)
+        Text(
+          stringResource(R.string.settings_hotspot_body),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+        )
+      }
+      Switch(checked = enabled, onCheckedChange = onEnabledChange)
+    }
+  }
+
+  AnimatedVisibility(visible = enabled) {
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+      Text(stringResource(R.string.settings_hotspot_program_title), style = MaterialTheme.typography.bodyMedium)
+      Spacer(Modifier.height(10.dp))
+      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        FilterChip(
+          selected = safeTarget == "operaproxy",
+          onClick = { if (safeTarget != "operaproxy") onTargetChange("operaproxy") },
+          label = { Text(stringResource(R.string.settings_hotspot_program_operaproxy)) },
+          modifier = Modifier.weight(1f),
+          colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+          ),
+        )
+        FilterChip(
+          selected = safeTarget == "singbox",
+          onClick = { if (safeTarget != "singbox") onTargetChange("singbox") },
+          label = { Text(stringResource(R.string.settings_hotspot_program_singbox)) },
+          modifier = Modifier.weight(1f),
+          colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+          ),
+        )
+      }
+    }
+  }
+}
 
 private data class ProtectorModeOption(
   val value: String,
@@ -454,6 +622,42 @@ private fun ProtectorModeChip(
     )
   }
 }
+
+@Composable
+private fun ModuleIdentifierResetProgressDialog(visible: Boolean) {
+  if (!visible) return
+
+  Dialog(
+    onDismissRequest = {},
+    properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+  ) {
+    Surface(
+      shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
+      tonalElevation = 6.dp,
+    ) {
+      Column(
+        modifier = Modifier.padding(horizontal = 24.dp, vertical = 22.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        CircularProgressIndicator()
+        Text(
+          text = stringResource(R.string.settings_reset_identifier_wait_title),
+          style = MaterialTheme.typography.titleMedium,
+          fontWeight = FontWeight.SemiBold,
+          textAlign = TextAlign.Center,
+        )
+        Text(
+          text = stringResource(R.string.settings_reset_identifier_wait_body),
+          style = MaterialTheme.typography.bodyMedium,
+          textAlign = TextAlign.Center,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+        )
+      }
+    }
+  }
+}
+
 
 @Composable
 fun UnknownSourcesPermissionDialog(

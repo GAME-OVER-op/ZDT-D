@@ -51,8 +51,10 @@ object ApiModels {
     val sha256: String? = null,
   )
 
-  data class ProtectorSetting(
+  data class DaemonSettings(
     val protectorMode: String = "off",
+    val hotspotT2sEnabled: Boolean = false,
+    val hotspotT2sTarget: String = "",
   )
 
   fun parseProcAgg(o: JSONObject?): ProcAgg {
@@ -122,18 +124,32 @@ object ApiModels {
     return ProcAgg(count = 0, cpuPercent = cpu, rssMb = ram)
   }
 
-  fun parseProtectorSetting(wrapper: JSONObject?): ProtectorSetting {
+  fun parseDaemonSettings(wrapper: JSONObject?): DaemonSettings {
     val setting = wrapper?.optJSONObject("setting")
     val mode = setting?.optString("protector_mode", "off")
       ?.trim()
       ?.lowercase(Locale.ROOT)
       .takeUnless { it.isNullOrBlank() }
       ?: "off"
-    val safe = when (mode) {
+    val safeMode = when (mode) {
       "on", "off", "auto" -> mode
       else -> "off"
     }
-    return ProtectorSetting(protectorMode = safe)
+    val hotspotEnabled = setting?.optBoolean("hotspot_t2s_enabled", false) ?: false
+    val rawTarget = setting?.optString("hotspot_t2s_target", "")
+      ?.trim()
+      ?.lowercase(Locale.ROOT)
+      .orEmpty()
+    val safeTarget = when (rawTarget) {
+      "operaproxy", "opera-proxy", "opera_proxy" -> "operaproxy"
+      "singbox", "sing-box", "sing_box" -> "singbox"
+      else -> ""
+    }
+    return DaemonSettings(
+      protectorMode = safeMode,
+      hotspotT2sEnabled = hotspotEnabled,
+      hotspotT2sTarget = safeTarget,
+    )
   }
 
   fun parsePrograms(wrapper: JSONObject?): List<Program> {

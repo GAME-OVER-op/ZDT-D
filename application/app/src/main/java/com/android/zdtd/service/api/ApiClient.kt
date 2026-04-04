@@ -84,18 +84,31 @@ class ApiClient(
     return requestOk("PUT", path, body)
   }
 
-  fun getProtectorSetting(): ApiModels.ProtectorSetting {
+  fun getDaemonSettings(): ApiModels.DaemonSettings {
     val obj = requestJson("GET", "/api/setting", null)
-    return ApiModels.parseProtectorSetting(obj)
+    return ApiModels.parseDaemonSettings(obj)
   }
 
-  fun setProtectorMode(mode: String): ApiModels.ProtectorSetting {
+  fun setProtectorMode(mode: String): ApiModels.DaemonSettings {
     val safe = when (mode.trim().lowercase()) {
       "on", "off", "auto" -> mode.trim().lowercase()
       else -> "off"
     }
     val obj = requestJson("POST", "/api/setting", JSONObject().put("protector_mode", safe))
-    return ApiModels.parseProtectorSetting(obj)
+    return ApiModels.parseDaemonSettings(obj)
+  }
+
+  fun setHotspotT2s(enabled: Boolean, target: String): ApiModels.DaemonSettings {
+    val safeTarget = when (target.trim().lowercase()) {
+      "operaproxy", "opera-proxy", "opera_proxy" -> "operaproxy"
+      "singbox", "sing-box", "sing_box" -> "singbox"
+      else -> ""
+    }
+    val body = JSONObject()
+      .put("hotspot_t2s_enabled", enabled)
+      .put("hotspot_t2s_target", safeTarget)
+    val obj = requestJson("POST", "/api/setting", body)
+    return ApiModels.parseDaemonSettings(obj)
   }
 
   fun getJsonData(path: String): JSONObject {

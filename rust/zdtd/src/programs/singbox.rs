@@ -12,6 +12,7 @@ use std::{
 
 use crate::iptables::iptables_port::{self, DpiTunnelOptions, ProtoChoice};
 use crate::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
+use crate::{settings, shell::{self, Capture}};
 
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
 const WORKING_DIR: &str = "/data/adb/modules/ZDT-D/working_folder";
@@ -146,9 +147,23 @@ pub fn start_if_enabled() -> Result<()> {
                 .collect::<Vec<_>>()
                 .join(",");
 
+            let api_settings = settings::load_api_settings().unwrap_or_default();
+            let hotspot_t2s = api_settings.hotspot_t2s_for_singbox();
+            let t2s_listen_addr = if hotspot_t2s { "0.0.0.0" } else { "127.0.0.1" };
+
             let t2s_logp = Path::new(T2S_LOG);
             truncate_file(t2s_logp)?;
-            spawn_t2s(&t2s_bin, setting.t2s_port, setting.t2s_web_port, &ports_csv, t2s_logp)?;
+            spawn_t2s(
+                &t2s_bin,
+                t2s_listen_addr,
+                setting.t2s_port,
+                setting.t2s_web_port,
+                &ports_csv,
+                t2s_logp,
+            )?;
+            if hotspot_t2s {
+                apply_hotspot_prerouting_redirect(setting.t2s_port)?;
+            }
 
             // 3) iptables: redirect selected apps -> t2s_port (TCP only)
             // We keep app selection file compatible with other programs:
@@ -164,8 +179,9 @@ pub fn start_if_enabled() -> Result<()> {
             )?;
 
             info!(
-                "sing-box: socks5 started profiles={} t2s_port={} socks_ports={} web_port={}",
+                "sing-box: socks5 started profiles={} t2s_listen_addr={} t2s_port={} socks_ports={} web_port={}",
                 enabled_profiles.len(),
+                t2s_listen_addr,
                 setting.t2s_port,
                 ports_csv,
                 setting.t2s_web_port
@@ -373,6 +389,43 @@ fn ensure_no_port_conflicts(setting: &Setting, plan: &StartPlan) -> Result<()> {
     Ok(())
 }
 
+fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
+    let listen_port_s = listen_port.to_string();
+    let check_args = [
+        "-t",
+        "nat",
+        "-C",
+        "PREROUTING",
+        "-p",
+        "tcp",
+        "-j",
+        "REDIRECT",
+        "--to-ports",
+        listen_port_s.as_str(),
+    ];
+    let rc = match shell::run("iptables", &check_args, Capture::None) {
+        Ok((rc, _)) => rc,
+        Err(_) => 1,
+    };
+    if rc != 0 {
+        let add_args = [
+            "-t",
+            "nat",
+            "-I",
+            "PREROUTING",
+            "-p",
+            "tcp",
+            "-j",
+            "REDIRECT",
+            "--to-ports",
+            listen_port_s.as_str(),
+        ];
+        shell::ok("iptables", &add_args)
+            .with_context(|| format!("sing-box hotspot PREROUTING redirect to :{}", listen_port))?;
+    }
+    Ok(())
+}
+
 fn is_nonempty_file(p: &Path) -> Result<bool> {
     let md = fs::metadata(p).with_context(|| format!("stat {}", p.display()))?;
     Ok(md.len() > 0)
@@ -451,7 +504,14 @@ fn spawn_singbox(config_path: &Path, log_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn spawn_t2s(bin: &Path, listen_port: u16, web_port: u16, socks_ports_csv: &str, log_path: &Path) -> Result<()> {
+fn spawn_t2s(
+    bin: &Path,
+    listen_addr: &str,
+    listen_port: u16,
+    web_port: u16,
+    socks_ports_csv: &str,
+    log_path: &Path,
+) -> Result<()> {
     let logf = OpenOptions::new()
         .create(true)
         .write(true)
@@ -462,7 +522,7 @@ fn spawn_t2s(bin: &Path, listen_port: u16, web_port: u16, socks_ports_csv: &str,
 
     let mut cmd = Command::new(bin);
     cmd.arg("--listen-addr")
-        .arg("127.0.0.1")
+        .arg(listen_addr)
         .arg("--listen-port")
         .arg(listen_port.to_string())
         .arg("--socks-host")
@@ -492,8 +552,9 @@ fn spawn_t2s(bin: &Path, listen_port: u16, web_port: u16, socks_ports_csv: &str,
 
     let child = cmd.spawn().with_context(|| format!("spawn {}", bin.display()))?;
     info!(
-        "spawned t2s pid={} listen_port={} socks_ports={} web_port={} log={}",
+        "spawned t2s pid={} listen_addr={} listen_port={} socks_ports={} web_port={} log={}",
         child.id(),
+        listen_addr,
         listen_port,
         socks_ports_csv,
         web_port,

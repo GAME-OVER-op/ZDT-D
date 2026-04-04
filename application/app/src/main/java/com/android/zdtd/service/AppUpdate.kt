@@ -9,6 +9,11 @@ data class AppUpdateUiState(
   val languageMode: String = "auto",
   /** Module protector mode: off | on | auto */
   val protectorMode: String = "off",
+  /** Hotspot redirect via t2s: enabled flag and target program id. */
+  val hotspotT2sEnabled: Boolean = false,
+  val hotspotT2sTarget: String = "",
+  /** True while the app automatically stops the daemon, removes flag.sha256 and starts it again. */
+  val resettingModuleIdentifier: Boolean = false,
   // App-owned notification about daemon status (running/stopped).
   val daemonStatusNotificationEnabled: Boolean = false,
   val checking: Boolean = false,

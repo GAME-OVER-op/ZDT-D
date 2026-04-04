@@ -513,7 +513,7 @@ private fun MainShell(
 
   if (showSettings) {
     LaunchedEffect(Unit) {
-      actions.refreshProtectorMode()
+      actions.refreshDaemonSettings()
     }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
@@ -530,6 +530,12 @@ private fun MainShell(
         onLanguageModeChange = actions::setAppLanguageMode,
         protectorMode = appUpdate.protectorMode,
         onProtectorModeChange = actions::setProtectorMode,
+        hotspotT2sEnabled = appUpdate.hotspotT2sEnabled,
+        hotspotT2sTarget = appUpdate.hotspotT2sTarget,
+        onHotspotT2sEnabledChange = actions::setHotspotT2sEnabled,
+        onHotspotT2sTargetChange = actions::setHotspotT2sTarget,
+        resettingModuleIdentifier = appUpdate.resettingModuleIdentifier,
+        onResetModuleIdentifier = actions::resetModuleIdentifier,
         onDeleteModule = {
           showSettings = false
           showDeleteModule = true

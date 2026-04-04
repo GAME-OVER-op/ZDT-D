@@ -46,11 +46,44 @@ impl Default for ProtectorMode {
 pub struct ApiSettings {
     #[serde(default, alias = "mode", alias = "protection_mode")]
     pub protector_mode: ProtectorMode,
+    #[serde(default)]
+    pub hotspot_t2s_enabled: bool,
+    #[serde(default)]
+    pub hotspot_t2s_target: String,
 }
 
 impl Default for ApiSettings {
     fn default() -> Self {
-        Self { protector_mode: ProtectorMode::Off }
+        Self {
+            protector_mode: ProtectorMode::Off,
+            hotspot_t2s_enabled: false,
+            hotspot_t2s_target: String::new(),
+        }
+    }
+}
+
+impl ApiSettings {
+    pub fn normalize(&mut self) {
+        self.hotspot_t2s_target = normalize_hotspot_t2s_target(&self.hotspot_t2s_target);
+        if !self.hotspot_t2s_enabled {
+            self.hotspot_t2s_target.clear();
+        }
+    }
+
+    pub fn hotspot_t2s_for_operaproxy(&self) -> bool {
+        self.hotspot_t2s_enabled && self.hotspot_t2s_target == "operaproxy"
+    }
+
+    pub fn hotspot_t2s_for_singbox(&self) -> bool {
+        self.hotspot_t2s_enabled && self.hotspot_t2s_target == "singbox"
+    }
+}
+
+fn normalize_hotspot_t2s_target(raw: &str) -> String {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "operaproxy" | "opera-proxy" | "opera_proxy" => "operaproxy".to_string(),
+        "singbox" | "sing-box" | "sing_box" => "singbox".to_string(),
+        _ => String::new(),
     }
 }
 
@@ -62,14 +95,21 @@ pub fn load_api_settings() -> Result<ApiSettings> {
         fs::write(&path, s).with_context(|| format!("write {}", path.display()))?;
     }
     let raw = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    let st: ApiSettings = serde_json::from_str(&raw).with_context(|| format!("parse {}", path.display()))?;
+    let mut st: ApiSettings = serde_json::from_str(&raw).with_context(|| format!("parse {}", path.display()))?;
+    st.normalize();
+    let normalized = serde_json::to_string_pretty(&st)?;
+    if raw.trim() != normalized.trim() {
+        fs::write(&path, &normalized).with_context(|| format!("write {}", path.display()))?;
+    }
     Ok(st)
 }
 
 pub fn save_api_settings(st: &ApiSettings) -> Result<()> {
     ensure_dirs()?;
     let path = api_setting_json_path();
-    let s = serde_json::to_string_pretty(st)?;
+    let mut normalized = st.clone();
+    normalized.normalize();
+    let s = serde_json::to_string_pretty(&normalized)?;
     fs::write(&path, s).with_context(|| format!("write {}", path.display()))?;
     Ok(())
 }

@@ -162,11 +162,20 @@ interface ZdtdActions {
   /** Set app UI language: auto | ru | en. */
   fun setAppLanguageMode(mode: String)
 
-  /** Reload module protector mode from daemon settings. */
-  fun refreshProtectorMode()
+  /** Reload daemon settings used by the settings sheet. */
+  fun refreshDaemonSettings()
 
   /** Set module protector mode: off | on | auto. */
   fun setProtectorMode(mode: String)
+
+  /** Enable/disable hotspot routing through t2s. */
+  fun setHotspotT2sEnabled(enabled: Boolean)
+
+  /** Choose which program receives hotspot traffic: operaproxy | singbox. */
+  fun setHotspotT2sTarget(target: String)
+
+  /** Remove working_folder/flag.sha256 and restart the daemon when needed. */
+  fun resetModuleIdentifier()
 
   /** Trigger an immediate update check (ignores the 12h cooldown). */
   fun checkAppUpdateNow()

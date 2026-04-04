@@ -17,6 +17,7 @@ use crate::{
     android::pkg_uid::{self, Sha256Tracker, Mode as UidMode},
     iptables::iptables_port::{self, DpiTunnelOptions, ProtoChoice},
     programs::dnscrypt,
+    settings,
     shell::{self, Capture},
 };
 
@@ -270,12 +271,24 @@ pub fn start_if_enabled() -> Result<()> {
 
     crate::logging::user_info("Opera: t2s");
     // 5) Start t2s (hardcoded args + dynamic listen port + socks ports)
+    let api_settings = settings::load_api_settings().unwrap_or_default();
+    let hotspot_t2s = api_settings.hotspot_t2s_for_operaproxy();
+    let t2s_listen_addr = if hotspot_t2s { "0.0.0.0" } else { "127.0.0.1" };
+
     let t2s_bin = find_bin("t2s")?;
     let t2s_log = log_dir.join("t2s.log");
     truncate_file(&t2s_log)?;
 
-    spawn_t2s(&t2s_bin, port_cfg.t2s_port, &ports_csv, &t2s_log)?;
-    info!("operaproxy: t2s started listen_port={} socks_ports={}", port_cfg.t2s_port, ports_csv);
+    spawn_t2s(&t2s_bin, t2s_listen_addr, port_cfg.t2s_port, &ports_csv, &t2s_log)?;
+    info!(
+        "operaproxy: t2s started listen_addr={} listen_port={} socks_ports={}",
+        t2s_listen_addr,
+        port_cfg.t2s_port,
+        ports_csv
+    );
+    if hotspot_t2s {
+        apply_hotspot_prerouting_redirect(port_cfg.t2s_port)?;
+    }
 
     // 6) NAT MASQUERADE rule for local t2s port (like original else branch)
     // Keep it idempotent in case caller runs twice.
@@ -533,7 +546,7 @@ fn spawn_opera_proxy(
     Ok(())
 }
 
-fn spawn_t2s(bin: &Path, listen_port: u16, socks_ports_csv: &str, log_path: &Path) -> Result<()> {
+fn spawn_t2s(bin: &Path, listen_addr: &str, listen_port: u16, socks_ports_csv: &str, log_path: &Path) -> Result<()> {
     let logf = OpenOptions::new()
         .create(true)
         .write(true)
@@ -544,7 +557,7 @@ fn spawn_t2s(bin: &Path, listen_port: u16, socks_ports_csv: &str, log_path: &Pat
 
     let mut cmd = Command::new(bin);
     cmd.arg("--listen-addr")
-        .arg("127.0.0.1")
+        .arg(listen_addr)
         .arg("--listen-port")
         .arg(listen_port.to_string())
         .arg("--socks-host")
@@ -572,12 +585,51 @@ fn spawn_t2s(bin: &Path, listen_port: u16, socks_ports_csv: &str, log_path: &Pat
 
     let child = cmd.spawn().with_context(|| format!("spawn {}", bin.display()))?;
     info!(
-        "spawned t2s pid={} listen_port={} socks_ports={} log={}",
+        "spawned t2s pid={} listen_addr={} listen_port={} socks_ports={} log={}",
         child.id(),
+        listen_addr,
         listen_port,
         socks_ports_csv,
         log_path.display()
     );
+    Ok(())
+}
+
+
+fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
+    let listen_port_s = listen_port.to_string();
+    let check_args = [
+        "-t",
+        "nat",
+        "-C",
+        "PREROUTING",
+        "-p",
+        "tcp",
+        "-j",
+        "REDIRECT",
+        "--to-ports",
+        listen_port_s.as_str(),
+    ];
+    let rc = match shell::run("iptables", &check_args, Capture::None) {
+        Ok((rc, _)) => rc,
+        Err(_) => 1,
+    };
+    if rc != 0 {
+        let add_args = [
+            "-t",
+            "nat",
+            "-I",
+            "PREROUTING",
+            "-p",
+            "tcp",
+            "-j",
+            "REDIRECT",
+            "--to-ports",
+            listen_port_s.as_str(),
+        ];
+        shell::ok("iptables", &add_args)
+            .with_context(|| format!("operaproxy hotspot PREROUTING redirect to :{}", listen_port))?;
+    }
     Ok(())
 }
 

@@ -645,4 +645,25 @@
     <string name="singbox_port_sync_skip_profile">Не менять сервер</string>
     <string name="singbox_port_sync_save_config_only">Сохранить только config</string>
 
+
+    <string name="settings_hotspot_title">Включить точку доступа</string>
+    <string name="settings_hotspot_body">Позволяет направлять трафик точки доступа через выбранную программу.</string>
+    <string name="settings_hotspot_program_title">Программа для точки доступа</string>
+    <string name="settings_hotspot_program_operaproxy">opera-proxy</string>
+    <string name="settings_hotspot_program_singbox">sing-box</string>
+    <string name="settings_hotspot_warning_title">Предупреждение безопасности</string>
+    <string name="settings_hotspot_warning_body">При включении этой функции безопасность устройства может снизиться, так как порт программы будет открыт. Любой в сети сможет попытаться подключиться к вашему прокси.</string>
+    <string name="settings_hotspot_warning_accept">Принять</string>
+    <string name="settings_hotspot_saved">Настройка точки доступа сохранена</string>
+    <string name="settings_hotspot_save_failed">Не удалось сохранить настройку точки доступа</string>
+    <string name="settings_reset_identifier_title">Сбросить идентификатор модуля</string>
+    <string name="settings_reset_identifier_body">Пересобрать список приложений модуля, если приложение было удалено и установлено заново.</string>
+    <string name="settings_reset_identifier_action">Сбросить идентификатор модуля</string>
+    <string name="settings_reset_identifier_confirm_body">Данный сброс заставит модуль собрать список приложений заново. Это нужно, если вы удалили приложение и установили его снова — идентификатор приложения мог измениться, и его нужно обновить.</string>
+    <string name="settings_reset_identifier_confirm_action">Подтвердить</string>
+    <string name="settings_reset_identifier_wait_title">Подождите</string>
+    <string name="settings_reset_identifier_wait_body">Процедура пройдет автоматически, модуль сам подтянет нужные данные.</string>
+    <string name="settings_reset_identifier_done">Идентификатор сброшен</string>
+    <string name="settings_reset_identifier_failed">Не удалось сбросить идентификатор</string>
+
 </resources>

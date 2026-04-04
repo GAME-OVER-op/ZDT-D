@@ -120,6 +120,11 @@ detect_java_home() {
     printf '%s' "$JAVA_HOME"
     return 0
   fi
+  local termux_jdk="$TERMUX_PREFIX/lib/jvm/java-17-openjdk"
+  if [[ -x "$termux_jdk/bin/java" ]]; then
+    printf '%s' "$termux_jdk"
+    return 0
+  fi
   if command -v javac >/dev/null 2>&1; then
     local javac_path real_javac
     javac_path="$(command -v javac)"
@@ -127,7 +132,34 @@ detect_java_home() {
     dirname "$(dirname "$real_javac")"
     return 0
   fi
+  if command -v java >/dev/null 2>&1; then
+    local java_path real_java
+    java_path="$(command -v java)"
+    real_java="$(readlink -f "$java_path" 2>/dev/null || printf '%s' "$java_path")"
+    dirname "$(dirname "$real_java")"
+    return 0
+  fi
   return 1
+}
+
+ensure_java_home() {
+  local java_home=""
+  if ! java_home="$(detect_java_home 2>/dev/null)"; then
+    if is_termux_runtime && cmd_exists pkg; then
+      msg 'Устанавливаю OpenJDK 17 для Android SDK / Gradle'
+      pkg install -y openjdk-17
+      hash -r || true
+      java_home="$(detect_java_home 2>/dev/null || true)"
+    fi
+  fi
+  [[ -n "$java_home" ]] || fail 'Не найден JDK. Установи openjdk-17 или задай JAVA_HOME.'
+  export JAVA_HOME="$java_home"
+  case ":$PATH:" in
+    *":$JAVA_HOME/bin:"*) ;;
+    *) export PATH="$JAVA_HOME/bin:$PATH" ;;
+  esac
+  [[ -x "$JAVA_HOME/bin/java" ]] || fail "Некорректный JAVA_HOME: $JAVA_HOME"
+  hash -r || true
 }
 
 set_rust_toolchain_paths() {
@@ -517,7 +549,10 @@ install_termux_packages() {
   cmd_exists pkg || fail 'Этот режим рассчитан на Termux: команда pkg не найдена.'
   msg 'Устанавливаю/дополняю пакеты Termux: openjdk-17, rust, clang, unzip, zip, curl, wget, make, git, aapt2, binutils, pkg-config, file'
   pkg install -y openjdk-17 rust clang unzip zip curl wget make git aapt2 binutils pkg-config file
+  hash -r || true
+  ensure_java_home
 }
+
 
 install_gradle_local() {
   need_cmd unzip
@@ -561,12 +596,14 @@ install_android_cmdline_tools() {
 }
 
 install_android_sdk_packages() {
+  ensure_java_home
   install_android_cmdline_tools
   mkdir -p "$HOME/.android"
   : > "$HOME/.android/repositories.cfg"
   msg 'Принимаю лицензии Android SDK'
-  yes | "$SDKMANAGER_BIN" --sdk_root="$ANDROID_SDK_ROOT" --licenses >/dev/null || true
+  yes | JAVA_HOME="$JAVA_HOME" PATH="$JAVA_HOME/bin:$PATH" "$SDKMANAGER_BIN" --sdk_root="$ANDROID_SDK_ROOT" --licenses >/dev/null || true
   msg "Устанавливаю Android SDK пакеты: platform-tools, platforms;android-$ANDROID_API_LEVEL, build-tools;$ANDROID_BUILD_TOOLS_VERSION"
+  JAVA_HOME="$JAVA_HOME" PATH="$JAVA_HOME/bin:$PATH" \
   "$SDKMANAGER_BIN" --sdk_root="$ANDROID_SDK_ROOT" \
     "platform-tools" \
     "platforms;android-$ANDROID_API_LEVEL" \
@@ -899,7 +936,8 @@ run_cargo_stage() {
           else
             set_dashboard_current "$title"
           fi
-        done < <(tr '' '
+        done < <(tr '
+' '
 ' < "$fifo")
       ) &
       parser_pid=$!
@@ -1096,7 +1134,8 @@ build_apk() {
   run_simple_stage android 'Android prereqs' ensure_android_sdk_ready
   local gradle_cmd java_home aapt2_override gradle_workers
   gradle_cmd="$(find_gradle_cmd)" || fail 'Не удалось подготовить gradle/gradlew.'
-  java_home="$(detect_java_home)" || fail 'Не найден JDK. Установи openjdk-17 или задай JAVA_HOME.'
+  ensure_java_home
+  java_home="$JAVA_HOME"
   gradle_workers="$(detect_gradle_workers)"
   aapt2_override="$(select_aapt2_override 2>/dev/null || true)"
   run_gradle_stage apk 'Build APK' "$gradle_cmd" "$java_home" "$gradle_workers" "$aapt2_override"

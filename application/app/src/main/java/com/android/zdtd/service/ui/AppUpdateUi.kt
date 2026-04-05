@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
@@ -474,8 +475,14 @@ private fun HotspotT2sSection(
         FilterChip(
           selected = safeTarget == "operaproxy",
           onClick = { if (safeTarget != "operaproxy") onTargetChange("operaproxy") },
-          label = { Text(stringResource(R.string.settings_hotspot_program_operaproxy)) },
-          modifier = Modifier.weight(1f),
+          label = {
+            Text(
+              stringResource(R.string.settings_hotspot_program_operaproxy),
+              modifier = Modifier.fillMaxWidth(),
+              textAlign = TextAlign.Center,
+            )
+          },
+          modifier = Modifier.weight(1f).heightIn(min = 46.dp),
           colors = FilterChipDefaults.filterChipColors(
             selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
           ),
@@ -483,8 +490,14 @@ private fun HotspotT2sSection(
         FilterChip(
           selected = safeTarget == "singbox",
           onClick = { if (safeTarget != "singbox") onTargetChange("singbox") },
-          label = { Text(stringResource(R.string.settings_hotspot_program_singbox)) },
-          modifier = Modifier.weight(1f),
+          label = {
+            Text(
+              stringResource(R.string.settings_hotspot_program_singbox),
+              modifier = Modifier.fillMaxWidth(),
+              textAlign = TextAlign.Center,
+            )
+          },
+          modifier = Modifier.weight(1f).heightIn(min = 46.dp),
           colors = FilterChipDefaults.filterChipColors(
             selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
           ),

@@ -685,4 +685,18 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="settings_reset_identifier_done">Identifier reset</string>
     <string name="settings_reset_identifier_failed">Failed to reset identifier</string>
 
+    <string name="app_picker_conflict_used_in">Used in %1$s</string>
+    <string name="apps_conflict_slot_common">Common</string>
+    <string name="apps_conflict_slot_wifi">Wi-Fi</string>
+    <string name="apps_conflict_slot_mobile">Mobile</string>
+    <string name="apps_conflict_program_operaproxy">opera-proxy</string>
+    <string name="apps_conflict_program_singbox">sing-box</string>
+    <string name="apps_conflict_program_dpitunnel">dpitunnel</string>
+    <string name="apps_conflict_program_byedpi">byedpi</string>
+    <string name="apps_conflict_program_zapret">zapret</string>
+    <string name="apps_conflict_program_zapret2">zapret2</string>
+    <string name="settings_proxyinfo_conflict_title">Apps are already in use</string>
+    <string name="settings_proxyinfo_conflict_body">These apps are already used in program rules. Remove them from those programs and add them to port scan protection?</string>
+    <string name="settings_proxyinfo_conflict_yes">Yes, move them</string>
+    <string name="settings_proxyinfo_conflict_no">No, uncheck them</string>
 </resources>

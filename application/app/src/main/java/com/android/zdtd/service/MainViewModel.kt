@@ -3400,6 +3400,17 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     }
   }
 
+
+  override fun loadAppAssignments(onDone: (ApiModels.AppAssignmentsState?) -> Unit) {
+    launchIO {
+      val data = runCatching { api.getAppAssignments() }.getOrElse {
+        log("ERR", "app assignments load failed: ${it.message ?: it}")
+        null
+      }
+      withContext(Dispatchers.Main.immediate) { onDone(data) }
+    }
+  }
+
   override fun setProxyInfoEnabled(enabled: Boolean) {
     val previous = _appUpdate.value.proxyInfoEnabled
     if (previous == enabled) return
@@ -3438,6 +3449,39 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         api.setProxyInfoApps(normalized) && api.applyProxyInfo()
       }.getOrElse {
         log("ERR", "proxyInfo apps failed: ${it.message ?: it}")
+        false
+      }
+      if (!ok) {
+        _appUpdate.update { it.copy(proxyInfoAppsContent = previous, proxyInfoBusy = false) }
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_proxyinfo_save_failed))
+          onDone(false)
+        }
+        return@launchIO
+      }
+      _appUpdate.update { it.copy(proxyInfoAppsContent = normalized, proxyInfoBusy = false) }
+      withContext(Dispatchers.Main.immediate) {
+        toast(str(R.string.settings_proxyinfo_saved))
+        onDone(true)
+      }
+    }
+  }
+
+
+  override fun saveProxyInfoAppsRemovingConflicts(content: String, onDone: (Boolean) -> Unit) {
+    val normalized = content
+      .lineSequence()
+      .map { it.trim() }
+      .filter { it.isNotEmpty() }
+      .distinct()
+      .joinToString("\n")
+    val previous = _appUpdate.value.proxyInfoAppsContent
+    _appUpdate.update { it.copy(proxyInfoAppsContent = normalized, proxyInfoBusy = true) }
+    launchIO {
+      val ok = runCatching {
+        api.saveProxyInfoAppsResolved(normalized, true) && api.applyProxyInfo()
+      }.getOrElse {
+        log("ERR", "proxyInfo resolve-save failed: ${it.message ?: it}")
         false
       }
       if (!ok) {

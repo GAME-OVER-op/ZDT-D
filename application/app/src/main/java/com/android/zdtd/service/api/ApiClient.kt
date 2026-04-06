@@ -111,6 +111,11 @@ class ApiClient(
     return ApiModels.parseDaemonSettings(obj)
   }
 
+
+  fun getAppAssignments(): ApiModels.AppAssignmentsState {
+    val obj = requestJson("GET", "/api/apps/assignments", null)
+    return ApiModels.parseAppAssignments(obj)
+  }
   fun getProxyInfo(): ApiModels.ProxyInfoState {
     val obj = requestJson("GET", "/api/proxyinfo", null)
     return ApiModels.parseProxyInfo(obj)
@@ -129,6 +134,13 @@ class ApiClient(
   fun setProxyInfoApps(content: String): Boolean {
     val body = JSONObject().put("content", content)
     return requestOk("PUT", "/api/proxyinfo/apps", body)
+  }
+
+
+  fun saveProxyInfoAppsResolved(content: String, removeConflicts: Boolean): Boolean {
+    val body = JSONObject().put("content", content).put("remove_conflicts", removeConflicts)
+    val obj = requestJson("POST", "/api/proxyinfo/save", body)
+    return (obj?.optBoolean("ok", false) == true) && (obj.optBoolean("saved", false))
   }
 
   fun applyProxyInfo(): Boolean = requestOk("POST", "/api/proxyinfo/apply", JSONObject())

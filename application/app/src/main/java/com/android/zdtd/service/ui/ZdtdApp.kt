@@ -539,7 +539,9 @@ private fun MainShell(
         proxyInfoBusy = appUpdate.proxyInfoBusy,
         proxyInfoAppsContent = appUpdate.proxyInfoAppsContent,
         onProxyInfoEnabledChange = actions::setProxyInfoEnabled,
+        onLoadAppAssignments = actions::loadAppAssignments,
         onProxyInfoAppsSave = actions::saveProxyInfoApps,
+        onProxyInfoAppsSaveRemovingConflicts = actions::saveProxyInfoAppsRemovingConflicts,
         resettingModuleIdentifier = appUpdate.resettingModuleIdentifier,
         onResetModuleIdentifier = actions::resetModuleIdentifier,
         onDeleteModule = {

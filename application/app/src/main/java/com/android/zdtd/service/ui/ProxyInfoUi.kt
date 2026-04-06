@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.android.zdtd.service.R
+import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
@@ -152,17 +153,24 @@ fun ProxyInfoAppsDialog(
   initialContent: String,
   saving: Boolean,
   onDismiss: () -> Unit,
-  onSave: (String) -> Unit,
+  onLoadAssignments: (((ApiModels.AppAssignmentsState?) -> Unit) -> Unit),
+  onSave: (String, (Boolean) -> Unit) -> Unit,
+  onSaveRemovingConflicts: (String, (Boolean) -> Unit) -> Unit,
 ) {
   val ctx = androidx.compose.ui.platform.LocalContext.current
   val pm = ctx.packageManager
   var query by remember { mutableStateOf("") }
   var selected by remember(initialContent) { mutableStateOf(parsePkgList(initialContent)) }
+  var assignments by remember { mutableStateOf<ApiModels.AppAssignmentsState?>(null) }
+  var pendingConflicts by remember { mutableStateOf<Map<String, List<ApiModels.AppAssignmentEntry>>>(emptyMap()) }
   val iconCache = remember { mutableStateMapOf<String, androidx.compose.ui.graphics.ImageBitmap?>() }
   val apps by produceState<List<InstalledApp>>(initialValue = emptyList(), key1 = Unit) {
     value = withContext(Dispatchers.IO) {
       runCatching { loadInstalledApps(pm) }.getOrDefault(emptyList())
     }
+  }
+  LaunchedEffect(Unit) {
+    onLoadAssignments { assignments = it ?: ApiModels.AppAssignmentsState() }
   }
 
   val q = query.trim().lowercase(Locale.ROOT)
@@ -180,6 +188,52 @@ fun ProxyInfoAppsDialog(
   val notSelectedApps = remember(filtered, selected) { filtered.filter { it.packageName !in selected } }
   val compactWidth = rememberIsCompactWidth()
   val shortHeight = rememberIsShortHeight()
+
+  val slotCommonLabel = stringResource(R.string.apps_conflict_slot_common)
+  val slotWifiLabel = stringResource(R.string.apps_conflict_slot_wifi)
+  val slotMobileLabel = stringResource(R.string.apps_conflict_slot_mobile)
+  val programOperaLabel = stringResource(R.string.apps_conflict_program_operaproxy)
+  val programSingboxLabel = stringResource(R.string.apps_conflict_program_singbox)
+  val programDpitunnelLabel = stringResource(R.string.apps_conflict_program_dpitunnel)
+  val programByedpiLabel = stringResource(R.string.apps_conflict_program_byedpi)
+  val programZapretLabel = stringResource(R.string.apps_conflict_program_zapret)
+  val programZapret2Label = stringResource(R.string.apps_conflict_program_zapret2)
+
+  fun slotLabel(slot: String): String = when (slot.lowercase(Locale.ROOT)) {
+    "common" -> slotCommonLabel
+    "wifi" -> slotWifiLabel
+    "mobile" -> slotMobileLabel
+    else -> slot
+  }
+
+  fun programLabel(programId: String): String = when (programId) {
+    "operaproxy" -> programOperaLabel
+    "sing-box" -> programSingboxLabel
+    "dpitunnel" -> programDpitunnelLabel
+    "byedpi" -> programByedpiLabel
+    "nfqws" -> programZapretLabel
+    "nfqws2" -> programZapret2Label
+    else -> programId
+  }
+
+    fun entryLabel(entry: ApiModels.AppAssignmentEntry): String {
+    val base = programLabel(entry.programId)
+    val slot = slotLabel(entry.slot)
+    return if (entry.profile.isNullOrBlank()) "$base / $slot" else "$base / ${entry.profile} / $slot"
+  }
+
+  fun computeConflicts(pkgs: Set<String>): Map<String, List<ApiModels.AppAssignmentEntry>> {
+    val data = assignments ?: return emptyMap()
+    val out = linkedMapOf<String, MutableList<ApiModels.AppAssignmentEntry>>()
+    for (entry in data.lists) {
+      for (pkg in entry.packages) {
+        if (pkg in pkgs) out.getOrPut(pkg) { mutableListOf() }.add(entry)
+      }
+    }
+    return out
+  }
+
+  val selectedConflicts = remember(selected, assignments) { computeConflicts(selected) }
 
   Dialog(
     onDismissRequest = { if (!saving) onDismiss() },
@@ -330,7 +384,14 @@ fun ProxyInfoAppsDialog(
             Text(stringResource(R.string.common_cancel))
           }
           Button(
-            onClick = { onSave(selected.sorted().joinToString("\n")) },
+            onClick = {
+              val payload = selected.sorted().joinToString("\n")
+              if (selectedConflicts.isEmpty()) {
+                onSave(payload) { ok -> if (ok) onDismiss() }
+              } else {
+                pendingConflicts = selectedConflicts
+              }
+            },
             modifier = Modifier.weight(1f),
             enabled = !saving,
           ) {
@@ -346,6 +407,50 @@ fun ProxyInfoAppsDialog(
         }
       }
     }
+  }
+
+  if (pendingConflicts.isNotEmpty()) {
+    val conflictPackages = pendingConflicts.keys.toSet()
+    val conflictText = pendingConflicts.entries.joinToString("\n") { (pkg, entries) ->
+      val whereUsed = entries.joinToString(", ") { entry -> entryLabel(entry) }
+      "• $pkg — $whereUsed"
+    }
+    AlertDialog(
+      onDismissRequest = { if (!saving) pendingConflicts = emptyMap() },
+      title = { Text(stringResource(R.string.settings_proxyinfo_conflict_title)) },
+      text = {
+        Text(
+          stringResource(R.string.settings_proxyinfo_conflict_body) + "\n\n" + conflictText
+        )
+      },
+      dismissButton = {
+        OutlinedButton(
+          onClick = {
+            selected = selected - conflictPackages
+            pendingConflicts = emptyMap()
+          },
+          enabled = !saving,
+        ) {
+          Text(stringResource(R.string.settings_proxyinfo_conflict_no))
+        }
+      },
+      confirmButton = {
+        Button(
+          onClick = {
+            val payload = selected.sorted().joinToString("\n")
+            onSaveRemovingConflicts(payload) { ok ->
+              if (ok) {
+                pendingConflicts = emptyMap()
+                onDismiss()
+              }
+            }
+          },
+          enabled = !saving,
+        ) {
+          Text(stringResource(R.string.settings_proxyinfo_conflict_yes))
+        }
+      },
+    )
   }
 }
 

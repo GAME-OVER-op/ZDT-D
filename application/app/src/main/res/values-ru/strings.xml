@@ -683,4 +683,18 @@
     <string name="settings_reset_identifier_done">Идентификатор сброшен</string>
     <string name="settings_reset_identifier_failed">Не удалось сбросить идентификатор</string>
 
+    <string name="app_picker_conflict_used_in">Используется в %1$s</string>
+    <string name="apps_conflict_slot_common">Общий</string>
+    <string name="apps_conflict_slot_wifi">Wi-Fi</string>
+    <string name="apps_conflict_slot_mobile">Мобильный</string>
+    <string name="apps_conflict_program_operaproxy">opera-proxy</string>
+    <string name="apps_conflict_program_singbox">sing-box</string>
+    <string name="apps_conflict_program_dpitunnel">dpitunnel</string>
+    <string name="apps_conflict_program_byedpi">byedpi</string>
+    <string name="apps_conflict_program_zapret">zapret</string>
+    <string name="apps_conflict_program_zapret2">zapret2</string>
+    <string name="settings_proxyinfo_conflict_title">Приложения уже используются</string>
+    <string name="settings_proxyinfo_conflict_body">Эти приложения уже используются в правилах программ. Удалить их из этих программ и добавить в защиту от сканирования портов?</string>
+    <string name="settings_proxyinfo_conflict_yes">Да, перенести</string>
+    <string name="settings_proxyinfo_conflict_no">Нет, снять галочки</string>
 </resources>

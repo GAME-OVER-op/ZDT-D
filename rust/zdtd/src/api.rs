@@ -971,56 +971,239 @@ fn parse_package_set(raw: &str) -> BTreeSet<String> {
     out
 }
 
-fn read_package_set_or_empty(p: &Path) -> Result<BTreeSet<String>> {
-    Ok(parse_package_set(&read_text_or_empty(p)?))
+#[derive(Debug, Clone, Serialize)]
+struct AppAssignmentView {
+    program_id: String,
+    profile: Option<String>,
+    slot: String,
+    path: String,
+    packages: Vec<String>,
 }
 
-fn proxyinfo_protected_program_paths() -> Vec<PathBuf> {
+#[derive(Debug, Clone)]
+struct AppAssignmentFile {
+    program_id: String,
+    profile: Option<String>,
+    slot: String,
+    path: String,
+    fs_path: PathBuf,
+    packages: BTreeSet<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct AppConflictView {
+    package: String,
+    program_id: String,
+    profile: Option<String>,
+    slot: String,
+    path: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProxyInfoSaveReq {
+    content: String,
+    #[serde(default)]
+    remove_conflicts: bool,
+}
+
+fn slot_from_kind(kind: &str) -> Option<&'static str> {
+    match kind {
+        "user" => Some("common"),
+        "mobile" => Some("mobile"),
+        "wifi" => Some("wifi"),
+        _ => None,
+    }
+}
+
+fn app_domain(program_id: &str) -> Option<&'static str> {
+    match program_id {
+        "operaproxy" | "sing-box" | "dpitunnel" | "byedpi" => Some("tunnel"),
+        "nfqws" | "nfqws2" => Some("zapret"),
+        _ => None,
+    }
+}
+
+fn push_assignment_file(
+    out: &mut Vec<AppAssignmentFile>,
+    program_id: &str,
+    profile: Option<String>,
+    kind: &str,
+    fs_path: PathBuf,
+    path: String,
+) {
+    let Some(slot) = slot_from_kind(kind) else { return; };
+    let packages = read_package_set_or_empty(&fs_path).unwrap_or_default();
+    out.push(AppAssignmentFile {
+        program_id: program_id.to_string(),
+        profile,
+        slot: slot.to_string(),
+        path,
+        fs_path,
+        packages,
+    });
+}
+
+fn collect_assignment_files() -> Vec<AppAssignmentFile> {
     let mut out = Vec::new();
 
-    let byedpi_root = program_root("byedpi");
-    if let Ok(rd) = fs::read_dir(&byedpi_root) {
-        for ent in rd.flatten() {
-            let path = ent.path();
-            if path.is_dir() {
-                out.push(path.join("app/uid/user_program"));
+    for id in ["nfqws", "nfqws2", "byedpi", "dpitunnel"] {
+        let root = program_root(id);
+        if let Ok(rd) = fs::read_dir(&root) {
+            for ent in rd.flatten() {
+                let path = ent.path();
+                if !path.is_dir() { continue; }
+                let Some(profile) = path.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+                match id {
+                    "nfqws" | "nfqws2" | "dpitunnel" => {
+                        for kind in ["user", "mobile", "wifi"] {
+                            let fname = match kind { "user" => "user_program", "mobile" => "mobile_program", "wifi" => "wifi_program", _ => continue };
+                            push_assignment_file(
+                                &mut out,
+                                id,
+                                Some(profile.clone()),
+                                kind,
+                                path.join(format!("app/uid/{fname}")),
+                                format!("/api/programs/{id}/profiles/{profile}/apps/{kind}"),
+                            );
+                        }
+                    }
+                    "byedpi" => {
+                        push_assignment_file(
+                            &mut out,
+                            id,
+                            Some(profile.clone()),
+                            "user",
+                            path.join("app/uid/user_program"),
+                            format!("/api/programs/{id}/profiles/{profile}/apps/user"),
+                        );
+                    }
+                    _ => {}
+                }
             }
         }
     }
 
-    let dpitunnel_root = program_root("dpitunnel");
-    if let Ok(rd) = fs::read_dir(&dpitunnel_root) {
-        for ent in rd.flatten() {
-            let path = ent.path();
-            if path.is_dir() {
-                out.push(path.join("app/uid/user_program"));
-                out.push(path.join("app/uid/mobile_program"));
-                out.push(path.join("app/uid/wifi_program"));
-            }
-        }
+    for kind in ["user", "mobile", "wifi"] {
+        let fname = match kind { "user" => "user_program", "mobile" => "mobile_program", "wifi" => "wifi_program", _ => continue };
+        push_assignment_file(
+            &mut out,
+            "operaproxy",
+            None,
+            kind,
+            program_root("operaproxy").join(format!("app/uid/{fname}")),
+            format!("/api/programs/operaproxy/apps/{kind}"),
+        );
     }
 
-    let opera_root = program_root("operaproxy").join("app/uid");
-    out.push(opera_root.join("user_program"));
-    out.push(opera_root.join("mobile_program"));
-    out.push(opera_root.join("wifi_program"));
-
-    let sing_root = program_root("singbox").join("app/uid/user_program");
-    out.push(sing_root);
+    push_assignment_file(
+        &mut out,
+        "sing-box",
+        None,
+        "user",
+        program_root("singbox").join("app/uid/user_program"),
+        "/api/programs/sing-box/apps/user".to_string(),
+    );
 
     out
 }
 
-fn validate_program_apps_not_blocked(content: &str) -> Result<()> {
-    let candidate = parse_package_set(content);
-    if candidate.is_empty() {
-        return Ok(());
+fn assignment_to_view(v: &AppAssignmentFile) -> AppAssignmentView {
+    AppAssignmentView {
+        program_id: v.program_id.clone(),
+        profile: v.profile.clone(),
+        slot: v.slot.clone(),
+        path: v.path.clone(),
+        packages: v.packages.iter().cloned().collect(),
     }
+}
+
+fn conflict_label(v: &AppConflictView) -> String {
+    match &v.profile {
+        Some(profile) if !profile.is_empty() => format!("{} / {} / {}", v.program_id, profile, v.slot),
+        _ => format!("{} / {}", v.program_id, v.slot),
+    }
+}
+
+fn packages_to_text(pkgs: &BTreeSet<String>) -> String {
+    pkgs.iter().cloned().collect::<Vec<_>>().join("\n")
+}
+
+fn flatten_conflicts(map: &BTreeMap<String, Vec<AppConflictView>>) -> Vec<AppConflictView> {
+    let mut out = Vec::new();
+    for items in map.values() {
+        out.extend(items.iter().cloned());
+    }
+    out
+}
+
+fn find_program_conflicts(
+    candidate: &BTreeSet<String>,
+    current_api_path: &str,
+    program_id: &str,
+    slot: &str,
+) -> BTreeMap<String, Vec<AppConflictView>> {
+    let mut out: BTreeMap<String, Vec<AppConflictView>> = BTreeMap::new();
+    let Some(domain) = app_domain(program_id) else { return out; };
+    let lists = collect_assignment_files();
+    let current_existing = lists
+        .iter()
+        .find(|v| v.path == current_api_path)
+        .map(|v| v.packages.clone())
+        .unwrap_or_default();
+    for item in lists {
+        if item.path == current_api_path { continue; }
+        if item.slot != slot { continue; }
+        if app_domain(&item.program_id) != Some(domain) { continue; }
+        for pkg in candidate.intersection(&item.packages) {
+            if current_existing.contains(pkg) { continue; }
+            out.entry(pkg.clone()).or_default().push(AppConflictView {
+                package: pkg.clone(),
+                program_id: item.program_id.clone(),
+                profile: item.profile.clone(),
+                slot: item.slot.clone(),
+                path: item.path.clone(),
+            });
+        }
+    }
+    out
+}
+
+fn find_proxyinfo_conflicts(candidate: &BTreeSet<String>) -> BTreeMap<String, Vec<AppConflictView>> {
+    let mut out: BTreeMap<String, Vec<AppConflictView>> = BTreeMap::new();
+    for item in collect_assignment_files() {
+        for pkg in candidate.intersection(&item.packages) {
+            out.entry(pkg.clone()).or_default().push(AppConflictView {
+                package: pkg.clone(),
+                program_id: item.program_id.clone(),
+                profile: item.profile.clone(),
+                slot: item.slot.clone(),
+                path: item.path.clone(),
+            });
+        }
+    }
+    out
+}
+
+fn validate_program_apps_content(content: &str, current_api_path: &str, program_id: &str, slot: &str) -> Result<()> {
+    let candidate = parse_package_set(content);
+    if candidate.is_empty() { return Ok(()); }
+
     let blocked = crate::proxyinfo::read_proxy_packages().unwrap_or_default();
     let mut overlap: Vec<String> = candidate.intersection(&blocked).cloned().collect();
     overlap.sort();
     if !overlap.is_empty() {
         anyhow::bail!("apps are blocked by proxyInfo: {}", overlap.join(", "));
+    }
+
+    let conflicts = find_program_conflicts(&candidate, current_api_path, program_id, slot);
+    if !conflicts.is_empty() {
+        let mut parts = Vec::new();
+        for (pkg, uses) in &conflicts {
+            let labels = uses.iter().map(conflict_label).collect::<Vec<_>>().join(", ");
+            parts.push(format!("{pkg} ({labels})"));
+        }
+        parts.sort();
+        anyhow::bail!("apps are already used in conflicting program lists: {}", parts.join("; "));
     }
     Ok(())
 }
@@ -1031,19 +1214,42 @@ fn validate_proxyinfo_apps_content(content: &str) -> Result<()> {
         return Ok(());
     }
 
-    let mut overlap = BTreeSet::new();
-    for p in proxyinfo_protected_program_paths() {
-        let existing = read_package_set_or_empty(&p).unwrap_or_default();
-        for pkg in candidate.intersection(&existing) {
-            overlap.insert(pkg.clone());
+    let conflicts = find_proxyinfo_conflicts(&candidate);
+    if !conflicts.is_empty() {
+        let mut parts = Vec::new();
+        for (pkg, uses) in &conflicts {
+            let labels = uses.iter().map(conflict_label).collect::<Vec<_>>().join(", ");
+            parts.push(format!("{pkg} ({labels})"));
         }
-    }
-
-    if !overlap.is_empty() {
-        let list: Vec<String> = overlap.into_iter().collect();
-        anyhow::bail!("apps are already used by ZDT-D programs: {}", list.join(", "));
+        parts.sort();
+        anyhow::bail!("apps are already used by ZDT-D programs: {}", parts.join("; "));
     }
     Ok(())
+}
+
+fn remove_packages_from_program_lists(packages: &BTreeSet<String>) -> Result<Vec<AppConflictView>> {
+    let mut removed = Vec::new();
+    if packages.is_empty() { return Ok(removed); }
+    for item in collect_assignment_files() {
+        let intersection: BTreeSet<String> = item.packages.intersection(packages).cloned().collect();
+        if intersection.is_empty() { continue; }
+        let updated: BTreeSet<String> = item.packages.difference(packages).cloned().collect();
+        write_text_atomic(&item.fs_path, &packages_to_text(&updated))?;
+        for pkg in intersection {
+            removed.push(AppConflictView {
+                package: pkg,
+                program_id: item.program_id.clone(),
+                profile: item.profile.clone(),
+                slot: item.slot.clone(),
+                path: item.path.clone(),
+            });
+        }
+    }
+    Ok(removed)
+}
+
+fn read_package_set_or_empty(p: &Path) -> Result<BTreeSet<String>> {
+    Ok(parse_package_set(&read_text_or_empty(p)?))
 }
 
 fn validate_sing_box_setting(v: &serde_json::Value) -> Result<()> {
@@ -1355,7 +1561,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
                     ("dpitunnel", "wifi") => "wifi_program",
                     _ => anyhow::bail!("invalid apps kind for program"),
                 };
-                validate_program_apps_not_blocked(&req.content)?;
+                let api_path = format!("/api/programs/{}/profiles/{}/apps/{}", id, profile, kind);
+                validate_program_apps_content(&req.content, &api_path, id, slot_from_kind(kind).ok_or_else(|| anyhow::anyhow!("invalid apps kind"))?)?;
                 let p = profile_root(id, profile).join(format!("app/uid/{fname}"));
                 write_text_atomic(&p, &req.content)?;
                 Ok(())
@@ -1544,7 +1751,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
             let res = (|| -> Result<()> {
                 let req: ContentReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                validate_program_apps_not_blocked(&req.content)?;
+                validate_program_apps_content(&req.content, "/api/programs/operaproxy/apps/user", "operaproxy", "common")?;
                 let p = program_root("operaproxy").join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 Ok(())
@@ -1567,7 +1774,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
             let res = (|| -> Result<()> {
                 let req: ContentReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                validate_program_apps_not_blocked(&req.content)?;
+                validate_program_apps_content(&req.content, "/api/programs/operaproxy/apps/mobile", "operaproxy", "mobile")?;
                 let p = program_root("operaproxy").join("app/uid/mobile_program");
                 write_text_atomic(&p, &req.content)?;
                 Ok(())
@@ -1590,7 +1797,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
             let res = (|| -> Result<()> {
                 let req: ContentReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                validate_program_apps_not_blocked(&req.content)?;
+                validate_program_apps_content(&req.content, "/api/programs/operaproxy/apps/wifi", "operaproxy", "wifi")?;
                 let p = program_root("operaproxy").join("app/uid/wifi_program");
                 write_text_atomic(&p, &req.content)?;
                 Ok(())
@@ -1827,7 +2034,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
             let res = (|| -> Result<()> {
                 let req: ContentReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                validate_program_apps_not_blocked(&req.content)?;
+                validate_program_apps_content(&req.content, "/api/programs/sing-box/apps/user", "sing-box", "common")?;
                 let p = program_root("singbox").join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 Ok(())
@@ -2127,6 +2334,42 @@ match (method.as_str(), path.as_str()) {
             })();
             match res {
                 Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", "/api/apps/assignments") => {
+            let res = (|| -> Result<serde_json::Value> {
+                let lists = collect_assignment_files()
+                    .into_iter()
+                    .map(|v| assignment_to_view(&v))
+                    .collect::<Vec<_>>();
+                let proxyinfo = crate::proxyinfo::read_proxy_packages()?.into_iter().collect::<Vec<_>>();
+                Ok(json!({"ok": true, "lists": lists, "proxyinfo_packages": proxyinfo}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", "/api/proxyinfo/save") => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: ProxyInfoSaveReq = serde_json::from_slice(&body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let candidate = parse_package_set(&req.content);
+                let conflicts = find_proxyinfo_conflicts(&candidate);
+                if !conflicts.is_empty() && !req.remove_conflicts {
+                    return Ok(json!({"ok": true, "saved": false, "conflicts": flatten_conflicts(&conflicts)}));
+                }
+                let removed = if req.remove_conflicts {
+                    remove_packages_from_program_lists(&candidate)?
+                } else {
+                    Vec::new()
+                };
+                crate::proxyinfo::write_uid_program_text(&req.content)?;
+                Ok(json!({"ok": true, "saved": true, "removed": removed}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
                 Err(e) => write_err(stream, e),
             }
         }

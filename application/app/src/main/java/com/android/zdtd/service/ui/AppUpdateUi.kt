@@ -184,7 +184,9 @@ fun AppUpdateSettings(
   proxyInfoBusy: Boolean,
   proxyInfoAppsContent: String,
   onProxyInfoEnabledChange: (Boolean) -> Unit,
+  onLoadAppAssignments: (((com.android.zdtd.service.api.ApiModels.AppAssignmentsState?) -> Unit) -> Unit),
   onProxyInfoAppsSave: (String, (Boolean) -> Unit) -> Unit,
+  onProxyInfoAppsSaveRemovingConflicts: (String, (Boolean) -> Unit) -> Unit,
   resettingModuleIdentifier: Boolean,
   onResetModuleIdentifier: () -> Unit,
   onDeleteModule: () -> Unit,
@@ -323,11 +325,9 @@ fun AppUpdateSettings(
         initialContent = proxyInfoAppsContent,
         saving = proxyInfoBusy,
         onDismiss = { if (!proxyInfoBusy) showProxyInfoConfigure = false },
-        onSave = { content ->
-          onProxyInfoAppsSave(content) { ok ->
-            if (ok) showProxyInfoConfigure = false
-          }
-        },
+        onLoadAssignments = onLoadAppAssignments,
+        onSave = onProxyInfoAppsSave,
+        onSaveRemovingConflicts = onProxyInfoAppsSaveRemovingConflicts,
       )
     }
 

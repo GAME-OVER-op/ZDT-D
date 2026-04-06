@@ -168,11 +168,17 @@ interface ZdtdActions {
   /** Reload proxyInfo settings used by the settings sheet. */
   fun refreshProxyInfo()
 
+  /** Load current app assignments across program lists and proxyInfo. */
+  fun loadAppAssignments(onDone: (com.android.zdtd.service.api.ApiModels.AppAssignmentsState?) -> Unit)
+
   /** Enable/disable port scan protection. */
   fun setProxyInfoEnabled(enabled: Boolean)
 
   /** Save selected app package names for port scan protection and apply changes. */
   fun saveProxyInfoApps(content: String, onDone: (Boolean) -> Unit = {})
+
+  /** Save proxyInfo apps after removing conflicts from program lists on the daemon side. */
+  fun saveProxyInfoAppsRemovingConflicts(content: String, onDone: (Boolean) -> Unit = {})
 
   /** Set module protector mode: off | on | auto. */
   fun setProtectorMode(mode: String)

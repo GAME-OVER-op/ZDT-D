@@ -63,6 +63,19 @@ object ApiModels {
     val active: Boolean = false,
   )
 
+  data class AppAssignmentEntry(
+    val programId: String,
+    val profile: String? = null,
+    val slot: String,
+    val path: String,
+    val packages: Set<String> = emptySet(),
+  )
+
+  data class AppAssignmentsState(
+    val lists: List<AppAssignmentEntry> = emptyList(),
+    val proxyInfoPackages: Set<String> = emptySet(),
+  )
+
 
   fun parseProcAgg(o: JSONObject?): ProcAgg {
     if (o == null) return ProcAgg()
@@ -172,6 +185,48 @@ object ApiModels {
     )
   }
 
+
+  fun parseAppAssignments(wrapper: JSONObject?): AppAssignmentsState {
+    if (wrapper == null) return AppAssignmentsState()
+    val listsArr = wrapper.optJSONArray("lists")
+    val lists = buildList {
+      if (listsArr != null) {
+        for (i in 0 until listsArr.length()) {
+          val o = listsArr.optJSONObject(i) ?: continue
+          val programId = o.optString("program_id", "").trim()
+          val slot = o.optString("slot", "").trim().lowercase(Locale.ROOT)
+          val path = o.optString("path", "").trim()
+          if (programId.isEmpty() || slot.isEmpty() || path.isEmpty()) continue
+          val pkgs = linkedSetOf<String>()
+          val arr = o.optJSONArray("packages")
+          if (arr != null) {
+            for (j in 0 until arr.length()) {
+              val pkg = arr.optString(j, "").trim()
+              if (pkg.isNotEmpty()) pkgs.add(pkg)
+            }
+          }
+          add(
+            AppAssignmentEntry(
+              programId = programId,
+              profile = o.optString("profile", "").trim().takeIf { it.isNotEmpty() },
+              slot = slot,
+              path = path,
+              packages = pkgs,
+            )
+          )
+        }
+      }
+    }
+    val proxyPkgs = linkedSetOf<String>()
+    val proxyArr = wrapper.optJSONArray("proxyinfo_packages")
+    if (proxyArr != null) {
+      for (i in 0 until proxyArr.length()) {
+        val pkg = proxyArr.optString(i, "").trim()
+        if (pkg.isNotEmpty()) proxyPkgs.add(pkg)
+      }
+    }
+    return AppAssignmentsState(lists = lists, proxyInfoPackages = proxyPkgs)
+  }
   fun parsePrograms(wrapper: JSONObject?): List<Program> {
     if (wrapper == null) return emptyList()
     if (!wrapper.optBoolean("ok", false)) return emptyList()

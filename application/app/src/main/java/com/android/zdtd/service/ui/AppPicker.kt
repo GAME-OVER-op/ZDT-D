@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
+import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -104,6 +105,8 @@ fun AppListPickerCard(
   if (showPicker) {
     AppPickerSheet(
       title = title,
+      path = path,
+      actions = actions,
       initialSelected = selected,
       onDismiss = { showPicker = false },
       onSave = { newSel ->
@@ -205,6 +208,8 @@ fun NfqwsAppListsSection(
 @Composable
 private fun AppPickerSheet(
   title: String,
+  path: String,
+  actions: ZdtdActions,
   initialSelected: Set<String>,
   onDismiss: () -> Unit,
   onSave: (Set<String>) -> Unit,
@@ -215,6 +220,10 @@ private fun AppPickerSheet(
     value = withContext(Dispatchers.IO) {
       runCatching { loadInstalledApps(ctx.packageManager) }.getOrDefault(emptyList())
     }
+  }
+  var assignments by remember(path) { mutableStateOf<ApiModels.AppAssignmentsState?>(null) }
+  LaunchedEffect(path) {
+    actions.loadAppAssignments { assignments = it ?: ApiModels.AppAssignmentsState() }
   }
 
   var query by remember { mutableStateOf("") }
@@ -229,15 +238,81 @@ private fun AppPickerSheet(
     else apps.filter { it.label.lowercase(Locale.ROOT).contains(q) || it.packageName.lowercase(Locale.ROOT).contains(q) }
   }
 
+  val currentEntry = remember(assignments, path) {
+    assignments?.lists?.firstOrNull { it.path == path }
+  }
+
+  val slotCommonLabel = stringResource(R.string.apps_conflict_slot_common)
+  val slotWifiLabel = stringResource(R.string.apps_conflict_slot_wifi)
+  val slotMobileLabel = stringResource(R.string.apps_conflict_slot_mobile)
+  val programOperaLabel = stringResource(R.string.apps_conflict_program_operaproxy)
+  val programSingboxLabel = stringResource(R.string.apps_conflict_program_singbox)
+  val programDpitunnelLabel = stringResource(R.string.apps_conflict_program_dpitunnel)
+  val programByedpiLabel = stringResource(R.string.apps_conflict_program_byedpi)
+  val programZapretLabel = stringResource(R.string.apps_conflict_program_zapret)
+  val programZapret2Label = stringResource(R.string.apps_conflict_program_zapret2)
+
+  fun slotLabel(slot: String): String = when (slot.lowercase(Locale.ROOT)) {
+    "common" -> slotCommonLabel
+    "wifi" -> slotWifiLabel
+    "mobile" -> slotMobileLabel
+    else -> slot
+  }
+
+  fun programLabel(programId: String): String = when (programId) {
+    "operaproxy" -> programOperaLabel
+    "sing-box" -> programSingboxLabel
+    "dpitunnel" -> programDpitunnelLabel
+    "byedpi" -> programByedpiLabel
+    "nfqws" -> programZapretLabel
+    "nfqws2" -> programZapret2Label
+    else -> programId
+  }
+
+  fun programGroup(programId: String): String? = when (programId) {
+    "operaproxy", "sing-box", "dpitunnel", "byedpi" -> "tunnel"
+    "nfqws", "nfqws2" -> "zapret"
+    else -> null
+  }
+
+    fun entryLabel(entry: ApiModels.AppAssignmentEntry): String {
+    val base = programLabel(entry.programId)
+    val slot = slotLabel(entry.slot)
+    return if (entry.profile.isNullOrBlank()) "$base / $slot" else "$base / ${entry.profile} / $slot"
+  }
+
+  val hiddenPackages = remember(assignments, selected) {
+    ((assignments?.proxyInfoPackages ?: emptySet()) - selected)
+  }
+
+  val disabledReasons = remember(assignments, currentEntry, selected) {
+    val out = linkedMapOf<String, MutableList<ApiModels.AppAssignmentEntry>>()
+    val entry = currentEntry
+    val data = assignments
+    if (entry != null && data != null) {
+      val group = programGroup(entry.programId)
+      if (group != null) {
+        for (other in data.lists) {
+          if (other.path == entry.path) continue
+          if (other.slot != entry.slot) continue
+          if (programGroup(other.programId) != group) continue
+          for (pkg in other.packages) {
+            if (pkg in selected) continue
+            out.getOrPut(pkg) { mutableListOf() }.add(other)
+          }
+        }
+      }
+    }
+    out
+  }
+
   val selectedApps = remember(apps, selected) {
-    // Use global apps list for labels.
     val byPkg = apps.associateBy { it.packageName }
-    // If the package is no longer installed / not visible, keep it as a plain entry.
     selected.map { pkg -> byPkg[pkg] ?: InstalledApp(pkg, pkg, false) }
       .sortedBy { it.label.lowercase(Locale.ROOT) }
   }
-  val notSelectedApps = remember(filtered, selected) {
-    filtered.filter { it.packageName !in selected }
+  val notSelectedApps = remember(filtered, selected, hiddenPackages) {
+    filtered.filter { it.packageName !in selected && it.packageName !in hiddenPackages }
   }
 
   val isCompactWidth = rememberIsCompactWidth()
@@ -267,11 +342,7 @@ private fun AppPickerSheet(
           Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)) {
               IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
-                Icon(
-                  imageVector = Icons.Default.Close,
-                  contentDescription = stringResource(R.string.app_picker_cancel),
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.app_picker_cancel))
               }
             }
             Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
@@ -343,39 +414,15 @@ private fun AppPickerSheet(
           }
         } else {
           items(selectedApps, key = { "sel:" + it.packageName }) { app ->
-            Surface(
-              shape = MaterialTheme.shapes.medium,
-              color = MaterialTheme.colorScheme.surface.copy(alpha = 0.45f),
-              tonalElevation = 0.dp,
-            ) {
-              Row(
-                Modifier
-                  .fillMaxWidth()
-                  .clickable { selected = selected - app.packageName }
-                  .padding(horizontal = 10.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-              ) {
-                AppIcon(packageName = app.packageName, cache = iconCache)
-                Checkbox(
-                  checked = true,
-                  onCheckedChange = { checked ->
-                    selected = if (!checked) selected - app.packageName else selected
-                  },
-                )
-                Column(Modifier.weight(1f)) {
-                  Text(app.label, maxLines = if (isCompactWidth) 2 else 1, overflow = TextOverflow.Ellipsis)
-                  Text(
-                    app.packageName,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
-                    maxLines = if (isCompactWidth) 2 else 1,
-                    overflow = TextOverflow.Ellipsis,
-                  )
-                }
-              }
-            }
+            AppPickerRow(
+              app = app,
+              selected = true,
+              compactWidth = isCompactWidth,
+              iconCache = iconCache,
+              enabled = true,
+              reason = null,
+              onToggle = { selected = selected - app.packageName },
+            )
           }
         }
 
@@ -398,44 +445,94 @@ private fun AppPickerSheet(
         }
 
         items(notSelectedApps, key = { "all:" + it.packageName }) { app ->
-          Surface(
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.32f),
-            tonalElevation = 0.dp,
-          ) {
-            Row(
-              Modifier
-                .fillMaxWidth()
-                .clickable { selected = selected + app.packageName }
-                .padding(horizontal = 10.dp, vertical = 10.dp),
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              AppIcon(packageName = app.packageName, cache = iconCache)
-              Spacer(Modifier.width(10.dp))
-              Column(Modifier.weight(1f)) {
-                Text(app.label, maxLines = if (isCompactWidth) 2 else 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                  app.packageName,
-                  style = MaterialTheme.typography.bodySmall,
-                  fontFamily = FontFamily.Monospace,
-                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
-                  maxLines = if (isCompactWidth) 2 else 1,
-                  overflow = TextOverflow.Ellipsis,
-                )
-              }
-              if (app.isSystem) {
-                Spacer(Modifier.width(10.dp))
-                AssistChip(
-                  onClick = {},
-                  enabled = false,
-                  label = { Text(stringResource(R.string.app_picker_system_label)) },
-                )
-              }
-            }
-          }
+          val reasons = disabledReasons[app.packageName].orEmpty()
+          val disabledReason = if (reasons.isEmpty()) null else stringResource(
+            R.string.app_picker_conflict_used_in,
+            reasons.joinToString(", ") { entryLabel(it) },
+          )
+          AppPickerRow(
+            app = app,
+            selected = false,
+            compactWidth = isCompactWidth,
+            iconCache = iconCache,
+            enabled = disabledReason == null,
+            reason = disabledReason,
+            onToggle = { selected = selected + app.packageName },
+          )
         }
 
         item { Spacer(Modifier.height(30.dp)) }
+      }
+    }
+  }
+}
+
+@Composable
+private fun AppPickerRow(
+  app: InstalledApp,
+  selected: Boolean,
+  compactWidth: Boolean,
+  iconCache: MutableMap<String, ImageBitmap?>,
+  enabled: Boolean,
+  reason: String?,
+  onToggle: () -> Unit,
+) {
+  Surface(
+    shape = MaterialTheme.shapes.medium,
+    color = if (selected) {
+      MaterialTheme.colorScheme.surface.copy(alpha = 0.45f)
+    } else {
+      MaterialTheme.colorScheme.surface.copy(alpha = 0.32f)
+    },
+    tonalElevation = 0.dp,
+  ) {
+    Row(
+      Modifier
+        .fillMaxWidth()
+        .clickable(enabled = enabled) { onToggle() }
+        .padding(horizontal = 10.dp, vertical = 10.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      AppIcon(packageName = app.packageName, cache = iconCache)
+      Checkbox(
+        checked = selected,
+        onCheckedChange = { if (enabled) onToggle() },
+        enabled = enabled,
+      )
+      Column(Modifier.weight(1f)) {
+        Text(
+          app.label,
+          maxLines = if (compactWidth) 2 else 1,
+          overflow = TextOverflow.Ellipsis,
+          color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.50f),
+        )
+        Text(
+          app.packageName,
+          style = MaterialTheme.typography.bodySmall,
+          fontFamily = FontFamily.Monospace,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 0.60f else 0.42f),
+          maxLines = if (compactWidth) 2 else 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        if (!reason.isNullOrBlank()) {
+          Spacer(Modifier.height(2.dp))
+          Text(
+            reason,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.error,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+      }
+      if (app.isSystem) {
+        Spacer(Modifier.width(10.dp))
+        AssistChip(
+          onClick = {},
+          enabled = false,
+          label = { Text(stringResource(R.string.app_picker_system_label)) },
+        )
       }
     }
   }

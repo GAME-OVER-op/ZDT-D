@@ -656,6 +656,23 @@
     <string name="settings_hotspot_warning_accept">Принять</string>
     <string name="settings_hotspot_saved">Настройка точки доступа сохранена</string>
     <string name="settings_hotspot_save_failed">Не удалось сохранить настройку точки доступа</string>
+
+    <string name="settings_proxyinfo_title">Защита от сканирования портов</string>
+    <string name="settings_proxyinfo_body">Блокирует приложениям возможность определить открытые порты модуля.</string>
+    <string name="settings_proxyinfo_warning_title">Защита от сканирования портов</string>
+    <string name="settings_proxyinfo_warning_body">Данная функция блокирует приложениям возможность определить открытые порты модуля, из-за чего приложение не сможет определить, установлен ли ZDT-D на вашем устройстве.
+
+Защита не работает для режима точки доступа. Если включена точка доступа и выбран sing-box, защита для него работать не будет.</string>
+    <string name="settings_proxyinfo_warning_accept">Понятно</string>
+    <string name="settings_proxyinfo_configure">Настроить</string>
+    <string name="settings_proxyinfo_apps_title">Выбор приложений</string>
+    <string name="settings_proxyinfo_apps_body">Выбранные приложения не смогут определить наличие открытых портов модуля ZDT-D.</string>
+    <string name="settings_proxyinfo_search_hint">Поиск приложений</string>
+    <string name="settings_proxyinfo_selected_header">Выбранные приложения</string>
+    <string name="settings_proxyinfo_all_apps_title">Все приложения</string>
+    <string name="settings_proxyinfo_empty">Ничего не выбрано</string>
+    <string name="settings_proxyinfo_saved">Настройки защиты сохранены</string>
+    <string name="settings_proxyinfo_save_failed">Не удалось сохранить настройки защиты</string>
     <string name="settings_reset_identifier_title">Сбросить идентификатор модуля</string>
     <string name="settings_reset_identifier_body">Пересобрать список приложений модуля, если приложение было удалено и установлено заново.</string>
     <string name="settings_reset_identifier_action">Сбросить идентификатор модуля</string>

@@ -28,6 +28,23 @@ pub fn api_setting_json_path() -> PathBuf {
     Path::new(API_DIR).join("setting.json")
 }
 
+
+pub fn proxyinfo_root_path() -> PathBuf {
+    Path::new(MODULE_DIR).join("working_folder/proxyInfo")
+}
+
+pub fn proxyinfo_enabled_json_path() -> PathBuf {
+    proxyinfo_root_path().join("enabled.json")
+}
+
+pub fn proxyinfo_uid_program_path() -> PathBuf {
+    proxyinfo_root_path().join("uid_program")
+}
+
+pub fn proxyinfo_out_program_path() -> PathBuf {
+    proxyinfo_root_path().join("out_program")
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ProtectorMode {

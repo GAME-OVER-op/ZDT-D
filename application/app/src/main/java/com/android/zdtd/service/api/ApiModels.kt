@@ -57,6 +57,13 @@ object ApiModels {
     val hotspotT2sTarget: String = "",
   )
 
+  data class ProxyInfoState(
+    val enabled: Boolean = false,
+    val appsContent: String = "",
+    val active: Boolean = false,
+  )
+
+
   fun parseProcAgg(o: JSONObject?): ProcAgg {
     if (o == null) return ProcAgg()
     return ProcAgg(
@@ -149,6 +156,19 @@ object ApiModels {
       protectorMode = safeMode,
       hotspotT2sEnabled = hotspotEnabled,
       hotspotT2sTarget = safeTarget,
+    )
+  }
+
+  fun parseProxyInfo(wrapper: JSONObject?): ProxyInfoState {
+    if (wrapper == null) return ProxyInfoState()
+    val enabledRaw = when {
+      wrapper.has("enabled") -> wrapper.optInt("enabled", if (wrapper.optBoolean("enabled", false)) 1 else 0)
+      else -> 0
+    }
+    return ProxyInfoState(
+      enabled = enabledRaw != 0,
+      appsContent = wrapper.optString("apps", ""),
+      active = wrapper.optBoolean("active", false),
     )
   }
 

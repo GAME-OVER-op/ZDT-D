@@ -4,7 +4,7 @@ use serde::de::DeserializeOwned;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{HashMap, BTreeMap},
+    collections::{HashMap, BTreeMap, BTreeSet},
     fs,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
@@ -154,6 +154,11 @@ struct NewProfileReq {
 #[derive(Debug, Deserialize)]
 struct EnabledReq {
     enabled: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct ProxyEnabledReq {
+    enabled: u8,
 }
 
 #[derive(Debug, Deserialize)]
@@ -950,6 +955,97 @@ fn write_json_pretty<T: Serialize>(p: &Path, v: &T) -> Result<()> {
     write_text_atomic(p, &txt)
 }
 
+
+fn parse_package_set(raw: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    for line in raw.lines() {
+        let mut s = line.trim();
+        if let Some((left, _)) = s.split_once('#') {
+            s = left.trim();
+        }
+        if s.is_empty() {
+            continue;
+        }
+        out.insert(s.to_string());
+    }
+    out
+}
+
+fn read_package_set_or_empty(p: &Path) -> Result<BTreeSet<String>> {
+    Ok(parse_package_set(&read_text_or_empty(p)?))
+}
+
+fn proxyinfo_protected_program_paths() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+
+    let byedpi_root = program_root("byedpi");
+    if let Ok(rd) = fs::read_dir(&byedpi_root) {
+        for ent in rd.flatten() {
+            let path = ent.path();
+            if path.is_dir() {
+                out.push(path.join("app/uid/user_program"));
+            }
+        }
+    }
+
+    let dpitunnel_root = program_root("dpitunnel");
+    if let Ok(rd) = fs::read_dir(&dpitunnel_root) {
+        for ent in rd.flatten() {
+            let path = ent.path();
+            if path.is_dir() {
+                out.push(path.join("app/uid/user_program"));
+                out.push(path.join("app/uid/mobile_program"));
+                out.push(path.join("app/uid/wifi_program"));
+            }
+        }
+    }
+
+    let opera_root = program_root("operaproxy").join("app/uid");
+    out.push(opera_root.join("user_program"));
+    out.push(opera_root.join("mobile_program"));
+    out.push(opera_root.join("wifi_program"));
+
+    let sing_root = program_root("singbox").join("app/uid/user_program");
+    out.push(sing_root);
+
+    out
+}
+
+fn validate_program_apps_not_blocked(content: &str) -> Result<()> {
+    let candidate = parse_package_set(content);
+    if candidate.is_empty() {
+        return Ok(());
+    }
+    let blocked = crate::proxyinfo::read_proxy_packages().unwrap_or_default();
+    let mut overlap: Vec<String> = candidate.intersection(&blocked).cloned().collect();
+    overlap.sort();
+    if !overlap.is_empty() {
+        anyhow::bail!("apps are blocked by proxyInfo: {}", overlap.join(", "));
+    }
+    Ok(())
+}
+
+fn validate_proxyinfo_apps_content(content: &str) -> Result<()> {
+    let candidate = parse_package_set(content);
+    if candidate.is_empty() {
+        return Ok(());
+    }
+
+    let mut overlap = BTreeSet::new();
+    for p in proxyinfo_protected_program_paths() {
+        let existing = read_package_set_or_empty(&p).unwrap_or_default();
+        for pkg in candidate.intersection(&existing) {
+            overlap.insert(pkg.clone());
+        }
+    }
+
+    if !overlap.is_empty() {
+        let list: Vec<String> = overlap.into_iter().collect();
+        anyhow::bail!("apps are already used by ZDT-D programs: {}", list.join(", "));
+    }
+    Ok(())
+}
+
 fn validate_sing_box_setting(v: &serde_json::Value) -> Result<()> {
     let profiles = v
         .get("profiles")
@@ -1259,6 +1355,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
                     ("dpitunnel", "wifi") => "wifi_program",
                     _ => anyhow::bail!("invalid apps kind for program"),
                 };
+                validate_program_apps_not_blocked(&req.content)?;
                 let p = profile_root(id, profile).join(format!("app/uid/{fname}"));
                 write_text_atomic(&p, &req.content)?;
                 Ok(())
@@ -1447,6 +1544,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
             let res = (|| -> Result<()> {
                 let req: ContentReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                validate_program_apps_not_blocked(&req.content)?;
                 let p = program_root("operaproxy").join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 Ok(())
@@ -1469,6 +1567,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
             let res = (|| -> Result<()> {
                 let req: ContentReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                validate_program_apps_not_blocked(&req.content)?;
                 let p = program_root("operaproxy").join("app/uid/mobile_program");
                 write_text_atomic(&p, &req.content)?;
                 Ok(())
@@ -1491,6 +1590,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
             let res = (|| -> Result<()> {
                 let req: ContentReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                validate_program_apps_not_blocked(&req.content)?;
                 let p = program_root("operaproxy").join("app/uid/wifi_program");
                 write_text_atomic(&p, &req.content)?;
                 Ok(())
@@ -1727,6 +1827,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
             let res = (|| -> Result<()> {
                 let req: ContentReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                validate_program_apps_not_blocked(&req.content)?;
                 let p = program_root("singbox").join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 Ok(())
@@ -1970,6 +2071,84 @@ match (method.as_str(), path.as_str()) {
             match res {
                 Ok(accepted) => write_json(stream, 200, json!({"ok": true, "accepted": accepted})),
                 Err(e) => write_json(stream, 200, json!({"ok": false, "error": format!("{e:#}")})),
+            }
+        }
+
+        ("GET", "/api/proxyinfo") => {
+            let res = (|| -> Result<serde_json::Value> {
+                let enabled = crate::proxyinfo::load_enabled_json()?.enabled;
+                let apps = crate::proxyinfo::read_uid_program_text()?;
+                Ok(json!({"ok": true, "enabled": enabled, "apps": apps, "active": services_running && crate::proxyinfo::is_active()}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", "/api/proxyinfo/enabled") => {
+            let res = (|| -> Result<serde_json::Value> {
+                let enabled = crate::proxyinfo::load_enabled_json()?.enabled;
+                Ok(json!({"ok": true, "enabled": enabled}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", "/api/proxyinfo/enabled") => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: ProxyEnabledReq = serde_json::from_slice(&body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                if req.enabled > 1 {
+                    anyhow::bail!("enabled must be 0 or 1");
+                }
+                let v = crate::proxyinfo::save_enabled_value(req.enabled)?;
+                Ok(json!({"ok": true, "enabled": v.enabled}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", "/api/proxyinfo/apps") => {
+            let res = crate::proxyinfo::read_uid_program_text();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", "/api/proxyinfo/apps") => {
+            let res = (|| -> Result<()> {
+                let req: ContentReq = serde_json::from_slice(&body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                validate_proxyinfo_apps_content(&req.content)?;
+                crate::proxyinfo::write_uid_program_text(&req.content)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", "/api/proxyinfo/apply") => {
+            let res = (|| -> Result<serde_json::Value> {
+                let enabled = crate::proxyinfo::load_enabled_json()?.is_enabled();
+                if !enabled {
+                    crate::proxyinfo::clear_rules()?;
+                    return Ok(json!({"ok": true, "active": false}));
+                }
+                let _ = crate::proxyinfo::rebuild_out_program()?;
+                if services_running {
+                    let active = crate::proxyinfo::refresh_runtime(true)?;
+                    Ok(json!({"ok": true, "active": active}))
+                } else {
+                    crate::proxyinfo::clear_rules()?;
+                    Ok(json!({"ok": true, "active": false}))
+                }
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
             }
         }
         _ => write_empty_404(stream),

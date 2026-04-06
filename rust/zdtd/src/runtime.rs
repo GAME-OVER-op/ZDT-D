@@ -97,6 +97,11 @@ if !any_main_service_running() {
     bail!("no main services started");
 }
 
+    if let Err(e) = crate::proxyinfo::refresh_runtime(true) {
+        log::warn!("proxyInfo apply failed after start: {e:#}");
+        crate::logging::user_warn("proxyInfo: не удалось применить защиту");
+    }
+
     crate::logging::user_info("Запуск завершён");
 
     Ok(())

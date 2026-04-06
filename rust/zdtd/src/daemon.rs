@@ -42,6 +42,9 @@ pub fn run(_cfg: &Config) -> Result<()> {
     if let Err(e) = settings::load_api_settings() {
         logging::warn(&format!("failed to init api/setting.json: {e:#}"));
     }
+    if let Err(e) = crate::proxyinfo::ensure_layout() {
+        logging::warn(&format!("failed to init proxyInfo files: {e:#}"));
+    }
 
     // Truncate main log at each daemon start.
     logging::truncate_main_log()?;

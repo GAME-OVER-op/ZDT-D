@@ -111,6 +111,28 @@ class ApiClient(
     return ApiModels.parseDaemonSettings(obj)
   }
 
+  fun getProxyInfo(): ApiModels.ProxyInfoState {
+    val obj = requestJson("GET", "/api/proxyinfo", null)
+    return ApiModels.parseProxyInfo(obj)
+  }
+
+  fun setProxyInfoEnabled(enabled: Boolean): Boolean {
+    val body = JSONObject().put("enabled", if (enabled) 1 else 0)
+    return requestOk("PUT", "/api/proxyinfo/enabled", body)
+  }
+
+  fun getProxyInfoApps(): String {
+    val obj = requestJson("GET", "/api/proxyinfo/apps", null)
+    return obj?.optString("content", "") ?: ""
+  }
+
+  fun setProxyInfoApps(content: String): Boolean {
+    val body = JSONObject().put("content", content)
+    return requestOk("PUT", "/api/proxyinfo/apps", body)
+  }
+
+  fun applyProxyInfo(): Boolean = requestOk("POST", "/api/proxyinfo/apply", JSONObject())
+
   fun getJsonData(path: String): JSONObject {
     val obj = requestJson("GET", path, null) ?: return JSONObject()
     // Prefer wrapped payload when server uses { data: {...} }, otherwise return the object as-is.

@@ -514,6 +514,7 @@ private fun MainShell(
   if (showSettings) {
     LaunchedEffect(Unit) {
       actions.refreshDaemonSettings()
+      actions.refreshProxyInfo()
     }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
@@ -534,6 +535,11 @@ private fun MainShell(
         hotspotT2sTarget = appUpdate.hotspotT2sTarget,
         onHotspotT2sEnabledChange = actions::setHotspotT2sEnabled,
         onHotspotT2sTargetChange = actions::setHotspotT2sTarget,
+        proxyInfoEnabled = appUpdate.proxyInfoEnabled,
+        proxyInfoBusy = appUpdate.proxyInfoBusy,
+        proxyInfoAppsContent = appUpdate.proxyInfoAppsContent,
+        onProxyInfoEnabledChange = actions::setProxyInfoEnabled,
+        onProxyInfoAppsSave = actions::saveProxyInfoApps,
         resettingModuleIdentifier = appUpdate.resettingModuleIdentifier,
         onResetModuleIdentifier = actions::resetModuleIdentifier,
         onDeleteModule = {

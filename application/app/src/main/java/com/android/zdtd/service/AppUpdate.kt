@@ -12,6 +12,10 @@ data class AppUpdateUiState(
   /** Hotspot redirect via t2s: enabled flag and target program id. */
   val hotspotT2sEnabled: Boolean = false,
   val hotspotT2sTarget: String = "",
+  /** Port scan protection (proxyInfo). */
+  val proxyInfoEnabled: Boolean = false,
+  val proxyInfoAppsContent: String = "",
+  val proxyInfoBusy: Boolean = false,
   /** True while the app automatically stops the daemon, removes flag.sha256 and starts it again. */
   val resettingModuleIdentifier: Boolean = false,
   // App-owned notification about daemon status (running/stopped).

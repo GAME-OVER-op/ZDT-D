@@ -68,7 +68,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
-private data class InstalledApp(
+data class InstalledApp(
   val packageName: String,
   val label: String,
   val isSystem: Boolean,
@@ -441,7 +441,7 @@ private fun AppPickerSheet(
   }
 }
 
-private fun parsePkgList(content: String?): Set<String> {
+fun parsePkgList(content: String?): Set<String> {
   if (content.isNullOrBlank()) return emptySet()
   return content
     .lineSequence()
@@ -451,7 +451,7 @@ private fun parsePkgList(content: String?): Set<String> {
     .toSet()
 }
 
-private fun loadInstalledApps(pm: PackageManager): List<InstalledApp> {
+fun loadInstalledApps(pm: PackageManager): List<InstalledApp> {
   val apps = runCatching {
     if (Build.VERSION.SDK_INT >= 33) {
       pm.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0))
@@ -476,7 +476,7 @@ private fun loadInstalledApps(pm: PackageManager): List<InstalledApp> {
 }
 
 @Composable
-private fun AppIcon(packageName: String, cache: MutableMap<String, ImageBitmap?>) {
+fun AppIcon(packageName: String, cache: MutableMap<String, ImageBitmap?>) {
   val ctx = LocalContext.current
   val pm = ctx.packageManager
   val density = LocalDensity.current

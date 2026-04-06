@@ -112,11 +112,14 @@ pub fn stop_services_and_restore_iptables() -> Result<()> {
     kill_by_name("opera-proxy")?;
     kill_by_name("sing-box")?;
 
-    // 2) iptables: flush nat/mangle then restore baseline backup
+    // 2) remove proxyInfo runtime guard before restore
+    let _ = crate::proxyinfo::clear_rules();
+
+    // 3) iptables: flush nat/mangle then restore baseline backup; proxyInfo filter chain is removed separately
     if crate::settings::iptables_backup_path().exists() {
         iptables_backup::reset_tables_then_restore_backup()?;
     } else {
-        log::warn!("iptables backup is missing; flushing nat/mangle without restore");
+        log::warn!("iptables backup is missing; flushing nat/mangle without restore (proxyInfo filter chain already removed)");
         let _ = shell::ok_sh_timeout("iptables -t nat -F", IPT_FLUSH_TIMEOUT);
         let _ = shell::ok_sh_timeout("iptables -t mangle -F", IPT_FLUSH_TIMEOUT);
 

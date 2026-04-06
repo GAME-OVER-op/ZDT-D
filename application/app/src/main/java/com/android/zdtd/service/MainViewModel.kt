@@ -3371,6 +3371,92 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     }
   }
 
+  private suspend fun fetchProxyInfoState(): ApiModels.ProxyInfoState {
+    val base = runCatching { api.getProxyInfo() }.getOrDefault(ApiModels.ProxyInfoState())
+    val apps = base.appsContent.ifBlank {
+      runCatching { api.getProxyInfoApps() }.getOrDefault("")
+    }
+    return base.copy(appsContent = apps)
+  }
+
+  override fun refreshProxyInfo() {
+    launchIO {
+      _appUpdate.update { it.copy(proxyInfoBusy = true) }
+      val state = runCatching { fetchProxyInfoState() }.getOrElse {
+        log("ERR", "proxyInfo refresh failed: ${it.message ?: it}")
+        ApiModels.ProxyInfoState(
+          enabled = _appUpdate.value.proxyInfoEnabled,
+          appsContent = _appUpdate.value.proxyInfoAppsContent,
+          active = false,
+        )
+      }
+      _appUpdate.update {
+        it.copy(
+          proxyInfoEnabled = state.enabled,
+          proxyInfoAppsContent = state.appsContent,
+          proxyInfoBusy = false,
+        )
+      }
+    }
+  }
+
+  override fun setProxyInfoEnabled(enabled: Boolean) {
+    val previous = _appUpdate.value.proxyInfoEnabled
+    if (previous == enabled) return
+    _appUpdate.update { it.copy(proxyInfoEnabled = enabled) }
+    launchIO {
+      val ok = runCatching {
+        api.setProxyInfoEnabled(enabled) && api.applyProxyInfo()
+      }.getOrElse {
+        log("ERR", "proxyInfo enabled failed: ${it.message ?: it}")
+        false
+      }
+      if (!ok) {
+        _appUpdate.update { it.copy(proxyInfoEnabled = previous) }
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_proxyinfo_save_failed))
+        }
+        return@launchIO
+      }
+      withContext(Dispatchers.Main.immediate) {
+        toast(str(R.string.settings_proxyinfo_saved))
+      }
+    }
+  }
+
+  override fun saveProxyInfoApps(content: String, onDone: (Boolean) -> Unit) {
+    val normalized = content
+      .lineSequence()
+      .map { it.trim() }
+      .filter { it.isNotEmpty() }
+      .distinct()
+      .joinToString("\n")
+    val previous = _appUpdate.value.proxyInfoAppsContent
+    _appUpdate.update { it.copy(proxyInfoAppsContent = normalized, proxyInfoBusy = true) }
+    launchIO {
+      val ok = runCatching {
+        api.setProxyInfoApps(normalized) && api.applyProxyInfo()
+      }.getOrElse {
+        log("ERR", "proxyInfo apps failed: ${it.message ?: it}")
+        false
+      }
+      if (!ok) {
+        _appUpdate.update { it.copy(proxyInfoAppsContent = previous, proxyInfoBusy = false) }
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_proxyinfo_save_failed))
+          onDone(false)
+        }
+        return@launchIO
+      }
+      _appUpdate.update { it.copy(proxyInfoAppsContent = normalized, proxyInfoBusy = false) }
+      withContext(Dispatchers.Main.immediate) {
+        toast(str(R.string.settings_proxyinfo_saved))
+        onDone(true)
+      }
+    }
+  }
+
+
   override fun setProtectorMode(mode: String) {
     val safe = when (mode.trim().lowercase()) {
       "on", "off", "auto" -> mode.trim().lowercase()

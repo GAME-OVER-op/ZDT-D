@@ -1,0 +1,12 @@
+# Nmap 7.99 scan initiated Mon Apr  6 16:53:07 2026 as: nmap -Pn -n -sT -p 1-65535 -oN localhost_scan.txt 127.0.0.1
+Nmap scan report for 127.0.0.1
+Host is up (0.0014s latency).
+Not shown: 65530 closed tcp ports (conn-refused)
+PORT      STATE SERVICE
+1004/tcp  open  unknown
+17235/tcp open  ssh-mgmt
+22499/tcp open  unknown
+31257/tcp open  unknown
+34807/tcp open  unknown
+
+# Nmap done at Mon Apr  6 16:53:32 2026 -- 1 IP address (1 host up) scanned in 24.92 seconds

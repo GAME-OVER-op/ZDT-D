@@ -15,6 +15,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -179,6 +180,11 @@ fun AppUpdateSettings(
   hotspotT2sTarget: String,
   onHotspotT2sEnabledChange: (Boolean) -> Unit,
   onHotspotT2sTargetChange: (String) -> Unit,
+  proxyInfoEnabled: Boolean,
+  proxyInfoBusy: Boolean,
+  proxyInfoAppsContent: String,
+  onProxyInfoEnabledChange: (Boolean) -> Unit,
+  onProxyInfoAppsSave: (String, (Boolean) -> Unit) -> Unit,
   resettingModuleIdentifier: Boolean,
   onResetModuleIdentifier: () -> Unit,
   onDeleteModule: () -> Unit,
@@ -186,6 +192,7 @@ fun AppUpdateSettings(
   val compactWidth = rememberIsCompactWidth()
   var showHotspotWarning by remember { mutableStateOf(false) }
   var showResetIdentifierConfirm by remember { mutableStateOf(false) }
+  var showProxyInfoConfigure by remember { mutableStateOf(false) }
   // BottomSheet content may not have enough height on small screens.
   // Make it scrollable so the Language section is always reachable.
   Column(
@@ -297,6 +304,28 @@ fun AppUpdateSettings(
             onHotspotT2sEnabledChange(true)
           }) {
             Text(stringResource(R.string.settings_hotspot_warning_accept))
+          }
+        },
+      )
+    }
+
+    Spacer(Modifier.height(18.dp))
+
+    ProxyInfoSectionCard(
+      enabled = proxyInfoEnabled,
+      busy = proxyInfoBusy,
+      onEnabledChange = onProxyInfoEnabledChange,
+      onConfigure = { showProxyInfoConfigure = true },
+    )
+
+    if (showProxyInfoConfigure) {
+      ProxyInfoAppsDialog(
+        initialContent = proxyInfoAppsContent,
+        saving = proxyInfoBusy,
+        onDismiss = { if (!proxyInfoBusy) showProxyInfoConfigure = false },
+        onSave = { content ->
+          onProxyInfoAppsSave(content) { ok ->
+            if (ok) showProxyInfoConfigure = false
           }
         },
       )
@@ -422,6 +451,24 @@ fun AppUpdateSettings(
   }
 }
 
+
+@Composable
+private fun SettingsSectionCard(
+  modifier: Modifier = Modifier,
+  content: @Composable ColumnScope.() -> Unit,
+) {
+  ElevatedCard(
+    modifier = modifier.fillMaxWidth(),
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 14.dp, vertical = 14.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+      content = content,
+    )
+  }
+}
 
 @Composable
 private fun HotspotT2sSection(

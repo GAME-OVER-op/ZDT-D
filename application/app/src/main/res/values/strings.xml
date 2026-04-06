@@ -658,6 +658,23 @@ Install the module again.</string>
     <string name="settings_hotspot_warning_accept">Accept</string>
     <string name="settings_hotspot_saved">Hotspot setting saved</string>
     <string name="settings_hotspot_save_failed">Failed to save hotspot setting</string>
+
+    <string name="settings_proxyinfo_title">Port Scan Protection</string>
+    <string name="settings_proxyinfo_body">Blocks apps from detecting the open ports of the module.</string>
+    <string name="settings_proxyinfo_warning_title">Port Scan Protection</string>
+    <string name="settings_proxyinfo_warning_body">This feature blocks apps from detecting the open ports of the module, so the app cannot determine whether ZDT-D is installed on your device.
+
+Protection does not work in hotspot mode. If hotspot is enabled and sing-box is selected, protection will not apply to it.</string>
+    <string name="settings_proxyinfo_warning_accept">Understood</string>
+    <string name="settings_proxyinfo_configure">Configure</string>
+    <string name="settings_proxyinfo_apps_title">Select apps</string>
+    <string name="settings_proxyinfo_apps_body">Selected apps will not be able to detect the open ports of the ZDT-D module.</string>
+    <string name="settings_proxyinfo_search_hint">Search apps</string>
+    <string name="settings_proxyinfo_selected_header">Selected apps</string>
+    <string name="settings_proxyinfo_all_apps_title">All apps</string>
+    <string name="settings_proxyinfo_empty">Nothing selected</string>
+    <string name="settings_proxyinfo_saved">Protection settings saved</string>
+    <string name="settings_proxyinfo_save_failed">Failed to save protection settings</string>
     <string name="settings_reset_identifier_title">Reset module identifier</string>
     <string name="settings_reset_identifier_body">Rebuild the module app list if an app was removed and installed again.</string>
     <string name="settings_reset_identifier_action">Reset module identifier</string>

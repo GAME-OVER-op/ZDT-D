@@ -6,6 +6,7 @@ mod iptables;
 mod iptables_backup;
 mod logging;
 mod ports;
+mod proxyinfo;
 mod protector;
 mod screen;
 mod programs;

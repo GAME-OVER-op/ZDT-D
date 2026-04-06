@@ -165,6 +165,15 @@ interface ZdtdActions {
   /** Reload daemon settings used by the settings sheet. */
   fun refreshDaemonSettings()
 
+  /** Reload proxyInfo settings used by the settings sheet. */
+  fun refreshProxyInfo()
+
+  /** Enable/disable port scan protection. */
+  fun setProxyInfoEnabled(enabled: Boolean)
+
+  /** Save selected app package names for port scan protection and apply changes. */
+  fun saveProxyInfoApps(content: String, onDone: (Boolean) -> Unit = {})
+
   /** Set module protector mode: off | on | auto. */
   fun setProtectorMode(mode: String)
 

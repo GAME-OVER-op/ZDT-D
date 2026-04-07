@@ -67,6 +67,8 @@ pub struct ApiSettings {
     pub hotspot_t2s_enabled: bool,
     #[serde(default)]
     pub hotspot_t2s_target: String,
+    #[serde(default)]
+    pub hotspot_t2s_singbox_profile: String,
 }
 
 impl Default for ApiSettings {
@@ -75,6 +77,7 @@ impl Default for ApiSettings {
             protector_mode: ProtectorMode::Off,
             hotspot_t2s_enabled: false,
             hotspot_t2s_target: String::new(),
+            hotspot_t2s_singbox_profile: String::new(),
         }
     }
 }
@@ -82,8 +85,14 @@ impl Default for ApiSettings {
 impl ApiSettings {
     pub fn normalize(&mut self) {
         self.hotspot_t2s_target = normalize_hotspot_t2s_target(&self.hotspot_t2s_target);
+        self.hotspot_t2s_singbox_profile = self.hotspot_t2s_singbox_profile.trim().to_string();
         if !self.hotspot_t2s_enabled {
             self.hotspot_t2s_target.clear();
+            self.hotspot_t2s_singbox_profile.clear();
+            return;
+        }
+        if self.hotspot_t2s_target != "singbox" {
+            self.hotspot_t2s_singbox_profile.clear();
         }
     }
 
@@ -93,6 +102,18 @@ impl ApiSettings {
 
     pub fn hotspot_t2s_for_singbox(&self) -> bool {
         self.hotspot_t2s_enabled && self.hotspot_t2s_target == "singbox"
+    }
+
+    pub fn hotspot_t2s_singbox_profile(&self) -> Option<&str> {
+        if !self.hotspot_t2s_for_singbox() {
+            return None;
+        }
+        let profile = self.hotspot_t2s_singbox_profile.trim();
+        if profile.is_empty() {
+            None
+        } else {
+            Some(profile)
+        }
     }
 }
 

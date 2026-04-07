@@ -88,29 +88,19 @@ fn default_operaproxy_t2s_web_port() -> u16 {
 }
 
 #[derive(Debug, Deserialize, Default)]
-struct SingboxProfile {
-    #[serde(default)]
-    name: String,
-    #[serde(default)]
-    enabled: bool,
-    #[serde(default)]
-    port: Option<u16>,
-}
-
-#[derive(Debug, Deserialize, Default)]
-struct SingboxSetting {
-    #[serde(default)]
-    enabled: bool,
-    #[serde(default)]
-    mode: String,
+struct SingboxProfileSetting {
     #[serde(default)]
     t2s_port: u16,
     #[serde(default = "default_t2s_web_port")]
     t2s_web_port: u16,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct SingboxServerSetting {
     #[serde(default)]
-    active_transparent_profile: String,
+    enabled: bool,
     #[serde(default)]
-    profiles: Vec<SingboxProfile>,
+    port: u16,
 }
 
 fn default_t2s_web_port() -> u16 {
@@ -490,43 +480,50 @@ fn count_operaproxy_sni(p: &Path) -> usize {
 }
 
 fn collect_singbox_ports(out: &mut BTreeSet<u16>) -> Result<()> {
-    let setting_path = working_program_dir("singbox").join("setting.json");
-    if !setting_path.is_file() {
+    let active_path = working_program_dir("singbox").join("active.json");
+    if !active_path.is_file() {
         return Ok(());
     }
-    let st: SingboxSetting = read_json_file(&setting_path).unwrap_or_default();
-    if !st.enabled {
-        return Ok(());
-    }
-
-    match st.mode.trim().to_ascii_lowercase().as_str() {
-        "transparent" => {
-            for p in &st.profiles {
-                if p.name == st.active_transparent_profile {
-                    if let Some(port) = p.port {
-                        if port > 0 {
-                            out.insert(port);
-                        }
-                    }
-                    break;
-                }
+    let api_settings = settings::load_api_settings().unwrap_or_default();
+    let hotspot_profile = api_settings.hotspot_t2s_singbox_profile().map(|s| s.to_string());
+    let active: ProfilesActive = read_json_file(&active_path).unwrap_or_default();
+    let root = working_program_dir("singbox").join("profile");
+    for (name, st) in active.profiles {
+        if !st.enabled {
+            continue;
+        }
+        let is_hotspot_profile = hotspot_profile.as_deref() == Some(name.as_str());
+        let profile_dir = root.join(&name);
+        if profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) {
+            continue;
+        }
+        let setting_path = profile_dir.join("setting.json");
+        if setting_path.is_file() {
+            let setting: SingboxProfileSetting = read_json_file(&setting_path).unwrap_or_default();
+            if !is_hotspot_profile && setting.t2s_port > 0 {
+                out.insert(setting.t2s_port);
+            }
+            if !is_hotspot_profile && setting.t2s_web_port > 0 {
+                out.insert(setting.t2s_web_port);
             }
         }
-        _ => {
-            if st.t2s_port > 0 {
-                out.insert(st.t2s_port);
-            }
-            if st.t2s_web_port > 0 {
-                out.insert(st.t2s_web_port);
-            }
-            for p in &st.profiles {
-                if !p.enabled {
+        let server_root = profile_dir.join("server");
+        if let Ok(rd) = fs::read_dir(&server_root) {
+            for ent in rd.flatten() {
+                let server_dir = ent.path();
+                if !server_dir.is_dir() {
                     continue;
                 }
-                if let Some(port) = p.port {
-                    if port > 0 {
-                        out.insert(port);
-                    }
+                if server_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) {
+                    continue;
+                }
+                let setting_path = server_dir.join("setting.json");
+                if !setting_path.is_file() {
+                    continue;
+                }
+                let setting: SingboxServerSetting = read_json_file(&setting_path).unwrap_or_default();
+                if !is_hotspot_profile && setting.enabled && setting.port > 0 {
+                    out.insert(setting.port);
                 }
             }
         }

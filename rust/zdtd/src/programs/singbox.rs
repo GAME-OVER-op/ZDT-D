@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
     os::unix::process::CommandExt,
     path::{Path, PathBuf},
@@ -10,62 +10,84 @@ use std::{
     time::Duration,
 };
 
-use crate::iptables::iptables_port::{self, DpiTunnelOptions, ProtoChoice};
 use crate::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
-use crate::{settings, shell::{self, Capture}};
+use crate::iptables::iptables_port::{self, DpiTunnelOptions, ProtoChoice};
+use crate::{
+    settings,
+    shell::{self, Capture},
+};
 
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
 const WORKING_DIR: &str = "/data/adb/modules/ZDT-D/working_folder";
 
 const SINGBOX_BIN: &str = "/data/adb/modules/ZDT-D/bin/sing-box";
 const SINGBOX_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/singbox";
-const SETTING_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/singbox/setting.json";
-
-const T2S_LOG: &str = "/data/adb/modules/ZDT-D/working_folder/singbox/t2s.log";
+const SINGBOX_PROFILE_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/singbox/profile";
+const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/singbox/active.json";
 const SHA_FLAG_FILE: &str = "/data/adb/modules/ZDT-D/working_folder/flag.sha256";
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Mode {
-    Socks5,
-    Transparent,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CaptureMode {
-    Tcp,
-    TcpUdp,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Profile {
-    pub name: String,
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct ProfileState {
     #[serde(default)]
     pub enabled: bool,
+}
 
-    /// Single port used for both socks5 and transparent modes for this profile.
-    /// (User-managed sing-box config.json expects a fixed port.)
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct ActiveProfiles {
     #[serde(default)]
-    pub port: Option<u16>,
-
-    #[serde(default)]
-    pub capture: Option<CaptureMode>,
+    pub profiles: BTreeMap<String, ProfileState>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Setting {
-    #[serde(default)]
-    pub enabled: bool,
-    pub mode: Mode,
+pub struct ProfileSetting {
     #[serde(default)]
     pub t2s_port: u16,
     #[serde(default = "default_t2s_web_port")]
     pub t2s_web_port: u16,
+}
+
+impl Default for ProfileSetting {
+    fn default() -> Self {
+        Self {
+            t2s_port: 12345,
+            t2s_web_port: default_t2s_web_port(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ServerSetting {
     #[serde(default)]
-    pub active_transparent_profile: String,
+    pub enabled: bool,
     #[serde(default)]
-    pub profiles: Vec<Profile>,
+    pub port: u16,
+}
+
+impl Default for ServerSetting {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            port: 1080,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct ServerPlan {
+    name: String,
+    port: u16,
+    config_path: PathBuf,
+    log_path: PathBuf,
+}
+
+#[derive(Debug, Clone)]
+struct ProfilePlan {
+    name: String,
+    setting: ProfileSetting,
+    uid_out: PathBuf,
+    uid_count: usize,
+    t2s_log: PathBuf,
+    servers: Vec<ServerPlan>,
 }
 
 fn default_t2s_web_port() -> u16 {
@@ -75,318 +97,303 @@ fn default_t2s_web_port() -> u16 {
 pub fn start_if_enabled() -> Result<()> {
     ensure_dir(MODULE_DIR)?;
     ensure_dir(WORKING_DIR)?;
-    ensure_dir(SINGBOX_ROOT)?;
+    fs::create_dir_all(SINGBOX_ROOT).ok();
+    fs::create_dir_all(SINGBOX_PROFILE_ROOT).ok();
     ensure_file(SINGBOX_BIN)?;
 
-    let setting_path = Path::new(SETTING_JSON);
-    let setting: Setting = match read_json(setting_path) {
+    let active_path = Path::new(ACTIVE_JSON);
+    let active: ActiveProfiles = match read_json(active_path) {
         Ok(v) => v,
         Err(e) => {
-            warn!("sing-box: failed to read setting.json (skip): {e:#}");
+            warn!("sing-box: failed to read active.json (skip): {e:#}");
             return Ok(());
         }
     };
 
-    if !setting.enabled {
-        info!("sing-box: disabled via setting.json");
+    let enabled_names: Vec<String> = active
+        .profiles
+        .iter()
+        .filter(|(_, st)| st.enabled)
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    if enabled_names.is_empty() {
+        info!("sing-box: no enabled profiles in active.json");
         return Ok(());
     }
 
-    // Validate settings and build plan first. If anything is wrong -> skip without partial actions.
-    let plan = match build_plan(&setting).with_context(|| "validate sing-box setting.json") {
-        Ok(p) => p,
-        Err(e) => {
-            warn!("sing-box: invalid setting.json -> skip: {e:#}");
-            return Ok(());
+    let external_used = crate::ports::collect_used_ports_for_conflict_check()
+        .unwrap_or_else(|_| BTreeSet::new());
+    let mut own_used = BTreeSet::<u16>::new();
+    let mut plans = Vec::<ProfilePlan>::new();
+
+    for name in enabled_names {
+        match build_profile_plan(&name, &external_used, &own_used) {
+            Ok(Some(plan)) => {
+                own_used.insert(plan.setting.t2s_port);
+                own_used.insert(plan.setting.t2s_web_port);
+                for srv in &plan.servers {
+                    own_used.insert(srv.port);
+                }
+                plans.push(plan);
+            }
+            Ok(None) => {}
+            Err(e) => warn!("sing-box: profile '{}' skip: {e:#}", name),
         }
-    };
+    }
 
-    // Port intersection / conflicts with other programs.
-    if let Err(e) = ensure_no_port_conflicts(&setting, &plan).with_context(|| "sing-box port conflict") {
-        warn!("sing-box: port conflict -> skip: {e:#}");
+    if plans.is_empty() {
+        warn!("sing-box: no runnable profiles after validation");
         return Ok(());
     }
 
-    // Resolve apps list -> uids (like other programs). If no apps selected/resolved -> skip start.
+    let t2s_bin = find_bin("t2s")?;
+    let api_settings = settings::load_api_settings().unwrap_or_default();
+    let hotspot_profile = api_settings
+        .hotspot_t2s_singbox_profile()
+        .map(|s| s.to_string());
+    if api_settings.hotspot_t2s_for_singbox() && hotspot_profile.is_none() {
+        warn!("sing-box: hotspot target is sing-box, but no hotspot profile is selected; using 127.0.0.1 for all profiles");
+    }
+    if let Some(ref wanted_profile) = hotspot_profile {
+        if !plans.iter().any(|plan| plan.name == *wanted_profile) {
+            warn!(
+                "sing-box: hotspot profile '{}' is not active/runnable; skipping hotspot redirect",
+                wanted_profile
+            );
+        }
+    }
+
+    crate::logging::user_info("sing-box: socks5 profiles");
+
+    for plan in &plans {
+        let ports_csv = plan
+            .servers
+            .iter()
+            .map(|s| s.port.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+
+        for server in &plan.servers {
+            ensure_parent_dir(&server.log_path)?;
+            truncate_file(&server.log_path)?;
+            spawn_singbox(&server.config_path, &server.log_path)
+                .with_context(|| format!("spawn sing-box profile={} server={}", plan.name, server.name))?;
+        }
+
+        let hotspot_for_plan = hotspot_profile.as_deref() == Some(plan.name.as_str());
+        let t2s_listen_addr = if hotspot_for_plan { "0.0.0.0" } else { "127.0.0.1" };
+
+        truncate_file(&plan.t2s_log)?;
+        spawn_t2s(
+            &t2s_bin,
+            t2s_listen_addr,
+            plan.setting.t2s_port,
+            plan.setting.t2s_web_port,
+            &ports_csv,
+            &plan.t2s_log,
+        )
+        .with_context(|| format!("spawn t2s profile={}", plan.name))?;
+
+        if hotspot_for_plan {
+            apply_hotspot_prerouting_redirect(plan.setting.t2s_port)?;
+        }
+
+        iptables_port::apply(
+            &plan.uid_out,
+            plan.setting.t2s_port,
+            ProtoChoice::Tcp,
+            None,
+            DpiTunnelOptions {
+                port_preference: 1,
+                ..DpiTunnelOptions::default()
+            },
+        )
+        .with_context(|| format!("iptables profile={}", plan.name))?;
+
+        info!(
+            "sing-box: profile={} apps={} servers={} t2s_port={} t2s_web_port={} socks_ports={} listen_addr={}",
+            plan.name,
+            plan.uid_count,
+            plan.servers.len(),
+            plan.setting.t2s_port,
+            plan.setting.t2s_web_port,
+            ports_csv,
+            t2s_listen_addr,
+        );
+    }
+
+    Ok(())
+}
+
+fn build_profile_plan(
+    profile: &str,
+    external_used: &BTreeSet<u16>,
+    own_used: &BTreeSet<u16>,
+) -> Result<Option<ProfilePlan>> {
+    ensure_valid_profile_name(profile)?;
+
+    let profile_dir = profile_root(profile);
+    if !profile_dir.is_dir() {
+        anyhow::bail!("profile directory missing: {}", profile_dir.display());
+    }
+
+    let setting_path = profile_dir.join("setting.json");
+    let setting: ProfileSetting = read_json(&setting_path)
+        .with_context(|| format!("read {}", setting_path.display()))?;
+    validate_profile_setting(profile, &setting, external_used, own_used)?;
+
     let tracker = Sha256Tracker::new(SHA_FLAG_FILE);
-    let uid_in_dir = Path::new(SINGBOX_ROOT).join("app/uid");
-    let uid_out_dir = Path::new(SINGBOX_ROOT).join("app/out");
-    fs::create_dir_all(&uid_in_dir).ok();
-    fs::create_dir_all(&uid_out_dir).ok();
-    let uid_in = uid_in_dir.join("user_program");
-    let uid_out = uid_out_dir.join("user_program");
+    let uid_in = profile_dir.join("app/uid/user_program");
+    let uid_out = profile_dir.join("app/out/user_program");
     ensure_file_empty(&uid_in)?;
+    ensure_parent_dir(&uid_out)?;
     let _ = pkg_uid::unified_processing(UidMode::Default, &tracker, &uid_out, &uid_in)
-        .with_context(|| "pkg_uid processing")?;
+        .with_context(|| format!("pkg_uid processing profile={profile}"))?;
     let resolved = count_valid_uid_pairs(&uid_out).unwrap_or(0);
     if resolved == 0 {
-        warn!("sing-box: no apps resolved -> skip start/iptables");
-        return Ok(());
+        warn!("sing-box: profile '{}' has no resolved apps", profile);
+        return Ok(None);
     }
 
-    // --- Start processes + apply iptables.
-    match plan {
-        StartPlan::Socks5 { enabled_profiles, socks_ports } => {
-            crate::logging::user_info("sing-box: socks5");
-
-            // 1) start sing-box per profile
-            for p in &enabled_profiles {
-                let cfg = profile_config_path(&p.name);
-                let logp = profile_log_path(&p.name);
-                ensure_parent_dir(&logp)?;
-                truncate_file(&logp)?;
-                spawn_singbox(&cfg, &logp)
-                    .with_context(|| format!("spawn sing-box profile={}", p.name))?;
-            }
-
-            // 2) start t2s (one instance)
-            let t2s_bin = find_bin("t2s")?;
-            let ports_csv = socks_ports
-                .iter()
-                .map(|p| p.to_string())
-                .collect::<Vec<_>>()
-                .join(",");
-
-            let api_settings = settings::load_api_settings().unwrap_or_default();
-            let hotspot_t2s = api_settings.hotspot_t2s_for_singbox();
-            let t2s_listen_addr = if hotspot_t2s { "0.0.0.0" } else { "127.0.0.1" };
-
-            let t2s_logp = Path::new(T2S_LOG);
-            truncate_file(t2s_logp)?;
-            spawn_t2s(
-                &t2s_bin,
-                t2s_listen_addr,
-                setting.t2s_port,
-                setting.t2s_web_port,
-                &ports_csv,
-                t2s_logp,
-            )?;
-            if hotspot_t2s {
-                apply_hotspot_prerouting_redirect(setting.t2s_port)?;
-            }
-
-            // 3) iptables: redirect selected apps -> t2s_port (TCP only)
-            // We keep app selection file compatible with other programs:
-            // /working_folder/singbox/app/uid/user_program
-            let uid_file = Path::new(SINGBOX_ROOT).join("app/out/user_program");
-            crate::logging::user_info("sing-box: iptables (tcp)");
-            iptables_port::apply(
-                &uid_file,
-                setting.t2s_port,
-                ProtoChoice::Tcp,
-                None,
-                DpiTunnelOptions { port_preference: 1, ..DpiTunnelOptions::default() },
-            )?;
-
-            info!(
-                "sing-box: socks5 started profiles={} t2s_listen_addr={} t2s_port={} socks_ports={} web_port={}",
-                enabled_profiles.len(),
-                t2s_listen_addr,
-                setting.t2s_port,
-                ports_csv,
-                setting.t2s_web_port
-            );
-        }
-        StartPlan::Transparent { profile, proto_choice } => {
-            crate::logging::user_info("sing-box: transparent");
-
-            let cfg = profile_config_path(&profile.name);
-            let logp = profile_log_path(&profile.name);
-            ensure_parent_dir(&logp)?;
-            truncate_file(&logp)?;
-            spawn_singbox(&cfg, &logp)
-                .with_context(|| format!("spawn sing-box profile={}", profile.name))?;
-
-            // iptables: redirect apps -> profile port (TCP or TCP+UDP)
-            let uid_file = Path::new(SINGBOX_ROOT).join("app/out/user_program");
-            crate::logging::user_info("sing-box: iptables (transparent)");
-            iptables_port::apply(
-                &uid_file,
-                profile.port.unwrap_or(0),
-                proto_choice,
-                None,
-                DpiTunnelOptions { port_preference: 1, ..DpiTunnelOptions::default() },
-            )?;
-
-            info!(
-                "sing-box: transparent started profile={} port={} proto={:?}",
-                profile.name,
-                profile.port.unwrap_or(0),
-                proto_choice
-            );
-        }
+    let mut reserved = BTreeSet::new();
+    reserved.insert(setting.t2s_port);
+    reserved.insert(setting.t2s_web_port);
+    let servers = collect_profile_servers(profile, external_used, own_used, &reserved)?;
+    if servers.is_empty() {
+        warn!("sing-box: profile '{}' has no runnable servers", profile);
+        return Ok(None);
     }
 
+    Ok(Some(ProfilePlan {
+        name: profile.to_string(),
+        setting,
+        uid_out,
+        uid_count: resolved,
+        t2s_log: profile_t2s_log_path(profile),
+        servers,
+    }))
+}
+
+fn validate_profile_setting(
+    profile: &str,
+    setting: &ProfileSetting,
+    external_used: &BTreeSet<u16>,
+    own_used: &BTreeSet<u16>,
+) -> Result<()> {
+    for (label, port) in [
+        ("t2s_port", setting.t2s_port),
+        ("t2s_web_port", setting.t2s_web_port),
+    ] {
+        if port == 0 {
+            anyhow::bail!("{} is required for profile '{}'", label, profile);
+        }
+    }
+    if setting.t2s_port == setting.t2s_web_port {
+        anyhow::bail!("profile '{}' uses duplicate t2s ports", profile);
+    }
+    for port in [setting.t2s_port, setting.t2s_web_port] {
+        if external_used.contains(&port) {
+            anyhow::bail!("port conflict detected: {}", port);
+        }
+        if own_used.contains(&port) {
+            anyhow::bail!("port conflict with another sing-box profile: {}", port);
+        }
+    }
     Ok(())
 }
 
-#[derive(Debug, Clone)]
-enum StartPlan {
-    Socks5 {
-        enabled_profiles: Vec<Profile>,
-        socks_ports: Vec<u16>,
-    },
-    Transparent {
-        profile: Profile,
-        proto_choice: ProtoChoice,
-    },
-}
-
-fn build_plan(setting: &Setting) -> Result<StartPlan> {
-    // Basic field validation.
-    if setting.t2s_web_port == 0 {
-        anyhow::bail!("t2s_web_port is required");
-    }
-    if setting.t2s_web_port > 65535 {
-        anyhow::bail!("t2s_web_port out of range");
-    }
-    if setting.t2s_port > 65535 {
-        anyhow::bail!("t2s_port out of range");
+fn collect_profile_servers(
+    profile: &str,
+    external_used: &BTreeSet<u16>,
+    own_used: &BTreeSet<u16>,
+    reserved: &BTreeSet<u16>,
+) -> Result<Vec<ServerPlan>> {
+    let server_root = profile_root(profile).join("server");
+    if !server_root.is_dir() {
+        return Ok(Vec::new());
     }
 
-    // Profile name validation.
-    for p in &setting.profiles {
-        ensure_valid_profile_name(&p.name)?;
-    }
+    let mut out = Vec::<ServerPlan>::new();
+    let mut seen_ports = BTreeSet::<u16>::new();
+    let mut entries = fs::read_dir(&server_root)
+        .with_context(|| format!("readdir {}", server_root.display()))?
+        .filter_map(|e| e.ok())
+        .collect::<Vec<_>>();
+    entries.sort_by_key(|e| e.file_name());
 
-    // Profile ports must be unique across profiles (even if disabled), when provided.
-    let mut ports_seen = BTreeSet::<u16>::new();
-    for p in &setting.profiles {
-        if let Some(port) = p.port {
-            if port == 0 {
-                anyhow::bail!("profile '{}' port invalid", p.name);
-            }
-            if !ports_seen.insert(port) {
-                anyhow::bail!("duplicate profile port {port}");
-            }
+    for ent in entries {
+        let dir = ent.path();
+        if !dir.is_dir() {
+            continue;
         }
+        let Some(name) = dir.file_name().and_then(|s| s.to_str()) else { continue };
+        ensure_valid_profile_name(name)?;
+
+        let setting_path = dir.join("setting.json");
+        let setting: ServerSetting = match read_json(&setting_path) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!(
+                    "sing-box: skip profile='{}' server='{}' (bad setting.json): {e:#}",
+                    profile,
+                    name
+                );
+                continue;
+            }
+        };
+        if !setting.enabled {
+            continue;
+        }
+        if setting.port == 0 {
+            warn!(
+                "sing-box: skip profile='{}' server='{}' (missing/invalid port)",
+                profile,
+                name
+            );
+            continue;
+        }
+        if external_used.contains(&setting.port)
+            || own_used.contains(&setting.port)
+            || reserved.contains(&setting.port)
+            || !seen_ports.insert(setting.port)
+        {
+            warn!(
+                "sing-box: skip profile='{}' server='{}' (port conflict {})",
+                profile,
+                name,
+                setting.port
+            );
+            continue;
+        }
+
+        let cfg = dir.join("config.json");
+        if !cfg.is_file() {
+            warn!(
+                "sing-box: skip profile='{}' server='{}' (config.json missing)",
+                profile,
+                name
+            );
+            continue;
+        }
+        if !is_nonempty_file(&cfg).unwrap_or(false) {
+            warn!(
+                "sing-box: skip profile='{}' server='{}' (config.json empty)",
+                profile,
+                name
+            );
+            continue;
+        }
+
+        out.push(ServerPlan {
+            name: name.to_string(),
+            port: setting.port,
+            config_path: cfg,
+            log_path: dir.join("log/sing-box.log"),
+        });
     }
 
-    match setting.mode {
-        Mode::Socks5 => {
-            if setting.t2s_port == 0 {
-                anyhow::bail!("t2s_port is required in socks5 mode");
-            }
-            // Enabled profiles may still be skipped if they are not "ready" (e.g. empty config).
-            // We must not partially start with bad data.
-            let mut enabled_profiles = Vec::<Profile>::new();
-            let mut socks_ports = Vec::<u16>::new();
-
-            for p in setting.profiles.iter().filter(|p| p.enabled) {
-                // Port must be present and valid.
-                let port = match p.port {
-                    Some(v) if v > 0 => v,
-                    _ => {
-                        warn!("sing-box: socks5 skip profile='{}' (missing/invalid port)", p.name);
-                        continue;
-                    }
-                };
-
-                // config.json is user-managed and may be empty; empty -> profile is skipped.
-                let cfg = profile_config_path(&p.name);
-                if !cfg.is_file() {
-                    warn!("sing-box: socks5 skip profile='{}' (config.json missing)", p.name);
-                    continue;
-                }
-                if !is_nonempty_file(&cfg).unwrap_or(false) {
-                    warn!("sing-box: socks5 skip profile='{}' (config.json empty)", p.name);
-                    continue;
-                }
-
-                enabled_profiles.push(p.clone());
-                socks_ports.push(port);
-            }
-
-            if enabled_profiles.is_empty() {
-                anyhow::bail!("no runnable enabled profiles in socks5 mode");
-            }
-
-            // Ports must be unique among runnable profiles.
-            let mut set = BTreeSet::new();
-            for p in &socks_ports {
-                if !set.insert(*p) {
-                    anyhow::bail!("duplicate profile port {p}");
-                }
-            }
-
-            Ok(StartPlan::Socks5 { enabled_profiles, socks_ports })
-        }
-        Mode::Transparent => {
-            if setting.active_transparent_profile.trim().is_empty() {
-                anyhow::bail!("active_transparent_profile is required in transparent mode");
-            }
-            let prof = setting
-                .profiles
-                .iter()
-                .find(|p| p.name == setting.active_transparent_profile)
-                .cloned()
-                .ok_or_else(|| anyhow::anyhow!("active_transparent_profile not found"))?;
-
-            let port = match prof.port {
-                Some(v) if v > 0 => v,
-                _ => anyhow::bail!("port required for active transparent profile"),
-            };
-            let cfg = profile_config_path(&prof.name);
-            if !cfg.is_file() {
-                anyhow::bail!("profile '{}' config.json not found: {}", prof.name, cfg.display());
-            }
-            if !is_nonempty_file(&cfg).unwrap_or(false) {
-                anyhow::bail!("profile '{}' config.json empty", prof.name);
-            }
-
-            let cap = prof.capture.clone().unwrap_or(CaptureMode::Tcp);
-            let proto = match cap {
-                CaptureMode::Tcp => ProtoChoice::Tcp,
-                CaptureMode::TcpUdp => ProtoChoice::TcpUdp,
-            };
-            // Ensure port is set (already validated above).
-            let mut prof2 = prof;
-            prof2.port = Some(port);
-            Ok(StartPlan::Transparent { profile: prof2, proto_choice: proto })
-        }
-    }
-}
-
-fn ensure_no_port_conflicts(setting: &Setting, plan: &StartPlan) -> Result<()> {
-    // Collect all ports used by other programs/services.
-    let mut used = crate::ports::collect_used_ports_for_conflict_check()
-        .unwrap_or_else(|_| BTreeSet::new());
-
-    // Also guard against collisions inside sing-box itself.
-    let mut own = BTreeSet::<u16>::new();
-    match plan {
-        StartPlan::Socks5 { socks_ports, .. } => {
-            if setting.t2s_port == 0 || setting.t2s_web_port == 0 {
-                anyhow::bail!("t2s ports are required");
-            }
-            for p in [setting.t2s_port, setting.t2s_web_port] {
-                if !own.insert(p) {
-                    anyhow::bail!("duplicate port inside sing-box: {p}");
-                }
-            }
-            for p in socks_ports {
-                if !own.insert(*p) {
-                    anyhow::bail!("duplicate port inside sing-box: {p}");
-                }
-            }
-        }
-        StartPlan::Transparent { profile, .. } => {
-            let p = profile.port.unwrap_or(0);
-            if p == 0 {
-                anyhow::bail!("profile port is required");
-            }
-            own.insert(p);
-        }
-    }
-
-    // Collision with other programs.
-    for p in &own {
-        if used.contains(p) {
-            anyhow::bail!("port conflict detected: {p}");
-        }
-        used.insert(*p);
-    }
-    Ok(())
+    Ok(out)
 }
 
 fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
@@ -431,17 +438,12 @@ fn is_nonempty_file(p: &Path) -> Result<bool> {
     Ok(md.len() > 0)
 }
 
-fn profile_config_path(profile: &str) -> PathBuf {
-    Path::new(SINGBOX_ROOT)
-        .join(profile)
-        .join("config.json")
+fn profile_root(profile: &str) -> PathBuf {
+    Path::new(SINGBOX_PROFILE_ROOT).join(profile)
 }
 
-fn profile_log_path(profile: &str) -> PathBuf {
-    Path::new(SINGBOX_ROOT)
-        .join(profile)
-        .join("log")
-        .join("sing-box.log")
+fn profile_t2s_log_path(profile: &str) -> PathBuf {
+    profile_root(profile).join("log/t2s.log")
 }
 
 fn ensure_valid_profile_name(name: &str) -> Result<()> {
@@ -451,12 +453,11 @@ fn ensure_valid_profile_name(name: &str) -> Result<()> {
     if name.len() > 64 {
         anyhow::bail!("profile name too long");
     }
-    // English symbols, no spaces.
     if !name
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
     {
-        anyhow::bail!("profile name must contain only English letters/digits/_/-");
+        anyhow::bail!("profile/server name must contain only English letters/digits/_/-");
     }
     Ok(())
 }
@@ -495,7 +496,6 @@ fn spawn_singbox(config_path: &Path, log_path: &Path) -> Result<()> {
         log_path.display()
     );
 
-    // quick liveness check (best-effort)
     std::thread::sleep(Duration::from_millis(150));
     let proc_path = PathBuf::from("/proc").join(child.id().to_string());
     if !proc_path.is_dir() {
@@ -573,6 +573,7 @@ fn find_bin(name: &str) -> Result<PathBuf> {
 }
 
 fn truncate_file(p: &Path) -> Result<()> {
+    ensure_parent_dir(p)?;
     let _ = OpenOptions::new().create(true).write(true).truncate(true).open(p)?;
     Ok(())
 }
@@ -582,8 +583,7 @@ fn ensure_file_empty(p: &Path) -> Result<()> {
         if let Some(parent) = p.parent() {
             fs::create_dir_all(parent).ok();
         }
-        fs::write(p, b"")
-            .with_context(|| format!("create {}", p.display()))?;
+        fs::write(p, b"").with_context(|| format!("create {}", p.display()))?;
     }
     Ok(())
 }
@@ -611,17 +611,14 @@ fn count_valid_uid_pairs(path: &Path) -> Result<usize> {
 
 fn ensure_parent_dir(p: &Path) -> Result<()> {
     if let Some(parent) = p.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("mkdir {}", parent.display()))?;
+        fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
     }
     Ok(())
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    let s = fs::read_to_string(path)
-        .with_context(|| format!("read {}", path.display()))?;
-    let v = serde_json::from_str::<T>(&s)
-        .with_context(|| format!("parse json {}", path.display()))?;
+    let s = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let v = serde_json::from_str::<T>(&s).with_context(|| format!("parse json {}", path.display()))?;
     Ok(v)
 }
 

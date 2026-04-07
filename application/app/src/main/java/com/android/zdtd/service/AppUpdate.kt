@@ -1,5 +1,7 @@
 package com.android.zdtd.service
 
+import com.android.zdtd.service.api.ApiModels
+
 /**
  * State for online app updates (APK downloaded from GitHub releases).
  */
@@ -9,9 +11,11 @@ data class AppUpdateUiState(
   val languageMode: String = "auto",
   /** Module protector mode: off | on | auto */
   val protectorMode: String = "off",
-  /** Hotspot redirect via t2s: enabled flag and target program id. */
+  /** Hotspot redirect via t2s: enabled flag, target program id and optional sing-box profile. */
   val hotspotT2sEnabled: Boolean = false,
   val hotspotT2sTarget: String = "",
+  val hotspotT2sSingboxProfile: String = "",
+  val hotspotSingboxProfiles: List<ApiModels.SingBoxProfileChoice> = emptyList(),
   /** Port scan protection (proxyInfo). */
   val proxyInfoEnabled: Boolean = false,
   val proxyInfoAppsContent: String = "",

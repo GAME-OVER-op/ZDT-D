@@ -265,6 +265,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       protectorMode = "off",
       hotspotT2sEnabled = false,
       hotspotT2sTarget = "",
+      hotspotT2sSingboxProfile = "",
       daemonStatusNotificationEnabled = root.isDaemonStatusNotificationEnabled(),
     )
   )
@@ -910,7 +911,7 @@ private fun clearDownloadedUpdateApk() {
       // 4) Version gate.
       val installedText = runCatching { root.readTextFile("/data/adb/modules/${id}/module.prop") }.getOrDefault("")
       val installedCode = parseVersionCode(installedText)
-      val minSupported = 25000
+      val minSupported = 29000
 
       if (installedCode != null && installedCode < minSupported) {
         runCatching { root.setTamperReinstallPendingReboot(true) }
@@ -2856,10 +2857,10 @@ if (mf.isNotBlank()) {
     // Current module/app versionCode used for backup compatibility checks.
     // Use installed module versionCode if available, otherwise fall back to bundled/build version.
     val currentVersionCode = readInstalledModuleVersionCode() ?: readBundledModuleVersionCode() ?: BuildConfig.VERSION_CODE
-    val minSupportedBackupVersionCode = 25000
+    val minSupportedBackupVersionCode = 29000
 
     // Block restore when the currently installed module/app is below the minimum supported architecture.
-    // Requirement: versions below 25000 are not supported for restore in either direction.
+    // Requirement: versions below 29000 are not supported for restore in either direction.
     if (currentVersionCode in 1 until minSupportedBackupVersionCode) {
       return BackupValidation(
         ok = false,
@@ -3156,6 +3157,35 @@ private fun shQuote(s: String): String {
     }
   }
 
+  override fun createSingBoxServer(profile: String, server: String, onDone: (String?) -> Unit) {
+    launchIO {
+      val safeProfile = profile.trim()
+      val safeServer = server.trim()
+      val ok = runCatching { api.createSingBoxServer(safeProfile, safeServer) }.getOrDefault(false)
+      if (ok) {
+        log("OK", "sing-box/$safeProfile/$safeServer created (apply after stop/start)")
+        withContext(Dispatchers.Main.immediate) { onDone(safeServer) }
+      } else {
+        log("ERR", "sing-box/$safeProfile/$safeServer create failed")
+        withContext(Dispatchers.Main.immediate) { onDone(null) }
+      }
+    }
+  }
+
+  override fun deleteSingBoxServer(profile: String, server: String, onDone: (Boolean) -> Unit) {
+    launchIO {
+      val safeProfile = profile.trim()
+      val safeServer = server.trim()
+      val ok = runCatching { api.deleteSingBoxServer(safeProfile, safeServer) }.getOrDefault(false)
+      if (ok) {
+        log("OK", "sing-box/$safeProfile/$safeServer deleted")
+      } else {
+        log("ERR", "sing-box/$safeProfile/$safeServer delete failed")
+      }
+      withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
   override fun loadText(path: String, onDone: (String?) -> Unit) {
     launchIO {
       val content = runCatching { api.getTextContent(path) }.getOrNull()
@@ -3357,15 +3387,26 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     _appUpdate.update { it.copy(languageMode = root.getAppLanguageMode()) }
   }
 
+  private suspend fun fetchHotspotSingBoxProfiles(): List<ApiModels.SingBoxProfileChoice> {
+    return runCatching { api.getSingBoxProfiles() }
+      .getOrElse {
+        log("ERR", "hotspot sing-box profiles load failed: ${it.message ?: it}")
+        emptyList()
+      }
+  }
+
   override fun refreshDaemonSettings() {
     launchIO {
       val settings = runCatching { api.getDaemonSettings() }
         .getOrDefault(com.android.zdtd.service.api.ApiModels.DaemonSettings())
+      val singboxProfiles = fetchHotspotSingBoxProfiles()
       _appUpdate.update {
         it.copy(
           protectorMode = settings.protectorMode,
           hotspotT2sEnabled = settings.hotspotT2sEnabled,
           hotspotT2sTarget = settings.hotspotT2sTarget,
+          hotspotT2sSingboxProfile = settings.hotspotT2sSingboxProfile,
+          hotspotSingboxProfiles = singboxProfiles,
         )
       }
     }
@@ -3521,6 +3562,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
           hotspotT2sTarget = applied.hotspotT2sTarget,
+          hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -3530,14 +3572,32 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
   }
 
   override fun setHotspotT2sEnabled(enabled: Boolean) {
-    val current = _appUpdate.value
-    val target = when (current.hotspotT2sTarget.trim().lowercase()) {
-      "operaproxy", "singbox" -> current.hotspotT2sTarget.trim().lowercase()
-      else -> "operaproxy"
+    if (enabled) {
+      _appUpdate.update {
+        it.copy(
+          hotspotT2sEnabled = true,
+          hotspotT2sTarget = "",
+          hotspotT2sSingboxProfile = "",
+        )
+      }
+      return
     }
-    _appUpdate.update { it.copy(hotspotT2sEnabled = enabled, hotspotT2sTarget = target) }
+
+    _appUpdate.update {
+      it.copy(
+        hotspotT2sEnabled = false,
+        hotspotT2sTarget = "",
+        hotspotT2sSingboxProfile = "",
+      )
+    }
     launchIO {
-      val applied = runCatching { api.setHotspotT2s(enabled = enabled, target = target) }.getOrElse {
+      val applied = runCatching {
+        api.setHotspotT2s(
+          enabled = false,
+          target = "",
+          singboxProfile = "",
+        )
+      }.getOrElse {
         log("ERR", "hotspot t2s toggle failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
           toast(str(R.string.settings_hotspot_save_failed))
@@ -3550,6 +3610,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
           hotspotT2sTarget = applied.hotspotT2sTarget,
+          hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -3561,12 +3622,23 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
   override fun setHotspotT2sTarget(target: String) {
     val safeTarget = when (target.trim().lowercase()) {
       "operaproxy", "singbox" -> target.trim().lowercase()
-      else -> "operaproxy"
+      else -> ""
     }
     val enabled = _appUpdate.value.hotspotT2sEnabled
-    _appUpdate.update { it.copy(hotspotT2sTarget = safeTarget) }
+    val profile = if (safeTarget == "singbox") _appUpdate.value.hotspotT2sSingboxProfile else ""
+    _appUpdate.update { it.copy(hotspotT2sTarget = safeTarget, hotspotT2sSingboxProfile = profile) }
+
+    if (!enabled || safeTarget.isBlank()) {
+      return
+    }
+    if (safeTarget == "singbox") {
+      return
+    }
+
     launchIO {
-      val applied = runCatching { api.setHotspotT2s(enabled = enabled, target = safeTarget) }.getOrElse {
+      val applied = runCatching {
+        api.setHotspotT2s(enabled = true, target = safeTarget, singboxProfile = "")
+      }.getOrElse {
         log("ERR", "hotspot t2s target failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
           toast(str(R.string.settings_hotspot_save_failed))
@@ -3579,6 +3651,44 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
           hotspotT2sTarget = applied.hotspotT2sTarget,
+          hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+        )
+      }
+      withContext(Dispatchers.Main.immediate) {
+        toast(str(R.string.settings_hotspot_saved))
+      }
+    }
+  }
+
+  override fun setHotspotT2sSingboxProfile(profile: String) {
+    val safeProfile = profile.trim()
+    val enabled = _appUpdate.value.hotspotT2sEnabled
+    _appUpdate.update {
+      it.copy(
+        hotspotT2sTarget = "singbox",
+        hotspotT2sSingboxProfile = safeProfile,
+      )
+    }
+    if (!enabled || safeProfile.isBlank()) {
+      return
+    }
+    launchIO {
+      val applied = runCatching {
+        api.setHotspotT2s(enabled = true, target = "singbox", singboxProfile = safeProfile)
+      }.getOrElse {
+        log("ERR", "hotspot sing-box profile failed: ${it.message ?: it}")
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_hotspot_save_failed))
+        }
+        refreshDaemonSettings()
+        return@launchIO
+      }
+      _appUpdate.update {
+        it.copy(
+          protectorMode = applied.protectorMode,
+          hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotT2sTarget = applied.hotspotT2sTarget,
+          hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
         )
       }
       withContext(Dispatchers.Main.immediate) {

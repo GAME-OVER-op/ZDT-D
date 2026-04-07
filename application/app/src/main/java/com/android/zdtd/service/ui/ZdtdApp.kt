@@ -518,7 +518,16 @@ private fun MainShell(
     }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
-      onDismissRequest = { showSettings = false },
+      onDismissRequest = {
+        val hotspotInvalid = appUpdate.hotspotT2sEnabled && (
+          appUpdate.hotspotT2sTarget.isBlank() ||
+            (appUpdate.hotspotT2sTarget == "singbox" && appUpdate.hotspotT2sSingboxProfile.isBlank())
+          )
+        if (hotspotInvalid) {
+          actions.setHotspotT2sEnabled(false)
+        }
+        showSettings = false
+      },
       sheetState = sheetState,
     ) {
       AppUpdateSettings(
@@ -533,8 +542,11 @@ private fun MainShell(
         onProtectorModeChange = actions::setProtectorMode,
         hotspotT2sEnabled = appUpdate.hotspotT2sEnabled,
         hotspotT2sTarget = appUpdate.hotspotT2sTarget,
+        hotspotT2sSingboxProfile = appUpdate.hotspotT2sSingboxProfile,
+        hotspotSingboxProfiles = appUpdate.hotspotSingboxProfiles,
         onHotspotT2sEnabledChange = actions::setHotspotT2sEnabled,
         onHotspotT2sTargetChange = actions::setHotspotT2sTarget,
+        onHotspotT2sSingboxProfileChange = actions::setHotspotT2sSingboxProfile,
         proxyInfoEnabled = appUpdate.proxyInfoEnabled,
         proxyInfoBusy = appUpdate.proxyInfoBusy,
         proxyInfoAppsContent = appUpdate.proxyInfoAppsContent,

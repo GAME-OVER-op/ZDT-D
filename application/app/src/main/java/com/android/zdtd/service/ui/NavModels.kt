@@ -12,3 +12,6 @@ sealed class AppsRoute {
   data class Program(val programId: String) : AppsRoute()
   data class Profile(val programId: String, val profile: String) : AppsRoute()
 }
+
+
+internal fun isProfileProgramType(type: String?): Boolean = type == "profiles" || type == "singbox_profiles"

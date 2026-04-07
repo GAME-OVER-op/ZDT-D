@@ -66,7 +66,7 @@ fun ProgramScreen(
   }
 
   // Dialogs must be invoked from a @Composable context (not inside LazyColumn/LazyListScope).
-  if (program.type == "profiles" && showCreateProfile && (!hasStrategicFiles || programTab == 0)) {
+  if (isProfileProgramType(program.type) && showCreateProfile && (!hasStrategicFiles || programTab == 0)) {
     CreateProfileDialog(
       existing = program.profiles.map { it.name },
       onDismiss = { showCreateProfile = false },
@@ -115,7 +115,7 @@ fun ProgramScreen(
 
     when {
       
-program.type == "profiles" -> {
+isProfileProgramType(program.type) -> {
         item {
           if (hasStrategicFiles) {
             if (useScrollableTabs) {

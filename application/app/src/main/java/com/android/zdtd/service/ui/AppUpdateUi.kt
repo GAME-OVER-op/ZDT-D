@@ -25,12 +25,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -40,6 +40,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -178,8 +179,11 @@ fun AppUpdateSettings(
   onProtectorModeChange: (String) -> Unit,
   hotspotT2sEnabled: Boolean,
   hotspotT2sTarget: String,
+  hotspotT2sSingboxProfile: String,
+  hotspotSingboxProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
   onHotspotT2sEnabledChange: (Boolean) -> Unit,
   onHotspotT2sTargetChange: (String) -> Unit,
+  onHotspotT2sSingboxProfileChange: (String) -> Unit,
   proxyInfoEnabled: Boolean,
   proxyInfoBusy: Boolean,
   proxyInfoAppsContent: String,
@@ -279,6 +283,8 @@ fun AppUpdateSettings(
     HotspotT2sSection(
       enabled = hotspotT2sEnabled,
       target = hotspotT2sTarget,
+      singboxProfile = hotspotT2sSingboxProfile,
+      singboxProfiles = hotspotSingboxProfiles,
       compactWidth = compactWidth,
       onEnabledChange = { checked ->
         if (checked && !hotspotT2sEnabled) {
@@ -288,6 +294,7 @@ fun AppUpdateSettings(
         }
       },
       onTargetChange = onHotspotT2sTargetChange,
+      onSingboxProfileChange = onHotspotT2sSingboxProfileChange,
     )
 
     if (showHotspotWarning) {
@@ -474,15 +481,19 @@ private fun SettingsSectionCard(
 private fun HotspotT2sSection(
   enabled: Boolean,
   target: String,
+  singboxProfile: String,
+  singboxProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
   compactWidth: Boolean,
   onEnabledChange: (Boolean) -> Unit,
   onTargetChange: (String) -> Unit,
+  onSingboxProfileChange: (String) -> Unit,
 ) {
   val safeTarget = when (target.trim().lowercase()) {
     "operaproxy" -> "operaproxy"
     "singbox" -> "singbox"
-    else -> "operaproxy"
+    else -> ""
   }
+  val enabledProfiles = remember(singboxProfiles) { singboxProfiles.filter { it.enabled } }
 
   if (compactWidth) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -521,7 +532,9 @@ private fun HotspotT2sSection(
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         FilterChip(
           selected = safeTarget == "operaproxy",
-          onClick = { if (safeTarget != "operaproxy") onTargetChange("operaproxy") },
+          onClick = {
+            if (safeTarget != "operaproxy") onTargetChange("operaproxy")
+          },
           label = {
             Text(
               stringResource(R.string.settings_hotspot_program_operaproxy),
@@ -536,7 +549,9 @@ private fun HotspotT2sSection(
         )
         FilterChip(
           selected = safeTarget == "singbox",
-          onClick = { if (safeTarget != "singbox") onTargetChange("singbox") },
+          onClick = {
+            if (safeTarget != "singbox") onTargetChange("singbox")
+          },
           label = {
             Text(
               stringResource(R.string.settings_hotspot_program_singbox),
@@ -549,6 +564,90 @@ private fun HotspotT2sSection(
             selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
           ),
         )
+      }
+
+      AnimatedVisibility(
+        visible = safeTarget == "singbox",
+        enter = fadeIn(animationSpec = tween(180)) + expandVertically(animationSpec = tween(180)),
+        exit = fadeOut(animationSpec = tween(140)) + shrinkVertically(animationSpec = tween(140)),
+      ) {
+        Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+          Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+            shape = MaterialTheme.shapes.large,
+            tonalElevation = 0.dp,
+            shadowElevation = 0.dp,
+          ) {
+            Column(
+              modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+              verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              Text(
+                stringResource(R.string.settings_hotspot_singbox_hint_title),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.primary,
+              )
+              Text(
+                stringResource(R.string.settings_hotspot_singbox_hint_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
+              )
+
+              if (enabledProfiles.isEmpty()) {
+                Text(
+                  stringResource(R.string.settings_hotspot_singbox_profiles_empty),
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                )
+              } else {
+                Text(
+                  stringResource(R.string.settings_hotspot_singbox_profiles_title),
+                  style = MaterialTheme.typography.bodySmall,
+                  fontWeight = FontWeight.Medium,
+                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                  enabledProfiles.forEach { profile ->
+                    val selected = profile.name == singboxProfile
+                    if (selected) {
+                      Button(
+                        onClick = { onSingboxProfileChange(profile.name) },
+                        modifier = Modifier.fillMaxWidth(),
+                      ) {
+                        Text(profile.name)
+                      }
+                    } else {
+                      OutlinedButton(
+                        onClick = { onSingboxProfileChange(profile.name) },
+                        modifier = Modifier.fillMaxWidth(),
+                      ) {
+                        Text(profile.name)
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          Spacer(Modifier.height(10.dp))
+          if (singboxProfile.isBlank()) {
+            Text(
+              stringResource(R.string.settings_hotspot_singbox_profile_missing),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.primary,
+              fontWeight = FontWeight.Medium,
+            )
+          } else {
+            Text(
+              stringResource(R.string.settings_hotspot_singbox_profile_selected_fmt, singboxProfile),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
+            )
+          }
+        }
       }
     }
   }

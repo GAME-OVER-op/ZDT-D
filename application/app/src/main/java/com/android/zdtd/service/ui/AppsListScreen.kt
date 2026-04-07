@@ -73,10 +73,10 @@ fun AppsListScreen(
   }
 
   val core = remember(filtered) {
-    filtered.filter { it.type != "profiles" }.sortedBy { (it.name ?: it.id).lowercase(Locale.ROOT) }
+    filtered.filter { !isProfileProgramType(it.type) }.sortedBy { (it.name ?: it.id).lowercase(Locale.ROOT) }
   }
   val prof = remember(filtered) {
-    filtered.filter { it.type == "profiles" }.sortedBy { (it.name ?: it.id).lowercase(Locale.ROOT) }
+    filtered.filter { isProfileProgramType(it.type) }.sortedBy { (it.name ?: it.id).lowercase(Locale.ROOT) }
   }
 
   LazyColumn(
@@ -263,7 +263,7 @@ private fun ProgramCard(compact: Boolean, program: ApiModels.Program, onClick: (
   val title = program.name ?: program.id
   val subtitle = programDescription(program.id)
 
-  val isProfiles = program.type == "profiles"
+  val isProfiles = isProfileProgramType(program.type)
   val profilesTotal = program.profiles.size
   val profilesEnabled = program.profiles.count { it.enabled }
 

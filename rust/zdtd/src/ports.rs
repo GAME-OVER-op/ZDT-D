@@ -166,6 +166,55 @@ fn collect_adjustable_ports() -> Result<Vec<PortEntry>> {
     Ok(out)
 }
 
+
+fn collect_defined_singbox_ports() -> BTreeSet<u16> {
+    let mut used = BTreeSet::new();
+    let root = working_program_dir("singbox").join("profile");
+    if let Ok(rd) = fs::read_dir(&root) {
+        for ent in rd.flatten() {
+            let profile_dir = ent.path();
+            if !profile_dir.is_dir() {
+                continue;
+            }
+            if profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) {
+                continue;
+            }
+            let setting_path = profile_dir.join("setting.json");
+            if let Ok(v) = read_json_value(&setting_path) {
+                for key in ["t2s_port", "t2s_web_port"] {
+                    if let Some(port) = v.get(key).and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
+                        if port != 0 {
+                            used.insert(port);
+                        }
+                    }
+                }
+            }
+
+            let server_root = profile_dir.join("server");
+            if let Ok(server_rd) = fs::read_dir(&server_root) {
+                for server_ent in server_rd.flatten() {
+                    let server_dir = server_ent.path();
+                    if !server_dir.is_dir() {
+                        continue;
+                    }
+                    if server_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) {
+                        continue;
+                    }
+                    let setting_path = server_dir.join("setting.json");
+                    if let Ok(v) = read_json_value(&setting_path) {
+                        if let Some(port) = v.get("port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
+                            if port != 0 {
+                                used.insert(port);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    used
+}
+
 fn next_free_port(mut start: u16, base: u16, used: &BTreeSet<u16>) -> Result<u16> {
     // Keep within u16 range.
     if start == 0 {
@@ -251,6 +300,8 @@ pub fn suggest_port_for_new_profile(program: &str) -> Result<u16> {
 
     // Build a global used-set: fixed/reserved ports + all existing adjustable profile ports.
     let mut used = collect_reserved_ports();
+
+    used.extend(collect_defined_singbox_ports());
 
     let entries = collect_adjustable_ports().unwrap_or_default();
     let mut max_self: Option<u16> = None;

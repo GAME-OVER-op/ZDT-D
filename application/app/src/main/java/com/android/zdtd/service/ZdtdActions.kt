@@ -117,6 +117,12 @@ interface ZdtdActions {
    */
   fun createNamedProfile(programId: String, profile: String, onDone: (String?) -> Unit = {})
 
+  /** Create a sing-box server inside a specific profile. */
+  fun createSingBoxServer(profile: String, server: String, onDone: (String?) -> Unit = {})
+
+  /** Delete a sing-box server inside a specific profile. */
+  fun deleteSingBoxServer(profile: String, server: String, onDone: (Boolean) -> Unit = {})
+
   fun loadText(path: String, onDone: (String?) -> Unit)
   fun saveText(path: String, content: String, onDone: (Boolean) -> Unit)
 
@@ -188,6 +194,9 @@ interface ZdtdActions {
 
   /** Choose which program receives hotspot traffic: operaproxy | singbox. */
   fun setHotspotT2sTarget(target: String)
+
+  /** Choose which sing-box profile receives hotspot traffic when sing-box is selected. */
+  fun setHotspotT2sSingboxProfile(profile: String)
 
   /** Remove working_folder/flag.sha256 and restart the daemon when needed. */
   fun resetModuleIdentifier()

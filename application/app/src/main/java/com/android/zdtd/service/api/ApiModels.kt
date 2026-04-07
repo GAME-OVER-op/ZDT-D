@@ -55,6 +55,12 @@ object ApiModels {
     val protectorMode: String = "off",
     val hotspotT2sEnabled: Boolean = false,
     val hotspotT2sTarget: String = "",
+    val hotspotT2sSingboxProfile: String = "",
+  )
+
+  data class SingBoxProfileChoice(
+    val name: String,
+    val enabled: Boolean = false,
   )
 
   data class ProxyInfoState(
@@ -165,11 +171,32 @@ object ApiModels {
       "singbox", "sing-box", "sing_box" -> "singbox"
       else -> ""
     }
+    val hotspotProfile = setting?.optString("hotspot_t2s_singbox_profile", "")
+      ?.trim()
+      .orEmpty()
     return DaemonSettings(
       protectorMode = safeMode,
       hotspotT2sEnabled = hotspotEnabled,
       hotspotT2sTarget = safeTarget,
+      hotspotT2sSingboxProfile = hotspotProfile,
     )
+  }
+
+  fun parseSingBoxProfiles(wrapper: JSONObject?): List<SingBoxProfileChoice> {
+    if (wrapper == null) return emptyList()
+    val arr = wrapper.optJSONArray("profiles") ?: JSONArray()
+    val out = ArrayList<SingBoxProfileChoice>(arr.length())
+    for (i in 0 until arr.length()) {
+      val item = arr.optJSONObject(i) ?: continue
+      val name = item.optString("name", "").trim()
+      if (name.isEmpty()) continue
+      out += SingBoxProfileChoice(
+        name = name,
+        enabled = item.optBoolean("enabled", false),
+      )
+    }
+    out.sortBy { it.name.lowercase(Locale.ROOT) }
+    return out
   }
 
   fun parseProxyInfo(wrapper: JSONObject?): ProxyInfoState {

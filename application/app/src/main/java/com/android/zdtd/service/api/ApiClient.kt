@@ -74,6 +74,19 @@ class ApiClient(
     return requestOk("POST", "/api/new/profile", body)
   }
 
+  fun createSingBoxServer(profile: String, server: String? = null): Boolean {
+    val path = "/api/programs/sing-box/profiles/${enc(profile)}/servers"
+    val body = JSONObject()
+    val s = server?.trim().orEmpty()
+    if (s.isNotEmpty()) body.put("name", s)
+    return requestOk("POST", path, body)
+  }
+
+  fun deleteSingBoxServer(profile: String, server: String): Boolean {
+    val path = "/api/programs/sing-box/profiles/${enc(profile)}/servers/${enc(server)}"
+    return requestOk("DELETE", path, null)
+  }
+
   fun getTextContent(path: String): String {
     val obj = requestJson("GET", path, null)
     return obj?.optString("content", "") ?: ""
@@ -98,19 +111,25 @@ class ApiClient(
     return ApiModels.parseDaemonSettings(obj)
   }
 
-  fun setHotspotT2s(enabled: Boolean, target: String): ApiModels.DaemonSettings {
+  fun setHotspotT2s(enabled: Boolean, target: String, singboxProfile: String = ""): ApiModels.DaemonSettings {
     val safeTarget = when (target.trim().lowercase()) {
       "operaproxy", "opera-proxy", "opera_proxy" -> "operaproxy"
       "singbox", "sing-box", "sing_box" -> "singbox"
       else -> ""
     }
+    val safeProfile = if (safeTarget == "singbox") singboxProfile.trim() else ""
     val body = JSONObject()
       .put("hotspot_t2s_enabled", enabled)
       .put("hotspot_t2s_target", safeTarget)
+      .put("hotspot_t2s_singbox_profile", safeProfile)
     val obj = requestJson("POST", "/api/setting", body)
     return ApiModels.parseDaemonSettings(obj)
   }
 
+  fun getSingBoxProfiles(): List<ApiModels.SingBoxProfileChoice> {
+    val obj = requestJson("GET", "/api/programs/sing-box/profiles", null)
+    return ApiModels.parseSingBoxProfiles(obj)
+  }
 
   fun getAppAssignments(): ApiModels.AppAssignmentsState {
     val obj = requestJson("GET", "/api/apps/assignments", null)

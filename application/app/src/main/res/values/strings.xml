@@ -658,6 +658,13 @@ Install the module again.</string>
     <string name="settings_hotspot_warning_accept">Accept</string>
     <string name="settings_hotspot_saved">Hotspot setting saved</string>
     <string name="settings_hotspot_save_failed">Failed to save hotspot setting</string>
+    <string name="settings_hotspot_singbox_hint_title">sing-box hotspot profile</string>
+    <string name="settings_hotspot_singbox_hint_body">Choose a sing-box profile below. The hotspot profile choice is reset every time hotspot is enabled, so it must be selected again.</string>
+    <string name="settings_hotspot_singbox_press_hint">Hold the sing-box button to choose a profile for hotspot.</string>
+    <string name="settings_hotspot_singbox_profile_missing">No sing-box profile selected yet. If you close settings now, hotspot will be turned off automatically.</string>
+    <string name="settings_hotspot_singbox_profile_selected_fmt">Selected sing-box profile: %1$s</string>
+    <string name="settings_hotspot_singbox_profiles_title">Available sing-box profiles</string>
+    <string name="settings_hotspot_singbox_profiles_empty">There are no enabled sing-box profiles available.</string>
 
     <string name="settings_proxyinfo_title">Port Scan Protection</string>
     <string name="settings_proxyinfo_body">Blocks apps from detecting the open ports of the module.</string>
@@ -699,4 +706,20 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="settings_proxyinfo_conflict_body">These apps are already used in program rules. Remove them from those programs and add them to port scan protection?</string>
     <string name="settings_proxyinfo_conflict_yes">Yes, move them</string>
     <string name="settings_proxyinfo_conflict_no">No, uncheck them</string>
+
+    <string name="action_edit">Edit</string>
+    <string name="singbox_profile_settings_title">Profile settings</string>
+    <string name="singbox_profile_settings_desc">Each sing-box profile has its own t2s ports, apps list, and server set.</string>
+    <string name="singbox_profile_add_server">Create</string>
+    <string name="singbox_profile_no_servers">No servers created for this profile yet.</string>
+    <string name="singbox_profile_ports_must_differ">t2s_port and t2s_web_port must be different</string>
+    <string name="singbox_server_port_label">Server port</string>
+    <string name="singbox_delete_server_title">Delete server</string>
+    <string name="singbox_delete_server_message_fmt">sing-box / %1$s / %2$s</string>
+
+
+    <string name="singbox_apps_title">Apps</string>
+    <string name="singbox_profile_autosave_hint">Changes are saved automatically after a short pause.</string>
+    <string name="singbox_server_autosave_hint">Port and enabled state are saved automatically.</string>
+
 </resources>

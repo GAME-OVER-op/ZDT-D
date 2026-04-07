@@ -78,13 +78,22 @@ fun AppsHost(
         actions = actions,
         snackHost = snackHost,
       )
-      is AppsRoute.Profile -> ProfileScreen(
-        programs = programs,
-        programId = r.programId,
-        profile = r.profile,
-        actions = actions,
-        snackHost = snackHost,
-      )
+      is AppsRoute.Profile -> if (r.programId == "sing-box") {
+        SingBoxProfileScreen(
+          programs = programs,
+          profile = r.profile,
+          actions = actions,
+          snackHost = snackHost,
+        )
+      } else {
+        ProfileScreen(
+          programs = programs,
+          programId = r.programId,
+          profile = r.profile,
+          actions = actions,
+          snackHost = snackHost,
+        )
+      }
       else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(stringResource(R.string.apps_host_unknown_route)) }
     }
   }

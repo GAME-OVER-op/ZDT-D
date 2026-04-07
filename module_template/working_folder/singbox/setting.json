@@ -1,8 +1,0 @@
-{
-  "active_transparent_profile": "",
-  "enabled": false,
-  "mode": "socks5",
-  "profiles": [],
-  "t2s_port": 12345,
-  "t2s_web_port": 8001
-}

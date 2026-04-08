@@ -107,6 +107,119 @@ fn default_t2s_web_port() -> u16 {
     8001
 }
 
+#[derive(Debug, Clone, Copy)]
+enum LocalMatchMode {
+    LoAndDest127,
+    Dest127,
+    LoopbackIface,
+    DstTypeLocal,
+}
+
+impl LocalMatchMode {
+    fn describe(self) -> &'static str {
+        match self {
+            Self::LoAndDest127 => "-o lo -d 127.0.0.1",
+            Self::Dest127 => "-d 127.0.0.1",
+            Self::LoopbackIface => "-o lo",
+            Self::DstTypeLocal => "-m addrtype --dst-type LOCAL",
+        }
+    }
+
+    fn push_args(self, args: &mut Vec<String>) {
+        match self {
+            Self::LoAndDest127 => {
+                args.push("-o".into());
+                args.push("lo".into());
+                args.push("-d".into());
+                args.push("127.0.0.1".into());
+            }
+            Self::Dest127 => {
+                args.push("-d".into());
+                args.push("127.0.0.1".into());
+            }
+            Self::LoopbackIface => {
+                args.push("-o".into());
+                args.push("lo".into());
+            }
+            Self::DstTypeLocal => {
+                args.push("-m".into());
+                args.push("addrtype".into());
+                args.push("--dst-type".into());
+                args.push("LOCAL".into());
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PortRuleMode {
+    Multiport,
+    PerPort,
+}
+
+impl PortRuleMode {
+    fn describe(self) -> &'static str {
+        match self {
+            Self::Multiport => "multiport",
+            Self::PerPort => "per-port",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum RejectMode {
+    RejectTcpReset,
+    Reject,
+    Drop,
+}
+
+impl RejectMode {
+    fn describe(self) -> &'static str {
+        match self {
+            Self::RejectTcpReset => "REJECT tcp-reset",
+            Self::Reject => "REJECT",
+            Self::Drop => "DROP",
+        }
+    }
+
+    fn push_args(self, args: &mut Vec<String>) {
+        match self {
+            Self::RejectTcpReset => {
+                args.push("-j".into());
+                args.push("REJECT".into());
+                args.push("--reject-with".into());
+                args.push("tcp-reset".into());
+            }
+            Self::Reject => {
+                args.push("-j".into());
+                args.push("REJECT".into());
+            }
+            Self::Drop => {
+                args.push("-j".into());
+                args.push("DROP".into());
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ProxyRuleStrategy {
+    local_match: LocalMatchMode,
+    port_mode: PortRuleMode,
+    reject_mode: RejectMode,
+}
+
+impl ProxyRuleStrategy {
+    fn describe(self) -> String {
+        format!(
+            "local={}, ports={}, action={}",
+            self.local_match.describe(),
+            self.port_mode.describe(),
+            self.reject_mode.describe()
+        )
+    }
+}
+
 fn read_json_file<T: for<'de> Deserialize<'de> + Default>(p: &Path) -> Result<T> {
     let raw = fs::read_to_string(p).with_context(|| format!("read {}", p.display()))?;
     let v: T = serde_json::from_str(&raw).with_context(|| format!("parse {}", p.display()))?;
@@ -246,7 +359,7 @@ pub fn read_out_uids() -> Result<Vec<u32>> {
 pub fn is_active() -> bool {
     match shell::run_timeout(
         "iptables",
-        &["-C", "OUTPUT", "-o", "lo", "-p", "tcp", "-d", "127.0.0.1", "-j", PROXY_CHAIN],
+        &["-C", "OUTPUT", "-p", "tcp", "-j", PROXY_CHAIN],
         Capture::None,
         IPT_TIMEOUT,
     ) {
@@ -262,9 +375,14 @@ fn table_cmd_ok(args: &[&str]) -> bool {
     }
 }
 
-pub fn clear_rules() -> Result<()> {
-    // Remove hook(s) first, then flush and delete our chain. Best-effort and idempotent.
+fn remove_known_hooks() {
+    while table_cmd_ok(&["-D", "OUTPUT", "-p", "tcp", "-j", PROXY_CHAIN]) {}
     while table_cmd_ok(&["-D", "OUTPUT", "-o", "lo", "-p", "tcp", "-d", "127.0.0.1", "-j", PROXY_CHAIN]) {}
+    while table_cmd_ok(&["-D", "OUTPUT", "-p", "tcp", "-d", "127.0.0.1", "-j", PROXY_CHAIN]) {}
+}
+
+pub fn clear_rules() -> Result<()> {
+    remove_known_hooks();
     let _ = shell::run_timeout("iptables", &["-F", PROXY_CHAIN], Capture::None, IPT_TIMEOUT);
     let _ = shell::run_timeout("iptables", &["-X", PROXY_CHAIN], Capture::None, IPT_TIMEOUT);
     Ok(())
@@ -281,10 +399,10 @@ fn ensure_chain() -> Result<()> {
     if rc != 0 {
         anyhow::bail!("iptables -F {PROXY_CHAIN} failed: {out}");
     }
-    while table_cmd_ok(&["-D", "OUTPUT", "-o", "lo", "-p", "tcp", "-d", "127.0.0.1", "-j", PROXY_CHAIN]) {}
+    remove_known_hooks();
     let (rc, out) = shell::run_timeout(
         "iptables",
-        &["-I", "OUTPUT", "1", "-o", "lo", "-p", "tcp", "-d", "127.0.0.1", "-j", PROXY_CHAIN],
+        &["-I", "OUTPUT", "1", "-p", "tcp", "-j", PROXY_CHAIN],
         Capture::Both,
         IPT_TIMEOUT,
     )?;
@@ -294,32 +412,99 @@ fn ensure_chain() -> Result<()> {
     Ok(())
 }
 
-fn add_rule_for_chunk(uid: u32, ports: &[u16]) -> Result<()> {
-    let ports_csv = ports.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(",");
-    let uid_s = uid.to_string();
-    let args = [
-        "-A",
-        PROXY_CHAIN,
-        "-p",
-        "tcp",
-        "-m",
-        "owner",
-        "--uid-owner",
-        uid_s.as_str(),
-        "-m",
-        "multiport",
-        "--dports",
-        ports_csv.as_str(),
-        "-j",
-        "REJECT",
-        "--reject-with",
-        "tcp-reset",
+fn build_rule_args(uid: u32, ports: &[u16], strategy: ProxyRuleStrategy) -> Vec<String> {
+    let mut args = vec![
+        "-A".to_string(),
+        PROXY_CHAIN.to_string(),
+        "-p".to_string(),
+        "tcp".to_string(),
     ];
-    let (rc, out) = shell::run_timeout("iptables", &args, Capture::Both, IPT_TIMEOUT)?;
+    strategy.local_match.push_args(&mut args);
+    args.push("-m".into());
+    args.push("owner".into());
+    args.push("--uid-owner".into());
+    args.push(uid.to_string());
+
+    match strategy.port_mode {
+        PortRuleMode::Multiport => {
+            let ports_csv = ports.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(",");
+            args.push("-m".into());
+            args.push("multiport".into());
+            args.push("--dports".into());
+            args.push(ports_csv);
+        }
+        PortRuleMode::PerPort => {
+            let port = ports.first().copied().unwrap_or_default();
+            args.push("--dport".into());
+            args.push(port.to_string());
+        }
+    }
+
+    strategy.reject_mode.push_args(&mut args);
+    args
+}
+
+fn add_rule_for_ports(uid: u32, ports: &[u16], strategy: ProxyRuleStrategy) -> Result<()> {
+    let args = build_rule_args(uid, ports, strategy);
+    let (rc, out) = shell::runv_timeout("iptables", &args, Capture::Both, IPT_TIMEOUT)?;
     if rc != 0 {
-        anyhow::bail!("iptables add proxyInfo rule failed uid={uid}: {out}");
+        anyhow::bail!(
+            "iptables add proxyInfo rule failed uid={} strategy={} args='{}': {}",
+            uid,
+            strategy.describe(),
+            args.join(" "),
+            out
+        );
     }
     Ok(())
+}
+
+fn install_rules_with_strategy(uids: &[u32], ports: &[u16], strategy: ProxyRuleStrategy) -> Result<()> {
+    clear_rules()?;
+    if uids.is_empty() || ports.is_empty() {
+        return Ok(());
+    }
+    ensure_chain()?;
+    for &uid in uids {
+        match strategy.port_mode {
+            PortRuleMode::Multiport => {
+                for chunk in ports.chunks(15) {
+                    add_rule_for_ports(uid, chunk, strategy)?;
+                }
+            }
+            PortRuleMode::PerPort => {
+                for &port in ports {
+                    add_rule_for_ports(uid, &[port], strategy)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn candidate_strategies() -> Vec<ProxyRuleStrategy> {
+    let local_modes = [
+        LocalMatchMode::LoAndDest127,
+        LocalMatchMode::Dest127,
+        LocalMatchMode::DstTypeLocal,
+        LocalMatchMode::LoopbackIface,
+    ];
+    let port_modes = [PortRuleMode::Multiport, PortRuleMode::PerPort];
+    let reject_modes = [RejectMode::RejectTcpReset, RejectMode::Reject, RejectMode::Drop];
+
+    let mut out = Vec::new();
+    for local_match in local_modes {
+        for port_mode in port_modes {
+            for reject_mode in reject_modes {
+                out.push(ProxyRuleStrategy {
+                    local_match,
+                    port_mode,
+                    reject_mode,
+                });
+            }
+        }
+    }
+    out
 }
 
 fn install_rules(uids: &[u32], ports: &[u16]) -> Result<()> {
@@ -327,13 +512,30 @@ fn install_rules(uids: &[u32], ports: &[u16]) -> Result<()> {
     if uids.is_empty() || ports.is_empty() {
         return Ok(());
     }
-    ensure_chain()?;
-    for &uid in uids {
-        for chunk in ports.chunks(15) {
-            add_rule_for_chunk(uid, chunk)?;
+
+    let mut errors = Vec::new();
+    for strategy in candidate_strategies() {
+        match install_rules_with_strategy(uids, ports, strategy) {
+            Ok(()) => {
+                logging::info(&format!(
+                    "proxyInfo iptables strategy selected: {}",
+                    strategy.describe()
+                ));
+                return Ok(());
+            }
+            Err(e) => {
+                let msg = format!("{} => {e:#}", strategy.describe());
+                logging::warn(&format!("proxyInfo strategy failed: {}", msg));
+                errors.push(msg);
+                let _ = clear_rules();
+            }
         }
     }
-    Ok(())
+
+    anyhow::bail!(
+        "all proxyInfo iptables strategies failed: {}",
+        errors.join(" | ")
+    )
 }
 
 pub fn refresh_runtime(services_running: bool) -> Result<bool> {

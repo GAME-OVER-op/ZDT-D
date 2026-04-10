@@ -45,6 +45,22 @@ pub fn proxyinfo_out_program_path() -> PathBuf {
     proxyinfo_root_path().join("out_program")
 }
 
+pub fn blockedquic_root_path() -> PathBuf {
+    Path::new(MODULE_DIR).join("working_folder/blockedquic")
+}
+
+pub fn blockedquic_enabled_json_path() -> PathBuf {
+    blockedquic_root_path().join("enabled.json")
+}
+
+pub fn blockedquic_uid_program_path() -> PathBuf {
+    blockedquic_root_path().join("uid_program")
+}
+
+pub fn blockedquic_out_program_path() -> PathBuf {
+    blockedquic_root_path().join("out_program")
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ProtectorMode {
@@ -199,6 +215,7 @@ pub fn ensure_minimal_program_layouts() -> Result<()> {
         ("dnscrypt", "active.json", ENABLED_FALSE_JSON),
         ("operaproxy", "active.json", ENABLED_FALSE_JSON),
         ("proxyInfo", "enabled.json", PROXYINFO_ENABLED_JSON),
+        ("blockedquic", "enabled.json", PROXYINFO_ENABLED_JSON),
     ];
 
     fs::create_dir_all(working_root_path())

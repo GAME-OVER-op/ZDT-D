@@ -673,6 +673,24 @@
     <string name="settings_hotspot_singbox_profiles_title">Доступные профили sing-box</string>
     <string name="settings_hotspot_singbox_profiles_empty">Нет доступных включённых профилей sing-box.</string>
 
+    <string name="settings_blockedquic_title">Блокировать QUIC приложений</string>
+    <string name="settings_blockedquic_body">Блокирует QUIC-трафик выбранных приложений.</string>
+    <string name="settings_blockedquic_warning_title">Блокировать QUIC приложений</string>
+    <string name="settings_blockedquic_warning_body">Данная функция блокирует трафик приложения QUIC.
+Заставляет приложение использовать TCP как основное подключение.</string>
+    <string name="settings_blockedquic_warning_accept">Понятно</string>
+    <string name="settings_blockedquic_configure">Настроить</string>
+    <string name="settings_blockedquic_apps_title">Выбор приложений</string>
+    <string name="settings_blockedquic_apps_body">Выбранные приложения будут использовать TCP вместо QUIC, если это возможно.</string>
+    <string name="settings_blockedquic_search_hint">Поиск приложений</string>
+    <string name="settings_blockedquic_selected_header">Выбранные приложения</string>
+    <string name="settings_blockedquic_all_apps_title">Все приложения</string>
+    <string name="settings_blockedquic_empty">Ничего не выбрано</string>
+    <string name="settings_blockedquic_saved">Настройки блокировки QUIC сохранены</string>
+    <string name="settings_blockedquic_save_failed">Не удалось сохранить настройки блокировки QUIC</string>
+    <string name="settings_blockedquic_conflict_title">Приложения уже добавлены в защиту портов</string>
+    <string name="settings_blockedquic_conflict_body">Эти приложения уже находятся в списке защиты от сканирования портов. Уберите их из выбора блокировки QUIC.</string>
+    <string name="settings_blockedquic_conflict_uncheck">Снять галочки</string>
     <string name="settings_proxyinfo_title">Защита от сканирования портов</string>
     <string name="settings_proxyinfo_body">Блокирует приложениям возможность определить открытые порты модуля.</string>
     <string name="settings_proxyinfo_warning_title">Защита от сканирования портов</string>

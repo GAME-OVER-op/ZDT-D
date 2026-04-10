@@ -1,4 +1,5 @@
 mod android;
+mod blockedquic;
 mod api;
 mod config;
 mod daemon;
@@ -15,6 +16,7 @@ mod settings;
 mod shell;
 mod stats;
 mod stop;
+mod xtables_lock;
 
 use anyhow::Result;
 use log::info;

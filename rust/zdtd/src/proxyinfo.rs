@@ -11,7 +11,8 @@ use crate::{
     android::pkg_uid::{self, Mode as UidMode, Sha256Tracker},
     logging,
     settings,
-    shell::{self, Capture},
+    shell::Capture,
+    xtables_lock,
 };
 
 const PROXY_CHAIN: &str = "ZDT_PROXYINFO";
@@ -410,11 +411,12 @@ pub fn read_out_uids() -> Result<Vec<u32>> {
 }
 
 pub fn is_active() -> bool {
+    let _guard = xtables_lock::lock();
     any_hook_active(Backend::Iptables) || any_hook_active(Backend::Ip6tables)
 }
 
 fn table_cmd_ok(backend: Backend, args: &[&str]) -> bool {
-    match shell::run_timeout(backend.cmd(), args, Capture::None, IPT_TIMEOUT) {
+    match xtables_lock::run_timeout_retry(backend.cmd(), args, Capture::Both, IPT_TIMEOUT) {
         Ok((rc, _)) => rc == 0,
         Err(_) => false,
     }
@@ -463,31 +465,36 @@ fn remove_known_hooks(backend: Backend) {
     }
 }
 
-fn clear_chain(backend: Backend) {
+fn clear_chain_unlocked(backend: Backend) {
     remove_known_hooks(backend);
-    let _ = shell::run_timeout(backend.cmd(), &["-F", PROXY_CHAIN], Capture::None, IPT_TIMEOUT);
-    let _ = shell::run_timeout(backend.cmd(), &["-X", PROXY_CHAIN], Capture::None, IPT_TIMEOUT);
+    let _ = xtables_lock::run_timeout_retry(backend.cmd(), &["-F", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT);
+    let _ = xtables_lock::run_timeout_retry(backend.cmd(), &["-X", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT);
+}
+
+fn clear_rules_unlocked() {
+    clear_chain_unlocked(Backend::Iptables);
+    clear_chain_unlocked(Backend::Ip6tables);
 }
 
 pub fn clear_rules() -> Result<()> {
-    clear_chain(Backend::Iptables);
-    clear_chain(Backend::Ip6tables);
+    let _guard = xtables_lock::lock();
+    clear_rules_unlocked();
     Ok(())
 }
 
 fn ensure_chain(backend: Backend) -> Result<()> {
     if !table_cmd_ok(backend, &["-L", PROXY_CHAIN]) {
-        let (rc, out) = shell::run_timeout(backend.cmd(), &["-N", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT)?;
+        let (rc, out) = xtables_lock::run_timeout_retry(backend.cmd(), &["-N", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT)?;
         if rc != 0 {
             anyhow::bail!("{} -N {} failed: {}", backend.cmd(), PROXY_CHAIN, out);
         }
     }
-    let (rc, out) = shell::run_timeout(backend.cmd(), &["-F", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT)?;
+    let (rc, out) = xtables_lock::run_timeout_retry(backend.cmd(), &["-F", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT)?;
     if rc != 0 {
         anyhow::bail!("{} -F {} failed: {}", backend.cmd(), PROXY_CHAIN, out);
     }
     remove_known_hooks(backend);
-    let (rc, out) = shell::run_timeout(
+    let (rc, out) = xtables_lock::run_timeout_retry(
         backend.cmd(),
         &["-I", "OUTPUT", "1", "-j", PROXY_CHAIN],
         Capture::Both,
@@ -543,7 +550,7 @@ fn add_rule_for_ports_v4(
     strategy: ProxyRuleStrategy,
 ) -> Result<()> {
     let args = build_rule_args_v4(uid, proto, ports, strategy);
-    let (rc, out) = shell::runv_timeout(Backend::Iptables.cmd(), &args, Capture::Both, IPT_TIMEOUT)?;
+    let (rc, out) = xtables_lock::runv_timeout_retry(Backend::Iptables.cmd(), &args, Capture::Both, IPT_TIMEOUT)?;
     if rc != 0 {
         anyhow::bail!(
             "{} add proxyInfo rule failed uid={} strategy={} args='{}': {}",
@@ -616,7 +623,7 @@ fn select_ipv4_strategy(
 ) -> Result<ProxyRuleStrategy> {
     let mut errors = Vec::new();
     for strategy in candidate_strategies_for_proto(proto) {
-        let (rc, out) = shell::run_timeout(Backend::Iptables.cmd(), &["-F", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT)?;
+        let (rc, out) = xtables_lock::run_timeout_retry(Backend::Iptables.cmd(), &["-F", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT)?;
         if rc != 0 {
             anyhow::bail!("{} -F {} failed before strategy install: {}", Backend::Iptables.cmd(), PROXY_CHAIN, out);
         }
@@ -669,7 +676,7 @@ fn install_ipv4_rules(uids: &[u32], ports: &[u16]) -> Result<()> {
         Some((TransportProtocol::Tcp, tcp_strategy)),
     )?;
 
-    let (rc, out) = shell::run_timeout(Backend::Iptables.cmd(), &["-F", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT)?;
+    let (rc, out) = xtables_lock::run_timeout_retry(Backend::Iptables.cmd(), &["-F", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT)?;
     if rc != 0 {
         anyhow::bail!("{} -F {} failed: {}", Backend::Iptables.cmd(), PROXY_CHAIN, out);
     }
@@ -695,7 +702,7 @@ fn install_ipv6_rules(uids: &[u32]) -> Result<()> {
             "-j".to_string(),
             "DROP".to_string(),
         ];
-        let (rc, out) = shell::runv_timeout(Backend::Ip6tables.cmd(), &args, Capture::Both, IPT_TIMEOUT)?;
+        let (rc, out) = xtables_lock::runv_timeout_retry(Backend::Ip6tables.cmd(), &args, Capture::Both, IPT_TIMEOUT)?;
         if rc != 0 {
             anyhow::bail!("ip6tables add proxyInfo IPv6 deny rule failed uid={} args='{}': {}", uid, args.join(" "), out);
         }
@@ -705,7 +712,8 @@ fn install_ipv6_rules(uids: &[u32]) -> Result<()> {
 }
 
 fn install_rules(uids: &[u32], ports: &[u16]) -> Result<()> {
-    clear_rules()?;
+    let _guard = xtables_lock::lock();
+    clear_rules_unlocked();
     if uids.is_empty() {
         return Ok(());
     }
@@ -719,7 +727,7 @@ fn install_rules(uids: &[u32], ports: &[u16]) -> Result<()> {
     })();
 
     if result.is_err() {
-        let _ = clear_rules();
+        clear_rules_unlocked();
     }
     result
 }

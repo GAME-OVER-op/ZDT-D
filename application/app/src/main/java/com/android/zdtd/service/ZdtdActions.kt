@@ -186,6 +186,15 @@ interface ZdtdActions {
   /** Save proxyInfo apps after removing conflicts from program lists on the daemon side. */
   fun saveProxyInfoAppsRemovingConflicts(content: String, onDone: (Boolean) -> Unit = {})
 
+  /** Reload blocked QUIC settings used by the settings sheet. */
+  fun refreshBlockedQuic()
+
+  /** Enable/disable blocking QUIC for selected apps. */
+  fun setBlockedQuicEnabled(enabled: Boolean)
+
+  /** Save selected app package names for QUIC blocking and apply changes. */
+  fun saveBlockedQuicApps(content: String, onDone: (Boolean) -> Unit = {})
+
   /** Set module protector mode: off | on | auto. */
   fun setProtectorMode(mode: String)
 

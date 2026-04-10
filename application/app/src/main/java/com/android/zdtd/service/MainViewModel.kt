@@ -3514,6 +3514,14 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     return base.copy(appsContent = apps)
   }
 
+  private suspend fun fetchBlockedQuicState(): ApiModels.ProxyInfoState {
+    val base = runCatching { api.getBlockedQuic() }.getOrDefault(ApiModels.ProxyInfoState())
+    val apps = base.appsContent.ifBlank {
+      runCatching { api.getBlockedQuicApps() }.getOrDefault("")
+    }
+    return base.copy(appsContent = apps)
+  }
+
   override fun refreshProxyInfo() {
     launchIO {
       _appUpdate.update { it.copy(proxyInfoBusy = true) }
@@ -3535,6 +3543,27 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     }
   }
 
+
+  override fun refreshBlockedQuic() {
+    launchIO {
+      _appUpdate.update { it.copy(blockedQuicBusy = true) }
+      val state = runCatching { fetchBlockedQuicState() }.getOrElse {
+        log("ERR", "blockedQuic refresh failed: ${it.message ?: it}")
+        ApiModels.ProxyInfoState(
+          enabled = _appUpdate.value.blockedQuicEnabled,
+          appsContent = _appUpdate.value.blockedQuicAppsContent,
+          active = false,
+        )
+      }
+      _appUpdate.update {
+        it.copy(
+          blockedQuicEnabled = state.enabled,
+          blockedQuicAppsContent = state.appsContent,
+          blockedQuicBusy = false,
+        )
+      }
+    }
+  }
 
   override fun loadAppAssignments(onDone: (ApiModels.AppAssignmentsState?) -> Unit) {
     launchIO {
@@ -3635,6 +3664,62 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     }
   }
 
+
+  override fun setBlockedQuicEnabled(enabled: Boolean) {
+    val previous = _appUpdate.value.blockedQuicEnabled
+    if (previous == enabled) return
+    _appUpdate.update { it.copy(blockedQuicEnabled = enabled) }
+    launchIO {
+      val ok = runCatching {
+        api.setBlockedQuicEnabled(enabled) && api.applyBlockedQuic()
+      }.getOrElse {
+        log("ERR", "blockedQuic enabled failed: ${it.message ?: it}")
+        false
+      }
+      if (!ok) {
+        _appUpdate.update { it.copy(blockedQuicEnabled = previous) }
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_blockedquic_save_failed))
+        }
+        return@launchIO
+      }
+      withContext(Dispatchers.Main.immediate) {
+        toast(str(R.string.settings_blockedquic_saved))
+      }
+    }
+  }
+
+  override fun saveBlockedQuicApps(content: String, onDone: (Boolean) -> Unit) {
+    val normalized = content
+      .lineSequence()
+      .map { it.trim() }
+      .filter { it.isNotEmpty() }
+      .distinct()
+      .joinToString("\n")
+    val previous = _appUpdate.value.blockedQuicAppsContent
+    _appUpdate.update { it.copy(blockedQuicAppsContent = normalized, blockedQuicBusy = true) }
+    launchIO {
+      val ok = runCatching {
+        api.saveBlockedQuicApps(normalized) && api.applyBlockedQuic()
+      }.getOrElse {
+        log("ERR", "blockedQuic apps failed: ${it.message ?: it}")
+        false
+      }
+      if (!ok) {
+        _appUpdate.update { it.copy(blockedQuicAppsContent = previous, blockedQuicBusy = false) }
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_blockedquic_save_failed))
+          onDone(false)
+        }
+        return@launchIO
+      }
+      _appUpdate.update { it.copy(blockedQuicAppsContent = normalized, blockedQuicBusy = false) }
+      withContext(Dispatchers.Main.immediate) {
+        toast(str(R.string.settings_blockedquic_saved))
+        onDone(true)
+      }
+    }
+  }
 
   override fun setProtectorMode(mode: String) {
     val safe = when (mode.trim().lowercase()) {

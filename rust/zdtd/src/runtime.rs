@@ -109,6 +109,9 @@ if !any_main_service_running() {
         log::warn!("proxyInfo apply failed after start: {e:#}");
         crate::logging::user_warn("proxyInfo: не удалось применить защиту");
     }
+    if let Err(e) = crate::blockedquic::refresh_runtime(true) {
+        log::warn!("blockedquic apply failed after start: {e:#}");
+    }
 
     crate::logging::user_info("Запуск завершён");
 

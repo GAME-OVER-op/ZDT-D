@@ -191,6 +191,11 @@ fun AppUpdateSettings(
   onLoadAppAssignments: (((com.android.zdtd.service.api.ApiModels.AppAssignmentsState?) -> Unit) -> Unit),
   onProxyInfoAppsSave: (String, (Boolean) -> Unit) -> Unit,
   onProxyInfoAppsSaveRemovingConflicts: (String, (Boolean) -> Unit) -> Unit,
+  blockedQuicEnabled: Boolean,
+  blockedQuicBusy: Boolean,
+  blockedQuicAppsContent: String,
+  onBlockedQuicEnabledChange: (Boolean) -> Unit,
+  onBlockedQuicAppsSave: (String, (Boolean) -> Unit) -> Unit,
   resettingModuleIdentifier: Boolean,
   onResetModuleIdentifier: () -> Unit,
   onDeleteModule: () -> Unit,
@@ -199,6 +204,7 @@ fun AppUpdateSettings(
   var showHotspotWarning by remember { mutableStateOf(false) }
   var showResetIdentifierConfirm by remember { mutableStateOf(false) }
   var showProxyInfoConfigure by remember { mutableStateOf(false) }
+  var showBlockedQuicConfigure by remember { mutableStateOf(false) }
   // BottomSheet content may not have enough height on small screens.
   // Make it scrollable so the Language section is always reachable.
   Column(
@@ -335,6 +341,25 @@ fun AppUpdateSettings(
         onLoadAssignments = onLoadAppAssignments,
         onSave = onProxyInfoAppsSave,
         onSaveRemovingConflicts = onProxyInfoAppsSaveRemovingConflicts,
+      )
+    }
+
+    Spacer(Modifier.height(18.dp))
+
+    BlockedQuicSectionCard(
+      enabled = blockedQuicEnabled,
+      busy = blockedQuicBusy,
+      onEnabledChange = onBlockedQuicEnabledChange,
+      onConfigure = { showBlockedQuicConfigure = true },
+    )
+
+    if (showBlockedQuicConfigure) {
+      BlockedQuicAppsDialog(
+        initialContent = blockedQuicAppsContent,
+        saving = blockedQuicBusy,
+        onDismiss = { if (!blockedQuicBusy) showBlockedQuicConfigure = false },
+        onLoadAssignments = onLoadAppAssignments,
+        onSave = onBlockedQuicAppsSave,
       )
     }
 

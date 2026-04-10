@@ -117,7 +117,6 @@ pub fn start_if_enabled() -> Result<()> {
     crate::logging::user_info("DNSCrypt: правила iptables");
     
     apply_dns_iptables(listen_port)?;
-    apply_udp_443_reject_rules()?;
 
     if stop_requested() {
         warn!("dnscrypt stopped right after iptables");
@@ -719,61 +718,6 @@ fn apply_dns_ip6tables(listen_port: u16) -> Result<()> {
 }
 
 
-fn apply_udp_443_reject_rules() -> Result<()> {
-    let ipt = find_iptables();
-    let v4_rule = [
-        "-p",
-        "udp",
-        "--dport",
-        "443",
-        "-j",
-        "REJECT",
-        "--reject-with",
-        "icmp-port-unreachable",
-    ];
-    if !rule_exists(&ipt, "filter", "OUTPUT", &v4_rule)? {
-        add_rule_pos(&ipt, "filter", "OUTPUT", 1, &v4_rule)
-            .or_else(|_| add_rule(&ipt, "filter", "OUTPUT", true, &v4_rule))
-            .or_else(|_| add_rule(&ipt, "filter", "OUTPUT", false, &v4_rule))?;
-        info!("dnscrypt: added IPv4 udp/443 reject rule in filter OUTPUT");
-    }
-
-    let ip6t = find_ip6tables();
-    let v6_rule = ["-p", "udp", "--dport", "443", "-j", "REJECT"];
-    if !rule_exists(&ip6t, "filter", "OUTPUT", &v6_rule)? {
-        add_rule_pos(&ip6t, "filter", "OUTPUT", 1, &v6_rule)
-            .or_else(|_| add_rule(&ip6t, "filter", "OUTPUT", true, &v6_rule))
-            .or_else(|_| add_rule(&ip6t, "filter", "OUTPUT", false, &v6_rule))?;
-        info!("dnscrypt: added IPv6 udp/443 reject rule in filter OUTPUT");
-    }
-
-    Ok(())
-}
-
-pub fn clear_udp_443_reject_rules() -> Result<()> {
-    let ipt = find_iptables();
-    let v4_rule = [
-        "-p",
-        "udp",
-        "--dport",
-        "443",
-        "-j",
-        "REJECT",
-        "--reject-with",
-        "icmp-port-unreachable",
-    ];
-    while rule_exists(&ipt, "filter", "OUTPUT", &v4_rule).unwrap_or(false) {
-        let _ = del_rule(&ipt, "filter", "OUTPUT", &v4_rule);
-    }
-
-    let ip6t = find_ip6tables();
-    let v6_rule = ["-p", "udp", "--dport", "443", "-j", "REJECT"];
-    while rule_exists(&ip6t, "filter", "OUTPUT", &v6_rule).unwrap_or(false) {
-        let _ = del_rule(&ip6t, "filter", "OUTPUT", &v6_rule);
-    }
-
-    Ok(())
-}
 
 fn ensure_chain(iptables: &str, table: &str, chain: &str) -> Result<()> {
     let (code, _) = shell::run(iptables, &["-t", table, "-nL", chain], Capture::Stdout)

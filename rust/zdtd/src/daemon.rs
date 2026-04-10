@@ -49,6 +49,9 @@ pub fn run(_cfg: &Config) -> Result<()> {
     if let Err(e) = crate::proxyinfo::ensure_layout() {
         logging::warn(&format!("failed to init proxyInfo files: {e:#}"));
     }
+    if let Err(e) = crate::blockedquic::ensure_layout() {
+        logging::warn(&format!("failed to init blockedquic files: {e:#}"));
+    }
 
     // Truncate main log at each daemon start.
     logging::truncate_main_log()?;

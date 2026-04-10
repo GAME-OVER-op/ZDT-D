@@ -707,6 +707,7 @@ private fun MainShell(
     LaunchedEffect(Unit) {
       actions.refreshDaemonSettings()
       actions.refreshProxyInfo()
+      actions.refreshBlockedQuic()
     }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     ModalBottomSheet(
@@ -746,6 +747,11 @@ private fun MainShell(
         onLoadAppAssignments = actions::loadAppAssignments,
         onProxyInfoAppsSave = actions::saveProxyInfoApps,
         onProxyInfoAppsSaveRemovingConflicts = actions::saveProxyInfoAppsRemovingConflicts,
+        blockedQuicEnabled = appUpdate.blockedQuicEnabled,
+        blockedQuicBusy = appUpdate.blockedQuicBusy,
+        blockedQuicAppsContent = appUpdate.blockedQuicAppsContent,
+        onBlockedQuicEnabledChange = actions::setBlockedQuicEnabled,
+        onBlockedQuicAppsSave = actions::saveBlockedQuicApps,
         resettingModuleIdentifier = appUpdate.resettingModuleIdentifier,
         onResetModuleIdentifier = actions::resetModuleIdentifier,
         onDeleteModule = {

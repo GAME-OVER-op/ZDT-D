@@ -110,9 +110,9 @@ pub fn stop_services_and_restore_iptables() -> Result<()> {
     kill_by_name("opera-proxy")?;
     kill_by_name("sing-box")?;
 
-    // 2) remove direct dnscrypt filter guards and proxyInfo runtime guards before restore
-    let _ = crate::programs::dnscrypt::clear_udp_443_reject_rules();
+    // 2) remove runtime guard chains before restore
     let _ = crate::proxyinfo::clear_rules();
+    let _ = crate::blockedquic::clear_rules();
 
     // 3) flush nat/mangle and restore baseline backups independently for IPv4 and IPv6
     let restored_v4 = iptables_backup::reset_restore_v4_if_present()?;

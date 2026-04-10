@@ -20,6 +20,10 @@ data class AppUpdateUiState(
   val proxyInfoEnabled: Boolean = false,
   val proxyInfoAppsContent: String = "",
   val proxyInfoBusy: Boolean = false,
+  /** Block QUIC traffic for selected apps. */
+  val blockedQuicEnabled: Boolean = false,
+  val blockedQuicAppsContent: String = "",
+  val blockedQuicBusy: Boolean = false,
   /** True while the app automatically stops the daemon, removes flag.sha256 and starts it again. */
   val resettingModuleIdentifier: Boolean = false,
   // App-owned notification about daemon status (running/stopped).

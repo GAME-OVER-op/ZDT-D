@@ -164,6 +164,44 @@ class ApiClient(
 
   fun applyProxyInfo(): Boolean = requestOk("POST", "/api/proxyinfo/apply", JSONObject())
 
+
+  fun getBlockedQuic(): ApiModels.ProxyInfoState {
+    val obj = requestJson("GET", "/api/blockedquic", null)
+    return ApiModels.parseProxyInfo(obj)
+  }
+
+  fun getBlockedQuicEnabled(): Boolean {
+    val obj = requestJson("GET", "/api/blockedquic/enabled", null)
+    val enabledRaw = when {
+      obj?.has("enabled") == true -> obj.optInt("enabled", if (obj.optBoolean("enabled", false)) 1 else 0)
+      else -> 0
+    }
+    return enabledRaw != 0
+  }
+
+  fun setBlockedQuicEnabled(enabled: Boolean): Boolean {
+    val body = JSONObject().put("enabled", if (enabled) 1 else 0)
+    return requestOk("PUT", "/api/blockedquic/enabled", body)
+  }
+
+  fun getBlockedQuicApps(): String {
+    val obj = requestJson("GET", "/api/blockedquic/apps", null)
+    return obj?.optString("content", "") ?: ""
+  }
+
+  fun setBlockedQuicApps(content: String): Boolean {
+    val body = JSONObject().put("content", content)
+    return requestOk("PUT", "/api/blockedquic/apps", body)
+  }
+
+  fun saveBlockedQuicApps(content: String): Boolean {
+    val body = JSONObject().put("content", content)
+    val obj = requestJson("POST", "/api/blockedquic/save", body)
+    return (obj?.optBoolean("ok", false) == true) && obj.optBoolean("saved", false)
+  }
+
+  fun applyBlockedQuic(): Boolean = requestOk("POST", "/api/blockedquic/apply", JSONObject())
+
   fun getJsonData(path: String): JSONObject {
     val obj = requestJson("GET", path, null) ?: return JSONObject()
     // Prefer wrapped payload when server uses { data: {...} }, otherwise return the object as-is.

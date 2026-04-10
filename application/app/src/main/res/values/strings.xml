@@ -675,6 +675,24 @@ Install the module again.</string>
     <string name="settings_hotspot_singbox_profiles_title">Available sing-box profiles</string>
     <string name="settings_hotspot_singbox_profiles_empty">There are no enabled sing-box profiles available.</string>
 
+    <string name="settings_blockedquic_title">Block app QUIC</string>
+    <string name="settings_blockedquic_body">Blocks QUIC traffic for selected apps.</string>
+    <string name="settings_blockedquic_warning_title">Block app QUIC</string>
+    <string name="settings_blockedquic_warning_body">This feature blocks QUIC traffic for the app.
+It forces the app to use TCP as the primary connection.</string>
+    <string name="settings_blockedquic_warning_accept">Understood</string>
+    <string name="settings_blockedquic_configure">Configure</string>
+    <string name="settings_blockedquic_apps_title">Select apps</string>
+    <string name="settings_blockedquic_apps_body">Selected apps will be forced to use TCP instead of QUIC whenever possible.</string>
+    <string name="settings_blockedquic_search_hint">Search apps</string>
+    <string name="settings_blockedquic_selected_header">Selected apps</string>
+    <string name="settings_blockedquic_all_apps_title">All apps</string>
+    <string name="settings_blockedquic_empty">Nothing selected</string>
+    <string name="settings_blockedquic_saved">QUIC blocking settings saved</string>
+    <string name="settings_blockedquic_save_failed">Failed to save QUIC blocking settings</string>
+    <string name="settings_blockedquic_conflict_title">Apps are already in port scan protection</string>
+    <string name="settings_blockedquic_conflict_body">These apps are already added to port scan protection. Remove them from the QUIC blocking list selection.</string>
+    <string name="settings_blockedquic_conflict_uncheck">Uncheck them</string>
     <string name="settings_proxyinfo_title">Port Scan Protection</string>
     <string name="settings_proxyinfo_body">Blocks apps from detecting the open ports of the module.</string>
     <string name="settings_proxyinfo_warning_title">Port Scan Protection</string>

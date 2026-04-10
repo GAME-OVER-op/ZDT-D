@@ -2553,6 +2553,94 @@ match (method.as_str(), path.as_str()) {
             }
         }
 
+        ("GET", "/api/blockedquic") => {
+            let res = (|| -> Result<serde_json::Value> {
+                let enabled = crate::blockedquic::load_enabled_json()?.enabled;
+                let apps = crate::blockedquic::read_uid_program_text()?;
+                Ok(json!({"ok": true, "enabled": enabled, "apps": apps, "active": services_running && crate::blockedquic::is_active()}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", "/api/blockedquic/enabled") => {
+            let res = (|| -> Result<serde_json::Value> {
+                let enabled = crate::blockedquic::load_enabled_json()?.enabled;
+                Ok(json!({"ok": true, "enabled": enabled}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", "/api/blockedquic/enabled") => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: ProxyEnabledReq = serde_json::from_slice(&body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                if req.enabled > 1 {
+                    anyhow::bail!("enabled must be 0 or 1");
+                }
+                let v = crate::blockedquic::save_enabled_value(req.enabled)?;
+                Ok(json!({"ok": true, "enabled": v.enabled}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", "/api/blockedquic/apps") => {
+            let res = crate::blockedquic::read_uid_program_text();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", "/api/blockedquic/apps") => {
+            let res = (|| -> Result<()> {
+                let req: ContentReq = serde_json::from_slice(&body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                crate::blockedquic::write_uid_program_text(&req.content)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", "/api/blockedquic/save") => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: ContentReq = serde_json::from_slice(&body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                crate::blockedquic::write_uid_program_text(&req.content)?;
+                Ok(json!({"ok": true, "saved": true}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", "/api/blockedquic/apply") => {
+            let res = (|| -> Result<serde_json::Value> {
+                let enabled = crate::blockedquic::load_enabled_json()?.is_enabled();
+                if !enabled {
+                    crate::blockedquic::clear_rules()?;
+                    return Ok(json!({"ok": true, "active": false}));
+                }
+                let _ = crate::blockedquic::rebuild_out_program()?;
+                if services_running {
+                    let active = crate::blockedquic::refresh_runtime(true)?;
+                    Ok(json!({"ok": true, "active": active}))
+                } else {
+                    crate::blockedquic::clear_rules()?;
+                    Ok(json!({"ok": true, "active": false}))
+                }
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
         ("GET", "/api/proxyinfo") => {
             let res = (|| -> Result<serde_json::Value> {
                 let enabled = crate::proxyinfo::load_enabled_json()?.enabled;

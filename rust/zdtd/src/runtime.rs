@@ -99,6 +99,12 @@ if !any_main_service_running() {
     bail!("no main services started");
 }
 
+    let proxyinfo_enabled = crate::proxyinfo::load_enabled_json()
+        .map(|v| v.is_enabled())
+        .unwrap_or(false);
+    if proxyinfo_enabled {
+        crate::logging::user_info("Настройка защиты");
+    }
     if let Err(e) = crate::proxyinfo::refresh_runtime(true) {
         log::warn!("proxyInfo apply failed after start: {e:#}");
         crate::logging::user_warn("proxyInfo: не удалось применить защиту");

@@ -290,47 +290,8 @@ pub fn start_if_enabled() -> Result<()> {
         apply_hotspot_prerouting_redirect(port_cfg.t2s_port)?;
     }
 
-    // 6) NAT MASQUERADE rule for local t2s port (like original else branch)
-    // Keep it idempotent in case caller runs twice.
-    let t2s_port_s = port_cfg.t2s_port.to_string();
-    let check_args = [
-        "-t",
-        "nat",
-        "-C",
-        "POSTROUTING",
-        "-p",
-        "tcp",
-        "-d",
-        "127.0.0.1",
-        "--dport",
-        &t2s_port_s,
-        "-j",
-        "MASQUERADE",
-    ];
-    let rc = match shell::run("iptables", &check_args, Capture::None) {
-        Ok((rc, _)) => rc,
-        Err(_) => 1,
-    };
-    if rc != 0 {
-        let add_args = [
-            "-t",
-            "nat",
-            "-A",
-            "POSTROUTING",
-            "-p",
-            "tcp",
-            "-d",
-            "127.0.0.1",
-            "--dport",
-            &t2s_port_s,
-            "-j",
-            "MASQUERADE",
-        ];
-        let _ = shell::run("iptables", &add_args, Capture::None);
-    }
-
     crate::logging::user_info("Opera: iptables");
-    // 7) Apply iptables_port for selected apps -> t2s_port, proto tcp
+    // 6) Apply iptables_port for selected apps -> t2s_port, proto tcp
     // - user list applies to ALL interfaces (no -o)
     // - mobile/wifi lists apply to specified interfaces from port.json
     let opt = DpiTunnelOptions { port_preference: 1, ..DpiTunnelOptions::default() };
@@ -514,13 +475,11 @@ fn spawn_opera_proxy(
         .arg("-init-retries")
         .arg("15")
         .arg("-init-retry-interval")
-        .arg("5s")
+        .arg("3s")
         .arg("-server-selection")
         .arg("fastest")
         .arg("-server-selection-dl-limit")
-        .arg("204800")
-        .arg("-server-selection-timeout")
-        .arg("60s");
+        .arg("204800");
     if let Some(ref upstream) = upstream {
         cmd.arg("-proxy").arg(upstream);
     }

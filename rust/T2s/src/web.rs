@@ -8,11 +8,11 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::{hash::{Hash, Hasher}, net::SocketAddr, time::Duration};
+use std::{hash::{Hash, Hasher}, net::{SocketAddr, ToSocketAddrs}, time::Duration};
 use tokio::time::Instant;
 
 const INDEX_HTML: &str = include_str!("web_ui.html");
-const BUILD_TAG: &str = "tcp-only-green-only-smart-energy-v2";
+const BUILD_TAG: &str = "tcp-only-green-only-smart-energy-v3";
 
 #[derive(Debug, Deserialize)]
 struct DownloadLimitReq {
@@ -24,6 +24,10 @@ struct DownloadLimitReq {
 struct BackendReq {
     host: String,
     port: u16,
+    #[serde(default)]
+    username: Option<String>,
+    #[serde(default)]
+    password: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,30 +127,59 @@ async fn api_download_limit(State(state): State<AppState>, Json(req): Json<Downl
     (StatusCode::OK, Json(serde_json::json!({"result":"ok","mbit":mbit})))
 }
 
+
+fn normalize_backend_auth(req: &BackendReq) -> std::result::Result<Option<(String, String)>, String> {
+    let username = req.username.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let password = req.password.clone().filter(|s| !s.is_empty());
+    match (username, password) {
+        (None, None) => Ok(None),
+        (Some(u), Some(p)) => Ok(Some((u, p))),
+        _ => Err("username and password must be provided together".to_string()),
+    }
+}
+
+fn resolve_backend_addr(host: &str, port: u16) -> std::result::Result<SocketAddr, String> {
+    let it = (host, port)
+        .to_socket_addrs()
+        .map_err(|_| "invalid host:port".to_string())?;
+    let mut first: Option<SocketAddr> = None;
+    for sa in it {
+        if first.is_none() {
+            first = Some(sa);
+        }
+        if sa.is_ipv4() {
+            return Ok(sa);
+        }
+    }
+    first.ok_or_else(|| "invalid host:port".to_string())
+}
+
 async fn api_backend_add(State(state): State<AppState>, Json(req): Json<BackendReq>) -> impl IntoResponse {
-    let addr_str = format!("{}:{}", req.host, req.port);
-    match addr_str.parse::<SocketAddr>() {
+    let auth = match normalize_backend_auth(&req) {
+        Ok(v) => v,
+        Err(e) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))),
+    };
+
+    match resolve_backend_addr(&req.host, req.port) {
         Ok(sa) => {
             let mut b = state.backends.lock();
-            // avoid duplicates
             if b.snapshot().iter().any(|s| s.addr == sa.to_string()) {
                 return (StatusCode::OK, Json(serde_json::json!({"result":"ok","note":"already exists"})));
             }
-            b.add(sa);
+            b.add(sa, auth);
             (StatusCode::OK, Json(serde_json::json!({"result":"ok"})))
         }
-        Err(_) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"invalid host:port"}))),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))),
     }
 }
 
 async fn api_backend_remove(State(state): State<AppState>, Json(req): Json<BackendReq>) -> impl IntoResponse {
-    let addr_str = format!("{}:{}", req.host, req.port);
-    match addr_str.parse::<SocketAddr>() {
+    match resolve_backend_addr(&req.host, req.port) {
         Ok(sa) => {
             state.backends.lock().remove(sa);
             (StatusCode::OK, Json(serde_json::json!({"result":"ok"})))
         }
-        Err(_) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"invalid host:port"}))),
+        Err(e) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))),
     }
 }
 

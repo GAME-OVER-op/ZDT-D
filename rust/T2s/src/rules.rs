@@ -129,6 +129,10 @@ impl Rules {
         }
         None
     }
+
+    pub fn has_host_rules(&self) -> bool {
+        self.rules.iter().any(|r| r.when.host_regex.is_some())
+    }
 }
 
 impl Rule {

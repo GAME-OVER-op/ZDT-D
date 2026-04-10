@@ -328,7 +328,17 @@ fn collect_profile_servers(
             continue;
         }
         let Some(name) = dir.file_name().and_then(|s| s.to_str()) else { continue };
-        ensure_valid_profile_name(name)?;
+        if name.starts_with('.') {
+            continue;
+        }
+        if let Err(e) = ensure_valid_profile_name(name) {
+            warn!(
+                "sing-box: skip profile='{}' server-dir='{}' (invalid directory name): {e:#}",
+                profile,
+                name
+            );
+            continue;
+        }
 
         let setting_path = dir.join("setting.json");
         let setting: ServerSetting = match read_json(&setting_path) {

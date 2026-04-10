@@ -299,8 +299,10 @@ hr.sep{border:0;border-top:1px solid rgba(255,255,255,.06); margin:12px 0}
     <div class="card">
       <h2>SOCKS backends</h2>
       <div class="row" style="margin-bottom:10px;">
-        <input class="input" id="be_host" placeholder="host" style="flex:1;min-width:140px;">
+        <input class="input" id="be_host" placeholder="host / ip" style="flex:1;min-width:140px;">
         <input class="input" id="be_port" placeholder="port" type="number" style="width:110px;">
+        <input class="input" id="be_user" placeholder="username (optional)" style="width:180px;">
+        <input class="input" id="be_pass" placeholder="password (optional)" type="password" style="width:180px;">
         <button class="btn secondary" id="btn_add_be">Add</button>
         <button class="btn danger" id="btn_rm_be">Remove</button>
         <div class="muted" id="be_total" style="margin-left:auto;"></div>
@@ -574,12 +576,23 @@ hr.sep{border:0;border-top:1px solid rgba(255,255,255,.06); margin:12px 0}
   async function addBackend(){
     const host = $('be_host').value.trim();
     const port = Number($('be_port').value || 0);
+    const username = $('be_user').value.trim();
+    const password = $('be_pass').value;
     if(!host || !port) return;
-    await fetch('/api/backends/add', {
+    const body = {host, port};
+    if(username || password){
+      body.username = username;
+      body.password = password;
+    }
+    const r = await fetch('/api/backends/add', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({host, port})
+      body: JSON.stringify(body)
     });
+    if(r.ok){
+      $('be_user').value = '';
+      $('be_pass').value = '';
+    }
     await fetchState();
   }
 

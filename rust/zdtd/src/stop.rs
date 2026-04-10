@@ -2,8 +2,6 @@ use anyhow::Result;
 
 use crate::{iptables_backup, shell};
 
-const IPT_FLUSH_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-
 fn pidof(name: &str) -> Vec<i32> {
     // `pidof` returns a space-separated list of PIDs.
     let (rc, out) = match shell::run("pidof", &[name], shell::Capture::Stdout) {
@@ -112,20 +110,17 @@ pub fn stop_services_and_restore_iptables() -> Result<()> {
     kill_by_name("opera-proxy")?;
     kill_by_name("sing-box")?;
 
-    // 2) remove proxyInfo runtime guard before restore
+    // 2) remove proxyInfo runtime guards before restore
     let _ = crate::proxyinfo::clear_rules();
 
-    // 3) iptables: flush nat/mangle then restore baseline backup; proxyInfo filter chain is removed separately
-    if crate::settings::iptables_backup_path().exists() {
-        iptables_backup::reset_tables_then_restore_backup()?;
-    } else {
-        log::warn!("iptables backup is missing; flushing nat/mangle without restore (proxyInfo filter chain already removed)");
-        let _ = shell::ok_sh_timeout("iptables -t nat -F", IPT_FLUSH_TIMEOUT);
-        let _ = shell::ok_sh_timeout("iptables -t mangle -F", IPT_FLUSH_TIMEOUT);
+    // 3) flush nat/mangle and restore baseline backups independently for IPv4 and IPv6
+    let restored_v4 = iptables_backup::reset_restore_v4_if_present()?;
+    let _restored_v6 = iptables_backup::reset_restore_v6_if_present()?;
 
-        // IPv6 best-effort cleanup
-        let _ = shell::ok_sh_timeout("ip6tables -t nat -F", IPT_FLUSH_TIMEOUT);
-        let _ = shell::ok_sh_timeout("ip6tables -t mangle -F", IPT_FLUSH_TIMEOUT);
+    if !restored_v4 {
+        log::warn!(
+            "iptables backup is missing; IPv4 nat/mangle were flushed without restore (proxyInfo filter chains already removed)"
+        );
     }
 
     Ok(())

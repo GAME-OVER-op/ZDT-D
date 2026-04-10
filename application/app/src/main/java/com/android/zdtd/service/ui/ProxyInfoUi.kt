@@ -9,16 +9,21 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -187,7 +192,12 @@ fun ProxyInfoAppsDialog(
   }
   val notSelectedApps = remember(filtered, selected) { filtered.filter { it.packageName !in selected } }
   val compactWidth = rememberIsCompactWidth()
+  val narrowWidth = rememberIsNarrowWidth()
   val shortHeight = rememberIsShortHeight()
+  val useCompactHeader = shortHeight || narrowWidth
+  val dialogHorizontalPadding = if (compactWidth) 10.dp else 18.dp
+  val dialogVerticalPadding = if (shortHeight) 8.dp else 20.dp
+  val contentPadding = if (shortHeight) 12.dp else 16.dp
 
   val slotCommonLabel = stringResource(R.string.apps_conflict_slot_common)
   val slotWifiLabel = stringResource(R.string.apps_conflict_slot_wifi)
@@ -235,6 +245,15 @@ fun ProxyInfoAppsDialog(
 
   val selectedConflicts = remember(selected, assignments) { computeConflicts(selected) }
 
+  fun attemptSave() {
+    val payload = selected.sorted().joinToString("\n")
+    if (selectedConflicts.isEmpty()) {
+      onSave(payload) { ok -> if (ok) onDismiss() }
+    } else {
+      pendingConflicts = selectedConflicts
+    }
+  }
+
   Dialog(
     onDismissRequest = { if (!saving) onDismiss() },
     properties = DialogProperties(
@@ -246,7 +265,8 @@ fun ProxyInfoAppsDialog(
     Surface(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 18.dp, vertical = 20.dp),
+        .fillMaxHeight(if (shortHeight) 0.96f else 0.90f)
+        .padding(horizontal = dialogHorizontalPadding, vertical = dialogVerticalPadding),
       shape = MaterialTheme.shapes.extraLarge,
       tonalElevation = 6.dp,
       shadowElevation = 12.dp,
@@ -254,39 +274,96 @@ fun ProxyInfoAppsDialog(
     ) {
       Column(
         modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 16.dp, vertical = 16.dp),
+          .fillMaxSize()
+          .navigationBarsPadding()
+          .imePadding()
+          .padding(horizontal = contentPadding, vertical = contentPadding),
       ) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Column(Modifier.weight(1f)) {
-            Text(
-              text = stringResource(R.string.settings_proxyinfo_apps_title),
-              style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.SemiBold,
-              maxLines = 2,
-              overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-              text = stringResource(R.string.settings_proxyinfo_apps_body),
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-            )
-          }
-          Surface(
-            shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
+        if (useCompactHeader) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
           ) {
-            IconButton(onClick = onDismiss, enabled = !saving) {
-              Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_cancel))
+            Column(Modifier.weight(1f)) {
+              Text(
+                text = stringResource(R.string.settings_proxyinfo_apps_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+              )
+              Spacer(Modifier.height(4.dp))
+              Text(
+                text = stringResource(R.string.settings_proxyinfo_apps_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+            Row(
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+              ) {
+                IconButton(onClick = onDismiss, enabled = !saving, modifier = Modifier.size(40.dp)) {
+                  Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_cancel))
+                }
+              }
+              Surface(
+                shape = CircleShape,
+                color = if (saving) {
+                  MaterialTheme.colorScheme.primary.copy(alpha = 0.60f)
+                } else {
+                  MaterialTheme.colorScheme.primary
+                },
+              ) {
+                IconButton(onClick = { attemptSave() }, enabled = !saving, modifier = Modifier.size(40.dp)) {
+                  Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = stringResource(R.string.common_save),
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                  )
+                }
+              }
+            }
+          }
+        } else {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Column(Modifier.weight(1f)) {
+              Text(
+                text = stringResource(R.string.settings_proxyinfo_apps_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+              )
+              Spacer(Modifier.height(4.dp))
+              Text(
+                text = stringResource(R.string.settings_proxyinfo_apps_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+              )
+            }
+            Surface(
+              shape = MaterialTheme.shapes.large,
+              color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.75f),
+            ) {
+              IconButton(onClick = onDismiss, enabled = !saving) {
+                Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_cancel))
+              }
             }
           }
         }
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(if (shortHeight) 8.dp else 12.dp))
 
         OutlinedTextField(
           value = query,
@@ -297,13 +374,13 @@ fun ProxyInfoAppsDialog(
           enabled = !saving,
         )
 
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(if (shortHeight) 8.dp else 12.dp))
 
         if (apps.isEmpty()) {
           Box(
             modifier = Modifier
               .fillMaxWidth()
-              .height(240.dp),
+              .weight(1f, fill = true),
             contentAlignment = Alignment.Center,
           ) {
             CircularProgressIndicator()
@@ -312,8 +389,8 @@ fun ProxyInfoAppsDialog(
           LazyColumn(
             modifier = Modifier
               .fillMaxWidth()
-              .heightIn(min = if (shortHeight) 220.dp else 300.dp, max = if (shortHeight) 420.dp else 560.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+              .weight(1f, fill = true),
+            verticalArrangement = Arrangement.spacedBy(if (shortHeight) 6.dp else 8.dp),
           ) {
             item {
               Text(
@@ -346,9 +423,9 @@ fun ProxyInfoAppsDialog(
             }
 
             item {
-              Spacer(Modifier.height(8.dp))
+              Spacer(Modifier.height(if (shortHeight) 6.dp else 8.dp))
               HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f))
-              Spacer(Modifier.height(8.dp))
+              Spacer(Modifier.height(if (shortHeight) 6.dp else 8.dp))
               Text(
                 text = stringResource(R.string.settings_proxyinfo_all_apps_title),
                 style = MaterialTheme.typography.labelLarge,
@@ -371,37 +448,32 @@ fun ProxyInfoAppsDialog(
           }
         }
 
-        Spacer(Modifier.height(14.dp))
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-          OutlinedButton(
-            onClick = onDismiss,
-            modifier = Modifier.weight(1f),
-            enabled = !saving,
+        if (!useCompactHeader) {
+          Spacer(Modifier.height(if (shortHeight) 10.dp else 14.dp))
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
           ) {
-            Text(stringResource(R.string.common_cancel))
-          }
-          Button(
-            onClick = {
-              val payload = selected.sorted().joinToString("\n")
-              if (selectedConflicts.isEmpty()) {
-                onSave(payload) { ok -> if (ok) onDismiss() }
+            OutlinedButton(
+              onClick = onDismiss,
+              modifier = Modifier.weight(1f),
+              enabled = !saving,
+            ) {
+              Text(stringResource(R.string.common_cancel))
+            }
+            Button(
+              onClick = { attemptSave() },
+              modifier = Modifier.weight(1f),
+              enabled = !saving,
+            ) {
+              if (saving) {
+                CircularProgressIndicator(
+                  modifier = Modifier.size(18.dp),
+                  strokeWidth = 2.dp,
+                )
               } else {
-                pendingConflicts = selectedConflicts
+                Text(stringResource(R.string.common_save))
               }
-            },
-            modifier = Modifier.weight(1f),
-            enabled = !saving,
-          ) {
-            if (saving) {
-              CircularProgressIndicator(
-                modifier = Modifier.size(18.dp),
-                strokeWidth = 2.dp,
-              )
-            } else {
-              Text(stringResource(R.string.common_save))
             }
           }
         }

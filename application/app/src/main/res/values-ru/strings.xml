@@ -403,6 +403,10 @@
     <string name="strategic_strategies_none">Стратегии: нет</string>
     <string name="strategic_strategy_selected">Стратегия: %1$s</string>
     <string name="strategic_user_config">Пользовательский конфиг</string>
+    <string name="strategic_variants_sheet_title">Доступные конфиги</string>
+    <string name="strategic_variants_sheet_hint">Нажмите на конфиг, чтобы сразу применить его.</string>
+    <string name="strategic_variants_current_hint">Текущий конфиг</string>
+    <string name="strategic_variants_tap_to_apply">Нажмите, чтобы применить</string>
 
     <!-- Common -->
     <string name="common_close">Закрыть</string><string name="common_update">Обновить</string>
@@ -549,6 +553,11 @@
     <string name="startup_stage_connecting">1-й этап: подключение к демону</string>
     <string name="startup_stage_loading">2-й этап: загрузка информации от демона</string>
     <string name="startup_reinstall_module">Переустановить модуль</string>
+    <string name="startup_loading_title">Загрузка приложения</string>
+    <string name="startup_loading_subtitle">Подготавливаем интерфейс и проверяем подключение к модулю.</string>
+    <string name="startup_stage_connecting_short">Подключение...</string>
+    <string name="startup_stage_initializing">Инициализация...</string>
+    <string name="startup_stage_opening">Открытие интерфейса...</string>
     <string name="startup_daemon_failed_module_found">Не удалось подключиться к демону.
 Модуль найден, но, возможно, работает некорректно.
 Рекомендуется переустановить модуль.</string>

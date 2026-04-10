@@ -124,6 +124,57 @@ fn ip6_nat_supported() -> bool {
     }
 }
 
+pub fn flush_tables_v4_best_effort() {
+    let _ = shell::ok_sh_timeout("iptables -t nat -F", IPT_FLUSH_TIMEOUT);
+    let _ = shell::ok_sh_timeout("iptables -t mangle -F", IPT_FLUSH_TIMEOUT);
+}
+
+pub fn flush_tables_v6_best_effort() {
+    if ip6_nat_supported() {
+        let _ = shell::ok_sh_timeout("ip6tables -t nat -F", IPT_FLUSH_TIMEOUT);
+    }
+    let _ = shell::ok_sh_timeout("ip6tables -t mangle -F", IPT_FLUSH_TIMEOUT);
+}
+
+pub fn reset_restore_v4_if_present() -> Result<bool> {
+    let path_v4 = settings::iptables_backup_path();
+    flush_tables_v4_best_effort();
+    if !path_v4.exists() {
+        logging::warn("iptables backup missing; IPv4 tables flushed without restore");
+        return Ok(false);
+    }
+
+    let restore_line = format!("iptables-restore < '{}'", path_v4.display());
+    shell::ok_sh_timeout(&restore_line, IPT_RESTORE_TIMEOUT)
+        .with_context(|| format!("iptables-restore from {}", path_v4.display()))?;
+    logging::info("iptables restored from backup");
+    Ok(true)
+}
+
+pub fn reset_restore_v6_if_present() -> Result<bool> {
+    let path_v6 = settings::ip6tables_backup_path();
+    flush_tables_v6_best_effort();
+    if !path_v6.exists() {
+        logging::warn("ip6tables backup missing; IPv6 tables flushed without restore");
+        return Ok(false);
+    }
+
+    let restore6 = format!("ip6tables-restore < '{}'", path_v6.display());
+    match shell::ok_sh_timeout(&restore6, IPT_RESTORE_TIMEOUT) {
+        Ok(_) => {
+            logging::info("ip6tables restored from backup");
+            Ok(true)
+        }
+        Err(e) => {
+            logging::warn(&format!(
+                "ip6tables-restore from {} failed ({e:#}); continuing",
+                path_v6.display()
+            ));
+            Ok(false)
+        }
+    }
+}
+
 /// Ensure iptables backup exists for the *first* full launch.
 ///
 /// Logic:
@@ -158,51 +209,12 @@ pub fn ensure_backup_if_first_launch() -> Result<()> {
     Ok(())
 }
 
-/// Flush nat/mangle and restore the previously captured backup.
+/// Flush nat/mangle for both IPv4 and IPv6, then restore whichever backup files exist.
 ///
-/// Order (IPv4):
-/// 1) iptables -t nat -F
-/// 2) iptables -t mangle -F
-/// 3) iptables-restore < backup
-///
-/// IPv6 is applied best-effort:
-/// - flush mangle always
-/// - flush nat only if supported
-/// - restore from ip6tables backup if present
+/// IPv4 restore is strict: if the backup exists but restore fails, an error is returned.
+/// IPv6 restore is best-effort: failures are logged and stop/start continue.
 pub fn reset_tables_then_restore_backup() -> Result<()> {
-    let path_v4 = settings::iptables_backup_path();
-    if !path_v4.exists() {
-        anyhow::bail!("iptables backup file not found: {}", path_v4.display());
-    }
-
-    let _ = shell::ok_sh_timeout("iptables -t nat -F", IPT_FLUSH_TIMEOUT);
-    let _ = shell::ok_sh_timeout("iptables -t mangle -F", IPT_FLUSH_TIMEOUT);
-
-    // stdin redirect requires sh -c
-    let restore_line = format!("iptables-restore < '{}'", path_v4.display());
-    shell::ok_sh_timeout(&restore_line, IPT_RESTORE_TIMEOUT)
-        .with_context(|| format!("iptables-restore from {}", path_v4.display()))?;
-    logging::info("iptables restored from backup");
-
-    // IPv6 restore (best-effort)
-    let path_v6 = settings::ip6tables_backup_path();
-    if ip6_nat_supported() {
-        let _ = shell::ok_sh_timeout("ip6tables -t nat -F", IPT_FLUSH_TIMEOUT);
-    }
-    let _ = shell::ok_sh_timeout("ip6tables -t mangle -F", IPT_FLUSH_TIMEOUT);
-
-    if path_v6.exists() {
-        let restore6 = format!("ip6tables-restore < '{}'", path_v6.display());
-        match shell::ok_sh_timeout(&restore6, IPT_RESTORE_TIMEOUT) {
-            Ok(_) => logging::info("ip6tables restored from backup"),
-            Err(e) => logging::warn(&format!(
-                "ip6tables-restore from {} failed ({e:#}); continuing",
-                path_v6.display()
-            )),
-        }
-    } else {
-        logging::warn("ip6tables backup missing; IPv6 tables flushed without restore");
-    }
-
+    let _ = reset_restore_v4_if_present()?;
+    let _ = reset_restore_v6_if_present()?;
     Ok(())
 }

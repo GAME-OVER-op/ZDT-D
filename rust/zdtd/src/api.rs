@@ -789,6 +789,18 @@ fn singbox_profiles_root() -> PathBuf {
     program_root("singbox").join("profile")
 }
 
+fn singbox_deleted_root() -> PathBuf {
+    program_root("singbox").join(".deleted")
+}
+
+fn singbox_deleted_profiles_root() -> PathBuf {
+    singbox_deleted_root().join("profiles")
+}
+
+fn singbox_deleted_servers_root(profile: &str) -> PathBuf {
+    singbox_deleted_root().join("servers").join(profile)
+}
+
 fn singbox_profile_root(profile: &str) -> PathBuf {
     singbox_profiles_root().join(profile)
 }
@@ -1574,7 +1586,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
                 write_json_pretty(&p, &active)?;
                 let src = singbox_profile_root(profile);
                 if src.exists() {
-                    let deleted_dir = singbox_profiles_root().join(".deleted");
+                    let deleted_dir = singbox_deleted_profiles_root();
                     fs::create_dir_all(&deleted_dir).ok();
                     let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
                     let dst = deleted_dir.join(format!("{profile}.{ts}"));
@@ -1706,7 +1718,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
                 if !src.exists() {
                     anyhow::bail!("server not found");
                 }
-                let deleted_dir = singbox_profile_root(profile).join("server/.deleted");
+                let deleted_dir = singbox_deleted_servers_root(profile);
                 fs::create_dir_all(&deleted_dir).ok();
                 let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
                 let dst = deleted_dir.join(format!("{server}.{ts}"));

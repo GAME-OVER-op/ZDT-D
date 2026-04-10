@@ -22,6 +22,8 @@ pub fn start_full() -> Result<()> {
     boot::wait_for_boot_completed()?;
     log::info!("boot completed");
 
+    settings::ensure_minimal_program_layouts()?;
+
     // Backup baseline iptables before any rule changes (only once on first launch).
     iptables_backup::ensure_backup_if_first_launch()?;
 

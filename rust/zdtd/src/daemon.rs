@@ -36,6 +36,10 @@ pub fn lock_state<'a>(state: &'a SharedState) -> std::sync::MutexGuard<'a, State
 /// If `setting/start.json` has `enabled=true`, we also try to start services
 /// in "full" mode on daemon boot. Otherwise we start only the API.
 pub fn run(_cfg: &Config) -> Result<()> {
+    if let Err(e) = settings::ensure_minimal_program_layouts() {
+        logging::warn(&format!("failed to restore minimal working_folder layout: {e:#}"));
+    }
+
     // Ensure token exists and write api info (no token in API responses).
     let token = settings::read_or_create_token()?;
     settings::write_api_info(&settings::api_info_path(), "127.0.0.1:1006")?;

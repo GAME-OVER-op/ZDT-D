@@ -233,14 +233,19 @@ pub struct BackendStatus {
 #[derive(Clone)]
 pub struct SocksBackends {
     addrs: Vec<SocketAddr>,
+    auth_override: Vec<Option<(String, String)>>,
     status: Vec<BackendStatus>,
     ttl_hist: Vec<VecDeque<u32>>,
     rtt_hist: Vec<VecDeque<f64>>,
     runtime_fail_streak: Vec<u8>,
     last_runtime_fail_ts: Vec<u64>,
     last_full_probe: Vec<u64>,
+    last_activity_ts: Vec<u64>,
     rr: usize,
     check_rr: usize,
+    active_check_rr: usize,
+    audit_check_rr: usize,
+    check_cycle: u64,
 }
 
 impl SocksBackends {
@@ -279,6 +284,8 @@ impl SocksBackends {
             return Err(anyhow!("no SOCKS backends after resolution"));
         }
         let now = now_ts();
+        let auth_override = vec![None; addrs.len()];
+
         let status = addrs.iter().map(|sa| BackendStatus{
             addr: sa.to_string(),
             state: BackendState::Red,
@@ -298,12 +305,35 @@ impl SocksBackends {
         let runtime_fail_streak = vec![0; addrs.len()];
         let last_runtime_fail_ts = vec![0; addrs.len()];
         let last_full_probe = vec![0; addrs.len()];
+        let last_activity_ts = vec![0; addrs.len()];
 
-        Ok(Self{ addrs, status, ttl_hist, rtt_hist, runtime_fail_streak, last_runtime_fail_ts, last_full_probe, rr: 0, check_rr: 0 })
+        Ok(Self{
+            addrs,
+            auth_override,
+            status,
+            ttl_hist,
+            rtt_hist,
+            runtime_fail_streak,
+            last_runtime_fail_ts,
+            last_full_probe,
+            last_activity_ts,
+            rr: 0,
+            check_rr: 0,
+            active_check_rr: 0,
+            audit_check_rr: 0,
+            check_cycle: 0,
+        })
     }
 
     pub fn len(&self) -> usize { self.addrs.len() }
     pub fn addr_at(&self, idx: usize) -> Option<SocketAddr> { self.addrs.get(idx).copied() }
+
+    pub fn effective_auth_at(&self, idx: usize, global_auth: Option<&(String, String)>) -> Option<(String, String)> {
+        if let Some(Some((u, p))) = self.auth_override.get(idx) {
+            return Some((u.clone(), p.clone()));
+        }
+        global_auth.map(|(u, p)| (u.clone(), p.clone()))
+    }
 
     pub fn next_check_index(&mut self) -> Option<usize> {
         if self.addrs.is_empty() {
@@ -312,6 +342,68 @@ impl SocksBackends {
         let idx = self.check_rr % self.addrs.len();
         self.check_rr = (self.check_rr + 1) % self.addrs.len();
         Some(idx)
+    }
+
+    fn pick_from_bucket(indices: &[usize], cursor: &mut usize) -> Option<usize> {
+        if indices.is_empty() {
+            return None;
+        }
+        let idx = indices[*cursor % indices.len()];
+        *cursor = (*cursor + 1) % indices.len();
+        Some(idx)
+    }
+
+    fn touch_backend_activity_idx(&mut self, idx: usize, now: u64, force: bool) {
+        if idx >= self.last_activity_ts.len() {
+            return;
+        }
+        let prev = self.last_activity_ts[idx];
+        if force || prev == 0 || now.saturating_sub(prev) >= BACKEND_ACTIVITY_TOUCH_SECS {
+            self.last_activity_ts[idx] = now;
+        }
+    }
+
+    pub fn note_backend_selected(&mut self, addr: SocketAddr) {
+        if let Some(idx) = self.addrs.iter().position(|a| *a == addr) {
+            self.touch_backend_activity_idx(idx, now_ts(), true);
+        }
+    }
+
+    pub fn next_check_index_active_first(&mut self, active_window_secs: u64, audit_every: u64) -> Option<usize> {
+        if self.addrs.is_empty() {
+            return None;
+        }
+
+        let now = now_ts();
+        let mut active = Vec::new();
+        let mut audit = Vec::new();
+        for idx in 0..self.addrs.len() {
+            let last = self.last_activity_ts.get(idx).copied().unwrap_or(0);
+            if last != 0 && now.saturating_sub(last) <= active_window_secs {
+                active.push(idx);
+            } else {
+                audit.push(idx);
+            }
+        }
+
+        self.check_cycle = self.check_cycle.wrapping_add(1);
+        let should_audit = !audit.is_empty() && audit_every > 0 && self.check_cycle % audit_every == 0;
+
+        if should_audit {
+            if let Some(idx) = Self::pick_from_bucket(&audit, &mut self.audit_check_rr) {
+                return Some(idx);
+            }
+        }
+
+        if let Some(idx) = Self::pick_from_bucket(&active, &mut self.active_check_rr) {
+            return Some(idx);
+        }
+
+        if let Some(idx) = Self::pick_from_bucket(&audit, &mut self.audit_check_rr) {
+            return Some(idx);
+        }
+
+        self.next_check_index()
     }
 
     pub fn state_at(&self, idx: usize) -> Option<BackendState> {
@@ -376,9 +468,10 @@ impl SocksBackends {
         self.status.clone()
     }
 
-    pub fn add(&mut self, addr: SocketAddr) {
+    pub fn add(&mut self, addr: SocketAddr, auth: Option<(String, String)>) {
         if self.addrs.iter().any(|a| *a == addr) { return; }
         self.addrs.push(addr);
+        self.auth_override.push(auth);
         self.status.push(BackendStatus{
             addr: addr.to_string(),
             state: BackendState::Red,
@@ -397,28 +490,34 @@ impl SocksBackends {
         self.runtime_fail_streak.push(0);
         self.last_runtime_fail_ts.push(0);
         self.last_full_probe.push(0);
+        self.last_activity_ts.push(0);
     }
 
     pub fn remove(&mut self, addr: SocketAddr) {
         if let Some(pos) = self.addrs.iter().position(|a| *a == addr) {
             self.addrs.remove(pos);
+            if pos < self.auth_override.len() { self.auth_override.remove(pos); }
             if pos < self.status.len() { self.status.remove(pos); }
             if pos < self.ttl_hist.len() { self.ttl_hist.remove(pos); }
             if pos < self.rtt_hist.len() { self.rtt_hist.remove(pos); }
             if pos < self.runtime_fail_streak.len() { self.runtime_fail_streak.remove(pos); }
             if pos < self.last_runtime_fail_ts.len() { self.last_runtime_fail_ts.remove(pos); }
             if pos < self.last_full_probe.len() { self.last_full_probe.remove(pos); }
+            if pos < self.last_activity_ts.len() { self.last_activity_ts.remove(pos); }
             if self.rr >= self.addrs.len() { self.rr = 0; }
             if self.check_rr >= self.addrs.len() { self.check_rr = 0; }
+            if self.active_check_rr >= self.addrs.len() { self.active_check_rr = 0; }
+            if self.audit_check_rr >= self.addrs.len() { self.audit_check_rr = 0; }
         }
     }
-pub fn select_rr(&mut self) -> Result<SocketAddr> {
+pub fn select_rr_with_auth(&mut self, global_auth: Option<&(String, String)>) -> Result<(SocketAddr, Option<(String, String)>)> {
         let healthy: Vec<usize> = self.status.iter().enumerate().filter(|(_,s)| s.healthy).map(|(i,_)| i).collect();
         if healthy.is_empty() {
             return Err(anyhow!("no GREEN backends"));
         }
         self.rr = (self.rr + 1) % healthy.len();
-        Ok(self.addrs[healthy[self.rr]])
+        let idx = healthy[self.rr];
+        Ok((self.addrs[idx], self.effective_auth_at(idx, global_auth)))
     }
 
     pub fn update(
@@ -528,6 +627,7 @@ pub fn select_rr(&mut self) -> Result<SocketAddr> {
             if pos < self.status.len() {
                 self.status[pos].total_bytes = self.status[pos].total_bytes.saturating_add(n);
             }
+            self.touch_backend_activity_idx(pos, now_ts(), false);
         }
     }
 }
@@ -728,13 +828,17 @@ enum TrafficCadence {
     Quiet120,
 }
 
+const ACTIVE_BACKEND_WINDOW_SECS: u64 = 10 * 60;
+const AUDIT_BACKEND_EVERY: u64 = 4;
+const BACKEND_ACTIVITY_TOUCH_SECS: u64 = 5;
+
 impl TrafficCadence {
     fn interval(self) -> Duration {
         match self {
-            TrafficCadence::High => Duration::from_secs(30),
-            TrafficCadence::Normal => Duration::from_secs(35),
-            TrafficCadence::Quiet60 => Duration::from_secs(60),
-            TrafficCadence::Quiet120 => Duration::from_secs(120),
+            TrafficCadence::High => Duration::from_secs(45),
+            TrafficCadence::Normal => Duration::from_secs(60),
+            TrafficCadence::Quiet60 => Duration::from_secs(120),
+            TrafficCadence::Quiet120 => Duration::from_secs(180),
         }
     }
 }
@@ -761,6 +865,13 @@ async fn probe_backend_once(
     };
     let ttl = if probe_mode == ProbeMode::Full { internet_ttl } else { None };
     (err, socks_ping_ms, internet_ping_ms, ttl)
+}
+
+fn global_backend_auth(args: &Args) -> Option<(String, String)> {
+    match (args.socks_user.clone(), args.socks_pass.clone()) {
+        (Some(u), Some(p)) => Some((u, p)),
+        _ => None,
+    }
 }
 
 fn health_timeout(state: &crate::AppState) -> Duration {
@@ -823,22 +934,23 @@ async fn refresh_backend_index_once(
 pub async fn refresh_backends_once(state: crate::AppState, timeout: Duration) {
     let _guard = state.runtime.refresh_lock.lock().await;
     let internet_ttl = maybe_sample_internet_ttl(&state).await;
-    let auth = match (state.args.socks_user.clone(), state.args.socks_pass.clone()) {
-        (Some(u), Some(p)) => Some((u, p)),
-        _ => None,
-    };
-    let addrs: Vec<(usize, SocketAddr)> = {
+    let global_auth = global_backend_auth(&state.args);
+    let addrs: Vec<usize> = {
         let b = state.backends.lock();
-        (0..b.len()).filter_map(|idx| b.addr_at(idx).map(|a| (idx, a))).collect()
+        (0..b.len()).filter(|idx| b.addr_at(*idx).is_some()).collect()
     };
 
-    for (idx, _backend) in addrs {
+    for idx in addrs {
+        let auth = {
+            let b = state.backends.lock();
+            b.effective_auth_at(idx, global_auth.as_ref())
+        };
         let _ = refresh_backend_index_once(
             state.clone(),
             idx,
             timeout,
             internet_ttl,
-            auth.clone(),
+            auth,
             ProbeMode::Full,
         ).await;
     }
@@ -846,13 +958,10 @@ pub async fn refresh_backends_once(state: crate::AppState, timeout: Duration) {
 
 pub async fn refresh_one_backend_once_rr(state: crate::AppState, timeout: Duration) -> bool {
     let _guard = state.runtime.refresh_lock.lock().await;
-    let auth = match (state.args.socks_user.clone(), state.args.socks_pass.clone()) {
-        (Some(u), Some(p)) => Some((u, p)),
-        _ => None,
-    };
-    let (idx, probe_mode) = {
+    let global_auth = global_backend_auth(&state.args);
+    let (idx, probe_mode, auth) = {
         let mut b = state.backends.lock();
-        let idx = b.next_check_index();
+        let idx = b.next_check_index_active_first(ACTIVE_BACKEND_WINDOW_SECS, AUDIT_BACKEND_EVERY);
         let Some(idx) = idx else { return false; };
         let state_at = b.state_at(idx).unwrap_or(BackendState::Red);
         let last_full_probe = b.last_full_probe_at(idx).unwrap_or(0);
@@ -863,7 +972,8 @@ pub async fn refresh_one_backend_once_rr(state: crate::AppState, timeout: Durati
         } else {
             ProbeMode::Full
         };
-        (Some(idx), probe_mode)
+        let auth = b.effective_auth_at(idx, global_auth.as_ref());
+        (Some(idx), probe_mode, auth)
     };
 
     let Some(idx) = idx else { return false; };

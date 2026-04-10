@@ -494,6 +494,10 @@ Use another editor to modify it.</string>
     <string name="strategic_strategies_none">Strategies: none</string>
     <string name="strategic_strategy_selected">Strategy: %1$s</string>
     <string name="strategic_user_config">User config</string>
+    <string name="strategic_variants_sheet_title">Available configs</string>
+    <string name="strategic_variants_sheet_hint">Tap a config to apply it immediately.</string>
+    <string name="strategic_variants_current_hint">Current config</string>
+    <string name="strategic_variants_tap_to_apply">Tap to apply</string>
     <string name="enabled_card_apply_hint">Apply after stop/start</string>
     <string name="byedpi_start_args_title">Start arguments</string>
     <string name="byedpi_restart_args_title">Restart arguments</string>
@@ -551,6 +555,11 @@ By continuing, you agree to restore the backup while ignoring the versionCode ch
     <string name="startup_stage_connecting">Stage 1: Connecting to daemon</string>
     <string name="startup_stage_loading">Stage 2: Loading information from daemon</string>
     <string name="startup_reinstall_module">Reinstall module</string>
+    <string name="startup_loading_title">Loading application</string>
+    <string name="startup_loading_subtitle">Preparing the interface and checking the connection to the module.</string>
+    <string name="startup_stage_connecting_short">Connecting...</string>
+    <string name="startup_stage_initializing">Initializing...</string>
+    <string name="startup_stage_opening">Opening interface...</string>
     <string name="startup_daemon_failed_module_found">Failed to connect to the daemon.
 Module found, but it may be working incorrectly.
 It is recommended to reinstall the module.</string>

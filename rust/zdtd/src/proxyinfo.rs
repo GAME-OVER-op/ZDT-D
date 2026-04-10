@@ -108,44 +108,95 @@ fn default_t2s_web_port() -> u16 {
 }
 
 #[derive(Debug, Clone, Copy)]
+enum Backend {
+    Iptables,
+    Ip6tables,
+}
+
+impl Backend {
+    fn cmd(self) -> &'static str {
+        match self {
+            Self::Iptables => "iptables",
+            Self::Ip6tables => "ip6tables",
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Iptables => "IPv4",
+            Self::Ip6tables => "IPv6",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TransportProtocol {
+    Tcp,
+    Udp,
+}
+
+impl TransportProtocol {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Tcp => "tcp",
+            Self::Udp => "udp",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 enum LocalMatchMode {
-    LoAndDest127,
-    Dest127,
+    LoAndDestLoopback,
+    DestLoopback,
     LoopbackIface,
     DstTypeLocal,
 }
 
 impl LocalMatchMode {
-    fn describe(self) -> &'static str {
-        match self {
-            Self::LoAndDest127 => "-o lo -d 127.0.0.1",
-            Self::Dest127 => "-d 127.0.0.1",
-            Self::LoopbackIface => "-o lo",
-            Self::DstTypeLocal => "-m addrtype --dst-type LOCAL",
+    fn describe(self, backend: Backend) -> &'static str {
+        match (self, backend) {
+            (Self::LoAndDestLoopback, Backend::Iptables) => "-o lo -d 127.0.0.1",
+            (Self::DestLoopback, Backend::Iptables) => "-d 127.0.0.1",
+            (Self::LoopbackIface, Backend::Iptables) => "-o lo",
+            (Self::DstTypeLocal, Backend::Iptables) => "-m addrtype --dst-type LOCAL",
+            (Self::LoAndDestLoopback, Backend::Ip6tables) => "-o lo -d ::1",
+            (Self::DestLoopback, Backend::Ip6tables) => "-d ::1",
+            (Self::LoopbackIface, Backend::Ip6tables) => "-o lo",
+            (Self::DstTypeLocal, Backend::Ip6tables) => "-m addrtype --dst-type LOCAL",
         }
     }
 
-    fn push_args(self, args: &mut Vec<String>) {
-        match self {
-            Self::LoAndDest127 => {
+    fn push_args(self, backend: Backend, args: &mut Vec<String>) {
+        match (self, backend) {
+            (Self::LoAndDestLoopback, Backend::Iptables) => {
                 args.push("-o".into());
                 args.push("lo".into());
                 args.push("-d".into());
                 args.push("127.0.0.1".into());
             }
-            Self::Dest127 => {
+            (Self::DestLoopback, Backend::Iptables) => {
                 args.push("-d".into());
                 args.push("127.0.0.1".into());
             }
-            Self::LoopbackIface => {
+            (Self::LoopbackIface, _) => {
                 args.push("-o".into());
                 args.push("lo".into());
             }
-            Self::DstTypeLocal => {
+            (Self::DstTypeLocal, _) => {
                 args.push("-m".into());
                 args.push("addrtype".into());
                 args.push("--dst-type".into());
                 args.push("LOCAL".into());
+            }
+            (Self::LoAndDestLoopback, Backend::Ip6tables) => {
+                args.push("-o".into());
+                args.push("lo".into());
+                args.push("-d".into());
+                args.push("::1".into());
+            }
+            (Self::DestLoopback, Backend::Ip6tables) => {
+                args.push("-d".into());
+                args.push("::1".into());
             }
         }
     }
@@ -210,10 +261,12 @@ struct ProxyRuleStrategy {
 }
 
 impl ProxyRuleStrategy {
-    fn describe(self) -> String {
+    fn describe(self, backend: Backend, proto: TransportProtocol) -> String {
         format!(
-            "local={}, ports={}, action={}",
-            self.local_match.describe(),
+            "backend={}, proto={}, local={}, ports={}, action={}",
+            backend.label(),
+            proto.name(),
+            self.local_match.describe(backend),
             self.port_mode.describe(),
             self.reject_mode.describe()
         )
@@ -357,69 +410,108 @@ pub fn read_out_uids() -> Result<Vec<u32>> {
 }
 
 pub fn is_active() -> bool {
-    match shell::run_timeout(
-        "iptables",
-        &["-C", "OUTPUT", "-p", "tcp", "-j", PROXY_CHAIN],
-        Capture::None,
-        IPT_TIMEOUT,
-    ) {
+    any_hook_active(Backend::Iptables) || any_hook_active(Backend::Ip6tables)
+}
+
+fn table_cmd_ok(backend: Backend, args: &[&str]) -> bool {
+    match shell::run_timeout(backend.cmd(), args, Capture::None, IPT_TIMEOUT) {
         Ok((rc, _)) => rc == 0,
         Err(_) => false,
     }
 }
 
-fn table_cmd_ok(args: &[&str]) -> bool {
-    match shell::run_timeout("iptables", args, Capture::None, IPT_TIMEOUT) {
-        Ok((rc, _)) => rc == 0,
-        Err(_) => false,
+fn any_hook_active(backend: Backend) -> bool {
+    let hooks: &[&[&str]] = match backend {
+        Backend::Iptables => &[
+            &["-C", "OUTPUT", "-j", PROXY_CHAIN],
+            &["-C", "OUTPUT", "-p", "tcp", "-j", PROXY_CHAIN],
+            &["-C", "OUTPUT", "-p", "udp", "-j", PROXY_CHAIN],
+        ],
+        Backend::Ip6tables => &[
+            &["-C", "OUTPUT", "-j", PROXY_CHAIN],
+            &["-C", "OUTPUT", "-p", "tcp", "-j", PROXY_CHAIN],
+            &["-C", "OUTPUT", "-p", "udp", "-j", PROXY_CHAIN],
+        ],
+    };
+    hooks.iter().any(|args| table_cmd_ok(backend, args))
+}
+
+fn remove_known_hooks(backend: Backend) {
+    let mut legacy_hooks: Vec<Vec<&str>> = vec![
+        vec!["-D", "OUTPUT", "-j", PROXY_CHAIN],
+        vec!["-D", "OUTPUT", "-p", "tcp", "-j", PROXY_CHAIN],
+        vec!["-D", "OUTPUT", "-p", "udp", "-j", PROXY_CHAIN],
+    ];
+
+    match backend {
+        Backend::Iptables => {
+            legacy_hooks.push(vec!["-D", "OUTPUT", "-o", "lo", "-p", "tcp", "-d", "127.0.0.1", "-j", PROXY_CHAIN]);
+            legacy_hooks.push(vec!["-D", "OUTPUT", "-p", "tcp", "-d", "127.0.0.1", "-j", PROXY_CHAIN]);
+            legacy_hooks.push(vec!["-D", "OUTPUT", "-o", "lo", "-p", "udp", "-d", "127.0.0.1", "-j", PROXY_CHAIN]);
+            legacy_hooks.push(vec!["-D", "OUTPUT", "-p", "udp", "-d", "127.0.0.1", "-j", PROXY_CHAIN]);
+        }
+        Backend::Ip6tables => {
+            legacy_hooks.push(vec!["-D", "OUTPUT", "-o", "lo", "-p", "tcp", "-d", "::1", "-j", PROXY_CHAIN]);
+            legacy_hooks.push(vec!["-D", "OUTPUT", "-p", "tcp", "-d", "::1", "-j", PROXY_CHAIN]);
+            legacy_hooks.push(vec!["-D", "OUTPUT", "-o", "lo", "-p", "udp", "-d", "::1", "-j", PROXY_CHAIN]);
+            legacy_hooks.push(vec!["-D", "OUTPUT", "-p", "udp", "-d", "::1", "-j", PROXY_CHAIN]);
+        }
+    }
+
+    for hook in legacy_hooks {
+        while table_cmd_ok(backend, &hook) {}
     }
 }
 
-fn remove_known_hooks() {
-    while table_cmd_ok(&["-D", "OUTPUT", "-p", "tcp", "-j", PROXY_CHAIN]) {}
-    while table_cmd_ok(&["-D", "OUTPUT", "-o", "lo", "-p", "tcp", "-d", "127.0.0.1", "-j", PROXY_CHAIN]) {}
-    while table_cmd_ok(&["-D", "OUTPUT", "-p", "tcp", "-d", "127.0.0.1", "-j", PROXY_CHAIN]) {}
+fn clear_chain(backend: Backend) {
+    remove_known_hooks(backend);
+    let _ = shell::run_timeout(backend.cmd(), &["-F", PROXY_CHAIN], Capture::None, IPT_TIMEOUT);
+    let _ = shell::run_timeout(backend.cmd(), &["-X", PROXY_CHAIN], Capture::None, IPT_TIMEOUT);
 }
 
 pub fn clear_rules() -> Result<()> {
-    remove_known_hooks();
-    let _ = shell::run_timeout("iptables", &["-F", PROXY_CHAIN], Capture::None, IPT_TIMEOUT);
-    let _ = shell::run_timeout("iptables", &["-X", PROXY_CHAIN], Capture::None, IPT_TIMEOUT);
+    clear_chain(Backend::Iptables);
+    clear_chain(Backend::Ip6tables);
     Ok(())
 }
 
-fn ensure_chain() -> Result<()> {
-    if !table_cmd_ok(&["-L", PROXY_CHAIN]) {
-        let (rc, out) = shell::run_timeout("iptables", &["-N", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT)?;
+fn ensure_chain(backend: Backend) -> Result<()> {
+    if !table_cmd_ok(backend, &["-L", PROXY_CHAIN]) {
+        let (rc, out) = shell::run_timeout(backend.cmd(), &["-N", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT)?;
         if rc != 0 {
-            anyhow::bail!("iptables -N {PROXY_CHAIN} failed: {out}");
+            anyhow::bail!("{} -N {} failed: {}", backend.cmd(), PROXY_CHAIN, out);
         }
     }
-    let (rc, out) = shell::run_timeout("iptables", &["-F", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT)?;
+    let (rc, out) = shell::run_timeout(backend.cmd(), &["-F", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT)?;
     if rc != 0 {
-        anyhow::bail!("iptables -F {PROXY_CHAIN} failed: {out}");
+        anyhow::bail!("{} -F {} failed: {}", backend.cmd(), PROXY_CHAIN, out);
     }
-    remove_known_hooks();
+    remove_known_hooks(backend);
     let (rc, out) = shell::run_timeout(
-        "iptables",
-        &["-I", "OUTPUT", "1", "-p", "tcp", "-j", PROXY_CHAIN],
+        backend.cmd(),
+        &["-I", "OUTPUT", "1", "-j", PROXY_CHAIN],
         Capture::Both,
         IPT_TIMEOUT,
     )?;
     if rc != 0 {
-        anyhow::bail!("iptables -I OUTPUT -> {PROXY_CHAIN} failed: {out}");
+        anyhow::bail!("{} -I OUTPUT -> {} failed: {}", backend.cmd(), PROXY_CHAIN, out);
     }
     Ok(())
 }
 
-fn build_rule_args(uid: u32, ports: &[u16], strategy: ProxyRuleStrategy) -> Vec<String> {
+fn build_rule_args_v4(
+    uid: u32,
+    proto: TransportProtocol,
+    ports: &[u16],
+    strategy: ProxyRuleStrategy,
+) -> Vec<String> {
     let mut args = vec![
         "-A".to_string(),
         PROXY_CHAIN.to_string(),
         "-p".to_string(),
-        "tcp".to_string(),
+        proto.name().to_string(),
     ];
-    strategy.local_match.push_args(&mut args);
+    strategy.local_match.push_args(Backend::Iptables, &mut args);
     args.push("-m".into());
     args.push("owner".into());
     args.push("--uid-owner".into());
@@ -444,14 +536,20 @@ fn build_rule_args(uid: u32, ports: &[u16], strategy: ProxyRuleStrategy) -> Vec<
     args
 }
 
-fn add_rule_for_ports(uid: u32, ports: &[u16], strategy: ProxyRuleStrategy) -> Result<()> {
-    let args = build_rule_args(uid, ports, strategy);
-    let (rc, out) = shell::runv_timeout("iptables", &args, Capture::Both, IPT_TIMEOUT)?;
+fn add_rule_for_ports_v4(
+    uid: u32,
+    proto: TransportProtocol,
+    ports: &[u16],
+    strategy: ProxyRuleStrategy,
+) -> Result<()> {
+    let args = build_rule_args_v4(uid, proto, ports, strategy);
+    let (rc, out) = shell::runv_timeout(Backend::Iptables.cmd(), &args, Capture::Both, IPT_TIMEOUT)?;
     if rc != 0 {
         anyhow::bail!(
-            "iptables add proxyInfo rule failed uid={} strategy={} args='{}': {}",
+            "{} add proxyInfo rule failed uid={} strategy={} args='{}': {}",
+            Backend::Iptables.cmd(),
             uid,
-            strategy.describe(),
+            strategy.describe(Backend::Iptables, proto),
             args.join(" "),
             out
         );
@@ -459,22 +557,22 @@ fn add_rule_for_ports(uid: u32, ports: &[u16], strategy: ProxyRuleStrategy) -> R
     Ok(())
 }
 
-fn install_rules_with_strategy(uids: &[u32], ports: &[u16], strategy: ProxyRuleStrategy) -> Result<()> {
-    clear_rules()?;
-    if uids.is_empty() || ports.is_empty() {
-        return Ok(());
-    }
-    ensure_chain()?;
+fn install_proto_rules_v4_with_strategy(
+    uids: &[u32],
+    ports: &[u16],
+    strategy: ProxyRuleStrategy,
+    proto: TransportProtocol,
+) -> Result<()> {
     for &uid in uids {
         match strategy.port_mode {
             PortRuleMode::Multiport => {
                 for chunk in ports.chunks(15) {
-                    add_rule_for_ports(uid, chunk, strategy)?;
+                    add_rule_for_ports_v4(uid, proto, chunk, strategy)?;
                 }
             }
             PortRuleMode::PerPort => {
                 for &port in ports {
-                    add_rule_for_ports(uid, &[port], strategy)?;
+                    add_rule_for_ports_v4(uid, proto, &[port], strategy)?;
                 }
             }
         }
@@ -482,20 +580,23 @@ fn install_rules_with_strategy(uids: &[u32], ports: &[u16], strategy: ProxyRuleS
     Ok(())
 }
 
-fn candidate_strategies() -> Vec<ProxyRuleStrategy> {
+fn candidate_strategies_for_proto(proto: TransportProtocol) -> Vec<ProxyRuleStrategy> {
     let local_modes = [
-        LocalMatchMode::LoAndDest127,
-        LocalMatchMode::Dest127,
+        LocalMatchMode::LoAndDestLoopback,
+        LocalMatchMode::DestLoopback,
         LocalMatchMode::DstTypeLocal,
         LocalMatchMode::LoopbackIface,
     ];
     let port_modes = [PortRuleMode::Multiport, PortRuleMode::PerPort];
-    let reject_modes = [RejectMode::RejectTcpReset, RejectMode::Reject, RejectMode::Drop];
+    let reject_modes: &[RejectMode] = match proto {
+        TransportProtocol::Tcp => &[RejectMode::RejectTcpReset, RejectMode::Reject, RejectMode::Drop],
+        TransportProtocol::Udp => &[RejectMode::Reject, RejectMode::Drop],
+    };
 
     let mut out = Vec::new();
     for local_match in local_modes {
         for port_mode in port_modes {
-            for reject_mode in reject_modes {
+            for &reject_mode in reject_modes {
                 out.push(ProxyRuleStrategy {
                     local_match,
                     port_mode,
@@ -507,35 +608,120 @@ fn candidate_strategies() -> Vec<ProxyRuleStrategy> {
     out
 }
 
-fn install_rules(uids: &[u32], ports: &[u16]) -> Result<()> {
-    clear_rules()?;
-    if uids.is_empty() || ports.is_empty() {
-        return Ok(());
-    }
-
+fn select_ipv4_strategy(
+    uids: &[u32],
+    ports: &[u16],
+    proto: TransportProtocol,
+    prerequisite: Option<(TransportProtocol, ProxyRuleStrategy)>,
+) -> Result<ProxyRuleStrategy> {
     let mut errors = Vec::new();
-    for strategy in candidate_strategies() {
-        match install_rules_with_strategy(uids, ports, strategy) {
+    for strategy in candidate_strategies_for_proto(proto) {
+        let (rc, out) = shell::run_timeout(Backend::Iptables.cmd(), &["-F", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT)?;
+        if rc != 0 {
+            anyhow::bail!("{} -F {} failed before strategy install: {}", Backend::Iptables.cmd(), PROXY_CHAIN, out);
+        }
+
+        if let Some((prev_proto, prev_strategy)) = prerequisite {
+            if let Err(e) = install_proto_rules_v4_with_strategy(uids, ports, prev_strategy, prev_proto) {
+                anyhow::bail!(
+                    "failed to reinstall prerequisite proxyInfo {} strategy {}: {e:#}",
+                    prev_proto.name(),
+                    prev_strategy.describe(Backend::Iptables, prev_proto)
+                );
+            }
+        }
+
+        match install_proto_rules_v4_with_strategy(uids, ports, strategy, proto) {
             Ok(()) => {
                 logging::info(&format!(
-                    "proxyInfo iptables strategy selected: {}",
-                    strategy.describe()
+                    "proxyInfo {} strategy selected: {}",
+                    proto.name(),
+                    strategy.describe(Backend::Iptables, proto)
                 ));
-                return Ok(());
+                return Ok(strategy);
             }
             Err(e) => {
-                let msg = format!("{} => {e:#}", strategy.describe());
+                let msg = format!("{} => {e:#}", strategy.describe(Backend::Iptables, proto));
                 logging::warn(&format!("proxyInfo strategy failed: {}", msg));
                 errors.push(msg);
-                let _ = clear_rules();
             }
         }
     }
 
     anyhow::bail!(
-        "all proxyInfo iptables strategies failed: {}",
+        "all proxyInfo {} strategies failed: {}",
+        proto.name(),
         errors.join(" | ")
     )
+}
+
+fn install_ipv4_rules(uids: &[u32], ports: &[u16]) -> Result<()> {
+    if uids.is_empty() || ports.is_empty() {
+        return Ok(());
+    }
+
+    ensure_chain(Backend::Iptables)?;
+    let tcp_strategy = select_ipv4_strategy(uids, ports, TransportProtocol::Tcp, None)?;
+    let udp_strategy = select_ipv4_strategy(
+        uids,
+        ports,
+        TransportProtocol::Udp,
+        Some((TransportProtocol::Tcp, tcp_strategy)),
+    )?;
+
+    let (rc, out) = shell::run_timeout(Backend::Iptables.cmd(), &["-F", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT)?;
+    if rc != 0 {
+        anyhow::bail!("{} -F {} failed: {}", Backend::Iptables.cmd(), PROXY_CHAIN, out);
+    }
+    install_proto_rules_v4_with_strategy(uids, ports, tcp_strategy, TransportProtocol::Tcp)?;
+    install_proto_rules_v4_with_strategy(uids, ports, udp_strategy, TransportProtocol::Udp)?;
+    Ok(())
+}
+
+fn install_ipv6_rules(uids: &[u32]) -> Result<()> {
+    if uids.is_empty() {
+        return Ok(());
+    }
+
+    ensure_chain(Backend::Ip6tables)?;
+    for &uid in uids {
+        let args = vec![
+            "-A".to_string(),
+            PROXY_CHAIN.to_string(),
+            "-m".to_string(),
+            "owner".to_string(),
+            "--uid-owner".to_string(),
+            uid.to_string(),
+            "-j".to_string(),
+            "DROP".to_string(),
+        ];
+        let (rc, out) = shell::runv_timeout(Backend::Ip6tables.cmd(), &args, Capture::Both, IPT_TIMEOUT)?;
+        if rc != 0 {
+            anyhow::bail!("ip6tables add proxyInfo IPv6 deny rule failed uid={} args='{}': {}", uid, args.join(" "), out);
+        }
+    }
+    logging::info("proxyInfo IPv6 strategy selected: full OUTPUT deny by uid (DROP)");
+    Ok(())
+}
+
+fn install_rules(uids: &[u32], ports: &[u16]) -> Result<()> {
+    clear_rules()?;
+    if uids.is_empty() {
+        return Ok(());
+    }
+
+    let result = (|| {
+        if !ports.is_empty() {
+            install_ipv4_rules(uids, ports)?;
+        }
+        install_ipv6_rules(uids)?;
+        Ok(())
+    })();
+
+    if result.is_err() {
+        let _ = clear_rules();
+    }
+    result
 }
 
 pub fn refresh_runtime(services_running: bool) -> Result<bool> {
@@ -558,14 +744,10 @@ pub fn refresh_runtime(services_running: bool) -> Result<bool> {
         return Ok(false);
     }
     let ports = collect_protected_ports()?;
-    if ports.is_empty() {
-        clear_rules()?;
-        return Ok(false);
-    }
     let port_list: Vec<u16> = ports.into_iter().collect();
     install_rules(&uids, &port_list)?;
     logging::info(&format!(
-        "proxyInfo active: {} uid(s), {} port(s)",
+        "proxyInfo active: {} uid(s), {} IPv4 protected port(s), IPv6 deny=full",
         uids.len(),
         port_list.len()
     ));

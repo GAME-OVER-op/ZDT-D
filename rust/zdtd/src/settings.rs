@@ -170,6 +170,54 @@ pub fn ensure_dirs() -> Result<()> {
     Ok(())
 }
 
+pub fn working_root_path() -> PathBuf {
+    Path::new(MODULE_DIR).join("working_folder")
+}
+
+pub fn working_program_root_path(program: &str) -> PathBuf {
+    working_root_path().join(program)
+}
+
+pub fn ensure_minimal_program_layouts() -> Result<()> {
+    const PROFILES_DEFAULT_JSON: &str = "{
+  \"profiles\": {}
+}
+";
+    const ENABLED_FALSE_JSON: &str = "{\"enabled\":false}
+";
+    const PROXYINFO_ENABLED_JSON: &str = "{
+  \"enabled\": 0
+}
+";
+
+    let layouts = [
+        ("byedpi", "active.json", PROFILES_DEFAULT_JSON),
+        ("dpitunnel", "active.json", PROFILES_DEFAULT_JSON),
+        ("nfqws", "active.json", PROFILES_DEFAULT_JSON),
+        ("nfqws2", "active.json", PROFILES_DEFAULT_JSON),
+        ("singbox", "active.json", PROFILES_DEFAULT_JSON),
+        ("dnscrypt", "active.json", ENABLED_FALSE_JSON),
+        ("operaproxy", "active.json", ENABLED_FALSE_JSON),
+        ("proxyInfo", "enabled.json", PROXYINFO_ENABLED_JSON),
+    ];
+
+    fs::create_dir_all(working_root_path())
+        .with_context(|| format!("mkdir {}", working_root_path().display()))?;
+
+    for (program, state_file, default_content) in layouts {
+        let root = working_program_root_path(program);
+        fs::create_dir_all(&root).with_context(|| format!("mkdir {}", root.display()))?;
+
+        let state_path = root.join(state_file);
+        if !state_path.exists() {
+            fs::write(&state_path, default_content)
+                .with_context(|| format!("write {}", state_path.display()))?;
+        }
+    }
+
+    Ok(())
+}
+
 pub fn load_start_settings() -> Result<StartSettings> {
     ensure_dirs()?;
     let path = start_json_path();

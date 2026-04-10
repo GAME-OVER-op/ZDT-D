@@ -47,6 +47,7 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.max
 import androidx.annotation.StringRes
+import kotlin.random.Random
 
 enum class RootState {
   CHECKING,
@@ -102,16 +103,33 @@ enum class StartupStage {
   IDLE,
   CONNECTING_DAEMON,
   LOADING_STATUS,
+  COMPLETE,
   FAILED,
 }
 
 data class StartupUiState(
-  val visible: Boolean = false,
-  val stage: StartupStage = StartupStage.IDLE,
+  val visible: Boolean = true,
+  val stage: StartupStage = StartupStage.CONNECTING_DAEMON,
   val errorText: String = "",
   val moduleFound: Boolean = false,
   val moduleStructureOk: Boolean = true,
-)
+  val connectingDurationMs: Int = 2200,
+  val loadingDurationMs: Int = 2200,
+  val completeDurationMs: Int = 900,
+) {
+  companion object {
+    fun hidden(): StartupUiState = StartupUiState(
+      visible = false,
+      stage = StartupStage.IDLE,
+      errorText = "",
+      moduleFound = false,
+      moduleStructureOk = true,
+      connectingDurationMs = 2200,
+      loadingDurationMs = 2200,
+      completeDurationMs = 900,
+    )
+  }
+}
 
 data class UiState(
   val baseUrl: String = "http://127.0.0.1:1006",
@@ -126,6 +144,15 @@ data class UiState(
   val busy: Boolean = false,
   val daemonLogTail: String = "",
 )
+
+private data class StartupTimingPlan(
+  val totalMs: Long,
+  val connectingEndMs: Long,
+  val completeMs: Long,
+) {
+  val loadingDurationMs: Long get() = (totalMs - completeMs - connectingEndMs).coerceAtLeast(0L)
+}
+
 
 data class LogLine(
   val ts: String,
@@ -298,6 +325,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   private var startupJob: Job? = null
   private var appVisible: Boolean = false
   private var startupCompleted: Boolean = false
+  private val startupMinVisibleMsRange: LongRange = 4_000L..8_000L
+  private val startupMinCompleteMs: Long = 900L
+  private val startupMinConnectingMsFloor: Long = 1_500L
+  private val startupMinLoadingMsFloor: Long = 1_200L
 
   private var didInit: Boolean = false
   private var appUpdateBannerDismissedThisSession: Boolean = false
@@ -972,8 +1003,6 @@ private fun clearDownloadedUpdateApk() {
       startupJob?.cancel(); startupJob = null
       statusJob?.cancel(); statusJob = null
       daemonLogJob?.cancel(); daemonLogJob = null
-      startupCompleted = false
-      _uiState.update { it.copy(startup = StartupUiState()) }
       return
     }
 
@@ -1015,14 +1044,70 @@ private fun clearDownloadedUpdateApk() {
     }
   }
 
+  private suspend fun waitForStartupElapsed(startedAt: Long, minElapsedMs: Long) {
+    val remaining = minElapsedMs - (System.currentTimeMillis() - startedAt)
+    if (remaining > 0L) delay(remaining)
+  }
+
+  private fun createStartupTimingPlan(): StartupTimingPlan {
+    val totalMs = Random.nextLong(startupMinVisibleMsRange.first, startupMinVisibleMsRange.last + 1L)
+    val remainingBeforeComplete = (totalMs - startupMinCompleteMs).coerceAtLeast(
+      startupMinConnectingMsFloor + startupMinLoadingMsFloor
+    )
+    val maxConnecting = minOf(
+      3_200L,
+      (remainingBeforeComplete - startupMinLoadingMsFloor).coerceAtLeast(startupMinConnectingMsFloor)
+    )
+    val connectingEndMs = if (maxConnecting <= startupMinConnectingMsFloor) {
+      startupMinConnectingMsFloor
+    } else {
+      Random.nextLong(startupMinConnectingMsFloor, maxConnecting + 1L)
+    }
+    return StartupTimingPlan(
+      totalMs = totalMs,
+      connectingEndMs = connectingEndMs,
+      completeMs = startupMinCompleteMs,
+    )
+  }
+
+  private fun beginStartupHandshake(plan: StartupTimingPlan) {
+    _uiState.update { st ->
+      st.copy(
+        startup = StartupUiState(
+          visible = true,
+          stage = StartupStage.CONNECTING_DAEMON,
+          errorText = "",
+          moduleFound = false,
+          moduleStructureOk = true,
+          connectingDurationMs = plan.connectingEndMs.toInt(),
+          loadingDurationMs = plan.loadingDurationMs.toInt(),
+          completeDurationMs = plan.completeMs.toInt(),
+        )
+      )
+    }
+  }
+
   private fun finishStartupHandshake() {
     startupCompleted = true
     startupJob = null
-    _uiState.update { it.copy(startup = StartupUiState(), daemonUnavailableVisible = false) }
+    _uiState.update { st ->
+      st.copy(
+        startup = st.startup.copy(
+          visible = true,
+          stage = StartupStage.COMPLETE,
+          errorText = "",
+        ),
+        daemonUnavailableVisible = false,
+      )
+    }
     startStatusPolling()
     startDaemonLogPolling()
     refreshPrograms()
     refreshDaemonSettings()
+    launchIO {
+      delay(startupMinCompleteMs)
+      _uiState.update { it.copy(startup = StartupUiState.hidden(), daemonUnavailableVisible = false) }
+    }
   }
 
 
@@ -1060,27 +1145,36 @@ private fun clearDownloadedUpdateApk() {
     }
   }
 
+
   private fun startStartupHandshake() {
-    startupJob?.cancel()
-    startupJob = launchIO {
-      startupCompleted = false
-      setStartupStage(StartupStage.CONNECTING_DAEMON)
-      val deadline = System.currentTimeMillis() + 10_000L
-      while (isActive && System.currentTimeMillis() < deadline) {
-        try {
-          val rep = api.getStatus()
-          _uiState.update { it.copy(status = rep, daemonOnline = true, daemonUnavailableVisible = false) }
-          root.setCachedServiceOn(ApiModels.isServiceOn(rep))
-          setStartupStage(StartupStage.LOADING_STATUS)
-          finishStartupHandshake()
-          return@launchIO
-        } catch (_: Throwable) {
-        }
-        delay(700)
+  startupJob?.cancel()
+  startupJob = launchIO {
+    startupCompleted = false
+    val startupStartedAt = System.currentTimeMillis()
+    val timingPlan = createStartupTimingPlan()
+    val loadingStageStartAt = timingPlan.connectingEndMs + timingPlan.loadingDurationMs
+
+    beginStartupHandshake(timingPlan)
+    val deadline = startupStartedAt + 10_000L
+    while (isActive && System.currentTimeMillis() < deadline) {
+      try {
+        val rep = api.getStatus()
+        _uiState.update { it.copy(status = rep, daemonOnline = true, daemonUnavailableVisible = false) }
+        root.setCachedServiceOn(ApiModels.isServiceOn(rep))
+        waitForStartupElapsed(startupStartedAt, timingPlan.connectingEndMs)
+        if (!isActive) return@launchIO
+        setStartupStage(StartupStage.LOADING_STATUS)
+        waitForStartupElapsed(startupStartedAt, loadingStageStartAt)
+        if (!isActive) return@launchIO
+        finishStartupHandshake()
+        return@launchIO
+      } catch (_: Throwable) {
       }
-      failStartupHandshake()
+      delay(700)
     }
+    failStartupHandshake()
   }
+}
 
   override fun retryDaemonStartup() {
     if (_rootState.value != RootState.GRANTED || !isSetupDone() || !appVisible) return

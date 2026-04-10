@@ -27,6 +27,72 @@ pub struct AppState {
     pub semaphore: Arc<Semaphore>,
 }
 
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SniffMode {
+    Progressive,
+    Quick80,
+    Skip,
+}
+
+fn sniff_thresholds(max_conns: u32) -> (usize, usize) {
+    let max_conns = usize::max(max_conns as usize, 1);
+    let busy = (max_conns / 3).clamp(24, 64);
+    let overload = ((max_conns * 2) / 3).clamp(48, 128).max(busy + 1);
+    (busy, overload)
+}
+
+fn sniff_mode_for(state: &AppState) -> SniffMode {
+    let active = state.conns.len();
+    let (busy_threshold, overload_threshold) = sniff_thresholds(state.args.max_conns);
+
+    if active >= overload_threshold {
+        if state.rules.has_host_rules() {
+            SniffMode::Quick80
+        } else {
+            SniffMode::Skip
+        }
+    } else if active >= busy_threshold {
+        SniffMode::Quick80
+    } else {
+        SniffMode::Progressive
+    }
+}
+
+async fn sniff_client_host(client: &tokio::net::TcpStream, mode: SniffMode) -> Option<crate::sniff::SniffResult> {
+    use tokio::time::{Duration, Instant};
+
+    let budgets_ms: &[u64] = match mode {
+        SniffMode::Progressive => &[80, 120, 160, 200],
+        SniffMode::Quick80 => &[80],
+        SniffMode::Skip => &[],
+    };
+
+    if budgets_ms.is_empty() {
+        return None;
+    }
+
+    let mut buf = vec![0u8; 4096];
+    let started = Instant::now();
+
+    for budget_ms in budgets_ms {
+        let budget = Duration::from_millis(*budget_ms);
+        let elapsed = started.elapsed();
+        if elapsed >= budget {
+            continue;
+        }
+        let remaining = budget - elapsed;
+        match tokio::time::timeout(remaining, client.peek(&mut buf)).await {
+            Ok(Ok(sz)) if sz > 0 => return crate::sniff::sniff_host(&buf[..sz]),
+            Ok(Ok(_)) => return None,
+            Ok(Err(_)) => return None,
+            Err(_) => continue,
+        }
+    }
+
+    None
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -243,14 +309,8 @@ async fn proxy_tcp(
     let (target_host, target_port) = target.to_host_port_string();
 
     // Best-effort sniffing: domain from HTTP Host / CONNECT / TLS SNI.
-    let sniffed = {
-        let mut buf = vec![0u8; 4096];
-        let n = tokio::time::timeout(Duration::from_millis(200), client.peek(&mut buf)).await;
-        match n {
-            Ok(Ok(sz)) if sz > 0 => crate::sniff::sniff_host(&buf[..sz]),
-            _ => None,
-        }
-    };
+    // Under load we shrink or skip sniffing to avoid adding avoidable latency on new connections.
+    let sniffed = sniff_client_host(&client, sniff_mode_for(&state)).await;
     let sniff_host = match &sniffed {
         Some(crate::sniff::SniffResult::HttpHost(h)) => Some(h.clone()),
         Some(crate::sniff::SniffResult::ConnectHost(h)) => Some(h.clone()),
@@ -538,7 +598,7 @@ async fn connect_socks(
 ) -> Result<(tokio::net::TcpStream, SocketAddr)> {
     let timeout = Duration::from_secs(state.args.connect_timeout as u64);
 
-    let auth = match (state.args.socks_user.clone(), state.args.socks_pass.clone()) {
+    let global_auth = match (state.args.socks_user.clone(), state.args.socks_pass.clone()) {
         (Some(u), Some(p)) => Some((u, p)),
         _ => None,
     };
@@ -558,18 +618,19 @@ async fn connect_socks(
     let mut tried = std::collections::HashSet::<SocketAddr>::new();
 
     for _ in 0..max_tries {
-        let backend = {
+        let (backend, auth) = {
             let mut b = state.backends.lock();
-            b.select_rr().context("no GREEN SOCKS5 backends")?
+            b.select_rr_with_auth(global_auth.as_ref()).context("no GREEN SOCKS5 backends")?
         };
 
         if !tried.insert(backend) {
             continue;
         }
 
-        match socks5::connect_via_socks5(backend, taddr.clone(), auth.clone(), timeout).await {
+        match socks5::connect_via_socks5(backend, taddr.clone(), auth, timeout).await {
             Ok(s) => {
                 state.stats.inc_socks_ok();
+                state.backends.lock().note_backend_selected(backend);
                 return Ok((s, backend));
             }
             Err(e) => {

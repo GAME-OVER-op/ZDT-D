@@ -9,9 +9,9 @@ use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     path::{Component, Path, PathBuf},
-    sync::{Arc, atomic::{AtomicUsize, Ordering}},
+    sync::{Arc, OnceLock, Mutex, atomic::{AtomicUsize, Ordering}},
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use crate::{daemon, daemon::SharedState, protector, settings, stats};
@@ -24,6 +24,58 @@ const MAX_BODY: usize = 32 * 1024 * 1024;
 // Safety guard for dnscrypt setting files (some lists can be enormous and will crash the app/UI if returned whole).
 // Per Danil: limit reads/edits to ~200KB.
 const DNSCRYPT_SETTING_MAX_BYTES: u64 = 200 * 1024;
+
+const STATUS_CACHE_TTL: Duration = Duration::from_secs(2);
+const ASSIGNMENT_CACHE_TTL: Duration = Duration::from_secs(2);
+
+#[derive(Clone)]
+struct StatusCacheEntry {
+    created: Instant,
+    report: stats::Report,
+}
+
+#[derive(Clone)]
+struct AssignmentCacheEntry {
+    created: Instant,
+    items: Vec<AppAssignmentFile>,
+}
+
+static STATUS_CACHE: OnceLock<Mutex<Option<StatusCacheEntry>>> = OnceLock::new();
+static ASSIGNMENT_CACHE: OnceLock<Mutex<Option<AssignmentCacheEntry>>> = OnceLock::new();
+
+fn status_cache() -> &'static Mutex<Option<StatusCacheEntry>> {
+    STATUS_CACHE.get_or_init(|| Mutex::new(None))
+}
+
+fn assignment_cache() -> &'static Mutex<Option<AssignmentCacheEntry>> {
+    ASSIGNMENT_CACHE.get_or_init(|| Mutex::new(None))
+}
+
+fn invalidate_assignment_cache() {
+    if let Ok(mut guard) = assignment_cache().lock() {
+        *guard = None;
+    }
+}
+
+fn get_status_cached(services_running: bool) -> Result<stats::Report> {
+    if let Ok(guard) = status_cache().lock() {
+        if let Some(entry) = &*guard {
+            if entry.created.elapsed() < STATUS_CACHE_TTL {
+                return Ok(entry.report.clone());
+            }
+        }
+    }
+
+    let report = stats::collect_report(services_running)?;
+    if let Ok(mut guard) = status_cache().lock() {
+        *guard = Some(StatusCacheEntry {
+            created: Instant::now(),
+            report: report.clone(),
+        });
+    }
+    Ok(report)
+}
+
 
 fn find_header_end(data: &[u8]) -> Option<usize> {
     if data.len() < 4 {
@@ -1021,6 +1073,224 @@ fn create_singbox_server_next(profile: &str) -> Result<String> {
     Ok(next)
 }
 
+
+
+fn wireproxy_active_path() -> PathBuf {
+    program_root("wireproxy").join("active.json")
+}
+
+fn wireproxy_profiles_root() -> PathBuf {
+    program_root("wireproxy").join("profile")
+}
+
+fn wireproxy_deleted_root() -> PathBuf {
+    program_root("wireproxy").join(".deleted")
+}
+
+fn wireproxy_deleted_profiles_root() -> PathBuf {
+    wireproxy_deleted_root().join("profiles")
+}
+
+fn wireproxy_deleted_servers_root(profile: &str) -> PathBuf {
+    wireproxy_deleted_root().join("servers").join(profile)
+}
+
+fn wireproxy_profile_root(profile: &str) -> PathBuf {
+    wireproxy_profiles_root().join(profile)
+}
+
+fn wireproxy_server_root(profile: &str, server: &str) -> PathBuf {
+    wireproxy_profile_root(profile).join("server").join(server)
+}
+
+fn default_wireproxy_profile_setting_value(t2s_port: u16, t2s_web_port: u16) -> serde_json::Value {
+    json!({
+        "t2s_port": t2s_port,
+        "t2s_web_port": t2s_web_port
+    })
+}
+
+fn default_wireproxy_server_setting_value() -> serde_json::Value {
+    json!({
+        "enabled": false
+    })
+}
+
+fn ensure_wireproxy_profile_layout(profile: &str) -> Result<()> {
+    let root = wireproxy_profile_root(profile);
+    fs::create_dir_all(root.join("app/uid"))?;
+    fs::create_dir_all(root.join("app/out"))?;
+    fs::create_dir_all(root.join("log"))?;
+    fs::create_dir_all(root.join("server"))?;
+
+    let app_list = root.join("app/uid/user_program");
+    if !app_list.exists() {
+        write_text_atomic(&app_list, "")?;
+    }
+    let out_list = root.join("app/out/user_program");
+    if !out_list.exists() {
+        write_text_atomic(&out_list, "")?;
+    }
+    let t2s_log = root.join("log/t2s.log");
+    if !t2s_log.exists() {
+        write_text_atomic(&t2s_log, "")?;
+    }
+    Ok(())
+}
+
+fn collect_existing_wireproxy_ports() -> BTreeSet<u16> {
+    let mut used = BTreeSet::new();
+    let root = wireproxy_profiles_root();
+    if let Ok(rd) = fs::read_dir(&root) {
+        for ent in rd.flatten() {
+            let profile_dir = ent.path();
+            if !profile_dir.is_dir() {
+                continue;
+            }
+            if profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) {
+                continue;
+            }
+            let setting_path = profile_dir.join("setting.json");
+            if let Ok(v) = read_json::<serde_json::Value>(&setting_path) {
+                if let Some(port) = v.get("t2s_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
+                    if port > 0 {
+                        used.insert(port);
+                    }
+                }
+                if let Some(port) = v.get("t2s_web_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
+                    if port > 0 {
+                        used.insert(port);
+                    }
+                }
+            }
+
+            let server_root = profile_dir.join("server");
+            if let Ok(server_rd) = fs::read_dir(&server_root) {
+                for server_ent in server_rd.flatten() {
+                    let server_dir = server_ent.path();
+                    if !server_dir.is_dir() {
+                        continue;
+                    }
+                    if server_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) {
+                        continue;
+                    }
+                    let config_path = server_dir.join("config.conf");
+                    let Ok(raw) = fs::read_to_string(&config_path) else { continue; };
+                    let Ok(bind) = crate::programs::wireproxy::parse_socks5_bind_address_str(&raw) else { continue; };
+                    if bind.port > 0 {
+                        used.insert(bind.port);
+                    }
+                }
+            }
+        }
+    }
+    used
+}
+
+fn suggest_wireproxy_profile_ports() -> Result<(u16, u16)> {
+    let mut used = crate::ports::collect_used_ports_for_conflict_check().unwrap_or_default();
+    used.extend(collect_existing_wireproxy_ports());
+    let t2s = next_free_port_from_used(12345, &used)?;
+    used.insert(t2s);
+    let web = next_free_port_from_used(8001, &used)?;
+    Ok((t2s, web))
+}
+
+fn create_wireproxy_profile_named(requested: &str) -> Result<String> {
+    let name = requested.trim();
+    ensure_valid_singbox_profile_name(name)?;
+
+    let active_path = wireproxy_active_path();
+    let mut active: ProfilesActive = read_json(&active_path).unwrap_or_default();
+    if active.profiles.contains_key(name) {
+        anyhow::bail!("profile already exists");
+    }
+    active.profiles.insert(name.to_string(), ProfileState { enabled: false });
+    write_json_pretty(&active_path, &active)?;
+
+    ensure_wireproxy_profile_layout(name)?;
+    let profile_setting = wireproxy_profile_root(name).join("setting.json");
+    if !profile_setting.exists() {
+        let (t2s_port, t2s_web_port) = suggest_wireproxy_profile_ports()?;
+        write_json_pretty(
+            &profile_setting,
+            &default_wireproxy_profile_setting_value(t2s_port, t2s_web_port),
+        )?;
+    }
+
+    Ok(name.to_string())
+}
+
+fn create_wireproxy_profile_next() -> Result<String> {
+    let active: ProfilesActive = read_json(&wireproxy_active_path()).unwrap_or_default();
+    let mut max_n = 0u32;
+    for k in active.profiles.keys() {
+        if let Ok(n) = k.parse::<u32>() {
+            max_n = max_n.max(n);
+            continue;
+        }
+        if let Some(rest) = k.strip_prefix("profile") {
+            if let Ok(n) = rest.parse::<u32>() {
+                max_n = max_n.max(n);
+            }
+        }
+    }
+    let next = format!("profile{}", max_n + 1);
+    create_wireproxy_profile_named(&next)?;
+    Ok(next)
+}
+
+fn create_wireproxy_server_named(profile: &str, requested: &str) -> Result<String> {
+    ensure_valid_singbox_profile_name(profile)?;
+    let name = requested.trim();
+    ensure_valid_singbox_profile_name(name)?;
+    ensure_wireproxy_profile_layout(profile)?;
+
+    let root = wireproxy_server_root(profile, name);
+    if root.exists() {
+        anyhow::bail!("server already exists");
+    }
+    fs::create_dir_all(root.join("log"))?;
+    let cfg = root.join("config.conf");
+    if !cfg.exists() {
+        write_text_atomic(&cfg, "")?;
+    }
+    let log = root.join("log/wireproxy.log");
+    if !log.exists() {
+        write_text_atomic(&log, "")?;
+    }
+    let setting = root.join("setting.json");
+    if !setting.exists() {
+        write_json_pretty(&setting, &default_wireproxy_server_setting_value())?;
+    }
+    Ok(name.to_string())
+}
+
+fn create_wireproxy_server_next(profile: &str) -> Result<String> {
+    ensure_valid_singbox_profile_name(profile)?;
+    let root = wireproxy_profile_root(profile).join("server");
+    fs::create_dir_all(&root)?;
+    let mut max_n = 0u32;
+    if let Ok(rd) = fs::read_dir(&root) {
+        for ent in rd.flatten() {
+            let path = ent.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|s| s.to_str()) else { continue };
+            if name.starts_with('.') { continue; }
+            if let Some(rest) = name.strip_prefix("server") {
+                if let Ok(n) = rest.parse::<u32>() {
+                    max_n = max_n.max(n);
+                }
+            }
+        }
+    }
+    let next = format!("server{}", max_n + 1);
+    create_wireproxy_server_named(profile, &next)?;
+    Ok(next)
+}
+
 fn create_named_profile(program_id: &str, requested: &str) -> Result<String> {
     ensure_safe_segment(program_id, "program id")?;
     if !matches!(program_id, "nfqws" | "nfqws2" | "byedpi" | "dpitunnel") {
@@ -1185,7 +1455,7 @@ fn slot_from_kind(kind: &str) -> Option<&'static str> {
 
 fn app_domain(program_id: &str) -> Option<&'static str> {
     match program_id {
-        "operaproxy" | "sing-box" | "dpitunnel" | "byedpi" => Some("tunnel"),
+        "operaproxy" | "sing-box" | "wireproxy" | "tor" | "dpitunnel" | "byedpi" => Some("tunnel"),
         "nfqws" | "nfqws2" => Some("zapret"),
         _ => None,
     }
@@ -1211,7 +1481,7 @@ fn push_assignment_file(
     });
 }
 
-fn collect_assignment_files() -> Vec<AppAssignmentFile> {
+fn collect_assignment_files_uncached() -> Vec<AppAssignmentFile> {
     let mut out = Vec::new();
 
     for id in ["nfqws", "nfqws2", "byedpi", "dpitunnel"] {
@@ -1262,6 +1532,14 @@ fn collect_assignment_files() -> Vec<AppAssignmentFile> {
             format!("/api/programs/operaproxy/apps/{kind}"),
         );
     }
+    push_assignment_file(
+        &mut out,
+        "tor",
+        None,
+        "user",
+        program_root("tor").join("app/uid/user_program"),
+        "/api/programs/tor/apps".to_string(),
+    );
 
     let singbox_root = singbox_profiles_root();
     if let Ok(rd) = fs::read_dir(&singbox_root) {
@@ -1280,7 +1558,43 @@ fn collect_assignment_files() -> Vec<AppAssignmentFile> {
         }
     }
 
+    let wireproxy_root = wireproxy_profiles_root();
+    if let Ok(rd) = fs::read_dir(&wireproxy_root) {
+        for ent in rd.flatten() {
+            let path = ent.path();
+            if !path.is_dir() { continue; }
+            let Some(profile) = path.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+            push_assignment_file(
+                &mut out,
+                "wireproxy",
+                Some(profile.clone()),
+                "user",
+                path.join("app/uid/user_program"),
+                format!("/api/programs/wireproxy/profiles/{profile}/apps/user"),
+            );
+        }
+    }
+
     out
+}
+
+fn collect_assignment_files() -> Vec<AppAssignmentFile> {
+    if let Ok(guard) = assignment_cache().lock() {
+        if let Some(entry) = &*guard {
+            if entry.created.elapsed() < ASSIGNMENT_CACHE_TTL {
+                return entry.items.clone();
+            }
+        }
+    }
+
+    let items = collect_assignment_files_uncached();
+    if let Ok(mut guard) = assignment_cache().lock() {
+        *guard = Some(AssignmentCacheEntry {
+            created: Instant::now(),
+            items: items.clone(),
+        });
+    }
+    items
 }
 
 fn assignment_to_view(v: &AppAssignmentFile) -> AppAssignmentView {
@@ -1421,6 +1735,9 @@ fn remove_packages_from_program_lists(packages: &BTreeSet<String>) -> Result<Vec
             });
         }
     }
+    if !removed.is_empty() {
+        invalidate_assignment_cache();
+    }
     Ok(removed)
 }
 
@@ -1500,6 +1817,16 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
         }));
     }
 
+    {
+        let enabled = crate::programs::tor::load_enabled_json().map(|v| v.is_enabled()).unwrap_or(false);
+        out.push(json!({
+            "id": "tor",
+            "name": "tor",
+            "type": "single",
+            "enabled": enabled
+        }));
+    }
+
     // sing-box (profile-based, socks5-only)
     {
         let active: ProfilesActive = read_json(&singbox_active_path()).unwrap_or_default();
@@ -1512,6 +1839,22 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
             "id": "sing-box",
             "name": "sing-box",
             "type": "singbox_profiles",
+            "profiles": profiles
+        }));
+    }
+
+    // wireproxy (profile-based, socks5-only)
+    {
+        let active: ProfilesActive = read_json(&wireproxy_active_path()).unwrap_or_default();
+        let mut profiles = Vec::new();
+        for (name, st) in active.profiles {
+            profiles.push(json!({"name": name, "enabled": st.enabled}));
+        }
+        profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        out.push(json!({
+            "id": "wireproxy",
+            "name": "wireproxy",
+            "type": "wireproxy_profiles",
             "profiles": profiles
         }));
     }
@@ -1584,6 +1927,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
                     anyhow::bail!("profile not found");
                 }
                 write_json_pretty(&p, &active)?;
+                invalidate_assignment_cache();
                 let src = singbox_profile_root(profile);
                 if src.exists() {
                     let deleted_dir = singbox_deleted_profiles_root();
@@ -1660,6 +2004,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
                 validate_program_apps_content(&req.content, &api_path, "sing-box", "common")?;
                 let p = singbox_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
+                invalidate_assignment_cache();
                 Ok(())
             })();
             match res {
@@ -1798,6 +2143,306 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
                 let root = singbox_server_root(profile, server);
                 fs::create_dir_all(root.join("log"))?;
                 let p = root.join("config.json");
+                write_text_atomic(&p, &req.content)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
+
+        // --- wireproxy profile/server API
+        ("GET", ["api", "programs", "wireproxy", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let active: ProfilesActive = read_json(&wireproxy_active_path()).unwrap_or_default();
+                let mut profiles = Vec::new();
+                for (name, st) in active.profiles {
+                    profiles.push(json!({"name": name, "enabled": st.enabled}));
+                }
+                profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+                Ok(json!({"ok": true, "profiles": profiles}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "programs", "wireproxy", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                #[derive(Deserialize)]
+                struct CreateReq {
+                    #[serde(default)]
+                    name: Option<String>,
+                }
+                let req: CreateReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let profile = match req.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                    Some(name) => create_wireproxy_profile_named(name)?,
+                    None => create_wireproxy_profile_next()?,
+                };
+                Ok(json!({"ok": true, "profile": profile}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "wireproxy", "profiles", profile, "enabled"]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                let req: EnabledReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let p = wireproxy_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                if !active.profiles.contains_key(*profile) {
+                    anyhow::bail!("profile not found");
+                }
+                active.profiles.insert(profile.to_string(), ProfileState { enabled: req.enabled });
+                write_json_pretty(&p, &active)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("DELETE", ["api", "programs", "wireproxy", "profiles", profile]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                let p = wireproxy_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                active.profiles.remove(*profile);
+                write_json_pretty(&p, &active)?;
+                invalidate_assignment_cache();
+
+                let src = wireproxy_profile_root(profile);
+                if src.exists() {
+                    let deleted_dir = wireproxy_deleted_profiles_root();
+                    fs::create_dir_all(&deleted_dir).ok();
+                    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                    let dst = deleted_dir.join(format!("{profile}.{ts}"));
+                    let _ = fs::rename(&src, &dst);
+                }
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "wireproxy", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_wireproxy_profile_layout(profile)?;
+                let p = wireproxy_profile_root(profile).join("setting.json");
+                if !p.exists() {
+                    let (t2s_port, t2s_web_port) = suggest_wireproxy_profile_ports()?;
+                    write_json_pretty(&p, &default_wireproxy_profile_setting_value(t2s_port, t2s_web_port))?;
+                }
+                let v: serde_json::Value = read_json(&p)?;
+                Ok(json!({"ok": true, "data": v}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "wireproxy", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_wireproxy_profile_layout(profile)?;
+                let v: serde_json::Value = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let t2s_port = v.get("t2s_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok())
+                    .ok_or_else(|| anyhow::anyhow!("t2s_port is required"))?;
+                let t2s_web_port = v.get("t2s_web_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok())
+                    .ok_or_else(|| anyhow::anyhow!("t2s_web_port is required"))?;
+                if t2s_port == 0 || t2s_web_port == 0 || t2s_port == t2s_web_port {
+                    anyhow::bail!("invalid ports");
+                }
+                let p = wireproxy_profile_root(profile).join("setting.json");
+                write_json_pretty(&p, &v)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "wireproxy", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<String> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_wireproxy_profile_layout(profile)?;
+                let p = wireproxy_profile_root(profile).join("app/uid/user_program");
+                read_text_or_empty(&p)
+            })();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "wireproxy", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_wireproxy_profile_layout(profile)?;
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let api_path = format!("/api/programs/wireproxy/profiles/{}/apps/user", profile);
+                validate_program_apps_content(&req.content, &api_path, "wireproxy", "common")?;
+                let p = wireproxy_profile_root(profile).join("app/uid/user_program");
+                write_text_atomic(&p, &req.content)?;
+                invalidate_assignment_cache();
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "wireproxy", "profiles", profile, "servers"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_wireproxy_profile_layout(profile)?;
+                let root = wireproxy_profile_root(profile).join("server");
+                let mut servers = Vec::new();
+                if let Ok(rd) = fs::read_dir(&root) {
+                    for ent in rd.flatten() {
+                        let path = ent.path();
+                        if !path.is_dir() { continue; }
+                        let Some(name) = path.file_name().and_then(|s| s.to_str()) else { continue; };
+                        if name.starts_with('.') { continue; }
+                        let setting_path = path.join("setting.json");
+                        let data: serde_json::Value = read_json(&setting_path).unwrap_or_else(|_| default_wireproxy_server_setting_value());
+                        let config_path = path.join("config.conf");
+                        let bind = fs::read_to_string(&config_path)
+                            .ok()
+                            .and_then(|raw| crate::programs::wireproxy::parse_socks5_bind_address_str(&raw).ok())
+                            .map(|v| json!({"host": v.host, "port": v.port}));
+                        servers.push(json!({"name": name, "data": data, "bind": bind}));
+                    }
+                }
+                servers.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+                Ok(json!({"ok": true, "servers": servers}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "programs", "wireproxy", "profiles", profile, "servers"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                #[derive(Deserialize)]
+                struct CreateReq {
+                    #[serde(default)]
+                    name: Option<String>,
+                }
+                ensure_valid_singbox_profile_name(profile)?;
+                let req: CreateReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let server = match req.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                    Some(name) => create_wireproxy_server_named(profile, name)?,
+                    None => create_wireproxy_server_next(profile)?,
+                };
+                Ok(json!({"ok": true, "server": server}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("DELETE", ["api", "programs", "wireproxy", "profiles", profile, "servers", server]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_valid_singbox_profile_name(server)?;
+                let src = wireproxy_server_root(profile, server);
+                if !src.exists() {
+                    anyhow::bail!("server not found");
+                }
+                let deleted_dir = wireproxy_deleted_servers_root(profile);
+                fs::create_dir_all(&deleted_dir).ok();
+                let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                let dst = deleted_dir.join(format!("{server}.{ts}"));
+                let _ = fs::rename(&src, &dst);
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "wireproxy", "profiles", profile, "servers", server, "setting"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_valid_singbox_profile_name(server)?;
+                ensure_wireproxy_profile_layout(profile)?;
+                let root = wireproxy_server_root(profile, server);
+                fs::create_dir_all(root.join("log"))?;
+                let p = root.join("setting.json");
+                if !p.exists() {
+                    write_json_pretty(&p, &default_wireproxy_server_setting_value())?;
+                }
+                let v: serde_json::Value = read_json(&p)?;
+                Ok(json!({"ok": true, "data": v}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "wireproxy", "profiles", profile, "servers", server, "setting"]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_valid_singbox_profile_name(server)?;
+                let v: serde_json::Value = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let enabled = v.get("enabled").and_then(|x| x.as_bool())
+                    .ok_or_else(|| anyhow::anyhow!("enabled is required"))?;
+                let root = wireproxy_server_root(profile, server);
+                fs::create_dir_all(root.join("log"))?;
+                let p = root.join("setting.json");
+                write_json_pretty(&p, &json!({"enabled": enabled}))?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "wireproxy", "profiles", profile, "servers", server, "config"]) => {
+            let res = (|| -> Result<String> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_valid_singbox_profile_name(server)?;
+                let root = wireproxy_server_root(profile, server);
+                fs::create_dir_all(root.join("log"))?;
+                let p = root.join("config.conf");
+                if !p.exists() {
+                    write_text_atomic(&p, "")?;
+                }
+                read_text_or_empty(&p)
+            })();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "wireproxy", "profiles", profile, "servers", server, "config"]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_valid_singbox_profile_name(server)?;
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let root = wireproxy_server_root(profile, server);
+                fs::create_dir_all(root.join("log"))?;
+                let raw = req.content.trim();
+                if !raw.is_empty() {
+                    let bind = crate::programs::wireproxy::parse_socks5_bind_address_str(raw)?;
+                    if bind.host != "127.0.0.1" {
+                        anyhow::bail!("Socks5 BindAddress host must be 127.0.0.1");
+                    }
+                }
+                let p = root.join("config.conf");
                 write_text_atomic(&p, &req.content)?;
                 Ok(())
             })();
@@ -1962,6 +2607,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
                 validate_program_apps_content(&req.content, &api_path, id, slot_from_kind(kind).ok_or_else(|| anyhow::anyhow!("invalid apps kind"))?)?;
                 let p = profile_root(id, profile).join(format!("app/uid/{fname}"));
                 write_text_atomic(&p, &req.content)?;
+                invalidate_assignment_cache();
                 Ok(())
             })();
             match res {
@@ -2113,6 +2759,104 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
             }
         }
 
+        // --- tor enabled/apps/config
+        ("GET", ["api", "programs", "tor"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let enabled = crate::programs::tor::load_enabled_json()?.enabled;
+                let apps = crate::programs::tor::read_uid_program_text()?;
+                let setting = crate::programs::tor::load_setting()?;
+                let torrc = crate::programs::tor::read_torrc_text()?;
+                let socks_port = crate::programs::tor::parse_socks_port_from_str(&torrc).ok();
+                let bridges = crate::programs::tor::bridge_count_from_str(&torrc);
+                let active = stats::collect_status().map(|r| r.tor.count > 0).unwrap_or(false);
+                Ok(json!({"ok": true, "enabled": enabled, "apps": apps, "setting": setting, "torrc": torrc, "socks_port": socks_port, "bridge_count": bridges, "active": active}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("GET", ["api", "programs", "tor", "enabled"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let enabled = crate::programs::tor::load_enabled_json()?.enabled;
+                Ok(json!({"ok": true, "enabled": enabled}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("PUT", ["api", "programs", "tor", "enabled"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: ProxyEnabledReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                if req.enabled > 1 { anyhow::bail!("enabled must be 0 or 1"); }
+                if req.enabled != 0 {
+                    crate::programs::tor::validate_enable_toggle_requirements()?;
+                }
+                let v = crate::programs::tor::save_enabled_value(req.enabled)?;
+                Ok(json!({"ok": true, "enabled": v.enabled}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("GET", ["api", "programs", "tor", "apps"]) => {
+            let res = crate::programs::tor::read_uid_program_text();
+            match res { Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})), Err(e) => write_err(stream, e) }
+        }
+        ("PUT", ["api", "programs", "tor", "apps"]) => {
+            let res = (|| -> Result<()> {
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                validate_program_apps_content(&req.content, "/api/programs/tor/apps", "tor", "common")?;
+                crate::programs::tor::write_uid_program_text(&req.content)?;
+                invalidate_assignment_cache();
+                Ok(())
+            })();
+            match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
+        }
+        ("GET", ["api", "programs", "tor", "setting"]) => {
+            let res = crate::programs::tor::load_setting();
+            match res { Ok(v) => write_json(stream, 200, json!({"ok": true, "data": v})), Err(e) => write_err(stream, e) }
+        }
+        ("PUT", ["api", "programs", "tor", "setting"]) => {
+            let res = (|| -> Result<()> {
+                let setting: crate::programs::tor::Setting = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                if setting.t2s_port == 0 || setting.t2s_web_port == 0 || setting.t2s_port == setting.t2s_web_port {
+                    anyhow::bail!("invalid t2s ports");
+                }
+                if let Ok(torrc) = crate::programs::tor::read_torrc_text() {
+                    if let Ok(socks_port) = crate::programs::tor::parse_socks_port_from_str(&torrc) {
+                        if setting.t2s_port == socks_port || setting.t2s_web_port == socks_port {
+                            anyhow::bail!("t2s ports must not match SocksPort");
+                        }
+                    }
+                }
+                crate::programs::tor::save_setting(&setting)?;
+                Ok(())
+            })();
+            match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
+        }
+        ("GET", ["api", "programs", "tor", "torrc"]) => {
+            let res = crate::programs::tor::read_torrc_text();
+            match res { Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})), Err(e) => write_err(stream, e) }
+        }
+        ("PUT", ["api", "programs", "tor", "torrc"]) => {
+            let res = (|| -> Result<()> {
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                crate::programs::tor::write_torrc_text(&req.content)?;
+                Ok(())
+            })();
+            match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
+        }
+        ("POST", ["api", "programs", "tor", "apply"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let enabled = crate::programs::tor::load_enabled_json()?.is_enabled();
+                if enabled {
+                    crate::programs::tor::validate_enable_requirements()?;
+                }
+                let _ = crate::programs::tor::rebuild_out_program()?;
+                let active = enabled && stats::collect_status().map(|r| r.tor.count > 0).unwrap_or(false);
+                Ok(json!({"ok": true, "active": active}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+
         // --- operaproxy enabled
         ("GET", ["api", "programs", "operaproxy", "enabled"]) => {
             let p = active_json_path("operaproxy");
@@ -2151,6 +2895,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
                 validate_program_apps_content(&req.content, "/api/programs/operaproxy/apps/user", "operaproxy", "common")?;
                 let p = program_root("operaproxy").join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
+                invalidate_assignment_cache();
                 Ok(())
             })();
             match res {
@@ -2174,6 +2919,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
                 validate_program_apps_content(&req.content, "/api/programs/operaproxy/apps/mobile", "operaproxy", "mobile")?;
                 let p = program_root("operaproxy").join("app/uid/mobile_program");
                 write_text_atomic(&p, &req.content)?;
+                invalidate_assignment_cache();
                 Ok(())
             })();
             match res {
@@ -2197,6 +2943,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
                 validate_program_apps_content(&req.content, "/api/programs/operaproxy/apps/wifi", "operaproxy", "wifi")?;
                 let p = program_root("operaproxy").join("app/uid/wifi_program");
                 write_text_atomic(&p, &req.content)?;
+                invalidate_assignment_cache();
                 Ok(())
             })();
             match res {
@@ -2433,7 +3180,7 @@ fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
 
 match (method.as_str(), path.as_str()) {
         ("GET", "/api/status") => {
-            let report = stats::collect_report(services_running)?;
+            let report = get_status_cached(services_running)?;
             write_json(stream, 200, serde_json::to_value(report)?)
         }
 
@@ -2452,6 +3199,8 @@ match (method.as_str(), path.as_str()) {
                 hotspot_t2s_target: Option<String>,
                 #[serde(default)]
                 hotspot_t2s_singbox_profile: Option<String>,
+                #[serde(default)]
+                hotspot_t2s_wireproxy_profile: Option<String>,
             }
 
             let patch: SettingPatch = serde_json::from_slice(&body)
@@ -2468,6 +3217,9 @@ match (method.as_str(), path.as_str()) {
             }
             if let Some(profile) = patch.hotspot_t2s_singbox_profile {
                 setting.hotspot_t2s_singbox_profile = profile;
+            }
+            if let Some(profile) = patch.hotspot_t2s_wireproxy_profile {
+                setting.hotspot_t2s_wireproxy_profile = profile;
             }
             settings::save_api_settings(&setting)?;
             let saved = settings::load_api_settings().unwrap_or(setting);
@@ -2523,6 +3275,11 @@ match (method.as_str(), path.as_str()) {
                     match req.profile.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
                         Some(p) => create_singbox_profile_named(p)?,
                         None => create_singbox_profile_next()?,
+                    }
+                } else if program == "wireproxy" {
+                    match req.profile.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                        Some(p) => create_wireproxy_profile_named(p)?,
+                        None => create_wireproxy_profile_next()?,
                     }
                 } else {
                     match req.profile.as_deref().map(str::trim).filter(|s| !s.is_empty()) {

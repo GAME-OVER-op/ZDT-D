@@ -600,14 +600,20 @@ fun proxyUploadMultipart(path: String, filename: String, bytes: ByteArray): JSON
         val hdr1 = shQuote("X-Api-Key: $token")
         val hdr2 = shQuote("Authorization: Bearer $token")
 
+        val timeoutSecs = when {
+            method.uppercase() == "GET" -> 3
+            path.endsWith("/apply") -> 15
+            else -> 6
+        }
+
         val cmd = if (method.uppercase() == "GET") {
-            "(curl -s -m 3 -H $hdr1 -H $hdr2 -o - -w '\\n__HTTP__%{http_code}' ${shQuote(url)}" +
-                " || /data/data/com.termux/files/usr/bin/curl -s -m 3 -H $hdr1 -H $hdr2 -o - -w '\\n__HTTP__%{http_code}' ${shQuote(url)})"
+            "(curl -s -m $timeoutSecs -H $hdr1 -H $hdr2 -o - -w '\n__HTTP__%{http_code}' ${shQuote(url)}" +
+                " || /data/data/com.termux/files/usr/bin/curl -s -m $timeoutSecs -H $hdr1 -H $hdr2 -o - -w '\n__HTTP__%{http_code}' ${shQuote(url)})"
         } else {
             val b64 = Base64.encodeToString(body.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
             "echo ${shQuote(b64)} | (base64 -d 2>/dev/null || /system/bin/toybox base64 -d 2>/dev/null) | " +
-                "(curl -s -m 3 -H $hdr1 -H $hdr2 -H ${shQuote("Content-Type: application/json")} -X ${method.uppercase()} --data-binary @- -o - -w '\\n__HTTP__%{http_code}' ${shQuote(url)}" +
-                " || /data/data/com.termux/files/usr/bin/curl -s -m 3 -H $hdr1 -H $hdr2 -H ${shQuote("Content-Type: application/json")} -X ${method.uppercase()} --data-binary @- -o - -w '\\n__HTTP__%{http_code}' ${shQuote(url)})"
+                "(curl -s -m $timeoutSecs -H $hdr1 -H $hdr2 -H ${shQuote("Content-Type: application/json")} -X ${method.uppercase()} --data-binary @- -o - -w '\n__HTTP__%{http_code}' ${shQuote(url)}" +
+                " || /data/data/com.termux/files/usr/bin/curl -s -m $timeoutSecs -H $hdr1 -H $hdr2 -H ${shQuote("Content-Type: application/json")} -X ${method.uppercase()} --data-binary @- -o - -w '\n__HTTP__%{http_code}' ${shQuote(url)})"
         }
 
         val r = Shell.cmd(cmd).exec()

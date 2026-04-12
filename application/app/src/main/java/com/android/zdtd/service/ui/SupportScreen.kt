@@ -2,6 +2,7 @@ package com.android.zdtd.service.ui
 
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -35,50 +36,76 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.android.zdtd.service.RootConfigManager
 import com.android.zdtd.service.R
 
 @Composable
 fun SupportScreen() {
   val context = LocalContext.current
+  val configuration = LocalConfiguration.current
   val isCompactWidth = rememberIsCompactWidth()
   val isNarrowWidth = rememberIsNarrowWidth()
+  val languageMode = remember(context) {
+    RootConfigManager(context.applicationContext).getAppLanguageMode().trim().lowercase()
+  }
+  val effectiveLanguage = remember(configuration) {
+    val locale = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+      configuration.locales.get(0)
+    } else {
+      @Suppress("DEPRECATION")
+      configuration.locale
+    }
+    locale?.language?.lowercase().orEmpty()
+  }
+  val showSupportAuthor = languageMode == "ru" || (languageMode == "auto" && effectiveLanguage == "ru")
 
-  val links = remember {
-    listOf(
-      SupportLink(
-        titleRaw = "GitHub",
-        titleRes = null,
-        subtitleRes = R.string.support_link_github_subtitle,
-        url = "https://github.com/GAME-OVER-op/ZDT-D",
-        icon = Icons.Filled.Code,
-      ),
-      SupportLink(
-        titleRaw = null,
-        titleRes = R.string.support_link_releases_title,
-        subtitleRes = R.string.support_link_releases_subtitle,
-        url = "https://github.com/GAME-OVER-op/ZDT-D/releases",
-        icon = Icons.Filled.NewReleases,
-      ),
-      SupportLink(
-        titleRaw = "Telegram",
-        titleRes = null,
-        subtitleRes = R.string.support_link_telegram_subtitle,
-        url = "https://t.me/module_ggover",
-        icon = Icons.Filled.Send,
-      ),
-      SupportLink(
-        titleRaw = null,
-        titleRes = R.string.support_link_support_author_title,
-        subtitleRes = R.string.support_link_support_author_subtitle,
-        url = "https://yoomoney.ru/to/4100118340691506/100",
-        icon = Icons.Filled.Favorite,
-      ),
-    )
+  val links = remember(showSupportAuthor) {
+    buildList {
+      add(
+        SupportLink(
+          titleRaw = "GitHub",
+          titleRes = null,
+          subtitleRes = R.string.support_link_github_subtitle,
+          url = "https://github.com/GAME-OVER-op/ZDT-D",
+          icon = Icons.Filled.Code,
+        )
+      )
+      add(
+        SupportLink(
+          titleRaw = null,
+          titleRes = R.string.support_link_releases_title,
+          subtitleRes = R.string.support_link_releases_subtitle,
+          url = "https://github.com/GAME-OVER-op/ZDT-D/releases",
+          icon = Icons.Filled.NewReleases,
+        )
+      )
+      add(
+        SupportLink(
+          titleRaw = "Telegram",
+          titleRes = null,
+          subtitleRes = R.string.support_link_telegram_subtitle,
+          url = "https://t.me/module_ggover",
+          icon = Icons.Filled.Send,
+        )
+      )
+      if (showSupportAuthor) {
+        add(
+          SupportLink(
+            titleRaw = null,
+            titleRes = R.string.support_link_support_author_title,
+            subtitleRes = R.string.support_link_support_author_subtitle,
+            url = "https://yoomoney.ru/to/4100118340691506/100",
+            icon = Icons.Filled.Favorite,
+          )
+        )
+      }
+    }
   }
 
   LazyColumn(

@@ -78,15 +78,20 @@ fun AppsHost(
         actions = actions,
         snackHost = snackHost,
       )
-      is AppsRoute.Profile -> if (r.programId == "sing-box") {
-        SingBoxProfileScreen(
+      is AppsRoute.Profile -> when (r.programId) {
+        "sing-box" -> SingBoxProfileScreen(
           programs = programs,
           profile = r.profile,
           actions = actions,
           snackHost = snackHost,
         )
-      } else {
-        ProfileScreen(
+        "wireproxy" -> WireProxyProfileScreen(
+          programs = programs,
+          profile = r.profile,
+          actions = actions,
+          snackHost = snackHost,
+        )
+        else -> ProfileScreen(
           programs = programs,
           programId = r.programId,
           profile = r.profile,

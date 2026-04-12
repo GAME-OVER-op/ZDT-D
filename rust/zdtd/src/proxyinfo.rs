@@ -17,7 +17,9 @@ use crate::{
 
 const PROXY_CHAIN: &str = "ZDT_PROXYINFO";
 const IPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-const UID_TRACKER_FILE: &str = "/data/adb/modules/ZDT-D/working_folder/flag.sha256";
+// IMPORTANT: use only the shared working_folder/flag.sha256 file for sha tracking.
+// Never introduce module-specific *.flag.sha256 files here.
+const UID_TRACKER_FILE: &str = settings::SHARED_SHA_FLAG_FILE;
 const API_PORT: u16 = 1006;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,6 +104,34 @@ struct SingboxServerSetting {
     enabled: bool,
     #[serde(default)]
     port: u16,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct WireproxyProfileSetting {
+    #[serde(default)]
+    t2s_port: u16,
+    #[serde(default = "default_t2s_web_port")]
+    t2s_web_port: u16,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct WireproxyServerSetting {
+    #[serde(default)]
+    enabled: bool,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct TorEnabledJson {
+    #[serde(default)]
+    enabled: u8,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct TorSetting {
+    #[serde(default)]
+    t2s_port: u16,
+    #[serde(default)]
+    t2s_web_port: u16,
 }
 
 fn default_t2s_web_port() -> u16 {
@@ -408,6 +438,36 @@ pub fn read_out_uids() -> Result<Vec<u32>> {
         }
     }
     Ok(out.into_iter().collect())
+}
+
+pub fn read_out_uid_packages() -> Result<BTreeMap<u32, Vec<String>>> {
+    ensure_layout()?;
+    let raw = match fs::read_to_string(settings::proxyinfo_out_program_path()) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(e) => return Err(anyhow::anyhow!("read out_program failed: {e}")),
+    };
+
+    let mut out: BTreeMap<u32, Vec<String>> = BTreeMap::new();
+    for line in raw.lines() {
+        let s = line.trim();
+        if s.is_empty() {
+            continue;
+        }
+        let Some((pkg, rhs)) = s.rsplit_once('=') else {
+            continue;
+        };
+        let pkg = pkg.trim();
+        if pkg.is_empty() {
+            continue;
+        }
+        if let Ok(uid) = rhs.trim().parse::<u32>() {
+            if uid > 0 {
+                out.entry(uid).or_default().push(pkg.to_string());
+            }
+        }
+    }
+    Ok(out)
 }
 
 pub fn is_active() -> bool {
@@ -737,18 +797,21 @@ pub fn refresh_runtime(services_running: bool) -> Result<bool> {
     let enabled = load_enabled_json()?.is_enabled();
     if !enabled {
         clear_rules()?;
+        crate::scan_detector::stop();
         return Ok(false);
     }
 
     let _uids = rebuild_out_program()?;
     if !services_running {
         clear_rules()?;
+        crate::scan_detector::stop();
         return Ok(false);
     }
 
     let uids = read_out_uids()?;
     if uids.is_empty() {
         clear_rules()?;
+        crate::scan_detector::stop();
         return Ok(false);
     }
     let ports = collect_protected_ports()?;
@@ -759,6 +822,7 @@ pub fn refresh_runtime(services_running: bool) -> Result<bool> {
         uids.len(),
         port_list.len()
     ));
+    crate::scan_detector::start();
     Ok(true)
 }
 
@@ -769,6 +833,8 @@ pub fn collect_protected_ports() -> Result<BTreeSet<u16>> {
     collect_dpitunnel_ports(&mut out)?;
     collect_operaproxy_ports(&mut out)?;
     collect_singbox_ports(&mut out)?;
+    collect_wireproxy_ports(&mut out)?;
+    collect_tor_ports(&mut out)?;
     Ok(out)
 }
 
@@ -917,6 +983,96 @@ fn collect_singbox_ports(out: &mut BTreeSet<u16>) -> Result<()> {
                 if !is_hotspot_profile && setting.enabled && setting.port > 0 {
                     out.insert(setting.port);
                 }
+            }
+        }
+    }
+    Ok(())
+}
+
+
+fn collect_wireproxy_ports(out: &mut BTreeSet<u16>) -> Result<()> {
+    let active_path = working_program_dir("wireproxy").join("active.json");
+    if !active_path.is_file() {
+        return Ok(());
+    }
+    let api_settings = settings::load_api_settings().unwrap_or_default();
+    let hotspot_profile = api_settings.hotspot_t2s_wireproxy_profile().map(|s| s.to_string());
+    let active: ProfilesActive = read_json_file(&active_path).unwrap_or_default();
+    let root = working_program_dir("wireproxy").join("profile");
+    for (name, st) in active.profiles {
+        if !st.enabled {
+            continue;
+        }
+        let is_hotspot_profile = hotspot_profile.as_deref() == Some(name.as_str());
+        let profile_dir = root.join(&name);
+        if profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) {
+            continue;
+        }
+        let setting_path = profile_dir.join("setting.json");
+        if setting_path.is_file() {
+            let setting: WireproxyProfileSetting = read_json_file(&setting_path).unwrap_or_default();
+            if !is_hotspot_profile && setting.t2s_port > 0 {
+                out.insert(setting.t2s_port);
+            }
+            if !is_hotspot_profile && setting.t2s_web_port > 0 {
+                out.insert(setting.t2s_web_port);
+            }
+        }
+        let server_root = profile_dir.join("server");
+        if let Ok(rd) = fs::read_dir(&server_root) {
+            for ent in rd.flatten() {
+                let server_dir = ent.path();
+                if !server_dir.is_dir() {
+                    continue;
+                }
+                if server_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) {
+                    continue;
+                }
+                let setting_path = server_dir.join("setting.json");
+                if !setting_path.is_file() {
+                    continue;
+                }
+                let setting: WireproxyServerSetting = read_json_file(&setting_path).unwrap_or_default();
+                if !setting.enabled || is_hotspot_profile {
+                    continue;
+                }
+                let config_path = server_dir.join("config.conf");
+                let Ok(raw) = fs::read_to_string(&config_path) else { continue; };
+                let Ok(addr) = crate::programs::wireproxy::parse_socks5_bind_address_str(&raw) else { continue; };
+                if addr.port > 0 {
+                    out.insert(addr.port);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+
+fn collect_tor_ports(out: &mut BTreeSet<u16>) -> Result<()> {
+    let enabled_path = working_program_dir("tor").join("enabled.json");
+    if !enabled_path.is_file() {
+        return Ok(());
+    }
+    let enabled: TorEnabledJson = read_json_file(&enabled_path).unwrap_or_default();
+    if enabled.enabled == 0 {
+        return Ok(());
+    }
+    let setting_path = working_program_dir("tor").join("setting.json");
+    if setting_path.is_file() {
+        let setting: TorSetting = read_json_file(&setting_path).unwrap_or_default();
+        if setting.t2s_port > 0 {
+            out.insert(setting.t2s_port);
+        }
+        if setting.t2s_web_port > 0 {
+            out.insert(setting.t2s_web_port);
+        }
+    }
+    let torrc_path = working_program_dir("tor").join("torrc");
+    if let Ok(raw) = fs::read_to_string(&torrc_path) {
+        if let Ok(port) = crate::programs::tor::parse_socks_port_from_str(&raw) {
+            if port > 0 {
+                out.insert(port);
             }
         }
     }

@@ -12,13 +12,16 @@ use std::fs::OpenOptions;
 use std::os::unix::process::CommandExt;
 
 use crate::android::pkg_uid::{self, Mode, Sha256Tracker};
+use crate::settings;
 use crate::iptables::iptables_port::{self, DpiTunnelOptions, ProtoChoice};
 
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
 const WORKING_DIR: &str = "/data/adb/modules/ZDT-D/working_folder";
 const BYEDPI_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/byedpi";
 const BIN_DIR: &str = "/data/adb/modules/ZDT-D/bin";
-const SHA_FLAG_FILE: &str = "/data/adb/modules/ZDT-D/working_folder/flag.sha256";
+// IMPORTANT: use only the shared working_folder/flag.sha256 file for sha tracking.
+// Never introduce module-specific *.flag.sha256 files here.
+const SHA_FLAG_FILE: &str = settings::SHARED_SHA_FLAG_FILE;
 
 #[derive(Debug, Deserialize)]
 struct ActiveJson {

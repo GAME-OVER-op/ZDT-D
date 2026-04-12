@@ -180,10 +180,13 @@ fun AppUpdateSettings(
   hotspotT2sEnabled: Boolean,
   hotspotT2sTarget: String,
   hotspotT2sSingboxProfile: String,
+  hotspotT2sWireproxyProfile: String,
   hotspotSingboxProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
+  hotspotWireproxyProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
   onHotspotT2sEnabledChange: (Boolean) -> Unit,
   onHotspotT2sTargetChange: (String) -> Unit,
   onHotspotT2sSingboxProfileChange: (String) -> Unit,
+  onHotspotT2sWireproxyProfileChange: (String) -> Unit,
   proxyInfoEnabled: Boolean,
   proxyInfoBusy: Boolean,
   proxyInfoAppsContent: String,
@@ -290,7 +293,9 @@ fun AppUpdateSettings(
       enabled = hotspotT2sEnabled,
       target = hotspotT2sTarget,
       singboxProfile = hotspotT2sSingboxProfile,
+      wireproxyProfile = hotspotT2sWireproxyProfile,
       singboxProfiles = hotspotSingboxProfiles,
+      wireproxyProfiles = hotspotWireproxyProfiles,
       compactWidth = compactWidth,
       onEnabledChange = { checked ->
         if (checked && !hotspotT2sEnabled) {
@@ -301,6 +306,7 @@ fun AppUpdateSettings(
       },
       onTargetChange = onHotspotT2sTargetChange,
       onSingboxProfileChange = onHotspotT2sSingboxProfileChange,
+      onWireproxyProfileChange = onHotspotT2sWireproxyProfileChange,
     )
 
     if (showHotspotWarning) {
@@ -507,18 +513,23 @@ private fun HotspotT2sSection(
   enabled: Boolean,
   target: String,
   singboxProfile: String,
+  wireproxyProfile: String,
   singboxProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
+  wireproxyProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
   compactWidth: Boolean,
   onEnabledChange: (Boolean) -> Unit,
   onTargetChange: (String) -> Unit,
   onSingboxProfileChange: (String) -> Unit,
+  onWireproxyProfileChange: (String) -> Unit,
 ) {
   val safeTarget = when (target.trim().lowercase()) {
     "operaproxy" -> "operaproxy"
     "singbox" -> "singbox"
+    "wireproxy" -> "wireproxy"
     else -> ""
   }
   val enabledProfiles = remember(singboxProfiles) { singboxProfiles.filter { it.enabled } }
+  val enabledWireproxyProfiles = remember(wireproxyProfiles) { wireproxyProfiles.filter { it.enabled } }
 
   if (compactWidth) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -589,13 +600,33 @@ private fun HotspotT2sSection(
             selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
           ),
         )
+        FilterChip(
+          selected = safeTarget == "wireproxy",
+          onClick = {
+            if (safeTarget != "wireproxy") onTargetChange("wireproxy")
+          },
+          label = {
+            Text(
+              stringResource(R.string.settings_hotspot_program_wireproxy),
+              modifier = Modifier.fillMaxWidth(),
+              textAlign = TextAlign.Center,
+            )
+          },
+          modifier = Modifier.weight(1f).heightIn(min = 46.dp),
+          colors = FilterChipDefaults.filterChipColors(
+            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+          ),
+        )
       }
 
       AnimatedVisibility(
-        visible = safeTarget == "singbox",
+        visible = safeTarget == "singbox" || safeTarget == "wireproxy",
         enter = fadeIn(animationSpec = tween(180)) + expandVertically(animationSpec = tween(180)),
         exit = fadeOut(animationSpec = tween(140)) + shrinkVertically(animationSpec = tween(140)),
       ) {
+        val useWireproxy = safeTarget == "wireproxy"
+        val profiles = if (useWireproxy) enabledWireproxyProfiles else enabledProfiles
+        val selectedProfile = if (useWireproxy) wireproxyProfile else singboxProfile
         Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
           Surface(
             modifier = Modifier.fillMaxWidth(),
@@ -609,43 +640,47 @@ private fun HotspotT2sSection(
               verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
               Text(
-                stringResource(R.string.settings_hotspot_singbox_hint_title),
+                stringResource(if (useWireproxy) R.string.settings_hotspot_wireproxy_hint_title else R.string.settings_hotspot_singbox_hint_title),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 color = MaterialTheme.colorScheme.primary,
               )
               Text(
-                stringResource(R.string.settings_hotspot_singbox_hint_body),
+                stringResource(if (useWireproxy) R.string.settings_hotspot_wireproxy_hint_body else R.string.settings_hotspot_singbox_hint_body),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
               )
 
-              if (enabledProfiles.isEmpty()) {
+              if (profiles.isEmpty()) {
                 Text(
-                  stringResource(R.string.settings_hotspot_singbox_profiles_empty),
+                  stringResource(if (useWireproxy) R.string.settings_hotspot_wireproxy_profiles_empty else R.string.settings_hotspot_singbox_profiles_empty),
                   style = MaterialTheme.typography.bodySmall,
                   color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
                 )
               } else {
                 Text(
-                  stringResource(R.string.settings_hotspot_singbox_profiles_title),
+                  stringResource(if (useWireproxy) R.string.settings_hotspot_wireproxy_profiles_title else R.string.settings_hotspot_singbox_profiles_title),
                   style = MaterialTheme.typography.bodySmall,
                   fontWeight = FontWeight.Medium,
                   color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                  enabledProfiles.forEach { profile ->
-                    val selected = profile.name == singboxProfile
+                  profiles.forEach { profile ->
+                    val selected = profile.name == selectedProfile
                     if (selected) {
                       Button(
-                        onClick = { onSingboxProfileChange(profile.name) },
+                        onClick = {
+                          if (useWireproxy) onWireproxyProfileChange(profile.name) else onSingboxProfileChange(profile.name)
+                        },
                         modifier = Modifier.fillMaxWidth(),
                       ) {
                         Text(profile.name)
                       }
                     } else {
                       OutlinedButton(
-                        onClick = { onSingboxProfileChange(profile.name) },
+                        onClick = {
+                          if (useWireproxy) onWireproxyProfileChange(profile.name) else onSingboxProfileChange(profile.name)
+                        },
                         modifier = Modifier.fillMaxWidth(),
                       ) {
                         Text(profile.name)
@@ -658,16 +693,19 @@ private fun HotspotT2sSection(
           }
 
           Spacer(Modifier.height(10.dp))
-          if (singboxProfile.isBlank()) {
+          if (selectedProfile.isBlank()) {
             Text(
-              stringResource(R.string.settings_hotspot_singbox_profile_missing),
+              stringResource(if (useWireproxy) R.string.settings_hotspot_wireproxy_profile_missing else R.string.settings_hotspot_singbox_profile_missing),
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.primary,
               fontWeight = FontWeight.Medium,
             )
           } else {
             Text(
-              stringResource(R.string.settings_hotspot_singbox_profile_selected_fmt, singboxProfile),
+              stringResource(
+                if (useWireproxy) R.string.settings_hotspot_wireproxy_profile_selected_fmt else R.string.settings_hotspot_singbox_profile_selected_fmt,
+                selectedProfile,
+              ),
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
             )

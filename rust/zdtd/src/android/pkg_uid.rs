@@ -104,7 +104,9 @@ impl Mode {
     }
 }
 
-/// Tracks sha256 of input files inside a single JSON flag file (`flag.sha256`).
+/// Tracks sha256 of input files inside a single shared JSON flag file (`working_folder/flag.sha256`).
+/// IMPORTANT: all modules must reuse the same shared file; do not create per-module
+/// tracker files like `blockedquic.flag.sha256`.
 /// Key is the *full path* of the input file to avoid collisions between profiles.
 #[derive(Debug, Clone)]
 pub struct Sha256Tracker {

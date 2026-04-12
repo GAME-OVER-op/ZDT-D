@@ -109,6 +109,9 @@ pub fn stop_services_and_restore_iptables() -> Result<()> {
     kill_by_name("t2s")?;
     kill_by_name("opera-proxy")?;
     kill_by_name("sing-box")?;
+    kill_by_name("wireproxy")?;
+    kill_by_name("tor")?;
+    kill_by_name("obfs4proxy")?;
 
     // 2) remove runtime guard chains before restore
     let _ = crate::proxyinfo::clear_rules();

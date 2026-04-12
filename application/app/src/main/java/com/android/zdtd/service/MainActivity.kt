@@ -18,15 +18,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.FileProvider
-import androidx.core.os.LocaleListCompat
-import android.content.res.Resources
 import com.android.zdtd.service.ui.ZdtdApp
 import com.android.zdtd.service.ui.theme.ZdtdTheme
 import java.io.File
 import kotlinx.coroutines.launch
-import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
@@ -55,19 +51,9 @@ class MainActivity : AppCompatActivity() {
     super.onCreate(savedInstanceState)
 
     // Apply persisted app language before composing UI.
-runCatching {
-  val root = RootConfigManager(applicationContext)
-  val mode = root.getAppLanguageMode().trim().lowercase()
-  when (mode) {
-    // Auto: clear overrides so the app follows the system locale.
-    // With only EN (default) + RU resources this matches the rule:
-    // system ru -> RU, any other -> EN (fallback).
-    "auto", "" -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
-    "ru" -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("ru"))
-    "en" -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("en"))
-    else -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
-  }
-}
+    runCatching {
+      AppLanguageSupport.applyPersistedAppLocale(applicationContext)
+    }
 
     enableEdgeToEdge()
 

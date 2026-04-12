@@ -5,6 +5,8 @@ use std::process::{Command, Stdio};
 use crate::config::{Config, NotificationsConfig};
 
 const AM_BIN: &str = "/system/bin/am";
+const CMD_BIN: &str = "/system/bin/cmd";
+const APP_PACKAGE: &str = "com.android.zdtd.service";
 
 /// Types of notifications (mirrors the shell `case`).
 pub enum NotificationType<'a> {
@@ -139,7 +141,7 @@ pub fn send_app_state(running: bool) -> Result<()> {
         running_s,
     ];
 
-    let fallback = Command::new("/system/bin/cmd")
+    let fallback = Command::new(CMD_BIN)
         .args(cmd_args)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -157,6 +159,149 @@ pub fn send_app_state(running: bool) -> Result<()> {
         );
         anyhow::bail!(
             "broadcast failed (am={:?}, cmd={:?})",
+            status.code(),
+            fallback.code()
+        );
+    }
+}
+
+
+/// Send a best-effort broadcast to the Android app when proxyInfo counters suggest
+/// that a protected app is probing localhost/system services.
+///
+/// IMPORTANT: the daemon sends a broadcast only. The Android app should receive
+/// ACTION_PROXYINFO_PROBE_DETECTED and decide whether to show a notification,
+/// store the event, or launch an Activity itself.
+///
+/// The app should register a BroadcastReceiver for ACTION_PROXYINFO_PROBE_DETECTED
+/// and may choose to show a notification or launch an Activity itself.
+pub fn send_proxyinfo_probe_detected(
+    event_type: &str,
+    package: &str,
+    packages_csv: &str,
+    uid: u32,
+    proto: &str,
+    ports_hint: &str,
+    hit_count: u32,
+    window_secs: u32,
+) -> Result<()> {
+    let uid_s = uid.to_string();
+    let hit_s = hit_count.to_string();
+    let window_s = window_secs.to_string();
+
+    let am_args = [
+        "broadcast",
+        "--user",
+        "0",
+        "-a",
+        "com.android.zdtd.service.ACTION_PROXYINFO_PROBE_DETECTED",
+        "-p",
+        APP_PACKAGE,
+        "--es",
+        "event_type",
+        event_type,
+        "--es",
+        "package",
+        package,
+        "--es",
+        "packages_csv",
+        packages_csv,
+        "--ei",
+        "uid",
+        uid_s.as_str(),
+        "--es",
+        "proto",
+        proto,
+        "--es",
+        "ports_hint",
+        ports_hint,
+        "--ei",
+        "hit_count",
+        hit_s.as_str(),
+        "--ei",
+        "window_secs",
+        window_s.as_str(),
+        "--es",
+        "source",
+        "proxyinfo",
+    ];
+
+    let status = Command::new(AM_BIN)
+        .args(am_args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .context("run am broadcast proxyinfo probe")?;
+
+    if status.success() {
+        info!(
+            "proxyinfo probe broadcast sent event_type={} package={} uid={} proto={} ports_hint={} hit_count={}",
+            event_type, package, uid, proto, ports_hint, hit_count
+        );
+        return Ok(());
+    }
+
+    let cmd_args = [
+        "activity",
+        "broadcast",
+        "--user",
+        "0",
+        "-a",
+        "com.android.zdtd.service.ACTION_PROXYINFO_PROBE_DETECTED",
+        "-p",
+        APP_PACKAGE,
+        "--es",
+        "event_type",
+        event_type,
+        "--es",
+        "package",
+        package,
+        "--es",
+        "packages_csv",
+        packages_csv,
+        "--ei",
+        "uid",
+        uid_s.as_str(),
+        "--es",
+        "proto",
+        proto,
+        "--es",
+        "ports_hint",
+        ports_hint,
+        "--ei",
+        "hit_count",
+        hit_s.as_str(),
+        "--ei",
+        "window_secs",
+        window_s.as_str(),
+        "--es",
+        "source",
+        "proxyinfo",
+    ];
+
+    let fallback = Command::new(CMD_BIN)
+        .args(cmd_args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .context("run cmd activity broadcast proxyinfo probe")?;
+
+    if fallback.success() {
+        info!(
+            "proxyinfo probe broadcast sent via cmd event_type={} package={} uid={} proto={} ports_hint={} hit_count={}",
+            event_type, package, uid, proto, ports_hint, hit_count
+        );
+        Ok(())
+    } else {
+        warn!(
+            "proxyinfo probe broadcast failed am={:?} cmd={:?} package={} uid={}",
+            status.code(),
+            fallback.code(),
+            package,
+            uid
+        );
+        anyhow::bail!(
+            "proxyinfo probe broadcast failed (am={:?}, cmd={:?})",
             status.code(),
             fallback.code()
         );

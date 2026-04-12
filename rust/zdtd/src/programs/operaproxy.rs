@@ -7,6 +7,7 @@ use std::{
     fs::{self, OpenOptions},
     io::{Read, Write},
     net::TcpStream,
+    str::FromStr,
     os::unix::process::CommandExt,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -83,6 +84,8 @@ struct OperaSniEntry {
     sni: String,
     #[serde(default)]
     use_byedpi: bool,
+    #[serde(default)]
+    override_proxy_address: Option<String>,
 }
 
 pub fn start_if_enabled() -> Result<()> {
@@ -112,7 +115,9 @@ pub fn start_if_enabled() -> Result<()> {
     ensure_file_empty(Path::new(APP_UID_WIFI))?;
 
     // Resolve app uid map -> out (sha256 gated, but rebuild if output empty/missing)
-    let tracker = Sha256Tracker::new(Path::new(WORKING_DIR).join("flag.sha256"));
+    // IMPORTANT: use only the shared working_folder/flag.sha256 file for sha tracking.
+    // Never introduce module-specific *.flag.sha256 files here.
+    let tracker = Sha256Tracker::new(settings::SHARED_SHA_FLAG_FILE);
     let _ = pkg_uid::unified_processing(
         UidMode::Default,
         &tracker,
@@ -215,6 +220,7 @@ pub fn start_if_enabled() -> Result<()> {
             port,
             &entry.sni,
             if entry.use_byedpi { Some(port_cfg.byedpi_port) } else { None },
+            entry.override_proxy_address.as_deref(),
             &country,
             &bootstrap_dns,
             &log_path,
@@ -350,9 +356,51 @@ fn read_sni_entries(path: &Path) -> Result<Vec<OperaSniEntry>> {
         if t.is_empty() {
             continue;
         }
-        out.push(OperaSniEntry { sni: t.to_string(), use_byedpi: item.use_byedpi });
+
+        let override_proxy_address = match item.override_proxy_address.as_deref().map(str::trim) {
+            Some("") | None => None,
+            Some(v) => {
+                if is_valid_override_proxy_address(v) {
+                    Some(v.to_string())
+                } else {
+                    warn!(
+                        "operaproxy: invalid override_proxy_address '{}' for sni '{}' -> ignored",
+                        v,
+                        t
+                    );
+                    None
+                }
+            }
+        };
+
+        out.push(OperaSniEntry {
+            sni: t.to_string(),
+            use_byedpi: item.use_byedpi,
+            override_proxy_address,
+        });
     }
     Ok(out)
+}
+
+fn is_valid_override_proxy_address(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+
+    if std::net::SocketAddr::from_str(value).is_ok() {
+        return true;
+    }
+
+    let Some((host, port)) = value.rsplit_once(':') else {
+        return false;
+    };
+
+    let host = host.trim();
+    if host.is_empty() {
+        return false;
+    }
+
+    port.parse::<u16>().is_ok()
 }
 
 /// Reads Opera server region from config file.
@@ -442,6 +490,7 @@ fn spawn_opera_proxy(
     bind_port: u16,
     fake_sni: &str,
     upstream_byedpi_port: Option<u16>,
+    override_proxy_address: Option<&str>,
     country: &str,
     bootstrap_dns: &str,
     log_path: &Path,
@@ -472,8 +521,6 @@ fn spawn_opera_proxy(
         .arg("-certchain-workaround")
         .arg("-country")
         .arg(country)
-        .arg("-init-retries")
-        .arg("15")
         .arg("-init-retry-interval")
         .arg("3s")
         .arg("-server-selection")
@@ -482,6 +529,9 @@ fn spawn_opera_proxy(
         .arg("204800");
     if let Some(ref upstream) = upstream {
         cmd.arg("-proxy").arg(upstream);
+    }
+    if let Some(override_proxy_address) = override_proxy_address {
+        cmd.arg("-override-proxy-address").arg(override_proxy_address);
     }
     cmd.stdin(Stdio::null())
         .stdout(Stdio::from(logf))

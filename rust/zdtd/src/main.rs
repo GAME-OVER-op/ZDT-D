@@ -10,6 +10,7 @@ mod ports;
 mod proxyinfo;
 mod protector;
 mod screen;
+mod scan_detector;
 mod programs;
 mod runtime;
 mod settings;

@@ -31,7 +31,9 @@ pub struct StatusReport {
     pub dnscrypt: UsageAgg,
     pub dpitunnel: UsageAgg,
     pub sing_box: UsageAgg,
-    pub t2s: UsageAgg,       // t2s used by opera-proxy and sing-box
+    pub wireproxy: UsageAgg,
+    pub tor: UsageAgg,
+    pub t2s: UsageAgg,       // t2s used by opera-proxy, sing-box, wireproxy and tor
     pub opera: OperaAgg,    // opera-proxy + t2s + operaproxy-byedpi
 }
 
@@ -54,6 +56,8 @@ pub(crate) fn protected_pids() -> Vec<u32> {
     pids.extend(pidof("t2s"));
     pids.extend(pidof("opera-proxy"));
     pids.extend(singbox_pids());
+    pids.extend(wireproxy_pids());
+    pids.extend(tor_pids());
     pids.extend(pidof("byedpi"));
     pids.sort_unstable();
     pids.dedup();
@@ -100,6 +104,8 @@ pub fn collect_status() -> Result<StatusReport> {
     }
     let opera_proxy_pids = pidof("opera-proxy");
     let singbox_pids = singbox_pids();
+    let wireproxy_pids = wireproxy_pids();
+    let tor_pids = tor_pids();
 
     let mut byedpi_all = pidof("byedpi");
     byedpi_all.sort_unstable();
@@ -124,6 +130,8 @@ pub fn collect_status() -> Result<StatusReport> {
         dnscrypt: agg(&dnscrypt_pids),
         dpitunnel: agg(&dpitunnel_pids),
         sing_box: agg(&singbox_pids),
+        wireproxy: agg(&wireproxy_pids),
+        tor: agg(&tor_pids),
         t2s: agg(&t2s_all_pids),
         opera: OperaAgg {
             opera: agg(&opera_proxy_pids),
@@ -176,6 +184,97 @@ fn pidof_any(names: &[&str]) -> Vec<u32> {
 /// Best-effort detection of sing-box pids.
 /// Some Android builds may not report the binary name consistently for `pidof`,
 /// so we fall back to parsing `ps -A` output.
+
+fn wireproxy_pids() -> Vec<u32> {
+    let mut pids = pidof_any(&["wireproxy"]);
+    if !pids.is_empty() {
+        return pids;
+    }
+
+    if let Ok(out) = shell::capture_quiet(
+        "sh -c \"pgrep -f 'wireproxy -c /data/adb/modules/ZDT-D/working_folder/wireproxy/' 2>/dev/null || true\"",
+    ) {
+        for tok in out.split_whitespace() {
+            if let Ok(pid) = tok.parse::<u32>() {
+                pids.push(pid);
+            }
+        }
+        pids.sort_unstable();
+        pids.dedup();
+        if !pids.is_empty() {
+            return pids;
+        }
+    }
+
+    let out = shell::capture_quiet("ps -A").unwrap_or_default();
+    for line in out.lines() {
+        if !(line.contains("wireproxy")
+            || line.contains("/bin/wireproxy")
+            || line.contains("working_folder/wireproxy"))
+        {
+            continue;
+        }
+        for tok in line.split_whitespace() {
+            if let Ok(pid) = tok.parse::<u32>() {
+                pids.push(pid);
+                break;
+            }
+        }
+    }
+
+    pids.sort_unstable();
+    pids.dedup();
+    pids
+}
+
+
+fn tor_pids() -> Vec<u32> {
+    let mut pids = pidof_any(&["tor", "obfs4proxy"]);
+    if !pids.is_empty() {
+        return pids;
+    }
+
+    if let Ok(out) = shell::capture_quiet(
+        "sh -c \"pgrep -f 'tor -f /data/adb/modules/ZDT-D/working_folder/tor/torrc' 2>/dev/null || true\"",
+    ) {
+        for tok in out.split_whitespace() {
+            if let Ok(pid) = tok.parse::<u32>() {
+                pids.push(pid);
+            }
+        }
+    }
+    if let Ok(out) = shell::capture_quiet(
+        "sh -c \"pgrep -f '/data/adb/modules/ZDT-D/bin/obfs4proxy' 2>/dev/null || true\"",
+    ) {
+        for tok in out.split_whitespace() {
+            if let Ok(pid) = tok.parse::<u32>() {
+                pids.push(pid);
+            }
+        }
+    }
+
+    let out = shell::capture_quiet("ps -A").unwrap_or_default();
+    for line in out.lines() {
+        if !(line.contains(" tor")
+            || line.contains("/bin/tor")
+            || line.contains("working_folder/tor/torrc")
+            || line.contains("obfs4proxy"))
+        {
+            continue;
+        }
+        for tok in line.split_whitespace() {
+            if let Ok(pid) = tok.parse::<u32>() {
+                pids.push(pid);
+                break;
+            }
+        }
+    }
+
+    pids.sort_unstable();
+    pids.dedup();
+    pids
+}
+
 fn singbox_pids() -> Vec<u32> {
     let mut pids = pidof_any(&["sing-box", "singbox"]);
     if !pids.is_empty() {

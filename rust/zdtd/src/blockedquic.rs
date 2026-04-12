@@ -16,7 +16,9 @@ use crate::{
 
 const QUIC_CHAIN: &str = "ZDT_BLOCKEDQUIC";
 const IPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-const UID_TRACKER_FILE: &str = "/data/adb/modules/ZDT-D/working_folder/blockedquic.flag.sha256";
+// IMPORTANT: use only the shared working_folder/flag.sha256 file for sha tracking.
+// Never introduce module-specific *.flag.sha256 files here.
+const UID_TRACKER_FILE: &str = settings::SHARED_SHA_FLAG_FILE;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnabledJson {

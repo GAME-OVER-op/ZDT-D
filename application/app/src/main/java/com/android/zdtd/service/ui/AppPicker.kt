@@ -81,6 +81,7 @@ fun AppListPickerCard(
   title: String,
   desc: String,
   path: String,
+  initialContent: String? = null,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
@@ -88,7 +89,7 @@ fun AppListPickerCard(
   val msgSaved = stringResource(R.string.app_picker_saved_apply)
   val msgSaveFailed = stringResource(R.string.app_picker_save_failed)
 
-  var selected by remember(path) { mutableStateOf<Set<String>>(emptySet()) }
+  var selected by remember(path, initialContent) { mutableStateOf(parsePkgList(initialContent)) }
   var loading by remember(path) { mutableStateOf(true) }
   var saving by remember(path) { mutableStateOf(false) }
   var showPicker by remember { mutableStateOf(false) }
@@ -97,7 +98,9 @@ fun AppListPickerCard(
   LaunchedEffect(path) {
     loading = true
     actions.loadText(path) { content ->
-      selected = parsePkgList(content)
+      if (content != null) {
+        selected = parsePkgList(content)
+      }
       loading = false
     }
   }
@@ -112,7 +115,7 @@ fun AppListPickerCard(
       onSave = { newSel ->
         showPicker = false
         selected = newSel
-        val payload = newSel.sorted().joinToString("\n")
+        val payload = if (newSel.isEmpty()) "" else newSel.sorted().joinToString("\n", postfix = "\n")
         saving = true
         actions.saveText(path, payload) { ok ->
           saving = false
@@ -146,7 +149,8 @@ fun AppListPickerCard(
 
       if (loading) {
         LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-      } else {
+      }
+      if (!loading || selected.isNotEmpty()) {
         val preview = selected.sorted().take(6).joinToString("\n").ifBlank { stringResource(R.string.app_picker_empty) }
         Text(
           stringResource(R.string.app_picker_selected_count, selected.size),
@@ -251,6 +255,8 @@ private fun AppPickerSheet(
   val programByedpiLabel = stringResource(R.string.apps_conflict_program_byedpi)
   val programZapretLabel = stringResource(R.string.apps_conflict_program_zapret)
   val programZapret2Label = stringResource(R.string.apps_conflict_program_zapret2)
+  val programWireproxyLabel = stringResource(R.string.apps_conflict_program_wireproxy)
+  val programTorLabel = stringResource(R.string.apps_conflict_program_tor)
 
   fun slotLabel(slot: String): String = when (slot.lowercase(Locale.ROOT)) {
     "common" -> slotCommonLabel
@@ -266,11 +272,13 @@ private fun AppPickerSheet(
     "byedpi" -> programByedpiLabel
     "nfqws" -> programZapretLabel
     "nfqws2" -> programZapret2Label
+    "wireproxy" -> programWireproxyLabel
+    "tor" -> programTorLabel
     else -> programId
   }
 
   fun programGroup(programId: String): String? = when (programId) {
-    "operaproxy", "sing-box", "dpitunnel", "byedpi" -> "tunnel"
+    "operaproxy", "sing-box", "dpitunnel", "byedpi", "wireproxy", "tor" -> "tunnel"
     "nfqws", "nfqws2" -> "zapret"
     else -> null
   }

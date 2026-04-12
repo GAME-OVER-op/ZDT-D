@@ -293,6 +293,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       hotspotT2sEnabled = false,
       hotspotT2sTarget = "",
       hotspotT2sSingboxProfile = "",
+      hotspotT2sWireproxyProfile = "",
       daemonStatusNotificationEnabled = root.isDaemonStatusNotificationEnabled(),
     )
   )
@@ -329,6 +330,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   private val startupMinCompleteMs: Long = 900L
   private val startupMinConnectingMsFloor: Long = 1_500L
   private val startupMinLoadingMsFloor: Long = 1_200L
+
+  private val statusFreshMs: Long = 1_800L
+  private val programsFreshMs: Long = 1_200L
+  @Volatile private var lastStatusFetchAtMs: Long = 0L
+  @Volatile private var lastProgramsFetchAtMs: Long = 0L
+  @Volatile private var statusRefreshInFlight: Boolean = false
+  @Volatile private var programsRefreshInFlight: Boolean = false
 
   private var didInit: Boolean = false
   private var appUpdateBannerDismissedThisSession: Boolean = false
@@ -3042,7 +3050,7 @@ private fun shQuote(s: String): String {
     statusJob = launchIO {
       while (isActive) {
         try {
-          fetchAndUpdateStatus()
+          fetchAndUpdateStatus(force = true)
         } catch (e: Throwable) {
           handleDaemonUnreachable()
           log("ERR", "status poll failed: ${e.message ?: e}")
@@ -3092,7 +3100,7 @@ private fun shQuote(s: String): String {
   override fun refreshStatus() {
     launchIO {
       try {
-        fetchAndUpdateStatus()
+        fetchAndUpdateStatus(force = true)
       } catch (e: Throwable) {
         handleDaemonUnreachable()
         log("ERR", "status failed: ${e.message ?: e}")
@@ -3100,11 +3108,21 @@ private fun shQuote(s: String): String {
     }
   }
 
-  private suspend fun fetchAndUpdateStatus() {
-    val rep = api.getStatus()
-    _uiState.update { it.copy(status = rep, daemonOnline = true, daemonUnavailableVisible = false) }
-    // Cache last-known state for the Quick Settings tile.
-    root.setCachedServiceOn(ApiModels.isServiceOn(rep))
+  private suspend fun fetchAndUpdateStatus(force: Boolean = false) {
+    val now = System.currentTimeMillis()
+    val cached = _uiState.value.status
+    if (!force && cached != null && (now - lastStatusFetchAtMs) < statusFreshMs) return
+    if (!force && statusRefreshInFlight) return
+    statusRefreshInFlight = true
+    try {
+      val rep = api.getStatus()
+      lastStatusFetchAtMs = System.currentTimeMillis()
+      _uiState.update { it.copy(status = rep, daemonOnline = true, daemonUnavailableVisible = false) }
+      // Cache last-known state for the Quick Settings tile.
+      root.setCachedServiceOn(ApiModels.isServiceOn(rep))
+    } finally {
+      statusRefreshInFlight = false
+    }
   }
 
   override fun toggleService() {
@@ -3130,6 +3148,11 @@ private fun shQuote(s: String): String {
 
   override fun refreshPrograms() {
     launchIO {
+      val now = System.currentTimeMillis()
+      val current = _uiState.value.programs
+      if (current.isNotEmpty() && (now - lastProgramsFetchAtMs) < programsFreshMs) return@launchIO
+      if (programsRefreshInFlight) return@launchIO
+      programsRefreshInFlight = true
       try {
         val list = api.getPrograms()
         // Some programs (dnscrypt / operaproxy) use active.json under working_folder for enable state.
@@ -3142,9 +3165,12 @@ private fun shQuote(s: String): String {
             p
           }
         }
+        lastProgramsFetchAtMs = System.currentTimeMillis()
         _uiState.update { it.copy(programs = patched) }
       } catch (e: Throwable) {
         log("ERR", "programs failed: ${e.message ?: e}")
+      } finally {
+        programsRefreshInFlight = false
       }
     }
   }
@@ -3164,6 +3190,7 @@ private fun shQuote(s: String): String {
             st.copy(programs = st.programs.map { p -> if (p.id == programId) p.copy(enabled = enabled) else p })
           }
         } else {
+          lastProgramsFetchAtMs = 0L
           refreshPrograms()
         }
       } else {
@@ -3186,6 +3213,7 @@ private fun shQuote(s: String): String {
       val ok = runCatching { api.setProfileEnabled(programId, profile, enabled) }.getOrDefault(false)
       if (ok) {
         log("OK", "$programId/$profile enabled=$enabled (apply after stop/start)")
+        lastProgramsFetchAtMs = 0L
         refreshPrograms()
       } else {
         log("ERR", "$programId/$profile toggle failed")
@@ -3199,6 +3227,7 @@ private fun shQuote(s: String): String {
       val ok = runCatching { api.deleteProfile(programId, profile) }.getOrDefault(false)
       if (ok) {
         log("OK", "$programId/$profile deleted")
+        lastProgramsFetchAtMs = 0L
         refreshPrograms()
       } else {
         log("ERR", "$programId/$profile delete failed")
@@ -3220,6 +3249,7 @@ private fun shQuote(s: String): String {
       // Refresh and detect newly created profile by diff.
       val programs = runCatching { api.getPrograms() }.getOrDefault(emptyList())
       _uiState.update { it.copy(programs = programs) }
+      lastProgramsFetchAtMs = System.currentTimeMillis()
       val after = programs.firstOrNull { it.id == programId }?.profiles?.map { it.name }?.toSet().orEmpty()
       val created = (after - before).firstOrNull()
       log("OK", "$programId/${created ?: "(new)"} created (apply after stop/start)")
@@ -3241,6 +3271,7 @@ private fun shQuote(s: String): String {
       // Refresh and prefer the explicitly requested name.
       val programs = runCatching { api.getPrograms() }.getOrDefault(emptyList())
       _uiState.update { it.copy(programs = programs) }
+      lastProgramsFetchAtMs = System.currentTimeMillis()
       val after = programs.firstOrNull { it.id == programId }?.profiles?.map { it.name }?.toSet().orEmpty()
       val created = when {
         after.contains(p) -> p
@@ -3275,6 +3306,59 @@ private fun shQuote(s: String): String {
         log("OK", "sing-box/$safeProfile/$safeServer deleted")
       } else {
         log("ERR", "sing-box/$safeProfile/$safeServer delete failed")
+      }
+      withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
+  override fun createWireProxyServer(profile: String, server: String, onDone: (String?) -> Unit) {
+    launchIO {
+      val safeProfile = profile.trim()
+      val requested = server.trim()
+      val beforeObj = runCatching { api.getJsonData("/api/programs/wireproxy/profiles/${URLEncoder.encode(safeProfile, "UTF-8")}/servers") }.getOrNull()
+      val before = mutableSetOf<String>()
+      val beforeArr = beforeObj?.optJSONArray("servers")
+      if (beforeArr != null) {
+        for (i in 0 until beforeArr.length()) {
+          val item = beforeArr.optJSONObject(i) ?: continue
+          val name = item.optString("name", "").trim()
+          if (name.isNotEmpty()) before.add(name)
+        }
+      }
+      val ok = runCatching { api.createWireProxyServer(safeProfile, requested.ifBlank { null }) }.getOrDefault(false)
+      if (!ok) {
+        log("ERR", "wireproxy/$safeProfile/${requested.ifBlank { "(new)" }} create failed")
+        withContext(Dispatchers.Main.immediate) { onDone(null) }
+        return@launchIO
+      }
+      val afterObj = runCatching { api.getJsonData("/api/programs/wireproxy/profiles/${URLEncoder.encode(safeProfile, "UTF-8")}/servers") }.getOrNull()
+      val after = mutableSetOf<String>()
+      val afterArr = afterObj?.optJSONArray("servers")
+      if (afterArr != null) {
+        for (i in 0 until afterArr.length()) {
+          val item = afterArr.optJSONObject(i) ?: continue
+          val name = item.optString("name", "").trim()
+          if (name.isNotEmpty()) after.add(name)
+        }
+      }
+      val created = when {
+        requested.isNotBlank() && after.contains(requested) -> requested
+        else -> (after - before).firstOrNull() ?: requested.ifBlank { null }
+      }
+      if (created != null) log("OK", "wireproxy/$safeProfile/$created created")
+      withContext(Dispatchers.Main.immediate) { onDone(created) }
+    }
+  }
+
+  override fun deleteWireProxyServer(profile: String, server: String, onDone: (Boolean) -> Unit) {
+    launchIO {
+      val safeProfile = profile.trim()
+      val safeServer = server.trim()
+      val ok = runCatching { api.deleteWireProxyServer(safeProfile, safeServer) }.getOrDefault(false)
+      if (ok) {
+        log("OK", "wireproxy/$safeProfile/$safeServer deleted")
+      } else {
+        log("ERR", "wireproxy/$safeProfile/$safeServer delete failed")
       }
       withContext(Dispatchers.Main.immediate) { onDone(ok) }
     }
@@ -3489,18 +3573,29 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       }
   }
 
+  private suspend fun fetchHotspotWireproxyProfiles(): List<ApiModels.SingBoxProfileChoice> {
+    return runCatching { api.getWireProxyProfiles() }
+      .getOrElse {
+        log("ERR", "hotspot wireproxy profiles load failed: ${it.message ?: it}")
+        emptyList()
+      }
+  }
+
   override fun refreshDaemonSettings() {
     launchIO {
       val settings = runCatching { api.getDaemonSettings() }
         .getOrDefault(com.android.zdtd.service.api.ApiModels.DaemonSettings())
       val singboxProfiles = fetchHotspotSingBoxProfiles()
+      val wireproxyProfiles = fetchHotspotWireproxyProfiles()
       _appUpdate.update {
         it.copy(
           protectorMode = settings.protectorMode,
           hotspotT2sEnabled = settings.hotspotT2sEnabled,
           hotspotT2sTarget = settings.hotspotT2sTarget,
           hotspotT2sSingboxProfile = settings.hotspotT2sSingboxProfile,
+          hotspotT2sWireproxyProfile = settings.hotspotT2sWireproxyProfile,
           hotspotSingboxProfiles = singboxProfiles,
+          hotspotWireproxyProfiles = wireproxyProfiles,
         )
       }
     }
@@ -3742,6 +3837,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -3757,6 +3853,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sEnabled = true,
           hotspotT2sTarget = "",
           hotspotT2sSingboxProfile = "",
+          hotspotT2sWireproxyProfile = "",
         )
       }
       return
@@ -3767,6 +3864,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         hotspotT2sEnabled = false,
         hotspotT2sTarget = "",
         hotspotT2sSingboxProfile = "",
+        hotspotT2sWireproxyProfile = "",
       )
     }
     launchIO {
@@ -3775,6 +3873,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           enabled = false,
           target = "",
           singboxProfile = "",
+          wireproxyProfile = "",
         )
       }.getOrElse {
         log("ERR", "hotspot t2s toggle failed: ${it.message ?: it}")
@@ -3790,6 +3889,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -3800,23 +3900,30 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
 
   override fun setHotspotT2sTarget(target: String) {
     val safeTarget = when (target.trim().lowercase()) {
-      "operaproxy", "singbox" -> target.trim().lowercase()
+      "operaproxy", "singbox", "wireproxy" -> target.trim().lowercase()
       else -> ""
     }
     val enabled = _appUpdate.value.hotspotT2sEnabled
-    val profile = if (safeTarget == "singbox") _appUpdate.value.hotspotT2sSingboxProfile else ""
-    _appUpdate.update { it.copy(hotspotT2sTarget = safeTarget, hotspotT2sSingboxProfile = profile) }
+    val singboxProfile = if (safeTarget == "singbox") _appUpdate.value.hotspotT2sSingboxProfile else ""
+    val wireproxyProfile = if (safeTarget == "wireproxy") _appUpdate.value.hotspotT2sWireproxyProfile else ""
+    _appUpdate.update {
+      it.copy(
+        hotspotT2sTarget = safeTarget,
+        hotspotT2sSingboxProfile = singboxProfile,
+        hotspotT2sWireproxyProfile = wireproxyProfile,
+      )
+    }
 
     if (!enabled || safeTarget.isBlank()) {
       return
     }
-    if (safeTarget == "singbox") {
+    if (safeTarget == "singbox" || safeTarget == "wireproxy") {
       return
     }
 
     launchIO {
       val applied = runCatching {
-        api.setHotspotT2s(enabled = true, target = safeTarget, singboxProfile = "")
+        api.setHotspotT2s(enabled = true, target = safeTarget, singboxProfile = "", wireproxyProfile = "")
       }.getOrElse {
         log("ERR", "hotspot t2s target failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
@@ -3831,6 +3938,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -3846,6 +3954,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       it.copy(
         hotspotT2sTarget = "singbox",
         hotspotT2sSingboxProfile = safeProfile,
+        hotspotT2sWireproxyProfile = "",
       )
     }
     if (!enabled || safeProfile.isBlank()) {
@@ -3853,7 +3962,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     }
     launchIO {
       val applied = runCatching {
-        api.setHotspotT2s(enabled = true, target = "singbox", singboxProfile = safeProfile)
+        api.setHotspotT2s(enabled = true, target = "singbox", singboxProfile = safeProfile, wireproxyProfile = "")
       }.getOrElse {
         log("ERR", "hotspot sing-box profile failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
@@ -3868,6 +3977,46 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
+        )
+      }
+      withContext(Dispatchers.Main.immediate) {
+        toast(str(R.string.settings_hotspot_saved))
+      }
+    }
+  }
+
+  override fun setHotspotT2sWireproxyProfile(profile: String) {
+    val safeProfile = profile.trim()
+    val enabled = _appUpdate.value.hotspotT2sEnabled
+    _appUpdate.update {
+      it.copy(
+        hotspotT2sTarget = "wireproxy",
+        hotspotT2sSingboxProfile = "",
+        hotspotT2sWireproxyProfile = safeProfile,
+      )
+    }
+    if (!enabled || safeProfile.isBlank()) {
+      return
+    }
+    launchIO {
+      val applied = runCatching {
+        api.setHotspotT2s(enabled = true, target = "wireproxy", singboxProfile = "", wireproxyProfile = safeProfile)
+      }.getOrElse {
+        log("ERR", "hotspot wireproxy profile failed: ${it.message ?: it}")
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_hotspot_save_failed))
+        }
+        refreshDaemonSettings()
+        return@launchIO
+      }
+      _appUpdate.update {
+        it.copy(
+          protectorMode = applied.protectorMode,
+          hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotT2sTarget = applied.hotspotT2sTarget,
+          hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
         )
       }
       withContext(Dispatchers.Main.immediate) {

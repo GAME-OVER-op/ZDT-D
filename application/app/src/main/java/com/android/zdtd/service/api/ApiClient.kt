@@ -47,7 +47,7 @@ class ApiClient(
 
   fun setProgramEnabled(programId: String, enabled: Boolean): Boolean {
     val path = "/api/programs/${enc(programId)}/enabled"
-    val body = JSONObject().put("enabled", enabled)
+    val body = JSONObject().put("enabled", if (programId == "tor") if (enabled) 1 else 0 else enabled)
     return requestOk("PUT", path, body)
   }
 
@@ -87,6 +87,19 @@ class ApiClient(
     return requestOk("DELETE", path, null)
   }
 
+  fun createWireProxyServer(profile: String, server: String? = null): Boolean {
+    val path = "/api/programs/wireproxy/profiles/${enc(profile)}/servers"
+    val body = JSONObject()
+    val s = server?.trim().orEmpty()
+    if (s.isNotEmpty()) body.put("name", s)
+    return requestOk("POST", path, body)
+  }
+
+  fun deleteWireProxyServer(profile: String, server: String): Boolean {
+    val path = "/api/programs/wireproxy/profiles/${enc(profile)}/servers/${enc(server)}"
+    return requestOk("DELETE", path, null)
+  }
+
   fun getTextContent(path: String): String {
     val obj = requestJson("GET", path, null)
     return obj?.optString("content", "") ?: ""
@@ -111,23 +124,36 @@ class ApiClient(
     return ApiModels.parseDaemonSettings(obj)
   }
 
-  fun setHotspotT2s(enabled: Boolean, target: String, singboxProfile: String = ""): ApiModels.DaemonSettings {
+  fun setHotspotT2s(
+    enabled: Boolean,
+    target: String,
+    singboxProfile: String = "",
+    wireproxyProfile: String = "",
+  ): ApiModels.DaemonSettings {
     val safeTarget = when (target.trim().lowercase()) {
       "operaproxy", "opera-proxy", "opera_proxy" -> "operaproxy"
       "singbox", "sing-box", "sing_box" -> "singbox"
+      "wireproxy", "wire-proxy", "wire_proxy" -> "wireproxy"
       else -> ""
     }
     val safeProfile = if (safeTarget == "singbox") singboxProfile.trim() else ""
+    val safeWireproxyProfile = if (safeTarget == "wireproxy") wireproxyProfile.trim() else ""
     val body = JSONObject()
       .put("hotspot_t2s_enabled", enabled)
       .put("hotspot_t2s_target", safeTarget)
       .put("hotspot_t2s_singbox_profile", safeProfile)
+      .put("hotspot_t2s_wireproxy_profile", safeWireproxyProfile)
     val obj = requestJson("POST", "/api/setting", body)
     return ApiModels.parseDaemonSettings(obj)
   }
 
   fun getSingBoxProfiles(): List<ApiModels.SingBoxProfileChoice> {
     val obj = requestJson("GET", "/api/programs/sing-box/profiles", null)
+    return ApiModels.parseSingBoxProfiles(obj)
+  }
+
+  fun getWireProxyProfiles(): List<ApiModels.SingBoxProfileChoice> {
+    val obj = requestJson("GET", "/api/programs/wireproxy/profiles", null)
     return ApiModels.parseSingBoxProfiles(obj)
   }
 

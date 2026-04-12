@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
@@ -17,6 +18,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.delay
@@ -184,6 +192,12 @@ isProfileProgramType(program.type) -> {
       program.id == "operaproxy" -> {
         item {
           OperaProxySection(actions = actions, snackHost = snackHost)
+        }
+      }
+
+      program.id == "tor" -> {
+        item {
+          TorSection(program = program, actions = actions, snackHost = snackHost)
         }
       }
 
@@ -1525,7 +1539,19 @@ private fun OperaProxySection(actions: ZdtdActions, snackHost: SnackbarHostState
 private data class OperaSniItemUi(
   val sni: String = "",
   val useByedpi: Boolean = false,
+  val overrideProxyAddress: String = "",
 )
+
+private fun isValidOverrideProxyAddress(value: String): Boolean {
+  val text = value.trim()
+  if (text.isEmpty()) return true
+  val sep = text.lastIndexOf(':')
+  if (sep <= 0 || sep >= text.lastIndex) return false
+  val host = text.substring(0, sep).trim()
+  val portText = text.substring(sep + 1).trim()
+  val port = portText.toIntOrNull() ?: return false
+  return host.isNotEmpty() && port in 1..65535
+}
 
 @Composable
 private fun OperaSniJsonSection(
@@ -1533,11 +1559,15 @@ private fun OperaSniJsonSection(
   snack: (String) -> Unit,
 ) {
   val apiPath = "/api/programs/operaproxy/sni"
-  val savedMsg = stringResource(R.string.saved)
   val saveFailedMsg = stringResource(R.string.save_failed)
+  val compact = rememberIsCompactWidth()
+  val narrow = rememberIsNarrowWidth()
+  val shortHeight = rememberIsShortHeight()
 
   var items by remember { mutableStateOf(listOf<OperaSniItemUi>()) }
   var loaded by remember { mutableStateOf(false) }
+  var editingIndex by remember { mutableStateOf<Int?>(null) }
+  var dialogItem by remember { mutableStateOf<OperaSniItemUi?>(null) }
 
   fun parseItems(raw: String?): List<OperaSniItemUi> {
     val text = raw?.trim().orEmpty()
@@ -1549,7 +1579,13 @@ private fun OperaSniJsonSection(
           val o = arr.optJSONObject(i) ?: continue
           val sni = o.optString("sni", "").trim()
           if (sni.isEmpty()) continue
-          add(OperaSniItemUi(sni = sni, useByedpi = o.optBoolean("use_byedpi", false)))
+          add(
+            OperaSniItemUi(
+              sni = sni,
+              useByedpi = o.optBoolean("use_byedpi", false),
+              overrideProxyAddress = o.optString("override_proxy_address", "").trim(),
+            )
+          )
         }
       }
     }.getOrDefault(emptyList())
@@ -1563,9 +1599,23 @@ private fun OperaSniJsonSection(
       arr.put(JSONObject().apply {
         put("sni", sni)
         put("use_byedpi", item.useByedpi)
+        val overrideAddress = item.overrideProxyAddress.trim()
+        if (overrideAddress.isNotEmpty()) {
+          put("override_proxy_address", overrideAddress)
+        }
       })
     }
     return arr.toString(2)
+  }
+
+  fun persistItems(previous: List<OperaSniItemUi>, updated: List<OperaSniItemUi>) {
+    items = updated
+    actions.saveText(apiPath, toJson(updated)) { ok ->
+      if (!ok) {
+        items = previous
+        snack(saveFailedMsg)
+      }
+    }
   }
 
   LaunchedEffect(Unit) {
@@ -1573,6 +1623,31 @@ private fun OperaSniJsonSection(
       items = parseItems(raw)
       loaded = true
     }
+  }
+
+  dialogItem?.let { current ->
+    OperaSniServerDialog(
+      initial = current,
+      isEditing = editingIndex != null,
+      compactMode = narrow || shortHeight,
+      onDismiss = {
+        dialogItem = null
+        editingIndex = null
+      },
+      onSave = { saved ->
+        val previous = items
+        val list = items.toMutableList()
+        val idx = editingIndex
+        if (idx == null) {
+          list += saved
+        } else if (idx in list.indices) {
+          list[idx] = saved
+        }
+        persistItems(previous = previous, updated = list)
+        dialogItem = null
+        editingIndex = null
+      },
+    )
   }
 
   Card(modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large) {
@@ -1588,7 +1663,11 @@ private fun OperaSniJsonSection(
       )
 
       Button(
-        onClick = { items = items + OperaSniItemUi() },
+        onClick = {
+          editingIndex = null
+          dialogItem = OperaSniItemUi()
+        },
+        modifier = if (compact) Modifier.fillMaxWidth() else Modifier,
       ) {
         Icon(Icons.Default.Add, contentDescription = null)
         Spacer(Modifier.width(8.dp))
@@ -1608,70 +1687,240 @@ private fun OperaSniJsonSection(
       }
 
       items.forEachIndexed { index, item ->
-        Card(
-          modifier = Modifier.fillMaxWidth(),
-          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f)),
-        ) {
+        OutlinedCard(modifier = Modifier.fillMaxWidth()) {
           Column(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
           ) {
             Row(
               modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
+              verticalAlignment = Alignment.Top,
+              horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-              Text(stringResource(R.string.operaproxy_sni_entry_title_fmt, index + 1), fontWeight = FontWeight.SemiBold)
-              IconButton(onClick = { items = items.toMutableList().also { it.removeAt(index) } }) {
-                Icon(Icons.Default.Delete, contentDescription = null)
-              }
-            }
-
-            OutlinedTextField(
-              value = item.sni,
-              onValueChange = { v ->
-                items = items.toMutableList().also { it[index] = item.copy(sni = v) }
-              },
-              modifier = Modifier.fillMaxWidth(),
-              singleLine = false,
-              maxLines = 2,
-              label = { Text("SNI") },
-              placeholder = { Text(stringResource(R.string.operaproxy_sni_placeholder)) },
-            )
-
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.SpaceBetween,
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              Column(modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.operaproxy_sni_use_byedpi), fontWeight = FontWeight.Medium)
+              Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                  stringResource(R.string.operaproxy_sni_use_byedpi_desc),
+                  text = stringResource(R.string.operaproxy_sni_entry_title_fmt, index + 1),
+                  style = MaterialTheme.typography.titleSmall,
+                  fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                  text = stringResource(R.string.operaproxy_sni_detail_sni_fmt, item.sni),
+                  style = MaterialTheme.typography.bodyMedium,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                  text = stringResource(
+                    R.string.operaproxy_sni_detail_address_fmt,
+                    item.overrideProxyAddress.ifBlank { stringResource(R.string.operaproxy_sni_address_not_set) },
+                  ),
                   style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
                 )
               }
-              Switch(
-                checked = item.useByedpi,
-                onCheckedChange = { checked ->
-                  items = items.toMutableList().also { it[index] = item.copy(useByedpi = checked) }
+              Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                IconButton(
+                  onClick = {
+                    editingIndex = index
+                    dialogItem = item
+                  }
+                ) {
+                  Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.operaproxy_sni_edit_server))
                 }
-              )
+                IconButton(
+                  onClick = {
+                    val previous = items
+                    val updated = items.toMutableList().also { it.removeAt(index) }
+                    persistItems(previous = previous, updated = updated)
+                  }
+                ) {
+                  Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.common_delete_cd))
+                }
+              }
             }
           }
         }
       }
 
-      Button(
-        onClick = {
-          val payload = toJson(items)
-          actions.saveText(apiPath, payload) { ok ->
-            if (ok) snack(savedMsg) else snack(saveFailedMsg)
+    }
+  }
+}
+
+@Composable
+private fun OperaSniServerDialog(
+  initial: OperaSniItemUi,
+  isEditing: Boolean,
+  compactMode: Boolean,
+  onDismiss: () -> Unit,
+  onSave: (OperaSniItemUi) -> Unit,
+) {
+  var sni by remember(initial) { mutableStateOf(initial.sni) }
+  var useByedpi by remember(initial) { mutableStateOf(initial.useByedpi) }
+  var address by remember(initial) { mutableStateOf(initial.overrideProxyAddress) }
+  var attemptedSave by remember { mutableStateOf(false) }
+  val shortHeight = rememberIsShortHeight()
+  val dialogHorizontalPadding = if (compactMode) 12.dp else 20.dp
+  val dialogVerticalPadding = if (shortHeight) 12.dp else 24.dp
+  val contentPadding = if (compactMode) 14.dp else 20.dp
+  val scrollState = rememberScrollState()
+
+  val sniError = attemptedSave && sni.trim().isEmpty()
+  val addressError = attemptedSave && !isValidOverrideProxyAddress(address)
+
+  fun attemptSave() {
+    attemptedSave = true
+    if (sniError || addressError) return
+    onSave(
+      OperaSniItemUi(
+        sni = sni.trim(),
+        useByedpi = useByedpi,
+        overrideProxyAddress = address.trim(),
+      )
+    )
+  }
+
+  Dialog(
+    onDismissRequest = onDismiss,
+    properties = DialogProperties(
+      usePlatformDefaultWidth = false,
+      dismissOnBackPress = true,
+      dismissOnClickOutside = true,
+    ),
+  ) {
+    Surface(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = dialogHorizontalPadding, vertical = dialogVerticalPadding),
+      shape = MaterialTheme.shapes.extraLarge,
+      tonalElevation = 6.dp,
+      shadowElevation = 12.dp,
+      color = MaterialTheme.colorScheme.surface,
+    ) {
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .navigationBarsPadding()
+          .imePadding()
+          .padding(horizontal = contentPadding, vertical = contentPadding)
+          .verticalScroll(scrollState),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        if (compactMode) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            Column(Modifier.weight(1f)) {
+              Text(
+                text = stringResource(if (isEditing) R.string.operaproxy_sni_edit_server_title else R.string.operaproxy_sni_new_server_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+              )
+              Spacer(Modifier.height(4.dp))
+              Text(
+                text = stringResource(R.string.operaproxy_sni_dialog_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+              Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)) {
+                IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
+                  Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_cancel))
+                }
+              }
+              Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
+                IconButton(onClick = { attemptSave() }, modifier = Modifier.size(40.dp)) {
+                  Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.common_save), tint = MaterialTheme.colorScheme.onPrimary)
+                }
+              }
+            }
           }
-        },
-        enabled = loaded,
-      ) { Text(stringResource(R.string.common_save)) }
+        } else {
+          Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+              text = stringResource(if (isEditing) R.string.operaproxy_sni_edit_server_title else R.string.operaproxy_sni_new_server_title),
+              style = MaterialTheme.typography.titleMedium,
+              fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+              text = stringResource(R.string.operaproxy_sni_dialog_desc),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+            )
+          }
+        }
+
+        OutlinedTextField(
+          value = sni,
+          onValueChange = { sni = it },
+          modifier = Modifier.fillMaxWidth(),
+          singleLine = true,
+          label = { Text("SNI") },
+          placeholder = { Text(stringResource(R.string.operaproxy_sni_placeholder)) },
+          isError = sniError,
+          supportingText = {
+            if (sniError) {
+              Text(stringResource(R.string.operaproxy_sni_required))
+            }
+          },
+        )
+
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Column(modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.operaproxy_sni_use_byedpi), fontWeight = FontWeight.Medium)
+            Text(
+              stringResource(R.string.operaproxy_sni_use_byedpi_desc),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+            )
+          }
+          Switch(checked = useByedpi, onCheckedChange = { useByedpi = it })
+        }
+
+        OutlinedTextField(
+          value = address,
+          onValueChange = { address = it },
+          modifier = Modifier.fillMaxWidth(),
+          singleLine = true,
+          label = { Text(stringResource(R.string.operaproxy_sni_server_address)) },
+          placeholder = { Text(stringResource(R.string.operaproxy_sni_server_address_placeholder)) },
+          isError = addressError,
+          supportingText = {
+            Text(
+              text = if (addressError) stringResource(R.string.operaproxy_sni_server_address_error)
+              else stringResource(R.string.operaproxy_sni_server_address_hint),
+            )
+          },
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+        )
+
+        if (!compactMode) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+          ) {
+            TextButton(onClick = onDismiss) {
+              Text(stringResource(R.string.common_cancel))
+            }
+            Spacer(Modifier.width(8.dp))
+            Button(onClick = { attemptSave() }) {
+              Text(stringResource(R.string.common_save))
+            }
+          }
+        }
+      }
     }
   }
 }

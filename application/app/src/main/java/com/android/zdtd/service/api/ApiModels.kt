@@ -28,6 +28,8 @@ object ApiModels {
     val dnscrypt: ProcAgg = ProcAgg(),
     val dpitunnel: ProcAgg = ProcAgg(),
     val singBox: ProcAgg = ProcAgg(),
+    val wireProxy: ProcAgg = ProcAgg(),
+    val tor: ProcAgg = ProcAgg(),
     val t2s: ProcAgg = ProcAgg(),
     val opera: OperaAgg? = null,
   )
@@ -56,6 +58,7 @@ object ApiModels {
     val hotspotT2sEnabled: Boolean = false,
     val hotspotT2sTarget: String = "",
     val hotspotT2sSingboxProfile: String = "",
+    val hotspotT2sWireproxyProfile: String = "",
   )
 
   data class SingBoxProfileChoice(
@@ -112,6 +115,8 @@ object ApiModels {
       dnscrypt = parseProcAgg(o.optJSONObject("dnscrypt")),
       dpitunnel = parseProcAgg(o.optJSONObject("dpitunnel")),
       singBox = parseProcAgg(o.optJSONObject("sing_box")),
+      wireProxy = parseProcAgg(o.optJSONObject("wireproxy")),
+      tor = parseProcAgg(o.optJSONObject("tor")),
       t2s = parseProcAgg(o.optJSONObject("t2s")),
       opera = opera,
     )
@@ -120,7 +125,7 @@ object ApiModels {
   fun isServiceOn(r: StatusReport?): Boolean {
     if (r == null) return false
     val opera = r.opera
-    val sum = r.zapret.count + r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.dpitunnel.count + r.singBox.count +
+    val sum = r.zapret.count + r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.dpitunnel.count + r.singBox.count + r.wireProxy.count + r.tor.count +
       (opera?.opera?.count ?: 0) + r.t2s.count + (opera?.byedpi?.count ?: 0)
     return sum > 0
   }
@@ -135,6 +140,8 @@ object ApiModels {
       add(r.dnscrypt)
       add(r.dpitunnel)
       add(r.singBox)
+      add(r.wireProxy)
+      add(r.tor)
       add(r.t2s)
       r.opera?.let { o ->
         add(o.opera)
@@ -169,9 +176,13 @@ object ApiModels {
     val safeTarget = when (rawTarget) {
       "operaproxy", "opera-proxy", "opera_proxy" -> "operaproxy"
       "singbox", "sing-box", "sing_box" -> "singbox"
+      "wireproxy", "wire-proxy", "wire_proxy" -> "wireproxy"
       else -> ""
     }
     val hotspotProfile = setting?.optString("hotspot_t2s_singbox_profile", "")
+      ?.trim()
+      .orEmpty()
+    val hotspotWireproxyProfile = setting?.optString("hotspot_t2s_wireproxy_profile", "")
       ?.trim()
       .orEmpty()
     return DaemonSettings(
@@ -179,6 +190,7 @@ object ApiModels {
       hotspotT2sEnabled = hotspotEnabled,
       hotspotT2sTarget = safeTarget,
       hotspotT2sSingboxProfile = hotspotProfile,
+      hotspotT2sWireproxyProfile = hotspotWireproxyProfile,
     )
   }
 
@@ -265,10 +277,16 @@ object ApiModels {
       if (id.isEmpty()) continue
       val profilesArr = o.optJSONArray("profiles")
       val profiles = if (profilesArr != null) parseProfiles(profilesArr) else emptyList()
+      val rawName = o.optString("name").takeIf { it.isNotBlank() }
+      val displayName = when (id) {
+        "wireproxy" -> "WireGuard"
+        "tor" -> "Tor"
+        else -> rawName
+      }
       out.add(
         Program(
           id = id,
-          name = o.optString("name").takeIf { it.isNotBlank() },
+          name = displayName,
           enabled = o.optBoolean("enabled", false),
           type = o.optString("type").takeIf { it.isNotBlank() },
           profiles = profiles,

@@ -1,6 +1,14 @@
 package com.android.zdtd.service.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
@@ -27,7 +35,6 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.zdtd.service.R
@@ -134,84 +141,252 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
 
     // Daemon logs card (tail)
     val noLogDataText = stringResource(R.string.home_no_log_data)
-    val lines: List<String> = remember(logTail, noLogDataText) {
+    val logLines: List<DaemonLogUiLine> = remember(logTail, noLogDataText) {
       val t = logTail.trimEnd()
       if (t.isBlank()) {
-        listOf(noLogDataText)
+        listOf(DaemonLogUiLine(raw = noLogDataText, level = DaemonLogLevel.OTHER, text = noLogDataText))
       } else {
-        // Keep only a small tail for smoother UI.
-        t.split('\n').takeLast(260)
+        t.split('\n')
+          .asSequence()
+          .map { it.trimEnd() }
+          .filter { it.isNotBlank() }
+          .toList()
+          .takeLast(100)
+          .map(::parseDaemonLogUiLine)
       }
     }
-    val lastLine: String = remember(lines) { lines.lastOrNull()?.trimEnd().orEmpty() }
+    var logsBlockVisible by remember { mutableStateOf(false) }
+    var nextLogRenderId by remember { mutableLongStateOf(0L) }
+    fun renderize(lines: List<DaemonLogUiLine>): List<DaemonLogRenderLine> =
+      lines.map { DaemonLogRenderLine(id = nextLogRenderId++, line = it) }
+    var displayedLogLines by remember(noLogDataText) {
+      mutableStateOf(renderize(listOf(DaemonLogUiLine(raw = noLogDataText, level = DaemonLogLevel.OTHER, text = noLogDataText))))
+    }
+    var logRevealInitialized by remember { mutableStateOf(false) }
+    val initialAnimatedTail = 14
+    val lastLine: String = remember(displayedLogLines) { displayedLogLines.lastOrNull()?.line?.text?.trimEnd().orEmpty() }
     val listState = rememberLazyListState()
 
-    // Always keep the newest line visible.
-    LaunchedEffect(lines.size) {
-      // reverseLayout=true => index 0 is at the bottom.
-      listState.scrollToItem(0)
+    LaunchedEffect(Unit) {
+      kotlinx.coroutines.delay(160)
+      logsBlockVisible = true
     }
 
-    Card(
-      modifier = Modifier.fillMaxWidth(),
-      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
-      shape = RoundedCornerShape(22.dp),
-      border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
-    ) {
-      Column(Modifier.padding(14.dp)) {
-        Text(stringResource(R.string.home_daemon_logs_title), fontWeight = FontWeight.SemiBold)
-
-        Spacer(Modifier.height(2.dp))
-        Crossfade(targetState = lastLine, animationSpec = tween(durationMillis = 180), label = "lastLine") { line ->
-          if (line.isNotBlank()) {
-            Text(
-              line,
-              style = MaterialTheme.typography.bodySmall,
-              fontFamily = FontFamily.Monospace,
-              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-              maxLines = if (isCompactWidth) 2 else 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-          } else {
-            Spacer(Modifier.height(0.dp))
+    LaunchedEffect(logLines) {
+      if (!logRevealInitialized) {
+        val animatedTail = initialAnimatedTail.coerceAtMost(logLines.size)
+        val stableHead = logLines.dropLast(animatedTail)
+        displayedLogLines = if (stableHead.isNotEmpty()) renderize(stableHead) else emptyList()
+        logRevealInitialized = true
+        val toReveal = logLines.takeLast(animatedTail)
+        if (toReveal.isEmpty()) {
+          displayedLogLines = renderize(logLines)
+        } else {
+          for (line in toReveal) {
+            displayedLogLines = displayedLogLines + DaemonLogRenderLine(id = nextLogRenderId++, line = line)
+            kotlinx.coroutines.delay(135L)
           }
         }
-        Spacer(Modifier.height(8.dp))
+      } else if (logLines.map { it.raw } == displayedLogLines.map { it.line.raw }) {
+        // no-op
+      } else if (
+        logLines.size >= displayedLogLines.size &&
+        logLines.take(displayedLogLines.size).map { it.raw } == displayedLogLines.map { it.line.raw }
+      ) {
+        val appended = logLines.drop(displayedLogLines.size)
+        if (appended.isEmpty()) {
+          displayedLogLines = displayedLogLines.takeLast(logLines.size)
+        } else {
+          for (line in appended) {
+            displayedLogLines = (displayedLogLines + DaemonLogRenderLine(id = nextLogRenderId++, line = line)).takeLast(100)
+            kotlinx.coroutines.delay(135L)
+          }
+        }
+      } else {
+        displayedLogLines = renderize(logLines)
+      }
+    }
 
-        Surface(
-          tonalElevation = 0.dp,
-          color = MaterialTheme.colorScheme.surface.copy(alpha = 0.40f),
-          shape = RoundedCornerShape(14.dp),
-          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
-        ) {
-          LazyColumn(
-            modifier = Modifier
-              .fillMaxWidth()
-              .heightIn(min = if (isShortHeight) 104.dp else 120.dp, max = if (isShortHeight) 168.dp else 220.dp)
-              .padding(horizontal = 10.dp, vertical = 8.dp),
-            state = listState,
-            reverseLayout = true,
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-          ) {
-            // Newest first for reverseLayout.
-            val display: List<String> = lines.asReversed()
-            items(
-              count = display.size,
-              key = { idx -> "${idx}:${display[idx].hashCode()}" },
-            ) { idx ->
-              val line: String = display[idx]
+    // Keep the newest line visible without fighting the row enter animation.
+    LaunchedEffect(displayedLogLines.size) {
+      val nearBottom = listState.firstVisibleItemIndex <= 1 && listState.firstVisibleItemScrollOffset < 24
+      if (nearBottom && !listState.isScrollInProgress) {
+        // reverseLayout=true => index 0 is at the bottom.
+        listState.scrollToItem(0)
+      }
+    }
+
+    AnimatedVisibility(
+      visible = logsBlockVisible,
+      enter = fadeIn(animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing)) +
+        expandVertically(animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing)) +
+        slideInVertically(
+          initialOffsetY = { it / 10 },
+          animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+        ) +
+        scaleIn(
+          initialScale = 0.985f,
+          animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+        ),
+      exit = fadeOut(animationSpec = tween(durationMillis = 200)),
+    ) {
+      Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
+      ) {
+        Column(Modifier.padding(14.dp)) {
+          Text(stringResource(R.string.home_daemon_logs_title), fontWeight = FontWeight.SemiBold)
+
+          Spacer(Modifier.height(2.dp))
+          Crossfade(targetState = lastLine, animationSpec = tween(durationMillis = 180), label = "lastLine") { line ->
+            if (line.isNotBlank()) {
               Text(
-                text = line,
+                line,
                 style = MaterialTheme.typography.bodySmall,
                 fontFamily = FontFamily.Monospace,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                maxLines = if (isCompactWidth) 2 else 1,
-                overflow = TextOverflow.Ellipsis,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
               )
+            } else {
+              Spacer(Modifier.height(0.dp))
+            }
+          }
+          Spacer(Modifier.height(8.dp))
+
+          Surface(
+            tonalElevation = 0.dp,
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.40f),
+            shape = RoundedCornerShape(14.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+          ) {
+            LazyColumn(
+              modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = if (isShortHeight) 112.dp else 128.dp, max = if (isShortHeight) 192.dp else 240.dp)
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+              state = listState,
+              reverseLayout = true,
+              verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+              // Newest first for reverseLayout.
+              val display: List<DaemonLogRenderLine> = displayedLogLines.asReversed()
+              items(
+                count = display.size,
+                key = { idx -> display[idx].id },
+              ) { idx ->
+                val item: DaemonLogRenderLine = display[idx]
+                val line: DaemonLogUiLine = item.line
+                val backgroundColor = when (line.level) {
+                  DaemonLogLevel.WARN -> Color(0xFF2F3136)
+                  DaemonLogLevel.INFO -> Color(0xFF4A1F1F)
+                  DaemonLogLevel.ERROR -> Color(0xFF5A1B1B)
+                  DaemonLogLevel.NOTICE -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.70f)
+                  DaemonLogLevel.OTHER -> MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
+                }
+                val rowVisibleState = remember {
+                  MutableTransitionState(false).apply { targetState = true }
+                }
+                AnimatedVisibility(
+                  visibleState = rowVisibleState,
+                  enter = fadeIn(animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)) +
+                    slideInVertically(
+                      initialOffsetY = { maxOf(it / 6, 18) },
+                      animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+                    ),
+                  exit = fadeOut(animationSpec = tween(durationMillis = 140)),
+                ) {
+                  Surface(
+                    color = backgroundColor,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
+                  ) {
+                    Row(
+                      modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                      horizontalArrangement = Arrangement.spacedBy(8.dp),
+                      verticalAlignment = Alignment.Top,
+                    ) {
+                      if (line.level != DaemonLogLevel.OTHER) {
+                        Text(
+                          text = line.level.label,
+                          style = MaterialTheme.typography.labelSmall,
+                          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                          fontWeight = FontWeight.SemiBold,
+                          fontFamily = FontFamily.Monospace,
+                          modifier = Modifier.padding(top = 1.dp),
+                        )
+                      }
+                      Text(
+                        text = line.text,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+                        softWrap = true,
+                        modifier = Modifier.weight(1f),
+                      )
+                    }
+                  }
+                }
+              }
             }
           }
         }
       }
     }
   }
+}
+
+
+private enum class DaemonLogLevel(val label: String) {
+  WARN("WARN"),
+  INFO("INFO"),
+  ERROR("ERROR"),
+  NOTICE("NOTICE"),
+  OTHER(""),
+}
+
+private data class DaemonLogUiLine(
+  val raw: String,
+  val level: DaemonLogLevel,
+  val text: String,
+)
+
+private data class DaemonLogRenderLine(
+  val id: Long,
+  val line: DaemonLogUiLine,
+)
+
+private fun parseDaemonLogUiLine(raw: String): DaemonLogUiLine {
+  val upper = raw.uppercase()
+  val level = when {
+    " WARN " in " $upper " || upper.contains("[WARN]") || upper.contains(" WARNING ") -> DaemonLogLevel.WARN
+    " INFO " in " $upper " || upper.contains("[INFO]") -> DaemonLogLevel.INFO
+    " ERROR " in " $upper " || upper.contains("[ERROR]") || " ERR " in " $upper " -> DaemonLogLevel.ERROR
+    " NOTICE " in " $upper " || upper.contains("[NOTICE]") -> DaemonLogLevel.NOTICE
+    else -> DaemonLogLevel.OTHER
+  }
+  val text = stripDetectedLevelPrefix(raw.trim().ifBlank { raw }, level)
+  return DaemonLogUiLine(raw = raw, level = level, text = text)
+}
+
+private fun stripDetectedLevelPrefix(text: String, level: DaemonLogLevel): String {
+  if (level == DaemonLogLevel.OTHER) return text
+  val cleaned = when (level) {
+    DaemonLogLevel.INFO -> text
+      .replaceFirst(Regex("""\[INFO\]\s*""", RegexOption.IGNORE_CASE), "")
+      .replaceFirst(Regex("""\bINFO\b[:\-]?\s*""", RegexOption.IGNORE_CASE), "")
+    DaemonLogLevel.WARN -> text
+      .replaceFirst(Regex("""\[WARN(?:ING)?\]\s*""", RegexOption.IGNORE_CASE), "")
+      .replaceFirst(Regex("""\bWARN(?:ING)?\b[:\-]?\s*""", RegexOption.IGNORE_CASE), "")
+    DaemonLogLevel.ERROR -> text
+      .replaceFirst(Regex("""\[(?:ERROR|ERR)\]\s*""", RegexOption.IGNORE_CASE), "")
+      .replaceFirst(Regex("""\b(?:ERROR|ERR)\b[:\-]?\s*""", RegexOption.IGNORE_CASE), "")
+    DaemonLogLevel.NOTICE -> text
+      .replaceFirst(Regex("""\[NOTICE\]\s*""", RegexOption.IGNORE_CASE), "")
+      .replaceFirst(Regex("""\bNOTICE\b[:\-]?\s*""", RegexOption.IGNORE_CASE), "")
+    DaemonLogLevel.OTHER -> text
+  }
+  return cleaned.replace(Regex("""\s{2,}"""), " ").trim().ifBlank { text }
 }

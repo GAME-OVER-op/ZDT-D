@@ -2,10 +2,32 @@ use anyhow::{Context, Result};
 use log::{info, warn};
 use std::{collections::BTreeSet, fs, path::Path, time::Duration};
 
-use crate::shell::{self, Capture};
+use crate::{shell::{self, Capture}, xtables_lock};
 
 const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(5);
 const IPT_SLOW_TIMEOUT: Duration = Duration::from_secs(15);
+const XT_WAIT_SECS: &str = "5";
+
+// IMPORTANT: All iptables/ip6tables work in this module MUST go through the
+// shared xtables_lock helpers and the global lock below.
+// Do not call shell::run_timeout("iptables", ...) here directly, otherwise
+// concurrent programs can race, hit xtables lock contention and partially
+// apply rules.
+fn ipt_run_timeout(args: &[&str], capture: Capture, timeout: Duration) -> Result<(i32, String)> {
+    let mut a: Vec<&str> = Vec::with_capacity(args.len() + 2);
+    a.push("-w");
+    a.push(XT_WAIT_SECS);
+    a.extend_from_slice(args);
+    xtables_lock::run_timeout_retry("iptables", &a, capture, timeout)
+}
+
+fn ipt_runv_timeout(args: &[String], capture: Capture, timeout: Duration) -> Result<(i32, String)> {
+    let mut a: Vec<String> = Vec::with_capacity(args.len() + 2);
+    a.push("-w".into());
+    a.push(XT_WAIT_SECS.into());
+    a.extend_from_slice(args);
+    xtables_lock::runv_timeout_retry("iptables", &a, capture, timeout)
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum ProtoChoice { Tcp, Udp, TcpUdp }
@@ -54,6 +76,7 @@ static mut MANGLE_INIT_DONE: bool = false;
 /// - Adds DNAT rules into NAT_DPI to 127.0.0.1:<dest_port> for selected ports/protocols,
 ///   optionally per-interface `-o iface`.
 pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: DpiTunnelOptions) -> Result<()> {
+    let _xtables_guard = xtables_lock::lock();
     let (mode, ifaces, invalid) = normalize_ifaces(ifaces_raw)?;
     if !invalid.is_empty() {
         warn!("DPI: invalid ifaces skipped: {:?}", invalid);
@@ -275,13 +298,13 @@ fn parse_route_n_default(out: &str) -> Option<String> {
 }
 
 fn ensure_nat_chain_nat_dpi() -> Result<()> {
-    let (c, _) = shell::run_timeout("iptables", &["-t","nat","-nL","NAT_DPI"], Capture::None, IPT_SLOW_TIMEOUT)?;
+    let (c, _) = ipt_run_timeout(&["-t","nat","-nL","NAT_DPI"], Capture::None, IPT_SLOW_TIMEOUT)?;
     if c != 0 {
-        let _ = shell::run_timeout("iptables", &["-t","nat","-N","NAT_DPI"], Capture::Both, IPT_CMD_TIMEOUT)?;
+        let _ = ipt_run_timeout(&["-t","nat","-N","NAT_DPI"], Capture::Both, IPT_CMD_TIMEOUT)?;
     }
-    let (c2, _) = shell::run_timeout("iptables", &["-t","nat","-C","OUTPUT","-j","NAT_DPI"], Capture::None, IPT_CMD_TIMEOUT)?;
+    let (c2, _) = ipt_run_timeout(&["-t","nat","-C","OUTPUT","-j","NAT_DPI"], Capture::None, IPT_CMD_TIMEOUT)?;
     if c2 != 0 {
-        let _ = shell::run_timeout("iptables", &["-t","nat","-I","OUTPUT","1","-j","NAT_DPI"], Capture::Both, IPT_CMD_TIMEOUT)?;
+        let _ = ipt_run_timeout(&["-t","nat","-I","OUTPUT","1","-j","NAT_DPI"], Capture::Both, IPT_CMD_TIMEOUT)?;
     }
 
     // Must be at the very top to avoid feedback loops on loopback/localhost.
@@ -294,13 +317,13 @@ fn ensure_nat_chain_nat_dpi() -> Result<()> {
 fn ensure_mangle_chain_app_once() -> Result<()> {
     unsafe {
         if !MANGLE_INIT_DONE {
-            let (c, _) = shell::run_timeout("iptables", &["-t","mangle","-nL","MANGLE_APP"], Capture::None, IPT_SLOW_TIMEOUT)?;
+            let (c, _) = ipt_run_timeout(&["-t","mangle","-nL","MANGLE_APP"], Capture::None, IPT_SLOW_TIMEOUT)?;
             if c != 0 {
-                let _ = shell::run_timeout("iptables", &["-t","mangle","-N","MANGLE_APP"], Capture::Both, IPT_CMD_TIMEOUT)?;
+                let _ = ipt_run_timeout(&["-t","mangle","-N","MANGLE_APP"], Capture::Both, IPT_CMD_TIMEOUT)?;
             }
-            let (c2, _) = shell::run_timeout("iptables", &["-t","mangle","-C","OUTPUT","-j","MANGLE_APP"], Capture::None, IPT_CMD_TIMEOUT)?;
+            let (c2, _) = ipt_run_timeout(&["-t","mangle","-C","OUTPUT","-j","MANGLE_APP"], Capture::None, IPT_CMD_TIMEOUT)?;
             if c2 != 0 {
-                let _ = shell::run_timeout("iptables", &["-t","mangle","-A","OUTPUT","-j","MANGLE_APP"], Capture::Both, IPT_CMD_TIMEOUT)?;
+                let _ = ipt_run_timeout(&["-t","mangle","-A","OUTPUT","-j","MANGLE_APP"], Capture::Both, IPT_CMD_TIMEOUT)?;
             }
             MANGLE_INIT_DONE = true;
         }
@@ -319,7 +342,7 @@ fn ensure_loopback_return_mangle() -> Result<()> {
     // Remove duplicates (including legacy -d 127.0.0.1).
     let mut del_all = |args: &[&str]| -> Result<()> {
         loop {
-            let (c, _) = shell::run_timeout("iptables", args, Capture::None, IPT_CMD_TIMEOUT)?;
+            let (c, _) = ipt_run_timeout(args, Capture::None, IPT_CMD_TIMEOUT)?;
             if c != 0 { break; }
         }
         Ok(())
@@ -331,14 +354,12 @@ fn ensure_loopback_return_mangle() -> Result<()> {
     del_all(&["-t","mangle","-D","MANGLE_APP","-d","127.0.0.0/8","-j","RETURN"])?;
 
     // Keep these strictly at the beginning: #1 and #2.
-    let _ = shell::run_timeout(
-        "iptables",
+    let _ = ipt_run_timeout(
         &["-t","mangle","-I","MANGLE_APP","1","-o","lo","-j","RETURN"],
         Capture::Both,
         IPT_CMD_TIMEOUT,
     )?;
-    let _ = shell::run_timeout(
-        "iptables",
+    let _ = ipt_run_timeout(
         &["-t","mangle","-I","MANGLE_APP","2","-d","127.0.0.0/8","-j","RETURN"],
         Capture::Both,
         IPT_CMD_TIMEOUT,
@@ -351,7 +372,7 @@ fn ensure_loopback_return_nat() -> Result<()> {
     // Remove duplicates (including legacy -d 127.0.0.1).
     let mut del_all = |args: &[&str]| -> Result<()> {
         loop {
-            let (c, _) = shell::run_timeout("iptables", args, Capture::None, IPT_CMD_TIMEOUT)?;
+            let (c, _) = ipt_run_timeout(args, Capture::None, IPT_CMD_TIMEOUT)?;
             if c != 0 { break; }
         }
         Ok(())
@@ -363,14 +384,12 @@ fn ensure_loopback_return_nat() -> Result<()> {
     del_all(&["-t","nat","-D","NAT_DPI","-d","127.0.0.0/8","-j","RETURN"])?;
 
     // Keep these strictly at the beginning: #1 and #2.
-    let _ = shell::run_timeout(
-        "iptables",
+    let _ = ipt_run_timeout(
         &["-t","nat","-I","NAT_DPI","1","-o","lo","-j","RETURN"],
         Capture::Both,
         IPT_CMD_TIMEOUT,
     )?;
-    let _ = shell::run_timeout(
-        "iptables",
+    let _ = ipt_run_timeout(
         &["-t","nat","-I","NAT_DPI","2","-d","127.0.0.0/8","-j","RETURN"],
         Capture::Both,
         IPT_CMD_TIMEOUT,
@@ -400,17 +419,17 @@ fn read_uids(uid_file: &Path) -> Result<Vec<String>> {
 
 fn ensure_rule_mangle_return(uid: &str) -> Result<()> {
     let check = ["-t","mangle","-C","MANGLE_APP","-m","owner","--uid-owner",uid,"-j","RETURN"];
-    let (c, _) = shell::run_timeout("iptables", &check, Capture::None, IPT_CMD_TIMEOUT)?;
+    let (c, _) = ipt_run_timeout(&check, Capture::None, IPT_CMD_TIMEOUT)?;
     if c != 0 {
         // Keep the loopback / localhost RETURN rules at position #1/#2.
         // Insert UID RETURN right after them.
         let add3 = ["-t","mangle","-I","MANGLE_APP","3","-m","owner","--uid-owner",uid,"-j","RETURN"];
-        let (c2, _) = shell::run_timeout("iptables", &add3, Capture::Both, IPT_CMD_TIMEOUT)?;
+        let (c2, _) = ipt_run_timeout(&add3, Capture::Both, IPT_CMD_TIMEOUT)?;
         if c2 != 0 {
             // Some builds may not support positional "-I <chain> <num>".
             // Fall back to "-I <chain>" and then re-assert loopback rules on top.
             let add1 = ["-t","mangle","-I","MANGLE_APP","-m","owner","--uid-owner",uid,"-j","RETURN"];
-            let (c3, _) = shell::run_timeout("iptables", &add1, Capture::Both, IPT_CMD_TIMEOUT)?;
+            let (c3, _) = ipt_run_timeout(&add1, Capture::Both, IPT_CMD_TIMEOUT)?;
             if c3 == 0 {
                 let _ = ensure_loopback_return_mangle();
             }
@@ -440,10 +459,10 @@ fn analyze_ports(ports_csv: &str) -> (usize, bool) {
 
 fn test_multiport_supported() -> Result<bool> {
     let ins = ["-t","nat","-I","NAT_DPI","1","-p","tcp","-m","multiport","--dports","1","-j","RETURN"];
-    let (c, _) = shell::run_timeout("iptables", &ins, Capture::None, IPT_CMD_TIMEOUT)?;
+    let (c, _) = ipt_run_timeout(&ins, Capture::None, IPT_CMD_TIMEOUT)?;
     if c == 0 {
         let del = ["-t","nat","-D","NAT_DPI","-p","tcp","-m","multiport","--dports","1","-j","RETURN"];
-        let _ = shell::run_timeout("iptables", &del, Capture::None, IPT_CMD_TIMEOUT)?;
+        let _ = ipt_run_timeout(&del, Capture::None, IPT_CMD_TIMEOUT)?;
         return Ok(true);
     }
     Ok(false)
@@ -464,20 +483,20 @@ fn ensure_nat_multiport(uid: &str, proto: &str, ports: &str, mode: &str, ifaces:
     let to = format!("127.0.0.1:{dest_port}");
     if mode == "all" {
         let check = ["-t","nat","-C","NAT_DPI","-p",proto,"-m","owner","--uid-owner",uid,"-m","multiport","--dports",ports,"-j","DNAT","--to-destination",&to];
-        let (c, _) = shell::run_timeout("iptables", &check, Capture::None, IPT_CMD_TIMEOUT)?;
+        let (c, _) = ipt_run_timeout(&check, Capture::None, IPT_CMD_TIMEOUT)?;
         if c != 0 {
             let add = ["-t","nat","-A","NAT_DPI","-p",proto,"-m","owner","--uid-owner",uid,"-m","multiport","--dports",ports,"-j","DNAT","--to-destination",&to];
-            let _ = shell::run_timeout("iptables", &add, Capture::Both, IPT_CMD_TIMEOUT)?;
+            let _ = ipt_run_timeout(&add, Capture::Both, IPT_CMD_TIMEOUT)?;
         }
         return Ok(());
     }
 
     for iface in ifaces {
         let check = ["-t","nat","-C","NAT_DPI","-o",iface,"-p",proto,"-m","owner","--uid-owner",uid,"-m","multiport","--dports",ports,"-j","DNAT","--to-destination",&to];
-        let (c, _) = shell::run_timeout("iptables", &check, Capture::None, IPT_CMD_TIMEOUT)?;
+        let (c, _) = ipt_run_timeout(&check, Capture::None, IPT_CMD_TIMEOUT)?;
         if c != 0 {
             let add = ["-t","nat","-A","NAT_DPI","-o",iface,"-p",proto,"-m","owner","--uid-owner",uid,"-m","multiport","--dports",ports,"-j","DNAT","--to-destination",&to];
-            let _ = shell::run_timeout("iptables", &add, Capture::Both, IPT_CMD_TIMEOUT)?;
+            let _ = ipt_run_timeout(&add, Capture::Both, IPT_CMD_TIMEOUT)?;
         }
     }
     Ok(())
@@ -521,12 +540,12 @@ fn add_nat_rule_idempotent(uid: &str, proto: &str, extra: Option<&str>, mode: &s
 
             let mut check: Vec<String> = vec!["-t".into(),"nat".into(),"-C".into(),"NAT_DPI".into()];
             check.extend(rule.clone());
-            let (c, _) = shell::runv_timeout("iptables", &check, Capture::None, IPT_CMD_TIMEOUT)?;
+            let (c, _) = ipt_runv_timeout(&check, Capture::None, IPT_CMD_TIMEOUT)?;
             if c == 0 { return Ok(()); }
 
             let mut add: Vec<String> = vec!["-t".into(),"nat".into(),"-A".into(),"NAT_DPI".into()];
             add.extend(rule);
-            let (c2, _) = shell::runv_timeout("iptables", &add, Capture::None, IPT_CMD_TIMEOUT)?;
+            let (c2, _) = ipt_runv_timeout(&add, Capture::None, IPT_CMD_TIMEOUT)?;
             if c2 == 0 {
                 info!("DPI: added rule uid={} proto={} iface={}", uid, proto, iface.unwrap_or("ALL"));
                 return Ok(());

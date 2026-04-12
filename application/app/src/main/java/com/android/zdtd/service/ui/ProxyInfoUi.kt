@@ -208,6 +208,8 @@ fun ProxyInfoAppsDialog(
   val programByedpiLabel = stringResource(R.string.apps_conflict_program_byedpi)
   val programZapretLabel = stringResource(R.string.apps_conflict_program_zapret)
   val programZapret2Label = stringResource(R.string.apps_conflict_program_zapret2)
+  val programWireproxyLabel = stringResource(R.string.apps_conflict_program_wireproxy)
+  val programTorLabel = stringResource(R.string.apps_conflict_program_tor)
 
   fun slotLabel(slot: String): String = when (slot.lowercase(Locale.ROOT)) {
     "common" -> slotCommonLabel
@@ -223,6 +225,8 @@ fun ProxyInfoAppsDialog(
     "byedpi" -> programByedpiLabel
     "nfqws" -> programZapretLabel
     "nfqws2" -> programZapret2Label
+    "wireproxy" -> programWireproxyLabel
+    "tor" -> programTorLabel
     else -> programId
   }
 

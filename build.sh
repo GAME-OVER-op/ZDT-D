@@ -47,7 +47,7 @@ PROJECT_CARGO_TARGET_DIR="$RUST_DIR/target"
 GRADLE_FLAGS=()
 
 AUTO_BUILT_BINS=(zdtd t2s)
-REQUIRED_EXTERNAL_BINS=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box)
+REQUIRED_EXTERNAL_BINS=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box wireproxy tor obfs4proxy)
 
 RUSTC_BIN=""
 CARGO_BIN=""

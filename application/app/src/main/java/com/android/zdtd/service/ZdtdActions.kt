@@ -123,6 +123,12 @@ interface ZdtdActions {
   /** Delete a sing-box server inside a specific profile. */
   fun deleteSingBoxServer(profile: String, server: String, onDone: (Boolean) -> Unit = {})
 
+  /** Create a wireproxy server inside a specific profile. */
+  fun createWireProxyServer(profile: String, server: String, onDone: (String?) -> Unit = {})
+
+  /** Delete a wireproxy server inside a specific profile. */
+  fun deleteWireProxyServer(profile: String, server: String, onDone: (Boolean) -> Unit = {})
+
   fun loadText(path: String, onDone: (String?) -> Unit)
   fun saveText(path: String, content: String, onDone: (Boolean) -> Unit)
 
@@ -201,11 +207,14 @@ interface ZdtdActions {
   /** Enable/disable hotspot routing through t2s. */
   fun setHotspotT2sEnabled(enabled: Boolean)
 
-  /** Choose which program receives hotspot traffic: operaproxy | singbox. */
+  /** Choose which program receives hotspot traffic: operaproxy | singbox | wireproxy. */
   fun setHotspotT2sTarget(target: String)
 
   /** Choose which sing-box profile receives hotspot traffic when sing-box is selected. */
   fun setHotspotT2sSingboxProfile(profile: String)
+
+  /** Choose which wireproxy profile receives hotspot traffic when wireproxy is selected. */
+  fun setHotspotT2sWireproxyProfile(profile: String)
 
   /** Remove working_folder/flag.sha256 and restart the daemon when needed. */
   fun resetModuleIdentifier()

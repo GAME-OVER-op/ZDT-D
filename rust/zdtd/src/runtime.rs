@@ -4,8 +4,8 @@ use std::time::Duration;
 use crate::{
     android::{boot, selinux::SelinuxGuard},
     iptables_backup,
-    programs::{byedpi, dnscrypt, dpitunnel, nfqws, nfqws2, operaproxy},
-    programs::singbox,
+    programs::{byedpi, dnscrypt, dpitunnel, nfqws, nfqws2, operaproxy, tor},
+    programs::{singbox, wireproxy},
     stats,
     settings,
     shell,
@@ -65,6 +65,12 @@ pub fn start_full() -> Result<()> {
 
     // sing-box (may start multiple profiles + optional t2s)
     singbox::start_if_enabled()?;
+
+    // wireproxy (may start multiple profiles + optional t2s)
+    wireproxy::start_if_enabled()?;
+
+    // Tor (single socks5 service + t2s)
+    tor::start_if_enabled()?;
 
     // Opera-proxy pipeline (may use local dnscrypt port if running).
     // Start it last to avoid interfering with other startup logic.
@@ -153,6 +159,8 @@ fn any_main_service_running() -> bool {
                 || r.byedpi.count > 0
                 || r.dpitunnel.count > 0
                 || r.sing_box.count > 0
+                || r.wireproxy.count > 0
+                || r.tor.count > 0
                 || r.opera.opera.count > 0
                 || (dnscrypt_expected && r.dnscrypt.count > 0)
             {

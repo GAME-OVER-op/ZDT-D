@@ -8,6 +8,11 @@ pub const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
 pub const SETTING_DIR: &str = "/data/adb/modules/ZDT-D/setting";
 pub const API_DIR: &str = "/data/adb/modules/ZDT-D/api";
 
+// IMPORTANT: all modules MUST use this single shared SHA tracker file.
+// Do not create per-module files like `blockedquic.flag.sha256`.
+// This is intentionally centralized so both humans and other AIs see the rule in one place.
+pub const SHARED_SHA_FLAG_FILE: &str = "/data/adb/modules/ZDT-D/working_folder/flag.sha256";
+
 pub fn start_json_path() -> PathBuf {
     Path::new(SETTING_DIR).join("start.json")
 }
@@ -61,6 +66,30 @@ pub fn blockedquic_out_program_path() -> PathBuf {
     blockedquic_root_path().join("out_program")
 }
 
+pub fn tor_root_path() -> PathBuf {
+    Path::new(MODULE_DIR).join("working_folder/tor")
+}
+
+pub fn tor_enabled_json_path() -> PathBuf {
+    tor_root_path().join("enabled.json")
+}
+
+pub fn tor_setting_json_path() -> PathBuf {
+    tor_root_path().join("setting.json")
+}
+
+pub fn tor_torrc_path() -> PathBuf {
+    tor_root_path().join("torrc")
+}
+
+pub fn tor_uid_program_path() -> PathBuf {
+    tor_root_path().join("app/uid/user_program")
+}
+
+pub fn tor_out_program_path() -> PathBuf {
+    tor_root_path().join("app/out/user_program")
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ProtectorMode {
@@ -85,6 +114,8 @@ pub struct ApiSettings {
     pub hotspot_t2s_target: String,
     #[serde(default)]
     pub hotspot_t2s_singbox_profile: String,
+    #[serde(default)]
+    pub hotspot_t2s_wireproxy_profile: String,
 }
 
 impl Default for ApiSettings {
@@ -94,6 +125,7 @@ impl Default for ApiSettings {
             hotspot_t2s_enabled: false,
             hotspot_t2s_target: String::new(),
             hotspot_t2s_singbox_profile: String::new(),
+            hotspot_t2s_wireproxy_profile: String::new(),
         }
     }
 }
@@ -102,13 +134,18 @@ impl ApiSettings {
     pub fn normalize(&mut self) {
         self.hotspot_t2s_target = normalize_hotspot_t2s_target(&self.hotspot_t2s_target);
         self.hotspot_t2s_singbox_profile = self.hotspot_t2s_singbox_profile.trim().to_string();
+        self.hotspot_t2s_wireproxy_profile = self.hotspot_t2s_wireproxy_profile.trim().to_string();
         if !self.hotspot_t2s_enabled {
             self.hotspot_t2s_target.clear();
             self.hotspot_t2s_singbox_profile.clear();
+            self.hotspot_t2s_wireproxy_profile.clear();
             return;
         }
         if self.hotspot_t2s_target != "singbox" {
             self.hotspot_t2s_singbox_profile.clear();
+        }
+        if self.hotspot_t2s_target != "wireproxy" {
+            self.hotspot_t2s_wireproxy_profile.clear();
         }
     }
 
@@ -131,12 +168,29 @@ impl ApiSettings {
             Some(profile)
         }
     }
+
+    pub fn hotspot_t2s_for_wireproxy(&self) -> bool {
+        self.hotspot_t2s_enabled && self.hotspot_t2s_target == "wireproxy"
+    }
+
+    pub fn hotspot_t2s_wireproxy_profile(&self) -> Option<&str> {
+        if !self.hotspot_t2s_for_wireproxy() {
+            return None;
+        }
+        let profile = self.hotspot_t2s_wireproxy_profile.trim();
+        if profile.is_empty() {
+            None
+        } else {
+            Some(profile)
+        }
+    }
 }
 
 fn normalize_hotspot_t2s_target(raw: &str) -> String {
     match raw.trim().to_ascii_lowercase().as_str() {
         "operaproxy" | "opera-proxy" | "opera_proxy" => "operaproxy".to_string(),
         "singbox" | "sing-box" | "sing_box" => "singbox".to_string(),
+        "wireproxy" | "wire-proxy" | "wire_proxy" => "wireproxy".to_string(),
         _ => String::new(),
     }
 }
@@ -195,16 +249,28 @@ pub fn working_program_root_path(program: &str) -> PathBuf {
 }
 
 pub fn ensure_minimal_program_layouts() -> Result<()> {
-    const PROFILES_DEFAULT_JSON: &str = "{
-  \"profiles\": {}
+    const PROFILES_DEFAULT_JSON: &str = r#"{
+  "profiles": {}
 }
-";
-    const ENABLED_FALSE_JSON: &str = "{\"enabled\":false}
-";
-    const PROXYINFO_ENABLED_JSON: &str = "{
-  \"enabled\": 0
+"#;
+    const ENABLED_FALSE_JSON: &str = r#"{"enabled":false}
+"#;
+    const PROXYINFO_ENABLED_JSON: &str = r#"{
+  "enabled": 0
 }
-";
+"#;
+    const TOR_SETTING_JSON: &str = r#"{
+  "t2s_port": 12347,
+  "t2s_web_port": 8002
+}
+"#;
+    const TOR_TORRC: &str = r#"DataDirectory /data/adb/modules/ZDT-D/working_folder/tor/
+SocksPort 127.0.0.1:9050
+Log notice stdout
+
+UseBridges 1
+ClientTransportPlugin obfs4 exec /data/adb/modules/ZDT-D/bin/obfs4proxy
+"#;
 
     let layouts = [
         ("byedpi", "active.json", PROFILES_DEFAULT_JSON),
@@ -212,10 +278,12 @@ pub fn ensure_minimal_program_layouts() -> Result<()> {
         ("nfqws", "active.json", PROFILES_DEFAULT_JSON),
         ("nfqws2", "active.json", PROFILES_DEFAULT_JSON),
         ("singbox", "active.json", PROFILES_DEFAULT_JSON),
+        ("wireproxy", "active.json", PROFILES_DEFAULT_JSON),
         ("dnscrypt", "active.json", ENABLED_FALSE_JSON),
         ("operaproxy", "active.json", ENABLED_FALSE_JSON),
         ("proxyInfo", "enabled.json", PROXYINFO_ENABLED_JSON),
         ("blockedquic", "enabled.json", PROXYINFO_ENABLED_JSON),
+        ("tor", "enabled.json", PROXYINFO_ENABLED_JSON),
     ];
 
     fs::create_dir_all(working_root_path())
@@ -230,6 +298,18 @@ pub fn ensure_minimal_program_layouts() -> Result<()> {
             fs::write(&state_path, default_content)
                 .with_context(|| format!("write {}", state_path.display()))?;
         }
+    }
+
+    let tor_root = working_program_root_path("tor");
+    let tor_setting = tor_root.join("setting.json");
+    if !tor_setting.exists() {
+        fs::write(&tor_setting, TOR_SETTING_JSON)
+            .with_context(|| format!("write {}", tor_setting.display()))?;
+    }
+    let tor_torrc = tor_root.join("torrc");
+    if !tor_torrc.exists() {
+        fs::write(&tor_torrc, TOR_TORRC)
+            .with_context(|| format!("write {}", tor_torrc.display()))?;
     }
 
     Ok(())

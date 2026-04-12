@@ -24,7 +24,9 @@ const SINGBOX_BIN: &str = "/data/adb/modules/ZDT-D/bin/sing-box";
 const SINGBOX_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/singbox";
 const SINGBOX_PROFILE_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/singbox/profile";
 const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/singbox/active.json";
-const SHA_FLAG_FILE: &str = "/data/adb/modules/ZDT-D/working_folder/flag.sha256";
+// IMPORTANT: use only the shared working_folder/flag.sha256 file for sha tracking.
+// Never introduce module-specific *.flag.sha256 files here.
+const SHA_FLAG_FILE: &str = settings::SHARED_SHA_FLAG_FILE;
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct ProfileState {
@@ -122,7 +124,7 @@ pub fn start_if_enabled() -> Result<()> {
         return Ok(());
     }
 
-    let external_used = crate::ports::collect_used_ports_for_conflict_check()
+    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding(true, false)
         .unwrap_or_else(|_| BTreeSet::new());
     let mut own_used = BTreeSet::<u16>::new();
     let mut plans = Vec::<ProfilePlan>::new();
@@ -241,7 +243,6 @@ fn build_profile_plan(
     let setting_path = profile_dir.join("setting.json");
     let setting: ProfileSetting = read_json(&setting_path)
         .with_context(|| format!("read {}", setting_path.display()))?;
-    validate_profile_setting(profile, &setting, external_used, own_used)?;
 
     let tracker = Sha256Tracker::new(SHA_FLAG_FILE);
     let uid_in = profile_dir.join("app/uid/user_program");
@@ -255,6 +256,8 @@ fn build_profile_plan(
         warn!("sing-box: profile '{}' has no resolved apps", profile);
         return Ok(None);
     }
+
+    validate_profile_setting(profile, &setting, external_used, own_used)?;
 
     let mut reserved = BTreeSet::new();
     reserved.insert(setting.t2s_port);

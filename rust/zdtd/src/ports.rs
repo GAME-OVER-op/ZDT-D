@@ -107,6 +107,21 @@ fn collect_reserved_ports() -> BTreeSet<u16> {
 /// This is intended for *conflict checks* by programs that manage their own ports
 /// outside of the standard `*/port.json` profile layout (e.g. sing-box).
 pub fn collect_used_ports_for_conflict_check() -> Result<BTreeSet<u16>> {
+    collect_used_ports_for_conflict_check_excluding_programs(false, false, false)
+}
+
+pub fn collect_used_ports_for_conflict_check_excluding(
+    exclude_singbox: bool,
+    exclude_wireproxy: bool,
+) -> Result<BTreeSet<u16>> {
+    collect_used_ports_for_conflict_check_excluding_programs(exclude_singbox, exclude_wireproxy, false)
+}
+
+pub fn collect_used_ports_for_conflict_check_excluding_programs(
+    exclude_singbox: bool,
+    exclude_wireproxy: bool,
+    exclude_tor: bool,
+) -> Result<BTreeSet<u16>> {
     let mut used = collect_reserved_ports();
 
     // Add current ports from editable profile-based programs.
@@ -114,6 +129,15 @@ pub fn collect_used_ports_for_conflict_check() -> Result<BTreeSet<u16>> {
         if e.port != 0 {
             used.insert(e.port);
         }
+    }
+    if !exclude_singbox {
+        used.extend(collect_defined_singbox_ports());
+    }
+    if !exclude_wireproxy {
+        used.extend(collect_defined_wireproxy_ports());
+    }
+    if !exclude_tor {
+        used.extend(collect_defined_tor_ports());
     }
     Ok(used)
 }
@@ -215,6 +239,31 @@ fn collect_defined_singbox_ports() -> BTreeSet<u16> {
     used
 }
 
+
+fn collect_defined_tor_ports() -> BTreeSet<u16> {
+    let mut used = BTreeSet::new();
+    let root = working_program_dir("tor");
+    let setting_path = root.join("setting.json");
+    if let Ok(v) = read_json_value(&setting_path) {
+        for key in ["t2s_port", "t2s_web_port"] {
+            if let Some(port) = v.get(key).and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
+                if port != 0 {
+                    used.insert(port);
+                }
+            }
+        }
+    }
+    let torrc_path = root.join("torrc");
+    if let Ok(raw) = fs::read_to_string(&torrc_path) {
+        if let Ok(port) = crate::programs::tor::parse_socks_port_from_str(&raw) {
+            if port != 0 {
+                used.insert(port);
+            }
+        }
+    }
+    used
+}
+
 fn next_free_port(mut start: u16, base: u16, used: &BTreeSet<u16>) -> Result<u16> {
     // Keep within u16 range.
     if start == 0 {
@@ -245,6 +294,9 @@ fn next_free_port(mut start: u16, base: u16, used: &BTreeSet<u16>) -> Result<u16
 pub fn normalize_ports() -> Result<()> {
     let reserved = collect_reserved_ports();
     let mut used = reserved.clone();
+    used.extend(collect_defined_singbox_ports());
+    used.extend(collect_defined_wireproxy_ports());
+    used.extend(collect_defined_tor_ports());
 
     let entries = collect_adjustable_ports().context("collect adjustable ports")?;
     let mut changed = 0usize;
@@ -302,6 +354,8 @@ pub fn suggest_port_for_new_profile(program: &str) -> Result<u16> {
     let mut used = collect_reserved_ports();
 
     used.extend(collect_defined_singbox_ports());
+    used.extend(collect_defined_wireproxy_ports());
+    used.extend(collect_defined_tor_ports());
 
     let entries = collect_adjustable_ports().unwrap_or_default();
     let mut max_self: Option<u16> = None;
@@ -323,3 +377,50 @@ pub fn suggest_port_for_new_profile(program: &str) -> Result<u16> {
     next_free_port(start, base, &used)
 }
 
+
+fn collect_defined_wireproxy_ports() -> BTreeSet<u16> {
+    let mut used = BTreeSet::new();
+    let root = working_program_dir("wireproxy").join("profile");
+    if let Ok(rd) = fs::read_dir(&root) {
+        for ent in rd.flatten() {
+            let profile_dir = ent.path();
+            if !profile_dir.is_dir() {
+                continue;
+            }
+            if profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) {
+                continue;
+            }
+            let setting_path = profile_dir.join("setting.json");
+            if let Ok(v) = read_json_value(&setting_path) {
+                for key in ["t2s_port", "t2s_web_port"] {
+                    if let Some(port) = v.get(key).and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
+                        if port != 0 {
+                            used.insert(port);
+                        }
+                    }
+                }
+            }
+
+            let server_root = profile_dir.join("server");
+            if let Ok(server_rd) = fs::read_dir(&server_root) {
+                for server_ent in server_rd.flatten() {
+                    let server_dir = server_ent.path();
+                    if !server_dir.is_dir() {
+                        continue;
+                    }
+                    if server_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) {
+                        continue;
+                    }
+                    let config_path = server_dir.join("config.conf");
+                    let Ok(raw) = fs::read_to_string(&config_path) else { continue; };
+                    if let Ok(addr) = crate::programs::wireproxy::parse_socks5_bind_address_str(&raw) {
+                        if addr.port != 0 {
+                            used.insert(addr.port);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    used
+}

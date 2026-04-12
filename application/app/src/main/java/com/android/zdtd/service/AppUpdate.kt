@@ -11,11 +11,13 @@ data class AppUpdateUiState(
   val languageMode: String = "auto",
   /** Module protector mode: off | on | auto */
   val protectorMode: String = "off",
-  /** Hotspot redirect via t2s: enabled flag, target program id and optional sing-box profile. */
+  /** Hotspot redirect via t2s: enabled flag, target program id and optional sing-box / wireproxy profile. */
   val hotspotT2sEnabled: Boolean = false,
   val hotspotT2sTarget: String = "",
   val hotspotT2sSingboxProfile: String = "",
+  val hotspotT2sWireproxyProfile: String = "",
   val hotspotSingboxProfiles: List<ApiModels.SingBoxProfileChoice> = emptyList(),
+  val hotspotWireproxyProfiles: List<ApiModels.SingBoxProfileChoice> = emptyList(),
   /** Port scan protection (proxyInfo). */
   val proxyInfoEnabled: Boolean = false,
   val proxyInfoAppsContent: String = "",

@@ -19,7 +19,6 @@ import androidx.core.content.ContextCompat
 object DaemonStatusNotifier {
 
   private const val CHANNEL_ID = "zdtd_state"
-  private const val CHANNEL_NAME = "ZDT-D"
   private const val NOTIFICATION_ID = 1006
 
   fun cancel(context: Context) {
@@ -36,9 +35,10 @@ object DaemonStatusNotifier {
       if (!granted) return
     }
 
-    ensureChannel(context)
+    val localizedContext = AppLanguageSupport.localizedAppContext(context)
+    ensureChannel(localizedContext)
 
-    val text = if (running) context.getString(R.string.notif_service_running) else context.getString(R.string.notif_service_stopped)
+    val text = if (running) localizedContext.getString(R.string.notif_service_running) else localizedContext.getString(R.string.notif_service_stopped)
 
     val openIntent = Intent(context, MainActivity::class.java).apply {
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -53,7 +53,7 @@ object DaemonStatusNotifier {
 
     val pi = PendingIntent.getActivity(context, 0, openIntent, piFlags)
 
-    val n = NotificationCompat.Builder(context, CHANNEL_ID)
+    val n = NotificationCompat.Builder(localizedContext, CHANNEL_ID)
       .setSmallIcon(R.drawable.ic_qs_tile)
       .setContentTitle("ZDT-D")
       .setContentText(text)
@@ -64,7 +64,7 @@ object DaemonStatusNotifier {
       .setPriority(NotificationCompat.PRIORITY_LOW)
       .build()
 
-    NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, n)
+    NotificationManagerCompat.from(localizedContext).notify(NOTIFICATION_ID, n)
   }
 
   private fun ensureChannel(context: Context) {
@@ -72,7 +72,7 @@ object DaemonStatusNotifier {
     val nm = ContextCompat.getSystemService(context, NotificationManager::class.java) ?: return
     val ch = NotificationChannel(
       CHANNEL_ID,
-      CHANNEL_NAME,
+      context.getString(R.string.notif_channel_name),
       NotificationManager.IMPORTANCE_LOW
     ).apply {
       description = context.getString(R.string.notif_channel_desc)

@@ -52,6 +52,9 @@ pub fn run(_cfg: &Config) -> Result<()> {
     if let Err(e) = crate::blockedquic::ensure_layout() {
         logging::warn(&format!("failed to init blockedquic files: {e:#}"));
     }
+    if let Err(e) = crate::programs::tor::ensure_layout() {
+        logging::warn(&format!("failed to init tor files: {e:#}"));
+    }
 
     // Truncate main log at each daemon start.
     logging::truncate_main_log()?;
@@ -135,6 +138,7 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
             }
             Err(e) => {
                 logging::warn(&format!("start_full failed: {e:#}"));
+                crate::scan_detector::stop();
                 let mut st = lock_state(&st_arc);
                 st.services_running = false;
             }
@@ -184,6 +188,7 @@ pub fn handle_stop_async(state: &SharedState) -> Result<bool> {
 
     let st_arc = state.clone();
     std::thread::spawn(move || {
+        crate::scan_detector::stop();
         let res = runtime::stop_full().context("stop_full");
         match res {
             Ok(()) => {
@@ -192,6 +197,7 @@ pub fn handle_stop_async(state: &SharedState) -> Result<bool> {
                     st.services_running = false;
                 }
                 protector::deactivate();
+                crate::scan_detector::stop();
 
                 // Notify the Android app (app-owned notification).
                 let _ = crate::android::notification::send_app_state(false);

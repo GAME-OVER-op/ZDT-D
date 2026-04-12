@@ -34,6 +34,11 @@
 
         </activity>
 
+
+        <activity
+            android:name=".ProxyInfoProbeDetailsActivity"
+            android:exported="false" />
+
         <service
             android:name=".tile.ZdtdTileService"
             android:label="@string/qs_tile_label"
@@ -51,6 +56,14 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="com.android.zdtd.service.ACTION_DAEMON_STATE" />
+            </intent-filter>
+        </receiver>
+
+        <receiver
+            android:name=".ProxyInfoProbeReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.android.zdtd.service.ACTION_PROXYINFO_PROBE_DETECTED" />
             </intent-filter>
         </receiver>
 

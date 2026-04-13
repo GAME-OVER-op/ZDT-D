@@ -143,6 +143,7 @@ data class UiState(
   val programs: List<ApiModels.Program> = emptyList(),
   val busy: Boolean = false,
   val daemonLogTail: String = "",
+  val daemonLogDetailedTail: String = "",
 )
 
 private data class StartupTimingPlan(
@@ -1925,7 +1926,10 @@ if (mf.isNotBlank()) {
           }
           return@launchIO
         }
-        // Auto-check both after OFF.
+        // Give the daemon a little extra time to restore system traffic/DNS
+        // before starting network-dependent update checks.
+        delay(5_000)
+        // Auto-check both after OFF + restore grace period.
         checkZapretInternal()
         checkZapret2Internal()
       } finally {
@@ -3090,10 +3094,13 @@ private fun shQuote(s: String): String {
 
   private suspend fun refreshDaemonLogOnce() {
     // Root-only: /data/adb/... is not readable by the app.
-    val path = "/data/adb/modules/ZDT-D/log/zdtd.log"
-    val text = runCatching { root.readLogTail(path, 220) }.getOrDefault("")
+    val mainPath = "/data/adb/modules/ZDT-D/log/zdtd.log"
+    val detailedPath = "/data/adb/modules/ZDT-D/log/deamon.log"
+    val mainText = runCatching { root.readLogTail(mainPath, 220) }.getOrDefault("")
+    val detailedText = runCatching { root.readLogTail(detailedPath, 220) }.getOrDefault("")
     _uiState.update { st ->
-      if (st.daemonLogTail == text) st else st.copy(daemonLogTail = text)
+      if (st.daemonLogTail == mainText && st.daemonLogDetailedTail == detailedText) st
+      else st.copy(daemonLogTail = mainText, daemonLogDetailedTail = detailedText)
     }
   }
 

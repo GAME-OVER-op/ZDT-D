@@ -21,6 +21,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -62,6 +64,10 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
 
   val logTail by remember(uiStateFlow) {
     uiStateFlow.map { it.daemonLogTail }.distinctUntilChanged()
+  }.collectAsStateWithLifecycle(initialValue = "")
+
+  val detailedLogTail by remember(uiStateFlow) {
+    uiStateFlow.map { it.daemonLogDetailedTail }.distinctUntilChanged()
   }.collectAsStateWithLifecycle(initialValue = "")
 
   val on = ApiModels.isServiceOn(status)
@@ -140,9 +146,17 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
     Spacer(Modifier.height(contentSpacing))
 
     // Daemon logs card (tail)
+    var logSourceMenuExpanded by remember { mutableStateOf(false) }
+    var selectedLogSource by remember { mutableStateOf(HomeLogSource.MAIN) }
     val noLogDataText = stringResource(R.string.home_no_log_data)
-    val logLines: List<DaemonLogUiLine> = remember(logTail, noLogDataText) {
-      val t = logTail.trimEnd()
+    val mainLogsText = stringResource(R.string.home_logs_main)
+    val detailedLogsText = stringResource(R.string.home_logs_detailed)
+    val activeLogTail = when (selectedLogSource) {
+      HomeLogSource.MAIN -> logTail
+      HomeLogSource.DETAILED -> detailedLogTail
+    }
+    val logLines: List<DaemonLogUiLine> = remember(activeLogTail, noLogDataText) {
+      val t = activeLogTail.trimEnd()
       if (t.isBlank()) {
         listOf(DaemonLogUiLine(raw = noLogDataText, level = DaemonLogLevel.OTHER, text = noLogDataText))
       } else {
@@ -170,6 +184,12 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
     LaunchedEffect(Unit) {
       kotlinx.coroutines.delay(160)
       logsBlockVisible = true
+    }
+
+    LaunchedEffect(selectedLogSource) {
+      logRevealInitialized = false
+      displayedLogLines = emptyList()
+      listState.scrollToItem(0)
     }
 
     LaunchedEffect(logLines) {
@@ -237,7 +257,55 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
         border = BorderStroke(1.dp, Color.White.copy(alpha = 0.10f)),
       ) {
         Column(Modifier.padding(14.dp)) {
-          Text(stringResource(R.string.home_daemon_logs_title), fontWeight = FontWeight.SemiBold)
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+              Box {
+                IconButton(
+                  onClick = { logSourceMenuExpanded = true },
+                  modifier = Modifier.size(32.dp),
+                ) {
+                  Icon(
+                    imageVector = Icons.Filled.Menu,
+                    contentDescription = stringResource(R.string.home_logs_source_menu),
+                    modifier = Modifier.size(18.dp),
+                  )
+                }
+                DropdownMenu(
+                  expanded = logSourceMenuExpanded,
+                  onDismissRequest = { logSourceMenuExpanded = false },
+                ) {
+                  DropdownMenuItem(
+                    text = { Text(mainLogsText) },
+                    onClick = {
+                      selectedLogSource = HomeLogSource.MAIN
+                      logSourceMenuExpanded = false
+                    },
+                  )
+                  DropdownMenuItem(
+                    text = { Text(detailedLogsText) },
+                    onClick = {
+                      selectedLogSource = HomeLogSource.DETAILED
+                      logSourceMenuExpanded = false
+                    },
+                  )
+                }
+              }
+              Text(stringResource(R.string.home_daemon_logs_title), fontWeight = FontWeight.SemiBold)
+            }
+            AssistChip(
+              onClick = { logSourceMenuExpanded = true },
+              label = {
+                Text(
+                  if (selectedLogSource == HomeLogSource.MAIN) mainLogsText else detailedLogsText,
+                  style = MaterialTheme.typography.labelSmall,
+                )
+              },
+            )
+          }
 
           Spacer(Modifier.height(2.dp))
           Crossfade(targetState = lastLine, animationSpec = tween(durationMillis = 180), label = "lastLine") { line ->
@@ -357,6 +425,11 @@ private data class DaemonLogRenderLine(
   val id: Long,
   val line: DaemonLogUiLine,
 )
+
+private enum class HomeLogSource {
+  MAIN,
+  DETAILED,
+}
 
 private fun parseDaemonLogUiLine(raw: String): DaemonLogUiLine {
   val upper = raw.uppercase()

@@ -21,7 +21,6 @@ const POLL_ACTIVE_FAST: Duration = Duration::from_secs(30);
 const POLL_ACTIVE_MEDIUM: Duration = Duration::from_secs(60);
 const POLL_ACTIVE_SLOW: Duration = Duration::from_secs(120);
 const POLL_ACTIVE_IDLE: Duration = Duration::from_secs(180);
-const POLL_AFTER_CONFIRMED: Duration = Duration::from_secs(300);
 const MIN_WINDOW: Duration = Duration::from_secs(120);
 const SUSPICION_REMEMBER: Duration = Duration::from_secs(30 * 60);
 const SUSPICION_COOLDOWN: Duration = Duration::from_secs(30 * 60);
@@ -63,16 +62,14 @@ impl ProbeAlertType {
 struct DetectorState {
     last_packets_by_rule: HashMap<String, u64>,
     windows: HashMap<u32, VecDeque<ProbeEvent>>,
-    last_suspicion_at: HashMap<u32, Instant>,
-    last_confirmed_at: HashMap<u32, Instant>,
+    last_suspicion_at: HashMap<String, Instant>,
+    last_confirmed_at: HashMap<String, Instant>,
     idle_rounds: u32,
-    slow_until: Option<Instant>,
 }
 
 #[derive(Debug, Default)]
 struct TickOutcome {
     had_hits: bool,
-    had_confirmed_alert: bool,
 }
 
 fn detector_handle() -> &'static Mutex<Option<JoinHandle<()>>> {
@@ -126,11 +123,6 @@ fn detector_loop() -> Result<()> {
                 } else {
                     state.idle_rounds = state.idle_rounds.saturating_add(1);
                 }
-                if outcome.had_confirmed_alert {
-                    state.slow_until = Some(Instant::now() + POLL_AFTER_CONFIRMED);
-                } else if state.slow_until.is_some_and(|until| Instant::now() >= until) {
-                    state.slow_until = None;
-                }
             }
             Err(e) => logging::warn(&format!("proxyInfo detector tick failed: {e:#}")),
         }
@@ -147,9 +139,6 @@ fn detector_loop() -> Result<()> {
 }
 
 fn next_poll_interval(state: &DetectorState) -> Duration {
-    if state.slow_until.is_some_and(|until| Instant::now() < until) {
-        return POLL_AFTER_CONFIRMED;
-    }
     match state.idle_rounds {
         0..=1 => POLL_ACTIVE_FAST,
         2..=3 => POLL_ACTIVE_MEDIUM,
@@ -169,7 +158,6 @@ fn detector_tick(state: &mut DetectorState, poll_interval: Duration) -> Result<T
         state.last_packets_by_rule.clear();
         state.windows.clear();
         state.idle_rounds = 0;
-        state.slow_until = None;
         return Ok(TickOutcome::default());
     }
 
@@ -180,7 +168,6 @@ fn detector_tick(state: &mut DetectorState, poll_interval: Duration) -> Result<T
         state.last_packets_by_rule.clear();
         state.windows.clear();
         state.idle_rounds = 0;
-        state.slow_until = None;
         return Ok(TickOutcome::default());
     }
 
@@ -219,7 +206,6 @@ fn detector_tick(state: &mut DetectorState, poll_interval: Duration) -> Result<T
         }
     }
 
-    let mut had_confirmed_alert = false;
     for uid in changed_uids {
         let Some(events) = state.windows.get(&uid) else { continue; };
         if events.is_empty() {
@@ -228,9 +214,15 @@ fn detector_tick(state: &mut DetectorState, poll_interval: Duration) -> Result<T
         let rule_hits = events.len() as u32;
         let total_packets: u64 = events.iter().map(|e| e.packets).sum();
         let unique_ports = count_unique_ports(events);
+        let packages = uid_packages.get(&uid).cloned().unwrap_or_default();
+        if packages.is_empty() {
+            continue;
+        }
+        let package = packages.first().cloned().unwrap_or_else(|| format!("uid:{}", uid));
+        let package_key = package.clone();
         let recent_suspicion = state
             .last_suspicion_at
-            .get(&uid)
+            .get(&package_key)
             .is_some_and(|t| now.duration_since(*t) <= SUSPICION_REMEMBER);
 
         let event_type = if rule_hits >= 2 || unique_ports >= 2 || total_packets >= 2 || recent_suspicion {
@@ -238,35 +230,28 @@ fn detector_tick(state: &mut DetectorState, poll_interval: Duration) -> Result<T
         } else {
             ProbeAlertType::Suspicion
         };
-
-        let packages = uid_packages.get(&uid).cloned().unwrap_or_default();
-        if packages.is_empty() {
-            continue;
-        }
-        if !should_alert(state, uid, event_type, now) {
+        if !should_alert(state, &package_key, event_type, now) {
             continue;
         }
 
-        let package = packages.first().cloned().unwrap_or_default();
         let packages_csv = packages.join(",");
         let proto = summarize_proto(events);
         let ports_hint = summarize_ports(events);
 
         match event_type {
             ProbeAlertType::Confirmed => {
-                had_confirmed_alert = true;
                 logging::warn(&format!(
                     "proxyInfo detector: confirmed localhost/system probing package={} uid={} proto={} ports_hint={} hits={} packets={}",
                     package, uid, proto, ports_hint, rule_hits, total_packets
                 ));
-                state.last_confirmed_at.insert(uid, now);
+                state.last_confirmed_at.insert(package_key.clone(), now);
             }
             ProbeAlertType::Suspicion => {
                 logging::warn(&format!(
                     "proxyInfo detector: suspicion of localhost/system probing package={} uid={} proto={} ports_hint={} hits={} packets={}",
                     package, uid, proto, ports_hint, rule_hits, total_packets
                 ));
-                state.last_suspicion_at.insert(uid, now);
+                state.last_suspicion_at.insert(package_key.clone(), now);
             }
         }
 
@@ -282,7 +267,7 @@ fn detector_tick(state: &mut DetectorState, poll_interval: Duration) -> Result<T
         );
     }
 
-    Ok(TickOutcome { had_hits, had_confirmed_alert })
+    Ok(TickOutcome { had_hits })
 }
 
 fn summarize_proto(events: &VecDeque<ProbeEvent>) -> String {
@@ -307,23 +292,23 @@ fn count_unique_ports(events: &VecDeque<ProbeEvent>) -> usize {
     set.len()
 }
 
-fn should_alert(state: &DetectorState, uid: u32, event_type: ProbeAlertType, now: Instant) -> bool {
+fn should_alert(state: &DetectorState, package_key: &str, event_type: ProbeAlertType, now: Instant) -> bool {
     match event_type {
         ProbeAlertType::Confirmed => state
             .last_confirmed_at
-            .get(&uid)
+            .get(package_key)
             .map_or(true, |t| now.duration_since(*t) >= CONFIRMED_COOLDOWN),
         ProbeAlertType::Suspicion => {
             if state
                 .last_confirmed_at
-                .get(&uid)
+                .get(package_key)
                 .is_some_and(|t| now.duration_since(*t) < CONFIRMED_COOLDOWN)
             {
                 return false;
             }
             state
                 .last_suspicion_at
-                .get(&uid)
+                .get(package_key)
                 .map_or(true, |t| now.duration_since(*t) >= SUSPICION_COOLDOWN)
         }
     }

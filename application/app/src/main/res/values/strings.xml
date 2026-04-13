@@ -199,6 +199,9 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="home_service_stopped_hint">Service is stopped. Tap the button to start.</string>
     <string name="home_no_log_data">(no log data)</string>
     <string name="home_daemon_logs_title">Daemon logs</string>
+    <string name="home_logs_main">Main logs</string>
+    <string name="home_logs_detailed">Detailed logs</string>
+    <string name="home_logs_source_menu">Choose log source</string>
 
     <!-- Setup -->
     <string name="setup_welcome_title">Welcome</string>

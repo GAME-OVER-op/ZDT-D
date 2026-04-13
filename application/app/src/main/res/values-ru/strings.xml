@@ -485,6 +485,9 @@
     <string name="home_service_stopped_hint">Служба выключена. Нажми кнопку для запуска.</string>
     <string name="home_no_log_data">(нет данных лога)</string>
     <string name="home_daemon_logs_title">Логи демона</string>
+    <string name="home_logs_main">Логи основные</string>
+    <string name="home_logs_detailed">Логи подробные</string>
+    <string name="home_logs_source_menu">Выбрать источник логов</string>
 
     <!-- Setup -->
     <string name="setup_welcome_title">Добро пожаловать</string>

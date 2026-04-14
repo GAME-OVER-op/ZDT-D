@@ -327,10 +327,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   private var startupJob: Job? = null
   private var appVisible: Boolean = false
   private var startupCompleted: Boolean = false
-  private val startupMinVisibleMsRange: LongRange = 4_000L..8_000L
+  private val startupMinVisibleMsRange: LongRange = 2_000L..4_500L
   private val startupMinCompleteMs: Long = 900L
-  private val startupMinConnectingMsFloor: Long = 1_500L
-  private val startupMinLoadingMsFloor: Long = 1_200L
+  private val startupMinConnectingMsFloor: Long = 700L
+  private val startupMinLoadingMsFloor: Long = 400L
 
   private val statusFreshMs: Long = 1_800L
   private val programsFreshMs: Long = 1_200L

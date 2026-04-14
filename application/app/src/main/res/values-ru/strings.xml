@@ -877,4 +877,25 @@
     <string name="tor_validation_need_use_bridges">В torrc должна быть строка UseBridges 1.</string>
     <string name="tor_validation_need_bridge">Перед включением Tor добавьте хотя бы один мост.</string>
 
+
+    <string name="apps_list_desc_myproxy">Профили с одним upstream SOCKS5 через t2s</string>
+    <string name="apps_conflict_program_myproxy">myproxy</string>
+    <string name="myproxy_apps_title">Приложения myproxy</string>
+    <string name="myproxy_apps_desc">Выберите приложения, трафик которых должен идти через этот профиль myproxy.</string>
+    <string name="myproxy_ports_title">Локальные порты</string>
+    <string name="myproxy_ports_desc">Настройте локальные порты t2s для этого профиля. Корректные изменения сохраняются автоматически.</string>
+    <string name="myproxy_t2s_port_label">Порт t2s</string>
+    <string name="myproxy_t2s_web_port_label">Веб-порт t2s</string>
+    <string name="myproxy_ports_must_differ">Порт t2s и веб-порт t2s должны отличаться.</string>
+    <string name="myproxy_ports_autosave_hint">Корректные изменения сохраняются автоматически после короткой паузы.</string>
+    <string name="myproxy_ports_saving">Сохранение изменений…</string>
+    <string name="myproxy_upstream_title">Upstream SOCKS5</string>
+    <string name="myproxy_upstream_desc">У каждого профиля только один upstream SOCKS5 сервер.</string>
+    <string name="myproxy_host_label">Хост</string>
+    <string name="myproxy_proxy_port_label">Порт</string>
+    <string name="myproxy_user_label">Логин</string>
+    <string name="myproxy_pass_label">Пароль</string>
+    <string name="myproxy_credentials_pair_required">Если указан логин или пароль, заполните оба поля.</string>
+    <string name="myproxy_auto_save_failed">Не удалось выполнить автосохранение</string>
+
 </resources>

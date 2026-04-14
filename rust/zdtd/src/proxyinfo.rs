@@ -722,26 +722,59 @@ fn select_ipv4_strategy(
     )
 }
 
-fn install_ipv4_rules(uids: &[u32], ports: &[u16]) -> Result<()> {
-    if uids.is_empty() || ports.is_empty() {
+fn install_ipv4_rules(uids: &[u32], ports: &[u16], global_ports: &[u16]) -> Result<()> {
+    if uids.is_empty() || (ports.is_empty() && global_ports.is_empty()) {
         return Ok(());
     }
 
     ensure_chain(Backend::Iptables)?;
-    let tcp_strategy = select_ipv4_strategy(uids, ports, TransportProtocol::Tcp, None)?;
-    let udp_strategy = select_ipv4_strategy(
-        uids,
-        ports,
-        TransportProtocol::Udp,
-        Some((TransportProtocol::Tcp, tcp_strategy)),
-    )?;
-
     let (rc, out) = xtables_lock::run_timeout_retry(Backend::Iptables.cmd(), &["-F", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT)?;
     if rc != 0 {
         anyhow::bail!("{} -F {} failed: {}", Backend::Iptables.cmd(), PROXY_CHAIN, out);
     }
-    install_proto_rules_v4_with_strategy(uids, ports, tcp_strategy, TransportProtocol::Tcp)?;
-    install_proto_rules_v4_with_strategy(uids, ports, udp_strategy, TransportProtocol::Udp)?;
+    if !ports.is_empty() {
+        let tcp_strategy = select_ipv4_strategy(uids, ports, TransportProtocol::Tcp, None)?;
+        let udp_strategy = select_ipv4_strategy(
+            uids,
+            ports,
+            TransportProtocol::Udp,
+            Some((TransportProtocol::Tcp, tcp_strategy)),
+        )?;
+        install_proto_rules_v4_with_strategy(uids, ports, tcp_strategy, TransportProtocol::Tcp)?;
+        install_proto_rules_v4_with_strategy(uids, ports, udp_strategy, TransportProtocol::Udp)?;
+    }
+    install_global_tcp_rules_v4(uids, global_ports)?;
+    Ok(())
+}
+
+fn install_global_tcp_rules_v4(uids: &[u32], ports: &[u16]) -> Result<()> {
+    if uids.is_empty() || ports.is_empty() {
+        return Ok(());
+    }
+    for &uid in uids {
+        for &port in ports {
+            let args = vec![
+                "-A".to_string(),
+                PROXY_CHAIN.to_string(),
+                "-p".to_string(),
+                "tcp".to_string(),
+                "--dport".to_string(),
+                port.to_string(),
+                "-m".to_string(),
+                "owner".to_string(),
+                "--uid-owner".to_string(),
+                uid.to_string(),
+                "-j".to_string(),
+                "REJECT".to_string(),
+                "--reject-with".to_string(),
+                "tcp-reset".to_string(),
+            ];
+            let (rc, out) = xtables_lock::runv_timeout_retry(Backend::Iptables.cmd(), &args, Capture::Both, IPT_TIMEOUT)?;
+            if rc != 0 {
+                anyhow::bail!("iptables add proxyInfo myproxy upstream block failed uid={} port={} args='{}': {}", uid, port, args.join(" "), out);
+            }
+        }
+    }
     Ok(())
 }
 
@@ -771,7 +804,7 @@ fn install_ipv6_rules(uids: &[u32]) -> Result<()> {
     Ok(())
 }
 
-fn install_rules(uids: &[u32], ports: &[u16]) -> Result<()> {
+fn install_rules(uids: &[u32], local_ports: &[u16], global_ports: &[u16]) -> Result<()> {
     let _guard = xtables_lock::lock();
     clear_rules_unlocked();
     if uids.is_empty() {
@@ -779,8 +812,8 @@ fn install_rules(uids: &[u32], ports: &[u16]) -> Result<()> {
     }
 
     let result = (|| {
-        if !ports.is_empty() {
-            install_ipv4_rules(uids, ports)?;
+        if !local_ports.is_empty() || !global_ports.is_empty() {
+            install_ipv4_rules(uids, local_ports, global_ports)?;
         }
         install_ipv6_rules(uids)?;
         Ok(())
@@ -814,28 +847,38 @@ pub fn refresh_runtime(services_running: bool) -> Result<bool> {
         crate::scan_detector::stop();
         return Ok(false);
     }
-    let ports = collect_protected_ports()?;
-    let port_list: Vec<u16> = ports.into_iter().collect();
-    install_rules(&uids, &port_list)?;
+    let (local_ports, global_ports) = collect_protected_port_sets()?;
+    let local_list: Vec<u16> = local_ports.into_iter().collect();
+    let global_list: Vec<u16> = global_ports.into_iter().collect();
+    install_rules(&uids, &local_list, &global_list)?;
     logging::info(&format!(
-        "proxyInfo active: {} uid(s), {} IPv4 protected port(s), IPv6 deny=full",
+        "proxyInfo active: {} uid(s), {} local IPv4 protected port(s), {} global upstream port(s), IPv6 deny=full",
         uids.len(),
-        port_list.len()
+        local_list.len(),
+        global_list.len()
     ));
     crate::scan_detector::start();
     Ok(true)
 }
 
+pub fn collect_protected_port_sets() -> Result<(BTreeSet<u16>, BTreeSet<u16>)> {
+    let mut local = BTreeSet::new();
+    let mut global = BTreeSet::new();
+    local.insert(API_PORT);
+    collect_byedpi_ports(&mut local)?;
+    collect_dpitunnel_ports(&mut local)?;
+    collect_operaproxy_ports(&mut local)?;
+    collect_singbox_ports(&mut local)?;
+    collect_wireproxy_ports(&mut local)?;
+    collect_tor_ports(&mut local)?;
+    collect_myproxy_ports(&mut local, &mut global)?;
+    Ok((local, global))
+}
+
 pub fn collect_protected_ports() -> Result<BTreeSet<u16>> {
-    let mut out = BTreeSet::new();
-    out.insert(API_PORT);
-    collect_byedpi_ports(&mut out)?;
-    collect_dpitunnel_ports(&mut out)?;
-    collect_operaproxy_ports(&mut out)?;
-    collect_singbox_ports(&mut out)?;
-    collect_wireproxy_ports(&mut out)?;
-    collect_tor_ports(&mut out)?;
-    Ok(out)
+    let (mut local, global) = collect_protected_port_sets()?;
+    local.extend(global);
+    Ok(local)
 }
 
 fn working_program_dir(program: &str) -> PathBuf {
@@ -1048,6 +1091,34 @@ fn collect_wireproxy_ports(out: &mut BTreeSet<u16>) -> Result<()> {
     Ok(())
 }
 
+
+fn collect_myproxy_ports(local: &mut BTreeSet<u16>, global: &mut BTreeSet<u16>) -> Result<()> {
+    let active_path = working_program_dir("myproxy").join("active.json");
+    if !active_path.is_file() {
+        return Ok(());
+    }
+    let active: ProfilesActive = read_json_file(&active_path).unwrap_or_default();
+    let root = working_program_dir("myproxy").join("profile");
+    for (name, st) in active.profiles {
+        if !st.enabled { continue; }
+        let profile_dir = root.join(&name);
+        let setting_path = profile_dir.join("setting.json");
+        if let Ok(v) = read_json_file::<Value>(&setting_path) {
+            for key in ["t2s_port", "t2s_web_port"] {
+                if let Some(port) = v.get(key).and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
+                    if port != 0 { local.insert(port); }
+                }
+            }
+        }
+        let proxy_path = profile_dir.join("proxy.json");
+        if let Ok(v) = read_json_file::<Value>(&proxy_path) {
+            if let Some(port) = v.get("port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
+                if port != 0 { global.insert(port); }
+            }
+        }
+    }
+    Ok(())
+}
 
 fn collect_tor_ports(out: &mut BTreeSet<u16>) -> Result<()> {
     let enabled_path = working_program_dir("tor").join("enabled.json");

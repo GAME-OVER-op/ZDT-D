@@ -281,6 +281,7 @@ object ApiModels {
       val displayName = when (id) {
         "wireproxy" -> "WireGuard"
         "tor" -> "Tor"
+        "myproxy" -> rawName ?: "myproxy"
         else -> rawName
       }
       out.add(

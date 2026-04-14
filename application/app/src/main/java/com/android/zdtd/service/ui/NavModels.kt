@@ -14,4 +14,4 @@ sealed class AppsRoute {
 }
 
 
-internal fun isProfileProgramType(type: String?): Boolean = type == "profiles" || type == "singbox_profiles" || type == "wireproxy_profiles"
+internal fun isProfileProgramType(type: String?): Boolean = type == "profiles" || type == "singbox_profiles" || type == "wireproxy_profiles" || type == "myproxy_profiles"

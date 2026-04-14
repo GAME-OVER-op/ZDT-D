@@ -879,4 +879,25 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="tor_validation_need_use_bridges">torrc must contain UseBridges 1.</string>
     <string name="tor_validation_need_bridge">Add at least one bridge before enabling Tor.</string>
 
+
+    <string name="apps_list_desc_myproxy">Profile-based SOCKS5 upstream bridge through t2s</string>
+    <string name="apps_conflict_program_myproxy">myproxy</string>
+    <string name="myproxy_apps_title">myproxy apps</string>
+    <string name="myproxy_apps_desc">Select the apps whose traffic should use this myproxy profile.</string>
+    <string name="myproxy_ports_title">Local ports</string>
+    <string name="myproxy_ports_desc">Configure local t2s ports for this profile. Valid changes are saved automatically.</string>
+    <string name="myproxy_t2s_port_label">t2s port</string>
+    <string name="myproxy_t2s_web_port_label">t2s web port</string>
+    <string name="myproxy_ports_must_differ">The t2s port and t2s web port must be different.</string>
+    <string name="myproxy_ports_autosave_hint">Valid changes are saved automatically after a short pause.</string>
+    <string name="myproxy_ports_saving">Saving changes…</string>
+    <string name="myproxy_upstream_title">Upstream SOCKS5</string>
+    <string name="myproxy_upstream_desc">Each profile uses one SOCKS5 upstream server.</string>
+    <string name="myproxy_host_label">Host</string>
+    <string name="myproxy_proxy_port_label">Port</string>
+    <string name="myproxy_user_label">Username</string>
+    <string name="myproxy_pass_label">Password</string>
+    <string name="myproxy_credentials_pair_required">If username or password is used, fill in both fields.</string>
+    <string name="myproxy_auto_save_failed">Failed to auto-save changes</string>
+
 </resources>

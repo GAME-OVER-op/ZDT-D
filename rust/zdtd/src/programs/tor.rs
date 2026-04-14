@@ -18,6 +18,7 @@ const OBFS4PROXY_BIN: &str = "/data/adb/modules/ZDT-D/bin/obfs4proxy";
 // Never introduce module-specific *.flag.sha256 files here.
 const SHA_FLAG_FILE: &str = settings::SHARED_SHA_FLAG_FILE;
 
+const TOR_DATA_DIR_LINE: &str = "DataDirectory /data/adb/modules/ZDT-D/working_folder/tor/";
 const DEFAULT_TORRC: &str = "DataDirectory /data/adb/modules/ZDT-D/working_folder/tor/\nSocksPort 127.0.0.1:9050\nLog notice stdout\n\nUseBridges 1\nClientTransportPlugin obfs4 exec /data/adb/modules/ZDT-D/bin/obfs4proxy\n";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -261,14 +262,30 @@ pub fn bridge_count_from_str(raw: &str) -> usize {
 pub fn normalize_torrc_content(raw: &str) -> String {
     let had_trailing_newline = raw.ends_with('\n');
     let mut out = Vec::new();
+    let mut saw_data_directory = false;
+
     for line in raw.lines() {
         let trimmed = line.trim();
-        if !trimmed.is_empty() && !trimmed.starts_with('#') && !trimmed.starts_with(';') && trimmed.starts_with("obfs4 ") {
-            out.push(format!("Bridge {}", trimmed));
-        } else {
-            out.push(line.to_string());
+        if !trimmed.is_empty() && !trimmed.starts_with('#') && !trimmed.starts_with(';') {
+            if trimmed.starts_with("DataDirectory") {
+                if !saw_data_directory {
+                    out.push(TOR_DATA_DIR_LINE.to_string());
+                    saw_data_directory = true;
+                }
+                continue;
+            }
+            if trimmed.starts_with("obfs4 ") {
+                out.push(format!("Bridge {}", trimmed));
+                continue;
+            }
         }
+        out.push(line.to_string());
     }
+
+    if !saw_data_directory {
+        out.insert(0, TOR_DATA_DIR_LINE.to_string());
+    }
+
     let mut joined = out.join("\n");
     if had_trailing_newline || (!joined.is_empty() && !joined.ends_with('\n')) {
         joined.push('\n');
@@ -342,7 +359,7 @@ pub fn start_if_enabled() -> Result<()> {
     let socks_port = validate_torrc_ready(&normalized_torrc)?;
     validate_setting(&setting, socks_port)?;
 
-    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, true)
+    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, true, false)
         .unwrap_or_default();
     for port in [socks_port, setting.t2s_port, setting.t2s_web_port] {
         if external_used.contains(&port) {

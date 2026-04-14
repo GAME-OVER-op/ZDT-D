@@ -8,3 +8,4 @@ pub mod operaproxy;
 pub mod singbox;
 pub mod wireproxy;
 pub mod tor;
+pub mod myproxy;

@@ -1291,6 +1291,95 @@ fn create_wireproxy_server_next(profile: &str) -> Result<String> {
     Ok(next)
 }
 
+
+fn myproxy_active_path() -> PathBuf { program_root("myproxy").join("active.json") }
+fn myproxy_profiles_root() -> PathBuf { program_root("myproxy").join("profile") }
+fn myproxy_deleted_root() -> PathBuf { program_root("myproxy").join(".deleted") }
+fn myproxy_deleted_profiles_root() -> PathBuf { myproxy_deleted_root().join("profiles") }
+fn myproxy_profile_root(profile: &str) -> PathBuf { myproxy_profiles_root().join(profile) }
+
+fn default_myproxy_profile_setting_value(t2s_port: u16, t2s_web_port: u16) -> serde_json::Value {
+    json!({"t2s_port": t2s_port, "t2s_web_port": t2s_web_port})
+}
+
+fn default_myproxy_proxy_value() -> serde_json::Value {
+    json!({"host": "127.0.0.1", "port": 1080, "user": "", "pass": ""})
+}
+
+fn ensure_myproxy_profile_layout(profile: &str) -> Result<()> {
+    let root = myproxy_profile_root(profile);
+    fs::create_dir_all(root.join("app/uid"))?;
+    fs::create_dir_all(root.join("app/out"))?;
+    fs::create_dir_all(root.join("log"))?;
+    let app_list = root.join("app/uid/user_program");
+    if !app_list.exists() { write_text_atomic(&app_list, "")?; }
+    let out_list = root.join("app/out/user_program");
+    if !out_list.exists() { write_text_atomic(&out_list, "")?; }
+    let t2s_log = root.join("log/t2s.log");
+    if !t2s_log.exists() { write_text_atomic(&t2s_log, "")?; }
+    let proxy = root.join("proxy.json");
+    if !proxy.exists() { write_json_pretty(&proxy, &default_myproxy_proxy_value())?; }
+    Ok(())
+}
+
+fn collect_existing_myproxy_ports() -> BTreeSet<u16> {
+    let mut used = BTreeSet::new();
+    let root = myproxy_profiles_root();
+    if let Ok(rd) = fs::read_dir(&root) {
+        for ent in rd.flatten() {
+            let profile_dir = ent.path();
+            if !profile_dir.is_dir() { continue; }
+            if profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) { continue; }
+            let setting_path = profile_dir.join("setting.json");
+            if let Ok(v) = read_json::<serde_json::Value>(&setting_path) {
+                if let Some(port) = v.get("t2s_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) { if port > 0 { used.insert(port); } }
+                if let Some(port) = v.get("t2s_web_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) { if port > 0 { used.insert(port); } }
+            }
+        }
+    }
+    used
+}
+
+fn suggest_myproxy_profile_ports() -> Result<(u16, u16)> {
+    let mut used = crate::ports::collect_used_ports_for_conflict_check().unwrap_or_default();
+    used.extend(collect_existing_myproxy_ports());
+    let t2s = next_free_port_from_used(12348, &used)?;
+    used.insert(t2s);
+    let web = next_free_port_from_used(8004, &used)?;
+    Ok((t2s, web))
+}
+
+fn create_myproxy_profile_named(requested: &str) -> Result<String> {
+    let name = requested.trim();
+    ensure_valid_singbox_profile_name(name)?;
+    let active_path = myproxy_active_path();
+    let mut active: ProfilesActive = read_json(&active_path).unwrap_or_default();
+    if active.profiles.contains_key(name) { anyhow::bail!("profile already exists"); }
+    active.profiles.insert(name.to_string(), ProfileState { enabled: false });
+    write_json_pretty(&active_path, &active)?;
+    ensure_myproxy_profile_layout(name)?;
+    let profile_setting = myproxy_profile_root(name).join("setting.json");
+    if !profile_setting.exists() {
+        let (t2s_port, t2s_web_port) = suggest_myproxy_profile_ports()?;
+        write_json_pretty(&profile_setting, &default_myproxy_profile_setting_value(t2s_port, t2s_web_port))?;
+    }
+    Ok(name.to_string())
+}
+
+fn create_myproxy_profile_next() -> Result<String> {
+    let active: ProfilesActive = read_json(&myproxy_active_path()).unwrap_or_default();
+    let mut max_n = 0u32;
+    for k in active.profiles.keys() {
+        if let Ok(n) = k.parse::<u32>() { max_n = max_n.max(n); continue; }
+        if let Some(rest) = k.strip_prefix("profile") {
+            if let Ok(n) = rest.parse::<u32>() { max_n = max_n.max(n); }
+        }
+    }
+    let next = format!("profile{}", max_n + 1);
+    create_myproxy_profile_named(&next)?;
+    Ok(next)
+}
+
 fn create_named_profile(program_id: &str, requested: &str) -> Result<String> {
     ensure_safe_segment(program_id, "program id")?;
     if !matches!(program_id, "nfqws" | "nfqws2" | "byedpi" | "dpitunnel") {
@@ -1455,7 +1544,7 @@ fn slot_from_kind(kind: &str) -> Option<&'static str> {
 
 fn app_domain(program_id: &str) -> Option<&'static str> {
     match program_id {
-        "operaproxy" | "sing-box" | "wireproxy" | "tor" | "dpitunnel" | "byedpi" => Some("tunnel"),
+        "operaproxy" | "sing-box" | "wireproxy" | "myproxy" | "tor" | "dpitunnel" | "byedpi" => Some("tunnel"),
         "nfqws" | "nfqws2" => Some("zapret"),
         _ => None,
     }
@@ -1571,6 +1660,23 @@ fn collect_assignment_files_uncached() -> Vec<AppAssignmentFile> {
                 "user",
                 path.join("app/uid/user_program"),
                 format!("/api/programs/wireproxy/profiles/{profile}/apps/user"),
+            );
+        }
+    }
+
+    let myproxy_root = myproxy_profiles_root();
+    if let Ok(rd) = fs::read_dir(&myproxy_root) {
+        for ent in rd.flatten() {
+            let path = ent.path();
+            if !path.is_dir() { continue; }
+            let Some(profile) = path.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+            push_assignment_file(
+                &mut out,
+                "myproxy",
+                Some(profile.clone()),
+                "user",
+                path.join("app/uid/user_program"),
+                format!("/api/programs/myproxy/profiles/{profile}/apps/user"),
             );
         }
     }
@@ -1855,6 +1961,22 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
             "id": "wireproxy",
             "name": "wireproxy",
             "type": "wireproxy_profiles",
+            "profiles": profiles
+        }));
+    }
+
+    // myproxy (profile-based, single socks5 upstream per profile)
+    {
+        let active: ProfilesActive = read_json(&myproxy_active_path()).unwrap_or_default();
+        let mut profiles = Vec::new();
+        for (name, st) in active.profiles {
+            profiles.push(json!({"name": name, "enabled": st.enabled}));
+        }
+        profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        out.push(json!({
+            "id": "myproxy",
+            "name": "myproxy",
+            "type": "myproxy_profiles",
             "profiles": profiles
         }));
     }
@@ -2759,6 +2881,150 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
             }
         }
 
+        // --- myproxy profile API
+        ("GET", ["api", "programs", "myproxy", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let active: ProfilesActive = read_json(&myproxy_active_path()).unwrap_or_default();
+                let mut profiles = Vec::new();
+                for (name, st) in active.profiles {
+                    profiles.push(json!({"name": name, "enabled": st.enabled}));
+                }
+                profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+                Ok(json!({"ok": true, "profiles": profiles}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("POST", ["api", "programs", "myproxy", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                #[derive(Deserialize)] struct CreateReq { #[serde(default)] name: Option<String> }
+                let req: CreateReq = serde_json::from_slice(body).map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let profile = match req.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                    Some(name) => create_myproxy_profile_named(name)?,
+                    None => create_myproxy_profile_next()?,
+                };
+                Ok(json!({"ok": true, "profile": profile}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("PUT", ["api", "programs", "myproxy", "profiles", profile, "enabled"]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                let req: EnabledReq = serde_json::from_slice(body).map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let p = myproxy_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                if !active.profiles.contains_key(*profile) { anyhow::bail!("profile not found"); }
+                active.profiles.insert(profile.to_string(), ProfileState { enabled: req.enabled });
+                write_json_pretty(&p, &active)?;
+                Ok(())
+            })();
+            match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
+        }
+        ("DELETE", ["api", "programs", "myproxy", "profiles", profile]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                let p = myproxy_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                active.profiles.remove(*profile);
+                write_json_pretty(&p, &active)?;
+                invalidate_assignment_cache();
+                let src = myproxy_profile_root(profile);
+                if src.exists() {
+                    let deleted_dir = myproxy_deleted_profiles_root();
+                    fs::create_dir_all(&deleted_dir).ok();
+                    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                    let dst = deleted_dir.join(format!("{profile}.{ts}"));
+                    let _ = fs::rename(&src, &dst);
+                }
+                Ok(())
+            })();
+            match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
+        }
+        ("GET", ["api", "programs", "myproxy", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_myproxy_profile_layout(profile)?;
+                let p = myproxy_profile_root(profile).join("setting.json");
+                if !p.exists() {
+                    let (t2s_port, t2s_web_port) = suggest_myproxy_profile_ports()?;
+                    write_json_pretty(&p, &default_myproxy_profile_setting_value(t2s_port, t2s_web_port))?;
+                }
+                let v: serde_json::Value = read_json(&p)?;
+                Ok(json!({"ok": true, "data": v}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("PUT", ["api", "programs", "myproxy", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_myproxy_profile_layout(profile)?;
+                let v: serde_json::Value = serde_json::from_slice(body).map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let t2s_port = v.get("t2s_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).ok_or_else(|| anyhow::anyhow!("t2s_port is required"))?;
+                let t2s_web_port = v.get("t2s_web_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).ok_or_else(|| anyhow::anyhow!("t2s_web_port is required"))?;
+                if t2s_port == 0 || t2s_web_port == 0 || t2s_port == t2s_web_port { anyhow::bail!("invalid ports"); }
+                let proxy_path = myproxy_profile_root(profile).join("proxy.json");
+                if let Ok(proxy_cfg) = read_json::<crate::programs::myproxy::ProxyConfig>(&proxy_path) {
+                    if t2s_port == proxy_cfg.port || t2s_web_port == proxy_cfg.port { anyhow::bail!("t2s ports must not match upstream port"); }
+                }
+                let p = myproxy_profile_root(profile).join("setting.json");
+                write_json_pretty(&p, &v)?;
+                Ok(())
+            })();
+            match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
+        }
+        ("GET", ["api", "programs", "myproxy", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<String> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_myproxy_profile_layout(profile)?;
+                let p = myproxy_profile_root(profile).join("app/uid/user_program");
+                read_text_or_empty(&p)
+            })();
+            match res { Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})), Err(e) => write_err(stream, e) }
+        }
+        ("PUT", ["api", "programs", "myproxy", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_myproxy_profile_layout(profile)?;
+                let req: ContentReq = serde_json::from_slice(body).map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let api_path = format!("/api/programs/myproxy/profiles/{}/apps/user", profile);
+                validate_program_apps_content(&req.content, &api_path, "myproxy", "common")?;
+                let p = myproxy_profile_root(profile).join("app/uid/user_program");
+                write_text_atomic(&p, &req.content)?;
+                invalidate_assignment_cache();
+                Ok(())
+            })();
+            match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
+        }
+        ("GET", ["api", "programs", "myproxy", "profiles", profile, "proxy"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_myproxy_profile_layout(profile)?;
+                let p = myproxy_profile_root(profile).join("proxy.json");
+                if !p.exists() { write_json_pretty(&p, &default_myproxy_proxy_value())?; }
+                let v: serde_json::Value = read_json(&p)?;
+                Ok(json!({"ok": true, "data": v}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("PUT", ["api", "programs", "myproxy", "profiles", profile, "proxy"]) => {
+            let res = (|| -> Result<()> {
+                ensure_valid_singbox_profile_name(profile)?;
+                ensure_myproxy_profile_layout(profile)?;
+                let proxy_cfg: crate::programs::myproxy::ProxyConfig = serde_json::from_slice(body).map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                crate::programs::myproxy::validate_proxy_config(&proxy_cfg)?;
+                let setting_path = myproxy_profile_root(profile).join("setting.json");
+                if let Ok(setting_v) = read_json::<serde_json::Value>(&setting_path) {
+                    let t2s_port = setting_v.get("t2s_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
+                    let t2s_web_port = setting_v.get("t2s_web_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
+                    if proxy_cfg.port == t2s_port || proxy_cfg.port == t2s_web_port { anyhow::bail!("upstream port must not match t2s ports"); }
+                }
+                let p = myproxy_profile_root(profile).join("proxy.json");
+                write_json_pretty(&p, &proxy_cfg)?;
+                Ok(())
+            })();
+            match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
+        }
+
+
         // --- tor enabled/apps/config
         ("GET", ["api", "programs", "tor"]) => {
             let res = (|| -> Result<serde_json::Value> {
@@ -3280,6 +3546,11 @@ match (method.as_str(), path.as_str()) {
                     match req.profile.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
                         Some(p) => create_wireproxy_profile_named(p)?,
                         None => create_wireproxy_profile_next()?,
+                    }
+                } else if program == "myproxy" {
+                    match req.profile.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                        Some(p) => create_myproxy_profile_named(p)?,
+                        None => create_myproxy_profile_next()?,
                     }
                 } else {
                     match req.profile.as_deref().map(str::trim).filter(|s| !s.is_empty()) {

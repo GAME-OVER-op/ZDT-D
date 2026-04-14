@@ -652,6 +652,7 @@ private fun programDescription(id: String): String {
     "dpitunnel" -> stringResource(R.string.apps_list_desc_dpitunnel)
     "wireproxy" -> stringResource(R.string.apps_list_desc_wireproxy)
     "tor" -> stringResource(R.string.apps_list_desc_tor)
+    "myproxy" -> stringResource(R.string.apps_list_desc_myproxy)
     else -> stringResource(R.string.apps_list_desc_default)
   }
 }
@@ -666,6 +667,7 @@ private fun programIcon(id: String): ImageVector {
     "dpitunnel" -> Icons.Outlined.AltRoute
     "wireproxy" -> Icons.Outlined.AltRoute
     "tor" -> Icons.Outlined.Public
+    "myproxy" -> Icons.Outlined.SwapHoriz
     else -> Icons.Outlined.Extension
   }
 }

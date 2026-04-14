@@ -91,6 +91,12 @@ fun AppsHost(
           actions = actions,
           snackHost = snackHost,
         )
+        "myproxy" -> MyProxyProfileScreen(
+          programs = programs,
+          profile = r.profile,
+          actions = actions,
+          snackHost = snackHost,
+        )
         else -> ProfileScreen(
           programs = programs,
           programId = r.programId,

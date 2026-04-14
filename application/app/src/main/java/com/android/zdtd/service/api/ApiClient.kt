@@ -68,8 +68,13 @@ class ApiClient(
    * - If [profile] is provided -> server creates that profile name.
    */
   fun createProfile(programId: String, profile: String? = null): Boolean {
-    val body = JSONObject().put("program", programId)
     val p = profile?.trim().orEmpty()
+    if (programId == "myproxy") {
+      val body = JSONObject()
+      if (p.isNotEmpty()) body.put("name", p)
+      return requestOk("POST", "/api/programs/myproxy/profiles", body)
+    }
+    val body = JSONObject().put("program", programId)
     if (p.isNotEmpty()) body.put("profile", p)
     return requestOk("POST", "/api/new/profile", body)
   }

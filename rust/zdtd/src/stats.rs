@@ -32,6 +32,7 @@ pub struct StatusReport {
     pub dpitunnel: UsageAgg,
     pub sing_box: UsageAgg,
     pub wireproxy: UsageAgg,
+    pub myproxy: UsageAgg,
     pub tor: UsageAgg,
     pub t2s: UsageAgg,       // t2s used by opera-proxy, sing-box, wireproxy and tor
     pub opera: OperaAgg,    // opera-proxy + t2s + operaproxy-byedpi
@@ -57,6 +58,7 @@ pub(crate) fn protected_pids() -> Vec<u32> {
     pids.extend(pidof("opera-proxy"));
     pids.extend(singbox_pids());
     pids.extend(wireproxy_pids());
+    pids.extend(myproxy_t2s_pids());
     pids.extend(tor_pids());
     pids.extend(pidof("byedpi"));
     pids.sort_unstable();
@@ -105,6 +107,7 @@ pub fn collect_status() -> Result<StatusReport> {
     let opera_proxy_pids = pidof("opera-proxy");
     let singbox_pids = singbox_pids();
     let wireproxy_pids = wireproxy_pids();
+    let myproxy_pids = myproxy_t2s_pids();
     let tor_pids = tor_pids();
 
     let mut byedpi_all = pidof("byedpi");
@@ -131,6 +134,7 @@ pub fn collect_status() -> Result<StatusReport> {
         dpitunnel: agg(&dpitunnel_pids),
         sing_box: agg(&singbox_pids),
         wireproxy: agg(&wireproxy_pids),
+        myproxy: agg(&myproxy_pids),
         tor: agg(&tor_pids),
         t2s: agg(&t2s_all_pids),
         opera: OperaAgg {
@@ -228,48 +232,126 @@ fn wireproxy_pids() -> Vec<u32> {
 }
 
 
-fn tor_pids() -> Vec<u32> {
-    let mut pids = pidof_any(&["tor", "obfs4proxy"]);
-    if !pids.is_empty() {
-        return pids;
-    }
 
-    if let Ok(out) = shell::capture_quiet(
-        "sh -c \"pgrep -f 'tor -f /data/adb/modules/ZDT-D/working_folder/tor/torrc' 2>/dev/null || true\"",
-    ) {
-        for tok in out.split_whitespace() {
-            if let Ok(pid) = tok.parse::<u32>() {
-                pids.push(pid);
-            }
+fn myproxy_t2s_pids() -> Vec<u32> {
+    let mut ports = std::collections::BTreeSet::new();
+    let root = std::path::Path::new("/data/adb/modules/ZDT-D/working_folder/myproxy/profile");
+    if let Ok(rd) = std::fs::read_dir(root) {
+        for ent in rd.flatten() {
+            let profile_dir = ent.path();
+            if !profile_dir.is_dir() { continue; }
+            if profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) { continue; }
+            let setting_path = profile_dir.join("setting.json");
+            let Ok(raw) = std::fs::read_to_string(&setting_path) else { continue; };
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { continue; };
+            let Some(port) = v.get("t2s_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) else { continue; };
+            if port != 0 { ports.insert(port); }
         }
     }
-    if let Ok(out) = shell::capture_quiet(
-        "sh -c \"pgrep -f '/data/adb/modules/ZDT-D/bin/obfs4proxy' 2>/dev/null || true\"",
-    ) {
-        for tok in out.split_whitespace() {
-            if let Ok(pid) = tok.parse::<u32>() {
-                pids.push(pid);
-            }
-        }
-    }
+    if ports.is_empty() { return Vec::new(); }
 
-    let out = shell::capture_quiet("ps -A").unwrap_or_default();
-    for line in out.lines() {
-        if !(line.contains(" tor")
-            || line.contains("/bin/tor")
-            || line.contains("working_folder/tor/torrc")
-            || line.contains("obfs4proxy"))
-        {
-            continue;
-        }
-        for tok in line.split_whitespace() {
-            if let Ok(pid) = tok.parse::<u32>() {
-                pids.push(pid);
+    let mut matched = Vec::new();
+    let mut all_t2s = pidof("t2s");
+    all_t2s.sort_unstable();
+    all_t2s.dedup();
+    for pid in all_t2s {
+        let cmd = read_cmdline(pid);
+        if cmd.is_empty() { continue; }
+        for port in &ports {
+            if cmd.contains(&format!("--listen-port {}", port)) {
+                matched.push(pid);
                 break;
             }
         }
     }
+    matched.sort_unstable();
+    matched.dedup();
+    matched
+}
 
+const TOR_TORRC_PATH: &str = "/data/adb/modules/ZDT-D/working_folder/tor/torrc";
+const OBFS4PROXY_BIN: &str = "/data/adb/modules/ZDT-D/bin/obfs4proxy";
+
+fn parse_pids(out: &str) -> Vec<u32> {
+    out.split_whitespace()
+        .filter_map(|tok| tok.parse::<u32>().ok())
+        .collect()
+}
+
+fn tor_main_pids() -> Vec<u32> {
+    let mut pids = Vec::new();
+    let pgrep_cmd = format!(
+        r#"sh -c "pgrep -f '^tor -f {}$' 2>/dev/null || true""#,
+        TOR_TORRC_PATH
+    );
+    if let Ok(out) = shell::capture_quiet(&pgrep_cmd) {
+        pids.extend(parse_pids(&out));
+    }
+    if pids.is_empty() {
+        let ps_cmd = format!(
+            r#"sh -c "ps -ef 2>/dev/null | grep -F 'tor -f {}' | grep -v grep || true""#,
+            TOR_TORRC_PATH
+        );
+        if let Ok(out) = shell::capture_quiet(&ps_cmd) {
+            for line in out.lines() {
+                for tok in line.split_whitespace() {
+                    if let Ok(pid) = tok.parse::<u32>() {
+                        pids.push(pid);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    pids.sort_unstable();
+    pids.dedup();
+    pids
+}
+
+fn tor_helper_pids() -> Vec<u32> {
+    let mut pids = Vec::new();
+    let pgrep_cmd = format!(
+        r#"sh -c "pgrep -f '^{}' 2>/dev/null || true""#,
+        OBFS4PROXY_BIN
+    );
+    if let Ok(out) = shell::capture_quiet(&pgrep_cmd) {
+        pids.extend(parse_pids(&out));
+    }
+    if pids.is_empty() {
+        let ps_cmd = format!(
+            r#"sh -c "ps -ef 2>/dev/null | grep -F '{}' | grep -v grep || true""#,
+            OBFS4PROXY_BIN
+        );
+        if let Ok(out) = shell::capture_quiet(&ps_cmd) {
+            for line in out.lines() {
+                for tok in line.split_whitespace() {
+                    if let Ok(pid) = tok.parse::<u32>() {
+                        pids.push(pid);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    pids.sort_unstable();
+    pids.dedup();
+    pids
+}
+
+fn tor_pids() -> Vec<u32> {
+    // IMPORTANT: do not match plain substring "tor" here.
+    // Some Android kernels/services contain "tor" in unrelated names
+    // (torture_task, storaged, keystore2, regulator-*, etc.), which causes
+    // false "running" state after Tor is already stopped.
+    // Tor is considered running ONLY when the exact main command
+    // `tor -f <our torrc>` exists. obfs4proxy is auxiliary and is included
+    // only when the main Tor process is present.
+    let main = tor_main_pids();
+    if main.is_empty() {
+        return main;
+    }
+    let mut pids = main;
+    pids.extend(tor_helper_pids());
     pids.sort_unstable();
     pids.dedup();
     pids

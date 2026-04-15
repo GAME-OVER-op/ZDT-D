@@ -79,7 +79,7 @@ fn parse_pid_lines(out: &str) -> Vec<i32> {
 fn tor_main_pids_exact() -> Vec<i32> {
     let mut pids = Vec::new();
     let cmd = format!(
-        r#"sh -c "pgrep -f '^tor -f {}$' 2>/dev/null || true""#,
+        r#"sh -c "pgrep -f '^torproxy -f {}$' 2>/dev/null || true""#,
         TOR_TORRC_PATH
     );
     if let Ok(out) = shell::capture_quiet(&cmd) {
@@ -87,7 +87,7 @@ fn tor_main_pids_exact() -> Vec<i32> {
     }
     if pids.is_empty() {
         let ps_cmd = format!(
-            r#"sh -c "ps -ef 2>/dev/null | grep -F 'tor -f {}' | grep -v grep || true""#,
+            r#"sh -c "ps -ef 2>/dev/null | grep -F 'torproxy -f {}' | grep -v grep || true""#,
             TOR_TORRC_PATH
         );
         if let Ok(out) = shell::capture_quiet(&ps_cmd) {
@@ -215,7 +215,7 @@ pub fn stop_services_and_restore_iptables() -> Result<()> {
     // IMPORTANT: do not stop plain substring/name matches for Tor.
     // Some Android systems have unrelated processes containing "tor".
     // Stop only the exact Tor command using our torrc, plus our exact obfs4proxy.
-    kill_exact_pids("tor -f <our torrc>", &tor_main_pids_exact())?;
+    kill_exact_pids("torproxy -f <our torrc>", &tor_main_pids_exact())?;
     kill_exact_pids("obfs4proxy <our binary>", &obfs4proxy_pids_exact())?;
 
     // 2) remove runtime guard chains before restore

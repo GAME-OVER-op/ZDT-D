@@ -12,7 +12,7 @@ use crate::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
 use crate::iptables::iptables_port::{self, DpiTunnelOptions, ProtoChoice};
 use crate::settings;
 
-const TOR_BIN: &str = "/data/adb/modules/ZDT-D/bin/tor";
+const TOR_BIN: &str = "/data/adb/modules/ZDT-D/bin/torproxy";
 const OBFS4PROXY_BIN: &str = "/data/adb/modules/ZDT-D/bin/obfs4proxy";
 // IMPORTANT: use only the shared working_folder/flag.sha256 file for sha tracking.
 // Never introduce module-specific *.flag.sha256 files here.

@@ -33,6 +33,7 @@ pub struct StatusReport {
     pub sing_box: UsageAgg,
     pub wireproxy: UsageAgg,
     pub myproxy: UsageAgg,
+    pub myprogram: UsageAgg,
     pub tor: UsageAgg,
     pub t2s: UsageAgg,       // t2s used by opera-proxy, sing-box, wireproxy and tor
     pub opera: OperaAgg,    // opera-proxy + t2s + operaproxy-byedpi
@@ -59,6 +60,8 @@ pub(crate) fn protected_pids() -> Vec<u32> {
     pids.extend(singbox_pids());
     pids.extend(wireproxy_pids());
     pids.extend(myproxy_t2s_pids());
+    pids.extend(myprogram_main_pids());
+    pids.extend(myprogram_t2s_pids());
     pids.extend(tor_pids());
     pids.extend(pidof("byedpi"));
     pids.sort_unstable();
@@ -108,6 +111,7 @@ pub fn collect_status() -> Result<StatusReport> {
     let singbox_pids = singbox_pids();
     let wireproxy_pids = wireproxy_pids();
     let myproxy_pids = myproxy_t2s_pids();
+    let myprogram_pids = myprogram_main_pids();
     let tor_pids = tor_pids();
 
     let mut byedpi_all = pidof("byedpi");
@@ -135,6 +139,7 @@ pub fn collect_status() -> Result<StatusReport> {
         sing_box: agg(&singbox_pids),
         wireproxy: agg(&wireproxy_pids),
         myproxy: agg(&myproxy_pids),
+        myprogram: agg(&myprogram_pids),
         tor: agg(&tor_pids),
         t2s: agg(&t2s_all_pids),
         opera: OperaAgg {
@@ -244,6 +249,66 @@ fn myproxy_t2s_pids() -> Vec<u32> {
             let setting_path = profile_dir.join("setting.json");
             let Ok(raw) = std::fs::read_to_string(&setting_path) else { continue; };
             let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { continue; };
+            let Some(port) = v.get("t2s_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) else { continue; };
+            if port != 0 { ports.insert(port); }
+        }
+    }
+    if ports.is_empty() { return Vec::new(); }
+
+    let mut matched = Vec::new();
+    let mut all_t2s = pidof("t2s");
+    all_t2s.sort_unstable();
+    all_t2s.dedup();
+    for pid in all_t2s {
+        let cmd = read_cmdline(pid);
+        if cmd.is_empty() { continue; }
+        for port in &ports {
+            if cmd.contains(&format!("--listen-port {}", port)) {
+                matched.push(pid);
+                break;
+            }
+        }
+    }
+    matched.sort_unstable();
+    matched.dedup();
+    matched
+}
+
+
+fn myprogram_main_pids() -> Vec<u32> {
+    let mut pids = Vec::new();
+    let root = std::path::Path::new("/data/adb/modules/ZDT-D/working_folder/myprogram/profile");
+    if let Ok(rd) = std::fs::read_dir(root) {
+        for ent in rd.flatten() {
+            let profile_dir = ent.path();
+            if !profile_dir.is_dir() { continue; }
+            let runtime_path = profile_dir.join("runtime.json");
+            let Ok(raw) = std::fs::read_to_string(&runtime_path) else { continue; };
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { continue; };
+            let Some(pid) = v.get("pid").and_then(|x| x.as_u64()).and_then(|x| u32::try_from(x).ok()) else { continue; };
+            if pid == 0 { continue; }
+            if std::path::Path::new("/proc").join(pid.to_string()).is_dir() { pids.push(pid); }
+        }
+    }
+    pids.sort_unstable();
+    pids.dedup();
+    pids
+}
+
+fn myprogram_t2s_pids() -> Vec<u32> {
+    let mut ports = std::collections::BTreeSet::new();
+    let root = std::path::Path::new("/data/adb/modules/ZDT-D/working_folder/myprogram/profile");
+    if let Ok(rd) = std::fs::read_dir(root) {
+        for ent in rd.flatten() {
+            let profile_dir = ent.path();
+            if !profile_dir.is_dir() { continue; }
+            if profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) { continue; }
+            let setting_path = profile_dir.join("setting.json");
+            let Ok(raw) = std::fs::read_to_string(&setting_path) else { continue; };
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { continue; };
+            let apps_mode = v.get("apps_mode").and_then(|x| x.as_bool()).unwrap_or(false);
+            let route_mode = v.get("route_mode").and_then(|x| x.as_str()).unwrap_or("t2s");
+            if !apps_mode || route_mode != "t2s" { continue; }
             let Some(port) = v.get("t2s_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) else { continue; };
             if port != 0 { ports.insert(port); }
         }

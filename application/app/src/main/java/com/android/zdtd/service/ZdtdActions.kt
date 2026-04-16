@@ -129,6 +129,15 @@ interface ZdtdActions {
   /** Delete a wireproxy server inside a specific profile. */
   fun deleteWireProxyServer(profile: String, server: String, onDone: (Boolean) -> Unit = {})
 
+  /** Upload one file into myprogram profile bin/. */
+  fun uploadMyProgramBin(profile: String, filename: String, bytes: ByteArray, onDone: (Boolean) -> Unit = {})
+
+  /** Delete one file from myprogram profile bin/. */
+  fun deleteMyProgramBin(profile: String, filename: String, onDone: (Boolean) -> Unit = {})
+
+  /** Apply or restart the myprogram profile. */
+  fun applyMyProgramProfile(profile: String, onDone: (Boolean) -> Unit = {})
+
   fun loadText(path: String, onDone: (String?) -> Unit)
   fun saveText(path: String, content: String, onDone: (Boolean) -> Unit)
 

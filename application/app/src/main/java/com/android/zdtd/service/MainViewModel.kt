@@ -3371,6 +3371,40 @@ private fun shQuote(s: String): String {
     }
   }
 
+  override fun uploadMyProgramBin(profile: String, filename: String, bytes: ByteArray, onDone: (Boolean) -> Unit) {
+    launchIO {
+      val safeProfile = URLEncoder.encode(profile.trim(), "UTF-8")
+      val ok = runCatching {
+        api.uploadMultipart("/api/programs/myprogram/profiles/$safeProfile/bin/upload", filename, bytes)
+      }.getOrDefault(false)
+      if (ok) log("OK", "myprogram/$profile/bin/$filename uploaded") else log("ERR", "myprogram/$profile/bin/$filename upload failed")
+      withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
+  override fun deleteMyProgramBin(profile: String, filename: String, onDone: (Boolean) -> Unit) {
+    launchIO {
+      val safeProfile = URLEncoder.encode(profile.trim(), "UTF-8")
+      val safeFile = URLEncoder.encode(filename.trim(), "UTF-8")
+      val ok = runCatching {
+        api.deletePath("/api/programs/myprogram/profiles/$safeProfile/bin/$safeFile")
+      }.getOrDefault(false)
+      if (ok) log("OK", "myprogram/$profile/bin/$filename deleted") else log("ERR", "myprogram/$profile/bin/$filename delete failed")
+      withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
+  override fun applyMyProgramProfile(profile: String, onDone: (Boolean) -> Unit) {
+    launchIO {
+      val safeProfile = URLEncoder.encode(profile.trim(), "UTF-8")
+      val ok = runCatching {
+        api.postJsonData("/api/programs/myprogram/profiles/$safeProfile/apply", JSONObject())
+      }.getOrDefault(false)
+      if (ok) log("OK", "myprogram/$profile applied") else log("ERR", "myprogram/$profile apply failed")
+      withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
   override fun loadText(path: String, onDone: (String?) -> Unit) {
     launchIO {
       val content = runCatching { api.getTextContent(path) }.getOrNull()

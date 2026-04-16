@@ -143,6 +143,7 @@ pub fn collect_used_ports_for_conflict_check_excluding_programs(
     if !exclude_myproxy {
         used.extend(collect_defined_myproxy_ports());
     }
+    used.extend(collect_defined_myprogram_ports());
     Ok(used)
 }
 
@@ -302,6 +303,7 @@ pub fn normalize_ports() -> Result<()> {
     used.extend(collect_defined_wireproxy_ports());
     used.extend(collect_defined_tor_ports());
     used.extend(collect_defined_myproxy_ports());
+    used.extend(collect_defined_myprogram_ports());
 
     let entries = collect_adjustable_ports().context("collect adjustable ports")?;
     let mut changed = 0usize;
@@ -362,6 +364,7 @@ pub fn suggest_port_for_new_profile(program: &str) -> Result<u16> {
     used.extend(collect_defined_wireproxy_ports());
     used.extend(collect_defined_tor_ports());
     used.extend(collect_defined_myproxy_ports());
+    used.extend(collect_defined_myprogram_ports());
 
     let entries = collect_adjustable_ports().unwrap_or_default();
     let mut max_self: Option<u16> = None;
@@ -405,6 +408,39 @@ fn collect_defined_myproxy_ports() -> BTreeSet<u16> {
     }
     used
 }
+
+fn collect_defined_myprogram_ports() -> BTreeSet<u16> {
+    let mut used = BTreeSet::new();
+    let root = working_program_dir("myprogram").join("profile");
+    if let Ok(rd) = fs::read_dir(&root) {
+        for ent in rd.flatten() {
+            let profile_dir = ent.path();
+            if !profile_dir.is_dir() { continue; }
+            if profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) { continue; }
+            let setting_path = profile_dir.join("setting.json");
+            if let Ok(v) = read_json_value(&setting_path) {
+                let apps_mode = v.get("apps_mode").and_then(|x| x.as_bool()).unwrap_or(false);
+                if apps_mode {
+                    for key in ["t2s_port", "t2s_web_port"] {
+                        if let Some(port) = v.get(key).and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
+                            if port != 0 { used.insert(port); }
+                        }
+                    }
+                    let t2s_ports_path = profile_dir.join("t2s_ports.txt");
+                    if let Ok(raw) = fs::read_to_string(&t2s_ports_path) {
+                        if let Ok(ports) = crate::programs::myprogram::parse_port_list_str(&raw) { used.extend(ports); }
+                    }
+                }
+                let protect_ports_path = profile_dir.join("protect_ports.txt");
+                if let Ok(raw) = fs::read_to_string(&protect_ports_path) {
+                    if let Ok(ports) = crate::programs::myprogram::parse_port_list_str(&raw) { used.extend(ports); }
+                }
+            }
+        }
+    }
+    used
+}
+
 
 fn collect_defined_wireproxy_ports() -> BTreeSet<u16> {
     let mut used = BTreeSet::new();

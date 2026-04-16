@@ -102,6 +102,12 @@ fun AppsHost(
           actions = actions,
           snackHost = snackHost,
         )
+        "myprogram" -> MyProgramProfileScreen(
+          programs = programs,
+          profile = r.profile,
+          actions = actions,
+          snackHost = snackHost,
+        )
         else -> ProfileScreen(
           programs = programs,
           programId = r.programId,

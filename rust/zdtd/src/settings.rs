@@ -280,6 +280,7 @@ ClientTransportPlugin obfs4 exec /data/adb/modules/ZDT-D/bin/obfs4proxy
         ("singbox", "active.json", PROFILES_DEFAULT_JSON),
         ("wireproxy", "active.json", PROFILES_DEFAULT_JSON),
         ("myproxy", "active.json", PROFILES_DEFAULT_JSON),
+        ("myprogram", "active.json", PROFILES_DEFAULT_JSON),
         ("dnscrypt", "active.json", ENABLED_FALSE_JSON),
         ("operaproxy", "active.json", ENABLED_FALSE_JSON),
         ("proxyInfo", "enabled.json", PROXYINFO_ENABLED_JSON),

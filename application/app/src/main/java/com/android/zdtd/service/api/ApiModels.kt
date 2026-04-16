@@ -293,6 +293,7 @@ object ApiModels {
         "wireproxy" -> "WireGuard"
         "tor" -> "Tor"
         "myproxy" -> rawName ?: "myproxy"
+        "myprogram" -> rawName ?: "myprogram"
         else -> rawName
       }
       out.add(

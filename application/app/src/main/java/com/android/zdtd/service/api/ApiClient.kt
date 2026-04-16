@@ -69,10 +69,10 @@ class ApiClient(
    */
   fun createProfile(programId: String, profile: String? = null): Boolean {
     val p = profile?.trim().orEmpty()
-    if (programId == "myproxy") {
+    if (programId == "myproxy" || programId == "myprogram") {
       val body = JSONObject()
       if (p.isNotEmpty()) body.put("name", p)
-      return requestOk("POST", "/api/programs/myproxy/profiles", body)
+      return requestOk("POST", "/api/programs/${enc(programId)}/profiles", body)
     }
     val body = JSONObject().put("program", programId)
     if (p.isNotEmpty()) body.put("profile", p)

@@ -902,6 +902,7 @@ pub fn collect_protected_port_sets() -> Result<(BTreeSet<u16>, BTreeSet<u16>)> {
     collect_wireproxy_ports(&mut local)?;
     collect_tor_ports(&mut local)?;
     collect_myproxy_ports(&mut local, &mut global)?;
+    collect_myprogram_ports(&mut local)?;
     Ok((local, global))
 }
 
@@ -1144,6 +1145,47 @@ fn collect_myproxy_ports(local: &mut BTreeSet<u16>, global: &mut BTreeSet<u16>) 
         if let Ok(v) = read_json_file::<Value>(&proxy_path) {
             if let Some(port) = v.get("port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
                 if port != 0 { global.insert(port); }
+            }
+        }
+    }
+    Ok(())
+}
+
+
+fn collect_myprogram_ports(out: &mut BTreeSet<u16>) -> Result<()> {
+    let active_path = working_program_dir("myprogram").join("active.json");
+    if !active_path.is_file() {
+        return Ok(());
+    }
+    let active: ProfilesActive = read_json_file(&active_path).unwrap_or_default();
+    let root = working_program_dir("myprogram").join("profile");
+    for (name, st) in active.profiles {
+        if !st.enabled { continue; }
+        let profile_dir = root.join(&name);
+        let setting_path = profile_dir.join("setting.json");
+        if let Ok(v) = read_json_file::<Value>(&setting_path) {
+            let apps_mode = v.get("apps_mode").and_then(|x| x.as_bool()).unwrap_or(false);
+            let route_mode = v.get("route_mode").and_then(|x| x.as_str()).unwrap_or("t2s");
+            if apps_mode {
+                if route_mode == "t2s" {
+                    for key in ["t2s_port", "t2s_web_port"] {
+                        if let Some(port) = v.get(key).and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
+                            if port != 0 { out.insert(port); }
+                        }
+                    }
+                    let t2s_ports_path = profile_dir.join("t2s_ports.txt");
+                    if let Ok(raw) = fs::read_to_string(&t2s_ports_path) {
+                        if let Ok(ports) = crate::programs::myprogram::parse_port_list_str(&raw) { out.extend(ports); }
+                    }
+                } else if route_mode == "transparent" {
+                    if let Some(port) = v.get("transparent_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
+                        if port != 0 { out.insert(port); }
+                    }
+                }
+            }
+            let protect_ports_path = profile_dir.join("protect_ports.txt");
+            if let Ok(raw) = fs::read_to_string(&protect_ports_path) {
+                if let Ok(ports) = crate::programs::myprogram::parse_port_list_str(&raw) { out.extend(ports); }
             }
         }
     }

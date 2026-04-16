@@ -212,6 +212,7 @@ pub fn stop_services_and_restore_iptables() -> Result<()> {
     kill_by_name("opera-proxy")?;
     kill_by_name("sing-box")?;
     kill_by_name("wireproxy")?;
+    let _ = crate::programs::myprogram::stop_all();
     // IMPORTANT: do not stop plain substring/name matches for Tor.
     // Some Android systems have unrelated processes containing "tor".
     // Stop only the exact Tor command using our torrc, plus our exact obfs4proxy.

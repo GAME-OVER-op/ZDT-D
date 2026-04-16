@@ -77,6 +77,16 @@ private fun parseMyProxyUpstreamUi(obj: JSONObject?): MyProxyUpstreamUi {
   )
 }
 
+
+@Composable
+private fun FieldHint(text: String) {
+  Text(
+    text = text,
+    style = MaterialTheme.typography.bodySmall,
+    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+  )
+}
+
 @Composable
 fun MyProxyProfileScreen(
   programs: List<ApiModels.Program>,
@@ -215,6 +225,7 @@ fun MyProxyProfileScreen(
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
         )
+        FieldHint(stringResource(R.string.myproxy_t2s_port_hint))
         OutlinedTextField(
           value = t2sPortText,
           onValueChange = { t2sPortText = it.filter(Char::isDigit).take(5) },
@@ -224,6 +235,7 @@ fun MyProxyProfileScreen(
           singleLine = true,
           isError = t2sPortText.isNotBlank() && t2sPortText.toIntOrNull()?.let { it !in 1..65535 } != false,
         )
+        FieldHint(stringResource(R.string.myproxy_t2s_web_port_hint))
         OutlinedTextField(
           value = t2sWebPortText,
           onValueChange = { t2sWebPortText = it.filter(Char::isDigit).take(5) },
@@ -257,6 +269,7 @@ fun MyProxyProfileScreen(
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
         )
+        FieldHint(stringResource(R.string.myproxy_host_hint))
         OutlinedTextField(
           value = hostText,
           onValueChange = { hostText = it },
@@ -265,6 +278,7 @@ fun MyProxyProfileScreen(
           singleLine = true,
           isError = hostText.isBlank(),
         )
+        FieldHint(stringResource(R.string.myproxy_proxy_port_hint))
         OutlinedTextField(
           value = proxyPortText,
           onValueChange = { proxyPortText = it.filter(Char::isDigit).take(5) },
@@ -274,6 +288,7 @@ fun MyProxyProfileScreen(
           singleLine = true,
           isError = proxyPortText.isNotBlank() && proxyPortText.toIntOrNull()?.let { it !in 1..65535 } != false,
         )
+        FieldHint(stringResource(R.string.myproxy_user_hint))
         OutlinedTextField(
           value = userText,
           onValueChange = { userText = it },
@@ -281,6 +296,7 @@ fun MyProxyProfileScreen(
           modifier = Modifier.fillMaxWidth(),
           singleLine = true,
         )
+        FieldHint(stringResource(R.string.myproxy_pass_hint))
         OutlinedTextField(
           value = passText,
           onValueChange = { passText = it },

@@ -898,4 +898,63 @@
     <string name="myproxy_credentials_pair_required">Если указан логин или пароль, заполните оба поля.</string>
     <string name="myproxy_auto_save_failed">Не удалось выполнить автосохранение</string>
 
+
+    <string name="apps_list_desc_myprogram">Профильный запуск пользовательской команды с необязательным app mode и t2s</string>
+    <string name="apps_conflict_program_myprogram">myprogram</string>
+    <string name="myprogram_loading">Загрузка данных профиля…</string>
+    <string name="myprogram_saving">Сохранение изменений…</string>
+    <string name="myprogram_autosave_hint">Корректные изменения сохраняются автоматически после короткой паузы.</string>
+    <string name="myprogram_auto_save_failed">Не удалось выполнить автосохранение</string>
+    <string name="myprogram_apps_mode_title">Режим приложений</string>
+    <string name="myprogram_apps_mode_desc">Включите режим приложений, чтобы использовать список приложений вместе с t2s.</string>
+    <string name="myprogram_apps_mode_warning">Если после парсера список приложений окажется пустым, профиль не запустится.</string>
+    <string name="myprogram_launcher_mode_hint">При выключенном режиме приложений профиль работает как launcher пользовательской команды без списка приложений и t2s.</string>
+    <string name="myprogram_apps_title">Приложения myprogram</string>
+    <string name="myprogram_apps_desc">Выберите приложения, трафик которых должен идти через этот профиль myprogram.</string>
+    <string name="myprogram_ports_title">Локальные настройки t2s</string>
+    <string name="myprogram_ports_desc">Настройте локальные порты t2s и SOCKS5-авторизацию для режима t2s.</string>
+    <string name="myprogram_t2s_port_label">Порт t2s</string>
+    <string name="myprogram_t2s_web_port_label">Веб-порт t2s</string>
+    <string name="myprogram_ports_must_differ">Порт t2s и веб-порт t2s должны отличаться.</string>
+        <string name="myprogram_socks_user_label">SOCKS-логин</string>
+    <string name="myprogram_socks_pass_label">SOCKS-пароль</string>
+    <string name="myprogram_command_title">Команда запуска</string>
+    <string name="myprogram_command_desc">Введите пользовательскую команду, которая запускает этот профиль.</string>
+    <string name="myprogram_command_label">Команда</string>
+    <string name="myprogram_command_hint">Пример: ./mainbin --config ./config.json. При сохранении переносы строк превращаются в одну строку.</string>
+    <string name="myprogram_t2s_ports_title">Upstream-порты t2s</string>
+    <string name="myprogram_t2s_ports_desc">Укажите по одному upstream SOCKS5-порту на строку. Используется только в режиме t2s.</string>
+    <string name="myprogram_t2s_ports_label">Порты, по одному на строку</string>
+    <string name="myprogram_protect_ports_title">Защищаемые порты</string>
+    <string name="myprogram_protect_ports_desc">Укажите по одному защищаемому порту на строку.</string>
+    <string name="myprogram_protect_ports_label">Защищаемые порты, по одному на строку</string>
+    <string name="myprogram_ports_per_line_error">Каждая непустая строка должна содержать порт от 1 до 65535.</string>
+    <string name="myprogram_bin_title">Файлы профиля (bin)</string>
+    <string name="myprogram_bin_desc">Загружайте и удаляйте файлы, хранящиеся в каталоге bin профиля.</string>
+    <string name="myprogram_apply_title">Применить профиль</string>
+    <string name="myprogram_apply_desc">Применить текущую конфигурацию профиля и перезапустить его при необходимости.</string>
+    <string name="myprogram_apply_action">Применить профиль</string>
+    <string name="myprogram_applying">Применение…</string>
+    <string name="myprogram_route_mode_title">Режим маршрутизации</string>
+    <string name="myprogram_route_mode_desc">Выберите, использовать ли t2s или прямую прозрачную маршрутизацию.</string>
+    <string name="myprogram_route_mode_t2s">t2s</string>
+    <string name="myprogram_route_mode_transparent">transparent</string>
+    <string name="myprogram_route_mode_t2s_hint">В этом режиме используется t2s и список upstream-портов. Протокол — только TCP.</string>
+    <string name="myprogram_route_mode_transparent_hint">В этом режиме t2s не запускается: трафик приложений редиректится сразу на порт пользовательской программы.</string>
+    <string name="myprogram_transparent_title">Прозрачная маршрутизация</string>
+    <string name="myprogram_transparent_desc">Настройте прямой редирект трафика приложений на порт пользовательской программы и выберите протокол.</string>
+    <string name="myprogram_transparent_port_label">Transparent port</string>
+    <string name="myprogram_proto_mode_title">Протокол</string>
+    <string name="myprogram_proto_mode_desc">Выберите, какие протоколы нужно редиректить в режиме transparent.</string>
+    <string name="myprogram_proto_mode_tcp">TCP</string>
+    <string name="myprogram_proto_mode_tcp_udp">TCP + UDP</string>
+
+
+    <string name="myproxy_t2s_port_hint">Локальный порт, через который t2s принимает трафик приложений.</string>
+    <string name="myproxy_t2s_web_port_hint">Локальный служебный web-порт t2s.</string>
+    <string name="myproxy_host_hint">Адрес SOCKS5-прокси: IP или домен сервера.</string>
+    <string name="myproxy_proxy_port_hint">Порт SOCKS5-прокси на сервере.</string>
+    <string name="myproxy_user_hint">Логин SOCKS5. Оставьте пустым, если авторизация не нужна.</string>
+    <string name="myproxy_pass_hint">Пароль SOCKS5. Оставьте пустым, если авторизация не нужна.</string>
+
 </resources>

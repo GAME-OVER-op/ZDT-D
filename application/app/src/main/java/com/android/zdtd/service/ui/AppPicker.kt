@@ -258,6 +258,7 @@ private fun AppPickerSheet(
   val programWireproxyLabel = stringResource(R.string.apps_conflict_program_wireproxy)
   val programTorLabel = stringResource(R.string.apps_conflict_program_tor)
   val programMyproxyLabel = stringResource(R.string.apps_conflict_program_myproxy)
+  val programMyprogramLabel = stringResource(R.string.apps_conflict_program_myprogram)
 
   fun slotLabel(slot: String): String = when (slot.lowercase(Locale.ROOT)) {
     "common" -> slotCommonLabel
@@ -276,11 +277,12 @@ private fun AppPickerSheet(
     "wireproxy" -> programWireproxyLabel
     "tor" -> programTorLabel
     "myproxy" -> programMyproxyLabel
+    "myprogram" -> programMyprogramLabel
     else -> programId
   }
 
   fun programGroup(programId: String): String? = when (programId) {
-    "operaproxy", "sing-box", "dpitunnel", "byedpi", "wireproxy", "tor", "myproxy" -> "tunnel"
+    "operaproxy", "sing-box", "dpitunnel", "byedpi", "wireproxy", "tor", "myproxy", "myprogram" -> "tunnel"
     "nfqws", "nfqws2" -> "zapret"
     else -> null
   }

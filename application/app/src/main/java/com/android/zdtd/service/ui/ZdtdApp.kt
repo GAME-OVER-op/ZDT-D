@@ -42,6 +42,8 @@ import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -50,6 +52,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
@@ -996,40 +1000,29 @@ private fun TabBody(
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
-  val keptTabs = remember { mutableStateListOf(Tab.HOME) }
+  val stateHolder = rememberSaveableStateHolder()
+  val focusManager = LocalFocusManager.current
+  val keyboardController = LocalSoftwareKeyboardController.current
+  var appsVisited by rememberSaveable { mutableStateOf(tab == Tab.APPS) }
 
   LaunchedEffect(tab) {
-    if (tab !in keptTabs) keptTabs += tab
+    if (tab == Tab.APPS) appsVisited = true
+    focusManager.clearFocus(force = true)
+    keyboardController?.hide()
   }
 
   Box(Modifier.fillMaxSize()) {
-    keptTabs.forEach { t ->
-      val selected = t == tab
-      val alpha by animateFloatAsState(
-        targetValue = if (selected) 1f else 0f,
-        animationSpec = tween(180),
-        label = "tabKeepAliveAlpha_${t.name}",
-      )
-      val scale by animateFloatAsState(
-        targetValue = if (selected) 1f else 0.992f,
-        animationSpec = tween(180),
-        label = "tabKeepAliveScale_${t.name}",
-      )
-
+    if (appsVisited) {
       Box(
-        Modifier
+        modifier = Modifier
           .fillMaxSize()
-          .zIndex(if (selected) 1f else 0f)
+          .zIndex(if (tab == Tab.APPS) 1f else -1f)
           .graphicsLayer {
-            this.alpha = alpha
-            scaleX = scale
-            scaleY = scale
-          },
+            alpha = if (tab == Tab.APPS) 1f else 0f
+          }
       ) {
-        when (t) {
-          Tab.HOME -> HomeScreen(uiStateFlow = uiStateFlow, actions = actions)
-          Tab.STATS -> StatsScreen(uiStateFlow = uiStateFlow, actions = actions)
-          Tab.APPS -> AppsHost(
+        stateHolder.SaveableStateProvider(Tab.APPS.name) {
+          AppsHost(
             uiStateFlow = uiStateFlow,
             route = appsRoute,
             onOpenProgram = onOpenProgram,
@@ -1037,8 +1030,28 @@ private fun TabBody(
             actions = actions,
             snackHost = snackHost,
           )
-          Tab.SUPPORT -> SupportScreen()
         }
+      }
+    }
+
+    Crossfade(
+      targetState = tab,
+      animationSpec = tween(durationMillis = 180),
+      label = "main_tab_crossfade",
+    ) { currentTab ->
+      if (currentTab != Tab.APPS) {
+        stateHolder.SaveableStateProvider(currentTab.name) {
+          Box(Modifier.fillMaxSize()) {
+            when (currentTab) {
+              Tab.HOME -> HomeScreen(uiStateFlow = uiStateFlow, actions = actions)
+              Tab.STATS -> StatsScreen(uiStateFlow = uiStateFlow, actions = actions)
+              Tab.SUPPORT -> SupportScreen()
+              Tab.APPS -> Unit
+            }
+          }
+        }
+      } else if (!appsVisited) {
+        Box(Modifier.fillMaxSize())
       }
     }
   }

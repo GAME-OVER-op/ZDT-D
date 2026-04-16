@@ -656,6 +656,7 @@ private fun programDescription(id: String): String {
     "wireproxy" -> stringResource(R.string.apps_list_desc_wireproxy)
     "tor" -> stringResource(R.string.apps_list_desc_tor)
     "myproxy" -> stringResource(R.string.apps_list_desc_myproxy)
+    "myprogram" -> stringResource(R.string.apps_list_desc_myprogram)
     else -> stringResource(R.string.apps_list_desc_default)
   }
 }
@@ -671,6 +672,7 @@ private fun programIcon(id: String): ImageVector {
     "wireproxy" -> Icons.Outlined.AltRoute
     "tor" -> Icons.Outlined.Public
     "myproxy" -> Icons.Outlined.SwapHoriz
+    "myprogram" -> Icons.Outlined.Extension
     else -> Icons.Outlined.Extension
   }
 }

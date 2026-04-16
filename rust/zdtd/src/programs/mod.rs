@@ -9,3 +9,5 @@ pub mod singbox;
 pub mod wireproxy;
 pub mod tor;
 pub mod myproxy;
+
+pub mod myprogram;

@@ -900,4 +900,63 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="myproxy_credentials_pair_required">If username or password is used, fill in both fields.</string>
     <string name="myproxy_auto_save_failed">Failed to auto-save changes</string>
 
+
+    <string name="apps_list_desc_myprogram">Profile-based launcher with optional app mode and t2s</string>
+    <string name="apps_conflict_program_myprogram">myprogram</string>
+    <string name="myprogram_loading">Loading profile data…</string>
+    <string name="myprogram_saving">Saving changes…</string>
+    <string name="myprogram_autosave_hint">Valid changes are saved automatically after a short pause.</string>
+    <string name="myprogram_auto_save_failed">Failed to auto-save changes</string>
+    <string name="myprogram_apps_mode_title">App mode</string>
+    <string name="myprogram_apps_mode_desc">Enable app-based mode to use the app list together with t2s.</string>
+    <string name="myprogram_apps_mode_warning">If the parsed app list becomes empty, the profile will not start.</string>
+    <string name="myprogram_launcher_mode_hint">With app mode disabled, the profile works as a launcher for the custom command without the app list or t2s.</string>
+    <string name="myprogram_apps_title">myprogram apps</string>
+    <string name="myprogram_apps_desc">Select the apps whose traffic should use this myprogram profile.</string>
+    <string name="myprogram_ports_title">Local t2s settings</string>
+    <string name="myprogram_ports_desc">Configure the local t2s ports and SOCKS5 credentials for the t2s mode.</string>
+    <string name="myprogram_t2s_port_label">t2s port</string>
+    <string name="myprogram_t2s_web_port_label">t2s web port</string>
+    <string name="myprogram_ports_must_differ">The t2s port and t2s web port must be different.</string>
+        <string name="myprogram_socks_user_label">SOCKS username</string>
+    <string name="myprogram_socks_pass_label">SOCKS password</string>
+    <string name="myprogram_command_title">Launch command</string>
+    <string name="myprogram_command_desc">Enter the custom command used to launch this profile.</string>
+    <string name="myprogram_command_label">Command</string>
+    <string name="myprogram_command_hint">Example: ./mainbin --config ./config.json. Line breaks are flattened into one line on save.</string>
+    <string name="myprogram_t2s_ports_title">t2s upstream ports</string>
+    <string name="myprogram_t2s_ports_desc">Enter one upstream SOCKS5 port per line. Used only in t2s mode.</string>
+    <string name="myprogram_t2s_ports_label">Ports, one per line</string>
+    <string name="myprogram_protect_ports_title">Protected ports</string>
+    <string name="myprogram_protect_ports_desc">Enter one protected port per line.</string>
+    <string name="myprogram_protect_ports_label">Protected ports, one per line</string>
+    <string name="myprogram_ports_per_line_error">Each non-empty line must contain a port from 1 to 65535.</string>
+    <string name="myprogram_bin_title">Profile files (bin)</string>
+    <string name="myprogram_bin_desc">Upload or remove files stored in the profile bin directory.</string>
+    <string name="myprogram_apply_title">Apply profile</string>
+    <string name="myprogram_apply_desc">Apply the current profile configuration and restart it if needed.</string>
+    <string name="myprogram_apply_action">Apply profile</string>
+    <string name="myprogram_applying">Applying…</string>
+    <string name="myprogram_route_mode_title">Route mode</string>
+    <string name="myprogram_route_mode_desc">Choose whether app traffic should use t2s or direct transparent routing.</string>
+    <string name="myprogram_route_mode_t2s">t2s</string>
+    <string name="myprogram_route_mode_transparent">transparent</string>
+    <string name="myprogram_route_mode_t2s_hint">This mode uses t2s and the upstream port list. Protocol is TCP only.</string>
+    <string name="myprogram_route_mode_transparent_hint">This mode does not start t2s: app traffic is redirected straight to the user program port.</string>
+    <string name="myprogram_transparent_title">Transparent routing</string>
+    <string name="myprogram_transparent_desc">Configure direct redirection of app traffic to the user program port and choose the protocol.</string>
+    <string name="myprogram_transparent_port_label">Transparent port</string>
+    <string name="myprogram_proto_mode_title">Protocol</string>
+    <string name="myprogram_proto_mode_desc">Choose which protocols should be redirected in transparent mode.</string>
+    <string name="myprogram_proto_mode_tcp">TCP</string>
+    <string name="myprogram_proto_mode_tcp_udp">TCP + UDP</string>
+
+
+    <string name="myproxy_t2s_port_hint">Local port where t2s receives app traffic.</string>
+    <string name="myproxy_t2s_web_port_hint">Local service web port used by t2s.</string>
+    <string name="myproxy_host_hint">SOCKS5 proxy address: server IP or domain.</string>
+    <string name="myproxy_proxy_port_hint">SOCKS5 proxy port on the server.</string>
+    <string name="myproxy_user_hint">SOCKS5 username. Leave empty if auth is not required.</string>
+    <string name="myproxy_pass_hint">SOCKS5 password. Leave empty if auth is not required.</string>
+
 </resources>

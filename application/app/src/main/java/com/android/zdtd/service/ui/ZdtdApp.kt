@@ -47,6 +47,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -664,9 +665,19 @@ private fun MainShell(
   var deleteModulePrepareError by remember { mutableStateOf<String?>(null) }
   var deleteModulePrepareRequested by remember { mutableStateOf(false) }
 
-  // When user opens the Programs tab, refresh programs once (no manual refresh buttons in UI).
-  LaunchedEffect(tab) {
-    if (tab == Tab.APPS) actions.refreshPrograms()
+  var programsPrefetched by remember { mutableStateOf(false) }
+
+  // Prefetch program list once after startup so the Programs tab opens warmer and keeps route state.
+  LaunchedEffect(uiState.daemonOnline, uiState.startup.visible) {
+    if (!programsPrefetched && uiState.daemonOnline && !uiState.startup.visible) {
+      programsPrefetched = true
+      actions.refreshPrograms()
+    }
+  }
+
+  // If user opens Programs before prefetch completed or list is empty, do a single guarded refresh.
+  LaunchedEffect(tab, uiState.programs) {
+    if (tab == Tab.APPS && uiState.programs.isEmpty()) actions.refreshPrograms()
   }
 
   if (showLogs) {
@@ -985,34 +996,50 @@ private fun TabBody(
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
-  AnimatedContent(
-    targetState = tab,
-    transitionSpec = {
-      val forward = targetState.ordinal > initialState.ordinal
+  val keptTabs = remember { mutableStateListOf(Tab.HOME) }
 
-      val enter = fadeIn(tween(160)) + slideInHorizontally(tween(220)) {
-        if (forward) it / 8 else -it / 8
-      }
-      val exit = fadeOut(tween(160)) + slideOutHorizontally(tween(220)) {
-        if (forward) -it / 8 else it / 8
-      }
+  LaunchedEffect(tab) {
+    if (tab !in keptTabs) keptTabs += tab
+  }
 
-      (enter togetherWith exit).using(SizeTransform(clip = false))
-    },
-    label = "tab",
-  ) { t ->
-    when (t) {
-      Tab.HOME -> HomeScreen(uiStateFlow = uiStateFlow, actions = actions)
-      Tab.STATS -> StatsScreen(uiStateFlow = uiStateFlow, actions = actions)
-      Tab.APPS -> AppsHost(
-        uiStateFlow = uiStateFlow,
-        route = appsRoute,
-        onOpenProgram = onOpenProgram,
-        onOpenProfile = onOpenProfile,
-        actions = actions,
-        snackHost = snackHost,
+  Box(Modifier.fillMaxSize()) {
+    keptTabs.forEach { t ->
+      val selected = t == tab
+      val alpha by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = tween(180),
+        label = "tabKeepAliveAlpha_${t.name}",
       )
-      Tab.SUPPORT -> SupportScreen()
+      val scale by animateFloatAsState(
+        targetValue = if (selected) 1f else 0.992f,
+        animationSpec = tween(180),
+        label = "tabKeepAliveScale_${t.name}",
+      )
+
+      Box(
+        Modifier
+          .fillMaxSize()
+          .zIndex(if (selected) 1f else 0f)
+          .graphicsLayer {
+            this.alpha = alpha
+            scaleX = scale
+            scaleY = scale
+          },
+      ) {
+        when (t) {
+          Tab.HOME -> HomeScreen(uiStateFlow = uiStateFlow, actions = actions)
+          Tab.STATS -> StatsScreen(uiStateFlow = uiStateFlow, actions = actions)
+          Tab.APPS -> AppsHost(
+            uiStateFlow = uiStateFlow,
+            route = appsRoute,
+            onOpenProgram = onOpenProgram,
+            onOpenProfile = onOpenProfile,
+            actions = actions,
+            snackHost = snackHost,
+          )
+          Tab.SUPPORT -> SupportScreen()
+        }
+      }
     }
   }
 }

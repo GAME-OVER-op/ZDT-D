@@ -86,6 +86,21 @@ object ApiModels {
   )
 
 
+  private fun jsonBool(obj: JSONObject?, key: String, default: Boolean = false): Boolean {
+    if (obj == null || !obj.has(key)) return default
+    return when (val raw = obj.opt(key)) {
+      is Boolean -> raw
+      is Number -> raw.toInt() != 0
+      is String -> when (raw.trim().lowercase()) {
+        "1", "true", "yes", "on" -> true
+        "0", "false", "no", "off", "" -> false
+        else -> default
+      }
+      else -> default
+    }
+  }
+
+
   fun parseProcAgg(o: JSONObject?): ProcAgg {
     if (o == null) return ProcAgg()
     return ProcAgg(
@@ -213,12 +228,8 @@ object ApiModels {
 
   fun parseProxyInfo(wrapper: JSONObject?): ProxyInfoState {
     if (wrapper == null) return ProxyInfoState()
-    val enabledRaw = when {
-      wrapper.has("enabled") -> wrapper.optInt("enabled", if (wrapper.optBoolean("enabled", false)) 1 else 0)
-      else -> 0
-    }
     return ProxyInfoState(
-      enabled = enabledRaw != 0,
+      enabled = jsonBool(wrapper, "enabled", false),
       appsContent = wrapper.optString("apps", ""),
       active = wrapper.optBoolean("active", false),
     )
@@ -288,7 +299,7 @@ object ApiModels {
         Program(
           id = id,
           name = displayName,
-          enabled = o.optBoolean("enabled", false),
+          enabled = jsonBool(o, "enabled", false),
           type = o.optString("type").takeIf { it.isNotBlank() },
           profiles = profiles,
         )
@@ -303,7 +314,7 @@ object ApiModels {
       val o = arr.optJSONObject(i) ?: continue
       val name = o.optString("name", "").trim()
       if (name.isEmpty()) continue
-      out.add(Profile(name = name, enabled = o.optBoolean("enabled", false)))
+      out.add(Profile(name = name, enabled = jsonBool(o, "enabled", false)))
     }
     return out.sortedBy { it.name.lowercase(Locale.ROOT) }
   }

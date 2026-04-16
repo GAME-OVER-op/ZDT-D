@@ -77,8 +77,13 @@ private data class TorProgramStateUi(
 private fun parseTorProgramStateUi(obj: JSONObject?): TorProgramStateUi {
   val setting = obj?.optJSONObject("setting")
   return TorProgramStateUi(
-    enabled = when {
-      obj?.has("enabled") == true -> obj.optInt("enabled", if (obj.optBoolean("enabled", false)) 1 else 0) != 0
+    enabled = when (val raw = obj?.opt("enabled")) {
+      is Boolean -> raw
+      is Number -> raw.toInt() != 0
+      is String -> when (raw.trim().lowercase()) {
+        "true", "1", "yes", "on" -> true
+        else -> false
+      }
       else -> false
     },
     active = obj?.optBoolean("active", false) == true,

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AltRoute
@@ -60,6 +61,7 @@ fun AppsListScreen(
   programs: List<ApiModels.Program>,
   daemonOnline: Boolean,
   onOpenProgram: (String) -> Unit,
+  listState: LazyListState,
 ) {
 
   val isCompactWidth = rememberIsCompactWidth()
@@ -105,6 +107,7 @@ fun AppsListScreen(
   }
 
   LazyColumn(
+    state = listState,
     modifier = Modifier.fillMaxSize(),
     verticalArrangement = Arrangement.spacedBy(sectionGap),
   ) {

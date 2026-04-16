@@ -203,14 +203,32 @@ struct NewProfileReq {
 }
 
 
-#[derive(Debug, Deserialize)]
-struct EnabledReq {
-    enabled: bool,
+fn deserialize_boolish<'de, D>(deserializer: D) -> std::result::Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{Error as _, Unexpected};
+    let v = serde_json::Value::deserialize(deserializer)?;
+    match v {
+        serde_json::Value::Bool(b) => Ok(b),
+        serde_json::Value::Number(n) => match n.as_i64() {
+            Some(0) => Ok(false),
+            Some(1) => Ok(true),
+            _ => Err(D::Error::invalid_value(Unexpected::Other("number"), &"bool or 0/1")),
+        },
+        serde_json::Value::String(s) => match s.trim().to_ascii_lowercase().as_str() {
+            "true" | "1" => Ok(true),
+            "false" | "0" => Ok(false),
+            _ => Err(D::Error::invalid_value(Unexpected::Str(&s), &"bool or 0/1")),
+        },
+        _ => Err(D::Error::invalid_value(Unexpected::Other("non-bool"), &"bool or 0/1")),
+    }
 }
 
 #[derive(Debug, Deserialize)]
-struct ProxyEnabledReq {
-    enabled: u8,
+struct EnabledReq {
+    #[serde(deserialize_with = "deserialize_boolish")]
+    enabled: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2575,7 +2593,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
         }
 
         // --- profiles: enable/disable
-        ("PUT", ["api", "programs", id, "profiles", profile, "enabled"]) => {
+        ("PUT", ["api", "programs", id @ ("nfqws" | "nfqws2" | "byedpi" | "dpitunnel"), "profiles", profile, "enabled"]) => {
             let res = (|| -> Result<()> {
                 ensure_safe_segment(id, "program id")?;
                 ensure_safe_segment(profile, "profile name")?;
@@ -2599,7 +2617,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
         }
 
         // --- profiles: delete (soft delete by moving to .deleted/)
-        ("DELETE", ["api", "programs", id, "profiles", profile]) => {
+        ("DELETE", ["api", "programs", id @ ("nfqws" | "nfqws2" | "byedpi" | "dpitunnel"), "profiles", profile]) => {
             let res = (|| -> Result<()> {
                 ensure_safe_segment(id, "program id")?;
                 ensure_safe_segment(profile, "profile name")?;
@@ -2634,7 +2652,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
         }
 
         // --- profiles: config (text)
-        ("GET", ["api", "programs", id, "profiles", profile, "config"]) => {
+        ("GET", ["api", "programs", id @ ("nfqws" | "nfqws2" | "byedpi" | "dpitunnel"), "profiles", profile, "config"]) => {
             let res = (|| -> Result<String> {
                 ensure_safe_segment(id, "program id")?;
                 ensure_safe_segment(profile, "profile name")?;
@@ -2649,7 +2667,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
                 Err(e) => write_err(stream, e),
             }
         }
-        ("PUT", ["api", "programs", id, "profiles", profile, "config"]) => {
+        ("PUT", ["api", "programs", id @ ("nfqws" | "nfqws2" | "byedpi" | "dpitunnel"), "profiles", profile, "config"]) => {
             let res = (|| -> Result<()> {
                 ensure_safe_segment(id, "program id")?;
                 ensure_safe_segment(profile, "profile name")?;
@@ -2669,7 +2687,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
         }
 
         // --- profiles: apps lists (text)
-        ("GET", ["api", "programs", id, "profiles", profile, "apps", kind]) => {
+        ("GET", ["api", "programs", id @ ("nfqws" | "nfqws2" | "byedpi" | "dpitunnel"), "profiles", profile, "apps", kind]) => {
             let res = (|| -> Result<String> {
                 ensure_safe_segment(id, "program id")?;
                 ensure_safe_segment(profile, "profile name")?;
@@ -2702,7 +2720,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
                 Err(e) => write_err(stream, e),
             }
         }
-        ("PUT", ["api", "programs", id, "profiles", profile, "apps", kind]) => {
+        ("PUT", ["api", "programs", id @ ("nfqws" | "nfqws2" | "byedpi" | "dpitunnel"), "profiles", profile, "apps", kind]) => {
             let res = (|| -> Result<()> {
                 ensure_safe_segment(id, "program id")?;
                 ensure_safe_segment(profile, "profile name")?;
@@ -3028,7 +3046,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
         // --- tor enabled/apps/config
         ("GET", ["api", "programs", "tor"]) => {
             let res = (|| -> Result<serde_json::Value> {
-                let enabled = crate::programs::tor::load_enabled_json()?.enabled;
+                let enabled = crate::programs::tor::load_enabled_json()?.is_enabled();
                 let apps = crate::programs::tor::read_uid_program_text()?;
                 let setting = crate::programs::tor::load_setting()?;
                 let torrc = crate::programs::tor::read_torrc_text()?;
@@ -3041,21 +3059,20 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, body: 
         }
         ("GET", ["api", "programs", "tor", "enabled"]) => {
             let res = (|| -> Result<serde_json::Value> {
-                let enabled = crate::programs::tor::load_enabled_json()?.enabled;
+                let enabled = crate::programs::tor::load_enabled_json()?.is_enabled();
                 Ok(json!({"ok": true, "enabled": enabled}))
             })();
             match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
         }
         ("PUT", ["api", "programs", "tor", "enabled"]) => {
             let res = (|| -> Result<serde_json::Value> {
-                let req: ProxyEnabledReq = serde_json::from_slice(body)
+                let req: EnabledReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                if req.enabled > 1 { anyhow::bail!("enabled must be 0 or 1"); }
-                if req.enabled != 0 {
+                if req.enabled {
                     crate::programs::tor::validate_enable_toggle_requirements()?;
                 }
                 let v = crate::programs::tor::save_enabled_value(req.enabled)?;
-                Ok(json!({"ok": true, "enabled": v.enabled}))
+                Ok(json!({"ok": true, "enabled": v.is_enabled()}))
             })();
             match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
         }
@@ -3583,7 +3600,7 @@ match (method.as_str(), path.as_str()) {
 
         ("GET", "/api/blockedquic") => {
             let res = (|| -> Result<serde_json::Value> {
-                let enabled = crate::blockedquic::load_enabled_json()?.enabled;
+                let enabled = crate::blockedquic::load_enabled_json()?.is_enabled();
                 let apps = crate::blockedquic::read_uid_program_text()?;
                 Ok(json!({"ok": true, "enabled": enabled, "apps": apps, "active": services_running && crate::blockedquic::is_active()}))
             })();
@@ -3594,7 +3611,7 @@ match (method.as_str(), path.as_str()) {
         }
         ("GET", "/api/blockedquic/enabled") => {
             let res = (|| -> Result<serde_json::Value> {
-                let enabled = crate::blockedquic::load_enabled_json()?.enabled;
+                let enabled = crate::blockedquic::load_enabled_json()?.is_enabled();
                 Ok(json!({"ok": true, "enabled": enabled}))
             })();
             match res {
@@ -3604,13 +3621,10 @@ match (method.as_str(), path.as_str()) {
         }
         ("PUT", "/api/blockedquic/enabled") => {
             let res = (|| -> Result<serde_json::Value> {
-                let req: ProxyEnabledReq = serde_json::from_slice(&body)
+                let req: EnabledReq = serde_json::from_slice(&body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                if req.enabled > 1 {
-                    anyhow::bail!("enabled must be 0 or 1");
-                }
                 let v = crate::blockedquic::save_enabled_value(req.enabled)?;
-                Ok(json!({"ok": true, "enabled": v.enabled}))
+                Ok(json!({"ok": true, "enabled": v.is_enabled()}))
             })();
             match res {
                 Ok(v) => write_json(stream, 200, v),
@@ -3671,7 +3685,7 @@ match (method.as_str(), path.as_str()) {
         }
         ("GET", "/api/proxyinfo") => {
             let res = (|| -> Result<serde_json::Value> {
-                let enabled = crate::proxyinfo::load_enabled_json()?.enabled;
+                let enabled = crate::proxyinfo::load_enabled_json()?.is_enabled();
                 let apps = crate::proxyinfo::read_uid_program_text()?;
                 Ok(json!({"ok": true, "enabled": enabled, "apps": apps, "active": services_running && crate::proxyinfo::is_active()}))
             })();
@@ -3682,7 +3696,7 @@ match (method.as_str(), path.as_str()) {
         }
         ("GET", "/api/proxyinfo/enabled") => {
             let res = (|| -> Result<serde_json::Value> {
-                let enabled = crate::proxyinfo::load_enabled_json()?.enabled;
+                let enabled = crate::proxyinfo::load_enabled_json()?.is_enabled();
                 Ok(json!({"ok": true, "enabled": enabled}))
             })();
             match res {
@@ -3692,13 +3706,10 @@ match (method.as_str(), path.as_str()) {
         }
         ("PUT", "/api/proxyinfo/enabled") => {
             let res = (|| -> Result<serde_json::Value> {
-                let req: ProxyEnabledReq = serde_json::from_slice(&body)
+                let req: EnabledReq = serde_json::from_slice(&body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                if req.enabled > 1 {
-                    anyhow::bail!("enabled must be 0 or 1");
-                }
                 let v = crate::proxyinfo::save_enabled_value(req.enabled)?;
-                Ok(json!({"ok": true, "enabled": v.enabled}))
+                Ok(json!({"ok": true, "enabled": v.is_enabled()}))
             })();
             match res {
                 Ok(v) => write_json(stream, 200, v),

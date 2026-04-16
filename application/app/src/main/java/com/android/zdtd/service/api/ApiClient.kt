@@ -47,7 +47,7 @@ class ApiClient(
 
   fun setProgramEnabled(programId: String, enabled: Boolean): Boolean {
     val path = "/api/programs/${enc(programId)}/enabled"
-    val body = JSONObject().put("enabled", if (programId == "tor") if (enabled) 1 else 0 else enabled)
+    val body = JSONObject().put("enabled", enabled)
     return requestOk("PUT", path, body)
   }
 
@@ -172,7 +172,7 @@ class ApiClient(
   }
 
   fun setProxyInfoEnabled(enabled: Boolean): Boolean {
-    val body = JSONObject().put("enabled", if (enabled) 1 else 0)
+    val body = JSONObject().put("enabled", enabled)
     return requestOk("PUT", "/api/proxyinfo/enabled", body)
   }
 
@@ -203,15 +203,11 @@ class ApiClient(
 
   fun getBlockedQuicEnabled(): Boolean {
     val obj = requestJson("GET", "/api/blockedquic/enabled", null)
-    val enabledRaw = when {
-      obj?.has("enabled") == true -> obj.optInt("enabled", if (obj.optBoolean("enabled", false)) 1 else 0)
-      else -> 0
-    }
-    return enabledRaw != 0
+    return jsonBool(obj, "enabled", false)
   }
 
   fun setBlockedQuicEnabled(enabled: Boolean): Boolean {
-    val body = JSONObject().put("enabled", if (enabled) 1 else 0)
+    val body = JSONObject().put("enabled", enabled)
     return requestOk("PUT", "/api/blockedquic/enabled", body)
   }
 
@@ -292,11 +288,26 @@ fun uploadMultipart(path: String, filename: String, bytes: ByteArray): Boolean {
 }
 
 
+  private fun jsonBool(obj: JSONObject?, key: String, default: Boolean = false): Boolean {
+    if (obj == null || !obj.has(key)) return default
+    return when (val raw = obj.opt(key)) {
+      is Boolean -> raw
+      is Number -> raw.toInt() != 0
+      is String -> when (raw.trim().lowercase()) {
+        "1", "true", "yes", "on" -> true
+        "0", "false", "no", "off", "" -> false
+        else -> default
+      }
+      else -> default
+    }
+  }
+
+
   private fun requestOk(method: String, path: String, body: JSONObject?): Boolean {
     val obj = requestJson(method, path, body)
     // Many endpoints return { ok: true }, some return raw objects.
     // We treat missing "ok" as success if HTTP status was 2xx (handled by requestJson).
-    return obj?.optBoolean("ok", true) ?: true
+    return jsonBool(obj, "ok", true)
   }
 
   private fun requestJson(method: String, path: String, body: JSONObject?): JSONObject? {

@@ -21,25 +21,55 @@ const SHA_FLAG_FILE: &str = settings::SHARED_SHA_FLAG_FILE;
 const TOR_DATA_DIR_LINE: &str = "DataDirectory /data/adb/modules/ZDT-D/working_folder/tor/";
 const DEFAULT_TORRC: &str = "DataDirectory /data/adb/modules/ZDT-D/working_folder/tor/\nSocksPort 127.0.0.1:9050\nLog notice stdout\n\nUseBridges 1\nClientTransportPlugin obfs4 exec /data/adb/modules/ZDT-D/bin/obfs4proxy\n";
 
+fn deserialize_boolish<'de, D>(deserializer: D) -> std::result::Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{Error as _, Unexpected};
+    let v = serde_json::Value::deserialize(deserializer)?;
+    match v {
+        serde_json::Value::Bool(b) => Ok(b),
+        serde_json::Value::Number(n) => match n.as_i64() {
+            Some(0) => Ok(false),
+            Some(1) => Ok(true),
+            _ => Err(D::Error::invalid_value(Unexpected::Other("number"), &"bool or 0/1")),
+        },
+        serde_json::Value::String(s) => match s.trim().to_ascii_lowercase().as_str() {
+            "true" | "1" => Ok(true),
+            "false" | "0" => Ok(false),
+            _ => Err(D::Error::invalid_value(Unexpected::Str(&s), &"bool or 0/1")),
+        },
+        _ => Err(D::Error::invalid_value(Unexpected::Other("non-bool"), &"bool or 0/1")),
+    }
+}
+
+fn serialize_bool_as_bool<S>(value: &bool, serializer: S) -> std::result::Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_bool(*value)
+}
+
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnabledJson {
-    #[serde(default)]
-    pub enabled: u8,
+    #[serde(default, deserialize_with = "deserialize_boolish", serialize_with = "serialize_bool_as_bool")]
+    pub enabled: bool,
 }
 
 impl Default for EnabledJson {
     fn default() -> Self {
-        Self { enabled: 0 }
+        Self { enabled: false }
     }
 }
 
 impl EnabledJson {
     pub fn normalized(&self) -> Self {
-        Self { enabled: if self.enabled == 0 { 0 } else { 1 } }
+        Self { enabled: self.enabled }
     }
 
     pub fn is_enabled(&self) -> bool {
-        self.enabled != 0
+        self.enabled
     }
 }
 
@@ -137,7 +167,7 @@ pub fn load_enabled_json() -> Result<EnabledJson> {
     }
 }
 
-pub fn save_enabled_value(enabled: u8) -> Result<EnabledJson> {
+pub fn save_enabled_value(enabled: bool) -> Result<EnabledJson> {
     ensure_layout()?;
     let v = EnabledJson { enabled }.normalized();
     write_json_atomic(&enabled_path(), &v)?;

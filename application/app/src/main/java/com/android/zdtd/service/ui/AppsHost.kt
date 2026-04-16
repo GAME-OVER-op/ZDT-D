@@ -10,11 +10,13 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -43,6 +45,8 @@ fun AppsHost(
     uiStateFlow.map { it.daemonOnline }.distinctUntilChanged()
   }.collectAsStateWithLifecycle(initialValue = false)
 
+  val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+
   fun AppsRoute.depth(): Int = when (this) {
     AppsRoute.List -> 0
     is AppsRoute.Program -> 1
@@ -70,6 +74,7 @@ fun AppsHost(
         programs = programs,
         daemonOnline = daemonOnline,
         onOpenProgram = onOpenProgram,
+        listState = listState,
       )
       is AppsRoute.Program -> ProgramScreen(
         programs = programs,

@@ -1,18 +1,25 @@
+#![allow(dead_code)]
+#![allow(unused_imports)]
+#![allow(unused_variables)]
+#![allow(unused_mut)]
+#![allow(unused_unsafe)]
+#![allow(unused_comparisons)]
+
 mod android;
-mod blockedquic;
 mod api;
+mod blockedquic;
 mod config;
 mod daemon;
 mod iptables;
 mod iptables_backup;
 mod logging;
 mod ports;
-mod proxyinfo;
-mod protector;
-mod screen;
-mod scan_detector;
 mod programs;
+mod protector;
+mod proxyinfo;
 mod runtime;
+mod scan_detector;
+mod screen;
 mod settings;
 mod shell;
 mod stats;

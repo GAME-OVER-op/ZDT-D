@@ -136,14 +136,21 @@ private fun normalizeTorBridgeLine(raw: String): String {
   if (trimmed.isEmpty()) return ""
   return when {
     trimmed.startsWith("Bridge ", ignoreCase = true) -> "Bridge " + trimmed.substringAfter(' ').trim()
-    trimmed.startsWith("obfs4 ", ignoreCase = true) -> "Bridge $trimmed"
+    trimmed.startsWith("obfs4 ", ignoreCase = true) ||
+      trimmed.startsWith("snowflake ", ignoreCase = true) ||
+      trimmed.startsWith("webtunnel ", ignoreCase = true) ||
+      trimmed.startsWith("meek_lite ", ignoreCase = true) -> "Bridge $trimmed"
     else -> trimmed
   }
 }
 
 private fun isTorBridgeLine(raw: String): Boolean {
   val trimmed = raw.trim()
-  return trimmed.startsWith("Bridge ", ignoreCase = true) || trimmed.startsWith("obfs4 ", ignoreCase = true)
+  return trimmed.startsWith("Bridge ", ignoreCase = true) ||
+    trimmed.startsWith("obfs4 ", ignoreCase = true) ||
+    trimmed.startsWith("snowflake ", ignoreCase = true) ||
+    trimmed.startsWith("webtunnel ", ignoreCase = true) ||
+    trimmed.startsWith("meek_lite ", ignoreCase = true)
 }
 
 private fun extractTorBridgeLines(torrc: String): List<String> =
@@ -158,6 +165,22 @@ private fun hasUseBridgesEnabled(torrc: String): Boolean = torrc.lines().any {
   trimmed.startsWith("UseBridges", ignoreCase = true) && trimmed.substringAfter(' ', "").trim().ifEmpty { trimmed.substringAfter('=', "").trim() } == "1"
 }
 
+private fun parseBridgeTransport(raw: String): String? {
+  val normalized = normalizeTorBridgeLine(raw)
+  if (normalized.isBlank()) return null
+  val payload = if (normalized.startsWith("Bridge ", ignoreCase = true)) normalized.substringAfter("Bridge ").trim() else normalized
+  val transport = payload.substringBefore(' ').trim().lowercase()
+  return transport.takeIf { it.isNotBlank() }
+}
+
+private fun defaultPluginForTransport(transport: String): String? = when (transport.lowercase()) {
+  "obfs4" -> "ClientTransportPlugin obfs4 exec /data/adb/modules/ZDT-D/bin/obfs4proxy"
+  "snowflake" -> "ClientTransportPlugin snowflake exec /data/adb/modules/ZDT-D/bin/snowflake-client"
+  "webtunnel" -> "ClientTransportPlugin webtunnel exec /data/adb/modules/ZDT-D/bin/webtunnel-client"
+  "meek_lite" -> "ClientTransportPlugin meek_lite exec /data/adb/modules/ZDT-D/bin/meek-client"
+  else -> null
+}
+
 private fun ensureTorBridgeSupport(content: String, fallbackPort: Int): String {
   var out = content
   if (parseTorSocksPort(out) == null) {
@@ -165,26 +188,39 @@ private fun ensureTorBridgeSupport(content: String, fallbackPort: Int): String {
   }
   val lines = out.lines().toMutableList()
   var hasUseBridges = false
-  var hasPlugin = false
   for (i in lines.indices) {
     val trimmed = lines[i].trim()
     if (trimmed.startsWith("UseBridges", ignoreCase = true)) {
       lines[i] = "UseBridges 1"
       hasUseBridges = true
     }
-    if (trimmed.startsWith("ClientTransportPlugin", ignoreCase = true) && trimmed.contains("obfs4", ignoreCase = true)) {
-      hasPlugin = true
-    }
   }
   if (!hasUseBridges) {
     lines.add("")
     lines.add("UseBridges 1")
   }
-  if (!hasPlugin) {
-    lines.add("ClientTransportPlugin obfs4 exec /data/adb/modules/ZDT-D/bin/obfs4proxy")
-  }
+
+  val existingPlugins = lines
+    .map { it.trim() }
+    .filter { it.startsWith("ClientTransportPlugin", ignoreCase = true) }
+    .mapNotNull {
+      it.substringAfter("ClientTransportPlugin", "").trim().substringBefore(' ').trim().lowercase().takeIf { t -> t.isNotBlank() }
+    }
+    .toSet()
+  val transports = extractTorBridgeLines(lines.joinToString("\n"))
+    .mapNotNull(::parseBridgeTransport)
+    .toSet()
+  val pluginLinesToAdd = transports
+    .filterNot { it in existingPlugins }
+    .mapNotNull(::defaultPluginForTransport)
+  if (pluginLinesToAdd.isNotEmpty()) lines.addAll(pluginLinesToAdd)
   return lines.joinToString("\n").trimEnd() + "\n"
 }
+
+private fun parseImportedBridges(raw: String): List<String> =
+  raw.lines()
+    .map(::normalizeTorBridgeLine)
+    .filter { it.isNotBlank() && isTorBridgeLine(it) }
 
 private fun replaceTorBridgeLines(content: String, bridges: List<String>, fallbackPort: Int): String {
   val normalized = bridges.map(::normalizeTorBridgeLine).filter { it.isNotBlank() }
@@ -532,6 +568,21 @@ fun TorSection(
         Spacer(Modifier.width(6.dp))
         Text(stringResource(R.string.tor_bridge_create))
       }
+      OutlinedButton(
+        onClick = {
+          actions.loadJsonData("/api/programs/tor/debug_export") { obj ->
+            val path = obj?.optString("path", "").orEmpty()
+            if (path.isNotBlank()) {
+              showSnack(context.getString(R.string.tor_debug_export_done, path))
+            } else {
+              showSnack(context.getString(R.string.tor_debug_export_failed))
+            }
+          }
+        },
+        modifier = Modifier.fillMaxWidth(),
+      ) {
+        Text(stringResource(R.string.tor_debug_export))
+      }
       if (bridges.isEmpty()) {
         Text(
           stringResource(R.string.tor_bridges_empty),
@@ -595,10 +646,14 @@ fun TorSection(
           showSnack(context.getString(R.string.tor_bridge_open_bot_failed))
         }
       },
-      onSave = { bridgeText ->
+      onSave = { importedBridges ->
         val current = bridges.toMutableList()
-        val normalized = normalizeTorBridgeLine(bridgeText)
-        if (editingBridgeIndex != null && editingBridgeIndex in current.indices) current[editingBridgeIndex!!] = normalized else current.add(normalized)
+        if (editingBridgeIndex != null && editingBridgeIndex in current.indices) {
+          current[editingBridgeIndex!!] = importedBridges.first()
+          if (importedBridges.size > 1) current.addAll(importedBridges.drop(1))
+        } else {
+          current.addAll(importedBridges)
+        }
         val fallbackPort = parseTorSocksPort(torrcText)?.port ?: parsedSocksPort ?: 9050
         val updated = replaceTorBridgeLines(torrcText.ifBlank { torrcSaved }, current, fallbackPort)
         torrcSaving = true
@@ -660,7 +715,7 @@ private fun TorBridgeDialog(
   isEditing: Boolean,
   onDismiss: () -> Unit,
   onOpenBot: () -> Unit,
-  onSave: (String) -> Unit,
+  onSave: (List<String>) -> Unit,
 ) {
   val compactMode = rememberIsNarrowWidth() || rememberIsShortHeight()
   val dialogHorizontalPadding = if (compactMode) 10.dp else 28.dp
@@ -670,13 +725,13 @@ private fun TorBridgeDialog(
 
   var text by remember(initialText) { mutableStateOf(initialText) }
   var attemptedSave by remember { mutableStateOf(false) }
-  val normalized = normalizeTorBridgeLine(text)
-  val error = attemptedSave && normalized.isBlank()
+  val parsedLines = parseImportedBridges(text)
+  val error = attemptedSave && parsedLines.isEmpty()
 
   fun attemptSave() {
     attemptedSave = true
-    if (normalized.isBlank()) return
-    onSave(normalized)
+    if (parsedLines.isEmpty()) return
+    onSave(parsedLines)
   }
 
   Dialog(

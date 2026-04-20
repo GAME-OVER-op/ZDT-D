@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
+use std::time::Duration;
 use std::sync::{Arc, Mutex};
 
-use crate::{api, config::Config, logging, protector, runtime, settings, stats};
+use crate::{api, config::Config, logging, protector, runtime, settings, shell, stats};
 
 #[derive(Debug, Clone)]
 pub struct State {
@@ -135,6 +136,7 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
 
                 // Notify the Android app (app-owned notification).
                 let _ = crate::android::notification::send_app_state(true);
+                spawn_network_guard(st_arc.clone());
             }
             Err(e) => {
                 logging::warn(&format!("start_full failed: {e:#}"));
@@ -148,6 +150,132 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
     });
 
     Ok(true)
+}
+
+#[derive(Debug, Clone, Copy)]
+struct NetworkProbe {
+    ok: bool,
+    ping_ms: Option<f64>,
+    speed_mbps: Option<f64>,
+}
+
+/// Starts one background health-check cycle after service startup.
+///
+/// Flow:
+/// - first probe after 3 seconds;
+/// - if failed, second probe after 10 seconds;
+/// - if both fail, auto-stop module to avoid "no internet" state.
+fn spawn_network_guard(state: SharedState) {
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(3));
+        let first = probe_network();
+        log_network_probe("Сетевой тест #1", first);
+        if first.ok {
+            return;
+        }
+
+        std::thread::sleep(Duration::from_secs(10));
+        let second = probe_network();
+        log_network_probe("Сетевой тест #2", second);
+        if second.ok {
+            return;
+        }
+
+        // Avoid conflict with manual stop and skip if already stopped.
+        {
+            let st = lock_state(&state);
+            if !st.services_running || st.stop_in_progress {
+                return;
+            }
+        }
+
+        logging::user_error("Сеть недоступна после запуска: модуль автоматически остановлен");
+        crate::scan_detector::stop();
+        if let Err(e) = runtime::stop_full() {
+            logging::warn(&format!("auto-stop after failed network probes failed: {e:#}"));
+        }
+
+        let mut start = settings::read_start_settings().unwrap_or_default();
+        start.enabled = false;
+        let _ = settings::write_start_settings(&start);
+
+        {
+            let mut st = lock_state(&state);
+            st.services_running = false;
+            st.stop_in_progress = false;
+            st.start_in_progress = false;
+            st.start = start;
+        }
+        protector::deactivate();
+        let _ = crate::android::notification::send_app_state(false);
+    });
+}
+
+/// Emits user-facing network probe result into ordinary module logs.
+fn log_network_probe(prefix: &str, probe: NetworkProbe) {
+    let ping = probe
+        .ping_ms
+        .map(|v| format!("{v:.1}ms"))
+        .unwrap_or_else(|| "n/a".to_string());
+    let speed = probe
+        .speed_mbps
+        .map(|v| format!("{v:.2} Mbps"))
+        .unwrap_or_else(|| "n/a".to_string());
+    let status = if probe.ok { "OK" } else { "FAIL" };
+    logging::user_info(&format!("{prefix}: ping={ping}, speed={speed}, status={status}"));
+}
+
+/// Performs a lightweight availability + quality probe (ping + HTTP + curl speed).
+fn probe_network() -> NetworkProbe {
+    let ping_ms = ping_ms("1.1.1.1");
+    let http_ok = has_http_connectivity();
+    let speed_mbps = measure_speed_mbps();
+    let ok = ping_ms.is_some() || http_ok;
+    NetworkProbe {
+        ok,
+        ping_ms,
+        speed_mbps,
+    }
+}
+
+/// Runs one ICMP ping and extracts RTT in milliseconds.
+fn ping_ms(host: &str) -> Option<f64> {
+    let (rc, out) = shell::run_timeout(
+        "ping",
+        &["-c", "1", "-W", "2", host],
+        shell::Capture::Stdout,
+        Duration::from_secs(4),
+    )
+    .ok()?;
+    if rc != 0 {
+        return None;
+    }
+    let marker = "time=";
+    let idx = out.find(marker)?;
+    let tail = &out[idx + marker.len()..];
+    let token = tail.split_whitespace().next()?.trim();
+    token.parse::<f64>().ok()
+}
+
+/// Checks HTTP reachability against Android's common connectivity URL.
+fn has_http_connectivity() -> bool {
+    let cmd = "curl -m 4 -s -L -o /dev/null https://connectivitycheck.gstatic.com/generate_204";
+    shell::run_timeout(
+        "sh",
+        &["-c", cmd],
+        shell::Capture::Stdout,
+        Duration::from_secs(6),
+    )
+    .map(|(rc, _)| rc == 0)
+    .unwrap_or(false)
+}
+
+/// Measures approximate download speed in Mbps via curl's `speed_download` metric.
+fn measure_speed_mbps() -> Option<f64> {
+    let cmd = "curl -m 8 -s -L -o /dev/null -w '%{speed_download}' https://speed.cloudflare.com/__down?bytes=200000";
+    let out = shell::capture_timeout(cmd, Duration::from_secs(10)).ok()?;
+    let bytes_per_sec = out.trim().parse::<f64>().ok()?;
+    Some((bytes_per_sec * 8.0) / 1_000_000.0)
 }
 
 /// Schedule stop in background and return immediately.

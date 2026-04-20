@@ -1,6 +1,5 @@
-use anyhow::{Result, bail};
-
-use std::time::Duration;
+use anyhow::{Context, Result, bail};
+use std::{thread, time::Duration};
 use crate::{
     android::{boot, selinux::SelinuxGuard},
     iptables_backup,
@@ -14,7 +13,12 @@ use crate::{
 
 /// Start all enabled services and apply iptables rules.
 ///
-/// Note: iptables backup should already exist (created by daemon on first run).
+/// Ordering rules:
+/// 1) Environment/bootstrap (boot completed, ports, iptables baseline).
+/// 2) dnscrypt first (other programs may rely on local DNS).
+/// 3) Core profile programs in parallel when independent.
+/// 4) Proxy stacks in deterministic order.
+/// 5) Final sanity checks + optional protections.
 pub fn start_full() -> Result<()> {
     crate::logging::user_info("Подготовка: запуск");
     crate::logging::user_info("Подготовка: ожидание загрузки Android");
@@ -50,66 +54,55 @@ pub fn start_full() -> Result<()> {
         log::warn!("iptables backup missing -> skipping restore baseline");
     }
 
-    // Start dnscrypt first (must be before other programs).
-        std::thread::spawn(|| {
-            if let Err(e) = dnscrypt::start_if_enabled() {
-                log::error!("dnscrypt start failed: {:#}", e);
-            }
-        });
+    // Start dnscrypt first (strict dependency for DNS-aware flows).
+    dnscrypt::start_if_enabled().context("dnscrypt start")?;
 
-    // Other profiles.
-        nfqws::start_active_profiles()?;
-    nfqws2::start_active_profiles()?;
-    byedpi::start_active_profiles()?;
-    dpitunnel::start_active_profiles()?;
+    // Start independent profile groups in parallel to reduce total startup time.
+    start_core_profiles_parallel()?;
 
     // sing-box (may start multiple profiles + optional t2s)
-    singbox::start_if_enabled()?;
+    singbox::start_if_enabled().context("singbox start")?;
 
     // wireproxy (may start multiple profiles + optional t2s)
-    wireproxy::start_if_enabled()?;
+    wireproxy::start_if_enabled().context("wireproxy start")?;
 
     // myproxy (profile-based upstream socks5 via t2s)
-    myproxy::start_if_enabled()?;
+    myproxy::start_if_enabled().context("myproxy start")?;
 
     // myprogram (custom launched program profiles)
-    myprogram::start_if_enabled()?;
+    myprogram::start_if_enabled().context("myprogram start")?;
 
     // Tor (single socks5 service + t2s)
-    tor::start_if_enabled()?;
+    tor::start_if_enabled().context("tor start")?;
 
     // Opera-proxy pipeline (may use local dnscrypt port if running).
     // Start it last to avoid interfering with other startup logic.
-        operaproxy::start_if_enabled()?;
+    operaproxy::start_if_enabled().context("operaproxy start")?;
 
+    // Post-start sanity check:
+    // If no expected service appears, treat startup as failed and rollback.
+    if !any_main_service_running() {
+        crate::logging::user_error("Ошибка запуска: проверьте настройки");
+        log::error!("startup sanity check failed: no main services are running after start");
 
+        // Persist enabled=false so reboot won't autostart a broken config.
+        let mut st = settings::read_start_settings().unwrap_or_default();
+        st.enabled = false;
+        let _ = settings::write_start_settings(&st);
 
-// Post-start sanity check:
-// The Android app infers "running" from dpitunnel/byedpi/zapret/zapret2/opera-proxy.
-// If none of these are running after startup, treat it as a failed start:
-// log an error and stop everything (return to OFF state).
-if !any_main_service_running() {
-    crate::logging::user_error("Ошибка запуска: проверьте настройки");
-    log::error!("startup sanity check failed: no main services are running after start");
+        // Stop services and restore baseline iptables; always restore captive portal settings.
+        let stop_res = stop::stop_services();
+        let _ = shell::ok_sh(
+            "settings delete global captive_portal_detection_enabled; \
+             settings delete global captive_portal_server; \
+             settings delete global captive_portal_mode",
+        );
+        if let Err(e) = stop_res {
+            log::warn!("stop after failed start returned error: {e:#}");
+        }
 
-    // Persist enabled=false so reboot won't autostart a broken config.
-    let mut st = settings::read_start_settings().unwrap_or_default();
-    st.enabled = false;
-    let _ = settings::write_start_settings(&st);
-
-    // Stop services and restore baseline iptables; always restore captive portal settings.
-    let stop_res = stop::stop_services();
-    let _ = shell::ok_sh(
-        "settings delete global captive_portal_detection_enabled; \
-         settings delete global captive_portal_server; \
-         settings delete global captive_portal_mode",
-    );
-    if let Err(e) = stop_res {
-        log::warn!("stop after failed start returned error: {e:#}");
+        bail!("no main services started");
     }
-
-    bail!("no main services started");
-}
 
     let proxyinfo_enabled = crate::proxyinfo::load_enabled_json()
         .map(|v| v.is_enabled())
@@ -149,7 +142,29 @@ pub fn stop_full() -> Result<()> {
     Ok(())
 }
 
+/// Starts independent "core profile" programs concurrently.
+///
+/// These services do not have strict dependency edges between each other.
+fn start_core_profiles_parallel() -> Result<()> {
+    let j1 = thread::spawn(nfqws::start_active_profiles);
+    let j2 = thread::spawn(nfqws2::start_active_profiles);
+    let j3 = thread::spawn(byedpi::start_active_profiles);
+    let j4 = thread::spawn(dpitunnel::start_active_profiles);
 
+    for (name, join_res) in [
+        ("nfqws", j1.join()),
+        ("nfqws2", j2.join()),
+        ("byedpi", j3.join()),
+        ("dpitunnel", j4.join()),
+    ] {
+        match join_res {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return Err(e).context(format!("{name} start")),
+            Err(_) => anyhow::bail!("{name} start thread panicked"),
+        }
+    }
+    Ok(())
+}
 
 fn any_main_service_running() -> bool {
     // The Android app infers "running" from dpitunnel/byedpi/zapret/zapret2/opera-proxy.
@@ -175,7 +190,7 @@ fn any_main_service_running() -> bool {
                 return true;
             }
         }
-        std::thread::sleep(Duration::from_millis(250));
+        thread::sleep(Duration::from_millis(250));
     }
     false
 }

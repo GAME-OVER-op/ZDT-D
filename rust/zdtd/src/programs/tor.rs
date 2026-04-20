@@ -14,6 +14,9 @@ use crate::settings;
 
 const TOR_BIN: &str = "/data/adb/modules/ZDT-D/bin/torproxy";
 const OBFS4PROXY_BIN: &str = "/data/adb/modules/ZDT-D/bin/obfs4proxy";
+const SNOWFLAKE_BIN: &str = "/data/adb/modules/ZDT-D/bin/snowflake-client";
+const WEBTUNNEL_BIN: &str = "/data/adb/modules/ZDT-D/bin/webtunnel-client";
+const MEEK_BIN: &str = "/data/adb/modules/ZDT-D/bin/meek-client";
 // IMPORTANT: use only the shared working_folder/flag.sha256 file for sha tracking.
 // Never introduce module-specific *.flag.sha256 files here.
 const SHA_FLAG_FILE: &str = settings::SHARED_SHA_FLAG_FILE;
@@ -32,14 +35,20 @@ where
         serde_json::Value::Number(n) => match n.as_i64() {
             Some(0) => Ok(false),
             Some(1) => Ok(true),
-            _ => Err(D::Error::invalid_value(Unexpected::Other("number"), &"bool or 0/1")),
+            _ => Err(D::Error::invalid_value(
+                Unexpected::Other("number"),
+                &"bool or 0/1",
+            )),
         },
         serde_json::Value::String(s) => match s.trim().to_ascii_lowercase().as_str() {
             "true" | "1" => Ok(true),
             "false" | "0" => Ok(false),
             _ => Err(D::Error::invalid_value(Unexpected::Str(&s), &"bool or 0/1")),
         },
-        _ => Err(D::Error::invalid_value(Unexpected::Other("non-bool"), &"bool or 0/1")),
+        _ => Err(D::Error::invalid_value(
+            Unexpected::Other("non-bool"),
+            &"bool or 0/1",
+        )),
     }
 }
 
@@ -50,10 +59,13 @@ where
     serializer.serialize_bool(*value)
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnabledJson {
-    #[serde(default, deserialize_with = "deserialize_boolish", serialize_with = "serialize_bool_as_bool")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_boolish",
+        serialize_with = "serialize_bool_as_bool"
+    )]
     pub enabled: bool,
 }
 
@@ -65,7 +77,9 @@ impl Default for EnabledJson {
 
 impl EnabledJson {
     pub fn normalized(&self) -> Self {
-        Self { enabled: self.enabled }
+        Self {
+            enabled: self.enabled,
+        }
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -90,17 +104,37 @@ impl Default for Setting {
     }
 }
 
-fn default_t2s_port() -> u16 { 12347 }
-fn default_t2s_web_port() -> u16 { 8002 }
+fn default_t2s_port() -> u16 {
+    12347
+}
+fn default_t2s_web_port() -> u16 {
+    8002
+}
 
-fn root_dir() -> PathBuf { settings::working_program_root_path("tor") }
-fn enabled_path() -> PathBuf { settings::tor_enabled_json_path() }
-fn setting_path() -> PathBuf { settings::tor_setting_json_path() }
-fn torrc_path() -> PathBuf { settings::tor_torrc_path() }
-fn uid_program_path() -> PathBuf { settings::tor_uid_program_path() }
-fn out_program_path() -> PathBuf { settings::tor_out_program_path() }
-fn tor_log_path() -> PathBuf { root_dir().join("log/tor.log") }
-fn t2s_log_path() -> PathBuf { root_dir().join("log/t2s.log") }
+fn root_dir() -> PathBuf {
+    settings::working_program_root_path("tor")
+}
+fn enabled_path() -> PathBuf {
+    settings::tor_enabled_json_path()
+}
+fn setting_path() -> PathBuf {
+    settings::tor_setting_json_path()
+}
+fn torrc_path() -> PathBuf {
+    settings::tor_torrc_path()
+}
+fn uid_program_path() -> PathBuf {
+    settings::tor_uid_program_path()
+}
+fn out_program_path() -> PathBuf {
+    settings::tor_out_program_path()
+}
+fn tor_log_path() -> PathBuf {
+    root_dir().join("log/tor.log")
+}
+fn t2s_log_path() -> PathBuf {
+    root_dir().join("log/t2s.log")
+}
 
 fn write_text_atomic(p: &Path, content: &str) -> Result<()> {
     if let Some(parent) = p.parent() {
@@ -117,6 +151,7 @@ fn write_json_atomic<T: Serialize>(p: &Path, v: &T) -> Result<()> {
     write_text_atomic(p, &txt)
 }
 
+/// Creates a file if absent (used for log/app mapping placeholders).
 fn ensure_empty_file(p: &Path) -> Result<()> {
     if !p.exists() {
         write_text_atomic(p, "")?;
@@ -126,16 +161,21 @@ fn ensure_empty_file(p: &Path) -> Result<()> {
 
 pub fn ensure_layout() -> Result<()> {
     let root = root_dir();
-    fs::create_dir_all(root.join("app/uid")).with_context(|| format!("mkdir {}", root.join("app/uid").display()))?;
-    fs::create_dir_all(root.join("app/out")).with_context(|| format!("mkdir {}", root.join("app/out").display()))?;
-    fs::create_dir_all(root.join("log")).with_context(|| format!("mkdir {}", root.join("log").display()))?;
+    fs::create_dir_all(root.join("app/uid"))
+        .with_context(|| format!("mkdir {}", root.join("app/uid").display()))?;
+    fs::create_dir_all(root.join("app/out"))
+        .with_context(|| format!("mkdir {}", root.join("app/out").display()))?;
+    fs::create_dir_all(root.join("log"))
+        .with_context(|| format!("mkdir {}", root.join("log").display()))?;
 
     let enabled_path = enabled_path();
     if !enabled_path.exists() {
         write_json_atomic(&enabled_path, &EnabledJson::default())?;
     } else {
         let current = match fs::read_to_string(&enabled_path) {
-            Ok(raw) => serde_json::from_str::<EnabledJson>(&raw).unwrap_or_default().normalized(),
+            Ok(raw) => serde_json::from_str::<EnabledJson>(&raw)
+                .unwrap_or_default()
+                .normalized(),
             Err(_) => EnabledJson::default(),
         };
         write_json_atomic(&enabled_path, &current)?;
@@ -160,7 +200,8 @@ pub fn ensure_layout() -> Result<()> {
 
 pub fn load_enabled_json() -> Result<EnabledJson> {
     ensure_layout()?;
-    let raw = fs::read_to_string(enabled_path()).with_context(|| format!("read {}", enabled_path().display()))?;
+    let raw = fs::read_to_string(enabled_path())
+        .with_context(|| format!("read {}", enabled_path().display()))?;
     match serde_json::from_str::<EnabledJson>(&raw) {
         Ok(v) => Ok(v.normalized()),
         Err(_) => Ok(EnabledJson::default()),
@@ -176,7 +217,8 @@ pub fn save_enabled_value(enabled: bool) -> Result<EnabledJson> {
 
 pub fn load_setting() -> Result<Setting> {
     ensure_layout()?;
-    let raw = fs::read_to_string(setting_path()).with_context(|| format!("read {}", setting_path().display()))?;
+    let raw = fs::read_to_string(setting_path())
+        .with_context(|| format!("read {}", setting_path().display()))?;
     match serde_json::from_str::<Setting>(&raw) {
         Ok(v) => Ok(v),
         Err(_) => Ok(Setting::default()),
@@ -220,8 +262,13 @@ pub fn write_uid_program_text(content: &str) -> Result<()> {
 pub fn rebuild_out_program() -> Result<Vec<u32>> {
     ensure_layout()?;
     let tracker = Sha256Tracker::new(SHA_FLAG_FILE);
-    let _ = pkg_uid::unified_processing(UidMode::Default, &tracker, &out_program_path(), &uid_program_path())
-        .with_context(|| "tor uid parsing")?;
+    let _ = pkg_uid::unified_processing(
+        UidMode::Default,
+        &tracker,
+        &out_program_path(),
+        &uid_program_path(),
+    )
+    .with_context(|| "tor uid parsing")?;
     read_out_uids()
 }
 
@@ -235,8 +282,12 @@ pub fn read_out_uids() -> Result<Vec<u32>> {
     let mut out = std::collections::BTreeSet::new();
     for line in raw.lines() {
         let s = line.trim();
-        if s.is_empty() { continue; }
-        let Some((_, rhs)) = s.rsplit_once('=') else { continue; };
+        if s.is_empty() {
+            continue;
+        }
+        let Some((_, rhs)) = s.rsplit_once('=') else {
+            continue;
+        };
         if let Ok(uid) = rhs.trim().parse::<u32>() {
             if uid > 0 {
                 out.insert(uid);
@@ -266,13 +317,20 @@ pub fn parse_socks_port_from_str(raw: &str) -> Result<u16> {
         if !key.eq_ignore_ascii_case("SocksPort") {
             continue;
         }
-        let value = parts.next().ok_or_else(|| anyhow::anyhow!("SocksPort value is missing"))?;
+        let value = parts
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("SocksPort value is missing"))?;
         let addr = value.trim();
-        let (host, port_s) = addr.rsplit_once(':').ok_or_else(|| anyhow::anyhow!("SocksPort must be 127.0.0.1:PORT"))?;
+        let (host, port_s) = addr
+            .rsplit_once(':')
+            .ok_or_else(|| anyhow::anyhow!("SocksPort must be 127.0.0.1:PORT"))?;
         if host.trim() != "127.0.0.1" {
             anyhow::bail!("SocksPort host must be 127.0.0.1");
         }
-        let port = port_s.trim().parse::<u16>().map_err(|_| anyhow::anyhow!("invalid SocksPort port"))?;
+        let port = port_s
+            .trim()
+            .parse::<u16>()
+            .map_err(|_| anyhow::anyhow!("invalid SocksPort port"))?;
         if port == 0 {
             anyhow::bail!("SocksPort port must be > 0");
         }
@@ -285,10 +343,108 @@ pub fn bridge_count_from_str(raw: &str) -> usize {
     raw.lines()
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with('#') && !line.starts_with(';'))
-        .filter(|line| line.starts_with("Bridge ") || line.starts_with("obfs4 "))
+        .filter(|line| parse_bridge_transport(line).is_some())
         .count()
 }
 
+/// Splits a torrc directive line into key/value while tolerating `key value` and `key=value`.
+fn split_torrc_key_value(line: &str) -> Option<(&str, &str)> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with(';') {
+        return None;
+    }
+    if let Some((k, v)) = trimmed.split_once('=') {
+        return Some((k.trim(), v.trim()));
+    }
+    let mut parts = trimmed.splitn(2, char::is_whitespace);
+    let key = parts.next()?;
+    let value = parts.next().unwrap_or("");
+    Some((key.trim(), value.trim()))
+}
+
+/// Detects bridge transport token from a torrc bridge line.
+fn parse_bridge_transport(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with(';') {
+        return None;
+    }
+    let candidate = if trimmed.starts_with("Bridge ") {
+        trimmed["Bridge ".len()..].trim()
+    } else if trimmed.starts_with("obfs4 ")
+        || trimmed.starts_with("snowflake ")
+        || trimmed.starts_with("webtunnel ")
+        || trimmed.starts_with("meek_lite ")
+    {
+        trimmed
+    } else {
+        return None;
+    };
+    let transport = candidate
+        .split_whitespace()
+        .next()?
+        .trim()
+        .to_ascii_lowercase();
+    if transport.is_empty() {
+        None
+    } else {
+        Some(transport)
+    }
+}
+
+/// Transport list explicitly supported by module-level normalization/validation.
+fn is_known_transport(transport: &str) -> bool {
+    matches!(transport, "obfs4" | "snowflake" | "webtunnel" | "meek_lite")
+}
+
+/// Returns required transport binary for a known bridge transport.
+fn required_plugin_binary(transport: &str) -> Option<&'static str> {
+    match transport {
+        "obfs4" => Some(OBFS4PROXY_BIN),
+        "snowflake" => Some(SNOWFLAKE_BIN),
+        "webtunnel" => Some(WEBTUNNEL_BIN),
+        "meek_lite" => Some(MEEK_BIN),
+        _ => None,
+    }
+}
+
+/// Default plugin directive inserted when a bridge transport is used without explicit plugin line.
+fn default_plugin_line(transport: &str) -> Option<String> {
+    let bin = required_plugin_binary(transport)?;
+    Some(format!("ClientTransportPlugin {transport} exec {bin}"))
+}
+
+/// Collects all declared `ClientTransportPlugin` transports from torrc.
+fn find_declared_plugins(raw: &str) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    for line in raw.lines() {
+        let Some((key, value)) = split_torrc_key_value(line) else {
+            continue;
+        };
+        if !key.eq_ignore_ascii_case("ClientTransportPlugin") {
+            continue;
+        }
+        let mut parts = value.split_whitespace();
+        if let Some(transport) = parts.next() {
+            out.insert(transport.to_ascii_lowercase());
+        }
+    }
+    out
+}
+
+/// Collects known bridge transports used in torrc bridge lines.
+fn find_bridge_transports(raw: &str) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    for line in raw.lines() {
+        if let Some(transport) = parse_bridge_transport(line) {
+            if is_known_transport(&transport) {
+                out.insert(transport);
+            }
+        }
+    }
+    out
+}
+
+/// Normalizes torrc to keep mandatory directives consistent and auto-fill missing plugin lines.
 pub fn normalize_torrc_content(raw: &str) -> String {
     let had_trailing_newline = raw.ends_with('\n');
     let mut out = Vec::new();
@@ -304,9 +460,21 @@ pub fn normalize_torrc_content(raw: &str) -> String {
                 }
                 continue;
             }
-            if trimmed.starts_with("obfs4 ") {
-                out.push(format!("Bridge {}", trimmed));
-                continue;
+            if let Some(transport) = parse_bridge_transport(trimmed) {
+                if is_known_transport(&transport) && !trimmed.starts_with("Bridge ") {
+                    out.push(format!("Bridge {}", trimmed));
+                    continue;
+                }
+            }
+            if let Some((key, value)) = split_torrc_key_value(trimmed) {
+                if key.eq_ignore_ascii_case("UseBridges") {
+                    out.push("UseBridges 1".to_string());
+                    continue;
+                }
+                if key.eq_ignore_ascii_case("ClientTransportPlugin") {
+                    out.push(format!("ClientTransportPlugin {}", value.trim()));
+                    continue;
+                }
             }
         }
         out.push(line.to_string());
@@ -317,28 +485,44 @@ pub fn normalize_torrc_content(raw: &str) -> String {
     }
 
     let mut joined = out.join("\n");
+    let used_transports = find_bridge_transports(&joined);
+    let declared_plugins = find_declared_plugins(&joined);
+    if !used_transports.is_empty() {
+        if !joined.ends_with('\n') && !joined.is_empty() {
+            joined.push('\n');
+        }
+        for transport in used_transports {
+            if declared_plugins.contains(&transport) {
+                continue;
+            }
+            if let Some(line) = default_plugin_line(&transport) {
+                joined.push_str(&line);
+                joined.push('\n');
+            }
+        }
+    }
+
     if had_trailing_newline || (!joined.is_empty() && !joined.ends_with('\n')) {
         joined.push('\n');
     }
     joined
 }
 
+/// Reads torrc and checks whether `UseBridges 1` is currently enabled.
 fn use_bridges_enabled(raw: &str) -> bool {
     for line in raw.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') || line.starts_with(';') {
+        let Some((key, value)) = split_torrc_key_value(line) else {
             continue;
-        }
-        let mut parts = line.split_whitespace();
-        let key = parts.next().unwrap_or("");
+        };
         if !key.eq_ignore_ascii_case("UseBridges") {
             continue;
         }
-        return parts.next().map(|v| v.trim() == "1").unwrap_or(false);
+        return value.trim() == "1";
     }
     false
 }
 
+/// Validates minimal torrc runtime requirements and returns parsed SOCKS port.
 pub fn validate_torrc_ready(raw: &str) -> Result<u16> {
     let socks_port = parse_socks_port_from_str(raw)?;
     if !use_bridges_enabled(raw) {
@@ -350,6 +534,7 @@ pub fn validate_torrc_ready(raw: &str) -> Result<u16> {
     Ok(socks_port)
 }
 
+/// Lightweight guard for toggle UI: requiring at least one bridge.
 pub fn validate_enable_toggle_requirements() -> Result<()> {
     ensure_layout()?;
     let torrc = normalize_torrc_content(&read_torrc_text()?);
@@ -359,15 +544,61 @@ pub fn validate_enable_toggle_requirements() -> Result<()> {
     Ok(())
 }
 
+/// Full pre-start validation including binaries required by configured transports.
 pub fn validate_enable_requirements() -> Result<()> {
     ensure_layout()?;
     ensure_file(TOR_BIN)?;
-    ensure_file(OBFS4PROXY_BIN)?;
     let setting = load_setting()?;
     let torrc = normalize_torrc_content(&read_torrc_text()?);
     let socks_port = validate_torrc_ready(&torrc)?;
+    for transport in find_bridge_transports(&torrc) {
+        if let Some(bin) = required_plugin_binary(&transport) {
+            ensure_file(bin)?;
+        }
+    }
     validate_setting(&setting, socks_port)?;
     Ok(())
+}
+
+/// Exports a single debug report file containing torrc/settings and current tor/t2s logs.
+pub fn export_debug_logs() -> Result<PathBuf> {
+    ensure_layout()?;
+    let root = root_dir();
+    let export_dir = root.join("log/export");
+    fs::create_dir_all(&export_dir).with_context(|| format!("mkdir {}", export_dir.display()))?;
+
+    let epoch = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let out_path = export_dir.join(format!("tor-debug-{epoch}.txt"));
+
+    let torrc = read_torrc_text().unwrap_or_default();
+    let setting = load_setting().unwrap_or_default();
+    let tor_log =
+        fs::read_to_string(tor_log_path()).unwrap_or_else(|_| "<missing tor.log>\n".to_string());
+    let t2s_log =
+        fs::read_to_string(t2s_log_path()).unwrap_or_else(|_| "<missing t2s.log>\n".to_string());
+    let main_user_log = fs::read_to_string("/data/adb/modules/ZDT-D/log/zdtd.log")
+        .unwrap_or_else(|_| "<missing /data/adb/modules/ZDT-D/log/zdtd.log>\n".to_string());
+
+    let report = format!(
+        "=== TOR DEBUG EXPORT ===\n\
+timestamp_unix={epoch}\n\n\
+--- setting.json ---\n{}\n\n\
+--- torrc ---\n{}\n\n\
+--- tor.log ---\n{}\n\n\
+--- t2s.log ---\n{}\n\n\
+--- main-user-log (zdtd.log) ---\n{}\n",
+        serde_json::to_string_pretty(&setting).unwrap_or_else(|_| "{}".to_string()),
+        torrc,
+        tor_log,
+        t2s_log,
+        main_user_log
+    );
+
+    write_text_atomic(&out_path, &report)?;
+    Ok(out_path)
 }
 
 pub fn start_if_enabled() -> Result<()> {
@@ -389,8 +620,10 @@ pub fn start_if_enabled() -> Result<()> {
     let socks_port = validate_torrc_ready(&normalized_torrc)?;
     validate_setting(&setting, socks_port)?;
 
-    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, true, false)
-        .unwrap_or_default();
+    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(
+        false, false, true, false,
+    )
+    .unwrap_or_default();
     for port in [socks_port, setting.t2s_port, setting.t2s_web_port] {
         if external_used.contains(&port) {
             anyhow::bail!("port conflict detected: {}", port);
@@ -434,16 +667,16 @@ pub fn start_if_enabled() -> Result<()> {
 
     info!(
         "tor: apps={} socks_port={} t2s_port={} t2s_web_port={}",
-        resolved,
-        socks_port,
-        setting.t2s_port,
-        setting.t2s_web_port,
+        resolved, socks_port, setting.t2s_port, setting.t2s_web_port,
     );
     Ok(())
 }
 
 fn validate_setting(setting: &Setting, socks_port: u16) -> Result<()> {
-    if setting.t2s_port == 0 || setting.t2s_web_port == 0 || setting.t2s_port == setting.t2s_web_port {
+    if setting.t2s_port == 0
+        || setting.t2s_web_port == 0
+        || setting.t2s_port == setting.t2s_web_port
+    {
         anyhow::bail!("invalid t2s ports");
     }
     if setting.t2s_port == socks_port || setting.t2s_web_port == socks_port {
@@ -453,7 +686,11 @@ fn validate_setting(setting: &Setting, socks_port: u16) -> Result<()> {
 }
 
 fn spawn_tor(torrc: &Path, log_path: &Path) -> Result<()> {
-    let logf = OpenOptions::new().create(true).write(true).truncate(true).open(log_path)
+    let logf = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(log_path)
         .with_context(|| format!("open log {}", log_path.display()))?;
     let logf_err = logf.try_clone().with_context(|| "clone log file")?;
 
@@ -472,12 +709,21 @@ fn spawn_tor(torrc: &Path, log_path: &Path) -> Result<()> {
     }
 
     let child = cmd.spawn().with_context(|| format!("spawn {}", TOR_BIN))?;
-    info!("spawned tor pid={} cfg={} log={}", child.id(), torrc.display(), log_path.display());
+    info!(
+        "spawned tor pid={} cfg={} log={}",
+        child.id(),
+        torrc.display(),
+        log_path.display()
+    );
 
     std::thread::sleep(std::time::Duration::from_millis(150));
     let proc_path = PathBuf::from("/proc").join(child.id().to_string());
     if !proc_path.is_dir() {
-        warn!("tor pid={} exited quickly; check log {}", child.id(), log_path.display());
+        warn!(
+            "tor pid={} exited quickly; check log {}",
+            child.id(),
+            log_path.display()
+        );
     }
     Ok(())
 }
@@ -490,7 +736,11 @@ fn spawn_t2s(
     socks_ports_csv: &str,
     log_path: &Path,
 ) -> Result<()> {
-    let logf = OpenOptions::new().create(true).write(true).truncate(true).open(log_path)
+    let logf = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(log_path)
         .with_context(|| format!("open log {}", log_path.display()))?;
     let logf_err = logf.try_clone().with_context(|| "clone log file")?;
 
@@ -524,10 +774,17 @@ fn spawn_t2s(
         });
     }
 
-    let child = cmd.spawn().with_context(|| format!("spawn {}", bin.display()))?;
+    let child = cmd
+        .spawn()
+        .with_context(|| format!("spawn {}", bin.display()))?;
     info!(
         "spawned t2s pid={} listen_addr={} listen_port={} socks_ports={} web_port={} log={}",
-        child.id(), listen_addr, listen_port, socks_ports_csv, web_port, log_path.display()
+        child.id(),
+        listen_addr,
+        listen_port,
+        socks_ports_csv,
+        web_port,
+        log_path.display()
     );
     Ok(())
 }
@@ -543,7 +800,11 @@ fn find_bin(name: &str) -> Result<PathBuf> {
 
 fn truncate_file(p: &Path) -> Result<()> {
     ensure_parent_dir(p)?;
-    let _ = OpenOptions::new().create(true).write(true).truncate(true).open(p)?;
+    let _ = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(p)?;
     Ok(())
 }
 

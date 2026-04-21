@@ -4,10 +4,12 @@ use anyhow::{anyhow, Context, Result};
 use parking_lot::Mutex;
 use rand::RngCore;
 use serde::Serialize;
+use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use once_cell::sync::Lazy;
 use tokio::net::TcpStream;
 use tokio_util::sync::CancellationToken;
 
@@ -407,6 +409,12 @@ impl SocksBackends {
     }
 
     pub fn state_at(&self, idx: usize) -> Option<BackendState> {
+        if idx >= self.status.len() {
+            return None;
+        }
+        if protector_mode_forced_green() {
+            return Some(BackendState::Green);
+        }
         self.status.get(idx).map(|s| s.state)
     }
 
@@ -415,11 +423,17 @@ impl SocksBackends {
     }
 
     pub fn any_healthy(&self) -> bool {
+        if protector_mode_forced_green() {
+            return !self.addrs.is_empty();
+        }
         self.status.iter().any(|s| s.healthy)
     }
 
     /// Returns true if there is at least one GREEN backend (responding + Internet OK).
     pub fn any_green(&self) -> bool {
+        if protector_mode_forced_green() {
+            return !self.addrs.is_empty();
+        }
         self.any_healthy()
     }
 
@@ -465,6 +479,13 @@ impl SocksBackends {
 
 
     pub fn snapshot(&self) -> Vec<BackendStatus> {
+        if protector_mode_forced_green() {
+            return self.status.iter().cloned().map(|mut s| {
+                s.state = BackendState::Green;
+                s.healthy = true;
+                s
+            }).collect();
+        }
         self.status.clone()
     }
 
@@ -511,12 +532,16 @@ impl SocksBackends {
         }
     }
 pub fn select_rr_with_auth(&mut self, global_auth: Option<&(String, String)>) -> Result<(SocketAddr, Option<(String, String)>)> {
-        let healthy: Vec<usize> = self.status.iter().enumerate().filter(|(_,s)| s.healthy).map(|(i,_)| i).collect();
-        if healthy.is_empty() {
+        let candidates: Vec<usize> = if protector_mode_forced_green() {
+            (0..self.addrs.len()).collect()
+        } else {
+            self.status.iter().enumerate().filter(|(_,s)| s.healthy).map(|(i,_)| i).collect()
+        };
+        if candidates.is_empty() {
             return Err(anyhow!("no GREEN backends"));
         }
-        self.rr = (self.rr + 1) % healthy.len();
-        let idx = healthy[self.rr];
+        self.rr = (self.rr + 1) % candidates.len();
+        let idx = candidates[self.rr];
         Ok((self.addrs[idx], self.effective_auth_at(idx, global_auth)))
     }
 
@@ -797,6 +822,37 @@ impl Event {
     pub fn conn_target(cid: u64, host: String, port: u16, mode: String) -> Self {
         Self{ ts: now_ts(), kind: "conn_target".into(), cid: Some(cid), peer: None, target: Some(format!("{}:{}", host, port)), mode: Some(mode) }
     }
+}
+
+
+const ZDTD_SETTING_JSON: &str = "/data/adb/modules/ZDT-D/api/setting.json";
+const PROTECTOR_MODE_CACHE_TTL_SECS: u64 = 2;
+static PROTECTOR_MODE_CACHE: Lazy<Mutex<(u64, bool)>> = Lazy::new(|| Mutex::new((0, false)));
+
+fn read_protector_mode_forced_green_uncached() -> bool {
+    let content = match std::fs::read_to_string(ZDTD_SETTING_JSON) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let v: Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    v.get("protector_mode")
+        .and_then(|x| x.as_str())
+        .map(|s| s.eq_ignore_ascii_case("on"))
+        .unwrap_or(false)
+}
+
+fn protector_mode_forced_green() -> bool {
+    let now = now_ts();
+    let mut cache = PROTECTOR_MODE_CACHE.lock();
+    if cache.0 != 0 && now.saturating_sub(cache.0) < PROTECTOR_MODE_CACHE_TTL_SECS {
+        return cache.1;
+    }
+    let forced = read_protector_mode_forced_green_uncached();
+    *cache = (now, forced);
+    forced
 }
 
 pub fn now_ts() -> u64 {

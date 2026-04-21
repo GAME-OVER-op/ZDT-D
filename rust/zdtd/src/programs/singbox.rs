@@ -15,6 +15,7 @@ use crate::iptables::iptables_port::{self, DpiTunnelOptions, ProtoChoice};
 use crate::{
     settings,
     shell::{self, Capture},
+    xtables_lock,
 };
 
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
@@ -410,8 +411,12 @@ fn collect_profile_servers(
 }
 
 fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
+    const IPT_TIMEOUT: Duration = Duration::from_secs(5);
+    let _guard = xtables_lock::lock();
     let listen_port_s = listen_port.to_string();
     let check_args = [
+        "-w",
+        "5",
         "-t",
         "nat",
         "-C",
@@ -423,12 +428,14 @@ fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
         "--to-ports",
         listen_port_s.as_str(),
     ];
-    let rc = match shell::run("iptables", &check_args, Capture::None) {
+    let rc = match xtables_lock::run_timeout_retry("iptables", &check_args, Capture::None, IPT_TIMEOUT) {
         Ok((rc, _)) => rc,
         Err(_) => 1,
     };
     if rc != 0 {
         let add_args = [
+            "-w",
+            "5",
             "-t",
             "nat",
             "-I",
@@ -440,8 +447,11 @@ fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
             "--to-ports",
             listen_port_s.as_str(),
         ];
-        shell::ok("iptables", &add_args)
+        let (add_rc, out) = xtables_lock::run_timeout_retry("iptables", &add_args, Capture::Both, IPT_TIMEOUT)
             .with_context(|| format!("sing-box hotspot PREROUTING redirect to :{}", listen_port))?;
+        if add_rc != 0 {
+            anyhow::bail!("sing-box hotspot PREROUTING redirect to :{} failed: {}", listen_port, out.trim());
+        }
     }
     Ok(())
 }

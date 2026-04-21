@@ -335,7 +335,7 @@ fn myprogram_t2s_pids() -> Vec<u32> {
 }
 
 const TOR_TORRC_PATH: &str = "/data/adb/modules/ZDT-D/working_folder/tor/torrc";
-const OBFS4PROXY_BIN: &str = "/data/adb/modules/ZDT-D/bin/obfs4proxy";
+const LYREBIRD_BIN: &str = "/data/adb/modules/ZDT-D/bin/lyrebird";
 
 fn parse_pids(out: &str) -> Vec<u32> {
     out.split_whitespace()
@@ -377,7 +377,7 @@ fn tor_helper_pids() -> Vec<u32> {
     let mut pids = Vec::new();
     let pgrep_cmd = format!(
         r#"sh -c "pgrep -f '^{}' 2>/dev/null || true""#,
-        OBFS4PROXY_BIN
+        LYREBIRD_BIN
     );
     if let Ok(out) = shell::capture_quiet(&pgrep_cmd) {
         pids.extend(parse_pids(&out));
@@ -385,7 +385,7 @@ fn tor_helper_pids() -> Vec<u32> {
     if pids.is_empty() {
         let ps_cmd = format!(
             r#"sh -c "ps -ef 2>/dev/null | grep -F '{}' | grep -v grep || true""#,
-            OBFS4PROXY_BIN
+            LYREBIRD_BIN
         );
         if let Ok(out) = shell::capture_quiet(&ps_cmd) {
             for line in out.lines() {
@@ -409,7 +409,7 @@ fn tor_pids() -> Vec<u32> {
     // (torture_task, storaged, keystore2, regulator-*, etc.), which causes
     // false "running" state after Tor is already stopped.
     // Tor is considered running ONLY when the exact main command
-    // `torproxy -f <our torrc>` exists. obfs4proxy is auxiliary and is included
+    // `torproxy -f <our torrc>` exists. lyrebird is auxiliary and is included
     // only when the main torproxy process is present.
     let main = tor_main_pids();
     if main.is_empty() {

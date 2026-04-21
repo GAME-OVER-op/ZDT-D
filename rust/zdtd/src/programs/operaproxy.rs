@@ -20,6 +20,7 @@ use crate::{
     programs::dnscrypt,
     settings,
     shell::{self, Capture},
+    xtables_lock,
 };
 
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
@@ -31,6 +32,7 @@ const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/operaproxy/act
 const PORT_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/operaproxy/port.json";
 const SNI_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/operaproxy/config/sni.json";
 const SERVER_TXT: &str = "/data/adb/modules/ZDT-D/working_folder/operaproxy/config/server.txt";
+const IPT_TIMEOUT: Duration = Duration::from_secs(5);
 // Opera-proxy CA bundle for certificate verification. We keep it fixed to prevent config tampering.
 const OPERA_CAFILE: &str = "/data/adb/modules/ZDT-D/strategic/certificate/ca.bundle";
 
@@ -606,6 +608,7 @@ fn spawn_t2s(bin: &Path, listen_addr: &str, listen_port: u16, socks_ports_csv: &
 
 
 fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
+    let _xt_guard = xtables_lock::lock();
     let listen_port_s = listen_port.to_string();
     let check_args = [
         "-t",
@@ -619,7 +622,7 @@ fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
         "--to-ports",
         listen_port_s.as_str(),
     ];
-    let rc = match shell::run("iptables", &check_args, Capture::None) {
+    let rc = match xtables_lock::run_timeout_retry("iptables", &["-w", "5", check_args[0], check_args[1], check_args[2], check_args[3], check_args[4], check_args[5], check_args[6], check_args[7], check_args[8]], Capture::Both, IPT_TIMEOUT) {
         Ok((rc, _)) => rc,
         Err(_) => 1,
     };
@@ -636,8 +639,11 @@ fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
             "--to-ports",
             listen_port_s.as_str(),
         ];
-        shell::ok("iptables", &add_args)
+        let (add_rc, out) = xtables_lock::run_timeout_retry("iptables", &["-w", "5", add_args[0], add_args[1], add_args[2], add_args[3], add_args[4], add_args[5], add_args[6], add_args[7], add_args[8]], Capture::Both, IPT_TIMEOUT)
             .with_context(|| format!("operaproxy hotspot PREROUTING redirect to :{}", listen_port))?;
+        if add_rc != 0 {
+            anyhow::bail!("operaproxy hotspot PREROUTING redirect to :{} failed rc={} out={}", listen_port, add_rc, out.trim());
+        }
     }
     Ok(())
 }

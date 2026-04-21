@@ -1,16 +1,37 @@
 package com.android.zdtd.service.ui
 
 import android.os.Build
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -18,6 +39,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
+import com.android.zdtd.service.InstallConflictUi
 import com.android.zdtd.service.R
 import com.android.zdtd.service.RootState
 import com.android.zdtd.service.SetupUiState
@@ -135,6 +157,7 @@ fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit) {
         modifier = Modifier
           .padding(screenPadding)
           .fillMaxWidth()
+          .animateContentSize(animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing))
           .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
       ) {
@@ -262,10 +285,27 @@ fun InstallModuleScreen(
   onManualDismiss: () -> Unit,
   onContinue: () -> Unit,
   onReboot: () -> Unit,
+  onRefreshConflicts: () -> Unit,
+  onToggleConflictRemove: (String, Boolean) -> Unit,
 ) {
   val arm64Ok = remember { isArm64OnlySupported() }
   val compact = rememberIsCompactWidth()
   val screenPadding = rememberAdaptiveScreenPadding()
+  var showInstallLog by rememberSaveable(setup.installing, setup.installLog, setup.installOk, setup.installError, setup.manualZipSaved) { androidx.compose.runtime.mutableStateOf(false) }
+  val canShowInstallLog = !setup.installing && setup.installLog.isNotBlank()
+  val animatedInstallProgress by animateFloatAsState(
+    targetValue = (setup.installProgressPercent.coerceIn(0, 100) / 100f),
+    animationSpec = tween(durationMillis = 950, easing = FastOutSlowInEasing),
+    label = "install_progress_float",
+  )
+  val animatedInstallPercent by animateIntAsState(
+    targetValue = setup.installProgressPercent.coerceIn(0, 100),
+    animationSpec = tween(durationMillis = 950, easing = FastOutSlowInEasing),
+    label = "install_progress_int",
+  )
+  LaunchedEffect(Unit) {
+    onRefreshConflicts()
+  }
   if (arm64Ok && setup.showManualDialog) {
     val extra = if (setup.oldVersionDetected) {
       "\n\n" + stringResource(R.string.setup_manual_old_version_extra)
@@ -360,6 +400,47 @@ fun InstallModuleScreen(
           }
         }
 
+        AnimatedVisibility(
+          visible = setup.installConflicts.isNotEmpty(),
+          enter = fadeIn(animationSpec = tween(220)) + expandVertically(animationSpec = tween(260)),
+          exit = fadeOut(animationSpec = tween(180)) + shrinkVertically(animationSpec = tween(180)),
+        ) {
+          Column {
+            Spacer(Modifier.height(12.dp))
+            setup.installConflicts.forEachIndexed { index, conflict ->
+              key(conflict.modulePath) {
+                AnimatedVisibility(
+                  visible = true,
+                  enter = fadeIn(animationSpec = tween(durationMillis = 260, delayMillis = index * 55)) +
+                    expandVertically(
+                      animationSpec = tween(
+                        durationMillis = 320,
+                        delayMillis = index * 55,
+                        easing = FastOutSlowInEasing,
+                      ),
+                    ) +
+                    slideInVertically(
+                      initialOffsetY = { it / 5 },
+                      animationSpec = tween(
+                        durationMillis = 320,
+                        delayMillis = index * 55,
+                        easing = FastOutSlowInEasing,
+                      ),
+                    ),
+                ) {
+                  Column {
+                    InstallConflictCard(
+                      conflict = conflict,
+                      onToggleRemove = { checked -> onToggleConflictRemove(conflict.modulePath, checked) },
+                    )
+                    Spacer(Modifier.height(10.dp))
+                  }
+                }
+              }
+            }
+          }
+        }
+
         Spacer(Modifier.height(18.dp))
 
         if (!setup.preInstallWarning.isNullOrBlank()) {
@@ -398,25 +479,74 @@ fun InstallModuleScreen(
           )
         }
 
-        if (setup.installing) {
-          Spacer(Modifier.height(14.dp))
-          CircularProgressIndicator()
+        val showProgressCard = setup.installing || setup.installProgressPercent > 0
+        AnimatedVisibility(
+          visible = showProgressCard,
+          enter = fadeIn(animationSpec = tween(280)) + expandVertically(animationSpec = tween(280)),
+          exit = fadeOut(animationSpec = tween(220)) + shrinkVertically(animationSpec = tween(220)),
+        ) {
+          Column {
+            Spacer(Modifier.height(14.dp))
+            Card(
+              modifier = Modifier.fillMaxWidth(),
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            ) {
+              Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.SpaceBetween,
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  Text(
+                    text = setup.installProgressLabel.ifBlank { stringResource(R.string.setup_install_progress_preparing) },
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                  Text(
+                    text = stringResource(R.string.setup_install_progress_percent_fmt, animatedInstallPercent),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                }
+                LinearProgressIndicator(
+                  progress = animatedInstallProgress,
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(MaterialTheme.shapes.extraLarge),
+                )
+              }
+            }
+          }
         }
 
-        if (setup.installOk) {
-          Spacer(Modifier.height(18.dp))
-          Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(14.dp)) {
-              Text(stringResource(R.string.setup_module_installed_title), fontWeight = FontWeight.SemiBold)
-              Spacer(Modifier.height(6.dp))
-              Text(
-                stringResource(R.string.setup_module_installed_body),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
-              )
-              Spacer(Modifier.height(12.dp))
+        AnimatedVisibility(
+          visible = setup.installOk,
+          enter = fadeIn(animationSpec = tween(durationMillis = 520, delayMillis = 120)) +
+            expandVertically(animationSpec = tween(durationMillis = 520, delayMillis = 120, easing = FastOutSlowInEasing)) +
+            slideInVertically(
+              initialOffsetY = { fullHeight -> fullHeight / 5 },
+              animationSpec = tween(durationMillis = 520, delayMillis = 120, easing = FastOutSlowInEasing),
+            ),
+          exit = fadeOut(animationSpec = tween(durationMillis = 220)) +
+            shrinkVertically(animationSpec = tween(durationMillis = 220)),
+        ) {
+          Column(modifier = Modifier.fillMaxWidth()) {
+            Spacer(Modifier.height(18.dp))
+            Card(Modifier.fillMaxWidth()) {
+              Column(Modifier.padding(14.dp)) {
+                Text(stringResource(R.string.setup_module_installed_title), fontWeight = FontWeight.SemiBold)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                  stringResource(R.string.setup_module_installed_body),
+                  style = MaterialTheme.typography.bodyMedium,
+                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+                )
+                Spacer(Modifier.height(12.dp))
 
-              Button(onClick = onReboot, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.common_reboot)) }
+                Button(onClick = onReboot, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.common_reboot)) }
+              }
             }
           }
         }
@@ -454,16 +584,54 @@ fun InstallModuleScreen(
           )
         }
 
-        if (setup.installLog.isNotBlank()) {
-          Spacer(Modifier.height(18.dp))
-          Text(stringResource(R.string.setup_install_log_title), style = MaterialTheme.typography.titleSmall)
-          Spacer(Modifier.height(8.dp))
-          Card(Modifier.fillMaxWidth()) {
-            Text(
-              text = setup.installLog,
-              modifier = Modifier.padding(12.dp),
-              style = MaterialTheme.typography.bodySmall,
-            )
+        AnimatedVisibility(
+          visible = canShowInstallLog,
+          enter = fadeIn(animationSpec = tween(320)) + expandVertically(animationSpec = tween(320)),
+          exit = fadeOut(animationSpec = tween(220)) + shrinkVertically(animationSpec = tween(220)),
+        ) {
+          Column(modifier = Modifier.fillMaxWidth()) {
+            Spacer(Modifier.height(18.dp))
+            OutlinedButton(
+              onClick = { showInstallLog = !showInstallLog },
+              modifier = Modifier.fillMaxWidth(),
+            ) {
+              Icon(
+                imageVector = if (showInstallLog) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = null,
+              )
+              Spacer(Modifier.width(8.dp))
+              Text(
+                if (showInstallLog) stringResource(R.string.setup_install_log_hide)
+                else stringResource(R.string.setup_install_log_show),
+              )
+            }
+          }
+        }
+
+        AnimatedVisibility(
+          visible = canShowInstallLog && showInstallLog,
+          enter = fadeIn(animationSpec = tween(320)) + expandVertically(animationSpec = tween(320)),
+          exit = fadeOut(animationSpec = tween(220)) + shrinkVertically(animationSpec = tween(220)),
+        ) {
+          Column(modifier = Modifier.fillMaxWidth()) {
+            Spacer(Modifier.height(10.dp))
+            Card(Modifier.fillMaxWidth()) {
+              Column(Modifier.padding(12.dp)) {
+                Text(stringResource(R.string.setup_install_log_title), style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(8.dp))
+                Box(
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 240.dp)
+                    .verticalScroll(rememberScrollState()),
+                ) {
+                  Text(
+                    text = setup.installLog,
+                    style = MaterialTheme.typography.bodySmall,
+                  )
+                }
+              }
+            }
           }
         }
       }
@@ -471,4 +639,117 @@ fun InstallModuleScreen(
   }
 }
 
+
+@Composable
+private fun InstallConflictCard(
+  conflict: InstallConflictUi,
+  onToggleRemove: (Boolean) -> Unit,
+) {
+  var expanded by rememberSaveable(conflict.modulePath) { mutableStateOf(false) }
+  val compactLayout = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 420
+  Card(
+    modifier = Modifier.fillMaxWidth(),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 10.dp, vertical = 8.dp)
+        .animateContentSize(),
+      verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+      if (compactLayout) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            text = stringResource(R.string.setup_install_conflict_module_fmt, conflict.moduleName),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+            maxLines = 2,
+          )
+          IconButton(
+            onClick = { expanded = !expanded },
+            modifier = Modifier.size(34.dp),
+          ) {
+            Icon(
+              imageVector = Icons.Filled.ErrorOutline,
+              contentDescription = stringResource(R.string.setup_install_conflict_details),
+              tint = MaterialTheme.colorScheme.error,
+              modifier = Modifier.size(20.dp),
+            )
+          }
+        }
+      } else {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            text = stringResource(R.string.setup_install_conflict_module_fmt, conflict.moduleName),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+            maxLines = 2,
+          )
+          Spacer(Modifier.width(8.dp))
+          Text(
+            text = stringResource(R.string.setup_install_conflict_remove),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          Checkbox(
+            checked = conflict.markedForRemove,
+            onCheckedChange = { checked -> onToggleRemove(checked) },
+            modifier = Modifier.size(36.dp),
+          )
+          IconButton(
+            onClick = { expanded = !expanded },
+            modifier = Modifier.size(34.dp),
+          ) {
+            Icon(
+              imageVector = Icons.Filled.ErrorOutline,
+              contentDescription = stringResource(R.string.setup_install_conflict_details),
+              tint = MaterialTheme.colorScheme.error,
+              modifier = Modifier.size(20.dp),
+            )
+          }
+        }
+      }
+      AnimatedVisibility(
+        visible = expanded,
+        enter = fadeIn(animationSpec = tween(220)) + expandVertically(animationSpec = tween(220)),
+        exit = fadeOut(animationSpec = tween(180)) + shrinkVertically(animationSpec = tween(180)),
+      ) {
+        Text(
+          text = conflict.message,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.92f),
+        )
+      }
+      if (compactLayout) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.End,
+        ) {
+          Text(
+            text = stringResource(R.string.setup_install_conflict_remove),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          Checkbox(
+            checked = conflict.markedForRemove,
+            onCheckedChange = { checked -> onToggleRemove(checked) },
+            modifier = Modifier.size(36.dp),
+          )
+        }
+      }
+    }
+  }
+}
 

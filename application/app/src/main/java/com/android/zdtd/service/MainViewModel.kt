@@ -64,10 +64,19 @@ enum class SetupStep {
 }
 
 
+data class InstallConflictUi(
+  val moduleName: String,
+  val modulePath: String,
+  val message: String,
+  val markedForRemove: Boolean = false,
+)
+
 data class SetupUiState(
   val step: SetupStep = SetupStep.WELCOME,
   val installing: Boolean = false,
   val installLog: String = "",
+  val installProgressPercent: Int = 0,
+  val installProgressLabel: String = "",
   // For UI: which installer the app is going to use (Magisk / KernelSU / APatch / Manual).
   val installerLabel: String = "",
   // Manual export (when no installer is detected): we save zip to shared storage.
@@ -84,6 +93,7 @@ data class SetupUiState(
 
   // Pre-install warnings (forced update / tamper / unsupported)
   val preInstallWarning: String? = null,
+  val installConflicts: List<InstallConflictUi> = emptyList(),
 
   // Reboot required screen text
   val rebootRequiredText: String = "",
@@ -1203,6 +1213,19 @@ private fun clearDownloadedUpdateApk() {
     _setup.update { it.copy(step = SetupStep.ROOT) }
   }
 
+  private fun updateInstallProgress(percent: Int, label: String) {
+    _setup.update {
+      it.copy(
+        installProgressPercent = percent.coerceIn(0, 100),
+        installProgressLabel = label,
+      )
+    }
+  }
+
+  private fun updateInstallProgress(@androidx.annotation.StringRes labelRes: Int, percent: Int) {
+    updateInstallProgress(percent, str(labelRes))
+  }
+
   override fun beginModuleInstall() {
     if (_rootState.value != RootState.GRANTED) {
       log("ERR", "root required")
@@ -1243,6 +1266,8 @@ private fun clearDownloadedUpdateApk() {
           installError = null,
           installOk = false,
           installLog = "",
+          installProgressPercent = 3,
+          installProgressLabel = str(R.string.setup_install_progress_preparing),
           installerLabel = label,
           manualZipSaved = false,
           manualZipPath = "",
@@ -1256,6 +1281,8 @@ private fun clearDownloadedUpdateApk() {
         else -> RootConfigManager.PendingModuleAction.INSTALL
       }
 
+      updateInstallProgress(18, str(R.string.setup_install_progress_copying))
+
       val (ok, out) = when (installer) {
         RootConfigManager.ModuleInstaller.MAGISK -> installViaMagisk()
         RootConfigManager.ModuleInstaller.KSU -> installViaKsu()
@@ -1267,13 +1294,24 @@ private fun clearDownloadedUpdateApk() {
         // Mark setup as completed so we don't show the installer again after reboot.
         root.setSetupDone(true)
         rememberPendingModuleAction(pendingAction)
-        _setup.update { it.copy(installing = false, installOk = true, installLog = out, explicitReinstallRequested = false) }
+        _setup.update {
+          it.copy(
+            installing = false,
+            installOk = true,
+            installLog = out,
+            installProgressPercent = 100,
+            installProgressLabel = str(R.string.setup_install_progress_complete),
+            explicitReinstallRequested = false,
+          )
+        }
       } else {
         _setup.update {
           it.copy(
             installing = false,
             installError = str(R.string.mv_auto_017),
             installLog = out,
+            installProgressPercent = 100,
+            installProgressLabel = str(R.string.setup_install_progress_failed),
             showManualDialog = true,
             manualZipSaved = false,
             manualZipPath = "",
@@ -1301,6 +1339,74 @@ private fun clearDownloadedUpdateApk() {
     }
   }
 
+  override fun refreshInstallConflicts() {
+    launchIO {
+      val conflicts = detectInstallConflicts()
+      _setup.update { it.copy(installConflicts = conflicts) }
+    }
+  }
+
+  override fun setInstallConflictMarked(modulePath: String, checked: Boolean) {
+    launchIO {
+      val script = if (checked) {
+        "mkdir -p ${shQuote(modulePath)} 2>/dev/null || true; : > ${shQuote(modulePath + "/remove")}"
+      } else {
+        "rm -f ${shQuote(modulePath + "/remove")} 2>/dev/null || true"
+      }
+      runCatching { root.execRootSh(script) }
+      val conflicts = detectInstallConflicts()
+      _setup.update { it.copy(installConflicts = conflicts) }
+    }
+  }
+
+  private suspend fun detectInstallConflicts(): List<InstallConflictUi> {
+    if (_rootState.value != RootState.GRANTED) return emptyList()
+    val script = """
+      for d in /data/adb/modules/*; do
+        [ -d "${'$'}d" ] || continue
+        name="${'$'}{d##*/}"
+        lower=$$(printf '%s' "${'$'}name" | tr '[:upper:]' '[:lower:]')
+        [ "${'$'}lower" = "zdt-d" ] && continue
+        kind=""
+        if [ "${'$'}name" = "zapret" ] || [ "${'$'}name" = "zaprett" ]; then
+          kind="zapret"
+        elif [ "${'$'}name" = "dnscrypt-proxy-android" ]; then
+          kind="dnscrypt"
+        elif printf '%s' "${'$'}lower" | grep -q 'dnscrypt'; then
+          kind="dnscrypt"
+        elif [ "${'$'}lower" = "portguard" ]; then
+          kind="portguard"
+        fi
+        [ -n "${'$'}kind" ] || continue
+        if [ -f "${'$'}d/remove" ]; then marked=1; else marked=0; fi
+        printf '%s\t%s\t%s\t%s\n' "${'$'}name" "${'$'}d" "${'$'}kind" "${'$'}marked"
+      done
+    """.trimIndent().replace("$$", "$")
+    val r = runCatching { root.execRootSh(script) }.getOrNull() ?: return emptyList()
+    return r.out.mapNotNull { raw ->
+      val line = raw.trim()
+      if (line.isEmpty()) return@mapNotNull null
+      val parts = line.split('	')
+      if (parts.size < 4) return@mapNotNull null
+      val moduleName = parts[0].trim()
+      val modulePath = parts[1].trim()
+      val kind = parts[2].trim()
+      val marked = parts[3].trim() == "1"
+      val message = when (kind) {
+        "zapret" -> str(R.string.setup_install_conflict_zapret_message)
+        "dnscrypt" -> str(R.string.setup_install_conflict_dnscrypt_message)
+        "portguard" -> str(R.string.setup_install_conflict_portguard_message)
+        else -> return@mapNotNull null
+      }
+      InstallConflictUi(
+        moduleName = moduleName,
+        modulePath = modulePath,
+        message = message,
+        markedForRemove = marked,
+      )
+    }.sortedBy { it.moduleName.lowercase(Locale.ROOT) }
+  }
+
   override fun confirmManualInstall() {
     if (_rootState.value != RootState.GRANTED) {
       log("ERR", "root required")
@@ -1314,12 +1420,16 @@ private fun clearDownloadedUpdateApk() {
           installing = true,
           installError = null,
           installOk = false,
+          installLog = "",
+          installProgressPercent = 3,
+          installProgressLabel = str(R.string.setup_install_progress_preparing),
           showManualDialog = false,
           manualZipSaved = false,
           manualZipPath = "",
           oldVersionDetected = oldVer,
         )
       }
+      updateInstallProgress(45, str(R.string.setup_install_progress_exporting))
 
       val (ok, out, path) = exportModuleZipToSdcard()
       if (ok) {
@@ -1329,12 +1439,22 @@ private fun clearDownloadedUpdateApk() {
             installError = null,
             installOk = false,
             installLog = out,
+            installProgressPercent = 100,
+            installProgressLabel = str(R.string.setup_install_progress_complete),
             manualZipSaved = true,
             manualZipPath = path,
           )
         }
       } else {
-        _setup.update { it.copy(installing = false, installError = str(R.string.mv_auto_021), installLog = out) }
+        _setup.update {
+          it.copy(
+            installing = false,
+            installError = str(R.string.mv_auto_021),
+            installLog = out,
+            installProgressPercent = 100,
+            installProgressLabel = str(R.string.setup_install_progress_failed),
+          )
+        }
       }
     }
   }
@@ -2611,6 +2731,14 @@ if (mf.isNotBlank()) {
     _setup.update { st ->
       st.copy(
         step = SetupStep.INSTALL,
+        installing = false,
+        installLog = "",
+        installProgressPercent = 0,
+        installProgressLabel = "",
+        installOk = false,
+        installError = null,
+        manualZipSaved = false,
+        manualZipPath = "",
         showUpdatePrompt = false,
         updatePromptMandatory = false,
         updatePromptTitle = "",
@@ -2636,6 +2764,7 @@ if (mf.isNotBlank()) {
     val (stagedOk, stageLog) = stageModuleZipToTmp()
     if (!stagedOk) return false to stageLog
 
+    updateInstallProgress(62, str(R.string.setup_install_progress_installing_fmt, "Magisk"))
     val r = root.execRoot("sh -c 'magisk --install-module /data/local/tmp/zdt_module.zip'")
     val out2 = (r.out + r.err).joinToString("\n")
     return r.isSuccess to (stageLog + "\n" + out2).trim()
@@ -2645,6 +2774,7 @@ if (mf.isNotBlank()) {
     val (stagedOk, stageLog) = stageModuleZipToTmp()
     if (!stagedOk) return false to stageLog
 
+    updateInstallProgress(62, str(R.string.setup_install_progress_installing_fmt, str(R.string.mv_auto_013)))
     val ksu = runCatching { root.ksuPath() }.getOrNull() ?: "ksud"
     val r = root.execRoot("sh -c ${shQuote("${ksu} module install /data/local/tmp/zdt_module.zip")}")
     val out2 = (r.out + r.err).joinToString("\n")
@@ -2655,6 +2785,7 @@ if (mf.isNotBlank()) {
     val (stagedOk, stageLog) = stageModuleZipToTmp()
     if (!stagedOk) return false to stageLog
 
+    updateInstallProgress(62, str(R.string.setup_install_progress_installing_fmt, "APatch"))
     val apd = runCatching { root.apatchPath() }.getOrNull() ?: "apd"
     val r = root.execRoot("sh -c ${shQuote("${apd} module install /data/local/tmp/zdt_module.zip")}")
     val out2 = (r.out + r.err).joinToString("\n")
@@ -2685,6 +2816,7 @@ if (mf.isNotBlank()) {
   }
 
   private suspend fun stageModuleZipToTmp(): Pair<Boolean, String> {
+    updateInstallProgress(22, str(R.string.setup_install_progress_copying))
     // Copy assets/zdt_module.zip to cache and then to /data/local/tmp
     val cacheZip = File(ctx.cacheDir, "zdt_module.zip")
     runCatching {
@@ -2696,6 +2828,7 @@ if (mf.isNotBlank()) {
     }
 
     val src = cacheZip.absolutePath
+    updateInstallProgress(42, str(R.string.setup_install_progress_copying))
     val copyRes = root.execRoot("sh -c 'cp ${shQuote(src)} /data/local/tmp/zdt_module.zip'")
     val out1 = (copyRes.out + copyRes.err).joinToString("\n")
     return copyRes.isSuccess to out1.trim()

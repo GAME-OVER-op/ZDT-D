@@ -10,7 +10,7 @@ use std::{
 };
 use std::os::unix::process::CommandExt;
 
-use crate::shell::{self, Capture};
+use crate::{iptables::caps, shell::{self, Capture}, xtables_lock};
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -353,10 +353,56 @@ fn parse_listen_port(toml_path: &Path) -> Result<u16> {
     Ok(0)
 }
 
+const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(5);
+const XT_WAIT_SECS: &str = "5";
+
+fn supports_wait_fallback(out: &str) -> bool {
+    let s = out.to_ascii_lowercase();
+    s.contains("unknown option")
+        || s.contains("unrecognized option")
+        || s.contains("invalid option")
+        || s.contains("illegal option")
+        || s.contains("option requires an argument")
+}
+
+fn ipt_run(iptables: &str, args: &[&str], capture: Capture) -> Result<(i32, String)> {
+    let effective_capture = match capture {
+        Capture::None | Capture::Stdout | Capture::Stderr | Capture::Both => Capture::Both,
+    };
+
+    let mut with_wait: Vec<&str> = Vec::with_capacity(args.len() + 2);
+    with_wait.push("-w");
+    with_wait.push(XT_WAIT_SECS);
+    with_wait.extend_from_slice(args);
+
+    let first = xtables_lock::run_timeout_retry(iptables, &with_wait, effective_capture, IPT_CMD_TIMEOUT)?;
+    if first.0 == 0 || !supports_wait_fallback(&first.1) {
+        return Ok(first);
+    }
+
+    xtables_lock::run_timeout_retry(iptables, args, effective_capture, IPT_CMD_TIMEOUT)
+}
+
+fn add_per_port_rules(iptables: &str, table: &str, chain: &str, insert_first: bool, proto: &str, dns_ports: &[u16], tail: &[&str]) -> Result<()> {
+    for p in dns_ports {
+        let ps = p.to_string();
+        let mut rule: Vec<String> = vec!["-p".into(), proto.into(), "--dport".into(), ps];
+        rule.extend(tail.iter().map(|s| (*s).to_string()));
+        let refs: Vec<&str> = rule.iter().map(|s| s.as_str()).collect();
+        if !rule_exists(iptables, table, chain, &refs)? {
+            let _ = add_rule(iptables, table, chain, insert_first, &refs)
+                .or_else(|_| add_rule(iptables, table, chain, false, &refs));
+        }
+    }
+    Ok(())
+}
+
 fn apply_dns_iptables(listen_port: u16) -> Result<()> {
-    let dns_ports = [53u16, 853u16];
-    let dports_multi = "53,853";
+    let _xtables_guard = xtables_lock::lock();
+    let dns_ports = [53u16, 853u16, 5353u16];
+    let dports_multi = "53,853,5353";
     let prots = ["udp", "tcp", "sctp"];
+    let use_multiport = caps::multiport_v4();
 
     let ipt = find_iptables();
 
@@ -370,21 +416,19 @@ fn apply_dns_iptables(listen_port: u16) -> Result<()> {
 
     // 1) MANGLE exceptions: RETURN for DNS ports
     for proto in prots {
-        let mp = ["-p", proto, "-m", "multiport", "--dports", dports_multi, "-j", "RETURN"];
-        if !rule_exists(&ipt, "mangle", "MANGLE_APP", &mp)? {
-            if add_rule(&ipt, "mangle", "MANGLE_APP", true, &mp).is_ok() {
-                info!("dns: mangle added multiport RETURN ({}) for {}", dports_multi, proto);
-            } else {
-                for p in dns_ports {
-                    let ps = p.to_string();
-                    let r = ["-p", proto, "--dport", &ps, "-j", "RETURN"];
-                    if !rule_exists(&ipt, "mangle", "MANGLE_APP", &r)? {
-                        let _ = add_rule(&ipt, "mangle", "MANGLE_APP", true, &r)
-                            .or_else(|_| add_rule(&ipt, "mangle", "MANGLE_APP", false, &r));
-                    }
+        if use_multiport {
+            let mp = ["-p", proto, "-m", "multiport", "--dports", dports_multi, "-j", "RETURN"];
+            if !rule_exists(&ipt, "mangle", "MANGLE_APP", &mp)? {
+                if add_rule(&ipt, "mangle", "MANGLE_APP", true, &mp).is_ok() {
+                    info!("dns: mangle added multiport RETURN ({}) for {}", dports_multi, proto);
+                } else {
+                    add_per_port_rules(&ipt, "mangle", "MANGLE_APP", true, proto, &dns_ports, &["-j", "RETURN"])?;
+                    info!("dns: mangle multiport failed -> added per-port RETURN for {}", proto);
                 }
-                info!("dns: mangle multiport unavailable -> added per-port RETURN for {}", proto);
             }
+        } else {
+            add_per_port_rules(&ipt, "mangle", "MANGLE_APP", true, proto, &dns_ports, &["-j", "RETURN"])?;
+            info!("dns: mangle multiport unsupported -> added per-port RETURN for {}", proto);
         }
     }
 
@@ -431,32 +475,30 @@ fn apply_dns_iptables(listen_port: u16) -> Result<()> {
     for proto in prots {
         for chain in ["NAT_DPI"] {
             let to = format!("127.0.0.1:{}", listen_port);
-            let mp = [
-                "-p",
-                proto,
-                "-m",
-                "multiport",
-                "--dports",
-                dports_multi,
-                "-j",
-                "DNAT",
-                "--to-destination",
-                &to,
-            ];
-            if !rule_exists(&ipt, "nat", chain, &mp)? {
-                if add_rule(&ipt, "nat", chain, true, &mp).is_ok() {
-                    info!("dns: nat added multiport DNAT ({}) {} -> {} in {}", dports_multi, proto, to, chain);
-                } else {
-                    for p in dns_ports {
-                        let ps = p.to_string();
-                        let r = ["-p", proto, "--dport", &ps, "-j", "DNAT", "--to-destination", &to];
-                        if !rule_exists(&ipt, "nat", chain, &r)? {
-                            let _ = add_rule(&ipt, "nat", chain, true, &r)
-                                .or_else(|_| add_rule(&ipt, "nat", chain, false, &r));
-                        }
+            if use_multiport {
+                let mp = [
+                    "-p",
+                    proto,
+                    "-m",
+                    "multiport",
+                    "--dports",
+                    dports_multi,
+                    "-j",
+                    "DNAT",
+                    "--to-destination",
+                    &to,
+                ];
+                if !rule_exists(&ipt, "nat", chain, &mp)? {
+                    if add_rule(&ipt, "nat", chain, true, &mp).is_ok() {
+                        info!("dns: nat added multiport DNAT ({}) {} -> {} in {}", dports_multi, proto, to, chain);
+                    } else {
+                        add_per_port_rules(&ipt, "nat", chain, true, proto, &dns_ports, &["-j", "DNAT", "--to-destination", &to])?;
+                        info!("dns: nat multiport failed -> added per-port DNAT for {} in {}", proto, chain);
                     }
-                    info!("dns: nat multiport unavailable -> added per-port DNAT for {} in {}", proto, chain);
                 }
+            } else {
+                add_per_port_rules(&ipt, "nat", chain, true, proto, &dns_ports, &["-j", "DNAT", "--to-destination", &to])?;
+                info!("dns: nat multiport unsupported -> added per-port DNAT for {} in {}", proto, chain);
             }
         }
     }
@@ -519,16 +561,17 @@ fn find_ip6tables() -> String {
 }
 
 fn ip6_nat_supported(ip6t: &str) -> bool {
-    match shell::run(ip6t, &["-t", "nat", "-nL"], Capture::None) {
+    match ipt_run(ip6t, &["-t", "nat", "-nL"], Capture::None) {
         Ok((c, _)) => c == 0,
         Err(_) => false,
     }
 }
 
 fn apply_dns_ip6tables(listen_port: u16) -> Result<()> {
-    let dns_ports = [53u16, 853u16];
-    let dports_multi = "53,853";
+    let dns_ports = [53u16, 853u16, 5353u16];
+    let dports_multi = "53,853,5353";
     let prots = ["udp", "tcp", "sctp"];
+    let use_multiport = caps::multiport_v6();
 
     let ip6t = find_ip6tables();
 
@@ -572,21 +615,19 @@ fn apply_dns_ip6tables(listen_port: u16) -> Result<()> {
 
         // 1) MANGLE exceptions: RETURN for DNS ports
         for proto in prots {
-            let mp = ["-p", proto, "-m", "multiport", "--dports", dports_multi, "-j", "RETURN"];
-            if !rule_exists(&ip6t, "mangle", "MANGLE_APP", &mp)? {
-                if add_rule(&ip6t, "mangle", "MANGLE_APP", true, &mp).is_ok() {
-                    info!("dns6: mangle added multiport RETURN ({}) for {}", dports_multi, proto);
-                } else {
-                    for p in dns_ports {
-                        let ps = p.to_string();
-                        let r = ["-p", proto, "--dport", &ps, "-j", "RETURN"];
-                        if !rule_exists(&ip6t, "mangle", "MANGLE_APP", &r)? {
-                            let _ = add_rule(&ip6t, "mangle", "MANGLE_APP", true, &r)
-                                .or_else(|_| add_rule(&ip6t, "mangle", "MANGLE_APP", false, &r));
-                        }
+            if use_multiport {
+                let mp = ["-p", proto, "-m", "multiport", "--dports", dports_multi, "-j", "RETURN"];
+                if !rule_exists(&ip6t, "mangle", "MANGLE_APP", &mp)? {
+                    if add_rule(&ip6t, "mangle", "MANGLE_APP", true, &mp).is_ok() {
+                        info!("dns6: mangle added multiport RETURN ({}) for {}", dports_multi, proto);
+                    } else {
+                        add_per_port_rules(&ip6t, "mangle", "MANGLE_APP", true, proto, &dns_ports, &["-j", "RETURN"])?;
+                        info!("dns6: mangle multiport failed -> added per-port RETURN for {}", proto);
                     }
-                    info!("dns6: mangle multiport unavailable -> added per-port RETURN for {}", proto);
                 }
+            } else {
+                add_per_port_rules(&ip6t, "mangle", "MANGLE_APP", true, proto, &dns_ports, &["-j", "RETURN"])?;
+                info!("dns6: mangle multiport unsupported -> added per-port RETURN for {}", proto);
             }
         }
 
@@ -631,45 +672,46 @@ fn apply_dns_ip6tables(listen_port: u16) -> Result<()> {
 
         // 3) add DNAT inside NAT_DPI only (no PREROUTING)
         for proto in prots {
-            let mp = [
-                "-p",
-                proto,
-                "-m",
-                "multiport",
-                "--dports",
-                dports_multi,
-                "-j",
-                "DNAT",
-                "--to-destination",
-                &to,
-            ];
-            if !rule_exists(&ip6t, "nat", "NAT_DPI", &mp)? {
-                if add_rule(&ip6t, "nat", "NAT_DPI", true, &mp).is_ok() {
-                    info!(
-                        "dns6: nat added multiport DNAT ({}) {} -> {} in NAT_DPI",
-                        dports_multi, proto, to
-                    );
-                } else {
-                    for p in dns_ports {
-                        let ps = p.to_string();
-                        let r = ["-p", proto, "--dport", &ps, "-j", "DNAT", "--to-destination", &to];
-                        if !rule_exists(&ip6t, "nat", "NAT_DPI", &r)? {
-                            let _ = add_rule(&ip6t, "nat", "NAT_DPI", true, &r)
-                                .or_else(|_| add_rule(&ip6t, "nat", "NAT_DPI", false, &r));
-                        }
+            if use_multiport {
+                let mp = [
+                    "-p",
+                    proto,
+                    "-m",
+                    "multiport",
+                    "--dports",
+                    dports_multi,
+                    "-j",
+                    "DNAT",
+                    "--to-destination",
+                    &to,
+                ];
+                if !rule_exists(&ip6t, "nat", "NAT_DPI", &mp)? {
+                    if add_rule(&ip6t, "nat", "NAT_DPI", true, &mp).is_ok() {
+                        info!(
+                            "dns6: nat added multiport DNAT ({}) {} -> {} in NAT_DPI",
+                            dports_multi, proto, to
+                        );
+                    } else {
+                        add_per_port_rules(&ip6t, "nat", "NAT_DPI", true, proto, &dns_ports, &["-j", "DNAT", "--to-destination", &to])?;
+                        info!(
+                            "dns6: nat multiport failed -> added per-port DNAT for {} in NAT_DPI",
+                            proto
+                        );
                     }
-                    info!(
-                        "dns6: nat multiport unavailable -> added per-port DNAT for {} in NAT_DPI",
-                        proto
-                    );
                 }
+            } else {
+                add_per_port_rules(&ip6t, "nat", "NAT_DPI", true, proto, &dns_ports, &["-j", "DNAT", "--to-destination", &to])?;
+                info!(
+                    "dns6: nat multiport unsupported -> added per-port DNAT for {} in NAT_DPI",
+                    proto
+                );
             }
         }
     } else {
-        warn!("dns: ip6tables nat table unsupported; disabling IPv6 DNS (53/853)");
-        crate::logging::user_warn("DNSCrypt: IPv6 NAT не поддерживается — IPv6 DNS (53/853) отключён");
+        warn!("dns: ip6tables nat table unsupported; disabling IPv6 DNS (53/853/5353)");
+        crate::logging::user_warn("DNSCrypt: IPv6 NAT не поддерживается — IPv6 DNS (53/853/5353) отключён");
 
-        // Remove RETURN exceptions for 53/853 (otherwise they would bypass the block).
+        // Remove RETURN exceptions for 53/853/5353 (otherwise they would bypass the block).
         for proto in prots {
             let mp_ret = ["-p", proto, "-m", "multiport", "--dports", dports_multi, "-j", "RETURN"];
             if rule_exists(&ip6t, "mangle", "MANGLE_APP", &mp_ret)? {
@@ -686,29 +728,40 @@ fn apply_dns_ip6tables(listen_port: u16) -> Result<()> {
 
         // Add blocking rules at position 3 (after loopback RETURN rules).
         for proto in prots {
-            let mp_rej = ["-p", proto, "-m", "multiport", "--dports", dports_multi, "-j", "REJECT"];
-            let mp_drop = ["-p", proto, "-m", "multiport", "--dports", dports_multi, "-j", "DROP"];
+            if use_multiport {
+                let mp_rej = ["-p", proto, "-m", "multiport", "--dports", dports_multi, "-j", "REJECT"];
+                let mp_drop = ["-p", proto, "-m", "multiport", "--dports", dports_multi, "-j", "DROP"];
 
-            if !rule_exists(&ip6t, "mangle", "MANGLE_APP", &mp_rej)? && !rule_exists(&ip6t, "mangle", "MANGLE_APP", &mp_drop)? {
-                // try multiport first
-                let res = add_rule_pos(&ip6t, "mangle", "MANGLE_APP", 3, &mp_rej)
-                    .or_else(|_| add_rule_pos(&ip6t, "mangle", "MANGLE_APP", 3, &mp_drop));
+                if !rule_exists(&ip6t, "mangle", "MANGLE_APP", &mp_rej)? && !rule_exists(&ip6t, "mangle", "MANGLE_APP", &mp_drop)? {
+                    let res = add_rule_pos(&ip6t, "mangle", "MANGLE_APP", 3, &mp_rej)
+                        .or_else(|_| add_rule_pos(&ip6t, "mangle", "MANGLE_APP", 3, &mp_drop));
 
-                if res.is_ok() {
-                    info!("dns6: blocked IPv6 DNS {} ports {}", proto, dports_multi);
-                } else {
-                    // fallback to per-port
-                    for p in dns_ports {
-                        let ps = p.to_string();
-                        let r_rej = ["-p", proto, "--dport", &ps, "-j", "REJECT"];
-                        let r_drop = ["-p", proto, "--dport", &ps, "-j", "DROP"];
-                        if !rule_exists(&ip6t, "mangle", "MANGLE_APP", &r_rej)? && !rule_exists(&ip6t, "mangle", "MANGLE_APP", &r_drop)? {
-                            let _ = add_rule_pos(&ip6t, "mangle", "MANGLE_APP", 3, &r_rej)
-                                .or_else(|_| add_rule_pos(&ip6t, "mangle", "MANGLE_APP", 3, &r_drop));
+                    if res.is_ok() {
+                        info!("dns6: blocked IPv6 DNS {} ports {}", proto, dports_multi);
+                    } else {
+                        for p in dns_ports {
+                            let ps = p.to_string();
+                            let r_rej = ["-p", proto, "--dport", &ps, "-j", "REJECT"];
+                            let r_drop = ["-p", proto, "--dport", &ps, "-j", "DROP"];
+                            if !rule_exists(&ip6t, "mangle", "MANGLE_APP", &r_rej)? && !rule_exists(&ip6t, "mangle", "MANGLE_APP", &r_drop)? {
+                                let _ = add_rule_pos(&ip6t, "mangle", "MANGLE_APP", 3, &r_rej)
+                                    .or_else(|_| add_rule_pos(&ip6t, "mangle", "MANGLE_APP", 3, &r_drop));
+                            }
                         }
+                        info!("dns6: blocked IPv6 DNS {} ports (per-port)", proto);
                     }
-                    info!("dns6: blocked IPv6 DNS {} ports (per-port)", proto);
                 }
+            } else {
+                for p in dns_ports {
+                    let ps = p.to_string();
+                    let r_rej = ["-p", proto, "--dport", &ps, "-j", "REJECT"];
+                    let r_drop = ["-p", proto, "--dport", &ps, "-j", "DROP"];
+                    if !rule_exists(&ip6t, "mangle", "MANGLE_APP", &r_rej)? && !rule_exists(&ip6t, "mangle", "MANGLE_APP", &r_drop)? {
+                        let _ = add_rule_pos(&ip6t, "mangle", "MANGLE_APP", 3, &r_rej)
+                            .or_else(|_| add_rule_pos(&ip6t, "mangle", "MANGLE_APP", 3, &r_drop));
+                    }
+                }
+                info!("dns6: multiport unsupported -> blocked IPv6 DNS {} ports (per-port)", proto);
             }
         }
     }
@@ -720,10 +773,10 @@ fn apply_dns_ip6tables(listen_port: u16) -> Result<()> {
 
 
 fn ensure_chain(iptables: &str, table: &str, chain: &str) -> Result<()> {
-    let (code, _) = shell::run(iptables, &["-t", table, "-nL", chain], Capture::Stdout)
+    let (code, _) = ipt_run(iptables, &["-t", table, "-nL", chain], Capture::Stdout)
         .with_context(|| format!("iptables list chain {} {}", table, chain))?;
     if code != 0 {
-        let (c2, _) = shell::run(iptables, &["-t", table, "-N", chain], Capture::Stdout)
+        let (c2, _) = ipt_run(iptables, &["-t", table, "-N", chain], Capture::Stdout)
             .with_context(|| format!("iptables create chain {} {}", table, chain))?;
         if c2 != 0 {
             anyhow::bail!("failed to create chain {} in table {}", chain, table);
@@ -733,7 +786,7 @@ fn ensure_chain(iptables: &str, table: &str, chain: &str) -> Result<()> {
 }
 
 fn ensure_jump(iptables: &str, table: &str, from_chain: &str, to_chain: &str, insert_first: bool) -> Result<()> {
-    let (code, _) = shell::run(iptables, &["-t", table, "-C", from_chain, "-j", to_chain], Capture::Stdout)
+    let (code, _) = ipt_run(iptables, &["-t", table, "-C", from_chain, "-j", to_chain], Capture::Stdout)
         .unwrap_or((1, String::new()));
     if code == 0 {
         return Ok(());
@@ -743,7 +796,7 @@ fn ensure_jump(iptables: &str, table: &str, from_chain: &str, to_chain: &str, in
     } else {
         vec!["-t", table, "-A", from_chain, "-j", to_chain]
     };
-    let (c2, _) = shell::run(iptables, &args, Capture::Stdout)
+    let (c2, _) = ipt_run(iptables, &args, Capture::Stdout)
         .with_context(|| format!("iptables add jump {}:{} -> {}", table, from_chain, to_chain))?;
     if c2 != 0 {
         anyhow::bail!("failed to add jump {}:{} -> {}", table, from_chain, to_chain);
@@ -754,7 +807,7 @@ fn ensure_jump(iptables: &str, table: &str, from_chain: &str, to_chain: &str, in
 fn rule_exists(iptables: &str, table: &str, chain: &str, rule: &[&str]) -> Result<bool> {
     let mut args = vec!["-t", table, "-C", chain];
     args.extend_from_slice(rule);
-    let (code, _) = shell::run(iptables, &args, Capture::Stdout)
+    let (code, _) = ipt_run(iptables, &args, Capture::Stdout)
         .with_context(|| format!("iptables -C {} {}", table, chain))?;
     Ok(code == 0)
 }
@@ -765,7 +818,7 @@ fn add_rule(iptables: &str, table: &str, chain: &str, insert_first: bool, rule: 
         args.push("1");
     }
     args.extend_from_slice(rule);
-    let (code, _) = shell::run(iptables, &args, Capture::Stdout)
+    let (code, _) = ipt_run(iptables, &args, Capture::Stdout)
         .with_context(|| format!("iptables add rule {} {}", table, chain))?;
     if code != 0 {
         anyhow::bail!("iptables add rule failed {} {}", table, chain);
@@ -777,7 +830,7 @@ fn add_rule_pos(iptables: &str, table: &str, chain: &str, pos: usize, rule: &[&s
     let pos_s = pos.to_string();
     let mut args = vec!["-t", table, "-I", chain, &pos_s];
     args.extend_from_slice(rule);
-    let (code, _) = shell::run(iptables, &args, Capture::Stdout)
+    let (code, _) = ipt_run(iptables, &args, Capture::Stdout)
         .with_context(|| format!("iptables add rule(pos) {} {}", table, chain))?;
     if code != 0 {
         anyhow::bail!("iptables add rule(pos) failed {} {}", table, chain);
@@ -788,7 +841,7 @@ fn add_rule_pos(iptables: &str, table: &str, chain: &str, pos: usize, rule: &[&s
 fn del_rule(iptables: &str, table: &str, chain: &str, rule: &[&str]) -> Result<()> {
     let mut args = vec!["-t", table, "-D", chain];
     args.extend_from_slice(rule);
-    let (code, _) = shell::run(iptables, &args, Capture::Stdout)
+    let (code, _) = ipt_run(iptables, &args, Capture::Stdout)
         .with_context(|| format!("iptables del rule {} {}", table, chain))?;
     if code != 0 {
         anyhow::bail!("iptables del rule failed {} {}", table, chain);
@@ -800,7 +853,7 @@ fn ensure_loopback_returns(iptables: &str) -> Result<()> {
     // Keep loopback / localhost traffic at the very beginning to avoid feedback loops.
     let mut del_all = |args: &[&str]| {
         loop {
-            let (c, _) = shell::run(iptables, args, Capture::Stdout)
+            let (c, _) = ipt_run(iptables, args, Capture::Stdout)
                 .unwrap_or((1, String::new()));
             if c != 0 { break; }
         }
@@ -810,12 +863,12 @@ fn ensure_loopback_returns(iptables: &str) -> Result<()> {
     del_all(&["-t", "nat", "-D", "NAT_DPI", "-d", "127.0.0.1", "-j", "RETURN"]); // legacy
     del_all(&["-t", "nat", "-D", "NAT_DPI", "-o", "lo", "-j", "RETURN"]);
     del_all(&["-t", "nat", "-D", "NAT_DPI", "-d", "127.0.0.0/8", "-j", "RETURN"]);
-    let _ = shell::run(
+    let _ = ipt_run(
         iptables,
         &["-t", "nat", "-I", "NAT_DPI", "1", "-o", "lo", "-j", "RETURN"],
         Capture::Stdout,
     );
-    let _ = shell::run(
+    let _ = ipt_run(
         iptables,
         &["-t", "nat", "-I", "NAT_DPI", "2", "-d", "127.0.0.0/8", "-j", "RETURN"],
         Capture::Stdout,
@@ -825,12 +878,12 @@ fn ensure_loopback_returns(iptables: &str) -> Result<()> {
     del_all(&["-t", "mangle", "-D", "MANGLE_APP", "-d", "127.0.0.1", "-j", "RETURN"]); // legacy
     del_all(&["-t", "mangle", "-D", "MANGLE_APP", "-o", "lo", "-j", "RETURN"]);
     del_all(&["-t", "mangle", "-D", "MANGLE_APP", "-d", "127.0.0.0/8", "-j", "RETURN"]);
-    let _ = shell::run(
+    let _ = ipt_run(
         iptables,
         &["-t", "mangle", "-I", "MANGLE_APP", "1", "-o", "lo", "-j", "RETURN"],
         Capture::Stdout,
     );
-    let _ = shell::run(
+    let _ = ipt_run(
         iptables,
         &["-t", "mangle", "-I", "MANGLE_APP", "2", "-d", "127.0.0.0/8", "-j", "RETURN"],
         Capture::Stdout,
@@ -843,7 +896,7 @@ fn ensure_loopback_returns_v6(ip6tables: &str, nat_ok: bool) -> Result<()> {
     // Keep loopback / localhost traffic at the very beginning to avoid feedback loops.
     let mut del_all = |args: &[&str]| {
         loop {
-            let (c, _) = shell::run(ip6tables, args, Capture::Stdout).unwrap_or((1, String::new()));
+            let (c, _) = ipt_run(ip6tables, args, Capture::Stdout).unwrap_or((1, String::new()));
             if c != 0 {
                 break;
             }
@@ -855,12 +908,12 @@ fn ensure_loopback_returns_v6(ip6tables: &str, nat_ok: bool) -> Result<()> {
         del_all(&["-t", "nat", "-D", "NAT_DPI", "-d", "::1", "-j", "RETURN"]); // legacy
         del_all(&["-t", "nat", "-D", "NAT_DPI", "-o", "lo", "-j", "RETURN"]);
         del_all(&["-t", "nat", "-D", "NAT_DPI", "-d", "::1/128", "-j", "RETURN"]);
-        let _ = shell::run(
+        let _ = ipt_run(
             ip6tables,
             &["-t", "nat", "-I", "NAT_DPI", "1", "-o", "lo", "-j", "RETURN"],
             Capture::Stdout,
         );
-        let _ = shell::run(
+        let _ = ipt_run(
             ip6tables,
             &["-t", "nat", "-I", "NAT_DPI", "2", "-d", "::1/128", "-j", "RETURN"],
             Capture::Stdout,
@@ -871,12 +924,12 @@ fn ensure_loopback_returns_v6(ip6tables: &str, nat_ok: bool) -> Result<()> {
     del_all(&["-t", "mangle", "-D", "MANGLE_APP", "-d", "::1", "-j", "RETURN"]); // legacy
     del_all(&["-t", "mangle", "-D", "MANGLE_APP", "-o", "lo", "-j", "RETURN"]);
     del_all(&["-t", "mangle", "-D", "MANGLE_APP", "-d", "::1/128", "-j", "RETURN"]);
-    let _ = shell::run(
+    let _ = ipt_run(
         ip6tables,
         &["-t", "mangle", "-I", "MANGLE_APP", "1", "-o", "lo", "-j", "RETURN"],
         Capture::Stdout,
     );
-    let _ = shell::run(
+    let _ = ipt_run(
         ip6tables,
         &["-t", "mangle", "-I", "MANGLE_APP", "2", "-d", "::1/128", "-j", "RETURN"],
         Capture::Stdout,

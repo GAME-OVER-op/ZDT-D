@@ -269,7 +269,7 @@ SocksPort 127.0.0.1:9050
 Log notice stdout
 
 UseBridges 1
-ClientTransportPlugin obfs4 exec /data/adb/modules/ZDT-D/bin/obfs4proxy
+ClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules/ZDT-D/bin/lyrebird
 "#;
 
     let layouts = [

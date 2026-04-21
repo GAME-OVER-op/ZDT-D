@@ -89,4 +89,7 @@ apply net.netfilter.nf_conntrack_tcp_be_liberal 0
 # quiet printk
 apply kernel.printk "3 3 3 3"
 
+# Disable system DNS 
+settings put global private_dns_mode off
+
 exit 0

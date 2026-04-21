@@ -2,7 +2,10 @@ use anyhow::{Context, Result};
 use log::info;
 use std::{fs, path::Path, thread, time::Duration};
 
-use crate::shell::{self, Capture};
+use crate::{shell::{self, Capture}, xtables_lock};
+
+const IPT_TIMEOUT: Duration = Duration::from_secs(5);
+const XT_WAIT_SECS: &str = "5";
 
 #[derive(Debug, Default, Clone)]
 pub struct Stats {
@@ -47,8 +50,9 @@ pub fn apply(port: u16, ip_file: &Path) -> Result<Stats> {    if !ip_file.is_fil
         }
 
         let q = port.to_string();
-        shell::ok("iptables", &["-t","mangle","-A","PREROUTING","-m","set","--match-set",&set_v4,"dst","-j","NFQUEUE","--queue-num",&q])?;
-        shell::ok("iptables", &["-t","mangle","-A","OUTPUT","-m","set","--match-set",&set_v4,"dst","-j","NFQUEUE","--queue-num",&q])?;
+        let _xt_guard = xtables_lock::lock();
+        ipt_ok(&["-t","mangle","-A","PREROUTING","-m","set","--match-set",&set_v4,"dst","-j","NFQUEUE","--queue-num",&q])?;
+        ipt_ok(&["-t","mangle","-A","OUTPUT","-m","set","--match-set",&set_v4,"dst","-j","NFQUEUE","--queue-num",&q])?;
 
         st.success = total;
         st.processed = total;        return Ok(st);
@@ -92,8 +96,25 @@ fn command_exists(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn ipt_run_timeout(args: &[&str], capture: Capture, timeout: Duration) -> Result<(i32, String)> {
+    let mut a: Vec<&str> = Vec::with_capacity(args.len() + 2);
+    a.push("-w");
+    a.push(XT_WAIT_SECS);
+    a.extend_from_slice(args);
+    xtables_lock::run_timeout_retry("iptables", &a, capture, timeout)
+}
+
+fn ipt_ok(args: &[&str]) -> Result<()> {
+    let (rc, out) = ipt_run_timeout(args, Capture::Both, IPT_TIMEOUT)?;
+    if rc == 0 {
+        return Ok(());
+    }
+    anyhow::bail!("iptables {:?} failed rc={} out={}", args, rc, out.trim())
+}
+
 fn add_rule(chain: &str, ip: &str, q: &str) -> Result<bool> {
+    let _xt_guard = xtables_lock::lock();
     let args = ["-t","mangle","-A",chain,"-d",ip,"-j","NFQUEUE","--queue-num",q];
-    let (c, _) = shell::run("iptables", &args, Capture::None)?;
+    let (c, _) = ipt_run_timeout(&args, Capture::Both, IPT_TIMEOUT)?;
     Ok(c == 0)
 }

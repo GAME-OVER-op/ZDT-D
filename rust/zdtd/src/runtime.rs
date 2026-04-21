@@ -1,6 +1,6 @@
-use anyhow::{Result, bail};
+use anyhow::Result;
 
-use std::time::Duration;
+use std::{thread, time::Duration};
 use crate::{
     android::{boot, selinux::SelinuxGuard},
     iptables_backup,
@@ -57,14 +57,26 @@ pub fn start_full() -> Result<()> {
             }
         });
 
-    // Other profiles.
-        nfqws::start_active_profiles()?;
-    nfqws2::start_active_profiles()?;
-    byedpi::start_active_profiles()?;
-    dpitunnel::start_active_profiles()?;
+    // Run NFQUEUE-based programs together first, then wait until both are done.
+    let nfqws_handle = thread::spawn(nfqws::start_active_profiles);
+    let nfqws2_handle = thread::spawn(nfqws2::start_active_profiles);
+    wait_start_group(
+        "nfqueue",
+        vec![("nfqws", nfqws_handle), ("nfqws2", nfqws2_handle)],
+    );
 
-    // sing-box (may start multiple profiles + optional t2s)
-    singbox::start_if_enabled()?;
+    // Then start DPI/tunnel stack in parallel and wait for all of them.
+    let dpitunnel_handle = thread::spawn(dpitunnel::start_active_profiles);
+    let byedpi_handle = thread::spawn(byedpi::start_active_profiles);
+    let singbox_handle = thread::spawn(singbox::start_if_enabled);
+    wait_start_group(
+        "dpi-stack",
+        vec![
+            ("dpitunnel", dpitunnel_handle),
+            ("byedpi", byedpi_handle),
+            ("sing-box", singbox_handle),
+        ],
+    );
 
     // wireproxy (may start multiple profiles + optional t2s)
     wireproxy::start_if_enabled()?;
@@ -108,7 +120,7 @@ if !any_main_service_running() {
         log::warn!("stop after failed start returned error: {e:#}");
     }
 
-    bail!("no main services started");
+    anyhow::bail!("no main services started");
 }
 
     let proxyinfo_enabled = crate::proxyinfo::load_enabled_json()
@@ -187,3 +199,32 @@ fn truncate_all_logs() {
         "find /data/adb/modules/ZDT-D/working_folder -type f -path '*/log/*' -delete 2>/dev/null || true",
     );
 }
+fn wait_start_group(stage_name: &str, handles: Vec<(&'static str, thread::JoinHandle<Result<()>>)>) {
+    let mut failures: Vec<String> = Vec::new();
+
+    for (name, handle) in handles {
+        match handle.join() {
+            Ok(Ok(())) => {
+                log::info!("startup stage={stage_name} service={name} finished");
+            }
+            Ok(Err(e)) => {
+                log::error!("startup stage={stage_name} service={name} failed: {:#}", e);
+                crate::logging::user_warn(&format!("{name}: ошибка запуска"));
+                failures.push(name.to_string());
+            }
+            Err(_) => {
+                log::error!("startup stage={stage_name} service={name} panicked");
+                crate::logging::user_warn(&format!("{name}: аварийное завершение потока запуска"));
+                failures.push(name.to_string());
+            }
+        }
+    }
+
+    if !failures.is_empty() {
+        log::warn!(
+            "startup stage={stage_name} completed with failures: {}",
+            failures.join(", ")
+        );
+    }
+}
+

@@ -13,13 +13,16 @@ use crate::iptables::iptables_port::{self, DpiTunnelOptions, ProtoChoice};
 use crate::settings;
 
 const TOR_BIN: &str = "/data/adb/modules/ZDT-D/bin/torproxy";
-const OBFS4PROXY_BIN: &str = "/data/adb/modules/ZDT-D/bin/obfs4proxy";
+const LYREBIRD_BIN: &str = "/data/adb/modules/ZDT-D/bin/lyrebird";
 // IMPORTANT: use only the shared working_folder/flag.sha256 file for sha tracking.
 // Never introduce module-specific *.flag.sha256 files here.
 const SHA_FLAG_FILE: &str = settings::SHARED_SHA_FLAG_FILE;
 
 const TOR_DATA_DIR_LINE: &str = "DataDirectory /data/adb/modules/ZDT-D/working_folder/tor/";
-const DEFAULT_TORRC: &str = "DataDirectory /data/adb/modules/ZDT-D/working_folder/tor/\nSocksPort 127.0.0.1:9050\nLog notice stdout\n\nUseBridges 1\nClientTransportPlugin obfs4 exec /data/adb/modules/ZDT-D/bin/obfs4proxy\n";
+const DEFAULT_CLIENT_TRANSPORT_PLUGIN_LINE: &str = "ClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules/ZDT-D/bin/lyrebird";
+const LEGACY_CLIENT_TRANSPORT_PLUGIN_LINE: &str = "ClientTransportPlugin obfs4 exec /data/adb/modules/ZDT-D/bin/obfs4proxy";
+const SUPPORTED_BRIDGE_PROTOCOLS: &[&str] = &["obfs4", "webtunnel", "snowflake", "meek_lite"];
+const DEFAULT_TORRC: &str = "DataDirectory /data/adb/modules/ZDT-D/working_folder/tor/\nSocksPort 127.0.0.1:9050\nLog notice stdout\n\nUseBridges 1\nClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules/ZDT-D/bin/lyrebird\n";
 
 fn deserialize_boolish<'de, D>(deserializer: D) -> std::result::Result<bool, D::Error>
 where
@@ -281,11 +284,35 @@ pub fn parse_socks_port_from_str(raw: &str) -> Result<u16> {
     anyhow::bail!("SocksPort 127.0.0.1:PORT is required")
 }
 
+fn supported_bridge_protocol_from_short_line(line: &str) -> Option<&'static str> {
+    let first = line.split_whitespace().next()?;
+    SUPPORTED_BRIDGE_PROTOCOLS
+        .iter()
+        .copied()
+        .find(|proto| first.eq_ignore_ascii_case(proto))
+}
+
+fn supported_bridge_protocol_from_bridge_line(line: &str) -> Option<&'static str> {
+    let mut parts = line.split_whitespace();
+    let key = parts.next()?;
+    if !key.eq_ignore_ascii_case("Bridge") {
+        return None;
+    }
+    let proto = parts.next()?;
+    SUPPORTED_BRIDGE_PROTOCOLS
+        .iter()
+        .copied()
+        .find(|supported| proto.eq_ignore_ascii_case(supported))
+}
+
 pub fn bridge_count_from_str(raw: &str) -> usize {
     raw.lines()
         .map(str::trim)
         .filter(|line| !line.is_empty() && !line.starts_with('#') && !line.starts_with(';'))
-        .filter(|line| line.starts_with("Bridge ") || line.starts_with("obfs4 "))
+        .filter(|line| {
+            supported_bridge_protocol_from_bridge_line(line).is_some()
+                || supported_bridge_protocol_from_short_line(line).is_some()
+        })
         .count()
 }
 
@@ -304,7 +331,11 @@ pub fn normalize_torrc_content(raw: &str) -> String {
                 }
                 continue;
             }
-            if trimmed.starts_with("obfs4 ") {
+            if trimmed == LEGACY_CLIENT_TRANSPORT_PLUGIN_LINE {
+                out.push(DEFAULT_CLIENT_TRANSPORT_PLUGIN_LINE.to_string());
+                continue;
+            }
+            if supported_bridge_protocol_from_short_line(trimmed).is_some() {
                 out.push(format!("Bridge {}", trimmed));
                 continue;
             }
@@ -362,7 +393,7 @@ pub fn validate_enable_toggle_requirements() -> Result<()> {
 pub fn validate_enable_requirements() -> Result<()> {
     ensure_layout()?;
     ensure_file(TOR_BIN)?;
-    ensure_file(OBFS4PROXY_BIN)?;
+    ensure_file(LYREBIRD_BIN)?;
     let setting = load_setting()?;
     let torrc = normalize_torrc_content(&read_torrc_text()?);
     let socks_port = validate_torrc_ready(&torrc)?;

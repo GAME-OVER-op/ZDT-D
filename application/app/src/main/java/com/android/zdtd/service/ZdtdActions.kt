@@ -13,6 +13,8 @@ interface ZdtdActions {
   fun confirmManualInstall()
   fun dismissManualInstallDialog()
   fun continueAfterInstall()
+  fun refreshInstallConflicts()
+  fun setInstallConflictMarked(modulePath: String, checked: Boolean)
 
   /** Remove module and uninstall the app (with reboot after uninstall). */
   fun beginModuleRemoval()

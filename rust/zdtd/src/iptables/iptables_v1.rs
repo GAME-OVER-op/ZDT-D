@@ -1,12 +1,29 @@
 use anyhow::Result;
 use log::{info, warn};
-use std::{fs, path::Path};
+use std::{fs, path::Path, time::Duration};
 
-use crate::shell::{self, Capture};
 use crate::iptables::{caps, port_filter};
-use crate::logging;
+use crate::shell::Capture;
+use crate::xtables_lock;
 
-const IPT_CMD_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(5);
+const XT_WAIT_SECS: &str = "5";
+
+fn run_timeout_retry(cmd: &str, args: &[&str], capture: Capture, timeout: Duration) -> Result<(i32, String)> {
+    let mut a: Vec<&str> = Vec::with_capacity(args.len() + 2);
+    a.push("-w");
+    a.push(XT_WAIT_SECS);
+    a.extend_from_slice(args);
+    xtables_lock::run_timeout_retry(cmd, &a, capture, timeout)
+}
+
+fn runv_timeout_retry(cmd: &str, args: &[String], capture: Capture, timeout: Duration) -> Result<(i32, String)> {
+    let mut a: Vec<String> = Vec::with_capacity(args.len() + 2);
+    a.push("-w".into());
+    a.push(XT_WAIT_SECS.into());
+    a.extend_from_slice(args);
+    xtables_lock::runv_timeout_retry(cmd, &a, capture, timeout)
+}
 
 /// Rust port of `full_id_iptables()` from shell.
 ///
@@ -21,6 +38,8 @@ pub fn apply(
     uid_file: Option<&Path>,
     filter: Option<&crate::iptables::port_filter::ProtoPortFilter>,
 ) -> Result<()> {
+    let _xtables_guard = xtables_lock::lock();
+
     if mode != "full" && mode != "no_full" {
         anyhow::bail!("Usage: full_id_iptables <full|no_full> <queue-num> [iface] [uid_file]");
     }
@@ -33,7 +52,7 @@ pub fn apply(
         }
     }
 
-    let ipv6_avail = shell::run_timeout(
+    let ipv6_avail = run_timeout_retry(
         "ip6tables",
         &["-t", "mangle", "-nL", "OUTPUT"],
         Capture::None,
@@ -68,7 +87,6 @@ pub fn apply(
                 .unwrap_or("uids");
 
             for (idx, uid) in uids.iter().enumerate() {
-
                 if mode == "full" {
                     // v4
                     if use_filter_v4 {
@@ -95,7 +113,10 @@ pub fn apply(
                             queue.to_string(),
                             "--queue-bypass".into(),
                         ]);
-                        shell::okv_timeout("iptables", &args, IPT_CMD_TIMEOUT)?;
+                        let (rc, out) = runv_timeout_retry("iptables", &args, Capture::Both, IPT_CMD_TIMEOUT)?;
+                        if rc != 0 {
+                            anyhow::bail!("iptables NFQUEUE rule failed (uid={}): {}", uid, out.trim());
+                        }
                     }
 
                     // v6
@@ -132,8 +153,10 @@ pub fn apply(
                                 queue.to_string(),
                                 "--queue-bypass".into(),
                             ]);
-                            if let Err(e) = shell::okv_timeout("ip6tables", &args, IPT_CMD_TIMEOUT) {
-                                warn!("ip6tables NFQUEUE rule failed (uid={}): {e}", uid);
+                            match runv_timeout_retry("ip6tables", &args, Capture::Both, IPT_CMD_TIMEOUT) {
+                                Ok((0, _)) => {}
+                                Ok((_rc, out)) => warn!("ip6tables NFQUEUE rule failed (uid={}): {}", uid, out.trim()),
+                                Err(e) => warn!("ip6tables NFQUEUE rule failed (uid={}): {e}", uid),
                             }
                         }
                     }
@@ -158,15 +181,21 @@ pub fn apply(
                             queue.to_string(),
                             "--queue-bypass".into(),
                         ]);
-                        shell::okv_timeout("iptables", &args, IPT_CMD_TIMEOUT)?;
+                        let (rc, out) = runv_timeout_retry("iptables", &args, Capture::Both, IPT_CMD_TIMEOUT)?;
+                        if rc != 0 {
+                            anyhow::bail!("iptables NFQUEUE rule failed (uid={}): {}", uid, out.trim());
+                        }
                         if ipv6_avail {
-                            if let Err(e) = shell::okv_timeout("ip6tables", &args, IPT_CMD_TIMEOUT) {
-                                warn!("ip6tables NFQUEUE rule failed (uid={}): {e}", uid);
+                            match runv_timeout_retry("ip6tables", &args, Capture::Both, IPT_CMD_TIMEOUT) {
+                                Ok((0, _)) => {}
+                                Ok((_rc, out)) => warn!("ip6tables NFQUEUE rule failed (uid={}): {}", uid, out.trim()),
+                                Err(e) => warn!("ip6tables NFQUEUE rule failed (uid={}): {e}", uid),
                             }
                         }
                     }
                 }
             }
+            info!("full_id_iptables applied mode={} queue={} iface={:?} label={} uids={}", mode, queue, iface, label, total);
             return Ok(());
         }
     }
@@ -195,7 +224,10 @@ pub fn apply(
                     queue.to_string(),
                     "--queue-bypass".into(),
                 ]);
-                shell::okv_timeout("iptables", &args, IPT_CMD_TIMEOUT)?;
+                let (rc, out) = runv_timeout_retry("iptables", &args, Capture::Both, IPT_CMD_TIMEOUT)?;
+                if rc != 0 {
+                    anyhow::bail!("iptables NFQUEUE rule failed (global): {}", out.trim());
+                }
             }
 
             // v6
@@ -224,8 +256,10 @@ pub fn apply(
                         queue.to_string(),
                         "--queue-bypass".into(),
                     ]);
-                    if let Err(e) = shell::okv_timeout("ip6tables", &args, IPT_CMD_TIMEOUT) {
-                        warn!("ip6tables NFQUEUE rule failed (global): {e}");
+                    match runv_timeout_retry("ip6tables", &args, Capture::Both, IPT_CMD_TIMEOUT) {
+                        Ok((0, _)) => {}
+                        Ok((_rc, out)) => warn!("ip6tables NFQUEUE rule failed (global): {}", out.trim()),
+                        Err(e) => warn!("ip6tables NFQUEUE rule failed (global): {e}"),
                     }
                 }
             }
@@ -246,10 +280,15 @@ pub fn apply(
                     queue.to_string(),
                     "--queue-bypass".into(),
                 ]);
-                shell::okv_timeout("iptables", &args, IPT_CMD_TIMEOUT)?;
+                let (rc, out) = runv_timeout_retry("iptables", &args, Capture::Both, IPT_CMD_TIMEOUT)?;
+                if rc != 0 {
+                    anyhow::bail!("iptables NFQUEUE rule failed (global): {}", out.trim());
+                }
                 if ipv6_avail {
-                    if let Err(e) = shell::okv_timeout("ip6tables", &args, IPT_CMD_TIMEOUT) {
-                        warn!("ip6tables NFQUEUE rule failed (global): {e}");
+                    match runv_timeout_retry("ip6tables", &args, Capture::Both, IPT_CMD_TIMEOUT) {
+                        Ok((0, _)) => {}
+                        Ok((_rc, out)) => warn!("ip6tables NFQUEUE rule failed (global): {}", out.trim()),
+                        Err(e) => warn!("ip6tables NFQUEUE rule failed (global): {e}"),
                     }
                 }
             }
@@ -298,7 +337,10 @@ fn add_multiport_rules(
             queue.to_string(),
             "--queue-bypass".into(),
         ]);
-        shell::okv_timeout(cmd, &args, IPT_CMD_TIMEOUT)?;
+        let (rc, out) = runv_timeout_retry(cmd, &args, Capture::Both, IPT_CMD_TIMEOUT)?;
+        if rc != 0 {
+            anyhow::bail!("{cmd} NFQUEUE multiport rule failed: {}", out.trim());
+        }
     }
     Ok(())
 }

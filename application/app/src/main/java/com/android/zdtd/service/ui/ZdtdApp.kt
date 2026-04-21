@@ -108,6 +108,8 @@ fun ZdtdApp(
       onManualDismiss = actions::dismissManualInstallDialog,
       onContinue = actions::continueAfterInstall,
       onReboot = actions::rebootNow,
+      onRefreshConflicts = actions::refreshInstallConflicts,
+      onToggleConflictRemove = actions::setInstallConflictMarked,
     )
     SetupStep.REBOOT -> {
       when (rootState) {

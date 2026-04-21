@@ -1,9 +1,10 @@
 use anyhow::Result;
+use std::{path::Path, thread, time::Duration};
 
 use crate::{iptables_backup, shell};
 
 const TOR_TORRC_PATH: &str = "/data/adb/modules/ZDT-D/working_folder/tor/torrc";
-const OBFS4PROXY_BIN: &str = "/data/adb/modules/ZDT-D/bin/obfs4proxy";
+const LYREBIRD_BIN: &str = "/data/adb/modules/ZDT-D/bin/lyrebird";
 
 fn pidof(name: &str) -> Vec<i32> {
     // `pidof` returns a space-separated list of PIDs.
@@ -30,43 +31,45 @@ fn pidof_any(names: &[&str]) -> Vec<i32> {
     all
 }
 
-fn kill_by_name(name: &str) -> Result<()> {
-    let pids = pidof(name);
+fn pid_alive(pid: i32) -> bool {
+    Path::new("/proc").join(pid.to_string()).is_dir()
+}
+
+fn kill_pids_with_escalation(label: &str, pids: &[i32]) -> Result<()> {
     if pids.is_empty() {
         return Ok(());
     }
 
-    // Try graceful shutdown first.
-    for pid in &pids {
+    for pid in pids {
         let _ = shell::ok_sh(&format!("kill -15 {}", pid));
     }
 
-    // Wait briefly for processes to exit.
     for _ in 0..15 {
-        if pids.iter().all(|p| !std::path::Path::new("/proc").join(p.to_string()).is_dir()) {
+        if pids.iter().all(|p| !pid_alive(*p)) {
             return Ok(());
         }
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(100));
     }
 
-    // Force kill remaining.
-    for pid in &pids {
-        if std::path::Path::new("/proc").join(pid.to_string()).is_dir() {
+    for pid in pids {
+        if pid_alive(*pid) {
             let _ = shell::ok_sh(&format!("kill -9 {}", pid));
         }
     }
 
-    // Final wait.
     for _ in 0..10 {
-        if pids.iter().all(|p| !std::path::Path::new("/proc").join(p.to_string()).is_dir()) {
+        if pids.iter().all(|p| !pid_alive(*p)) {
             return Ok(());
         }
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(100));
     }
 
-    // Best-effort: do not fail stop sequence if a process refuses to die.
-    log::warn!("failed to kill process(es) via pidof {}: {:?}", name, pids);
+    log::warn!("failed to kill process(es) via {}: {:?}", label, pids);
     Ok(())
+}
+
+fn kill_by_name(name: &str) -> Result<()> {
+    kill_pids_with_escalation(&format!("pidof {name}"), &pidof(name))
 }
 
 fn parse_pid_lines(out: &str) -> Vec<i32> {
@@ -108,11 +111,11 @@ fn tor_main_pids_exact() -> Vec<i32> {
     pids
 }
 
-fn obfs4proxy_pids_exact() -> Vec<i32> {
+fn lyrebird_pids_exact() -> Vec<i32> {
     let mut pids = Vec::new();
     let cmd = format!(
         r#"sh -c "pgrep -f '^{}' 2>/dev/null || true""#,
-        OBFS4PROXY_BIN
+        LYREBIRD_BIN
     );
     if let Ok(out) = shell::capture_quiet(&cmd) {
         pids.extend(parse_pid_lines(&out));
@@ -120,7 +123,7 @@ fn obfs4proxy_pids_exact() -> Vec<i32> {
     if pids.is_empty() {
         let ps_cmd = format!(
             r#"sh -c "ps -ef 2>/dev/null | grep -F '{}' | grep -v grep || true""#,
-            OBFS4PROXY_BIN
+            LYREBIRD_BIN
         );
         if let Ok(out) = shell::capture_quiet(&ps_cmd) {
             for line in out.lines() {
@@ -141,60 +144,40 @@ fn obfs4proxy_pids_exact() -> Vec<i32> {
 }
 
 fn kill_exact_pids(label: &str, pids: &[i32]) -> Result<()> {
-    if pids.is_empty() {
-        return Ok(());
-    }
-    for pid in pids {
-        let _ = shell::ok_sh(&format!("kill -15 {}", pid));
-    }
-    for _ in 0..15 {
-        if pids.iter().all(|p| !std::path::Path::new("/proc").join(p.to_string()).is_dir()) {
-            return Ok(());
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
-    for pid in pids {
-        if std::path::Path::new("/proc").join(pid.to_string()).is_dir() {
-            let _ = shell::ok_sh(&format!("kill -9 {}", pid));
-        }
-    }
-    for _ in 0..10 {
-        if pids.iter().all(|p| !std::path::Path::new("/proc").join(p.to_string()).is_dir()) {
-            return Ok(());
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
-    log::warn!("failed to kill exact process(es) via {}: {:?}", label, pids);
-    Ok(())
+    kill_pids_with_escalation(label, pids)
 }
 
 fn kill_by_any(names: &[&str]) -> Result<()> {
-    let pids = pidof_any(names);
-    if pids.is_empty() {
-        return Ok(());
+    kill_pids_with_escalation(&format!("pidof {:?}", names), &pidof_any(names))
+}
+
+fn stop_process_groups_parallel() -> Result<()> {
+    let mut jobs = Vec::new();
+
+    for name in [
+        "nfqws",
+        "nfqws2",
+        "dnscrypt",
+        "byedpi",
+        "t2s",
+        "opera-proxy",
+        "sing-box",
+        "wireproxy",
+    ] {
+        let proc_name = name.to_string();
+        jobs.push(thread::spawn(move || kill_by_name(&proc_name)));
     }
 
-    for pid in &pids {
-        let _ = shell::ok_sh(&format!("kill -15 {}", pid));
-    }
-    for _ in 0..15 {
-        if pids.iter().all(|p| !std::path::Path::new("/proc").join(p.to_string()).is_dir()) {
-            return Ok(());
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
-    for pid in &pids {
-        if std::path::Path::new("/proc").join(pid.to_string()).is_dir() {
-            let _ = shell::ok_sh(&format!("kill -9 {}", pid));
+    jobs.push(thread::spawn(|| kill_by_any(&["DPITunnel-cli", "dpitunnel-cli"])));
+
+    for job in jobs {
+        match job.join() {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return Err(e),
+            Err(_) => anyhow::bail!("stop worker thread panicked"),
         }
     }
-    for _ in 0..10 {
-        if pids.iter().all(|p| !std::path::Path::new("/proc").join(p.to_string()).is_dir()) {
-            return Ok(());
-        }
-        std::thread::sleep(std::time::Duration::from_millis(100));
-    }
-    log::warn!("failed to kill process(es) via pidof {:?}: {:?}", names, pids);
+
     Ok(())
 }
 
@@ -202,22 +185,13 @@ pub fn stop_services_and_restore_iptables() -> Result<()> {
     crate::programs::dnscrypt::request_stop();
     // 1) stop background processes
     // Use `pidof` to avoid killing similarly-named processes.
-    kill_by_name("nfqws")?;
-    kill_by_name("nfqws2")?;
-    // dpitunnel-cli can show up as "DPITunnel-cli" depending on the build.
-    kill_by_any(&["DPITunnel-cli", "dpitunnel-cli"])?;
-    kill_by_name("dnscrypt")?;
-    kill_by_name("byedpi")?;
-    kill_by_name("t2s")?;
-    kill_by_name("opera-proxy")?;
-    kill_by_name("sing-box")?;
-    kill_by_name("wireproxy")?;
+    stop_process_groups_parallel()?;
     let _ = crate::programs::myprogram::stop_all();
     // IMPORTANT: do not stop plain substring/name matches for Tor.
     // Some Android systems have unrelated processes containing "tor".
-    // Stop only the exact Tor command using our torrc, plus our exact obfs4proxy.
+    // Stop only the exact Tor command using our torrc, plus our exact lyrebird.
     kill_exact_pids("torproxy -f <our torrc>", &tor_main_pids_exact())?;
-    kill_exact_pids("obfs4proxy <our binary>", &obfs4proxy_pids_exact())?;
+    kill_exact_pids("lyrebird <our binary>", &lyrebird_pids_exact())?;
 
     // 2) remove runtime guard chains before restore
     let _ = crate::proxyinfo::clear_rules();

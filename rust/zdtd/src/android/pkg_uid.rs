@@ -1,19 +1,74 @@
 use anyhow::{Context, Result};
-use log::{info, warn};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     fs,
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
+    sync::{
+        Mutex, OnceLock, TryLockError,
+    },
+    time::{Duration, Instant},
 };
 
 use crate::shell::{self, Capture};
-use crate::logging;
 
 const PROGRESS_EVERY: usize = 25;
 const CMD_PACKAGE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 const DUMPSYS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 const STAT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
+const FULL_SCAN_CACHE_TTL: Duration = Duration::from_secs(20);
+
+static UID_PARSE_LOCK: Mutex<()> = Mutex::new(());
+static SHA_TRACKER_LOCK: Mutex<()> = Mutex::new(());
+static FULL_SCAN_CACHE: OnceLock<Mutex<Option<FullScanCache>>> = OnceLock::new();
+
+#[derive(Debug, Clone)]
+struct FullScanCache {
+    created_at: Instant,
+    map: HashMap<String, u32>,
+}
+
+fn full_scan_cache() -> &'static Mutex<Option<FullScanCache>> {
+    FULL_SCAN_CACHE.get_or_init(|| Mutex::new(None))
+}
+
+fn acquire_uid_parser_slot() -> std::sync::MutexGuard<'static, ()> {
+    match UID_PARSE_LOCK.try_lock() {
+        Ok(guard) => guard,
+        Err(TryLockError::WouldBlock) => match UID_PARSE_LOCK.lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        },
+        Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+    }
+}
+
+fn build_uid_map_from_cmd_package_cached() -> Option<HashMap<String, u32>> {
+    {
+        let guard = match full_scan_cache().lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if let Some(cache) = guard.as_ref() {
+            if cache.created_at.elapsed() <= FULL_SCAN_CACHE_TTL {
+                return Some(cache.map.clone());
+            }
+        }
+    }
+
+    let fresh = build_uid_map_from_cmd_package()?;
+    {
+        let mut guard = match full_scan_cache().lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *guard = Some(FullScanCache {
+            created_at: Instant::now(),
+            map: fresh.clone(),
+        });
+    }
+    Some(fresh)
+}
 
 /// Mode of UID resolution.
 /// - Default: dumpsys per package, fallback stat per package.
@@ -124,19 +179,33 @@ impl Sha256Tracker {
         Self { flag_file: flag_file.into() }
     }
 
-    /// Returns (old_hash, new_hash, changed).
-    /// Always updates the JSON entry for the key (full path of input file).
-    pub fn check_and_update(&self, input_file: &Path) -> Result<(Option<String>, String, bool)> {
+    /// Returns (old_hash, new_hash, changed) without committing the new hash yet.
+    pub fn check(&self, input_file: &Path) -> Result<(Option<String>, String, bool)> {
+        let _guard = match SHA_TRACKER_LOCK.lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+
         let key = input_file.display().to_string();
         let new_hash = sha256sum(input_file)?;
-
-        let mut data = self.read_json().unwrap_or_default();
+        let data = self.read_json().unwrap_or_default();
         let old_hash = data.files.get(&key).cloned();
-        data.files.insert(key, new_hash.clone());
-        self.write_json(&data)?;
-
         let changed = old_hash.as_deref() != Some(new_hash.as_str());
         Ok((old_hash, new_hash, changed))
+    }
+
+    /// Commits the hash for the key (full path of input file) after a successful rebuild.
+    pub fn commit_hash(&self, input_file: &Path, new_hash: &str) -> Result<()> {
+        let _guard = match SHA_TRACKER_LOCK.lock() {
+            Ok(g) => g,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+
+        let key = input_file.display().to_string();
+        let mut data = self.read_json().unwrap_or_default();
+        data.files.insert(key, new_hash.to_string());
+        self.write_json(&data)?;
+        Ok(())
     }
 
     fn read_json(&self) -> Result<Sha256FlagJson> {
@@ -171,58 +240,42 @@ pub fn unified_processing(mode: Mode, tracker: &Sha256Tracker, output_file: &Pat
         anyhow::bail!("input_file not found: {}", input_file.display());
     }
 
-    let (old_hash, new_hash, changed) = tracker.check_and_update(input_file)?;
-    info!(
-        "uidmap: key={} old_hash={:?} new_hash={} changed={}",
-        input_file.display(),
-        old_hash,
-        new_hash,
-        changed
-    );
-
+    let (_old_hash, new_hash, changed) = tracker.check(input_file)?;
 
     // Read packages early so we can decide whether skipping is safe.
     let packages = read_package_list(input_file)?;
-    let label = input_file
-        .file_name()
-        .and_then(|s| s.to_str())
-        .unwrap_or("apps");
-let input_has_packages = !packages.is_empty();
+    let input_has_packages = !packages.is_empty();
 
-let output_exists = output_file.is_file();
-let output_nonempty = match fs::metadata(output_file) {
-    Ok(meta) => meta.len() > 0,
-    Err(_) => false,
-};
+    let output_exists = output_file.is_file();
+    let output_nonempty = match fs::metadata(output_file) {
+        Ok(meta) => meta.len() > 0,
+        Err(_) => false,
+    };
 
-if !changed && output_exists {
-    // If the input has packages but output is empty, rebuild to recover from stale/empty out files.
-    if input_has_packages && !output_nonempty {
-        warn!("uidmap: input hash unchanged but output is empty -> rebuilding {}", output_file.display());
-    } else {
-        info!("uidmap: input hash unchanged -> skip");
-        return Ok(false);
+    if !changed && output_exists {
+        // If the input has packages but output is empty, rebuild to recover from stale/empty out files.
+        if !(input_has_packages && !output_nonempty) {
+            return Ok(false);
+        }
     }
-} else if !changed && !output_exists {
-    warn!("uidmap: input hash unchanged but output missing -> rebuilding {}", output_file.display());
-}
 
-// If input has no packages, ensure output exists (empty) and finish.
-if !input_has_packages {
-    if let Some(parent) = output_file.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if !output_exists {
+    // If input has no packages, force output to become empty and commit the hash.
+    if !input_has_packages {
+        if let Some(parent) = output_file.parent() {
+            fs::create_dir_all(parent)
+                .with_context(|| format!("mkdir {}", parent.display()))?;
+        }
         fs::write(output_file, b"")
-            .with_context(|| format!("create empty output {}", output_file.display()))?;
+            .with_context(|| format!("clear empty output {}", output_file.display()))?;
+        tracker.commit_hash(input_file, &new_hash)?;
+        return Ok(true);
     }
-    info!("uidmap: no packages in {}", input_file.display());
-    return Ok(true);
-}
-    let map = resolve_uid_map(mode, &packages, label)?;
-    write_uid_map(output_file, &map)?;
 
-    info!("uidmap: wrote {} entries to {}", map.len(), output_file.display());
+    let _queue_guard = acquire_uid_parser_slot();
+    let map = resolve_uid_map(mode, &packages)?;
+    write_uid_map(output_file, &map)?;
+    tracker.commit_hash(input_file, &new_hash)?;
+
     Ok(true)
 }
 
@@ -258,12 +311,12 @@ pub fn read_package_list(input_file: &Path) -> Result<Vec<String>> {
 }
 
 /// Resolve a {package -> uid} map using dumpsys/stat like the original script.
-pub fn resolve_uid_map(mode: Mode, packages: &[String], progress_label: &str) -> Result<BTreeMap<String, u32>> {
+pub fn resolve_uid_map(mode: Mode, packages: &[String]) -> Result<BTreeMap<String, u32>> {
     let mut map: BTreeMap<String, u32> = BTreeMap::new();
     let mut unresolved: BTreeSet<String> = BTreeSet::new();
 
 // Fast path: try resolve via `cmd package list packages -U` once.
-if let Some(all) = build_uid_map_from_cmd_package() {
+if let Some(all) = build_uid_map_from_cmd_package_cached() {
     for p in packages {
         if let Some(uid) = all.get(p) {
             map.insert(p.clone(), *uid);
@@ -282,7 +335,6 @@ if unresolved.is_empty() {
     return Ok(map);
 }
     // First pass: dumpsys
-    let total_ds = unresolved.len();
     for pkg in unresolved.clone().iter() {
         if map.contains_key(pkg) { continue; }
         match resolve_uid_via_dumpsys(pkg)? {
@@ -305,26 +357,20 @@ if unresolved.is_empty() {
 // Second pass
     match mode {
         Mode::Dpi => {
-            let total_stat = unresolved.len();
             for pkg in unresolved {
                 if map.contains_key(&pkg) { continue; }
                 if let Some(uid) = resolve_uid_via_stat(&pkg)? {
                     map.insert(pkg, uid);
-                } else {
-                    warn!("uidmap: uid not found for {}", pkg);
                 }
             }
         }
         Mode::Default => {
             // In default mode we would have tried stat inline in shell.
             // We do it here for unresolved to keep code simpler and output identical.
-            let total_stat = unresolved.len();
             for pkg in unresolved {
                 if map.contains_key(&pkg) { continue; }
                 if let Some(uid) = resolve_uid_via_stat(&pkg)? {
                     map.insert(pkg, uid);
-                } else {
-                    warn!("uidmap: uid not found for {}", pkg);
                 }
             }
         }

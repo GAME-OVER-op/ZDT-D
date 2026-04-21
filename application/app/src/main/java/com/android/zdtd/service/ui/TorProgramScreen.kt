@@ -50,6 +50,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -96,6 +97,13 @@ private fun parseTorProgramStateUi(obj: JSONObject?): TorProgramStateUi {
 
 private data class TorSocksPort(val host: String, val port: Int)
 
+private val TOR_BRIDGE_PROTOCOLS = setOf("obfs4", "webtunnel", "snowflake", "meek_lite")
+private const val TOR_BRIDGE_PLUGIN_LINE =
+  "ClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules/ZDT-D/bin/lyrebird"
+private const val TOR_BRIDGE_PLUGIN_OLD_LINE =
+  "ClientTransportPlugin obfs4 exec /data/adb/modules/ZDT-D/bin/obfs4proxy"
+
+
 private fun parseTorSocksPort(torrc: String): TorSocksPort? {
   for (raw in torrc.lines()) {
     val line = raw.trim()
@@ -134,23 +142,30 @@ private fun upsertTorSocksPort(torrc: String, port: Int): String {
 private fun normalizeTorBridgeLine(raw: String): String {
   val trimmed = raw.trim()
   if (trimmed.isEmpty()) return ""
-  return when {
-    trimmed.startsWith("Bridge ", ignoreCase = true) -> "Bridge " + trimmed.substringAfter(' ').trim()
-    trimmed.startsWith("obfs4 ", ignoreCase = true) -> "Bridge $trimmed"
+  val bridgePayload = when {
+    trimmed.startsWith("Bridge ", ignoreCase = true) -> trimmed.substringAfter(' ').trim()
     else -> trimmed
   }
+  val parts = bridgePayload.split(Regex("\\s+"), limit = 2)
+  val protocol = parts.firstOrNull()?.trim()?.lowercase().orEmpty()
+  if (protocol !in TOR_BRIDGE_PROTOCOLS) return ""
+  val rest = parts.getOrNull(1)?.trim().orEmpty()
+  if (rest.isEmpty()) return ""
+  return "Bridge $protocol $rest"
 }
 
-private fun isTorBridgeLine(raw: String): Boolean {
-  val trimmed = raw.trim()
-  return trimmed.startsWith("Bridge ", ignoreCase = true) || trimmed.startsWith("obfs4 ", ignoreCase = true)
-}
+private fun normalizeTorBridgeLines(raw: String): List<String> =
+  raw.lines()
+    .map(::normalizeTorBridgeLine)
+    .filter { it.isNotBlank() }
+
+private fun isTorBridgeLine(raw: String): Boolean = normalizeTorBridgeLine(raw).isNotBlank()
 
 private fun extractTorBridgeLines(torrc: String): List<String> =
   torrc.lines()
     .mapNotNull { line ->
       val normalized = normalizeTorBridgeLine(line)
-      normalized.takeIf { it.isNotBlank() && isTorBridgeLine(normalized) }
+      normalized.takeIf { it.isNotBlank() }
     }
 
 private fun hasUseBridgesEnabled(torrc: String): Boolean = torrc.lines().any {
@@ -172,7 +187,12 @@ private fun ensureTorBridgeSupport(content: String, fallbackPort: Int): String {
       lines[i] = "UseBridges 1"
       hasUseBridges = true
     }
-    if (trimmed.startsWith("ClientTransportPlugin", ignoreCase = true) && trimmed.contains("obfs4", ignoreCase = true)) {
+    if (trimmed.equals(TOR_BRIDGE_PLUGIN_OLD_LINE, ignoreCase = true)) {
+      lines[i] = TOR_BRIDGE_PLUGIN_LINE
+      hasPlugin = true
+      continue
+    }
+    if (trimmed.startsWith("ClientTransportPlugin", ignoreCase = true) && trimmed.contains("lyrebird", ignoreCase = true)) {
       hasPlugin = true
     }
   }
@@ -181,13 +201,13 @@ private fun ensureTorBridgeSupport(content: String, fallbackPort: Int): String {
     lines.add("UseBridges 1")
   }
   if (!hasPlugin) {
-    lines.add("ClientTransportPlugin obfs4 exec /data/adb/modules/ZDT-D/bin/obfs4proxy")
+    lines.add(TOR_BRIDGE_PLUGIN_LINE)
   }
   return lines.joinToString("\n").trimEnd() + "\n"
 }
 
 private fun replaceTorBridgeLines(content: String, bridges: List<String>, fallbackPort: Int): String {
-  val normalized = bridges.map(::normalizeTorBridgeLine).filter { it.isNotBlank() }
+  val normalized = bridges.flatMap(::normalizeTorBridgeLines)
   val baseLines = ensureTorBridgeSupport(content, fallbackPort)
     .lines()
     .filterNot { isTorBridgeLine(it) }
@@ -255,6 +275,7 @@ fun TorSection(
   snackHost: SnackbarHostState,
 ) {
   val context = LocalContext.current
+  val clipboardManager = LocalClipboardManager.current
   val scope = rememberCoroutineScope()
   val compact = rememberIsCompactWidth()
 
@@ -595,10 +616,14 @@ fun TorSection(
           showSnack(context.getString(R.string.tor_bridge_open_bot_failed))
         }
       },
-      onSave = { bridgeText ->
+      onPaste = { clipboardManager.getText()?.text?.toString() },
+      onSave = { bridgeLines ->
         val current = bridges.toMutableList()
-        val normalized = normalizeTorBridgeLine(bridgeText)
-        if (editingBridgeIndex != null && editingBridgeIndex in current.indices) current[editingBridgeIndex!!] = normalized else current.add(normalized)
+        if (editingBridgeIndex != null && editingBridgeIndex in current.indices) {
+          current[editingBridgeIndex!!] = bridgeLines.first()
+        } else {
+          current.addAll(bridgeLines)
+        }
         val fallbackPort = parseTorSocksPort(torrcText)?.port ?: parsedSocksPort ?: 9050
         val updated = replaceTorBridgeLines(torrcText.ifBlank { torrcSaved }, current, fallbackPort)
         torrcSaving = true
@@ -660,7 +685,8 @@ private fun TorBridgeDialog(
   isEditing: Boolean,
   onDismiss: () -> Unit,
   onOpenBot: () -> Unit,
-  onSave: (String) -> Unit,
+  onPaste: () -> String?,
+  onSave: (List<String>) -> Unit,
 ) {
   val compactMode = rememberIsNarrowWidth() || rememberIsShortHeight()
   val dialogHorizontalPadding = if (compactMode) 10.dp else 28.dp
@@ -670,13 +696,26 @@ private fun TorBridgeDialog(
 
   var text by remember(initialText) { mutableStateOf(initialText) }
   var attemptedSave by remember { mutableStateOf(false) }
-  val normalized = normalizeTorBridgeLine(text)
-  val error = attemptedSave && normalized.isBlank()
+  val normalizedLines = remember(text) { normalizeTorBridgeLines(text) }
+  val rawNonBlankLines = remember(text) { text.lines().map { it.trim() }.filter { it.isNotBlank() } }
+  val hasInvalidLines = remember(text) { rawNonBlankLines.isNotEmpty() && normalizedLines.size != rawNonBlankLines.size }
+  val hasMultipleLines = rawNonBlankLines.size > 1
+  val error = attemptedSave && (
+    normalizedLines.isEmpty() ||
+      hasInvalidLines ||
+      (isEditing && hasMultipleLines)
+  )
+  val supportingMessageRes = when {
+    attemptedSave && normalizedLines.isEmpty() -> R.string.tor_bridge_input_required
+    attemptedSave && hasInvalidLines -> R.string.tor_bridge_input_invalid
+    attemptedSave && isEditing && hasMultipleLines -> R.string.tor_bridge_edit_single_only
+    else -> R.string.tor_bridge_input_hint
+  }
 
   fun attemptSave() {
     attemptedSave = true
-    if (normalized.isBlank()) return
-    onSave(normalized)
+    if (normalizedLines.isEmpty() || hasInvalidLines || (isEditing && hasMultipleLines)) return
+    onSave(if (isEditing) listOf(normalizedLines.first()) else normalizedLines)
   }
 
   Dialog(
@@ -754,6 +793,14 @@ private fun TorBridgeDialog(
               Spacer(Modifier.width(6.dp))
               Text(stringResource(R.string.tor_bridge_open_bot))
             }
+            OutlinedButton(
+              onClick = {
+                onPaste()?.takeIf { it.isNotBlank() }?.let { text = it }
+              },
+              modifier = Modifier.fillMaxWidth(),
+            ) {
+              Text(stringResource(R.string.tor_bridge_paste))
+            }
             Text(
               stringResource(R.string.tor_bridge_info_hint),
               style = MaterialTheme.typography.bodySmall,
@@ -769,12 +816,12 @@ private fun TorBridgeDialog(
           label = { Text(stringResource(R.string.tor_bridge_input_label)) },
           supportingText = {
             Text(
-              text = if (error) stringResource(R.string.tor_bridge_input_required) else stringResource(R.string.tor_bridge_input_hint),
+              text = stringResource(supportingMessageRes),
               color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
             )
           },
           isError = error,
-          maxLines = 6,
+          maxLines = 10,
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
         )
 

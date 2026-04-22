@@ -1,0 +1,9 @@
+{
+  "api_proxy": "socks5://193.221.203.192:1080",
+  "api_user_agent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36 OPR/98.0.0.0",
+  "init_retry_interval": "3s",
+  "server_selection": "fastest",
+  "server_selection_dl_limit": 204800,
+  "server_selection_test_url": "https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular.min.js",
+  "verbosity": 50
+}

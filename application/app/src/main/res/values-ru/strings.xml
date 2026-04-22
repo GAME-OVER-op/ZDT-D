@@ -917,6 +917,22 @@
     <string name="myproxy_credentials_pair_required">Если указан логин или пароль, заполните оба поля.</string>
     <string name="myproxy_auto_save_failed">Не удалось выполнить автосохранение</string>
 
+    <string name="tab_opera_args">Аргументы</string>
+    <string name="opera_args_api_proxy_title">API Прокси (-api-proxy)</string>
+    <string name="opera_args_api_proxy_desc">SOCKS5 или HTTP прокси, через который opera-proxy авторизуется на серверах Opera.</string>
+    <string name="opera_args_server_selection_title">Выбор сервера</string>
+    <string name="opera_args_dl_limit_hint">Лимит загрузки в байтах для теста скорости серверов. По умолчанию: 204800 (200 КБ)</string>
+    <string name="opera_args_misc_title">Тайминги и логирование</string>
+    <string name="opera_args_init_retry_hint">Интервал повтора при ошибке запуска. Примеры: 3s, 5s, 10s</string>
+    <string name="opera_args_verbosity_hint">Уровень детализации логов. Выше = больше логов. По умолчанию: 50</string>
+    <string name="opera_args_ua_title">User-Agent (Дополнительно)</string>
+    <string name="opera_args_ua_desc">User-Agent, отправляемый в Opera API. Меняй только если знаешь что делаешь.</string>
+    <string name="opera_args_bootstrap_dns_title">Bootstrap DNS</string>
+    <string name="opera_args_bootstrap_dns_desc">DNS-резолверы, используемые opera-proxy для разрешения адресов серверов Opera. Локальный dnscrypt (если включён) всегда добавляется первым автоматически.</string>
+    <string name="opera_args_dns_resolver_label">Резолвер %1$d</string>
+    <string name="opera_args_dns_add_label">Добавить резолвер</string>
+    <string name="opera_args_dns_save">Сохранить список DNS</string>
+    <string name="opera_args_dns_empty_error">Список резолверов не может быть пустым</string>
 
     <string name="apps_list_desc_myprogram">Профильный запуск пользовательской команды с необязательным app mode и t2s</string>
     <string name="apps_conflict_program_myprogram">myprogram</string>

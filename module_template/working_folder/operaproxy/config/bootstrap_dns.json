@@ -1,0 +1,12 @@
+[
+    "https://xbox-dns.ru/dns-query",
+    "tls://9.9.9.9:853",
+    "https://ru-mow.doh.sb/dns-query",
+    "https://1.1.1.3/dns-query",
+    "https://security.cloudflare-dns.com/dns-query",
+    "https://wikimedia-dns.org/dns-query",
+    "https://dns.adguard-dns.com/dns-query",
+    "https://dns.quad9.net/dns-query",
+    "https://dns.comss.one/dns-query",
+    "https://router.comss.one/dns-query"
+]

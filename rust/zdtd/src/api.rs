@@ -19,7 +19,7 @@ use crate::{daemon, daemon::SharedState, protector, settings, stats};
 const MAX_HEADER: usize = 16 * 1024;
 // Allow uploading strategic files (including binaries). The API is local-only and authenticated,
 // but we still cap body size to avoid accidental memory blowups.
-const MAX_BODY: usize = 32 * 1024 * 1024;
+const MAX_BODY: usize = 512 * 1024 * 1024;
 
 // Safety guard for dnscrypt setting files (some lists can be enormous and will crash the app/UI if returned whole).
 // Per Danil: limit reads/edits to ~200KB.

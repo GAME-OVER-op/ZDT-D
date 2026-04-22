@@ -3504,11 +3504,11 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun uploadMyProgramBin(profile: String, filename: String, bytes: ByteArray, onDone: (Boolean) -> Unit) {
+  override fun uploadMyProgramBin(profile: String, filename: String, file: File, onDone: (Boolean) -> Unit) {
     launchIO {
       val safeProfile = URLEncoder.encode(profile.trim(), "UTF-8")
       val ok = runCatching {
-        api.uploadMultipart("/api/programs/myprogram/profiles/$safeProfile/bin/upload", filename, bytes)
+        api.uploadMultipart("/api/programs/myprogram/profiles/$safeProfile/bin/upload", filename, file)
       }.getOrDefault(false)
       if (ok) log("OK", "myprogram/$profile/bin/$filename uploaded") else log("ERR", "myprogram/$profile/bin/$filename upload failed")
       withContext(Dispatchers.Main.immediate) { onDone(ok) }

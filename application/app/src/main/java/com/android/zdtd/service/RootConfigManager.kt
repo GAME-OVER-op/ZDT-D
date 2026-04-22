@@ -532,6 +532,48 @@ class RootConfigManager(private val context: Context) {
  *
  * Returns JSON: { code, body, error? }
  */
+fun proxyUploadMultipart(path: String, filename: String, file: File): JSONObject {
+    val token = readApiToken()
+    val url = "http://127.0.0.1:1006$path"
+
+    val res = JSONObject()
+    if (token.isBlank()) {
+        res.put("code", 0)
+        res.put("body", "")
+        res.put("error", "token_missing")
+        return res
+    }
+
+    val hdr1 = shQuote("X-Api-Key: $token")
+    val hdr2 = shQuote("Authorization: Bearer $token")
+    val fileQ = shQuote(file.absolutePath)
+    val urlQ = shQuote(url)
+    val form = shQuote("file=@${file.absolutePath};filename=$filename")
+
+    val script =
+        "(" +
+            "curl -s -m 1800 -H $hdr1 -H $hdr2 -F $form -o - -w '\n__HTTP__%{http_code}' $urlQ" +
+            " || /data/data/com.termux/files/usr/bin/curl -s -m 1800 -H $hdr1 -H $hdr2 -F $form -o - -w '\n__HTTP__%{http_code}' $urlQ" +
+            ")"
+
+    val r = Shell.cmd("sh", "-c", script).exec()
+    val out = (r.out + r.err).joinToString("\n")
+    val idx = out.lastIndexOf("__HTTP__")
+    if (idx >= 0) {
+        val body = out.substring(0, idx).trimEnd()
+        val codeStr = out.substring(idx + "__HTTP__".length).trim()
+        val code = codeStr.toIntOrNull() ?: 0
+        res.put("code", code)
+        res.put("body", body)
+        if (code == 0) res.put("error", "curl_failed")
+    } else {
+        res.put("code", 0)
+        res.put("body", out)
+        res.put("error", "bad_response")
+    }
+    return res
+}
+
 fun proxyUploadMultipart(path: String, filename: String, bytes: ByteArray): JSONObject {
     val token = readApiToken()
     val url = "http://127.0.0.1:1006$path"
@@ -561,8 +603,8 @@ fun proxyUploadMultipart(path: String, filename: String, bytes: ByteArray): JSON
         "echo ${shQuote(b64)} " +
             "| (base64 -d 2>/dev/null || /system/bin/toybox base64 -d 2>/dev/null) > $tmpQ && " +
             "(" +
-            "curl -s -m 20 -H $hdr1 -H $hdr2 -F $form -o - -w '\\n__HTTP__%{http_code}' $urlQ" +
-            " || /data/data/com.termux/files/usr/bin/curl -s -m 20 -H $hdr1 -H $hdr2 -F $form -o - -w '\\n__HTTP__%{http_code}' $urlQ" +
+            "curl -s -m 1800 -H $hdr1 -H $hdr2 -F $form -o - -w '\\n__HTTP__%{http_code}' $urlQ" +
+            " || /data/data/com.termux/files/usr/bin/curl -s -m 1800 -H $hdr1 -H $hdr2 -F $form -o - -w '\\n__HTTP__%{http_code}' $urlQ" +
             ")" +
             "; rm -f $tmpQ"
 

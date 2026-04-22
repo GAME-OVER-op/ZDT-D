@@ -183,6 +183,7 @@ fn stop_process_groups_parallel() -> Result<()> {
 
 pub fn stop_services_and_restore_iptables() -> Result<()> {
     crate::programs::dnscrypt::request_stop();
+    crate::programs::dnscrypt::clear_ipv6_resetprops();
     // 1) stop background processes
     // Use `pidof` to avoid killing similarly-named processes.
     stop_process_groups_parallel()?;

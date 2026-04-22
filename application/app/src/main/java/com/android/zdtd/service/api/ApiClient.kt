@@ -5,9 +5,11 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.io.File
 import java.io.IOException
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
@@ -27,6 +29,12 @@ class ApiClient(
     .connectTimeout(2, TimeUnit.SECONDS)
     .readTimeout(3, TimeUnit.SECONDS)
     .writeTimeout(3, TimeUnit.SECONDS)
+    .build()
+
+  private val uploadHttp = OkHttpClient.Builder()
+    .connectTimeout(30, TimeUnit.SECONDS)
+    .readTimeout(15, TimeUnit.MINUTES)
+    .writeTimeout(15, TimeUnit.MINUTES)
     .build()
 
   private val jsonMedia = "application/json".toMediaType()
@@ -254,6 +262,41 @@ class ApiClient(
  * Multipart file upload: POST <path> with form-data field "file".
  * Returns true for 2xx responses.
  */
+fun uploadMultipart(path: String, filename: String, file: File): Boolean {
+  val baseUrl = baseUrlProvider().trim().ifEmpty { "http://127.0.0.1:1006" }
+  val url = baseUrl + path
+
+  val body = MultipartBody.Builder()
+    .setType(MultipartBody.FORM)
+    .addFormDataPart(
+      "file",
+      filename,
+      file.asRequestBody("application/octet-stream".toMediaType())
+    )
+    .build()
+
+  val token = tokenProvider().trim()
+  val b = Request.Builder().url(url).post(body)
+  if (token.isNotEmpty()) {
+    b.header("Authorization", "Bearer $token")
+    b.header("X-Api-Key", token)
+  }
+
+  try {
+    uploadHttp.newCall(b.build()).execute().use { resp ->
+      if (resp.isSuccessful) return true
+    }
+  } catch (_: IOException) {
+    // fall through to root-proxy
+  }
+
+  return rootManager.proxyUploadMultipart(path, filename, file).optInt("code", 0) in 200..299
+}
+
+/**
+ * Multipart file upload from memory: POST <path> with form-data field "file".
+ * Kept for smaller uploads.
+ */
 fun uploadMultipart(path: String, filename: String, bytes: ByteArray): Boolean {
   val baseUrl = baseUrlProvider().trim().ifEmpty { "http://127.0.0.1:1006" }
   val url = baseUrl + path
@@ -274,19 +317,16 @@ fun uploadMultipart(path: String, filename: String, bytes: ByteArray): Boolean {
     b.header("X-Api-Key", token)
   }
 
-  // 1) Try normal HTTP
   try {
-    http.newCall(b.build()).execute().use { resp ->
+    uploadHttp.newCall(b.build()).execute().use { resp ->
       if (resp.isSuccessful) return true
     }
   } catch (_: IOException) {
     // fall through to root-proxy
   }
 
-  // 2) Root fallback: write bytes to temp file and curl -F upload
   return rootManager.proxyUploadMultipart(path, filename, bytes).optInt("code", 0) in 200..299
 }
-
 
   private fun jsonBool(obj: JSONObject?, key: String, default: Boolean = false): Boolean {
     if (obj == null || !obj.has(key)) return default

@@ -132,7 +132,7 @@ interface ZdtdActions {
   fun deleteWireProxyServer(profile: String, server: String, onDone: (Boolean) -> Unit = {})
 
   /** Upload one file into myprogram profile bin/. */
-  fun uploadMyProgramBin(profile: String, filename: String, bytes: ByteArray, onDone: (Boolean) -> Unit = {})
+  fun uploadMyProgramBin(profile: String, filename: String, file: java.io.File, onDone: (Boolean) -> Unit = {})
 
   /** Delete one file from myprogram profile bin/. */
   fun deleteMyProgramBin(profile: String, filename: String, onDone: (Boolean) -> Unit = {})

@@ -59,6 +59,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
+import java.io.File
 import kotlin.coroutines.resume
 
 private data class MyProgramSettingUi(
@@ -89,14 +90,30 @@ private suspend fun awaitSaveJsonMyProgram(actions: ZdtdActions, path: String, o
 private suspend fun awaitSaveTextMyProgram(actions: ZdtdActions, path: String, content: String): Boolean =
   suspendCancellableCoroutine { cont -> actions.saveText(path, content) { cont.resume(it) } }
 
-private suspend fun awaitUploadMyProgram(actions: ZdtdActions, profile: String, filename: String, bytes: ByteArray): Boolean =
-  suspendCancellableCoroutine { cont -> actions.uploadMyProgramBin(profile, filename, bytes) { cont.resume(it) } }
+private suspend fun awaitUploadMyProgram(actions: ZdtdActions, profile: String, filename: String, file: File): Boolean =
+  suspendCancellableCoroutine { cont -> actions.uploadMyProgramBin(profile, filename, file) { cont.resume(it) } }
 
 private suspend fun awaitDeleteMyProgram(actions: ZdtdActions, profile: String, filename: String): Boolean =
   suspendCancellableCoroutine { cont -> actions.deleteMyProgramBin(profile, filename) { cont.resume(it) } }
 
 private suspend fun awaitApplyMyProgram(actions: ZdtdActions, profile: String): Boolean =
   suspendCancellableCoroutine { cont -> actions.applyMyProgramProfile(profile) { cont.resume(it) } }
+
+
+private fun copyUriToTempFile(context: Context, uri: Uri, displayName: String): File? {
+  val safeName = displayName.ifBlank { "file.bin" }
+  val suffix = safeName.substringAfterLast('.', "bin").let { if (it.isBlank()) ".bin" else ".${it.take(16)}" }
+  val tmp = kotlin.runCatching { File.createTempFile("myprogram_upload_", suffix, context.cacheDir) }.getOrNull() ?: return null
+  return try {
+    context.contentResolver.openInputStream(uri)?.use { input ->
+      tmp.outputStream().use { output -> input.copyTo(output, 1024 * 1024) }
+    } ?: return null
+    tmp
+  } catch (_: Throwable) {
+    kotlin.runCatching { tmp.delete() }
+    null
+  }
+}
 
 private fun parseMyProgramSettingUi(obj: JSONObject?): MyProgramSettingUi {
   val data = obj?.optJSONObject("data") ?: obj
@@ -341,13 +358,17 @@ fun MyProgramProfileScreen(
     onResult = { uri ->
       if (uri == null) return@rememberLauncherForActivityResult
       val name = uriDisplayName(context, uri) ?: "file.bin"
-      val bytes = runCatching { context.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
-      if (bytes == null) {
+      val tmpFile = copyUriToTempFile(context, uri, name)
+      if (tmpFile == null) {
         showSnack(context.getString(R.string.common_upload_failed))
         return@rememberLauncherForActivityResult
       }
       scope.launch {
-        val ok = awaitUploadMyProgram(actions, profile, name, bytes)
+        val ok = try {
+          awaitUploadMyProgram(actions, profile, name, tmpFile)
+        } finally {
+          kotlin.runCatching { tmpFile.delete() }
+        }
         showSnack(if (ok) context.getString(R.string.common_uploaded) else context.getString(R.string.common_upload_failed))
         if (ok) refreshBin()
       }

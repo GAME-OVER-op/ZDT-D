@@ -796,6 +796,8 @@ fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
     let _xt_guard = xtables_lock::lock();
     let listen_port_s = listen_port.to_string();
     let check_args = [
+        "-w",
+        "5",
         "-t",
         "nat",
         "-C",
@@ -807,12 +809,14 @@ fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
         "--to-ports",
         listen_port_s.as_str(),
     ];
-    let rc = match xtables_lock::run_timeout_retry("iptables", &["-w", "5", check_args[0], check_args[1], check_args[2], check_args[3], check_args[4], check_args[5], check_args[6], check_args[7], check_args[8]], Capture::Both, IPT_TIMEOUT) {
+    let rc = match xtables_lock::run_timeout_retry("iptables", &check_args, Capture::Both, IPT_TIMEOUT) {
         Ok((rc, _)) => rc,
         Err(_) => 1,
     };
     if rc != 0 {
         let add_args = [
+            "-w",
+            "5",
             "-t",
             "nat",
             "-I",
@@ -824,7 +828,7 @@ fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
             "--to-ports",
             listen_port_s.as_str(),
         ];
-        let (add_rc, out) = xtables_lock::run_timeout_retry("iptables", &["-w", "5", add_args[0], add_args[1], add_args[2], add_args[3], add_args[4], add_args[5], add_args[6], add_args[7], add_args[8]], Capture::Both, IPT_TIMEOUT)
+        let (add_rc, out) = xtables_lock::run_timeout_retry("iptables", &add_args, Capture::Both, IPT_TIMEOUT)
             .with_context(|| format!("operaproxy hotspot PREROUTING redirect to :{}", listen_port))?;
         if add_rc != 0 {
             anyhow::bail!("operaproxy hotspot PREROUTING redirect to :{} failed rc={} out={}", listen_port, add_rc, out.trim());

@@ -692,6 +692,8 @@ fn spawn_opera_proxy(
     cmd.arg("-bind-address")
         .arg(bind)
         .arg("-socks-mode")
+        .arg("-cafile")
+        .arg(OPERA_CAFILE)
         .arg("-fake-SNI")
         .arg(fake_sni)
         .arg("-bootstrap-dns")

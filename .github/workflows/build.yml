@@ -1,0 +1,255 @@
+name: Build ZDT-D
+
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: false
+        default: 'Release'
+        type: choice
+        options:
+          - Debug
+          - Release
+
+env:
+  ANDROID_API_LEVEL: 34
+  ANDROID_BUILD_TOOLS_VERSION: "34.0.0"
+  GRADLE_VERSION: "8.2"
+  CARGO_PROFILE: release
+  CARGO_BUILD_TARGET: aarch64-linux-android
+  BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
+  NO_DASHBOARD: "1"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build module + APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Read version from module.prop
+        id: version
+        run: |
+          VERSION_CODE=$(grep -m1 '^versionCode=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')
+          VERSION_NAME=$(grep -m1 '^version=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')
+
+          if [[ -z "$VERSION_CODE" ]]; then
+            echo "::error::versionCode dont found in module.prop"
+            exit 1
+          fi
+
+          if [[ -n "$VERSION_NAME" ]]; then
+            TAG="v${VERSION_NAME}-build${VERSION_CODE}"
+          else
+            TAG="v${VERSION_CODE}"
+          fi
+
+          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+          echo "version_name=$VERSION_NAME"  >> $GITHUB_OUTPUT
+          echo "tag=$TAG"                    >> $GITHUB_OUTPUT
+          echo "Version: code=$VERSION_CODE name=$VERSION_NAME → tag=$TAG"
+
+      - name: Check existing tag
+        id: tag_check
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
+            echo "exists=true"  >> $GITHUB_OUTPUT
+            echo "Tag $TAG already exist — recreate"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "New tag $TAG."
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-${{ env.ANDROID_API_LEVEL }}" \
+            "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}"
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install Android NDK cross-linker
+        run: |
+          yes | sdkmanager "ndk;27.2.12479018" > /dev/null 2>&1
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls $ANDROID_SDK_ROOT/ndk | sort -V | tail -1)"
+          echo "NDK_ROOT=$NDK_ROOT" >> $GITHUB_ENV
+          mkdir -p ~/.cargo
+          cat >> ~/.cargo/config.toml <<EOF
+          [target.aarch64-linux-android]
+          linker = "$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
+          EOF
+
+      - name: Setup Gradle ${{ env.GRADLE_VERSION }}
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          cache-read-only: false
+
+      - name: Cache Cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-aarch64-linux-android-${{ hashFiles('rust/**/Cargo.lock') }}
+          restore-keys: |
+            cargo-aarch64-linux-android-
+
+      - name: Check prebuilt binaries
+        run: |
+          REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box wireproxy torproxy lyrebird)
+          MISSING=()
+          for bin in "${REQUIRED[@]}"; do
+            [[ -f "prebuilt/bin/arm64-v8a/$bin" ]] || MISSING+=("$bin")
+          done
+          if [[ ${#MISSING[@]} -gt 0 ]]; then
+            echo "::error::Binaries doesn't exist: ${MISSING[*]}"
+            exit 1
+          fi
+          echo "All binaries found"
+
+      - name: Build zdtd (Rust, aarch64-linux-android)
+        working-directory: rust/zdtd
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
+          RUSTUP_HOME: ""
+          RUSTUP_TOOLCHAIN: ""
+          RUSTFLAGS: ""
+          CARGO_ENCODED_RUSTFLAGS: ""
+          RUSTC_WRAPPER: ""
+        run: cargo build --profile ${{ env.CARGO_PROFILE }} --target ${{ env.CARGO_BUILD_TARGET }}
+
+      - name: Build t2s (Rust, aarch64-linux-android)
+        working-directory: rust/T2s
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
+          RUSTUP_HOME: ""
+          RUSTUP_TOOLCHAIN: ""
+          RUSTFLAGS: ""
+          CARGO_ENCODED_RUSTFLAGS: ""
+          RUSTC_WRAPPER: ""
+        run: cargo build --profile ${{ env.CARGO_PROFILE }} --target ${{ env.CARGO_BUILD_TARGET }}
+
+      - name: Pack Magisk module (zdt_module.zip)
+        run: |
+          set -euo pipefail
+
+          MODULE_BUILD_DIR="out/module_build/module_root"
+          MODULE_ZIP="out/module/zdt_module.zip"
+          PREBUILT="prebuilt/bin/arm64-v8a"
+          CARGO_OUT="rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}"
+
+          rm -rf out/module_build
+          mkdir -p "$MODULE_BUILD_DIR" out/module
+
+          cp -a module_template/. "$MODULE_BUILD_DIR/"
+          cp -f module.prop "$MODULE_BUILD_DIR/module.prop"
+
+          [[ -d "$MODULE_BUILD_DIR/META-INF" ]] || { echo "::error::META-INF doesnt exist in module_template"; exit 1; }
+
+          mkdir -p "$MODULE_BUILD_DIR/bin"
+          cp -f "$CARGO_OUT/zdtd" "$MODULE_BUILD_DIR/bin/zdtd" && chmod 755 "$MODULE_BUILD_DIR/bin/zdtd"
+          cp -f "$CARGO_OUT/t2s"  "$MODULE_BUILD_DIR/bin/t2s"  && chmod 755 "$MODULE_BUILD_DIR/bin/t2s"
+
+          for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box wireproxy torproxy lyrebird; do
+            cp -f "$PREBUILT/$bin" "$MODULE_BUILD_DIR/bin/$bin" && chmod 755 "$MODULE_BUILD_DIR/bin/$bin"
+          done
+
+          pushd "$MODULE_BUILD_DIR" > /dev/null
+          zip -qr "../../../$MODULE_ZIP" .
+          popd > /dev/null
+
+          echo "MODULE_ZIP=$MODULE_ZIP" >> $GITHUB_ENV
+
+      - name: Locate Android project root
+        run: |
+          SETTINGS=$(find . -maxdepth 4 \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) \
+            | grep -v '/build/' | sort | head -1)
+          if [[ -z "$SETTINGS" ]]; then
+            echo "::error::settings.gradle dont found:"
+            find . -maxdepth 4 -name '*.gradle*' | sort
+            exit 1
+          fi
+          GRADLE_PROJECT_DIR=$(dirname "$SETTINGS")
+          echo "GRADLE_PROJECT_DIR=$GRADLE_PROJECT_DIR" >> $GITHUB_ENV
+          echo "Android project root: $GRADLE_PROJECT_DIR"
+
+      - name: Write local.properties & keystore config
+        run: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > "$GRADLE_PROJECT_DIR/local.properties"
+
+          KEYSTORE_PATH="$(pwd)/keystores/zdt-debug.keystore"
+          mkdir -p "$(dirname "$KEYSTORE_PATH")"
+
+          if [[ ! -f "$KEYSTORE_PATH" ]]; then
+            keytool -genkeypair \
+              -keystore "$KEYSTORE_PATH" \
+              -storepass android \
+              -keypass android \
+              -alias androiddebugkey \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US" \
+              > /dev/null 2>&1
+          fi
+
+          {
+            echo "storeFile=$KEYSTORE_PATH"
+            echo "storePassword=android"
+            echo "keyAlias=androiddebugkey"
+            echo "keyPassword=android"
+          } > "$GRADLE_PROJECT_DIR/keystore.properties"
+
+      - name: Build APK (assemble${{ env.BUILD_TYPE }})
+        working-directory: ${{ env.GRADLE_PROJECT_DIR }}
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
+        run: |
+          gradle \
+            --no-daemon \
+            --max-workers=$(nproc) \
+            "assemble${{ env.BUILD_TYPE }}"
+
+      - name: Collect final artifacts
+        run: |
+          mkdir -p out/dist
+
+          APK=$(find "$GRADLE_PROJECT_DIR" -path '*/build/outputs/apk/*.apk' | sort | tail -1)
+          [[ -n "$APK" ]] || { echo "::error::APK does not exist"; exit 1; }
+
+          cp -f "$APK"        out/dist/app-release.apk
+          cp -f "$MODULE_ZIP" out/dist/zdt_module.zip
+
+          ls -lh out/dist/
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: out/dist/app-release.apk
+          retention-days: 30
+          archive: false

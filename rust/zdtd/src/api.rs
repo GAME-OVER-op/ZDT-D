@@ -3660,6 +3660,72 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
             }
         }
 
+        // --- operaproxy args (config/args.json) ---
+        ("GET", ["api", "programs", "operaproxy", "args"]) => {
+            let args = crate::programs::operaproxy::read_opera_args();
+            match serde_json::to_value(&args) {
+                Ok(v) => write_json(stream, 200, json!({"ok": true, "data": v})),
+                Err(e) => write_err(stream, anyhow::anyhow!("serialize args: {e}")),
+            }
+        }
+        ("PUT", ["api", "programs", "operaproxy", "args"]) => {
+            let res = (|| -> Result<()> {
+                let args: crate::programs::operaproxy::OperaArgs =
+                    serde_json::from_slice(body)
+                        .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                // Basic sanity checks
+                if args.api_proxy.trim().is_empty() {
+                    anyhow::bail!("api_proxy must not be empty");
+                }
+                if args.init_retry_interval.trim().is_empty() {
+                    anyhow::bail!("init_retry_interval must not be empty");
+                }
+                if args.server_selection.trim().is_empty() {
+                    anyhow::bail!("server_selection must not be empty");
+                }
+                if args.server_selection_test_url.trim().is_empty() {
+                    anyhow::bail!("server_selection_test_url must not be empty");
+                }
+                crate::programs::operaproxy::write_opera_args(&args)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
+        // --- operaproxy bootstrap DNS (config/bootstrap_dns.json) ---
+        ("GET", ["api", "programs", "operaproxy", "bootstrap_dns"]) => {
+            let resolvers = crate::programs::operaproxy::read_bootstrap_dns();
+            // Return as JSON array split on comma for easy UI consumption
+            let arr: serde_json::Value = resolvers
+                .split(',')
+                .map(|s| serde_json::Value::String(s.trim().to_string()))
+                .collect::<Vec<_>>()
+                .into();
+            write_json(stream, 200, json!({"ok": true, "data": arr}))
+        }
+        ("PUT", ["api", "programs", "operaproxy", "bootstrap_dns"]) => {
+            let res = (|| -> Result<()> {
+                let arr: Vec<String> = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body (expected array of strings): {e}"))?;
+                let clean: Vec<String> = arr.iter()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if clean.is_empty() {
+                    anyhow::bail!("resolver list must not be empty");
+                }
+                crate::programs::operaproxy::write_bootstrap_dns(&clean)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
         // --- legacy sing-box routes kept only to explain migration
         ("GET", ["api", "programs", "sing-box", "setting"]) | ("PUT", ["api", "programs", "sing-box", "setting"]) => {
             write_json(stream, 200, json!({

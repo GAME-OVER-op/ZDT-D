@@ -122,7 +122,7 @@ fun ProgramScreen(
     }
 
     when {
-      
+
 isProfileProgramType(program.type) -> {
         item {
           if (hasStrategicFiles) {
@@ -1481,6 +1481,7 @@ private fun OperaProxySection(actions: ZdtdActions, snackHost: SnackbarHostState
         Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.tab_byedpi), maxLines = 2) })
         Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(stringResource(R.string.tab_sni), maxLines = 2) })
         Tab(selected = tab == 3, onClick = { tab = 3 }, text = { Text(stringResource(R.string.tab_servers), maxLines = 2) })
+        Tab(selected = tab == 4, onClick = { tab = 4 }, text = { Text(stringResource(R.string.tab_opera_args), maxLines = 2) })
       }
     } else {
       TabRow(selectedTabIndex = tab) {
@@ -1488,6 +1489,7 @@ private fun OperaProxySection(actions: ZdtdActions, snackHost: SnackbarHostState
         Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.tab_byedpi), maxLines = 2) })
         Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(stringResource(R.string.tab_sni), maxLines = 2) })
         Tab(selected = tab == 3, onClick = { tab = 3 }, text = { Text(stringResource(R.string.tab_servers), maxLines = 2) })
+        Tab(selected = tab == 4, onClick = { tab = 4 }, text = { Text(stringResource(R.string.tab_opera_args), maxLines = 2) })
       }
     }
 
@@ -1530,6 +1532,9 @@ private fun OperaProxySection(actions: ZdtdActions, snackHost: SnackbarHostState
       }
       3 -> {
         OperaServerSection(actions = actions, snack = ::snack)
+      }
+      4 -> {
+        OperaArgsSection(actions = actions, snackHost = snackHost)
       }
     }
   }
@@ -2042,6 +2047,361 @@ private fun OperaServerSection(
         )
       }
     }
+  }
+}
+
+
+@Composable
+private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState) {
+  val apiPath = "/api/programs/operaproxy/args"
+  val scope = rememberCoroutineScope()
+  val context = LocalContext.current
+  fun snack(msg: String) { scope.launch { snackHost.showSnackbar(msg) } }
+
+  val dnsApiPath = "/api/programs/operaproxy/bootstrap_dns"
+
+  // State for each OperaArgs field (mirrors the Rust struct)
+  var apiProxy        by remember { mutableStateOf("") }
+  var apiUserAgent    by remember { mutableStateOf("") }
+  var initRetry       by remember { mutableStateOf("") }
+  var serverSelection by remember { mutableStateOf("fastest") }
+  var dlLimit         by remember { mutableStateOf("") }
+  var testUrl         by remember { mutableStateOf("") }
+  var verbosity       by remember { mutableStateOf("") }
+  var loaded          by remember { mutableStateOf(false) }
+  var saving          by remember { mutableStateOf(false) }
+
+  // Bootstrap DNS: list of resolver URL strings
+  var dnsResolvers    by remember { mutableStateOf(listOf<String>()) }
+  var dnsLoaded       by remember { mutableStateOf(false) }
+  var dnsSaving       by remember { mutableStateOf(false) }
+  // New resolver input field
+  var dnsNewEntry     by remember { mutableStateOf("") }
+
+  // Load current args from daemon on first compose
+  LaunchedEffect(Unit) {
+    actions.loadJsonData(apiPath) { obj ->
+      if (obj != null) {
+        apiProxy        = obj.optString("api_proxy",                 "socks5://193.221.203.192:1080")
+        apiUserAgent    = obj.optString("api_user_agent",            "")
+        initRetry       = obj.optString("init_retry_interval",       "3s")
+        serverSelection = obj.optString("server_selection",          "fastest")
+        dlLimit         = obj.optLong("server_selection_dl_limit",   204800L).toString()
+        testUrl         = obj.optString("server_selection_test_url", "https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular.min.js")
+        verbosity       = obj.optInt("verbosity",                    50).toString()
+      }
+      loaded = true
+    }
+    // Load bootstrap DNS resolvers list
+    actions.loadJsonData(dnsApiPath) { obj ->
+      if (obj != null) {
+        val arr = obj.optJSONArray("data") ?: obj.optJSONArray("resolvers")
+        if (arr != null) {
+          dnsResolvers = (0 until arr.length()).mapNotNull { i ->
+            arr.optString(i).trim().takeIf { it.isNotEmpty() }
+          }
+        }
+      }
+      // If still empty after load, show defaults hint via empty list
+      dnsLoaded = true
+    }
+  }
+
+  fun save() {
+    val obj = JSONObject().apply {
+      put("api_proxy",                    apiProxy.trim())
+      put("api_user_agent",               apiUserAgent.trim())
+      put("init_retry_interval",          initRetry.trim())
+      put("server_selection",             serverSelection.trim())
+      put("server_selection_dl_limit",    dlLimit.trim().toLongOrNull() ?: 204800L)
+      put("server_selection_test_url",    testUrl.trim())
+      put("verbosity",                    verbosity.trim().toIntOrNull() ?: 50)
+    }
+    saving = true
+    actions.saveJsonData(apiPath, obj) { ok ->
+      saving = false
+      snack(if (ok) context.getString(R.string.saved) else context.getString(R.string.save_failed))
+    }
+  }
+
+  fun saveDns() {
+    val list = dnsResolvers.map { it.trim() }.filter { it.isNotEmpty() }
+    if (list.isEmpty()) {
+      snack(context.getString(R.string.opera_args_dns_empty_error))
+      return
+    }
+    val arr = JSONArray().also { a -> list.forEach { a.put(it) } }
+    val obj = JSONObject().put("data", arr)
+    // The API expects a plain JSON array, not a wrapped object — send array directly
+    dnsSaving = true
+    // saveJsonData wraps in JSONObject, so we use saveText with raw JSON
+    actions.saveText(dnsApiPath, arr.toString()) { ok ->
+      dnsSaving = false
+      snack(if (ok) context.getString(R.string.saved) else context.getString(R.string.save_failed))
+    }
+  }
+
+  if (!loaded) {
+    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    return
+  }
+
+  Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+
+    // ── Card: -api-proxy ── (highlighted as most important)
+    Card(
+      colors = CardDefaults.cardColors(
+        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.40f)
+      )
+    ) {
+      Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+          stringResource(R.string.opera_args_api_proxy_title),
+          fontWeight = FontWeight.SemiBold,
+          style = MaterialTheme.typography.titleSmall,
+        )
+        Text(
+          stringResource(R.string.opera_args_api_proxy_desc),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+        )
+        OutlinedTextField(
+          value = apiProxy,
+          onValueChange = { apiProxy = it },
+          modifier = Modifier.fillMaxWidth(),
+          singleLine = true,
+          label = { Text("-api-proxy") },
+          placeholder = { Text("socks5://host:port") },
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+          isError = apiProxy.trim().isEmpty(),
+        )
+      }
+    }
+
+    // ── Card: server selection ──
+    Card {
+      Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+          stringResource(R.string.opera_args_server_selection_title),
+          fontWeight = FontWeight.SemiBold,
+          style = MaterialTheme.typography.titleSmall,
+        )
+
+        // -server-selection chip picker
+        Text(
+          "-server-selection",
+          style = MaterialTheme.typography.labelMedium,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          listOf("fastest", "random").forEach { opt ->
+            FilterChip(
+              selected = serverSelection == opt,
+              onClick = { serverSelection = opt },
+              label = { Text(opt) },
+              colors = FilterChipDefaults.filterChipColors(
+                selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
+                selectedLabelColor = MaterialTheme.colorScheme.error,
+              ),
+            )
+          }
+        }
+
+        // -server-selection-dl-limit
+        OutlinedTextField(
+          value = dlLimit,
+          onValueChange = { dlLimit = it },
+          modifier = Modifier.fillMaxWidth(),
+          singleLine = true,
+          label = { Text("-server-selection-dl-limit") },
+          placeholder = { Text("204800") },
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+          supportingText = { Text(stringResource(R.string.opera_args_dl_limit_hint)) },
+          isError = dlLimit.trim().toLongOrNull() == null,
+        )
+
+        // -server-selection-test-url
+        OutlinedTextField(
+          value = testUrl,
+          onValueChange = { testUrl = it },
+          modifier = Modifier.fillMaxWidth(),
+          singleLine = true,
+          label = { Text("-server-selection-test-url") },
+          placeholder = { Text("https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular.min.js") },
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+        )
+      }
+    }
+
+    // ── Card: timing & verbosity ──
+    Card {
+      Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+          stringResource(R.string.opera_args_misc_title),
+          fontWeight = FontWeight.SemiBold,
+          style = MaterialTheme.typography.titleSmall,
+        )
+
+        // -init-retry-interval
+        OutlinedTextField(
+          value = initRetry,
+          onValueChange = { initRetry = it },
+          modifier = Modifier.fillMaxWidth(),
+          singleLine = true,
+          label = { Text("-init-retry-interval") },
+          placeholder = { Text("3s") },
+          supportingText = { Text(stringResource(R.string.opera_args_init_retry_hint)) },
+          isError = initRetry.trim().isEmpty(),
+        )
+
+        // -verbosity
+        OutlinedTextField(
+          value = verbosity,
+          onValueChange = { verbosity = it },
+          modifier = Modifier.fillMaxWidth(),
+          singleLine = true,
+          label = { Text("-verbosity") },
+          placeholder = { Text("50") },
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+          supportingText = { Text(stringResource(R.string.opera_args_verbosity_hint)) },
+          isError = verbosity.trim().toIntOrNull() == null,
+        )
+      }
+    }
+
+    // ── Card: User-Agent (advanced, collapsed visually at bottom) ──
+    Card {
+      Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+          stringResource(R.string.opera_args_ua_title),
+          fontWeight = FontWeight.SemiBold,
+          style = MaterialTheme.typography.titleSmall,
+        )
+        Text(
+          stringResource(R.string.opera_args_ua_desc),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+        )
+        OutlinedTextField(
+          value = apiUserAgent,
+          onValueChange = { apiUserAgent = it },
+          modifier = Modifier.fillMaxWidth().heightIn(min = 72.dp),
+          singleLine = false,
+          maxLines = 3,
+          label = { Text("-api-user-agent") },
+        )
+      }
+    }
+
+    // ── Card: Bootstrap DNS ──
+    Card {
+      Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(
+          stringResource(R.string.opera_args_bootstrap_dns_title),
+          fontWeight = FontWeight.SemiBold,
+          style = MaterialTheme.typography.titleSmall,
+        )
+        Text(
+          stringResource(R.string.opera_args_bootstrap_dns_desc),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+        )
+
+        if (!dnsLoaded) {
+          LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        } else {
+          // Existing resolver rows
+          dnsResolvers.forEachIndexed { index, resolver ->
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+              OutlinedTextField(
+                value = resolver,
+                onValueChange = { v ->
+                  dnsResolvers = dnsResolvers.toMutableList().also { it[index] = v }
+                },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                label = { Text(stringResource(R.string.opera_args_dns_resolver_label, index + 1)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+              )
+              IconButton(onClick = {
+                dnsResolvers = dnsResolvers.toMutableList().also { it.removeAt(index) }
+              }) {
+                Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.cd_delete))
+              }
+            }
+          }
+
+          // New resolver input row
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            OutlinedTextField(
+              value = dnsNewEntry,
+              onValueChange = { dnsNewEntry = it },
+              modifier = Modifier.weight(1f),
+              singleLine = true,
+              label = { Text(stringResource(R.string.opera_args_dns_add_label)) },
+              placeholder = { Text("https://1.1.1.1/dns-query") },
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            )
+            IconButton(
+              onClick = {
+                val trimmed = dnsNewEntry.trim()
+                if (trimmed.isNotEmpty()) {
+                  dnsResolvers = dnsResolvers + trimmed
+                  dnsNewEntry = ""
+                }
+              },
+              enabled = dnsNewEntry.trim().isNotEmpty(),
+            ) {
+              Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.opera_args_dns_add_label))
+            }
+          }
+
+          // Save DNS button (separate from main args save)
+          OutlinedButton(
+            onClick = { saveDns() },
+            enabled = !dnsSaving && dnsLoaded,
+            modifier = Modifier.fillMaxWidth(),
+          ) {
+            if (dnsSaving) {
+              CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+              Spacer(Modifier.width(8.dp))
+            } else {
+              Text(stringResource(R.string.opera_args_dns_save))
+            }
+          }
+        }
+      }
+    }
+
+    // ── Save button ──
+    Button(
+      onClick = { save() },
+      enabled = !saving && loaded,
+      modifier = Modifier.fillMaxWidth(),
+    ) {
+      if (saving) {
+        CircularProgressIndicator(
+          modifier = Modifier.size(18.dp),
+          strokeWidth = 2.dp,
+        )
+      } else {
+        Text(stringResource(R.string.action_save))
+      }
+    }
+
+    Text(
+      stringResource(R.string.changes_apply_after_restart),
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+    )
   }
 }
 

@@ -36,6 +36,17 @@ const IPT_TIMEOUT: Duration = Duration::from_secs(5);
 // Opera-proxy CA bundle for certificate verification. We keep it fixed to prevent config tampering.
 const OPERA_CAFILE: &str = "/data/adb/modules/ZDT-D/strategic/certificate/ca.bundle";
 
+// Configurable opera-proxy arguments stored as JSON (editable from the app UI).
+const OPERA_ARGS_JSON: &str =
+    "/data/adb/modules/ZDT-D/working_folder/operaproxy/config/args.json";
+
+// Configurable bootstrap DNS resolvers stored as a JSON array of strings (editable from the app UI).
+const BOOTSTRAP_DNS_JSON: &str =
+    "/data/adb/modules/ZDT-D/working_folder/operaproxy/config/bootstrap_dns.json";
+
+// Built-in fallback bootstrap DNS resolvers used when bootstrap_dns.json is missing or empty.
+const DEFAULT_BOOTSTRAP_DNS: &str = "tls://dns.geohide.ru,https://xbox-dns.ru/dns-query,tls://9.9.9.9:853,https://ru-mow.doh.sb/dns-query,https://1.1.1.3/dns-query,https://security.cloudflare-dns.com/dns-query,https://wikimedia-dns.org/dns-query,https://dns.adguard-dns.com/dns-query,https://dns.quad9.net/dns-query,https://dns.comss.one/dns-query,https://router.comss.one/dns-query";
+
 const APP_UID_USER: &str =
     "/data/adb/modules/ZDT-D/working_folder/operaproxy/app/uid/user_program";
 const APP_OUT_USER: &str =
@@ -78,6 +89,119 @@ struct PortJson {
     iface_mobile: String,
     #[serde(default = "default_iface")]
     iface_wifi: String,
+}
+
+/// Configurable opera-proxy arguments.
+/// All fields correspond directly to opera-proxy CLI flags.
+/// Stored in config/args.json and edited from the app UI.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OperaArgs {
+    /// -api-proxy: SOCKS5/HTTP proxy used by opera-proxy to reach Opera backend API.
+    /// Example: "socks5://193.221.203.192:1080"
+    #[serde(default = "default_api_proxy")]
+    pub api_proxy: String,
+
+    /// -api-user-agent: User-Agent sent to Opera backend API.
+    #[serde(default = "default_api_user_agent")]
+    pub api_user_agent: String,
+
+    /// -init-retry-interval: retry interval on startup failure. Example: "3s", "5s".
+    #[serde(default = "default_init_retry_interval")]
+    pub init_retry_interval: String,
+
+    /// -server-selection: strategy for choosing the fastest server.
+    /// Typical values: "fastest", "random".
+    #[serde(default = "default_server_selection")]
+    pub server_selection: String,
+
+    /// -server-selection-dl-limit: download limit in bytes for speed test. Example: 204800.
+    #[serde(default = "default_server_selection_dl_limit")]
+    pub server_selection_dl_limit: u64,
+
+    /// -server-selection-test-url: URL used for the speed test.
+    #[serde(default = "default_server_selection_test_url")]
+    pub server_selection_test_url: String,
+
+    /// -verbosity: logging verbosity level (integer). Default: 50.
+    #[serde(default = "default_verbosity")]
+    pub verbosity: u32,
+}
+
+// ---- Default value functions required by serde ----
+
+fn default_api_proxy() -> String {
+    "socks5://193.221.203.192:1080".to_string()
+}
+
+fn default_api_user_agent() -> String {
+    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Mobile Safari/537.36 OPR/98.0.0.0".to_string()
+}
+
+fn default_init_retry_interval() -> String {
+    "3s".to_string()
+}
+
+fn default_server_selection() -> String {
+    "fastest".to_string()
+}
+
+fn default_server_selection_dl_limit() -> u64 {
+    204800
+}
+
+fn default_server_selection_test_url() -> String {
+    "https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular.min.js".to_string()
+}
+
+fn default_verbosity() -> u32 {
+    50
+}
+
+impl Default for OperaArgs {
+    fn default() -> Self {
+        Self {
+            api_proxy: default_api_proxy(),
+            api_user_agent: default_api_user_agent(),
+            init_retry_interval: default_init_retry_interval(),
+            server_selection: default_server_selection(),
+            server_selection_dl_limit: default_server_selection_dl_limit(),
+            server_selection_test_url: default_server_selection_test_url(),
+            verbosity: default_verbosity(),
+        }
+    }
+}
+
+/// Load configurable opera-proxy arguments from config/args.json.
+/// If the file is missing or unparseable, returns built-in defaults.
+pub fn read_opera_args() -> OperaArgs {
+    let path = Path::new(OPERA_ARGS_JSON);
+    if !path.is_file() {
+        return OperaArgs::default();
+    }
+    match fs::read_to_string(path) {
+        Ok(s) => serde_json::from_str::<OperaArgs>(&s).unwrap_or_else(|e| {
+            warn!("operaproxy: failed to parse args.json: {} -> using defaults", e);
+            OperaArgs::default()
+        }),
+        Err(e) => {
+            warn!("operaproxy: failed to read args.json: {} -> using defaults", e);
+            OperaArgs::default()
+        }
+    }
+}
+
+/// Write configurable opera-proxy arguments to config/args.json.
+pub fn write_opera_args(args: &OperaArgs) -> Result<()> {
+    let path = Path::new(OPERA_ARGS_JSON);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("mkdir {}", parent.display()))?;
+    }
+    let json = serde_json::to_string_pretty(args)
+        .with_context(|| "serialize OperaArgs")?;
+    fs::write(path, json.as_bytes())
+        .with_context(|| format!("write {}", path.display()))?;
+    Ok(())
 }
 
 
@@ -166,6 +290,16 @@ pub fn start_if_enabled() -> Result<()> {
     // opera-proxy region (EU/AS/AM) from config/server.txt, validated against whitelist
     let country = read_server_region(Path::new(SERVER_TXT));
 
+    // Load configurable opera-proxy args (falls back to defaults if file missing/invalid)
+    let opera_args = read_opera_args();
+    info!(
+        "operaproxy: args loaded: api_proxy='{}' verbosity={} server_selection='{}' init_retry='{}'",
+        opera_args.api_proxy,
+        opera_args.verbosity,
+        opera_args.server_selection,
+        opera_args.init_retry_interval,
+    );
+
     let service_count = sni_list.len();
     let any_uses_byedpi = sni_list.iter().any(|x| x.use_byedpi);
 
@@ -225,6 +359,7 @@ pub fn start_if_enabled() -> Result<()> {
             entry.override_proxy_address.as_deref(),
             &country,
             &bootstrap_dns,
+            &opera_args,
             &log_path,
         )?;
 
@@ -336,15 +471,59 @@ pub fn start_if_enabled() -> Result<()> {
     Ok(())
 }
 
+/// Read the bootstrap DNS resolver list from config/bootstrap_dns.json.
+/// Returns a comma-separated string of resolver URLs.
+/// Falls back to DEFAULT_BOOTSTRAP_DNS if the file is missing, empty, or invalid.
+pub fn read_bootstrap_dns() -> String {
+    let path = Path::new(BOOTSTRAP_DNS_JSON);
+    if !path.is_file() {
+        return DEFAULT_BOOTSTRAP_DNS.to_string();
+    }
+    let s = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            warn!("operaproxy: failed to read bootstrap_dns.json: {} -> using defaults", e);
+            return DEFAULT_BOOTSTRAP_DNS.to_string();
+        }
+    };
+    // Parse as JSON array of strings
+    let arr: Vec<String> = match serde_json::from_str::<Vec<String>>(&s) {
+        Ok(v) => v.into_iter().map(|e| e.trim().to_string()).filter(|e| !e.is_empty()).collect(),
+        Err(e) => {
+            warn!("operaproxy: failed to parse bootstrap_dns.json: {} -> using defaults", e);
+            return DEFAULT_BOOTSTRAP_DNS.to_string();
+        }
+    };
+    if arr.is_empty() {
+        warn!("operaproxy: bootstrap_dns.json is empty -> using defaults");
+        return DEFAULT_BOOTSTRAP_DNS.to_string();
+    }
+    arr.join(",")
+}
+
+/// Write bootstrap DNS resolver list to config/bootstrap_dns.json as a JSON array.
+pub fn write_bootstrap_dns(resolvers: &[String]) -> Result<()> {
+    let path = Path::new(BOOTSTRAP_DNS_JSON);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("mkdir {}", parent.display()))?;
+    }
+    let json = serde_json::to_string_pretty(resolvers)
+        .with_context(|| "serialize bootstrap DNS list")?;
+    fs::write(path, json.as_bytes())
+        .with_context(|| format!("write {}", path.display()))?;
+    Ok(())
+}
+
 fn build_bootstrap_dns_list() -> Result<String> {
-    // External resolvers (do not shorten)
-    let external = "https://1.1.1.1/dns-query,tls://9.9.9.9:853,https://1.1.1.3/dns-query,https://8.8.8.8/dns-query,https://dns.google/dns-query,https://security.cloudflare-dns.com/dns-query,https://fidelity.vm-0.com/q,https://wikimedia-dns.org/dns-query,https://dns.adguard-dns.com/dns-query,https://dns.quad9.net/dns-query,https://doh.cleanbrowsing.org/doh/adult-filter/";
-    // Add local dnscrypt only if enabled
+    // Load configurable external resolvers (falls back to defaults if file missing/invalid)
+    let external = read_bootstrap_dns();
+    // Prepend local dnscrypt resolver if it is currently enabled
     if let Some(port) = dnscrypt::active_listen_port()? {
         let local = format!("https://127.0.0.1:{},{}", port, external);
         Ok(local)
     } else {
-        Ok(external.to_string())
+        Ok(external)
     }
 }
 
@@ -495,6 +674,7 @@ fn spawn_opera_proxy(
     override_proxy_address: Option<&str>,
     country: &str,
     bootstrap_dns: &str,
+    opera_args: &OperaArgs,
     log_path: &Path,
 ) -> Result<()> {
     let logf = OpenOptions::new()
@@ -519,16 +699,21 @@ fn spawn_opera_proxy(
         .arg("-bootstrap-dns")
         .arg(bootstrap_dns)
         .arg("-api-user-agent")
-        .arg("Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36")
-        .arg("-certchain-workaround")
+        .arg(&opera_args.api_user_agent)
         .arg("-country")
         .arg(country)
         .arg("-init-retry-interval")
-        .arg("3s")
+        .arg(&opera_args.init_retry_interval)
         .arg("-server-selection")
-        .arg("fastest")
+        .arg(&opera_args.server_selection)
         .arg("-server-selection-dl-limit")
-        .arg("204800");
+        .arg(opera_args.server_selection_dl_limit.to_string())
+        .arg("-verbosity")
+        .arg(opera_args.verbosity.to_string())
+        .arg("-api-proxy")
+        .arg(&opera_args.api_proxy)
+        .arg("-server-selection-test-url")
+        .arg(&opera_args.server_selection_test_url);
     if let Some(ref upstream) = upstream {
         cmd.arg("-proxy").arg(upstream);
     }

@@ -992,4 +992,38 @@
     <string name="myproxy_user_hint">Логин SOCKS5. Оставьте пустым, если авторизация не нужна.</string>
     <string name="myproxy_pass_hint">Пароль SOCKS5. Оставьте пустым, если авторизация не нужна.</string>
 
+    <string name="world_map_title">Карта мира</string>
+    <string name="world_map_prompt_title">Вы желаете открыть карту мира?</string>
+    <string name="world_map_prompt_body">Примечание: пока окно будет активно, возможно повышение потребления CPU для показа карты.</string>
+
+
+    <plurals name="world_map_connections_count">
+        <item quantity="one">%1$d подключение</item>
+        <item quantity="few">%1$d подключения</item>
+        <item quantity="many">%1$d подключений</item>
+        <item quantity="other">%1$d подключения</item>
+    </plurals>
+    <string name="world_map_traffic_gb">Трафик %1$.2f GB</string>
+    <string name="world_map_traffic_mb">Трафик %1$.1f MB</string>
+    <string name="world_map_traffic_kb">Трафик %1$.0f KB</string>
+    <string name="world_map_traffic_b">Трафик %1$d B</string>
+    <string name="world_map_you">ВЫ</string>
+    <string name="world_map_peer_traffic_meta">↑%1$d%%  ↓%2$d%%  •  %3$d мс</string>
+    <string name="world_map_activity_very_high">очень высокая активность</string>
+    <string name="world_map_activity_high">высокая активность</string>
+    <string name="world_map_activity_medium">средняя активность</string>
+    <string name="world_map_activity_low">низкая активность</string>
+    <string name="world_map_geo_no_geo">%1$s • без гео</string>
+    <string name="world_map_geo_skipped">%1$s • пропущено</string>
+    <string name="world_map_geo_resolving">Определение…</string>
+    <string name="world_map_unknown_state">неизвестно</string>
+    <string name="world_map_unknown_location">Неизвестно</string>
+    <string name="world_map_error_execute_connections">Не удалось выполнить команду просмотра соединений.</string>
+    <string name="world_map_error_root_unavailable">Root недоступен. Предоставь приложению права superuser.</string>
+    <string name="world_map_error_read_connections">Не удалось прочитать системные соединения.</string>
+    <string name="world_map_closing_local">локально</string>
+    <string name="world_map_closing_remote">удалённо</string>
+    <string name="world_map_closing_unknown">неизвестно</string>
+    <string name="world_map_geo_label_format">%1$s • %2$s</string>
+
 </resources>

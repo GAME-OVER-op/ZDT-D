@@ -1,6 +1,7 @@
 package com.android.zdtd.service.ui
 
 import android.app.Activity
+import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -22,6 +23,8 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
@@ -69,6 +72,7 @@ import com.android.zdtd.service.RootState
 import com.android.zdtd.service.SetupStep
 import com.android.zdtd.service.SetupUiState
 import com.android.zdtd.service.UiState
+import com.android.zdtd.service.WorldMapActivity
 import com.android.zdtd.service.StartupStage
 import com.android.zdtd.service.StartupUiState
 import com.android.zdtd.service.ZdtdActions
@@ -599,6 +603,7 @@ private fun MainShell(
   var showDeleteModule by remember { mutableStateOf(false) }
   var showDeleteModuleNext by remember { mutableStateOf(false) }
   var showSettings by remember { mutableStateOf(false) }
+  var showWorldMapPrompt by remember { mutableStateOf(false) }
 
   // System Back behavior:
   // - From Stats/Programs -> go to Home
@@ -608,12 +613,16 @@ private fun MainShell(
   // - If logs sheet is open -> close it
   val ctx = LocalContext.current
   val activity = ctx as? Activity
-  val handleBack = remember(tab, appsRoute, showLogs, showBackup, showProgramUpdates, showSettings, showDeleteModule, showDeleteModuleNext) {
-    tab != Tab.HOME || showLogs || showBackup || showProgramUpdates || showSettings || showDeleteModule || showDeleteModuleNext || (tab == Tab.APPS && appsRoute != AppsRoute.List)
+  val handleBack = remember(tab, appsRoute, showLogs, showBackup, showProgramUpdates, showSettings, showDeleteModule, showDeleteModuleNext, showWorldMapPrompt) {
+    tab != Tab.HOME || showLogs || showBackup || showProgramUpdates || showSettings || showDeleteModule || showDeleteModuleNext || showWorldMapPrompt || (tab == Tab.APPS && appsRoute != AppsRoute.List)
   }
   BackHandler(enabled = handleBack) {
     if (showDeleteModuleNext) {
       showDeleteModuleNext = false
+      return@BackHandler
+    }
+    if (showWorldMapPrompt) {
+      showWorldMapPrompt = false
       return@BackHandler
     }
     if (showDeleteModule) {
@@ -666,6 +675,27 @@ private fun MainShell(
   val uiState by uiStateFlow.collectAsStateWithLifecycle()
 
   DaemonUnavailableDialogHost(uiState = uiState)
+
+  if (showWorldMapPrompt) {
+    AlertDialog(
+      onDismissRequest = { showWorldMapPrompt = false },
+      title = { Text(stringResource(R.string.world_map_prompt_title)) },
+      text = { Text(stringResource(R.string.world_map_prompt_body)) },
+      dismissButton = {
+        TextButton(onClick = { showWorldMapPrompt = false }) {
+          Text(stringResource(R.string.common_no))
+        }
+      },
+      confirmButton = {
+        TextButton(onClick = {
+          showWorldMapPrompt = false
+          ctx.startActivity(Intent(ctx, WorldMapActivity::class.java))
+        }) {
+          Text(stringResource(R.string.common_yes))
+        }
+      },
+    )
+  }
 
   var deleteModulePreparing by remember { mutableStateOf(false) }
   var deleteModulePrepareError by remember { mutableStateOf<String?>(null) }
@@ -896,7 +926,23 @@ private fun MainShell(
       Scaffold(
         topBar = {
         TopAppBar(
-          title = { Text(title, letterSpacing = 2.sp) },
+          title = {
+            val isHomeTitle = tab == Tab.HOME
+            Text(
+              title,
+              letterSpacing = 2.sp,
+              modifier = if (isHomeTitle) {
+                Modifier.clickable(
+                  interactionSource = remember { MutableInteractionSource() },
+                  indication = null,
+                ) {
+                  showWorldMapPrompt = true
+                }
+              } else {
+                Modifier
+              },
+            )
+          },
           navigationIcon = {
             if (canGoBack) {
               IconButton(onClick = {

@@ -994,4 +994,36 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="myproxy_user_hint">SOCKS5 username. Leave empty if auth is not required.</string>
     <string name="myproxy_pass_hint">SOCKS5 password. Leave empty if auth is not required.</string>
 
+    <string name="world_map_title">World map</string>
+    <string name="world_map_prompt_title">Open world map?</string>
+    <string name="world_map_prompt_body">Note: while this window is active, CPU usage may increase to render the map.</string>
+
+
+    <plurals name="world_map_connections_count">
+        <item quantity="one">%1$d connection</item>
+        <item quantity="other">%1$d connections</item>
+    </plurals>
+    <string name="world_map_traffic_gb">Traffic %1$.2f GB</string>
+    <string name="world_map_traffic_mb">Traffic %1$.1f MB</string>
+    <string name="world_map_traffic_kb">Traffic %1$.0f KB</string>
+    <string name="world_map_traffic_b">Traffic %1$d B</string>
+    <string name="world_map_you">YOU</string>
+    <string name="world_map_peer_traffic_meta">↑%1$d%%  ↓%2$d%%  •  %3$d ms</string>
+    <string name="world_map_activity_very_high">very high activity</string>
+    <string name="world_map_activity_high">high activity</string>
+    <string name="world_map_activity_medium">medium activity</string>
+    <string name="world_map_activity_low">low activity</string>
+    <string name="world_map_geo_no_geo">%1$s • no geo</string>
+    <string name="world_map_geo_skipped">%1$s • skipped</string>
+    <string name="world_map_geo_resolving">Resolving…</string>
+    <string name="world_map_unknown_state">unknown</string>
+    <string name="world_map_unknown_location">Unknown</string>
+    <string name="world_map_error_execute_connections">Failed to run the connection inspection command.</string>
+    <string name="world_map_error_root_unavailable">Root is unavailable. Grant the app superuser access.</string>
+    <string name="world_map_error_read_connections">Failed to read system connections.</string>
+    <string name="world_map_closing_local">local</string>
+    <string name="world_map_closing_remote">remote</string>
+    <string name="world_map_closing_unknown">unknown</string>
+    <string name="world_map_geo_label_format">%1$s • %2$s</string>
+
 </resources>

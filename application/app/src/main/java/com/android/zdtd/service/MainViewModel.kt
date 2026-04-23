@@ -325,6 +325,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     _toastEvents.tryEmit(msg)
   }
 
+  private fun scheduleProxyInfoApply(reason: String) {
+    proxyInfoApplyJob?.cancel()
+    proxyInfoApplyJob = launchIO {
+      delay(proxyInfoApplyDelayMs)
+      val ok = runCatching { api.applyProxyInfo() }.getOrElse {
+        log("ERR", "proxyInfo delayed apply failed ($reason): ${it.message ?: it}")
+        false
+      }
+      if (!ok) return@launchIO
+      log("OK", "proxyInfo apply completed ($reason)")
+      refreshProxyInfo()
+    }
+  }
+
   private var appUpdateCheckedThisSession: Boolean = false
   private var appUpdateDownloadJob: Job? = null
 
@@ -335,6 +349,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   private var statusJob: Job? = null
   private var daemonLogJob: Job? = null
   private var startupJob: Job? = null
+  private var proxyInfoApplyJob: Job? = null
+  private val proxyInfoApplyDelayMs: Long = 1_200L
   private var appVisible: Boolean = false
   private var startupCompleted: Boolean = false
   private val startupMinVisibleMsRange: LongRange = 2_000L..4_500L
@@ -3879,9 +3895,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     _appUpdate.update { it.copy(proxyInfoAppsContent = normalized, proxyInfoBusy = true) }
     launchIO {
       val ok = runCatching {
-        api.setProxyInfoApps(normalized) && api.applyProxyInfo()
+        api.setProxyInfoApps(normalized)
       }.getOrElse {
-        log("ERR", "proxyInfo apps failed: ${it.message ?: it}")
+        log("ERR", "proxyInfo apps save failed: ${it.message ?: it}")
         false
       }
       if (!ok) {
@@ -3893,6 +3909,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         return@launchIO
       }
       _appUpdate.update { it.copy(proxyInfoAppsContent = normalized, proxyInfoBusy = false) }
+      scheduleProxyInfoApply("apps-save")
       withContext(Dispatchers.Main.immediate) {
         toast(str(R.string.settings_proxyinfo_saved))
         onDone(true)
@@ -3912,7 +3929,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     _appUpdate.update { it.copy(proxyInfoAppsContent = normalized, proxyInfoBusy = true) }
     launchIO {
       val ok = runCatching {
-        api.saveProxyInfoAppsResolved(normalized, true) && api.applyProxyInfo()
+        api.saveProxyInfoAppsResolved(normalized, true)
       }.getOrElse {
         log("ERR", "proxyInfo resolve-save failed: ${it.message ?: it}")
         false
@@ -3926,6 +3943,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         return@launchIO
       }
       _appUpdate.update { it.copy(proxyInfoAppsContent = normalized, proxyInfoBusy = false) }
+      scheduleProxyInfoApply("apps-save-resolved")
       withContext(Dispatchers.Main.immediate) {
         toast(str(R.string.settings_proxyinfo_saved))
         onDone(true)

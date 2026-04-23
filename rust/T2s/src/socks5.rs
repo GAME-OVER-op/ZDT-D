@@ -1,6 +1,20 @@
 use anyhow::{anyhow, Context, Result};
-use std::{net::SocketAddr, time::Duration};
+use std::{future::Future, net::SocketAddr, time::Duration};
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream};
+
+async fn io_step<T, F>(timeout: Duration, label: &'static str, fut: F) -> Result<T>
+where
+    F: Future<Output = std::io::Result<T>>,
+{
+    tokio::time::timeout(timeout, fut)
+        .await
+        .with_context(|| format!("socks handshake timeout: {}", label))?
+        .with_context(|| format!("socks handshake failed: {}", label))
+}
+
+fn handshake_timeout(total_timeout: Duration) -> Duration {
+    total_timeout.min(Duration::from_secs(3)).max(Duration::from_millis(800))
+}
 
 #[derive(Clone, Debug)]
 pub enum TargetAddr {
@@ -19,15 +33,17 @@ pub async fn connect_via_socks5(
         .context("socks tcp connect timeout")?
         .context("socks tcp connect failed")?;
 
+    let hs_timeout = handshake_timeout(timeout);
+
     // Greeting
     let mut methods = vec![0x00u8]; // no auth
     if auth.is_some() {
         methods.push(0x02u8); // username/password
     }
-    stream.write_all(&[0x05u8, methods.len() as u8]).await?;
-    stream.write_all(&methods).await?;
+    io_step(hs_timeout, "greeting header write", stream.write_all(&[0x05u8, methods.len() as u8])).await?;
+    io_step(hs_timeout, "greeting methods write", stream.write_all(&methods)).await?;
     let mut resp = [0u8; 2];
-    stream.read_exact(&mut resp).await.context("socks greeting reply")?;
+    io_step(hs_timeout, "greeting reply read", stream.read_exact(&mut resp)).await?;
     if resp[0] != 0x05 {
         return Err(anyhow!("invalid SOCKS version {}", resp[0]));
     }
@@ -35,7 +51,9 @@ pub async fn connect_via_socks5(
         0x00 => {}
         0x02 => {
             let (u, p) = auth.clone().ok_or_else(|| anyhow!("server requires auth but no creds"))?;
-            do_userpass_auth_for_healthcheck(&mut stream, &u, &p).await?;
+            tokio::time::timeout(hs_timeout, do_userpass_auth_for_healthcheck(&mut stream, &u, &p))
+                .await
+                .context("socks handshake timeout: userpass auth")??;
         }
         0xFF => return Err(anyhow!("no acceptable auth methods")),
         m => return Err(anyhow!("unsupported auth method {:#x}", m)),
@@ -69,11 +87,11 @@ pub async fn connect_via_socks5(
         }
     }
 
-    stream.write_all(&req).await?;
+    io_step(hs_timeout, "connect request write", stream.write_all(&req)).await?;
 
     // Reply: VER, REP, RSV, ATYP, BND.ADDR, BND.PORT
     let mut hdr = [0u8; 4];
-    stream.read_exact(&mut hdr).await.context("socks reply hdr")?;
+    io_step(hs_timeout, "connect reply head read", stream.read_exact(&mut hdr)).await?;
     if hdr[0] != 0x05 {
         return Err(anyhow!("invalid SOCKS version in reply {}", hdr[0]));
     }
@@ -84,18 +102,18 @@ pub async fn connect_via_socks5(
     match atyp {
         0x01 => {
             let mut buf = [0u8; 4+2];
-            stream.read_exact(&mut buf).await?;
+            io_step(hs_timeout, "connect reply ipv4 read", stream.read_exact(&mut buf)).await?;
         }
         0x04 => {
             let mut buf = [0u8; 16+2];
-            stream.read_exact(&mut buf).await?;
+            io_step(hs_timeout, "connect reply ipv6 read", stream.read_exact(&mut buf)).await?;
         }
         0x03 => {
             let mut ln = [0u8; 1];
-            stream.read_exact(&mut ln).await?;
+            io_step(hs_timeout, "connect reply domain len read", stream.read_exact(&mut ln)).await?;
             let l = ln[0] as usize;
             let mut buf = vec![0u8; l+2];
-            stream.read_exact(&mut buf).await?;
+            io_step(hs_timeout, "connect reply domain read", stream.read_exact(&mut buf)).await?;
         }
         _ => return Err(anyhow!("unknown ATYP in reply {}", atyp)),
     }

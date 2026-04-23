@@ -362,17 +362,10 @@ async fn ws_handle(mut socket: WebSocket, state: AppState) {
 
 fn build_state(state: &AppState) -> ApiState {
     let stats = state.stats.snapshot();
+    let total_active = state.conns.len();
+    let (int_active, ext_active) = state.conns.ingress_counts();
     let conns = state.conns.list();
     let backends = state.backends.lock().snapshot();
-
-    let mut int_active = 0usize;
-    let mut ext_active = 0usize;
-    for c in conns.iter() {
-        match c.ingress.as_str() {
-            "external" => ext_active += 1,
-            _ => int_active += 1,
-        }
-    }
 
     let ports = PortsView {
         internal: PortView {
@@ -437,7 +430,7 @@ fn build_state(state: &AppState) -> ApiState {
     ApiState {
         ts: stats::now_ts(),
         stats,
-        active_connections: conn_views.len(),
+        active_connections: total_active,
         ports,
         conns: conn_views,
         backends,

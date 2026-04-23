@@ -59,6 +59,26 @@ fn sniff_mode_for(state: &AppState) -> SniffMode {
     }
 }
 
+
+fn accept_error_backoff(err: &std::io::Error) -> Duration {
+    match err.raw_os_error() {
+        Some(11) | Some(12) | Some(23) | Some(24) => Duration::from_millis(250),
+        _ => Duration::from_millis(50),
+    }
+}
+
+fn is_transient_accept_error(err: &std::io::Error) -> bool {
+    use std::io::ErrorKind;
+    matches!(
+        err.kind(),
+        ErrorKind::ConnectionAborted
+            | ErrorKind::ConnectionReset
+            | ErrorKind::Interrupted
+            | ErrorKind::WouldBlock
+            | ErrorKind::TimedOut
+    ) || matches!(err.raw_os_error(), Some(11) | Some(12) | Some(23) | Some(24))
+}
+
 async fn sniff_client_host(client: &tokio::net::TcpStream, mode: SniffMode) -> Option<crate::sniff::SniffResult> {
     use tokio::time::{Duration, Instant};
 
@@ -253,22 +273,72 @@ async fn run_tcp_on(state: AppState, addr: SocketAddr, ingress: stats::Ingress) 
     info!("TCP ({:?}) listening on {}", ingress, addr);
 
     loop {
-        let (sock, peer) = listener.accept().await.context("accept")?;
+        let (sock, peer) = match listener.accept().await {
+            Ok(v) => v,
+            Err(e) => {
+                if is_transient_accept_error(&e) {
+                    let backoff = accept_error_backoff(&e);
+                    warn!("TCP ({:?}) accept temporary error on {}: {} (backoff {:?})", ingress, addr, e, backoff);
+                    tokio::time::sleep(backoff).await;
+                    continue;
+                }
+                return Err(e).context("accept");
+            }
+        };
         // Wake up background loops (health checks, etc.) on new activity.
         state.runtime.wake();
+
+        let permit = match state.semaphore.clone().try_acquire_owned() {
+            Ok(p) => p,
+            Err(_) => {
+                state.stats.inc_policy_drop();
+                warn!("dropping new connection from {}: connection storm protection (max_conns reached)", peer);
+                drop(sock);
+                continue;
+            }
+        };
+
+        if ingress == stats::Ingress::External {
+            let (_, ext_active) = state.conns.ingress_counts();
+            let ext_limit = external_ingress_limit(&state);
+            if ext_active >= ext_limit {
+                state.stats.inc_policy_drop();
+                warn!(
+                    "dropping new external connection from {}: external fairness cap reached ({}/{})",
+                    peer,
+                    ext_active,
+                    ext_limit,
+                );
+                drop(sock);
+                drop(permit);
+                continue;
+            }
+        }
+
+        let source_limit = if ingress == stats::Ingress::External {
+            Some(external_per_source_limit(&state))
+        } else {
+            None
+        };
+        let cid = match state.conns.try_new_conn(peer, ingress, source_limit) {
+            Some(cid) => cid,
+            None => {
+                state.stats.inc_policy_drop();
+                warn!(
+                    "dropping new connection from {}: per-source fairness cap reached (limit={})",
+                    peer,
+                    source_limit.unwrap_or(0),
+                );
+                drop(sock);
+                drop(permit);
+                continue;
+            }
+        };
+        let token = state.conns.set_cancel_token(cid);
+        let _ = state.events.send(stats::Event::conn_open(cid, peer));
+
         let st = state.clone();
-
         tokio::spawn(async move {
-            let permit = match st.semaphore.acquire().await {
-                Ok(p) => p,
-                Err(_) => return,
-            };
-
-            let cid = st.conns.new_conn(peer, ingress);
-            let token = st.conns.set_cancel_token(cid);
-
-            let _ = st.events.send(stats::Event::conn_open(cid, peer));
-
             let res = proxy_tcp(sock, peer, cid, st.clone(), token, ingress).await;
 
             drop(permit);
@@ -296,6 +366,8 @@ async fn proxy_tcp(
 ) -> Result<()> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::time::Instant;
+
+    state.conns.set_mode(cid, "pending");
 
     // Determine target
     let target = if let (Some(h), Some(p)) = (state.args.target_host.clone(), state.args.target_port) {
@@ -372,8 +444,29 @@ async fn proxy_tcp(
             return Ok(());
         }
         Some(rules::Action::Wait) => {
-            // Wait a bit for backend recovery
+            // Avoid turning WAIT into a permit-holding queue under overload.
+            let overload_cutoff = ((state.args.max_conns as usize) * 8 / 10).max(1);
+            let waiting_now = state.conns.count_modes(&["wait_backend"]);
+            let setup_now = state.conns.count_modes(&["pending", "wait_backend", "socks_connecting"]);
+            if state.conns.len() >= overload_cutoff
+                || state.semaphore.available_permits() <= 1
+                || waiting_now >= wait_phase_limit(&state)
+                || setup_now >= setup_phase_limit(&state)
+            {
+                state.stats.inc_policy_drop();
+                tracing::warn!(
+                    "[cid={}] dropping WAIT action under overload (active={}, permits_left={}, waiting={}, setup={})",
+                    cid,
+                    state.conns.len(),
+                    state.semaphore.available_permits(),
+                    waiting_now,
+                    setup_now,
+                );
+                return Ok(());
+            }
+            state.conns.set_mode(cid, "wait_backend");
             let ok = stats::wait_for_backend_recovery(state.clone(), Duration::from_secs(5)).await;
+            state.conns.set_mode(cid, "pending");
             if !ok {
                 state.stats.inc_policy_drop();
                 return Ok(());
@@ -394,7 +487,7 @@ let mut chosen_mode = "socks";
     let upstream = if use_direct || !socks_available {
         let refreshed = stats::wait_for_backend_recovery(state.clone(), Duration::from_millis(1200)).await;
         if refreshed {
-            let (s, be) = connect_socks(&target, sniff_host.as_deref(), state.clone()).await?;
+            let (s, be) = connect_socks(&target, sniff_host.as_deref(), state.clone(), cid).await?;
             chosen_backend = Some(be);
             s
         } else {
@@ -411,7 +504,7 @@ let mut chosen_mode = "socks";
             }
         }
     } else {
-        match connect_socks(&target, sniff_host.as_deref(), state.clone()).await {
+        match connect_socks(&target, sniff_host.as_deref(), state.clone(), cid).await {
             Ok((s, be)) => {
                 chosen_backend = Some(be);
                 s
@@ -425,7 +518,7 @@ let mut chosen_mode = "socks";
 
                 let refreshed = stats::wait_for_backend_recovery(state.clone(), Duration::from_millis(1200)).await;
                 if refreshed {
-                    let (s, be) = connect_socks(&target, sniff_host.as_deref(), state.clone()).await?;
+                    let (s, be) = connect_socks(&target, sniff_host.as_deref(), state.clone(), cid).await?;
                     chosen_backend = Some(be);
                     s
                 } else {
@@ -471,29 +564,43 @@ let mut chosen_mode = "socks";
         // client -> upstream (upload)
         let mut buf = vec![0u8; buf_sz];
         let mut be_acc: u64 = 0;
-        let mut last = Instant::now();
         loop {
+            let n = tokio::select! {
+                _ = c1.cancelled() => break,
+                res = async {
+                    if let Some(idle_d) = idle {
+                        tokio::time::timeout(idle_d, cr.read(&mut buf)).await
+                            .map_err(|_| anyhow::anyhow!("upload read idle timeout"))?
+                            .map_err(anyhow::Error::from)
+                    } else {
+                        cr.read(&mut buf).await.map_err(anyhow::Error::from)
+                    }
+                } => res?,
+            };
+            if n == 0 { break; }
+
             tokio::select! {
                 _ = c1.cancelled() => break,
-                res = cr.read(&mut buf) => {
-                    let n = res?;
-                    if n == 0 { break; }
-                    uw.write_all(&buf[..n]).await?;
-                    st1.stats.add_up(n as u64);
-                    st1.stats.add_up_ingress(ingress, n as u64);
-                    st1.conns.add_bytes_up(cid, n as u64);
-                    if let Some(b) = be1 {
-                        be_acc = be_acc.saturating_add(n as u64);
-                        if be_acc >= 65536 {
-                            st1.backends.lock().add_bytes(b, be_acc);
-                            be_acc = 0;
-                        }
+                res = async {
+                    if let Some(idle_d) = idle {
+                        tokio::time::timeout(idle_d, uw.write_all(&buf[..n])).await
+                            .map_err(|_| anyhow::anyhow!("upload write idle timeout"))?
+                            .map_err(anyhow::Error::from)
+                    } else {
+                        uw.write_all(&buf[..n]).await.map_err(anyhow::Error::from)
                     }
-                    last = Instant::now();
-                }
+                } => { res?; }
             }
-            if let Some(idle_d) = idle {
-                if last.elapsed() > idle_d { break; }
+
+            st1.stats.add_up(n as u64);
+            st1.stats.add_up_ingress(ingress, n as u64);
+            st1.conns.add_bytes_up(cid, n as u64);
+            if let Some(b) = be1 {
+                be_acc = be_acc.saturating_add(n as u64);
+                if be_acc >= 65536 {
+                    st1.backends.lock().add_bytes(b, be_acc);
+                    be_acc = 0;
+                }
             }
         }
         if let Some(b) = be1 {
@@ -512,54 +619,69 @@ let mut chosen_mode = "socks";
         // upstream -> client (download)
         let mut buf = vec![0u8; buf_sz];
         let mut be_acc: u64 = 0;
-        let mut last = Instant::now();
         let mut window_start = Instant::now();
         let mut window_bytes: u64 = 0;
 
         loop {
-            tokio::select! {
+            let n = tokio::select! {
                 _ = c2.cancelled() => break,
-                res = ur.read(&mut buf) => {
-                    let n = res?;
-                    if n == 0 { break; }
+                res = async {
+                    if let Some(idle_d) = idle {
+                        tokio::time::timeout(idle_d, ur.read(&mut buf)).await
+                            .map_err(|_| anyhow::anyhow!("download read idle timeout"))?
+                            .map_err(anyhow::Error::from)
+                    } else {
+                        ur.read(&mut buf).await.map_err(anyhow::Error::from)
+                    }
+                } => res?,
+            };
+            if n == 0 { break; }
 
-                    let bps = st2.runtime.download_limit_bps.load(std::sync::atomic::Ordering::Relaxed);
-                    if bps > 0 {
-                        window_bytes += n as u64;
-                        let elapsed = window_start.elapsed().as_secs_f64();
-                        if elapsed > 0.0 {
-                            let cur_bps = (window_bytes as f64) / elapsed;
-                            if cur_bps > (bps as f64) {
-                                // sleep proportional
-                                let target_elapsed = (window_bytes as f64) / (bps as f64);
-                                let sleep_s = target_elapsed - elapsed;
-                                if sleep_s > 0.0 {
-                                    tokio::time::sleep(Duration::from_secs_f64(sleep_s.min(0.5))).await;
-                                }
+            let bps = st2.runtime.download_limit_bps.load(std::sync::atomic::Ordering::Relaxed);
+            if bps > 0 {
+                window_bytes += n as u64;
+                let elapsed = window_start.elapsed().as_secs_f64();
+                if elapsed > 0.0 {
+                    let cur_bps = (window_bytes as f64) / elapsed;
+                    if cur_bps > (bps as f64) {
+                        // sleep proportional
+                        let target_elapsed = (window_bytes as f64) / (bps as f64);
+                        let sleep_s = target_elapsed - elapsed;
+                        if sleep_s > 0.0 {
+                            tokio::select! {
+                                _ = c2.cancelled() => break,
+                                _ = tokio::time::sleep(Duration::from_secs_f64(sleep_s.min(0.5))) => {}
                             }
                         }
-                        if window_start.elapsed() > Duration::from_secs(1) {
-                            window_start = Instant::now();
-                            window_bytes = 0;
-                        }
                     }
-
-                    cw.write_all(&buf[..n]).await?;
-                    st2.stats.add_down(n as u64);
-                    st2.stats.add_down_ingress(ingress, n as u64);
-                    st2.conns.add_bytes_down(cid, n as u64);
-                    if let Some(b) = be2 {
-                        be_acc = be_acc.saturating_add(n as u64);
-                        if be_acc >= 65536 {
-                            st2.backends.lock().add_bytes(b, be_acc);
-                            be_acc = 0;
-                        }
-                    }
-                    last = Instant::now();
+                }
+                if window_start.elapsed() > Duration::from_secs(1) {
+                    window_start = Instant::now();
+                    window_bytes = 0;
                 }
             }
-            if let Some(idle_d) = idle {
-                if last.elapsed() > idle_d { break; }
+
+            tokio::select! {
+                _ = c2.cancelled() => break,
+                res = async {
+                    if let Some(idle_d) = idle {
+                        tokio::time::timeout(idle_d, cw.write_all(&buf[..n])).await
+                            .map_err(|_| anyhow::anyhow!("download write idle timeout"))?
+                            .map_err(anyhow::Error::from)
+                    } else {
+                        cw.write_all(&buf[..n]).await.map_err(anyhow::Error::from)
+                    }
+                } => { res?; }
+            }
+            st2.stats.add_down(n as u64);
+            st2.stats.add_down_ingress(ingress, n as u64);
+            st2.conns.add_bytes_down(cid, n as u64);
+            if let Some(b) = be2 {
+                be_acc = be_acc.saturating_add(n as u64);
+                if be_acc >= 65536 {
+                    st2.backends.lock().add_bytes(b, be_acc);
+                    be_acc = 0;
+                }
             }
         }
         if let Some(b) = be2 {
@@ -591,12 +713,62 @@ fn looks_like_ip(host: &str) -> bool {
     host.parse::<std::net::IpAddr>().is_ok()
 }
 
+fn per_backend_connect_limit(state: &AppState) -> u32 {
+    let backend_count = state.backends.lock().len().max(1) as u32;
+    let share = ((state.args.max_conns.max(1) + backend_count - 1) / backend_count).max(1);
+    (share / 2).clamp(4, 12)
+}
+
+fn setup_phase_limit(state: &AppState) -> usize {
+    ((state.args.max_conns as usize) / 2).clamp(8, 64)
+}
+
+fn wait_phase_limit(state: &AppState) -> usize {
+    ((state.args.max_conns as usize) / 8).clamp(2, 16)
+}
+
+fn internal_reserve_slots(state: &AppState) -> usize {
+    let maxc = (state.args.max_conns as usize).max(1);
+    if maxc <= 8 {
+        1
+    } else {
+        ((maxc / 4).clamp(4, 32)).min(maxc.saturating_sub(1))
+    }
+}
+
+fn external_ingress_limit(state: &AppState) -> usize {
+    let maxc = (state.args.max_conns as usize).max(1);
+    maxc.saturating_sub(internal_reserve_slots(state)).max(1)
+}
+
+fn external_per_source_limit(state: &AppState) -> u32 {
+    let ingress_cap = external_ingress_limit(state);
+    let base = ((state.args.max_conns as usize) / 4).clamp(8, 64);
+    let limit = base.min((ingress_cap / 2).max(2));
+    limit.max(2) as u32
+}
+
+fn is_soft_backend_failure(err: &str) -> bool {
+    let e = err.to_ascii_lowercase();
+    e.contains("socks handshake timeout")
+        || e.contains("connect queue saturated")
+        || e.contains("too many in-flight")
+        || e.contains("timed out")
+}
+
 async fn connect_socks(
     target: &stats::Target,
     domain_hint: Option<&str>,
     state: AppState,
+    cid: u64,
 ) -> Result<(tokio::net::TcpStream, SocketAddr)> {
     let timeout = Duration::from_secs(state.args.connect_timeout as u64);
+
+    let setup_now = state.conns.count_modes(&["pending", "wait_backend", "socks_connecting"]);
+    let setup_limit = setup_phase_limit(&state);
+    if setup_now > setup_limit {
+        return Err(anyhow::anyhow!("local socks setup saturated ({}/{})", setup_now, setup_limit));
+    }
 
     let global_auth = match (state.args.socks_user.clone(), state.args.socks_pass.clone()) {
         (Some(u), Some(p)) => Some((u, p)),
@@ -616,9 +788,10 @@ async fn connect_socks(
     // Try multiple GREEN backends before giving up.
     let max_tries = state.backends.lock().len().max(1);
     let mut tried = std::collections::HashSet::<SocketAddr>::new();
+    let inflight_limit = per_backend_connect_limit(&state);
 
     for _ in 0..max_tries {
-        let (backend, auth) = {
+        let (backend_idx, backend, auth) = {
             let mut b = state.backends.lock();
             b.select_rr_with_auth(global_auth.as_ref()).context("no GREEN SOCKS5 backends")?
         };
@@ -627,7 +800,24 @@ async fn connect_socks(
             continue;
         }
 
-        match socks5::connect_via_socks5(backend, taddr.clone(), auth, timeout).await {
+        let acquired = {
+            let mut b = state.backends.lock();
+            b.try_acquire_connect_slot(backend_idx, inflight_limit)
+        };
+        if !acquired {
+            continue;
+        }
+
+        state.conns.set_mode(cid, "socks_connecting");
+        state.conns.set_backend(cid, Some(backend));
+
+        let attempt = socks5::connect_via_socks5(backend, taddr.clone(), auth, timeout).await;
+        {
+            let mut b = state.backends.lock();
+            b.release_connect_slot(backend_idx);
+        }
+
+        match attempt {
             Ok(s) => {
                 state.stats.inc_socks_ok();
                 state.backends.lock().note_backend_selected(backend);
@@ -635,10 +825,17 @@ async fn connect_socks(
             }
             Err(e) => {
                 state.stats.inc_socks_fail();
-                state.backends
-                    .lock()
-                    .mark_backend_failed(backend, format!("{:#}", e));
+                let err_text = format!("{:#}", e);
+                let mut b = state.backends.lock();
+                if let Some(inflight) = b.inflight_connects(backend) {
+                    let prefix = if is_soft_backend_failure(&err_text) { "soft runtime failure" } else { "runtime failure" };
+                    b.mark_backend_failed(backend, format!("{}: {} (inflight={})", prefix, err_text, inflight));
+                } else {
+                    b.mark_backend_failed(backend, err_text);
+                }
+                drop(b);
                 state.runtime.wake();
+                state.conns.set_mode(cid, "pending");
                 // try next backend
             }
         }

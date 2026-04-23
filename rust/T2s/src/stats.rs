@@ -208,6 +208,12 @@ pub enum BackendState {
     Red,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RuntimeFailureClass {
+    Soft,
+    Hard,
+    Auth,
+}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct BackendStatus {
@@ -243,6 +249,8 @@ pub struct SocksBackends {
     last_runtime_fail_ts: Vec<u64>,
     last_full_probe: Vec<u64>,
     last_activity_ts: Vec<u64>,
+    inflight_connects: Vec<u32>,
+    backend_cooldown_until_ts: Vec<u64>,
     rr: usize,
     check_rr: usize,
     active_check_rr: usize,
@@ -308,6 +316,8 @@ impl SocksBackends {
         let last_runtime_fail_ts = vec![0; addrs.len()];
         let last_full_probe = vec![0; addrs.len()];
         let last_activity_ts = vec![0; addrs.len()];
+        let inflight_connects = vec![0; addrs.len()];
+        let backend_cooldown_until_ts = vec![0; addrs.len()];
 
         Ok(Self{
             addrs,
@@ -319,6 +329,8 @@ impl SocksBackends {
             last_runtime_fail_ts,
             last_full_probe,
             last_activity_ts,
+            inflight_connects,
+            backend_cooldown_until_ts,
             rr: 0,
             check_rr: 0,
             active_check_rr: 0,
@@ -408,6 +420,16 @@ impl SocksBackends {
         self.next_check_index()
     }
 
+    fn backend_in_cooldown_idx(&self, idx: usize, now: u64) -> bool {
+        self.backend_cooldown_until_ts.get(idx).copied().unwrap_or(0) > now
+    }
+
+    fn set_backend_cooldown_idx(&mut self, idx: usize, seconds: u64) {
+        if idx < self.backend_cooldown_until_ts.len() {
+            self.backend_cooldown_until_ts[idx] = now_ts().saturating_add(seconds);
+        }
+    }
+
     pub fn state_at(&self, idx: usize) -> Option<BackendState> {
         if idx >= self.status.len() {
             return None;
@@ -446,6 +468,7 @@ impl SocksBackends {
         if let Some(idx) = self.addrs.iter().position(|a| *a == addr) {
             if idx < self.status.len() {
                 let now = now_ts();
+                let class = Self::classify_runtime_failure(&err);
                 if idx < self.last_runtime_fail_ts.len() && idx < self.runtime_fail_streak.len() {
                     let prev = self.last_runtime_fail_ts[idx];
                     if prev == 0 || now.saturating_sub(prev) > 8 {
@@ -458,21 +481,31 @@ impl SocksBackends {
                 self.status[idx].last_check = now;
                 self.status[idx].last_error = Some(err);
 
-                let streak = self.runtime_fail_streak.get(idx).copied().unwrap_or(1);
-                let tolerate = match self.status[idx].state {
-                    BackendState::Green => streak < 3,
-                    BackendState::Yellow => streak < 2,
-                    BackendState::Red => false,
-                };
+                match class {
+                    RuntimeFailureClass::Soft => self.set_backend_cooldown_idx(idx, 3),
+                    RuntimeFailureClass::Hard => self.set_backend_cooldown_idx(idx, 6),
+                    RuntimeFailureClass::Auth => self.set_backend_cooldown_idx(idx, 15),
+                }
 
-                if tolerate {
+                let streak = self.runtime_fail_streak.get(idx).copied().unwrap_or(1);
+                let threshold = Self::runtime_fail_tolerate_threshold(self.status[idx].state, class);
+                if streak < threshold {
                     return;
                 }
 
-                self.status[idx].state = BackendState::Red;
-                self.status[idx].healthy = false;
-                self.status[idx].socks_ping_ms = None;
-                self.status[idx].internet_ping_ms = None;
+                match class {
+                    RuntimeFailureClass::Soft => {
+                        self.status[idx].state = BackendState::Yellow;
+                        self.status[idx].healthy = false;
+                        self.status[idx].internet_ping_ms = None;
+                    }
+                    RuntimeFailureClass::Hard | RuntimeFailureClass::Auth => {
+                        self.status[idx].state = BackendState::Red;
+                        self.status[idx].healthy = false;
+                        self.status[idx].socks_ping_ms = None;
+                        self.status[idx].internet_ping_ms = None;
+                    }
+                }
             }
         }
     }
@@ -512,6 +545,8 @@ impl SocksBackends {
         self.last_runtime_fail_ts.push(0);
         self.last_full_probe.push(0);
         self.last_activity_ts.push(0);
+        self.inflight_connects.push(0);
+        self.backend_cooldown_until_ts.push(0);
     }
 
     pub fn remove(&mut self, addr: SocketAddr) {
@@ -525,24 +560,105 @@ impl SocksBackends {
             if pos < self.last_runtime_fail_ts.len() { self.last_runtime_fail_ts.remove(pos); }
             if pos < self.last_full_probe.len() { self.last_full_probe.remove(pos); }
             if pos < self.last_activity_ts.len() { self.last_activity_ts.remove(pos); }
+            if pos < self.inflight_connects.len() { self.inflight_connects.remove(pos); }
+            if pos < self.backend_cooldown_until_ts.len() { self.backend_cooldown_until_ts.remove(pos); }
             if self.rr >= self.addrs.len() { self.rr = 0; }
             if self.check_rr >= self.addrs.len() { self.check_rr = 0; }
             if self.active_check_rr >= self.addrs.len() { self.active_check_rr = 0; }
             if self.audit_check_rr >= self.addrs.len() { self.audit_check_rr = 0; }
         }
     }
-pub fn select_rr_with_auth(&mut self, global_auth: Option<&(String, String)>) -> Result<(SocketAddr, Option<(String, String)>)> {
-        let candidates: Vec<usize> = if protector_mode_forced_green() {
+pub fn select_rr_with_auth(&mut self, global_auth: Option<&(String, String)>) -> Result<(usize, SocketAddr, Option<(String, String)>)> {
+        let now = now_ts();
+        let mut candidates: Vec<usize> = if protector_mode_forced_green() {
             (0..self.addrs.len()).collect()
         } else {
-            self.status.iter().enumerate().filter(|(_,s)| s.healthy).map(|(i,_)| i).collect()
+            self.status
+                .iter()
+                .enumerate()
+                .filter(|(i, s)| s.healthy && !self.backend_in_cooldown_idx(*i, now))
+                .map(|(i, _)| i)
+                .collect()
         };
+        if candidates.is_empty() {
+            candidates = if protector_mode_forced_green() {
+                (0..self.addrs.len()).collect()
+            } else {
+                self.status.iter().enumerate().filter(|(_, s)| s.healthy).map(|(i, _)| i).collect()
+            };
+        }
         if candidates.is_empty() {
             return Err(anyhow!("no GREEN backends"));
         }
         self.rr = (self.rr + 1) % candidates.len();
         let idx = candidates[self.rr];
-        Ok((self.addrs[idx], self.effective_auth_at(idx, global_auth)))
+        Ok((idx, self.addrs[idx], self.effective_auth_at(idx, global_auth)))
+    }
+
+    pub fn backend_addr_at(&self, idx: usize) -> Option<SocketAddr> {
+        self.addrs.get(idx).copied()
+    }
+
+    pub fn try_acquire_connect_slot(&mut self, idx: usize, limit: u32) -> bool {
+        if idx >= self.addrs.len() {
+            return false;
+        }
+        let lim = limit.max(1);
+        let cur = self.inflight_connects.get(idx).copied().unwrap_or(0);
+        if cur >= lim {
+            let now = now_ts();
+            if idx < self.status.len() {
+                self.status[idx].last_check = now;
+                self.status[idx].last_error = Some(format!("connect queue saturated ({}/{})", cur, lim));
+            }
+            self.set_backend_cooldown_idx(idx, 2);
+            return false;
+        }
+        if idx < self.inflight_connects.len() {
+            self.inflight_connects[idx] = cur.saturating_add(1);
+        }
+        true
+    }
+
+    pub fn release_connect_slot(&mut self, idx: usize) {
+        if idx < self.inflight_connects.len() && self.inflight_connects[idx] > 0 {
+            self.inflight_connects[idx] -= 1;
+        }
+    }
+
+    pub fn inflight_connects(&self, addr: SocketAddr) -> Option<u32> {
+        self.addrs.iter().position(|a| *a == addr).and_then(|idx| self.inflight_connects.get(idx).copied())
+    }
+
+    fn classify_runtime_failure(err: &str) -> RuntimeFailureClass {
+        let e = err.to_ascii_lowercase();
+        if e.contains("auth") || e.contains("username/password") || e.contains("requires auth") {
+            RuntimeFailureClass::Auth
+        } else if e.contains("handshake timeout")
+            || e.contains("saturated")
+            || e.contains("queue full")
+            || e.contains("too many in-flight")
+            || e.contains("operation timed out")
+            || e.contains("timed out")
+            || e.contains("resource temporarily unavailable")
+            || e.contains("soft runtime failure")
+        {
+            RuntimeFailureClass::Soft
+        } else {
+            RuntimeFailureClass::Hard
+        }
+    }
+
+    fn runtime_fail_tolerate_threshold(state: BackendState, class: RuntimeFailureClass) -> u8 {
+        match (state, class) {
+            (BackendState::Green, RuntimeFailureClass::Soft) => 8,
+            (BackendState::Green, RuntimeFailureClass::Hard) => 3,
+            (BackendState::Green, RuntimeFailureClass::Auth) => 1,
+            (BackendState::Yellow, RuntimeFailureClass::Soft) => 5,
+            (BackendState::Yellow, RuntimeFailureClass::Hard) => 2,
+            (BackendState::Yellow, RuntimeFailureClass::Auth) => 1,
+            (BackendState::Red, _) => 0,
+        }
     }
 
     pub fn update(
@@ -661,6 +777,7 @@ pub fn select_rr_with_auth(&mut self, global_auth: Option<&(String, String)>) ->
 pub struct ConnInfo {
     pub cid: u64,
     pub peer: String,
+    pub peer_ip: String,
     /// Which local listener accepted this connection (internal 127.0.0.1:* or external 0.0.0.0:*).
     pub ingress: String,
     /// Best-effort domain (HTTP Host / CONNECT host / TLS SNI).
@@ -672,6 +789,7 @@ pub struct ConnInfo {
     /// Selected SOCKS backend (when in SOCKS mode).
     pub backend: Option<String>,
     pub started_ts: u64,
+    pub last_progress_ts: u64,
     pub bytes_up: u64,
     pub bytes_down: u64,
 }
@@ -679,30 +797,134 @@ pub struct ConnInfo {
 #[derive(Default)]
 pub struct ConnRegistry {
     inner: Mutex<HashMap<u64, (ConnInfo, CancellationToken)>>,
+    source_counts: Mutex<HashMap<String, u32>>,
+    active_total: AtomicU64,
+    active_internal: AtomicU64,
+    active_external: AtomicU64,
+    mode_pending: AtomicU64,
+    mode_wait_backend: AtomicU64,
+    mode_socks_connecting: AtomicU64,
 }
 
 impl ConnRegistry {
-    pub fn new_conn(&self, peer: SocketAddr, ingress: Ingress) -> u64 {
+    fn inc_ingress(&self, ingress: Ingress) {
+        match ingress {
+            Ingress::Internal => { self.active_internal.fetch_add(1, Ordering::Relaxed); }
+            Ingress::External => { self.active_external.fetch_add(1, Ordering::Relaxed); }
+        }
+        self.active_total.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn dec_ingress(&self, ingress_name: &str) {
+        match ingress_name {
+            "external" => { self.active_external.fetch_sub(1, Ordering::Relaxed); }
+            _ => { self.active_internal.fetch_sub(1, Ordering::Relaxed); }
+        }
+        self.active_total.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    fn inc_mode_counter(&self, mode: &str) {
+        match mode {
+            "pending" => { self.mode_pending.fetch_add(1, Ordering::Relaxed); }
+            "wait_backend" => { self.mode_wait_backend.fetch_add(1, Ordering::Relaxed); }
+            "socks_connecting" => { self.mode_socks_connecting.fetch_add(1, Ordering::Relaxed); }
+            _ => {}
+        }
+    }
+
+    fn dec_mode_counter(&self, mode: &str) {
+        match mode {
+            "pending" => { self.mode_pending.fetch_sub(1, Ordering::Relaxed); }
+            "wait_backend" => { self.mode_wait_backend.fetch_sub(1, Ordering::Relaxed); }
+            "socks_connecting" => { self.mode_socks_connecting.fetch_sub(1, Ordering::Relaxed); }
+            _ => {}
+        }
+    }
+
+    fn update_mode_counters(&self, old_mode: Option<&str>, new_mode: Option<&str>) {
+        if old_mode == new_mode {
+            return;
+        }
+        if let Some(m) = old_mode {
+            self.dec_mode_counter(m);
+        }
+        if let Some(m) = new_mode {
+            self.inc_mode_counter(m);
+        }
+    }
+
+    pub fn try_new_conn(&self, peer: SocketAddr, ingress: Ingress, external_per_source_limit: Option<u32>) -> Option<u64> {
         let cid = rand_u64();
+        let now = now_ts();
+        let peer_ip = peer.ip().to_string();
         let info = ConnInfo{
             cid,
             peer: peer.to_string(),
+            peer_ip: peer_ip.clone(),
             ingress: match ingress { Ingress::Internal => "internal".into(), Ingress::External => "external".into() },
             domain: None,
             dst_ip: None,
             target: None,
-            mode: None,
+            mode: Some("pending".to_string()),
             backend: None,
-            started_ts: now_ts(),
+            started_ts: now,
+            last_progress_ts: now,
             bytes_up: 0,
             bytes_down: 0,
         };
-        self.inner.lock().insert(cid, (info, CancellationToken::new()));
-        cid
+        let mut inner = self.inner.lock();
+        let mut source_counts = self.source_counts.lock();
+        if ingress == Ingress::External {
+            if let Some(limit) = external_per_source_limit {
+                let current = source_counts.get(&peer_ip).copied().unwrap_or(0);
+                if current >= limit.max(1) {
+                    return None;
+                }
+            }
+            let entry = source_counts.entry(peer_ip).or_insert(0);
+            *entry = entry.saturating_add(1);
+        }
+        inner.insert(cid, (info, CancellationToken::new()));
+        drop(source_counts);
+        drop(inner);
+        self.inc_ingress(ingress);
+        self.inc_mode_counter("pending");
+        Some(cid)
     }
 
     pub fn len(&self) -> usize {
-        self.inner.lock().len()
+        self.active_total.load(Ordering::Relaxed) as usize
+    }
+
+    pub fn ingress_counts(&self) -> (usize, usize) {
+        (
+            self.active_internal.load(Ordering::Relaxed) as usize,
+            self.active_external.load(Ordering::Relaxed) as usize,
+        )
+    }
+
+    pub fn count_modes(&self, modes: &[&str]) -> usize {
+        let mut total = 0usize;
+        let mut all_fast = true;
+        for mode in modes {
+            match *mode {
+                "pending" => total += self.mode_pending.load(Ordering::Relaxed) as usize,
+                "wait_backend" => total += self.mode_wait_backend.load(Ordering::Relaxed) as usize,
+                "socks_connecting" => total += self.mode_socks_connecting.load(Ordering::Relaxed) as usize,
+                _ => {
+                    all_fast = false;
+                    break;
+                }
+            }
+        }
+        if all_fast {
+            return total;
+        }
+        self.inner
+            .lock()
+            .values()
+            .filter(|(info, _)| info.mode.as_deref().map(|m| modes.iter().any(|want| *want == m)).unwrap_or(false))
+            .count()
     }
 
     pub fn set_cancel_token(&self, cid: u64) -> CancellationToken {
@@ -722,9 +944,39 @@ impl ConnRegistry {
     }
 
     pub fn set_target(&self, cid: u64, target: &str, mode: &str) {
-        if let Some((info, _)) = self.inner.lock().get_mut(&cid) {
-            info.target = Some(target.to_string());
-            info.mode = Some(mode.to_string());
+        let mut old_mode: Option<String> = None;
+        let mut changed = false;
+        {
+            let mut guard = self.inner.lock();
+            if let Some((info, _)) = guard.get_mut(&cid) {
+                old_mode = info.mode.clone();
+                let new_mode = Some(mode.to_string());
+                changed = info.mode != new_mode;
+                info.target = Some(target.to_string());
+                info.mode = new_mode;
+                info.last_progress_ts = now_ts();
+            }
+        }
+        if changed {
+            self.update_mode_counters(old_mode.as_deref(), Some(mode));
+        }
+    }
+
+    pub fn set_mode(&self, cid: u64, mode: &str) {
+        let mut old_mode: Option<String> = None;
+        let mut changed = false;
+        {
+            let mut guard = self.inner.lock();
+            if let Some((info, _)) = guard.get_mut(&cid) {
+                old_mode = info.mode.clone();
+                let new_mode = Some(mode.to_string());
+                changed = info.mode != new_mode;
+                info.mode = new_mode;
+                info.last_progress_ts = now_ts();
+            }
+        }
+        if changed {
+            self.update_mode_counters(old_mode.as_deref(), Some(mode));
         }
     }
 
@@ -751,11 +1003,13 @@ impl ConnRegistry {
     pub fn add_bytes_up(&self, cid: u64, n: u64) {
         if let Some((info, _)) = self.inner.lock().get_mut(&cid) {
             info.bytes_up += n;
+            info.last_progress_ts = now_ts();
         }
     }
     pub fn add_bytes_down(&self, cid: u64, n: u64) {
         if let Some((info, _)) = self.inner.lock().get_mut(&cid) {
             info.bytes_down += n;
+            info.last_progress_ts = now_ts();
         }
     }
 
@@ -780,7 +1034,7 @@ impl ConnRegistry {
     pub fn kill_stuck_socks_zero_traffic(&self, older_than_secs: u64) -> usize {
         let now = now_ts();
         let mut n = 0usize;
-        let mut g = self.inner.lock();
+        let g = self.inner.lock();
         for (info, token) in g.values() {
             if info.mode.as_deref() == Some("socks")
                 && info.bytes_up == 0
@@ -793,8 +1047,41 @@ impl ConnRegistry {
         }
         n
     }
+
+    /// Cancels connections that are still pending/connecting and have not made progress.
+    pub fn kill_stuck_connecting(&self, older_than_secs: u64) -> usize {
+        let now = now_ts();
+        let mut n = 0usize;
+        let g = self.inner.lock();
+        for (info, token) in g.values() {
+            let is_connecting = matches!(info.mode.as_deref(), Some("pending") | Some("socks_connecting") | Some("wait_backend"));
+            if is_connecting
+                && info.bytes_up == 0
+                && info.bytes_down == 0
+                && now.saturating_sub(info.last_progress_ts) >= older_than_secs
+            {
+                token.cancel();
+                n += 1;
+            }
+        }
+        n
+    }
     pub fn finish_conn(&self, cid: u64) {
-        self.inner.lock().remove(&cid);
+        let removed = self.inner.lock().remove(&cid);
+        if let Some((info, _)) = removed {
+            self.dec_ingress(&info.ingress);
+            self.update_mode_counters(info.mode.as_deref(), None);
+            if info.ingress == "external" {
+                let mut source_counts = self.source_counts.lock();
+                if let Some(cur) = source_counts.get_mut(&info.peer_ip) {
+                    if *cur > 1 {
+                        *cur -= 1;
+                    } else {
+                        source_counts.remove(&info.peer_ip);
+                    }
+                }
+            }
+        }
     }
 
     pub fn list(&self) -> Vec<ConnInfo> {
@@ -1218,6 +1505,11 @@ pub async fn proxy_enforce_loop(state: crate::AppState) {
 
         had_green = green;
 
+        let killed_connecting = state.conns.kill_stuck_connecting(12);
+        if killed_connecting > 0 {
+            tracing::info!("proxy enforce: cancelled {} stuck pending/connecting connections", killed_connecting);
+        }
+
         // When idle (no UI + no conns), slow down enforcement checks.
         let ui = state.runtime.ui_clients.load(Ordering::Relaxed);
         let active = state.conns.len();
@@ -1257,26 +1549,32 @@ async fn check_backend_rtt(
     timeout: Duration,
     auth: Option<(String, String)>,
 ) -> Option<f64> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
     let start = Instant::now();
+    let hs_timeout = timeout.min(Duration::from_secs(3)).max(Duration::from_millis(800));
     let res = tokio::time::timeout(timeout, TcpStream::connect(backend)).await;
     if let Ok(Ok(mut s)) = res {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let mut methods = vec![0x00u8];
         if auth.is_some() {
             methods.push(0x02u8);
         }
-        if s.write_all(&[0x05u8, methods.len() as u8]).await.is_err() { return None; }
-        if s.write_all(&methods).await.is_err() { return None; }
+        if tokio::time::timeout(hs_timeout, s.write_all(&[0x05u8, methods.len() as u8])).await.is_err() { return None; }
+        if tokio::time::timeout(hs_timeout, s.write_all(&methods)).await.is_err() { return None; }
         let mut resp = [0u8; 2];
-        if s.read_exact(&mut resp).await.is_err() { return None; }
+        match tokio::time::timeout(hs_timeout, s.read_exact(&mut resp)).await {
+            Ok(Ok(_)) => {}
+            _ => return None,
+        }
         if resp[0] != 0x05 { return None; }
         match resp[1] {
             0x00 => Some(start.elapsed().as_secs_f64() * 1000.0),
             0x02 => {
                 let (u, p) = auth?;
-                if crate::socks5::do_userpass_auth_for_healthcheck(&mut s, &u, &p).await.is_ok() {
-                    Some(start.elapsed().as_secs_f64() * 1000.0)
-                } else { None }
+                match tokio::time::timeout(hs_timeout, crate::socks5::do_userpass_auth_for_healthcheck(&mut s, &u, &p)).await {
+                    Ok(Ok(())) => Some(start.elapsed().as_secs_f64() * 1000.0),
+                    _ => None,
+                }
             }
             _ => None,
         }

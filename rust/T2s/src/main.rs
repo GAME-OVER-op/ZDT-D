@@ -79,6 +79,14 @@ fn is_transient_accept_error(err: &std::io::Error) -> bool {
     ) || matches!(err.raw_os_error(), Some(11) | Some(12) | Some(23) | Some(24))
 }
 
+fn should_log_policy_drop(drop_count: u64) -> bool {
+    drop_count <= 4 || drop_count.is_power_of_two() || drop_count % 256 == 0
+}
+
+fn conn_stats_flush_threshold() -> u64 {
+    16 * 1024
+}
+
 async fn sniff_client_host(client: &tokio::net::TcpStream, mode: SniffMode) -> Option<crate::sniff::SniffResult> {
     use tokio::time::{Duration, Instant};
 
@@ -285,14 +293,13 @@ async fn run_tcp_on(state: AppState, addr: SocketAddr, ingress: stats::Ingress) 
                 return Err(e).context("accept");
             }
         };
-        // Wake up background loops (health checks, etc.) on new activity.
-        state.runtime.wake();
-
         let permit = match state.semaphore.clone().try_acquire_owned() {
             Ok(p) => p,
             Err(_) => {
-                state.stats.inc_policy_drop();
-                warn!("dropping new connection from {}: connection storm protection (max_conns reached)", peer);
+                let drop_count = state.stats.inc_policy_drop();
+                if should_log_policy_drop(drop_count) {
+                    warn!("dropping new connection from {}: connection storm protection (max_conns reached, drops={})", peer, drop_count);
+                }
                 drop(sock);
                 continue;
             }
@@ -302,13 +309,16 @@ async fn run_tcp_on(state: AppState, addr: SocketAddr, ingress: stats::Ingress) 
             let (_, ext_active) = state.conns.ingress_counts();
             let ext_limit = external_ingress_limit(&state);
             if ext_active >= ext_limit {
-                state.stats.inc_policy_drop();
-                warn!(
-                    "dropping new external connection from {}: external fairness cap reached ({}/{})",
-                    peer,
-                    ext_active,
-                    ext_limit,
-                );
+                let drop_count = state.stats.inc_policy_drop();
+                if should_log_policy_drop(drop_count) {
+                    warn!(
+                        "dropping new external connection from {}: external fairness cap reached ({}/{}, drops={})",
+                        peer,
+                        ext_active,
+                        ext_limit,
+                        drop_count,
+                    );
+                }
                 drop(sock);
                 drop(permit);
                 continue;
@@ -323,19 +333,24 @@ async fn run_tcp_on(state: AppState, addr: SocketAddr, ingress: stats::Ingress) 
         let cid = match state.conns.try_new_conn(peer, ingress, source_limit) {
             Some(cid) => cid,
             None => {
-                state.stats.inc_policy_drop();
-                warn!(
-                    "dropping new connection from {}: per-source fairness cap reached (limit={})",
-                    peer,
-                    source_limit.unwrap_or(0),
-                );
+                let drop_count = state.stats.inc_policy_drop();
+                if should_log_policy_drop(drop_count) {
+                    warn!(
+                        "dropping new connection from {}: per-source fairness cap reached (limit={}, drops={})",
+                        peer,
+                        source_limit.unwrap_or(0),
+                        drop_count,
+                    );
+                }
                 drop(sock);
                 drop(permit);
                 continue;
             }
         };
         let token = state.conns.set_cancel_token(cid);
-        let _ = state.events.send(stats::Event::conn_open(cid, peer));
+        if state.runtime.ui_clients.load(std::sync::atomic::Ordering::Relaxed) > 0 {
+            let _ = state.events.send(stats::Event::conn_open(cid, peer));
+        }
 
         let st = state.clone();
         tokio::spawn(async move {
@@ -351,7 +366,9 @@ async fn run_tcp_on(state: AppState, addr: SocketAddr, ingress: stats::Ingress) 
                 }
             }
             st.conns.finish_conn(cid);
-            let _ = st.events.send(stats::Event::conn_close(cid));
+            if st.runtime.ui_clients.load(std::sync::atomic::Ordering::Relaxed) > 0 {
+                let _ = st.events.send(stats::Event::conn_close(cid));
+            }
         });
     }
 }
@@ -453,15 +470,18 @@ async fn proxy_tcp(
                 || waiting_now >= wait_phase_limit(&state)
                 || setup_now >= setup_phase_limit(&state)
             {
-                state.stats.inc_policy_drop();
-                tracing::warn!(
-                    "[cid={}] dropping WAIT action under overload (active={}, permits_left={}, waiting={}, setup={})",
-                    cid,
-                    state.conns.len(),
-                    state.semaphore.available_permits(),
-                    waiting_now,
-                    setup_now,
-                );
+                let drop_count = state.stats.inc_policy_drop();
+                if should_log_policy_drop(drop_count) {
+                    tracing::warn!(
+                        "[cid={}] dropping WAIT action under overload (active={}, permits_left={}, waiting={}, setup={}, drops={})",
+                        cid,
+                        state.conns.len(),
+                        state.semaphore.available_permits(),
+                        waiting_now,
+                        setup_now,
+                        drop_count,
+                    );
+                }
                 return Ok(());
             }
             state.conns.set_mode(cid, "wait_backend");
@@ -510,7 +530,7 @@ let mut chosen_mode = "socks";
                 s
             }
             Err(e) => {
-                tracing::warn!("[cid={}] socks connect failed: {:#}", cid, e);
+                tracing::debug!("[cid={}] socks connect failed: {:#}", cid, e);
 
                 if state.backends.lock().any_green() {
                     return Err(e);
@@ -542,7 +562,9 @@ let mut chosen_mode = "socks";
     state.conns.set_backend(cid, chosen_backend);
 
     state.conns.set_target(cid, &format!("{}:{}", target_host, target_port), chosen_mode);
-    let _ = state.events.send(stats::Event::conn_target(cid, target_host.clone(), target_port, chosen_mode.to_string()));
+    if state.runtime.ui_clients.load(std::sync::atomic::Ordering::Relaxed) > 0 {
+        let _ = state.events.send(stats::Event::conn_target(cid, target_host.clone(), target_port, chosen_mode.to_string()));
+    }
 
     // Proxy with simple throttling on downstream (upstream->client)
     let (mut cr, mut cw) = client.into_split();
@@ -564,37 +586,47 @@ let mut chosen_mode = "socks";
         // client -> upstream (upload)
         let mut buf = vec![0u8; buf_sz];
         let mut be_acc: u64 = 0;
+        let mut conn_acc: u64 = 0;
+        let conn_flush_threshold = conn_stats_flush_threshold();
+        let mut idle_sleep = idle.map(|d| Box::pin(tokio::time::sleep(d)));
         loop {
-            let n = tokio::select! {
-                _ = c1.cancelled() => break,
-                res = async {
-                    if let Some(idle_d) = idle {
-                        tokio::time::timeout(idle_d, cr.read(&mut buf)).await
-                            .map_err(|_| anyhow::anyhow!("upload read idle timeout"))?
-                            .map_err(anyhow::Error::from)
-                    } else {
-                        cr.read(&mut buf).await.map_err(anyhow::Error::from)
-                    }
-                } => res?,
+            let n = if idle.is_some() {
+                let sleep = idle_sleep.as_mut().expect("idle sleep present");
+                tokio::select! {
+                    _ = c1.cancelled() => break,
+                    _ = sleep.as_mut() => break,
+                    res = cr.read(&mut buf) => res?,
+                }
+            } else {
+                tokio::select! {
+                    _ = c1.cancelled() => break,
+                    res = cr.read(&mut buf) => res?,
+                }
             };
             if n == 0 { break; }
 
-            tokio::select! {
-                _ = c1.cancelled() => break,
-                res = async {
-                    if let Some(idle_d) = idle {
-                        tokio::time::timeout(idle_d, uw.write_all(&buf[..n])).await
-                            .map_err(|_| anyhow::anyhow!("upload write idle timeout"))?
-                            .map_err(anyhow::Error::from)
-                    } else {
-                        uw.write_all(&buf[..n]).await.map_err(anyhow::Error::from)
-                    }
-                } => { res?; }
+            if let Some(idle_d) = idle {
+                let sleep = idle_sleep.as_mut().expect("idle sleep present");
+                tokio::select! {
+                    _ = c1.cancelled() => break,
+                    _ = sleep.as_mut() => break,
+                    res = uw.write_all(&buf[..n]) => res?,
+                }
+                sleep.as_mut().reset(tokio::time::Instant::now() + idle_d);
+            } else {
+                tokio::select! {
+                    _ = c1.cancelled() => break,
+                    res = uw.write_all(&buf[..n]) => res?,
+                }
             }
 
             st1.stats.add_up(n as u64);
             st1.stats.add_up_ingress(ingress, n as u64);
-            st1.conns.add_bytes_up(cid, n as u64);
+            conn_acc = conn_acc.saturating_add(n as u64);
+            if conn_acc >= conn_flush_threshold {
+                st1.conns.add_bytes_up(cid, conn_acc);
+                conn_acc = 0;
+            }
             if let Some(b) = be1 {
                 be_acc = be_acc.saturating_add(n as u64);
                 if be_acc >= 65536 {
@@ -602,6 +634,9 @@ let mut chosen_mode = "socks";
                     be_acc = 0;
                 }
             }
+        }
+        if conn_acc > 0 {
+            st1.conns.add_bytes_up(cid, conn_acc);
         }
         if let Some(b) = be1 {
             if be_acc > 0 {
@@ -619,21 +654,25 @@ let mut chosen_mode = "socks";
         // upstream -> client (download)
         let mut buf = vec![0u8; buf_sz];
         let mut be_acc: u64 = 0;
+        let mut conn_acc: u64 = 0;
+        let conn_flush_threshold = conn_stats_flush_threshold();
         let mut window_start = Instant::now();
         let mut window_bytes: u64 = 0;
+        let mut idle_sleep = idle.map(|d| Box::pin(tokio::time::sleep(d)));
 
         loop {
-            let n = tokio::select! {
-                _ = c2.cancelled() => break,
-                res = async {
-                    if let Some(idle_d) = idle {
-                        tokio::time::timeout(idle_d, ur.read(&mut buf)).await
-                            .map_err(|_| anyhow::anyhow!("download read idle timeout"))?
-                            .map_err(anyhow::Error::from)
-                    } else {
-                        ur.read(&mut buf).await.map_err(anyhow::Error::from)
-                    }
-                } => res?,
+            let n = if idle.is_some() {
+                let sleep = idle_sleep.as_mut().expect("idle sleep present");
+                tokio::select! {
+                    _ = c2.cancelled() => break,
+                    _ = sleep.as_mut() => break,
+                    res = ur.read(&mut buf) => res?,
+                }
+            } else {
+                tokio::select! {
+                    _ = c2.cancelled() => break,
+                    res = ur.read(&mut buf) => res?,
+                }
             };
             if n == 0 { break; }
 
@@ -644,7 +683,6 @@ let mut chosen_mode = "socks";
                 if elapsed > 0.0 {
                     let cur_bps = (window_bytes as f64) / elapsed;
                     if cur_bps > (bps as f64) {
-                        // sleep proportional
                         let target_elapsed = (window_bytes as f64) / (bps as f64);
                         let sleep_s = target_elapsed - elapsed;
                         if sleep_s > 0.0 {
@@ -661,21 +699,27 @@ let mut chosen_mode = "socks";
                 }
             }
 
-            tokio::select! {
-                _ = c2.cancelled() => break,
-                res = async {
-                    if let Some(idle_d) = idle {
-                        tokio::time::timeout(idle_d, cw.write_all(&buf[..n])).await
-                            .map_err(|_| anyhow::anyhow!("download write idle timeout"))?
-                            .map_err(anyhow::Error::from)
-                    } else {
-                        cw.write_all(&buf[..n]).await.map_err(anyhow::Error::from)
-                    }
-                } => { res?; }
+            if let Some(idle_d) = idle {
+                let sleep = idle_sleep.as_mut().expect("idle sleep present");
+                tokio::select! {
+                    _ = c2.cancelled() => break,
+                    _ = sleep.as_mut() => break,
+                    res = cw.write_all(&buf[..n]) => res?,
+                }
+                sleep.as_mut().reset(tokio::time::Instant::now() + idle_d);
+            } else {
+                tokio::select! {
+                    _ = c2.cancelled() => break,
+                    res = cw.write_all(&buf[..n]) => res?,
+                }
             }
             st2.stats.add_down(n as u64);
             st2.stats.add_down_ingress(ingress, n as u64);
-            st2.conns.add_bytes_down(cid, n as u64);
+            conn_acc = conn_acc.saturating_add(n as u64);
+            if conn_acc >= conn_flush_threshold {
+                st2.conns.add_bytes_down(cid, conn_acc);
+                conn_acc = 0;
+            }
             if let Some(b) = be2 {
                 be_acc = be_acc.saturating_add(n as u64);
                 if be_acc >= 65536 {
@@ -683,6 +727,9 @@ let mut chosen_mode = "socks";
                     be_acc = 0;
                 }
             }
+        }
+        if conn_acc > 0 {
+            st2.conns.add_bytes_down(cid, conn_acc);
         }
         if let Some(b) = be2 {
             if be_acc > 0 {

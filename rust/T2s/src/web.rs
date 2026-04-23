@@ -286,8 +286,8 @@ async fn ws_handle(mut socket: WebSocket, state: AppState) {
     let _guard = UiGuard { rt: state.runtime.clone() };
 
     // Event-driven updates with slow polling for backend/system changes and a rare keepalive.
-    let mut poll_tick = tokio::time::interval(Duration::from_secs(15));
-    let mut keepalive_tick = tokio::time::interval(Duration::from_secs(30));
+    let mut poll_tick = tokio::time::interval(Duration::from_secs(20));
+    let mut keepalive_tick = tokio::time::interval(Duration::from_secs(45));
     let mut events_rx = state.events.subscribe();
     let mut last_sent = Instant::now() - Duration::from_secs(31);
     let mut last_fp: Option<u64> = None;
@@ -328,7 +328,7 @@ async fn ws_handle(mut socket: WebSocket, state: AppState) {
             evt = events_rx.recv() => {
                 match evt {
                     Ok(_evt) => {
-                        if last_sent.elapsed() < Duration::from_millis(300) { continue; }
+                        if last_sent.elapsed() < Duration::from_millis(750) { continue; }
                         let st = build_state(&state);
                         let fp = state_fingerprint(&st);
                         let changed = last_fp.map(|prev| prev != fp).unwrap_or(true);

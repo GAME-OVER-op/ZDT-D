@@ -59,7 +59,7 @@ impl Stats {
     pub fn inc_error(&self) { self.errors.fetch_add(1, Ordering::Relaxed); }
     pub fn inc_socks_ok(&self) { self.socks_ok.fetch_add(1, Ordering::Relaxed); }
     pub fn inc_socks_fail(&self) { self.socks_fail.fetch_add(1, Ordering::Relaxed); }
-    pub fn inc_policy_drop(&self) { self.policy_drop.fetch_add(1, Ordering::Relaxed); }
+    pub fn inc_policy_drop(&self) -> u64 { self.policy_drop.fetch_add(1, Ordering::Relaxed) + 1 }
 }
 
 pub struct RuntimeConfig {
@@ -80,6 +80,9 @@ pub struct RuntimeConfig {
 
     /// Last time we attempted a best-effort ICMP TTL sample for UI diagnostics.
     pub last_ttl_ping_ts: AtomicU64,
+
+    /// Global throttle for forced recovery refreshes requested by hot-path connection handling.
+    pub next_forced_refresh_after_ms: AtomicU64,
 }
 
 impl Default for RuntimeConfig {
@@ -91,6 +94,7 @@ impl Default for RuntimeConfig {
             direct_cooldown_until_ts: AtomicU64::new(0),
             refresh_lock: tokio::sync::Mutex::new(()),
             last_ttl_ping_ts: AtomicU64::new(0),
+            next_forced_refresh_after_ms: AtomicU64::new(0),
         }
     }
 }
@@ -111,6 +115,26 @@ impl RuntimeConfig {
 
     pub fn clear_direct_cooldown(&self) {
         self.direct_cooldown_until_ts.store(0, Ordering::Relaxed);
+    }
+
+    pub fn try_begin_forced_refresh(&self, min_interval_ms: u64) -> bool {
+        let now = now_ms();
+        loop {
+            let next_allowed = self.next_forced_refresh_after_ms.load(Ordering::Relaxed);
+            if next_allowed > now {
+                return false;
+            }
+            let new_next = now.saturating_add(min_interval_ms.max(1));
+            match self.next_forced_refresh_after_ms.compare_exchange(
+                next_allowed,
+                new_next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return true,
+                Err(_) => continue,
+            }
+        }
     }
 }
 
@@ -1116,6 +1140,10 @@ const ZDTD_SETTING_JSON: &str = "/data/adb/modules/ZDT-D/api/setting.json";
 const PROTECTOR_MODE_CACHE_TTL_SECS: u64 = 2;
 static PROTECTOR_MODE_CACHE: Lazy<Mutex<(u64, bool)>> = Lazy::new(|| Mutex::new((0, false)));
 
+static PING_TTL_TIME_RE: Lazy<regex::Regex> = Lazy::new(|| regex::Regex::new(r"ttl=(\d+).*time=([0-9.]+)\s*ms").unwrap());
+static PING_TIME_RE: Lazy<regex::Regex> = Lazy::new(|| regex::Regex::new(r"time=([0-9.]+)\s*ms").unwrap());
+static PING_TTL_RE: Lazy<regex::Regex> = Lazy::new(|| regex::Regex::new(r"ttl=(\d+)").unwrap());
+
 fn read_protector_mode_forced_green_uncached() -> bool {
     let content = match std::fs::read_to_string(ZDTD_SETTING_JSON) {
         Ok(s) => s,
@@ -1144,6 +1172,10 @@ fn protector_mode_forced_green() -> bool {
 
 pub fn now_ts() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs()
+}
+
+pub fn now_ms() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as u64
 }
 
 fn rand_u64() -> u64 {
@@ -1652,20 +1684,17 @@ async fn ping_once(host: String) -> Result<Option<(f64, u32)>> {
         }
 
         let s = String::from_utf8_lossy(&out.stdout);
-        let re = regex::Regex::new(r"ttl=(\d+).*time=([0-9.]+)\s*ms").unwrap();
-        if let Some(c) = re.captures(&s) {
+        if let Some(c) = PING_TTL_TIME_RE.captures(&s) {
             let ttl: u32 = c.get(1).unwrap().as_str().parse().unwrap_or(0);
             let ms: f64 = c.get(2).unwrap().as_str().parse().unwrap_or(0.0);
             return Ok(Some((ms, ttl)));
         }
 
-        let re2 = regex::Regex::new(r"time=([0-9.]+)\s*ms").unwrap();
-        let ms = re2
+        let ms = PING_TIME_RE
             .captures(&s)
             .and_then(|c| c.get(1))
             .and_then(|m| m.as_str().parse().ok());
-        let re3 = regex::Regex::new(r"ttl=(\d+)").unwrap();
-        let ttl = re3
+        let ttl = PING_TTL_RE
             .captures(&s)
             .and_then(|c| c.get(1))
             .and_then(|m| m.as_str().parse().ok());
@@ -1677,15 +1706,30 @@ async fn ping_once(host: String) -> Result<Option<(f64, u32)>> {
 
 pub async fn wait_for_backend_recovery(state: crate::AppState, max_wait: Duration) -> bool {
     let deadline = tokio::time::Instant::now() + max_wait;
+    let refresh_timeout = Duration::from_millis(1500);
+    let quiet_wait = Duration::from_millis(450);
+
     while tokio::time::Instant::now() < deadline {
         if state.backends.lock().any_healthy() {
             return true;
         }
-        refresh_backends_once(state.clone(), Duration::from_millis(1500)).await;
-        if state.backends.lock().any_healthy() {
-            return true;
+
+        if state.runtime.try_begin_forced_refresh(750) {
+            refresh_backends_once(state.clone(), refresh_timeout).await;
+            if state.backends.lock().any_healthy() {
+                return true;
+            }
         }
-        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        let now = tokio::time::Instant::now();
+        if now >= deadline {
+            break;
+        }
+        let sleep_for = (deadline - now).min(quiet_wait);
+        tokio::select! {
+            _ = tokio::time::sleep(sleep_for) => {},
+            _ = state.runtime.wakeup.notified() => {},
+        }
     }
     false
 }

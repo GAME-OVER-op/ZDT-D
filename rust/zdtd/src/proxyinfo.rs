@@ -5,6 +5,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
     path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
 };
 
 use crate::{
@@ -332,6 +333,34 @@ impl ProxyRuleStrategy {
             self.reject_mode.describe()
         )
     }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct CachedIpv4Strategies {
+    tcp: Option<ProxyRuleStrategy>,
+    udp: Option<ProxyRuleStrategy>,
+}
+
+static IPV4_STRATEGY_CACHE: OnceLock<Mutex<CachedIpv4Strategies>> = OnceLock::new();
+
+fn ipv4_strategy_cache() -> &'static Mutex<CachedIpv4Strategies> {
+    IPV4_STRATEGY_CACHE.get_or_init(|| Mutex::new(CachedIpv4Strategies::default()))
+}
+
+fn load_cached_ipv4_strategies() -> CachedIpv4Strategies {
+    *ipv4_strategy_cache().lock().unwrap_or_else(|e| e.into_inner())
+}
+
+fn store_cached_ipv4_strategies(tcp: ProxyRuleStrategy, udp: ProxyRuleStrategy) {
+    let mut guard = ipv4_strategy_cache().lock().unwrap_or_else(|e| e.into_inner());
+    guard.tcp = Some(tcp);
+    guard.udp = Some(udp);
+}
+
+fn clear_cached_ipv4_strategies() {
+    let mut guard = ipv4_strategy_cache().lock().unwrap_or_else(|e| e.into_inner());
+    guard.tcp = None;
+    guard.udp = None;
 }
 
 fn read_json_file<T: for<'de> Deserialize<'de> + Default>(p: &Path) -> Result<T> {
@@ -752,6 +781,44 @@ fn select_ipv4_strategy(
     )
 }
 
+fn try_install_cached_ipv4_rules(uids: &[u32], ports: &[u16]) -> Result<bool> {
+    if uids.is_empty() || ports.is_empty() {
+        return Ok(false);
+    }
+
+    let cached = load_cached_ipv4_strategies();
+    let (Some(tcp_strategy), Some(udp_strategy)) = (cached.tcp, cached.udp) else {
+        return Ok(false);
+    };
+
+    if let Err(e) = install_proto_rules_v4_with_strategy(uids, ports, tcp_strategy, TransportProtocol::Tcp) {
+        logging::warn(&format!(
+            "proxyInfo cached TCP strategy failed, reprobe required: {} => {e:#}",
+            tcp_strategy.describe(Backend::Iptables, TransportProtocol::Tcp)
+        ));
+        clear_cached_ipv4_strategies();
+        let _ = xtables_lock::run_timeout_retry(Backend::Iptables.cmd(), &["-F", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT);
+        return Ok(false);
+    }
+
+    if let Err(e) = install_proto_rules_v4_with_strategy(uids, ports, udp_strategy, TransportProtocol::Udp) {
+        logging::warn(&format!(
+            "proxyInfo cached UDP strategy failed, reprobe required: {} => {e:#}",
+            udp_strategy.describe(Backend::Iptables, TransportProtocol::Udp)
+        ));
+        clear_cached_ipv4_strategies();
+        let _ = xtables_lock::run_timeout_retry(Backend::Iptables.cmd(), &["-F", PROXY_CHAIN], Capture::Both, IPT_TIMEOUT);
+        return Ok(false);
+    }
+
+    logging::info(&format!(
+        "proxyInfo reused cached IPv4 strategies: tcp=[{}], udp=[{}]",
+        tcp_strategy.describe(Backend::Iptables, TransportProtocol::Tcp),
+        udp_strategy.describe(Backend::Iptables, TransportProtocol::Udp)
+    ));
+    Ok(true)
+}
+
 fn install_ipv4_rules(uids: &[u32], ports: &[u16], global_ports: &[u16]) -> Result<()> {
     if uids.is_empty() || (ports.is_empty() && global_ports.is_empty()) {
         return Ok(());
@@ -762,7 +829,7 @@ fn install_ipv4_rules(uids: &[u32], ports: &[u16], global_ports: &[u16]) -> Resu
     if rc != 0 {
         anyhow::bail!("{} -F {} failed: {}", Backend::Iptables.cmd(), PROXY_CHAIN, out);
     }
-    if !ports.is_empty() {
+    if !ports.is_empty() && !try_install_cached_ipv4_rules(uids, ports)? {
         let tcp_strategy = select_ipv4_strategy(uids, ports, TransportProtocol::Tcp, None)?;
         let udp_strategy = select_ipv4_strategy(
             uids,
@@ -770,8 +837,7 @@ fn install_ipv4_rules(uids: &[u32], ports: &[u16], global_ports: &[u16]) -> Resu
             TransportProtocol::Udp,
             Some((TransportProtocol::Tcp, tcp_strategy)),
         )?;
-        install_proto_rules_v4_with_strategy(uids, ports, tcp_strategy, TransportProtocol::Tcp)?;
-        install_proto_rules_v4_with_strategy(uids, ports, udp_strategy, TransportProtocol::Udp)?;
+        store_cached_ipv4_strategies(tcp_strategy, udp_strategy);
     }
     install_global_tcp_rules_v4(uids, global_ports)?;
     Ok(())

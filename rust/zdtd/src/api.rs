@@ -4137,7 +4137,6 @@ match (method.as_str(), path.as_str()) {
                     crate::proxyinfo::clear_rules()?;
                     return Ok(json!({"ok": true, "active": false}));
                 }
-                let _ = crate::proxyinfo::rebuild_out_program()?;
                 if services_running {
                     let active = crate::proxyinfo::refresh_runtime(true)?;
                     Ok(json!({"ok": true, "active": active}))

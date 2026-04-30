@@ -2,7 +2,7 @@ use anyhow::Result;
 
 use std::{thread, time::Duration};
 use crate::{
-    android::{boot, selinux::SelinuxGuard},
+    android::boot,
     iptables_backup,
     programs::{byedpi, dnscrypt, dpitunnel, myproxy, myprogram, nfqws, nfqws2, operaproxy, tor},
     programs::{singbox, wireproxy},
@@ -38,9 +38,6 @@ pub fn start_full() -> Result<()> {
 
     // Ensure ports/queue numbers do not collide across programs.
     crate::ports::normalize_ports()?;
-
-    // Temporary Permissive while we touch iptables and start daemons.
-    let _selinux = SelinuxGuard::enter_permissive_if_enforcing()?;
 
     crate::logging::user_info("Подготовка: восстановление базовых iptables");
     // Restore baseline iptables before applying rules (prevents leftovers between starts).
@@ -145,8 +142,6 @@ if !any_main_service_running() {
 /// Stop all services and restore baseline iptables.
 pub fn stop_full() -> Result<()> {
     crate::logging::user_info("Остановка: начало");
-    // Temporary Permissive while we touch iptables.
-    let _selinux = SelinuxGuard::enter_permissive_if_enforcing()?;
 
     // Stop services first, but always try to restore captive portal settings even
     // if the stop sequence partially fails.

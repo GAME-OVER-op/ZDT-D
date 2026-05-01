@@ -4,5 +4,5 @@
 --blob=tls_4pda:@/data/adb/modules/ZDT-D/strategic/bin/tls_clienthello_4pda_to.bin \
 --blob=tls_max:@/data/adb/modules/ZDT-D/strategic/bin/tls_clienthello_max_ru.bin \
 --blob=zero4:0x00000000 \
---filter-udp=443 --hostlist=/data/adb/modules/ZDT-D/strategic/list/default.txt --hostlist=/data/adb/modules/ZDT-D/strategic/list/custom.txt --hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt --ipset-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt --lua-desync=fake:blob=quic_google:repeats=6 --new \
---filter-udp=443 --ipset=/data/adb/modules/ZDT-D/strategic/list/ipset.txt --ipset=/data/adb/modules/ZDT-D/strategic/list/custom.txt --hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt --ipset-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt --lua-desync=fake:blob=quic_google:repeats=6
+--filter-udp=443,19294-19344,50000-50100 --hostlist=/data/adb/modules/ZDT-D/strategic/list/default.txt --hostlist=/data/adb/modules/ZDT-D/strategic/list/custom.txt --hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt --ipset-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt --lua-desync=fake:blob=quic_google:repeats=6 --new \
+--filter-udp=443,19294-19344,50000-50100 --ipset=/data/adb/modules/ZDT-D/strategic/list/ipset.txt --ipset=/data/adb/modules/ZDT-D/strategic/list/custom.txt --hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt --ipset-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt --lua-desync=fake:blob=quic_google:repeats=6

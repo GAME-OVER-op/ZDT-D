@@ -3674,9 +3674,6 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     serde_json::from_slice(body)
                         .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
                 // Basic sanity checks
-                if args.api_proxy.trim().is_empty() {
-                    anyhow::bail!("api_proxy must not be empty");
-                }
                 if args.init_retry_interval.trim().is_empty() {
                     anyhow::bail!("init_retry_interval must not be empty");
                 }
@@ -3837,6 +3834,10 @@ match (method.as_str(), path.as_str()) {
                 hotspot_t2s_singbox_profile: Option<String>,
                 #[serde(default)]
                 hotspot_t2s_wireproxy_profile: Option<String>,
+                #[serde(default)]
+                allow_loopback_redirect: Option<bool>,
+                #[serde(default)]
+                selinux_permissive_enabled: Option<bool>,
             }
 
             let patch: SettingPatch = serde_json::from_slice(&body)
@@ -3856,6 +3857,12 @@ match (method.as_str(), path.as_str()) {
             }
             if let Some(profile) = patch.hotspot_t2s_wireproxy_profile {
                 setting.hotspot_t2s_wireproxy_profile = profile;
+            }
+            if let Some(enabled) = patch.allow_loopback_redirect {
+                setting.allow_loopback_redirect = enabled;
+            }
+            if let Some(enabled) = patch.selinux_permissive_enabled {
+                setting.selinux_permissive_enabled = enabled;
             }
             settings::save_api_settings(&setting)?;
             let saved = settings::load_api_settings().unwrap_or(setting);

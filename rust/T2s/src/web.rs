@@ -1,4 +1,4 @@
-use crate::{stats, system, AppState};
+use crate::{stats, AppState};
 use anyhow::{Context, Result};
 use axum::{
     extract::{ws::{Message, WebSocket, WebSocketUpgrade}, State},
@@ -8,7 +8,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::{hash::{Hash, Hasher}, net::{SocketAddr, ToSocketAddrs}, time::Duration};
+use std::{collections::HashMap, hash::{Hash, Hasher}, net::{SocketAddr, ToSocketAddrs}, time::Duration};
 use tokio::time::Instant;
 
 const INDEX_HTML: &str = include_str!("web_ui.html");
@@ -71,7 +71,6 @@ struct ApiState {
     ports: PortsView,
     conns: Vec<ConnView>,
     backends: Vec<stats::BackendStatus>,
-    system: system::SystemStats,
     download_limit_mbit: f64,
 }
 
@@ -117,6 +116,12 @@ async fn api_version() -> impl IntoResponse {
 }
 
 async fn api_state(State(state): State<AppState>) -> impl IntoResponse {
+    if state.runtime.try_begin_forced_refresh(30_000) {
+        let st = state.clone();
+        tokio::spawn(async move {
+            stats::refresh_backends_for_ui(st.clone(), stats::health_timeout(&st)).await;
+        });
+    }
     Json(build_state(&state))
 }
 
@@ -233,13 +238,7 @@ fn state_fingerprint(st: &ApiState) -> u64 {
     st.stats.internal.bytes_down.hash(&mut hasher);
     st.stats.external.bytes_up.hash(&mut hasher);
     st.stats.external.bytes_down.hash(&mut hasher);
-    st.system.cpu_percent.to_bits().hash(&mut hasher);
-    st.system.mem_total_kb.hash(&mut hasher);
-    st.system.mem_avail_kb.hash(&mut hasher);
-    st.system.mem_used_percent.to_bits().hash(&mut hasher);
-    st.system.proc_rss_kb.hash(&mut hasher);
-    st.system.net_rx_bytes.hash(&mut hasher);
-    st.system.net_tx_bytes.hash(&mut hasher);
+
     for b in &st.backends {
         b.addr.hash(&mut hasher);
         (b.state as u8).hash(&mut hasher);
@@ -278,27 +277,30 @@ async fn ws_handle(mut socket: WebSocket, state: AppState) {
     impl Drop for UiGuard {
         fn drop(&mut self) {
             self.rt.ui_clients.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-            self.rt.wake();
+            self.rt.ui_wake_throttled(250);
         }
     }
     state.runtime.ui_clients.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    state.runtime.wake();
+    state.runtime.ui_wake_throttled(250);
+    if state.runtime.try_begin_forced_refresh(30_000) {
+        let st = state.clone();
+        tokio::spawn(async move {
+            stats::refresh_backends_for_ui(st.clone(), stats::health_timeout(&st)).await;
+        });
+    }
     let _guard = UiGuard { rt: state.runtime.clone() };
 
-    // Event-driven updates with slow polling for backend/system changes and a rare keepalive.
-    let mut poll_tick = tokio::time::interval(Duration::from_secs(20));
-    let mut keepalive_tick = tokio::time::interval(Duration::from_secs(45));
+    // Event-driven updates with slow polling for backend changes and a rare keepalive.
+    let mut poll_tick = tokio::time::interval(Duration::from_secs(30));
+    let mut keepalive_tick = tokio::time::interval(Duration::from_secs(60));
     let mut events_rx = state.events.subscribe();
-    let mut last_sent = Instant::now() - Duration::from_secs(31);
-    let mut last_fp: Option<u64> = None;
-
     let initial = build_state(&state);
     let initial_fp = state_fingerprint(&initial);
     if let Ok(txt) = serde_json::to_string(&initial) {
         if socket.send(Message::Text(txt)).await.is_err() { return; }
     }
-    last_sent = Instant::now();
-    last_fp = Some(initial_fp);
+    let mut last_sent = Instant::now();
+    let mut last_fp: Option<u64> = Some(initial_fp);
 
     loop {
         tokio::select! {
@@ -315,15 +317,7 @@ async fn ws_handle(mut socket: WebSocket, state: AppState) {
                 }
             }
             _ = keepalive_tick.tick() => {
-                if last_sent.elapsed() >= Duration::from_secs(30) {
-                    let st = build_state(&state);
-                    let fp = state_fingerprint(&st);
-                    if let Ok(txt) = serde_json::to_string(&st) {
-                        if socket.send(Message::Text(txt)).await.is_err() { break; }
-                    }
-                    last_sent = Instant::now();
-                    last_fp = Some(fp);
-                }
+                if socket.send(Message::Ping(Vec::new().into())).await.is_err() { break; }
             }
             evt = events_rx.recv() => {
                 match evt {
@@ -387,28 +381,23 @@ fn build_state(state: &AppState) -> ApiState {
             None
         },
     };
+    let backend_labels: HashMap<String, String> = backends
+        .iter()
+        .enumerate()
+        .map(|(idx, b)| (b.addr.clone(), format!("#{}", idx + 1)))
+        .collect();
     let conn_views: Vec<ConnView> = conns
         .into_iter()
         .map(|c| {
             let domain = c.domain.clone().filter(|d| !d.is_empty()).unwrap_or_else(|| "Domain not resolved".to_string());
             let dst_ip = c.dst_ip.clone().filter(|s| !s.is_empty()).unwrap_or_else(|| "—".to_string());
 
-            let mode = match c.mode.as_deref() {
-                _ => {
-                    if c.backend.is_some() { "socks5" } else { "transparent" }
-                }
-            };
+            let mode = if c.backend.is_some() { "socks5" } else { "transparent" };
 
-            let server = if let Some(be) = &c.backend {
-                if let Some(pos) = backends.iter().position(|b| b.addr == *be) {
-                    format!("#{}", pos + 1)
-                } else {
-                    // backend list might have changed; still keep a compact marker
-                    "#?".to_string()
-                }
-            } else {
-                "—".to_string()
-            };
+            let server = c.backend
+                .as_ref()
+                .and_then(|be| backend_labels.get(be).cloned())
+                .unwrap_or_else(|| if c.backend.is_some() { "#?".to_string() } else { "—".to_string() });
 
             ConnView {
                 cid: c.cid.to_string(),
@@ -423,7 +412,6 @@ fn build_state(state: &AppState) -> ApiState {
             }
         })
         .collect();
-    let system = state.system.lock().clone();
     let bps = state.runtime.download_limit_bps.load(std::sync::atomic::Ordering::Relaxed);
     let download_limit_mbit = if bps > 0 { (bps as f64) * 8.0 / (1024.0 * 1024.0) } else { 0.0 };
 
@@ -434,7 +422,6 @@ fn build_state(state: &AppState) -> ApiState {
         ports,
         conns: conn_views,
         backends,
-        system,
         download_limit_mbit,
     }
 }

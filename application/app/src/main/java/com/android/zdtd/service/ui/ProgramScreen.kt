@@ -114,7 +114,7 @@ fun ProgramScreen(
     if (program.id == "dnscrypt" || program.id == "operaproxy") {
       item {
         EnabledCard(
-          title = stringResource(R.string.enabled),
+          title = stringResource(R.string.enabled_card_program_title),
           checked = program.enabled,
           onCheckedChange = { v -> actions.setProgramEnabled(program.id, v) },
         )
@@ -845,7 +845,7 @@ private fun SingBoxSection(
 
   Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
     EnabledCard(
-      title = stringResource(R.string.enabled),
+      title = stringResource(R.string.enabled_card_program_title),
       checked = enabled,
       onCheckedChange = { v ->
         val prev = enabled

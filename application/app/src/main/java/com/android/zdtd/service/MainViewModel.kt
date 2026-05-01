@@ -1953,7 +1953,30 @@ if (mf.isNotBlank()) {
         return@launchIO
       }
 
+      _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_049), progressPercent = 99) }
+      refreshAfterBackupRestore()
       finishBackupProgress(text = str(R.string.mv_auto_049), percent = 100)
+    }
+  }
+
+  private suspend fun refreshAfterBackupRestore() {
+    lastStatusFetchAtMs = 0L
+    lastProgramsFetchAtMs = 0L
+
+    val delays = listOf(0L, 800L, 2_000L)
+    for (waitMs in delays) {
+      if (waitMs > 0L) delay(waitMs)
+      currentCoroutineContext().ensureActive()
+
+      runCatching { fetchAndUpdateStatus(force = true) }
+        .onFailure { log("ERR", "restore status refresh failed: ${it.message ?: it}") }
+
+      lastProgramsFetchAtMs = 0L
+      runCatching { refreshProgramsNow(force = true) }
+        .onFailure { log("ERR", "restore programs refresh failed: ${it.message ?: it}") }
+
+      runCatching { refreshDaemonSettingsNow() }
+        .onFailure { log("ERR", "restore settings refresh failed: ${it.message ?: it}") }
     }
   }
 
@@ -3302,32 +3325,44 @@ private fun shQuote(s: String): String {
     }
   }
 
+  private suspend fun refreshProgramsNow(force: Boolean = false) {
+    val now = System.currentTimeMillis()
+    val current = _uiState.value.programs
+    if (!force && current.isNotEmpty() && (now - lastProgramsFetchAtMs) < programsFreshMs) return
+    if (programsRefreshInFlight) {
+      if (!force) return
+      var waitedMs = 0L
+      while (programsRefreshInFlight && waitedMs < 1_000L) {
+        delay(50L)
+        waitedMs += 50L
+      }
+      if (programsRefreshInFlight) return
+    }
+    programsRefreshInFlight = true
+    try {
+      val list = api.getPrograms()
+      // Some programs (dnscrypt / operaproxy) use active.json under working_folder for enable state.
+      val patched = list.map { p ->
+        val ap = activeJsonPath(p.id)
+        if (ap != null) {
+          val en = root.readEnabledFlag(ap)
+          if (en != null) p.copy(enabled = en) else p
+        } else {
+          p
+        }
+      }
+      lastProgramsFetchAtMs = System.currentTimeMillis()
+      _uiState.update { it.copy(programs = patched) }
+    } catch (e: Throwable) {
+      log("ERR", "programs failed: ${e.message ?: e}")
+    } finally {
+      programsRefreshInFlight = false
+    }
+  }
+
   override fun refreshPrograms() {
     launchIO {
-      val now = System.currentTimeMillis()
-      val current = _uiState.value.programs
-      if (current.isNotEmpty() && (now - lastProgramsFetchAtMs) < programsFreshMs) return@launchIO
-      if (programsRefreshInFlight) return@launchIO
-      programsRefreshInFlight = true
-      try {
-        val list = api.getPrograms()
-        // Some programs (dnscrypt / operaproxy) use active.json under working_folder for enable state.
-        val patched = list.map { p ->
-          val ap = activeJsonPath(p.id)
-          if (ap != null) {
-            val en = root.readEnabledFlag(ap)
-            if (en != null) p.copy(enabled = en) else p
-          } else {
-            p
-          }
-        }
-        lastProgramsFetchAtMs = System.currentTimeMillis()
-        _uiState.update { it.copy(programs = patched) }
-      } catch (e: Throwable) {
-        log("ERR", "programs failed: ${e.message ?: e}")
-      } finally {
-        programsRefreshInFlight = false
-      }
+      refreshProgramsNow(force = false)
     }
   }
 
@@ -3771,23 +3806,27 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       }
   }
 
+  private suspend fun refreshDaemonSettingsNow() {
+    val settings = runCatching { api.getDaemonSettings() }
+      .getOrDefault(com.android.zdtd.service.api.ApiModels.DaemonSettings())
+    val singboxProfiles = fetchHotspotSingBoxProfiles()
+    val wireproxyProfiles = fetchHotspotWireproxyProfiles()
+    _appUpdate.update {
+      it.copy(
+        protectorMode = settings.protectorMode,
+        hotspotT2sEnabled = settings.hotspotT2sEnabled,
+        hotspotT2sTarget = settings.hotspotT2sTarget,
+        hotspotT2sSingboxProfile = settings.hotspotT2sSingboxProfile,
+        hotspotT2sWireproxyProfile = settings.hotspotT2sWireproxyProfile,
+        hotspotSingboxProfiles = singboxProfiles,
+        hotspotWireproxyProfiles = wireproxyProfiles,
+      )
+    }
+  }
+
   override fun refreshDaemonSettings() {
     launchIO {
-      val settings = runCatching { api.getDaemonSettings() }
-        .getOrDefault(com.android.zdtd.service.api.ApiModels.DaemonSettings())
-      val singboxProfiles = fetchHotspotSingBoxProfiles()
-      val wireproxyProfiles = fetchHotspotWireproxyProfiles()
-      _appUpdate.update {
-        it.copy(
-          protectorMode = settings.protectorMode,
-          hotspotT2sEnabled = settings.hotspotT2sEnabled,
-          hotspotT2sTarget = settings.hotspotT2sTarget,
-          hotspotT2sSingboxProfile = settings.hotspotT2sSingboxProfile,
-          hotspotT2sWireproxyProfile = settings.hotspotT2sWireproxyProfile,
-          hotspotSingboxProfiles = singboxProfiles,
-          hotspotWireproxyProfiles = wireproxyProfiles,
-        )
-      }
+      refreshDaemonSettingsNow()
     }
   }
 

@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use std::panic::{self, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 
 use crate::{api, config::Config, logging, protector, runtime, settings, stats};
@@ -44,7 +45,7 @@ pub fn run(_cfg: &Config) -> Result<()> {
     let token = settings::read_or_create_token()?;
     settings::write_api_info(&settings::api_info_path(), "127.0.0.1:1006")?;
     if let Err(e) = settings::load_api_settings() {
-        logging::warn(&format!("failed to init api/setting.json: {e:#}"));
+        logging::warn(&format!("failed to init setting/setting.json: {e:#}"));
     }
     if let Err(e) = crate::proxyinfo::ensure_layout() {
         logging::warn(&format!("failed to init proxyInfo files: {e:#}"));
@@ -121,23 +122,32 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
 
     let st_arc = state.clone();
     std::thread::spawn(move || {
-        let res = runtime::start_full().context("start_full");
-        match res {
-            Ok(()) => {
-                let start_now = settings::read_start_settings().unwrap_or_default();
-                {
-                    let mut st = lock_state(&st_arc);
-                    st.services_running = true;
-                    st.start = start_now;
+        let outcome = panic::catch_unwind(AssertUnwindSafe(|| runtime::start_full().context("start_full")));
+        match outcome {
+            Ok(res) => match res {
+                Ok(()) => {
+                    let start_now = settings::read_start_settings().unwrap_or_default();
+                    {
+                        let mut st = lock_state(&st_arc);
+                        st.services_running = true;
+                        st.start = start_now;
+                    }
+
+                    protector::activate();
+
+                    // Notify the Android app (app-owned notification).
+                    let _ = crate::android::notification::send_app_state(true);
                 }
-
-                protector::activate();
-
-                // Notify the Android app (app-owned notification).
-                let _ = crate::android::notification::send_app_state(true);
-            }
-            Err(e) => {
-                logging::warn(&format!("start_full failed: {e:#}"));
+                Err(e) => {
+                    logging::warn(&format!("start_full failed: {e:#}"));
+                    crate::scan_detector::stop();
+                    let mut st = lock_state(&st_arc);
+                    st.services_running = false;
+                }
+            },
+            Err(_) => {
+                logging::warn("start thread panicked");
+                crate::logging::user_error("Ошибка запуска: внутренний сбой потока");
                 crate::scan_detector::stop();
                 let mut st = lock_state(&st_arc);
                 st.services_running = false;
@@ -188,22 +198,30 @@ pub fn handle_stop_async(state: &SharedState) -> Result<bool> {
 
     let st_arc = state.clone();
     std::thread::spawn(move || {
-        crate::scan_detector::stop();
-        let res = runtime::stop_full().context("stop_full");
-        match res {
-            Ok(()) => {
-                {
-                    let mut st = lock_state(&st_arc);
-                    st.services_running = false;
-                }
-                protector::deactivate();
-                crate::scan_detector::stop();
+        let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
+            crate::scan_detector::stop();
+            runtime::stop_full().context("stop_full")
+        }));
+        match outcome {
+            Ok(res) => match res {
+                Ok(()) => {
+                    {
+                        let mut st = lock_state(&st_arc);
+                        st.services_running = false;
+                    }
+                    protector::deactivate();
+                    crate::scan_detector::stop();
 
-                // Notify the Android app (app-owned notification).
-                let _ = crate::android::notification::send_app_state(false);
-            }
-            Err(e) => {
-                logging::warn(&format!("stop_full failed: {e:#}"));
+                    // Notify the Android app (app-owned notification).
+                    let _ = crate::android::notification::send_app_state(false);
+                }
+                Err(e) => {
+                    logging::warn(&format!("stop_full failed: {e:#}"));
+                }
+            },
+            Err(_) => {
+                logging::warn("stop thread panicked");
+                crate::logging::user_error("Ошибка остановки: внутренний сбой потока");
             }
         }
         let mut st = lock_state(&st_arc);

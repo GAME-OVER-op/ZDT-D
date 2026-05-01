@@ -51,7 +51,7 @@ pub fn activate() {
         Ok(v) => v,
         Err(e) => {
             crate::logging::warn(&format!(
-                "protector: failed to load api/setting.json, fallback to off: {e:#}"
+                "protector: failed to load setting/setting.json, fallback to off: {e:#}"
             ));
             settings::ApiSettings::default()
         }

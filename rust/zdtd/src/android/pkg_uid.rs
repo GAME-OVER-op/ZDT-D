@@ -142,7 +142,9 @@ fn build_uid_map_from_cmd_package() -> Option<HashMap<String, u32>> {
         }
 
         if let (Some(p), Some(u)) = (pkg_name, uid_val) {
-            map.insert(p.to_string(), u);
+            if u > 0 {
+                map.insert(p.to_string(), u);
+            }
         }
     }
     Some(map)
@@ -319,7 +321,11 @@ pub fn resolve_uid_map(mode: Mode, packages: &[String]) -> Result<BTreeMap<Strin
 if let Some(all) = build_uid_map_from_cmd_package_cached() {
     for p in packages {
         if let Some(uid) = all.get(p) {
-            map.insert(p.clone(), *uid);
+            if *uid > 0 {
+                map.insert(p.clone(), *uid);
+            } else {
+                unresolved.insert(p.clone());
+            }
         } else {
             unresolved.insert(p.clone());
         }
@@ -338,8 +344,8 @@ if unresolved.is_empty() {
     for pkg in unresolved.clone().iter() {
         if map.contains_key(pkg) { continue; }
         match resolve_uid_via_dumpsys(pkg)? {
-            Some(uid) => { map.insert(pkg.clone(), uid); }
-            None => { /* keep unresolved */ }
+            Some(uid) if uid > 0 => { map.insert(pkg.clone(), uid); }
+            _ => { /* keep unresolved */ }
         }
     }
 
@@ -360,7 +366,9 @@ if unresolved.is_empty() {
             for pkg in unresolved {
                 if map.contains_key(&pkg) { continue; }
                 if let Some(uid) = resolve_uid_via_stat(&pkg)? {
-                    map.insert(pkg, uid);
+                    if uid > 0 {
+                        map.insert(pkg, uid);
+                    }
                 }
             }
         }
@@ -370,7 +378,9 @@ if unresolved.is_empty() {
             for pkg in unresolved {
                 if map.contains_key(&pkg) { continue; }
                 if let Some(uid) = resolve_uid_via_stat(&pkg)? {
-                    map.insert(pkg, uid);
+                    if uid > 0 {
+                        map.insert(pkg, uid);
+                    }
                 }
             }
         }
@@ -388,7 +398,9 @@ pub fn write_uid_map(output_file: &Path, map: &BTreeMap<String, u32>) -> Result<
         .with_context(|| format!("open output {}", output_file.display()))?;
 
     for (pkg, uid) in map {
-        writeln!(f, "{}={}", pkg, uid)?;
+        if *uid > 0 {
+            writeln!(f, "{}={}", pkg, uid)?;
+        }
     }
     f.flush()?;
     Ok(())
@@ -401,7 +413,9 @@ fn resolve_uid_via_dumpsys(package: &str) -> Result<Option<u32>> {
                 let tail = &line[pos + "userId=".len()..];
                 let digits: String = tail.chars().take_while(|c| c.is_ascii_digit()).collect();
                 if let Ok(uid) = digits.parse::<u32>() {
-                    return Some(uid);
+                    if uid > 0 {
+                        return Some(uid);
+                    }
                 }
             }
             // Some Android builds use "uid=" in dumpsys output
@@ -409,7 +423,9 @@ fn resolve_uid_via_dumpsys(package: &str) -> Result<Option<u32>> {
                 let tail = &line[pos + "uid=".len()..];
                 let digits: String = tail.chars().take_while(|c| c.is_ascii_digit()).collect();
                 if let Ok(uid) = digits.parse::<u32>() {
-                    return Some(uid);
+                    if uid > 0 {
+                        return Some(uid);
+                    }
                 }
             }
         }
@@ -450,7 +466,9 @@ fn resolve_uid_via_stat(package: &str) -> Result<Option<u32>> {
         return Ok(None);
     }
     if let Ok(uid) = s.parse::<u32>() {
-        return Ok(Some(uid));
+        if uid > 0 {
+            return Ok(Some(uid));
+        }
     }
     Ok(None)
 }

@@ -953,7 +953,6 @@ pub fn refresh_runtime(services_running: bool) -> Result<bool> {
         local_list.len(),
         global_list.len()
     ));
-    crate::scan_detector::start();
     Ok(true)
 }
 

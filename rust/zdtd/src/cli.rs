@@ -37,7 +37,7 @@ impl Args {
 
 pub fn print_help() {
     println!("zdtd (ZDT-D2) usage:");
-    println!("  zdtd              # oneshot: wait boot, set selinux permissive, start nfqws profiles, iptables");
+    println!("  zdtd              # oneshot: wait boot, optionally set selinux permissive, start nfqws profiles, iptables");
     println!("  zdtd --config <file>   # optional config for logging (json)");
     println!("  zdtd --help       # this help");
 }

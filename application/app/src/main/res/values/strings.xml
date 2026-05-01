@@ -542,6 +542,10 @@ Use another editor to modify it.</string>
     <string name="strategic_variants_sheet_hint">Tap a config to apply it immediately.</string>
     <string name="strategic_variants_current_hint">Current config</string>
     <string name="strategic_variants_tap_to_apply">Tap to apply</string>
+    <string name="enabled_card_program_title">Program state</string>
+    <string name="enabled_card_profile_title">Profile state</string>
+    <string name="enabled_state_on">Enabled</string>
+    <string name="enabled_state_off">Disabled</string>
     <string name="enabled_card_apply_hint">Apply after stop/start</string>
     <string name="byedpi_start_args_title">Start arguments</string>
     <string name="byedpi_restart_args_title">Restart arguments</string>

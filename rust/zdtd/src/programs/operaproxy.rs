@@ -647,7 +647,7 @@ fn spawn_byedpi(bin: &Path, port: u16, extra_args: &[String], log_path: &Path) -
         .arg("-p")
         .arg(port.to_string())
         .arg("-x")
-        .arg("1")
+        .arg("0")
         .args(extra_args)
         .stdin(Stdio::null())
         .stdout(Stdio::from(logf))
@@ -709,10 +709,12 @@ fn spawn_opera_proxy(
         .arg("-server-selection-dl-limit")
         .arg(opera_args.server_selection_dl_limit.to_string())
         .arg("-verbosity")
-        .arg(opera_args.verbosity.to_string())
-        .arg("-api-proxy")
-        .arg(&opera_args.api_proxy)
-        .arg("-server-selection-test-url")
+        .arg(opera_args.verbosity.to_string());
+    let api_proxy = opera_args.api_proxy.trim();
+    if !api_proxy.is_empty() {
+        cmd.arg("-api-proxy").arg(api_proxy);
+    }
+    cmd.arg("-server-selection-test-url")
         .arg(&opera_args.server_selection_test_url);
     if let Some(ref upstream) = upstream {
         cmd.arg("-proxy").arg(upstream);
@@ -761,9 +763,9 @@ fn spawn_t2s(bin: &Path, listen_addr: &str, listen_port: u16, socks_ports_csv: &
         .arg("--socks-port")
         .arg(socks_ports_csv)
         .arg("--max-conns")
-        .arg("600")
+        .arg("1200")
         .arg("--idle-timeout")
-        .arg("5000")
+        .arg("400")
         .arg("--connect-timeout")
         .arg("30")
         .arg("--enable-http2")

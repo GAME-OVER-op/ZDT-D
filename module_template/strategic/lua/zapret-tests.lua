@@ -15,7 +15,7 @@ end
 function test_all(...)
 	test_run({
 		test_crypto, test_bin, test_time, test_gzip, test_ipstr, test_dissect, test_csum, test_resolve,
-		test_get_source_ip, test_ifaddrs, test_rawsend},...)
+		test_get_source_ip, test_ifaddrs, test_rawsend, test_timer},...)
 end
 
 
@@ -906,6 +906,53 @@ function test_ifaddrs(opts)
 		end
 	end
 end
+
+function print_current_time()
+	local sec,nsec = clock_gettime()
+	local t = sec + nsec/1000000000;
+	print("time: "..t)
+end
+function timer_info_print(tinfo)
+	print(" timer_info.name="..tinfo.name)
+	print(" timer_info.func="..tinfo.func)
+	print(" timer_info.period="..tinfo.period)
+	print(" timer_info.oneshot="..tostring(tinfo.oneshot))
+	print(" timer_info.fires="..tinfo.fires)
+end
+function timer_info_print_by_name(name)
+	local tinfo = timer_info(name)
+	timer_info_print(tinfo)
+end
+
+function timer1(name, data)
+	print("timer "..name.." fired. data="..tostring(data))
+	print_current_time()
+	timer_info_print_by_name(name)
+end
+function timer2(name, data)
+	data.n = data.n+1
+	print("timer "..name.." fired. data.n="..tostring(data.n))
+	print_current_time()
+	timer_info_print_by_name(name)
+	if data.n>=4 then
+		timer_del(name)
+	end
+end
+function test_timer(opts)
+	timer_set("t1","timer1",500,true,"sample_data");
+	local tbl = {n=0}
+	timer_set("t2","timer2",700,false,tbl);
+
+	print("* timers\n")
+	local timers=timer_enum()
+	for i,name in ipairs(timers) do
+		print("TIMER "..i.." :")
+		timer_info_print_by_name(name)
+	end
+	print_current_time()
+	print()
+end
+
 
 function test_rawsend(opts)
 	print("* rawsend")

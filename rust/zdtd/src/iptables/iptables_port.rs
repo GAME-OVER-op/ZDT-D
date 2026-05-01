@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use log::{info, warn};
 use std::{collections::BTreeSet, fs, path::Path, time::Duration};
 
-use crate::{shell::{self, Capture}, xtables_lock};
+use crate::{settings, shell::{self, Capture}, xtables_lock};
 
 const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(5);
 const IPT_SLOW_TIMEOUT: Duration = Duration::from_secs(15);
@@ -68,6 +68,16 @@ impl Default for DpiTunnelOptions {
 
 static mut MANGLE_INIT_DONE: bool = false;
 
+fn allow_loopback_redirect_enabled() -> bool {
+    match settings::load_api_settings() {
+        Ok(st) => st.allow_loopback_redirect,
+        Err(e) => {
+            warn!("DPI: failed to load setting/setting.json, loopback redirect disabled: {e:#}");
+            false
+        }
+    }
+}
+
 /// Rust port of `load_config_dpi_tunnel()`.
 ///
 /// - Creates NAT_DPI chain and hooks OUTPUT -> NAT_DPI (nat table).
@@ -77,6 +87,7 @@ static mut MANGLE_INIT_DONE: bool = false;
 ///   optionally per-interface `-o iface`.
 pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: DpiTunnelOptions) -> Result<()> {
     let _xtables_guard = xtables_lock::lock();
+    let allow_loopback_redirect = allow_loopback_redirect_enabled();
     let (mode, ifaces, invalid) = normalize_ifaces(ifaces_raw)?;
     if !invalid.is_empty() {
         warn!("DPI: invalid ifaces skipped: {:?}", invalid);
@@ -84,7 +95,7 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
 
     info!("DPI: port_preference={} proto_choice={:?} dpi_ports='{}'", opt.port_preference, proto_choice, opt.dpi_ports);
 
-    ensure_nat_chain_nat_dpi()?;
+    ensure_nat_chain_nat_dpi(allow_loopback_redirect)?;
     ensure_mangle_chain_app_once()?;
 
     let uids = read_uids(uid_file)?;
@@ -105,6 +116,10 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
         info!("DPI: applying DNAT for ALL ports");
         for uid in &uids {
             for proto in protos {
+                if allow_loopback_redirect {
+                    ensure_nat_local_dest_port_return(uid, proto, dest_port)?;
+                    add_nat_local_rule_idempotent(uid, proto, None, dest_port)?;
+                }
                 add_nat_rule_idempotent(uid, proto, None, &mode, &ifaces, dest_port)?;
             }
         }
@@ -123,6 +138,11 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
         let ports_for_multi = ports_csv.replace(' ', "").replace('\t', "");
         for uid in &uids {
             for proto in protos {
+                if allow_loopback_redirect {
+                    ensure_nat_local_dest_port_return(uid, proto, dest_port)?;
+                    let extra = format!("-m multiport --dports {}", ports_for_multi);
+                    add_nat_local_rule_idempotent(uid, proto, Some(extra.as_str()), dest_port)?;
+                }
                 ensure_nat_multiport(uid, proto, &ports_for_multi, &mode, &ifaces, dest_port)?;
             }
         }
@@ -146,6 +166,10 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
         for uid in &uids {
             for proto in protos {
                 for dp in &dport_args {
+                    if allow_loopback_redirect {
+                        ensure_nat_local_dest_port_return(uid, proto, dest_port)?;
+                        add_nat_local_rule_idempotent(uid, proto, Some(dp.as_str()), dest_port)?;
+                    }
                     add_nat_rule_idempotent(uid, proto, Some(dp.as_str()), &mode, &ifaces, dest_port)?;
                 }
             }
@@ -297,7 +321,7 @@ fn parse_route_n_default(out: &str) -> Option<String> {
     None
 }
 
-fn ensure_nat_chain_nat_dpi() -> Result<()> {
+fn ensure_nat_chain_nat_dpi(allow_loopback_redirect: bool) -> Result<()> {
     let (c, _) = ipt_run_timeout(&["-t","nat","-nL","NAT_DPI"], Capture::None, IPT_SLOW_TIMEOUT)?;
     if c != 0 {
         let _ = ipt_run_timeout(&["-t","nat","-N","NAT_DPI"], Capture::Both, IPT_CMD_TIMEOUT)?;
@@ -307,10 +331,32 @@ fn ensure_nat_chain_nat_dpi() -> Result<()> {
         let _ = ipt_run_timeout(&["-t","nat","-I","OUTPUT","1","-j","NAT_DPI"], Capture::Both, IPT_CMD_TIMEOUT)?;
     }
 
+    ensure_nat_local_chain(allow_loopback_redirect)?;
+
     // Must be at the very top to avoid feedback loops on loopback/localhost.
     ensure_loopback_return_nat()?;
 
     info!("DPI: NAT_DPI ready");
+    Ok(())
+}
+
+fn ensure_nat_local_chain(enabled: bool) -> Result<()> {
+    loop {
+        let (c, _) = ipt_run_timeout(&["-t","nat","-D","OUTPUT","-j","NAT_DPI_LOCAL"], Capture::None, IPT_CMD_TIMEOUT)?;
+        if c != 0 { break; }
+    }
+
+    if !enabled {
+        let _ = ipt_run_timeout(&["-t","nat","-F","NAT_DPI_LOCAL"], Capture::None, IPT_CMD_TIMEOUT);
+        let _ = ipt_run_timeout(&["-t","nat","-X","NAT_DPI_LOCAL"], Capture::None, IPT_CMD_TIMEOUT);
+        return Ok(());
+    }
+
+    let (c, _) = ipt_run_timeout(&["-t","nat","-nL","NAT_DPI_LOCAL"], Capture::None, IPT_SLOW_TIMEOUT)?;
+    if c != 0 {
+        let _ = ipt_run_timeout(&["-t","nat","-N","NAT_DPI_LOCAL"], Capture::Both, IPT_CMD_TIMEOUT)?;
+    }
+    let _ = ipt_run_timeout(&["-t","nat","-I","OUTPUT","1","-j","NAT_DPI_LOCAL"], Capture::Both, IPT_CMD_TIMEOUT)?;
     Ok(())
 }
 
@@ -411,7 +457,11 @@ fn read_uids(uid_file: &Path) -> Result<Vec<String>> {
         let _app = it.next().unwrap_or("");
         let uid = it.next().unwrap_or("").trim();
         if uid.chars().all(|c| c.is_ascii_digit()) {
-            set.insert(uid.to_string());
+            if let Ok(parsed) = uid.parse::<u32>() {
+                if parsed > 0 {
+                    set.insert(parsed.to_string());
+                }
+            }
         }
     }
     Ok(set.into_iter().collect())
@@ -500,6 +550,75 @@ fn ensure_nat_multiport(uid: &str, proto: &str, ports: &str, mode: &str, ifaces:
         }
     }
     Ok(())
+}
+
+
+fn ensure_nat_local_dest_port_return(uid: &str, proto: &str, dest_port: u16) -> Result<()> {
+    let dport = dest_port.to_string();
+    let check = [
+        "-t","nat","-C","NAT_DPI_LOCAL",
+        "-d","127.0.0.0/8",
+        "-p",proto,
+        "-m","owner","--uid-owner",uid,
+        "-m",proto,"--dport",&dport,
+        "-j","RETURN",
+    ];
+    let (c, _) = ipt_run_timeout(&check, Capture::None, IPT_CMD_TIMEOUT)?;
+    if c != 0 {
+        let add = [
+            "-t","nat","-A","NAT_DPI_LOCAL",
+            "-d","127.0.0.0/8",
+            "-p",proto,
+            "-m","owner","--uid-owner",uid,
+            "-m",proto,"--dport",&dport,
+            "-j","RETURN",
+        ];
+        let _ = ipt_run_timeout(&add, Capture::Both, IPT_CMD_TIMEOUT)?;
+    }
+    Ok(())
+}
+
+fn add_nat_local_rule_idempotent(uid: &str, proto: &str, extra: Option<&str>, dest_port: u16) -> Result<()> {
+    let extra_tokens = extra
+        .map(|s| s.split_whitespace().map(|t| t.to_string()).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let variants: [&[&str]; 5] = [
+        &["-p", "PROTO", "-m", "PROTO", "-m", "owner", "--uid-owner", "UID"],
+        &["-p", "PROTO", "-m", "owner", "--uid-owner", "UID", "-m", "PROTO"],
+        &["-m", "owner", "--uid-owner", "UID", "-p", "PROTO", "-m", "PROTO"],
+        &["-p", "PROTO", "-m", "owner", "--uid-owner", "UID"],
+        &["-m", "owner", "--uid-owner", "UID"],
+    ];
+
+    let to_dst = format!("127.0.0.1:{dest_port}");
+
+    for v in variants {
+        let mut rule: Vec<String> = vec!["-d".into(), "127.0.0.0/8".into()];
+        for tok in v {
+            match *tok {
+                "PROTO" => rule.push(proto.into()),
+                "UID" => rule.push(uid.into()),
+                other => rule.push(other.into()),
+            }
+        }
+        rule.extend(extra_tokens.clone());
+        rule.extend(vec!["-j".into(), "DNAT".into(), "--to-destination".into(), to_dst.clone()]);
+
+        let mut check: Vec<String> = vec!["-t".into(),"nat".into(),"-C".into(),"NAT_DPI_LOCAL".into()];
+        check.extend(rule.clone());
+        let (c, _) = ipt_runv_timeout(&check, Capture::None, IPT_CMD_TIMEOUT)?;
+        if c == 0 { return Ok(()); }
+
+        let mut add: Vec<String> = vec!["-t".into(),"nat".into(),"-A".into(),"NAT_DPI_LOCAL".into()];
+        add.extend(rule);
+        let (c2, _) = ipt_runv_timeout(&add, Capture::None, IPT_CMD_TIMEOUT)?;
+        if c2 == 0 {
+            info!("DPI: added localhost rule uid={} proto={}", uid, proto);
+            return Ok(());
+        }
+    }
+
+    anyhow::bail!("DPI: failed to add localhost rule uid={} proto={} extra={:?}", uid, proto, extra);
 }
 
 /// Attempt to add a DNAT rule with several argument order variants (iptables quirks).

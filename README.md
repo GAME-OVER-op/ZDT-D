@@ -196,31 +196,6 @@ This part is intended to improve service stability during idle or power-managed 
 
 ---
 
-## Dependencies
-
-### Runtime requirements
-- **Root**: Magisk / KernelSU / APatch (or compatible forks)
-- **Architecture**: **arm64-v8a only**
-- **Android**: **11+**
-- working shell environment with access to:
-  - `su`
-  - `cmd`
-  - `settings`
-  - `iptables`
-  - `ip6tables`
-
-### Main internal Rust dependencies
-- `anyhow`
-- `serde`
-- `serde_json`
-- `log`
-- `simplelog`
-- `libc`
-- `sha2`
-- `hex`
-
----
-
 ## Installation
 
 1. Install the Android app.

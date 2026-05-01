@@ -6,7 +6,7 @@ use rand::RngCore;
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{HashMap, VecDeque};
-use std::net::{SocketAddr, ToSocketAddrs};
+use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use once_cell::sync::Lazy;
@@ -68,8 +68,10 @@ pub struct RuntimeConfig {
     /// Connected Web UI clients (SSE/WS).
     pub ui_clients: std::sync::atomic::AtomicU64,
 
-    /// Wakes up background loops (health checks, enforce loop, etc.) when activity happens.
-    pub wakeup: tokio::sync::Notify,
+    /// Wakes UI-related loops when UI clients open/close.
+    pub ui_wakeup: tokio::sync::Notify,
+    /// Wakes backend-recovery waiters when backend health actually changes.
+    pub backend_wakeup: tokio::sync::Notify,
 
     /// While this timestamp is in the future, direct fallback is temporarily blocked
     /// because recent direct attempts failed with timeouts or unreachable errors.
@@ -83,6 +85,23 @@ pub struct RuntimeConfig {
 
     /// Global throttle for forced recovery refreshes requested by hot-path connection handling.
     pub next_forced_refresh_after_ms: AtomicU64,
+
+    /// Only one recovery waiter should actively drive forced refreshes at a time.
+    pub recovery_waiter_active: AtomicU64,
+
+    /// Coalesce UI wakeups.
+    pub next_ui_wakeup_after_ms: AtomicU64,
+    /// Coalesce backend-state wakeups.
+    pub next_backend_wakeup_after_ms: AtomicU64,
+
+    /// Recent accepted-connection timestamps used to detect small bursts when all backends are yellow.
+    pub recent_conn_arrivals_ms: Mutex<VecDeque<u64>>,
+    /// Throttle burst-triggered full Internet rechecks.
+    pub next_burst_recheck_after_ms: AtomicU64,
+    /// Only one burst-triggered backend recheck may run at a time.
+    pub burst_recheck_active: AtomicU64,
+    /// Only one accelerated recovery ladder may run at a time.
+    pub burst_recovery_ladder_active: AtomicU64,
 }
 
 impl Default for RuntimeConfig {
@@ -90,18 +109,58 @@ impl Default for RuntimeConfig {
         Self {
             download_limit_bps: AtomicU64::new(0),
             ui_clients: std::sync::atomic::AtomicU64::new(0),
-            wakeup: tokio::sync::Notify::new(),
+            ui_wakeup: tokio::sync::Notify::new(),
+            backend_wakeup: tokio::sync::Notify::new(),
             direct_cooldown_until_ts: AtomicU64::new(0),
             refresh_lock: tokio::sync::Mutex::new(()),
             last_ttl_ping_ts: AtomicU64::new(0),
             next_forced_refresh_after_ms: AtomicU64::new(0),
+            recovery_waiter_active: AtomicU64::new(0),
+            next_ui_wakeup_after_ms: AtomicU64::new(0),
+            next_backend_wakeup_after_ms: AtomicU64::new(0),
+            recent_conn_arrivals_ms: Mutex::new(VecDeque::with_capacity(16)),
+            next_burst_recheck_after_ms: AtomicU64::new(0),
+            burst_recheck_active: AtomicU64::new(0),
+            burst_recovery_ladder_active: AtomicU64::new(0),
         }
     }
 }
 
 impl RuntimeConfig {
-    pub fn wake(&self) {
-        self.wakeup.notify_waiters();
+    fn notify_throttled(slot: &AtomicU64, notify: &tokio::sync::Notify, min_interval_ms: u64) {
+        let min_interval_ms = min_interval_ms.max(1);
+        let now = now_ms();
+        loop {
+            let next_allowed = slot.load(Ordering::Relaxed);
+            if next_allowed > now {
+                return;
+            }
+            let new_next = now.saturating_add(min_interval_ms);
+            match slot.compare_exchange(
+                next_allowed,
+                new_next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => {
+                    notify.notify_waiters();
+                    return;
+                }
+                Err(_) => continue,
+            }
+        }
+    }
+
+    pub fn ui_wake_throttled(&self, min_interval_ms: u64) {
+        Self::notify_throttled(&self.next_ui_wakeup_after_ms, &self.ui_wakeup, min_interval_ms);
+    }
+
+    pub fn backend_wake(&self) {
+        self.backend_wakeup.notify_waiters();
+    }
+
+    pub fn backend_wake_throttled(&self, min_interval_ms: u64) {
+        Self::notify_throttled(&self.next_backend_wakeup_after_ms, &self.backend_wakeup, min_interval_ms);
     }
 
     pub fn direct_allowed(&self) -> bool {
@@ -110,7 +169,6 @@ impl RuntimeConfig {
 
     pub fn note_direct_failure(&self, seconds: u64) {
         self.direct_cooldown_until_ts.store(now_ts().saturating_add(seconds), Ordering::Relaxed);
-        self.wake();
     }
 
     pub fn clear_direct_cooldown(&self) {
@@ -135,6 +193,72 @@ impl RuntimeConfig {
                 Err(_) => continue,
             }
         }
+    }
+
+    pub fn try_enter_recovery_waiter(&self) -> bool {
+        self.recovery_waiter_active
+            .compare_exchange(0, 1, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+    }
+
+    pub fn leave_recovery_waiter(&self) {
+        self.recovery_waiter_active.store(0, Ordering::Relaxed);
+    }
+
+    pub fn note_new_connection_spike(&self, threshold: usize, window: Duration) -> bool {
+        let threshold = threshold.max(1);
+        let now = now_ms();
+        let cutoff = now.saturating_sub(window.as_millis() as u64);
+        let mut q = self.recent_conn_arrivals_ms.lock();
+        q.push_back(now);
+        while let Some(front) = q.front().copied() {
+            if front < cutoff {
+                q.pop_front();
+            } else {
+                break;
+            }
+        }
+        q.len() >= threshold
+    }
+
+    pub fn try_begin_burst_recheck(&self, min_interval_ms: u64) -> bool {
+        let now = now_ms();
+        loop {
+            let next_allowed = self.next_burst_recheck_after_ms.load(Ordering::Relaxed);
+            if next_allowed > now {
+                return false;
+            }
+            let new_next = now.saturating_add(min_interval_ms.max(1));
+            match self.next_burst_recheck_after_ms.compare_exchange(
+                next_allowed,
+                new_next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return true,
+                Err(_) => continue,
+            }
+        }
+    }
+
+    pub fn try_enter_burst_recheck(&self) -> bool {
+        self.burst_recheck_active
+            .compare_exchange(0, 1, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+    }
+
+    pub fn leave_burst_recheck(&self) {
+        self.burst_recheck_active.store(0, Ordering::Relaxed);
+    }
+
+    pub fn try_enter_burst_recovery_ladder(&self) -> bool {
+        self.burst_recovery_ladder_active
+            .compare_exchange(0, 1, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+    }
+
+    pub fn leave_burst_recovery_ladder(&self) {
+        self.burst_recovery_ladder_active.store(0, Ordering::Relaxed);
     }
 }
 
@@ -272,13 +396,17 @@ pub struct SocksBackends {
     runtime_fail_streak: Vec<u8>,
     last_runtime_fail_ts: Vec<u64>,
     last_full_probe: Vec<u64>,
+    last_green_ts: Vec<u64>,
     last_activity_ts: Vec<u64>,
     inflight_connects: Vec<u32>,
     backend_cooldown_until_ts: Vec<u64>,
+    internet_probe_fail_streak: Vec<u8>,
+    next_internet_probe_after_ts: Vec<u64>,
     rr: usize,
     check_rr: usize,
     active_check_rr: usize,
     audit_check_rr: usize,
+    burst_check_rr: usize,
     check_cycle: u64,
 }
 
@@ -339,9 +467,12 @@ impl SocksBackends {
         let runtime_fail_streak = vec![0; addrs.len()];
         let last_runtime_fail_ts = vec![0; addrs.len()];
         let last_full_probe = vec![0; addrs.len()];
+        let last_green_ts = vec![0; addrs.len()];
         let last_activity_ts = vec![0; addrs.len()];
         let inflight_connects = vec![0; addrs.len()];
         let backend_cooldown_until_ts = vec![0; addrs.len()];
+        let internet_probe_fail_streak = vec![0; addrs.len()];
+        let next_internet_probe_after_ts = vec![0; addrs.len()];
 
         Ok(Self{
             addrs,
@@ -352,13 +483,17 @@ impl SocksBackends {
             runtime_fail_streak,
             last_runtime_fail_ts,
             last_full_probe,
+            last_green_ts,
             last_activity_ts,
             inflight_connects,
             backend_cooldown_until_ts,
+            internet_probe_fail_streak,
+            next_internet_probe_after_ts,
             rr: 0,
             check_rr: 0,
             active_check_rr: 0,
             audit_check_rr: 0,
+            burst_check_rr: 0,
             check_cycle: 0,
         })
     }
@@ -454,6 +589,32 @@ impl SocksBackends {
         }
     }
 
+    fn internet_probe_due_idx(&self, idx: usize, now: u64) -> bool {
+        self.next_internet_probe_after_ts.get(idx).copied().unwrap_or(0) <= now
+    }
+
+    fn note_internet_probe_result(&mut self, idx: usize, ok: bool) {
+        if idx >= self.internet_probe_fail_streak.len() || idx >= self.next_internet_probe_after_ts.len() {
+            return;
+        }
+        if ok {
+            self.internet_probe_fail_streak[idx] = 0;
+            self.next_internet_probe_after_ts[idx] = 0;
+            return;
+        }
+        let streak = self.internet_probe_fail_streak[idx].saturating_add(1);
+        self.internet_probe_fail_streak[idx] = streak;
+        let backoff_secs = match streak {
+            0 | 1 => 30,
+            2 => 60,
+            3 => 120,
+            4 => 300,
+            5 => 600,
+            _ => 900,
+        };
+        self.next_internet_probe_after_ts[idx] = now_ts().saturating_add(backoff_secs);
+    }
+
     pub fn state_at(&self, idx: usize) -> Option<BackendState> {
         if idx >= self.status.len() {
             return None;
@@ -466,6 +627,55 @@ impl SocksBackends {
 
     pub fn last_full_probe_at(&self, idx: usize) -> Option<u64> {
         self.last_full_probe.get(idx).copied()
+    }
+
+    pub fn any_yellow(&self) -> bool {
+        self.status.iter().any(|s| s.state == BackendState::Yellow)
+    }
+
+    pub fn choose_burst_recheck_index(&mut self, global_auth: Option<&(String, String)>, ignore_normal_due: bool) -> Option<(usize, Option<(String, String)>)> {
+        if protector_mode_forced_green() || self.any_green() {
+            return None;
+        }
+        let now = now_ts();
+        let mut candidates: Vec<usize> = self.status
+            .iter()
+            .enumerate()
+            .filter(|(idx, s)| {
+                s.state == BackendState::Yellow
+                    && (ignore_normal_due || self.internet_probe_due_idx(*idx, now))
+            })
+            .map(|(idx, _)| idx)
+            .collect();
+        if candidates.is_empty() {
+            return None;
+        }
+
+        let latest_green = candidates
+            .iter()
+            .filter_map(|idx| self.last_green_ts.get(*idx).copied())
+            .max()
+            .unwrap_or(0);
+        if latest_green > 0 {
+            candidates.retain(|idx| self.last_green_ts.get(*idx).copied().unwrap_or(0) == latest_green);
+        }
+
+        let best_rtt = candidates
+            .iter()
+            .filter_map(|idx| self.status.get(*idx).and_then(|s| s.internet_ping_ms.or(s.socks_ping_ms)))
+            .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        if let Some(best_rtt) = best_rtt {
+            candidates.retain(|idx| {
+                self.status
+                    .get(*idx)
+                    .and_then(|s| s.internet_ping_ms.or(s.socks_ping_ms))
+                    .map(|rtt| (rtt - best_rtt).abs() <= 0.5)
+                    .unwrap_or(false)
+            });
+        }
+
+        let idx = Self::pick_from_bucket(&candidates, &mut self.burst_check_rr)?;
+        Some((idx, self.effective_auth_at(idx, global_auth)))
     }
 
     pub fn any_healthy(&self) -> bool {
@@ -488,9 +698,11 @@ impl SocksBackends {
         self.status.iter().any(|s| s.state != BackendState::Red)
     }
 
-    pub fn mark_backend_failed(&mut self, addr: SocketAddr, err: String) {
+    pub fn mark_backend_failed(&mut self, addr: SocketAddr, err: String) -> bool {
         if let Some(idx) = self.addrs.iter().position(|a| *a == addr) {
             if idx < self.status.len() {
+                let before_any_healthy = self.any_healthy();
+                let before_any_green = self.any_green();
                 let now = now_ts();
                 let class = Self::classify_runtime_failure(&err);
                 if idx < self.last_runtime_fail_ts.len() && idx < self.runtime_fail_streak.len() {
@@ -514,7 +726,7 @@ impl SocksBackends {
                 let streak = self.runtime_fail_streak.get(idx).copied().unwrap_or(1);
                 let threshold = Self::runtime_fail_tolerate_threshold(self.status[idx].state, class);
                 if streak < threshold {
-                    return;
+                    return false;
                 }
 
                 match class {
@@ -530,8 +742,13 @@ impl SocksBackends {
                         self.status[idx].internet_ping_ms = None;
                     }
                 }
+
+                let after_any_healthy = self.any_healthy();
+                let after_any_green = self.any_green();
+                return should_wake_backend_loops(before_any_healthy, after_any_healthy, before_any_green, after_any_green);
             }
         }
+        false
     }
 
 
@@ -568,9 +785,12 @@ impl SocksBackends {
         self.runtime_fail_streak.push(0);
         self.last_runtime_fail_ts.push(0);
         self.last_full_probe.push(0);
+        self.last_green_ts.push(0);
         self.last_activity_ts.push(0);
         self.inflight_connects.push(0);
         self.backend_cooldown_until_ts.push(0);
+        self.internet_probe_fail_streak.push(0);
+        self.next_internet_probe_after_ts.push(0);
     }
 
     pub fn remove(&mut self, addr: SocketAddr) {
@@ -583,13 +803,17 @@ impl SocksBackends {
             if pos < self.runtime_fail_streak.len() { self.runtime_fail_streak.remove(pos); }
             if pos < self.last_runtime_fail_ts.len() { self.last_runtime_fail_ts.remove(pos); }
             if pos < self.last_full_probe.len() { self.last_full_probe.remove(pos); }
+            if pos < self.last_green_ts.len() { self.last_green_ts.remove(pos); }
             if pos < self.last_activity_ts.len() { self.last_activity_ts.remove(pos); }
             if pos < self.inflight_connects.len() { self.inflight_connects.remove(pos); }
             if pos < self.backend_cooldown_until_ts.len() { self.backend_cooldown_until_ts.remove(pos); }
+            if pos < self.internet_probe_fail_streak.len() { self.internet_probe_fail_streak.remove(pos); }
+            if pos < self.next_internet_probe_after_ts.len() { self.next_internet_probe_after_ts.remove(pos); }
             if self.rr >= self.addrs.len() { self.rr = 0; }
             if self.check_rr >= self.addrs.len() { self.check_rr = 0; }
             if self.active_check_rr >= self.addrs.len() { self.active_check_rr = 0; }
             if self.audit_check_rr >= self.addrs.len() { self.audit_check_rr = 0; }
+            if self.burst_check_rr >= self.addrs.len() { self.burst_check_rr = 0; }
         }
     }
 pub fn select_rr_with_auth(&mut self, global_auth: Option<&(String, String)>) -> Result<(usize, SocketAddr, Option<(String, String)>)> {
@@ -716,6 +940,9 @@ pub fn select_rr_with_auth(&mut self, global_auth: Option<&(String, String)>) ->
         self.status[idx].state = state;
         self.status[idx].healthy = state == BackendState::Green;
         self.status[idx].last_check = now;
+        if state == BackendState::Green && idx < self.last_green_ts.len() {
+            self.last_green_ts[idx] = now;
+        }
         if idx < self.runtime_fail_streak.len() {
             self.runtime_fail_streak[idx] = 0;
         }
@@ -728,6 +955,7 @@ pub fn select_rr_with_auth(&mut self, global_auth: Option<&(String, String)>) ->
             if idx < self.last_full_probe.len() {
                 self.last_full_probe[idx] = now;
             }
+            self.note_internet_probe_result(idx, internet_ping_ms.is_some());
             self.status[idx].internet_ping_ms = internet_ping_ms;
             self.status[idx].last_error = err;
         } else {
@@ -801,6 +1029,8 @@ pub fn select_rr_with_auth(&mut self, global_auth: Option<&(String, String)>) ->
 pub struct ConnInfo {
     pub cid: u64,
     pub peer: String,
+    #[serde(skip_serializing)]
+    pub peer_ip_addr: IpAddr,
     pub peer_ip: String,
     /// Which local listener accepted this connection (internal 127.0.0.1:* or external 0.0.0.0:*).
     pub ingress: String,
@@ -821,7 +1051,7 @@ pub struct ConnInfo {
 #[derive(Default)]
 pub struct ConnRegistry {
     inner: Mutex<HashMap<u64, (ConnInfo, CancellationToken)>>,
-    source_counts: Mutex<HashMap<String, u32>>,
+    source_counts: Mutex<HashMap<IpAddr, u32>>,
     active_total: AtomicU64,
     active_internal: AtomicU64,
     active_external: AtomicU64,
@@ -880,10 +1110,12 @@ impl ConnRegistry {
     pub fn try_new_conn(&self, peer: SocketAddr, ingress: Ingress, external_per_source_limit: Option<u32>) -> Option<u64> {
         let cid = rand_u64();
         let now = now_ts();
-        let peer_ip = peer.ip().to_string();
+        let peer_ip_addr = peer.ip();
+        let peer_ip = peer_ip_addr.to_string();
         let info = ConnInfo{
             cid,
             peer: peer.to_string(),
+            peer_ip_addr,
             peer_ip: peer_ip.clone(),
             ingress: match ingress { Ingress::Internal => "internal".into(), Ingress::External => "external".into() },
             domain: None,
@@ -900,12 +1132,12 @@ impl ConnRegistry {
         let mut source_counts = self.source_counts.lock();
         if ingress == Ingress::External {
             if let Some(limit) = external_per_source_limit {
-                let current = source_counts.get(&peer_ip).copied().unwrap_or(0);
+                let current = source_counts.get(&peer_ip_addr).copied().unwrap_or(0);
                 if current >= limit.max(1) {
                     return None;
                 }
             }
-            let entry = source_counts.entry(peer_ip).or_insert(0);
+            let entry = source_counts.entry(peer_ip_addr).or_insert(0);
             *entry = entry.saturating_add(1);
         }
         inner.insert(cid, (info, CancellationToken::new()));
@@ -949,6 +1181,19 @@ impl ConnRegistry {
             .values()
             .filter(|(info, _)| info.mode.as_deref().map(|m| modes.iter().any(|want| *want == m)).unwrap_or(false))
             .count()
+    }
+
+    pub fn has_mode(&self, mode: &str) -> bool {
+        match mode {
+            "pending" => self.mode_pending.load(Ordering::Relaxed) > 0,
+            "wait_backend" => self.mode_wait_backend.load(Ordering::Relaxed) > 0,
+            "socks_connecting" => self.mode_socks_connecting.load(Ordering::Relaxed) > 0,
+            _ => self
+                .inner
+                .lock()
+                .values()
+                .any(|(info, _)| info.mode.as_deref() == Some(mode)),
+        }
     }
 
     pub fn set_cancel_token(&self, cid: u64) -> CancellationToken {
@@ -1043,7 +1288,7 @@ impl ConnRegistry {
     /// Returns number of cancelled connections.
     pub fn kill_mode(&self, mode: &str) -> usize {
         let mut n = 0usize;
-        let mut g = self.inner.lock();
+        let g = self.inner.lock();
         for (info, token) in g.values() {
             if info.mode.as_deref() == Some(mode) {
                 token.cancel();
@@ -1097,11 +1342,11 @@ impl ConnRegistry {
             self.update_mode_counters(info.mode.as_deref(), None);
             if info.ingress == "external" {
                 let mut source_counts = self.source_counts.lock();
-                if let Some(cur) = source_counts.get_mut(&info.peer_ip) {
+                if let Some(cur) = source_counts.get_mut(&info.peer_ip_addr) {
                     if *cur > 1 {
                         *cur -= 1;
                     } else {
-                        source_counts.remove(&info.peer_ip);
+                        source_counts.remove(&info.peer_ip_addr);
                     }
                 }
             }
@@ -1136,7 +1381,7 @@ impl Event {
 }
 
 
-const ZDTD_SETTING_JSON: &str = "/data/adb/modules/ZDT-D/api/setting.json";
+const ZDTD_SETTING_JSON: &str = "/data/adb/modules/ZDT-D/setting/setting.json";
 const PROTECTOR_MODE_CACHE_TTL_SECS: u64 = 2;
 static PROTECTOR_MODE_CACHE: Lazy<Mutex<(u64, bool)>> = Lazy::new(|| Mutex::new((0, false)));
 
@@ -1249,8 +1494,30 @@ fn global_backend_auth(args: &Args) -> Option<(String, String)> {
     }
 }
 
-fn health_timeout(state: &crate::AppState) -> Duration {
+pub fn health_timeout(state: &crate::AppState) -> Duration {
     Duration::from_millis(((state.args.connect_timeout as u64) * 1000).clamp(1200, 3000))
+}
+
+fn choose_probe_mode(
+    b: &SocksBackends,
+    idx: usize,
+    now: u64,
+    ui_forced_full: bool,
+) -> ProbeMode {
+    if ui_forced_full {
+        return ProbeMode::Full;
+    }
+    let state_at = b.state_at(idx).unwrap_or(BackendState::Red);
+    let last_full_probe = b.last_full_probe_at(idx).unwrap_or(0);
+    let full_probe_due = last_full_probe == 0 || now.saturating_sub(last_full_probe) >= 15 * 60;
+    let probe_allowed = b.internet_probe_due_idx(idx, now);
+    if state_at == BackendState::Green && !full_probe_due {
+        ProbeMode::Light
+    } else if full_probe_due && probe_allowed {
+        ProbeMode::Full
+    } else {
+        ProbeMode::Light
+    }
 }
 
 fn total_traffic_bytes(state: &crate::AppState) -> u64 {
@@ -1258,7 +1525,16 @@ fn total_traffic_bytes(state: &crate::AppState) -> u64 {
         .saturating_add(state.stats.bytes_down.load(Ordering::Relaxed))
 }
 
-async fn maybe_sample_internet_ttl(state: &crate::AppState) -> Option<u32> {
+fn should_wake_backend_loops(
+    before_any_healthy: bool,
+    after_any_healthy: bool,
+    before_any_green: bool,
+    after_any_green: bool,
+) -> bool {
+    before_any_healthy != after_any_healthy || before_any_green != after_any_green
+}
+
+pub async fn maybe_sample_internet_ttl_for_ui(state: &crate::AppState) -> Option<u32> {
     let now = now_ts();
     let ui_open = state.runtime.ui_clients.load(Ordering::Relaxed) > 0;
     let min_gap_secs = if ui_open { 5 * 60 } else { 20 * 60 };
@@ -1295,38 +1571,69 @@ async fn refresh_backend_index_once(
         probe_backend_once(backend, timeout, auth, internet_ttl, probe_mode).await;
 
     let mut b = state.backends.lock();
+    let before_any_healthy = b.any_healthy();
+    let before_any_green = b.any_green();
     let changed = b.update(idx, socks_ping_ms.is_some(), err, socks_ping_ms, internet_ping_ms, ttl, probe_mode == ProbeMode::Full);
-    if b.any_green() {
+    let after_any_healthy = b.any_healthy();
+    let after_any_green = b.any_green();
+    let after_any_yellow = b.any_yellow();
+    if after_any_green {
         state.runtime.clear_direct_cooldown();
     }
+    // If Internet just dropped across all backends but SOCKS is still reachable
+    // (Yellow/no-GREEN state), immediately start the accelerated recovery ladder.
+    // This avoids waiting for a later burst of new connections before we begin
+    // trying to recover Internet availability again.
+    let should_start_recovery_ladder = changed
+        && !after_any_green
+        && after_any_yellow
+        && (before_any_green || !before_any_healthy || probe_mode == ProbeMode::Full);
+    let wake_backend = changed && should_wake_backend_loops(before_any_healthy, after_any_healthy, before_any_green, after_any_green);
     drop(b);
-    if changed {
-        state.runtime.wake();
+    if wake_backend {
+        state.runtime.backend_wake_throttled(750);
+    }
+    if should_start_recovery_ladder && state.runtime.try_enter_burst_recovery_ladder() {
+        let st_recover = state.clone();
+        spawn_burst_recovery_ladder(st_recover);
     }
     true
 }
 
 pub async fn refresh_backends_once(state: crate::AppState, timeout: Duration) {
     let _guard = state.runtime.refresh_lock.lock().await;
-    let internet_ttl = maybe_sample_internet_ttl(&state).await;
     let global_auth = global_backend_auth(&state.args);
-    let addrs: Vec<usize> = {
+    let refresh_plan: Vec<(usize, Option<(String, String)>, ProbeMode)> = {
         let b = state.backends.lock();
-        (0..b.len()).filter(|idx| b.addr_at(*idx).is_some()).collect()
+        let now = now_ts();
+        let mut full_idx: Option<usize> = None;
+        let mut plan = Vec::with_capacity(b.len());
+        for idx in 0..b.len() {
+            if b.addr_at(idx).is_none() {
+                continue;
+            }
+            let probe_mode = if full_idx.is_none() {
+                let pm = choose_probe_mode(&b, idx, now, false);
+                if pm == ProbeMode::Full {
+                    full_idx = Some(idx);
+                }
+                pm
+            } else {
+                ProbeMode::Light
+            };
+            plan.push((idx, b.effective_auth_at(idx, global_auth.as_ref()), probe_mode));
+        }
+        plan
     };
 
-    for idx in addrs {
-        let auth = {
-            let b = state.backends.lock();
-            b.effective_auth_at(idx, global_auth.as_ref())
-        };
+    for (idx, auth, probe_mode) in refresh_plan {
         let _ = refresh_backend_index_once(
             state.clone(),
             idx,
             timeout,
-            internet_ttl,
+            None,
             auth,
-            ProbeMode::Full,
+            probe_mode,
         ).await;
     }
 }
@@ -1338,26 +1645,125 @@ pub async fn refresh_one_backend_once_rr(state: crate::AppState, timeout: Durati
         let mut b = state.backends.lock();
         let idx = b.next_check_index_active_first(ACTIVE_BACKEND_WINDOW_SECS, AUDIT_BACKEND_EVERY);
         let Some(idx) = idx else { return false; };
-        let state_at = b.state_at(idx).unwrap_or(BackendState::Red);
-        let last_full_probe = b.last_full_probe_at(idx).unwrap_or(0);
         let now = now_ts();
-        let full_probe_due = last_full_probe == 0 || now.saturating_sub(last_full_probe) >= 15 * 60;
-        let probe_mode = if state_at == BackendState::Green && !full_probe_due {
-            ProbeMode::Light
-        } else {
-            ProbeMode::Full
-        };
+        let probe_mode = choose_probe_mode(&b, idx, now, false);
         let auth = b.effective_auth_at(idx, global_auth.as_ref());
         (Some(idx), probe_mode, auth)
     };
 
     let Some(idx) = idx else { return false; };
-    let internet_ttl = if probe_mode == ProbeMode::Full {
-        maybe_sample_internet_ttl(&state).await
-    } else {
-        None
+    refresh_backend_index_once(state.clone(), idx, timeout, None, auth, probe_mode).await
+}
+
+pub async fn burst_recheck_one_backend(state: crate::AppState) -> bool {
+    if !state.runtime.try_enter_burst_recheck() {
+        return false;
+    }
+
+    let res = async {
+        let _guard = state.runtime.refresh_lock.lock().await;
+        let global_auth = global_backend_auth(&state.args);
+        let choice = {
+            let mut b = state.backends.lock();
+            // Recovery ladder is intentionally more aggressive than normal background
+            // probes. It bypasses the regular per-backend internet-probe due/backoff
+            // gate so a recently-yellow backend can be revalidated quickly after the
+            // network comes back. The ladder cadence itself (2s / 5s / 15s) remains
+            // the safety limiter against overly frequent probing.
+            b.choose_burst_recheck_index(global_auth.as_ref(), true)
+        };
+        let Some((idx, auth)) = choice else { return false; };
+        let timeout = health_timeout(&state);
+        refresh_backend_index_once(state.clone(), idx, timeout, None, auth, ProbeMode::Full).await
+    }.await;
+
+    state.runtime.leave_burst_recheck();
+    res
+}
+
+
+
+pub fn spawn_burst_recovery_ladder(state: crate::AppState) {
+    std::thread::spawn(move || {
+        let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+            Ok(rt) => rt,
+            Err(_) => {
+                state.runtime.leave_burst_recovery_ladder();
+                return;
+            }
+        };
+        rt.block_on(async move {
+            burst_recovery_ladder_loop(state).await;
+        });
+    });
+}
+
+pub async fn burst_recovery_ladder_loop(state: crate::AppState) {
+    let started = tokio::time::Instant::now();
+    let mut attempt = 0u32;
+
+    loop {
+        if state.backends.lock().any_green() {
+            break;
+        }
+
+        let elapsed = started.elapsed();
+        if elapsed >= Duration::from_secs(30 + 60 + 5 * 60) {
+            break;
+        }
+
+        let _ = burst_recheck_one_backend(state.clone()).await;
+        attempt = attempt.saturating_add(1);
+
+        if state.backends.lock().any_green() {
+            break;
+        }
+
+        let elapsed = started.elapsed();
+        let sleep_for = if elapsed < Duration::from_secs(30) {
+            Duration::from_secs(2)
+        } else if elapsed < Duration::from_secs(30 + 60) {
+            Duration::from_secs(5)
+        } else {
+            Duration::from_secs(15)
+        };
+
+        tokio::select! {
+            _ = tokio::time::sleep(sleep_for) => {},
+            _ = state.runtime.backend_wakeup.notified() => {
+                if state.backends.lock().any_green() {
+                    break;
+                }
+            },
+        }
+    }
+
+    let _ = attempt;
+    state.runtime.leave_burst_recovery_ladder();
+}
+
+pub async fn refresh_backends_for_ui(state: crate::AppState, timeout: Duration) {
+    let _guard = state.runtime.refresh_lock.lock().await;
+    let internet_ttl = maybe_sample_internet_ttl_for_ui(&state).await;
+    let global_auth = global_backend_auth(&state.args);
+    let refresh_plan: Vec<(usize, Option<(String, String)>)> = {
+        let b = state.backends.lock();
+        (0..b.len())
+            .filter(|idx| b.addr_at(*idx).is_some())
+            .map(|idx| (idx, b.effective_auth_at(idx, global_auth.as_ref())))
+            .collect()
     };
-    refresh_backend_index_once(state.clone(), idx, timeout, internet_ttl, auth, probe_mode).await
+
+    for (idx, auth) in refresh_plan {
+        let _ = refresh_backend_index_once(
+            state.clone(),
+            idx,
+            timeout,
+            internet_ttl,
+            auth,
+            ProbeMode::Full,
+        ).await;
+    }
 }
 
 // --- background tasks
@@ -1402,21 +1808,30 @@ pub async fn backend_health_loop(state: crate::AppState) {
             false
         };
 
+        let active = state.conns.len();
+        let ui_open = state.runtime.ui_clients.load(Ordering::Relaxed) > 0;
+        let quiet_for = no_traffic_since
+            .map(|ts| now.saturating_duration_since(ts))
+            .unwrap_or_default();
+        let has_direct = state.conns.has_mode("direct");
+        let connecting_now = state.conns.count_modes(&["pending", "wait_backend", "socks_connecting"]);
+        let urgent_work = has_direct || connecting_now > 0;
+        let idle_without_work = !ui_open && !urgent_work && quiet_for >= Duration::from_secs(60);
+        let deep_idle = !ui_open && active == 0 && quiet_for >= Duration::from_secs(3 * 60);
+        let quiet_lingering_only = idle_without_work && active > 0;
+
         let current_desired = if had_traffic {
             if avg_bps >= 100.0 * 1024.0 {
                 TrafficCadence::High
             } else {
                 TrafficCadence::Normal
             }
+        } else if urgent_work {
+            TrafficCadence::Normal
+        } else if quiet_for >= Duration::from_secs(10 * 60) {
+            TrafficCadence::Quiet120
         } else {
-            let quiet_for = no_traffic_since
-                .map(|ts| now.saturating_duration_since(ts))
-                .unwrap_or_default();
-            if quiet_for >= Duration::from_secs(10 * 60) {
-                TrafficCadence::Quiet120
-            } else {
-                TrafficCadence::Quiet60
-            }
+            TrafficCadence::Quiet60
         };
 
         if current_desired == desired_cadence {
@@ -1429,37 +1844,66 @@ pub async fn backend_health_loop(state: crate::AppState) {
             applied_cadence = current_desired;
         }
 
-        let green_available = state.backends.lock().any_green();
-        let refresh_mode = if force_full_sweep || !green_available || woke_from_quiet {
-            HealthRefreshMode::FullSweep
-        } else {
-            HealthRefreshMode::RoundRobinOne
-        };
+        let allow_refresh = ui_open || had_traffic || urgent_work || quiet_for < Duration::from_secs(2 * 60);
+        if allow_refresh {
+            let green_available = state.backends.lock().any_green();
+            let refresh_mode = if force_full_sweep || !green_available || woke_from_quiet {
+                HealthRefreshMode::FullSweep
+            } else {
+                HealthRefreshMode::RoundRobinOne
+            };
 
-        let timeout = health_timeout(&state);
-        match refresh_mode {
-            HealthRefreshMode::FullSweep => refresh_backends_once(state.clone(), timeout).await,
-            HealthRefreshMode::RoundRobinOne => {
-                let _ = refresh_one_backend_once_rr(state.clone(), timeout).await;
+            let timeout = health_timeout(&state);
+            match refresh_mode {
+                HealthRefreshMode::FullSweep => refresh_backends_once(state.clone(), timeout).await,
+                HealthRefreshMode::RoundRobinOne => {
+                    let _ = refresh_one_backend_once_rr(state.clone(), timeout).await;
+                }
             }
+            force_full_sweep = false;
         }
-        force_full_sweep = false;
 
-        let interval = applied_cadence.interval();
+        let interval = if deep_idle {
+            // In deep idle, avoid periodic network probes entirely.
+            // Wake on backend-state changes / first new connection, and keep only
+            // a very rare safety tick so phones can actually sleep.
+            Duration::from_secs(45 * 60)
+        } else if quiet_lingering_only {
+            if quiet_for >= Duration::from_secs(45 * 60) {
+                Duration::from_secs(45 * 60)
+            } else if quiet_for >= Duration::from_secs(20 * 60) {
+                Duration::from_secs(20 * 60)
+            } else if quiet_for >= Duration::from_secs(10 * 60) {
+                Duration::from_secs(10 * 60)
+            } else if quiet_for >= Duration::from_secs(5 * 60) {
+                Duration::from_secs(5 * 60)
+            } else {
+                Duration::from_secs(2 * 60)
+            }
+        } else if idle_without_work {
+            if quiet_for >= Duration::from_secs(20 * 60) {
+                Duration::from_secs(20 * 60)
+            } else if quiet_for >= Duration::from_secs(5 * 60) {
+                Duration::from_secs(5 * 60)
+            } else {
+                applied_cadence.interval()
+            }
+        } else {
+            applied_cadence.interval()
+        };
 
         last_total_bytes = total_bytes;
         last_sample_at = now;
 
         tokio::select! {
             _ = tokio::time::sleep(interval) => {},
-            _ = state.runtime.wakeup.notified() => {
-                if no_traffic_since.is_some() {
-                    force_full_sweep = true;
-                }
+            _ = state.runtime.backend_wakeup.notified() => {
+                force_full_sweep = true;
             }
         }
     }
 }
+
 
 #[derive(Clone, Debug)]
 struct InternetProbeSummary {
@@ -1514,58 +1958,96 @@ pub async fn proxy_enforce_loop(state: crate::AppState) {
     let mut had_green = false;
 
     let mut idle_since: Option<tokio::time::Instant> = None;
+    let mut last_total_bytes = total_traffic_bytes(&state);
+    let mut no_traffic_since: Option<tokio::time::Instant> = None;
 
     loop {
-        let green = state.backends.lock().any_green();
+        let now = tokio::time::Instant::now();
+        let total_bytes = total_traffic_bytes(&state);
+        let had_traffic = total_bytes.saturating_sub(last_total_bytes) > 0;
+        if had_traffic {
+            no_traffic_since = None;
+        } else if no_traffic_since.is_none() {
+            no_traffic_since = Some(now);
+        }
+        let quiet_for = no_traffic_since
+            .map(|ts| now.saturating_duration_since(ts))
+            .unwrap_or_default();
 
-        if green {
+        let active = state.conns.len();
+        let ui = state.runtime.ui_clients.load(Ordering::Relaxed);
+        let has_direct = state.conns.has_mode("direct");
+        let connecting_now = state.conns.count_modes(&["pending", "wait_backend", "socks_connecting"]);
+        let quiet_lingering_only = ui == 0
+            && active > 0
+            && !has_direct
+            && connecting_now == 0
+            && quiet_for >= Duration::from_secs(60);
+        let deep_idle = ui == 0 && active == 0 && quiet_for >= Duration::from_secs(3 * 60);
+        let green = if deep_idle { false } else { state.backends.lock().any_green() };
+        let recovery_edge = !had_green && green;
+        let needs_enforce = !deep_idle && (has_direct || connecting_now > 0 || recovery_edge);
+
+        if needs_enforce {
             // Safety net: if any DIRECT connections exist while GREEN backends are available,
             // cancel them. This enforces the "no bypass" rule.
-            let killed_direct = state.conns.kill_mode("direct");
-            if killed_direct > 0 {
-                tracing::info!("proxy enforce: cancelled {} DIRECT connections (GREEN available)", killed_direct);
+            if green && has_direct {
+                let killed_direct = state.conns.kill_mode("direct");
+                if killed_direct > 0 {
+                    tracing::info!("proxy enforce: cancelled {} DIRECT connections (GREEN available)", killed_direct);
+                }
             }
 
             // On recovery edge (no green -> green), also cancel SOCKS connections that never transferred any data.
-            if !had_green {
+            if recovery_edge {
                 let killed_stuck = state.conns.kill_stuck_socks_zero_traffic(15);
                 if killed_stuck > 0 {
                     tracing::info!("proxy enforce: cancelled {} stuck SOCKS connections after recovery", killed_stuck);
                 }
             }
+
+            if connecting_now > 0 {
+                let killed_connecting = state.conns.kill_stuck_connecting(12);
+                if killed_connecting > 0 {
+                    tracing::info!("proxy enforce: cancelled {} stuck pending/connecting connections", killed_connecting);
+                }
+            }
         }
 
         had_green = green;
+        last_total_bytes = total_bytes;
 
-        let killed_connecting = state.conns.kill_stuck_connecting(12);
-        if killed_connecting > 0 {
-            tracing::info!("proxy enforce: cancelled {} stuck pending/connecting connections", killed_connecting);
-        }
-
-        // When idle (no UI + no conns), slow down enforcement checks.
-        let ui = state.runtime.ui_clients.load(Ordering::Relaxed);
-        let active = state.conns.len();
-        let is_idle = ui == 0 && active == 0;
-
-        let interval = if is_idle {
+        let interval = if deep_idle {
             if idle_since.is_none() {
                 idle_since = Some(tokio::time::Instant::now());
             }
-            // While sleeping, enforce rarely (there should be no conns anyway).
             let idle_for = idle_since.unwrap().elapsed();
-            if idle_for < Duration::from_secs(10 * 60) {
-                Duration::from_secs(60)
+            if idle_for < Duration::from_secs(15 * 60) {
+                Duration::from_secs(20 * 60)
             } else {
-                Duration::from_secs(120)
+                Duration::from_secs(30 * 60)
+            }
+        } else if needs_enforce {
+            idle_since = None;
+            Duration::from_secs(40)
+        } else if quiet_lingering_only {
+            if quiet_for >= Duration::from_secs(45 * 60) {
+                Duration::from_secs(45 * 60)
+            } else if quiet_for >= Duration::from_secs(20 * 60) {
+                Duration::from_secs(20 * 60)
+            } else if quiet_for >= Duration::from_secs(10 * 60) {
+                Duration::from_secs(10 * 60)
+            } else {
+                Duration::from_secs(5 * 60)
             }
         } else {
             idle_since = None;
-            Duration::from_secs(40)
+            Duration::from_secs(10 * 60)
         };
 
         tokio::select! {
             _ = tokio::time::sleep(interval) => {},
-            _ = state.runtime.wakeup.notified() => {
+            _ = state.runtime.backend_wakeup.notified() => {
                 idle_since = None;
             }
         }
@@ -1620,30 +2102,26 @@ async fn check_internet_via_backend(
     timeout: Duration,
     auth: Option<(String, String)>,
 ) -> InternetProbeSummary {
-    // Probe sequentially to avoid bursty network wakeups on phones.
-    // Consider backend internet-usable if either:
-    // - at least one raw IP probe AND at least one domain probe succeed, or
-    // - at least two different IP probes succeed.
+    // Keep Internet validation cheap: one raw IP target + one domain target.
+    // This is enough to distinguish a merely reachable SOCKS backend from
+    // one that can really pass Internet traffic without the old fan-out burst.
     let per_probe_timeout = timeout.min(Duration::from_millis(1500));
 
     let ip_targets = vec![
         TargetAddr::Ip(SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(1, 1, 1, 1)), 443)),
-        TargetAddr::Ip(SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(1, 0, 0, 1)), 443)),
-        TargetAddr::Ip(SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(8, 8, 8, 8)), 53)),
     ];
     let domain_targets = vec![
-        TargetAddr::Domain("example.com".to_string(), 80),
         TargetAddr::Domain("cloudflare.com".to_string(), 443),
     ];
 
-    let (ip_ok, ip_best) = first_successful_probe(backend, per_probe_timeout, auth.clone(), ip_targets, 2).await;
-    let (domain_ok, domain_best) = if ip_ok >= 2 {
-        (0usize, None)
-    } else {
+    let (ip_ok, ip_best) = first_successful_probe(backend, per_probe_timeout, auth.clone(), ip_targets, 1).await;
+    let (domain_ok, domain_best) = if ip_ok >= 1 {
         first_successful_probe(backend, per_probe_timeout, auth, domain_targets, 1).await
+    } else {
+        (0usize, None)
     };
 
-    let ok = (ip_ok >= 1 && domain_ok >= 1) || ip_ok >= 2;
+    let ok = ip_ok >= 1 && domain_ok >= 1;
     let best_ping_ms = match (ip_best, domain_best) {
         (Some(a), Some(b)) => Some(a.min(b)),
         (Some(a), None) => Some(a),
@@ -1653,16 +2131,16 @@ async fn check_internet_via_backend(
 
     let error_summary = if ok {
         if ip_ok >= 2 {
-            format!("probe ok (ip={}/3, domain=skipped)", ip_ok)
+            format!("probe ok (ip={}/1, domain=skipped)", ip_ok)
         } else {
-            format!("probe ok (ip={}/3, domain={}/2)", ip_ok, domain_ok)
+            format!("probe ok (ip={}/1, domain={}/1)", ip_ok, domain_ok)
         }
     } else if ip_ok >= 1 && domain_ok == 0 {
-        format!("internet probes weak: raw IP works (ip={}/3) but domain/DNS failed (domain=0/2)", ip_ok)
+        format!("internet probes weak: raw IP works (ip={}/1) but domain/DNS failed (domain=0/1)", ip_ok)
     } else if ip_ok == 0 && domain_ok >= 1 {
-        format!("internet probes weak: domain worked (domain={}/2) but raw IP failed (ip=0/3)", domain_ok)
+        format!("internet probes weak: domain worked (domain={}/1) but raw IP failed (ip=0/1)", domain_ok)
     } else {
-        format!("internet probes failed (ip={}/3, domain={}/2)", ip_ok, domain_ok)
+        format!("internet probes failed (ip={}/1, domain={}/1)", ip_ok, domain_ok)
     };
 
     InternetProbeSummary { ok, best_ping_ms, error_summary }
@@ -1707,16 +2185,21 @@ async fn ping_once(host: String) -> Result<Option<(f64, u32)>> {
 pub async fn wait_for_backend_recovery(state: crate::AppState, max_wait: Duration) -> bool {
     let deadline = tokio::time::Instant::now() + max_wait;
     let refresh_timeout = Duration::from_millis(1500);
-    let quiet_wait = Duration::from_millis(450);
+    let quiet_wait = Duration::from_millis(1500);
+    let recovery_leader = state.runtime.try_enter_recovery_waiter();
 
     while tokio::time::Instant::now() < deadline {
         if state.backends.lock().any_healthy() {
+            if recovery_leader {
+                state.runtime.leave_recovery_waiter();
+            }
             return true;
         }
 
-        if state.runtime.try_begin_forced_refresh(750) {
+        if recovery_leader && state.runtime.try_begin_forced_refresh(4000) {
             refresh_backends_once(state.clone(), refresh_timeout).await;
             if state.backends.lock().any_healthy() {
+                state.runtime.leave_recovery_waiter();
                 return true;
             }
         }
@@ -1728,8 +2211,11 @@ pub async fn wait_for_backend_recovery(state: crate::AppState, max_wait: Duratio
         let sleep_for = (deadline - now).min(quiet_wait);
         tokio::select! {
             _ = tokio::time::sleep(sleep_for) => {},
-            _ = state.runtime.wakeup.notified() => {},
+            _ = state.runtime.backend_wakeup.notified() => {},
         }
+    }
+    if recovery_leader {
+        state.runtime.leave_recovery_waiter();
     }
     false
 }

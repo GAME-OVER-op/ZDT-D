@@ -286,14 +286,6 @@ hr.sep{border:0;border-top:1px solid rgba(255,255,255,.06); margin:12px 0}
         <button class="btn" id="btn_apply_dl">Apply</button>
       </div>
       <div class="small" style="margin-top:10px;">Current: <b id="dl_limit_current">∞</b></div>
-      <hr class="sep">
-      <h2>System</h2>
-      <div class="split">
-        <div class="kv"><div class="k">CPU</div><div class="v" id="sys_cpu">0%</div></div>
-        <div class="kv"><div class="k">RAM used</div><div class="v" id="sys_mem">0%</div></div>
-        <div class="kv"><div class="k">Process RSS</div><div class="v" id="sys_rss">0 KB</div></div>
-        <div class="kv"><div class="k">Net RX / TX</div><div class="v"><span id="sys_rx">0 B</span> / <span id="sys_tx">0 B</span></div></div>
-      </div>
     </div>
 
     <div class="card">
@@ -524,14 +516,6 @@ hr.sep{border:0;border-top:1px solid rgba(255,255,255,.06); margin:12px 0}
     }
   }
 
-  function setSystem(sys){
-    $('sys_cpu').textContent = (Number(sys.cpu_percent||0)).toFixed(1)+'%';
-    $('sys_mem').textContent = (Number(sys.mem_used_percent||0)).toFixed(1)+'%';
-    $('sys_rss').textContent = (Number(sys.proc_rss_kb||0)).toFixed(0)+' KB';
-    $('sys_rx').textContent = fmtBytes(sys.net_rx_bytes||0);
-    $('sys_tx').textContent = fmtBytes(sys.net_tx_bytes||0);
-  }
-
   function setDownloadLimit(mbit){
     const dl = Number(mbit||0);
     $('dl_limit_current').textContent = (dl>0) ? dl.toFixed(2)+' Mbit/s' : '∞';
@@ -550,7 +534,6 @@ hr.sep{border:0;border-top:1px solid rgba(255,255,255,.06); margin:12px 0}
 
     setPorts(s.ports || {});
     setDownloadLimit(s.download_limit_mbit);
-    setSystem(s.system || {});
     setSockStatus(s.backends || []);
     setBackends(s.backends || []);
     setConns(s.conns || []);

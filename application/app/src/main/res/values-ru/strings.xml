@@ -540,6 +540,10 @@
     <string name="prog_update_error_archive_changed">Структура архива изменилась. Автообновление невозможно.</string>
     <string name="prog_update_error_install_failed">Не удалось установить</string>
     <string name="prog_update_status_installed">Установлено</string>
+    <string name="enabled_card_program_title">Состояние программы</string>
+    <string name="enabled_card_profile_title">Состояние профиля</string>
+    <string name="enabled_state_on">Включено</string>
+    <string name="enabled_state_off">Выключено</string>
     <string name="enabled_card_apply_hint">Применится после остановки/запуска</string>
     <string name="byedpi_start_args_title">Аргументы запуска</string>
     <string name="byedpi_restart_args_title">Аргументы перезапуска</string>

@@ -74,10 +74,13 @@ pub fn apply(
                 let mut it = line.split('=');
                 let _app = it.next().unwrap_or("");
                 let uid = it.next().unwrap_or("").trim();
-                if uid.is_empty() || !uid.chars().next().unwrap_or('x').is_ascii_digit() {
+                let Ok(uid_num) = uid.parse::<u32>() else {
+                    continue;
+                };
+                if uid_num == 0 {
                     continue;
                 }
-                uids.push(uid.to_string());
+                uids.push(uid_num.to_string());
             }
 
             let total = uids.len();

@@ -30,7 +30,7 @@ pub fn api_token_path() -> PathBuf {
 }
 
 pub fn api_setting_json_path() -> PathBuf {
-    Path::new(API_DIR).join("setting.json")
+    Path::new(SETTING_DIR).join("setting.json")
 }
 
 
@@ -116,6 +116,10 @@ pub struct ApiSettings {
     pub hotspot_t2s_singbox_profile: String,
     #[serde(default)]
     pub hotspot_t2s_wireproxy_profile: String,
+    #[serde(default)]
+    pub allow_loopback_redirect: bool,
+    #[serde(default)]
+    pub selinux_permissive_enabled: bool,
 }
 
 impl Default for ApiSettings {
@@ -126,6 +130,8 @@ impl Default for ApiSettings {
             hotspot_t2s_target: String::new(),
             hotspot_t2s_singbox_profile: String::new(),
             hotspot_t2s_wireproxy_profile: String::new(),
+            allow_loopback_redirect: false,
+            selinux_permissive_enabled: false,
         }
     }
 }

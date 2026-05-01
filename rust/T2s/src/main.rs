@@ -4,7 +4,6 @@ mod transparent;
 mod rules;
 mod stats;
 mod web;
-mod system;
 mod sniff;
 
 use anyhow::{Context, Result};
@@ -22,7 +21,6 @@ pub struct AppState {
     pub conns: Arc<stats::ConnRegistry>,
     pub rules: Arc<rules::Rules>,
     pub backends: Arc<Mutex<stats::SocksBackends>>,
-    pub system: Arc<Mutex<system::SystemStats>>,
     pub events: broadcast::Sender<stats::Event>,
     pub semaphore: Arc<Semaphore>,
 }
@@ -121,12 +119,25 @@ async fn sniff_client_host(client: &tokio::net::TcpStream, mode: SniffMode) -> O
     None
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()))
         .init();
 
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get().min(3))
+        .unwrap_or(1);
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(workers)
+        .enable_all()
+        .build()
+        .context("build tokio runtime")?;
+
+    rt.block_on(async_main(workers))
+}
+
+async fn async_main(workers: usize) -> Result<()> {
     let args = Args::parse_and_normalize().context("parse args")?;
 
     let rules = rules::Rules::load_from_env();
@@ -141,7 +152,6 @@ async fn main() -> Result<()> {
     let (events, _rx) = broadcast::channel(1024);
 
     let backends = Arc::new(Mutex::new(stats::SocksBackends::new(&args)?));
-    let system_stats = Arc::new(Mutex::new(system::SystemStats::default()));
     let semaphore = Arc::new(Semaphore::new(args.max_conns as usize));
 
     let state = AppState {
@@ -151,7 +161,6 @@ async fn main() -> Result<()> {
         conns,
         rules: Arc::new(rules),
         backends,
-        system: system_stats.clone(),
         events,
         semaphore,
     };
@@ -172,51 +181,7 @@ async fn main() -> Result<()> {
         });
     }
 
-    // Background: system stats collector (/proc), optimized for Android.
-    // To save battery on weaker phones, we only collect expensive /proc stats while the Web UI is open.
-    {
-        let st = state.clone();
-        tokio::spawn(async move {
-            let mut prev = None;
-            let mut idle_since: Option<tokio::time::Instant> = None;
-            loop {
-                let ui = st.runtime.ui_clients.load(std::sync::atomic::Ordering::Relaxed);
-                if ui == 0 {
-                    idle_since = None;
-                    tokio::select! {
-                        _ = st.runtime.wakeup.notified() => {},
-                        _ = tokio::time::sleep(Duration::from_secs(60)) => {},
-                    }
-                    continue;
-                }
 
-                let (s, cpu) = system::collect(prev);
-                prev = Some(cpu);
-                *st.system.lock() = s;
-
-                let active = st.conns.len();
-                let interval = if active == 0 {
-                    if idle_since.is_none() {
-                        idle_since = Some(tokio::time::Instant::now());
-                    }
-                    let idle_for = idle_since.unwrap().elapsed();
-                    if idle_for < Duration::from_secs(10 * 60) {
-                        Duration::from_secs(20)
-                    } else {
-                        Duration::from_secs(40)
-                    }
-                } else {
-                    idle_since = None;
-                    Duration::from_secs(10)
-                };
-
-                tokio::select! {
-                    _ = tokio::time::sleep(interval) => {},
-                    _ = st.runtime.wakeup.notified() => {},
-                }
-            }
-        });
-    }
 
     // Web server (optional)
     if args.web_socket {
@@ -255,7 +220,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    info!("Started. Press Ctrl+C to stop.");
+    info!("Started with {} Tokio worker thread(s). Press Ctrl+C to stop.", workers);
     signal::ctrl_c().await?;
     info!("Shutting down.");
     Ok(())
@@ -348,6 +313,24 @@ async fn run_tcp_on(state: AppState, addr: SocketAddr, ingress: stats::Ingress) 
             }
         };
         let token = state.conns.set_cancel_token(cid);
+        if state.conns.len() == 1 {
+            state.runtime.backend_wake_throttled(250);
+        }
+
+        // If a small burst of new connections arrives while all backends are
+        // reachable but currently have no confirmed Internet access, temporarily
+        // accelerate Internet rechecks until one backend turns green again.
+        if state.runtime.note_new_connection_spike(2, Duration::from_secs(5)) {
+            let should_start_recovery_ladder = {
+                let b = state.backends.lock();
+                !b.any_green() && b.any_yellow()
+            };
+            if should_start_recovery_ladder && state.runtime.try_enter_burst_recovery_ladder() {
+                let st_burst = state.clone();
+                stats::spawn_burst_recovery_ladder(st_burst);
+            }
+        }
+
         if state.runtime.ui_clients.load(std::sync::atomic::Ordering::Relaxed) > 0 {
             let _ = state.events.send(stats::Event::conn_open(cid, peer));
         }
@@ -374,8 +357,8 @@ async fn run_tcp_on(state: AppState, addr: SocketAddr, ingress: stats::Ingress) 
 }
 
 async fn proxy_tcp(
-    mut client: tokio::net::TcpStream,
-    peer: SocketAddr,
+    client: tokio::net::TcpStream,
+    _peer: SocketAddr,
     cid: u64,
     state: AppState,
     cancel: tokio_util::sync::CancellationToken,
@@ -874,14 +857,16 @@ async fn connect_socks(
                 state.stats.inc_socks_fail();
                 let err_text = format!("{:#}", e);
                 let mut b = state.backends.lock();
-                if let Some(inflight) = b.inflight_connects(backend) {
+                let wake_backend = if let Some(inflight) = b.inflight_connects(backend) {
                     let prefix = if is_soft_backend_failure(&err_text) { "soft runtime failure" } else { "runtime failure" };
-                    b.mark_backend_failed(backend, format!("{}: {} (inflight={})", prefix, err_text, inflight));
+                    b.mark_backend_failed(backend, format!("{}: {} (inflight={})", prefix, err_text, inflight))
                 } else {
-                    b.mark_backend_failed(backend, err_text);
-                }
+                    b.mark_backend_failed(backend, err_text)
+                };
                 drop(b);
-                state.runtime.wake();
+                if wake_backend {
+                    state.runtime.backend_wake_throttled(2500);
+                }
                 state.conns.set_mode(cid, "pending");
                 // try next backend
             }

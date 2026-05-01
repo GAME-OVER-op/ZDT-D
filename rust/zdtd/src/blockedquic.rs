@@ -346,23 +346,33 @@ fn install_rules(uids: &[u32]) -> Result<()> {
 pub fn refresh_runtime(services_running: bool) -> Result<bool> {
     ensure_layout()?;
     let enabled = load_enabled_json()?.is_enabled();
+    logging::info(&format!(
+        "blockedquic refresh begin: enabled={}, services_running={}",
+        enabled, services_running
+    ));
     if !enabled {
+        logging::info("blockedquic refresh: disabled -> clearing rules");
         clear_rules()?;
         return Ok(false);
     }
 
+    logging::info("blockedquic refresh: rebuilding uid list");
     let _ = rebuild_out_program()?;
     if !services_running {
+        logging::info("blockedquic refresh: services not running -> clearing rules");
         clear_rules()?;
         return Ok(false);
     }
 
     let uids = read_out_uids()?;
+    logging::info(&format!("blockedquic refresh: uid count={}", uids.len()));
     if uids.is_empty() {
+        logging::info("blockedquic refresh: no uids -> clearing rules");
         clear_rules()?;
         return Ok(false);
     }
 
+    logging::info("blockedquic refresh: installing IPv4/IPv6 UDP/443 rules");
     install_rules(&uids)?;
     logging::info(&format!(
         "blockedquic active: {} uid(s), UDP/443 deny on IPv4+IPv6",

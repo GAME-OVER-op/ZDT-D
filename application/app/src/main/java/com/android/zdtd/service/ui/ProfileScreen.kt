@@ -53,7 +53,7 @@ fun ProfileScreen(
     )
 
     EnabledCard(
-      title = stringResource(R.string.profile_enabled),
+      title = stringResource(R.string.enabled_card_profile_title),
       checked = prof?.enabled ?: false,
       onCheckedChange = { v -> actions.setProfileEnabled(programId, profile, v) },
     )

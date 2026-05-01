@@ -129,12 +129,49 @@ if !any_main_service_running() {
     if proxyinfo_enabled {
         crate::logging::user_info("Настройка защиты");
     }
-    if let Err(e) = crate::proxyinfo::refresh_runtime(true) {
-        log::warn!("proxyInfo apply failed after start: {e:#}");
-        crate::logging::user_warn("proxyInfo: не удалось применить защиту");
+    log::info!("startup: applying proxyinfo");
+    let proxyinfo_active = match crate::proxyinfo::refresh_runtime(true) {
+        Ok(active) => {
+            log::info!("startup: proxyinfo applied active={active}");
+            if active {
+                crate::logging::user_info("proxyInfo: защита применена");
+            } else if proxyinfo_enabled {
+                crate::logging::user_warn("proxyInfo: защита не активировалась");
+            }
+            active
+        }
+        Err(e) => {
+            log::warn!("proxyInfo apply failed after start: {e:#}");
+            crate::logging::user_warn("proxyInfo: не удалось применить защиту");
+            false
+        }
+    };
+
+    let blockedquic_enabled = crate::blockedquic::load_enabled_json()
+        .map(|v| v.is_enabled())
+        .unwrap_or(false);
+    if blockedquic_enabled {
+        crate::logging::user_info("Применение BlockedQUIC");
     }
-    if let Err(e) = crate::blockedquic::refresh_runtime(true) {
-        log::warn!("blockedquic apply failed after start: {e:#}");
+    log::info!("startup: applying blockedquic");
+    match crate::blockedquic::refresh_runtime(true) {
+        Ok(active) => {
+            log::info!("startup: blockedquic applied active={active}");
+            if active {
+                crate::logging::user_info("BlockedQUIC: правила применены");
+            } else if blockedquic_enabled {
+                crate::logging::user_warn("BlockedQUIC: не активирован после запуска");
+            }
+        }
+        Err(e) => {
+            log::warn!("blockedquic apply failed after start: {e:#}");
+            crate::logging::user_warn("BlockedQUIC: ошибка применения");
+        }
+    }
+
+    if proxyinfo_active {
+        log::info!("startup: starting proxyinfo scan detector");
+        crate::scan_detector::start();
     }
 
     crate::logging::user_info("Запуск завершён");

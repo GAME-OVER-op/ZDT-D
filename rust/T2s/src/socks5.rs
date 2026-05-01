@@ -4,7 +4,7 @@ use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream};
 
 async fn io_step<T, F>(timeout: Duration, label: &'static str, fut: F) -> Result<T>
 where
-    F: Future<Output = std::io::Result<T>>,
+    F: Future<Output = std::io::Result<T>> + Send,
 {
     tokio::time::timeout(timeout, fut)
         .await

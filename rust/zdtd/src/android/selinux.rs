@@ -2,7 +2,10 @@ use anyhow::{Context, Result};
 use log::{info, warn};
 use std::{fs, path::Path};
 
-use crate::shell::{self, Capture};
+use crate::{
+    settings,
+    shell::{self, Capture},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SelinuxMode {
@@ -56,6 +59,16 @@ fn parse_getenforce(s: &str) -> SelinuxMode {
     }
 }
 
+fn temporary_permissive_enabled() -> bool {
+    match settings::load_api_settings() {
+        Ok(st) => st.selinux_permissive_enabled,
+        Err(e) => {
+            warn!("failed to load SELinux setting; defaulting to disabled: {e:#}");
+            false
+        }
+    }
+}
+
 /// Set SELinux enforcing/permissive.
 /// Uses `setenforce 1|0`. If command is missing/fails, returns error.
 pub fn set_enforce(enforcing: bool) -> Result<()> {
@@ -77,18 +90,34 @@ impl SelinuxGuard {
     /// Otherwise returns a guard that does nothing.
     pub fn enter_permissive_if_enforcing() -> Result<Self> {
         let prev = get_mode()?;
+        if !temporary_permissive_enabled() {
+            info!("SELinux temporary switch disabled in settings -> no change");
+            return Ok(Self {
+                prev,
+                changed: false,
+            });
+        }
         match prev {
             SelinuxMode::Enforcing => {
                 info!("SELinux is Enforcing -> switching to Permissive (temporary)");
                 if let Err(e) = set_enforce(false) {
                     warn!("failed to setenforce 0: {e:?}");
-                    return Ok(Self { prev, changed: false });
+                    return Ok(Self {
+                        prev,
+                        changed: false,
+                    });
                 }
-                Ok(Self { prev, changed: true })
+                Ok(Self {
+                    prev,
+                    changed: true,
+                })
             }
             _ => {
                 info!("SELinux mode is {} -> no change", prev.as_str());
-                Ok(Self { prev, changed: false })
+                Ok(Self {
+                    prev,
+                    changed: false,
+                })
             }
         }
     }

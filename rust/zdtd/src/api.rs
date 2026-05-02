@@ -169,8 +169,11 @@ fn safe_module_path(rel: &str) -> Result<PathBuf> {
     if rel.starts_with('/') {
         anyhow::bail!("absolute paths are not allowed");
     }
-    if !(rel.starts_with("working_folder/") || rel.starts_with("setting/")) {
-        anyhow::bail!("path must start with working_folder/ or setting/");
+    // Generic FS API is intentionally limited to runtime/profile data.
+    // Do not expose setting/* here: settings, start state and iptables backups have
+    // dedicated API paths and must not be writable through this broad file endpoint.
+    if !rel.starts_with("working_folder/") {
+        anyhow::bail!("path must start with working_folder/");
     }
 
     let p = Path::new(rel);
@@ -256,6 +259,9 @@ fn program_display_name<'a>(id: &'a str) -> &'a str {
         "nfqws" => "zapret",
         "nfqws2" => "zapret2",
         "operaproxy" => "opera-proxy",
+        "openvpn" => "openvpn",
+        "tun2socks" => "tun2socks",
+        "myvpn" => "myvpn",
         _ => id,
     }
 }
@@ -1457,6 +1463,137 @@ fn create_myprogram_profile_next() -> Result<String> {
     Ok(next)
 }
 
+fn openvpn_active_path() -> PathBuf { crate::programs::openvpn::active_path() }
+fn openvpn_profiles_root() -> PathBuf { crate::programs::openvpn::profiles_root() }
+fn openvpn_deleted_root() -> PathBuf { program_root("openvpn").join(".deleted") }
+fn openvpn_deleted_profiles_root() -> PathBuf { openvpn_deleted_root().join("profiles") }
+fn openvpn_profile_root(profile: &str) -> PathBuf { crate::programs::openvpn::profile_root(profile) }
+
+fn ensure_openvpn_profile_layout(profile: &str) -> Result<()> {
+    crate::programs::openvpn::ensure_profile_layout(profile)
+}
+
+fn create_openvpn_profile_named(requested: &str) -> Result<String> {
+    let name = requested.trim();
+    crate::programs::openvpn::ensure_valid_profile_name(name)?;
+    crate::programs::openvpn::ensure_root_layout()?;
+    let active_path = openvpn_active_path();
+    let mut active: ProfilesActive = read_json(&active_path).unwrap_or_default();
+    if active.profiles.contains_key(name) { anyhow::bail!("profile already exists"); }
+    active.profiles.insert(name.to_string(), ProfileState { enabled: false });
+    write_json_pretty(&active_path, &active)?;
+    ensure_openvpn_profile_layout(name)?;
+    Ok(name.to_string())
+}
+
+fn create_openvpn_profile_next() -> Result<String> {
+    crate::programs::openvpn::ensure_root_layout()?;
+    let active: ProfilesActive = read_json(&openvpn_active_path()).unwrap_or_default();
+    for n in 1..=9999u32 {
+        let next = format!("profile{n}");
+        if next.len() > 10 { break; }
+        if !active.profiles.contains_key(&next) {
+            create_openvpn_profile_named(&next)?;
+            return Ok(next);
+        }
+    }
+    anyhow::bail!("no free openvpn profile name")
+}
+
+fn tun2socks_active_path() -> PathBuf { crate::programs::tun2socks::active_path() }
+fn tun2socks_profiles_root() -> PathBuf { crate::programs::tun2socks::profiles_root() }
+fn tun2socks_deleted_root() -> PathBuf { program_root("tun2socks").join(".deleted") }
+fn tun2socks_deleted_profiles_root() -> PathBuf { tun2socks_deleted_root().join("profiles") }
+fn tun2socks_profile_root(profile: &str) -> PathBuf { crate::programs::tun2socks::profile_root(profile) }
+
+fn ensure_tun2socks_profile_layout(profile: &str) -> Result<()> {
+    crate::programs::tun2socks::ensure_profile_layout(profile)
+}
+
+fn create_tun2socks_profile_named(requested: &str) -> Result<String> {
+    let name = requested.trim();
+    crate::programs::tun2socks::ensure_valid_profile_name(name)?;
+    crate::programs::tun2socks::ensure_root_layout()?;
+    let active_path = tun2socks_active_path();
+    let mut active: ProfilesActive = read_json(&active_path).unwrap_or_default();
+    if active.profiles.contains_key(name) { anyhow::bail!("profile already exists"); }
+    active.profiles.insert(name.to_string(), ProfileState { enabled: false });
+    write_json_pretty(&active_path, &active)?;
+    ensure_tun2socks_profile_layout(name)?;
+    Ok(name.to_string())
+}
+
+fn create_tun2socks_profile_next() -> Result<String> {
+    crate::programs::tun2socks::ensure_root_layout()?;
+    let active: ProfilesActive = read_json(&tun2socks_active_path()).unwrap_or_default();
+    for n in 1..=9999u32 {
+        let next = format!("profile{n}");
+        if next.len() > 10 { break; }
+        if !active.profiles.contains_key(&next) {
+            create_tun2socks_profile_named(&next)?;
+            return Ok(next);
+        }
+    }
+    anyhow::bail!("no free tun2socks profile name")
+}
+
+fn myvpn_active_path() -> PathBuf { crate::programs::myvpn::active_path() }
+fn myvpn_profiles_root() -> PathBuf { crate::programs::myvpn::profiles_root() }
+fn myvpn_deleted_root() -> PathBuf { program_root("myvpn").join(".deleted") }
+fn myvpn_deleted_profiles_root() -> PathBuf { myvpn_deleted_root().join("profiles") }
+fn myvpn_profile_root(profile: &str) -> PathBuf { crate::programs::myvpn::profile_root(profile) }
+
+fn ensure_myvpn_profile_layout(profile: &str) -> Result<()> {
+    crate::programs::myvpn::ensure_profile_layout(profile)
+}
+
+fn create_myvpn_profile_named(requested: &str) -> Result<String> {
+    let name = requested.trim();
+    crate::programs::myvpn::ensure_valid_profile_name(name)?;
+    crate::programs::myvpn::ensure_root_layout()?;
+    let active_path = myvpn_active_path();
+    let mut active: ProfilesActive = read_json(&active_path).unwrap_or_default();
+    if active.profiles.contains_key(name) { anyhow::bail!("profile already exists"); }
+    active.profiles.insert(name.to_string(), ProfileState { enabled: false });
+    write_json_pretty(&active_path, &active)?;
+    ensure_myvpn_profile_layout(name)?;
+    Ok(name.to_string())
+}
+
+fn create_myvpn_profile_next() -> Result<String> {
+    crate::programs::myvpn::ensure_root_layout()?;
+    let active: ProfilesActive = read_json(&myvpn_active_path()).unwrap_or_default();
+    for n in 1..=9999u32 {
+        let next = format!("profile{n}");
+        if next.len() > 10 { break; }
+        if !active.profiles.contains_key(&next) {
+            create_myvpn_profile_named(&next)?;
+            return Ok(next);
+        }
+    }
+    anyhow::bail!("no free myvpn profile name")
+}
+
+fn validate_cross_vpn_tun_claim(program_id: &str, profile: &str, tun: &str) -> Result<()> {
+    let this_label = format!("{program_id}/{profile}");
+    for (other_label, other_tun) in crate::programs::openvpn::enabled_tun_claims()
+        .into_iter()
+        .chain(crate::programs::tun2socks::enabled_tun_claims().into_iter())
+        .chain(crate::programs::myvpn::enabled_tun_claims().into_iter())
+    {
+        if other_label != this_label && other_tun == tun {
+            anyhow::bail!("VPN tun conflict: tun {tun} is already used by {other_label}");
+        }
+    }
+    Ok(())
+}
+
+fn is_profile_enabled(active_path: &Path, profile: &str) -> bool {
+    read_json::<ProfilesActive>(active_path)
+        .map(|a| a.profiles.get(profile).map(|st| st.enabled).unwrap_or(false))
+        .unwrap_or(false)
+}
+
 fn create_named_profile(program_id: &str, requested: &str) -> Result<String> {
     ensure_safe_segment(program_id, "program id")?;
     if !matches!(program_id, "nfqws" | "nfqws2" | "byedpi" | "dpitunnel") {
@@ -1621,10 +1758,19 @@ fn slot_from_kind(kind: &str) -> Option<&'static str> {
 
 fn app_domain(program_id: &str) -> Option<&'static str> {
     match program_id {
+        "vpn-netd" | "openvpn" | "tun2socks" | "myvpn" | "wireguard" => Some("exclusive_network"),
         "operaproxy" | "sing-box" | "wireproxy" | "myproxy" | "myprogram" | "tor" | "dpitunnel" | "byedpi" => Some("tunnel"),
         "nfqws" | "nfqws2" => Some("zapret"),
+        // blockedquic only conflicts with proxyInfo protection; it must not block VPN/tunnel app lists.
         _ => None,
     }
+}
+
+fn app_domains_conflict(a: &str, b: &str) -> bool {
+    if a == b {
+        return true;
+    }
+    a == "exclusive_network" || b == "exclusive_network"
 }
 
 fn push_assignment_file(
@@ -1706,6 +1852,14 @@ fn collect_assignment_files_uncached() -> Vec<AppAssignmentFile> {
         program_root("tor").join("app/uid/user_program"),
         "/api/programs/tor/apps".to_string(),
     );
+    push_assignment_file(
+        &mut out,
+        "blockedquic",
+        None,
+        "user",
+        settings::blockedquic_uid_program_path(),
+        "/api/blockedquic/apps".to_string(),
+    );
 
     let singbox_root = singbox_profiles_root();
     if let Ok(rd) = fs::read_dir(&singbox_root) {
@@ -1771,6 +1925,57 @@ fn collect_assignment_files_uncached() -> Vec<AppAssignmentFile> {
                 "user",
                 path.join("app/uid/user_program"),
                 format!("/api/programs/myprogram/profiles/{profile}/apps/user"),
+            );
+        }
+    }
+
+    let openvpn_root = openvpn_profiles_root();
+    if let Ok(rd) = fs::read_dir(&openvpn_root) {
+        for ent in rd.flatten() {
+            let path = ent.path();
+            if !path.is_dir() { continue; }
+            let Some(profile) = path.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+            push_assignment_file(
+                &mut out,
+                "openvpn",
+                Some(profile.clone()),
+                "user",
+                path.join("app/uid/user_program"),
+                format!("/api/programs/openvpn/profiles/{profile}/apps/user"),
+            );
+        }
+    }
+
+    let tun2socks_root = tun2socks_profiles_root();
+    if let Ok(rd) = fs::read_dir(&tun2socks_root) {
+        for ent in rd.flatten() {
+            let path = ent.path();
+            if !path.is_dir() { continue; }
+            let Some(profile) = path.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+            push_assignment_file(
+                &mut out,
+                "tun2socks",
+                Some(profile.clone()),
+                "user",
+                path.join("app/uid/user_program"),
+                format!("/api/programs/tun2socks/profiles/{profile}/apps/user"),
+            );
+        }
+    }
+
+    let myvpn_root = myvpn_profiles_root();
+    if let Ok(rd) = fs::read_dir(&myvpn_root) {
+        for ent in rd.flatten() {
+            let path = ent.path();
+            if !path.is_dir() { continue; }
+            let Some(profile) = path.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+            push_assignment_file(
+                &mut out,
+                "myvpn",
+                Some(profile.clone()),
+                "user",
+                path.join("app/uid/user_program"),
+                format!("/api/programs/myvpn/profiles/{profile}/apps/user"),
             );
         }
     }
@@ -1843,7 +2048,8 @@ fn find_program_conflicts(
     for item in lists {
         if item.path == current_api_path { continue; }
         if item.slot != slot { continue; }
-        if app_domain(&item.program_id) != Some(domain) { continue; }
+        let Some(item_domain) = app_domain(&item.program_id) else { continue; };
+        if !app_domains_conflict(domain, item_domain) { continue; }
         for pkg in candidate.intersection(&item.packages) {
             if current_existing.contains(pkg) { continue; }
             out.entry(pkg.clone()).or_default().push(AppConflictView {
@@ -2091,6 +2297,54 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
         }));
     }
 
+    // openvpn (VPN/netd profiles)
+    {
+        let active: ProfilesActive = read_json(&openvpn_active_path()).unwrap_or_default();
+        let mut profiles = Vec::new();
+        for (name, st) in active.profiles {
+            profiles.push(json!({"name": name, "enabled": st.enabled}));
+        }
+        profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        out.push(json!({
+            "id": "openvpn",
+            "name": "openvpn",
+            "type": "openvpn_profiles",
+            "profiles": profiles
+        }));
+    }
+
+    // tun2socks (VPN/netd profiles)
+    {
+        let active: ProfilesActive = read_json(&tun2socks_active_path()).unwrap_or_default();
+        let mut profiles = Vec::new();
+        for (name, st) in active.profiles {
+            profiles.push(json!({"name": name, "enabled": st.enabled}));
+        }
+        profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        out.push(json!({
+            "id": "tun2socks",
+            "name": "tun2socks",
+            "type": "tun2socks_profiles",
+            "profiles": profiles
+        }));
+    }
+
+    // myvpn (universal VPN/netd binder profiles)
+    {
+        let active: ProfilesActive = read_json(&myvpn_active_path()).unwrap_or_default();
+        let mut profiles = Vec::new();
+        for (name, st) in active.profiles {
+            profiles.push(json!({"name": name, "enabled": st.enabled}));
+        }
+        profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        out.push(json!({
+            "id": "myvpn",
+            "name": "myvpn",
+            "type": "myvpn_profiles",
+            "profiles": profiles
+        }));
+    }
+
     write_json(stream, 200, json!({"ok": true, "data": out}))
 }
 
@@ -2099,6 +2353,509 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
     let seg: Vec<&str> = path.trim_start_matches('/').split('/').collect();
 
     match (method, seg.as_slice()) {
+        // --- openvpn profile API
+        ("GET", ["api", "programs", "openvpn", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::openvpn::ensure_root_layout()?;
+                let active: ProfilesActive = read_json(&openvpn_active_path()).unwrap_or_default();
+                let mut profiles = Vec::new();
+                for (name, st) in active.profiles {
+                    profiles.push(json!({"name": name, "enabled": st.enabled}));
+                }
+                profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+                Ok(json!({"ok": true, "profiles": profiles}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "programs", "openvpn", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                #[derive(Deserialize)]
+                struct Req { #[serde(default)] name: Option<String> }
+                let req: Req = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let profile = match req.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                    Some(name) => create_openvpn_profile_named(name)?,
+                    None => create_openvpn_profile_next()?,
+                };
+                Ok(json!({"ok": true, "profile": profile}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "openvpn", "profiles", profile, "enabled"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::openvpn::ensure_valid_profile_name(profile)?;
+                let req: EnabledReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let p = openvpn_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                let st = active.profiles.get_mut(*profile)
+                    .ok_or_else(|| anyhow::anyhow!("profile not found"))?;
+                st.enabled = req.enabled;
+                crate::programs::openvpn::validate_enabled_tun_uniqueness_with_override(
+                    Some(profile),
+                    None,
+                    Some(req.enabled),
+                )?;
+                if req.enabled {
+                    let setting = crate::programs::openvpn::read_setting(profile).unwrap_or_default();
+                    validate_cross_vpn_tun_claim("openvpn", profile, &setting.tun)?;
+                }
+                write_json_pretty(&p, &active)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("DELETE", ["api", "programs", "openvpn", "profiles", profile]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::openvpn::ensure_valid_profile_name(profile)?;
+                let p = openvpn_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                if active.profiles.remove(*profile).is_none() {
+                    anyhow::bail!("profile not found");
+                }
+                write_json_pretty(&p, &active)?;
+                invalidate_assignment_cache();
+                let src = openvpn_profile_root(profile);
+                if src.exists() {
+                    let deleted_dir = openvpn_deleted_profiles_root();
+                    fs::create_dir_all(&deleted_dir).ok();
+                    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                    let dst = deleted_dir.join(format!("{profile}.{ts}"));
+                    let _ = fs::rename(&src, &dst);
+                }
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "openvpn", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::openvpn::ensure_valid_profile_name(profile)?;
+                ensure_openvpn_profile_layout(profile)?;
+                let p = openvpn_profile_root(profile).join("setting.json");
+                let v: serde_json::Value = read_json(&p)?;
+                Ok(json!({"ok": true, "data": v}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "openvpn", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::openvpn::ensure_valid_profile_name(profile)?;
+                ensure_openvpn_profile_layout(profile)?;
+                let v: serde_json::Value = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let setting = crate::programs::openvpn::normalize_setting_value(v)?;
+                crate::programs::openvpn::validate_enabled_tun_uniqueness_with_override(
+                    Some(profile),
+                    Some(&setting),
+                    None,
+                )?;
+                if is_profile_enabled(&openvpn_active_path(), profile) {
+                    validate_cross_vpn_tun_claim("openvpn", profile, &setting.tun)?;
+                }
+                crate::programs::openvpn::write_setting(profile, &setting)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "openvpn", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<String> {
+                crate::programs::openvpn::ensure_valid_profile_name(profile)?;
+                ensure_openvpn_profile_layout(profile)?;
+                let p = openvpn_profile_root(profile).join("app/uid/user_program");
+                read_text_or_empty(&p)
+            })();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "openvpn", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::openvpn::ensure_valid_profile_name(profile)?;
+                ensure_openvpn_profile_layout(profile)?;
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let api_path = format!("/api/programs/openvpn/profiles/{}/apps/user", profile);
+                validate_program_apps_content(&req.content, &api_path, "openvpn", "common")?;
+                let p = openvpn_profile_root(profile).join("app/uid/user_program");
+                write_text_atomic(&p, &req.content)?;
+                invalidate_assignment_cache();
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "openvpn", "profiles", profile, "config"]) => {
+            let res = (|| -> Result<String> {
+                crate::programs::openvpn::ensure_valid_profile_name(profile)?;
+                ensure_openvpn_profile_layout(profile)?;
+                let p = openvpn_profile_root(profile).join("client.ovpn");
+                read_text_or_empty(&p)
+            })();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "openvpn", "profiles", profile, "config"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::openvpn::ensure_valid_profile_name(profile)?;
+                ensure_openvpn_profile_layout(profile)?;
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let p = openvpn_profile_root(profile).join("client.ovpn");
+                write_text_atomic(&p, &req.content)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "programs", "openvpn", "profiles", profile, "upload-config"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::openvpn::ensure_valid_profile_name(profile)?;
+                ensure_openvpn_profile_layout(profile)?;
+                let f = parse_multipart_file(headers, body)?;
+                if !f.filename.ends_with(".ovpn") {
+                    anyhow::bail!("only .ovpn files are accepted");
+                }
+                let p = openvpn_profile_root(profile).join("client.ovpn");
+                write_bytes_atomic(&p, &f.data)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
+        // --- tun2socks profile API
+        ("GET", ["api", "programs", "tun2socks", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::tun2socks::ensure_root_layout()?;
+                let active: ProfilesActive = read_json(&tun2socks_active_path()).unwrap_or_default();
+                let mut profiles = Vec::new();
+                for (name, st) in active.profiles {
+                    profiles.push(json!({"name": name, "enabled": st.enabled}));
+                }
+                profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+                Ok(json!({"ok": true, "profiles": profiles}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "programs", "tun2socks", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                #[derive(Deserialize)]
+                struct Req { #[serde(default)] name: Option<String> }
+                let req: Req = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let profile = match req.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                    Some(name) => create_tun2socks_profile_named(name)?,
+                    None => create_tun2socks_profile_next()?,
+                };
+                Ok(json!({"ok": true, "profile": profile}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "tun2socks", "profiles", profile, "enabled"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::tun2socks::ensure_valid_profile_name(profile)?;
+                let req: EnabledReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let p = tun2socks_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                let st = active.profiles.get_mut(*profile)
+                    .ok_or_else(|| anyhow::anyhow!("profile not found"))?;
+                st.enabled = req.enabled;
+                crate::programs::tun2socks::validate_enabled_tun_uniqueness_with_override(
+                    Some(profile),
+                    None,
+                    Some(req.enabled),
+                )?;
+                if req.enabled {
+                    let setting = crate::programs::tun2socks::read_setting(profile).unwrap_or_default();
+                    validate_cross_vpn_tun_claim("tun2socks", profile, &setting.tun)?;
+                }
+                write_json_pretty(&p, &active)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("DELETE", ["api", "programs", "tun2socks", "profiles", profile]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::tun2socks::ensure_valid_profile_name(profile)?;
+                let p = tun2socks_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                if active.profiles.remove(*profile).is_none() {
+                    anyhow::bail!("profile not found");
+                }
+                write_json_pretty(&p, &active)?;
+                invalidate_assignment_cache();
+                let src = tun2socks_profile_root(profile);
+                if src.exists() {
+                    let deleted_dir = tun2socks_deleted_profiles_root();
+                    fs::create_dir_all(&deleted_dir).ok();
+                    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                    let dst = deleted_dir.join(format!("{profile}.{ts}"));
+                    let _ = fs::rename(&src, &dst);
+                }
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "tun2socks", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::tun2socks::ensure_valid_profile_name(profile)?;
+                ensure_tun2socks_profile_layout(profile)?;
+                let p = tun2socks_profile_root(profile).join("setting.json");
+                let v: serde_json::Value = read_json(&p)?;
+                Ok(json!({"ok": true, "data": v}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "tun2socks", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::tun2socks::ensure_valid_profile_name(profile)?;
+                ensure_tun2socks_profile_layout(profile)?;
+                let v: serde_json::Value = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let setting = crate::programs::tun2socks::normalize_setting_value(v)?;
+                crate::programs::tun2socks::validate_enabled_tun_uniqueness_with_override(
+                    Some(profile),
+                    Some(&setting),
+                    None,
+                )?;
+                if is_profile_enabled(&tun2socks_active_path(), profile) {
+                    validate_cross_vpn_tun_claim("tun2socks", profile, &setting.tun)?;
+                }
+                crate::programs::tun2socks::write_setting(profile, &setting)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "tun2socks", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<String> {
+                crate::programs::tun2socks::ensure_valid_profile_name(profile)?;
+                ensure_tun2socks_profile_layout(profile)?;
+                let p = tun2socks_profile_root(profile).join("app/uid/user_program");
+                read_text_or_empty(&p)
+            })();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "tun2socks", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::tun2socks::ensure_valid_profile_name(profile)?;
+                ensure_tun2socks_profile_layout(profile)?;
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let api_path = format!("/api/programs/tun2socks/profiles/{}/apps/user", profile);
+                validate_program_apps_content(&req.content, &api_path, "tun2socks", "common")?;
+                let p = tun2socks_profile_root(profile).join("app/uid/user_program");
+                write_text_atomic(&p, &req.content)?;
+                invalidate_assignment_cache();
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
+        // --- myvpn profile API
+        ("GET", ["api", "programs", "myvpn", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::myvpn::ensure_root_layout()?;
+                let active: ProfilesActive = read_json(&myvpn_active_path()).unwrap_or_default();
+                let mut profiles = Vec::new();
+                for (name, st) in active.profiles {
+                    profiles.push(json!({"name": name, "enabled": st.enabled}));
+                }
+                profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+                Ok(json!({"ok": true, "profiles": profiles}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "programs", "myvpn", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                #[derive(Deserialize)]
+                struct Req { #[serde(default)] name: Option<String> }
+                let req: Req = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let profile = match req.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                    Some(name) => create_myvpn_profile_named(name)?,
+                    None => create_myvpn_profile_next()?,
+                };
+                Ok(json!({"ok": true, "profile": profile}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "myvpn", "profiles", profile, "enabled"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::myvpn::ensure_valid_profile_name(profile)?;
+                let req: EnabledReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let p = myvpn_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                let st = active.profiles.get_mut(*profile)
+                    .ok_or_else(|| anyhow::anyhow!("profile not found"))?;
+                st.enabled = req.enabled;
+                crate::programs::myvpn::validate_enabled_tun_uniqueness_with_override(
+                    Some(profile),
+                    None,
+                    Some(req.enabled),
+                )?;
+                if req.enabled {
+                    let setting = crate::programs::myvpn::read_setting(profile).unwrap_or_default();
+                    validate_cross_vpn_tun_claim("myvpn", profile, &setting.tun)?;
+                }
+                write_json_pretty(&p, &active)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("DELETE", ["api", "programs", "myvpn", "profiles", profile]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::myvpn::ensure_valid_profile_name(profile)?;
+                let p = myvpn_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                if active.profiles.remove(*profile).is_none() {
+                    anyhow::bail!("profile not found");
+                }
+                write_json_pretty(&p, &active)?;
+                invalidate_assignment_cache();
+                let src = myvpn_profile_root(profile);
+                if src.exists() {
+                    let deleted_dir = myvpn_deleted_profiles_root();
+                    fs::create_dir_all(&deleted_dir).ok();
+                    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                    let dst = deleted_dir.join(format!("{profile}.{ts}"));
+                    let _ = fs::rename(&src, &dst);
+                }
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "myvpn", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::myvpn::ensure_valid_profile_name(profile)?;
+                ensure_myvpn_profile_layout(profile)?;
+                let p = myvpn_profile_root(profile).join("setting.json");
+                let v: serde_json::Value = read_json(&p)?;
+                Ok(json!({"ok": true, "data": v}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "myvpn", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::myvpn::ensure_valid_profile_name(profile)?;
+                ensure_myvpn_profile_layout(profile)?;
+                let v: serde_json::Value = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let setting = crate::programs::myvpn::normalize_setting_value(v)?;
+                crate::programs::myvpn::validate_enabled_tun_uniqueness_with_override(
+                    Some(profile),
+                    Some(&setting),
+                    None,
+                )?;
+                if is_profile_enabled(&myvpn_active_path(), profile) {
+                    validate_cross_vpn_tun_claim("myvpn", profile, &setting.tun)?;
+                }
+                crate::programs::myvpn::write_setting(profile, &setting)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "myvpn", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<String> {
+                crate::programs::myvpn::ensure_valid_profile_name(profile)?;
+                ensure_myvpn_profile_layout(profile)?;
+                let p = myvpn_profile_root(profile).join("app/uid/user_program");
+                read_text_or_empty(&p)
+            })();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "myvpn", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::myvpn::ensure_valid_profile_name(profile)?;
+                ensure_myvpn_profile_layout(profile)?;
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let api_path = format!("/api/programs/myvpn/profiles/{}/apps/user", profile);
+                validate_program_apps_content(&req.content, &api_path, "myvpn", "common")?;
+                let p = myvpn_profile_root(profile).join("app/uid/user_program");
+                write_text_atomic(&p, &req.content)?;
+                invalidate_assignment_cache();
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
         // --- sing-box profile/server API
         ("GET", ["api", "programs", "sing-box", "profiles"]) => {
             let res = (|| -> Result<serde_json::Value> {
@@ -3777,9 +4534,16 @@ fn write_empty_404(mut stream: TcpStream) -> Result<()> {
 
 fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
     let (method, path, headers, body) = parse_http_request(&mut stream)?;
-    let (token, services_running) = {
+    let (token, services_running, runtime_state, start_in_progress, stop_in_progress, services_partial) = {
         let st = daemon::lock_state(&state);
-        (st.token.clone(), st.services_running)
+        (
+            st.token.clone(),
+            st.services_running,
+            daemon::runtime_state_label(&st).to_string(),
+            st.start_in_progress,
+            st.stop_in_progress,
+            st.services_partial,
+        )
     };
 
     // Only /api/* is exposed. Everything else -> empty 404.
@@ -3814,7 +4578,14 @@ fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
 match (method.as_str(), path.as_str()) {
         ("GET", "/api/status") => {
             let report = get_status_cached(services_running)?;
-            write_json(stream, 200, serde_json::to_value(report)?)
+            let mut value = serde_json::to_value(report)?;
+            if let Some(obj) = value.as_object_mut() {
+                obj.insert("runtime_state".to_string(), json!(runtime_state));
+                obj.insert("start_in_progress".to_string(), json!(start_in_progress));
+                obj.insert("stop_in_progress".to_string(), json!(stop_in_progress));
+                obj.insert("services_partial".to_string(), json!(services_partial));
+            }
+            write_json(stream, 200, value)
         }
 
         ("GET", "/api/setting") => {
@@ -4007,7 +4778,9 @@ match (method.as_str(), path.as_str()) {
             let res = (|| -> Result<()> {
                 let req: ContentReq = serde_json::from_slice(&body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                validate_program_apps_content(&req.content, "/api/blockedquic/apps", "blockedquic", "common")?;
                 crate::blockedquic::write_uid_program_text(&req.content)?;
+                invalidate_assignment_cache();
                 Ok(())
             })();
             match res {
@@ -4019,7 +4792,9 @@ match (method.as_str(), path.as_str()) {
             let res = (|| -> Result<serde_json::Value> {
                 let req: ContentReq = serde_json::from_slice(&body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                validate_program_apps_content(&req.content, "/api/blockedquic/apps", "blockedquic", "common")?;
                 crate::blockedquic::write_uid_program_text(&req.content)?;
+                invalidate_assignment_cache();
                 Ok(json!({"ok": true, "saved": true}))
             })();
             match res {

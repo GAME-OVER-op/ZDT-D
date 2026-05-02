@@ -8,6 +8,8 @@ use crate::{api, config::Config, logging, protector, runtime, settings, stats};
 pub struct State {
     pub token: String,
     pub services_running: bool,
+    /// Last successful start completed with partial failures.
+    pub services_partial: bool,
     /// A start sequence is currently running.
     pub start_in_progress: bool,
     /// A stop sequence is currently running.
@@ -28,6 +30,20 @@ pub fn lock_state<'a>(state: &'a SharedState) -> std::sync::MutexGuard<'a, State
             crate::logging::warn("state mutex poisoned; recovering");
             poisoned.into_inner()
         }
+    }
+}
+
+pub fn runtime_state_label(st: &State) -> &'static str {
+    if st.start_in_progress {
+        "starting"
+    } else if st.stop_in_progress {
+        "stopping"
+    } else if st.services_running && st.services_partial {
+        "partial"
+    } else if st.services_running {
+        "running"
+    } else {
+        "stopped"
     }
 }
 
@@ -67,6 +83,7 @@ pub fn run(_cfg: &Config) -> Result<()> {
     let state: SharedState = Arc::new(Mutex::new(State {
         token,
         services_running: false,
+        services_partial: false,
         start_in_progress: false,
         stop_in_progress: false,
         start: start.clone(),
@@ -100,6 +117,7 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
             return Ok(false);
         }
         // Mark busy first so concurrent requests are ignored.
+        st.services_partial = false;
         st.start_in_progress = true;
     }
 
@@ -130,6 +148,7 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
                     {
                         let mut st = lock_state(&st_arc);
                         st.services_running = true;
+                        st.services_partial = runtime::last_start_partial();
                         st.start = start_now;
                     }
 
@@ -143,6 +162,7 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
                     crate::scan_detector::stop();
                     let mut st = lock_state(&st_arc);
                     st.services_running = false;
+                    st.services_partial = false;
                 }
             },
             Err(_) => {
@@ -151,6 +171,7 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
                 crate::scan_detector::stop();
                 let mut st = lock_state(&st_arc);
                 st.services_running = false;
+                st.services_partial = false;
             }
         }
         let mut st = lock_state(&st_arc);
@@ -176,6 +197,7 @@ pub fn handle_stop_async(state: &SharedState) -> Result<bool> {
         // start sequence might have partially completed. `stop_full()` is designed to
         // be idempotent, so we allow a stop request whenever we are idle.
         st.services_running = false;
+        st.services_partial = false;
         // Mark busy first so concurrent requests are ignored.
         st.stop_in_progress = true;
     }
@@ -208,6 +230,7 @@ pub fn handle_stop_async(state: &SharedState) -> Result<bool> {
                     {
                         let mut st = lock_state(&st_arc);
                         st.services_running = false;
+                        st.services_partial = false;
                     }
                     protector::deactivate();
                     crate::scan_detector::stop();

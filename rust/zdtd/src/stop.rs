@@ -184,10 +184,17 @@ fn stop_process_groups_parallel() -> Result<()> {
 pub fn stop_services_and_restore_iptables() -> Result<()> {
     crate::programs::dnscrypt::request_stop();
     crate::programs::dnscrypt::clear_ipv6_resetprops();
+    if let Err(e) = crate::vpn_netd::stop_applied() {
+        log::warn!("vpn_netd cleanup failed during stop: {e:#}");
+    }
     // 1) stop background processes
     // Use `pidof` to avoid killing similarly-named processes.
     stop_process_groups_parallel()?;
     let _ = crate::programs::myprogram::stop_all();
+    // Stop VPN profile engines only when they were launched from this module path.
+    kill_exact_pids("openvpn --config <profile>/client.ovpn", &crate::programs::openvpn::main_pids_exact())?;
+    kill_exact_pids("tun2socks -device tun://<profile tun>", &crate::programs::tun2socks::main_pids_exact())?;
+
     // IMPORTANT: do not stop plain substring/name matches for Tor.
     // Some Android systems have unrelated processes containing "tor".
     // Stop only the exact Tor command using our torrc, plus our exact lyrebird.

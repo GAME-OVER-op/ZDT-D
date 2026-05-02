@@ -84,6 +84,8 @@ fun AppListPickerCard(
   initialContent: String? = null,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  saveFailedMessage: String? = null,
+  onSavedSelection: ((Set<String>) -> Unit)? = null,
 ) {
   // Snackbar messages must be resolved in a composable context.
   val msgSaved = stringResource(R.string.app_picker_saved_apply)
@@ -119,8 +121,9 @@ fun AppListPickerCard(
         saving = true
         actions.saveText(path, payload) { ok ->
           saving = false
+          if (ok) onSavedSelection?.invoke(newSel)
           scope.launch {
-            snackHost.showSnackbar(if (ok) msgSaved else msgSaveFailed)
+            snackHost.showSnackbar(if (ok) msgSaved else (saveFailedMessage ?: msgSaveFailed))
           }
         }
       },
@@ -259,6 +262,9 @@ private fun AppPickerSheet(
   val programTorLabel = stringResource(R.string.apps_conflict_program_tor)
   val programMyproxyLabel = stringResource(R.string.apps_conflict_program_myproxy)
   val programMyprogramLabel = stringResource(R.string.apps_conflict_program_myprogram)
+  val programOpenVpnLabel = stringResource(R.string.apps_conflict_program_openvpn)
+  val programTun2SocksLabel = stringResource(R.string.apps_conflict_program_tun2socks)
+  val programMyVpnLabel = stringResource(R.string.apps_conflict_program_myvpn)
 
   fun slotLabel(slot: String): String = when (slot.lowercase(Locale.ROOT)) {
     "common" -> slotCommonLabel
@@ -278,16 +284,28 @@ private fun AppPickerSheet(
     "tor" -> programTorLabel
     "myproxy" -> programMyproxyLabel
     "myprogram" -> programMyprogramLabel
+    "openvpn" -> programOpenVpnLabel
+    "tun2socks" -> programTun2SocksLabel
+    "myvpn" -> programMyVpnLabel
     else -> programId
   }
 
   fun programGroup(programId: String): String? = when (programId) {
-    "operaproxy", "sing-box", "dpitunnel", "byedpi", "wireproxy", "tor", "myproxy", "myprogram" -> "tunnel"
+    "operaproxy", "sing-box", "dpitunnel", "byedpi", "wireproxy", "tor", "myproxy", "myprogram", "openvpn", "tun2socks", "myvpn" -> "tunnel"
     "nfqws", "nfqws2" -> "zapret"
     else -> null
   }
 
-    fun entryLabel(entry: ApiModels.AppAssignmentEntry): String {
+  fun appListsConflict(leftProgramId: String, rightProgramId: String): Boolean {
+    val left = programGroup(leftProgramId) ?: return false
+    val right = programGroup(rightProgramId) ?: return false
+    if (leftProgramId == "openvpn" || rightProgramId == "openvpn") return true
+    if (leftProgramId == "tun2socks" || rightProgramId == "tun2socks") return true
+    if (leftProgramId == "myvpn" || rightProgramId == "myvpn") return true
+    return left == right
+  }
+
+  fun entryLabel(entry: ApiModels.AppAssignmentEntry): String {
     val base = programLabel(entry.programId)
     val slot = slotLabel(entry.slot)
     return if (entry.profile.isNullOrBlank()) "$base / $slot" else "$base / ${entry.profile} / $slot"
@@ -302,12 +320,12 @@ private fun AppPickerSheet(
     val entry = currentEntry
     val data = assignments
     if (entry != null && data != null) {
-      val group = programGroup(entry.programId)
-      if (group != null) {
+      if (programGroup(entry.programId) != null) {
         for (other in data.lists) {
           if (other.path == entry.path) continue
-          if (other.slot != entry.slot) continue
-          if (programGroup(other.programId) != group) continue
+          val requiresSameSlot = entry.programId != "openvpn" && other.programId != "openvpn" && entry.programId != "tun2socks" && other.programId != "tun2socks" && entry.programId != "myvpn" && other.programId != "myvpn"
+          if (requiresSameSlot && other.slot != entry.slot) continue
+          if (!appListsConflict(entry.programId, other.programId)) continue
           for (pkg in other.packages) {
             if (pkg in selected) continue
             out.getOrPut(pkg) { mutableListOf() }.add(other)

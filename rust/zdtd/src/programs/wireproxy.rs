@@ -441,7 +441,9 @@ fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
         "--to-ports",
         listen_port_s.as_str(),
     ];
-    let rc = match xtables_lock::run_timeout_retry("iptables", &["-w", "5", check_args[0], check_args[1], check_args[2], check_args[3], check_args[4], check_args[5], check_args[6], check_args[7], check_args[8]], Capture::Both, IPT_TIMEOUT) {
+    let mut check_cmd_args = vec!["-w", "5"];
+    check_cmd_args.extend_from_slice(&check_args);
+    let rc = match xtables_lock::run_timeout_retry("iptables", &check_cmd_args, Capture::Both, IPT_TIMEOUT) {
         Ok((rc, _)) => rc,
         Err(_) => 1,
     };
@@ -458,7 +460,9 @@ fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
             "--to-ports",
             listen_port_s.as_str(),
         ];
-        let (add_rc, out) = xtables_lock::run_timeout_retry("iptables", &["-w", "5", add_args[0], add_args[1], add_args[2], add_args[3], add_args[4], add_args[5], add_args[6], add_args[7], add_args[8]], Capture::Both, IPT_TIMEOUT)
+        let mut add_cmd_args = vec!["-w", "5"];
+        add_cmd_args.extend_from_slice(&add_args);
+        let (add_rc, out) = xtables_lock::run_timeout_retry("iptables", &add_cmd_args, Capture::Both, IPT_TIMEOUT)
             .with_context(|| format!("wireproxy hotspot PREROUTING redirect to :{}", listen_port))?;
         if add_rc != 0 {
             anyhow::bail!("wireproxy hotspot PREROUTING redirect to :{} failed rc={} out={}", listen_port, add_rc, out.trim());

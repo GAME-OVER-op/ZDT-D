@@ -66,8 +66,6 @@ impl Default for DpiTunnelOptions {
     }
 }
 
-static mut MANGLE_INIT_DONE: bool = false;
-
 fn allow_loopback_redirect_enabled() -> bool {
     match settings::load_api_settings() {
         Ok(st) => st.allow_loopback_redirect,
@@ -361,17 +359,21 @@ fn ensure_nat_local_chain(enabled: bool) -> Result<()> {
 }
 
 fn ensure_mangle_chain_app_once() -> Result<()> {
-    unsafe {
-        if !MANGLE_INIT_DONE {
-            let (c, _) = ipt_run_timeout(&["-t","mangle","-nL","MANGLE_APP"], Capture::None, IPT_SLOW_TIMEOUT)?;
-            if c != 0 {
-                let _ = ipt_run_timeout(&["-t","mangle","-N","MANGLE_APP"], Capture::Both, IPT_CMD_TIMEOUT)?;
-            }
-            let (c2, _) = ipt_run_timeout(&["-t","mangle","-C","OUTPUT","-j","MANGLE_APP"], Capture::None, IPT_CMD_TIMEOUT)?;
-            if c2 != 0 {
-                let _ = ipt_run_timeout(&["-t","mangle","-A","OUTPUT","-j","MANGLE_APP"], Capture::Both, IPT_CMD_TIMEOUT)?;
-            }
-            MANGLE_INIT_DONE = true;
+    // Do not cache this in-process: stop/restore may delete MANGLE_APP while the daemon
+    // remains alive. Always verify the real iptables state before applying rules.
+    let (c, _) = ipt_run_timeout(&["-t","mangle","-nL","MANGLE_APP"], Capture::None, IPT_SLOW_TIMEOUT)?;
+    if c != 0 {
+        let (rc, out) = ipt_run_timeout(&["-t","mangle","-N","MANGLE_APP"], Capture::Both, IPT_CMD_TIMEOUT)?;
+        if rc != 0 {
+            anyhow::bail!("DPI: create MANGLE_APP failed: {}", out.trim());
+        }
+    }
+
+    let (c2, _) = ipt_run_timeout(&["-t","mangle","-C","OUTPUT","-j","MANGLE_APP"], Capture::None, IPT_CMD_TIMEOUT)?;
+    if c2 != 0 {
+        let (rc, out) = ipt_run_timeout(&["-t","mangle","-A","OUTPUT","-j","MANGLE_APP"], Capture::Both, IPT_CMD_TIMEOUT)?;
+        if rc != 0 {
+            anyhow::bail!("DPI: hook OUTPUT -> MANGLE_APP failed: {}", out.trim());
         }
     }
 

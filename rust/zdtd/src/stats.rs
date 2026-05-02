@@ -34,6 +34,8 @@ pub struct StatusReport {
     pub wireproxy: UsageAgg,
     pub myproxy: UsageAgg,
     pub myprogram: UsageAgg,
+    pub openvpn: UsageAgg,
+    pub tun2socks: UsageAgg,
     pub tor: UsageAgg,
     pub t2s: UsageAgg,       // t2s used by opera-proxy, sing-box, wireproxy and tor
     pub opera: OperaAgg,    // opera-proxy + t2s + operaproxy-byedpi
@@ -62,6 +64,8 @@ pub(crate) fn protected_pids() -> Vec<u32> {
     pids.extend(myproxy_t2s_pids());
     pids.extend(myprogram_main_pids());
     pids.extend(myprogram_t2s_pids());
+    pids.extend(openvpn_pids());
+    pids.extend(tun2socks_pids());
     pids.extend(tor_pids());
     pids.extend(pidof("byedpi"));
     pids.sort_unstable();
@@ -112,6 +116,8 @@ pub fn collect_status() -> Result<StatusReport> {
     let wireproxy_pids = wireproxy_pids();
     let myproxy_pids = myproxy_t2s_pids();
     let myprogram_pids = myprogram_main_pids();
+    let openvpn_pids = openvpn_pids();
+    let tun2socks_pids = tun2socks_pids();
     let tor_pids = tor_pids();
 
     let mut byedpi_all = pidof("byedpi");
@@ -140,6 +146,8 @@ pub fn collect_status() -> Result<StatusReport> {
         wireproxy: agg(&wireproxy_pids),
         myproxy: agg(&myproxy_pids),
         myprogram: agg(&myprogram_pids),
+        openvpn: agg(&openvpn_pids),
+        tun2socks: agg(&tun2socks_pids),
         tor: agg(&tor_pids),
         t2s: agg(&t2s_all_pids),
         opera: OperaAgg {
@@ -332,6 +340,21 @@ fn myprogram_t2s_pids() -> Vec<u32> {
     matched.sort_unstable();
     matched.dedup();
     matched
+}
+
+
+fn openvpn_pids() -> Vec<u32> {
+    crate::programs::openvpn::main_pids_exact()
+        .into_iter()
+        .filter_map(|p| u32::try_from(p).ok())
+        .collect()
+}
+
+fn tun2socks_pids() -> Vec<u32> {
+    crate::programs::tun2socks::main_pids_exact()
+        .into_iter()
+        .filter_map(|p| u32::try_from(p).ok())
+        .collect()
 }
 
 const TOR_TORRC_PATH: &str = "/data/adb/modules/ZDT-D/working_folder/tor/torrc";

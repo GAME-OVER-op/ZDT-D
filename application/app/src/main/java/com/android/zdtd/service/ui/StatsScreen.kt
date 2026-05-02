@@ -101,11 +101,13 @@ fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
         ProcRow("dpitunnel", showRep?.dpitunnel ?: ApiModels.ProcAgg(), 4),
         ProcRow("dnscrypt", showRep?.dnscrypt ?: ApiModels.ProcAgg(), 5),
         ProcRow("sing-box", showRep?.singBox ?: ApiModels.ProcAgg(), 6),
-        ProcRow("WireGuard", showRep?.wireProxy ?: ApiModels.ProcAgg(), 7),
+        ProcRow("WireProxy", showRep?.wireProxy ?: ApiModels.ProcAgg(), 7),
         ProcRow("Tor", showRep?.tor ?: ApiModels.ProcAgg(), 8),
-        ProcRow("opera-proxy", showRep?.opera?.opera ?: ApiModels.ProcAgg(), 9),
-        ProcRow("t2s", showRep?.t2s ?: ApiModels.ProcAgg(), 10),
-        ProcRow("opera-byedpi", showRep?.opera?.byedpi ?: ApiModels.ProcAgg(), 11),
+        ProcRow("OpenVPN", showRep?.openVpn ?: ApiModels.ProcAgg(), 9),
+        ProcRow("tun2socks", showRep?.tun2Socks ?: ApiModels.ProcAgg(), 10),
+        ProcRow("opera-proxy", showRep?.opera?.opera ?: ApiModels.ProcAgg(), 11),
+        ProcRow("t2s", showRep?.t2s ?: ApiModels.ProcAgg(), 12),
+        ProcRow("opera-byedpi", showRep?.opera?.byedpi ?: ApiModels.ProcAgg(), 13),
       ).sortedWith(
         compareByDescending<ProcRow> { it.agg.count > 0 }
           .thenByDescending { it.agg.cpuPercent }

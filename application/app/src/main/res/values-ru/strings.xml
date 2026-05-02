@@ -209,7 +209,6 @@
     <string name="dnscrypt_main_config_desc">Редактирование основного конфига; требуется перезапуск.</string>
 
     <string name="not_implemented_yet">Пока не реализовано</string>
-    <string name="not_implemented_yet_desc">Для этого модуля пока нет нативной формы. Можно добавить позже по твоим указаниям.</string>
 
     <string name="delete_profile_title">Удалить профиль</string>
     <string name="cd_delete">Удалить</string>
@@ -808,19 +807,19 @@
     <string name="operaproxy_sni_server_address_hint">Необязательно. Формат: host:port или IP:port.</string>
     <string name="operaproxy_sni_server_address_error">Укажите корректный host:port, например 77.111.244.11:443</string>
 
-    <string name="apps_list_desc_wireproxy">Профили WireGuard с локальным мостом SOCKS5</string>
-    <string name="apps_conflict_program_wireproxy">WireGuard</string>
-    <string name="settings_hotspot_program_wireproxy">WireGuard</string>
-    <string name="settings_hotspot_wireproxy_hint_title">Выберите профиль WireGuard</string>
-    <string name="settings_hotspot_wireproxy_hint_body">Трафик точки доступа будет направлен через выбранный профиль WireGuard.</string>
-    <string name="settings_hotspot_wireproxy_profiles_empty">Не найдено включённых профилей WireGuard.</string>
-    <string name="settings_hotspot_wireproxy_profiles_title">Включённые профили WireGuard</string>
-    <string name="settings_hotspot_wireproxy_profile_missing">Выберите профиль WireGuard для продолжения.</string>
-    <string name="settings_hotspot_wireproxy_profile_selected_fmt">Выбранный профиль WireGuard: %1$s</string>
-    <string name="wireproxy_apps_title">Приложения WireGuard</string>
-    <string name="wireproxy_apps_desc">Выберите приложения, трафик которых должен идти через этот профиль WireGuard.</string>
-    <string name="wireproxy_profile_settings_title">Настройки профиля WireGuard</string>
-    <string name="wireproxy_profile_settings_desc">Настройте локальные порты t2s для этого профиля WireGuard. Изменения сохраняются автоматически.</string>
+    <string name="apps_list_desc_wireproxy">Профили WireProxy с локальным мостом SOCKS5</string>
+    <string name="apps_conflict_program_wireproxy">WireProxy</string>
+    <string name="settings_hotspot_program_wireproxy">WireProxy</string>
+    <string name="settings_hotspot_wireproxy_hint_title">Выберите профиль WireProxy</string>
+    <string name="settings_hotspot_wireproxy_hint_body">Трафик точки доступа будет направлен через выбранный профиль WireProxy.</string>
+    <string name="settings_hotspot_wireproxy_profiles_empty">Не найдено включённых профилей WireProxy.</string>
+    <string name="settings_hotspot_wireproxy_profiles_title">Включённые профили WireProxy</string>
+    <string name="settings_hotspot_wireproxy_profile_missing">Выберите профиль WireProxy для продолжения.</string>
+    <string name="settings_hotspot_wireproxy_profile_selected_fmt">Выбранный профиль WireProxy: %1$s</string>
+    <string name="wireproxy_apps_title">Приложения WireProxy</string>
+    <string name="wireproxy_apps_desc">Выберите приложения, трафик которых должен идти через этот профиль WireProxy.</string>
+    <string name="wireproxy_profile_settings_title">Настройки профиля WireProxy</string>
+    <string name="wireproxy_profile_settings_desc">Настройте локальные порты t2s для этого профиля WireProxy. Изменения сохраняются автоматически.</string>
     <string name="wireproxy_t2s_port_label">Порт t2s</string>
     <string name="wireproxy_t2s_web_port_label">Веб-порт t2s</string>
     <string name="wireproxy_profile_autosave_hint">Изменения сохраняются автоматически после короткой паузы.</string>
@@ -828,7 +827,7 @@
     <string name="wireproxy_profile_fix_conflicts">Устраните конфликты портов перед сохранением.</string>
     <string name="wireproxy_auto_save_failed">Не удалось выполнить автосохранение</string>
     <string name="wireproxy_servers_title">Серверы</string>
-    <string name="wireproxy_servers_desc">Создавайте, редактируйте и удаляйте серверы внутри этого профиля WireGuard. SOCKS5 использует только 127.0.0.1.</string>
+    <string name="wireproxy_servers_desc">Создавайте, редактируйте и удаляйте серверы внутри этого профиля WireProxy. SOCKS5 использует только 127.0.0.1.</string>
     <string name="wireproxy_add_server">Создать сервер</string>
     <string name="wireproxy_no_servers">Серверы ещё не созданы.</string>
     <string name="wireproxy_server_bind_fmt">SOCKS5: %1$s:%2$d</string>
@@ -1029,5 +1028,115 @@
     <string name="world_map_closing_remote">удалённо</string>
     <string name="world_map_closing_unknown">неизвестно</string>
     <string name="world_map_geo_label_format">%1$s • %2$s</string>
+
+
+    <!-- myvpn profiles -->
+    <string name="apps_list_desc_myvpn">Привязка выбранных приложений к существующему TUN-интерфейсу через Android netd</string>
+    <string name="apps_conflict_program_myvpn">myvpn</string>
+    <string name="myvpn_program_hint">myvpn привязывает выбранные приложения к уже существующему TUN-интерфейсу.</string>
+    <string name="myvpn_status_profiles">Включено профилей: %1$d / %2$d</string>
+    <string name="myvpn_no_profiles_title">Нет профилей myvpn</string>
+    <string name="myvpn_no_profiles_desc">Создайте профиль, добавьте имя TUN, DNS-серверы, режим CIDR и список приложений.</string>
+    <string name="myvpn_create_profile_title">Создать профиль myvpn</string>
+    <string name="myvpn_profile_created">Профиль %1$s создан</string>
+    <string name="myvpn_profile_name_rules">Разрешено: A-Z, a-z, 0-9, подчёркивание и дефис. Длина: 1..10 символов. Без пробелов, точек, слешей, кириллицы и спецсимволов.</string>
+    <string name="myvpn_profile_name_invalid">Неверное имя профиля. Используйте только A-Z, a-z, 0-9, _ или -, длина 1..10.</string>
+    <string name="myvpn_profile_name_readonly_hint">Имя профиля используется как имя папки и здесь не редактируется.</string>
+    <string name="myvpn_settings_title">Настройки профиля</string>
+    <string name="myvpn_autosave_hint">Автосохранение включено. Изменения применятся после перезапуска службы.</string>
+    <string name="myvpn_tun_label">TUN-интерфейс</string>
+    <string name="myvpn_tun_hint">Интерфейс должен быть создан другой программой до применения myvpn. Не используйте wlan0, rmnet_data0, eth0, lo или dummy0.</string>
+    <string name="myvpn_tun_invalid">Неверное имя TUN или запрещённый физический интерфейс.</string>
+    <string name="myvpn_dns_label">DNS-серверы</string>
+    <string name="myvpn_dns_hint">Введите 1..8 IPv4 DNS через пробел или запятую. IPv6, домены и https/tls URL запрещены.</string>
+    <string name="myvpn_dns_invalid">Введите только 1..8 корректных IPv4-адресов.</string>
+    <string name="myvpn_cidr_mode_label">Режим CIDR</string>
+    <string name="myvpn_cidr_mode_auto">Auto</string>
+    <string name="myvpn_cidr_mode_manual">Manual</string>
+    <string name="myvpn_cidr_auto_hint">Daemon сам попробует определить CIDR из TUN-интерфейса.</string>
+    <string name="myvpn_cidr_manual_hint">Введите IPv4 CIDR вручную, если auto-определение использовать нельзя.</string>
+    <string name="myvpn_cidr_label">Manual CIDR</string>
+    <string name="myvpn_cidr_hint">Примеры: 198.18.9.0/30, 10.8.0.0/24, 172.16.50.0/24.</string>
+    <string name="myvpn_cidr_invalid">Введите корректный IPv4 CIDR с префиксом.</string>
+    <string name="myvpn_apps_title">Приложения myvpn</string>
+    <string name="myvpn_apps_desc">Выберите package names, чей трафик должен идти через эту привязку myvpn. UID парсит daemon.</string>
+    <string name="myvpn_enabled_empty_apps_warning">Профиль включён, но список приложений пустой.</string>
+    <string name="myvpn_app_conflict_error">Это приложение уже используется другой сетевой программой. Уберите его там или выберите другой профиль.</string>
+
+
+    <!-- tun2socks profiles -->
+    <string name="apps_list_desc_tun2socks">Профильная маршрутизация tun2socks через Android netd</string>
+    <string name="apps_conflict_program_tun2socks">tun2socks</string>
+    <string name="tun2socks_program_hint">tun2socks создаёт TUN, ZDT-D направляет выбранные приложения через него.</string>
+    <string name="tun2socks_status_profiles">Включено профилей: %1$d / %2$d</string>
+    <string name="tun2socks_no_profiles_title">Нет профилей tun2socks</string>
+    <string name="tun2socks_no_profiles_desc">Создайте профиль, добавьте имя TUN, proxy URL и список приложений.</string>
+    <string name="tun2socks_create_profile_title">Создать профиль tun2socks</string>
+    <string name="tun2socks_profile_created">Профиль %1$s создан</string>
+    <string name="tun2socks_profile_name_rules">Разрешено: A-Z, a-z, 0-9, подчёркивание и дефис. Длина: 1..10 символов. Без пробелов, точек, слешей, кириллицы и спецсимволов.</string>
+    <string name="tun2socks_profile_name_invalid">Неверное имя профиля. Используйте только A-Z, a-z, 0-9, _ или -, длина 1..10.</string>
+    <string name="tun2socks_profile_name_readonly_hint">Имя профиля используется как имя папки и здесь не редактируется.</string>
+    <string name="tun2socks_profile_card_meta">tun: %1$s • proxy: %2$s • loglevel: %3$s</string>
+    <string name="tun2socks_profile_card_apps">приложений: %1$d</string>
+    <string name="tun2socks_settings_title">Настройки профиля</string>
+    <string name="tun2socks_autosave_hint">Автосохранение включено. Изменения применятся после перезапуска службы.</string>
+    <string name="tun2socks_saving">Сохранение…</string>
+    <string name="tun2socks_tun_label">TUN-интерфейс</string>
+    <string name="tun2socks_tun_hint">tun2socks сам создаёт этот интерфейс. После запуска daemon назначит IPv4 и поднимет его. Не используйте wlan0, rmnet_data0, eth0, lo или dummy0.</string>
+    <string name="tun2socks_tun_invalid">Неверное имя TUN или запрещённый физический интерфейс.</string>
+    <string name="tun2socks_proxy_label">Proxy URL</string>
+    <string name="tun2socks_proxy_hint">Поддерживается: socks5://host:port, socks5://user:pass@host:port, http://host:port, http://user:pass@host:port.</string>
+    <string name="tun2socks_proxy_invalid">Proxy URL должен содержать схему, host и port 1..65535.</string>
+    <string name="tun2socks_proxy_invalid_warning">Proxy URL пустой или некорректный.</string>
+    <string name="tun2socks_loglevel_label">Log level</string>
+    <string name="tun2socks_loglevel_hint">Допустимо: debug, info, warn, error, silent. По умолчанию: info.</string>
+    <string name="tun2socks_loglevel_invalid">Допустимые значения: debug, info, warn, error, silent.</string>
+    <string name="tun2socks_apps_title">Приложения tun2socks</string>
+    <string name="tun2socks_apps_desc">Выберите приложения, трафик которых должен идти через этот профиль tun2socks. UID парсит daemon.</string>
+    <string name="tun2socks_enabled_empty_apps_warning">Профиль включён, но список приложений пустой.</string>
+    <string name="tun2socks_app_conflict_error">Это приложение уже используется другой сетевой программой. Уберите его там или выберите другой профиль.</string>
+    <string name="tun2socks_debug_hint_title">Debug-логи</string>
+    <string name="tun2socks_debug_hint_body">Если профиль не запускается, смотрите /data/adb/modules/ZDT-D/working_folder/tun2socks/profile/&lt;name&gt;/log/tun2socks.log и /data/adb/modules/ZDT-D/log/zdtd.log.</string>
+
+    <!-- OpenVPN profiles -->
+    <string name="apps_list_desc_openvpn">Профильная маршрутизация OpenVPN через Android netd</string>
+    <string name="apps_conflict_program_openvpn">OpenVPN</string>
+    <string name="openvpn_program_hint">Профили применяются при запуске службы. Сохранённые изменения применятся после остановки и повторного запуска.</string>
+    <string name="openvpn_status_profiles">Включено профилей: %1$d / %2$d</string>
+    <string name="openvpn_no_profiles_title">Нет профилей OpenVPN</string>
+    <string name="openvpn_no_profiles_desc">Создайте профиль, добавьте client.ovpn, DNS-серверы и список приложений.</string>
+    <string name="openvpn_create_profile_title">Создать профиль OpenVPN</string>
+    <string name="openvpn_profile_created">Профиль %1$s создан</string>
+    <string name="openvpn_profile_name_rules">Разрешено: A-Z, a-z, 0-9, подчёркивание и дефис. Длина: 1..10 символов. Без пробелов, точек, слешей, кириллицы и спецсимволов.</string>
+    <string name="openvpn_profile_name_invalid">Неверное имя профиля. Используйте только A-Z, a-z, 0-9, _ или -, длина 1..10.</string>
+    <string name="openvpn_profile_name_readonly_hint">Имя профиля используется как имя папки и здесь не редактируется.</string>
+    <string name="openvpn_profile_card_meta">tun: %1$s • dns: %2$s</string>
+    <string name="openvpn_profile_card_files">client.ovpn: %1$s • приложений: %2$d</string>
+    <string name="openvpn_config_present">есть</string>
+    <string name="openvpn_config_missing">нет</string>
+    <string name="openvpn_config_missing_warning">client.ovpn отсутствует. Без него профиль не сможет запуститься.</string>
+    <string name="openvpn_settings_title">Настройки профиля</string>
+    <string name="openvpn_tun_label">TUN-интерфейс</string>
+    <string name="openvpn_tun_hint">Интерфейс должен появиться после запуска OpenVPN. Нельзя использовать физические интерфейсы вроде wlan0, rmnet_data0, eth0 или lo.</string>
+    <string name="openvpn_tun_invalid">Неверное имя TUN или запрещённый физический интерфейс.</string>
+    <string name="openvpn_dns_label">DNS-серверы</string>
+    <string name="openvpn_dns_hint">Введите 1..8 IPv4 DNS через пробел или запятую. IPv6, домены и https/tls URL запрещены.</string>
+    <string name="openvpn_dns_invalid">Введите только 1..8 корректных IPv4-адресов.</string>
+    <string name="openvpn_config_title">Конфиг OpenVPN</string>
+    <string name="openvpn_config_desc">Вставьте содержимое client.ovpn или загрузите его из файла. Он сохраняется как profile/name/client.ovpn.</string>
+    <string name="openvpn_config_empty">client.ovpn не должен быть пустым.</string>
+    <string name="openvpn_apps_title">Приложения OpenVPN</string>
+    <string name="openvpn_apps_desc">Выберите package names, чей трафик должен идти через этот профиль OpenVPN. UID парсит daemon.</string>
+    <string name="openvpn_enabled_empty_apps_warning">Профиль включён, но список приложений пустой.</string>
+    <string name="openvpn_app_conflict_error">Это приложение уже используется другой сетевой программой. Уберите его там или выберите другой профиль.</string>
+    <string name="openvpn_autosave_hint">Автосохранение включено. Изменения применятся после перезапуска службы.</string>
+    <string name="openvpn_config_summary_desc">client.ovpn редактируется отдельно. Откройте редактор через карандаш.</string>
+    <string name="openvpn_config_summary_present_fmt">client.ovpn есть • непустых строк: %1$d</string>
+    <string name="openvpn_config_autosave_hint">Автосохранение включено. Изменения применятся после перезапуска службы.</string>
+    <string name="openvpn_config_editor_title_fmt">client.ovpn / %1$s</string>
+    <string name="openvpn_saving">Сохранение…</string>
+    <string name="saved_apply_after_restart">Сохранено. Изменения применятся после перезапуска службы.</string>
+    <string name="action_open_edit">Открыть/редактировать</string>
+    <string name="common_uploading">Загрузка…</string>
 
 </resources>

@@ -322,7 +322,6 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="dnscrypt_main_config_desc">Edit main config; restart required.</string>
 
     <string name="not_implemented_yet">Not implemented yet</string>
-    <string name="not_implemented_yet_desc">This module does not have a native form yet. We can add it later per your instructions.</string>
 
     <string name="delete_profile_title">Delete profile</string>
     <string name="cd_delete">Delete</string>
@@ -810,19 +809,19 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="operaproxy_sni_server_address_hint">Optional. Use host:port or IP:port.</string>
     <string name="operaproxy_sni_server_address_error">Use a valid host:port value, for example 77.111.244.11:443</string>
 
-    <string name="apps_list_desc_wireproxy">WireGuard profiles with local SOCKS5 bridge</string>
-    <string name="apps_conflict_program_wireproxy">WireGuard</string>
-    <string name="settings_hotspot_program_wireproxy">WireGuard</string>
-    <string name="settings_hotspot_wireproxy_hint_title">Choose a WireGuard profile</string>
-    <string name="settings_hotspot_wireproxy_hint_body">Hotspot traffic will be redirected through the selected WireGuard profile.</string>
-    <string name="settings_hotspot_wireproxy_profiles_empty">No enabled WireGuard profiles found.</string>
-    <string name="settings_hotspot_wireproxy_profiles_title">Enabled WireGuard profiles</string>
-    <string name="settings_hotspot_wireproxy_profile_missing">Select a WireGuard profile to continue.</string>
-    <string name="settings_hotspot_wireproxy_profile_selected_fmt">Selected WireGuard profile: %1$s</string>
-    <string name="wireproxy_apps_title">WireGuard apps</string>
-    <string name="wireproxy_apps_desc">Select the apps whose traffic should use this WireGuard profile.</string>
-    <string name="wireproxy_profile_settings_title">WireGuard profile settings</string>
-    <string name="wireproxy_profile_settings_desc">Configure the local t2s ports for this WireGuard profile. Changes are saved automatically.</string>
+    <string name="apps_list_desc_wireproxy">WireProxy profiles with local SOCKS5 bridge</string>
+    <string name="apps_conflict_program_wireproxy">WireProxy</string>
+    <string name="settings_hotspot_program_wireproxy">WireProxy</string>
+    <string name="settings_hotspot_wireproxy_hint_title">Choose a WireProxy profile</string>
+    <string name="settings_hotspot_wireproxy_hint_body">Hotspot traffic will be redirected through the selected WireProxy profile.</string>
+    <string name="settings_hotspot_wireproxy_profiles_empty">No enabled WireProxy profiles found.</string>
+    <string name="settings_hotspot_wireproxy_profiles_title">Enabled WireProxy profiles</string>
+    <string name="settings_hotspot_wireproxy_profile_missing">Select a WireProxy profile to continue.</string>
+    <string name="settings_hotspot_wireproxy_profile_selected_fmt">Selected WireProxy profile: %1$s</string>
+    <string name="wireproxy_apps_title">WireProxy apps</string>
+    <string name="wireproxy_apps_desc">Select the apps whose traffic should use this WireProxy profile.</string>
+    <string name="wireproxy_profile_settings_title">WireProxy profile settings</string>
+    <string name="wireproxy_profile_settings_desc">Configure the local t2s ports for this WireProxy profile. Changes are saved automatically.</string>
     <string name="wireproxy_t2s_port_label">t2s port</string>
     <string name="wireproxy_t2s_web_port_label">t2s web port</string>
     <string name="wireproxy_profile_autosave_hint">Changes are saved automatically after a short pause.</string>
@@ -830,7 +829,7 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="wireproxy_profile_fix_conflicts">Resolve the port conflicts before saving.</string>
     <string name="wireproxy_auto_save_failed">Auto-save failed</string>
     <string name="wireproxy_servers_title">Servers</string>
-    <string name="wireproxy_servers_desc">Create, edit and delete servers inside this WireGuard profile. SOCKS5 uses 127.0.0.1 only.</string>
+    <string name="wireproxy_servers_desc">Create, edit and delete servers inside this WireProxy profile. SOCKS5 uses 127.0.0.1 only.</string>
     <string name="wireproxy_add_server">Create server</string>
     <string name="wireproxy_no_servers">No servers created yet.</string>
     <string name="wireproxy_server_bind_fmt">SOCKS5: %1$s:%2$d</string>
@@ -1029,5 +1028,115 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="world_map_closing_remote">remote</string>
     <string name="world_map_closing_unknown">unknown</string>
     <string name="world_map_geo_label_format">%1$s • %2$s</string>
+
+
+    <!-- myvpn profiles -->
+    <string name="apps_list_desc_myvpn">Bind selected apps to an existing TUN interface through Android netd</string>
+    <string name="apps_conflict_program_myvpn">myvpn</string>
+    <string name="myvpn_program_hint">myvpn binds selected apps to an already existing TUN interface.</string>
+    <string name="myvpn_status_profiles">Enabled profiles: %1$d / %2$d</string>
+    <string name="myvpn_no_profiles_title">No myvpn profiles</string>
+    <string name="myvpn_no_profiles_desc">Create a profile, add a TUN name, DNS servers, CIDR mode and an app list.</string>
+    <string name="myvpn_create_profile_title">Create myvpn profile</string>
+    <string name="myvpn_profile_created">Profile %1$s created</string>
+    <string name="myvpn_profile_name_rules">Allowed: A-Z, a-z, 0-9, underscore and hyphen. Length: 1..10 characters. No spaces, dots, slashes, Cyrillic or special symbols.</string>
+    <string name="myvpn_profile_name_invalid">Invalid profile name. Use only A-Z, a-z, 0-9, _ or -, length 1..10.</string>
+    <string name="myvpn_profile_name_readonly_hint">Profile name is used as the directory name and is not edited here.</string>
+    <string name="myvpn_settings_title">Profile settings</string>
+    <string name="myvpn_autosave_hint">Auto-save is enabled. Changes apply after service restart.</string>
+    <string name="myvpn_tun_label">TUN interface</string>
+    <string name="myvpn_tun_hint">The interface must be created by another program before myvpn is applied. Do not use wlan0, rmnet_data0, eth0, lo or dummy0.</string>
+    <string name="myvpn_tun_invalid">Invalid TUN name or forbidden physical interface.</string>
+    <string name="myvpn_dns_label">DNS servers</string>
+    <string name="myvpn_dns_hint">Enter 1..8 IPv4 DNS servers separated by spaces or commas. IPv6, domains and https/tls URLs are not allowed.</string>
+    <string name="myvpn_dns_invalid">Enter 1..8 valid IPv4 addresses only.</string>
+    <string name="myvpn_cidr_mode_label">CIDR mode</string>
+    <string name="myvpn_cidr_mode_auto">Auto</string>
+    <string name="myvpn_cidr_mode_manual">Manual</string>
+    <string name="myvpn_cidr_auto_hint">The daemon will try to detect CIDR from the TUN interface.</string>
+    <string name="myvpn_cidr_manual_hint">Enter IPv4 CIDR manually if auto detection cannot be used.</string>
+    <string name="myvpn_cidr_label">Manual CIDR</string>
+    <string name="myvpn_cidr_hint">Examples: 198.18.9.0/30, 10.8.0.0/24, 172.16.50.0/24.</string>
+    <string name="myvpn_cidr_invalid">Enter a valid IPv4 CIDR with prefix.</string>
+    <string name="myvpn_apps_title">myvpn apps</string>
+    <string name="myvpn_apps_desc">Select package names whose traffic should use this myvpn binding. UID parsing is done by the daemon.</string>
+    <string name="myvpn_enabled_empty_apps_warning">The profile is enabled, but the app list is empty.</string>
+    <string name="myvpn_app_conflict_error">This app is already used by another network program. Remove it there or choose another profile.</string>
+
+
+    <!-- tun2socks profiles -->
+    <string name="apps_list_desc_tun2socks">Profile-based tun2socks routing through Android netd</string>
+    <string name="apps_conflict_program_tun2socks">tun2socks</string>
+    <string name="tun2socks_program_hint">tun2socks creates the TUN interface; ZDT-D routes selected apps through it.</string>
+    <string name="tun2socks_status_profiles">Enabled profiles: %1$d / %2$d</string>
+    <string name="tun2socks_no_profiles_title">No tun2socks profiles</string>
+    <string name="tun2socks_no_profiles_desc">Create a profile, add a TUN name, proxy URL and app list.</string>
+    <string name="tun2socks_create_profile_title">Create tun2socks profile</string>
+    <string name="tun2socks_profile_created">Profile %1$s created</string>
+    <string name="tun2socks_profile_name_rules">Allowed: A-Z, a-z, 0-9, underscore and hyphen. Length: 1..10 characters. No spaces, dots, slashes, Cyrillic or special symbols.</string>
+    <string name="tun2socks_profile_name_invalid">Invalid profile name. Use only A-Z, a-z, 0-9, _ or -, length 1..10.</string>
+    <string name="tun2socks_profile_name_readonly_hint">Profile name is used as the directory name and is not edited here.</string>
+    <string name="tun2socks_profile_card_meta">tun: %1$s • proxy: %2$s • loglevel: %3$s</string>
+    <string name="tun2socks_profile_card_apps">apps: %1$d</string>
+    <string name="tun2socks_settings_title">Profile settings</string>
+    <string name="tun2socks_autosave_hint">Auto-save is enabled. Changes apply after service restart.</string>
+    <string name="tun2socks_saving">Saving…</string>
+    <string name="tun2socks_tun_label">TUN interface</string>
+    <string name="tun2socks_tun_hint">tun2socks creates this interface. After start, the daemon assigns IPv4 and brings it up. Do not use wlan0, rmnet_data0, eth0, lo or dummy0.</string>
+    <string name="tun2socks_tun_invalid">Invalid TUN name or forbidden physical interface.</string>
+    <string name="tun2socks_proxy_label">Proxy URL</string>
+    <string name="tun2socks_proxy_hint">Supported: socks5://host:port, socks5://user:pass@host:port, http://host:port, http://user:pass@host:port.</string>
+    <string name="tun2socks_proxy_invalid">Proxy URL must include scheme, host and port 1..65535.</string>
+    <string name="tun2socks_proxy_invalid_warning">Proxy URL is empty or invalid.</string>
+    <string name="tun2socks_loglevel_label">Log level</string>
+    <string name="tun2socks_loglevel_hint">Allowed: debug, info, warn, error, silent. Default: info.</string>
+    <string name="tun2socks_loglevel_invalid">Allowed values: debug, info, warn, error, silent.</string>
+    <string name="tun2socks_apps_title">tun2socks apps</string>
+    <string name="tun2socks_apps_desc">Select package names whose traffic should use this tun2socks profile. UID parsing is done by the daemon.</string>
+    <string name="tun2socks_enabled_empty_apps_warning">The profile is enabled, but the app list is empty.</string>
+    <string name="tun2socks_app_conflict_error">This app is already used by another network program. Remove it there or choose another profile.</string>
+    <string name="tun2socks_debug_hint_title">Debug logs</string>
+    <string name="tun2socks_debug_hint_body">If a profile does not start, check /data/adb/modules/ZDT-D/working_folder/tun2socks/profile/&lt;name&gt;/log/tun2socks.log and /data/adb/modules/ZDT-D/log/zdtd.log.</string>
+
+    <!-- OpenVPN profiles -->
+    <string name="apps_list_desc_openvpn">Profile-based OpenVPN routing through Android netd</string>
+    <string name="apps_conflict_program_openvpn">OpenVPN</string>
+    <string name="openvpn_program_hint">Profiles are applied when the service starts. Saved changes apply after stop/start.</string>
+    <string name="openvpn_status_profiles">Enabled profiles: %1$d / %2$d</string>
+    <string name="openvpn_no_profiles_title">No OpenVPN profiles</string>
+    <string name="openvpn_no_profiles_desc">Create a profile, add client.ovpn, DNS servers and an app list.</string>
+    <string name="openvpn_create_profile_title">Create OpenVPN profile</string>
+    <string name="openvpn_profile_created">Profile %1$s created</string>
+    <string name="openvpn_profile_name_rules">Allowed: A-Z, a-z, 0-9, underscore and hyphen. Length: 1..10 characters. No spaces, dots, slashes, Cyrillic or special symbols.</string>
+    <string name="openvpn_profile_name_invalid">Invalid profile name. Use only A-Z, a-z, 0-9, _ or -, length 1..10.</string>
+    <string name="openvpn_profile_name_readonly_hint">Profile name is used as the directory name and is not edited here.</string>
+    <string name="openvpn_profile_card_meta">tun: %1$s • dns: %2$s</string>
+    <string name="openvpn_profile_card_files">client.ovpn: %1$s • apps: %2$d</string>
+    <string name="openvpn_config_present">present</string>
+    <string name="openvpn_config_missing">missing</string>
+    <string name="openvpn_config_missing_warning">client.ovpn is missing. The profile cannot start without it.</string>
+    <string name="openvpn_settings_title">Profile settings</string>
+    <string name="openvpn_tun_label">TUN interface</string>
+    <string name="openvpn_tun_hint">The interface must appear after OpenVPN starts. Do not use physical interfaces like wlan0, rmnet_data0, eth0 or lo.</string>
+    <string name="openvpn_tun_invalid">Invalid TUN name or forbidden physical interface.</string>
+    <string name="openvpn_dns_label">DNS servers</string>
+    <string name="openvpn_dns_hint">Enter 1..8 IPv4 DNS servers separated by spaces or commas. IPv6, domains and https/tls URLs are not allowed.</string>
+    <string name="openvpn_dns_invalid">Enter 1..8 valid IPv4 addresses only.</string>
+    <string name="openvpn_config_title">OpenVPN config</string>
+    <string name="openvpn_config_desc">Paste client.ovpn content or load it from a file. It is saved as profile/name/client.ovpn.</string>
+    <string name="openvpn_config_empty">client.ovpn cannot be empty.</string>
+    <string name="openvpn_apps_title">OpenVPN apps</string>
+    <string name="openvpn_apps_desc">Select package names whose traffic should use this OpenVPN profile. UID parsing is done by the daemon.</string>
+    <string name="openvpn_enabled_empty_apps_warning">The profile is enabled, but the app list is empty.</string>
+    <string name="openvpn_app_conflict_error">This app is already used by another network program. Remove it there or choose another profile.</string>
+    <string name="openvpn_autosave_hint">Auto-save is enabled. Changes apply after service restart.</string>
+    <string name="openvpn_config_summary_desc">client.ovpn is edited separately. Use the pencil to open the editor.</string>
+    <string name="openvpn_config_summary_present_fmt">client.ovpn is present • %1$d non-empty lines</string>
+    <string name="openvpn_config_autosave_hint">Auto-save is enabled. Changes apply after service restart.</string>
+    <string name="openvpn_config_editor_title_fmt">client.ovpn / %1$s</string>
+    <string name="openvpn_saving">Saving…</string>
+    <string name="saved_apply_after_restart">Saved. Changes apply after service restart.</string>
+    <string name="action_open_edit">Open/edit</string>
+    <string name="common_uploading">Uploading…</string>
 
 </resources>

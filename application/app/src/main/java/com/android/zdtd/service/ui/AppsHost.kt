@@ -76,13 +76,33 @@ fun AppsHost(
         onOpenProgram = onOpenProgram,
         listState = listState,
       )
-      is AppsRoute.Program -> ProgramScreen(
-        programs = programs,
-        programId = r.programId,
-        onOpenProfile = onOpenProfile,
-        actions = actions,
-        snackHost = snackHost,
-      )
+      is AppsRoute.Program -> when (r.programId) {
+        "openvpn" -> OpenVpnProgramScreen(
+          programs = programs,
+          onOpenProfile = onOpenProfile,
+          actions = actions,
+          snackHost = snackHost,
+        )
+        "tun2socks" -> Tun2SocksProgramScreen(
+          programs = programs,
+          onOpenProfile = onOpenProfile,
+          actions = actions,
+          snackHost = snackHost,
+        )
+        "myvpn" -> MyVpnProgramScreen(
+          programs = programs,
+          onOpenProfile = onOpenProfile,
+          actions = actions,
+          snackHost = snackHost,
+        )
+        else -> ProgramScreen(
+          programs = programs,
+          programId = r.programId,
+          onOpenProfile = onOpenProfile,
+          actions = actions,
+          snackHost = snackHost,
+        )
+      }
       is AppsRoute.Profile -> when (r.programId) {
         "sing-box" -> SingBoxProfileScreen(
           programs = programs,
@@ -103,6 +123,24 @@ fun AppsHost(
           snackHost = snackHost,
         )
         "myprogram" -> MyProgramProfileScreen(
+          programs = programs,
+          profile = r.profile,
+          actions = actions,
+          snackHost = snackHost,
+        )
+        "openvpn" -> OpenVpnProfileScreen(
+          programs = programs,
+          profile = r.profile,
+          actions = actions,
+          snackHost = snackHost,
+        )
+        "tun2socks" -> Tun2SocksProfileScreen(
+          programs = programs,
+          profile = r.profile,
+          actions = actions,
+          snackHost = snackHost,
+        )
+        "myvpn" -> MyVpnProfileScreen(
           programs = programs,
           profile = r.profile,
           actions = actions,

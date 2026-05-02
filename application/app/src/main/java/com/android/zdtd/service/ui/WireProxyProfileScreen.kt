@@ -485,7 +485,7 @@ fun WireProxyProfileScreen(
       .navigationBarsPadding(),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    Text("${program?.name ?: "WireGuard"} / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 2)
+    Text("${program?.name ?: "WireProxy"} / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 2)
     Text(
       stringResource(R.string.changes_apply_after_restart),
       style = MaterialTheme.typography.bodySmall,

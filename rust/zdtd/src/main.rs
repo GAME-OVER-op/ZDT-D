@@ -17,6 +17,7 @@ mod settings;
 mod shell;
 mod stats;
 mod stop;
+mod vpn_netd;
 mod xtables_lock;
 
 use anyhow::Result;
@@ -35,6 +36,7 @@ fn main() -> Result<()> {
     let cfg = config::Config::default_fixed();
 
     logging::init(&cfg)?;
+    logging::init_user_locale();
     info!("zdtd starting (daemon)");
 
     daemon::run(&cfg)

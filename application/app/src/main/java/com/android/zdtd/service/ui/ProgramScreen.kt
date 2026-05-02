@@ -1,6 +1,11 @@
 package com.android.zdtd.service.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
@@ -17,6 +22,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -209,21 +216,78 @@ isProfileProgramType(program.type) -> {
 
       else -> {
         item {
-          Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f))) {
-            Column(Modifier.padding(12.dp)) {
-              Text(stringResource(R.string.not_implemented_yet), fontWeight = FontWeight.SemiBold)
-              Spacer(Modifier.height(6.dp))
-              Text(
-                stringResource(R.string.not_implemented_yet_desc),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-              )
-            }
-          }
+          NotImplementedProgramCard()
         }
       }
     }
 
     item { Spacer(Modifier.height(80.dp)) }
+  }
+}
+
+
+@Composable
+private fun NotImplementedProgramCard() {
+  val transition = rememberInfiniteTransition()
+  val handOffset by transition.animateFloat(
+    initialValue = -32f,
+    targetValue = 32f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(durationMillis = 950),
+      repeatMode = RepeatMode.Reverse,
+    )
+  )
+  val handRotation by transition.animateFloat(
+    initialValue = -10f,
+    targetValue = 10f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(durationMillis = 950),
+      repeatMode = RepeatMode.Reverse,
+    )
+  )
+
+  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f))) {
+    Column(
+      modifier = Modifier.fillMaxWidth().padding(18.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+      Text(
+        text = stringResource(R.string.not_implemented_yet),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+      )
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .height(76.dp),
+        contentAlignment = Alignment.Center,
+      ) {
+        Row(
+          modifier = Modifier.width(180.dp),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            text = "‹",
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+            fontSize = 30.sp,
+          )
+          Text(
+            text = "›",
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f),
+            fontSize = 30.sp,
+          )
+        }
+        Text(
+          text = "☝",
+          fontSize = 42.sp,
+          modifier = Modifier
+            .offset(x = handOffset.dp)
+            .rotate(handRotation),
+        )
+      }
+    }
   }
 }
 
@@ -1296,65 +1360,15 @@ private fun ProfileRow(
   onDelete: () -> Unit,
   deletable: Boolean,
 ) {
-  var askDelete by remember { mutableStateOf(false) }
-  if (askDelete) {
-    AlertDialog(
-      onDismissRequest = { askDelete = false },
-      title = { Text(stringResource(R.string.delete_profile_title)) },
-      text = { Text("$programId / ${profile.name}") },
-      confirmButton = {
-        Button(onClick = { askDelete = false; onDelete() }) { Text(stringResource(R.string.action_delete)) }
-      },
-      dismissButton = { OutlinedButton(onClick = { askDelete = false }) { Text(stringResource(R.string.action_cancel)) } },
-    )
-  }
-
-  val compact = rememberIsCompactWidth()
-  Card(
-    onClick = onOpen,
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
-  ) {
-    if (compact) {
-      Column(
-        Modifier.fillMaxWidth().padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-      ) {
-        Column {
-          Text(profile.name, fontWeight = FontWeight.SemiBold, maxLines = 2)
-          Spacer(Modifier.height(2.dp))
-          Text(stringResource(R.string.apply_after_restart_short), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-          Switch(checked = profile.enabled, onCheckedChange = onToggle)
-          if (deletable) {
-            IconButton(onClick = { askDelete = true }) {
-              Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.cd_delete))
-            }
-          } else {
-            Spacer(Modifier.width(48.dp))
-          }
-        }
-      }
-    } else {
-      Row(
-        Modifier.fillMaxWidth().padding(12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-      ) {
-        Column(Modifier.weight(1f)) {
-          Text(profile.name, fontWeight = FontWeight.SemiBold, maxLines = 2)
-          Spacer(Modifier.height(2.dp))
-          Text(stringResource(R.string.apply_after_restart_short), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
-        }
-        Switch(checked = profile.enabled, onCheckedChange = onToggle)
-        if (deletable) {
-          IconButton(onClick = { askDelete = true }) {
-            Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.cd_delete))
-          }
-        }
-      }
-    }
-  }
+  ProfileStatusCard(
+    programId = programId,
+    profileName = profile.name,
+    checked = profile.enabled,
+    onOpen = onOpen,
+    onCheckedChange = onToggle,
+    onDelete = onDelete,
+    deletable = deletable,
+  )
 }
 
 @Composable

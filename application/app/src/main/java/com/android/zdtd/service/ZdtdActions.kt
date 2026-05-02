@@ -140,6 +140,9 @@ interface ZdtdActions {
   /** Apply or restart the myprogram profile. */
   fun applyMyProgramProfile(profile: String, onDone: (Boolean) -> Unit = {})
 
+  /** Upload client.ovpn into an OpenVPN profile. */
+  fun uploadOpenVpnConfig(profile: String, filename: String, file: java.io.File, onDone: (Boolean) -> Unit = {})
+
   fun loadText(path: String, onDone: (String?) -> Unit)
   fun saveText(path: String, content: String, onDone: (Boolean) -> Unit)
 

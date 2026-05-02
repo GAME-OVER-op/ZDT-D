@@ -30,6 +30,8 @@ object ApiModels {
     val singBox: ProcAgg = ProcAgg(),
     val wireProxy: ProcAgg = ProcAgg(),
     val tor: ProcAgg = ProcAgg(),
+    val openVpn: ProcAgg = ProcAgg(),
+    val tun2Socks: ProcAgg = ProcAgg(),
     val t2s: ProcAgg = ProcAgg(),
     val opera: OperaAgg? = null,
   )
@@ -132,6 +134,8 @@ object ApiModels {
       singBox = parseProcAgg(o.optJSONObject("sing_box")),
       wireProxy = parseProcAgg(o.optJSONObject("wireproxy")),
       tor = parseProcAgg(o.optJSONObject("tor")),
+      openVpn = parseProcAgg(o.optJSONObject("openvpn")),
+      tun2Socks = parseProcAgg(o.optJSONObject("tun2socks")),
       t2s = parseProcAgg(o.optJSONObject("t2s")),
       opera = opera,
     )
@@ -140,7 +144,7 @@ object ApiModels {
   fun isServiceOn(r: StatusReport?): Boolean {
     if (r == null) return false
     val opera = r.opera
-    val sum = r.zapret.count + r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.dpitunnel.count + r.singBox.count + r.wireProxy.count + r.tor.count +
+    val sum = r.zapret.count + r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.dpitunnel.count + r.singBox.count + r.wireProxy.count + r.tor.count + r.openVpn.count + r.tun2Socks.count +
       (opera?.opera?.count ?: 0) + r.t2s.count + (opera?.byedpi?.count ?: 0)
     return sum > 0
   }
@@ -157,6 +161,8 @@ object ApiModels {
       add(r.singBox)
       add(r.wireProxy)
       add(r.tor)
+      add(r.openVpn)
+      add(r.tun2Socks)
       add(r.t2s)
       r.opera?.let { o ->
         add(o.opera)
@@ -290,10 +296,13 @@ object ApiModels {
       val profiles = if (profilesArr != null) parseProfiles(profilesArr) else emptyList()
       val rawName = o.optString("name").takeIf { it.isNotBlank() }
       val displayName = when (id) {
-        "wireproxy" -> "WireGuard"
+        "wireproxy" -> "WireProxy"
         "tor" -> "Tor"
         "myproxy" -> rawName ?: "myproxy"
         "myprogram" -> rawName ?: "myprogram"
+        "openvpn" -> rawName ?: "OpenVPN"
+        "tun2socks" -> rawName ?: "tun2socks"
+        "myvpn" -> rawName ?: "myvpn"
         else -> rawName
       }
       out.add(

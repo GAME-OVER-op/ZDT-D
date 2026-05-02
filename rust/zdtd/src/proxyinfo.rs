@@ -911,7 +911,11 @@ fn install_rules(uids: &[u32], local_ports: &[u16], global_ports: &[u16]) -> Res
         if !local_ports.is_empty() || !global_ports.is_empty() {
             install_ipv4_rules(uids, local_ports, global_ports)?;
         }
-        install_ipv6_rules(uids)?;
+        if let Err(e) = install_ipv6_rules(uids) {
+            logging::warn(&format!(
+                "proxyInfo IPv6 rules unavailable, keeping IPv4 rules active: {e:#}"
+            ));
+        }
         Ok(())
     })();
 

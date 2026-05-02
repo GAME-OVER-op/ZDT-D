@@ -3589,6 +3589,19 @@ private fun shQuote(s: String): String {
     }
   }
 
+
+  override fun uploadOpenVpnConfig(profile: String, filename: String, file: File, onDone: (Boolean) -> Unit) {
+    launchIO {
+      val safeProfile = profile.trim()
+      val ok = runCatching {
+        api.uploadOpenVpnConfig(safeProfile, filename, file)
+      }.getOrDefault(false)
+      if (ok) log("OK", "openvpn/$safeProfile/client.ovpn uploaded (apply after stop/start)")
+      else log("ERR", "openvpn/$safeProfile/client.ovpn upload failed")
+      withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
   override fun loadText(path: String, onDone: (String?) -> Unit) {
     launchIO {
       val content = runCatching { api.getTextContent(path) }.getOrNull()

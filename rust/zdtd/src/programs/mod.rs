@@ -11,3 +11,7 @@ pub mod tor;
 pub mod myproxy;
 
 pub mod myprogram;
+
+pub mod openvpn;
+pub mod tun2socks;
+pub mod myvpn;

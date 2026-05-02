@@ -333,7 +333,11 @@ fn install_rules(uids: &[u32]) -> Result<()> {
 
     let result = (|| {
         install_ipv4_rules(uids)?;
-        install_ipv6_rules(uids)?;
+        if let Err(e) = install_ipv6_rules(uids) {
+            logging::warn(&format!(
+                "blockedquic IPv6 rules unavailable, keeping IPv4 rules active: {e:#}"
+            ));
+        }
         Ok(())
     })();
 

@@ -10,6 +10,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -120,6 +122,160 @@ fun EnabledCard(title: String, checked: Boolean, onCheckedChange: (Boolean) -> U
         }
       }
     }
+  }
+}
+
+
+@Composable
+fun ProfileStatusCard(
+  programId: String,
+  profileName: String,
+  checked: Boolean,
+  onOpen: () -> Unit,
+  onCheckedChange: (Boolean) -> Unit,
+  onDelete: () -> Unit,
+  deletable: Boolean = true,
+) {
+  var askDelete by remember { mutableStateOf(false) }
+  if (askDelete) {
+    AlertDialog(
+      onDismissRequest = { askDelete = false },
+      title = { Text(stringResource(R.string.delete_profile_title)) },
+      text = { Text("$programId / $profileName") },
+      confirmButton = {
+        Button(onClick = { askDelete = false; onDelete() }) {
+          Text(stringResource(R.string.action_delete))
+        }
+      },
+      dismissButton = {
+        OutlinedButton(onClick = { askDelete = false }) {
+          Text(stringResource(R.string.action_cancel))
+        }
+      },
+    )
+  }
+
+  val compactWidth = rememberIsCompactWidth()
+  val progress = remember { Animatable(if (checked) 1f else 0f) }
+  var animating by remember { mutableStateOf(false) }
+  var animationToken by remember { mutableStateOf(0) }
+
+  LaunchedEffect(checked) {
+    val token = animationToken + 1
+    animationToken = token
+    animating = true
+    try {
+      progress.animateTo(
+        targetValue = if (checked) 1f else 0f,
+        animationSpec = tween(durationMillis = 560, easing = FastOutSlowInEasing),
+      )
+    } finally {
+      if (animationToken == token) animating = false
+    }
+  }
+
+  val infinite = rememberInfiniteTransition(label = "profile_card_wave")
+  val wave by infinite.animateFloat(
+    initialValue = 0f,
+    targetValue = 1f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(durationMillis = 900, easing = LinearEasing),
+      repeatMode = RepeatMode.Restart,
+    ),
+    label = "profile_card_wave_value",
+  )
+
+  val onColor = Color(0xFF22C55E)
+  val offColor = MaterialTheme.colorScheme.error
+  val baseColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)
+
+  Card(
+    onClick = onOpen,
+    colors = CardDefaults.cardColors(containerColor = baseColor),
+  ) {
+    Box(Modifier.fillMaxWidth()) {
+      Canvas(Modifier.matchParentSize()) {
+        val p = progress.value.coerceIn(0f, 1f)
+        val currentColor = lerp(offColor, onColor, p)
+        val targetColor = if (checked) onColor else offColor
+        val towardTarget = if (checked) p else 1f - p
+        val maxDim = max(size.width, size.height)
+        val origin = Offset(size.width - 72.dp.toPx(), size.height / 2f)
+        val pulse = if (animating) wave * maxDim * 0.10f else 0f
+        val radius = maxDim * (0.10f + 0.74f * towardTarget) + pulse
+
+        drawRoundRect(
+          color = currentColor.copy(alpha = 0.030f + 0.050f * towardTarget),
+          size = size,
+        )
+        drawCircle(
+          color = targetColor.copy(alpha = if (animating) 0.155f else 0.095f),
+          radius = radius,
+          center = origin,
+        )
+        if (animating) {
+          drawCircle(
+            color = targetColor.copy(alpha = 0.085f * (1f - wave.coerceIn(0f, 1f))),
+            radius = maxDim * (0.20f + wave * 0.70f),
+            center = origin,
+          )
+        }
+      }
+
+      if (compactWidth) {
+        Column(
+          Modifier.fillMaxWidth().padding(12.dp),
+          verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          ProfileStatusCardText(profileName = profileName)
+          Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Switch(checked = checked, onCheckedChange = onCheckedChange)
+            if (deletable) {
+              IconButton(onClick = { askDelete = true }) {
+                Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.cd_delete))
+              }
+            } else {
+              Spacer(Modifier.width(48.dp))
+            }
+          }
+        }
+      } else {
+        Row(
+          Modifier.fillMaxWidth().padding(12.dp),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          ProfileStatusCardText(profileName = profileName, modifier = Modifier.weight(1f))
+          Spacer(Modifier.width(12.dp))
+          Switch(checked = checked, onCheckedChange = onCheckedChange)
+          if (deletable) {
+            IconButton(onClick = { askDelete = true }) {
+              Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.cd_delete))
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun ProfileStatusCardText(
+  profileName: String,
+  modifier: Modifier = Modifier,
+) {
+  Column(modifier) {
+    Text(profileName, fontWeight = FontWeight.SemiBold, maxLines = 2)
+    Spacer(Modifier.height(2.dp))
+    Text(
+      stringResource(R.string.apply_after_restart_short),
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+    )
   }
 }
 

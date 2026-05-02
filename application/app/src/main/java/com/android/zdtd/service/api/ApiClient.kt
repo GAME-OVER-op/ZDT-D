@@ -77,7 +77,7 @@ class ApiClient(
    */
   fun createProfile(programId: String, profile: String? = null): Boolean {
     val p = profile?.trim().orEmpty()
-    if (programId == "myproxy" || programId == "myprogram") {
+    if (programId == "myproxy" || programId == "myprogram" || programId == "openvpn" || programId == "tun2socks" || programId == "myvpn") {
       val body = JSONObject()
       if (p.isNotEmpty()) body.put("name", p)
       return requestOk("POST", "/api/programs/${enc(programId)}/profiles", body)
@@ -255,6 +255,11 @@ class ApiClient(
 
   fun deletePath(path: String): Boolean {
     return requestOk("DELETE", path, null)
+  }
+
+  fun uploadOpenVpnConfig(profile: String, filename: String, file: File): Boolean {
+    val safeProfile = enc(profile.trim())
+    return uploadMultipart("/api/programs/openvpn/profiles/$safeProfile/upload-config", filename, file)
   }
 
 

@@ -46,6 +46,7 @@ pub fn start_full() -> Result<()> {
     log::info!("waiting for sys.boot_completed=1 ...");
     boot::wait_for_boot_completed()?;
     log::info!("boot completed");
+    wait_android_runtime_ready_best_effort();
 
     settings::ensure_minimal_program_layouts()?;
 
@@ -279,6 +280,74 @@ pub fn stop_full() -> Result<()> {
     Ok(())
 }
 
+
+fn wait_android_runtime_ready_best_effort() {
+    // Android can report sys.boot_completed before package manager/netd are fully
+    // responsive, especially on cold boot. Keep this guard soft: it improves
+    // startup stability, but a temporary PM/netd issue must not block unrelated
+    // programs forever.
+    const STABILIZE_SECS: u64 = 3;
+    log::info!("boot guard: stabilization sleep {STABILIZE_SECS}s after sys.boot_completed");
+    std::thread::sleep(Duration::from_secs(STABILIZE_SECS));
+
+    if !wait_shell_probe_ready(
+        "package-manager",
+        &[
+            "cmd package list packages >/dev/null 2>&1",
+            "pm list packages >/dev/null 2>&1",
+        ],
+        Duration::from_secs(20),
+        Duration::from_secs(1),
+        Duration::from_secs(5),
+    ) {
+        mark_start_partial();
+    }
+
+    if !wait_shell_probe_ready(
+        "netd",
+        &["ndc network list >/dev/null 2>&1"],
+        Duration::from_secs(20),
+        Duration::from_secs(1),
+        Duration::from_secs(5),
+    ) {
+        mark_start_partial();
+    }
+}
+
+fn wait_shell_probe_ready(
+    name: &str,
+    probes: &[&str],
+    max_wait: Duration,
+    step: Duration,
+    per_try_timeout: Duration,
+) -> bool {
+    let started = std::time::Instant::now();
+    let mut attempt: u32 = 0;
+
+    loop {
+        attempt = attempt.saturating_add(1);
+        for probe in probes {
+            match shell::ok_sh_timeout(probe, per_try_timeout) {
+                Ok(_) => {
+                    log::info!("boot guard: {name} ready after attempt={attempt}");
+                    return true;
+                }
+                Err(e) => {
+                    log::debug!("boot guard: {name} probe failed attempt={attempt}: {probe}: {e:#}");
+                }
+            }
+        }
+
+        if started.elapsed() >= max_wait {
+            log::warn!(
+                "boot guard: {name} not ready after {:?}; startup will continue",
+                max_wait
+            );
+            return false;
+        }
+        std::thread::sleep(step);
+    }
+}
 
 
 fn start_best_effort<F>(name: &'static str, f: F)

@@ -498,7 +498,10 @@ fn build_profile_plan(profile: &str) -> Result<ProfilePlan> {
     if cfg.trim().is_empty() {
         bail!("client.ovpn is empty: {}", config_path.display());
     }
-    normalize_client_config_in_place(&config_path, &setting.tun)
+    let tmp_dir = profile_dir.join("tmp");
+    fs::create_dir_all(&tmp_dir)
+        .with_context(|| format!("create openvpn tmp dir {}", tmp_dir.display()))?;
+    normalize_client_config_in_place(&config_path, &setting.tun, &tmp_dir)
         .with_context(|| format!("normalize {}", config_path.display()))?;
 
     let app_in = profile_dir.join("app/uid/user_program");
@@ -524,7 +527,7 @@ fn build_profile_plan(profile: &str) -> Result<ProfilePlan> {
 const ZDTD_OPENVPN_BLOCK_BEGIN: &str = "# ZDT-D Android CLI UID-only mode BEGIN";
 const ZDTD_OPENVPN_BLOCK_END: &str = "# ZDT-D Android CLI UID-only mode END";
 
-fn normalize_client_config_in_place(config_path: &Path, tun: &str) -> Result<()> {
+fn normalize_client_config_in_place(config_path: &Path, tun: &str, tmp_dir: &Path) -> Result<()> {
     let original = fs::read_to_string(config_path)
         .with_context(|| format!("read {}", config_path.display()))?;
     let original_lines: Vec<&str> = original.lines().collect();
@@ -586,6 +589,7 @@ fn normalize_client_config_in_place(config_path: &Path, tun: &str) -> Result<()>
     kept.push("pull-filter ignore \"tun-ipv6\"".to_string());
     kept.push("pull-filter ignore \"ifconfig-ipv6\"".to_string());
     kept.push("pull-filter ignore \"route-ipv6\"".to_string());
+    kept.push(format!("tmp-dir {}", tmp_dir.display()));
     kept.push(format!("dev {tun}"));
     kept.push("dev-type tun".to_string());
     kept.push(ZDTD_OPENVPN_BLOCK_END.to_string());
@@ -601,12 +605,17 @@ fn normalize_client_config_in_place(config_path: &Path, tun: &str) -> Result<()>
     }
 
     if normalized != original {
+        info!(
+            "openvpn: normalized config {} for tun={} tmp_dir={}",
+            config_path.display(),
+            tun,
+            tmp_dir.display()
+        );
         let tmp = config_path.with_file_name("client.ovpn.zdtd.tmp");
         fs::write(&tmp, normalized)
             .with_context(|| format!("write {}", tmp.display()))?;
         fs::rename(&tmp, config_path)
             .with_context(|| format!("rename {} -> {}", tmp.display(), config_path.display()))?;
-        info!("openvpn: normalized config {} for tun={}", config_path.display(), tun);
     }
     Ok(())
 }
@@ -657,7 +666,7 @@ fn is_openvpn_line_managed_by_zdtd(trimmed: &str) -> bool {
     let mut parts = lower.split_whitespace();
     let directive = parts.next().unwrap_or("");
     match directive {
-        "block-outside-dns" | "route-noexec" | "redirect-gateway" | "dev" | "dev-type" | "tun-ipv6" => true,
+        "block-outside-dns" | "route-noexec" | "redirect-gateway" | "tmp-dir" | "dev" | "dev-type" | "tun-ipv6" => true,
         "ifconfig-ipv6" | "route-ipv6" => true,
         "dhcp-option" => parts.next() == Some("dns"),
         "pull-filter" => {

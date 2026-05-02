@@ -15,246 +15,161 @@
     <img src="https://img.shields.io/github/downloads/GAME-OVER-op/ZDT-D/total?style=flat-square" alt="Downloads" />
   </a>
   <a href="https://t.me/module_ggover">
-    <img src="https://img.shields.io/badge/Telegram–Join%20Group-blue?style=flat-square&logo=telegram" alt="Telegram Group" />
+    <img src="https://img.shields.io/badge/Telegram-Join%20Group-blue?style=flat-square&logo=telegram" alt="Telegram Group" />
   </a>
 </p>
 
 ## Description
 
-**ZDT-D** is a root module for Android designed for advanced network compatibility, DPI circumvention, DNS handling, and local proxy orchestration.
+**ZDT-D** is a root-based Android network orchestration project for advanced traffic routing, DPI circumvention, DNS handling, local proxy pipelines, and selective VPN/TUN binding.
 
-Unlike a classic Android VPN app, ZDT-D does **not** rely on `VpnService` as its primary traffic engine.  
-Instead, it uses a **root daemon**, **iptables/ip6tables**, **UID-based routing**, **NFQUEUE**, and **local transparent redirection** to selectively pass traffic into different processing pipelines.
+It is not a classic Android VPN application and it is not limited to one bundled engine. ZDT-D uses a local root daemon, Android application UIDs, `iptables` / `ip6tables`, NFQUEUE, local loopback services, and Android `netd` to route selected applications through different processing paths.
 
 The project includes:
 
 - a local Rust daemon (`zdtd`)
 - an Android application for configuration and status control
-- bundled networking tools for different routing and DPI-bypass scenarios
+- bundled networking tools for different routing and compatibility scenarios
+- internal builders for UID-based redirection and Android `netd`-based TUN binding
 
-> The app is available in **Russian** and **English**.
+> The Android app is available in Russian and English.
 
----
+## What makes ZDT-D different
 
-## What makes ZDT-D different from a classic VPN
+Most Android VPN or proxy applications use a single `VpnService` instance, create one virtual TUN interface, and route all or selected traffic through one global pipeline.
 
-A traditional Android VPN usually works through `VpnService`, creates a virtual `TUN` interface, and routes traffic through a single VPN pipeline.
+ZDT-D uses a different model:
 
-**ZDT-D uses a different model:**
+- it works with root privileges
+- it does not depend on Android `VpnService` as its main traffic engine
+- it can route traffic by Android application UID
+- it can apply `iptables` / `ip6tables` rules
+- it can send traffic to NFQUEUE-based DPI engines
+- it can redirect selected applications to local proxy services on `127.0.0.1`
+- it can bind selected applications to existing or generated TUN interfaces through Android `netd`
+- it can run several engines and profiles at the same time
 
-- works with **root privileges**
-- applies rules through **iptables / ip6tables**
-- routes traffic **by Android app UID**
-- supports **NFQUEUE-based packet processing**
-- supports **transparent redirect to local services on `127.0.0.1`**
-- can combine multiple engines for different scenarios instead of forcing one global VPN tunnel
+Because of this, ZDT-D is closer to a root-based traffic management platform than to a traditional VPN client.
 
-This makes ZDT-D closer to a **root-based transparent traffic manager** than to a standard VPN client.
+## Split tunneling and app-based control
 
----
+ZDT-D does not blindly route the whole device through one tunnel.
 
-## Architecture overview
+The user selects Android applications, the daemon resolves package names into Linux UIDs, and those UIDs are used by the routing layer. Depending on the selected program, traffic can be sent through `iptables`, NFQUEUE, a local transparent proxy pipeline, or an Android `netd` VPN binding.
 
-### 1. Android app
-The Android application is responsible for:
+This makes it possible to build flexible scenarios such as:
 
-- editing settings
-- enabling/disabling services
-- selecting apps for routing
-- importing/exporting backups
-- starting module update flow
-- viewing service state and logs
+- one application through OpenVPN + Android `netd`
+- another application through tun2socks + Android `netd`
+- another application through a local sing-box or wireproxy pipeline
+- selected applications through NFQUEUE-based DPI circumvention
+- selected applications through an Opera proxy pipeline
+- selected applications through a custom TUN interface exposed by `myvpn`
 
-### 2. `zdtd` daemon
-`zdtd` is the central runtime component.
+ZDT-D is designed for selective routing. It does not force every application into the same path.
 
-It:
+## Flexible program architecture
 
-- waits for Android boot completion
-- prepares runtime environment
-- backs up and restores baseline iptables state
-- starts enabled services in a controlled order
-- exposes a local API on loopback
-- monitors service state
-- can protect critical processes from sleep/termination
+ZDT-D is built around profile-based programs rather than a single fixed binary.
 
-### 3. External bundled tools
-ZDT-D orchestrates multiple external engines instead of implementing every protocol inside one binary.
+Different programs can have their own profiles, settings, app lists, logs, and runtime behavior. The daemon collects enabled profiles, validates conflicts, starts the required engines, and applies the correct routing model for each one.
 
----
+The project supports several categories of components:
 
-## Included Tools
+- DPI and NFQUEUE engines
+- transparent proxy engines
+- local proxy pipelines
+- DNS components
+- VPN/TUN + Android `netd` binding
+- user-defined process launchers
+- port protection and diagnostic helpers
 
-| Program | Purpose | Upstream |
-|---|---|---|
-| zapret (`nfqws`) | DPI circumvention via NFQUEUE-based packet processing | https://github.com/bol-van/zapret |
-| zapret2 (`nfqws2` + lua) | Extended DPI bypass engine with lua scripts | https://github.com/bol-van/zapret2 |
-| byedpi | DPI circumvention utility | https://github.com/hufrea/byedpi |
-| DPITunnel-cli | Desync-based DPI tool | https://github.com/nomoresat/DPITunnel-cli |
-| dnscrypt-proxy | Encrypted DNS proxy | https://github.com/DNSCrypt/dnscrypt-proxy |
-| opera-proxy | Opera proxy/VPN pipeline component | https://github.com/Snawoot/opera-proxy |
-| sing-box | Multi-protocol proxy engine | https://github.com/SagerNet/sing-box |
-| t2s | Transparent-to-socks helper used in selected modes | bundled in project |
+This architecture makes the project flexible: new engines can be added without redesigning the entire routing system.
 
----
+## Custom programs and extensibility
 
-## Traffic routing model
+A major goal of ZDT-D is extensibility.
 
-ZDT-D supports more than one traffic handling path.
+The project is not limited to pre-defined tools. Users can add their own network programs and combine them with ZDT-D routing features.
 
-### A. NFQUEUE path
-Used for packet-level processing.
+For example:
 
-Typical logic:
+- `myprogram` can launch a user-provided binary or script
+- that binary can create a local proxy, a service, or a TUN interface
+- `myvpn` can bind selected applications to an already existing TUN interface
+- the daemon can still handle UID parsing, conflict checks, and Android `netd` binding
 
-- selected Android packages are converted into **UIDs**
-- `iptables` rules are added in `mangle`
-- matching traffic is sent to **NFQUEUE**
-- userspace processor handles the packets
+This allows ZDT-D to be used as a base for custom Android networking setups, not only as a ready-made module with fixed behavior.
 
-### B. Transparent local redirection
-Used for local service pipelines.
+## Routing models
 
-Typical logic:
+ZDT-D supports multiple independent traffic handling paths.
 
-- selected Android app UIDs are resolved
-- `iptables` rules are attached to `OUTPUT`
-- traffic is redirected to local listeners on `127.0.0.1:<port>`
-- local component processes the stream
+### NFQUEUE path
 
-### C. DNS handling
-`dnscrypt-proxy` can be started before the rest of the pipeline so DNS resolution can be handled in a controlled way.
+Selected application traffic can be matched by UID and sent into NFQUEUE. A userspace DPI engine can then inspect or modify packets.
 
----
+### Transparent local redirection
 
-## How app selection works
+Selected application traffic can be redirected to a local listener on `127.0.0.1:<port>`. Local helper programs then forward or process the stream.
 
-ZDT-D does not blindly route all device traffic.
+### Android netd / TUN binding
 
-It can work with **selected applications**:
+When a supported program creates or exposes a TUN interface, ZDT-D can bind selected application UIDs to that interface through Android `netd`.
 
-1. package names are collected from user settings
-2. package names are resolved into **Linux UIDs**
-3. iptables rules are generated using `-m owner --uid-owner`
-4. only traffic belonging to those apps is redirected or queued
+This model is used by OpenVPN, tun2socks, and the universal `myvpn` binding.
 
-This allows more selective routing than a simple “all traffic through one tunnel” design.
+### DNS handling
 
----
+ZDT-D can manage local DNS components such as dnscrypt-proxy and route DNS-related traffic in controlled scenarios.
 
-## iptables / ip6tables usage
+## Conflict control
 
-ZDT-D actively manages system networking rules.
+Because several programs can target the same applications, ZDT-D checks app-list conflicts.
 
-Main characteristics:
+An application should not be assigned to multiple incompatible network pipelines at the same time. This reduces broken routing, duplicated redirection, and hard-to-debug conflicts between profiles.
 
-- uses **iptables** and **ip6tables**
-- backs up baseline rules on first launch
-- restores a clean baseline before applying new runtime rules
-- works primarily with **`nat`** and **`mangle`** tables
-- applies rules idempotently to reduce duplication
-- supports IPv6 on a best-effort basis depending on device capabilities
+Some helper features, such as QUIC blocking, can be used alongside other routing modes when they do not conflict with the main traffic path.
 
-Examples of rule types used by the module:
+## Documentation
 
-- `NFQUEUE` rules in `mangle`
-- `owner` match by UID
-- `DNAT` to loopback ports
-- custom chains for transparent redirection
+Detailed information about supported programs and internal components is available in:
 
----
+- [`docs/PROGRAMS.md`](docs/PROGRAMS.md)
 
-## sing-box integration
+Practical usage notes, troubleshooting, and advanced examples may be kept in:
 
-ZDT-D supports `sing-box` in two primary modes:
-
-### Socks5 mode
-- launches one or more `sing-box` profiles
-- starts `t2s`
-- redirects selected app traffic into `t2s`
-- `t2s` forwards into the selected socks5 pipeline
-
-### Transparent mode
-- launches the selected `sing-box` profile
-- applies transparent iptables redirect directly to the configured local port
-- supports TCP or TCP+UDP capture depending on profile settings
-
----
-
-## Runtime protection
-
-ZDT-D includes a runtime protector for important service processes.
-
-Depending on configuration, it can:
-
-- acquire a kernel wake lock
-- adjust `oom_score_adj`
-- work in `Off`, `On`, or `Auto` mode
-- react differently to screen-on / screen-off states
-
-This part is intended to improve service stability during idle or power-managed device states.
-
----
-
-## Installation
-
-1. Install the Android app.
-2. Use the app to install or update the module.
-3. Reboot when prompted.
-4. Open the app and configure the desired programs and app routing lists.
-
-> Do not manually modify release archives unless you know exactly what you are doing.
-
----
-
-## Updates
-
-### Module update
-- performed through the Android app
-- requires reboot after installation
-- settings migration is supported
-
-### Program updates
-Some bundled tools can be updated manually from their official upstream releases through the app.
-
-Examples:
-- zapret → updates `nfqws`
-- zapret2 → updates `nfqws2` + `lua` scripts
-
----
+- `INSTRUCTIONS.md`
 
 ## Privacy
 
-ZDT-D does **not** collect, transmit, sell, share, or use personal data.
+ZDT-D does not collect, transmit, sell, share, or use personal data.
 
-All configuration, routing, rule management, and runtime control required for the module to work are performed **locally on the installed device**.
+All configuration, routing, rule management, and runtime control required for the module to work are performed locally on the installed device.
 
-The project does **not** require remote telemetry or analytics for core functionality.
+The project does not require remote telemetry or analytics for core functionality.
 
 If the application connects to external resources, it does so only for actions explicitly requested by the user, such as checking releases or downloading updates from official upstream sources.
 
----
+## Safety and compatibility
 
-## Safety
+ZDT-D works with low-level Android networking components. Compatibility may vary depending on:
 
-- Some antivirus products may flag DPI-related tools because they work with low-level network behavior.
-- ZDT-D is intended for advanced network compatibility, routing control, and research / enthusiast use.
-- Device compatibility may vary depending on ROM behavior, SELinux handling, kernel options, and root environment.
-- Some features depend on working iptables/ip6tables support on the device.
+- ROM behavior
+- root implementation
+- SELinux behavior
+- kernel features
+- `iptables` / `ip6tables` support
+- Android `netd` behavior
+- bundled binary compatibility
 
----
+Some antivirus products may flag DPI-related tools because they work with low-level network traffic. This does not mean that ZDT-D collects data or performs remote telemetry.
 
-## Notes
-
-- IPv6 behavior may differ across devices and firmware builds.
-- Some functions may depend on the behavior of the root environment and firmware implementation.
-- For additional usage notes and explanations, see `INSTRUCTIONS.md`.
-
----
+ZDT-D is intended for advanced users, network compatibility research, routing control, and enthusiast use.
 
 ## License
 
-GPL-3.0 License — see [LICENSE](https://github.com/GAME-OVER-op/ZDT-D/blob/main/LICENSE)
+GPL-3.0 License — see [LICENSE](https://github.com/GAME-OVER-op/ZDT-D/blob/main/LICENSE).
 
 ## Downloads
 

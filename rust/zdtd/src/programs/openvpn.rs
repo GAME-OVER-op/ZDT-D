@@ -683,6 +683,15 @@ fn is_openvpn_line_managed_by_zdtd(trimmed: &str) -> bool {
 }
 
 fn spawn_openvpn(plan: &ProfilePlan) -> Result<()> {
+    if openvpn_profile_process_running(&plan.config_path) {
+        info!(
+            "openvpn: profile={} already running for config={}, skip spawn",
+            plan.name,
+            plan.config_path.display()
+        );
+        return Ok(());
+    }
+
     fs::create_dir_all(plan.profile_dir.join("log"))?;
     let logf = OpenOptions::new()
         .create(true)
@@ -722,6 +731,19 @@ fn spawn_openvpn(plan: &ProfilePlan) -> Result<()> {
         warn!("openvpn: profile={} pid={} exited quickly; check log {}", plan.name, child.id(), plan.log_path.display());
     }
     Ok(())
+}
+
+fn openvpn_profile_process_running(config_path: &Path) -> bool {
+    let pattern = format!("{} --config {}", OPENVPN_BIN, config_path.display());
+    let cmd = format!(
+        "ps -ef 2>/dev/null | grep -F {} | grep -v grep >/dev/null 2>&1",
+        shell_quote_for_sh(&pattern)
+    );
+    shell::ok_sh(&cmd).is_ok()
+}
+
+fn shell_quote_for_sh(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 fn wait_tun_ready(tun: &str) -> Result<()> {

@@ -186,9 +186,20 @@ fun Tun2SocksProgramScreen(
         showCreate = false
         actions.createNamedProfile("tun2socks", name) { created ->
           if (created != null) {
-            showSnack(context.getString(R.string.tun2socks_profile_created, created))
-            actions.refreshPrograms()
-            onOpenProfile("tun2socks", created)
+            scope.launch {
+              val tun = nextFreeVpnTunName(actions, programs, excludeProgramId = "tun2socks", excludeProfile = created)
+              val ok = awaitSaveJsonVpnTunGuard(
+                actions,
+                "${vpnProfileApiPath("tun2socks", created)}/setting",
+                defaultTun2SocksSettingJson(tun),
+              )
+              showSnack(
+                if (ok) context.getString(R.string.tun2socks_profile_created, created)
+                else context.getString(R.string.save_failed)
+              )
+              actions.refreshPrograms()
+              onOpenProfile("tun2socks", created)
+            }
           } else {
             showSnack(context.getString(R.string.create_failed))
           }
@@ -357,6 +368,7 @@ fun Tun2SocksProfileScreen(
   var hiddenSetting by remember(profile) { mutableStateOf(JSONObject().put("udp_timeout", JSONObject.NULL).put("fwmark", JSONObject.NULL).put("restapi", JSONObject.NULL)) }
   var settingInitialized by remember(profile) { mutableStateOf(false) }
   var appCount by remember(profile) { mutableStateOf(0) }
+  var usedVpnTuns by remember(profile) { mutableStateOf(emptySet<String>()) }
 
   fun showSnack(msg: String) {
     scope.launch { snackHost.showSnackbar(msg) }
@@ -366,11 +378,14 @@ fun Tun2SocksProfileScreen(
     loading = true
     settingInitialized = false
     scope.launch {
+      val usedTuns = loadUsedVpnTunNames(actions, programs, excludeProgramId = "tun2socks", excludeProfile = profile)
       val raw = awaitLoadJsonTun2Socks(actions, "$basePath/setting")
-      val setting = parseTun2SocksSetting(raw)
+      val loaded = parseTun2SocksSetting(raw)
+      val setting = if (isVpnTunNameUsed(loaded.tun, usedTuns)) loaded.copy(tun = nextFreeVpnTunName(usedTuns)) else loaded
       val apps = parsePkgList(awaitLoadTextTun2Socks(actions, "$basePath/apps/user").orEmpty()).size
 
-      syncedSetting = setting
+      usedVpnTuns = usedTuns
+      syncedSetting = loaded
       tunText = setting.tun
       proxyText = setting.proxy
       loglevelText = setting.loglevel
@@ -384,14 +399,15 @@ fun Tun2SocksProfileScreen(
 
   LaunchedEffect(profile) { reload() }
 
-  val tunValid = remember(tunText) { isValidTun2SocksTun(tunText) }
+  val tunNameConflict = remember(tunText, usedVpnTuns) { isVpnTunNameUsed(tunText, usedVpnTuns) }
+  val tunValid = remember(tunText, tunNameConflict) { isValidTun2SocksTun(tunText) && !tunNameConflict }
   val proxyValid = remember(proxyText) { isValidTun2SocksProxy(proxyText) }
   val loglevelValid = remember(loglevelText) { isValidTun2SocksLogLevel(loglevelText) }
 
   LaunchedEffect(tunText, proxyText, loglevelText, settingInitialized) {
     if (!settingInitialized || loading) return@LaunchedEffect
     delay(TUN2SOCKS_AUTOSAVE_DELAY_MS)
-    if (!isValidTun2SocksTun(tunText)) return@LaunchedEffect
+    if (!isValidTun2SocksTun(tunText) || isVpnTunNameUsed(tunText, usedVpnTuns)) return@LaunchedEffect
     if (!isValidTun2SocksProxy(proxyText)) return@LaunchedEffect
     if (!isValidTun2SocksLogLevel(loglevelText)) return@LaunchedEffect
     val current = Tun2SocksSettingUi(
@@ -473,8 +489,11 @@ fun Tun2SocksProfileScreen(
           isError = tunText.isNotBlank() && !tunValid,
           supportingText = { Text(stringResource(R.string.tun2socks_tun_hint)) },
         )
-        if (tunText.isNotBlank() && !tunValid) {
+        if (tunText.isNotBlank() && !isValidTun2SocksTun(tunText)) {
           Text(stringResource(R.string.tun2socks_tun_invalid), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+        if (tunNameConflict) {
+          Text(stringResource(R.string.vpn_tun_name_in_use), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
         OutlinedTextField(
           value = proxyText,

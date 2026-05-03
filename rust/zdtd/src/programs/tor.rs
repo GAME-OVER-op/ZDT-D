@@ -420,7 +420,7 @@ pub fn start_if_enabled() -> Result<()> {
     let socks_port = validate_torrc_ready(&normalized_torrc)?;
     validate_setting(&setting, socks_port)?;
 
-    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, true, false)
+    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, true, false, false)
         .unwrap_or_default();
     for port in [socks_port, setting.t2s_port, setting.t2s_web_port] {
         if external_used.contains(&port) {

@@ -36,6 +36,7 @@ pub struct StatusReport {
     pub myprogram: UsageAgg,
     pub openvpn: UsageAgg,
     pub tun2socks: UsageAgg,
+    pub mihomo: UsageAgg,
     pub tor: UsageAgg,
     pub t2s: UsageAgg,       // t2s used by opera-proxy, sing-box, wireproxy and tor
     pub opera: OperaAgg,    // opera-proxy + t2s + operaproxy-byedpi
@@ -66,6 +67,7 @@ pub(crate) fn protected_pids() -> Vec<u32> {
     pids.extend(myprogram_t2s_pids());
     pids.extend(openvpn_pids());
     pids.extend(tun2socks_pids());
+    pids.extend(mihomo_pids());
     pids.extend(tor_pids());
     pids.extend(pidof("byedpi"));
     pids.sort_unstable();
@@ -118,6 +120,7 @@ pub fn collect_status() -> Result<StatusReport> {
     let myprogram_pids = myprogram_main_pids();
     let openvpn_pids = openvpn_pids();
     let tun2socks_pids = tun2socks_pids();
+    let mihomo_pids = mihomo_pids();
     let tor_pids = tor_pids();
 
     let mut byedpi_all = pidof("byedpi");
@@ -148,6 +151,7 @@ pub fn collect_status() -> Result<StatusReport> {
         myprogram: agg(&myprogram_pids),
         openvpn: agg(&openvpn_pids),
         tun2socks: agg(&tun2socks_pids),
+        mihomo: agg(&mihomo_pids),
         tor: agg(&tor_pids),
         t2s: agg(&t2s_all_pids),
         opera: OperaAgg {
@@ -345,6 +349,13 @@ fn myprogram_t2s_pids() -> Vec<u32> {
 
 fn openvpn_pids() -> Vec<u32> {
     crate::programs::openvpn::main_pids_exact()
+        .into_iter()
+        .filter_map(|p| u32::try_from(p).ok())
+        .collect()
+}
+
+fn mihomo_pids() -> Vec<u32> {
+    crate::programs::mihomo::main_pids_exact()
         .into_iter()
         .filter_map(|p| u32::try_from(p).ok())
         .collect()

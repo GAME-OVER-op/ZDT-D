@@ -265,6 +265,7 @@ private fun AppPickerSheet(
   val programOpenVpnLabel = stringResource(R.string.apps_conflict_program_openvpn)
   val programTun2SocksLabel = stringResource(R.string.apps_conflict_program_tun2socks)
   val programMyVpnLabel = stringResource(R.string.apps_conflict_program_myvpn)
+  val programMihomoLabel = stringResource(R.string.apps_conflict_program_mihomo)
 
   fun slotLabel(slot: String): String = when (slot.lowercase(Locale.ROOT)) {
     "common" -> slotCommonLabel
@@ -287,11 +288,12 @@ private fun AppPickerSheet(
     "openvpn" -> programOpenVpnLabel
     "tun2socks" -> programTun2SocksLabel
     "myvpn" -> programMyVpnLabel
+    "mihomo" -> programMihomoLabel
     else -> programId
   }
 
   fun programGroup(programId: String): String? = when (programId) {
-    "operaproxy", "sing-box", "dpitunnel", "byedpi", "wireproxy", "tor", "myproxy", "myprogram", "openvpn", "tun2socks", "myvpn" -> "tunnel"
+    "operaproxy", "sing-box", "dpitunnel", "byedpi", "wireproxy", "tor", "myproxy", "myprogram", "openvpn", "tun2socks", "myvpn", "mihomo" -> "tunnel"
     "nfqws", "nfqws2" -> "zapret"
     else -> null
   }
@@ -302,6 +304,7 @@ private fun AppPickerSheet(
     if (leftProgramId == "openvpn" || rightProgramId == "openvpn") return true
     if (leftProgramId == "tun2socks" || rightProgramId == "tun2socks") return true
     if (leftProgramId == "myvpn" || rightProgramId == "myvpn") return true
+    if (leftProgramId == "mihomo" || rightProgramId == "mihomo") return true
     return left == right
   }
 
@@ -323,7 +326,7 @@ private fun AppPickerSheet(
       if (programGroup(entry.programId) != null) {
         for (other in data.lists) {
           if (other.path == entry.path) continue
-          val requiresSameSlot = entry.programId != "openvpn" && other.programId != "openvpn" && entry.programId != "tun2socks" && other.programId != "tun2socks" && entry.programId != "myvpn" && other.programId != "myvpn"
+          val requiresSameSlot = entry.programId != "openvpn" && other.programId != "openvpn" && entry.programId != "tun2socks" && other.programId != "tun2socks" && entry.programId != "myvpn" && other.programId != "myvpn" && entry.programId != "mihomo" && other.programId != "mihomo"
           if (requiresSameSlot && other.slot != entry.slot) continue
           if (!appListsConflict(entry.programId, other.programId)) continue
           for (pkg in other.packages) {

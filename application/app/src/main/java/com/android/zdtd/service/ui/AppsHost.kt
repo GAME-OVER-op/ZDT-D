@@ -95,6 +95,12 @@ fun AppsHost(
           actions = actions,
           snackHost = snackHost,
         )
+        "mihomo" -> MihomoProgramScreen(
+          programs = programs,
+          onOpenProfile = onOpenProfile,
+          actions = actions,
+          snackHost = snackHost,
+        )
         else -> ProgramScreen(
           programs = programs,
           programId = r.programId,
@@ -141,6 +147,12 @@ fun AppsHost(
           snackHost = snackHost,
         )
         "myvpn" -> MyVpnProfileScreen(
+          programs = programs,
+          profile = r.profile,
+          actions = actions,
+          snackHost = snackHost,
+        )
+        "mihomo" -> MihomoProfileScreen(
           programs = programs,
           profile = r.profile,
           actions = actions,

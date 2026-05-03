@@ -105,9 +105,10 @@ fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
         ProcRow("Tor", showRep?.tor ?: ApiModels.ProcAgg(), 8),
         ProcRow("OpenVPN", showRep?.openVpn ?: ApiModels.ProcAgg(), 9),
         ProcRow("tun2socks", showRep?.tun2Socks ?: ApiModels.ProcAgg(), 10),
-        ProcRow("opera-proxy", showRep?.opera?.opera ?: ApiModels.ProcAgg(), 11),
-        ProcRow("t2s", showRep?.t2s ?: ApiModels.ProcAgg(), 12),
-        ProcRow("opera-byedpi", showRep?.opera?.byedpi ?: ApiModels.ProcAgg(), 13),
+        ProcRow("Mihomo", showRep?.mihomo ?: ApiModels.ProcAgg(), 11),
+        ProcRow("opera-proxy", showRep?.opera?.opera ?: ApiModels.ProcAgg(), 12),
+        ProcRow("t2s", showRep?.t2s ?: ApiModels.ProcAgg(), 13),
+        ProcRow("opera-byedpi", showRep?.opera?.byedpi ?: ApiModels.ProcAgg(), 14),
       ).sortedWith(
         compareByDescending<ProcRow> { it.agg.count > 0 }
           .thenByDescending { it.agg.cpuPercent }

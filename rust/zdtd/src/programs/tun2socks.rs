@@ -446,6 +446,16 @@ fn build_profile_plan(profile: &str, used_netids: &BTreeSet<u32>) -> Result<Prof
 }
 
 fn spawn_tun2socks(plan: &ProfilePlan) -> Result<()> {
+    if tun2socks_profile_process_running(&plan.setting.tun, &plan.setting.proxy) {
+        info!(
+            "tun2socks: profile={} already running for tun={} proxy={}, skip spawn",
+            plan.name,
+            plan.setting.tun,
+            plan.setting.proxy
+        );
+        return Ok(());
+    }
+
     fs::create_dir_all(plan.profile_dir.join("log"))?;
     let logf = OpenOptions::new()
         .create(true)
@@ -504,6 +514,24 @@ fn spawn_tun2socks(plan: &ProfilePlan) -> Result<()> {
         warn!("tun2socks: profile={} pid={} exited quickly; check log {}", plan.name, child.id(), plan.log_path.display());
     }
     Ok(())
+}
+
+fn tun2socks_profile_process_running(tun: &str, proxy: &str) -> bool {
+    let pattern = format!(
+        "{} -device tun://{} -proxy {}",
+        TUN2SOCKS_BIN,
+        tun,
+        proxy
+    );
+    let cmd = format!(
+        "ps -ef 2>/dev/null | grep -F {} | grep -v grep >/dev/null 2>&1",
+        shell_quote_for_sh(&pattern)
+    );
+    shell::ok_sh(&cmd).is_ok()
+}
+
+fn shell_quote_for_sh(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 fn wait_tun_link(tun: &str) -> Result<()> {

@@ -262,6 +262,7 @@ fn program_display_name<'a>(id: &'a str) -> &'a str {
         "openvpn" => "openvpn",
         "tun2socks" => "tun2socks",
         "myvpn" => "myvpn",
+        "mihomo" => "mihomo",
         _ => id,
     }
 }
@@ -1574,12 +1575,51 @@ fn create_myvpn_profile_next() -> Result<String> {
     anyhow::bail!("no free myvpn profile name")
 }
 
+fn mihomo_active_path() -> PathBuf { crate::programs::mihomo::active_path() }
+fn mihomo_profiles_root() -> PathBuf { crate::programs::mihomo::profiles_root() }
+fn mihomo_deleted_root() -> PathBuf { program_root("mihomo").join(".deleted") }
+fn mihomo_deleted_profiles_root() -> PathBuf { mihomo_deleted_root().join("profiles") }
+fn mihomo_profile_root(profile: &str) -> PathBuf { crate::programs::mihomo::profile_root(profile) }
+
+fn ensure_mihomo_profile_layout(profile: &str) -> Result<()> {
+    crate::programs::mihomo::ensure_profile_layout(profile)
+}
+
+fn create_mihomo_profile_named(requested: &str) -> Result<String> {
+    let name = requested.trim();
+    crate::programs::mihomo::ensure_valid_profile_name(name)?;
+    crate::programs::mihomo::ensure_root_layout()?;
+    let active_path = mihomo_active_path();
+    let mut active: ProfilesActive = read_json(&active_path).unwrap_or_default();
+    if active.profiles.contains_key(name) { anyhow::bail!("profile already exists"); }
+    active.profiles.insert(name.to_string(), ProfileState { enabled: false });
+    write_json_pretty(&active_path, &active)?;
+    ensure_mihomo_profile_layout(name)?;
+    crate::programs::mihomo::assign_free_ports_for_profile(name)?;
+    Ok(name.to_string())
+}
+
+fn create_mihomo_profile_next() -> Result<String> {
+    crate::programs::mihomo::ensure_root_layout()?;
+    let active: ProfilesActive = read_json(&mihomo_active_path()).unwrap_or_default();
+    for n in 1..=9999u32 {
+        let next = format!("profile{n}");
+        if next.len() > 10 { break; }
+        if !active.profiles.contains_key(&next) {
+            create_mihomo_profile_named(&next)?;
+            return Ok(next);
+        }
+    }
+    anyhow::bail!("no free mihomo profile name")
+}
+
 fn validate_cross_vpn_tun_claim(program_id: &str, profile: &str, tun: &str) -> Result<()> {
     let this_label = format!("{program_id}/{profile}");
     for (other_label, other_tun) in crate::programs::openvpn::enabled_tun_claims()
         .into_iter()
         .chain(crate::programs::tun2socks::enabled_tun_claims().into_iter())
         .chain(crate::programs::myvpn::enabled_tun_claims().into_iter())
+        .chain(crate::programs::mihomo::enabled_tun_claims().into_iter())
     {
         if other_label != this_label && other_tun == tun {
             anyhow::bail!("VPN tun conflict: tun {tun} is already used by {other_label}");
@@ -1758,7 +1798,7 @@ fn slot_from_kind(kind: &str) -> Option<&'static str> {
 
 fn app_domain(program_id: &str) -> Option<&'static str> {
     match program_id {
-        "vpn-netd" | "openvpn" | "tun2socks" | "myvpn" | "wireguard" => Some("exclusive_network"),
+        "vpn-netd" | "openvpn" | "tun2socks" | "myvpn" | "mihomo" | "wireguard" => Some("exclusive_network"),
         "operaproxy" | "sing-box" | "wireproxy" | "myproxy" | "myprogram" | "tor" | "dpitunnel" | "byedpi" => Some("tunnel"),
         "nfqws" | "nfqws2" => Some("zapret"),
         // blockedquic only conflicts with proxyInfo protection; it must not block VPN/tunnel app lists.
@@ -1976,6 +2016,23 @@ fn collect_assignment_files_uncached() -> Vec<AppAssignmentFile> {
                 "user",
                 path.join("app/uid/user_program"),
                 format!("/api/programs/myvpn/profiles/{profile}/apps/user"),
+            );
+        }
+    }
+
+    let mihomo_root = mihomo_profiles_root();
+    if let Ok(rd) = fs::read_dir(&mihomo_root) {
+        for ent in rd.flatten() {
+            let path = ent.path();
+            if !path.is_dir() { continue; }
+            let Some(profile) = path.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+            push_assignment_file(
+                &mut out,
+                "mihomo",
+                Some(profile.clone()),
+                "user",
+                path.join("app/uid/user_program"),
+                format!("/api/programs/mihomo/profiles/{profile}/apps/user"),
             );
         }
     }
@@ -2341,6 +2398,22 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
             "id": "myvpn",
             "name": "myvpn",
             "type": "myvpn_profiles",
+            "profiles": profiles
+        }));
+    }
+
+    // mihomo (Mihomo + tun2socks + VPN/netd profiles)
+    {
+        let active: ProfilesActive = read_json(&mihomo_active_path()).unwrap_or_default();
+        let mut profiles = Vec::new();
+        for (name, st) in active.profiles {
+            profiles.push(json!({"name": name, "enabled": st.enabled}));
+        }
+        profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        out.push(json!({
+            "id": "mihomo",
+            "name": "mihomo",
+            "type": "mihomo_profiles",
             "profiles": profiles
         }));
     }
@@ -2854,6 +2927,156 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 Ok(_) => write_ok(stream),
                 Err(e) => write_err(stream, e),
             }
+        }
+
+
+        // --- mihomo profile API
+        ("GET", ["api", "programs", "mihomo", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::mihomo::ensure_root_layout()?;
+                let active: ProfilesActive = read_json(&mihomo_active_path()).unwrap_or_default();
+                let mut profiles = Vec::new();
+                for (name, st) in active.profiles {
+                    profiles.push(json!({"name": name, "enabled": st.enabled}));
+                }
+                profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+                Ok(json!({"ok": true, "profiles": profiles}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("POST", ["api", "programs", "mihomo", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                #[derive(Deserialize)]
+                struct Req { #[serde(default)] name: Option<String> }
+                let req: Req = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let profile = match req.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                    Some(name) => create_mihomo_profile_named(name)?,
+                    None => create_mihomo_profile_next()?,
+                };
+                Ok(json!({"ok": true, "profile": profile}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("PUT", ["api", "programs", "mihomo", "profiles", profile, "enabled"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::mihomo::ensure_valid_profile_name(profile)?;
+                let req: EnabledReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let p = mihomo_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                let st = active.profiles.get_mut(*profile)
+                    .ok_or_else(|| anyhow::anyhow!("profile not found"))?;
+                st.enabled = req.enabled;
+                crate::programs::mihomo::validate_enabled_tun_uniqueness_with_override(Some(profile), None, Some(req.enabled))?;
+                if req.enabled {
+                    let setting = crate::programs::mihomo::read_setting(profile).unwrap_or_default();
+                    validate_cross_vpn_tun_claim("mihomo", profile, &setting.tun)?;
+                    crate::programs::mihomo::validate_port_uniqueness_with_override(Some(profile), None, None)?;
+                }
+                write_json_pretty(&p, &active)?;
+                Ok(())
+            })();
+            match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
+        }
+        ("DELETE", ["api", "programs", "mihomo", "profiles", profile]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::mihomo::ensure_valid_profile_name(profile)?;
+                let p = mihomo_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                if active.profiles.remove(*profile).is_none() { anyhow::bail!("profile not found"); }
+                write_json_pretty(&p, &active)?;
+                invalidate_assignment_cache();
+                let src = mihomo_profile_root(profile);
+                if src.exists() {
+                    let deleted_dir = mihomo_deleted_profiles_root();
+                    fs::create_dir_all(&deleted_dir).ok();
+                    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                    let dst = deleted_dir.join(format!("{profile}.{ts}"));
+                    let _ = fs::rename(&src, &dst);
+                }
+                Ok(())
+            })();
+            match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
+        }
+        ("GET", ["api", "programs", "mihomo", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::mihomo::ensure_valid_profile_name(profile)?;
+                ensure_mihomo_profile_layout(profile)?;
+                let p = mihomo_profile_root(profile).join("setting.json");
+                let v: serde_json::Value = read_json(&p)?;
+                Ok(json!({"ok": true, "data": v}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("PUT", ["api", "programs", "mihomo", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::mihomo::ensure_valid_profile_name(profile)?;
+                ensure_mihomo_profile_layout(profile)?;
+                let v: serde_json::Value = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let setting = crate::programs::mihomo::normalize_setting_value(v)?;
+                crate::programs::mihomo::validate_enabled_tun_uniqueness_with_override(Some(profile), Some(&setting), None)?;
+                crate::programs::mihomo::validate_port_uniqueness_with_override(Some(profile), Some(&setting), None)?;
+                if is_profile_enabled(&mihomo_active_path(), profile) {
+                    validate_cross_vpn_tun_claim("mihomo", profile, &setting.tun)?;
+                }
+                crate::programs::mihomo::write_setting(profile, &setting)?;
+                Ok(())
+            })();
+            match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
+        }
+        ("GET", ["api", "programs", "mihomo", "profiles", profile, "config"]) => {
+            let res = (|| -> Result<String> {
+                crate::programs::mihomo::ensure_valid_profile_name(profile)?;
+                ensure_mihomo_profile_layout(profile)?;
+                let p = mihomo_profile_root(profile).join("config.yaml");
+                read_text_or_empty(&p)
+            })();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "mihomo", "profiles", profile, "config"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::mihomo::ensure_valid_profile_name(profile)?;
+                ensure_mihomo_profile_layout(profile)?;
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                crate::programs::mihomo::validate_port_uniqueness_with_override(Some(profile), None, Some(&req.content))?;
+                let p = mihomo_profile_root(profile).join("config.yaml");
+                write_text_atomic(&p, &req.content)?;
+                Ok(())
+            })();
+            match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
+        }
+        ("GET", ["api", "programs", "mihomo", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<String> {
+                crate::programs::mihomo::ensure_valid_profile_name(profile)?;
+                ensure_mihomo_profile_layout(profile)?;
+                let p = mihomo_profile_root(profile).join("app/uid/user_program");
+                read_text_or_empty(&p)
+            })();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "mihomo", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::mihomo::ensure_valid_profile_name(profile)?;
+                ensure_mihomo_profile_layout(profile)?;
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let api_path = format!("/api/programs/mihomo/profiles/{}/apps/user", profile);
+                validate_program_apps_content(&req.content, &api_path, "mihomo", "common")?;
+                let p = mihomo_profile_root(profile).join("app/uid/user_program");
+                write_text_atomic(&p, &req.content)?;
+                invalidate_assignment_cache();
+                Ok(())
+            })();
+            match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
         }
 
         // --- sing-box profile/server API

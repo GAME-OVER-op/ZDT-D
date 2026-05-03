@@ -232,9 +232,20 @@ fun OpenVpnProgramScreen(
         showCreate = false
         actions.createNamedProfile("openvpn", name) { created ->
           if (created != null) {
-            showSnack(context.getString(R.string.openvpn_profile_created, created))
-            actions.refreshPrograms()
-            onOpenProfile("openvpn", created)
+            scope.launch {
+              val tun = nextFreeVpnTunName(actions, programs, excludeProgramId = "openvpn", excludeProfile = created)
+              val ok = awaitSaveJsonVpnTunGuard(
+                actions,
+                "${vpnProfileApiPath("openvpn", created)}/setting",
+                defaultOpenVpnSettingJson(tun),
+              )
+              showSnack(
+                if (ok) context.getString(R.string.openvpn_profile_created, created)
+                else context.getString(R.string.save_failed)
+              )
+              actions.refreshPrograms()
+              onOpenProfile("openvpn", created)
+            }
           } else {
             showSnack(context.getString(R.string.create_failed))
           }
@@ -405,6 +416,7 @@ fun OpenVpnProfileScreen(
   var settingInitialized by remember(profile) { mutableStateOf(false) }
   var configInitialized by remember(profile) { mutableStateOf(false) }
   var appCount by remember(profile) { mutableStateOf(0) }
+  var usedVpnTuns by remember(profile) { mutableStateOf(emptySet<String>()) }
   var showConfigEditor by remember(profile) { mutableStateOf(false) }
 
   fun showSnack(msg: String) {
@@ -416,11 +428,15 @@ fun OpenVpnProfileScreen(
     settingInitialized = false
     configInitialized = false
     scope.launch {
-      val setting = parseOpenVpnSetting(awaitLoadJsonOpenVpn(actions, "$basePath/setting"))
+      val usedTuns = loadUsedVpnTunNames(actions, programs, excludeProgramId = "openvpn", excludeProfile = profile)
+      val rawSetting = awaitLoadJsonOpenVpn(actions, "$basePath/setting")
+      val loaded = parseOpenVpnSetting(rawSetting)
+      val setting = if (isVpnTunNameUsed(loaded.tun, usedTuns)) loaded.copy(tun = nextFreeVpnTunName(usedTuns)) else loaded
       val loadedConfig = awaitLoadTextOpenVpn(actions, "$basePath/config").orEmpty()
       val apps = parsePkgList(awaitLoadTextOpenVpn(actions, "$basePath/apps/user").orEmpty()).size
 
-      syncedSetting = setting
+      usedVpnTuns = usedTuns
+      syncedSetting = loaded
       tunText = setting.tun
       dnsText = setting.dns.joinToString(" ")
       settingInitialized = true
@@ -467,7 +483,8 @@ fun OpenVpnProfileScreen(
   )
 
   val dnsParsed = remember(dnsText) { parseOpenVpnDnsInput(dnsText) }
-  val tunValid = remember(tunText) { isValidOpenVpnTun(tunText) }
+  val tunNameConflict = remember(tunText, usedVpnTuns) { isVpnTunNameUsed(tunText, usedVpnTuns) }
+  val tunValid = remember(tunText, tunNameConflict) { isValidOpenVpnTun(tunText) && !tunNameConflict }
   val configBlank = configText.trim().isBlank()
   val configWarnings = remember(configText) { if (configBlank) emptyList() else openVpnConfigWarnings(configText) }
   val configLineCount = remember(configText) { configText.lines().count { it.isNotBlank() } }
@@ -476,7 +493,7 @@ fun OpenVpnProfileScreen(
     if (!settingInitialized || loading) return@LaunchedEffect
     delay(OPENVPN_AUTOSAVE_DELAY_MS)
     val dns = parseOpenVpnDnsInput(dnsText) ?: return@LaunchedEffect
-    if (!isValidOpenVpnTun(tunText)) return@LaunchedEffect
+    if (!isValidOpenVpnTun(tunText) || isVpnTunNameUsed(tunText, usedVpnTuns)) return@LaunchedEffect
     val current = OpenVpnSettingUi(tun = tunText.trim(), dns = dns)
     if (current == syncedSetting) return@LaunchedEffect
     val ok = awaitSaveJsonOpenVpn(actions, "$basePath/setting", buildOpenVpnSettingJson(current.tun, current.dns))
@@ -583,8 +600,11 @@ fun OpenVpnProfileScreen(
           isError = tunText.isNotBlank() && !tunValid,
           supportingText = { Text(stringResource(R.string.openvpn_tun_hint)) },
         )
-        if (tunText.isNotBlank() && !tunValid) {
+        if (tunText.isNotBlank() && !isValidOpenVpnTun(tunText)) {
           Text(stringResource(R.string.openvpn_tun_invalid), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+        if (tunNameConflict) {
+          Text(stringResource(R.string.vpn_tun_name_in_use), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
         OutlinedTextField(
           value = dnsText,

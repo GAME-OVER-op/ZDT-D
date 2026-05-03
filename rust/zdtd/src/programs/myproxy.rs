@@ -104,7 +104,7 @@ pub fn start_if_enabled() -> Result<()> {
         return Ok(());
     }
 
-    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, false, true)
+    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, false, true, false)
         .unwrap_or_else(|_| BTreeSet::new());
     let mut own_used = BTreeSet::<u16>::new();
     let mut plans = Vec::<ProfilePlan>::new();

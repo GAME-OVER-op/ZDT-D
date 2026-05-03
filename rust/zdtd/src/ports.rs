@@ -107,14 +107,18 @@ fn collect_reserved_ports() -> BTreeSet<u16> {
 /// This is intended for *conflict checks* by programs that manage their own ports
 /// outside of the standard `*/port.json` profile layout (e.g. sing-box).
 pub fn collect_used_ports_for_conflict_check() -> Result<BTreeSet<u16>> {
-    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false)
+    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false, false)
 }
 
 pub fn collect_used_ports_for_conflict_check_excluding(
     exclude_singbox: bool,
     exclude_wireproxy: bool,
 ) -> Result<BTreeSet<u16>> {
-    collect_used_ports_for_conflict_check_excluding_programs(exclude_singbox, exclude_wireproxy, false, false)
+    collect_used_ports_for_conflict_check_excluding_programs(exclude_singbox, exclude_wireproxy, false, false, false)
+}
+
+pub fn collect_used_ports_for_conflict_check_excluding_mihomo() -> Result<BTreeSet<u16>> {
+    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false, true)
 }
 
 pub fn collect_used_ports_for_conflict_check_excluding_programs(
@@ -122,6 +126,7 @@ pub fn collect_used_ports_for_conflict_check_excluding_programs(
     exclude_wireproxy: bool,
     exclude_tor: bool,
     exclude_myproxy: bool,
+    exclude_mihomo: bool,
 ) -> Result<BTreeSet<u16>> {
     let mut used = collect_reserved_ports();
 
@@ -144,6 +149,9 @@ pub fn collect_used_ports_for_conflict_check_excluding_programs(
         used.extend(collect_defined_myproxy_ports());
     }
     used.extend(collect_defined_myprogram_ports());
+    if !exclude_mihomo {
+        used.extend(collect_defined_mihomo_ports());
+    }
     Ok(used)
 }
 
@@ -304,6 +312,7 @@ pub fn normalize_ports() -> Result<()> {
     used.extend(collect_defined_tor_ports());
     used.extend(collect_defined_myproxy_ports());
     used.extend(collect_defined_myprogram_ports());
+    used.extend(collect_defined_mihomo_ports());
 
     let entries = collect_adjustable_ports().context("collect adjustable ports")?;
     let mut changed = 0usize;
@@ -365,6 +374,7 @@ pub fn suggest_port_for_new_profile(program: &str) -> Result<u16> {
     used.extend(collect_defined_tor_ports());
     used.extend(collect_defined_myproxy_ports());
     used.extend(collect_defined_myprogram_ports());
+    used.extend(collect_defined_mihomo_ports());
 
     let entries = collect_adjustable_ports().unwrap_or_default();
     let mut max_self: Option<u16> = None;
@@ -439,6 +449,64 @@ fn collect_defined_myprogram_ports() -> BTreeSet<u16> {
         }
     }
     used
+}
+
+fn collect_defined_mihomo_ports() -> BTreeSet<u16> {
+    let mut used = BTreeSet::new();
+    let root = working_program_dir("mihomo").join("profile");
+    if let Ok(rd) = fs::read_dir(&root) {
+        for ent in rd.flatten() {
+            let profile_dir = ent.path();
+            if !profile_dir.is_dir() { continue; }
+            if profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) { continue; }
+            let setting_path = profile_dir.join("setting.json");
+            if let Ok(v) = read_json_value(&setting_path) {
+                for key in ["mixed_port"] {
+                    if let Some(port) = v.get(key).and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
+                        if port != 0 { used.insert(port); }
+                    }
+                }
+            }
+            collect_mihomo_yaml_ports_from_dir(&profile_dir, &mut used);
+        }
+    }
+    used
+}
+
+fn collect_mihomo_yaml_ports_from_dir(profile_dir: &Path, used: &mut BTreeSet<u16>) {
+    for name in ["config.yaml", "config.runtime.yaml"] {
+        let path = profile_dir.join(name);
+        if let Ok(raw) = fs::read_to_string(&path) {
+            if let Some(port) = parse_mihomo_external_controller_port(&raw) {
+                used.insert(port);
+            }
+        }
+    }
+}
+
+fn parse_mihomo_external_controller_port(raw: &str) -> Option<u16> {
+    for line in raw.lines() {
+        let trimmed = line.trim_start();
+        let indent = line.len().saturating_sub(trimmed.len());
+        if indent != 0 { continue; }
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('-') { continue; }
+        let (key, value) = trimmed.split_once(':')?;
+        if key.trim() != "external-controller" { continue; }
+        return parse_port_from_yaml_scalar(value);
+    }
+    None
+}
+
+fn parse_port_from_yaml_scalar(value: &str) -> Option<u16> {
+    let mut v = value.trim();
+    if v.is_empty() { return None; }
+    if let Some(idx) = v.find(" #") { v = &v[..idx]; }
+    v = v.trim().trim_matches('"').trim_matches('\'').trim();
+    if v.is_empty() { return None; }
+    if let Ok(port) = v.parse::<u16>() { return if port != 0 { Some(port) } else { None }; }
+    let idx = v.rfind(':')?;
+    let port_s = v[idx + 1..].trim().trim_matches(']').trim_matches('"').trim_matches('\'');
+    port_s.parse::<u16>().ok().filter(|p| *p != 0)
 }
 
 

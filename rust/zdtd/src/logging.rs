@@ -168,6 +168,8 @@ fn user_localize(msg: &str) -> String {
 
 fn user_localize_en(msg: &str) -> String {
     match msg {
+        "Запуск: инициализация" => return "Startup: initialization".to_string(),
+        "Инициализация завершена" => return "Initialization complete".to_string(),
         "Подготовка: запуск" => return "Preparation: start".to_string(),
         "Подготовка: ожидание загрузки Android" => return "Preparation: waiting for Android boot".to_string(),
         "Подготовка: восстановление базовых iptables" => return "Preparation: restoring baseline iptables".to_string(),
@@ -194,6 +196,9 @@ fn user_localize_en(msg: &str) -> String {
         "myvpn: запуск" => return "myvpn: start".to_string(),
         "myvpn: ошибка запуска, запуск продолжен" => return "myvpn: startup error, continuing".to_string(),
         "myvpn: часть профилей не применена, запуск продолжен" => return "myvpn: some profiles were not applied, continuing".to_string(),
+        "mihomo: запуск" => return "mihomo: start".to_string(),
+        "mihomo: ошибка запуска, запуск продолжен" => return "mihomo: startup error, continuing".to_string(),
+        "mihomo: часть профилей не запущена, запуск продолжен" => return "mihomo: some profiles did not start, continuing".to_string(),
         "VPN/netd: ошибка применения, запуск продолжен" => return "VPN/netd: apply error, continuing".to_string(),
         "VPN/netd: конфликт tun, запуск продолжен" => return "VPN/netd: TUN conflict, continuing".to_string(),
         "VPN/netd: конфликт профилей, запуск продолжен" => return "VPN/netd: profile conflict, continuing".to_string(),
@@ -228,6 +233,8 @@ fn user_localize_ru(msg: &str) -> String {
         "myproxy: socks5 profiles" => "myproxy: socks5 профили".to_string(),
         "sing-box: socks5 profiles" => "sing-box: socks5 профили".to_string(),
         "wireproxy: socks5 profiles" => "wireproxy: socks5 профили".to_string(),
+        "Startup: initialization" => "Запуск: инициализация".to_string(),
+        "Initialization complete" => "Инициализация завершена".to_string(),
         "Preparation: start" => "Подготовка: запуск".to_string(),
         "Preparation: waiting for Android boot" => "Подготовка: ожидание загрузки Android".to_string(),
         "Preparation: restoring baseline iptables" => "Подготовка: восстановление базовых iptables".to_string(),

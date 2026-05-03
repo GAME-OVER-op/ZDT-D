@@ -10,7 +10,7 @@ use std::{
 use crate::{
     android::{boot, selinux::SelinuxGuard},
     iptables_backup,
-    programs::{byedpi, dnscrypt, dpitunnel, myproxy, myprogram, nfqws, nfqws2, openvpn, operaproxy, tor, tun2socks, myvpn},
+    programs::{byedpi, dnscrypt, dpitunnel, myproxy, myprogram, nfqws, nfqws2, openvpn, operaproxy, tor, tun2socks, myvpn, mihomo},
     programs::{singbox, wireproxy},
     stats,
     settings,
@@ -37,18 +37,27 @@ pub fn last_start_partial() -> bool {
 /// Note: iptables backup should already exist (created by daemon on first run).
 pub fn start_full() -> Result<()> {
     reset_start_partial();
-    // Clean logs before the first user-visible startup line so the beginning of
-    // zdtd.log is not erased later in the same start sequence.
-    truncate_all_logs();
+    // Clean only the main user-facing log before the first visible startup line.
+    // Do not delete profile logs yet: on hot daemon replacement we may adopt an
+    // already-running runtime and should not erase active process logs.
+    let _ = crate::logging::truncate_log_file();
 
-    crate::logging::user_info("Подготовка: запуск");
-    crate::logging::user_info("Подготовка: ожидание загрузки Android");
-    log::info!("waiting for sys.boot_completed=1 ...");
+    crate::logging::user_info("Запуск: инициализация");
+    log::info!("startup initialization: waiting for sys.boot_completed=1 ...");
     boot::wait_for_boot_completed()?;
-    log::info!("boot completed");
+    log::info!("startup initialization: boot completed");
     wait_android_runtime_ready_best_effort();
 
     settings::ensure_minimal_program_layouts()?;
+
+    if can_adopt_existing_runtime() {
+        crate::runtime_state::write_running(false, true).ok();
+        crate::logging::user_info("Инициализация завершена");
+        return Ok(());
+    }
+
+    truncate_profile_logs();
+    crate::logging::user_info("Подготовка: запуск");
 
     // Backup baseline iptables before any rule changes (only once on first launch).
     iptables_backup::ensure_backup_if_first_launch()?;
@@ -115,7 +124,7 @@ pub fn start_full() -> Result<()> {
 
     // VPN/netd profile programs: launch VPN engines, wait for TUN, then apply Android netd routing once.
     // VPN profile failures are best-effort: log to console/profile logs and continue the rest of startup.
-    let vpn_expected = openvpn::has_enabled_profiles() || tun2socks::has_enabled_profiles() || myvpn::has_enabled_profiles();
+    let vpn_expected = openvpn::has_enabled_profiles() || tun2socks::has_enabled_profiles() || myvpn::has_enabled_profiles() || mihomo::has_enabled_profiles();
     let mut vpn_profiles = Vec::new();
     match validate_vpn_tun_claims_unique() {
         Ok(()) => {
@@ -141,6 +150,14 @@ pub fn start_full() -> Result<()> {
                     log::warn!("myvpn startup failed, continuing: {e:#}");
                     mark_start_partial();
                     crate::logging::user_warn("myvpn: ошибка запуска, запуск продолжен");
+                }
+            }
+            match mihomo::start_profiles_for_netd() {
+                Ok(items) => vpn_profiles.extend(items),
+                Err(e) => {
+                    log::warn!("mihomo startup failed, continuing: {e:#}");
+                    mark_start_partial();
+                    crate::logging::user_warn("mihomo: ошибка запуска, запуск продолжен");
                 }
             }
             if let Err(e) = crate::vpn_netd::start_profiles(vpn_profiles) {
@@ -183,7 +200,9 @@ if !any_main_service_running() {
     let _ = settings::write_start_settings(&st);
 
     // Stop services and restore baseline iptables; always restore captive portal settings.
+    crate::runtime_state::clear();
     let stop_res = stop::stop_services();
+    crate::runtime_state::clear();
     let _ = shell::ok_sh(
         "settings delete global captive_portal_detection_enabled; \
          settings delete global captive_portal_server; \
@@ -248,6 +267,9 @@ if !any_main_service_running() {
     }
 
     crate::logging::user_info("Запуск завершён");
+    if let Err(e) = crate::runtime_state::write_running(last_start_partial(), false) {
+        log::warn!("failed to write runtime state marker: {e:#}");
+    }
 
     Ok(())
 }
@@ -268,6 +290,7 @@ pub fn stop_full() -> Result<()> {
     // Stop services first, but always try to restore captive portal settings even
     // if the stop sequence partially fails.
     let stop_res = stop::stop_services();
+    crate::runtime_state::clear();
     let _ = shell::ok_sh(
         "settings delete global captive_portal_detection_enabled; \
          settings delete global captive_portal_server; \
@@ -276,10 +299,232 @@ pub fn stop_full() -> Result<()> {
     if let Err(e) = stop_res {
         log::warn!("stop_services partially failed, continuing cleanup: {e:#}");
     }
+    crate::runtime_state::clear();
     crate::logging::user_info("Остановка завершена");
     Ok(())
 }
 
+
+
+fn can_adopt_existing_runtime() -> bool {
+    let marker = match crate::runtime_state::read() {
+        Ok(Some(st)) => st,
+        Ok(None) => {
+            log::info!("runtime adoption: no runtime state marker");
+            return false;
+        }
+        Err(e) => {
+            log::warn!("runtime adoption: failed to read runtime state marker: {e:#}");
+            return false;
+        }
+    };
+
+    if marker.state != "running" {
+        log::info!("runtime adoption: marker state is not running: {}", marker.state);
+        return false;
+    }
+
+    if !actual_runtime_has_services() {
+        log::info!("runtime adoption: no active services detected");
+        return false;
+    }
+
+    if !enabled_runtime_processes_look_complete() {
+        log::info!("runtime adoption: at least one enabled service/profile is not running");
+        return false;
+    }
+
+    let vpn_expected = openvpn::has_enabled_profiles()
+        || tun2socks::has_enabled_profiles()
+        || myvpn::has_enabled_profiles()
+        || mihomo::has_enabled_profiles();
+    if vpn_expected && !crate::vpn_netd::applied_snapshot_path().is_file() {
+        log::info!("runtime adoption: VPN profiles are expected but vpn_netd_applied.json is missing");
+        return false;
+    }
+
+    if runtime_uses_iptables_paths() && !iptables_runtime_anchors_present() {
+        log::info!("runtime adoption: iptables runtime anchors are missing");
+        return false;
+    }
+
+    log::info!(
+        "runtime adoption: existing runtime accepted old_daemon_pid={} partial={} adopted={}",
+        marker.daemon_pid,
+        marker.partial,
+        marker.adopted
+    );
+    true
+}
+
+fn enabled_runtime_processes_look_complete() -> bool {
+    let Ok(r) = stats::collect_status() else {
+        return false;
+    };
+
+    let mut expected_any = false;
+
+    macro_rules! require_profile_program {
+        ($program:literal, $count:expr) => {{
+            if active_profiles_enabled($program) {
+                expected_any = true;
+                if $count == 0 {
+                    log::info!("runtime adoption: enabled {program} profiles exist but process count is 0", program = $program);
+                    return false;
+                }
+            }
+        }};
+    }
+
+    require_profile_program!("nfqws", r.zapret.count);
+    require_profile_program!("nfqws2", r.zapret2.count);
+    require_profile_program!("byedpi", r.byedpi.count);
+    require_profile_program!("dpitunnel", r.dpitunnel.count);
+    require_profile_program!("singbox", r.sing_box.count);
+    require_profile_program!("wireproxy", r.wireproxy.count);
+    require_profile_program!("myproxy", r.myproxy.count);
+    require_profile_program!("myprogram", r.myprogram.count);
+    require_profile_program!("openvpn", r.openvpn.count);
+    require_profile_program!("tun2socks", r.tun2socks.count);
+    require_profile_program!("mihomo", r.mihomo.count);
+
+    if myvpn::has_enabled_profiles() {
+        expected_any = true;
+        if !vpn_netd_has_applied_owner("myvpn") {
+            log::info!("runtime adoption: enabled myvpn profiles exist but vpn_netd snapshot has no myvpn owner");
+            return false;
+        }
+    }
+
+    if tor_enabled() {
+        expected_any = true;
+        if r.tor.count == 0 {
+            log::info!("runtime adoption: tor is enabled but process count is 0");
+            return false;
+        }
+    }
+
+    if dnscrypt_enabled() {
+        expected_any = true;
+        if r.dnscrypt.count == 0 {
+            log::info!("runtime adoption: dnscrypt is enabled but process count is 0");
+            return false;
+        }
+    }
+
+    if operaproxy_enabled() {
+        expected_any = true;
+        if r.opera.opera.count == 0 {
+            log::info!("runtime adoption: operaproxy is enabled but process count is 0");
+            return false;
+        }
+    }
+
+    expected_any
+}
+
+fn active_profiles_enabled(program: &str) -> bool {
+    let path = settings::working_program_root_path(program).join("active.json");
+    let Ok(raw) = std::fs::read_to_string(path) else { return false; };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { return false; };
+    v.get("profiles")
+        .and_then(|p| p.as_object())
+        .map(|m| {
+            m.values().any(|st| {
+                st.get("enabled")
+                    .and_then(|x| x.as_bool())
+                    .unwrap_or_else(|| st.get("enabled").and_then(|x| x.as_i64()).unwrap_or(0) != 0)
+            })
+        })
+        .unwrap_or(false)
+}
+
+fn simple_enabled_json(program: &str, file: &str) -> bool {
+    let path = settings::working_program_root_path(program).join(file);
+    let Ok(raw) = std::fs::read_to_string(path) else { return false; };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { return false; };
+    v.get("enabled")
+        .and_then(|x| x.as_bool())
+        .unwrap_or_else(|| v.get("enabled").and_then(|x| x.as_i64()).unwrap_or(0) != 0)
+}
+
+fn dnscrypt_enabled() -> bool {
+    simple_enabled_json("dnscrypt", "active.json")
+}
+
+fn operaproxy_enabled() -> bool {
+    simple_enabled_json("operaproxy", "active.json")
+}
+
+fn tor_enabled() -> bool {
+    simple_enabled_json("tor", "enabled.json")
+}
+
+
+fn actual_runtime_has_services() -> bool {
+    if let Ok(r) = stats::collect_status() {
+        if r.zapret.count > 0
+            || r.zapret2.count > 0
+            || r.byedpi.count > 0
+            || r.dpitunnel.count > 0
+            || r.sing_box.count > 0
+            || r.wireproxy.count > 0
+            || r.myproxy.count > 0
+            || r.myprogram.count > 0
+            || r.tor.count > 0
+            || r.opera.opera.count > 0
+            || r.dnscrypt.count > 0
+        {
+            return true;
+        }
+    }
+
+    openvpn::is_running()
+        || tun2socks::is_running()
+        || mihomo::is_running()
+        || vpn_netd_has_applied_owner("myvpn")
+}
+
+fn runtime_uses_iptables_paths() -> bool {
+    match stats::collect_status() {
+        Ok(r) => {
+            r.zapret.count > 0
+                || r.zapret2.count > 0
+                || r.byedpi.count > 0
+                || r.dpitunnel.count > 0
+                || r.sing_box.count > 0
+                || r.wireproxy.count > 0
+                || r.myproxy.count > 0
+                || r.myprogram.count > 0
+                || r.tor.count > 0
+                || r.opera.opera.count > 0
+                || r.dnscrypt.count > 0
+        }
+        Err(_) => false,
+    }
+}
+
+fn iptables_runtime_anchors_present() -> bool {
+    let nat = shell::run_timeout(
+        "iptables",
+        &["-t", "nat", "-C", "OUTPUT", "-j", "NAT_DPI"],
+        shell::Capture::None,
+        Duration::from_secs(3),
+    )
+    .map(|(code, _)| code == 0)
+    .unwrap_or(false);
+
+    let mangle = shell::run_timeout(
+        "iptables",
+        &["-t", "mangle", "-C", "OUTPUT", "-j", "MANGLE_APP"],
+        shell::Capture::None,
+        Duration::from_secs(3),
+    )
+    .map(|(code, _)| code == 0)
+    .unwrap_or(false);
+
+    nat || mangle
+}
 
 fn wait_android_runtime_ready_best_effort() {
     // Android can report sys.boot_completed before package manager/netd are fully
@@ -382,6 +627,10 @@ fn validate_start_plan_best_effort() {
         had_warning = true;
         log::warn!("start plan warning: myvpn: {e:#}");
     }
+    if let Err(e) = mihomo::validate_start_plan() {
+        had_warning = true;
+        log::warn!("start plan warning: mihomo: {e:#}");
+    }
     if let Err(e) = validate_vpn_tun_claims_unique() {
         had_warning = true;
         log::warn!("start plan warning: vpn tun claims: {e:#}");
@@ -398,6 +647,7 @@ fn validate_vpn_tun_claims_unique() -> Result<()> {
         .into_iter()
         .chain(tun2socks::enabled_tun_claims().into_iter())
         .chain(myvpn::enabled_tun_claims().into_iter())
+        .chain(mihomo::enabled_tun_claims().into_iter())
     {
         if let Some(other) = seen.insert(tun.clone(), label.clone()) {
             anyhow::bail!("VPN tun conflict: tun {tun} is used by {other} and {label}");
@@ -414,6 +664,7 @@ fn any_main_service_running() -> bool {
     let openvpn_expected = openvpn::has_enabled_profiles();
     let tun2socks_expected = tun2socks::has_enabled_profiles();
     let myvpn_expected = myvpn::has_enabled_profiles();
+    let mihomo_expected = mihomo::has_enabled_profiles();
 
     // Give processes a short moment to initialize; some binaries may exit immediately on bad args.
     for _ in 0..20 {
@@ -432,6 +683,7 @@ fn any_main_service_running() -> bool {
                 || (openvpn_expected && openvpn::is_running())
                 || (tun2socks_expected && tun2socks::is_running())
                 || (myvpn_expected && vpn_netd_has_applied_owner("myvpn"))
+                || (mihomo_expected && mihomo::is_running())
             {
                 return true;
             }
@@ -441,9 +693,9 @@ fn any_main_service_running() -> bool {
     false
 }
 
-fn truncate_all_logs() {
-    // Best effort: ignore errors.
-    let _ = crate::logging::truncate_log_file();
+fn truncate_profile_logs() {
+    // Best effort: ignore errors. Keep zdtd.log intact; this only clears per-profile
+    // process logs during a real cold/normal start.
     let _ = shell::ok_sh(
         "find /data/adb/modules/ZDT-D/working_folder -type f -path '*/log/*' -delete 2>/dev/null || true",
     );

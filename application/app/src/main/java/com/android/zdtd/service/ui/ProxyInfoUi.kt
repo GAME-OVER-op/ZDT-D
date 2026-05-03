@@ -212,6 +212,10 @@ fun ProxyInfoAppsDialog(
   val programTorLabel = stringResource(R.string.apps_conflict_program_tor)
   val programMyproxyLabel = stringResource(R.string.apps_conflict_program_myproxy)
   val programMyprogramLabel = stringResource(R.string.apps_conflict_program_myprogram)
+  val programOpenVpnLabel = stringResource(R.string.apps_conflict_program_openvpn)
+  val programTun2SocksLabel = stringResource(R.string.apps_conflict_program_tun2socks)
+  val programMyVpnLabel = stringResource(R.string.apps_conflict_program_myvpn)
+  val programMihomoLabel = stringResource(R.string.apps_conflict_program_mihomo)
 
   fun slotLabel(slot: String): String = when (slot.lowercase(Locale.ROOT)) {
     "common" -> slotCommonLabel
@@ -231,6 +235,10 @@ fun ProxyInfoAppsDialog(
     "tor" -> programTorLabel
     "myproxy" -> programMyproxyLabel
     "myprogram" -> programMyprogramLabel
+    "openvpn" -> programOpenVpnLabel
+    "tun2socks" -> programTun2SocksLabel
+    "myvpn" -> programMyVpnLabel
+    "mihomo" -> programMihomoLabel
     else -> programId
   }
 

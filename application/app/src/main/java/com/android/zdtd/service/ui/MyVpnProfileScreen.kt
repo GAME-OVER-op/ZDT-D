@@ -192,9 +192,20 @@ fun MyVpnProgramScreen(
         showCreate = false
         actions.createNamedProfile("myvpn", name) { created ->
           if (created != null) {
-            showSnack(context.getString(R.string.myvpn_profile_created, created))
-            actions.refreshPrograms()
-            onOpenProfile("myvpn", created)
+            scope.launch {
+              val tun = nextFreeVpnTunName(actions, programs, excludeProgramId = "myvpn", excludeProfile = created)
+              val ok = awaitSaveJsonVpnTunGuard(
+                actions,
+                "${vpnProfileApiPath("myvpn", created)}/setting",
+                defaultMyVpnSettingJson(tun),
+              )
+              showSnack(
+                if (ok) context.getString(R.string.myvpn_profile_created, created)
+                else context.getString(R.string.save_failed)
+              )
+              actions.refreshPrograms()
+              onOpenProfile("myvpn", created)
+            }
           } else {
             showSnack(context.getString(R.string.create_failed))
           }
@@ -348,6 +359,7 @@ fun MyVpnProfileScreen(
   var syncedSetting by remember(profile) { mutableStateOf(MyVpnSettingUi()) }
   var settingInitialized by remember(profile) { mutableStateOf(false) }
   var appCount by remember(profile) { mutableStateOf(0) }
+  var usedVpnTuns by remember(profile) { mutableStateOf(emptySet<String>()) }
 
   fun showSnack(msg: String) {
     scope.launch { snackHost.showSnackbar(msg) }
@@ -357,10 +369,13 @@ fun MyVpnProfileScreen(
     loading = true
     settingInitialized = false
     scope.launch {
-      val setting = parseMyVpnSetting(awaitLoadJsonMyVpn(actions, "$basePath/setting"))
+      val usedTuns = loadUsedVpnTunNames(actions, programs, excludeProgramId = "myvpn", excludeProfile = profile)
+      val loaded = parseMyVpnSetting(awaitLoadJsonMyVpn(actions, "$basePath/setting"))
+      val setting = if (isVpnTunNameUsed(loaded.tun, usedTuns)) loaded.copy(tun = nextFreeVpnTunName(usedTuns)) else loaded
       val apps = parsePkgList(awaitLoadTextMyVpn(actions, "$basePath/apps/user").orEmpty()).size
 
-      syncedSetting = setting
+      usedVpnTuns = usedTuns
+      syncedSetting = loaded
       tunText = setting.tun
       dnsText = setting.dns.joinToString(" ")
       cidrMode = setting.cidrMode
@@ -374,14 +389,15 @@ fun MyVpnProfileScreen(
 
   LaunchedEffect(profile) { reload() }
 
-  val tunValid = remember(tunText) { isValidMyVpnTun(tunText) }
+  val tunNameConflict = remember(tunText, usedVpnTuns) { isVpnTunNameUsed(tunText, usedVpnTuns) }
+  val tunValid = remember(tunText, tunNameConflict) { isValidMyVpnTun(tunText) && !tunNameConflict }
   val dnsParsed = remember(dnsText) { parseMyVpnDnsInput(dnsText) }
   val cidrValid = remember(cidrMode, cidrText) { cidrMode == "auto" || isValidMyVpnCidr(cidrText) }
 
   LaunchedEffect(tunText, dnsText, cidrMode, cidrText, settingInitialized) {
     if (!settingInitialized || loading) return@LaunchedEffect
     delay(MYVPN_AUTOSAVE_DELAY_MS)
-    if (!isValidMyVpnTun(tunText)) return@LaunchedEffect
+    if (!isValidMyVpnTun(tunText) || isVpnTunNameUsed(tunText, usedVpnTuns)) return@LaunchedEffect
     val dns = parseMyVpnDnsInput(dnsText) ?: return@LaunchedEffect
     val safeMode = cidrMode.takeIf { it == "auto" || it == "manual" } ?: "auto"
     if (safeMode == "manual" && !isValidMyVpnCidr(cidrText)) return@LaunchedEffect
@@ -465,8 +481,11 @@ fun MyVpnProfileScreen(
           isError = tunText.isNotBlank() && !tunValid,
           supportingText = { Text(stringResource(R.string.myvpn_tun_hint)) },
         )
-        if (tunText.isNotBlank() && !tunValid) {
+        if (tunText.isNotBlank() && !isValidMyVpnTun(tunText)) {
           Text(stringResource(R.string.myvpn_tun_invalid), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+        if (tunNameConflict) {
+          Text(stringResource(R.string.vpn_tun_name_in_use), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         }
         OutlinedTextField(
           value = dnsText,

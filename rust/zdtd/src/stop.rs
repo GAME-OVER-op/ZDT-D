@@ -193,6 +193,8 @@ pub fn stop_services_and_restore_iptables() -> Result<()> {
     let _ = crate::programs::myprogram::stop_all();
     // Stop VPN profile engines only when they were launched from this module path.
     kill_exact_pids("openvpn --config <profile>/client.ovpn", &crate::programs::openvpn::main_pids_exact())?;
+    kill_exact_pids("mihomo -d <profile>/work -f config.runtime.yaml", &crate::programs::mihomo::main_pids_exact())?;
+    kill_exact_pids("mihomo tun2socks -device tun://<profile tun>", &crate::programs::mihomo::tun2socks_pids_exact())?;
     kill_exact_pids("tun2socks -device tun://<profile tun>", &crate::programs::tun2socks::main_pids_exact())?;
 
     // IMPORTANT: do not stop plain substring/name matches for Tor.

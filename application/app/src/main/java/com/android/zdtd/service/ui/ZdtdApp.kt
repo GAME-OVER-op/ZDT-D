@@ -54,6 +54,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -244,6 +245,15 @@ private fun StartupFullscreenContent(
   Box(
     modifier = Modifier
       .fillMaxSize()
+      .zIndex(20f)
+      .pointerInput(startup.stage) {
+        awaitPointerEventScope {
+          while (true) {
+            val event = awaitPointerEvent()
+            event.changes.forEach { it.consume() }
+          }
+        }
+      }
       .background(
         Brush.verticalGradient(
           colors = listOf(

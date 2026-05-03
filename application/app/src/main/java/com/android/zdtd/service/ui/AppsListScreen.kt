@@ -660,6 +660,7 @@ private fun programDescription(id: String): String {
     "openvpn" -> stringResource(R.string.apps_list_desc_openvpn)
     "tun2socks" -> stringResource(R.string.apps_list_desc_tun2socks)
     "myvpn" -> stringResource(R.string.apps_list_desc_myvpn)
+    "mihomo" -> stringResource(R.string.apps_list_desc_mihomo)
     else -> stringResource(R.string.apps_list_desc_default)
   }
 }
@@ -679,6 +680,7 @@ private fun programIcon(id: String): ImageVector {
     "openvpn" -> Icons.Outlined.AltRoute
     "tun2socks" -> Icons.Outlined.AltRoute
     "myvpn" -> Icons.Outlined.AltRoute
+    "mihomo" -> Icons.Outlined.AltRoute
     else -> Icons.Outlined.Extension
   }
 }

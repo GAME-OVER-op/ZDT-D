@@ -9,7 +9,7 @@ use std::{
     io::{Read, Write},
     net::{TcpListener, TcpStream},
     path::{Component, Path, PathBuf},
-    sync::{Arc, OnceLock, Mutex, atomic::{AtomicUsize, Ordering}},
+    sync::{Arc, OnceLock, Mutex, atomic::{AtomicBool, AtomicUsize, Ordering}},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -57,23 +57,78 @@ fn invalidate_assignment_cache() {
     }
 }
 
-fn get_status_cached(services_running: bool) -> Result<stats::Report> {
-    if let Ok(guard) = status_cache().lock() {
-        if let Some(entry) = &*guard {
-            if entry.created.elapsed() < STATUS_CACHE_TTL {
-                return Ok(entry.report.clone());
-            }
-        }
-    }
+static STATUS_REFRESHING: AtomicBool = AtomicBool::new(false);
 
-    let report = stats::collect_report(services_running)?;
+fn store_status_cache(report: stats::Report) {
     if let Ok(mut guard) = status_cache().lock() {
         *guard = Some(StatusCacheEntry {
             created: Instant::now(),
-            report: report.clone(),
+            report,
         });
     }
-    Ok(report)
+}
+
+fn spawn_status_refresh(services_running: bool) {
+    if STATUS_REFRESHING
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return;
+    }
+
+    thread::spawn(move || {
+        struct RefreshGuard;
+        impl Drop for RefreshGuard {
+            fn drop(&mut self) {
+                STATUS_REFRESHING.store(false, Ordering::Release);
+            }
+        }
+        let _guard = RefreshGuard;
+        let started = Instant::now();
+        let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            stats::collect_report(services_running)
+        }));
+        match res {
+            Ok(Ok(report)) => {
+                let elapsed = started.elapsed();
+                if elapsed > Duration::from_millis(500) {
+                    log::warn!("api status refresh slow: duration_ms={}", elapsed.as_millis());
+                }
+                store_status_cache(report);
+            }
+            Ok(Err(e)) => {
+                log::warn!("api status refresh failed: {e:#}");
+            }
+            Err(_) => {
+                log::error!("api status refresh panicked");
+            }
+        }
+    });
+}
+
+fn get_status_snapshot(services_running: bool) -> (stats::Report, bool, bool) {
+    match status_cache().try_lock() {
+        Ok(guard) => {
+            if let Some(entry) = &*guard {
+                let age = entry.created.elapsed();
+                if age < STATUS_CACHE_TTL {
+                    return (entry.report.clone(), true, false);
+                }
+                let stale = entry.report.clone();
+                drop(guard);
+                spawn_status_refresh(services_running);
+                return (stale, true, true);
+            }
+        }
+        Err(_) => {
+            spawn_status_refresh(services_running);
+            return (stats::Report::default(), true, true);
+        }
+    }
+
+    // First request after daemon start: do not block the HTTP handler on process scans.
+    spawn_status_refresh(services_running);
+    (stats::Report::default(), true, true)
 }
 
 
@@ -4756,7 +4811,33 @@ fn write_empty_404(mut stream: TcpStream) -> Result<()> {
 }
 
 fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
+    let request_started = Instant::now();
     let (method, path, headers, body) = parse_http_request(&mut stream)?;
+
+    struct SlowRequestGuard {
+        started: Instant,
+        method: String,
+        path: String,
+    }
+    impl Drop for SlowRequestGuard {
+        fn drop(&mut self) {
+            let elapsed = self.started.elapsed();
+            if elapsed > Duration::from_millis(500) {
+                log::warn!(
+                    "api slow request: method={} path={} duration_ms={}",
+                    self.method,
+                    self.path,
+                    elapsed.as_millis()
+                );
+            }
+        }
+    }
+    let _slow_request_guard = SlowRequestGuard {
+        started: request_started,
+        method: method.clone(),
+        path: path.clone(),
+    };
+
     let (token, services_running, runtime_state, start_in_progress, stop_in_progress, services_partial) = {
         let st = daemon::lock_state(&state);
         (
@@ -4800,13 +4881,37 @@ fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
 
 match (method.as_str(), path.as_str()) {
         ("GET", "/api/status") => {
-            let report = get_status_cached(services_running)?;
-            let mut value = serde_json::to_value(report)?;
+            let (report, cached, degraded) = get_status_snapshot(services_running);
+            let mut value = match serde_json::to_value(report) {
+                Ok(v) => v,
+                Err(e) => {
+                    log::warn!("api status serialize failed: {e:#}");
+                    json!({})
+                }
+            };
             if let Some(obj) = value.as_object_mut() {
-                obj.insert("runtime_state".to_string(), json!(runtime_state));
+                obj.insert("ok".to_string(), json!(true));
+                obj.insert("cached".to_string(), json!(cached));
+                obj.insert("degraded".to_string(), json!(degraded));
+                obj.insert(
+                    "runtime_state".to_string(),
+                    json!(if degraded && (start_in_progress || stop_in_progress) { "busy" } else { runtime_state.as_str() }),
+                );
+                obj.insert("actual_runtime_state".to_string(), json!(runtime_state));
                 obj.insert("start_in_progress".to_string(), json!(start_in_progress));
                 obj.insert("stop_in_progress".to_string(), json!(stop_in_progress));
                 obj.insert("services_partial".to_string(), json!(services_partial));
+            } else {
+                value = json!({
+                    "ok": true,
+                    "cached": cached,
+                    "degraded": degraded,
+                    "runtime_state": if degraded && (start_in_progress || stop_in_progress) { "busy" } else { runtime_state.as_str() },
+                    "actual_runtime_state": runtime_state,
+                    "start_in_progress": start_in_progress,
+                    "stop_in_progress": stop_in_progress,
+                    "services_partial": services_partial,
+                });
             }
             write_json(stream, 200, value)
         }
@@ -5164,7 +5269,7 @@ pub fn serve(state: SharedState, bind: &str) -> Result<()> {
     ///
     /// The API is local-only (127.0.0.1) but we still cap concurrency to avoid
     /// accidental flooding (or a buggy client) spawning unbounded threads.
-    const MAX_INFLIGHT: usize = 32;
+    const MAX_INFLIGHT: usize = 64;
 
     let listener = TcpListener::bind(bind)?;
     let inflight = Arc::new(AtomicUsize::new(0));
@@ -5174,6 +5279,7 @@ pub fn serve(state: SharedState, bind: &str) -> Result<()> {
             Ok(mut stream) => {
                 // Apply small write timeout so we don't block forever on slow clients.
                 let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+                let _ = stream.set_nodelay(true);
 
                 // Concurrency gate
                 let now = inflight.fetch_add(1, Ordering::AcqRel) + 1;
@@ -5196,7 +5302,14 @@ pub fn serve(state: SharedState, bind: &str) -> Result<()> {
                     }
                     let _guard = ConnGuard(inflight2);
 
-                    let _ = handle_connection(stream, st);
+                    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        handle_connection(stream, st)
+                    }));
+                    match res {
+                        Ok(Ok(())) => {}
+                        Ok(Err(e)) => log::warn!("api request failed: {e:#}"),
+                        Err(_) => log::error!("api request handler panicked"),
+                    }
                 });
             }
             Err(_) => continue,

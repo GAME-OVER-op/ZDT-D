@@ -13,7 +13,8 @@ use crate::{
     shell::{self, Capture},
 };
 
-const WORKING_DIR: &str = "/data/adb/modules/ZDT-D/working_folder";
+const WORKING_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder";
+const VPN_NETD_DIR: &str = "/data/adb/modules/ZDT-D/working_folder/vpn_netd";
 const NDC_TIMEOUT: Duration = Duration::from_secs(5);
 const IP_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -46,24 +47,49 @@ pub struct AppliedProfile {
     pub uid_ranges: Vec<String>,
 }
 
-fn working_file(name: &str) -> PathBuf {
-    Path::new(WORKING_DIR).join(name)
+fn runtime_file(name: &str) -> PathBuf {
+    Path::new(VPN_NETD_DIR).join(name)
+}
+
+fn legacy_working_file(name: &str) -> PathBuf {
+    Path::new(WORKING_ROOT).join(name)
 }
 
 pub fn applied_snapshot_path() -> PathBuf {
-    working_file("vpn_netd_applied.json")
+    runtime_file("applied.json")
 }
 
 pub fn profiles_tmp_path() -> PathBuf {
-    working_file("vpn_netd_profiles.tmp")
+    runtime_file("profiles.tmp")
 }
 
 pub fn last_ndc_out_path() -> PathBuf {
-    working_file("vpn_netd_last_ndc.out")
+    runtime_file("last_ndc.out")
 }
 
 fn ensure_working_dir() -> Result<()> {
-    fs::create_dir_all(WORKING_DIR).with_context(|| format!("mkdir {WORKING_DIR}"))
+    fs::create_dir_all(VPN_NETD_DIR).with_context(|| format!("mkdir {VPN_NETD_DIR}"))?;
+    migrate_legacy_runtime_files();
+    Ok(())
+}
+
+fn migrate_legacy_runtime_files() {
+    let pairs = [
+        ("vpn_netd_applied.json", applied_snapshot_path()),
+        ("vpn_netd_profiles.tmp", profiles_tmp_path()),
+        ("vpn_netd_last_ndc.out", last_ndc_out_path()),
+    ];
+    for (legacy, new_path) in pairs {
+        let old_path = legacy_working_file(legacy);
+        if old_path.is_file() && !new_path.exists() {
+            if let Some(parent) = new_path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            let _ = fs::rename(&old_path, &new_path);
+        } else if old_path.exists() {
+            let _ = fs::remove_file(&old_path);
+        }
+    }
 }
 
 fn unique_tmp_path(target: &Path) -> PathBuf {
@@ -94,6 +120,14 @@ fn cleanup_runtime_files() {
     let _ = fs::remove_file(applied_snapshot_path());
     let _ = fs::remove_file(profiles_tmp_path());
     let _ = fs::remove_file(last_ndc_out_path());
+
+    // Remove legacy top-level files left by older ZDT-D builds.
+    let _ = fs::remove_file(legacy_working_file("vpn_netd_applied.json"));
+    let _ = fs::remove_file(legacy_working_file("vpn_netd_profiles.tmp"));
+    let _ = fs::remove_file(legacy_working_file("vpn_netd_last_ndc.out"));
+
+    // Keep the directory if it still contains future files, but remove it when empty.
+    let _ = fs::remove_dir(VPN_NETD_DIR);
 }
 
 fn trim_ndc_output(out: &str) -> String {
@@ -532,6 +566,7 @@ pub fn start_profiles(profiles: Vec<VpnNetdProfile>) -> Result<()> {
 }
 
 pub fn stop_applied() -> Result<()> {
+    ensure_working_dir()?;
     let path = applied_snapshot_path();
     if !path.is_file() {
         cleanup_runtime_files();
@@ -560,6 +595,7 @@ pub fn stop_applied() -> Result<()> {
 }
 
 pub fn read_applied_snapshot() -> Result<AppliedSnapshot> {
+    ensure_working_dir()?;
     let path = applied_snapshot_path();
     if !path.is_file() {
         return Ok(AppliedSnapshot::default());

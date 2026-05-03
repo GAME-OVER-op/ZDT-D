@@ -339,7 +339,7 @@ fn can_adopt_existing_runtime() -> bool {
         || myvpn::has_enabled_profiles()
         || mihomo::has_enabled_profiles();
     if vpn_expected && !crate::vpn_netd::applied_snapshot_path().is_file() {
-        log::info!("runtime adoption: VPN profiles are expected but vpn_netd_applied.json is missing");
+        log::info!("runtime adoption: VPN profiles are expected but vpn_netd/applied.json is missing");
         return false;
     }
 

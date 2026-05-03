@@ -378,7 +378,13 @@ fun uploadMultipart(path: String, filename: String, bytes: ByteArray): Boolean {
       val code = wrapper.optInt("code", 0)
       val bodyText = wrapper.optString("body", "")
       if (code < 200 || code >= 300) {
-        throw IOException("proxy HTTP $code: ${bodyText.take(120)}")
+        val proxyError = wrapper.optString("error", "").ifBlank { wrapper.optString("shell_error", "") }
+        val detail = buildString {
+          append("proxy HTTP ").append(code)
+          if (proxyError.isNotBlank()) append(" (").append(proxyError.take(100)).append(")")
+          if (bodyText.isNotBlank()) append(": ").append(bodyText.take(120))
+        }
+        throw IOException(detail)
       }
       return parseJsonOrThrow(bodyText)
     }

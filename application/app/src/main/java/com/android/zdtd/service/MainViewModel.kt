@@ -360,7 +360,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
 
   private val statusFreshMs: Long = 1_800L
   private val programsFreshMs: Long = 1_200L
+  private val statusPollFailureThreshold: Int = 3
+  private val statusPollGraceMs: Long = 15_000L
+  private val statusPollWarnLogThrottleMs: Long = 20_000L
   @Volatile private var lastStatusFetchAtMs: Long = 0L
+  @Volatile private var lastStatusOkAtMs: Long = 0L
+  @Volatile private var lastStatusPollWarnLogAtMs: Long = 0L
+  @Volatile private var statusPollFailureCount: Int = 0
   @Volatile private var lastProgramsFetchAtMs: Long = 0L
   @Volatile private var statusRefreshInFlight: Boolean = false
   @Volatile private var programsRefreshInFlight: Boolean = false
@@ -1152,6 +1158,31 @@ private fun clearDownloadedUpdateApk() {
       val nextVisible = if (showOverlay) true else st.daemonUnavailableVisible
       if (!st.daemonOnline && st.daemonUnavailableVisible == nextVisible) st
       else st.copy(daemonOnline = false, daemonUnavailableVisible = nextVisible)
+    }
+  }
+
+  private fun noteStatusPollSuccess(now: Long = System.currentTimeMillis()) {
+    statusPollFailureCount = 0
+    lastStatusOkAtMs = now
+  }
+
+  private fun handleStatusPollFailure(source: String, error: Throwable) {
+    val now = System.currentTimeMillis()
+    val failures = (statusPollFailureCount + 1).coerceAtMost(Int.MAX_VALUE)
+    statusPollFailureCount = failures
+    val recentlyOk = lastStatusOkAtMs > 0L && (now - lastStatusOkAtMs) < statusPollGraceMs
+    val message = error.message ?: error.toString()
+
+    if (failures >= statusPollFailureThreshold && !recentlyOk) {
+      handleDaemonUnreachable()
+      log("ERR", "$source failed after $failures attempts: $message")
+      lastStatusPollWarnLogAtMs = now
+      return
+    }
+
+    if ((now - lastStatusPollWarnLogAtMs) >= statusPollWarnLogThrottleMs) {
+      log("WARN", "temporary $source failed ($failures/$statusPollFailureThreshold): $message")
+      lastStatusPollWarnLogAtMs = now
     }
   }
 
@@ -3228,8 +3259,7 @@ private fun shQuote(s: String): String {
         try {
           fetchAndUpdateStatus(force = true)
         } catch (e: Throwable) {
-          handleDaemonUnreachable()
-          log("ERR", "status poll failed: ${e.message ?: e}")
+          handleStatusPollFailure("status poll", e)
         }
         delay(5200)
       }
@@ -3281,8 +3311,7 @@ private fun shQuote(s: String): String {
       try {
         fetchAndUpdateStatus(force = true)
       } catch (e: Throwable) {
-        handleDaemonUnreachable()
-        log("ERR", "status failed: ${e.message ?: e}")
+        handleStatusPollFailure("status refresh", e)
       }
     }
   }
@@ -3291,11 +3320,13 @@ private fun shQuote(s: String): String {
     val now = System.currentTimeMillis()
     val cached = _uiState.value.status
     if (!force && cached != null && (now - lastStatusFetchAtMs) < statusFreshMs) return
-    if (!force && statusRefreshInFlight) return
+    if (statusRefreshInFlight) return
     statusRefreshInFlight = true
     try {
       val rep = api.getStatus()
-      lastStatusFetchAtMs = System.currentTimeMillis()
+      val okAt = System.currentTimeMillis()
+      lastStatusFetchAtMs = okAt
+      noteStatusPollSuccess(okAt)
       _uiState.update { it.copy(status = rep, daemonOnline = true, daemonUnavailableVisible = false) }
       // Cache last-known state for the Quick Settings tile.
       root.setCachedServiceOn(ApiModels.isServiceOn(rep))

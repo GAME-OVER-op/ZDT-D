@@ -1,5 +1,6 @@
 package com.android.zdtd.service.ui
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -80,6 +82,16 @@ private data class MihomoSettingUi(
   val logLevel: String = "info",
   val tun2socksLogLevel: String = "info",
 )
+
+private data class MihomoPendingChange(
+  val id: String,
+  val title: String,
+  val message: String,
+  val detail: String,
+  val yaml: String,
+  val addProxyToDefaultGroup: String? = null,
+)
+
 
 private val mihomoProfileNameRegex = Regex("^[A-Za-z0-9_-]{1,10}$")
 private val mihomoTunRegex = Regex("^[A-Za-z0-9_.-]{1,15}$")
@@ -341,6 +353,10 @@ private val mihomoUserConfigTopLevelKeys = setOf(
   "proxy-providers",
   "rule-providers",
   "sniffer",
+  "sub-rules",
+  "tunnels",
+  "listeners",
+  "ntp",
   "profile",
   "experimental",
 )
@@ -385,9 +401,34 @@ private fun removeEmptyMihomoProviderSections(yaml: String): String {
   return out
 }
 
+
+private fun removeMihomoRuntimeManagedBlock(yaml: String): String {
+  val lines = yaml.replace("\r\n", "\n").lines()
+  val out = mutableListOf<String>()
+  var i = 0
+  while (i < lines.size) {
+    val line = lines[i]
+    if (line.contains("ZDT-D managed runtime config", ignoreCase = true)) {
+      i++
+      while (i < lines.size) {
+        val next = lines[i]
+        if (next.startsWith("mixed-port:") || next.startsWith("allow-lan:") || next.startsWith("bind-address:") || next.startsWith("log-level:") || next.isBlank()) {
+          i++
+        } else {
+          break
+        }
+      }
+      continue
+    }
+    out += line
+    i++
+  }
+  return out.joinToString("\n").trimEnd() + "\n"
+}
+
 private fun sanitizeMihomoUserConfigYaml(yaml: String): String {
-  val withoutManaged = removeMihomoTopLevelKeys(yaml, mihomoManagedTopLevelKeys)
-  val withoutDuplicate = removeDuplicateMihomoTopLevelEntries(withoutManaged)
+  val withoutRuntimeBlock = removeMihomoRuntimeManagedBlock(yaml)
+  val withoutDuplicate = removeDuplicateMihomoTopLevelEntries(withoutRuntimeBlock)
   return normalizeMihomoYamlText(removeEmptyMihomoProviderSections(withoutDuplicate))
 }
 
@@ -443,6 +484,11 @@ private data class MihomoProviderBlock(
   val interval: String,
   val behavior: String,
   val healthCheck: Boolean,
+  val format: String,
+  val proxy: String,
+  val sizeLimit: String,
+  val filter: String,
+  val excludeFilter: String,
 )
 
 private data class MihomoRuleParts(
@@ -469,6 +515,23 @@ private data class MihomoGroupDraft(
   val name: String,
   val type: String,
   val proxies: List<String>,
+  val use: List<String> = emptyList(),
+  val includeAll: Boolean = false,
+  val includeAllProxies: Boolean = false,
+  val includeAllProviders: Boolean = false,
+  val filter: String = "",
+  val excludeFilter: String = "",
+  val excludeType: String = "",
+  val url: String = "",
+  val interval: String = "",
+  val lazy: Boolean = false,
+  val timeout: String = "",
+  val maxFailedTimes: String = "",
+  val expectedStatus: String = "",
+  val disableUdp: Boolean = false,
+  val hidden: Boolean = false,
+  val icon: String = "",
+  val strategy: String = "",
 )
 
 private val mihomoDashboardPresets = listOf(
@@ -584,6 +647,11 @@ private fun parseProviderBlocks(sectionText: String): List<MihomoProviderBlock> 
     val path = Regex("""(?m)^\s{4}path:\s*[\"']?([^\"'\n]+)[\"']?\s*$""").find(raw)?.groupValues?.getOrNull(1).orEmpty()
     val interval = Regex("""(?m)^\s{4}interval:\s*([^\s#]+)""").find(raw)?.groupValues?.getOrNull(1).orEmpty()
     val behavior = Regex("""(?m)^\s{4}behavior:\s*([^\s#]+)""").find(raw)?.groupValues?.getOrNull(1).orEmpty()
+    val format = Regex("""(?m)^\s{4}format:\s*([^\s#]+)""").find(raw)?.groupValues?.getOrNull(1).orEmpty()
+    val proxy = Regex("""(?m)^\s{4}proxy:\s*[\"']?([^\"'\n]+)[\"']?\s*$""").find(raw)?.groupValues?.getOrNull(1).orEmpty()
+    val sizeLimit = Regex("""(?m)^\s{4}size-limit:\s*([^\s#]+)""").find(raw)?.groupValues?.getOrNull(1).orEmpty()
+    val filter = Regex("""(?m)^\s{4}filter:\s*[\"']?([^\"'\n]+)[\"']?\s*$""").find(raw)?.groupValues?.getOrNull(1).orEmpty()
+    val excludeFilter = Regex("""(?m)^\s{4}exclude-filter:\s*[\"']?([^\"'\n]+)[\"']?\s*$""").find(raw)?.groupValues?.getOrNull(1).orEmpty()
     val healthCheck = Regex("""(?m)^\s{4}health-check:\s*$""").containsMatchIn(raw)
     MihomoProviderBlock(
       raw = raw,
@@ -594,6 +662,11 @@ private fun parseProviderBlocks(sectionText: String): List<MihomoProviderBlock> 
       interval = interval,
       behavior = behavior,
       healthCheck = healthCheck,
+      format = format,
+      proxy = proxy,
+      sizeLimit = sizeLimit,
+      filter = filter,
+      excludeFilter = excludeFilter,
     )
   }
 }
@@ -609,6 +682,20 @@ private fun buildProviderSection(section: String, blocks: List<String>): String 
 
 private fun proxyNamesFromYaml(yamlText: String): List<String> =
   parseYamlListBlocks(extractTopLevelYamlSection(yamlText, "proxies")).map { it.name }.filter { it != "Unnamed" }
+
+private fun proxyGroupNamesFromYaml(yamlText: String): List<String> =
+  parseYamlListBlocks(extractTopLevelYamlSection(yamlText, "proxy-groups")).map { it.name }.filter { it != "Unnamed" }
+
+private fun proxyProviderNamesFromYaml(yamlText: String): List<String> =
+  parseProviderBlocks(extractTopLevelYamlSection(yamlText, "proxy-providers")).map { it.name }.filter { it.isNotBlank() }
+
+private val mihomoBuiltInPolicies = listOf("DIRECT", "REJECT", "REJECT-DROP", "PASS", "GLOBAL", "COMPATIBLE")
+
+private fun mihomoGroupPolicyNamesFromYaml(yamlText: String, currentGroupName: String? = null): List<String> =
+  (proxyNamesFromYaml(yamlText) + proxyGroupNamesFromYaml(yamlText).filter { it != currentGroupName } + mihomoBuiltInPolicies)
+    .map { it.trim() }
+    .filter { it.isNotBlank() }
+    .distinct()
 
 private fun parseMihomoRuleParts(rule: String): MihomoRuleParts {
   val parts = rule.split(',').map { it.trim() }.filter { it.isNotBlank() }
@@ -649,9 +736,8 @@ private fun addMihomoProxyToDefaultGroup(yamlText: String, proxyName: String, gr
   val blocks = parseYamlListBlocks(groupSection).map { it.raw }.toMutableList()
   val targetIndex = blocks.indexOfFirst { readMihomoGroupDraft(it).name == groupName }
   if (targetIndex >= 0) {
-    val available = proxyNamesFromYaml(yamlText).toSet()
     val draft = readMihomoGroupDraft(blocks[targetIndex])
-    val updatedProxies = (listOf(safeProxy) + draft.proxies.filter { it in available }).distinct()
+    val updatedProxies = (listOf(safeProxy) + draft.proxies).filter { it != draft.name }.distinct()
     blocks[targetIndex] = buildMihomoGroupFromDraft(blocks[targetIndex], draft.copy(proxies = updatedProxies))
   } else {
     blocks.add(0, mihomoGroupTemplate(groupName, "select", listOf(safeProxy)))
@@ -668,6 +754,33 @@ private data class MihomoProviderDraft(
   val interval: String,
   val behavior: String,
   val healthCheck: Boolean,
+  val format: String = "",
+  val proxy: String = "",
+  val sizeLimit: String = "",
+  val headerUserAgent: String = "",
+  val headerAuthorization: String = "",
+  val healthUrl: String = "",
+  val healthInterval: String = "",
+  val healthTimeout: String = "",
+  val healthLazy: Boolean = false,
+  val healthExpectedStatus: String = "",
+  val overridePrefix: String = "",
+  val overrideSuffix: String = "",
+  val overrideTfo: Boolean = false,
+  val overrideMptcp: Boolean = false,
+  val overrideUdp: Boolean = false,
+  val overrideUdpOverTcp: Boolean = false,
+  val overrideDown: String = "",
+  val overrideUp: String = "",
+  val overrideSkipCertVerify: Boolean = false,
+  val overrideDialerProxy: String = "",
+  val overrideInterfaceName: String = "",
+  val overrideRoutingMark: String = "",
+  val overrideIpVersion: String = "",
+  val overrideProxyName: String = "",
+  val filter: String = "",
+  val excludeFilter: String = "",
+  val excludeType: String = "",
 )
 
 private fun readMihomoYamlList(raw: String, key: String, baseIndent: Int = 4): List<String> {
@@ -714,26 +827,54 @@ private fun readMihomoGroupDraft(raw: String): MihomoGroupDraft = MihomoGroupDra
   name = readMihomoBlockScalar(raw, "name").ifBlank { "Proxy" },
   type = readMihomoBlockScalar(raw, "type").ifBlank { "select" },
   proxies = readMihomoYamlList(raw, "proxies"),
+  use = readMihomoYamlList(raw, "use"),
+  includeAll = readMihomoBlockBool(raw, "include-all"),
+  includeAllProxies = readMihomoBlockBool(raw, "include-all-proxies"),
+  includeAllProviders = readMihomoBlockBool(raw, "include-all-providers"),
+  filter = readMihomoBlockScalar(raw, "filter"),
+  excludeFilter = readMihomoBlockScalar(raw, "exclude-filter"),
+  excludeType = readMihomoBlockScalar(raw, "exclude-type"),
+  url = readMihomoBlockScalar(raw, "url"),
+  interval = readMihomoBlockScalar(raw, "interval"),
+  lazy = readMihomoBlockBool(raw, "lazy"),
+  timeout = readMihomoBlockScalar(raw, "timeout"),
+  maxFailedTimes = readMihomoBlockScalar(raw, "max-failed-times"),
+  expectedStatus = readMihomoBlockScalar(raw, "expected-status"),
+  disableUdp = readMihomoBlockBool(raw, "disable-udp"),
+  hidden = readMihomoBlockBool(raw, "hidden"),
+  icon = readMihomoBlockScalar(raw, "icon"),
+  strategy = readMihomoBlockScalar(raw, "strategy"),
 )
 
-private fun sanitizeMihomoGroupRaw(raw: String, availableProxies: List<String>): String {
+private fun sanitizeMihomoGroupRaw(raw: String): String {
   val draft = readMihomoGroupDraft(raw)
-  val filtered = draft.proxies.filter { it in availableProxies }.distinct()
-  return buildMihomoGroupFromDraft(raw, draft.copy(proxies = filtered))
+  val safeProxies = draft.proxies.map { it.trim() }.filter { it.isNotBlank() && it != draft.name }.distinct()
+  val safeUse = draft.use.map { it.trim() }.filter { it.isNotBlank() }.distinct()
+  return buildMihomoGroupFromDraft(raw, draft.copy(proxies = safeProxies, use = safeUse))
 }
 
 private fun buildMihomoGroupFromDraft(raw: String, draft: MihomoGroupDraft): String {
   var out = raw.trimEnd().ifBlank { mihomoGroupTemplate(draft.name, draft.type, draft.proxies) }
   out = upsertMihomoBlockScalar(out, "name", draft.name.ifBlank { "Proxy" }, quote = true, removeIfBlank = false)
   out = upsertMihomoBlockScalar(out, "type", draft.type.ifBlank { "select" }, removeIfBlank = false)
-  out = replaceMihomoYamlList(out, "proxies", draft.proxies.distinct())
-  if (draft.type in setOf("url-test", "fallback", "load-balance")) {
-    if (readMihomoBlockScalar(out, "url").isBlank()) out = upsertMihomoBlockScalar(out, "url", "http://www.gstatic.com/generate_204", removeIfBlank = false)
-    if (readMihomoBlockScalar(out, "interval").isBlank()) out = upsertMihomoBlockScalar(out, "interval", "300", removeIfBlank = false)
-  }
-  if (draft.type == "load-balance" && readMihomoBlockScalar(out, "strategy").isBlank()) {
-    out = upsertMihomoBlockScalar(out, "strategy", "consistent-hashing", removeIfBlank = false)
-  }
+  out = replaceMihomoYamlList(out, "proxies", draft.proxies.filter { it != draft.name }.distinct())
+  out = replaceMihomoYamlList(out, "use", draft.use.distinct())
+  out = upsertMihomoBlockScalar(out, "include-all", if (draft.includeAll) "true" else "")
+  out = upsertMihomoBlockScalar(out, "include-all-proxies", if (draft.includeAllProxies) "true" else "")
+  out = upsertMihomoBlockScalar(out, "include-all-providers", if (draft.includeAllProviders) "true" else "")
+  out = upsertMihomoBlockScalar(out, "filter", draft.filter, quote = true)
+  out = upsertMihomoBlockScalar(out, "exclude-filter", draft.excludeFilter, quote = true)
+  out = upsertMihomoBlockScalar(out, "exclude-type", draft.excludeType, quote = true)
+  out = upsertMihomoBlockScalar(out, "url", draft.url.ifBlank { if (draft.type in setOf("url-test", "fallback", "load-balance")) "http://www.gstatic.com/generate_204" else "" })
+  out = upsertMihomoBlockScalar(out, "interval", draft.interval.ifBlank { if (draft.type in setOf("url-test", "fallback", "load-balance")) "300" else "" })
+  out = upsertMihomoBlockScalar(out, "lazy", if (draft.lazy) "true" else "")
+  out = upsertMihomoBlockScalar(out, "timeout", draft.timeout.filter(Char::isDigit))
+  out = upsertMihomoBlockScalar(out, "max-failed-times", draft.maxFailedTimes.filter(Char::isDigit))
+  out = upsertMihomoBlockScalar(out, "expected-status", draft.expectedStatus.filter(Char::isDigit))
+  out = upsertMihomoBlockScalar(out, "disable-udp", if (draft.disableUdp) "true" else "")
+  out = upsertMihomoBlockScalar(out, "hidden", if (draft.hidden) "true" else "")
+  out = upsertMihomoBlockScalar(out, "icon", draft.icon, quote = draft.icon.contains(':') || draft.icon.contains('/'))
+  out = upsertMihomoBlockScalar(out, "strategy", draft.strategy.ifBlank { if (draft.type == "load-balance") "consistent-hashing" else "" })
   return out.trimEnd()
 }
 
@@ -747,6 +888,33 @@ private fun readMihomoProviderDraft(raw: String, ruleProvider: Boolean): MihomoP
     interval = Regex("""(?m)^\s{4}interval:\s*([^\s#]+)""").find(raw)?.groupValues?.getOrNull(1).orEmpty(),
     behavior = Regex("""(?m)^\s{4}behavior:\s*([^\s#]+)""").find(raw)?.groupValues?.getOrNull(1).orEmpty().ifBlank { "domain" },
     healthCheck = raw.contains(Regex("""(?m)^\s{4}health-check:\s*$""")),
+    format = Regex("""(?m)^\s{4}format:\s*([^\s#]+)""").find(raw)?.groupValues?.getOrNull(1).orEmpty(),
+    proxy = Regex("""(?m)^\s{4}proxy:\s*[\"']?([^\"'\n]+)[\"']?\s*$""").find(raw)?.groupValues?.getOrNull(1).orEmpty(),
+    sizeLimit = Regex("""(?m)^\s{4}size-limit:\s*([^\s#]+)""").find(raw)?.groupValues?.getOrNull(1).orEmpty(),
+    headerUserAgent = readMihomoProviderHeaderUserAgent(raw),
+    headerAuthorization = readMihomoProviderHeaderAuthorization(raw),
+    healthUrl = readMihomoNestedScalar(raw, "health-check", "url"),
+    healthInterval = readMihomoNestedScalar(raw, "health-check", "interval"),
+    healthTimeout = readMihomoNestedScalar(raw, "health-check", "timeout"),
+    healthLazy = readMihomoNestedScalar(raw, "health-check", "lazy").equals("true", ignoreCase = true),
+    healthExpectedStatus = readMihomoNestedScalar(raw, "health-check", "expected-status"),
+    overridePrefix = readMihomoNestedScalar(raw, "override", "additional-prefix"),
+    overrideSuffix = readMihomoNestedScalar(raw, "override", "additional-suffix"),
+    overrideTfo = readMihomoNestedScalar(raw, "override", "tfo").equals("true", ignoreCase = true),
+    overrideMptcp = readMihomoNestedScalar(raw, "override", "mptcp").equals("true", ignoreCase = true),
+    overrideUdp = readMihomoNestedScalar(raw, "override", "udp").equals("true", ignoreCase = true),
+    overrideUdpOverTcp = readMihomoNestedScalar(raw, "override", "udp-over-tcp").equals("true", ignoreCase = true),
+    overrideDown = readMihomoNestedScalar(raw, "override", "down"),
+    overrideUp = readMihomoNestedScalar(raw, "override", "up"),
+    overrideSkipCertVerify = readMihomoNestedScalar(raw, "override", "skip-cert-verify").equals("true", ignoreCase = true),
+    overrideDialerProxy = readMihomoNestedScalar(raw, "override", "dialer-proxy"),
+    overrideInterfaceName = readMihomoNestedScalar(raw, "override", "interface-name"),
+    overrideRoutingMark = readMihomoNestedScalar(raw, "override", "routing-mark"),
+    overrideIpVersion = readMihomoNestedScalar(raw, "override", "ip-version"),
+    overrideProxyName = readMihomoNestedScalar(raw, "override", "proxy-name"),
+    filter = Regex("""(?m)^\s{4}filter:\s*[\"']?([^\"'\n]+)[\"']?\s*$""").find(raw)?.groupValues?.getOrNull(1).orEmpty(),
+    excludeFilter = Regex("""(?m)^\s{4}exclude-filter:\s*[\"']?([^\"'\n]+)[\"']?\s*$""").find(raw)?.groupValues?.getOrNull(1).orEmpty(),
+    excludeType = Regex("""(?m)^\s{4}exclude-type:\s*[\"']?([^\"'\n]+)[\"']?\s*$""").find(raw)?.groupValues?.getOrNull(1).orEmpty(),
   )
 }
 
@@ -775,24 +943,98 @@ private fun upsertMihomoProviderScalar(raw: String, key: String, value: String, 
   return lines.joinToString("\n").trimEnd()
 }
 
-private fun setMihomoProviderHealthCheck(raw: String, enable: Boolean): String {
+private fun removeMihomoProviderNestedBlock(raw: String, key: String): String {
   val lines = raw.replace("\r\n", "\n").trimEnd().lines().toMutableList()
-  val start = lines.indexOfFirst { it == "    health-check:" }
-  if (!enable) {
-    if (start < 0) return lines.joinToString("\n").trimEnd()
-    var end = lines.size
-    for (i in start + 1 until lines.size) {
-      if (lines[i].startsWith("    ") && !lines[i].startsWith("      ")) { end = i; break }
-    }
-    repeat(end - start) { lines.removeAt(start) }
-    return lines.joinToString("\n").trimEnd()
+  val start = lines.indexOfFirst { it == "    $key:" }
+  if (start < 0) return lines.joinToString("\n").trimEnd()
+  var end = lines.size
+  for (i in start + 1 until lines.size) {
+    if (lines[i].startsWith("    ") && !lines[i].startsWith("      ")) { end = i; break }
   }
-  if (start >= 0) return lines.joinToString("\n").trimEnd()
-  lines.add("    health-check:")
-  lines.add("      enable: true")
-  lines.add("      url: http://www.gstatic.com/generate_204")
-  lines.add("      interval: 300")
+  repeat(end - start) { lines.removeAt(start) }
   return lines.joinToString("\n").trimEnd()
+}
+
+private fun appendMihomoProviderNestedBlock(raw: String, key: String, linesToAdd: List<String>): String {
+  val base = removeMihomoProviderNestedBlock(raw, key).trimEnd()
+  if (linesToAdd.isEmpty()) return base
+  return buildString {
+    if (base.isNotBlank()) append(base).append("\n")
+    append("    ").append(key).append(":\n")
+    linesToAdd.forEach { append("      ").append(it).append("\n") }
+  }.trimEnd()
+}
+
+private fun readMihomoProviderHeaderUserAgent(raw: String): String {
+  val lines = raw.replace("\r\n", "\n").lines()
+  val headerIndex = lines.indexOfFirst { it == "    header:" || it == "    headers:" }
+  if (headerIndex < 0) return ""
+  val uaIndex = (headerIndex + 1 until lines.size).firstOrNull { lines[it].trim().startsWith("User-Agent:") } ?: return ""
+  for (i in uaIndex + 1 until lines.size) {
+    val line = lines[i]
+    if (line.startsWith("      ") && !line.startsWith("        ")) break
+    if (line.trim().startsWith("- ")) return stripYamlQuotes(line.trim().removePrefix("- "))
+  }
+  return ""
+}
+
+private fun readMihomoProviderHeaderAuthorization(raw: String): String {
+  val lines = raw.replace("\r\n", "\n").lines()
+  val headerIndex = lines.indexOfFirst { it == "    header:" || it == "    headers:" }
+  if (headerIndex < 0) return ""
+  val authIndex = (headerIndex + 1 until lines.size).firstOrNull { lines[it].trim().startsWith("Authorization:") } ?: return ""
+  for (i in authIndex + 1 until lines.size) {
+    val line = lines[i]
+    if (line.startsWith("      ") && !line.startsWith("        ")) break
+    if (line.trim().startsWith("- ")) return stripYamlQuotes(line.trim().removePrefix("- "))
+  }
+  return ""
+}
+
+private fun setMihomoProviderHeader(raw: String, userAgent: String, authorization: String): String {
+  var out = removeMihomoProviderNestedBlock(raw, "header")
+  out = removeMihomoProviderNestedBlock(out, "headers")
+  val lines = mutableListOf<String>()
+  if (userAgent.isNotBlank()) {
+    lines += "User-Agent:"
+    lines += "  - ${yamlQuote(userAgent.trim())}"
+  }
+  if (authorization.isNotBlank()) {
+    lines += "Authorization:"
+    lines += "  - ${yamlQuote(authorization.trim())}"
+  }
+  if (lines.isEmpty()) return out
+  return appendMihomoProviderNestedBlock(out, "header", lines)
+}
+
+private fun setMihomoProviderOverride(raw: String, draft: MihomoProviderDraft): String {
+  val lines = mutableListOf<String>()
+  if (draft.overridePrefix.isNotBlank()) lines += "additional-prefix: ${yamlQuote(draft.overridePrefix.trim())}"
+  if (draft.overrideSuffix.isNotBlank()) lines += "additional-suffix: ${yamlQuote(draft.overrideSuffix.trim())}"
+  if (draft.overrideTfo) lines += "tfo: true"
+  if (draft.overrideMptcp) lines += "mptcp: true"
+  if (draft.overrideUdp) lines += "udp: true"
+  if (draft.overrideUdpOverTcp) lines += "udp-over-tcp: true"
+  if (draft.overrideDown.isNotBlank()) lines += "down: ${yamlQuote(draft.overrideDown.trim())}"
+  if (draft.overrideUp.isNotBlank()) lines += "up: ${yamlQuote(draft.overrideUp.trim())}"
+  if (draft.overrideSkipCertVerify) lines += "skip-cert-verify: true"
+  if (draft.overrideDialerProxy.isNotBlank()) lines += "dialer-proxy: ${draft.overrideDialerProxy.trim()}"
+  if (draft.overrideInterfaceName.isNotBlank()) lines += "interface-name: ${draft.overrideInterfaceName.trim()}"
+  if (draft.overrideRoutingMark.isNotBlank()) lines += "routing-mark: ${draft.overrideRoutingMark.filter(Char::isDigit)}"
+  if (draft.overrideIpVersion.isNotBlank()) lines += "ip-version: ${draft.overrideIpVersion.trim()}"
+  if (draft.overrideProxyName.isNotBlank()) lines += "proxy-name: ${yamlQuote(draft.overrideProxyName.trim())}"
+  return appendMihomoProviderNestedBlock(raw, "override", lines)
+}
+
+private fun setMihomoProviderHealthCheck(raw: String, draft: MihomoProviderDraft): String {
+  if (!draft.healthCheck) return removeMihomoProviderNestedBlock(raw, "health-check")
+  val lines = mutableListOf("enable: true")
+  lines += "url: ${draft.healthUrl.ifBlank { "http://www.gstatic.com/generate_204" }}"
+  lines += "interval: ${draft.healthInterval.filter(Char::isDigit).ifBlank { "300" }}"
+  draft.healthTimeout.filter(Char::isDigit).takeIf { it.isNotBlank() }?.let { lines += "timeout: $it" }
+  if (draft.healthLazy) lines += "lazy: true"
+  draft.healthExpectedStatus.filter(Char::isDigit).takeIf { it.isNotBlank() }?.let { lines += "expected-status: $it" }
+  return appendMihomoProviderNestedBlock(raw, "health-check", lines)
 }
 
 private fun buildMihomoProviderFromDraft(raw: String, draft: MihomoProviderDraft, ruleProvider: Boolean): String {
@@ -801,11 +1043,21 @@ private fun buildMihomoProviderFromDraft(raw: String, draft: MihomoProviderDraft
   }
   out = renameMihomoProviderBlock(out, draft.name)
   out = upsertMihomoProviderScalar(out, "type", draft.type.ifBlank { "http" }, removeIfBlank = false)
-  if (ruleProvider) out = upsertMihomoProviderScalar(out, "behavior", draft.behavior.ifBlank { "domain" }, removeIfBlank = false)
+  if (ruleProvider) {
+    out = upsertMihomoProviderScalar(out, "behavior", draft.behavior.ifBlank { "domain" }, removeIfBlank = false)
+    out = upsertMihomoProviderScalar(out, "format", draft.format)
+  }
   out = upsertMihomoProviderScalar(out, "url", draft.url, quote = draft.url.contains(':') || draft.url.contains('/'))
-  out = upsertMihomoProviderScalar(out, "path", draft.path.ifBlank { if (ruleProvider) "./ruleset/${draft.name}.yaml" else "./providers/${draft.name}.yaml" })
+  out = upsertMihomoProviderScalar(out, "path", draft.path.ifBlank { if (ruleProvider) "./rule_providers/${draft.name}.yaml" else "./proxy_providers/${draft.name}.yaml" })
   out = upsertMihomoProviderScalar(out, "interval", draft.interval.filter(Char::isDigit))
-  out = setMihomoProviderHealthCheck(out, draft.healthCheck)
+  out = upsertMihomoProviderScalar(out, "proxy", draft.proxy)
+  out = upsertMihomoProviderScalar(out, "size-limit", draft.sizeLimit.filter(Char::isDigit))
+  out = upsertMihomoProviderScalar(out, "filter", draft.filter, quote = true)
+  out = upsertMihomoProviderScalar(out, "exclude-filter", draft.excludeFilter, quote = true)
+  out = upsertMihomoProviderScalar(out, "exclude-type", draft.excludeType, quote = true)
+  out = setMihomoProviderHeader(out, draft.headerUserAgent, draft.headerAuthorization)
+  out = setMihomoProviderOverride(out, draft)
+  out = setMihomoProviderHealthCheck(out, draft)
   return out.trimEnd()
 }
 
@@ -1577,7 +1829,7 @@ private fun mihomoProxyProviderTemplate(name: String, type: String): String = wh
   "file" -> """
   $name:
     type: file
-    path: ./providers/$name.yaml
+    path: ./proxy_providers/$name.yaml
     health-check:
       enable: true
       url: http://www.gstatic.com/generate_204
@@ -1595,7 +1847,7 @@ private fun mihomoProxyProviderTemplate(name: String, type: String): String = wh
   $name:
     type: http
     url: "https://example.com/sub.yaml"
-    path: ./providers/$name.yaml
+    path: ./proxy_providers/$name.yaml
     interval: 3600
     health-check:
       enable: true
@@ -1609,7 +1861,7 @@ private fun mihomoRuleProviderTemplate(name: String, type: String): String = whe
   $name:
     type: file
     behavior: domain
-    path: ./ruleset/$name.yaml
+    path: ./rule_providers/$name.yaml
 """.trimEnd()
   "inline" -> """
   $name:
@@ -1623,7 +1875,7 @@ private fun mihomoRuleProviderTemplate(name: String, type: String): String = whe
     type: http
     behavior: domain
     url: "https://example.com/$name.yaml"
-    path: ./ruleset/$name.yaml
+    path: ./rule_providers/$name.yaml
     interval: 86400
 """.trimEnd()
 }
@@ -1929,6 +2181,8 @@ fun MihomoProfileScreen(
   var usedVpnTuns by remember(profile) { mutableStateOf(emptySet<String>()) }
   var usedMihomoPorts by remember(profile) { mutableStateOf(emptySet<Int>()) }
   var usedMihomoControllerPorts by remember(profile) { mutableStateOf(emptySet<Int>()) }
+  var pendingChanges by remember(profile) { mutableStateOf(emptyList<MihomoPendingChange>()) }
+  var pendingExpanded by remember(profile) { mutableStateOf(false) }
 
   fun showSnack(msg: String) {
     scope.launch { snackHost.showSnackbar(msg) }
@@ -1996,13 +2250,27 @@ fun MihomoProfileScreen(
     }
   }
 
-  fun saveYaml(newText: String = yamlText, notify: Boolean = true) {
-    val normalizedText = sanitizeMihomoUserConfigYaml(newText)
+  fun queuePendingChange(change: MihomoPendingChange) {
+    pendingChanges = (pendingChanges.filter { it.id != change.id } + change).takeLast(6)
+    pendingExpanded = false
+  }
+
+  fun removePendingChange(id: String) {
+    pendingChanges = pendingChanges.filter { it.id != id }
+    if (pendingChanges.isEmpty()) pendingExpanded = false
+  }
+
+  fun savePendingChange(change: MihomoPendingChange, notify: Boolean = true) {
+    val sourceYaml = change.addProxyToDefaultGroup?.let { proxyName ->
+      addMihomoProxyToDefaultGroup(yamlText, proxyName)
+    } ?: change.yaml
+    val normalizedText = sanitizeMihomoUserConfigYaml(sourceYaml)
     yamlSaving = true
     actions.saveText("$basePath/config", normalizedText) { ok ->
       yamlSaving = false
       if (ok) {
         yamlText = normalizedText
+        removePendingChange(change.id)
         if (notify) showSnack(context.getString(R.string.saved_apply_after_restart))
       } else {
         showSnack(context.getString(R.string.save_failed))
@@ -2010,6 +2278,54 @@ fun MihomoProfileScreen(
     }
   }
 
+  fun saveAllPendingChanges() {
+    if (pendingChanges.isEmpty()) return
+    var mergedYaml = yamlText
+    pendingChanges.forEach { change ->
+      mergedYaml = change.addProxyToDefaultGroup?.let { proxyName ->
+        addMihomoProxyToDefaultGroup(mergedYaml, proxyName)
+      } ?: change.yaml
+    }
+    val normalizedText = sanitizeMihomoUserConfigYaml(mergedYaml)
+    yamlSaving = true
+    actions.saveText("$basePath/config", normalizedText) { ok ->
+      yamlSaving = false
+      if (ok) {
+        yamlText = normalizedText
+        pendingChanges = emptyList()
+        pendingExpanded = false
+        showSnack(context.getString(R.string.saved_apply_after_restart))
+      } else {
+        showSnack(context.getString(R.string.save_failed))
+      }
+    }
+  }
+
+  fun saveYaml(newText: String = yamlText, notify: Boolean = true) {
+    val normalizedText = sanitizeMihomoUserConfigYaml(newText)
+    yamlSaving = true
+    actions.saveText("$basePath/config", normalizedText) { ok ->
+      yamlSaving = false
+      if (ok) {
+        yamlText = normalizedText
+        pendingChanges = pendingChanges.filter { it.yaml.trimEnd() != normalizedText.trimEnd() }
+        if (notify) showSnack(context.getString(R.string.saved_apply_after_restart))
+      } else {
+        queuePendingChange(
+          MihomoPendingChange(
+            id = "save-failed-${normalizedText.hashCode()}",
+            title = context.getString(R.string.mihomo_pending_save_failed_title),
+            message = context.getString(R.string.mihomo_pending_save_failed_desc),
+            detail = context.getString(R.string.save_failed),
+            yaml = normalizedText,
+          )
+        )
+        showSnack(context.getString(R.string.save_failed))
+      }
+    }
+  }
+
+  Box(Modifier.fillMaxSize()) {
   Column(
     Modifier
       .fillMaxSize()
@@ -2040,6 +2356,7 @@ fun MihomoProfileScreen(
       stringResource(R.string.mihomo_tab_general),
       stringResource(R.string.mihomo_tab_dashboard),
       stringResource(R.string.mihomo_tab_yaml),
+      stringResource(R.string.mihomo_tab_dns),
       stringResource(R.string.mihomo_tab_proxies),
       stringResource(R.string.mihomo_tab_groups),
       stringResource(R.string.mihomo_tab_rules),
@@ -2051,6 +2368,7 @@ fun MihomoProfileScreen(
       stringResource(R.string.mihomo_tab_desc_general),
       stringResource(R.string.mihomo_tab_desc_dashboard),
       stringResource(R.string.mihomo_tab_desc_yaml),
+      stringResource(R.string.mihomo_tab_desc_dns),
       stringResource(R.string.mihomo_tab_desc_proxies),
       stringResource(R.string.mihomo_tab_desc_groups),
       stringResource(R.string.mihomo_tab_desc_rules),
@@ -2108,23 +2426,43 @@ fun MihomoProfileScreen(
         onSave = { saveYaml() },
         onRestoreSample = { yamlText = mihomoSampleConfig(profile, nextFreeMihomoControllerPort(usedMihomoControllerPorts)) },
       )
-      3 -> MihomoProxiesBuilderTab(
+      3 -> MihomoRawSectionEditorTab(
+        title = stringResource(R.string.mihomo_dns_title),
+        description = stringResource(R.string.mihomo_dns_desc),
+        section = "dns",
+        yamlText = yamlText,
+        defaultText = mihomoDefaultDnsSection(),
+        onSaveYaml = { updated -> saveYaml(updated, notify = false) },
+      )
+      4 -> MihomoProxiesBuilderTab(
+        yamlText = yamlText,
+        onSaveYaml = { updated -> saveYaml(updated, notify = false) },
+        onQueuePendingChange = { proxyName, pendingYaml ->
+          queuePendingChange(
+            MihomoPendingChange(
+              id = "mihomo-proxy-group-$proxyName",
+              title = context.getString(R.string.mihomo_pending_add_proxy_group_title),
+              message = context.getString(R.string.mihomo_pending_add_proxy_group_desc, proxyName),
+              detail = "Proxy",
+              yaml = pendingYaml,
+              addProxyToDefaultGroup = proxyName,
+            )
+          )
+        },
+      )
+      5 -> MihomoGroupsBuilderTab(
         yamlText = yamlText,
         onSaveYaml = { updated -> saveYaml(updated, notify = false) },
       )
-      4 -> MihomoGroupsBuilderTab(
+      6 -> MihomoRulesBuilderTab(
         yamlText = yamlText,
         onSaveYaml = { updated -> saveYaml(updated, notify = false) },
       )
-      5 -> MihomoRulesBuilderTab(
+      7 -> MihomoProvidersBuilderTab(
         yamlText = yamlText,
         onSaveYaml = { updated -> saveYaml(updated, notify = false) },
       )
-      6 -> MihomoProvidersBuilderTab(
-        yamlText = yamlText,
-        onSaveYaml = { updated -> saveYaml(updated, notify = false) },
-      )
-      7 -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      8 -> Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         AppListPickerCard(
           title = stringResource(R.string.mihomo_apps_title),
           desc = stringResource(R.string.mihomo_apps_desc),
@@ -2149,13 +2487,139 @@ fun MihomoProfileScreen(
           }
         }
       }
-      else -> MihomoAdvancedTab(
+      else -> MihomoAdvancedCompatibilityTab(
         yamlText = yamlText,
-        onSaveYaml = { updated -> saveYaml(updated) },
+        onSaveYaml = { updated -> saveYaml(updated, notify = false) },
       )
     }
 
     Spacer(Modifier.height(80.dp))
+  }
+
+  AnimatedVisibility(
+    visible = pendingChanges.isNotEmpty(),
+    modifier = Modifier
+      .align(Alignment.BottomEnd)
+      .padding(end = 16.dp, bottom = 64.dp)
+      .navigationBarsPadding(),
+  ) {
+    MihomoPendingChangesPanel(
+      pendingChanges = pendingChanges,
+      expanded = pendingExpanded,
+      compact = compact,
+      saving = yamlSaving,
+      onToggle = { pendingExpanded = !pendingExpanded },
+      onApply = { change -> savePendingChange(change) },
+      onDiscard = { change -> removePendingChange(change.id) },
+      onApplyAll = { saveAllPendingChanges() },
+      onDiscardAll = { pendingChanges = emptyList(); pendingExpanded = false },
+    )
+  }
+  }
+}
+
+
+@Composable
+private fun MihomoPendingChangesPanel(
+  pendingChanges: List<MihomoPendingChange>,
+  expanded: Boolean,
+  compact: Boolean,
+  saving: Boolean,
+  onToggle: () -> Unit,
+  onApply: (MihomoPendingChange) -> Unit,
+  onDiscard: (MihomoPendingChange) -> Unit,
+  onApplyAll: () -> Unit,
+  onDiscardAll: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  if (pendingChanges.isEmpty()) return
+  Column(
+    modifier = modifier.width(if (compact) 286.dp else 360.dp),
+    horizontalAlignment = Alignment.End,
+    verticalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    AnimatedVisibility(visible = expanded) {
+      Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.96f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.35f)),
+      ) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          Text(
+            stringResource(R.string.mihomo_pending_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onErrorContainer,
+          )
+          Text(
+            stringResource(R.string.mihomo_pending_count, pendingChanges.size),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.78f),
+          )
+          pendingChanges.forEach { change ->
+            Surface(
+              modifier = Modifier.fillMaxWidth(),
+              shape = MaterialTheme.shapes.medium,
+              color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.18f)),
+            ) {
+              Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(change.title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                Text(change.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f))
+                if (change.detail.isNotBlank()) {
+                  Text(
+                    "${stringResource(R.string.mihomo_pending_details)}: ${change.detail}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                    maxLines = 3,
+                  )
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                  TextButton(onClick = { onDiscard(change) }, enabled = !saving) {
+                    Text(if (compact) "✕" else stringResource(R.string.mihomo_pending_discard))
+                  }
+                  Spacer(Modifier.width(6.dp))
+                  Button(onClick = { onApply(change) }, enabled = !saving) {
+                    Text(if (compact) "✓" else stringResource(R.string.mihomo_pending_apply))
+                  }
+                }
+              }
+            }
+          }
+          if (pendingChanges.size > 1) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+              TextButton(onClick = onDiscardAll, enabled = !saving) {
+                Text(if (compact) "✕ ✕" else stringResource(R.string.mihomo_pending_discard_all))
+              }
+              Spacer(Modifier.width(6.dp))
+              Button(onClick = onApplyAll, enabled = !saving) {
+                Text(if (compact) "✓ ✓" else stringResource(R.string.mihomo_pending_apply_all))
+              }
+            }
+          }
+        }
+      }
+    }
+    Surface(
+      shape = CircleShape,
+      color = MaterialTheme.colorScheme.errorContainer,
+      border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.45f)),
+      shadowElevation = 8.dp,
+      modifier = Modifier
+        .width(52.dp)
+        .height(52.dp),
+    ) {
+      TextButton(
+        onClick = onToggle,
+        modifier = Modifier.fillMaxSize(),
+      ) {
+        Text(
+          "⚠",
+          style = MaterialTheme.typography.titleLarge,
+          color = MaterialTheme.colorScheme.error,
+          maxLines = 1,
+        )
+      }
+    }
   }
 }
 
@@ -2183,7 +2647,7 @@ private fun MihomoProfileTabSelector(
       BoxWithConstraints(Modifier.fillMaxWidth()) {
         val reservedForMenu = 70f
         val availableWidth = (maxWidth.value - reservedForMenu).coerceAtLeast(96f)
-        val basePriority = listOf(0, 1, 3, 4, 5, 7, 2, 6, 8).filter { it in labels.indices }
+        val basePriority = listOf(0, 1, 4, 5, 6, 8, 3, 2, 7, 9).filter { it in labels.indices }
         val ordered = (listOf(safeSelected) + recentTabs + basePriority + labels.indices.toList()).distinct()
         val visible = mutableListOf<Int>()
         var usedWidth = 0f
@@ -2704,21 +3168,22 @@ private fun MihomoDashboardTab(
 }
 
 @Composable
-private fun MihomoProxiesBuilderTab(yamlText: String, onSaveYaml: (String) -> Unit) {
+private fun MihomoProxiesBuilderTab(
+  yamlText: String,
+  onSaveYaml: (String) -> Unit,
+  onQueuePendingChange: (String, String) -> Unit,
+) {
   val sectionText = remember(yamlText) { extractTopLevelYamlSection(yamlText, "proxies") }
-  val proxyNames = remember(yamlText) { proxyNamesFromYaml(yamlText) }
-  var blocks by remember(sectionText, proxyNames) { mutableStateOf(parseYamlListBlocks(sectionText).map { sanitizeMihomoGroupRaw(it.raw, proxyNames) }) }
+  var blocks by remember(sectionText) { mutableStateOf(parseYamlListBlocks(sectionText).map { it.raw }) }
   var editIndex by remember { mutableStateOf<Int?>(null) }
   var showAdd by remember { mutableStateOf(false) }
-  var pendingGroupProxy by remember { mutableStateOf<String?>(null) }
   var lastSavedSection by remember(sectionText) { mutableStateOf(sectionText.trimEnd()) }
   val parsed = remember(blocks) { parseYamlListBlocks(buildYamlListSection("proxies", blocks)) }
   val serializedSection = remember(blocks) { buildYamlListSection("proxies", blocks).trimEnd() }
 
   fun currentYamlWithProxies(): String = replaceTopLevelYamlSection(yamlText, "proxies", buildYamlListSection("proxies", blocks))
 
-  LaunchedEffect(serializedSection, pendingGroupProxy) {
-    if (pendingGroupProxy != null) return@LaunchedEffect
+  LaunchedEffect(serializedSection) {
     if (serializedSection == lastSavedSection.trimEnd()) return@LaunchedEffect
     delay(MIHOMO_AUTOSAVE_DELAY_MS)
     onSaveYaml(currentYamlWithProxies())
@@ -2729,19 +3194,17 @@ private fun MihomoProxiesBuilderTab(yamlText: String, onSaveYaml: (String) -> Un
     MihomoAddProxyDialog(
       onDismiss = { showAdd = false },
       onAdd = { presetYaml ->
-        blocks = blocks + presetYaml
-        pendingGroupProxy = readMihomoBlockScalar(presetYaml, "name").ifBlank { parseYamlListBlocks("proxies:\n$presetYaml").firstOrNull()?.name.orEmpty() }
+        val newBlocks = blocks + presetYaml
+        val proxyName = readMihomoBlockScalar(presetYaml, "name")
+          .ifBlank { parseYamlListBlocks("proxies:\n$presetYaml").firstOrNull()?.name.orEmpty() }
+        val withProxy = replaceTopLevelYamlSection(yamlText, "proxies", buildYamlListSection("proxies", newBlocks))
+        if (proxyName.isNotBlank()) {
+          onQueuePendingChange(proxyName, addMihomoProxyToDefaultGroup(withProxy, proxyName))
+        }
+        blocks = newBlocks
         showAdd = false
       },
     )
-  }
-  fun savePendingProxy(addToGroup: Boolean) {
-    pendingGroupProxy?.let { proxyName ->
-      val withProxy = currentYamlWithProxies()
-      onSaveYaml(if (addToGroup) addMihomoProxyToDefaultGroup(withProxy, proxyName) else withProxy)
-      lastSavedSection = serializedSection
-      pendingGroupProxy = null
-    }
   }
   editIndex?.let { index ->
     MihomoProxySmartEditorDialog(
@@ -2773,34 +3236,6 @@ private fun MihomoProxiesBuilderTab(yamlText: String, onSaveYaml: (String) -> Un
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
         )
-      }
-    }
-    pendingGroupProxy?.let { proxyName ->
-      Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f)),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
-      ) {
-        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          Text(
-            stringResource(R.string.mihomo_add_proxy_to_group_title),
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-          )
-          Text(
-            stringResource(R.string.mihomo_add_proxy_to_group_desc, proxyName),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f),
-          )
-          Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            Button(onClick = { savePendingProxy(addToGroup = true) }, modifier = Modifier.fillMaxWidth()) {
-              Text(stringResource(R.string.mihomo_add_to_proxy_group))
-            }
-            OutlinedButton(onClick = { savePendingProxy(addToGroup = false) }, modifier = Modifier.fillMaxWidth()) {
-              Text(stringResource(R.string.mihomo_keep_proxy_only))
-            }
-          }
-        }
       }
     }
     if (parsed.isEmpty()) {
@@ -2988,7 +3423,7 @@ private fun MihomoAddProxyDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit)
               OutlinedTextField(value = realityPublicKey, onValueChange = { realityPublicKey = it.trim().take(120) }, label = { Text(stringResource(R.string.mihomo_field_reality_public_key)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
               OutlinedTextField(value = realityShortId, onValueChange = { realityShortId = it.trim().take(32) }, label = { Text(stringResource(R.string.mihomo_field_reality_short_id)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
             }
-            Text(stringResource(R.string.mihomo_live_yaml_preview_title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.mihomo_live_yaml_preview_title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
             OutlinedTextField(
               value = generatedRaw,
               onValueChange = { rawText = it },
@@ -3014,8 +3449,9 @@ private fun MihomoAddProxyDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit)
 @Composable
 private fun MihomoGroupsBuilderTab(yamlText: String, onSaveYaml: (String) -> Unit) {
   val sectionText = remember(yamlText) { extractTopLevelYamlSection(yamlText, "proxy-groups") }
-  val proxyNames = remember(yamlText) { proxyNamesFromYaml(yamlText) }
-  var blocks by remember(sectionText, proxyNames) { mutableStateOf(parseYamlListBlocks(sectionText).map { sanitizeMihomoGroupRaw(it.raw, proxyNames) }) }
+  val policyNames = remember(yamlText) { mihomoGroupPolicyNamesFromYaml(yamlText) }
+  val providerNames = remember(yamlText) { proxyProviderNamesFromYaml(yamlText) }
+  var blocks by remember(sectionText) { mutableStateOf(parseYamlListBlocks(sectionText).map { sanitizeMihomoGroupRaw(it.raw) }) }
   var editIndex by remember { mutableStateOf<Int?>(null) }
   var showAdd by remember { mutableStateOf(false) }
   var lastSavedSection by remember(sectionText) { mutableStateOf(sectionText.trimEnd()) }
@@ -3030,12 +3466,13 @@ private fun MihomoGroupsBuilderTab(yamlText: String, onSaveYaml: (String) -> Uni
   }
 
   if (showAdd) {
-    MihomoAddGroupDialog(proxyNames = proxyNames, onDismiss = { showAdd = false }, onAdd = { raw -> blocks = blocks + raw; showAdd = false })
+    MihomoAddGroupDialog(policyNames = policyNames, providerNames = providerNames, onDismiss = { showAdd = false }, onAdd = { raw -> blocks = blocks + raw; showAdd = false })
   }
   editIndex?.let { index ->
     MihomoEditGroupDialog(
       initialRaw = blocks.getOrNull(index).orEmpty(),
-      proxyNames = proxyNames,
+      policyNames = policyNames,
+      providerNames = providerNames,
       onDismiss = { editIndex = null },
       onSave = { updated -> blocks = blocks.toMutableList().also { if (index in it.indices) it[index] = updated.trimEnd() }; editIndex = null },
     )
@@ -3071,13 +3508,56 @@ private fun MihomoGroupsBuilderTab(yamlText: String, onSaveYaml: (String) -> Uni
 }
 
 @Composable
-private fun MihomoAddGroupDialog(proxyNames: List<String>, onDismiss: () -> Unit, onAdd: (String) -> Unit) {
+private fun MihomoAddGroupDialog(policyNames: List<String>, providerNames: List<String>, onDismiss: () -> Unit, onAdd: (String) -> Unit) {
   var name by remember { mutableStateOf("Proxy") }
   var type by remember { mutableStateOf("select") }
-  var selectedProxies by remember(proxyNames) { mutableStateOf(proxyNames.take(3)) }
+  var selectedProxies by remember(policyNames) { mutableStateOf(emptyList<String>()) }
+  var selectedUse by remember(providerNames) { mutableStateOf(emptyList<String>()) }
+  var includeAll by remember { mutableStateOf(false) }
+  var includeAllProxies by remember { mutableStateOf(false) }
+  var includeAllProviders by remember { mutableStateOf(false) }
+  var filter by remember { mutableStateOf("") }
+  var excludeFilter by remember { mutableStateOf("") }
+  var excludeType by remember { mutableStateOf("") }
+  var url by remember { mutableStateOf("") }
+  var interval by remember { mutableStateOf("") }
+  var lazy by remember { mutableStateOf(false) }
+  var timeout by remember { mutableStateOf("") }
+  var maxFailedTimes by remember { mutableStateOf("") }
+  var expectedStatus by remember { mutableStateOf("") }
+  var disableUdp by remember { mutableStateOf(false) }
+  var hidden by remember { mutableStateOf(false) }
+  var icon by remember { mutableStateOf("") }
+  var strategy by remember { mutableStateOf("") }
   val types = listOf("select", "url-test", "fallback", "load-balance", "relay")
-  val generatedRaw = remember(name, type, selectedProxies) {
-    mihomoGroupTemplate(name.ifBlank { "Proxy" }, type, selectedProxies)
+  val visiblePolicies = remember(policyNames, selectedProxies, name) { (selectedProxies + policyNames).map { it.trim() }.filter { it.isNotBlank() && it != name }.distinct() }
+  val visibleProviders = remember(providerNames, selectedUse) { (selectedUse + providerNames).map { it.trim() }.filter { it.isNotBlank() }.distinct() }
+  val generatedRaw = remember(name, type, selectedProxies, selectedUse, includeAll, includeAllProxies, includeAllProviders, filter, excludeFilter, excludeType, url, interval, lazy, timeout, maxFailedTimes, expectedStatus, disableUdp, hidden, icon, strategy) {
+    buildMihomoGroupFromDraft(
+      "",
+      MihomoGroupDraft(
+        name = name.ifBlank { "Proxy" },
+        type = type,
+        proxies = selectedProxies.filter { it != name },
+        use = selectedUse,
+        includeAll = includeAll,
+        includeAllProxies = includeAllProxies,
+        includeAllProviders = includeAllProviders,
+        filter = filter,
+        excludeFilter = excludeFilter,
+        excludeType = excludeType,
+        url = url,
+        interval = interval,
+        lazy = lazy,
+        timeout = timeout,
+        maxFailedTimes = maxFailedTimes,
+        expectedStatus = expectedStatus,
+        disableUdp = disableUdp,
+        hidden = hidden,
+        icon = icon,
+        strategy = strategy,
+      )
+    )
   }
   AlertDialog(
     onDismissRequest = onDismiss,
@@ -3091,26 +3571,78 @@ private fun MihomoAddGroupDialog(proxyNames: List<String>, onDismiss: () -> Unit
           options = types,
           onValueChange = { type = it },
         )
-        Text(stringResource(R.string.mihomo_field_proxies), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-        if (proxyNames.isEmpty()) {
+        Text(stringResource(R.string.mihomo_group_policies_title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        if (visiblePolicies.isEmpty()) {
           Text(
-            stringResource(R.string.mihomo_no_available_proxies),
+            stringResource(R.string.mihomo_no_available_group_policies),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
           )
         } else {
-          proxyNames.chunked(2).forEach { row ->
+          visiblePolicies.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-              row.forEach { p -> FilterChip(selected = p in selectedProxies, onClick = { selectedProxies = if (p in selectedProxies) selectedProxies.filter { it != p } else (listOf(p) + selectedProxies) }, label = { Text(p, maxLines = 1) }) }
+              row.forEach { p ->
+                FilterChip(
+                  selected = p in selectedProxies,
+                  onClick = { selectedProxies = if (p in selectedProxies) selectedProxies.filter { it != p } else (listOf(p) + selectedProxies) },
+                  label = { Text(p, maxLines = 1) },
+                )
+              }
             }
           }
         }
+        Text(stringResource(R.string.mihomo_group_use_title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        if (visibleProviders.isEmpty()) {
+          Text(
+            stringResource(R.string.mihomo_no_available_providers_for_use),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+          )
+        } else {
+          visibleProviders.chunked(2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              row.forEach { provider ->
+                FilterChip(
+                  selected = provider in selectedUse,
+                  onClick = { selectedUse = if (provider in selectedUse) selectedUse.filter { it != provider } else (listOf(provider) + selectedUse) },
+                  label = { Text(provider, maxLines = 1) },
+                )
+              }
+            }
+          }
+        }
+        Text(stringResource(R.string.mihomo_group_include_filter_title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          FilterChip(selected = includeAll, onClick = { includeAll = !includeAll }, label = { Text("include-all") })
+          FilterChip(selected = includeAllProxies, onClick = { includeAllProxies = !includeAllProxies }, label = { Text("include-all-proxies") })
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          FilterChip(selected = includeAllProviders, onClick = { includeAllProviders = !includeAllProviders }, label = { Text("include-all-providers") })
+          FilterChip(selected = disableUdp, onClick = { disableUdp = !disableUdp }, label = { Text("disable-udp") })
+        }
+        OutlinedTextField(value = filter, onValueChange = { filter = it.take(180) }, label = { Text(stringResource(R.string.mihomo_field_filter)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = excludeFilter, onValueChange = { excludeFilter = it.take(180) }, label = { Text(stringResource(R.string.mihomo_field_exclude_filter)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = excludeType, onValueChange = { excludeType = it.take(120) }, label = { Text(stringResource(R.string.mihomo_field_exclude_type)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Text(stringResource(R.string.mihomo_group_health_title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        OutlinedTextField(value = url, onValueChange = { url = it.take(220) }, label = { Text(stringResource(R.string.mihomo_field_url)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = interval, onValueChange = { interval = it.filter(Char::isDigit).take(8) }, label = { Text(stringResource(R.string.mihomo_field_interval)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          FilterChip(selected = lazy, onClick = { lazy = !lazy }, label = { Text("lazy") })
+          FilterChip(selected = hidden, onClick = { hidden = !hidden }, label = { Text("hidden") })
+        }
+        OutlinedTextField(value = timeout, onValueChange = { timeout = it.filter(Char::isDigit).take(8) }, label = { Text(stringResource(R.string.mihomo_field_timeout)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = maxFailedTimes, onValueChange = { maxFailedTimes = it.filter(Char::isDigit).take(4) }, label = { Text(stringResource(R.string.mihomo_field_max_failed_times)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = expectedStatus, onValueChange = { expectedStatus = it.filter(Char::isDigit).take(8) }, label = { Text(stringResource(R.string.mihomo_field_expected_status)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+        if (type == "load-balance") {
+          OutlinedTextField(value = strategy, onValueChange = { strategy = it.take(64) }, label = { Text(stringResource(R.string.mihomo_field_strategy)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        }
+        OutlinedTextField(value = icon, onValueChange = { icon = it.take(220) }, label = { Text(stringResource(R.string.mihomo_field_icon)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Text(stringResource(R.string.mihomo_live_yaml_preview_title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
         OutlinedTextField(
           value = generatedRaw,
           onValueChange = {},
           readOnly = true,
-          modifier = Modifier.fillMaxWidth().height(160.dp),
+          modifier = Modifier.fillMaxWidth().height(180.dp),
           textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
         )
       }
@@ -3122,15 +3654,58 @@ private fun MihomoAddGroupDialog(proxyNames: List<String>, onDismiss: () -> Unit
 
 
 @Composable
-private fun MihomoEditGroupDialog(initialRaw: String, proxyNames: List<String>, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+private fun MihomoEditGroupDialog(initialRaw: String, policyNames: List<String>, providerNames: List<String>, onDismiss: () -> Unit, onSave: (String) -> Unit) {
   val initial = remember(initialRaw) { readMihomoGroupDraft(initialRaw) }
   var name by remember(initialRaw) { mutableStateOf(initial.name) }
   var type by remember(initialRaw) { mutableStateOf(initial.type) }
-  var selectedProxies by remember(initialRaw, proxyNames) { mutableStateOf(initial.proxies.filter { it in proxyNames }.distinct()) }
+  var selectedProxies by remember(initialRaw) { mutableStateOf(initial.proxies.distinct()) }
+  var selectedUse by remember(initialRaw) { mutableStateOf(initial.use.distinct()) }
+  var includeAll by remember(initialRaw) { mutableStateOf(initial.includeAll) }
+  var includeAllProxies by remember(initialRaw) { mutableStateOf(initial.includeAllProxies) }
+  var includeAllProviders by remember(initialRaw) { mutableStateOf(initial.includeAllProviders) }
+  var filter by remember(initialRaw) { mutableStateOf(initial.filter) }
+  var excludeFilter by remember(initialRaw) { mutableStateOf(initial.excludeFilter) }
+  var excludeType by remember(initialRaw) { mutableStateOf(initial.excludeType) }
+  var url by remember(initialRaw) { mutableStateOf(initial.url) }
+  var interval by remember(initialRaw) { mutableStateOf(initial.interval) }
+  var lazy by remember(initialRaw) { mutableStateOf(initial.lazy) }
+  var timeout by remember(initialRaw) { mutableStateOf(initial.timeout) }
+  var maxFailedTimes by remember(initialRaw) { mutableStateOf(initial.maxFailedTimes) }
+  var expectedStatus by remember(initialRaw) { mutableStateOf(initial.expectedStatus) }
+  var disableUdp by remember(initialRaw) { mutableStateOf(initial.disableUdp) }
+  var hidden by remember(initialRaw) { mutableStateOf(initial.hidden) }
+  var icon by remember(initialRaw) { mutableStateOf(initial.icon) }
+  var strategy by remember(initialRaw) { mutableStateOf(initial.strategy) }
   var raw by remember(initialRaw) { mutableStateOf(initialRaw) }
   val types = listOf("select", "url-test", "fallback", "load-balance", "relay")
-  val generatedRaw = remember(raw, name, type, selectedProxies) {
-    buildMihomoGroupFromDraft(raw, MihomoGroupDraft(name.ifBlank { "Proxy" }, type.ifBlank { "select" }, selectedProxies))
+  val visiblePolicies = remember(policyNames, selectedProxies, name) { (selectedProxies + policyNames).map { it.trim() }.filter { it.isNotBlank() && it != name }.distinct() }
+  val visibleProviders = remember(providerNames, selectedUse) { (selectedUse + providerNames).map { it.trim() }.filter { it.isNotBlank() }.distinct() }
+  val generatedRaw = remember(raw, name, type, selectedProxies, selectedUse, includeAll, includeAllProxies, includeAllProviders, filter, excludeFilter, excludeType, url, interval, lazy, timeout, maxFailedTimes, expectedStatus, disableUdp, hidden, icon, strategy) {
+    buildMihomoGroupFromDraft(
+      raw,
+      MihomoGroupDraft(
+        name = name.ifBlank { "Proxy" },
+        type = type.ifBlank { "select" },
+        proxies = selectedProxies.filter { it != name },
+        use = selectedUse,
+        includeAll = includeAll,
+        includeAllProxies = includeAllProxies,
+        includeAllProviders = includeAllProviders,
+        filter = filter,
+        excludeFilter = excludeFilter,
+        excludeType = excludeType,
+        url = url,
+        interval = interval,
+        lazy = lazy,
+        timeout = timeout,
+        maxFailedTimes = maxFailedTimes,
+        expectedStatus = expectedStatus,
+        disableUdp = disableUdp,
+        hidden = hidden,
+        icon = icon,
+        strategy = strategy,
+      )
+    )
   }
   AlertDialog(
     onDismissRequest = onDismiss,
@@ -3139,25 +3714,100 @@ private fun MihomoEditGroupDialog(initialRaw: String, proxyNames: List<String>, 
       Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
         OutlinedTextField(value = name, onValueChange = { name = it.take(48) }, label = { Text(stringResource(R.string.mihomo_field_name)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         MihomoDropdownSelectorCard(label = stringResource(R.string.mihomo_field_type), value = type, options = types, onValueChange = { type = it })
-        Text(stringResource(R.string.mihomo_field_proxies), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-        if (proxyNames.isEmpty()) {
+        Text(stringResource(R.string.mihomo_group_policies_title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        if (visiblePolicies.isEmpty()) {
           Text(
-            stringResource(R.string.mihomo_no_available_proxies),
+            stringResource(R.string.mihomo_no_available_group_policies),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
           )
         } else {
-          proxyNames.chunked(2).forEach { row ->
+          visiblePolicies.chunked(2).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-              row.forEach { p -> FilterChip(selected = p in selectedProxies, onClick = { selectedProxies = if (p in selectedProxies) selectedProxies.filter { it != p } else (listOf(p) + selectedProxies) }, label = { Text(p, maxLines = 1) }) }
+              row.forEach { p ->
+                FilterChip(
+                  selected = p in selectedProxies,
+                  onClick = { selectedProxies = if (p in selectedProxies) selectedProxies.filter { it != p } else (listOf(p) + selectedProxies) },
+                  label = { Text(p, maxLines = 1) },
+                )
+              }
             }
           }
         }
+        Text(stringResource(R.string.mihomo_group_use_title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        if (visibleProviders.isEmpty()) {
+          Text(
+            stringResource(R.string.mihomo_no_available_providers_for_use),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+          )
+        } else {
+          visibleProviders.chunked(2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              row.forEach { provider ->
+                FilterChip(
+                  selected = provider in selectedUse,
+                  onClick = { selectedUse = if (provider in selectedUse) selectedUse.filter { it != provider } else (listOf(provider) + selectedUse) },
+                  label = { Text(provider, maxLines = 1) },
+                )
+              }
+            }
+          }
+        }
+        Text(stringResource(R.string.mihomo_group_include_filter_title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          FilterChip(selected = includeAll, onClick = { includeAll = !includeAll }, label = { Text("include-all") })
+          FilterChip(selected = includeAllProxies, onClick = { includeAllProxies = !includeAllProxies }, label = { Text("include-all-proxies") })
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          FilterChip(selected = includeAllProviders, onClick = { includeAllProviders = !includeAllProviders }, label = { Text("include-all-providers") })
+          FilterChip(selected = disableUdp, onClick = { disableUdp = !disableUdp }, label = { Text("disable-udp") })
+        }
+        OutlinedTextField(value = filter, onValueChange = { filter = it.take(180) }, label = { Text(stringResource(R.string.mihomo_field_filter)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = excludeFilter, onValueChange = { excludeFilter = it.take(180) }, label = { Text(stringResource(R.string.mihomo_field_exclude_filter)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = excludeType, onValueChange = { excludeType = it.take(120) }, label = { Text(stringResource(R.string.mihomo_field_exclude_type)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Text(stringResource(R.string.mihomo_group_health_title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        OutlinedTextField(value = url, onValueChange = { url = it.take(220) }, label = { Text(stringResource(R.string.mihomo_field_url)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = interval, onValueChange = { interval = it.filter(Char::isDigit).take(8) }, label = { Text(stringResource(R.string.mihomo_field_interval)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          FilterChip(selected = lazy, onClick = { lazy = !lazy }, label = { Text("lazy") })
+          FilterChip(selected = hidden, onClick = { hidden = !hidden }, label = { Text("hidden") })
+        }
+        OutlinedTextField(value = timeout, onValueChange = { timeout = it.filter(Char::isDigit).take(8) }, label = { Text(stringResource(R.string.mihomo_field_timeout)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = maxFailedTimes, onValueChange = { maxFailedTimes = it.filter(Char::isDigit).take(4) }, label = { Text(stringResource(R.string.mihomo_field_max_failed_times)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = expectedStatus, onValueChange = { expectedStatus = it.filter(Char::isDigit).take(8) }, label = { Text(stringResource(R.string.mihomo_field_expected_status)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+        if (type == "load-balance") {
+          OutlinedTextField(value = strategy, onValueChange = { strategy = it.take(64) }, label = { Text(stringResource(R.string.mihomo_field_strategy)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        }
+        OutlinedTextField(value = icon, onValueChange = { icon = it.take(220) }, label = { Text(stringResource(R.string.mihomo_field_icon)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Text(stringResource(R.string.mihomo_raw_extra_title), style = MaterialTheme.typography.labelLarge)
         OutlinedTextField(
           value = generatedRaw,
-          onValueChange = { raw = it },
-          modifier = Modifier.fillMaxWidth().height(220.dp),
+          onValueChange = { updatedRaw ->
+            raw = updatedRaw
+            val parsedRaw = readMihomoGroupDraft(updatedRaw)
+            name = parsedRaw.name
+            type = parsedRaw.type
+            selectedProxies = parsedRaw.proxies.distinct()
+            selectedUse = parsedRaw.use.distinct()
+            includeAll = parsedRaw.includeAll
+            includeAllProxies = parsedRaw.includeAllProxies
+            includeAllProviders = parsedRaw.includeAllProviders
+            filter = parsedRaw.filter
+            excludeFilter = parsedRaw.excludeFilter
+            excludeType = parsedRaw.excludeType
+            url = parsedRaw.url
+            interval = parsedRaw.interval
+            lazy = parsedRaw.lazy
+            timeout = parsedRaw.timeout
+            maxFailedTimes = parsedRaw.maxFailedTimes
+            expectedStatus = parsedRaw.expectedStatus
+            disableUdp = parsedRaw.disableUdp
+            hidden = parsedRaw.hidden
+            icon = parsedRaw.icon
+            strategy = parsedRaw.strategy
+          },
+          modifier = Modifier.fillMaxWidth().height(240.dp),
           textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
         )
       }
@@ -3170,6 +3820,7 @@ private fun MihomoEditGroupDialog(initialRaw: String, proxyNames: List<String>, 
     dismissButton = { OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )
 }
+
 
 @Composable
 private fun MihomoRulesBuilderTab(yamlText: String, onSaveYaml: (String) -> Unit) {
@@ -3228,19 +3879,46 @@ private fun MihomoAddRuleDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) 
   var type by remember { mutableStateOf("MATCH") }
   var value by remember { mutableStateOf("") }
   var target by remember { mutableStateOf("Proxy") }
-  val types = listOf("DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "DOMAIN-WILDCARD", "GEOSITE", "IP-CIDR", "GEOIP", "RULE-SET", "PROCESS-NAME", "NETWORK", "MATCH")
+  var noResolve by remember { mutableStateOf(false) }
+  var src by remember { mutableStateOf(false) }
+  val types = listOf(
+    "DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "DOMAIN-WILDCARD", "DOMAIN-REGEX", "GEOSITE",
+    "IP-CIDR", "IP-CIDR6", "IP-SUFFIX", "IP-ASN", "GEOIP",
+    "SRC-GEOIP", "SRC-IP-ASN", "SRC-IP-CIDR", "SRC-IP-SUFFIX",
+    "DST-PORT", "SRC-PORT", "IN-PORT", "IN-TYPE", "IN-USER", "IN-NAME",
+    "PROCESS-PATH", "PROCESS-PATH-WILDCARD", "PROCESS-PATH-REGEX",
+    "PROCESS-NAME", "PROCESS-NAME-WILDCARD", "PROCESS-NAME-REGEX",
+    "UID", "NETWORK", "DSCP", "RULE-SET", "SUB-RULE", "AND", "OR", "NOT", "MATCH",
+  )
   AlertDialog(
     onDismissRequest = onDismiss,
     title = { Text(stringResource(R.string.mihomo_add_rule_title)) },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
         MihomoDropdownSelectorCard(label = stringResource(R.string.mihomo_rule_type_label), value = type, options = types, onValueChange = { type = it })
-        if (type != "MATCH") OutlinedTextField(value = value, onValueChange = { value = it.take(160) }, label = { Text(stringResource(R.string.mihomo_field_value)) }, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = target, onValueChange = { target = it.take(64) }, label = { Text(stringResource(R.string.mihomo_field_policy)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        if (type != "MATCH") OutlinedTextField(value = value, onValueChange = { value = it.take(260) }, label = { Text(stringResource(R.string.mihomo_field_value)) }, modifier = Modifier.fillMaxWidth())
+        if (type != "SUB-RULE") OutlinedTextField(value = target, onValueChange = { target = it.take(64) }, label = { Text(stringResource(R.string.mihomo_field_policy)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        if (type in setOf("IP-CIDR", "IP-CIDR6", "IP-SUFFIX", "IP-ASN", "GEOIP", "SRC-GEOIP", "SRC-IP-ASN", "SRC-IP-CIDR", "SRC-IP-SUFFIX")) {
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = noResolve, onClick = { noResolve = !noResolve }, label = { Text("no-resolve") })
+            FilterChip(selected = src, onClick = { src = !src }, label = { Text("src") })
+          }
+        }
+        if (type in setOf("AND", "OR", "NOT", "SUB-RULE")) {
+          Text(stringResource(R.string.mihomo_complex_rule_raw_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f))
+        }
       }
     },
     confirmButton = {
-      Button(onClick = { onAdd(if (type == "MATCH") "MATCH,${target.ifBlank { "Proxy" }}" else "$type,${value.ifBlank { "example.com" }},${target.ifBlank { "Proxy" }}") }) { Text(stringResource(R.string.action_add)) }
+      Button(onClick = {
+        val options = listOf(if (noResolve) "no-resolve" else "", if (src) "src" else "").filter { it.isNotBlank() }
+        val rule = when (type) {
+          "MATCH" -> "MATCH,${target.ifBlank { "Proxy" }}"
+          "SUB-RULE" -> "SUB-RULE,${value.ifBlank { "example" }}"
+          else -> (listOf(type, value.ifBlank { "example.com" }, target.ifBlank { "Proxy" }) + options).joinToString(",")
+        }
+        onAdd(rule)
+      }) { Text(stringResource(R.string.action_add)) }
     },
     dismissButton = { OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )
@@ -3327,6 +4005,8 @@ private fun MihomoProviderListCard(
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                   MihomoMiniBadge(provider.type)
                   if (provider.behavior.isNotBlank()) MihomoInfoChip(provider.behavior)
+                  if (provider.format.isNotBlank()) MihomoInfoChip(provider.format)
+                  if (provider.proxy.isNotBlank()) MihomoInfoChip("${stringResource(R.string.mihomo_field_proxy)}: ${provider.proxy}")
                   if (provider.healthCheck) MihomoInfoChip(stringResource(R.string.mihomo_field_health_check))
                 }
                 val mainLine = listOf(provider.url, provider.path).filter { it.isNotBlank() }.joinToString(" · ")
@@ -3345,8 +4025,13 @@ private fun MihomoProviderListCard(
                     maxLines = 1,
                   )
                 }
-                if (provider.interval.isNotBlank()) {
-                  MihomoInfoChip("${stringResource(R.string.mihomo_field_interval)}: ${provider.interval}")
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                  if (provider.interval.isNotBlank()) MihomoInfoChip("${stringResource(R.string.mihomo_field_interval)}: ${provider.interval}")
+                  if (provider.sizeLimit.isNotBlank()) MihomoInfoChip("${stringResource(R.string.mihomo_field_size_limit)}: ${provider.sizeLimit}")
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                  if (provider.filter.isNotBlank()) MihomoInfoChip("${stringResource(R.string.mihomo_field_filter)}")
+                  if (provider.excludeFilter.isNotBlank()) MihomoInfoChip("${stringResource(R.string.mihomo_field_exclude_filter)}")
                 }
               }
             }
@@ -3374,6 +4059,7 @@ private fun MihomoAddProviderDialog(ruleProvider: Boolean, onDismiss: () -> Unit
   val generatedRaw = remember(name, type, ruleProvider) {
     if (ruleProvider) mihomoRuleProviderTemplate(name.ifBlank { "reject" }, type) else mihomoProxyProviderTemplate(name.ifBlank { "provider1" }, type)
   }
+  var customRaw by remember(generatedRaw) { mutableStateOf(generatedRaw) }
   AlertDialog(
     onDismissRequest = onDismiss,
     title = { Text(if (ruleProvider) stringResource(R.string.mihomo_add_rule_provider_title) else stringResource(R.string.mihomo_add_proxy_provider_title)) },
@@ -3383,15 +4069,14 @@ private fun MihomoAddProviderDialog(ruleProvider: Boolean, onDismiss: () -> Unit
         MihomoDropdownSelectorCard(label = stringResource(R.string.mihomo_field_type), value = type, options = types, onValueChange = { type = it })
         Text(stringResource(R.string.mihomo_live_yaml_preview_title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
         OutlinedTextField(
-          value = generatedRaw,
-          onValueChange = {},
-          readOnly = true,
-          modifier = Modifier.fillMaxWidth().height(160.dp),
+          value = customRaw,
+          onValueChange = { customRaw = it },
+          modifier = Modifier.fillMaxWidth().height(200.dp),
           textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
         )
       }
     },
-    confirmButton = { Button(onClick = { onAdd(generatedRaw) }) { Text(stringResource(R.string.action_add)) } },
+    confirmButton = { Button(onClick = { onAdd(customRaw.trimEnd()) }) { Text(stringResource(R.string.action_add)) } },
     dismissButton = { OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )
 }
@@ -3407,11 +4092,79 @@ private fun MihomoEditProviderDialog(ruleProvider: Boolean, initialRaw: String, 
   var interval by remember(initialRaw) { mutableStateOf(initial.interval) }
   var behavior by remember(initialRaw) { mutableStateOf(initial.behavior) }
   var healthCheck by remember(initialRaw) { mutableStateOf(initial.healthCheck) }
+  var format by remember(initialRaw) { mutableStateOf(initial.format) }
+  var proxy by remember(initialRaw) { mutableStateOf(initial.proxy) }
+  var sizeLimit by remember(initialRaw) { mutableStateOf(initial.sizeLimit) }
+  var headerUserAgent by remember(initialRaw) { mutableStateOf(initial.headerUserAgent) }
+  var headerAuthorization by remember(initialRaw) { mutableStateOf(initial.headerAuthorization) }
+  var healthUrl by remember(initialRaw) { mutableStateOf(initial.healthUrl) }
+  var healthInterval by remember(initialRaw) { mutableStateOf(initial.healthInterval) }
+  var healthTimeout by remember(initialRaw) { mutableStateOf(initial.healthTimeout) }
+  var healthLazy by remember(initialRaw) { mutableStateOf(initial.healthLazy) }
+  var healthExpectedStatus by remember(initialRaw) { mutableStateOf(initial.healthExpectedStatus) }
+  var overridePrefix by remember(initialRaw) { mutableStateOf(initial.overridePrefix) }
+  var overrideSuffix by remember(initialRaw) { mutableStateOf(initial.overrideSuffix) }
+  var overrideTfo by remember(initialRaw) { mutableStateOf(initial.overrideTfo) }
+  var overrideMptcp by remember(initialRaw) { mutableStateOf(initial.overrideMptcp) }
+  var overrideUdp by remember(initialRaw) { mutableStateOf(initial.overrideUdp) }
+  var overrideUdpOverTcp by remember(initialRaw) { mutableStateOf(initial.overrideUdpOverTcp) }
+  var overrideDown by remember(initialRaw) { mutableStateOf(initial.overrideDown) }
+  var overrideUp by remember(initialRaw) { mutableStateOf(initial.overrideUp) }
+  var overrideSkipCertVerify by remember(initialRaw) { mutableStateOf(initial.overrideSkipCertVerify) }
+  var overrideDialerProxy by remember(initialRaw) { mutableStateOf(initial.overrideDialerProxy) }
+  var overrideInterfaceName by remember(initialRaw) { mutableStateOf(initial.overrideInterfaceName) }
+  var overrideRoutingMark by remember(initialRaw) { mutableStateOf(initial.overrideRoutingMark) }
+  var overrideIpVersion by remember(initialRaw) { mutableStateOf(initial.overrideIpVersion) }
+  var overrideProxyName by remember(initialRaw) { mutableStateOf(initial.overrideProxyName) }
+  var filter by remember(initialRaw) { mutableStateOf(initial.filter) }
+  var excludeFilter by remember(initialRaw) { mutableStateOf(initial.excludeFilter) }
+  var excludeType by remember(initialRaw) { mutableStateOf(initial.excludeType) }
   var raw by remember(initialRaw) { mutableStateOf(initialRaw) }
   val types = listOf("http", "file", "inline")
   val behaviors = listOf("domain", "ipcidr", "classical")
-  val generatedRaw = remember(raw, name, type, url, path, interval, behavior, healthCheck, ruleProvider) {
-    buildMihomoProviderFromDraft(raw, MihomoProviderDraft(name, type, url, path, interval, behavior, healthCheck), ruleProvider)
+  val formats = listOf("", "yaml", "text", "mrs")
+  val defaultFormatLabel = stringResource(R.string.mihomo_value_default)
+  val generatedRaw = remember(raw, name, type, url, path, interval, behavior, healthCheck, format, proxy, sizeLimit, headerUserAgent, headerAuthorization, healthUrl, healthInterval, healthTimeout, healthLazy, healthExpectedStatus, overridePrefix, overrideSuffix, overrideTfo, overrideMptcp, overrideUdp, overrideUdpOverTcp, overrideDown, overrideUp, overrideSkipCertVerify, overrideDialerProxy, overrideInterfaceName, overrideRoutingMark, overrideIpVersion, overrideProxyName, filter, excludeFilter, excludeType, ruleProvider) {
+    buildMihomoProviderFromDraft(
+      raw,
+      MihomoProviderDraft(
+        name = name,
+        type = type,
+        url = url,
+        path = path,
+        interval = interval,
+        behavior = behavior,
+        healthCheck = healthCheck,
+        format = format,
+        proxy = proxy,
+        sizeLimit = sizeLimit,
+        headerUserAgent = headerUserAgent,
+        headerAuthorization = headerAuthorization,
+        healthUrl = healthUrl,
+        healthInterval = healthInterval,
+        healthTimeout = healthTimeout,
+        healthLazy = healthLazy,
+        healthExpectedStatus = healthExpectedStatus,
+        overridePrefix = overridePrefix,
+        overrideSuffix = overrideSuffix,
+        overrideTfo = overrideTfo,
+        overrideMptcp = overrideMptcp,
+        overrideUdp = overrideUdp,
+        overrideUdpOverTcp = overrideUdpOverTcp,
+        overrideDown = overrideDown,
+        overrideUp = overrideUp,
+        overrideSkipCertVerify = overrideSkipCertVerify,
+        overrideDialerProxy = overrideDialerProxy,
+        overrideInterfaceName = overrideInterfaceName,
+        overrideRoutingMark = overrideRoutingMark,
+        overrideIpVersion = overrideIpVersion,
+        overrideProxyName = overrideProxyName,
+        filter = filter,
+        excludeFilter = excludeFilter,
+        excludeType = excludeType,
+      ),
+      ruleProvider,
+    )
   }
   AlertDialog(
     onDismissRequest = onDismiss,
@@ -3422,6 +4175,7 @@ private fun MihomoEditProviderDialog(ruleProvider: Boolean, initialRaw: String, 
         MihomoDropdownSelectorCard(label = stringResource(R.string.mihomo_field_type), value = type, options = types, onValueChange = { type = it })
         if (ruleProvider) {
           MihomoDropdownSelectorCard(label = stringResource(R.string.mihomo_field_behavior), value = behavior, options = behaviors, onValueChange = { behavior = it })
+          MihomoDropdownSelectorCard(label = stringResource(R.string.mihomo_field_format), value = format, options = formats, onValueChange = { format = it }, displayFor = { it.ifBlank { defaultFormatLabel } })
         }
         if (type == "http") {
           OutlinedTextField(value = url, onValueChange = { url = it.take(260) }, label = { Text(stringResource(R.string.mihomo_field_url)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -3430,7 +4184,46 @@ private fun MihomoEditProviderDialog(ruleProvider: Boolean, initialRaw: String, 
         if (type != "inline") {
           OutlinedTextField(value = path, onValueChange = { path = it.take(180) }, label = { Text(stringResource(R.string.mihomo_field_path)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         }
+        Text(stringResource(R.string.mihomo_provider_options_title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        OutlinedTextField(value = proxy, onValueChange = { proxy = it.take(96) }, label = { Text(stringResource(R.string.mihomo_field_proxy)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = sizeLimit, onValueChange = { sizeLimit = it.filter(Char::isDigit).take(12) }, label = { Text(stringResource(R.string.mihomo_field_size_limit)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = headerUserAgent, onValueChange = { headerUserAgent = it.take(160) }, label = { Text(stringResource(R.string.mihomo_field_user_agent)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = headerAuthorization, onValueChange = { headerAuthorization = it.take(220) }, label = { Text(stringResource(R.string.mihomo_field_authorization)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = filter, onValueChange = { filter = it.take(180) }, label = { Text(stringResource(R.string.mihomo_field_filter)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = excludeFilter, onValueChange = { excludeFilter = it.take(180) }, label = { Text(stringResource(R.string.mihomo_field_exclude_filter)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = excludeType, onValueChange = { excludeType = it.take(120) }, label = { Text(stringResource(R.string.mihomo_field_exclude_type)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = overridePrefix, onValueChange = { overridePrefix = it.take(80) }, label = { Text(stringResource(R.string.mihomo_field_override_prefix)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = overrideSuffix, onValueChange = { overrideSuffix = it.take(80) }, label = { Text(stringResource(R.string.mihomo_field_override_suffix)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Text(stringResource(R.string.mihomo_provider_override_advanced_title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = overrideTfo, onClick = { overrideTfo = !overrideTfo }, label = { Text("tfo") })
+            FilterChip(selected = overrideMptcp, onClick = { overrideMptcp = !overrideMptcp }, label = { Text("mptcp") })
+            FilterChip(selected = overrideUdp, onClick = { overrideUdp = !overrideUdp }, label = { Text("udp") })
+          }
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = overrideUdpOverTcp, onClick = { overrideUdpOverTcp = !overrideUdpOverTcp }, label = { Text("udp-over-tcp") })
+            FilterChip(selected = overrideSkipCertVerify, onClick = { overrideSkipCertVerify = !overrideSkipCertVerify }, label = { Text("skip-cert") })
+          }
+        }
+        OutlinedTextField(value = overrideDown, onValueChange = { overrideDown = it.take(48) }, label = { Text(stringResource(R.string.mihomo_field_down)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = overrideUp, onValueChange = { overrideUp = it.take(48) }, label = { Text(stringResource(R.string.mihomo_field_up)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = overrideDialerProxy, onValueChange = { overrideDialerProxy = it.take(96) }, label = { Text(stringResource(R.string.mihomo_field_dialer_proxy)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = overrideInterfaceName, onValueChange = { overrideInterfaceName = it.take(32) }, label = { Text(stringResource(R.string.mihomo_field_interface_name)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = overrideRoutingMark, onValueChange = { overrideRoutingMark = it.filter(Char::isDigit).take(10) }, label = { Text(stringResource(R.string.mihomo_field_routing_mark)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+        MihomoDropdownSelectorCard(label = stringResource(R.string.mihomo_field_ip_version), value = overrideIpVersion, options = listOf("", "ipv4", "ipv6", "dual"), onValueChange = { overrideIpVersion = it }, displayFor = { it.ifBlank { defaultFormatLabel } })
+        OutlinedTextField(value = overrideProxyName, onValueChange = { overrideProxyName = it.take(96) }, label = { Text(stringResource(R.string.mihomo_field_proxy_name)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Text(stringResource(R.string.mihomo_field_health_check), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
         FilterChip(selected = healthCheck, onClick = { healthCheck = !healthCheck }, label = { Text(stringResource(R.string.mihomo_field_health_check)) })
+        if (healthCheck) {
+          OutlinedTextField(value = healthUrl, onValueChange = { healthUrl = it.take(220) }, label = { Text(stringResource(R.string.mihomo_field_url)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+          OutlinedTextField(value = healthInterval, onValueChange = { healthInterval = it.filter(Char::isDigit).take(8) }, label = { Text(stringResource(R.string.mihomo_field_interval)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+          OutlinedTextField(value = healthTimeout, onValueChange = { healthTimeout = it.filter(Char::isDigit).take(8) }, label = { Text(stringResource(R.string.mihomo_field_timeout)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = healthLazy, onClick = { healthLazy = !healthLazy }, label = { Text("lazy") })
+          }
+          OutlinedTextField(value = healthExpectedStatus, onValueChange = { healthExpectedStatus = it.filter(Char::isDigit).take(8) }, label = { Text(stringResource(R.string.mihomo_field_expected_status)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+        }
         Text(stringResource(R.string.mihomo_raw_extra_title), style = MaterialTheme.typography.labelLarge)
         OutlinedTextField(
           value = generatedRaw,
@@ -3479,6 +4272,10 @@ private fun mihomoDetailLabel(label: String): String = when (label) {
   "use" -> stringResource(R.string.mihomo_detail_use)
   "url" -> stringResource(R.string.mihomo_field_url)
   "interval" -> stringResource(R.string.mihomo_field_interval)
+  "filter" -> stringResource(R.string.mihomo_field_filter)
+  "exclude-filter" -> stringResource(R.string.mihomo_field_exclude_filter)
+  "exclude-type" -> stringResource(R.string.mihomo_field_exclude_type)
+  "expected-status" -> stringResource(R.string.mihomo_field_expected_status)
   "path" -> stringResource(R.string.mihomo_field_path)
   "mode" -> stringResource(R.string.mihomo_detail_mode)
   else -> label
@@ -3498,6 +4295,11 @@ private fun mihomoBuilderCardChips(raw: String, type: String): List<String> {
   if (raw.contains("grpc-opts:")) chips += "grpc"
   if (raw.contains("reality-opts:")) chips += "reality"
   if (raw.contains("health-check:")) chips += "health-check"
+  if (readMihomoBlockBool(raw, "include-all")) chips += "include-all"
+  if (readMihomoBlockBool(raw, "include-all-proxies")) chips += "include-all-proxies"
+  if (readMihomoBlockBool(raw, "include-all-providers")) chips += "include-all-providers"
+  if (readMihomoBlockBool(raw, "disable-udp")) chips += "disable-udp"
+  if (readMihomoBlockBool(raw, "hidden")) chips += "hidden"
   readMihomoBlockScalar(raw, "strategy").takeIf { it.isNotBlank() }?.let { chips += it }
   return (listOf(t).filter { it.isNotBlank() && it != "unknown" } + chips).distinct().take(8)
 }
@@ -3526,6 +4328,10 @@ private fun mihomoBuilderCardDetails(raw: String, type: String): List<Pair<Strin
   if (use.isNotEmpty()) details += "use" to use.take(4).joinToString(", ") + if (use.size > 4) " +${use.size - 4}" else ""
   readMihomoBlockScalar(raw, "url").takeIf { it.isNotBlank() }?.let { details += "url" to it }
   readMihomoBlockScalar(raw, "interval").takeIf { it.isNotBlank() }?.let { details += "interval" to "${it}s" }
+  readMihomoBlockScalar(raw, "filter").takeIf { it.isNotBlank() }?.let { details += "filter" to it }
+  readMihomoBlockScalar(raw, "exclude-filter").takeIf { it.isNotBlank() }?.let { details += "exclude-filter" to it }
+  readMihomoBlockScalar(raw, "exclude-type").takeIf { it.isNotBlank() }?.let { details += "exclude-type" to it }
+  readMihomoBlockScalar(raw, "expected-status").takeIf { it.isNotBlank() }?.let { details += "expected-status" to it }
   readMihomoBlockScalar(raw, "path").takeIf { it.isNotBlank() }?.let { details += "path" to it }
   if (details.isEmpty()) {
     details += "mode" to when (t) {
@@ -3936,7 +4742,7 @@ private fun MihomoProvidersTab(yamlText: String, onSaveYaml: (String) -> Unit) {
   provider1:
     type: http
     url: "https://example.com/sub.yaml"
-    path: ./providers/provider1.yaml
+    path: ./proxy_providers/provider1.yaml
     interval: 3600
     health-check:
       enable: true
@@ -3955,7 +4761,7 @@ private fun MihomoProvidersTab(yamlText: String, onSaveYaml: (String) -> Unit) {
     type: http
     behavior: domain
     url: "https://example.com/reject.yaml"
-    path: ./ruleset/reject.yaml
+    path: ./rule_providers/reject.yaml
     interval: 86400
 """.trimEnd() + "\n"
       },
@@ -3992,6 +4798,138 @@ private fun MihomoProviderCard(
         onValueChange = onTextChange,
         modifier = Modifier.fillMaxWidth().height(260.dp),
         textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+      )
+    }
+  }
+}
+
+
+private fun mihomoDefaultDnsSection(): String = """
+dns:
+  enable: true
+  listen: 127.0.0.1:1053
+  enhanced-mode: fake-ip
+  nameserver:
+    - 1.1.1.1
+    - 8.8.8.8
+""".trimIndent()
+
+private fun mihomoDefaultAdvancedSection(section: String): String = when (section) {
+  "sniffer" -> """
+sniffer:
+  enable: false
+  force-dns-mapping: true
+  parse-pure-ip: true
+  override-destination: false
+""".trimIndent()
+  "sub-rules" -> """
+sub-rules:
+  example:
+    - DOMAIN-SUFFIX,example.com,DIRECT
+    - MATCH,Proxy
+""".trimIndent()
+  "tunnels" -> """
+tunnels:
+  # - tcp/udp,127.0.0.1:12345,example.com:443,Proxy
+""".trimIndent()
+  "listeners" -> """
+listeners:
+  # Keep this empty unless you intentionally add Mihomo inbound listeners.
+""".trimIndent()
+  "ntp" -> """
+ntp:
+  enable: false
+  server: time.apple.com
+  port: 123
+  interval: 30
+""".trimIndent()
+  "experimental" -> """
+experimental:
+  quic-go-disable-gso: false
+  quic-go-disable-ecn: false
+""".trimIndent()
+  "profile" -> """
+profile:
+  store-selected: true
+  store-fake-ip: true
+""".trimIndent()
+  else -> "$section:\n"
+}
+
+@Composable
+private fun MihomoRawSectionEditorTab(
+  title: String,
+  description: String,
+  section: String,
+  yamlText: String,
+  defaultText: String,
+  onSaveYaml: (String) -> Unit,
+) {
+  var text by remember(yamlText, section) {
+    val extracted = extractTopLevelYamlSection(yamlText, section).trimEnd()
+    mutableStateOf(if (extracted == "$section:") "" else extracted)
+  }
+  var lastSaved by remember(yamlText, section) {
+    val extracted = extractTopLevelYamlSection(yamlText, section).trimEnd()
+    mutableStateOf(if (extracted == "$section:") "" else extracted)
+  }
+  LaunchedEffect(text) {
+    if (text.trimEnd() == lastSaved.trimEnd()) return@LaunchedEffect
+    delay(MIHOMO_AUTOSAVE_DELAY_MS)
+    val cleaned = text.trimEnd()
+    val updated = if (cleaned.isBlank() || cleaned == "$section:") {
+      replaceTopLevelYamlSection(yamlText, section, "")
+    } else {
+      replaceTopLevelYamlSection(yamlText, section, cleaned + "\n")
+    }
+    onSaveYaml(updated)
+    lastSaved = cleaned
+  }
+  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
+    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+      Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+      Text(stringResource(R.string.mihomo_raw_safe_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f))
+      OutlinedTextField(
+        value = text,
+        onValueChange = { text = it },
+        modifier = Modifier.fillMaxWidth().height(360.dp),
+        textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+      )
+      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(onClick = { text = defaultText.trimEnd() }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.mihomo_restore_sample)) }
+        OutlinedButton(onClick = { text = "" }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.action_delete)) }
+      }
+    }
+  }
+}
+
+@Composable
+private fun MihomoAdvancedCompatibilityTab(yamlText: String, onSaveYaml: (String) -> Unit) {
+  Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
+      Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(stringResource(R.string.mihomo_advanced_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.mihomo_advanced_compat_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+        Text(stringResource(R.string.mihomo_inbound_warning), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+      }
+    }
+    listOf(
+      "sniffer" to stringResource(R.string.mihomo_advanced_sniffer_desc),
+      "sub-rules" to stringResource(R.string.mihomo_advanced_subrules_desc),
+      "tunnels" to stringResource(R.string.mihomo_advanced_tunnels_desc),
+      "listeners" to stringResource(R.string.mihomo_advanced_listeners_desc),
+      "ntp" to stringResource(R.string.mihomo_advanced_ntp_desc),
+      "experimental" to stringResource(R.string.mihomo_advanced_experimental_desc),
+      "profile" to stringResource(R.string.mihomo_advanced_profile_desc),
+    ).forEach { (section, desc) ->
+      MihomoRawSectionEditorTab(
+        title = section,
+        description = desc,
+        section = section,
+        yamlText = yamlText,
+        defaultText = mihomoDefaultAdvancedSection(section),
+        onSaveYaml = onSaveYaml,
       )
     }
   }

@@ -8,15 +8,43 @@
   <a href="https://github.com/GAME-OVER-op/ZDT-D/blob/main/LICENSE">
     <img src="https://img.shields.io/github/license/GAME-OVER-op/ZDT-D?style=flat-square" alt="License" />
   </a>
+  <a href="https://github.com/GAME-OVER-op/ZDT-D/stargazers">
+    <img src="https://img.shields.io/github/stars/GAME-OVER-op/ZDT-D?style=flat-square&logo=github" alt="GitHub Stars" />
+  </a>
+  <a href="https://github.com/GAME-OVER-op/ZDT-D/network/members">
+    <img src="https://img.shields.io/github/forks/GAME-OVER-op/ZDT-D?style=flat-square&logo=github" alt="GitHub Forks" />
+  </a>
   <a href="https://github.com/GAME-OVER-op/ZDT-D/releases/latest">
     <img src="https://img.shields.io/github/v/release/GAME-OVER-op/ZDT-D?style=flat-square" alt="Latest Release" />
+  </a>
+  <a href="https://github.com/GAME-OVER-op/ZDT-D/releases/latest">
+    <img src="https://img.shields.io/github/release-date/GAME-OVER-op/ZDT-D?style=flat-square" alt="Release Date" />
   </a>
   <a href="https://github.com/GAME-OVER-op/ZDT-D/releases">
     <img src="https://img.shields.io/github/downloads/GAME-OVER-op/ZDT-D/total?style=flat-square" alt="Downloads" />
   </a>
+  <a href="https://github.com/GAME-OVER-op/ZDT-D/commits/main">
+    <img src="https://img.shields.io/github/last-commit/GAME-OVER-op/ZDT-D?style=flat-square" alt="Last Commit" />
+  </a>
   <a href="https://t.me/module_ggover">
     <img src="https://img.shields.io/badge/Telegram-Join%20Group-blue?style=flat-square&logo=telegram" alt="Telegram Group" />
   </a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Android-Root%20Module-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android Root Module" />
+  <img src="https://img.shields.io/badge/Magisk-supported-00AF9C?style=flat-square" alt="Magisk Supported" />
+  <img src="https://img.shields.io/badge/KernelSU-supported-4285F4?style=flat-square" alt="KernelSU Supported" />
+  <img src="https://img.shields.io/badge/APatch-supported-8A2BE2?style=flat-square" alt="APatch Supported" />
+  <img src="https://img.shields.io/badge/Kotlin-Android-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin Android" />
+  <img src="https://img.shields.io/badge/Rust-Daemon-B7410E?style=flat-square&logo=rust&logoColor=white" alt="Rust Daemon" />
+  <img src="https://img.shields.io/badge/DPI-Bypass-red?style=flat-square" alt="DPI Bypass" />
+  <img src="https://img.shields.io/badge/Per--App-Routing-orange?style=flat-square" alt="Per-App Routing" />
+  <img src="https://img.shields.io/badge/DNS-Control-blue?style=flat-square" alt="DNS Control" />
+</p>
+
+<p align="center">
+  <b>ZDT-D</b> is an Android root module for traffic routing, DPI bypass, proxy chaining, DNS control, and per-app network management.
 </p>
 
 ## Description

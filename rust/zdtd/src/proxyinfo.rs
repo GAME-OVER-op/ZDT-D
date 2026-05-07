@@ -458,6 +458,9 @@ fn parse_package_lines(raw: &str) -> BTreeSet<String> {
         if s.is_empty() {
             continue;
         }
+        if crate::android::pkg_uid::is_launch_marker_package(s) {
+            continue;
+        }
         out.insert(s.to_string());
     }
     out

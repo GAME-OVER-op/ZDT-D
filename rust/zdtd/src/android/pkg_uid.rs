@@ -18,6 +18,32 @@ const DUMPSYS_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 const STAT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 const FULL_SCAN_CACHE_TTL: Duration = Duration::from_secs(20);
 
+/// Service marker package: allows a profile to start without routing the ZDT-D app UID.
+/// This marker is filtered before UID resolution and must never appear in app/out files.
+pub const LAUNCH_MARKER_PACKAGE: &str = "com.android.zdtd.service";
+
+pub fn is_launch_marker_package(s: &str) -> bool {
+    s.trim().eq_ignore_ascii_case(LAUNCH_MARKER_PACKAGE)
+}
+
+pub fn content_has_launch_marker(raw: &str) -> bool {
+    raw.lines().any(|line| {
+        let mut s = line.trim();
+        if let Some((left, _)) = s.split_once('#') {
+            s = left.trim();
+        }
+        !s.is_empty() && is_launch_marker_package(s)
+    })
+}
+
+pub fn file_has_launch_marker(p: &Path) -> Result<bool> {
+    match fs::read_to_string(p) {
+        Ok(s) => Ok(content_has_launch_marker(&s)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e).with_context(|| format!("read {}", p.display())),
+    }
+}
+
 static UID_PARSE_LOCK: Mutex<()> = Mutex::new(());
 static SHA_TRACKER_LOCK: Mutex<()> = Mutex::new(());
 static FULL_SCAN_CACHE: OnceLock<Mutex<Option<FullScanCache>>> = OnceLock::new();
@@ -256,7 +282,10 @@ pub fn unified_processing(mode: Mode, tracker: &Sha256Tracker, output_file: &Pat
 
     if !changed && output_exists {
         // If the input has packages but output is empty, rebuild to recover from stale/empty out files.
-        if !(input_has_packages && !output_nonempty) {
+        // If the input has no real packages (only comments/launch marker) but output is non-empty,
+        // clear it to prevent stale UIDs from being routed.
+        let needs_rebuild = (input_has_packages && !output_nonempty) || (!input_has_packages && output_nonempty);
+        if !needs_rebuild {
             return Ok(false);
         }
     }
@@ -304,6 +333,9 @@ pub fn read_package_list(input_file: &Path) -> Result<Vec<String>> {
             s = left.trim();
         }
         if s.is_empty() || s.starts_with('#') {
+            continue;
+        }
+        if is_launch_marker_package(s) {
             continue;
         }
 

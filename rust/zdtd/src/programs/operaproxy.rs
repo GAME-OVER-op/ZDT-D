@@ -267,9 +267,15 @@ pub fn start_if_enabled() -> Result<()> {
     let resolved_mobile = count_valid_uid_pairs(Path::new(APP_OUT_MOBILE))?;
     let resolved_wifi = count_valid_uid_pairs(Path::new(APP_OUT_WIFI))?;
     let resolved_total = resolved_user + resolved_mobile + resolved_wifi;
-    if resolved_total == 0 {
+    let has_launch_marker = pkg_uid::file_has_launch_marker(Path::new(APP_UID_USER)).unwrap_or(false)
+        || pkg_uid::file_has_launch_marker(Path::new(APP_UID_MOBILE)).unwrap_or(false)
+        || pkg_uid::file_has_launch_marker(Path::new(APP_UID_WIFI)).unwrap_or(false);
+    if resolved_total == 0 && !has_launch_marker {
         warn!("operaproxy: no apps resolved -> skip start/iptables");
         return Ok(());
+    }
+    if resolved_total == 0 && has_launch_marker {
+        info!("operaproxy: launch marker present, starting without routing app UIDs");
     }
 
     // sni list required

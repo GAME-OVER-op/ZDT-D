@@ -149,7 +149,7 @@ fun BackupDialog(
                 .heightIn(max = if (compact) 320.dp else 420.dp),
               verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-              items(state.items, key = { it.name }) { item ->
+              items(state.items, key = { it.name }, contentType = { "backup_item" }) { item ->
                 BackupItemCard(
                   item = item,
                   enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,

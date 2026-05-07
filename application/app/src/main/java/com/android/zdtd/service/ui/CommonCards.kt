@@ -53,16 +53,21 @@ fun EnabledCard(title: String, checked: Boolean, onCheckedChange: (Boolean) -> U
     }
   }
 
-  val infinite = rememberInfiniteTransition(label = "enabled_card_wave")
-  val wave by infinite.animateFloat(
-    initialValue = 0f,
-    targetValue = 1f,
-    animationSpec = infiniteRepeatable(
-      animation = tween(durationMillis = 950, easing = LinearEasing),
-      repeatMode = RepeatMode.Restart,
-    ),
-    label = "enabled_card_wave_value",
-  )
+  val wave = if (animating) {
+    val infinite = rememberInfiniteTransition(label = "enabled_card_wave")
+    val value by infinite.animateFloat(
+      initialValue = 0f,
+      targetValue = 1f,
+      animationSpec = infiniteRepeatable(
+        animation = tween(durationMillis = 950, easing = LinearEasing),
+        repeatMode = RepeatMode.Restart,
+      ),
+      label = "enabled_card_wave_value",
+    )
+    value
+  } else {
+    0f
+  }
 
   val onColor = Color(0xFF22C55E)
   val offColor = MaterialTheme.colorScheme.error
@@ -174,16 +179,21 @@ fun ProfileStatusCard(
     }
   }
 
-  val infinite = rememberInfiniteTransition(label = "profile_card_wave")
-  val wave by infinite.animateFloat(
-    initialValue = 0f,
-    targetValue = 1f,
-    animationSpec = infiniteRepeatable(
-      animation = tween(durationMillis = 900, easing = LinearEasing),
-      repeatMode = RepeatMode.Restart,
-    ),
-    label = "profile_card_wave_value",
-  )
+  val wave = if (animating) {
+    val infinite = rememberInfiniteTransition(label = "profile_card_wave")
+    val value by infinite.animateFloat(
+      initialValue = 0f,
+      targetValue = 1f,
+      animationSpec = infiniteRepeatable(
+        animation = tween(durationMillis = 900, easing = LinearEasing),
+        repeatMode = RepeatMode.Restart,
+      ),
+      label = "profile_card_wave_value",
+    )
+    value
+  } else {
+    0f
+  }
 
   val onColor = Color(0xFF22C55E)
   val offColor = MaterialTheme.colorScheme.error

@@ -1,10 +1,17 @@
 package com.android.zdtd.service.ui
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,12 +30,14 @@ import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -51,14 +60,19 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.R
+import com.android.zdtd.service.LocalWebPanelActivity
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.URLEncoder
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.io.File
 import kotlin.coroutines.resume
 
@@ -170,6 +184,56 @@ private fun formatFileSize(size: Long): String = when {
   else -> "$size B"
 }
 
+private fun myProgramWebPanelUrl(port: Int): String = "http://127.0.0.1:$port/"
+
+private fun myProgramWebPanelScope(profile: String): String = "profile/myprogram/${profile.ifBlank { "main" }}"
+
+private suspend fun isMyProgramWebPanelPortOpen(port: Int): Boolean = withContext(Dispatchers.IO) {
+  runCatching {
+    Socket().use { socket ->
+      socket.connect(InetSocketAddress("127.0.0.1", port), 850)
+    }
+    true
+  }.getOrDefault(false)
+}
+
+@Composable
+private fun MyProgramWebPanelCard(
+  checking: Boolean,
+  onOpen: () -> Unit,
+) {
+  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))) {
+    Row(
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Text(
+        text = stringResource(R.string.web_panel_open),
+        modifier = Modifier.weight(1f),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+      )
+      FilledTonalIconButton(
+        onClick = onOpen,
+        enabled = !checking,
+      ) {
+        if (checking) {
+          CircularProgressIndicator(
+            modifier = Modifier.width(20.dp).height(20.dp),
+            strokeWidth = 2.dp,
+          )
+        } else {
+          Icon(
+            imageVector = Icons.Filled.Public,
+            contentDescription = stringResource(R.string.web_panel_open),
+          )
+        }
+      }
+    }
+  }
+}
+
 private fun uriDisplayName(context: Context, uri: Uri): String? = runCatching {
   context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
     if (c.moveToFirst()) c.getString(0) else null
@@ -203,6 +267,7 @@ fun MyProgramProfileScreen(
   var protectPortsSaving by remember(profile) { mutableStateOf(false) }
   var binLoading by remember(profile) { mutableStateOf(false) }
   var applying by remember(profile) { mutableStateOf(false) }
+  var myProgramWebPanelChecking by remember(profile) { mutableStateOf(false) }
 
   var syncedSetting by remember(profile) { mutableStateOf(MyProgramSettingUi()) }
   var syncedCommand by remember(profile) { mutableStateOf("") }
@@ -379,6 +444,9 @@ fun MyProgramProfileScreen(
   val protectPortsError = remember(protectPortsText) { normalizePortsContent(protectPortsText) == null }
   val routeModeT2s = routeMode == "t2s"
   val routeModeTransparent = routeMode == "transparent"
+  val t2sWebPanelPort = remember(t2sWebPortText) { t2sWebPortText.trim().toIntOrNull()?.takeIf { it in 1..65535 } }
+  val myProgramPanelUrl = remember(t2sWebPanelPort) { t2sWebPanelPort?.let { myProgramWebPanelUrl(it) } }
+  val myProgramWebPanelVisible = prof?.enabled == true && appsMode && routeModeT2s && t2sWebPanelPort != null
   val settingsPortsSame = appsMode && routeModeT2s && t2sPortText.isNotBlank() && t2sPortText == t2sWebPortText
   val transparentPortError = appsMode && routeModeTransparent && transparentPortText.isNotBlank() && transparentPortText.toIntOrNull()?.let { it !in 1..65535 } != false
 
@@ -415,6 +483,38 @@ fun MyProgramProfileScreen(
       checked = prof?.enabled ?: false,
       onCheckedChange = { v -> actions.setProfileEnabled("myprogram", profile, v) },
     )
+
+    AnimatedVisibility(
+      visible = myProgramWebPanelVisible,
+      enter = fadeIn(tween(180)) + expandVertically(animationSpec = tween(220)),
+      exit = fadeOut(tween(140)) + shrinkVertically(animationSpec = tween(180)),
+    ) {
+      MyProgramWebPanelCard(
+        checking = myProgramWebPanelChecking,
+        onOpen = {
+          val port = t2sWebPanelPort
+          val url = myProgramPanelUrl
+          if (port == null || url == null) {
+            showSnack(context.getString(R.string.web_panel_unavailable))
+          } else if (!myProgramWebPanelChecking) {
+            scope.launch {
+              myProgramWebPanelChecking = true
+              val available = isMyProgramWebPanelPortOpen(port)
+              myProgramWebPanelChecking = false
+              if (available) {
+                context.startActivity(
+                  Intent(context, LocalWebPanelActivity::class.java)
+                    .putExtra(LocalWebPanelActivity.EXTRA_SCOPE_KEY, myProgramWebPanelScope(profile))
+                    .putExtra(LocalWebPanelActivity.EXTRA_DEFAULT_URL, url)
+                )
+              } else {
+                showSnack(context.getString(R.string.web_panel_unavailable))
+              }
+            }
+          }
+        },
+      )
+    }
 
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
       Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

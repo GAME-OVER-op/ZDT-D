@@ -99,9 +99,15 @@ let resolved_mobile = count_valid_uid_pairs(&out_mobile)?;
     let resolved_wifi = count_valid_uid_pairs(&out_wifi)?;
     let resolved_user = count_valid_uid_pairs(&out_user)?;
     let resolved_total = resolved_mobile + resolved_wifi + resolved_user;
-    if resolved_total == 0 {
-        log::warn!("nfqws: no apps resolved for {} -> skip start/iptables", profile_dir.display());
+    let has_launch_marker = pkg_uid::file_has_launch_marker(&in_mobile).unwrap_or(false)
+        || pkg_uid::file_has_launch_marker(&in_wifi).unwrap_or(false)
+        || pkg_uid::file_has_launch_marker(&in_user).unwrap_or(false);
+    if resolved_total == 0 && !has_launch_marker {
+        log::warn!("nfqws2: no apps resolved for {} -> skip start/iptables", profile_dir.display());
         return Ok(());
+    }
+    if resolved_total == 0 && has_launch_marker {
+        log::info!("nfqws2: launch marker present for {}, starting without routing app UIDs", profile_dir.display());
     }
 
     let config_path = profile_dir.join("config/config.txt");

@@ -400,6 +400,7 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="app_picker_none">(none)</string>
     <string name="app_picker_all_apps_title">All apps</string>
     <string name="app_picker_all_apps_hint">Tap to add. (No checkmarks here — remove from the top list.)</string>
+    <string name="app_picker_own_app_hint">Allows the program to start without a selected app list</string>
     <string name="app_picker_system_label">system</string>
 
     <string name="apps_list_clear">Clear</string>
@@ -1353,5 +1354,14 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="mihomo_pending_add_proxy_group_title">Proxy group change is not saved</string>
     <string name="mihomo_pending_add_proxy_group_desc">Proxy %1$s is saved in proxies. Save this pending change to add it to group Proxy, or cancel to keep the config as it is.</string>
     <string name="mihomo_pending_details">Change</string>
+
+    <string name="web_panel_open">Web panel</string>
+    <string name="web_panel_unavailable">It looks like the service is not running or the web panel is configured incorrectly</string>
+    <string name="program_logs_title">Program logs</string>
+    <string name="program_logs_empty">No log files found</string>
+    <string name="program_logs_empty_desc">Start the program or profile first, then open this window again.</string>
+    <string name="program_logs_refresh">Refresh log files</string>
+    <string name="program_logs_back_to_files">Back to log files</string>
+    <string name="program_logs_realtime">Real-time tail</string>
 
 </resources>

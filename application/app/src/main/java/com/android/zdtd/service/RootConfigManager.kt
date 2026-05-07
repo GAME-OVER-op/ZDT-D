@@ -472,6 +472,44 @@ class RootConfigManager(private val context: Context) {
         return r.out.joinToString("\n")
     }
 
+    /**
+     * Root-only helper: read two log tails with a single shell round-trip.
+     * This keeps HOME log polling responsive without starting two root commands every tick.
+     */
+    fun readLogTailPair(firstPath: String, secondPath: String, lines: Int = 200): Pair<String, String> {
+        val n = lines.coerceIn(20, 2000)
+        val markerFirst = "__ZDTD_LOG_PAIR_FIRST_9AF46F2B__"
+        val markerSecond = "__ZDTD_LOG_PAIR_SECOND_9AF46F2B__"
+        val cmd = buildString {
+            append("printf '%s\n' ")
+            append(shQuote(markerFirst))
+            append("; (tail -n ")
+            append(n)
+            append(' ')
+            append(shQuote(firstPath))
+            append(" 2>/dev/null || cat ")
+            append(shQuote(firstPath))
+            append(" 2>/dev/null || true); printf '%s\n' ")
+            append(shQuote(markerSecond))
+            append("; (tail -n ")
+            append(n)
+            append(' ')
+            append(shQuote(secondPath))
+            append(" 2>/dev/null || cat ")
+            append(shQuote(secondPath))
+            append(" 2>/dev/null || true)")
+        }
+        val r = Shell.cmd(cmd).exec()
+        val text = r.out.joinToString("\n")
+        if (!text.contains(markerFirst) || !text.contains(markerSecond)) {
+            return readLogTail(firstPath, n) to readLogTail(secondPath, n)
+        }
+        val afterFirst = text.substringAfter(markerFirst)
+        val firstText = afterFirst.substringBefore(markerSecond).trim('\n', '\r')
+        val secondText = afterFirst.substringAfter(markerSecond).trim('\n', '\r')
+        return firstText to secondText
+    }
+
     // Reads ZDT-D API token from the module token file (root required).
     fun readApiToken(): String {
         // 1) Probe a few likely locations.

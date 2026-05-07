@@ -253,9 +253,13 @@ fn build_profile_plan(
     let _ = pkg_uid::unified_processing(UidMode::Default, &tracker, &uid_out, &uid_in)
         .with_context(|| format!("pkg_uid processing profile={profile}"))?;
     let resolved = count_valid_uid_pairs(&uid_out).unwrap_or(0);
-    if resolved == 0 {
+    let has_launch_marker = pkg_uid::file_has_launch_marker(&uid_in).unwrap_or(false);
+    if resolved == 0 && !has_launch_marker {
         warn!("sing-box: profile '{}' has no resolved apps", profile);
         return Ok(None);
+    }
+    if resolved == 0 && has_launch_marker {
+        info!("sing-box: profile '{}' uses launch marker; starting without routing app UIDs", profile);
     }
 
     validate_profile_setting(profile, &setting, external_used, own_used)?;

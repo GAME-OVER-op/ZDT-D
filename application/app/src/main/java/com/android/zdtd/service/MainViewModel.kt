@@ -360,9 +360,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
 
   private val statusFreshMs: Long = 1_800L
   private val programsFreshMs: Long = 1_200L
-  private val statusPollFailureThreshold: Int = 3
-  private val statusPollGraceMs: Long = 15_000L
-  private val statusPollWarnLogThrottleMs: Long = 20_000L
+  private val statusPollFailureThreshold: Int = 5
+  private val statusPollGraceMs: Long = 60_000L
+  private val statusPollWarnLogThrottleMs: Long = 45_000L
   @Volatile private var lastStatusFetchAtMs: Long = 0L
   @Volatile private var lastStatusOkAtMs: Long = 0L
   @Volatile private var lastStatusPollWarnLogAtMs: Long = 0L
@@ -370,6 +370,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   @Volatile private var lastProgramsFetchAtMs: Long = 0L
   @Volatile private var statusRefreshInFlight: Boolean = false
   @Volatile private var programsRefreshInFlight: Boolean = false
+  @Volatile private var activeMainTabHint: String = "HOME"
 
   private var didInit: Boolean = false
   private var appUpdateBannerDismissedThisSession: Boolean = false
@@ -1068,6 +1069,21 @@ private fun clearDownloadedUpdateApk() {
     if (startupJob?.isActive == true) return
     startStartupHandshake()
   }
+
+  override fun setActiveMainTab(tab: String) {
+    val wasHome = activeMainTabHint == "HOME"
+    activeMainTabHint = tab
+    if (!wasHome && tab == "HOME") refreshDaemonLog()
+  }
+
+  private fun currentStatusPollDelayMs(): Long = when (activeMainTabHint) {
+    "HOME" -> 5_800L
+    "STATS" -> 7_500L
+    "APPS" -> 9_500L
+    else -> 10_500L
+  }
+
+  private fun currentDaemonLogPollDelayMs(): Long = if (activeMainTabHint == "HOME") 650L else 15_000L
 
   private fun moduleDirExists(): Boolean = runCatching {
     root.execRoot("sh -c 'test -d /data/adb/modules/ZDT-D'").isSuccess
@@ -3261,7 +3277,7 @@ private fun shQuote(s: String): String {
         } catch (e: Throwable) {
           handleStatusPollFailure("status poll", e)
         }
-        delay(5200)
+        delay(currentStatusPollDelayMs())
       }
     }
   }
@@ -3275,7 +3291,7 @@ private fun shQuote(s: String): String {
         } catch (e: Throwable) {
           log("ERR", "daemon log poll failed: ${e.message ?: e}")
         }
-        delay(1500)
+        delay(currentDaemonLogPollDelayMs())
       }
     }
   }
@@ -3298,8 +3314,9 @@ private fun shQuote(s: String): String {
     // Root-only: /data/adb/... is not readable by the app.
     val mainPath = "/data/adb/modules/ZDT-D/log/zdtd.log"
     val detailedPath = "/data/adb/modules/ZDT-D/log/deamon.log"
-    val mainText = runCatching { root.readLogTail(mainPath, 220) }.getOrDefault("")
-    val detailedText = runCatching { root.readLogTail(detailedPath, 220) }.getOrDefault("")
+    val (mainText, detailedText) = runCatching {
+      root.readLogTailPair(mainPath, detailedPath, 220)
+    }.getOrDefault("" to "")
     _uiState.update { st ->
       if (st.daemonLogTail == mainText && st.daemonLogDetailedTail == detailedText) st
       else st.copy(daemonLogTail = mainText, daemonLogDetailedTail = detailedText)

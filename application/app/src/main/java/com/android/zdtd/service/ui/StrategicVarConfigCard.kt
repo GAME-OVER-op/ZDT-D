@@ -367,7 +367,7 @@ private fun StrategicVariantsBottomSheet(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(bottom = 16.dp),
       ) {
-        items(variants, key = { it.name }) { variant ->
+        items(variants, key = { it.name }, contentType = { "strategic_variant" }) { variant ->
           val isCurrent = variant.name == currentVariantName
           Card(
             onClick = { onChoose(variant) },

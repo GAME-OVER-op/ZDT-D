@@ -1,5 +1,12 @@
 package com.android.zdtd.service.ui
 
+import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,13 +30,16 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -58,13 +68,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.android.zdtd.service.R
+import com.android.zdtd.service.LocalWebPanelActivity
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.net.URLEncoder
 import kotlin.coroutines.resume
 
@@ -297,6 +312,56 @@ private suspend fun awaitDeleteWireProxyServer(actions: ZdtdActions, profile: St
     actions.deleteWireProxyServer(profile, server) { cont.resume(it) }
   }
 
+private fun wireProxyWebPanelUrl(port: Int): String = "http://127.0.0.1:$port/"
+
+private fun wireProxyWebPanelScope(profile: String): String = "profile/wireproxy/${profile.ifBlank { "main" }}"
+
+private suspend fun isWireProxyWebPanelPortOpen(port: Int): Boolean = withContext(Dispatchers.IO) {
+  runCatching {
+    Socket().use { socket ->
+      socket.connect(InetSocketAddress("127.0.0.1", port), 850)
+    }
+    true
+  }.getOrDefault(false)
+}
+
+@Composable
+private fun WireProxyWebPanelCard(
+  checking: Boolean,
+  onOpen: () -> Unit,
+) {
+  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))) {
+    Row(
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Text(
+        text = stringResource(R.string.web_panel_open),
+        modifier = Modifier.weight(1f),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+      )
+      FilledTonalIconButton(
+        onClick = onOpen,
+        enabled = !checking,
+      ) {
+        if (checking) {
+          CircularProgressIndicator(
+            modifier = Modifier.width(20.dp).height(20.dp),
+            strokeWidth = 2.dp,
+          )
+        } else {
+          Icon(
+            imageVector = Icons.Filled.Public,
+            contentDescription = stringResource(R.string.web_panel_open),
+          )
+        }
+      }
+    }
+  }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WireProxyProfileScreen(
@@ -332,6 +397,7 @@ fun WireProxyProfileScreen(
   var editorText by remember(profile) { mutableStateOf("") }
   var editorLoading by remember(profile) { mutableStateOf(false) }
   var editorSaving by remember(profile) { mutableStateOf(false) }
+  var wireProxyWebPanelChecking by remember(profile) { mutableStateOf(false) }
 
   fun refreshSetting() {
     settingLoading = true
@@ -477,6 +543,10 @@ fun WireProxyProfileScreen(
     )
   }
 
+  val wireProxyWebPanelPort = setting?.t2sWebPort
+  val wireProxyPanelUrl = remember(wireProxyWebPanelPort) { wireProxyWebPanelPort?.let { wireProxyWebPanelUrl(it) } }
+  val wireProxyWebPanelVisible = prof?.enabled == true && wireProxyWebPanelPort != null
+
   Column(
     Modifier
       .fillMaxSize()
@@ -497,6 +567,38 @@ fun WireProxyProfileScreen(
       checked = prof?.enabled ?: false,
       onCheckedChange = { v -> actions.setProfileEnabled("wireproxy", profile, v) },
     )
+
+    AnimatedVisibility(
+      visible = wireProxyWebPanelVisible,
+      enter = fadeIn(tween(180)) + expandVertically(animationSpec = tween(220)),
+      exit = fadeOut(tween(140)) + shrinkVertically(animationSpec = tween(180)),
+    ) {
+      WireProxyWebPanelCard(
+        checking = wireProxyWebPanelChecking,
+        onOpen = {
+          val port = wireProxyWebPanelPort
+          val url = wireProxyPanelUrl
+          if (port == null || url == null) {
+            showSnack(context.getString(R.string.web_panel_unavailable))
+          } else if (!wireProxyWebPanelChecking) {
+            scope.launch {
+              wireProxyWebPanelChecking = true
+              val available = isWireProxyWebPanelPortOpen(port)
+              wireProxyWebPanelChecking = false
+              if (available) {
+                context.startActivity(
+                  Intent(context, LocalWebPanelActivity::class.java)
+                    .putExtra(LocalWebPanelActivity.EXTRA_SCOPE_KEY, wireProxyWebPanelScope(profile))
+                    .putExtra(LocalWebPanelActivity.EXTRA_DEFAULT_URL, url)
+                )
+              } else {
+                showSnack(context.getString(R.string.web_panel_unavailable))
+              }
+            }
+          }
+        },
+      )
+    }
 
     WireProxyProfileSettingsCard(
       profile = profile,

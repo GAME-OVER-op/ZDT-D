@@ -357,7 +357,7 @@ private fun ReleasePickerDialog(
             }
           }
 
-          items(stateItem.releases) { r ->
+          items(stateItem.releases, key = { it.version }, contentType = { "program_release" }) { r ->
             Card(colors = CardDefaults.cardColors(), modifier = Modifier.fillMaxWidth()) {
               val isSelected = stateItem.selectedVersion == r.version
               val label = if (isSelected) stringResource(R.string.program_updates_selected) else stringResource(R.string.program_updates_select)

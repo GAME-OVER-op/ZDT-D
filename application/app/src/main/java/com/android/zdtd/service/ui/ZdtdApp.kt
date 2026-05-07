@@ -9,6 +9,7 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -20,12 +21,15 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.ArrowBack
@@ -51,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
@@ -80,6 +85,7 @@ import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -567,30 +573,116 @@ private fun DaemonUnavailableDialogHost(uiState: UiState) {
 
 @Composable
 private fun UpdatePromptDialog(setup: SetupUiState, onUpdate: () -> Unit, onSkip: () -> Unit) {
-  if (!setup.showUpdatePrompt) return
+  var renderDialog by rememberSaveable { mutableStateOf(false) }
+  var contentVisible by remember { mutableStateOf(false) }
+  var dismissRequested by remember { mutableStateOf(false) }
+  val scope = rememberCoroutineScope()
+
+  LaunchedEffect(setup.showUpdatePrompt) {
+    dismissRequested = false
+    if (setup.showUpdatePrompt) {
+      contentVisible = false
+      renderDialog = false
+      delay(760)
+      renderDialog = true
+      withFrameNanos { }
+      contentVisible = true
+    } else {
+      contentVisible = false
+      delay(240)
+      renderDialog = false
+    }
+  }
+
+  if (!renderDialog) return
+
   val mandatory = setup.updatePromptMandatory
-  AlertDialog(
-    onDismissRequest = { if (!mandatory) onSkip() },
-    title = {
-      Text(
-        if (setup.updatePromptTitle.isBlank()) stringResource(R.string.update_prompt_title_default)
-        else setup.updatePromptTitle
-      )
-    },
-    text = { Text(setup.updatePromptText) },
-    confirmButton = {
-      TextButton(onClick = onUpdate) { Text(stringResource(R.string.update_prompt_update)) }
-    },
-    dismissButton = {
-      if (!mandatory) {
-        TextButton(onClick = onSkip) { Text(stringResource(R.string.update_prompt_skip)) }
-      }
-    },
-    properties = androidx.compose.ui.window.DialogProperties(
+  fun requestSkip() {
+    if (mandatory || dismissRequested) return
+    dismissRequested = true
+    contentVisible = false
+    scope.launch {
+      delay(240)
+      onSkip()
+    }
+  }
+
+  Dialog(
+    onDismissRequest = { requestSkip() },
+    properties = DialogProperties(
       dismissOnBackPress = !mandatory,
       dismissOnClickOutside = !mandatory,
     )
-  )
+  ) {
+    AnimatedVisibility(
+      visible = contentVisible,
+      enter = fadeIn(
+        animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
+      ) + scaleIn(
+        initialScale = 0.94f,
+        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
+      ) + slideInVertically(
+        initialOffsetY = { it / 7 },
+        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
+      ),
+      exit = fadeOut(
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
+      ) + scaleOut(
+        targetScale = 0.98f,
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
+      ) + slideOutVertically(
+        targetOffsetY = { it / 12 },
+        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
+      ),
+    ) {
+      Surface(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 24.dp),
+        shape = MaterialTheme.shapes.extraLarge,
+        tonalElevation = 6.dp,
+        shadowElevation = 12.dp,
+        color = MaterialTheme.colorScheme.surface,
+      ) {
+        Column(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 22.dp),
+          verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+          Text(
+            text = if (setup.updatePromptTitle.isBlank()) {
+              stringResource(R.string.update_prompt_title_default)
+            } else {
+              setup.updatePromptTitle
+            },
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.SemiBold,
+          )
+          Text(
+            text = setup.updatePromptText,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            if (!mandatory) {
+              TextButton(onClick = { requestSkip() }) {
+                Text(stringResource(R.string.update_prompt_skip))
+              }
+              Spacer(Modifier.width(8.dp))
+            }
+            TextButton(onClick = onUpdate) {
+              Text(stringResource(R.string.update_prompt_update))
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 
@@ -613,6 +705,8 @@ private fun MainShell(
   var showDeleteModule by remember { mutableStateOf(false) }
   var showDeleteModuleNext by remember { mutableStateOf(false) }
   var showSettings by remember { mutableStateOf(false) }
+  var settingsCloseRequested by remember { mutableStateOf(false) }
+  var programLogsTarget by remember { mutableStateOf<ProgramLogTarget?>(null) }
   var showWorldMapPrompt by remember { mutableStateOf(false) }
 
   // System Back behavior:
@@ -623,8 +717,8 @@ private fun MainShell(
   // - If logs sheet is open -> close it
   val ctx = LocalContext.current
   val activity = ctx as? Activity
-  val handleBack = remember(tab, appsRoute, showLogs, showBackup, showProgramUpdates, showSettings, showDeleteModule, showDeleteModuleNext, showWorldMapPrompt) {
-    tab != Tab.HOME || showLogs || showBackup || showProgramUpdates || showSettings || showDeleteModule || showDeleteModuleNext || showWorldMapPrompt || (tab == Tab.APPS && appsRoute != AppsRoute.List)
+  val handleBack = remember(tab, appsRoute, showLogs, showBackup, showProgramUpdates, showSettings, showDeleteModule, showDeleteModuleNext, showWorldMapPrompt, programLogsTarget) {
+    tab != Tab.HOME || showLogs || showBackup || showProgramUpdates || showSettings || showDeleteModule || showDeleteModuleNext || showWorldMapPrompt || programLogsTarget != null || (tab == Tab.APPS && appsRoute != AppsRoute.List)
   }
   BackHandler(enabled = handleBack) {
     if (showDeleteModuleNext) {
@@ -639,8 +733,12 @@ private fun MainShell(
       showDeleteModule = false
       return@BackHandler
     }
+    if (programLogsTarget != null) {
+      programLogsTarget = null
+      return@BackHandler
+    }
     if (showSettings) {
-      showSettings = false
+      settingsCloseRequested = true
       return@BackHandler
     }
     if (showProgramUpdates) {
@@ -736,6 +834,13 @@ private fun MainShell(
     )
   }
 
+  programLogsTarget?.let { target ->
+    ProgramLogsBrowserSheet(
+      target = target,
+      onDismiss = { programLogsTarget = null },
+    )
+  }
+
   if (showBackup) {
     val backup by backupFlow.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) {
@@ -761,64 +866,120 @@ private fun MainShell(
   val appUpdate by appUpdateFlow.collectAsStateWithLifecycle()
 
   if (showSettings) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val settingsScope = rememberCoroutineScope()
+    var settingsContentReady by remember { mutableStateOf(false) }
+    var settingsClosing by remember { mutableStateOf(false) }
+
+    fun resetInvalidHotspotT2sIfNeeded() {
+      val hotspotInvalid = appUpdate.hotspotT2sEnabled && (
+        appUpdate.hotspotT2sTarget.isBlank() ||
+          (appUpdate.hotspotT2sTarget == "singbox" && appUpdate.hotspotT2sSingboxProfile.isBlank())
+        )
+      if (hotspotInvalid) {
+        actions.setHotspotT2sEnabled(false)
+      }
+    }
+
+    fun closeSettings(afterClose: (() -> Unit)? = null) {
+      if (settingsClosing) return
+      settingsClosing = true
+      resetInvalidHotspotT2sIfNeeded()
+      settingsScope.launch {
+        runCatching { sheetState.hide() }
+        showSettings = false
+        settingsCloseRequested = false
+        afterClose?.invoke()
+      }
+    }
+
     LaunchedEffect(Unit) {
+      settingsContentReady = false
       actions.refreshDaemonSettings()
       actions.refreshProxyInfo()
       actions.refreshBlockedQuic()
+      delay(260)
+      settingsContentReady = true
     }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    LaunchedEffect(settingsCloseRequested) {
+      if (settingsCloseRequested) closeSettings()
+    }
+
     ModalBottomSheet(
-      onDismissRequest = {
-        val hotspotInvalid = appUpdate.hotspotT2sEnabled && (
-          appUpdate.hotspotT2sTarget.isBlank() ||
-            (appUpdate.hotspotT2sTarget == "singbox" && appUpdate.hotspotT2sSingboxProfile.isBlank())
-          )
-        if (hotspotInvalid) {
-          actions.setHotspotT2sEnabled(false)
-        }
-        showSettings = false
-      },
+      onDismissRequest = { closeSettings() },
       sheetState = sheetState,
     ) {
-      AppUpdateSettings(
-        enabled = appUpdate.enabled,
-        onToggle = actions::setAppUpdateChecksEnabled,
-        onCheckNow = actions::checkAppUpdateNow,
-        daemonNotificationEnabled = appUpdate.daemonStatusNotificationEnabled,
-        onToggleDaemonNotification = actions::setDaemonStatusNotificationsEnabled,
-        languageMode = appUpdate.languageMode,
-        onLanguageModeChange = actions::setAppLanguageMode,
-        protectorMode = appUpdate.protectorMode,
-        onProtectorModeChange = actions::setProtectorMode,
-        hotspotT2sEnabled = appUpdate.hotspotT2sEnabled,
-        hotspotT2sTarget = appUpdate.hotspotT2sTarget,
-        hotspotT2sSingboxProfile = appUpdate.hotspotT2sSingboxProfile,
-        hotspotT2sWireproxyProfile = appUpdate.hotspotT2sWireproxyProfile,
-        hotspotSingboxProfiles = appUpdate.hotspotSingboxProfiles,
-        hotspotWireproxyProfiles = appUpdate.hotspotWireproxyProfiles,
-        onHotspotT2sEnabledChange = actions::setHotspotT2sEnabled,
-        onHotspotT2sTargetChange = actions::setHotspotT2sTarget,
-        onHotspotT2sSingboxProfileChange = actions::setHotspotT2sSingboxProfile,
-        onHotspotT2sWireproxyProfileChange = actions::setHotspotT2sWireproxyProfile,
-        proxyInfoEnabled = appUpdate.proxyInfoEnabled,
-        proxyInfoBusy = appUpdate.proxyInfoBusy,
-        proxyInfoAppsContent = appUpdate.proxyInfoAppsContent,
-        onProxyInfoEnabledChange = actions::setProxyInfoEnabled,
-        onLoadAppAssignments = actions::loadAppAssignments,
-        onProxyInfoAppsSave = actions::saveProxyInfoApps,
-        onProxyInfoAppsSaveRemovingConflicts = actions::saveProxyInfoAppsRemovingConflicts,
-        blockedQuicEnabled = appUpdate.blockedQuicEnabled,
-        blockedQuicBusy = appUpdate.blockedQuicBusy,
-        blockedQuicAppsContent = appUpdate.blockedQuicAppsContent,
-        onBlockedQuicEnabledChange = actions::setBlockedQuicEnabled,
-        onBlockedQuicAppsSave = actions::saveBlockedQuicApps,
-        resettingModuleIdentifier = appUpdate.resettingModuleIdentifier,
-        onResetModuleIdentifier = actions::resetModuleIdentifier,
-        onDeleteModule = {
-          showSettings = false
-          showDeleteModule = true
-        },
-      )
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .animateContentSize(animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)),
+      ) {
+        Crossfade(
+          targetState = settingsContentReady,
+          animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+          label = "settingsContentReady",
+        ) { ready ->
+          if (!ready) {
+            Box(
+              modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 220.dp)
+                .padding(horizontal = 24.dp, vertical = 28.dp),
+              contentAlignment = Alignment.Center,
+            ) {
+              Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+              ) {
+                CircularProgressIndicator()
+                Text(
+                  text = stringResource(R.string.common_loading),
+                  style = MaterialTheme.typography.bodyMedium,
+                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                )
+              }
+            }
+          } else {
+            AppUpdateSettings(
+              enabled = appUpdate.enabled,
+              onToggle = actions::setAppUpdateChecksEnabled,
+              onCheckNow = actions::checkAppUpdateNow,
+              daemonNotificationEnabled = appUpdate.daemonStatusNotificationEnabled,
+              onToggleDaemonNotification = actions::setDaemonStatusNotificationsEnabled,
+              languageMode = appUpdate.languageMode,
+              onLanguageModeChange = actions::setAppLanguageMode,
+              protectorMode = appUpdate.protectorMode,
+              onProtectorModeChange = actions::setProtectorMode,
+              hotspotT2sEnabled = appUpdate.hotspotT2sEnabled,
+              hotspotT2sTarget = appUpdate.hotspotT2sTarget,
+              hotspotT2sSingboxProfile = appUpdate.hotspotT2sSingboxProfile,
+              hotspotT2sWireproxyProfile = appUpdate.hotspotT2sWireproxyProfile,
+              hotspotSingboxProfiles = appUpdate.hotspotSingboxProfiles,
+              hotspotWireproxyProfiles = appUpdate.hotspotWireproxyProfiles,
+              onHotspotT2sEnabledChange = actions::setHotspotT2sEnabled,
+              onHotspotT2sTargetChange = actions::setHotspotT2sTarget,
+              onHotspotT2sSingboxProfileChange = actions::setHotspotT2sSingboxProfile,
+              onHotspotT2sWireproxyProfileChange = actions::setHotspotT2sWireproxyProfile,
+              proxyInfoEnabled = appUpdate.proxyInfoEnabled,
+              proxyInfoBusy = appUpdate.proxyInfoBusy,
+              proxyInfoAppsContent = appUpdate.proxyInfoAppsContent,
+              onProxyInfoEnabledChange = actions::setProxyInfoEnabled,
+              onLoadAppAssignments = actions::loadAppAssignments,
+              onProxyInfoAppsSave = actions::saveProxyInfoApps,
+              onProxyInfoAppsSaveRemovingConflicts = actions::saveProxyInfoAppsRemovingConflicts,
+              blockedQuicEnabled = appUpdate.blockedQuicEnabled,
+              blockedQuicBusy = appUpdate.blockedQuicBusy,
+              blockedQuicAppsContent = appUpdate.blockedQuicAppsContent,
+              onBlockedQuicEnabledChange = actions::setBlockedQuicEnabled,
+              onBlockedQuicAppsSave = actions::saveBlockedQuicApps,
+              resettingModuleIdentifier = appUpdate.resettingModuleIdentifier,
+              onResetModuleIdentifier = actions::resetModuleIdentifier,
+              onDeleteModule = { closeSettings { showDeleteModule = true } },
+            )
+          }
+        }
+      }
       Spacer(Modifier.height(16.dp))
     }
   }
@@ -891,6 +1052,11 @@ private fun MainShell(
   val statsTabLabel = stringResource(R.string.nav_stats)
   val appsTabLabel = stringResource(R.string.nav_programs)
   val supportTabLabel = stringResource(R.string.nav_support)
+
+  LaunchedEffect(tab) {
+    actions.setActiveMainTab(tab.name)
+  }
+
   val canGoBack = tab == Tab.APPS && appsRoute != AppsRoute.List
   val title = when {
     tab == Tab.HOME -> stringResource(R.string.app_name)
@@ -900,6 +1066,33 @@ private fun MainShell(
     tab == Tab.APPS && appsRoute is AppsRoute.Program -> stringResource(R.string.title_program)
     tab == Tab.APPS && appsRoute is AppsRoute.Profile -> stringResource(R.string.title_profile)
     else -> stringResource(R.string.app_name)
+  }
+
+  val currentProgramLogTarget = remember(tab, appsRoute, uiState.programs) {
+    if (tab != Tab.APPS) {
+      null
+    } else {
+      when (val route = appsRoute) {
+        AppsRoute.List -> null
+        is AppsRoute.Program -> {
+          val program = uiState.programs.firstOrNull { it.id == route.programId }
+          if (program != null && !isProfileProgramType(program.type) && supportsProgramLogs(route.programId, profile = null)) {
+            ProgramLogTarget(programId = route.programId, profile = null, title = program.name ?: route.programId)
+          } else {
+            null
+          }
+        }
+        is AppsRoute.Profile -> {
+          if (supportsProgramLogs(route.programId, profile = route.profile)) {
+            val program = uiState.programs.firstOrNull { it.id == route.programId }
+            val programName = program?.name ?: route.programId
+            ProgramLogTarget(programId = route.programId, profile = route.profile, title = "$programName / ${route.profile}")
+          } else {
+            null
+          }
+        }
+      }
+    }
   }
 
 
@@ -917,20 +1110,12 @@ private fun MainShell(
     animationSpec = tween(durationMillis = 360),
     label = "main_shell_alpha",
   )
-  val mainContentScale by animateFloatAsState(
-    targetValue = if (mainContentVisible) 1f else 0.985f,
-    animationSpec = tween(durationMillis = 360),
-    label = "main_shell_scale",
-  )
-
   Box(Modifier.fillMaxSize()) {
     Box(
       modifier = Modifier
         .fillMaxSize()
         .graphicsLayer {
           alpha = mainContentAlpha
-          scaleX = mainContentScale
-          scaleY = mainContentScale
         }
     ) {
       Scaffold(
@@ -965,13 +1150,21 @@ private fun MainShell(
             }
           },
           actions = {
-              IconButton(onClick = { showLogs = true }) { Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs)) }
-              IconButton(onClick = { showBackup = true }) { Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup)) }
-              IconButton(onClick = {
+            TopBarActionCluster(
+              programLogTarget = currentProgramLogTarget,
+              onOpenLogs = { target ->
+                if (target == null) showLogs = true else programLogsTarget = target
+              },
+              onOpenBackup = { showBackup = true },
+              onOpenProgramUpdates = {
                 showProgramUpdates = true
                 actions.resetProgramUpdatesUi()
-              }) { Icon(Icons.Filled.SystemUpdateAlt, contentDescription = stringResource(R.string.cd_program_updates)) }
-              IconButton(onClick = { showSettings = true }) { Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings)) }
+              },
+              onOpenSettings = {
+                settingsCloseRequested = false
+                showSettings = true
+              },
+            )
           }
         )
       },
@@ -1048,6 +1241,131 @@ private fun MainShell(
   }
 }
 
+private fun supportsProgramLogs(programId: String, profile: String?): Boolean {
+  return if (profile == null) {
+    programId in setOf("operaproxy", "dnscrypt", "tor")
+  } else {
+    programId in setOf(
+      "nfqws",
+      "nfqws2",
+      "byedpi",
+      "dpitunnel",
+      "sing-box",
+      "wireproxy",
+      "myproxy",
+      "myprogram",
+      "openvpn",
+      "tun2socks",
+      "mihomo",
+    )
+  }
+}
+
+
+@Composable
+private fun TopBarActionCluster(
+  programLogTarget: ProgramLogTarget?,
+  onOpenLogs: (ProgramLogTarget?) -> Unit,
+  onOpenBackup: () -> Unit,
+  onOpenProgramUpdates: () -> Unit,
+  onOpenSettings: () -> Unit,
+) {
+  AnimatedContent(
+    targetState = programLogTarget,
+    transitionSpec = {
+      ((fadeIn(tween(150)) + slideInHorizontally(tween(180)) { it / 8 }) togetherWith
+        (fadeOut(tween(120)) + slideOutHorizontally(tween(160)) { -it / 8 }))
+        .using(SizeTransform(clip = false))
+    },
+    label = "topBarActionCluster",
+  ) { target ->
+    if (target == null) {
+      TopBarFullActions(
+        onOpenLogs = { onOpenLogs(null) },
+        onOpenBackup = onOpenBackup,
+        onOpenProgramUpdates = onOpenProgramUpdates,
+        onOpenSettings = onOpenSettings,
+      )
+    } else {
+      CollapsingProgramLogActions(
+        target = target,
+        onOpenProgramLogs = { onOpenLogs(target) },
+        onOpenBackup = onOpenBackup,
+        onOpenProgramUpdates = onOpenProgramUpdates,
+        onOpenSettings = onOpenSettings,
+      )
+    }
+  }
+}
+
+@Composable
+private fun TopBarFullActions(
+  onOpenLogs: () -> Unit,
+  onOpenBackup: () -> Unit,
+  onOpenProgramUpdates: () -> Unit,
+  onOpenSettings: () -> Unit,
+) {
+  Row(verticalAlignment = Alignment.CenterVertically) {
+    IconButton(onClick = onOpenLogs) { Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs)) }
+    IconButton(onClick = onOpenBackup) { Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup)) }
+    IconButton(onClick = onOpenProgramUpdates) { Icon(Icons.Filled.SystemUpdateAlt, contentDescription = stringResource(R.string.cd_program_updates)) }
+    IconButton(onClick = onOpenSettings) { Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings)) }
+  }
+}
+
+@Composable
+private fun CollapsingProgramLogActions(
+  target: ProgramLogTarget,
+  onOpenProgramLogs: () -> Unit,
+  onOpenBackup: () -> Unit,
+  onOpenProgramUpdates: () -> Unit,
+  onOpenSettings: () -> Unit,
+) {
+  var collapsed by remember(target.key) { mutableStateOf(false) }
+  val glow = remember(target.key) { Animatable(0.16f) }
+
+  LaunchedEffect(target.key) {
+    collapsed = false
+    glow.snapTo(0.14f)
+    delay(460)
+    glow.animateTo(0.72f, animationSpec = tween(durationMillis = 110, easing = FastOutSlowInEasing))
+    collapsed = true
+    glow.animateTo(0.18f, animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing))
+  }
+
+  Box(
+    modifier = Modifier
+      .padding(end = 2.dp)
+      .shadow(0.dp, CircleShape)
+      .background(MaterialTheme.colorScheme.error.copy(alpha = glow.value), CircleShape)
+      .padding(horizontal = if (collapsed) 2.dp else 4.dp),
+    contentAlignment = Alignment.CenterEnd,
+  ) {
+    AnimatedContent(
+      targetState = collapsed,
+      transitionSpec = {
+        val enter = fadeIn(tween(130)) + scaleIn(tween(180, easing = FastOutSlowInEasing), initialScale = 0.84f)
+        val exit = fadeOut(tween(120)) + scaleOut(tween(160, easing = FastOutSlowInEasing), targetScale = 0.72f)
+        (enter togetherWith exit).using(SizeTransform(clip = false))
+      },
+      label = "programActionCollapse",
+    ) { isCollapsed ->
+      if (isCollapsed) {
+        IconButton(onClick = onOpenProgramLogs) {
+          Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs))
+        }
+      } else {
+        TopBarFullActions(
+          onOpenLogs = onOpenProgramLogs,
+          onOpenBackup = onOpenBackup,
+          onOpenProgramUpdates = onOpenProgramUpdates,
+          onOpenSettings = onOpenSettings,
+        )
+      }
+    }
+  }
+}
+
 @Composable
 private fun TabBody(
   tab: Tab,
@@ -1061,26 +1379,24 @@ private fun TabBody(
   val stateHolder = rememberSaveableStateHolder()
   val focusManager = LocalFocusManager.current
   val keyboardController = LocalSoftwareKeyboardController.current
-  var appsVisited by rememberSaveable { mutableStateOf(tab == Tab.APPS) }
 
   LaunchedEffect(tab) {
-    if (tab == Tab.APPS) appsVisited = true
     focusManager.clearFocus(force = true)
     keyboardController?.hide()
   }
 
-  Box(Modifier.fillMaxSize()) {
-    if (appsVisited) {
-      Box(
-        modifier = Modifier
-          .fillMaxSize()
-          .zIndex(if (tab == Tab.APPS) 1f else -1f)
-          .graphicsLayer {
-            alpha = if (tab == Tab.APPS) 1f else 0f
-          }
-      ) {
-        stateHolder.SaveableStateProvider(Tab.APPS.name) {
-          AppsHost(
+  Crossfade(
+    targetState = tab,
+    animationSpec = tween(durationMillis = 160),
+    label = "main_tab_crossfade",
+  ) { currentTab ->
+    stateHolder.SaveableStateProvider(currentTab.name) {
+      Box(Modifier.fillMaxSize()) {
+        when (currentTab) {
+          Tab.HOME -> HomeScreen(uiStateFlow = uiStateFlow, actions = actions)
+          Tab.STATS -> StatsScreen(uiStateFlow = uiStateFlow, actions = actions)
+          Tab.SUPPORT -> SupportScreen()
+          Tab.APPS -> AppsHost(
             uiStateFlow = uiStateFlow,
             route = appsRoute,
             onOpenProgram = onOpenProgram,
@@ -1089,27 +1405,6 @@ private fun TabBody(
             snackHost = snackHost,
           )
         }
-      }
-    }
-
-    Crossfade(
-      targetState = tab,
-      animationSpec = tween(durationMillis = 180),
-      label = "main_tab_crossfade",
-    ) { currentTab ->
-      if (currentTab != Tab.APPS) {
-        stateHolder.SaveableStateProvider(currentTab.name) {
-          Box(Modifier.fillMaxSize()) {
-            when (currentTab) {
-              Tab.HOME -> HomeScreen(uiStateFlow = uiStateFlow, actions = actions)
-              Tab.STATS -> StatsScreen(uiStateFlow = uiStateFlow, actions = actions)
-              Tab.SUPPORT -> SupportScreen()
-              Tab.APPS -> Unit
-            }
-          }
-        }
-      } else if (!appsVisited) {
-        Box(Modifier.fillMaxSize())
       }
     }
   }

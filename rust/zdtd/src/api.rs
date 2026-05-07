@@ -1802,6 +1802,9 @@ fn parse_package_set(raw: &str) -> BTreeSet<String> {
         if s.is_empty() {
             continue;
         }
+        if crate::android::pkg_uid::is_launch_marker_package(s) {
+            continue;
+        }
         out.insert(s.to_string());
     }
     out
@@ -2192,7 +2195,22 @@ fn find_proxyinfo_conflicts(candidate: &BTreeSet<String>) -> BTreeMap<String, Ve
     out
 }
 
+fn launch_marker_allowed_for_program(program_id: &str) -> bool {
+    !matches!(program_id, "blockedquic" | "proxyInfo" | "proxyinfo")
+}
+
+fn validate_launch_marker_usage(content: &str, program_id: &str) -> Result<()> {
+    if crate::android::pkg_uid::content_has_launch_marker(content) && !launch_marker_allowed_for_program(program_id) {
+        anyhow::bail!(
+            "ZDT-D launch marker {} is not allowed for this program",
+            crate::android::pkg_uid::LAUNCH_MARKER_PACKAGE
+        );
+    }
+    Ok(())
+}
+
 fn validate_program_apps_content(content: &str, current_api_path: &str, program_id: &str, slot: &str) -> Result<()> {
+    validate_launch_marker_usage(content, program_id)?;
     let candidate = parse_package_set(content);
     if candidate.is_empty() { return Ok(()); }
 
@@ -2217,6 +2235,7 @@ fn validate_program_apps_content(content: &str, current_api_path: &str, program_
 }
 
 fn validate_proxyinfo_apps_content(content: &str) -> Result<()> {
+    validate_launch_marker_usage(content, "proxyInfo")?;
     let candidate = parse_package_set(content);
     if candidate.is_empty() {
         return Ok(());
@@ -5222,6 +5241,7 @@ match (method.as_str(), path.as_str()) {
             let res = (|| -> Result<serde_json::Value> {
                 let req: ProxyInfoSaveReq = serde_json::from_slice(&body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                validate_launch_marker_usage(&req.content, "proxyInfo")?;
                 let candidate = parse_package_set(&req.content);
                 let conflicts = find_proxyinfo_conflicts(&candidate);
                 if !conflicts.is_empty() && !req.remove_conflicts {

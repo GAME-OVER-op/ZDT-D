@@ -293,6 +293,13 @@ fn resolve_uid_ranges(app_list_path: &Path, app_out_path: &Path) -> Result<Vec<S
     }
     let ranges = uids_to_ranges(uids);
     if ranges.is_empty() {
+        if pkg_uid::file_has_launch_marker(app_list_path).unwrap_or(false) {
+            log::info!(
+                "vpn_netd: launch marker present in {}, applying profile without UID users",
+                app_list_path.display()
+            );
+            return Ok(Vec::new());
+        }
         bail!("no resolved UIDs for app list {}", app_list_path.display());
     }
     Ok(ranges)

@@ -46,6 +46,7 @@ import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlin.math.roundToInt
 
 @Composable
 fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
@@ -148,6 +149,17 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
     // Daemon logs card (tail)
     var logSourceMenuExpanded by remember { mutableStateOf(false) }
     var selectedLogSource by remember { mutableStateOf(HomeLogSource.MAIN) }
+    var logSourceSwitchNonce by remember { mutableLongStateOf(0L) }
+    var pendingSmoothTailReleaseNonce by remember { mutableLongStateOf(0L) }
+    var sourceSwitchTailAnimationInProgress by remember { mutableStateOf(false) }
+    fun selectLogSource(source: HomeLogSource) {
+      if (selectedLogSource != source) {
+        sourceSwitchTailAnimationInProgress = true
+        selectedLogSource = source
+        logSourceSwitchNonce++
+      }
+      logSourceMenuExpanded = false
+    }
     val noLogDataText = stringResource(R.string.home_no_log_data)
     val mainLogsText = stringResource(R.string.home_logs_main)
     val detailedLogsText = stringResource(R.string.home_logs_detailed)
@@ -173,13 +185,104 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
     var nextLogRenderId by remember { mutableLongStateOf(0L) }
     fun renderize(lines: List<DaemonLogUiLine>): List<DaemonLogRenderLine> =
       lines.map { DaemonLogRenderLine(id = nextLogRenderId++, line = it) }
+    fun rawMatches(lines: List<DaemonLogUiLine>, displayed: List<DaemonLogRenderLine>): Boolean {
+      if (lines.size != displayed.size) return false
+      for (index in lines.indices) {
+        if (lines[index].raw != displayed[index].line.raw) return false
+      }
+      return true
+    }
+    fun displayedIsPrefixOf(lines: List<DaemonLogUiLine>, displayed: List<DaemonLogRenderLine>): Boolean {
+      if (lines.size < displayed.size) return false
+      for (index in displayed.indices) {
+        if (lines[index].raw != displayed[index].line.raw) return false
+      }
+      return true
+    }
+    fun mergeSlidingTail(lines: List<DaemonLogUiLine>, displayed: List<DaemonLogRenderLine>): List<DaemonLogRenderLine>? {
+      val maxOverlap = minOf(lines.size, displayed.size)
+      for (overlap in maxOverlap downTo 1) {
+        val displayedStart = displayed.size - overlap
+        var matches = true
+        for (i in 0 until overlap) {
+          if (displayed[displayedStart + i].line.raw != lines[i].raw) {
+            matches = false
+            break
+          }
+        }
+        if (matches) {
+          val kept = displayed.takeLast(overlap)
+          val appended = lines.drop(overlap).map { DaemonLogRenderLine(id = nextLogRenderId++, line = it) }
+          return (kept + appended).takeLast(100)
+        }
+      }
+      return null
+    }
     var displayedLogLines by remember(noLogDataText) {
       mutableStateOf(renderize(listOf(DaemonLogUiLine(raw = noLogDataText, level = DaemonLogLevel.OTHER, text = noLogDataText))))
     }
     var logRevealInitialized by remember { mutableStateOf(false) }
     val initialAnimatedTail = 14
+    val logRevealDelayMs = 32L
     val lastLine: String = remember(displayedLogLines) { displayedLogLines.lastOrNull()?.line?.text?.trimEnd().orEmpty() }
+    val newestLogRenderId: Long = displayedLogLines.lastOrNull()?.id ?: -1L
     val listState = rememberLazyListState()
+    var followNewestLogLine by remember { mutableStateOf(true) }
+    var userScrolledAwayDuringGesture by remember { mutableStateOf(false) }
+    var manualScrollIdleNonce by remember { mutableLongStateOf(0L) }
+    val autoReleaseToBottomDelayMs = 5_000L
+    fun isLogListNearBottom(): Boolean =
+      listState.firstVisibleItemIndex <= 1 && listState.firstVisibleItemScrollOffset < 96
+
+    suspend fun smoothReleaseLogListToBottom(durationMillis: Int = 720) {
+      if (displayedLogLines.isEmpty()) return
+      val maxIndex = (displayedLogLines.size - 1).coerceAtLeast(0)
+      if (listState.firstVisibleItemIndex > maxIndex) {
+        listState.scrollToItem(maxIndex, 0)
+      }
+
+      val visibleItems = listState.layoutInfo.visibleItemsInfo
+      val averageItemSizePx = visibleItems
+        .takeIf { it.isNotEmpty() }
+        ?.map { it.size }
+        ?.average()
+        ?.toFloat()
+        ?.coerceAtLeast(1f)
+        ?: 72f
+
+      val startDistancePx =
+        (listState.firstVisibleItemIndex * averageItemSizePx) + listState.firstVisibleItemScrollOffset
+      if (startDistancePx <= 2f) {
+        listState.scrollToItem(0, 0)
+        return
+      }
+
+      val boundedDurationMs = durationMillis
+        .coerceAtLeast(420)
+        .coerceAtMost(1_100)
+      var startFrameNanos = 0L
+      var finished = false
+
+      while (!finished) {
+        val frameTimeNanos = withFrameNanos { it }
+        if (startFrameNanos == 0L) startFrameNanos = frameTimeNanos
+        val elapsedMs = (frameTimeNanos - startFrameNanos) / 1_000_000f
+        val fraction = (elapsedMs / boundedDurationMs).coerceIn(0f, 1f)
+        val eased = FastOutSlowInEasing.transform(fraction)
+        val remainingDistancePx = startDistancePx * (1f - eased)
+        val targetIndex = (remainingDistancePx / averageItemSizePx)
+          .toInt()
+          .coerceIn(0, maxIndex)
+        val targetOffset = (remainingDistancePx - (targetIndex * averageItemSizePx))
+          .roundToInt()
+          .coerceAtLeast(0)
+
+        listState.scrollToItem(targetIndex, targetOffset)
+        finished = fraction >= 1f
+      }
+
+      listState.scrollToItem(0, 0)
+    }
 
     LaunchedEffect(Unit) {
       kotlinx.coroutines.delay(160)
@@ -187,52 +290,107 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
     }
 
     LaunchedEffect(selectedLogSource) {
+      followNewestLogLine = true
+      userScrolledAwayDuringGesture = false
       logRevealInitialized = false
-      displayedLogLines = emptyList()
-      listState.scrollToItem(0)
     }
 
-    LaunchedEffect(logLines) {
+    LaunchedEffect(selectedLogSource, logLines) {
       if (!logRevealInitialized) {
-        val animatedTail = initialAnimatedTail.coerceAtMost(logLines.size)
-        val stableHead = logLines.dropLast(animatedTail)
-        displayedLogLines = if (stableHead.isNotEmpty()) renderize(stableHead) else emptyList()
-        logRevealInitialized = true
-        val toReveal = logLines.takeLast(animatedTail)
-        if (toReveal.isEmpty()) {
+        if (logSourceSwitchNonce > 0L) {
           displayedLogLines = renderize(logLines)
+          logRevealInitialized = true
+          pendingSmoothTailReleaseNonce = logSourceSwitchNonce
         } else {
-          for (line in toReveal) {
-            displayedLogLines = displayedLogLines + DaemonLogRenderLine(id = nextLogRenderId++, line = line)
-            kotlinx.coroutines.delay(135L)
+          val animatedTail = initialAnimatedTail.coerceAtMost(logLines.size)
+          val stableHead = logLines.dropLast(animatedTail)
+          displayedLogLines = if (stableHead.isNotEmpty()) renderize(stableHead) else emptyList()
+          logRevealInitialized = true
+          val toReveal = logLines.takeLast(animatedTail)
+          if (toReveal.isEmpty()) {
+            displayedLogLines = renderize(logLines)
+          } else {
+            for (line in toReveal) {
+              displayedLogLines = displayedLogLines + DaemonLogRenderLine(id = nextLogRenderId++, line = line)
+              kotlinx.coroutines.delay(logRevealDelayMs)
+            }
           }
         }
-      } else if (logLines.map { it.raw } == displayedLogLines.map { it.line.raw }) {
+      } else if (rawMatches(logLines, displayedLogLines)) {
         // no-op
-      } else if (
-        logLines.size >= displayedLogLines.size &&
-        logLines.take(displayedLogLines.size).map { it.raw } == displayedLogLines.map { it.line.raw }
-      ) {
+      } else if (displayedIsPrefixOf(logLines, displayedLogLines)) {
         val appended = logLines.drop(displayedLogLines.size)
         if (appended.isEmpty()) {
           displayedLogLines = displayedLogLines.takeLast(logLines.size)
         } else {
           for (line in appended) {
             displayedLogLines = (displayedLogLines + DaemonLogRenderLine(id = nextLogRenderId++, line = line)).takeLast(100)
-            kotlinx.coroutines.delay(135L)
+            kotlinx.coroutines.delay(logRevealDelayMs)
           }
         }
       } else {
-        displayedLogLines = renderize(logLines)
+        displayedLogLines = mergeSlidingTail(logLines, displayedLogLines) ?: renderize(logLines)
       }
     }
 
-    // Keep the newest line visible without fighting the row enter animation.
-    LaunchedEffect(displayedLogLines.size) {
-      val nearBottom = listState.firstVisibleItemIndex <= 1 && listState.firstVisibleItemScrollOffset < 24
-      if (nearBottom && !listState.isScrollInProgress) {
-        // reverseLayout=true => index 0 is at the bottom.
-        listState.scrollToItem(0)
+    // Keep the newest line visible while the user is following the tail.
+    // If the user scrolls upward to read older lines, do not fight them; after
+    // 5 seconds from the end of that manual gesture, gently release the list
+    // back to the newest line. Log updates themselves must not restart this timer.
+    LaunchedEffect(listState) {
+      snapshotFlow {
+        Triple(
+          listState.firstVisibleItemIndex,
+          listState.firstVisibleItemScrollOffset,
+          listState.isScrollInProgress,
+        )
+      }.collect { (_, _, scrolling) ->
+        val nearBottom = isLogListNearBottom()
+        if (nearBottom) {
+          followNewestLogLine = true
+          userScrolledAwayDuringGesture = false
+        } else if (scrolling) {
+          followNewestLogLine = false
+          userScrolledAwayDuringGesture = true
+        } else if (userScrolledAwayDuringGesture) {
+          userScrolledAwayDuringGesture = false
+          manualScrollIdleNonce++
+        }
+      }
+    }
+
+    LaunchedEffect(manualScrollIdleNonce, selectedLogSource) {
+      if (manualScrollIdleNonce > 0L && !followNewestLogLine) {
+        kotlinx.coroutines.delay(autoReleaseToBottomDelayMs)
+        if (!listState.isScrollInProgress && !isLogListNearBottom()) {
+          followNewestLogLine = true
+          // reverseLayout=true => index 0 is the visual bottom/newest line.
+          smoothReleaseLogListToBottom(durationMillis = 780)
+        }
+      }
+    }
+
+    LaunchedEffect(pendingSmoothTailReleaseNonce) {
+      if (pendingSmoothTailReleaseNonce > 0L) {
+        kotlinx.coroutines.delay(24)
+        followNewestLogLine = true
+        try {
+          smoothReleaseLogListToBottom(durationMillis = 720)
+        } finally {
+          sourceSwitchTailAnimationInProgress = false
+          pendingSmoothTailReleaseNonce = 0L
+        }
+      }
+    }
+
+    LaunchedEffect(selectedLogSource, newestLogRenderId) {
+      if (!sourceSwitchTailAnimationInProgress &&
+        (followNewestLogLine || isLogListNearBottom()) &&
+        !listState.isScrollInProgress
+      ) {
+        followNewestLogLine = true
+        // reverseLayout=true => index 0 is the visual bottom/newest line.
+        listState.animateScrollToItem(0)
       }
     }
 
@@ -280,17 +438,11 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
                 ) {
                   DropdownMenuItem(
                     text = { Text(mainLogsText) },
-                    onClick = {
-                      selectedLogSource = HomeLogSource.MAIN
-                      logSourceMenuExpanded = false
-                    },
+                    onClick = { selectLogSource(HomeLogSource.MAIN) },
                   )
                   DropdownMenuItem(
                     text = { Text(detailedLogsText) },
-                    onClick = {
-                      selectedLogSource = HomeLogSource.DETAILED
-                      logSourceMenuExpanded = false
-                    },
+                    onClick = { selectLogSource(HomeLogSource.DETAILED) },
                   )
                 }
               }
@@ -342,6 +494,7 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
               items(
                 count = display.size,
                 key = { idx -> display[idx].id },
+                contentType = { "daemon_log_line" },
               ) { idx ->
                 val item: DaemonLogRenderLine = display[idx]
                 val line: DaemonLogUiLine = item.line

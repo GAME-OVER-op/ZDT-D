@@ -286,6 +286,7 @@
     <string name="app_picker_none">(нет)</string>
     <string name="app_picker_all_apps_title">Все приложения</string>
     <string name="app_picker_all_apps_hint">Нажмите, чтобы добавить. (Здесь нет галочек — удаление в верхнем списке.)</string>
+    <string name="app_picker_own_app_hint">Разрешает программе запускаться без выбранного списка приложений</string>
     <string name="app_picker_system_label">системное</string>
 
     <string name="apps_list_clear">Очистить</string>
@@ -1353,5 +1354,14 @@
     <string name="mihomo_pending_add_proxy_group_title">Изменение группы не сохранено</string>
     <string name="mihomo_pending_add_proxy_group_desc">Proxy %1$s уже сохранён в proxies. Сохраните ожидающее изменение, чтобы добавить его в группу Proxy, или отмените и оставьте конфиг как есть.</string>
     <string name="mihomo_pending_details">Изменение</string>
+
+    <string name="web_panel_open">Веб-панель</string>
+    <string name="web_panel_unavailable">Кажется, служба не запущена или веб-панель настроена неверно</string>
+    <string name="program_logs_title">Логи программы</string>
+    <string name="program_logs_empty">Файлы логов не найдены</string>
+    <string name="program_logs_empty_desc">Сначала запустите программу или профиль, затем откройте это окно снова.</string>
+    <string name="program_logs_refresh">Обновить список логов</string>
+    <string name="program_logs_back_to_files">Назад к файлам логов</string>
+    <string name="program_logs_realtime">Лог в реальном времени</string>
 
 </resources>

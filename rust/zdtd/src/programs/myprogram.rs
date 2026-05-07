@@ -260,9 +260,13 @@ fn build_profile_plan(profile: &str, external_used: &BTreeSet<u16>, own_used: &B
         let _ = pkg_uid::unified_processing(UidMode::Default, &tracker, &uid_out, &uid_in)
             .with_context(|| format!("pkg_uid processing profile={profile}"))?;
         uid_count = count_valid_uid_pairs(&uid_out).unwrap_or(0);
-        if uid_count == 0 {
+        let has_launch_marker = pkg_uid::file_has_launch_marker(&uid_in).unwrap_or(false);
+        if uid_count == 0 && !has_launch_marker {
             warn!("myprogram: profile '{}' has no resolved apps", profile);
             return Ok(None);
+        }
+        if uid_count == 0 && has_launch_marker {
+            info!("myprogram: profile '{}' uses launch marker; starting without routing app UIDs", profile);
         }
     } else {
         ensure_parent_dir(&uid_out)?;

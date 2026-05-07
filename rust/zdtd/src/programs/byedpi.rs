@@ -79,9 +79,13 @@ fn start_profile(profile_name: &str, tracker: &Sha256Tracker) -> Result<()> {
     let _ = pkg_uid::unified_processing(Mode::Default, tracker, &out_user, &in_user)?;
 
     let resolved = count_valid_uid_pairs(&out_user)?;
-    if resolved == 0 {
+    let has_launch_marker = pkg_uid::file_has_launch_marker(&in_user).unwrap_or(false);
+    if resolved == 0 && !has_launch_marker {
         log::warn!("byedpi: no apps resolved for {} -> skip start/iptables", profile_dir.display());
         return Ok(());
+    }
+    if resolved == 0 && has_launch_marker {
+        log::info!("byedpi: launch marker present for {}, starting without routing app UIDs", profile_dir.display());
     }
 
     // Config args come from config/config.txt content (split into argv tokens)

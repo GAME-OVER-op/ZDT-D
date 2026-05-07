@@ -1,5 +1,10 @@
 package com.android.zdtd.service.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -13,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.*
 import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.runtime.*
@@ -32,14 +38,20 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import android.content.Intent
+import com.android.zdtd.service.LocalWebPanelActivity
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import com.android.zdtd.service.R
 import androidx.compose.material.icons.filled.Edit
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.net.URLEncoder
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -68,6 +80,7 @@ fun ProgramScreen(
   var programTab by remember(program.id) { mutableStateOf(0) }
 
   var showCreateProfile by remember { mutableStateOf(false) }
+  var operaWebPanelChecking by remember(program.id) { mutableStateOf(false) }
 
   fun showSnack(msg: String) {
     scope.launch { snackHost.showSnackbar(msg) }
@@ -118,13 +131,50 @@ fun ProgramScreen(
     // - MUST exist for dnscrypt + operaproxy (per Danil)
     // - sing-box has a custom enabled inside its own setting.json
     // - MUST NOT exist for zapret/dpitunnel/byedpi (it's useless there)
-    if (program.id == "dnscrypt" || program.id == "operaproxy") {
+    if (program.id == "dnscrypt") {
       item {
         EnabledCard(
           title = stringResource(R.string.enabled_card_program_title),
           checked = program.enabled,
           onCheckedChange = { v -> actions.setProgramEnabled(program.id, v) },
         )
+      }
+    } else if (program.id == "operaproxy") {
+      item(key = "operaproxy_global_controls", contentType = "operaproxy_global_controls") {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+          EnabledCard(
+            title = stringResource(R.string.enabled_card_program_title),
+            checked = program.enabled,
+            onCheckedChange = { v -> actions.setProgramEnabled(program.id, v) },
+          )
+          AnimatedVisibility(
+            visible = program.enabled,
+            enter = fadeIn(tween(180)) + expandVertically(animationSpec = tween(220)),
+            exit = fadeOut(tween(140)) + shrinkVertically(animationSpec = tween(180)),
+          ) {
+            OperaWebPanelCard(
+              checking = operaWebPanelChecking,
+              onOpen = {
+                if (!operaWebPanelChecking) {
+                  scope.launch {
+                    operaWebPanelChecking = true
+                    val available = isLocalWebPanelPortOpen()
+                    operaWebPanelChecking = false
+                    if (available) {
+                      context.startActivity(
+                        Intent(context, LocalWebPanelActivity::class.java)
+                          .putExtra(LocalWebPanelActivity.EXTRA_SCOPE_KEY, "program/operaproxy")
+                          .putExtra(LocalWebPanelActivity.EXTRA_DEFAULT_URL, OPERAPROXY_WEB_PANEL_URL)
+                      )
+                    } else {
+                      showSnack(context.getString(R.string.web_panel_unavailable))
+                    }
+                  }
+                }
+              },
+            )
+          }
+        }
       }
     }
 
@@ -153,7 +203,7 @@ isProfileProgramType(program.type) -> {
         }
 
         if (!hasStrategicFiles || programTab == 0) {
-          items(sortedProfiles, key = { it.name }) { prof ->
+          items(sortedProfiles, key = { it.name }, contentType = { "profile_card" }) { prof ->
             ProfileRow(
               programId = program.id,
               profile = prof,
@@ -223,6 +273,55 @@ isProfileProgramType(program.type) -> {
 
     item { Spacer(Modifier.height(80.dp)) }
   }
+}
+
+
+private const val OPERAPROXY_WEB_PANEL_URL = "http://127.0.0.1:8000/"
+
+@Composable
+private fun OperaWebPanelCard(
+  checking: Boolean,
+  onOpen: () -> Unit,
+) {
+  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))) {
+    Row(
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Text(
+        text = stringResource(R.string.web_panel_open),
+        modifier = Modifier.weight(1f),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+      )
+      FilledTonalIconButton(
+        onClick = onOpen,
+        enabled = !checking,
+      ) {
+        if (checking) {
+          CircularProgressIndicator(
+            modifier = Modifier.size(20.dp),
+            strokeWidth = 2.dp,
+          )
+        } else {
+          Icon(
+            imageVector = Icons.Filled.Public,
+            contentDescription = stringResource(R.string.web_panel_open),
+          )
+        }
+      }
+    }
+  }
+}
+
+private suspend fun isLocalWebPanelPortOpen(): Boolean = withContext(Dispatchers.IO) {
+  runCatching {
+    Socket().use { socket ->
+      socket.connect(InetSocketAddress("127.0.0.1", 8000), 850)
+    }
+    true
+  }.getOrDefault(false)
 }
 
 

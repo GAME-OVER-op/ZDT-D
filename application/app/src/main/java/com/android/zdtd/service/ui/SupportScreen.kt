@@ -135,7 +135,7 @@ fun SupportScreen() {
       }
     }
 
-    items(links) { link ->
+    items(links, key = { it.url }, contentType = { "support_link" }) { link ->
       SupportLinkCard(
         compact = isCompactWidth,
         narrow = isNarrowWidth,

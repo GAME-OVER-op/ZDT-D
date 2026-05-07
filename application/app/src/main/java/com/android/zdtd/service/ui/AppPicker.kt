@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
@@ -40,7 +41,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -61,19 +61,37 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toBitmap
+import java.util.Collections
+import java.util.LinkedHashMap
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.util.Locale
+
+internal const val ZDTD_APP_PACKAGE_NAME = "com.android.zdtd.service"
 
 data class InstalledApp(
   val packageName: String,
   val label: String,
   val isSystem: Boolean,
+  val sortKey: String = label.lowercase(Locale.ROOT),
 )
+
+object AppIconMemoryCache {
+  private const val MaxEntries = 384
+
+  val map: MutableMap<String, ImageBitmap?> = Collections.synchronizedMap(
+    object : LinkedHashMap<String, ImageBitmap?>(MaxEntries, 0.75f, true) {
+      override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ImageBitmap?>?): Boolean {
+        return size > MaxEntries
+      }
+    }
+  )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -225,7 +243,7 @@ private fun AppPickerSheet(
 
   val apps by produceState<List<InstalledApp>>(initialValue = emptyList(), key1 = Unit) {
     value = withContext(Dispatchers.IO) {
-      runCatching { loadInstalledApps(ctx.packageManager) }.getOrDefault(emptyList())
+      runCatching { loadInstalledAppsCached(ctx.packageManager) }.getOrDefault(emptyList())
     }
   }
   var assignments by remember(path) { mutableStateOf<ApiModels.AppAssignmentsState?>(null) }
@@ -236,13 +254,21 @@ private fun AppPickerSheet(
   var query by remember { mutableStateOf("") }
   var selected by remember { mutableStateOf(initialSelected) }
 
-  // Cache app icons across list item disposals (important for smooth scrolling).
-  val iconCache = remember { mutableStateMapOf<String, ImageBitmap?>() }
+  // Cache app icons across sheet opens and list item disposals (important for smooth scrolling).
+  val iconCache = remember { AppIconMemoryCache.map }
+  val listState = rememberLazyListState()
 
-  val q = query.trim().lowercase(Locale.ROOT)
-  val filtered = remember(apps, q) {
-    if (q.isBlank()) apps
-    else apps.filter { it.label.lowercase(Locale.ROOT).contains(q) || it.packageName.lowercase(Locale.ROOT).contains(q) }
+  var debouncedQuery by remember { mutableStateOf("") }
+  LaunchedEffect(query) {
+    delay(180L)
+    debouncedQuery = query.trim().lowercase(Locale.ROOT)
+  }
+  val filtered = remember(apps, debouncedQuery) {
+    if (debouncedQuery.isBlank()) apps
+    else apps.filter {
+      it.label.lowercase(Locale.ROOT).contains(debouncedQuery) ||
+        it.packageName.lowercase(Locale.ROOT).contains(debouncedQuery)
+    }
   }
 
   val currentEntry = remember(assignments, path) {
@@ -315,10 +341,10 @@ private fun AppPickerSheet(
   }
 
   val hiddenPackages = remember(assignments, selected) {
-    ((assignments?.proxyInfoPackages ?: emptySet()) - selected)
+    ((assignments?.proxyInfoPackages ?: emptySet()) - selected - ZDTD_APP_PACKAGE_NAME)
   }
 
-  val disabledReasons = remember(assignments, currentEntry, selected) {
+  val disabledReasons = remember(assignments, currentEntry) {
     val out = linkedMapOf<String, MutableList<ApiModels.AppAssignmentEntry>>()
     val entry = currentEntry
     val data = assignments
@@ -330,7 +356,7 @@ private fun AppPickerSheet(
           if (requiresSameSlot && other.slot != entry.slot) continue
           if (!appListsConflict(entry.programId, other.programId)) continue
           for (pkg in other.packages) {
-            if (pkg in selected) continue
+            if (pkg == ZDTD_APP_PACKAGE_NAME) continue
             out.getOrPut(pkg) { mutableListOf() }.add(other)
           }
         }
@@ -339,10 +365,10 @@ private fun AppPickerSheet(
     out
   }
 
-  val selectedApps = remember(apps, selected) {
-    val byPkg = apps.associateBy { it.packageName }
-    selected.map { pkg -> byPkg[pkg] ?: InstalledApp(pkg, pkg, false) }
-      .sortedBy { it.label.lowercase(Locale.ROOT) }
+  val appsByPackage = remember(apps) { apps.associateBy { it.packageName } }
+  val selectedApps = remember(appsByPackage, selected) {
+    selected.map { pkg -> appsByPackage[pkg] ?: InstalledApp(pkg, pkg, false) }
+      .sortedBy { it.sortKey }
   }
   val notSelectedApps = remember(filtered, selected, hiddenPackages) {
     filtered.filter { it.packageName !in selected && it.packageName !in hiddenPackages }
@@ -423,6 +449,7 @@ private fun AppPickerSheet(
       Spacer(Modifier.height(10.dp))
 
       LazyColumn(
+        state = listState,
         modifier = Modifier
           .fillMaxWidth()
           .heightIn(min = if (isShortHeight) 220.dp else 280.dp, max = if (isShortHeight) 420.dp else 620.dp),
@@ -446,7 +473,7 @@ private fun AppPickerSheet(
             )
           }
         } else {
-          items(selectedApps, key = { "sel:" + it.packageName }) { app ->
+          items(selectedApps, key = { "sel:" + it.packageName }, contentType = { "app_selected" }) { app ->
             AppPickerRow(
               app = app,
               selected = true,
@@ -477,7 +504,7 @@ private fun AppPickerSheet(
           Spacer(Modifier.height(6.dp))
         }
 
-        items(notSelectedApps, key = { "all:" + it.packageName }) { app ->
+        items(notSelectedApps, key = { "all:" + it.packageName }, contentType = { "app_available" }) { app ->
           val reasons = disabledReasons[app.packageName].orEmpty()
           val disabledReason = if (reasons.isEmpty()) null else stringResource(
             R.string.app_picker_conflict_used_in,
@@ -510,14 +537,16 @@ private fun AppPickerRow(
   reason: String?,
   onToggle: () -> Unit,
 ) {
+  val isOwnApp = app.packageName == ZDTD_APP_PACKAGE_NAME
   Surface(
     shape = MaterialTheme.shapes.medium,
-    color = if (selected) {
-      MaterialTheme.colorScheme.surface.copy(alpha = 0.45f)
-    } else {
-      MaterialTheme.colorScheme.surface.copy(alpha = 0.32f)
+    color = when {
+      isOwnApp -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (selected) 0.56f else 0.44f)
+      selected -> MaterialTheme.colorScheme.surface.copy(alpha = 0.45f)
+      else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.32f)
     },
-    tonalElevation = 0.dp,
+    border = if (isOwnApp) BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.50f)) else null,
+    tonalElevation = if (isOwnApp) 1.dp else 0.dp,
   ) {
     Row(
       Modifier
@@ -548,6 +577,16 @@ private fun AppPickerRow(
           maxLines = if (compactWidth) 2 else 1,
           overflow = TextOverflow.Ellipsis,
         )
+        if (isOwnApp) {
+          Spacer(Modifier.height(3.dp))
+          Text(
+            stringResource(R.string.app_picker_own_app_hint),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
         if (!reason.isNullOrBlank()) {
           Spacer(Modifier.height(2.dp))
           Text(
@@ -581,6 +620,25 @@ fun parsePkgList(content: String?): Set<String> {
     .toSet()
 }
 
+private object InstalledAppMemoryCache {
+  private const val TtlMs = 120_000L
+  private var cachedAtMs: Long = 0L
+  private var cachedApps: List<InstalledApp>? = null
+
+  @Synchronized
+  fun getOrLoad(pm: PackageManager): List<InstalledApp> {
+    val now = System.currentTimeMillis()
+    val cached = cachedApps
+    if (cached != null && now - cachedAtMs < TtlMs) return cached
+    val loaded = loadInstalledApps(pm)
+    cachedApps = loaded
+    cachedAtMs = now
+    return loaded
+  }
+}
+
+fun loadInstalledAppsCached(pm: PackageManager): List<InstalledApp> = InstalledAppMemoryCache.getOrLoad(pm)
+
 fun loadInstalledApps(pm: PackageManager): List<InstalledApp> {
   val apps = runCatching {
     if (Build.VERSION.SDK_INT >= 33) {
@@ -601,7 +659,7 @@ fun loadInstalledApps(pm: PackageManager): List<InstalledApp> {
     }
     .distinctBy { it.packageName }
     // User apps first, then system apps, then alphabetical.
-    .sortedWith(compareBy<InstalledApp>({ it.isSystem }, { it.label.lowercase(Locale.ROOT) }))
+    .sortedWith(compareBy<InstalledApp>({ it.isSystem }, { it.sortKey }))
     .toList()
 }
 

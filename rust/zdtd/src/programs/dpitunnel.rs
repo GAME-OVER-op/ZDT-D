@@ -111,9 +111,15 @@ fn start_profile(profile_name: &str, tracker: &Sha256Tracker) -> Result<()> {
     let resolved_mobile = count_valid_uid_pairs(&out_mobile)?;
     let resolved_wifi = count_valid_uid_pairs(&out_wifi)?;
     let resolved_total = resolved_user + resolved_mobile + resolved_wifi;
-    if resolved_total == 0 {
+    let has_launch_marker = pkg_uid::file_has_launch_marker(&in_user).unwrap_or(false)
+        || pkg_uid::file_has_launch_marker(&in_mobile).unwrap_or(false)
+        || pkg_uid::file_has_launch_marker(&in_wifi).unwrap_or(false);
+    if resolved_total == 0 && !has_launch_marker {
         log::warn!("dpitunnel: no apps resolved for {} -> skip start/iptables", profile_dir.display());
         return Ok(());
+    }
+    if resolved_total == 0 && has_launch_marker {
+        log::info!("dpitunnel: launch marker present for {}, starting without routing app UIDs", profile_dir.display());
     }
 
     // Config args come from config/config.txt content (split into argv tokens)

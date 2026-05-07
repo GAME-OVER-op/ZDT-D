@@ -1,6 +1,12 @@
 package com.android.zdtd.service.ui
 
+import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,9 +17,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -22,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -33,6 +43,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -61,13 +72,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.R
+import com.android.zdtd.service.LocalWebPanelActivity
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.URLEncoder
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.util.Locale
 import kotlin.coroutines.resume
 
@@ -210,6 +226,56 @@ private fun nextFreeMihomoControllerPort(used: Set<Int>, preferred: Int = 19090)
   for (port in preferred + 1..65535) if (port !in used) return port
   for (port in 1024 until preferred) if (port !in used) return port
   return preferred
+}
+
+private fun mihomoWebPanelUrl(port: Int): String = "http://127.0.0.1:$port/ui/"
+
+private fun mihomoWebPanelScope(profile: String): String = "profile/mihomo/${profile.ifBlank { "main" }}"
+
+private suspend fun isLocalWebPanelPortOpen(port: Int): Boolean = withContext(Dispatchers.IO) {
+  runCatching {
+    Socket().use { socket ->
+      socket.connect(InetSocketAddress("127.0.0.1", port), 850)
+    }
+    true
+  }.getOrDefault(false)
+}
+
+@Composable
+private fun MihomoWebPanelCard(
+  checking: Boolean,
+  onOpen: () -> Unit,
+) {
+  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))) {
+    Row(
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Text(
+        text = stringResource(R.string.web_panel_open),
+        modifier = Modifier.weight(1f),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+      )
+      FilledTonalIconButton(
+        onClick = onOpen,
+        enabled = !checking,
+      ) {
+        if (checking) {
+          CircularProgressIndicator(
+            modifier = Modifier.width(20.dp).height(20.dp),
+            strokeWidth = 2.dp,
+          )
+        } else {
+          Icon(
+            imageVector = Icons.Filled.Public,
+            contentDescription = stringResource(R.string.web_panel_open),
+          )
+        }
+      }
+    }
+  }
 }
 
 private fun mihomoDefaultController(port: Int = 19090): String = "127.0.0.1:$port"
@@ -2183,6 +2249,7 @@ fun MihomoProfileScreen(
   var usedMihomoControllerPorts by remember(profile) { mutableStateOf(emptySet<Int>()) }
   var pendingChanges by remember(profile) { mutableStateOf(emptyList<MihomoPendingChange>()) }
   var pendingExpanded by remember(profile) { mutableStateOf(false) }
+  var mihomoWebPanelChecking by remember(profile) { mutableStateOf(false) }
 
   fun showSnack(msg: String) {
     scope.launch { snackHost.showSnackbar(msg) }
@@ -2226,6 +2293,9 @@ fun MihomoProfileScreen(
   val mixedPort = remember(mixedPortText) { mixedPortText.trim().toIntOrNull() }
   val portConflict = remember(mixedPort, usedMihomoPorts) { mixedPort != null && mixedPort in usedMihomoPorts }
   val portValid = remember(mixedPortText, portConflict) { isValidMihomoPort(mixedPortText) && !portConflict }
+  val controllerPort = remember(yamlText) { extractMihomoControllerPort(yamlText) }
+  val webPanelUrl = remember(controllerPort) { controllerPort?.let { mihomoWebPanelUrl(it) } }
+  val webPanelVisible = prof?.enabled == true && controllerPort != null
 
   LaunchedEffect(tunText, mixedPortText, logLevel, tun2socksLogLevel, settingInitialized) {
     if (!settingInitialized || loading) return@LaunchedEffect
@@ -2351,6 +2421,38 @@ fun MihomoProfileScreen(
         }
       },
     )
+
+    AnimatedVisibility(
+      visible = webPanelVisible,
+      enter = fadeIn(tween(180)) + expandVertically(animationSpec = tween(220)),
+      exit = fadeOut(tween(140)) + shrinkVertically(animationSpec = tween(180)),
+    ) {
+      MihomoWebPanelCard(
+        checking = mihomoWebPanelChecking,
+        onOpen = {
+          val port = controllerPort
+          val url = webPanelUrl
+          if (port == null || url == null) {
+            showSnack(context.getString(R.string.web_panel_unavailable))
+          } else if (!mihomoWebPanelChecking) {
+            scope.launch {
+              mihomoWebPanelChecking = true
+              val available = isLocalWebPanelPortOpen(port)
+              mihomoWebPanelChecking = false
+              if (available) {
+                context.startActivity(
+                  Intent(context, LocalWebPanelActivity::class.java)
+                    .putExtra(LocalWebPanelActivity.EXTRA_SCOPE_KEY, mihomoWebPanelScope(profile))
+                    .putExtra(LocalWebPanelActivity.EXTRA_DEFAULT_URL, url)
+                )
+              } else {
+                showSnack(context.getString(R.string.web_panel_unavailable))
+              }
+            }
+          }
+        },
+      )
+    }
 
     val tabLabels = listOf(
       stringResource(R.string.mihomo_tab_general),
@@ -3180,8 +3282,19 @@ private fun MihomoProxiesBuilderTab(
   var lastSavedSection by remember(sectionText) { mutableStateOf(sectionText.trimEnd()) }
   val parsed = remember(blocks) { parseYamlListBlocks(buildYamlListSection("proxies", blocks)) }
   val serializedSection = remember(blocks) { buildYamlListSection("proxies", blocks).trimEnd() }
+  val currentYamlWithProxiesSnapshot = remember(yamlText, blocks) {
+    replaceTopLevelYamlSection(yamlText, "proxies", buildYamlListSection("proxies", blocks))
+  }
+  val defaultGroupProxyNames = remember(currentYamlWithProxiesSnapshot) {
+    parseYamlListBlocks(extractTopLevelYamlSection(currentYamlWithProxiesSnapshot, "proxy-groups"))
+      .map { readMihomoGroupDraft(it.raw) }
+      .firstOrNull { it.name == "Proxy" }
+      ?.proxies
+      ?.toSet()
+      .orEmpty()
+  }
 
-  fun currentYamlWithProxies(): String = replaceTopLevelYamlSection(yamlText, "proxies", buildYamlListSection("proxies", blocks))
+  fun currentYamlWithProxies(): String = currentYamlWithProxiesSnapshot
 
   LaunchedEffect(serializedSection) {
     if (serializedSection == lastSavedSection.trimEnd()) return@LaunchedEffect
@@ -3243,27 +3356,38 @@ private fun MihomoProxiesBuilderTab(
         Text(stringResource(R.string.mihomo_no_proxy_blocks), modifier = Modifier.fillMaxWidth().padding(14.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
       }
     }
-    parsed.forEachIndexed { i, item ->
-      MihomoBuilderItemCard(
-        title = item.name,
-        subtitle = item.summary,
-        raw = item.raw,
-        type = item.type,
-        canMoveUp = i > 0,
-        canMoveDown = i < parsed.lastIndex,
-        onEdit = { editIndex = i },
-        onDuplicate = { blocks = blocks.toMutableList().also { it.add(i + 1, item.raw) } },
-        onDelete = { blocks = blocks.toMutableList().also { it.removeAt(i) } },
-        onMoveUp = { blocks = blocks.toMutableList().also { java.util.Collections.swap(it, i, i - 1) } },
-        onMoveDown = { blocks = blocks.toMutableList().also { java.util.Collections.swap(it, i, i + 1) } },
-        extraActionLabel = if (item.name.isNotBlank() && item.name != "Unnamed" && !mihomoProxyIsInDefaultGroup(currentYamlWithProxies(), item.name)) stringResource(R.string.mihomo_add_to_proxy_group) else null,
-        onExtraAction = if (item.name.isNotBlank() && item.name != "Unnamed" && !mihomoProxyIsInDefaultGroup(currentYamlWithProxies(), item.name)) {
-          {
-            onSaveYaml(addMihomoProxyToDefaultGroup(currentYamlWithProxies(), item.name))
-            lastSavedSection = serializedSection
-          }
-        } else null,
-      )
+    if (parsed.isNotEmpty()) {
+      LazyColumn(
+        modifier = Modifier.fillMaxWidth().heightIn(max = 680.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        itemsIndexed(
+          items = parsed,
+          key = { index, item -> "proxy:${item.name}:${item.type}:$index" },
+          contentType = { _, _ -> "mihomo_proxy_card" },
+        ) { i, item ->
+          MihomoBuilderItemCard(
+            title = item.name,
+            subtitle = item.summary,
+            raw = item.raw,
+            type = item.type,
+            canMoveUp = i > 0,
+            canMoveDown = i < parsed.lastIndex,
+            onEdit = { editIndex = i },
+            onDuplicate = { blocks = blocks.toMutableList().also { it.add(i + 1, item.raw) } },
+            onDelete = { blocks = blocks.toMutableList().also { it.removeAt(i) } },
+            onMoveUp = { blocks = blocks.toMutableList().also { java.util.Collections.swap(it, i, i - 1) } },
+            onMoveDown = { blocks = blocks.toMutableList().also { java.util.Collections.swap(it, i, i + 1) } },
+            extraActionLabel = if (item.name.isNotBlank() && item.name != "Unnamed" && item.name !in defaultGroupProxyNames) stringResource(R.string.mihomo_add_to_proxy_group) else null,
+            onExtraAction = if (item.name.isNotBlank() && item.name != "Unnamed" && item.name !in defaultGroupProxyNames) {
+              {
+                onSaveYaml(addMihomoProxyToDefaultGroup(currentYamlWithProxies(), item.name))
+                lastSavedSection = serializedSection
+              }
+            } else null,
+          )
+        }
+      }
     }
   }
 }
@@ -3332,6 +3456,11 @@ private fun MihomoAddProxyDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit)
   val portInvalid = port.isNotBlank() && (port.toIntOrNull()?.let { it in 1..65535 } != true)
   val generatedRaw = remember(rawText, name, type, server, port, username, secret, uuid, cipher, udp, tls, skipCert, serverName, network, flow, packetEncoding, wsPath, wsHost, grpcService, realityPublicKey, realityShortId) {
     buildMihomoProxyBlockFromFields(rawText, name, type, server, port, username, secret, uuid, cipher, udp, tls, skipCert, serverName, network, flow, packetEncoding, wsPath, wsHost, grpcService, realityPublicKey, realityShortId)
+  }
+  var previewRaw by remember { mutableStateOf(generatedRaw) }
+  LaunchedEffect(generatedRaw) {
+    delay(220)
+    previewRaw = generatedRaw
   }
   val categoryDisplay = mapOf(
     "Basic" to stringResource(R.string.mihomo_proxy_category_basic),
@@ -3425,8 +3554,11 @@ private fun MihomoAddProxyDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit)
             }
         Text(stringResource(R.string.mihomo_live_yaml_preview_title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
             OutlinedTextField(
-              value = generatedRaw,
-              onValueChange = { rawText = it },
+              value = previewRaw,
+              onValueChange = { updated ->
+                previewRaw = updated
+                rawText = updated
+              },
               modifier = Modifier.fillMaxWidth().height(180.dp),
               textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
             )
@@ -3489,20 +3621,31 @@ private fun MihomoGroupsBuilderTab(yamlText: String, onSaveYaml: (String) -> Uni
         FilledTonalButton(onClick = { showAdd = true }) { Icon(Icons.Filled.Add, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.action_add)) }
       }
     }
-    parsed.forEachIndexed { i, item ->
-      MihomoBuilderItemCard(
-        title = item.name,
-        subtitle = item.summary,
-        raw = item.raw,
-        type = item.type,
-        canMoveUp = i > 0,
-        canMoveDown = i < parsed.lastIndex,
-        onEdit = { editIndex = i },
-        onDuplicate = { blocks = blocks.toMutableList().also { it.add(i + 1, item.raw) } },
-        onDelete = { blocks = blocks.toMutableList().also { it.removeAt(i) } },
-        onMoveUp = { blocks = blocks.toMutableList().also { java.util.Collections.swap(it, i, i - 1) } },
-        onMoveDown = { blocks = blocks.toMutableList().also { java.util.Collections.swap(it, i, i + 1) } },
-      )
+    if (parsed.isNotEmpty()) {
+      LazyColumn(
+        modifier = Modifier.fillMaxWidth().heightIn(max = 620.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        itemsIndexed(
+          items = parsed,
+          key = { index, item -> "group:${item.name}:${item.type}:$index" },
+          contentType = { _, _ -> "mihomo_group_card" },
+        ) { i, item ->
+          MihomoBuilderItemCard(
+            title = item.name,
+            subtitle = item.summary,
+            raw = item.raw,
+            type = item.type,
+            canMoveUp = i > 0,
+            canMoveDown = i < parsed.lastIndex,
+            onEdit = { editIndex = i },
+            onDuplicate = { blocks = blocks.toMutableList().also { it.add(i + 1, item.raw) } },
+            onDelete = { blocks = blocks.toMutableList().also { it.removeAt(i) } },
+            onMoveUp = { blocks = blocks.toMutableList().also { java.util.Collections.swap(it, i, i - 1) } },
+            onMoveDown = { blocks = blocks.toMutableList().also { java.util.Collections.swap(it, i, i + 1) } },
+          )
+        }
+      }
     }
   }
 }
@@ -3860,16 +4003,27 @@ private fun MihomoRulesBuilderTab(yamlText: String, onSaveYaml: (String) -> Unit
         FilledTonalButton(onClick = { showAdd = true }) { Icon(Icons.Filled.Add, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.action_add)) }
       }
     }
-    rules.forEachIndexed { i, rule ->
-      MihomoRuleCard(
-        rule = rule,
-        canMoveUp = i > 0,
-        canMoveDown = i < rules.lastIndex,
-        onEdit = { editIndex = i },
-        onDelete = { rules = rules.toMutableList().also { it.removeAt(i) } },
-        onMoveUp = { rules = rules.toMutableList().also { java.util.Collections.swap(it, i, i - 1) } },
-        onMoveDown = { rules = rules.toMutableList().also { java.util.Collections.swap(it, i, i + 1) } },
-      )
+    if (rules.isNotEmpty()) {
+      LazyColumn(
+        modifier = Modifier.fillMaxWidth().heightIn(max = 700.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        itemsIndexed(
+          items = rules,
+          key = { index, rule -> "rule:${rule.hashCode()}:$index" },
+          contentType = { _, _ -> "mihomo_rule_card" },
+        ) { i, rule ->
+          MihomoRuleCard(
+            rule = rule,
+            canMoveUp = i > 0,
+            canMoveDown = i < rules.lastIndex,
+            onEdit = { editIndex = i },
+            onDelete = { rules = rules.toMutableList().also { it.removeAt(i) } },
+            onMoveUp = { rules = rules.toMutableList().also { java.util.Collections.swap(it, i, i - 1) } },
+            onMoveDown = { rules = rules.toMutableList().also { java.util.Collections.swap(it, i, i + 1) } },
+          )
+        }
+      }
     }
   }
 }
@@ -3992,61 +4146,71 @@ private fun MihomoProviderListCard(
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         FilledTonalButton(onClick = onAdd) { Icon(Icons.Filled.Add, null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.action_add)) }
       }
-      providers.forEachIndexed { idx, provider ->
-        Surface(
-          shape = MaterialTheme.shapes.large,
-          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.40f),
-          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.10f)),
+      if (providers.isNotEmpty()) {
+        LazyColumn(
+          modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp),
+          verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-          Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-              Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                Text(provider.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                  MihomoMiniBadge(provider.type)
-                  if (provider.behavior.isNotBlank()) MihomoInfoChip(provider.behavior)
-                  if (provider.format.isNotBlank()) MihomoInfoChip(provider.format)
-                  if (provider.proxy.isNotBlank()) MihomoInfoChip("${stringResource(R.string.mihomo_field_proxy)}: ${provider.proxy}")
-                  if (provider.healthCheck) MihomoInfoChip(stringResource(R.string.mihomo_field_health_check))
+          itemsIndexed(
+            items = providers,
+            key = { index, provider -> "provider:${provider.name}:${provider.type}:$index" },
+            contentType = { _, _ -> "mihomo_provider_card" },
+          ) { idx, provider ->
+            Surface(
+              shape = MaterialTheme.shapes.large,
+              color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.40f),
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.10f)),
+            ) {
+              Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                  Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Text(provider.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                      MihomoMiniBadge(provider.type)
+                      if (provider.behavior.isNotBlank()) MihomoInfoChip(provider.behavior)
+                      if (provider.format.isNotBlank()) MihomoInfoChip(provider.format)
+                      if (provider.proxy.isNotBlank()) MihomoInfoChip("${stringResource(R.string.mihomo_field_proxy)}: ${provider.proxy}")
+                      if (provider.healthCheck) MihomoInfoChip(stringResource(R.string.mihomo_field_health_check))
+                    }
+                    val mainLine = listOf(provider.url, provider.path).filter { it.isNotBlank() }.joinToString(" · ")
+                    if (mainLine.isNotBlank()) {
+                      Text(
+                        mainLine,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                        maxLines = 2,
+                      )
+                    } else {
+                      Text(
+                        stringResource(R.string.mihomo_raw_provider),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                        maxLines = 1,
+                      )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                      if (provider.interval.isNotBlank()) MihomoInfoChip("${stringResource(R.string.mihomo_field_interval)}: ${provider.interval}")
+                      if (provider.sizeLimit.isNotBlank()) MihomoInfoChip("${stringResource(R.string.mihomo_field_size_limit)}: ${provider.sizeLimit}")
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                      if (provider.filter.isNotBlank()) MihomoInfoChip("${stringResource(R.string.mihomo_field_filter)}")
+                      if (provider.excludeFilter.isNotBlank()) MihomoInfoChip("${stringResource(R.string.mihomo_field_exclude_filter)}")
+                    }
+                  }
                 }
-                val mainLine = listOf(provider.url, provider.path).filter { it.isNotBlank() }.joinToString(" · ")
-                if (mainLine.isNotBlank()) {
-                  Text(
-                    mainLine,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-                    maxLines = 2,
-                  )
-                } else {
-                  Text(
-                    stringResource(R.string.mihomo_raw_provider),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
-                    maxLines = 1,
-                  )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                  if (provider.interval.isNotBlank()) MihomoInfoChip("${stringResource(R.string.mihomo_field_interval)}: ${provider.interval}")
-                  if (provider.sizeLimit.isNotBlank()) MihomoInfoChip("${stringResource(R.string.mihomo_field_size_limit)}: ${provider.sizeLimit}")
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                  if (provider.filter.isNotBlank()) MihomoInfoChip("${stringResource(R.string.mihomo_field_filter)}")
-                  if (provider.excludeFilter.isNotBlank()) MihomoInfoChip("${stringResource(R.string.mihomo_field_exclude_filter)}")
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.End,
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  TextButton(onClick = { onEdit(idx) }) { Text(stringResource(R.string.action_edit)) }
+                  TextButton(onClick = { onDelete(idx) }) { Text(stringResource(R.string.action_delete)) }
                 }
               }
             }
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.End,
-              verticalAlignment = Alignment.CenterVertically,
-            ) {
-              TextButton(onClick = { onEdit(idx) }) { Text(stringResource(R.string.action_edit)) }
-              TextButton(onClick = { onDelete(idx) }) { Text(stringResource(R.string.action_delete)) }
-            }
           }
         }
-      }
-    }
+      }    }
   }
 }
 
@@ -4592,6 +4756,11 @@ private fun MihomoProxySmartEditorDialog(initialText: String, onDismiss: () -> U
   val generatedRaw = remember(rawText, name, type, server, port, username, secret, uuid, cipher, udp, tls, skipCert, serverName, network, flow, packetEncoding, wsPath, wsHost, grpcService, realityPublicKey, realityShortId) {
     buildMihomoProxyBlockFromFields(rawText, name, type, server, port, username, secret, uuid, cipher, udp, tls, skipCert, serverName, network, flow, packetEncoding, wsPath, wsHost, grpcService, realityPublicKey, realityShortId)
   }
+  var previewRaw by remember(initialText) { mutableStateOf(generatedRaw) }
+  LaunchedEffect(generatedRaw) {
+    delay(220)
+    previewRaw = generatedRaw
+  }
 
   AlertDialog(
     onDismissRequest = onDismiss,
@@ -4678,8 +4847,11 @@ private fun MihomoProxySmartEditorDialog(initialText: String, onDismiss: () -> U
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
         )
         OutlinedTextField(
-          value = generatedRaw,
-          onValueChange = { rawText = it },
+          value = previewRaw,
+          onValueChange = { updated ->
+            previewRaw = updated
+            rawText = updated
+          },
           modifier = Modifier.fillMaxWidth().height(220.dp),
           textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
         )

@@ -48,7 +48,7 @@ fun LogsBottomSheet(
           verticalArrangement = Arrangement.spacedBy(8.dp),
           modifier = Modifier.fillMaxWidth().heightIn(max = if (compact) 360.dp else 520.dp),
         ) {
-          items(logs, key = { it.ts + it.msg }) { l ->
+          items(logs, key = { it.ts + it.msg }, contentType = { "log_entry" }) { l ->
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.65f))) {
               Column(Modifier.padding(12.dp)) {
                 Text("${l.ts} • ${l.level}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))

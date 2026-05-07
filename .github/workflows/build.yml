@@ -122,7 +122,7 @@ jobs:
 
       - name: Check prebuilt binaries
         run: |
-          REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box wireproxy torproxy lyrebird)
+          REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box wireproxy torproxy lyrebird tun2socks openvpn mihomo)
           MISSING=()
           for bin in "${REQUIRED[@]}"; do
             [[ -f "prebuilt/bin/arm64-v8a/$bin" ]] || MISSING+=("$bin")
@@ -176,7 +176,7 @@ jobs:
           cp -f "$CARGO_OUT/zdtd" "$MODULE_BUILD_DIR/bin/zdtd" && chmod 755 "$MODULE_BUILD_DIR/bin/zdtd"
           cp -f "$CARGO_OUT/t2s"  "$MODULE_BUILD_DIR/bin/t2s"  && chmod 755 "$MODULE_BUILD_DIR/bin/t2s"
 
-          for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box wireproxy torproxy lyrebird; do
+          for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box wireproxy torproxy lyrebird tun2socks openvpn mihomo; do
             cp -f "$PREBUILT/$bin" "$MODULE_BUILD_DIR/bin/$bin" && chmod 755 "$MODULE_BUILD_DIR/bin/$bin"
           done
 

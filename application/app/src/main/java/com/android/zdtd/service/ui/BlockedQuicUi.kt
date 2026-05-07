@@ -39,7 +39,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -56,6 +55,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.android.zdtd.service.R
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
@@ -160,30 +160,35 @@ fun BlockedQuicAppsDialog(
   val ctx = androidx.compose.ui.platform.LocalContext.current
   val pm = ctx.packageManager
   var query by remember { mutableStateOf("") }
-  var selected by remember(initialContent) { mutableStateOf(parsePkgList(initialContent)) }
+  var selected by remember(initialContent) { mutableStateOf(parsePkgList(initialContent) - ZDTD_APP_PACKAGE_NAME) }
   var assignments by remember { mutableStateOf<ApiModels.AppAssignmentsState?>(null) }
   var conflictPackages by remember { mutableStateOf<Set<String>>(emptySet()) }
-  val iconCache = remember { mutableStateMapOf<String, androidx.compose.ui.graphics.ImageBitmap?>() }
+  val iconCache = remember { AppIconMemoryCache.map }
   val apps by produceState<List<InstalledApp>>(initialValue = emptyList(), key1 = Unit) {
     value = withContext(Dispatchers.IO) {
-      runCatching { loadInstalledApps(pm) }.getOrDefault(emptyList())
+      runCatching { loadInstalledAppsCached(pm) }.getOrDefault(emptyList())
     }
   }
   LaunchedEffect(Unit) {
     onLoadAssignments { assignments = it ?: ApiModels.AppAssignmentsState() }
   }
 
-  val q = query.trim().lowercase(Locale.ROOT)
-  val filtered = remember(apps, q) {
-    if (q.isBlank()) apps
-    else apps.filter {
-      it.label.lowercase(Locale.ROOT).contains(q) || it.packageName.lowercase(Locale.ROOT).contains(q)
+  var debouncedQuery by remember { mutableStateOf("") }
+  LaunchedEffect(query) {
+    delay(180L)
+    debouncedQuery = query.trim().lowercase(Locale.ROOT)
+  }
+  val availableApps = remember(apps) { apps.filter { it.packageName != ZDTD_APP_PACKAGE_NAME } }
+  val filtered = remember(availableApps, debouncedQuery) {
+    if (debouncedQuery.isBlank()) availableApps
+    else availableApps.filter {
+      it.sortKey.contains(debouncedQuery) || it.packageName.lowercase(Locale.ROOT).contains(debouncedQuery)
     }
   }
-  val selectedApps = remember(apps, selected) {
-    val byPkg = apps.associateBy { it.packageName }
-    selected.map { pkg -> byPkg[pkg] ?: InstalledApp(pkg, pkg, false) }
-      .sortedBy { it.label.lowercase(Locale.ROOT) }
+  val appsByPackage = remember(availableApps) { availableApps.associateBy { it.packageName } }
+  val selectedApps = remember(appsByPackage, selected) {
+    selected.map { pkg -> appsByPackage[pkg] ?: InstalledApp(pkg, pkg, false) }
+      .sortedBy { it.sortKey }
   }
   val notSelectedApps = remember(filtered, selected) { filtered.filter { it.packageName !in selected } }
   val compactWidth = rememberIsCompactWidth()
@@ -202,7 +207,7 @@ fun BlockedQuicAppsDialog(
   val selectedConflicts = remember(selected, assignments) { computeProxyInfoConflicts(selected) }
 
   fun attemptSave() {
-    val payload = selected.sorted().joinToString("\n")
+    val payload = (selected - ZDTD_APP_PACKAGE_NAME).sorted().joinToString("\n")
     if (selectedConflicts.isEmpty()) {
       onSave(payload) { ok -> if (ok) onDismiss() }
     } else {
@@ -360,7 +365,7 @@ fun BlockedQuicAppsDialog(
                 )
               }
             } else {
-              items(selectedApps, key = { "sel:" + it.packageName }) { app ->
+              items(selectedApps, key = { "sel:" + it.packageName }, contentType = { "blockedquic_selected_app" }) { app ->
                 BlockedQuicAppRow(
                   app = app,
                   selected = true,
@@ -385,7 +390,7 @@ fun BlockedQuicAppsDialog(
               )
             }
 
-            items(notSelectedApps, key = { "all:" + it.packageName }) { app ->
+            items(notSelectedApps, key = { "all:" + it.packageName }, contentType = { "blockedquic_available_app" }) { app ->
               BlockedQuicAppRow(
                 app = app,
                 selected = false,

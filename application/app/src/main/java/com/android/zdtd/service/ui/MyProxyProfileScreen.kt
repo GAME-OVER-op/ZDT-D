@@ -1,19 +1,32 @@
 package com.android.zdtd.service.ui
 
+import android.content.Intent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
@@ -25,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -32,12 +46,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.R
+import com.android.zdtd.service.LocalWebPanelActivity
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.net.URLEncoder
 import kotlin.coroutines.resume
 
@@ -77,6 +96,55 @@ private fun parseMyProxyUpstreamUi(obj: JSONObject?): MyProxyUpstreamUi {
   )
 }
 
+private fun myProxyWebPanelUrl(port: Int): String = "http://127.0.0.1:$port/"
+
+private fun myProxyWebPanelScope(profile: String): String = "profile/myproxy/${profile.ifBlank { "main" }}"
+
+private suspend fun isMyProxyWebPanelPortOpen(port: Int): Boolean = withContext(Dispatchers.IO) {
+  runCatching {
+    Socket().use { socket ->
+      socket.connect(InetSocketAddress("127.0.0.1", port), 850)
+    }
+    true
+  }.getOrDefault(false)
+}
+
+@Composable
+private fun MyProxyWebPanelCard(
+  checking: Boolean,
+  onOpen: () -> Unit,
+) {
+  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))) {
+    Row(
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Text(
+        text = stringResource(R.string.web_panel_open),
+        modifier = Modifier.weight(1f),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+      )
+      FilledTonalIconButton(
+        onClick = onOpen,
+        enabled = !checking,
+      ) {
+        if (checking) {
+          CircularProgressIndicator(
+            modifier = Modifier.width(20.dp).height(20.dp),
+            strokeWidth = 2.dp,
+          )
+        } else {
+          Icon(
+            imageVector = Icons.Filled.Public,
+            contentDescription = stringResource(R.string.web_panel_open),
+          )
+        }
+      }
+    }
+  }
+}
 
 @Composable
 private fun FieldHint(text: String) {
@@ -123,6 +191,7 @@ fun MyProxyProfileScreen(
 
   var settingInitialized by remember(profile) { mutableStateOf(false) }
   var proxyInitialized by remember(profile) { mutableStateOf(false) }
+  var myProxyWebPanelChecking by remember(profile) { mutableStateOf(false) }
 
   fun loadAll() {
     loading = true
@@ -188,6 +257,10 @@ fun MyProxyProfileScreen(
     if (ok) syncedProxy = current else showSnack(context.getString(R.string.myproxy_auto_save_failed))
   }
 
+  val t2sWebPanelPort = remember(t2sWebPortText) { t2sWebPortText.trim().toIntOrNull()?.takeIf { it in 1..65535 } }
+  val myProxyPanelUrl = remember(t2sWebPanelPort) { t2sWebPanelPort?.let { myProxyWebPanelUrl(it) } }
+  val myProxyWebPanelVisible = prof?.enabled == true && t2sWebPanelPort != null
+
   Column(
     Modifier
       .fillMaxSize()
@@ -208,6 +281,38 @@ fun MyProxyProfileScreen(
       checked = prof?.enabled ?: false,
       onCheckedChange = { v -> actions.setProfileEnabled("myproxy", profile, v) },
     )
+
+    AnimatedVisibility(
+      visible = myProxyWebPanelVisible,
+      enter = fadeIn(tween(180)) + expandVertically(animationSpec = tween(220)),
+      exit = fadeOut(tween(140)) + shrinkVertically(animationSpec = tween(180)),
+    ) {
+      MyProxyWebPanelCard(
+        checking = myProxyWebPanelChecking,
+        onOpen = {
+          val port = t2sWebPanelPort
+          val url = myProxyPanelUrl
+          if (port == null || url == null) {
+            showSnack(context.getString(R.string.web_panel_unavailable))
+          } else if (!myProxyWebPanelChecking) {
+            scope.launch {
+              myProxyWebPanelChecking = true
+              val available = isMyProxyWebPanelPortOpen(port)
+              myProxyWebPanelChecking = false
+              if (available) {
+                context.startActivity(
+                  Intent(context, LocalWebPanelActivity::class.java)
+                    .putExtra(LocalWebPanelActivity.EXTRA_SCOPE_KEY, myProxyWebPanelScope(profile))
+                    .putExtra(LocalWebPanelActivity.EXTRA_DEFAULT_URL, url)
+                )
+              } else {
+                showSnack(context.getString(R.string.web_panel_unavailable))
+              }
+            }
+          }
+        },
+      )
+    }
 
     AppListPickerCard(
       title = stringResource(R.string.myproxy_apps_title),

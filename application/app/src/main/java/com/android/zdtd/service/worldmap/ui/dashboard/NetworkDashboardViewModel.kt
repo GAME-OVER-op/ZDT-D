@@ -33,6 +33,8 @@ data class DashboardUiState(
 
 private const val POLL_INTERVAL_MS = 2_000L
 private const val FRAME_INTERVAL_MS = 42L
+private const val IDLE_FRAME_INTERVAL_MS = 160L
+private const val QUIET_FRAME_INTERVAL_MS = 84L
 private const val VISIBILITY_STEP = 0.016f
 private const val ACTIVITY_STEP = 0.014f
 private const val PACKET_DRAIN_MS = 1_650L
@@ -145,9 +147,13 @@ class NetworkDashboardViewModel(
         if (animatorJob?.isActive != true) {
             animatorJob = viewModelScope.launch {
                 while (isActive) {
+                    if (renderPeers.isEmpty()) {
+                        delay(IDLE_FRAME_INTERVAL_MS)
+                        continue
+                    }
                     val changed = animateFrame()
                     if (changed) emitUiState()
-                    delay(FRAME_INTERVAL_MS)
+                    delay(if (changed) FRAME_INTERVAL_MS else QUIET_FRAME_INTERVAL_MS)
                 }
             }
         }

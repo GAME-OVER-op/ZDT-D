@@ -134,7 +134,7 @@ fun NetworkDashboardScreen(
                 .padding(padding),
             contentPadding = PaddingValues(bottom = 24.dp),
         ) {
-            item {
+            item(key = "header", contentType = "header") {
                 DashboardHeader(
                     connectionsCount = state.peers.count { it.isActive },
                     isRootReady = state.isRootReady,
@@ -143,7 +143,7 @@ fun NetworkDashboardScreen(
                 )
             }
 
-            item {
+            item(key = "map", contentType = "map") {
                 NetworkMapCard(
                     peers = state.peers,
                     modifier = Modifier
@@ -152,7 +152,7 @@ fun NetworkDashboardScreen(
                 )
             }
 
-            item {
+            item(key = "error", contentType = "error") {
                 if (lastError != null) {
                     Text(
                         text = lastError,
@@ -165,7 +165,11 @@ fun NetworkDashboardScreen(
                 }
             }
 
-            items(state.peers, key = { it.id }) { peer ->
+            items(
+                items = state.peers,
+                key = { it.id },
+                contentType = { "peer" },
+            ) { peer ->
                 PeerCard(peer = peer)
             }
         }
@@ -272,17 +276,23 @@ private fun NetworkMapCard(
         colors = CardDefaults.cardColors(containerColor = Color(0xFF13090B)),
         shape = RoundedCornerShape(24.dp),
     ) {
-        val infinite = rememberInfiniteTransition(label = "network-pulse")
-        val pulse by infinite.animateFloat(
-            initialValue = 0.25f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 3200, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "pulse",
-        )
-        val nowMs = rememberAnimationClockMillis()
+        val hasAnimatedContent = peers.isNotEmpty()
+        val pulse = if (hasAnimatedContent) {
+            val infinite = rememberInfiniteTransition(label = "network-pulse")
+            val animatedPulse by infinite.animateFloat(
+                initialValue = 0.25f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 3200, easing = LinearEasing),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "pulse",
+            )
+            animatedPulse
+        } else {
+            0.55f
+        }
+        val nowMs = rememberAnimationClockMillis(enabled = hasAnimatedContent)
         val startupSequenceStartMsState = remember { mutableLongStateOf(0L) }
         val startupSequenceStartMs = startupSequenceStartMsState.longValue
 
@@ -1120,11 +1130,18 @@ private operator fun Offset.minus(other: Offset): Offset = Offset(x - other.x, y
 private operator fun Offset.times(value: Float): Offset = Offset(x * value, y * value)
 
 @Composable
-private fun rememberAnimationClockMillis(): Long {
+private fun rememberAnimationClockMillis(enabled: Boolean): Long {
     val frameTime = remember { mutableLongStateOf(0L) }
-    LaunchedEffect(Unit) {
+    LaunchedEffect(enabled) {
+        if (!enabled) {
+            frameTime.longValue = 0L
+            return@LaunchedEffect
+        }
         while (true) {
             withFrameMillis { frameTime.longValue = it }
+            // The map animation is decorative. Throttling it keeps the visual style
+            // but prevents the world map from invalidating composition every display frame.
+            delay(66L)
         }
     }
     return frameTime.longValue

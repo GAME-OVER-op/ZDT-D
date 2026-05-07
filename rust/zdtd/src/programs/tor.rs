@@ -430,9 +430,13 @@ pub fn start_if_enabled() -> Result<()> {
 
     let _ = rebuild_out_program()?;
     let resolved = count_valid_uid_pairs(&out_program_path()).unwrap_or(0);
-    if resolved == 0 {
+    let has_launch_marker = pkg_uid::file_has_launch_marker(&uid_program_path()).unwrap_or(false);
+    if resolved == 0 && !has_launch_marker {
         warn!("tor: no resolved apps -> skip start/iptables");
         return Ok(());
+    }
+    if resolved == 0 && has_launch_marker {
+        info!("tor: launch marker present, starting without routing app UIDs");
     }
 
     crate::logging::user_info("Tor: запуск");

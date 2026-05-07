@@ -53,15 +53,20 @@ internal fun PowerWaveButton(
     if (state == PowerUiState.Stopping) Color(0xFFFF5252) else Color.White
   }
 
-  val infinite = rememberInfiniteTransition(label = "powerWaves")
-  val progress by infinite.animateFloat(
-    initialValue = 0f,
-    targetValue = 1f,
-    animationSpec = infiniteRepeatable(
-      animation = tween(durationMillis = 950, easing = LinearEasing),
-    ),
-    label = "waveProgress",
-  )
+  val progress = if (isAnimating) {
+    val infinite = rememberInfiniteTransition(label = "powerWaves")
+    val value by infinite.animateFloat(
+      initialValue = 0f,
+      targetValue = 1f,
+      animationSpec = infiniteRepeatable(
+        animation = tween(durationMillis = 950, easing = LinearEasing),
+      ),
+      label = "waveProgress",
+    )
+    value
+  } else {
+    0f
+  }
 
   Surface(
     modifier = modifier

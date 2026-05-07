@@ -38,6 +38,10 @@
             android:name=".WorldMapActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".LocalWebPanelActivity"
+            android:exported="false" />
+
 
         <activity
             android:name=".ProxyInfoProbeDetailsActivity"

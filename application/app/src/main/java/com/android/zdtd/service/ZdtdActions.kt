@@ -256,4 +256,7 @@ interface ZdtdActions {
 
   /** Called after the POST_NOTIFICATIONS runtime permission request (Android 13+). */
   fun onPostNotificationsPermissionResult(granted: Boolean)
+
+  /** Hint from UI for screen-aware polling/throttling. */
+  fun setActiveMainTab(tab: String)
 }

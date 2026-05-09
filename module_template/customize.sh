@@ -18,12 +18,13 @@ fail() {
 }
 
 ################################################################################
-# Pre-checks: Android 11+ (SDK >= 30) and arm64 only
+# Pre-checks: Android 9+ (SDK >= 28) and arm64 only
 ################################################################################
 hr
 sec "Magisk Module Pre-checks"
 ui_print "## Requirements:"
-ui_print "## - Android 11+ (SDK >= 30)"
+ui_print "## - Android 9+ (SDK >= 28)"
+ui_print "## - Officially supported: Android 11+ (SDK >= 30)"
 ui_print "## - arm64 only (arm64-v8a / aarch64)"
 hr
 
@@ -41,9 +42,14 @@ ui_print "## - Android: ${REL:-unknown}"
 ui_print "## - SDK:     $SDK"
 hr
 
-if [ "$SDK" -lt 30 ]; then
+if [ "$SDK" -lt 28 ]; then
   [ -n "$REL" ] || REL="unknown"
-  fail "Android 11+ required. Detected Android $REL (SDK $SDK)."
+  fail "Android 9+ required. Detected Android $REL (SDK $SDK)."
+elif [ "$SDK" -lt 30 ]; then
+  warn "Android $REL (SDK $SDK) detected."
+  warn "This Android version is allowed, but not officially tested."
+  warn "Official support starts from Android 11+ (SDK >= 30)."
+  warn "If something does not work on Android 9/10, it is at the user's own risk."
 else
   ok "Android version is supported (SDK >= 30)"
 fi

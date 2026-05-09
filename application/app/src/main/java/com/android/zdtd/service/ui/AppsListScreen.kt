@@ -658,6 +658,7 @@ private fun programDescription(id: String): String {
     "myproxy" -> stringResource(R.string.apps_list_desc_myproxy)
     "myprogram" -> stringResource(R.string.apps_list_desc_myprogram)
     "openvpn" -> stringResource(R.string.apps_list_desc_openvpn)
+    "amneziawg" -> stringResource(R.string.apps_list_desc_amneziawg)
     "tun2socks" -> stringResource(R.string.apps_list_desc_tun2socks)
     "myvpn" -> stringResource(R.string.apps_list_desc_myvpn)
     "mihomo" -> stringResource(R.string.apps_list_desc_mihomo)
@@ -678,6 +679,7 @@ private fun programIcon(id: String): ImageVector {
     "myproxy" -> Icons.Outlined.SwapHoriz
     "myprogram" -> Icons.Outlined.Extension
     "openvpn" -> Icons.Outlined.AltRoute
+    "amneziawg" -> Icons.Outlined.AltRoute
     "tun2socks" -> Icons.Outlined.AltRoute
     "myvpn" -> Icons.Outlined.AltRoute
     "mihomo" -> Icons.Outlined.AltRoute

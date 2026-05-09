@@ -9,7 +9,7 @@ import java.net.URLEncoder
 import java.util.Locale
 import kotlin.coroutines.resume
 
-private val vpnTunProgramIds = listOf("openvpn", "tun2socks", "myvpn", "mihomo")
+private val vpnTunProgramIds = listOf("openvpn", "tun2socks", "myvpn", "mihomo", "amneziawg")
 
 private suspend fun awaitLoadJsonVpnTunGuard(actions: ZdtdActions, path: String): JSONObject? =
   suspendCancellableCoroutine { cont -> actions.loadJsonData(path) { cont.resume(it) } }
@@ -28,6 +28,7 @@ private fun defaultTunForVpnProgram(programId: String): String = when (programId
   "tun2socks" -> "tun9"
   "myvpn" -> "tun9"
   "mihomo" -> "tun20"
+  "amneziawg" -> "awg1"
   else -> "tun1"
 }
 
@@ -60,13 +61,14 @@ internal suspend fun loadUsedVpnTunNames(
   return used
 }
 
-internal fun nextFreeVpnTunName(usedTuns: Set<String>, startAt: Int = 1): String {
+internal fun nextFreeVpnTunName(usedTuns: Set<String>, startAt: Int = 1, prefix: String = "tun"): String {
   val used = usedTuns.map { it.lowercase(Locale.ROOT) }.toSet()
+  val safePrefix = prefix.trim().ifBlank { "tun" }
   for (i in startAt.coerceAtLeast(1)..999) {
-    val candidate = "tun$i"
+    val candidate = "$safePrefix$i"
     if (candidate.lowercase(Locale.ROOT) !in used) return candidate
   }
-  return "tun${System.currentTimeMillis() % 10000}"
+  return "$safePrefix${System.currentTimeMillis() % 10000}"
 }
 
 internal suspend fun nextFreeVpnTunName(
@@ -107,3 +109,16 @@ internal fun defaultMihomoSettingJson(tun: String, mixedPort: Int = 17890): JSON
   .put("mixed_port", mixedPort)
   .put("log_level", "info")
   .put("tun2socks_loglevel", "info")
+
+
+internal fun defaultAmneziaWgSettingJson(tun: String, addressCidr: String = "172.16.0.2/32"): JSONObject {
+  val address = JSONArray().put(addressCidr.trim().ifBlank { "172.16.0.2/32" })
+  val dns = JSONArray().put("1.1.1.1").put("1.0.0.1")
+  return JSONObject()
+    .put("tun", tun.trim())
+    .put("address", address)
+    .put("dns", dns)
+    .put("mtu", 1280)
+    .put("endpoint_resolve", false)
+    .put("strip_fwmark", false)
+}

@@ -744,13 +744,17 @@ fn looks_like_ip(host: &str) -> bool {
 }
 
 fn per_backend_connect_limit(state: &AppState) -> u32 {
-    let backend_count = state.backends.lock().len().max(1) as u32;
-    let share = ((state.args.max_conns.max(1) + backend_count - 1) / backend_count).max(1);
-    (share / 2).clamp(4, 12)
+    let max_conns = state.args.max_conns.max(1);
+    let backend_count = {
+        let b = state.backends.lock();
+        b.connect_capacity_backend_count().max(1) as u32
+    };
+
+    ((max_conns + backend_count - 1) / backend_count).max(1)
 }
 
 fn setup_phase_limit(state: &AppState) -> usize {
-    ((state.args.max_conns as usize) / 2).clamp(8, 64)
+    (state.args.max_conns as usize).max(1)
 }
 
 fn wait_phase_limit(state: &AppState) -> usize {

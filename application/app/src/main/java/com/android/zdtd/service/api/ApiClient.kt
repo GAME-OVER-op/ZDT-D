@@ -77,7 +77,7 @@ class ApiClient(
    */
   fun createProfile(programId: String, profile: String? = null): Boolean {
     val p = profile?.trim().orEmpty()
-    if (programId == "myproxy" || programId == "myprogram" || programId == "openvpn" || programId == "tun2socks" || programId == "myvpn" || programId == "mihomo") {
+    if (programId == "myproxy" || programId == "myprogram" || programId == "openvpn" || programId == "tun2socks" || programId == "myvpn" || programId == "mihomo" || programId == "amneziawg") {
       val body = JSONObject()
       if (p.isNotEmpty()) body.put("name", p)
       return requestOk("POST", "/api/programs/${enc(programId)}/profiles", body)
@@ -262,6 +262,11 @@ class ApiClient(
     return uploadMultipart("/api/programs/openvpn/profiles/$safeProfile/upload-config", filename, file)
   }
 
+  fun uploadAmneziaWgConfig(profile: String, filename: String, file: File): Boolean {
+    val safeProfile = enc(profile.trim())
+    return uploadMultipart("/api/programs/amneziawg/profiles/$safeProfile/upload-config", filename, file)
+  }
+
 
 /**
  * Multipart file upload: POST <path> with form-data field "file".
@@ -289,13 +294,13 @@ fun uploadMultipart(path: String, filename: String, file: File): Boolean {
 
   try {
     uploadHttp.newCall(b.build()).execute().use { resp ->
-      if (resp.isSuccessful) return true
+      if (resp.isSuccessful) return isOkJsonOrSuccess(resp.body?.string().orEmpty())
     }
   } catch (_: IOException) {
     // fall through to root-proxy
   }
 
-  return rootManager.proxyUploadMultipart(path, filename, file).optInt("code", 0) in 200..299
+  return multipartProxyResultOk(rootManager.proxyUploadMultipart(path, filename, file))
 }
 
 /**
@@ -324,13 +329,28 @@ fun uploadMultipart(path: String, filename: String, bytes: ByteArray): Boolean {
 
   try {
     uploadHttp.newCall(b.build()).execute().use { resp ->
-      if (resp.isSuccessful) return true
+      if (resp.isSuccessful) return isOkJsonOrSuccess(resp.body?.string().orEmpty())
     }
   } catch (_: IOException) {
     // fall through to root-proxy
   }
 
-  return rootManager.proxyUploadMultipart(path, filename, bytes).optInt("code", 0) in 200..299
+  return multipartProxyResultOk(rootManager.proxyUploadMultipart(path, filename, bytes))
+}
+
+private fun multipartProxyResultOk(wrapper: JSONObject): Boolean {
+  val code = wrapper.optInt("code", 0)
+  if (code !in 200..299) return false
+  return isOkJsonOrSuccess(wrapper.optString("body", ""))
+}
+
+private fun isOkJsonOrSuccess(text: String): Boolean {
+  val t = text.trim()
+  if (t.isBlank()) return true
+  return runCatching { JSONObject(t) }
+    .getOrNull()
+    ?.let { jsonBool(it, "ok", true) }
+    ?: true
 }
 
   private fun jsonBool(obj: JSONObject?, key: String, default: Boolean = false): Boolean {

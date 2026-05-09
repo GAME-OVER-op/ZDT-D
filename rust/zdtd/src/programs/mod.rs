@@ -13,6 +13,7 @@ pub mod myproxy;
 pub mod myprogram;
 
 pub mod openvpn;
+pub mod amneziawg;
 pub mod tun2socks;
 pub mod myvpn;
 pub mod mihomo;

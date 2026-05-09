@@ -83,6 +83,12 @@ fun AppsHost(
           actions = actions,
           snackHost = snackHost,
         )
+        "amneziawg" -> AmneziaWgProgramScreen(
+          programs = programs,
+          onOpenProfile = onOpenProfile,
+          actions = actions,
+          snackHost = snackHost,
+        )
         "tun2socks" -> Tun2SocksProgramScreen(
           programs = programs,
           onOpenProfile = onOpenProfile,
@@ -135,6 +141,12 @@ fun AppsHost(
           snackHost = snackHost,
         )
         "openvpn" -> OpenVpnProfileScreen(
+          programs = programs,
+          profile = r.profile,
+          actions = actions,
+          snackHost = snackHost,
+        )
+        "amneziawg" -> AmneziaWgProfileScreen(
           programs = programs,
           profile = r.profile,
           actions = actions,

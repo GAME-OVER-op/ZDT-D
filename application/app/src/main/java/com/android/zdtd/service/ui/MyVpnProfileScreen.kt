@@ -360,6 +360,7 @@ fun MyVpnProfileScreen(
   var settingInitialized by remember(profile) { mutableStateOf(false) }
   var appCount by remember(profile) { mutableStateOf(0) }
   var usedVpnTuns by remember(profile) { mutableStateOf(emptySet<String>()) }
+  var usedVpnIpv4Cidrs by remember(profile) { mutableStateOf(emptyList<VpnIpv4Use>()) }
 
   fun showSnack(msg: String) {
     scope.launch { snackHost.showSnackbar(msg) }
@@ -370,11 +371,18 @@ fun MyVpnProfileScreen(
     settingInitialized = false
     scope.launch {
       val usedTuns = loadUsedVpnTunNames(actions, programs, excludeProgramId = "myvpn", excludeProfile = profile)
+      val usedIpv4 = loadUsedVpnIpv4Cidrs(actions, programs, excludeProgramId = "myvpn", excludeProfile = profile)
       val loaded = parseMyVpnSetting(awaitLoadJsonMyVpn(actions, "$basePath/setting"))
-      val setting = if (isVpnTunNameUsed(loaded.tun, usedTuns)) loaded.copy(tun = nextFreeVpnTunName(usedTuns)) else loaded
+      val settingWithTun = if (isVpnTunNameUsed(loaded.tun, usedTuns)) loaded.copy(tun = nextFreeVpnTunName(usedTuns)) else loaded
+      val setting = if (settingWithTun.cidrMode == "manual" && vpnIpv4CidrConflict(settingWithTun.cidr, usedIpv4)) {
+        settingWithTun.copy(cidr = nextFreeVpnIpv4Cidr(usedIpv4))
+      } else {
+        settingWithTun
+      }
       val apps = parsePkgList(awaitLoadTextMyVpn(actions, "$basePath/apps/user").orEmpty()).size
 
       usedVpnTuns = usedTuns
+      usedVpnIpv4Cidrs = usedIpv4
       syncedSetting = loaded
       tunText = setting.tun
       dnsText = setting.dns.joinToString(" ")
@@ -392,7 +400,8 @@ fun MyVpnProfileScreen(
   val tunNameConflict = remember(tunText, usedVpnTuns) { isVpnTunNameUsed(tunText, usedVpnTuns) }
   val tunValid = remember(tunText, tunNameConflict) { isValidMyVpnTun(tunText) && !tunNameConflict }
   val dnsParsed = remember(dnsText) { parseMyVpnDnsInput(dnsText) }
-  val cidrValid = remember(cidrMode, cidrText) { cidrMode == "auto" || isValidMyVpnCidr(cidrText) }
+  val cidrConflict = remember(cidrMode, cidrText, usedVpnIpv4Cidrs) { cidrMode == "manual" && isValidMyVpnCidr(cidrText) && vpnIpv4CidrConflict(cidrText, usedVpnIpv4Cidrs) }
+  val cidrValid = remember(cidrMode, cidrText, cidrConflict) { cidrMode == "auto" || (isValidMyVpnCidr(cidrText) && !cidrConflict) }
 
   LaunchedEffect(tunText, dnsText, cidrMode, cidrText, settingInitialized) {
     if (!settingInitialized || loading) return@LaunchedEffect
@@ -400,7 +409,7 @@ fun MyVpnProfileScreen(
     if (!isValidMyVpnTun(tunText) || isVpnTunNameUsed(tunText, usedVpnTuns)) return@LaunchedEffect
     val dns = parseMyVpnDnsInput(dnsText) ?: return@LaunchedEffect
     val safeMode = cidrMode.takeIf { it == "auto" || it == "manual" } ?: "auto"
-    if (safeMode == "manual" && !isValidMyVpnCidr(cidrText)) return@LaunchedEffect
+    if (safeMode == "manual" && (!isValidMyVpnCidr(cidrText) || vpnIpv4CidrConflict(cidrText, usedVpnIpv4Cidrs))) return@LaunchedEffect
     val current = MyVpnSettingUi(
       tun = tunText.trim(),
       dns = dns,
@@ -435,9 +444,15 @@ fun MyVpnProfileScreen(
       title = stringResource(R.string.enabled_card_profile_title),
       checked = prof?.enabled ?: false,
       onCheckedChange = { checked ->
-        actions.setProfileEnabled("myvpn", profile, checked) { ok ->
-          showSnack(if (ok) context.getString(R.string.saved_apply_after_restart) else context.getString(R.string.save_failed))
-          if (ok) actions.refreshPrograms()
+        when {
+          checked && cidrMode == "manual" && (cidrText.isBlank() || !isValidMyVpnCidr(cidrText)) -> showSnack(context.getString(R.string.myvpn_cidr_invalid))
+          checked && cidrConflict -> showSnack(context.getString(R.string.vpn_ipv4_address_in_use))
+          else -> {
+            actions.setProfileEnabled("myvpn", profile, checked) { ok ->
+              showSnack(if (ok) context.getString(R.string.saved_apply_after_restart) else context.getString(R.string.save_failed))
+              if (ok) actions.refreshPrograms()
+            }
+          }
         }
       },
     )
@@ -528,8 +543,11 @@ fun MyVpnProfileScreen(
             isError = cidrText.isNotBlank() && !cidrValid,
             supportingText = { Text(stringResource(R.string.myvpn_cidr_hint)) },
           )
-          if (cidrText.isBlank() || !cidrValid) {
+          if (cidrText.isBlank() || !isValidMyVpnCidr(cidrText)) {
             Text(stringResource(R.string.myvpn_cidr_invalid), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+          }
+          if (cidrConflict) {
+            Text(stringResource(R.string.vpn_ipv4_address_in_use), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
           }
         }
       }

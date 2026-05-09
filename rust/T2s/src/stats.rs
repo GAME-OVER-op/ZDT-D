@@ -501,6 +501,28 @@ impl SocksBackends {
     pub fn len(&self) -> usize { self.addrs.len() }
     pub fn addr_at(&self, idx: usize) -> Option<SocketAddr> { self.addrs.get(idx).copied() }
 
+    /// Number of currently usable GREEN backends for distributing local connect capacity.
+    /// Prefer backends that are not in runtime cooldown, mirroring select_rr_with_auth().
+    /// If every GREEN backend is cooling down, fall back to all GREEN backends because
+    /// select_rr_with_auth() does the same instead of reporting no backend.
+    pub fn connect_capacity_backend_count(&self) -> usize {
+        if protector_mode_forced_green() {
+            return self.addrs.len();
+        }
+
+        let now = now_ts();
+        let selectable = self.status
+            .iter()
+            .enumerate()
+            .filter(|(idx, s)| s.healthy && !self.backend_in_cooldown_idx(*idx, now))
+            .count();
+        if selectable > 0 {
+            selectable
+        } else {
+            self.status.iter().filter(|s| s.healthy).count()
+        }
+    }
+
     pub fn effective_auth_at(&self, idx: usize, global_auth: Option<&(String, String)>) -> Option<(String, String)> {
         if let Some(Some((u, p))) = self.auth_override.get(idx) {
             return Some((u.clone(), p.clone()));
@@ -859,7 +881,9 @@ pub fn select_rr_with_auth(&mut self, global_auth: Option<&(String, String)>) ->
                 self.status[idx].last_check = now;
                 self.status[idx].last_error = Some(format!("connect queue saturated ({}/{})", cur, lim));
             }
-            self.set_backend_cooldown_idx(idx, 2);
+            // This is local T2S pressure, not a SOCKS5 runtime failure.
+            // Do not put the backend into cooldown here: with a single live backend that
+            // would temporarily remove the only usable route and make bursty clients fail.
             return false;
         }
         if idx < self.inflight_connects.len() {

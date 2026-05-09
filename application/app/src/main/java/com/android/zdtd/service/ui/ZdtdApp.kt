@@ -1255,6 +1255,7 @@ private fun supportsProgramLogs(programId: String, profile: String?): Boolean {
       "myproxy",
       "myprogram",
       "openvpn",
+      "amneziawg",
       "tun2socks",
       "mihomo",
     )

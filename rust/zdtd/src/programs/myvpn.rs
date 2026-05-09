@@ -237,6 +237,28 @@ pub fn enabled_tun_claims() -> Vec<(String, String)> {
     out
 }
 
+pub fn enabled_cidr_claims() -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let Ok(active) = read_active() else { return out; };
+    for (name, st) in active.profiles {
+        if !st.enabled { continue; }
+        let Ok(setting) = read_setting(&name) else { continue; };
+        if validate_setting(&setting).is_err() || enabled_app_list_empty(&profile_root(&name).join("app/uid/user_program")) { continue; }
+        if setting.cidr_mode == "manual" {
+            if let Ok(cidr) = normalize_cidr_network(setting.cidr.trim()) {
+                out.push((format!("myvpn/{name}"), cidr));
+            }
+        }
+    }
+    out
+}
+
+fn enabled_app_list_empty(path: &Path) -> bool {
+    fs::read_to_string(path)
+        .map(|raw| raw.lines().map(str::trim).all(|l| l.is_empty() || l.starts_with('#')))
+        .unwrap_or(true)
+}
+
 fn validate_plan_tuns_unique(plans: &[ProfilePlan]) -> Result<()> {
     let mut seen: BTreeMap<String, String> = BTreeMap::new();
     for plan in plans {

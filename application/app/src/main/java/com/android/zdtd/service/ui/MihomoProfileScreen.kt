@@ -2069,6 +2069,7 @@ fun MihomoProgramScreen(
               val port = nextFreeMihomoMixedPort(usedPorts)
               val usedControllerPorts = loadUsedMihomoControllerPorts(actions, programs, excludeProfile = created)
               val controllerPort = nextFreeMihomoControllerPort(usedControllerPorts)
+              val usedIpv4 = loadUsedVpnIpv4Cidrs(actions, programs, excludeProgramId = "mihomo", excludeProfile = created)
               val settingOk = awaitSaveJsonVpnTunGuard(
                 actions,
                 "${vpnProfileApiPath("mihomo", created)}/setting",
@@ -2077,7 +2078,7 @@ fun MihomoProgramScreen(
               val configOk = awaitSaveTextMihomo(
                 actions,
                 "${vpnProfileApiPath("mihomo", created)}/config",
-                mihomoSampleConfig(created, controllerPort),
+                rewriteMihomoExplicitIpv4Conflicts(mihomoSampleConfig(created, controllerPort), usedIpv4),
               )
               showSnack(
                 if (settingOk && configOk) context.getString(R.string.mihomo_profile_created, created)
@@ -2247,6 +2248,7 @@ fun MihomoProfileScreen(
   var usedVpnTuns by remember(profile) { mutableStateOf(emptySet<String>()) }
   var usedMihomoPorts by remember(profile) { mutableStateOf(emptySet<Int>()) }
   var usedMihomoControllerPorts by remember(profile) { mutableStateOf(emptySet<Int>()) }
+  var usedVpnIpv4Cidrs by remember(profile) { mutableStateOf(emptyList<VpnIpv4Use>()) }
   var pendingChanges by remember(profile) { mutableStateOf(emptyList<MihomoPendingChange>()) }
   var pendingExpanded by remember(profile) { mutableStateOf(false) }
   var mihomoWebPanelChecking by remember(profile) { mutableStateOf(false) }
@@ -2265,14 +2267,16 @@ fun MihomoProfileScreen(
       val setting = if (isVpnTunNameUsed(loaded.tun, usedTuns)) loaded.copy(tun = nextFreeVpnTunName(usedTuns, startAt = 20)) else loaded
       val ports = loadUsedMihomoMixedPorts(actions, programs, excludeProfile = profile)
       val controllerPorts = loadUsedMihomoControllerPorts(actions, programs, excludeProfile = profile)
+      val usedIpv4 = loadUsedVpnIpv4Cidrs(actions, programs, excludeProgramId = "mihomo", excludeProfile = profile)
       val apps = parsePkgList(awaitLoadTextMihomo(actions, "$basePath/apps/user").orEmpty()).size
       val cfg = awaitLoadTextMihomo(actions, "$basePath/config").orEmpty().ifBlank {
-        mihomoSampleConfig(profile, nextFreeMihomoControllerPort(controllerPorts))
+        rewriteMihomoExplicitIpv4Conflicts(mihomoSampleConfig(profile, nextFreeMihomoControllerPort(controllerPorts)), usedIpv4)
       }
 
       usedVpnTuns = usedTuns
       usedMihomoPorts = ports
       usedMihomoControllerPorts = controllerPorts
+      usedVpnIpv4Cidrs = usedIpv4
       syncedSetting = loaded
       tunText = setting.tun
       mixedPortText = setting.mixedPort.toString()
@@ -2294,6 +2298,9 @@ fun MihomoProfileScreen(
   val portConflict = remember(mixedPort, usedMihomoPorts) { mixedPort != null && mixedPort in usedMihomoPorts }
   val portValid = remember(mixedPortText, portConflict) { isValidMihomoPort(mixedPortText) && !portConflict }
   val controllerPort = remember(yamlText) { extractMihomoControllerPort(yamlText) }
+  val mihomoIpv4Cidrs = remember(yamlText) { extractMihomoExplicitIpv4Cidrs(yamlText).map { it.value } }
+  val mihomoIpv4SelfOverlap = remember(mihomoIpv4Cidrs) { vpnIpv4CidrsOverlapEachOther(mihomoIpv4Cidrs) }
+  val mihomoIpv4Conflict = remember(mihomoIpv4Cidrs, usedVpnIpv4Cidrs) { vpnIpv4CidrsConflict(mihomoIpv4Cidrs, usedVpnIpv4Cidrs) }
   val webPanelUrl = remember(controllerPort) { controllerPort?.let { mihomoWebPanelUrl(it) } }
   val webPanelVisible = prof?.enabled == true && controllerPort != null
 
@@ -2334,7 +2341,7 @@ fun MihomoProfileScreen(
     val sourceYaml = change.addProxyToDefaultGroup?.let { proxyName ->
       addMihomoProxyToDefaultGroup(yamlText, proxyName)
     } ?: change.yaml
-    val normalizedText = sanitizeMihomoUserConfigYaml(sourceYaml)
+    val normalizedText = sanitizeMihomoUserConfigYaml(rewriteMihomoExplicitIpv4Conflicts(sourceYaml, usedVpnIpv4Cidrs))
     yamlSaving = true
     actions.saveText("$basePath/config", normalizedText) { ok ->
       yamlSaving = false
@@ -2356,7 +2363,7 @@ fun MihomoProfileScreen(
         addMihomoProxyToDefaultGroup(mergedYaml, proxyName)
       } ?: change.yaml
     }
-    val normalizedText = sanitizeMihomoUserConfigYaml(mergedYaml)
+    val normalizedText = sanitizeMihomoUserConfigYaml(rewriteMihomoExplicitIpv4Conflicts(mergedYaml, usedVpnIpv4Cidrs))
     yamlSaving = true
     actions.saveText("$basePath/config", normalizedText) { ok ->
       yamlSaving = false
@@ -2372,7 +2379,7 @@ fun MihomoProfileScreen(
   }
 
   fun saveYaml(newText: String = yamlText, notify: Boolean = true) {
-    val normalizedText = sanitizeMihomoUserConfigYaml(newText)
+    val normalizedText = sanitizeMihomoUserConfigYaml(rewriteMihomoExplicitIpv4Conflicts(newText, usedVpnIpv4Cidrs))
     yamlSaving = true
     actions.saveText("$basePath/config", normalizedText) { ok ->
       yamlSaving = false
@@ -2415,9 +2422,15 @@ fun MihomoProfileScreen(
       title = stringResource(R.string.enabled_card_profile_title),
       checked = prof?.enabled ?: false,
       onCheckedChange = { checked ->
-        actions.setProfileEnabled("mihomo", profile, checked) { ok ->
-          showSnack(if (ok) context.getString(R.string.saved_apply_after_restart) else context.getString(R.string.save_failed))
-          if (ok) actions.refreshPrograms()
+        when {
+          checked && mihomoIpv4SelfOverlap -> showSnack(context.getString(R.string.vpn_ipv4_address_self_overlap))
+          checked && mihomoIpv4Conflict -> showSnack(context.getString(R.string.vpn_ipv4_address_in_use))
+          else -> {
+            actions.setProfileEnabled("mihomo", profile, checked) { ok ->
+              showSnack(if (ok) context.getString(R.string.saved_apply_after_restart) else context.getString(R.string.save_failed))
+              if (ok) actions.refreshPrograms()
+            }
+          }
         }
       },
     )
@@ -2495,6 +2508,21 @@ fun MihomoProfileScreen(
           CircularProgressIndicator(modifier = Modifier.width(22.dp).height(22.dp), strokeWidth = 2.dp)
           Text(stringResource(R.string.common_loading))
         }
+      }
+    }
+
+    if (mihomoIpv4SelfOverlap || mihomoIpv4Conflict) {
+      Surface(
+        color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.45f),
+        shape = MaterialTheme.shapes.medium,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.25f)),
+      ) {
+        Text(
+          stringResource(if (mihomoIpv4SelfOverlap) R.string.vpn_ipv4_address_self_overlap else R.string.vpn_ipv4_address_in_use),
+          modifier = Modifier.fillMaxWidth().padding(12.dp),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.error,
+        )
       }
     }
 

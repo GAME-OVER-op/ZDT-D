@@ -49,6 +49,14 @@ private fun isArm64OnlySupported(): Boolean {
   return Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
 }
 
+private fun isModuleInstallOsSupported(): Boolean {
+  return Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+}
+
+private fun needsUnofficialAndroidInstallWarning(): Boolean {
+  return Build.VERSION.SDK_INT in Build.VERSION_CODES.P until Build.VERSION_CODES.R
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SetupScaffold(content: @Composable (PaddingValues) -> Unit) {
@@ -292,6 +300,9 @@ fun InstallModuleScreen(
   val compact = rememberIsCompactWidth()
   val screenPadding = rememberAdaptiveScreenPadding()
   var showInstallLog by rememberSaveable(setup.installing, setup.installLog, setup.installOk, setup.installError, setup.manualZipSaved) { androidx.compose.runtime.mutableStateOf(false) }
+  var showUnofficialAndroidWarning by rememberSaveable { mutableStateOf(false) }
+  val osInstallOk = remember { isModuleInstallOsSupported() }
+  val needsAndroidWarning = remember { needsUnofficialAndroidInstallWarning() }
   val canShowInstallLog = !setup.installing && setup.installLog.isNotBlank()
   val animatedInstallProgress by animateFloatAsState(
     targetValue = (setup.installProgressPercent.coerceIn(0, 100) / 100f),
@@ -321,6 +332,27 @@ fun InstallModuleScreen(
       },
       dismissButton = {
         TextButton(onClick = onManualDismiss) { Text(stringResource(R.string.common_cancel)) }
+      },
+    )
+  }
+
+  if (showUnofficialAndroidWarning) {
+    AlertDialog(
+      onDismissRequest = { showUnofficialAndroidWarning = false },
+      title = { Text(stringResource(R.string.setup_android_unofficial_title)) },
+      text = { Text(stringResource(R.string.setup_android_unofficial_body)) },
+      confirmButton = {
+        TextButton(
+          onClick = {
+            showUnofficialAndroidWarning = false
+            onInstall()
+          },
+        ) { Text(stringResource(R.string.setup_android_unofficial_accept)) }
+      },
+      dismissButton = {
+        TextButton(onClick = { showUnofficialAndroidWarning = false }) {
+          Text(stringResource(R.string.setup_android_unofficial_decline))
+        }
       },
     )
   }
@@ -458,13 +490,36 @@ fun InstallModuleScreen(
           Spacer(Modifier.height(18.dp))
         }
 
-        val canInstall = arm64Ok && rootState == RootState.GRANTED && !setup.installing && !setup.installOk
+        val canInstall = arm64Ok && osInstallOk && rootState == RootState.GRANTED && !setup.installing && !setup.installOk
         Button(
-          onClick = onInstall,
+          onClick = {
+            if (needsAndroidWarning) {
+              showUnofficialAndroidWarning = true
+            } else {
+              onInstall()
+            }
+          },
           enabled = canInstall,
           modifier = Modifier.fillMaxWidth(),
         ) {
           Text(if (setup.installing) stringResource(R.string.common_installing) else stringResource(R.string.common_install))
+        }
+
+        if (!osInstallOk) {
+          Spacer(Modifier.height(10.dp))
+          Text(
+            text = stringResource(R.string.setup_android_unsupported_fmt, Build.VERSION.RELEASE.ifBlank { "unknown" }),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+          )
+        } else if (needsAndroidWarning && !setup.installing && !setup.installOk) {
+          Spacer(Modifier.height(10.dp))
+          Text(
+            text = stringResource(R.string.setup_android_unofficial_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+            textAlign = TextAlign.Center,
+          )
         }
 
         if (!arm64Ok) {

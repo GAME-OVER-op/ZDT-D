@@ -222,6 +222,29 @@ pub fn enabled_tun_claims() -> Vec<(String, String)> {
     out
 }
 
+pub fn enabled_cidr_claims() -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let Ok(active) = read_active() else { return out; };
+    let mut used_netids = BTreeSet::<u32>::new();
+    for (name, st) in active.profiles {
+        if !st.enabled { continue; }
+        let Ok(setting) = read_setting(&name) else { continue; };
+        if validate_setting(&setting).is_err() || enabled_app_list_empty(&profile_root(&name).join("app/uid/user_program")) { continue; }
+        let Ok(netid) = generate_netid(&used_netids) else { break; };
+        used_netids.insert(netid);
+        if let Ok((_, cidr)) = generated_tun_addr_and_cidr(netid) {
+            out.push((format!("mihomo/{name}"), cidr));
+        }
+    }
+    out
+}
+
+fn enabled_app_list_empty(path: &Path) -> bool {
+    fs::read_to_string(path)
+        .map(|raw| raw.lines().map(str::trim).all(|l| l.is_empty() || l.starts_with('#')))
+        .unwrap_or(true)
+}
+
 pub fn enabled_mixed_ports() -> Vec<u16> {
     let mut out = Vec::new();
     let Ok(active) = read_active() else { return out; };

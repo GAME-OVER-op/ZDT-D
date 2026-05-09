@@ -2,6 +2,13 @@ package com.android.zdtd.service.ui
 
 import android.content.pm.PackageManager
 import android.os.Build
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -42,7 +49,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -108,12 +114,24 @@ fun AppListPickerCard(
   // Snackbar messages must be resolved in a composable context.
   val msgSaved = stringResource(R.string.app_picker_saved_apply)
   val msgSaveFailed = stringResource(R.string.app_picker_save_failed)
-
   var selected by remember(path, initialContent) { mutableStateOf(parsePkgList(initialContent)) }
   var loading by remember(path) { mutableStateOf(true) }
   var saving by remember(path) { mutableStateOf(false) }
   var showPicker by remember { mutableStateOf(false) }
   val scope = rememberCoroutineScope()
+
+  fun saveSelection(newSel: Set<String>) {
+    selected = newSel
+    val payload = if (newSel.isEmpty()) "" else newSel.sorted().joinToString("\n", postfix = "\n")
+    saving = true
+    actions.saveText(path, payload) { ok ->
+      saving = false
+      if (ok) onSavedSelection?.invoke(newSel)
+      scope.launch {
+        snackHost.showSnackbar(if (ok) msgSaved else (saveFailedMessage ?: msgSaveFailed))
+      }
+    }
+  }
 
   LaunchedEffect(path) {
     loading = true
@@ -134,16 +152,7 @@ fun AppListPickerCard(
       onDismiss = { showPicker = false },
       onSave = { newSel ->
         showPicker = false
-        selected = newSel
-        val payload = if (newSel.isEmpty()) "" else newSel.sorted().joinToString("\n", postfix = "\n")
-        saving = true
-        actions.saveText(path, payload) { ok ->
-          saving = false
-          if (ok) onSavedSelection?.invoke(newSel)
-          scope.launch {
-            snackHost.showSnackbar(if (ok) msgSaved else (saveFailedMessage ?: msgSaveFailed))
-          }
-        }
+        saveSelection(newSel)
       },
     )
   }
@@ -241,10 +250,14 @@ private fun AppPickerSheet(
 ) {
   val ctx = LocalContext.current
 
-  val apps by produceState<List<InstalledApp>>(initialValue = emptyList(), key1 = Unit) {
-    value = withContext(Dispatchers.IO) {
+  var apps by remember { mutableStateOf<List<InstalledApp>>(emptyList()) }
+  var appsLoading by remember { mutableStateOf(true) }
+  LaunchedEffect(Unit) {
+    appsLoading = true
+    apps = withContext(Dispatchers.IO) {
       runCatching { loadInstalledAppsCached(ctx.packageManager) }.getOrDefault(emptyList())
     }
+    appsLoading = false
   }
   var assignments by remember(path) { mutableStateOf<ApiModels.AppAssignmentsState?>(null) }
   LaunchedEffect(path) {
@@ -263,12 +276,15 @@ private fun AppPickerSheet(
     delay(180L)
     debouncedQuery = query.trim().lowercase(Locale.ROOT)
   }
+
+  fun matchesSearch(app: InstalledApp, normalizedQuery: String): Boolean {
+    if (normalizedQuery.isBlank()) return true
+    return app.label.lowercase(Locale.ROOT).contains(normalizedQuery) ||
+      app.packageName.lowercase(Locale.ROOT).contains(normalizedQuery)
+  }
+
   val filtered = remember(apps, debouncedQuery) {
-    if (debouncedQuery.isBlank()) apps
-    else apps.filter {
-      it.label.lowercase(Locale.ROOT).contains(debouncedQuery) ||
-        it.packageName.lowercase(Locale.ROOT).contains(debouncedQuery)
-    }
+    if (debouncedQuery.isBlank()) apps else apps.filter { matchesSearch(it, debouncedQuery) }
   }
 
   val currentEntry = remember(assignments, path) {
@@ -292,6 +308,7 @@ private fun AppPickerSheet(
   val programTun2SocksLabel = stringResource(R.string.apps_conflict_program_tun2socks)
   val programMyVpnLabel = stringResource(R.string.apps_conflict_program_myvpn)
   val programMihomoLabel = stringResource(R.string.apps_conflict_program_mihomo)
+  val programAmneziaWgLabel = stringResource(R.string.apps_conflict_program_amneziawg)
 
   fun slotLabel(slot: String): String = when (slot.lowercase(Locale.ROOT)) {
     "common" -> slotCommonLabel
@@ -315,11 +332,12 @@ private fun AppPickerSheet(
     "tun2socks" -> programTun2SocksLabel
     "myvpn" -> programMyVpnLabel
     "mihomo" -> programMihomoLabel
+    "amneziawg" -> programAmneziaWgLabel
     else -> programId
   }
 
   fun programGroup(programId: String): String? = when (programId) {
-    "operaproxy", "sing-box", "dpitunnel", "byedpi", "wireproxy", "tor", "myproxy", "myprogram", "openvpn", "tun2socks", "myvpn", "mihomo" -> "tunnel"
+    "operaproxy", "sing-box", "dpitunnel", "byedpi", "wireproxy", "tor", "myproxy", "myprogram", "openvpn", "tun2socks", "myvpn", "mihomo", "amneziawg" -> "tunnel"
     "nfqws", "nfqws2" -> "zapret"
     else -> null
   }
@@ -331,6 +349,7 @@ private fun AppPickerSheet(
     if (leftProgramId == "tun2socks" || rightProgramId == "tun2socks") return true
     if (leftProgramId == "myvpn" || rightProgramId == "myvpn") return true
     if (leftProgramId == "mihomo" || rightProgramId == "mihomo") return true
+    if (leftProgramId == "amneziawg" || rightProgramId == "amneziawg") return true
     return left == right
   }
 
@@ -352,7 +371,7 @@ private fun AppPickerSheet(
       if (programGroup(entry.programId) != null) {
         for (other in data.lists) {
           if (other.path == entry.path) continue
-          val requiresSameSlot = entry.programId != "openvpn" && other.programId != "openvpn" && entry.programId != "tun2socks" && other.programId != "tun2socks" && entry.programId != "myvpn" && other.programId != "myvpn" && entry.programId != "mihomo" && other.programId != "mihomo"
+          val requiresSameSlot = entry.programId != "openvpn" && other.programId != "openvpn" && entry.programId != "tun2socks" && other.programId != "tun2socks" && entry.programId != "myvpn" && other.programId != "myvpn" && entry.programId != "mihomo" && other.programId != "mihomo" && entry.programId != "amneziawg" && other.programId != "amneziawg"
           if (requiresSameSlot && other.slot != entry.slot) continue
           if (!appListsConflict(entry.programId, other.programId)) continue
           for (pkg in other.packages) {
@@ -366,24 +385,32 @@ private fun AppPickerSheet(
   }
 
   val appsByPackage = remember(apps) { apps.associateBy { it.packageName } }
-  val selectedApps = remember(appsByPackage, selected) {
+  val selectedAppsAll = remember(appsByPackage, selected) {
     selected.map { pkg -> appsByPackage[pkg] ?: InstalledApp(pkg, pkg, false) }
       .sortedBy { it.sortKey }
+  }
+  val selectedApps = remember(selectedAppsAll, debouncedQuery) {
+    if (debouncedQuery.isBlank()) selectedAppsAll else selectedAppsAll.filter { matchesSearch(it, debouncedQuery) }
   }
   val notSelectedApps = remember(filtered, selected, hiddenPackages) {
     filtered.filter { it.packageName !in selected && it.packageName !in hiddenPackages }
   }
+  val showSelectedSection = debouncedQuery.isBlank() || selectedApps.isNotEmpty()
 
   val isCompactWidth = rememberIsCompactWidth()
   val isNarrowWidth = rememberIsNarrowWidth()
   val isShortHeight = rememberIsShortHeight()
   val useCompactHeader = isShortHeight || isNarrowWidth
 
+  LaunchedEffect(debouncedQuery, appsLoading) {
+    if (!appsLoading) listState.animateScrollToItem(0)
+  }
+
   ModalBottomSheet(
     onDismissRequest = onDismiss,
     dragHandle = { BottomSheetDefaults.DragHandle() },
   ) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).animateContentSize()) {
       if (useCompactHeader) {
         Row(
           modifier = Modifier.fillMaxWidth(),
@@ -448,80 +475,128 @@ private fun AppPickerSheet(
 
       Spacer(Modifier.height(10.dp))
 
-      LazyColumn(
-        state = listState,
-        modifier = Modifier
-          .fillMaxWidth()
-          .heightIn(min = if (isShortHeight) 220.dp else 280.dp, max = if (isShortHeight) 420.dp else 620.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
-      ) {
-        item {
-          Text(
-            stringResource(R.string.app_picker_selected_header, selected.size),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-          )
-          Spacer(Modifier.height(4.dp))
-        }
-
-        if (selectedApps.isEmpty()) {
-          item {
-            Text(
-              stringResource(R.string.app_picker_none),
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
-            )
+      Crossfade(targetState = appsLoading) { isLoading ->
+        if (isLoading) {
+          Surface(
+            modifier = Modifier
+              .fillMaxWidth()
+              .heightIn(min = if (isShortHeight) 220.dp else 280.dp),
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.32f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)),
+          ) {
+            Column(
+              modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+              verticalArrangement = Arrangement.spacedBy(10.dp),
+              horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+              LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+              Text(
+                stringResource(R.string.app_picker_loading_apps),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+              )
+            }
           }
         } else {
-          items(selectedApps, key = { "sel:" + it.packageName }, contentType = { "app_selected" }) { app ->
-            AppPickerRow(
-              app = app,
-              selected = true,
-              compactWidth = isCompactWidth,
-              iconCache = iconCache,
-              enabled = true,
-              reason = null,
-              onToggle = { selected = selected - app.packageName },
-            )
+          LazyColumn(
+            state = listState,
+            modifier = Modifier
+              .fillMaxWidth()
+              .heightIn(min = if (isShortHeight) 220.dp else 280.dp, max = if (isShortHeight) 420.dp else 620.dp)
+              .animateContentSize(),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            item(key = "selected_section") {
+              AnimatedVisibility(
+                visible = showSelectedSection,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically(),
+              ) {
+                Column(Modifier.fillMaxWidth()) {
+                  Text(
+                    stringResource(R.string.app_picker_selected_header, selectedApps.size),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                  )
+                  Spacer(Modifier.height(4.dp))
+                  if (selectedApps.isEmpty()) {
+                    Text(
+                      stringResource(R.string.app_picker_none),
+                      style = MaterialTheme.typography.bodySmall,
+                      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
+                    )
+                  }
+                }
+              }
+            }
+
+            items(selectedApps, key = { "sel:" + it.packageName }, contentType = { "app_selected" }) { app ->
+              AppPickerRow(
+                app = app,
+                selected = true,
+                compactWidth = isCompactWidth,
+                iconCache = iconCache,
+                enabled = true,
+                reason = null,
+                onToggle = { selected = selected - app.packageName },
+              )
+            }
+
+            item(key = "all_apps_header") {
+              Column(Modifier.fillMaxWidth().animateContentSize()) {
+                if (showSelectedSection || selectedApps.isNotEmpty()) {
+                  Spacer(Modifier.height(10.dp))
+                  Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f))
+                  Spacer(Modifier.height(10.dp))
+                }
+                Text(
+                  stringResource(R.string.app_picker_all_apps_title),
+                  style = MaterialTheme.typography.labelLarge,
+                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                  stringResource(R.string.app_picker_all_apps_hint),
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
+                )
+                Spacer(Modifier.height(6.dp))
+              }
+            }
+
+            if (notSelectedApps.isEmpty()) {
+              item(key = "available_empty") {
+                Text(
+                  stringResource(if (debouncedQuery.isBlank()) R.string.app_picker_none else R.string.app_picker_no_matches),
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
+                )
+              }
+            } else {
+              items(notSelectedApps, key = { "all:" + it.packageName }, contentType = { "app_available" }) { app ->
+                val reasons = disabledReasons[app.packageName].orEmpty()
+                val disabledReason = if (reasons.isEmpty()) null else stringResource(
+                  R.string.app_picker_conflict_used_in,
+                  reasons.joinToString(", ") { entryLabel(it) },
+                )
+                AppPickerRow(
+                  app = app,
+                  selected = false,
+                  compactWidth = isCompactWidth,
+                  iconCache = iconCache,
+                  enabled = disabledReason == null,
+                  reason = disabledReason,
+                  onToggle = { selected = selected + app.packageName },
+                )
+              }
+            }
+
+            item { Spacer(Modifier.height(30.dp)) }
           }
         }
-
-        item {
-          Spacer(Modifier.height(10.dp))
-          Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f))
-          Spacer(Modifier.height(10.dp))
-          Text(
-            stringResource(R.string.app_picker_all_apps_title),
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-          )
-          Spacer(Modifier.height(4.dp))
-          Text(
-            stringResource(R.string.app_picker_all_apps_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
-          )
-          Spacer(Modifier.height(6.dp))
-        }
-
-        items(notSelectedApps, key = { "all:" + it.packageName }, contentType = { "app_available" }) { app ->
-          val reasons = disabledReasons[app.packageName].orEmpty()
-          val disabledReason = if (reasons.isEmpty()) null else stringResource(
-            R.string.app_picker_conflict_used_in,
-            reasons.joinToString(", ") { entryLabel(it) },
-          )
-          AppPickerRow(
-            app = app,
-            selected = false,
-            compactWidth = isCompactWidth,
-            iconCache = iconCache,
-            enabled = disabledReason == null,
-            reason = disabledReason,
-            onToggle = { selected = selected + app.packageName },
-          )
-        }
-
-        item { Spacer(Modifier.height(30.dp)) }
       }
     }
   }
@@ -539,6 +614,7 @@ private fun AppPickerRow(
 ) {
   val isOwnApp = app.packageName == ZDTD_APP_PACKAGE_NAME
   Surface(
+    modifier = Modifier.animateContentSize(),
     shape = MaterialTheme.shapes.medium,
     color = when {
       isOwnApp -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (selected) 0.56f else 0.44f)

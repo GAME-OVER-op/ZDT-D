@@ -35,6 +35,7 @@ pub struct StatusReport {
     pub myproxy: UsageAgg,
     pub myprogram: UsageAgg,
     pub openvpn: UsageAgg,
+    pub amneziawg: UsageAgg,
     pub tun2socks: UsageAgg,
     pub mihomo: UsageAgg,
     pub tor: UsageAgg,
@@ -66,6 +67,7 @@ pub(crate) fn protected_pids() -> Vec<u32> {
     pids.extend(myprogram_main_pids());
     pids.extend(myprogram_t2s_pids());
     pids.extend(openvpn_pids());
+    pids.extend(amneziawg_pids());
     pids.extend(tun2socks_pids());
     pids.extend(mihomo_pids());
     pids.extend(tor_pids());
@@ -119,6 +121,7 @@ pub fn collect_status() -> Result<StatusReport> {
     let myproxy_pids = myproxy_t2s_pids();
     let myprogram_pids = myprogram_main_pids();
     let openvpn_pids = openvpn_pids();
+    let amneziawg_pids = amneziawg_pids();
     let tun2socks_pids = tun2socks_pids();
     let mihomo_pids = mihomo_pids();
     let tor_pids = tor_pids();
@@ -150,6 +153,7 @@ pub fn collect_status() -> Result<StatusReport> {
         myproxy: agg(&myproxy_pids),
         myprogram: agg(&myprogram_pids),
         openvpn: agg(&openvpn_pids),
+        amneziawg: agg(&amneziawg_pids),
         tun2socks: agg(&tun2socks_pids),
         mihomo: agg(&mihomo_pids),
         tor: agg(&tor_pids),
@@ -349,6 +353,13 @@ fn myprogram_t2s_pids() -> Vec<u32> {
 
 fn openvpn_pids() -> Vec<u32> {
     crate::programs::openvpn::main_pids_exact()
+        .into_iter()
+        .filter_map(|p| u32::try_from(p).ok())
+        .collect()
+}
+
+fn amneziawg_pids() -> Vec<u32> {
+    crate::programs::amneziawg::main_pids_exact()
         .into_iter()
         .filter_map(|p| u32::try_from(p).ok())
         .collect()

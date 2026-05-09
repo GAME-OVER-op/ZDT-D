@@ -1073,7 +1073,14 @@ private fun clearDownloadedUpdateApk() {
   override fun setActiveMainTab(tab: String) {
     val wasHome = activeMainTabHint == "HOME"
     activeMainTabHint = tab
-    if (!wasHome && tab == "HOME") refreshDaemonLog()
+    if (!wasHome && tab == "HOME") {
+      refreshDaemonLog()
+      if (appVisible && _rootState.value == RootState.GRANTED && isSetupDone()) {
+        // If the previous tab put daemon log polling into the long background delay,
+        // restart it so HOME immediately switches back to the fast live-tail interval.
+        startDaemonLogPolling()
+      }
+    }
   }
 
   private fun currentStatusPollDelayMs(): Long = when (activeMainTabHint) {
@@ -3314,12 +3321,18 @@ private fun shQuote(s: String): String {
     // Root-only: /data/adb/... is not readable by the app.
     val mainPath = "/data/adb/modules/ZDT-D/log/zdtd.log"
     val detailedPath = "/data/adb/modules/ZDT-D/log/deamon.log"
-    val (mainText, detailedText) = runCatching {
+    val pair = runCatching {
       root.readLogTailPair(mainPath, detailedPath, 220)
-    }.getOrDefault("" to "")
+    }.getOrElse { e ->
+      log("WARN", "daemon log read failed: ${e.message ?: e}")
+      return
+    }
+    val (mainText, detailedText) = pair
     _uiState.update { st ->
-      if (st.daemonLogTail == mainText && st.daemonLogDetailedTail == detailedText) st
-      else st.copy(daemonLogTail = mainText, daemonLogDetailedTail = detailedText)
+      val nextMain = if (mainText.isBlank() && st.daemonLogTail.isNotBlank()) st.daemonLogTail else mainText
+      val nextDetailed = if (detailedText.isBlank() && st.daemonLogDetailedTail.isNotBlank()) st.daemonLogDetailedTail else detailedText
+      if (st.daemonLogTail == nextMain && st.daemonLogDetailedTail == nextDetailed) st
+      else st.copy(daemonLogTail = nextMain, daemonLogDetailedTail = nextDetailed)
     }
   }
 
@@ -3646,6 +3659,18 @@ private fun shQuote(s: String): String {
       }.getOrDefault(false)
       if (ok) log("OK", "openvpn/$safeProfile/client.ovpn uploaded (apply after stop/start)")
       else log("ERR", "openvpn/$safeProfile/client.ovpn upload failed")
+      withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
+  override fun uploadAmneziaWgConfig(profile: String, filename: String, file: File, onDone: (Boolean) -> Unit) {
+    launchIO {
+      val safeProfile = profile.trim()
+      val ok = runCatching {
+        api.uploadAmneziaWgConfig(safeProfile, filename, file)
+      }.getOrDefault(false)
+      if (ok) log("OK", "amneziawg/$safeProfile/client.conf uploaded (apply after stop/start)")
+      else log("ERR", "amneziawg/$safeProfile/client.conf upload failed")
       withContext(Dispatchers.Main.immediate) { onDone(ok) }
     }
   }

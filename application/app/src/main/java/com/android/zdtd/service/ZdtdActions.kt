@@ -143,6 +143,9 @@ interface ZdtdActions {
   /** Upload client.ovpn into an OpenVPN profile. */
   fun uploadOpenVpnConfig(profile: String, filename: String, file: java.io.File, onDone: (Boolean) -> Unit = {})
 
+  /** Upload client.conf into an AmneziaWG profile. */
+  fun uploadAmneziaWgConfig(profile: String, filename: String, file: java.io.File, onDone: (Boolean) -> Unit = {})
+
   fun loadText(path: String, onDone: (String?) -> Unit)
   fun saveText(path: String, content: String, onDone: (Boolean) -> Unit)
 

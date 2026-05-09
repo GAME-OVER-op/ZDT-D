@@ -430,6 +430,12 @@ private fun buildProgramLogsListScript(target: ProgramLogTarget): String {
         addStatic("t2s.log", "$base/t2s.log")
       }
       "openvpn" -> addStatic("openvpn.log", "/data/adb/modules/ZDT-D/working_folder/openvpn/profile/$profile/log/openvpn.log")
+      "amneziawg" -> {
+        val base = "/data/adb/modules/ZDT-D/working_folder/amneziawg/profile/$profile/log"
+        addStatic("start.log", "$base/start.log")
+        addStatic("amneziawg-go.log", "$base/amneziawg-go.log")
+        addStatic("awg.log", "$base/awg.log")
+      }
       "tun2socks" -> addStatic("tun2socks.log", "/data/adb/modules/ZDT-D/working_folder/tun2socks/profile/$profile/log/tun2socks.log")
       "mihomo" -> {
         val base = "/data/adb/modules/ZDT-D/working_folder/mihomo/profile/$profile/log"

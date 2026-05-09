@@ -288,6 +288,7 @@ ClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules
         ("myproxy", "active.json", PROFILES_DEFAULT_JSON),
         ("myprogram", "active.json", PROFILES_DEFAULT_JSON),
         ("openvpn", "active.json", PROFILES_DEFAULT_JSON),
+        ("amneziawg", "active.json", PROFILES_DEFAULT_JSON),
         ("tun2socks", "active.json", PROFILES_DEFAULT_JSON),
         ("myvpn", "active.json", PROFILES_DEFAULT_JSON),
         ("mihomo", "active.json", PROFILES_DEFAULT_JSON),

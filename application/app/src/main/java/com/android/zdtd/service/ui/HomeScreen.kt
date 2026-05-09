@@ -46,7 +46,6 @@ import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
-import kotlin.math.roundToInt
 
 @Composable
 fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
@@ -150,11 +149,9 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
     var logSourceMenuExpanded by remember { mutableStateOf(false) }
     var selectedLogSource by remember { mutableStateOf(HomeLogSource.MAIN) }
     var logSourceSwitchNonce by remember { mutableLongStateOf(0L) }
-    var pendingSmoothTailReleaseNonce by remember { mutableLongStateOf(0L) }
-    var sourceSwitchTailAnimationInProgress by remember { mutableStateOf(false) }
+    var pendingImmediateTailSnapNonce by remember { mutableLongStateOf(0L) }
     fun selectLogSource(source: HomeLogSource) {
       if (selectedLogSource != source) {
-        sourceSwitchTailAnimationInProgress = true
         selectedLogSource = source
         logSourceSwitchNonce++
       }
@@ -222,7 +219,6 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
       mutableStateOf(renderize(listOf(DaemonLogUiLine(raw = noLogDataText, level = DaemonLogLevel.OTHER, text = noLogDataText))))
     }
     var logRevealInitialized by remember { mutableStateOf(false) }
-    val initialAnimatedTail = 14
     val logRevealDelayMs = 32L
     val lastLine: String = remember(displayedLogLines) { displayedLogLines.lastOrNull()?.line?.text?.trimEnd().orEmpty() }
     val newestLogRenderId: Long = displayedLogLines.lastOrNull()?.id ?: -1L
@@ -233,56 +229,6 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
     val autoReleaseToBottomDelayMs = 5_000L
     fun isLogListNearBottom(): Boolean =
       listState.firstVisibleItemIndex <= 1 && listState.firstVisibleItemScrollOffset < 96
-
-    suspend fun smoothReleaseLogListToBottom(durationMillis: Int = 720) {
-      if (displayedLogLines.isEmpty()) return
-      val maxIndex = (displayedLogLines.size - 1).coerceAtLeast(0)
-      if (listState.firstVisibleItemIndex > maxIndex) {
-        listState.scrollToItem(maxIndex, 0)
-      }
-
-      val visibleItems = listState.layoutInfo.visibleItemsInfo
-      val averageItemSizePx = visibleItems
-        .takeIf { it.isNotEmpty() }
-        ?.map { it.size }
-        ?.average()
-        ?.toFloat()
-        ?.coerceAtLeast(1f)
-        ?: 72f
-
-      val startDistancePx =
-        (listState.firstVisibleItemIndex * averageItemSizePx) + listState.firstVisibleItemScrollOffset
-      if (startDistancePx <= 2f) {
-        listState.scrollToItem(0, 0)
-        return
-      }
-
-      val boundedDurationMs = durationMillis
-        .coerceAtLeast(420)
-        .coerceAtMost(1_100)
-      var startFrameNanos = 0L
-      var finished = false
-
-      while (!finished) {
-        val frameTimeNanos = withFrameNanos { it }
-        if (startFrameNanos == 0L) startFrameNanos = frameTimeNanos
-        val elapsedMs = (frameTimeNanos - startFrameNanos) / 1_000_000f
-        val fraction = (elapsedMs / boundedDurationMs).coerceIn(0f, 1f)
-        val eased = FastOutSlowInEasing.transform(fraction)
-        val remainingDistancePx = startDistancePx * (1f - eased)
-        val targetIndex = (remainingDistancePx / averageItemSizePx)
-          .toInt()
-          .coerceIn(0, maxIndex)
-        val targetOffset = (remainingDistancePx - (targetIndex * averageItemSizePx))
-          .roundToInt()
-          .coerceAtLeast(0)
-
-        listState.scrollToItem(targetIndex, targetOffset)
-        finished = fraction >= 1f
-      }
-
-      listState.scrollToItem(0, 0)
-    }
 
     LaunchedEffect(Unit) {
       kotlinx.coroutines.delay(160)
@@ -297,25 +243,9 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
 
     LaunchedEffect(selectedLogSource, logLines) {
       if (!logRevealInitialized) {
-        if (logSourceSwitchNonce > 0L) {
-          displayedLogLines = renderize(logLines)
-          logRevealInitialized = true
-          pendingSmoothTailReleaseNonce = logSourceSwitchNonce
-        } else {
-          val animatedTail = initialAnimatedTail.coerceAtMost(logLines.size)
-          val stableHead = logLines.dropLast(animatedTail)
-          displayedLogLines = if (stableHead.isNotEmpty()) renderize(stableHead) else emptyList()
-          logRevealInitialized = true
-          val toReveal = logLines.takeLast(animatedTail)
-          if (toReveal.isEmpty()) {
-            displayedLogLines = renderize(logLines)
-          } else {
-            for (line in toReveal) {
-              displayedLogLines = displayedLogLines + DaemonLogRenderLine(id = nextLogRenderId++, line = line)
-              kotlinx.coroutines.delay(logRevealDelayMs)
-            }
-          }
-        }
+        displayedLogLines = renderize(logLines)
+        logRevealInitialized = true
+        pendingImmediateTailSnapNonce = if (logSourceSwitchNonce > 0L) logSourceSwitchNonce else 1L
       } else if (rawMatches(logLines, displayedLogLines)) {
         // no-op
       } else if (displayedIsPrefixOf(logLines, displayedLogLines)) {
@@ -365,32 +295,25 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
         if (!listState.isScrollInProgress && !isLogListNearBottom()) {
           followNewestLogLine = true
           // reverseLayout=true => index 0 is the visual bottom/newest line.
-          smoothReleaseLogListToBottom(durationMillis = 780)
+          listState.animateScrollToItem(0)
         }
       }
     }
 
-    LaunchedEffect(pendingSmoothTailReleaseNonce) {
-      if (pendingSmoothTailReleaseNonce > 0L) {
-        kotlinx.coroutines.delay(24)
+    LaunchedEffect(pendingImmediateTailSnapNonce, displayedLogLines.size) {
+      if (pendingImmediateTailSnapNonce > 0L) {
         followNewestLogLine = true
-        try {
-          smoothReleaseLogListToBottom(durationMillis = 720)
-        } finally {
-          sourceSwitchTailAnimationInProgress = false
-          pendingSmoothTailReleaseNonce = 0L
-        }
+        // reverseLayout=true => index 0 is the visual bottom/newest line.
+        listState.scrollToItem(0, 0)
+        pendingImmediateTailSnapNonce = 0L
       }
     }
 
     LaunchedEffect(selectedLogSource, newestLogRenderId) {
-      if (!sourceSwitchTailAnimationInProgress &&
-        (followNewestLogLine || isLogListNearBottom()) &&
-        !listState.isScrollInProgress
-      ) {
+      if ((followNewestLogLine || isLogListNearBottom()) && !listState.isScrollInProgress) {
         followNewestLogLine = true
         // reverseLayout=true => index 0 is the visual bottom/newest line.
-        listState.animateScrollToItem(0)
+        listState.scrollToItem(0, 0)
       }
     }
 

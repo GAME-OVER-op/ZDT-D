@@ -33,6 +33,7 @@ object ApiModels {
     val openVpn: ProcAgg = ProcAgg(),
     val tun2Socks: ProcAgg = ProcAgg(),
     val mihomo: ProcAgg = ProcAgg(),
+    val amneziaWg: ProcAgg = ProcAgg(),
     val t2s: ProcAgg = ProcAgg(),
     val opera: OperaAgg? = null,
   )
@@ -138,6 +139,7 @@ object ApiModels {
       openVpn = parseProcAgg(o.optJSONObject("openvpn")),
       tun2Socks = parseProcAgg(o.optJSONObject("tun2socks")),
       mihomo = parseProcAgg(o.optJSONObject("mihomo")),
+      amneziaWg = parseProcAgg(o.optJSONObject("amneziawg")),
       t2s = parseProcAgg(o.optJSONObject("t2s")),
       opera = opera,
     )
@@ -146,7 +148,7 @@ object ApiModels {
   fun isServiceOn(r: StatusReport?): Boolean {
     if (r == null) return false
     val opera = r.opera
-    val sum = r.zapret.count + r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.dpitunnel.count + r.singBox.count + r.wireProxy.count + r.tor.count + r.openVpn.count + r.tun2Socks.count + r.mihomo.count +
+    val sum = r.zapret.count + r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.dpitunnel.count + r.singBox.count + r.wireProxy.count + r.tor.count + r.openVpn.count + r.tun2Socks.count + r.mihomo.count + r.amneziaWg.count +
       (opera?.opera?.count ?: 0) + r.t2s.count + (opera?.byedpi?.count ?: 0)
     return sum > 0
   }
@@ -166,6 +168,7 @@ object ApiModels {
       add(r.openVpn)
       add(r.tun2Socks)
       add(r.mihomo)
+      add(r.amneziaWg)
       add(r.t2s)
       r.opera?.let { o ->
         add(o.opera)
@@ -307,6 +310,7 @@ object ApiModels {
         "tun2socks" -> rawName ?: "tun2socks"
         "myvpn" -> rawName ?: "myvpn"
         "mihomo" -> rawName ?: "Mihomo"
+        "amneziawg" -> rawName?.takeUnless { it.equals("amneziawg", ignoreCase = true) } ?: "AmneziaWG"
         else -> rawName
       }
       out.add(

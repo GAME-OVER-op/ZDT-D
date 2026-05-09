@@ -315,6 +315,7 @@ fn program_display_name<'a>(id: &'a str) -> &'a str {
         "nfqws2" => "zapret2",
         "operaproxy" => "opera-proxy",
         "openvpn" => "openvpn",
+        "amneziawg" => "amneziawg",
         "tun2socks" => "tun2socks",
         "myvpn" => "myvpn",
         "mihomo" => "mihomo",
@@ -1556,6 +1557,43 @@ fn create_openvpn_profile_next() -> Result<String> {
     anyhow::bail!("no free openvpn profile name")
 }
 
+fn amneziawg_active_path() -> PathBuf { crate::programs::amneziawg::active_path() }
+fn amneziawg_profiles_root() -> PathBuf { crate::programs::amneziawg::profiles_root() }
+fn amneziawg_deleted_root() -> PathBuf { program_root("amneziawg").join(".deleted") }
+fn amneziawg_deleted_profiles_root() -> PathBuf { amneziawg_deleted_root().join("profiles") }
+fn amneziawg_profile_root(profile: &str) -> PathBuf { crate::programs::amneziawg::profile_root(profile) }
+
+fn ensure_amneziawg_profile_layout(profile: &str) -> Result<()> {
+    crate::programs::amneziawg::ensure_profile_layout(profile)
+}
+
+fn create_amneziawg_profile_named(requested: &str) -> Result<String> {
+    let name = requested.trim();
+    crate::programs::amneziawg::ensure_valid_profile_name(name)?;
+    crate::programs::amneziawg::ensure_root_layout()?;
+    let active_path = amneziawg_active_path();
+    let mut active: ProfilesActive = read_json(&active_path).unwrap_or_default();
+    if active.profiles.contains_key(name) { anyhow::bail!("profile already exists"); }
+    active.profiles.insert(name.to_string(), ProfileState { enabled: false });
+    write_json_pretty(&active_path, &active)?;
+    ensure_amneziawg_profile_layout(name)?;
+    Ok(name.to_string())
+}
+
+fn create_amneziawg_profile_next() -> Result<String> {
+    crate::programs::amneziawg::ensure_root_layout()?;
+    let active: ProfilesActive = read_json(&amneziawg_active_path()).unwrap_or_default();
+    for n in 1..=9999u32 {
+        let next = format!("profile{n}");
+        if next.len() > 10 { break; }
+        if !active.profiles.contains_key(&next) {
+            create_amneziawg_profile_named(&next)?;
+            return Ok(next);
+        }
+    }
+    anyhow::bail!("no free amneziawg profile name")
+}
+
 fn tun2socks_active_path() -> PathBuf { crate::programs::tun2socks::active_path() }
 fn tun2socks_profiles_root() -> PathBuf { crate::programs::tun2socks::profiles_root() }
 fn tun2socks_deleted_root() -> PathBuf { program_root("tun2socks").join(".deleted") }
@@ -1672,6 +1710,7 @@ fn validate_cross_vpn_tun_claim(program_id: &str, profile: &str, tun: &str) -> R
     let this_label = format!("{program_id}/{profile}");
     for (other_label, other_tun) in crate::programs::openvpn::enabled_tun_claims()
         .into_iter()
+        .chain(crate::programs::amneziawg::enabled_tun_claims().into_iter())
         .chain(crate::programs::tun2socks::enabled_tun_claims().into_iter())
         .chain(crate::programs::myvpn::enabled_tun_claims().into_iter())
         .chain(crate::programs::mihomo::enabled_tun_claims().into_iter())
@@ -1856,7 +1895,12 @@ fn slot_from_kind(kind: &str) -> Option<&'static str> {
 
 fn app_domain(program_id: &str) -> Option<&'static str> {
     match program_id {
-        "vpn-netd" | "openvpn" | "tun2socks" | "myvpn" | "mihomo" | "wireguard" => Some("exclusive_network"),
+        // AmneziaWG is an exclusive network/VPN backend. A package routed through it
+        // must not be routed through other traffic-handling programs at the same time.
+        // Intentional exceptions are the ZDT-D launch marker and blockedquic: the
+        // marker is ignored by package conflict parsing, and blockedquic has no app
+        // routing domain so QUIC blocking may coexist with VPN/netd routing.
+        "vpn-netd" | "openvpn" | "amneziawg" | "tun2socks" | "myvpn" | "mihomo" | "wireguard" => Some("exclusive_network"),
         "operaproxy" | "sing-box" | "wireproxy" | "myproxy" | "myprogram" | "tor" | "dpitunnel" | "byedpi" => Some("tunnel"),
         "nfqws" | "nfqws2" => Some("zapret"),
         // blockedquic only conflicts with proxyInfo protection; it must not block VPN/tunnel app lists.
@@ -2040,6 +2084,23 @@ fn collect_assignment_files_uncached() -> Vec<AppAssignmentFile> {
                 "user",
                 path.join("app/uid/user_program"),
                 format!("/api/programs/openvpn/profiles/{profile}/apps/user"),
+            );
+        }
+    }
+
+    let amneziawg_root = amneziawg_profiles_root();
+    if let Ok(rd) = fs::read_dir(&amneziawg_root) {
+        for ent in rd.flatten() {
+            let path = ent.path();
+            if !path.is_dir() { continue; }
+            let Some(profile) = path.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+            push_assignment_file(
+                &mut out,
+                "amneziawg",
+                Some(profile.clone()),
+                "user",
+                path.join("app/uid/user_program"),
+                format!("/api/programs/amneziawg/profiles/{profile}/apps/user"),
             );
         }
     }
@@ -2444,6 +2505,22 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
         }));
     }
 
+    // amneziawg (AmneziaWG userspace + VPN/netd profiles)
+    {
+        let active: ProfilesActive = read_json(&amneziawg_active_path()).unwrap_or_default();
+        let mut profiles = Vec::new();
+        for (name, st) in active.profiles {
+            profiles.push(json!({"name": name, "enabled": st.enabled}));
+        }
+        profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        out.push(json!({
+            "id": "amneziawg",
+            "name": "amneziawg",
+            "type": "amneziawg_profiles",
+            "profiles": profiles
+        }));
+    }
+
     // tun2socks (VPN/netd profiles)
     {
         let active: ProfilesActive = read_json(&tun2socks_active_path()).unwrap_or_default();
@@ -2689,6 +2766,213 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 }
                 let p = openvpn_profile_root(profile).join("client.ovpn");
                 write_bytes_atomic(&p, &f.data)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
+        // --- amneziawg profile API
+        ("GET", ["api", "programs", "amneziawg", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::amneziawg::ensure_root_layout()?;
+                let active: ProfilesActive = read_json(&amneziawg_active_path()).unwrap_or_default();
+                let mut profiles = Vec::new();
+                for (name, st) in active.profiles {
+                    profiles.push(json!({"name": name, "enabled": st.enabled}));
+                }
+                profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+                Ok(json!({"ok": true, "profiles": profiles}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "programs", "amneziawg", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                #[derive(Deserialize)]
+                struct Req { #[serde(default)] name: Option<String> }
+                let req: Req = if body.is_empty() { Req { name: None } } else {
+                    serde_json::from_slice(body).map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?
+                };
+                let name = match req.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                    Some(name) => create_amneziawg_profile_named(name)?,
+                    None => create_amneziawg_profile_next()?,
+                };
+                Ok(json!({"ok": true, "profile": name}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "amneziawg", "profiles", profile, "enabled"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::amneziawg::ensure_valid_profile_name(profile)?;
+                let req: EnabledReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let p = amneziawg_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                let st = active.profiles.get_mut(*profile)
+                    .ok_or_else(|| anyhow::anyhow!("profile not found"))?;
+                st.enabled = req.enabled;
+                crate::programs::amneziawg::validate_enabled_tun_uniqueness_with_override(
+                    Some(profile),
+                    None,
+                    Some(req.enabled),
+                )?;
+                crate::programs::amneziawg::validate_enabled_address_uniqueness_with_override(
+                    Some(profile),
+                    None,
+                    Some(req.enabled),
+                )?;
+                if req.enabled {
+                    let setting = crate::programs::amneziawg::read_setting(profile).unwrap_or_default();
+                    validate_cross_vpn_tun_claim("amneziawg", profile, &setting.tun)?;
+                }
+                write_json_pretty(&p, &active)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("DELETE", ["api", "programs", "amneziawg", "profiles", profile]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::amneziawg::ensure_valid_profile_name(profile)?;
+                let p = amneziawg_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                if active.profiles.remove(*profile).is_none() {
+                    anyhow::bail!("profile not found");
+                }
+                write_json_pretty(&p, &active)?;
+                invalidate_assignment_cache();
+                let src = amneziawg_profile_root(profile);
+                if src.exists() {
+                    let deleted_dir = amneziawg_deleted_profiles_root();
+                    fs::create_dir_all(&deleted_dir).ok();
+                    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                    let dst = deleted_dir.join(format!("{profile}.{ts}"));
+                    let _ = fs::rename(&src, &dst);
+                }
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "amneziawg", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::amneziawg::ensure_valid_profile_name(profile)?;
+                ensure_amneziawg_profile_layout(profile)?;
+                let p = amneziawg_profile_root(profile).join("setting.json");
+                let v: serde_json::Value = read_json(&p)?;
+                Ok(json!({"ok": true, "data": v}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "amneziawg", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::amneziawg::ensure_valid_profile_name(profile)?;
+                ensure_amneziawg_profile_layout(profile)?;
+                let v: serde_json::Value = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let setting = crate::programs::amneziawg::normalize_setting_value(v)?;
+                crate::programs::amneziawg::validate_enabled_tun_uniqueness_with_override(
+                    Some(profile),
+                    Some(&setting),
+                    None,
+                )?;
+                crate::programs::amneziawg::validate_enabled_address_uniqueness_with_override(
+                    Some(profile),
+                    Some(&setting),
+                    None,
+                )?;
+                if is_profile_enabled(&amneziawg_active_path(), profile) {
+                    validate_cross_vpn_tun_claim("amneziawg", profile, &setting.tun)?;
+                }
+                crate::programs::amneziawg::write_setting(profile, &setting)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "amneziawg", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<String> {
+                crate::programs::amneziawg::ensure_valid_profile_name(profile)?;
+                ensure_amneziawg_profile_layout(profile)?;
+                let p = amneziawg_profile_root(profile).join("app/uid/user_program");
+                read_text_or_empty(&p)
+            })();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "amneziawg", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::amneziawg::ensure_valid_profile_name(profile)?;
+                ensure_amneziawg_profile_layout(profile)?;
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let api_path = format!("/api/programs/amneziawg/profiles/{}/apps/user", profile);
+                validate_program_apps_content(&req.content, &api_path, "amneziawg", "common")?;
+                let p = amneziawg_profile_root(profile).join("app/uid/user_program");
+                write_text_atomic(&p, &req.content)?;
+                invalidate_assignment_cache();
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "amneziawg", "profiles", profile, "config"]) => {
+            let res = (|| -> Result<String> {
+                crate::programs::amneziawg::ensure_valid_profile_name(profile)?;
+                ensure_amneziawg_profile_layout(profile)?;
+                let p = amneziawg_profile_root(profile).join("client.conf");
+                read_text_or_empty(&p)
+            })();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "amneziawg", "profiles", profile, "config"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::amneziawg::ensure_valid_profile_name(profile)?;
+                ensure_amneziawg_profile_layout(profile)?;
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                crate::programs::amneziawg::import_config(profile, &req.content)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "programs", "amneziawg", "profiles", profile, "upload-config"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::amneziawg::ensure_valid_profile_name(profile)?;
+                ensure_amneziawg_profile_layout(profile)?;
+                let f = parse_multipart_file(headers, body)?;
+                if !f.filename.ends_with(".conf") {
+                    anyhow::bail!("only .conf files are accepted");
+                }
+                let content = String::from_utf8(f.data).map_err(|e| anyhow::anyhow!("config is not UTF-8: {e}"))?;
+                crate::programs::amneziawg::import_config(profile, &content)?;
                 Ok(())
             })();
             match res {

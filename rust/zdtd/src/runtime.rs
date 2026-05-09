@@ -10,7 +10,7 @@ use std::{
 use crate::{
     android::{boot, selinux::SelinuxGuard},
     iptables_backup,
-    programs::{byedpi, dnscrypt, dpitunnel, myproxy, myprogram, nfqws, nfqws2, openvpn, operaproxy, tor, tun2socks, myvpn, mihomo},
+    programs::{amneziawg, byedpi, dnscrypt, dpitunnel, myproxy, myprogram, nfqws, nfqws2, openvpn, operaproxy, tor, tun2socks, myvpn, mihomo},
     programs::{singbox, wireproxy},
     stats,
     settings,
@@ -124,7 +124,7 @@ pub fn start_full() -> Result<()> {
 
     // VPN/netd profile programs: launch VPN engines, wait for TUN, then apply Android netd routing once.
     // VPN profile failures are best-effort: log to console/profile logs and continue the rest of startup.
-    let vpn_expected = openvpn::has_enabled_profiles() || tun2socks::has_enabled_profiles() || myvpn::has_enabled_profiles() || mihomo::has_enabled_profiles();
+    let vpn_expected = openvpn::has_enabled_profiles() || amneziawg::has_enabled_profiles() || tun2socks::has_enabled_profiles() || myvpn::has_enabled_profiles() || mihomo::has_enabled_profiles();
     let mut vpn_profiles = Vec::new();
     match validate_vpn_tun_claims_unique() {
         Ok(()) => {
@@ -134,6 +134,14 @@ pub fn start_full() -> Result<()> {
                     log::warn!("openvpn startup failed, continuing: {e:#}");
                     mark_start_partial();
                     crate::logging::user_warn("OpenVPN: ошибка запуска, запуск продолжен");
+                }
+            }
+            match amneziawg::start_profiles_for_netd() {
+                Ok(items) => vpn_profiles.extend(items),
+                Err(e) => {
+                    log::warn!("amneziawg startup failed, continuing: {e:#}");
+                    mark_start_partial();
+                    crate::logging::user_warn("AmneziaWG: ошибка запуска, запуск продолжен");
                 }
             }
             match tun2socks::start_profiles_for_netd() {
@@ -335,6 +343,7 @@ fn can_adopt_existing_runtime() -> bool {
     }
 
     let vpn_expected = openvpn::has_enabled_profiles()
+        || amneziawg::has_enabled_profiles()
         || tun2socks::has_enabled_profiles()
         || myvpn::has_enabled_profiles()
         || mihomo::has_enabled_profiles();
@@ -385,6 +394,7 @@ fn enabled_runtime_processes_look_complete() -> bool {
     require_profile_program!("myproxy", r.myproxy.count);
     require_profile_program!("myprogram", r.myprogram.count);
     require_profile_program!("openvpn", r.openvpn.count);
+    require_profile_program!("amneziawg", r.amneziawg.count);
     require_profile_program!("tun2socks", r.tun2socks.count);
     require_profile_program!("mihomo", r.mihomo.count);
 
@@ -474,12 +484,14 @@ fn actual_runtime_has_services() -> bool {
             || r.tor.count > 0
             || r.opera.opera.count > 0
             || r.dnscrypt.count > 0
+            || r.amneziawg.count > 0
         {
             return true;
         }
     }
 
     openvpn::is_running()
+        || amneziawg::is_running()
         || tun2socks::is_running()
         || mihomo::is_running()
         || vpn_netd_has_applied_owner("myvpn")
@@ -619,6 +631,10 @@ fn validate_start_plan_best_effort() {
         had_warning = true;
         log::warn!("start plan warning: openvpn: {e:#}");
     }
+    if let Err(e) = amneziawg::validate_start_plan() {
+        had_warning = true;
+        log::warn!("start plan warning: amneziawg: {e:#}");
+    }
     if let Err(e) = tun2socks::validate_start_plan() {
         had_warning = true;
         log::warn!("start plan warning: tun2socks: {e:#}");
@@ -645,6 +661,7 @@ fn validate_vpn_tun_claims_unique() -> Result<()> {
     let mut seen = BTreeMap::<String, String>::new();
     for (label, tun) in openvpn::enabled_tun_claims()
         .into_iter()
+        .chain(amneziawg::enabled_tun_claims().into_iter())
         .chain(tun2socks::enabled_tun_claims().into_iter())
         .chain(myvpn::enabled_tun_claims().into_iter())
         .chain(mihomo::enabled_tun_claims().into_iter())
@@ -662,6 +679,7 @@ fn any_main_service_running() -> bool {
     // successful if dnscrypt is enabled and running.
     let dnscrypt_expected = dnscrypt::active_listen_port().ok().flatten().is_some();
     let openvpn_expected = openvpn::has_enabled_profiles();
+    let amneziawg_expected = amneziawg::has_enabled_profiles();
     let tun2socks_expected = tun2socks::has_enabled_profiles();
     let myvpn_expected = myvpn::has_enabled_profiles();
     let mihomo_expected = mihomo::has_enabled_profiles();
@@ -681,6 +699,7 @@ fn any_main_service_running() -> bool {
                 || r.opera.opera.count > 0
                 || (dnscrypt_expected && r.dnscrypt.count > 0)
                 || (openvpn_expected && openvpn::is_running())
+                || (amneziawg_expected && amneziawg::is_running())
                 || (tun2socks_expected && tun2socks::is_running())
                 || (myvpn_expected && vpn_netd_has_applied_owner("myvpn"))
                 || (mihomo_expected && mihomo::is_running())

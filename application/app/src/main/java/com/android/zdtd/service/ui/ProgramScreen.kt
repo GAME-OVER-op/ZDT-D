@@ -2220,7 +2220,21 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
     }
   }
 
+  fun apiProxyHasInvalidEntries(value: String): Boolean {
+    val trimmed = value.trim()
+    if (trimmed.isEmpty()) return false
+    val allowed = listOf("http://", "https://", "socks5://", "socks5h://")
+    return trimmed.split(',')
+      .map { it.trim() }
+      .filter { it.isNotEmpty() }
+      .any { token -> allowed.none { prefix -> token.startsWith(prefix, ignoreCase = true) } }
+  }
+
   fun save() {
+    if (apiProxyHasInvalidEntries(apiProxy)) {
+      snack(context.getString(R.string.opera_args_api_proxy_invalid))
+      return
+    }
     val obj = JSONObject().apply {
       put("api_proxy",                    apiProxy.trim())
       put("api_user_agent",               apiUserAgent.trim())
@@ -2262,6 +2276,7 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
   Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
 
     // ── Card: -api-proxy ── (highlighted as most important)
+    val apiProxyInvalid = apiProxyHasInvalidEntries(apiProxy)
     Card(
       colors = CardDefaults.cardColors(
         containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.40f)
@@ -2286,7 +2301,16 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
           label = { Text("-api-proxy") },
           placeholder = { Text("socks5://host:port") },
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-          isError = apiProxy.trim().isEmpty(),
+          isError = apiProxyInvalid,
+          supportingText = {
+            Text(
+              if (apiProxyInvalid) {
+                stringResource(R.string.opera_args_api_proxy_invalid)
+              } else {
+                stringResource(R.string.opera_args_api_proxy_hint)
+              }
+            )
+          },
         )
       }
     }

@@ -5,8 +5,12 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -42,6 +46,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import com.android.zdtd.service.InstallConflictUi
 import com.android.zdtd.service.R
 import com.android.zdtd.service.RootState
@@ -284,7 +289,11 @@ fun RebootRequiredScreen(
         Spacer(Modifier.height(18.dp))
 
 
-        Button(onClick = onReboot, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.common_reboot)) }
+        CooldownRebootButton(
+          activeKey = text.ifBlank { "reboot-required" },
+          onReboot = onReboot,
+          modifier = Modifier.fillMaxWidth(),
+        )
       }
     }
   }
@@ -305,6 +314,8 @@ fun InstallModuleScreen(
   onToggleZygiskInstall: (Boolean) -> Unit,
   onConfirmZygiskInstall: () -> Unit,
   onDismissZygiskInstallConfirm: () -> Unit,
+  onDismissZygiskInstallRecovery: () -> Unit,
+  onRetryInstallWithoutZygisk: () -> Unit,
 ) {
   val arm64Ok = remember { isArm64OnlySupported() }
   val compact = rememberIsCompactWidth()
@@ -381,6 +392,25 @@ fun InstallModuleScreen(
       dismissButton = {
         TextButton(onClick = onDismissZygiskInstallConfirm) {
           Text(stringResource(R.string.setup_zygisk_confirm_no))
+        }
+      },
+    )
+  }
+
+
+  if (setup.showZygiskInstallRecoveryDialog) {
+    AlertDialog(
+      onDismissRequest = onDismissZygiskInstallRecovery,
+      title = { Text(stringResource(R.string.setup_zygisk_recovery_title)) },
+      text = { Text(stringResource(R.string.setup_zygisk_recovery_body)) },
+      confirmButton = {
+        TextButton(onClick = onRetryInstallWithoutZygisk) {
+          Text(stringResource(R.string.setup_zygisk_recovery_retry_without))
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = onDismissZygiskInstallRecovery) {
+          Text(stringResource(R.string.setup_zygisk_recovery_no))
         }
       },
     )
@@ -508,6 +538,22 @@ fun InstallModuleScreen(
           onToggle = onToggleZygiskInstall,
         )
 
+        AnimatedVisibility(
+          visible = setup.showKsuApatchZygiskWarning,
+          enter = fadeIn(animationSpec = tween(280)) +
+            expandVertically(animationSpec = tween(360, easing = FastOutSlowInEasing)) +
+            slideInVertically(
+              initialOffsetY = { fullHeight -> fullHeight / 6 },
+              animationSpec = tween(360, easing = FastOutSlowInEasing),
+            ),
+          exit = fadeOut(animationSpec = tween(180)) + shrinkVertically(animationSpec = tween(180)),
+        ) {
+          Column(modifier = Modifier.fillMaxWidth()) {
+            Spacer(Modifier.height(10.dp))
+            KsuApatchZygiskWarningCard()
+          }
+        }
+
         Spacer(Modifier.height(18.dp))
 
         if (!setup.preInstallWarning.isNullOrBlank()) {
@@ -634,7 +680,11 @@ fun InstallModuleScreen(
                 )
                 Spacer(Modifier.height(12.dp))
 
-                Button(onClick = onReboot, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.common_reboot)) }
+                CooldownRebootButton(
+                  activeKey = setup.installOk,
+                  onReboot = onReboot,
+                  modifier = Modifier.fillMaxWidth(),
+                )
               }
             }
           }
@@ -760,6 +810,91 @@ private fun SetupPrimaryButton(
       .heightIn(min = 48.dp),
   ) {
     Text(text)
+  }
+}
+
+@Composable
+private fun CooldownRebootButton(
+  activeKey: Any?,
+  onReboot: () -> Unit,
+  modifier: Modifier = Modifier,
+  seconds: Int = 10,
+) {
+  var remaining by remember(activeKey) { mutableStateOf(seconds) }
+  LaunchedEffect(activeKey) {
+    remaining = seconds
+    while (remaining > 0) {
+      delay(1000)
+      remaining -= 1
+    }
+  }
+  val enabled = remaining <= 0
+  val alpha by animateFloatAsState(
+    targetValue = if (enabled) 1f else 0.58f,
+    animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+    label = "reboot_button_cooldown_alpha",
+  )
+  Button(
+    onClick = onReboot,
+    enabled = enabled,
+    modifier = modifier.graphicsLayer { this.alpha = alpha },
+  ) {
+    Text(
+      if (enabled) stringResource(R.string.common_reboot)
+      else stringResource(R.string.common_reboot_wait_fmt, remaining),
+    )
+  }
+}
+
+@Composable
+private fun KsuApatchZygiskWarningCard() {
+  val pulse = rememberInfiniteTransition(label = "zygisk_compat_warning_pulse")
+  val scale by pulse.animateFloat(
+    initialValue = 1f,
+    targetValue = 1.018f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(durationMillis = 1150, easing = FastOutSlowInEasing),
+      repeatMode = RepeatMode.Reverse,
+    ),
+    label = "zygisk_compat_warning_scale",
+  )
+  Card(
+    modifier = Modifier
+      .fillMaxWidth()
+      .graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+      },
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
+    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+  ) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(14.dp),
+      verticalAlignment = Alignment.Top,
+    ) {
+      Icon(
+        imageVector = Icons.Filled.ErrorOutline,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+        modifier = Modifier.size(22.dp),
+      )
+      Spacer(Modifier.width(10.dp))
+      Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(
+          text = stringResource(R.string.setup_zygisk_ksu_apatch_warning_title),
+          style = MaterialTheme.typography.bodyMedium,
+          fontWeight = FontWeight.SemiBold,
+          color = MaterialTheme.colorScheme.onTertiaryContainer,
+        )
+        Text(
+          text = stringResource(R.string.setup_zygisk_ksu_apatch_warning_body),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.92f),
+        )
+      }
+    }
   }
 }
 

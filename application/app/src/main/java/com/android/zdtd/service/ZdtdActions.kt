@@ -19,6 +19,8 @@ interface ZdtdActions {
   fun requestSetInstallZygisk(enabled: Boolean)
   fun confirmInstallZygisk()
   fun dismissInstallZygiskConfirm()
+  fun dismissZygiskInstallRecoveryDialog()
+  fun retryInstallWithoutZygisk()
 
   /** Remove module and uninstall the app (with reboot after uninstall). */
   fun beginModuleRemoval()

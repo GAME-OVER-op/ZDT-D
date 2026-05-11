@@ -29,15 +29,66 @@ ui_print "## - arm64 only (arm64-v8a / aarch64)"
 hr
 
 
-MAGISK_CODE="${MAGISK_VER_CODE:-0}"
-case "$MAGISK_CODE" in
-  ''|*[!0-9]*) MAGISK_CODE=0 ;;
-esac
-if [ -f /data/adb/ZDT-D/zygisk ]; then
-  if [ "$MAGISK_CODE" -gt 0 ] && [ "$MAGISK_CODE" -lt 26000 ]; then
-    fail "Magisk 26.0+ required for Zygisk API v4. Detected MAGISK_VER_CODE=$MAGISK_CODE."
+num_or_zero() {
+  case "${1:-}" in
+    ''|*[!0-9]*) echo 0 ;;
+    *) echo "$1" ;;
+  esac
+}
+
+fail_code() {
+  code="$1"
+  shift
+  ui_print "! $code"
+  fail "$*"
+}
+
+ZYGISK_MARKER="/data/adb/ZDT-D/zygisk"
+
+if [ -f "$ZYGISK_MARKER" ]; then
+  MAGISK_CODE="$(num_or_zero "${MAGISK_VER_CODE:-0}")"
+  KSU_CODE="$(num_or_zero "${KSU_VER_CODE:-0}")"
+  APATCH_CODE="$(num_or_zero "${APATCH_VER_CODE:-0}")"
+
+  IS_KSU=0
+  IS_APATCH=0
+  [ "${KSU:-}" = "true" ] && IS_KSU=1
+  [ -n "${KSU_VER_CODE:-}" ] && IS_KSU=1
+  [ "${APATCH:-}" = "true" ] && IS_APATCH=1
+  [ "${KERNELPATCH:-}" = "true" ] && IS_APATCH=1
+  [ -n "${APATCH_VER_CODE:-}" ] && IS_APATCH=1
+
+  ui_print "## Zygisk component requested"
+
+  if [ "$IS_APATCH" -eq 1 ]; then
+    ui_print "## Root manager: APatch / KernelPatch compatible"
+    if [ "$APATCH_CODE" -gt 0 ] && [ "$APATCH_CODE" -lt 10700 ]; then
+      fail_code "ZDTD_ZYGISK_APATCH_TOO_OLD" "APatch 10700+ required for Zygisk-compatible installation. Detected APATCH_VER_CODE=$APATCH_CODE."
+    elif [ "$APATCH_CODE" -eq 0 ]; then
+      ui_print "! ZDTD_ZYGISK_APATCH_UNSUPPORTED"
+      warn "Cannot determine APatch version. Zygisk component requires APatch 10700+ and an installed, enabled, running Zygisk layer."
+    else
+      ok "APatch versionCode is compatible: $APATCH_CODE"
+    fi
+    warn "APatch requires a compatible Zygisk layer (for example ZygiskNext) to be installed, enabled, and running."
+  elif [ "$IS_KSU" -eq 1 ]; then
+    ui_print "## Root manager: KernelSU compatible"
+    if [ "$KSU_CODE" -gt 0 ] && [ "$KSU_CODE" -lt 10940 ]; then
+      fail_code "ZDTD_ZYGISK_KSU_TOO_OLD" "KernelSU 10940+ required for Zygisk-compatible installation. Detected KSU_VER_CODE=$KSU_CODE."
+    elif [ "$KSU_CODE" -eq 0 ]; then
+      ui_print "! ZDTD_ZYGISK_KSU_UNSUPPORTED"
+      warn "Cannot determine KernelSU version. Zygisk component requires KernelSU 10940+ and an installed, enabled, running Zygisk layer."
+    else
+      ok "KernelSU versionCode is compatible: $KSU_CODE"
+    fi
+    warn "KernelSU requires a compatible Zygisk layer (for example ZygiskNext/ZygiskOnKernelSU) to be installed, enabled, and running."
+  else
+    ui_print "## Root manager: Magisk"
+    if [ "$MAGISK_CODE" -lt 26000 ]; then
+      fail_code "ZDTD_ZYGISK_MAGISK_TOO_OLD" "Magisk 26.0+ required for Zygisk API v4. Detected MAGISK_VER_CODE=$MAGISK_CODE."
+    fi
+    ok "Magisk versionCode is compatible: $MAGISK_CODE"
   fi
-  [ "$MAGISK_CODE" -gt 0 ] && ok "Magisk versionCode is compatible: $MAGISK_CODE"
 fi
 
 SDK="$(getprop ro.build.version.sdk 2>/dev/null)"
@@ -136,7 +187,6 @@ else
   fail "File not found: $SERVICE"
 fi
 
-ZYGISK_MARKER="/data/adb/ZDT-D/zygisk"
 ZYGISK_DIR="$MODDIR/zygisk"
 ZYGISK_SO="$ZYGISK_DIR/arm64-v8a.so"
 if [ -f "$ZYGISK_MARKER" ]; then
@@ -147,7 +197,7 @@ if [ -f "$ZYGISK_MARKER" ]; then
     chmod 644 "$ZYGISK_SO" 2>/dev/null || fail "chmod 644 failed: $ZYGISK_SO"
     ok "Zygisk arm64-v8a.so found"
   else
-    fail "Zygisk marker exists, but library not found: $ZYGISK_SO"
+    fail_code "ZDTD_ZYGISK_LIBRARY_MISSING" "Zygisk marker exists, but library not found: $ZYGISK_SO"
   fi
 else
   ui_print "- Zygisk component: disabled"

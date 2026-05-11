@@ -125,6 +125,8 @@ fun ZdtdApp(
       onToggleZygiskInstall = actions::requestSetInstallZygisk,
       onConfirmZygiskInstall = actions::confirmInstallZygisk,
       onDismissZygiskInstallConfirm = actions::dismissInstallZygiskConfirm,
+      onDismissZygiskInstallRecovery = actions::dismissZygiskInstallRecoveryDialog,
+      onRetryInstallWithoutZygisk = actions::retryInstallWithoutZygisk,
     )
     SetupStep.REBOOT -> {
       when (rootState) {

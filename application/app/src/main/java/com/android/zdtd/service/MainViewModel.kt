@@ -96,6 +96,8 @@ data class SetupUiState(
   val installConflicts: List<InstallConflictUi> = emptyList(),
   val installZygiskRequested: Boolean = false,
   val showZygiskInstallConfirm: Boolean = false,
+  val showKsuApatchZygiskWarning: Boolean = false,
+  val showZygiskInstallRecoveryDialog: Boolean = false,
 
   // Reboot required screen text
   val rebootRequiredText: String = "",
@@ -1305,14 +1307,42 @@ private fun clearDownloadedUpdateApk() {
     }.getOrDefault(false)
   }
 
+  private fun moduleInstallerLabel(installer: RootConfigManager.ModuleInstaller): String {
+    return when (installer) {
+      RootConfigManager.ModuleInstaller.MAGISK -> "Magisk"
+      RootConfigManager.ModuleInstaller.KSU -> str(R.string.mv_auto_013)
+      RootConfigManager.ModuleInstaller.APATCH -> "APatch"
+      RootConfigManager.ModuleInstaller.UNKNOWN -> str(R.string.mv_auto_014)
+    }
+  }
+
+  private fun hasZygiskInstallErrorMarker(logText: String): Boolean {
+    return logText.contains("ZDTD_ZYGISK_")
+  }
+
   override fun refreshZygiskInstallMarker() {
     if (_rootState.value != RootState.GRANTED) {
-      _setup.update { it.copy(installZygiskRequested = false, showZygiskInstallConfirm = false) }
+      _setup.update {
+        it.copy(
+          installZygiskRequested = false,
+          showZygiskInstallConfirm = false,
+          showKsuApatchZygiskWarning = false,
+        )
+      }
       return
     }
     launchIO {
       val enabled = readZygiskInstallMarker()
-      _setup.update { it.copy(installZygiskRequested = enabled) }
+      val installer = runCatching { root.detectModuleInstaller() }.getOrDefault(RootConfigManager.ModuleInstaller.UNKNOWN)
+      val label = moduleInstallerLabel(installer)
+      val showZygiskWarning = installer == RootConfigManager.ModuleInstaller.KSU || installer == RootConfigManager.ModuleInstaller.APATCH
+      _setup.update {
+        it.copy(
+          installZygiskRequested = enabled,
+          installerLabel = label,
+          showKsuApatchZygiskWarning = showZygiskWarning,
+        )
+      }
     }
   }
 
@@ -1356,12 +1386,9 @@ private fun clearDownloadedUpdateApk() {
     launchIO {
       val oldVer = runCatching { root.hasOldModuleVersionWebroot() }.getOrDefault(false)
       val installer = runCatching { root.detectModuleInstaller() }.getOrDefault(RootConfigManager.ModuleInstaller.UNKNOWN)
-      val label = when (installer) {
-        RootConfigManager.ModuleInstaller.MAGISK -> "Magisk"
-        RootConfigManager.ModuleInstaller.KSU -> str(R.string.mv_auto_013)
-        RootConfigManager.ModuleInstaller.APATCH -> "APatch"
-        RootConfigManager.ModuleInstaller.UNKNOWN -> str(R.string.mv_auto_014)
-      }
+      val label = moduleInstallerLabel(installer)
+      val showZygiskWarning = installer == RootConfigManager.ModuleInstaller.KSU || installer == RootConfigManager.ModuleInstaller.APATCH
+      val zygiskRequestedAtStart = readZygiskInstallMarker()
 
       // If we can't detect an installer, ask the user and export the zip to /sdcard.
       if (installer == RootConfigManager.ModuleInstaller.UNKNOWN) {
@@ -1369,6 +1396,7 @@ private fun clearDownloadedUpdateApk() {
           it.copy(
             installing = false,
             installerLabel = label,
+            showKsuApatchZygiskWarning = showZygiskWarning,
             manualZipSaved = false,
             manualZipPath = "",
             showManualDialog = true,
@@ -1389,6 +1417,9 @@ private fun clearDownloadedUpdateApk() {
           installProgressPercent = 3,
           installProgressLabel = str(R.string.setup_install_progress_preparing),
           installerLabel = label,
+          showKsuApatchZygiskWarning = showZygiskWarning,
+          showZygiskInstallRecoveryDialog = false,
+          showManualDialog = false,
           manualZipSaved = false,
           manualZipPath = "",
           oldVersionDetected = oldVer,
@@ -1425,6 +1456,7 @@ private fun clearDownloadedUpdateApk() {
           )
         }
       } else {
+        val zygiskInstallError = zygiskRequestedAtStart && hasZygiskInstallErrorMarker(out)
         _setup.update {
           it.copy(
             installing = false,
@@ -1432,10 +1464,11 @@ private fun clearDownloadedUpdateApk() {
             installLog = out,
             installProgressPercent = 100,
             installProgressLabel = str(R.string.setup_install_progress_failed),
-            showManualDialog = true,
+            showManualDialog = !zygiskInstallError,
+            showZygiskInstallRecoveryDialog = zygiskInstallError,
             manualZipSaved = false,
             manualZipPath = "",
-            manualDialogText = str(R.string.mv_auto_018) +
+            manualDialogText = if (zygiskInstallError) "" else str(R.string.mv_auto_018) +
               str(R.string.mv_auto_019) +
               str(R.string.mv_auto_020),
           )
@@ -1446,6 +1479,27 @@ private fun clearDownloadedUpdateApk() {
 
   override fun dismissManualInstallDialog() {
     _setup.update { it.copy(showManualDialog = false, manualDialogText = "") }
+  }
+
+  override fun dismissZygiskInstallRecoveryDialog() {
+    _setup.update { it.copy(showZygiskInstallRecoveryDialog = false) }
+  }
+
+  override fun retryInstallWithoutZygisk() {
+    if (_rootState.value != RootState.GRANTED || _setup.value.installing) return
+    launchIO {
+      runCatching {
+        root.execRootSh("rm -f /data/adb/ZDT-D/zygisk 2>/dev/null || true; rmdir /data/adb/ZDT-D 2>/dev/null || true")
+      }
+      _setup.update {
+        it.copy(
+          installZygiskRequested = false,
+          showZygiskInstallRecoveryDialog = false,
+          showZygiskInstallConfirm = false,
+        )
+      }
+      beginModuleInstall()
+    }
   }
 
   override fun continueAfterInstall() {
@@ -1463,7 +1517,16 @@ private fun clearDownloadedUpdateApk() {
     launchIO {
       val conflicts = detectInstallConflicts()
       val zygiskMarker = readZygiskInstallMarker()
-      _setup.update { it.copy(installConflicts = conflicts, installZygiskRequested = zygiskMarker) }
+      val installer = runCatching { root.detectModuleInstaller() }.getOrDefault(RootConfigManager.ModuleInstaller.UNKNOWN)
+      val showZygiskWarning = installer == RootConfigManager.ModuleInstaller.KSU || installer == RootConfigManager.ModuleInstaller.APATCH
+      _setup.update {
+        it.copy(
+          installConflicts = conflicts,
+          installZygiskRequested = zygiskMarker,
+          installerLabel = moduleInstallerLabel(installer),
+          showKsuApatchZygiskWarning = showZygiskWarning,
+        )
+      }
     }
   }
 
@@ -2881,6 +2944,7 @@ if (mf.isNotBlank()) {
         installProgressLabel = "",
         installOk = false,
         installError = null,
+        showZygiskInstallRecoveryDialog = false,
         manualZipSaved = false,
         manualZipPath = "",
         showUpdatePrompt = false,

@@ -154,6 +154,7 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="common_confirm_action">Confirm action</string>
     <string name="common_continue">Continue</string>
     <string name="common_reboot">Reboot</string>
+    <string name="common_reboot_wait_fmt">Please wait… (%1$d sec)</string>
     <string name="common_install">Install</string>
     <string name="common_installing">Installing…</string>
     <string name="common_error">Error</string>
@@ -265,6 +266,16 @@ If Zygisk is not enabled, the component will not load and your root manager may 
 Install the Zygisk component?</string>
     <string name="setup_zygisk_confirm_no">No</string>
     <string name="setup_zygisk_confirm_yes">Yes</string>
+    <string name="setup_zygisk_ksu_apatch_warning_title">Zygisk support required</string>
+    <string name="setup_zygisk_ksu_apatch_warning_body">KernelSU/APatch do not provide built-in Zygisk like regular Magisk. This component requires a compatible Zygisk layer to be installed, enabled, and running, for example ZygiskNext, ZygiskOnKernelSU, or a similar solution.
+
+Minimum versions:
+KernelSU: 10940+
+APatch: 10700+</string>
+    <string name="setup_zygisk_recovery_title">Zygisk component was not installed</string>
+    <string name="setup_zygisk_recovery_body">The install log says the Zygisk component could not be installed. You can repeat ZDT-D installation without the Zygisk component.</string>
+    <string name="setup_zygisk_recovery_no">No</string>
+    <string name="setup_zygisk_recovery_retry_without">Reinstall without Zygisk</string>
 
     <!-- Program updates (MainViewModel) -->
     <string name="prog_update_status_ready">Ready</string>
@@ -948,7 +959,9 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 
     <string name="tab_opera_args">Args</string>
     <string name="opera_args_api_proxy_title">API Proxy (-api-proxy)</string>
-    <string name="opera_args_api_proxy_desc">SOCKS5 or HTTP proxy used by opera-proxy to reach Opera backend API. This is the most frequently changed argument.</string>
+    <string name="opera_args_api_proxy_desc">SOCKS5/HTTP(S) proxy used by opera-proxy to reach Opera backend API. You may specify one proxy URL, several proxy URLs separated by commas, or a URL to a plain text proxy list.</string>
+    <string name="opera_args_api_proxy_invalid">Use proxy URLs with a scheme: http://, https://, socks5:// or socks5h://. You can also use an http(s) URL to a plain text proxy list.</string>
+    <string name="opera_args_api_proxy_hint">Format: http://, https://, socks5:// or socks5h://[login:password@]host[:port]. Multiple proxies can be separated by commas. You may also paste an http(s) URL to a plain text list where each line contains a proxy URL. The list is downloaded again on every Opera-proxy start. Addresses without a scheme are not supported. If no working proxy is found or the list cannot be downloaded, Opera-proxy starts without api-proxy.</string>
     <string name="opera_args_server_selection_title">Server Selection</string>
     <string name="opera_args_dl_limit_hint">Download limit in bytes for server speed test. Default: 204800 (200 KB)</string>
     <string name="opera_args_misc_title">Timing &amp; Verbosity</string>

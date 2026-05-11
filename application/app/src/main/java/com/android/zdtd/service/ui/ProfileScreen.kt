@@ -30,6 +30,7 @@ fun ProfileScreen(
   val useScrollableTabs = rememberUseScrollableTabs()
   val program = programs.firstOrNull { it.id == programId }
   val prof = program?.profiles?.firstOrNull { it.name == profile }
+  val toolName = toolDisplayName(programId, program?.name)
 
   val pfx = "/api/programs/$programId/profiles/$profile"
 
@@ -45,9 +46,9 @@ fun ProfileScreen(
       .then(if (compact) Modifier.verticalScroll(screenScroll) else Modifier),
     verticalArrangement = Arrangement.spacedBy(12.dp)
   ) {
-    Text("$programId / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 2)
+    Text("$toolName / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 2)
     Text(
-      stringResource(R.string.changes_apply_after_restart),
+      toolDescription(programId),
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
     )

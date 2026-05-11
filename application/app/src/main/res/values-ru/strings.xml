@@ -160,16 +160,16 @@
 
     <string name="nav_home">Главная</string>
     <string name="nav_stats">Статистика</string>
-    <string name="nav_programs">Программы</string>
+    <string name="nav_programs">Инструменты</string>
     <string name="nav_support">Поддержка</string>
 
-    <string name="title_program">Программа</string>
+    <string name="title_program">Инструмент</string>
     <string name="title_profile">Профиль</string>
 
     <string name="cd_back">Назад</string>
     <string name="cd_logs">Логи</string>
     <string name="cd_backup">Бэкап</string>
-    <string name="cd_program_updates">Обновления программ</string>
+    <string name="cd_program_updates">Обновления инструментов</string>
     <string name="cd_settings">Настройки</string>
 
     <!-- LogsBottomSheet.kt -->
@@ -197,7 +197,7 @@
     <string name="profile_config_desc">Конфиг профиля.</string>
     <string name="profile_fake_sni_desc">Список fake SNI для профиля.</string>
 
-    <string name="program_not_found">Программа не найдена</string>
+    <string name="program_not_found">Инструмент не найден</string>
     <string name="enabled">Включено</string>
     <string name="tab_profiles">Профили</string>
     <string name="tab_files">Файлы</string>
@@ -223,10 +223,10 @@
     <string name="profile_already_exists">Профиль уже существует</string>
 
     <string name="opera_proxy_title">Opera Proxy</string>
-    <string name="tab_byedpi">Byedpi</string>
+    <string name="tab_byedpi">ByeDPI</string>
     <string name="tab_servers">Серверы</string>
-    <string name="byedpi_start_args_desc">Аргументы запуска byedpi.</string>
-    <string name="byedpi_restart_args_desc">Аргументы перезапуска byedpi.</string>
+    <string name="byedpi_start_args_desc">Аргументы запуска ByeDPI.</string>
+    <string name="byedpi_restart_args_desc">Аргументы перезапуска ByeDPI.</string>
     <string name="opera_ports_desc">Карта портов.</string>
     <string name="fake_sni_desc">Список fake SNI.</string>
 
@@ -284,7 +284,7 @@
     <string name="app_picker_search">Поиск</string>
     <string name="app_picker_loading_apps">Загрузка приложений…</string>
     <string name="app_picker_no_matches">Нет совпадений</string>
-    <string name="app_picker_own_app_hint">Разрешает программе запускаться без выбранного списка приложений</string>
+    <string name="app_picker_own_app_hint">Позволяет инструменту запускаться без выбранного списка приложений</string>
     <string name="app_picker_selected_header">Выбрано (%1$d)</string>
     <string name="app_picker_none">(нет)</string>
     <string name="app_picker_all_apps_title">Все приложения</string>
@@ -292,32 +292,33 @@
     <string name="app_picker_system_label">системное</string>
 
     <string name="apps_list_clear">Очистить</string>
-    <string name="apps_list_search_programs">Поиск программ</string>
-    <string name="apps_list_no_programs_title">Нет программ</string>
-    <string name="apps_list_no_programs_daemon_online">Демон онлайн, но список программ пустой.</string>
-    <string name="apps_list_no_programs_daemon_offline">Демон офлайн. Сначала запустите ZDT-D.</string>
+    <string name="apps_list_search_programs">Поиск инструментов</string>
+    <string name="apps_list_no_programs_title">Нет инструментов</string>
+    <string name="apps_list_no_programs_daemon_online">Daemon онлайн, но вернул пустой список инструментов.</string>
+    <string name="apps_list_no_programs_daemon_offline">Daemon офлайн. Сначала запустите ZDT-D.</string>
     <string name="apps_list_nothing_found_title">Ничего не найдено</string>
     <string name="apps_list_nothing_found_hint">Попробуйте другой запрос.</string>
     <string name="apps_list_section_core">Основное</string>
     <string name="apps_list_section_profiles">Профили</string>
     <string name="apps_list_items_count">%1$d шт.</string>
-    <string name="apps_list_programs_title">Программы</string>
+    <string name="apps_list_programs_title">Инструменты</string>
     <string name="apps_list_online_upper">ОНЛАЙН</string>
     <string name="apps_list_offline_upper">ОФЛАЙН</string>
-    <string name="apps_list_header_hint">Откройте программу для редактирования конфигов, профилей и списков приложений.</string>
+    <string name="apps_list_header_hint">Откройте инструмент для редактирования конфигов, профилей и списков приложений.</string>
     <string name="apps_list_total_fmt">Всего: %1$d</string>
     <string name="apps_list_showing_fmt">Показано: %1$d / %2$d</string>
     <string name="apps_list_chip_profiles">профили %1$d</string>
     <string name="apps_list_chip_enabled">включено</string>
     <string name="apps_list_chip_disabled">выключено</string>
     <string name="apps_list_chip_enabled_count">включено %1$d</string>
-    <string name="apps_list_desc_dnscrypt">Локальный шифрованный DNS‑резолвер</string>
-    <string name="apps_list_desc_operaproxy">цепочка byedpi → opera-proxy → t2s</string>
-    <string name="apps_list_desc_nfqws">zapret NFQUEUE обход DPI</string>
-    <string name="apps_list_desc_nfqws2">zapret2 NFQUEUE обход DPI</string>
-    <string name="apps_list_desc_byedpi">Локальный TCP‑прокси</string>
-    <string name="apps_list_desc_dpitunnel">TCP+UDP туннель</string>
-    <string name="apps_list_desc_default">Настройка и управление</string>
+    <string name="apps_list_desc_dnscrypt">DNSCrypt — шифрованный DNS‑резолвер</string>
+    <string name="apps_list_desc_operaproxy">Цепочка Opera Proxy с ByeDPI и t2s</string>
+    <string name="apps_list_desc_nfqws">Zapret NFQUEUE обход DPI</string>
+    <string name="apps_list_desc_nfqws2">Zapret 2 NFQUEUE обход DPI</string>
+    <string name="apps_list_desc_byedpi">ByeDPI локальный TCP‑прокси</string>
+    <string name="apps_list_desc_dpitunnel">DPITunnel TCP/UDP туннель</string>
+    <string name="apps_list_desc_singbox">sing-box — экспериментальный инструмент маршрутизации</string>
+    <string name="apps_list_desc_default">Настройка и управление инструментом</string>
 
     <string name="apps_host_unknown_route">Неизвестный маршрут</string>
     <string name="backup_title">Бэкап настроек</string>
@@ -340,15 +341,15 @@
     <string name="backup_delete_cd">Удалить</string>
     <string name="backup_item_restore">Восстановить</string>
     <string name="backup_progress_default_title">Операция</string>
-    <string name="program_updates_title">Обновление программ</string>
+    <string name="program_updates_title">Обновление инструментов</string>
     <string name="program_updates_reset_cd">Сброс</string>
-    <string name="program_updates_desc">Обновляет nfqws / nfqws2 и Lua-файлы прямо из GitHub releases. Проверка выполняется только по нажатию.</string>
+    <string name="program_updates_desc">Обновляет бинарники Zapret / Zapret 2 и Lua-файлы прямо из GitHub releases. Проверка выполняется только по нажатию.</string>
     <string name="program_updates_service_running_title">Сервис запущен</string>
     <string name="program_updates_service_running_desc">Перед проверкой/обновлением остановите сервис. Это нужно, чтобы правила и процессы не использовали файлы во время замены.</string>
     <string name="program_updates_stopping">Останавливаю…</string>
     <string name="program_updates_stop_and_check">Остановить и проверить</string>
     <string name="program_updates_pick_zapret_title">Версии Zapret</string>
-    <string name="program_updates_pick_zapret2_title">Версии Zapret2</string>
+    <string name="program_updates_pick_zapret2_title">Версии Zapret 2</string>
     <string name="program_updates_select_version_cd">Выбрать версию</string>
     <string name="program_updates_installed_latest_fmt">Установлено: %1$s   •   Последняя: %2$s</string>
     <string name="program_updates_target_fmt">Цель: %1$s%2$s</string>
@@ -537,8 +538,22 @@
     <string name="setup_install_conflict_details">Подробности конфликта</string>
     <string name="setup_install_conflict_remove">Удалить</string>
     <string name="setup_install_conflict_zapret_message">Предупреждение: обнаружены конфликтующие модули. Просьба удалить данные модули, возможна некорректная работа ZDT-D.</string>
-    <string name="setup_install_conflict_dnscrypt_message">Обнаружен модуль dnscrypt. Рекомендуется удалить данный модуль. Если вам нужен dnscrypt, он уже есть в составе ZDT-D.</string>
+    <string name="setup_install_conflict_dnscrypt_message">Обнаружен модуль DNSCrypt. Рекомендуется удалить данный модуль. Если вам нужен DNSCrypt, он уже есть в составе ZDT-D.</string>
     <string name="setup_install_conflict_portguard_message">Данный модуль имеет высокую конфликтность. Функционал данного модуля уже имеется в ZDT-D.</string>
+    <string name="setup_zygisk_install_title">Установить Zygisk?</string>
+    <string name="setup_zygisk_install_short">Дополнительный компонент скрытия интерфейсов</string>
+    <string name="setup_zygisk_install_details_cd">Описание Zygisk</string>
+    <string name="setup_zygisk_install_details">Zygisk-компонент поставляется вместе с установщиком ZDT-D и рекомендуется к установке, если вы хотите получить дополнительную защиту устройства от анализаторов.
+
+Компонент скрывает VPN-интерфейсы, которые создаёт модуль, делая среду для нежелательных приложений более чистой.</string>
+    <string name="setup_zygisk_confirm_title">Установить Zygisk-компонент?</string>
+    <string name="setup_zygisk_confirm_body">Для установки и работы Zygisk-компонента требуется включённый Zygisk в вашем root-менеджере: Magisk, KernelSU, APatch или совместимом решении.
+
+Если Zygisk не включён, компонент не сможет загрузиться, а root-менеджер может отключить модуль.
+
+Установить Zygisk-компонент?</string>
+    <string name="setup_zygisk_confirm_no">Нет</string>
+    <string name="setup_zygisk_confirm_yes">Да</string>
 
     <!-- Program updates (MainViewModel) -->
     <string name="prog_update_status_ready">Готово</string>
@@ -548,7 +563,7 @@
     <string name="prog_update_error_archive_changed">Структура архива изменилась. Автообновление невозможно.</string>
     <string name="prog_update_error_install_failed">Не удалось установить</string>
     <string name="prog_update_status_installed">Установлено</string>
-    <string name="enabled_card_program_title">Состояние программы</string>
+    <string name="enabled_card_program_title">Состояние инструмента</string>
     <string name="enabled_card_profile_title">Состояние профиля</string>
     <string name="enabled_state_on">Включено</string>
     <string name="enabled_state_off">Выключено</string>
@@ -559,7 +574,7 @@
     <string name="profile_config_txt_title">config.txt</string>
     <string name="profile_fake_sni_txt_title">fake_sni.txt</string>
     <string name="program_updates_zapret_title">Zapret (nfqws)</string>
-    <string name="program_updates_zapret2_title">Zapret2 (nfqws2 + lua)</string>
+    <string name="program_updates_zapret2_title">Zapret 2 (nfqws2 + lua)</string>
     <string name="program_updates_err_service_running">Служба всё ещё работает. Остановите её и попробуйте снова.</string>
     <string name="program_updates_err_detect_installed">Не удалось определить установленную версию</string>
     <string name="program_updates_err_check_latest">Не удалось проверить последнюю версию</string>
@@ -596,7 +611,7 @@
   <string name="backup_force_restore_text">Этот бэкап был создан для другой версии модуля. Можно попробовать восстановить его, но из-за различий в архитектуре модуля возможны ошибки в работе.</string>
   <string name="backup_force_restore_continue">Продолжить</string>
   <string name="backup_force_restore_confirm_title">Продолжить принудительное восстановление?</string>
-  <string name="backup_force_restore_confirm_text">Возможные проблемы: сервис может не запуститься, программы могут работать некорректно, настройки могут повредиться. Если что-то пойдёт не так, помочь может только чистая установка модуля.
+  <string name="backup_force_restore_confirm_text">Возможные проблемы: сервис может не запуститься, инструменты могут работать некорректно, настройки могут повредиться. Если что-то пойдёт не так, помочь может только чистая установка модуля.
 
 Продолжая, вы соглашаетесь восстановить бэкап, игнорируя проверку versionCode.</string>
   <string name="backup_force_restore_confirm_btn">Понимаю, восстановить</string>
@@ -655,12 +670,12 @@
     <string name="singbox_enable_at_least_one_profile">Включите хотя бы один профиль</string>
     <string name="singbox_select_active_transparent_profile">Выберите active_transparent_profile</string>
     <string name="singbox_active_transparent_profile_not_found">Активный transparent-профиль не найден</string>
-    <string name="operaproxy_sni_section_desc">Управление серверами opera-proxy. Для каждого сервера можно задать SNI, использование byedpi и необязательный адрес сервера.</string>
+    <string name="operaproxy_sni_section_desc">Управление серверами opera-proxy. Для каждого сервера можно задать SNI, использование ByeDPI и необязательный адрес сервера.</string>
     <string name="operaproxy_sni_create_new">Создать новый сервер</string>
     <string name="operaproxy_sni_empty">Серверы ещё не добавлены. Создайте первый сервер.</string>
     <string name="operaproxy_sni_entry_title_fmt">Сервер %1$d</string>
     <string name="operaproxy_sni_placeholder">example.com</string>
-    <string name="operaproxy_sni_use_byedpi">Использовать byedpi</string>
+    <string name="operaproxy_sni_use_byedpi">Использовать ByeDPI</string>
     <string name="operaproxy_sni_use_byedpi_desc">Добавлять upstream -proxy socks5://127.0.0.1:&lt;BYEDPI_PORT&gt;</string>
 
 
@@ -712,12 +727,12 @@
 
 
     <string name="settings_hotspot_title">Включить точку доступа</string>
-    <string name="settings_hotspot_body">Позволяет направлять трафик точки доступа через выбранную программу.</string>
-    <string name="settings_hotspot_program_title">Программа для точки доступа</string>
+    <string name="settings_hotspot_body">Позволяет направлять трафик точки доступа через выбранный инструмент.</string>
+    <string name="settings_hotspot_program_title">Инструмент для точки доступа</string>
     <string name="settings_hotspot_program_operaproxy">opera-proxy</string>
     <string name="settings_hotspot_program_singbox">sing-box</string>
     <string name="settings_hotspot_warning_title">Предупреждение безопасности</string>
-    <string name="settings_hotspot_warning_body">При включении этой функции безопасность устройства может снизиться, так как порт программы будет открыт. Любой в сети сможет попытаться подключиться к вашему прокси.</string>
+    <string name="settings_hotspot_warning_body">Включение этой функции может снизить безопасность устройства, потому что порт инструмента будет открыт. Любой в сети сможет попытаться подключиться к прокси.</string>
     <string name="settings_hotspot_warning_accept">Принять</string>
     <string name="settings_hotspot_saved">Настройка точки доступа сохранена</string>
     <string name="settings_hotspot_save_failed">Не удалось сохранить настройку точки доступа</string>
@@ -779,12 +794,12 @@
     <string name="apps_conflict_slot_mobile">Мобильный</string>
     <string name="apps_conflict_program_operaproxy">opera-proxy</string>
     <string name="apps_conflict_program_singbox">sing-box</string>
-    <string name="apps_conflict_program_dpitunnel">dpitunnel</string>
-    <string name="apps_conflict_program_byedpi">byedpi</string>
-    <string name="apps_conflict_program_zapret">zapret</string>
-    <string name="apps_conflict_program_zapret2">zapret2</string>
+    <string name="apps_conflict_program_dpitunnel">DPITunnel</string>
+    <string name="apps_conflict_program_byedpi">ByeDPI</string>
+    <string name="apps_conflict_program_zapret">Zapret</string>
+    <string name="apps_conflict_program_zapret2">Zapret 2</string>
     <string name="settings_proxyinfo_conflict_title">Приложения уже используются</string>
-    <string name="settings_proxyinfo_conflict_body">Эти приложения уже используются в правилах программ. Удалить их из этих программ и добавить в защиту от сканирования портов?</string>
+    <string name="settings_proxyinfo_conflict_body">Эти приложения уже используются в правилах инструментов. Убрать их из тех инструментов и добавить в защиту от сканирования портов?</string>
     <string name="settings_proxyinfo_conflict_yes">Да, перенести</string>
     <string name="settings_proxyinfo_conflict_no">Нет, снять галочки</string>
 
@@ -940,7 +955,7 @@
     <string name="opera_args_ua_title">User-Agent (Дополнительно)</string>
     <string name="opera_args_ua_desc">User-Agent, отправляемый в Opera API. Меняй только если знаешь что делаешь.</string>
     <string name="opera_args_bootstrap_dns_title">Bootstrap DNS</string>
-    <string name="opera_args_bootstrap_dns_desc">DNS-резолверы, используемые opera-proxy для разрешения адресов серверов Opera. Локальный dnscrypt (если включён) всегда добавляется первым автоматически.</string>
+    <string name="opera_args_bootstrap_dns_desc">DNS-резолверы, используемые opera-proxy для разрешения адресов серверов Opera. Локальный DNSCrypt (если включён) всегда добавляется первым автоматически.</string>
     <string name="opera_args_dns_resolver_label">Резолвер %1$d</string>
     <string name="opera_args_dns_add_label">Добавить резолвер</string>
     <string name="opera_args_dns_save">Сохранить список DNS</string>
@@ -1043,7 +1058,7 @@
     <string name="apps_list_desc_myvpn">Привязка выбранных приложений к существующему TUN-интерфейсу через Android netd</string>
     <string name="apps_conflict_program_myvpn">myvpn</string>
     <string name="myvpn_program_hint">myvpn привязывает выбранные приложения к уже существующему TUN-интерфейсу.</string>
-    <string name="myvpn_status_profiles">Включено профилей: %1$d / %2$d</string>
+    <string name="myvpn_status_profiles">Профили myvpn: %1$d / %2$d</string>
     <string name="myvpn_no_profiles_title">Нет профилей myvpn</string>
     <string name="myvpn_no_profiles_desc">Создайте профиль, добавьте имя TUN, DNS-серверы, режим CIDR и список приложений.</string>
     <string name="myvpn_create_profile_title">Создать профиль myvpn</string>
@@ -1078,7 +1093,7 @@
     <string name="apps_list_desc_tun2socks">Профильная маршрутизация tun2socks через Android netd</string>
     <string name="apps_conflict_program_tun2socks">tun2socks</string>
     <string name="tun2socks_program_hint">tun2socks создаёт TUN, ZDT-D направляет выбранные приложения через него.</string>
-    <string name="tun2socks_status_profiles">Включено профилей: %1$d / %2$d</string>
+    <string name="tun2socks_status_profiles">Профили tun2socks: %1$d / %2$d</string>
     <string name="tun2socks_no_profiles_title">Нет профилей tun2socks</string>
     <string name="tun2socks_no_profiles_desc">Создайте профиль, добавьте имя TUN, proxy URL и список приложений.</string>
     <string name="tun2socks_create_profile_title">Создать профиль tun2socks</string>
@@ -1111,8 +1126,8 @@
     <!-- OpenVPN profiles -->
     <string name="apps_list_desc_openvpn">Профильная маршрутизация OpenVPN через Android netd</string>
     <string name="apps_conflict_program_openvpn">OpenVPN</string>
-    <string name="openvpn_program_hint">Профили применяются при запуске службы. Сохранённые изменения применятся после остановки и повторного запуска.</string>
-    <string name="openvpn_status_profiles">Включено профилей: %1$d / %2$d</string>
+    <string name="openvpn_program_hint">Маршрутизация профилей OpenVPN через Android netd для выбранных приложений.</string>
+    <string name="openvpn_status_profiles">Профили OpenVPN: %1$d / %2$d</string>
     <string name="openvpn_no_profiles_title">Нет профилей OpenVPN</string>
     <string name="openvpn_no_profiles_desc">Создайте профиль, добавьте client.ovpn, DNS-серверы и список приложений.</string>
     <string name="openvpn_create_profile_title">Создать профиль OpenVPN</string>
@@ -1145,10 +1160,10 @@
     <string name="openvpn_config_autosave_hint">Автосохранение включено. Изменения применятся после перезапуска службы.</string>
     <string name="openvpn_config_editor_title_fmt">client.ovpn / %1$s</string>
     <string name="openvpn_saving">Сохранение…</string>
-    <string name="apps_list_desc_amneziawg">Профильная маршрутизация AmneziaWG через Android netd</string>
+    <string name="apps_list_desc_amneziawg">AmneziaWG userspace‑туннель с маршрутизацией через netd</string>
     <string name="apps_conflict_program_amneziawg">AmneziaWG</string>
-    <string name="amneziawg_program_hint">Профили применяются при запуске службы. AmneziaWG создаёт только userspace-интерфейс; маршруты, DNS и UID-routing делает vpn_netd.</string>
-    <string name="amneziawg_status_profiles">Включено профилей: %1$d / %2$d</string>
+    <string name="amneziawg_program_hint">AmneziaWG использует userspace‑интерфейс; маршруты, DNS и UID‑routing приложений делает ZDT-D через vpn_netd.</string>
+    <string name="amneziawg_status_profiles">Профили AmneziaWG: %1$d / %2$d</string>
     <string name="amneziawg_no_profiles_title">Нет профилей AmneziaWG</string>
     <string name="amneziawg_no_profiles_desc">Создайте профиль, добавьте client.conf, IPv4-адрес, DNS-серверы и список приложений.</string>
     <string name="amneziawg_create_profile_title">Создать профиль AmneziaWG</string>
@@ -1199,7 +1214,7 @@
     <string name="apps_list_desc_mihomo">Mihomo YAML, совместимый с Clash, через TUN + tun2socks</string>
     <string name="apps_conflict_program_mihomo">Mihomo</string>
     <string name="mihomo_program_hint">Mihomo использует Clash-compatible YAML, а ZDT-D направляет выбранные приложения через TUN + tun2socks.</string>
-    <string name="mihomo_status_profiles">Включено профилей: %1$d / %2$d</string>
+    <string name="mihomo_status_profiles">Профили Mihomo: %1$d / %2$d</string>
     <string name="mihomo_no_profiles_title">Нет профилей Mihomo</string>
     <string name="mihomo_no_profiles_desc">Создайте профиль, отредактируйте config.yaml и выберите приложения.</string>
     <string name="mihomo_create_profile_title">Создать профиль Mihomo</string>
@@ -1410,9 +1425,9 @@
 
     <string name="web_panel_open">Веб-панель</string>
     <string name="web_panel_unavailable">Кажется, служба не запущена или веб-панель настроена неверно</string>
-    <string name="program_logs_title">Логи программы</string>
+    <string name="program_logs_title">Логи инструмента</string>
     <string name="program_logs_empty">Файлы логов не найдены</string>
-    <string name="program_logs_empty_desc">Сначала запустите программу или профиль, затем откройте это окно снова.</string>
+    <string name="program_logs_empty_desc">Сначала запустите инструмент или профиль, затем откройте это окно снова.</string>
     <string name="program_logs_refresh">Обновить список логов</string>
     <string name="program_logs_back_to_files">Назад к файлам логов</string>
     <string name="program_logs_realtime">Лог в реальном времени</string>

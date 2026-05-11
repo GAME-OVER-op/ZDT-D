@@ -249,8 +249,22 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="setup_install_conflict_details">Conflict details</string>
     <string name="setup_install_conflict_remove">Remove</string>
     <string name="setup_install_conflict_zapret_message">Warning: conflicting modules were detected. Please remove these modules, as incorrect operation of ZDT-D is possible.</string>
-    <string name="setup_install_conflict_dnscrypt_message">A dnscrypt module was detected. It is recommended to remove this module. If you need dnscrypt, it is already included in ZDT-D.</string>
+    <string name="setup_install_conflict_dnscrypt_message">A DNSCrypt module was detected. It is recommended to remove this module. If you need DNSCrypt, it is already included in ZDT-D.</string>
     <string name="setup_install_conflict_portguard_message">This module has a high level of conflict. The functionality of this module is already available in ZDT-D.</string>
+    <string name="setup_zygisk_install_title">Install Zygisk?</string>
+    <string name="setup_zygisk_install_short">Optional interface-hiding component</string>
+    <string name="setup_zygisk_install_details_cd">Zygisk details</string>
+    <string name="setup_zygisk_install_details">The Zygisk component is bundled with the ZDT-D installer and is recommended if you want additional protection against analyzer apps.
+
+It hides VPN interfaces created by the module, making the environment cleaner for unwanted apps.</string>
+    <string name="setup_zygisk_confirm_title">Install Zygisk component?</string>
+    <string name="setup_zygisk_confirm_body">Installing and running the Zygisk component requires Zygisk to be enabled in your root manager: Magisk, KernelSU, APatch, or a compatible solution.
+
+If Zygisk is not enabled, the component will not load and your root manager may disable the module.
+
+Install the Zygisk component?</string>
+    <string name="setup_zygisk_confirm_no">No</string>
+    <string name="setup_zygisk_confirm_yes">Yes</string>
 
     <!-- Program updates (MainViewModel) -->
     <string name="prog_update_status_ready">Ready</string>
@@ -279,16 +293,16 @@ Updating is recommended for best compatibility. You may skip, but some features 
 
     <string name="nav_home">Home</string>
     <string name="nav_stats">Stats</string>
-    <string name="nav_programs">Programs</string>
+    <string name="nav_programs">Tools</string>
     <string name="nav_support">Support</string>
 
-    <string name="title_program">Program</string>
+    <string name="title_program">Tool</string>
     <string name="title_profile">Profile</string>
 
     <string name="cd_back">Back</string>
     <string name="cd_logs">Logs</string>
     <string name="cd_backup">Backup</string>
-    <string name="cd_program_updates">Program updates</string>
+    <string name="cd_program_updates">Tool updates</string>
     <string name="cd_settings">Settings</string>
 
     <!-- LogsBottomSheet.kt -->
@@ -316,7 +330,7 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="profile_config_desc">Profile config.</string>
     <string name="profile_fake_sni_desc">Profile fake SNI list.</string>
 
-    <string name="program_not_found">Program not found</string>
+    <string name="program_not_found">Tool not found</string>
     <string name="enabled">Enabled</string>
     <string name="tab_profiles">Profiles</string>
     <string name="tab_files">Files</string>
@@ -342,10 +356,10 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="profile_already_exists">Profile already exists</string>
 
     <string name="opera_proxy_title">Opera Proxy</string>
-    <string name="tab_byedpi">Byedpi</string>
+    <string name="tab_byedpi">ByeDPI</string>
     <string name="tab_servers">Servers</string>
-    <string name="byedpi_start_args_desc">Arguments for byedpi start.</string>
-    <string name="byedpi_restart_args_desc">Arguments for byedpi restart.</string>
+    <string name="byedpi_start_args_desc">Arguments for ByeDPI start.</string>
+    <string name="byedpi_restart_args_desc">Arguments for ByeDPI restart.</string>
     <string name="opera_ports_desc">Ports map.</string>
     <string name="fake_sni_desc">Fake SNI list.</string>
 
@@ -404,7 +418,7 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="app_picker_search">Search</string>
     <string name="app_picker_loading_apps">Loading apps…</string>
     <string name="app_picker_no_matches">No matches</string>
-    <string name="app_picker_own_app_hint">Allows the program to start without a selected app list</string>
+    <string name="app_picker_own_app_hint">Allows the tool to start without a selected app list</string>
     <string name="app_picker_selected_header">Selected (%1$d)</string>
     <string name="app_picker_none">(none)</string>
     <string name="app_picker_all_apps_title">All apps</string>
@@ -412,32 +426,33 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="app_picker_system_label">system</string>
 
     <string name="apps_list_clear">Clear</string>
-    <string name="apps_list_search_programs">Search programs</string>
-    <string name="apps_list_no_programs_title">No programs</string>
-    <string name="apps_list_no_programs_daemon_online">The daemon is online, but it returned an empty program list.</string>
+    <string name="apps_list_search_programs">Search tools</string>
+    <string name="apps_list_no_programs_title">No tools</string>
+    <string name="apps_list_no_programs_daemon_online">The daemon is online, but it returned an empty tool list.</string>
     <string name="apps_list_no_programs_daemon_offline">The daemon is offline. Start ZDT-D first.</string>
     <string name="apps_list_nothing_found_title">Nothing found</string>
     <string name="apps_list_nothing_found_hint">Try another search query.</string>
     <string name="apps_list_section_core">Core</string>
     <string name="apps_list_section_profiles">Profiles</string>
     <string name="apps_list_items_count">%1$d item(s)</string>
-    <string name="apps_list_programs_title">Programs</string>
+    <string name="apps_list_programs_title">Tools</string>
     <string name="apps_list_online_upper">ONLINE</string>
     <string name="apps_list_offline_upper">OFFLINE</string>
-    <string name="apps_list_header_hint">Open a program to edit configs, profiles and app lists.</string>
+    <string name="apps_list_header_hint">Open a tool to edit configs, profiles and app lists.</string>
     <string name="apps_list_total_fmt">Total: %1$d</string>
     <string name="apps_list_showing_fmt">Showing: %1$d / %2$d</string>
     <string name="apps_list_chip_profiles">profiles %1$d</string>
     <string name="apps_list_chip_enabled">enabled</string>
     <string name="apps_list_chip_disabled">disabled</string>
     <string name="apps_list_chip_enabled_count">enabled %1$d</string>
-    <string name="apps_list_desc_dnscrypt">Local encrypted DNS resolver</string>
-    <string name="apps_list_desc_operaproxy">byedpi → opera-proxy → t2s chain</string>
-    <string name="apps_list_desc_nfqws">zapret NFQUEUE DPI bypass</string>
-    <string name="apps_list_desc_nfqws2">zapret2 NFQUEUE DPI bypass</string>
-    <string name="apps_list_desc_byedpi">Local TCP proxy</string>
-    <string name="apps_list_desc_dpitunnel">TCP+UDP tunnel</string>
-    <string name="apps_list_desc_default">Configure and manage</string>
+    <string name="apps_list_desc_dnscrypt">DNSCrypt encrypted DNS resolver</string>
+    <string name="apps_list_desc_operaproxy">Opera Proxy chain with ByeDPI and t2s</string>
+    <string name="apps_list_desc_nfqws">Zapret NFQUEUE DPI bypass</string>
+    <string name="apps_list_desc_nfqws2">Zapret 2 NFQUEUE DPI bypass</string>
+    <string name="apps_list_desc_byedpi">ByeDPI local TCP proxy</string>
+    <string name="apps_list_desc_dpitunnel">DPITunnel TCP/UDP tunnel</string>
+    <string name="apps_list_desc_singbox">sing-box experimental routing tool</string>
+    <string name="apps_list_desc_default">Configure and manage this tool</string>
 
     <string name="apps_host_unknown_route">Unknown route</string>
     <string name="backup_title">Settings backup</string>
@@ -460,15 +475,15 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="backup_delete_cd">Delete</string>
     <string name="backup_item_restore">Restore</string>
     <string name="backup_progress_default_title">Operation</string>
-    <string name="program_updates_title">Program updates</string>
+    <string name="program_updates_title">Tool updates</string>
     <string name="program_updates_reset_cd">Reset</string>
-    <string name="program_updates_desc">Updates nfqws / nfqws2 and Lua files directly from GitHub releases. Check is performed only when you tap the button.</string>
+    <string name="program_updates_desc">Updates Zapret / Zapret 2 binaries and Lua files directly from GitHub releases. Check is performed only when you tap the button.</string>
     <string name="program_updates_service_running_title">Service is running</string>
     <string name="program_updates_service_running_desc">Stop the service before checking/updating. This is required so rules and processes don’t use the files during replacement.</string>
     <string name="program_updates_stopping">Stopping…</string>
     <string name="program_updates_stop_and_check">Stop and check</string>
     <string name="program_updates_pick_zapret_title">Zapret versions</string>
-    <string name="program_updates_pick_zapret2_title">Zapret2 versions</string>
+    <string name="program_updates_pick_zapret2_title">Zapret 2 versions</string>
     <string name="program_updates_select_version_cd">Select version</string>
     <string name="program_updates_installed_latest_fmt">Installed: %1$s   •   Latest: %2$s</string>
     <string name="program_updates_target_fmt">Target: %1$s%2$s</string>
@@ -550,7 +565,7 @@ Use another editor to modify it.</string>
     <string name="strategic_variants_sheet_hint">Tap a config to apply it immediately.</string>
     <string name="strategic_variants_current_hint">Current config</string>
     <string name="strategic_variants_tap_to_apply">Tap to apply</string>
-    <string name="enabled_card_program_title">Program state</string>
+    <string name="enabled_card_program_title">Tool state</string>
     <string name="enabled_card_profile_title">Profile state</string>
     <string name="enabled_state_on">Enabled</string>
     <string name="enabled_state_off">Disabled</string>
@@ -561,7 +576,7 @@ Use another editor to modify it.</string>
     <string name="profile_config_txt_title">config.txt</string>
     <string name="profile_fake_sni_txt_title">fake_sni.txt</string>
     <string name="program_updates_zapret_title">Zapret (nfqws)</string>
-    <string name="program_updates_zapret2_title">Zapret2 (nfqws2 + lua)</string>
+    <string name="program_updates_zapret2_title">Zapret 2 (nfqws2 + lua)</string>
     <string name="program_updates_err_service_running">Service is still running. Stop it and try again.</string>
     <string name="program_updates_err_detect_installed">Failed to detect installed version</string>
     <string name="program_updates_err_check_latest">Failed to check latest release</string>
@@ -598,7 +613,7 @@ Use another editor to modify it.</string>
   <string name="backup_force_restore_text">This backup was created for a different module version. You can try restoring it anyway, but it may break the service due to differences in the module architecture.</string>
   <string name="backup_force_restore_continue">Continue</string>
   <string name="backup_force_restore_confirm_title">Proceed with force restore?</string>
-  <string name="backup_force_restore_confirm_text">Possible issues: the daemon may fail to start, programs may not work, or settings may be corrupted. If anything goes wrong, the only fix may be a clean module install.
+  <string name="backup_force_restore_confirm_text">Possible issues: the daemon may fail to start, tools may not work, or settings may be corrupted. If anything goes wrong, the only fix may be a clean module install.
 
 By continuing, you agree to restore the backup while ignoring the versionCode check.</string>
   <string name="backup_force_restore_confirm_btn">I understand, restore</string>
@@ -657,12 +672,12 @@ Install the module again.</string>
     <string name="singbox_enable_at_least_one_profile">Enable at least one profile</string>
     <string name="singbox_select_active_transparent_profile">Select active_transparent_profile</string>
     <string name="singbox_active_transparent_profile_not_found">The active transparent profile was not found</string>
-    <string name="operaproxy_sni_section_desc">Manage opera-proxy servers. Each server stores SNI, optional byedpi, and an optional server address.</string>
+    <string name="operaproxy_sni_section_desc">Manage opera-proxy servers. Each server stores SNI, optional ByeDPI, and an optional server address.</string>
     <string name="operaproxy_sni_create_new">Create a new server</string>
     <string name="operaproxy_sni_empty">No servers configured yet. Create one to get started.</string>
     <string name="operaproxy_sni_entry_title_fmt">Server %1$d</string>
     <string name="operaproxy_sni_placeholder">example.com</string>
-    <string name="operaproxy_sni_use_byedpi">Use byedpi</string>
+    <string name="operaproxy_sni_use_byedpi">Use ByeDPI</string>
     <string name="operaproxy_sni_use_byedpi_desc">Add upstream -proxy socks5://127.0.0.1:&lt;BYEDPI_PORT&gt;</string>
 
 
@@ -714,12 +729,12 @@ Install the module again.</string>
 
 
     <string name="settings_hotspot_title">Enable hotspot</string>
-    <string name="settings_hotspot_body">Allows routing hotspot traffic through the selected program.</string>
-    <string name="settings_hotspot_program_title">Hotspot program</string>
+    <string name="settings_hotspot_body">Allows routing hotspot traffic through the selected tool.</string>
+    <string name="settings_hotspot_program_title">Hotspot tool</string>
     <string name="settings_hotspot_program_operaproxy">opera-proxy</string>
     <string name="settings_hotspot_program_singbox">sing-box</string>
     <string name="settings_hotspot_warning_title">Security warning</string>
-    <string name="settings_hotspot_warning_body">Enabling this feature may reduce device security because the program port will be exposed. Anyone on the network may try to connect to your proxy.</string>
+    <string name="settings_hotspot_warning_body">Enabling this feature may reduce device security because the tool port will be exposed. Anyone on the network may try to connect to your proxy.</string>
     <string name="settings_hotspot_warning_accept">Accept</string>
     <string name="settings_hotspot_saved">Hotspot setting saved</string>
     <string name="settings_hotspot_save_failed">Failed to save hotspot setting</string>
@@ -781,12 +796,12 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="apps_conflict_slot_mobile">Mobile</string>
     <string name="apps_conflict_program_operaproxy">opera-proxy</string>
     <string name="apps_conflict_program_singbox">sing-box</string>
-    <string name="apps_conflict_program_dpitunnel">dpitunnel</string>
-    <string name="apps_conflict_program_byedpi">byedpi</string>
-    <string name="apps_conflict_program_zapret">zapret</string>
-    <string name="apps_conflict_program_zapret2">zapret2</string>
+    <string name="apps_conflict_program_dpitunnel">DPITunnel</string>
+    <string name="apps_conflict_program_byedpi">ByeDPI</string>
+    <string name="apps_conflict_program_zapret">Zapret</string>
+    <string name="apps_conflict_program_zapret2">Zapret 2</string>
     <string name="settings_proxyinfo_conflict_title">Apps are already in use</string>
-    <string name="settings_proxyinfo_conflict_body">These apps are already used in program rules. Remove them from those programs and add them to port scan protection?</string>
+    <string name="settings_proxyinfo_conflict_body">These apps are already used in tool rules. Remove them from those tools and add them to port scan protection?</string>
     <string name="settings_proxyinfo_conflict_yes">Yes, move them</string>
     <string name="settings_proxyinfo_conflict_no">No, uncheck them</string>
 
@@ -942,7 +957,7 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="opera_args_ua_title">User-Agent (Advanced)</string>
     <string name="opera_args_ua_desc">User-Agent sent to Opera API. Change only if you know what you are doing.</string>
     <string name="opera_args_bootstrap_dns_title">Bootstrap DNS</string>
-    <string name="opera_args_bootstrap_dns_desc">DNS resolvers used by opera-proxy to resolve Opera server addresses. The local dnscrypt resolver (if enabled) is always prepended automatically.</string>
+    <string name="opera_args_bootstrap_dns_desc">DNS resolvers used by opera-proxy to resolve Opera server addresses. The local DNSCrypt resolver (if enabled) is always prepended automatically.</string>
     <string name="opera_args_dns_resolver_label">Resolver %1$d</string>
     <string name="opera_args_dns_add_label">Add resolver</string>
     <string name="opera_args_dns_save">Save DNS list</string>
@@ -1043,7 +1058,7 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="apps_list_desc_myvpn">Bind selected apps to an existing TUN interface through Android netd</string>
     <string name="apps_conflict_program_myvpn">myvpn</string>
     <string name="myvpn_program_hint">myvpn binds selected apps to an already existing TUN interface.</string>
-    <string name="myvpn_status_profiles">Enabled profiles: %1$d / %2$d</string>
+    <string name="myvpn_status_profiles">myvpn profiles: %1$d / %2$d</string>
     <string name="myvpn_no_profiles_title">No myvpn profiles</string>
     <string name="myvpn_no_profiles_desc">Create a profile, add a TUN name, DNS servers, CIDR mode and an app list.</string>
     <string name="myvpn_create_profile_title">Create myvpn profile</string>
@@ -1078,7 +1093,7 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="apps_list_desc_tun2socks">Profile-based tun2socks routing through Android netd</string>
     <string name="apps_conflict_program_tun2socks">tun2socks</string>
     <string name="tun2socks_program_hint">tun2socks creates the TUN interface; ZDT-D routes selected apps through it.</string>
-    <string name="tun2socks_status_profiles">Enabled profiles: %1$d / %2$d</string>
+    <string name="tun2socks_status_profiles">tun2socks profiles: %1$d / %2$d</string>
     <string name="tun2socks_no_profiles_title">No tun2socks profiles</string>
     <string name="tun2socks_no_profiles_desc">Create a profile, add a TUN name, proxy URL and app list.</string>
     <string name="tun2socks_create_profile_title">Create tun2socks profile</string>
@@ -1111,8 +1126,8 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <!-- OpenVPN profiles -->
     <string name="apps_list_desc_openvpn">Profile-based OpenVPN routing through Android netd</string>
     <string name="apps_conflict_program_openvpn">OpenVPN</string>
-    <string name="openvpn_program_hint">Profiles are applied when the service starts. Saved changes apply after stop/start.</string>
-    <string name="openvpn_status_profiles">Enabled profiles: %1$d / %2$d</string>
+    <string name="openvpn_program_hint">OpenVPN profile routing through Android netd for selected apps.</string>
+    <string name="openvpn_status_profiles">OpenVPN profiles: %1$d / %2$d</string>
     <string name="openvpn_no_profiles_title">No OpenVPN profiles</string>
     <string name="openvpn_no_profiles_desc">Create a profile, add client.ovpn, DNS servers and an app list.</string>
     <string name="openvpn_create_profile_title">Create OpenVPN profile</string>
@@ -1145,10 +1160,10 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="openvpn_config_autosave_hint">Auto-save is enabled. Changes apply after service restart.</string>
     <string name="openvpn_config_editor_title_fmt">client.ovpn / %1$s</string>
     <string name="openvpn_saving">Saving…</string>
-    <string name="apps_list_desc_amneziawg">Profile-based AmneziaWG routing through Android netd</string>
+    <string name="apps_list_desc_amneziawg">AmneziaWG userspace tunnel with netd routing</string>
     <string name="apps_conflict_program_amneziawg">AmneziaWG</string>
-    <string name="amneziawg_program_hint">Profiles are applied when the service starts. AmneziaWG only creates the userspace interface; routes, DNS and UID routing are handled by vpn_netd.</string>
-    <string name="amneziawg_status_profiles">Enabled profiles: %1$d / %2$d</string>
+    <string name="amneziawg_program_hint">AmneziaWG uses a userspace interface; ZDT-D handles routes, DNS and app UID routing through vpn_netd.</string>
+    <string name="amneziawg_status_profiles">AmneziaWG profiles: %1$d / %2$d</string>
     <string name="amneziawg_no_profiles_title">No AmneziaWG profiles</string>
     <string name="amneziawg_no_profiles_desc">Create a profile, add client.conf, IPv4 address, DNS servers and an app list.</string>
     <string name="amneziawg_create_profile_title">Create AmneziaWG profile</string>
@@ -1199,7 +1214,7 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="apps_list_desc_mihomo">Clash-compatible Mihomo YAML routed through TUN + tun2socks</string>
     <string name="apps_conflict_program_mihomo">Mihomo</string>
     <string name="mihomo_program_hint">Mihomo uses Clash-compatible YAML and ZDT-D routes selected apps through TUN + tun2socks.</string>
-    <string name="mihomo_status_profiles">Enabled profiles: %1$d / %2$d</string>
+    <string name="mihomo_status_profiles">Mihomo profiles: %1$d / %2$d</string>
     <string name="mihomo_no_profiles_title">No Mihomo profiles</string>
     <string name="mihomo_no_profiles_desc">Create a profile, edit config.yaml and select apps.</string>
     <string name="mihomo_create_profile_title">Create Mihomo profile</string>
@@ -1410,9 +1425,9 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 
     <string name="web_panel_open">Web panel</string>
     <string name="web_panel_unavailable">It looks like the service is not running or the web panel is configured incorrectly</string>
-    <string name="program_logs_title">Program logs</string>
+    <string name="program_logs_title">Tool logs</string>
     <string name="program_logs_empty">No log files found</string>
-    <string name="program_logs_empty_desc">Start the program or profile first, then open this window again.</string>
+    <string name="program_logs_empty_desc">Start the tool or profile first, then open this window again.</string>
     <string name="program_logs_refresh">Refresh log files</string>
     <string name="program_logs_back_to_files">Back to log files</string>
     <string name="program_logs_realtime">Real-time tail</string>

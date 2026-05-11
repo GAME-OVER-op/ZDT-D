@@ -121,6 +121,10 @@ fun ZdtdApp(
       onReboot = actions::rebootNow,
       onRefreshConflicts = actions::refreshInstallConflicts,
       onToggleConflictRemove = actions::setInstallConflictMarked,
+      onRefreshZygiskInstallMarker = actions::refreshZygiskInstallMarker,
+      onToggleZygiskInstall = actions::requestSetInstallZygisk,
+      onConfirmZygiskInstall = actions::confirmInstallZygisk,
+      onDismissZygiskInstallConfirm = actions::dismissInstallZygiskConfirm,
     )
     SetupStep.REBOOT -> {
       when (rootState) {

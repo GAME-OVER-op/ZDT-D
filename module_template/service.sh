@@ -9,8 +9,9 @@ LOGDIR="/data/adb/modules/ZDT-D/log"
 LOGFILE="$LOGDIR/deamon.log"
 
 mkdir -p "$LOGDIR"
+
+
 setsid "$MODDIR/bin/zdtd" >>"$LOGFILE" 2>&1 </dev/null &
-#!/system/bin/sh
 
 apply() {
   k="$1"

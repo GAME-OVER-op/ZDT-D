@@ -649,7 +649,7 @@ fun SingBoxProfileScreen(
   ) {
     Text("sing-box / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 2)
     Text(
-      stringResource(R.string.changes_apply_after_restart),
+      toolDescription("sing-box"),
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
     )

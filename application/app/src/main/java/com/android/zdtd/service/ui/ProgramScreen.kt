@@ -121,7 +121,7 @@ fun ProgramScreen(
       Text(program.name ?: program.id, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 2)
       Spacer(Modifier.height(4.dp))
       Text(
-        stringResource(R.string.changes_apply_after_restart),
+        toolDescription(program.id),
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
         style = MaterialTheme.typography.bodySmall,
       )
@@ -2511,7 +2511,7 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
     }
 
     Text(
-      stringResource(R.string.changes_apply_after_restart),
+      toolDescription("operaproxy"),
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
     )

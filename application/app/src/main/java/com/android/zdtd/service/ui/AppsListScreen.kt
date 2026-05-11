@@ -115,7 +115,6 @@ fun AppsListScreen(
       ProgramsHeaderCard(
         compact = isCompactWidth,
         shortHeight = isShortHeight,
-        daemonOnline = daemonOnline,
         total = all.size,
         shown = filtered.size,
         active = activeShown,
@@ -194,7 +193,6 @@ fun AppsListScreen(
 private fun ProgramsHeaderCard(
   compact: Boolean,
   shortHeight: Boolean,
-  daemonOnline: Boolean,
   total: Int,
   shown: Int,
   active: Int,
@@ -213,44 +211,6 @@ private fun ProgramsHeaderCard(
       Modifier.padding(if (compact) 14.dp else 16.dp),
       verticalArrangement = Arrangement.spacedBy(if (shortHeight) 10.dp else 12.dp),
     ) {
-      if (compact) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-          Text(
-            stringResource(R.string.apps_list_programs_title),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-          )
-          StatusChip(daemonOnline = daemonOnline)
-        }
-      } else {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Column(verticalArrangement = Arrangement.spacedBy(3.dp), modifier = Modifier.weight(1f)) {
-            Text(
-              stringResource(R.string.apps_list_programs_title),
-              style = MaterialTheme.typography.titleLarge,
-              fontWeight = FontWeight.Bold,
-            )
-            Text(
-              text = stringResource(R.string.apps_list_header_hint),
-              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-            )
-          }
-          Spacer(Modifier.width(12.dp))
-          StatusChip(daemonOnline = daemonOnline)
-        }
-      }
-
-      if (compact) {
-        Text(
-          text = stringResource(R.string.apps_list_header_hint),
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-        )
-      }
-
       SummaryMetricsRow(
         compact = compact,
         total = total,
@@ -282,22 +242,6 @@ private fun ProgramsHeaderCard(
       )
     }
   }
-}
-
-@Composable
-private fun StatusChip(daemonOnline: Boolean) {
-  val label = if (daemonOnline) stringResource(R.string.apps_list_online_upper) else stringResource(R.string.apps_list_offline_upper)
-  AssistChip(
-    onClick = {},
-    label = { Text(label) },
-    colors = AssistChipDefaults.assistChipColors(
-      containerColor = if (daemonOnline) {
-        MaterialTheme.colorScheme.secondary.copy(alpha = 0.24f)
-      } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
-      },
-    ),
-  )
 }
 
 @Composable
@@ -646,24 +590,7 @@ private fun isProgramVisuallyActive(program: ApiModels.Program): Boolean {
 
 @Composable
 private fun programDescription(id: String): String {
-  return when (id) {
-    "dnscrypt" -> stringResource(R.string.apps_list_desc_dnscrypt)
-    "operaproxy" -> stringResource(R.string.apps_list_desc_operaproxy)
-    "nfqws" -> stringResource(R.string.apps_list_desc_nfqws)
-    "nfqws2" -> stringResource(R.string.apps_list_desc_nfqws2)
-    "byedpi" -> stringResource(R.string.apps_list_desc_byedpi)
-    "dpitunnel" -> stringResource(R.string.apps_list_desc_dpitunnel)
-    "wireproxy" -> stringResource(R.string.apps_list_desc_wireproxy)
-    "tor" -> stringResource(R.string.apps_list_desc_tor)
-    "myproxy" -> stringResource(R.string.apps_list_desc_myproxy)
-    "myprogram" -> stringResource(R.string.apps_list_desc_myprogram)
-    "openvpn" -> stringResource(R.string.apps_list_desc_openvpn)
-    "amneziawg" -> stringResource(R.string.apps_list_desc_amneziawg)
-    "tun2socks" -> stringResource(R.string.apps_list_desc_tun2socks)
-    "myvpn" -> stringResource(R.string.apps_list_desc_myvpn)
-    "mihomo" -> stringResource(R.string.apps_list_desc_mihomo)
-    else -> stringResource(R.string.apps_list_desc_default)
-  }
+  return toolDescription(id)
 }
 
 private fun programIcon(id: String): ImageVector {

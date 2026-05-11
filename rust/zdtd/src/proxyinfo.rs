@@ -4,6 +4,7 @@ use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
+    net::Ipv4Addr,
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
 };
@@ -12,7 +13,7 @@ use crate::{
     android::pkg_uid::{self, Mode as UidMode, Sha256Tracker},
     logging,
     settings,
-    shell::Capture,
+    shell::{self, Capture},
     xtables_lock,
 };
 
@@ -163,6 +164,22 @@ struct TorSetting {
     t2s_port: u16,
     #[serde(default)]
     t2s_web_port: u16,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct VpnNetdAppliedSnapshotLite {
+    #[serde(default)]
+    profiles: Vec<VpnNetdAppliedProfileLite>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct VpnNetdAppliedProfileLite {
+    #[serde(default)]
+    owner_program: String,
+    #[serde(default)]
+    profile: String,
+    #[serde(default)]
+    tun: String,
 }
 
 fn default_t2s_web_port() -> u16 {
@@ -716,7 +733,13 @@ fn candidate_strategies_for_proto(proto: TransportProtocol) -> Vec<ProxyRuleStra
         LocalMatchMode::DstTypeLocal,
         LocalMatchMode::LoopbackIface,
     ];
-    let port_modes = [PortRuleMode::Multiport, PortRuleMode::PerPort];
+    let port_modes_with_multiport = [PortRuleMode::Multiport, PortRuleMode::PerPort];
+    let port_modes_per_port_only = [PortRuleMode::PerPort];
+    let port_modes: &[PortRuleMode] = if crate::iptables::caps::multiport_v4() {
+        &port_modes_with_multiport
+    } else {
+        &port_modes_per_port_only
+    };
     let reject_modes: &[RejectMode] = match proto {
         TransportProtocol::Tcp => &[RejectMode::RejectTcpReset, RejectMode::Reject, RejectMode::Drop],
         TransportProtocol::Udp => &[RejectMode::Reject, RejectMode::Drop],
@@ -724,7 +747,7 @@ fn candidate_strategies_for_proto(proto: TransportProtocol) -> Vec<ProxyRuleStra
 
     let mut out = Vec::new();
     for local_match in local_modes {
-        for port_mode in port_modes {
+        for &port_mode in port_modes {
             for &reject_mode in reject_modes {
                 out.push(ProxyRuleStrategy {
                     local_match,
@@ -794,6 +817,15 @@ fn try_install_cached_ipv4_rules(uids: &[u32], ports: &[u16]) -> Result<bool> {
         return Ok(false);
     };
 
+    if !crate::iptables::caps::multiport_v4()
+        && (matches!(tcp_strategy.port_mode, PortRuleMode::Multiport)
+            || matches!(udp_strategy.port_mode, PortRuleMode::Multiport))
+    {
+        logging::info("proxyInfo cached IPv4 strategy uses multiport but multiport is unsupported; reprobe per-port only");
+        clear_cached_ipv4_strategies();
+        return Ok(false);
+    }
+
     if let Err(e) = install_proto_rules_v4_with_strategy(uids, ports, tcp_strategy, TransportProtocol::Tcp) {
         logging::warn(&format!(
             "proxyInfo cached TCP strategy failed, reprobe required: {} => {e:#}",
@@ -822,8 +854,13 @@ fn try_install_cached_ipv4_rules(uids: &[u32], ports: &[u16]) -> Result<bool> {
     Ok(true)
 }
 
-fn install_ipv4_rules(uids: &[u32], ports: &[u16], global_ports: &[u16]) -> Result<()> {
-    if uids.is_empty() || (ports.is_empty() && global_ports.is_empty()) {
+fn install_ipv4_rules(
+    uids: &[u32],
+    ports: &[u16],
+    global_ports: &[u16],
+    project_interface_ips: &[Ipv4Addr],
+) -> Result<()> {
+    if uids.is_empty() || (ports.is_empty() && global_ports.is_empty() && project_interface_ips.is_empty()) {
         return Ok(());
     }
 
@@ -843,6 +880,45 @@ fn install_ipv4_rules(uids: &[u32], ports: &[u16], global_ports: &[u16]) -> Resu
         store_cached_ipv4_strategies(tcp_strategy, udp_strategy);
     }
     install_global_tcp_rules_v4(uids, global_ports)?;
+    install_project_interface_ip_rules_v4(uids, project_interface_ips)?;
+    Ok(())
+}
+
+fn install_project_interface_ip_rules_v4(uids: &[u32], ips: &[Ipv4Addr]) -> Result<()> {
+    if uids.is_empty() || ips.is_empty() {
+        return Ok(());
+    }
+
+    for &uid in uids {
+        for ip in ips {
+            if !is_protectable_project_ipv4(*ip) {
+                continue;
+            }
+            let dst = format!("{}/32", ip);
+            let args = vec![
+                "-A".to_string(),
+                PROXY_CHAIN.to_string(),
+                "-d".to_string(),
+                dst.clone(),
+                "-m".to_string(),
+                "owner".to_string(),
+                "--uid-owner".to_string(),
+                uid.to_string(),
+                "-j".to_string(),
+                "REJECT".to_string(),
+            ];
+            let (rc, out) = xtables_lock::runv_timeout_retry(Backend::Iptables.cmd(), &args, Capture::Both, IPT_TIMEOUT)?;
+            if rc != 0 {
+                anyhow::bail!(
+                    "iptables add proxyInfo project interface IP block failed uid={} dst={} args='{}': {}",
+                    uid,
+                    dst,
+                    args.join(" "),
+                    out
+                );
+            }
+        }
+    }
     Ok(())
 }
 
@@ -903,7 +979,7 @@ fn install_ipv6_rules(uids: &[u32]) -> Result<()> {
     Ok(())
 }
 
-fn install_rules(uids: &[u32], local_ports: &[u16], global_ports: &[u16]) -> Result<()> {
+fn install_rules(uids: &[u32], local_ports: &[u16], global_ports: &[u16], project_interface_ips: &[Ipv4Addr]) -> Result<()> {
     let _guard = xtables_lock::lock();
     clear_rules_unlocked();
     if uids.is_empty() {
@@ -911,8 +987,8 @@ fn install_rules(uids: &[u32], local_ports: &[u16], global_ports: &[u16]) -> Res
     }
 
     let result = (|| {
-        if !local_ports.is_empty() || !global_ports.is_empty() {
-            install_ipv4_rules(uids, local_ports, global_ports)?;
+        if !local_ports.is_empty() || !global_ports.is_empty() || !project_interface_ips.is_empty() {
+            install_ipv4_rules(uids, local_ports, global_ports, project_interface_ips)?;
         }
         if let Err(e) = install_ipv6_rules(uids) {
             logging::warn(&format!(
@@ -951,16 +1027,141 @@ pub fn refresh_runtime(services_running: bool) -> Result<bool> {
         return Ok(false);
     }
     let (local_ports, global_ports) = collect_protected_port_sets()?;
+    let project_interface_ips = collect_project_interface_ips_v4()?;
     let local_list: Vec<u16> = local_ports.into_iter().collect();
     let global_list: Vec<u16> = global_ports.into_iter().collect();
-    install_rules(&uids, &local_list, &global_list)?;
+    let project_interface_ip_list: Vec<Ipv4Addr> = project_interface_ips.into_iter().collect();
+    install_rules(&uids, &local_list, &global_list, &project_interface_ip_list)?;
     logging::info(&format!(
-        "proxyInfo active: {} uid(s), {} local IPv4 protected port(s), {} global upstream port(s), IPv6 deny=full",
+        "proxyInfo active: {} uid(s), {} local IPv4 protected port(s), {} global upstream port(s), {} project interface IP block(s), IPv6 deny=full",
         uids.len(),
         local_list.len(),
-        global_list.len()
+        global_list.len(),
+        project_interface_ip_list.len()
     ));
     Ok(true)
+}
+
+fn is_protectable_project_ipv4(ip: Ipv4Addr) -> bool {
+    // Never treat 0.0.0.0 as "all interfaces" here. If an owner program exposes
+    // only 0.0.0.0/0, proxyInfo skips the interface-address protection for it.
+    !ip.is_unspecified() && ip != Ipv4Addr::new(255, 255, 255, 255) && !ip.is_multicast() && !ip.is_loopback()
+}
+
+fn is_proxyinfo_project_vpn_owner(owner: &str) -> bool {
+    matches!(
+        owner.trim().to_ascii_lowercase().as_str(),
+        "openvpn" | "myvpn" | "tun2socks" | "tun2proxy" | "mihomo" | "amneziawg"
+    )
+}
+
+fn vpn_netd_applied_path() -> PathBuf {
+    Path::new(settings::MODULE_DIR)
+        .join("working_folder")
+        .join("vpn_netd")
+        .join("applied.json")
+}
+
+fn collect_project_interface_ips_v4() -> Result<BTreeSet<Ipv4Addr>> {
+    let path = vpn_netd_applied_path();
+    if !path.is_file() {
+        return Ok(BTreeSet::new());
+    }
+
+    let raw = match fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) => {
+            logging::warn(&format!(
+                "proxyInfo: failed to read vpn_netd applied snapshot {}, project interface IP protection skipped: {e}",
+                path.display()
+            ));
+            return Ok(BTreeSet::new());
+        }
+    };
+    let snapshot: VpnNetdAppliedSnapshotLite = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(e) => {
+            logging::warn(&format!(
+                "proxyInfo: failed to parse vpn_netd applied snapshot {}, project interface IP protection skipped: {e}",
+                path.display()
+            ));
+            return Ok(BTreeSet::new());
+        }
+    };
+
+    let mut out = BTreeSet::new();
+    for profile in snapshot.profiles {
+        if !is_proxyinfo_project_vpn_owner(&profile.owner_program) {
+            continue;
+        }
+        let tun = profile.tun.trim();
+        if tun.is_empty() {
+            continue;
+        }
+        match collect_interface_ipv4_addrs(tun) {
+            Ok(addrs) => {
+                let mut added = 0usize;
+                for ip in addrs {
+                    if is_protectable_project_ipv4(ip) {
+                        out.insert(ip);
+                        added += 1;
+                    } else {
+                        logging::warn(&format!(
+                            "proxyInfo: project interface IP {} for {}/{} ({}) is not protected",
+                            ip, profile.owner_program, profile.profile, tun
+                        ));
+                    }
+                }
+                if added == 0 {
+                    logging::warn(&format!(
+                        "proxyInfo: no usable IPv4 address found for project interface {}/{} ({})",
+                        profile.owner_program, profile.profile, tun
+                    ));
+                }
+            }
+            Err(e) => {
+                logging::warn(&format!(
+                    "proxyInfo: failed to read IPv4 address for project interface {}/{} ({}): {e:#}",
+                    profile.owner_program, profile.profile, tun
+                ));
+            }
+        }
+    }
+
+    if !out.is_empty() {
+        logging::info(&format!(
+            "proxyInfo: project interface IPv4 targets: {}",
+            out.iter().map(|ip| ip.to_string()).collect::<Vec<_>>().join(",")
+        ));
+    }
+    Ok(out)
+}
+
+fn collect_interface_ipv4_addrs(iface: &str) -> Result<Vec<Ipv4Addr>> {
+    let (rc, out) = shell::run_timeout("ip", &["-o", "-4", "addr", "show", "dev", iface], Capture::Both, IPT_TIMEOUT)
+        .with_context(|| format!("ip -o -4 addr show dev {iface}"))?;
+    if rc != 0 {
+        anyhow::bail!("ip -o -4 addr show dev {iface} failed rc={rc}: {out}");
+    }
+    Ok(parse_ip_o_addr_v4(&out))
+}
+
+fn parse_ip_o_addr_v4(raw: &str) -> Vec<Ipv4Addr> {
+    let mut out = BTreeSet::new();
+    for line in raw.lines() {
+        let mut tokens = line.split_whitespace();
+        while let Some(tok) = tokens.next() {
+            if tok != "inet" {
+                continue;
+            }
+            let Some(addr) = tokens.next() else { continue; };
+            let ip_s = addr.split_once('/').map(|(ip, _)| ip).unwrap_or(addr);
+            if let Ok(ip) = ip_s.parse::<Ipv4Addr>() {
+                out.insert(ip);
+            }
+        }
+    }
+    out.into_iter().collect()
 }
 
 pub fn collect_protected_port_sets() -> Result<(BTreeSet<u16>, BTreeSet<u16>)> {

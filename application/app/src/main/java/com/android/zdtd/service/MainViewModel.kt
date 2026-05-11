@@ -94,6 +94,8 @@ data class SetupUiState(
   // Pre-install warnings (forced update / tamper / unsupported)
   val preInstallWarning: String? = null,
   val installConflicts: List<InstallConflictUi> = emptyList(),
+  val installZygiskRequested: Boolean = false,
+  val showZygiskInstallConfirm: Boolean = false,
 
   // Reboot required screen text
   val rebootRequiredText: String = "",
@@ -1296,6 +1298,54 @@ private fun clearDownloadedUpdateApk() {
     updateInstallProgress(percent, str(labelRes))
   }
 
+  private fun readZygiskInstallMarker(): Boolean {
+    if (_rootState.value != RootState.GRANTED) return false
+    return runCatching {
+      root.execRootSh("test -f /data/adb/ZDT-D/zygisk").isSuccess
+    }.getOrDefault(false)
+  }
+
+  override fun refreshZygiskInstallMarker() {
+    if (_rootState.value != RootState.GRANTED) {
+      _setup.update { it.copy(installZygiskRequested = false, showZygiskInstallConfirm = false) }
+      return
+    }
+    launchIO {
+      val enabled = readZygiskInstallMarker()
+      _setup.update { it.copy(installZygiskRequested = enabled) }
+    }
+  }
+
+  override fun requestSetInstallZygisk(enabled: Boolean) {
+    if (_rootState.value != RootState.GRANTED || _setup.value.installing) return
+    if (enabled) {
+      _setup.update { it.copy(showZygiskInstallConfirm = true) }
+    } else {
+      launchIO {
+        runCatching {
+          root.execRootSh("rm -f /data/adb/ZDT-D/zygisk 2>/dev/null || true; rmdir /data/adb/ZDT-D 2>/dev/null || true")
+        }
+        val marker = readZygiskInstallMarker()
+        _setup.update { it.copy(installZygiskRequested = marker, showZygiskInstallConfirm = false) }
+      }
+    }
+  }
+
+  override fun confirmInstallZygisk() {
+    if (_rootState.value != RootState.GRANTED || _setup.value.installing) return
+    launchIO {
+      val ok = runCatching {
+        root.execRootSh("mkdir -p /data/adb/ZDT-D && : > /data/adb/ZDT-D/zygisk && chmod 700 /data/adb/ZDT-D && chmod 600 /data/adb/ZDT-D/zygisk")
+      }.getOrNull()?.isSuccess == true
+      val marker = if (ok) readZygiskInstallMarker() else false
+      _setup.update { it.copy(installZygiskRequested = marker, showZygiskInstallConfirm = false) }
+    }
+  }
+
+  override fun dismissInstallZygiskConfirm() {
+    _setup.update { it.copy(showZygiskInstallConfirm = false) }
+  }
+
   override fun beginModuleInstall() {
     if (_rootState.value != RootState.GRANTED) {
       log("ERR", "root required")
@@ -1412,7 +1462,8 @@ private fun clearDownloadedUpdateApk() {
   override fun refreshInstallConflicts() {
     launchIO {
       val conflicts = detectInstallConflicts()
-      _setup.update { it.copy(installConflicts = conflicts) }
+      val zygiskMarker = readZygiskInstallMarker()
+      _setup.update { it.copy(installConflicts = conflicts, installZygiskRequested = zygiskMarker) }
     }
   }
 

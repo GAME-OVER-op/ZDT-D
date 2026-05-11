@@ -95,11 +95,11 @@ fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
     derivedStateOf {
       listOf(
         ProcRow("zdt-d", showRep?.zdtd ?: ApiModels.ProcAgg(), 0),
-        ProcRow("zapret", showRep?.zapret ?: ApiModels.ProcAgg(), 1),
-        ProcRow("zapret2", showRep?.zapret2 ?: ApiModels.ProcAgg(), 2),
-        ProcRow("byedpi", showRep?.byedpi ?: ApiModels.ProcAgg(), 3),
-        ProcRow("dpitunnel", showRep?.dpitunnel ?: ApiModels.ProcAgg(), 4),
-        ProcRow("dnscrypt", showRep?.dnscrypt ?: ApiModels.ProcAgg(), 5),
+        ProcRow("Zapret", showRep?.zapret ?: ApiModels.ProcAgg(), 1),
+        ProcRow("Zapret 2", showRep?.zapret2 ?: ApiModels.ProcAgg(), 2),
+        ProcRow("ByeDPI", showRep?.byedpi ?: ApiModels.ProcAgg(), 3),
+        ProcRow("DPITunnel", showRep?.dpitunnel ?: ApiModels.ProcAgg(), 4),
+        ProcRow("DNSCrypt", showRep?.dnscrypt ?: ApiModels.ProcAgg(), 5),
         ProcRow("sing-box", showRep?.singBox ?: ApiModels.ProcAgg(), 6),
         ProcRow("WireProxy", showRep?.wireProxy ?: ApiModels.ProcAgg(), 7),
         ProcRow("Tor", showRep?.tor ?: ApiModels.ProcAgg(), 8),
@@ -109,7 +109,7 @@ fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
         ProcRow("AmneziaWG", showRep?.amneziaWg ?: ApiModels.ProcAgg(), 12),
         ProcRow("opera-proxy", showRep?.opera?.opera ?: ApiModels.ProcAgg(), 13),
         ProcRow("t2s", showRep?.t2s ?: ApiModels.ProcAgg(), 14),
-        ProcRow("opera-byedpi", showRep?.opera?.byedpi ?: ApiModels.ProcAgg(), 15),
+        ProcRow("opera-ByeDPI", showRep?.opera?.byedpi ?: ApiModels.ProcAgg(), 15),
       ).sortedWith(
         compareByDescending<ProcRow> { it.agg.count > 0 }
           .thenByDescending { it.agg.cpuPercent }

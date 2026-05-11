@@ -2106,12 +2106,6 @@ fun MihomoProgramScreen(
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
       Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Mihomo", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        val enabledCount = program?.profiles.orEmpty().count { it.enabled }
-        Text(
-          stringResource(R.string.mihomo_status_profiles, enabledCount, program?.profiles.orEmpty().size),
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
-        )
         Text(
           stringResource(R.string.mihomo_program_hint),
           style = MaterialTheme.typography.bodySmall,

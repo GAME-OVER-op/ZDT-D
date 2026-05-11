@@ -271,7 +271,7 @@ fun MyProxyProfileScreen(
   ) {
     Text("${program?.name ?: "myproxy"} / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
     Text(
-      stringResource(R.string.changes_apply_after_restart),
+      toolDescription("myproxy"),
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
     )

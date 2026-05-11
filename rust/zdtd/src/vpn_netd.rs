@@ -2,7 +2,8 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fs,
+    fs::{self, OpenOptions},
+    io::Write,
     path::{Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -67,6 +68,10 @@ pub fn last_ndc_out_path() -> PathBuf {
     runtime_file("last_ndc.out")
 }
 
+fn ndc_history_path() -> PathBuf {
+    runtime_file("ndc_history.log")
+}
+
 fn ensure_working_dir() -> Result<()> {
     fs::create_dir_all(VPN_NETD_DIR).with_context(|| format!("mkdir {VPN_NETD_DIR}"))?;
     migrate_legacy_runtime_files();
@@ -120,6 +125,7 @@ fn cleanup_runtime_files() {
     let _ = fs::remove_file(applied_snapshot_path());
     let _ = fs::remove_file(profiles_tmp_path());
     let _ = fs::remove_file(last_ndc_out_path());
+    let _ = fs::remove_file(ndc_history_path());
 
     // Remove legacy top-level files left by older ZDT-D builds.
     let _ = fs::remove_file(legacy_working_file("vpn_netd_applied.json"));
@@ -134,29 +140,123 @@ fn trim_ndc_output(out: &str) -> String {
     out.replace('\r', "").trim().to_string()
 }
 
-fn remember_ndc_output(out: &str) {
+fn ndc_command_for_log(args: &[String]) -> String {
+    format!("ndc {}", args.join(" "))
+}
+
+fn remember_ndc_output(args: &[String], code: i32, out: &str) {
     if ensure_working_dir().is_ok() {
-        let _ = fs::write(last_ndc_out_path(), out);
+        let cmd = ndc_command_for_log(args);
+        let trimmed = trim_ndc_output(out);
+        let last = if trimmed.is_empty() {
+            format!("cmd={cmd}\nrc={code}\nout=<empty>\n")
+        } else {
+            format!("cmd={cmd}\nrc={code}\nout={trimmed}\n")
+        };
+        let _ = fs::write(last_ndc_out_path(), &last);
+
+        if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(ndc_history_path()) {
+            let ts = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or(Duration::from_secs(0))
+                .as_secs();
+            let _ = writeln!(f, "[{ts}] {cmd}");
+            let _ = writeln!(f, "rc={code}");
+            if trimmed.is_empty() {
+                let _ = writeln!(f, "out=<empty>");
+            } else {
+                let _ = writeln!(f, "out={trimmed}");
+            }
+            let _ = writeln!(f);
+        }
     }
 }
 
 fn ndc_capture(args: &[String]) -> Result<(i32, String)> {
     let refs = args.iter().map(String::as_str).collect::<Vec<_>>();
     let (code, out) = shell::run_timeout("ndc", &refs, Capture::Both, NDC_TIMEOUT)?;
-    remember_ndc_output(&out);
+    remember_ndc_output(args, code, &out);
     Ok((code, trim_ndc_output(&out)))
+}
+
+fn ndc_failure_reason(code: i32, out: &str) -> Option<String> {
+    if code != 0 {
+        return Some(format!("rc={code}"));
+    }
+
+    for line in out.lines() {
+        let line = line.trim();
+        let Some(first) = line.split_whitespace().next() else { continue; };
+        if let Ok(status) = first.parse::<i32>() {
+            if (400..=599).contains(&status) {
+                return Some(line.to_string());
+            }
+        }
+    }
+
+    let lower = out.to_ascii_lowercase();
+    for needle in [
+        "unknown argument",
+        "command not recognized",
+        "permission denied",
+        "invalid argument",
+        "operation not permitted",
+        "failed",
+        "failure",
+    ] {
+        if lower.contains(needle) {
+            return Some(needle.to_string());
+        }
+    }
+
+    None
+}
+
+fn ndc_has_success_status(out: &str) -> bool {
+    out.lines().any(|line| {
+        let line = line.trim();
+        let Some(first) = line.split_whitespace().next() else { return false; };
+        first
+            .parse::<i32>()
+            .map(|status| (200..=299).contains(&status))
+            .unwrap_or(false)
+    })
+}
+
+fn ndc_is_ok(code: i32, out: &str) -> bool {
+    if ndc_failure_reason(code, out).is_some() {
+        return false;
+    }
+    if code != 0 {
+        return false;
+    }
+    if out.trim().is_empty() {
+        return true;
+    }
+    ndc_has_success_status(out)
 }
 
 fn ndc_ok(args: Vec<String>, what: &str) -> Result<()> {
     let (code, out) = ndc_capture(&args)?;
-    if code == 0 {
+    if ndc_is_ok(code, &out) {
         return Ok(());
     }
-    bail!("{what} failed rc={code} out={out}");
+    let reason = ndc_failure_reason(code, &out).unwrap_or_else(|| "unknown ndc failure".to_string());
+    bail!("{what} failed ({reason}) rc={code} out={out}");
 }
 
 fn ndc_quiet(args: Vec<String>) {
-    let _ = ndc_capture(&args);
+    match ndc_capture(&args) {
+        Ok((code, out)) if !ndc_is_ok(code, &out) => {
+            log::warn!(
+                "vpn_netd: cleanup ndc command failed: {} rc={} out={}",
+                ndc_command_for_log(&args),
+                code,
+                out
+            );
+        }
+        _ => {}
+    }
 }
 
 fn is_number_range(s: &str) -> bool {
@@ -230,8 +330,8 @@ fn validate_profile(p: &VpnNetdProfile) -> Result<()> {
     if !is_profile_name(&p.profile) {
         bail!("vpn netd profile name is invalid: {}", p.profile);
     }
-    if p.netid < 100 {
-        bail!("vpn netd profile {} netid is too small: {}", p.profile, p.netid);
+    if !(100..=65535).contains(&p.netid) {
+        bail!("vpn netd profile {} netid is outside Android netId range 100..65535: {}", p.profile, p.netid);
     }
     if !is_ifname(&p.tun) {
         bail!("vpn netd profile {} tun is invalid: {}", p.profile, p.tun);
@@ -312,22 +412,54 @@ fn create_vpn_network_universal(netid: u32) -> Result<()> {
         .map(str::to_string)
         .collect::<Vec<_>>();
     let (code1, out1) = ndc_capture(&modern)?;
-    if code1 == 0 {
+    if ndc_is_ok(code1, &out1) {
         log::info!("vpn_netd: network create netid={netid} mode=modern");
         return Ok(());
     }
 
-    let fallback = vec!["network", "create", &netid_s, "vpn", "1", "0"]
+    // Legacy netd syntax is: network create <netId> vpn <hasDns> <secure>.
+    // Keep the VPN secure first; older builds that reject this form can still fall
+    // through to the historical compatibility attempt below.
+    let legacy_secure = vec!["network", "create", &netid_s, "vpn", "1", "1"]
         .into_iter()
         .map(str::to_string)
         .collect::<Vec<_>>();
-    let (code2, out2) = ndc_capture(&fallback)?;
-    if code2 == 0 {
-        log::info!("vpn_netd: network create netid={netid} mode=fallback");
+    let (code2, out2) = ndc_capture(&legacy_secure)?;
+    if ndc_is_ok(code2, &out2) {
+        log::info!("vpn_netd: network create netid={netid} mode=legacy-secure");
         return Ok(());
     }
 
-    bail!("vpn_netd: create netd vpn network netid={netid} failed; modern rc={code1} out={out1}; fallback rc={code2} out={out2}");
+    // Some older Android/netd builds use: network create <netId> vpn
+    // and reject any trailing secure/hasDns arguments. Try this before the
+    // insecure compatibility form so devices with the no-arg syntax do not fall
+    // through to a less safe legacy mode.
+    let legacy_noargs = vec!["network", "create", &netid_s, "vpn"]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let (code3, out3) = ndc_capture(&legacy_noargs)?;
+    if ndc_is_ok(code3, &out3) {
+        log::info!("vpn_netd: network create netid={netid} mode=legacy-noargs");
+        return Ok(());
+    }
+
+    // Last-resort compatibility with the previous ZDT-D behavior. This may allow
+    // bypass on legacy Android, so log it loudly and only use it if secure forms
+    // and the historical no-argument form fail.
+    let legacy_compat = vec!["network", "create", &netid_s, "vpn", "1", "0"]
+        .into_iter()
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let (code4, out4) = ndc_capture(&legacy_compat)?;
+    if ndc_is_ok(code4, &out4) {
+        log::warn!("vpn_netd: network create netid={netid} mode=legacy-compat-insecure");
+        return Ok(());
+    }
+
+    bail!(
+        "vpn_netd: create netd vpn network netid={netid} failed; modern rc={code1} out={out1}; legacy-secure rc={code2} out={out2}; legacy-noargs rc={code3} out={out3}; legacy-compat rc={code4} out={out4}"
+    );
 }
 
 fn add_route_universal(netid: u32, tun: &str, dest: &str, gateway: Option<&str>) -> Result<()> {
@@ -338,7 +470,7 @@ fn add_route_universal(netid: u32, tun: &str, dest: &str, gateway: Option<&str>)
             .map(str::to_string)
             .collect::<Vec<_>>();
         let (code, out) = ndc_capture(&args)?;
-        if code == 0 {
+        if ndc_is_ok(code, &out) {
             return Ok(());
         }
         log::warn!("vpn_netd: route with gateway failed netid={netid} dest={dest} gw={gw}: rc={code} out={out}");
@@ -349,21 +481,85 @@ fn add_route_universal(netid: u32, tun: &str, dest: &str, gateway: Option<&str>)
         .map(str::to_string)
         .collect::<Vec<_>>();
     let (code, out) = ndc_capture(&args)?;
-    if code == 0 {
+    if ndc_is_ok(code, &out) {
         return Ok(());
     }
     bail!("vpn_netd: route add failed netid={netid} dest={dest}: rc={code} out={out}");
 }
 
-fn set_dns_universal(netid: u32, dns: &[String]) -> Result<()> {
+fn set_dns_universal(netid: u32, tun: &str, dns: &[String]) -> Result<()> {
     let netid_s = netid.to_string();
-    let mut args = vec!["resolver".to_string(), "setnetdns".to_string(), netid_s, String::new()];
-    args.extend(dns.iter().cloned());
-    let (code, out) = ndc_capture(&args)?;
-    if code == 0 {
+    let mut setnetdns = vec!["resolver".to_string(), "setnetdns".to_string(), netid_s, String::new()];
+    setnetdns.extend(dns.iter().cloned());
+    let (code1, out1) = ndc_capture(&setnetdns)?;
+    if ndc_is_ok(code1, &out1) {
+        log::info!("vpn_netd: resolver setnetdns applied netid={netid}");
         return Ok(());
     }
-    bail!("vpn_netd: resolver setnetdns failed rc={code} out={out}");
+
+    // Older netd builds used interface DNS configuration before setnetdns.
+    // DNS remains warning-only for vpn_netd, but trying setifdns improves
+    // compatibility on these devices and records the result in ndc_history.log.
+    let mut setifdns = vec!["resolver".to_string(), "setifdns".to_string(), tun.to_string(), String::new()];
+    setifdns.extend(dns.iter().cloned());
+    let (code2, out2) = ndc_capture(&setifdns)?;
+    if ndc_is_ok(code2, &out2) {
+        log::info!("vpn_netd: resolver setifdns applied tun={tun} netid={netid}");
+        return Ok(());
+    }
+
+    bail!("vpn_netd: resolver DNS setup failed; setnetdns rc={code1} out={out1}; setifdns rc={code2} out={out2}");
+}
+
+fn verify_post_apply(profile: &VpnNetdProfile, uid_ranges: &[String]) {
+    match shell::run_timeout("ip", &["rule", "show"], Capture::Stdout, IP_TIMEOUT) {
+        Ok((code, out)) if code == 0 => {
+            if !uid_ranges.is_empty() {
+                let missing = uid_ranges
+                    .iter()
+                    .filter(|r| !out.contains(&format!("uidrange {r}")))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if !missing.is_empty() {
+                    log::warn!(
+                        "vpn_netd: post-check did not see uidrange(s) in ip rule for {}/{} netid={} tun={}: {}",
+                        profile.owner_program,
+                        profile.profile,
+                        profile.netid,
+                        profile.tun,
+                        missing.join(", ")
+                    );
+                }
+            }
+            if !uid_ranges.is_empty() && !out.contains(&format!("lookup {}", profile.tun)) {
+                log::warn!(
+                    "vpn_netd: post-check did not see lookup {} in ip rule for {}/{} netid={}",
+                    profile.tun,
+                    profile.owner_program,
+                    profile.profile,
+                    profile.netid
+                );
+            }
+        }
+        Ok((code, out)) => log::warn!("vpn_netd: post-check ip rule failed rc={code} out={}", trim_ndc_output(&out)),
+        Err(e) => log::warn!("vpn_netd: post-check ip rule failed: {e:#}"),
+    }
+
+    match shell::run_timeout("ip", &["route", "show", "table", "all"], Capture::Stdout, IP_TIMEOUT) {
+        Ok((code, out)) if code == 0 => {
+            if !out.contains(&profile.tun) {
+                log::warn!(
+                    "vpn_netd: post-check did not see routes for tun {} in table all for {}/{} netid={}",
+                    profile.tun,
+                    profile.owner_program,
+                    profile.profile,
+                    profile.netid
+                );
+            }
+        }
+        Ok((code, out)) => log::warn!("vpn_netd: post-check ip route failed rc={code} out={}", trim_ndc_output(&out)),
+        Err(e) => log::warn!("vpn_netd: post-check ip route failed: {e:#}"),
+    }
 }
 
 fn remove_netd_profile(applied: &AppliedProfile) {
@@ -395,7 +591,7 @@ fn apply_one_profile(profile: &VpnNetdProfile, uid_ranges: &[String]) -> Result<
 
     add_route_universal(profile.netid, &profile.tun, "0.0.0.0/0", profile.gateway.as_deref())?;
 
-    if let Err(e) = set_dns_universal(profile.netid, &profile.dns) {
+    if let Err(e) = set_dns_universal(profile.netid, &profile.tun, &profile.dns) {
         log::warn!("vpn_netd: profile {}/{} DNS was not applied: {e:#}", profile.owner_program, profile.profile);
     }
 
@@ -415,6 +611,7 @@ fn apply_one_profile(profile: &VpnNetdProfile, uid_ranges: &[String]) -> Result<
 
     let _ = shell::run_timeout("ip", &["route", "flush", "cache"], Capture::None, IP_TIMEOUT);
 
+    verify_post_apply(profile, uid_ranges);
 
     Ok(AppliedProfile {
         owner_program: profile.owner_program.clone(),
@@ -498,6 +695,7 @@ pub fn start_from_registered_programs() -> Result<()> {
 
 pub fn start_profiles(profiles: Vec<VpnNetdProfile>) -> Result<()> {
     ensure_working_dir()?;
+    let requested_count = profiles.len();
 
     // Rebuild only VPN/netd state created by this builder. This does not touch iptables,
     // ip rules, or any profile configuration owned by future VPN programs.
@@ -529,10 +727,11 @@ pub fn start_profiles(profiles: Vec<VpnNetdProfile>) -> Result<()> {
     }
 
     if prepared.is_empty() {
+        let _ = fs::remove_file(applied_snapshot_path());
         if had_error {
             crate::logging::user_warn("VPN/netd: ошибка применения, запуск продолжен");
+            bail!("vpn_netd: no profiles prepared out of {requested_count}");
         }
-        let _ = fs::remove_file(applied_snapshot_path());
         return Ok(());
     }
 
@@ -540,7 +739,7 @@ pub fn start_profiles(profiles: Vec<VpnNetdProfile>) -> Result<()> {
         log::warn!("vpn_netd: profile collision, skipping VPN/netd apply and continuing: {e:#}");
         crate::logging::user_warn("VPN/netd: конфликт профилей, запуск продолжен");
         let _ = fs::remove_file(applied_snapshot_path());
-        return Ok(());
+        bail!("vpn_netd: profile collision: {e:#}");
     }
 
     let mut applied = Vec::new();
@@ -564,6 +763,11 @@ pub fn start_profiles(profiles: Vec<VpnNetdProfile>) -> Result<()> {
 
     if had_error {
         crate::logging::user_warn("VPN/netd: часть профилей не применена, запуск продолжен");
+    }
+
+    if applied.is_empty() {
+        let _ = fs::remove_file(applied_snapshot_path());
+        bail!("vpn_netd: no prepared profile was applied out of {requested_count}");
     }
 
     let snapshot = AppliedSnapshot { profiles: applied };

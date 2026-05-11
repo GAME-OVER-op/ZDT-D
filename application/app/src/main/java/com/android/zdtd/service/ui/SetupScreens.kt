@@ -13,6 +13,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -32,6 +34,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -130,9 +133,12 @@ fun WelcomeScreen(onAccept: () -> Unit) {
         )
 
         Spacer(Modifier.height(22.dp))
-        Button(onClick = onAccept, enabled = arm64Ok, modifier = Modifier.fillMaxWidth()) {
-          Text(stringResource(R.string.common_continue))
-        }
+        SetupPrimaryButton(
+          onClick = onAccept,
+          enabled = arm64Ok,
+          modifier = Modifier.fillMaxWidth(),
+          text = stringResource(R.string.common_continue),
+        )
 
         if (!arm64Ok) {
           Spacer(Modifier.height(10.dp))
@@ -295,6 +301,10 @@ fun InstallModuleScreen(
   onReboot: () -> Unit,
   onRefreshConflicts: () -> Unit,
   onToggleConflictRemove: (String, Boolean) -> Unit,
+  onRefreshZygiskInstallMarker: () -> Unit,
+  onToggleZygiskInstall: (Boolean) -> Unit,
+  onConfirmZygiskInstall: () -> Unit,
+  onDismissZygiskInstallConfirm: () -> Unit,
 ) {
   val arm64Ok = remember { isArm64OnlySupported() }
   val compact = rememberIsCompactWidth()
@@ -316,6 +326,7 @@ fun InstallModuleScreen(
   )
   LaunchedEffect(Unit) {
     onRefreshConflicts()
+    onRefreshZygiskInstallMarker()
   }
   if (arm64Ok && setup.showManualDialog) {
     val extra = if (setup.oldVersionDetected) {
@@ -352,6 +363,24 @@ fun InstallModuleScreen(
       dismissButton = {
         TextButton(onClick = { showUnofficialAndroidWarning = false }) {
           Text(stringResource(R.string.setup_android_unofficial_decline))
+        }
+      },
+    )
+  }
+
+  if (setup.showZygiskInstallConfirm) {
+    AlertDialog(
+      onDismissRequest = onDismissZygiskInstallConfirm,
+      title = { Text(stringResource(R.string.setup_zygisk_confirm_title)) },
+      text = { Text(stringResource(R.string.setup_zygisk_confirm_body)) },
+      confirmButton = {
+        TextButton(onClick = onConfirmZygiskInstall) {
+          Text(stringResource(R.string.setup_zygisk_confirm_yes))
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = onDismissZygiskInstallConfirm) {
+          Text(stringResource(R.string.setup_zygisk_confirm_no))
         }
       },
     )
@@ -473,6 +502,12 @@ fun InstallModuleScreen(
           }
         }
 
+        Spacer(Modifier.height(12.dp))
+        OptionalZygiskInstallCard(
+          enabled = setup.installZygiskRequested,
+          onToggle = onToggleZygiskInstall,
+        )
+
         Spacer(Modifier.height(18.dp))
 
         if (!setup.preInstallWarning.isNullOrBlank()) {
@@ -491,7 +526,7 @@ fun InstallModuleScreen(
         }
 
         val canInstall = arm64Ok && osInstallOk && rootState == RootState.GRANTED && !setup.installing && !setup.installOk
-        Button(
+        SetupPrimaryButton(
           onClick = {
             if (needsAndroidWarning) {
               showUnofficialAndroidWarning = true
@@ -501,9 +536,8 @@ fun InstallModuleScreen(
           },
           enabled = canInstall,
           modifier = Modifier.fillMaxWidth(),
-        ) {
-          Text(if (setup.installing) stringResource(R.string.common_installing) else stringResource(R.string.common_install))
-        }
+          text = if (setup.installing) stringResource(R.string.common_installing) else stringResource(R.string.common_install),
+        )
 
         if (!osInstallOk) {
           Spacer(Modifier.height(10.dp))
@@ -694,6 +728,115 @@ fun InstallModuleScreen(
   }
 }
 
+
+@Composable
+private fun SetupPrimaryButton(
+  onClick: () -> Unit,
+  enabled: Boolean,
+  modifier: Modifier = Modifier,
+  text: String,
+) {
+  val interactionSource = remember { MutableInteractionSource() }
+  val pressed by interactionSource.collectIsPressedAsState()
+  val scale by animateFloatAsState(
+    targetValue = if (pressed && enabled) 0.985f else 1f,
+    animationSpec = tween(durationMillis = 110),
+    label = "setup_button_press_scale",
+  )
+  Button(
+    onClick = onClick,
+    enabled = enabled,
+    interactionSource = interactionSource,
+    elevation = ButtonDefaults.buttonElevation(
+      defaultElevation = 2.dp,
+      pressedElevation = 6.dp,
+      disabledElevation = 0.dp,
+    ),
+    modifier = modifier
+      .graphicsLayer {
+        scaleX = scale
+        scaleY = scale
+      }
+      .heightIn(min = 48.dp),
+  ) {
+    Text(text)
+  }
+}
+
+@Composable
+private fun OptionalZygiskInstallCard(
+  enabled: Boolean,
+  onToggle: (Boolean) -> Unit,
+) {
+  var expanded by rememberSaveable { mutableStateOf(false) }
+  val compactLayout = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 420
+  Card(
+    modifier = Modifier.fillMaxWidth(),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 10.dp, vertical = 8.dp)
+        .animateContentSize(),
+      verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = stringResource(R.string.setup_zygisk_install_title),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+          if (!compactLayout) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+              text = stringResource(R.string.setup_zygisk_install_short),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
+              maxLines = 2,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
+        Spacer(Modifier.width(8.dp))
+        Checkbox(
+          checked = enabled,
+          onCheckedChange = onToggle,
+          modifier = Modifier.size(36.dp),
+        )
+        IconButton(
+          onClick = { expanded = !expanded },
+          modifier = Modifier.size(34.dp),
+        ) {
+          Icon(
+            imageVector = Icons.Filled.ErrorOutline,
+            contentDescription = stringResource(R.string.setup_zygisk_install_details_cd),
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp),
+          )
+        }
+      }
+      AnimatedVisibility(
+        visible = expanded,
+        enter = fadeIn(animationSpec = tween(220)) + expandVertically(animationSpec = tween(220)),
+        exit = fadeOut(animationSpec = tween(180)) + shrinkVertically(animationSpec = tween(180)),
+      ) {
+        Text(
+          text = stringResource(R.string.setup_zygisk_install_details),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.92f),
+        )
+      }
+    }
+  }
+}
 
 @Composable
 private fun InstallConflictCard(

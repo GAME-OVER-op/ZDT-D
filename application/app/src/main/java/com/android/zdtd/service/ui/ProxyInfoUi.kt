@@ -183,19 +183,26 @@ fun ProxyInfoAppsDialog(
     delay(180L)
     debouncedQuery = query.trim().lowercase(Locale.ROOT)
   }
+  fun matchesSearch(app: InstalledApp, normalizedQuery: String): Boolean {
+    if (normalizedQuery.isBlank()) return true
+    return app.label.lowercase(Locale.ROOT).contains(normalizedQuery) ||
+      app.packageName.lowercase(Locale.ROOT).contains(normalizedQuery)
+  }
+
   val availableApps = remember(apps) { apps.filter { it.packageName != ZDTD_APP_PACKAGE_NAME } }
   val filtered = remember(availableApps, debouncedQuery) {
-    if (debouncedQuery.isBlank()) availableApps
-    else availableApps.filter {
-      it.sortKey.contains(debouncedQuery) || it.packageName.lowercase(Locale.ROOT).contains(debouncedQuery)
-    }
+    if (debouncedQuery.isBlank()) availableApps else availableApps.filter { matchesSearch(it, debouncedQuery) }
   }
   val appsByPackage = remember(availableApps) { availableApps.associateBy { it.packageName } }
-  val selectedApps = remember(appsByPackage, selected) {
+  val selectedAppsAll = remember(appsByPackage, selected) {
     selected.map { pkg -> appsByPackage[pkg] ?: InstalledApp(pkg, pkg, false) }
       .sortedBy { it.sortKey }
   }
+  val selectedApps = remember(selectedAppsAll, debouncedQuery) {
+    if (debouncedQuery.isBlank()) selectedAppsAll else selectedAppsAll.filter { matchesSearch(it, debouncedQuery) }
+  }
   val notSelectedApps = remember(filtered, selected) { filtered.filter { it.packageName !in selected } }
+  val showSelectedSection = debouncedQuery.isBlank() || selectedApps.isNotEmpty()
   val compactWidth = rememberIsCompactWidth()
   val narrowWidth = rememberIsNarrowWidth()
   val shortHeight = rememberIsShortHeight()
@@ -413,26 +420,64 @@ fun ProxyInfoAppsDialog(
               .weight(1f, fill = true),
             verticalArrangement = Arrangement.spacedBy(if (shortHeight) 6.dp else 8.dp),
           ) {
+            if (showSelectedSection) {
+              item {
+                Text(
+                  text = stringResource(R.string.settings_proxyinfo_selected_header),
+                  style = MaterialTheme.typography.labelLarge,
+                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                )
+              }
+              if (selectedApps.isEmpty()) {
+                item {
+                  Text(
+                    text = stringResource(R.string.settings_proxyinfo_empty),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
+                  )
+                }
+              } else {
+                items(selectedApps, key = { "sel:" + it.packageName }, contentType = { "proxyinfo_selected_app" }) { app ->
+                  ProxyInfoAppRow(
+                    app = app,
+                    selected = true,
+                    compactWidth = compactWidth,
+                    iconCache = iconCache,
+                    enabled = !saving,
+                    onToggle = { checked ->
+                      selected = if (checked) selected + app.packageName else selected - app.packageName
+                    },
+                  )
+                }
+              }
+            }
+
             item {
+              if (showSelectedSection) {
+                Spacer(Modifier.height(if (shortHeight) 6.dp else 8.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f))
+                Spacer(Modifier.height(if (shortHeight) 6.dp else 8.dp))
+              }
               Text(
-                text = stringResource(R.string.settings_proxyinfo_selected_header),
+                text = stringResource(R.string.settings_proxyinfo_all_apps_title),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
               )
             }
-            if (selectedApps.isEmpty()) {
+
+            if (notSelectedApps.isEmpty()) {
               item {
                 Text(
-                  text = stringResource(R.string.settings_proxyinfo_empty),
+                  text = stringResource(if (debouncedQuery.isBlank()) R.string.app_picker_none else R.string.app_picker_no_matches),
                   style = MaterialTheme.typography.bodySmall,
                   color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
                 )
               }
             } else {
-              items(selectedApps, key = { "sel:" + it.packageName }, contentType = { "proxyinfo_selected_app" }) { app ->
+              items(notSelectedApps, key = { "all:" + it.packageName }, contentType = { "proxyinfo_available_app" }) { app ->
                 ProxyInfoAppRow(
                   app = app,
-                  selected = true,
+                  selected = false,
                   compactWidth = compactWidth,
                   iconCache = iconCache,
                   enabled = !saving,
@@ -441,30 +486,6 @@ fun ProxyInfoAppsDialog(
                   },
                 )
               }
-            }
-
-            item {
-              Spacer(Modifier.height(if (shortHeight) 6.dp else 8.dp))
-              HorizontalDivider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f))
-              Spacer(Modifier.height(if (shortHeight) 6.dp else 8.dp))
-              Text(
-                text = stringResource(R.string.settings_proxyinfo_all_apps_title),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-              )
-            }
-
-            items(notSelectedApps, key = { "all:" + it.packageName }, contentType = { "proxyinfo_available_app" }) { app ->
-              ProxyInfoAppRow(
-                app = app,
-                selected = false,
-                compactWidth = compactWidth,
-                iconCache = iconCache,
-                enabled = !saving,
-                onToggle = { checked ->
-                  selected = if (checked) selected + app.packageName else selected - app.packageName
-                },
-              )
             }
           }
         }

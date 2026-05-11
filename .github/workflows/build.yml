@@ -155,6 +155,25 @@ jobs:
           RUSTC_WRAPPER: ""
         run: cargo build --profile ${{ env.CARGO_PROFILE }} --target ${{ env.CARGO_BUILD_TARGET }}
 
+      - name: Build Zygisk (arm64-v8a)
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
+          ANDROID_NDK_ROOT: ${{ env.NDK_ROOT }}
+          NDK_ROOT: ${{ env.NDK_ROOT }}
+          ANDROID_API_LEVEL: 24
+        run: |
+          set -euo pipefail
+          mkdir -p out/zygisk
+          ./zygisk/build.sh out/zygisk/arm64-v8a.so
+          file out/zygisk/arm64-v8a.so
+          test -s out/zygisk/arm64-v8a.so
+          readelf -Ws out/zygisk/arm64-v8a.so | grep -q ' zygisk_module_entry$'
+          if readelf -d out/zygisk/arm64-v8a.so | grep -E 'NEEDED.*(libc\+\+|libstdc\+\+)' >/dev/null 2>&1; then
+            echo "::error::Zygisk binary must not depend on C++ STL runtime"
+            exit 1
+          fi
+
       - name: Pack Magisk module (zdt_module.zip)
         run: |
           set -euo pipefail
@@ -171,8 +190,12 @@ jobs:
           cp -f module.prop "$MODULE_BUILD_DIR/module.prop"
 
           [[ -d "$MODULE_BUILD_DIR/META-INF" ]] || { echo "::error::META-INF doesnt exist in module_template"; exit 1; }
+          find "$MODULE_BUILD_DIR" -name .gitkeep -type f -delete 2>/dev/null || true
+          rm -f "$MODULE_BUILD_DIR/zygisk/unloaded" 2>/dev/null || true
 
-          mkdir -p "$MODULE_BUILD_DIR/bin"
+          mkdir -p "$MODULE_BUILD_DIR/bin" "$MODULE_BUILD_DIR/zygisk"
+          cp -f "out/zygisk/arm64-v8a.so" "$MODULE_BUILD_DIR/zygisk/arm64-v8a.so" && chmod 644 "$MODULE_BUILD_DIR/zygisk/arm64-v8a.so"
+
           cp -f "$CARGO_OUT/zdtd" "$MODULE_BUILD_DIR/bin/zdtd" && chmod 755 "$MODULE_BUILD_DIR/bin/zdtd"
           cp -f "$CARGO_OUT/t2s"  "$MODULE_BUILD_DIR/bin/t2s"  && chmod 755 "$MODULE_BUILD_DIR/bin/t2s"
 
@@ -183,6 +206,12 @@ jobs:
           pushd "$MODULE_BUILD_DIR" > /dev/null
           zip -qr "../../../$MODULE_ZIP" .
           popd > /dev/null
+
+          unzip -l "$MODULE_ZIP" | grep -q 'zygisk/arm64-v8a.so' || { echo "::error::Zygisk binary missing in module zip"; exit 1; }
+          if unzip -l "$MODULE_ZIP" | grep -qE '(^|/)(unloaded|\.gitkeep)$'; then
+            echo "::error::unloaded or .gitkeep leaked into module zip"
+            exit 1
+          fi
 
           echo "MODULE_ZIP=$MODULE_ZIP" >> $GITHUB_ENV
 

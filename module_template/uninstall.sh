@@ -15,4 +15,7 @@ settings delete global global_proxy_pac_url
 settings delete global captive_portal_detection_enabled
 settings delete global captive_portal_server
 settings delete global captive_portal_mode
+
+# Remove only ZDT-D external installer markers. Do not touch /data/adb itself.
+rm -rf /data/adb/ZDT-D 2>/dev/null || true
 )&

@@ -15,6 +15,10 @@ interface ZdtdActions {
   fun continueAfterInstall()
   fun refreshInstallConflicts()
   fun setInstallConflictMarked(modulePath: String, checked: Boolean)
+  fun refreshZygiskInstallMarker()
+  fun requestSetInstallZygisk(enabled: Boolean)
+  fun confirmInstallZygisk()
+  fun dismissInstallZygiskConfirm()
 
   /** Remove module and uninstall the app (with reboot after uninstall). */
   fun beginModuleRemoval()

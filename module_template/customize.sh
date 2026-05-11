@@ -28,6 +28,18 @@ ui_print "## - Officially supported: Android 11+ (SDK >= 30)"
 ui_print "## - arm64 only (arm64-v8a / aarch64)"
 hr
 
+
+MAGISK_CODE="${MAGISK_VER_CODE:-0}"
+case "$MAGISK_CODE" in
+  ''|*[!0-9]*) MAGISK_CODE=0 ;;
+esac
+if [ -f /data/adb/ZDT-D/zygisk ]; then
+  if [ "$MAGISK_CODE" -gt 0 ] && [ "$MAGISK_CODE" -lt 26000 ]; then
+    fail "Magisk 26.0+ required for Zygisk API v4. Detected MAGISK_VER_CODE=$MAGISK_CODE."
+  fi
+  [ "$MAGISK_CODE" -gt 0 ] && ok "Magisk versionCode is compatible: $MAGISK_CODE"
+fi
+
 SDK="$(getprop ro.build.version.sdk 2>/dev/null)"
 REL="$(getprop ro.build.version.release 2>/dev/null)"
 
@@ -123,6 +135,25 @@ if [ -f "$SERVICE" ]; then
 else
   fail "File not found: $SERVICE"
 fi
+
+ZYGISK_MARKER="/data/adb/ZDT-D/zygisk"
+ZYGISK_DIR="$MODDIR/zygisk"
+ZYGISK_SO="$ZYGISK_DIR/arm64-v8a.so"
+if [ -f "$ZYGISK_MARKER" ]; then
+  ui_print "- Zygisk component: enabled by marker"
+  rm -f "$ZYGISK_DIR/unloaded" 2>/dev/null || true
+  if [ -f "$ZYGISK_SO" ]; then
+    chmod 755 "$ZYGISK_DIR" 2>/dev/null || true
+    chmod 644 "$ZYGISK_SO" 2>/dev/null || fail "chmod 644 failed: $ZYGISK_SO"
+    ok "Zygisk arm64-v8a.so found"
+  else
+    fail "Zygisk marker exists, but library not found: $ZYGISK_SO"
+  fi
+else
+  ui_print "- Zygisk component: disabled"
+  rm -rf "$ZYGISK_DIR" 2>/dev/null || true
+fi
+
 
 hr
 sec "Done"

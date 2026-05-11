@@ -7,6 +7,7 @@ APP_MODULE_DIR="$APP_DIR/app"
 MODULE_TEMPLATE_DIR="$ROOT_DIR/module_template"
 RUST_DIR="$ROOT_DIR/rust"
 PREBUILT_BIN_DIR="$ROOT_DIR/prebuilt/bin/arm64-v8a"
+ZYGISK_DIR="$ROOT_DIR/zygisk"
 OUT_DIR="$ROOT_DIR/out"
 MODULE_BUILD_DIR="$OUT_DIR/module_build"
 MODULE_ROOT_DIR="$MODULE_BUILD_DIR/module_root"
@@ -64,7 +65,7 @@ DASHBOARD_REFRESH_INTERVAL="${DASHBOARD_REFRESH_INTERVAL:-0.25}"
 declare -a DASHBOARD_LAST_LINES=()
 DASHBOARD_REFRESH_INTERVAL="${DASHBOARD_REFRESH_INTERVAL:-0.25}"
 declare -a DASHBOARD_LAST_LINES=()
-STAGE_KEYS=(env keystore rustcheck zdtd t2s extbin modulezip assets android apk final)
+STAGE_KEYS=(env keystore rustcheck zdtd t2s extbin zygisk modulezip assets android apk final)
 STAGE_NAMES=(
   "Environment checks"
   "Keystore check"
@@ -72,6 +73,7 @@ STAGE_NAMES=(
   "Build zdtd"
   "Build t2s"
   "External binaries"
+  "Build Zygisk"
   "Package module zip"
   "Prepare APK inputs"
   "Android prereqs"
@@ -349,7 +351,7 @@ ensure_gradle_ready() {
 ensure_termux_build_prereqs() {
   is_termux_runtime || return 0
   local missing=()
-  local required=(javac keytool zip unzip make git find curl rustc cargo aapt2 pkg-config file)
+  local required=(javac keytool zip unzip make git find curl rustc cargo aapt2 pkg-config file clang++)
   local cmd
   for cmd in "${required[@]}"; do
     cmd_exists "$cmd" || missing+=("$cmd")
@@ -1074,12 +1076,39 @@ prepare_module_tree_base() {
   mkdir -p "$MODULE_ROOT_DIR" "$OUT_DIR/module"
   cp -a "$MODULE_TEMPLATE_DIR/." "$MODULE_ROOT_DIR/"
   cp -f "$ROOT_DIR/module.prop" "$MODULE_ROOT_DIR/module.prop"
+  find "$MODULE_ROOT_DIR" -name .gitkeep -type f -delete 2>/dev/null || true
+  rm -f "$MODULE_ROOT_DIR/zygisk/unloaded" 2>/dev/null || true
   [[ -d "$MODULE_ROOT_DIR/META-INF" ]] || fail 'В шаблоне модуля отсутствует META-INF'
+  mkdir -p "$MODULE_ROOT_DIR/zygisk"
 }
 
 check_and_copy_external_bins() {
   require_external_bins
   copy_external_bins
+}
+
+build_zygisk_module() {
+  local out_so="$MODULE_ROOT_DIR/zygisk/arm64-v8a.so"
+  mkdir -p "$(dirname "$out_so")"
+  if [[ "${ZDT_SKIP_ZYGISK_BUILD:-0}" == "1" ]]; then
+    [[ -f "$out_so" ]] || fail "ZDT_SKIP_ZYGISK_BUILD=1, но готовый Zygisk файл не найден: $out_so"
+  else
+    [[ -x "$ZYGISK_DIR/build.sh" ]] || fail "Не найден скрипт сборки Zygisk: $ZYGISK_DIR/build.sh"
+    ANDROID_HOME="$ANDROID_HOME" ANDROID_SDK_ROOT="$ANDROID_SDK_ROOT" ANDROID_API_LEVEL=24 \
+      "$ZYGISK_DIR/build.sh" "$out_so"
+  fi
+  [[ -s "$out_so" ]] || fail "Zygisk arm64-v8a.so не создан: $out_so"
+  if command -v file >/dev/null 2>&1; then
+    file "$out_so" | grep -q 'ARM aarch64' || fail "Zygisk файл не является arm64 ELF: $out_so"
+  fi
+  if command -v readelf >/dev/null 2>&1; then
+    readelf -Ws "$out_so" | grep -q ' zygisk_module_entry$' || fail "Zygisk export zygisk_module_entry не найден: $out_so"
+    if readelf -d "$out_so" | grep -E 'NEEDED.*(libc\+\+|libstdc\+\+)' >/dev/null 2>&1; then
+      fail 'Zygisk библиотека не должна зависеть от C++ STL runtime'
+    fi
+  fi
+  rm -f "$MODULE_ROOT_DIR/zygisk/unloaded" 2>/dev/null || true
+  chmod 644 "$out_so"
 }
 
 package_module_zip() {
@@ -1091,6 +1120,10 @@ package_module_zip() {
 
 validate_module_zip() {
   [[ -f "$MODULE_ZIP" ]] || fail "Не найден модульный zip: $MODULE_ZIP"
+  unzip -l "$MODULE_ZIP" | grep -q 'zygisk/arm64-v8a.so' || fail 'В module zip отсутствует zygisk/arm64-v8a.so'
+  if unzip -l "$MODULE_ZIP" | grep -qE '(^|/)(unloaded|\.gitkeep)$'; then
+    fail 'В module zip попал служебный файл unloaded или .gitkeep'
+  fi
 }
 
 prepare_module_root() {
@@ -1104,6 +1137,7 @@ prepare_module_root() {
   run_cargo_stage zdtd 'Build zdtd' "$RUST_DIR/zdtd" 'zdtd' "$triple"
   run_cargo_stage t2s 'Build t2s' "$RUST_DIR/T2s" 't2s' "$triple"
   run_simple_stage extbin 'External binaries' check_and_copy_external_bins
+  run_simple_stage zygisk 'Build Zygisk' build_zygisk_module
   run_simple_stage modulezip 'Package module zip' package_module_zip
   run_simple_stage final 'Final validation' validate_module_zip
   set_dashboard_current 'Module ready'
@@ -1153,6 +1187,10 @@ build_apk() {
 clean_all() {
   rm -rf "$OUT_DIR" "$APP_DIR/app/build" "$APP_DIR/build" "$RUST_DIR/target"
   rm -rf "$APP_DIR/app/build/generated/zdt-assets" "$TOOLS_DIR/cargo-home"
+  rm -rf "$ZYGISK_DIR/out" "$ZYGISK_DIR/build" "$ZYGISK_DIR/.cxx"
+  rm -f "$MODULE_TEMPLATE_DIR/zygisk/arm64-v8a.so" "$MODULE_TEMPLATE_DIR/zygisk/unloaded"
+  rm -f "$MODULE_TEMPLATE_DIR"/working_folder/zygisk_status_*.json
+  rm -f "$MODULE_TEMPLATE_DIR/working_folder/proxyInfo/enabled.json" "$MODULE_TEMPLATE_DIR/working_folder/vpn_netd/applied.json"
   msg 'Build outputs cleaned'
 }
 
@@ -1166,13 +1204,24 @@ clear_all() {
     "$APP_DIR/.kotlin" \
     "$APP_DIR/build" \
     "$APP_DIR/app/build" \
-    "$APP_DIR/app/.cxx"
+    "$APP_DIR/app/.cxx" \
+    "$ZYGISK_DIR/out" \
+    "$ZYGISK_DIR/build" \
+    "$ZYGISK_DIR/.cxx"
   rm -f \
     "$APP_DIR/local.properties" \
     "$APP_DIR/keystore.properties" \
     "$APP_MODULE_DIR/src/main/assets/zdt_module.zip" \
-    "$APP_MODULE_DIR/src/main/assets/module.prop"
-  printf '[ZDT-D] Project cleared: removed compiled outputs, generated assets, and local build properties. Persistent keystores in ./keystores are preserved\n'
+    "$APP_MODULE_DIR/src/main/assets/module.prop" \
+    "$MODULE_TEMPLATE_DIR/zygisk/arm64-v8a.so" "$MODULE_TEMPLATE_DIR/zygisk/unloaded" \
+    "$MODULE_TEMPLATE_DIR/zygisk/.gitkeep" \
+    "$MODULE_TEMPLATE_DIR/working_folder/zygisk_status.json" \
+    "$MODULE_TEMPLATE_DIR/working_folder/proxyInfo/out_program" \
+    "$MODULE_TEMPLATE_DIR/working_folder/proxyInfo/enabled.json" \
+    "$MODULE_TEMPLATE_DIR/working_folder/vpn_netd/applied.json" \
+    "$MODULE_TEMPLATE_DIR/working_folder/proxyInfo/.gitkeep"
+  rm -f "$MODULE_TEMPLATE_DIR"/working_folder/zygisk_status_*.json
+  printf '[ZDT-D] Project cleared: removed compiled outputs, generated assets, local build properties, generated Zygisk binaries, and runtime state files. Persistent keystores in ./keystores are preserved\n'
   return 0
 }
 

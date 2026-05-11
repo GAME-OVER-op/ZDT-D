@@ -302,14 +302,19 @@ object ApiModels {
       val profiles = if (profilesArr != null) parseProfiles(profilesArr) else emptyList()
       val rawName = o.optString("name").takeIf { it.isNotBlank() }
       val displayName = when (id) {
-        "wireproxy" -> "WireProxy"
-        "tor" -> "Tor"
+        "dnscrypt" -> rawName?.takeUnless { it.equals("dnscrypt", ignoreCase = true) } ?: "DNSCrypt"
+        "dpitunnel" -> rawName?.takeUnless { it.equals("dpitunnel", ignoreCase = true) } ?: "DPITunnel"
+        "openvpn" -> rawName?.takeUnless { it.equals("openvpn", ignoreCase = true) } ?: "OpenVPN"
+        "nfqws" -> rawName?.takeUnless { it.equals("nfqws", ignoreCase = true) || it.equals("zapret", ignoreCase = true) } ?: "Zapret"
+        "nfqws2" -> rawName?.takeUnless { it.equals("nfqws2", ignoreCase = true) || it.equals("zapret2", ignoreCase = true) || it.equals("zapret 2", ignoreCase = true) } ?: "Zapret 2"
+        "byedpi" -> rawName?.takeUnless { it.equals("byedpi", ignoreCase = true) } ?: "ByeDPI"
+        "wireproxy" -> rawName?.takeUnless { it.equals("wireproxy", ignoreCase = true) } ?: "WireProxy"
+        "tor" -> rawName?.takeUnless { it.equals("tor", ignoreCase = true) } ?: "Tor"
         "myproxy" -> rawName ?: "myproxy"
         "myprogram" -> rawName ?: "myprogram"
-        "openvpn" -> rawName ?: "OpenVPN"
         "tun2socks" -> rawName ?: "tun2socks"
         "myvpn" -> rawName ?: "myvpn"
-        "mihomo" -> rawName ?: "Mihomo"
+        "mihomo" -> rawName?.takeUnless { it.equals("mihomo", ignoreCase = true) } ?: "Mihomo"
         "amneziawg" -> rawName?.takeUnless { it.equals("amneziawg", ignoreCase = true) } ?: "AmneziaWG"
         else -> rawName
       }

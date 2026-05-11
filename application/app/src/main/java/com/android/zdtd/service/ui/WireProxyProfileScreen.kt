@@ -557,7 +557,7 @@ fun WireProxyProfileScreen(
   ) {
     Text("${program?.name ?: "WireProxy"} / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 2)
     Text(
-      stringResource(R.string.changes_apply_after_restart),
+      toolDescription("wireproxy"),
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
     )

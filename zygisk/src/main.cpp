@@ -16,6 +16,12 @@ struct sockaddr {
   unsigned short sa_family;
   char sa_data[14];
 };
+struct sockaddr_nl {
+  unsigned short nl_family;
+  unsigned short nl_pad;
+  uint32_t nl_pid;
+  uint32_t nl_groups;
+};
 struct ifaddrs {
   struct ifaddrs *ifa_next;
   char *ifa_name;
@@ -88,6 +94,13 @@ struct ifinfomsg {
   uint32_t ifi_flags;
   uint32_t ifi_change;
 };
+struct ifaddrmsg {
+  uint8_t ifa_family;
+  uint8_t ifa_prefixlen;
+  uint8_t ifa_flags;
+  uint8_t ifa_scope;
+  uint32_t ifa_index;
+};
 struct rtattr {
   uint16_t rta_len;
   uint16_t rta_type;
@@ -109,10 +122,13 @@ ssize_t write(int fd, const void *buf, size_t count);
 off_t lseek(int fd, off_t offset, int whence);
 int ioctl(int fd, unsigned long request, ...);
 ssize_t recvmsg(int sockfd, struct msghdr *msg, int flags);
+ssize_t recv(int sockfd, void *buf, size_t len, int flags);
 DIR *opendir(const char *name);
 struct dirent_like *readdir(DIR *dirp);
 struct dirent_like *readdir64(DIR *dirp);
 int closedir(DIR *dirp);
+int getsockname(int sockfd, struct sockaddr *addr, socklen_t *addrlen);
+long syscall(long number, ...);
 unsigned int if_nametoindex(const char *ifname);
 char *if_indextoname(unsigned int ifindex, char *ifname);
 int snprintf(char *str, size_t size, const char *format, ...);
@@ -161,6 +177,18 @@ int *__errno(void);
 #ifndef ENOENT
 #define ENOENT 2
 #endif
+#ifndef AF_NETLINK
+#define AF_NETLINK 16
+#endif
+#ifndef __NR_memfd_create
+#define __NR_memfd_create 279
+#endif
+#ifndef MFD_CLOEXEC
+#define MFD_CLOEXEC 0x0001U
+#endif
+#ifndef MSG_TRUNC
+#define MSG_TRUNC 0x20
+#endif
 
 #define SIOCGIFNAME   0x8910
 #define SIOCGIFCONF   0x8912
@@ -174,6 +202,7 @@ int *__errno(void);
 #define SIOCGIFINDEX  0x8933
 
 #define RTM_NEWLINK 16
+#define RTM_NEWADDR 20
 #define IFLA_IFNAME 3
 #define NLMSG_ALIGNTO 4U
 #define RTA_ALIGNTO 4U
@@ -184,6 +213,12 @@ int *__errno(void);
 #define va_start __builtin_va_start
 #define va_arg __builtin_va_arg
 #define va_end __builtin_va_end
+
+
+// Minimal JNI access used only for reading AppSpecializeArgs::nice_name.
+// Keep this local to avoid depending on the platform jni.h in lightweight builds.
+using jsize = int;
+struct JNIEnv { const void *functions; };
 
 namespace {
 constexpr int MAX_INTERFACES = 32;
@@ -198,6 +233,7 @@ using OpenFn = int (*)(const char *, int, ...);
 using OpenAtFn = int (*)(int, const char *, int, ...);
 using IoctlFn = int (*)(int, unsigned long, ...);
 using RecvmsgFn = ssize_t (*)(int, msghdr *, int);
+using RecvFn = ssize_t (*)(int, void *, size_t, int);
 using OpendirFn = DIR *(*)(const char *);
 using ReaddirFn = dirent_like *(*)(DIR *);
 using ClosedirFn = int (*)(DIR *);
@@ -209,6 +245,7 @@ static OpenFn orig_open = nullptr;
 static OpenAtFn orig_openat = nullptr;
 static IoctlFn orig_ioctl = nullptr;
 static RecvmsgFn orig_recvmsg = nullptr;
+static RecvFn orig_recv = nullptr;
 static OpendirFn orig_opendir = nullptr;
 static ReaddirFn orig_readdir = nullptr;
 static ReaddirFn orig_readdir64 = nullptr;
@@ -239,6 +276,10 @@ static bool g_proxyinfo_enabled = false;
 static long g_last_reload_at = 0;
 static int g_current_ttl = 30;
 static bool g_runtime_loaded_once = false;
+static char g_process_name[256] = {};
+static bool g_is_child_zygote = false;
+static bool g_isolated_uid = false;
+static __thread int g_hook_depth = 0;
 
 constexpr int RUNTIME_TTL_MIN = 30;
 constexpr int RUNTIME_TTL_MAX = 400;
@@ -246,13 +287,13 @@ constexpr const char *ABS_TARGETS_PATH = "/data/adb/modules/ZDT-D/working_folder
 constexpr const char *ABS_START_PATH = "/data/adb/modules/ZDT-D/setting/start.json";
 constexpr const char *ABS_PROXYINFO_ENABLED_PATH = "/data/adb/modules/ZDT-D/working_folder/proxyInfo/enabled.json";
 constexpr const char *ABS_APPLIED_PATH = "/data/adb/modules/ZDT-D/working_folder/vpn_netd/applied.json";
-constexpr const char *ABS_STATUS_PATH = "/data/adb/modules/ZDT-D/working_folder/zygisk_status.json";
 
 int hooked_getifaddrs(ifaddrs **out);
 int hooked_open(const char *pathname, int flags, ...);
 int hooked_openat(int dirfd, const char *pathname, int flags, ...);
 int hooked_ioctl(int fd, unsigned long request, ...);
 ssize_t hooked_recvmsg(int sockfd, msghdr *msg, int flags);
+ssize_t hooked_recv(int sockfd, void *buf, size_t len, int flags);
 DIR *hooked_opendir(const char *name);
 dirent_like *hooked_readdir(DIR *dirp);
 dirent_like *hooked_readdir64(DIR *dirp);
@@ -278,6 +319,67 @@ void trim(char *s) {
 }
 
 bool streq(const char *a, const char *b) { return a && b && strcmp(a, b) == 0; }
+bool starts_with(const char *s, const char *prefix) {
+  if (!s || !prefix) return false;
+  while (*prefix) {
+    if (*s++ != *prefix++) return false;
+  }
+  return true;
+}
+
+constexpr int JNI_GET_STRING_UTF_CHARS_INDEX = 169;
+constexpr int JNI_RELEASE_STRING_UTF_CHARS_INDEX = 170;
+using GetStringUtfCharsFn = const char *(*)(JNIEnv *, jstring, jboolean *);
+using ReleaseStringUtfCharsFn = void (*)(JNIEnv *, jstring, const char *);
+
+bool copy_jstring_utf(JNIEnv *env, jstring value, char *out, int cap) {
+  if (!out || cap <= 1) return false;
+  out[0] = 0;
+  if (!env || !value || !env->functions) return false;
+  void *const *table = reinterpret_cast<void *const *>(const_cast<void *>(env->functions));
+  if (!table) return false;
+  auto get_chars = reinterpret_cast<GetStringUtfCharsFn>(table[JNI_GET_STRING_UTF_CHARS_INDEX]);
+  auto release_chars = reinterpret_cast<ReleaseStringUtfCharsFn>(table[JNI_RELEASE_STRING_UTF_CHARS_INDEX]);
+  if (!get_chars || !release_chars) return false;
+  jboolean is_copy = 0;
+  const char *utf = get_chars(env, value, &is_copy);
+  if (!utf) return false;
+  int n = 0;
+  while (utf[n] && n < cap - 1) {
+    out[n] = utf[n];
+    n++;
+  }
+  out[n] = 0;
+  release_chars(env, value, utf);
+  return n > 0;
+}
+
+bool is_forbidden_process_name(const char *process_name) {
+  if (!process_name || !*process_name) return false;
+  if (streq(process_name, "com.android.zdtd.service") || starts_with(process_name, "com.android.zdtd.service:")) return true;
+  if (strstr(process_name, "webview_zygote") != nullptr) return true;
+  if (strstr(process_name, "app_zygote") != nullptr) return true;
+  if (strstr(process_name, "sandboxed_process") != nullptr) return true;
+  if (strstr(process_name, "renderer") != nullptr) return true;
+  if (strstr(process_name, "com.android.chrome") != nullptr) return true;
+  if (strstr(process_name, "com.google.android.webview") != nullptr) return true;
+  if (strstr(process_name, "com.android.webview") != nullptr) return true;
+  if (strstr(process_name, "com.google.android.trichromelibrary") != nullptr) return true;
+  if (strstr(process_name, "org.chromium") != nullptr) return true;
+  return false;
+}
+
+bool is_android_isolated_uid(int uid) {
+  // Android isolated processes, including many WebView/renderer processes, are assigned
+  // UIDs from the AID_ISOLATED range. They are not regular app package processes and
+  // should never receive ZDT-D interface-hiding hooks.
+  return uid >= 99000 && uid <= 99999;
+}
+
+bool is_child_zygote_args(const zygisk::AppSpecializeArgs *args) {
+  return args && args->is_child_zygote && *(args->is_child_zygote);
+}
+
 int read_file_at(int dirfd, const char *path, char *buf, int cap) {
   if (!path || !buf || cap <= 1) return -1;
   int fd = -1;
@@ -295,62 +397,29 @@ int read_file_at(int dirfd, const char *path, char *buf, int cap) {
   return total;
 }
 
-void write_status_file(int dirfd, const char *path, const char *body, int len) {
-  if (!path || !body || len <= 0) return;
-  int fd = openat(dirfd, path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
-  if (fd < 0) return;
-  write(fd, body, static_cast<size_t>(len));
-  close(fd);
-}
-
-void write_status_at(int dirfd, const char *phase, int uid, bool target, bool active, int iface_count, int hook_count) {
-  char body[1536];
-  long now = time(nullptr);
-  int n = snprintf(
-      body,
-      sizeof(body),
-      "{\"phase\":\"%s\",\"mode\":\"safe_selective_plt_dynamic\",\"uid\":%d,\"target\":%s,\"active\":%s,\"start_enabled\":%s,\"proxyinfo_enabled\":%s,\"interfaces\":%d,\"hooks\":%d,\"maps_elf\":%d,\"commit_ok\":%s,\"ttl_sec\":%d,\"hits\":{\"getifaddrs\":%d,\"proc\":%d,\"ioctl\":%d,\"netlink\":%d},\"updated_at\":%ld}\n",
-      phase ? phase : "unknown",
-      uid,
-      target ? "true" : "false",
-      active ? "true" : "false",
-      g_start_enabled ? "true" : "false",
-      g_proxyinfo_enabled ? "true" : "false",
-      iface_count,
-      hook_count,
-      g_maps_elf_count,
-      g_commit_ok ? "true" : "false",
-      g_current_ttl,
-      g_getifaddrs_hits,
-      g_proc_hits,
-      g_ioctl_hits,
-      g_netlink_hits,
-      now);
-  if (n <= 0) return;
-
-  if (dirfd >= 0) {
-    write_status_file(dirfd, "working_folder/zygisk_status.json", body, n);
-    if (uid > 0) {
-      char rel[96];
-      int rn = snprintf(rel, sizeof(rel), "working_folder/zygisk_status_%d.json", uid);
-      if (rn > 0 && rn < static_cast<int>(sizeof(rel))) write_status_file(dirfd, rel, body, n);
-    }
-  }
-
-  write_status_file(AT_FDCWD, ABS_STATUS_PATH, body, n);
-  if (uid > 0) {
-    char abs[160];
-    int an = snprintf(abs, sizeof(abs), "/data/adb/modules/ZDT-D/working_folder/zygisk_status_%d.json", uid);
-    if (an > 0 && an < static_cast<int>(sizeof(abs))) write_status_file(AT_FDCWD, abs, body, n);
-  }
-}
-
 int read_file_module_or_abs(int dirfd, const char *rel_path, const char *abs_path, char *buf, int cap) {
   int n = -1;
   if (dirfd >= 0 && rel_path) n = read_file_at(dirfd, rel_path, buf, cap);
   if (n > 0) return n;
   if (abs_path) n = read_file_at(AT_FDCWD, abs_path, buf, cap);
   return n;
+}
+
+void close_module_fd_if_open() {
+  if (g_module_fd >= 0) {
+    close(g_module_fd);
+    g_module_fd = MODULE_FD_NONE;
+  }
+}
+
+bool enter_hook_guard() {
+  if (g_hook_depth > 0) return false;
+  g_hook_depth++;
+  return true;
+}
+
+void leave_hook_guard() {
+  if (g_hook_depth > 0) g_hook_depth--;
 }
 
 bool parse_positive_int(const char *s, int *out) {
@@ -381,12 +450,10 @@ bool uid_in_out_program(const char *raw, int uid) {
       if (tmp[0] && tmp[0] != '#') {
         char *eq = strchr(tmp, '=');
         if (eq) {
-          *eq = 0;
           char *digits = eq + 1;
-          trim(tmp);
           trim(digits);
           int parsed_uid = -1;
-          if (tmp[0] && parse_positive_int(digits, &parsed_uid) && parsed_uid == uid) return true;
+          if (parse_positive_int(digits, &parsed_uid) && parsed_uid == uid) return true;
         }
       }
     }
@@ -395,6 +462,7 @@ bool uid_in_out_program(const char *raw, int uid) {
   }
   return false;
 }
+
 
 void add_interface_name(const char *start, int len);
 void parse_applied_interfaces_json(const char *json);
@@ -472,10 +540,8 @@ bool reload_runtime_state(bool force, const char *phase) {
   g_runtime_loaded_once = true;
   if (orig_if_nametoindex) refresh_hidden_indices();
 
-  if (force || changed) {
-    const char *st = g_enabled ? "runtime_enabled" : "runtime_disabled";
-    write_status_at(g_module_fd, phase ? phase : st, g_uid, g_target, g_enabled, g_interface_count, g_registered_hooks);
-  }
+  (void)force;
+  (void)phase;
   return g_enabled;
 }
 
@@ -590,9 +656,8 @@ bool is_hidden_index(unsigned int idx) {
 
 void refresh_hidden_indices() {
   g_hidden_index_count = 0;
-  if (!orig_if_nametoindex) return;
   for (int i = 0; i < g_interface_count && g_hidden_index_count < MAX_HIDDEN_INDICES; ++i) {
-    unsigned int idx = orig_if_nametoindex(g_interfaces[i]);
+    unsigned int idx = orig_if_nametoindex ? orig_if_nametoindex(g_interfaces[i]) : if_nametoindex(g_interfaces[i]);
     if (idx == 0) continue;
     bool exists = false;
     for (int j = 0; j < g_hidden_index_count; ++j) if (g_hidden_indices[j] == idx) exists = true;
@@ -718,8 +783,22 @@ int filter_proc_text(const char *in, int in_len, char *out, int out_cap, ProcKin
   return written;
 }
 
+int make_memfd_from_text(const char *name, const char *text, int len) {
+  if (!name || !text || len < 0) return -1;
+  int fd = static_cast<int>(syscall(__NR_memfd_create, name, MFD_CLOEXEC));
+  if (fd < 0) return -1;
+  int written = 0;
+  while (written < len) {
+    ssize_t n = write(fd, text + written, static_cast<size_t>(len - written));
+    if (n <= 0) { close(fd); return -1; }
+    written += static_cast<int>(n);
+  }
+  lseek(fd, 0, SEEK_SET);
+  return fd;
+}
+
 int make_filtered_proc_fd(const char *path, ProcKind kind) {
-  if (!g_enabled || !orig_openat || g_module_fd < 0 || kind == PROC_NONE) return -1;
+  if (!g_enabled || !orig_openat || kind == PROC_NONE) return -1;
   int src = orig_openat(AT_FDCWD, path, O_RDONLY | O_CLOEXEC);
   if (src < 0) return -1;
   char raw[READ_LIMIT];
@@ -733,14 +812,10 @@ int make_filtered_proc_fd(const char *path, ProcKind kind) {
   raw[total] = 0;
   char filtered[READ_LIMIT];
   int filtered_len = filter_proc_text(raw, total, filtered, READ_LIMIT, kind);
-  char tmp_path[96];
   const char *kind_name = kind == PROC_DEV ? "dev" : (kind == PROC_ROUTE ? "route" : "ifinet6");
-  snprintf(tmp_path, sizeof(tmp_path), "working_folder/zygisk_%s_%d.tmp", kind_name, g_uid);
-  int fd = orig_openat(g_module_fd, tmp_path, O_RDWR | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
-  if (fd < 0) return -1;
-  if (filtered_len > 0) write(fd, filtered, static_cast<size_t>(filtered_len));
-  lseek(fd, 0, SEEK_SET);
-  return fd;
+  char memfd_name[64];
+  snprintf(memfd_name, sizeof(memfd_name), "zdt-d-zygisk-%s", kind_name);
+  return make_memfd_from_text(memfd_name, filtered, filtered_len);
 }
 
 bool sys_class_net_path(const char *path) {
@@ -799,11 +874,19 @@ bool request_uses_ifr_name(unsigned long request) {
 }
 
 bool nlmsg_has_hidden_ifname(nlmsghdr *hdr) {
-  if (!hdr || hdr->nlmsg_len < sizeof(nlmsghdr) + sizeof(ifinfomsg)) return false;
-  if (hdr->nlmsg_type != RTM_NEWLINK) return false;
+  if (!hdr || hdr->nlmsg_len < sizeof(nlmsghdr)) return false;
   char *base = reinterpret_cast<char *>(hdr);
-  int offset = static_cast<int>(sizeof(nlmsghdr) + sizeof(ifinfomsg));
   int total = static_cast<int>(hdr->nlmsg_len);
+
+  if (hdr->nlmsg_type == RTM_NEWADDR) {
+    if (total < static_cast<int>(sizeof(nlmsghdr) + sizeof(ifaddrmsg))) return false;
+    ifaddrmsg *addr = reinterpret_cast<ifaddrmsg *>(base + sizeof(nlmsghdr));
+    return is_hidden_index(addr->ifa_index);
+  }
+
+  if (hdr->nlmsg_type != RTM_NEWLINK) return false;
+  if (total < static_cast<int>(sizeof(nlmsghdr) + sizeof(ifinfomsg))) return false;
+  int offset = static_cast<int>(sizeof(nlmsghdr) + sizeof(ifinfomsg));
   while (offset + static_cast<int>(sizeof(rtattr)) <= total) {
     rtattr *attr = reinterpret_cast<rtattr *>(base + offset);
     if (attr->rta_len < sizeof(rtattr) || offset + attr->rta_len > total) break;
@@ -819,6 +902,31 @@ bool nlmsg_has_hidden_ifname(nlmsghdr *hdr) {
     offset += static_cast<int>(RTA_ALIGN(attr->rta_len));
   }
   return false;
+}
+
+bool is_netlink_socket_fd(int fd) {
+  sockaddr_nl addr;
+  memset(&addr, 0, sizeof(addr));
+  socklen_t len = static_cast<socklen_t>(sizeof(addr));
+  if (getsockname(fd, reinterpret_cast<sockaddr *>(&addr), &len) != 0) return false;
+  return len >= static_cast<socklen_t>(sizeof(unsigned short)) && addr.nl_family == AF_NETLINK;
+}
+
+bool looks_like_complete_netlink_buffer(const char *buf, ssize_t len) {
+  if (!buf || len < static_cast<ssize_t>(sizeof(nlmsghdr))) return false;
+  int pos = 0;
+  int total = static_cast<int>(len);
+  bool saw_message = false;
+  while (pos + static_cast<int>(sizeof(nlmsghdr)) <= total) {
+    const nlmsghdr *hdr = reinterpret_cast<const nlmsghdr *>(buf + pos);
+    if (hdr->nlmsg_len < sizeof(nlmsghdr)) return false;
+    if (pos + static_cast<int>(hdr->nlmsg_len) > total) return false;
+    int aligned = static_cast<int>(NLMSG_ALIGN(hdr->nlmsg_len));
+    if (aligned <= 0 || pos + aligned > total) aligned = total - pos;
+    saw_message = true;
+    pos += aligned;
+  }
+  return saw_message && pos == total;
 }
 
 ssize_t filter_netlink_buffer(char *buf, ssize_t len) {
@@ -847,11 +955,25 @@ ssize_t filter_netlink_buffer(char *buf, ssize_t len) {
   return out;
 }
 
+ssize_t filter_received_netlink_payload(int sockfd, void *data, ssize_t rc, size_t capacity, int msg_flags) {
+  if (rc <= 0 || !g_enabled || !data || capacity == 0) return rc;
+  if ((msg_flags & MSG_TRUNC) != 0) return rc;
+  if (rc > static_cast<ssize_t>(capacity)) return rc;
+  if (!is_netlink_socket_fd(sockfd)) return rc;
+  char *buf = reinterpret_cast<char *>(data);
+  if (!looks_like_complete_netlink_buffer(buf, rc)) return rc;
+  ssize_t filtered = filter_netlink_buffer(buf, rc);
+  if (filtered != rc) g_netlink_hits++;
+  return filtered;
+}
+
 int hooked_getifaddrs(ifaddrs **out) {
-  g_getifaddrs_hits++;
   if (!orig_getifaddrs) return -1;
+  if (!enter_hook_guard()) return orig_getifaddrs(out);
   int rc = orig_getifaddrs(out);
+  leave_hook_guard();
   if (rc != 0 || !out || !*out || !g_enabled) return rc;
+  g_getifaddrs_hits++;
   ifaddrs *head = *out;
   ifaddrs *prev = nullptr;
   ifaddrs *cur = head;
@@ -872,27 +994,41 @@ int hooked_getifaddrs(ifaddrs **out) {
 int hooked_open(const char *pathname, int flags, ...) {
   mode_t mode = 0;
   if (flags & O_CREAT) { va_list ap; va_start(ap, flags); mode = va_arg(ap, mode_t); va_end(ap); }
-  ProcKind kind = ((flags & O_ACCMODE) == O_RDONLY) ? classify_proc_path(pathname) : PROC_NONE;
-  if (kind != PROC_NONE) {
-    int fd = make_filtered_proc_fd(pathname, kind);
-    if (fd >= 0) { g_proc_hits++; return fd; }
+  if (g_hook_depth == 0 && g_enabled && ((flags & O_ACCMODE) == O_RDONLY)) {
+    ProcKind kind = classify_proc_path(pathname);
+    if (kind != PROC_NONE) {
+      int fd = make_filtered_proc_fd(pathname, kind);
+      if (fd >= 0) { g_proc_hits++; return fd; }
+    }
   }
   if (!orig_open) return -1;
-  if (flags & O_CREAT) return orig_open(pathname, flags, mode);
-  return orig_open(pathname, flags);
+  if (!enter_hook_guard()) {
+    if (flags & O_CREAT) return orig_open(pathname, flags, mode);
+    return orig_open(pathname, flags);
+  }
+  int rc = (flags & O_CREAT) ? orig_open(pathname, flags, mode) : orig_open(pathname, flags);
+  leave_hook_guard();
+  return rc;
 }
 
 int hooked_openat(int dirfd, const char *pathname, int flags, ...) {
   mode_t mode = 0;
   if (flags & O_CREAT) { va_list ap; va_start(ap, flags); mode = va_arg(ap, mode_t); va_end(ap); }
-  ProcKind kind = (dirfd == AT_FDCWD && ((flags & O_ACCMODE) == O_RDONLY)) ? classify_proc_path(pathname) : PROC_NONE;
-  if (kind != PROC_NONE) {
-    int fd = make_filtered_proc_fd(pathname, kind);
-    if (fd >= 0) { g_proc_hits++; return fd; }
+  if (g_hook_depth == 0 && g_enabled && dirfd == AT_FDCWD && ((flags & O_ACCMODE) == O_RDONLY)) {
+    ProcKind kind = classify_proc_path(pathname);
+    if (kind != PROC_NONE) {
+      int fd = make_filtered_proc_fd(pathname, kind);
+      if (fd >= 0) { g_proc_hits++; return fd; }
+    }
   }
   if (!orig_openat) return -1;
-  if (flags & O_CREAT) return orig_openat(dirfd, pathname, flags, mode);
-  return orig_openat(dirfd, pathname, flags);
+  if (!enter_hook_guard()) {
+    if (flags & O_CREAT) return orig_openat(dirfd, pathname, flags, mode);
+    return orig_openat(dirfd, pathname, flags);
+  }
+  int rc = (flags & O_CREAT) ? orig_openat(dirfd, pathname, flags, mode) : orig_openat(dirfd, pathname, flags);
+  leave_hook_guard();
+  return rc;
 }
 
 int hooked_ioctl(int fd, unsigned long request, ...) {
@@ -901,43 +1037,49 @@ int hooked_ioctl(int fd, unsigned long request, ...) {
   void *arg = va_arg(ap, void *);
   va_end(ap);
   if (!orig_ioctl) return -1;
-  if (!g_enabled || !arg) return orig_ioctl(fd, request, arg);
+  if (!enter_hook_guard()) return orig_ioctl(fd, request, arg);
+  int rc = orig_ioctl(fd, request, arg);
+  leave_hook_guard();
+  if (!g_enabled || !arg || rc != 0) return rc;
   if (request == SIOCGIFCONF) {
     g_ioctl_hits++;
-    int rc = orig_ioctl(fd, request, arg);
-    if (rc == 0) filter_ifconf(reinterpret_cast<ifconf *>(arg));
+    filter_ifconf(reinterpret_cast<ifconf *>(arg));
     return rc;
   }
-  if (request_uses_ifr_name(request)) {
-    g_ioctl_hits++;
+  if (request_uses_ifr_name(request) || request == SIOCGIFNAME) {
     ifreq *ifr = reinterpret_cast<ifreq *>(arg);
-    if (is_hidden_interface(ifr->ifr_name)) { set_errno_value(ENODEV); return -1; }
-  }
-  if (request == SIOCGIFNAME) {
-    int rc = orig_ioctl(fd, request, arg);
-    if (rc == 0) {
-      ifreq *ifr = reinterpret_cast<ifreq *>(arg);
-      if (is_hidden_interface(ifr->ifr_name)) { set_errno_value(ENODEV); return -1; }
+    if (is_hidden_interface(ifr->ifr_name)) {
+      g_ioctl_hits++;
+      set_errno_value(ENODEV);
+      return -1;
     }
-    return rc;
   }
-  return orig_ioctl(fd, request, arg);
+  return rc;
 }
 
 ssize_t hooked_recvmsg(int sockfd, msghdr *msg, int flags) {
   if (!orig_recvmsg) return -1;
+  if (!enter_hook_guard()) return orig_recvmsg(sockfd, msg, flags);
   ssize_t rc = orig_recvmsg(sockfd, msg, flags);
-  if (rc <= 0 || !g_enabled || !msg || !msg->msg_iov || msg->msg_iovlen <= 0) return rc;
+  leave_hook_guard();
+  if (!msg || !msg->msg_iov || msg->msg_iovlen != 1) return rc;
   iovec *iov = &msg->msg_iov[0];
-  if (!iov->iov_base || iov->iov_len == 0) return rc;
-  ssize_t max = rc < static_cast<ssize_t>(iov->iov_len) ? rc : static_cast<ssize_t>(iov->iov_len);
-  g_netlink_hits++;
-  return filter_netlink_buffer(reinterpret_cast<char *>(iov->iov_base), max);
+  return filter_received_netlink_payload(sockfd, iov ? iov->iov_base : nullptr, rc, iov ? iov->iov_len : 0, msg->msg_flags);
+}
+
+ssize_t hooked_recv(int sockfd, void *buf, size_t len, int flags) {
+  if (!orig_recv) return -1;
+  if (!enter_hook_guard()) return orig_recv(sockfd, buf, len, flags);
+  ssize_t rc = orig_recv(sockfd, buf, len, flags);
+  leave_hook_guard();
+  return filter_received_netlink_payload(sockfd, buf, rc, len, 0);
 }
 
 DIR *hooked_opendir(const char *name) {
   if (!orig_opendir) return nullptr;
+  if (!enter_hook_guard()) return orig_opendir(name);
   DIR *dir = orig_opendir(name);
+  leave_hook_guard();
   if (g_enabled && dir && sys_class_net_path(name)) track_dir(dir);
   return dir;
 }
@@ -945,30 +1087,49 @@ DIR *hooked_opendir(const char *name) {
 dirent_like *hooked_readdir(DIR *dirp) {
   if (!orig_readdir) return nullptr;
   dirent_like *ent = nullptr;
-  do { ent = orig_readdir(dirp); } while (ent && is_tracked_dir(dirp) && is_hidden_interface(ent->d_name));
+  do {
+    if (!enter_hook_guard()) return orig_readdir(dirp);
+    ent = orig_readdir(dirp);
+    leave_hook_guard();
+  } while (ent && is_tracked_dir(dirp) && is_hidden_interface(ent->d_name));
   return ent;
 }
 
 dirent_like *hooked_readdir64(DIR *dirp) {
   if (!orig_readdir64) return nullptr;
   dirent_like *ent = nullptr;
-  do { ent = orig_readdir64(dirp); } while (ent && is_tracked_dir(dirp) && is_hidden_interface(ent->d_name));
+  do {
+    if (!enter_hook_guard()) return orig_readdir64(dirp);
+    ent = orig_readdir64(dirp);
+    leave_hook_guard();
+  } while (ent && is_tracked_dir(dirp) && is_hidden_interface(ent->d_name));
   return ent;
 }
 
 int hooked_closedir(DIR *dirp) {
   untrack_dir(dirp);
-  return orig_closedir ? orig_closedir(dirp) : -1;
+  if (!orig_closedir) return -1;
+  if (!enter_hook_guard()) return orig_closedir(dirp);
+  int rc = orig_closedir(dirp);
+  leave_hook_guard();
+  return rc;
 }
 
 unsigned int hooked_if_nametoindex(const char *ifname) {
   if (g_enabled && is_hidden_interface(ifname)) { set_errno_value(ENODEV); return 0; }
-  return orig_if_nametoindex ? orig_if_nametoindex(ifname) : 0;
+  if (!orig_if_nametoindex) return 0;
+  if (!enter_hook_guard()) return orig_if_nametoindex(ifname);
+  unsigned int rc = orig_if_nametoindex(ifname);
+  leave_hook_guard();
+  return rc;
 }
 
 char *hooked_if_indextoname(unsigned int ifindex, char *ifname) {
   if (g_enabled && is_hidden_index(ifindex)) { set_errno_value(ENODEV); return nullptr; }
-  char *rc = orig_if_indextoname ? orig_if_indextoname(ifindex, ifname) : nullptr;
+  if (!orig_if_indextoname) return nullptr;
+  if (!enter_hook_guard()) return orig_if_indextoname(ifindex, ifname);
+  char *rc = orig_if_indextoname(ifindex, ifname);
+  leave_hook_guard();
   if (rc && is_hidden_interface(rc)) { set_errno_value(ENODEV); return nullptr; }
   return rc;
 }
@@ -995,9 +1156,25 @@ bool is_app_owned_library_path(const char *path) {
          strstr(path, "/mnt/expand/") != nullptr;
 }
 
+bool is_chromium_webview_library_path(const char *path) {
+  if (!path) return false;
+  return strstr(path, "libwebviewchromium") != nullptr ||
+         strstr(path, "libmonochrome") != nullptr ||
+         strstr(path, "libchromium") != nullptr ||
+         strstr(path, "trichrome") != nullptr ||
+         strstr(path, "Trichrome") != nullptr ||
+         strstr(path, "chromium") != nullptr ||
+         strstr(path, "Chromium") != nullptr ||
+         strstr(path, "webview") != nullptr ||
+         strstr(path, "WebView") != nullptr ||
+         strstr(path, "chrome") != nullptr ||
+         strstr(path, "Chrome") != nullptr;
+}
+
 bool should_register_hooks_for_path(const char *path) {
   if (!path || !*path) return false;
   if (strstr(path, "/ZDT-D/zygisk/") != nullptr) return false;
+  if (is_chromium_webview_library_path(path)) return false;
   if (strstr(path, "/libc.so") != nullptr) return false;
   if (strstr(path, "/libdl.so") != nullptr) return false;
   if (strstr(path, "/linker") != nullptr) return false;
@@ -1054,6 +1231,13 @@ int register_hooks_from_maps(zygisk::Api *api) {
             api->pltHookRegister(dev, ino, "getifaddrs", reinterpret_cast<void *>(hooked_getifaddrs), reinterpret_cast<void **>(&orig_getifaddrs)); registered++;
             api->pltHookRegister(dev, ino, "open", reinterpret_cast<void *>(hooked_open), reinterpret_cast<void **>(&orig_open)); registered++;
             api->pltHookRegister(dev, ino, "openat", reinterpret_cast<void *>(hooked_openat), reinterpret_cast<void **>(&orig_openat)); registered++;
+            api->pltHookRegister(dev, ino, "ioctl", reinterpret_cast<void *>(hooked_ioctl), reinterpret_cast<void **>(&orig_ioctl)); registered++;
+            api->pltHookRegister(dev, ino, "recvmsg", reinterpret_cast<void *>(hooked_recvmsg), reinterpret_cast<void **>(&orig_recvmsg)); registered++;
+            api->pltHookRegister(dev, ino, "recv", reinterpret_cast<void *>(hooked_recv), reinterpret_cast<void **>(&orig_recv)); registered++;
+            api->pltHookRegister(dev, ino, "opendir", reinterpret_cast<void *>(hooked_opendir), reinterpret_cast<void **>(&orig_opendir)); registered++;
+            api->pltHookRegister(dev, ino, "readdir", reinterpret_cast<void *>(hooked_readdir), reinterpret_cast<void **>(&orig_readdir)); registered++;
+            api->pltHookRegister(dev, ino, "readdir64", reinterpret_cast<void *>(hooked_readdir64), reinterpret_cast<void **>(&orig_readdir64)); registered++;
+            api->pltHookRegister(dev, ino, "closedir", reinterpret_cast<void *>(hooked_closedir), reinterpret_cast<void **>(&orig_closedir)); registered++;
             api->pltHookRegister(dev, ino, "if_nametoindex", reinterpret_cast<void *>(hooked_if_nametoindex), reinterpret_cast<void **>(&orig_if_nametoindex)); registered++;
             api->pltHookRegister(dev, ino, "if_indextoname", reinterpret_cast<void *>(hooked_if_indextoname), reinterpret_cast<void **>(&orig_if_indextoname)); registered++;
           }
@@ -1069,7 +1253,7 @@ int register_hooks_from_maps(zygisk::Api *api) {
 
 class ZdtdZygiskModule : public zygisk::ModuleBase {
 public:
-  void onLoad(zygisk::Api *api, JNIEnv *) override { api_ = api; }
+  void onLoad(zygisk::Api *api, JNIEnv *env) override { api_ = api; env_ = env; }
 
   void preAppSpecialize(zygisk::AppSpecializeArgs *args) override {
     const int uid = args ? args->uid : -1;
@@ -1092,16 +1276,24 @@ public:
     g_last_reload_at = 0;
     g_current_ttl = RUNTIME_TTL_MIN;
     g_runtime_loaded_once = false;
+    g_process_name[0] = 0;
+    g_is_child_zygote = false;
+    g_isolated_uid = false;
+    close_module_fd_if_open();
 
-    write_status_at(MODULE_FD_NONE, "pre_app_entered", uid, false, false, 0, 0);
-
-    g_module_fd = api_ ? api_->getModuleDir() : MODULE_FD_NONE;
-    if (g_module_fd >= 0) {
-      if (api_) api_->exemptFd(g_module_fd);
-      write_status_at(g_module_fd, "module_dir_ok", uid, false, false, 0, 0);
-    } else {
-      write_status_at(MODULE_FD_NONE, "module_dir_failed", uid, false, false, 0, 0);
+    copy_jstring_utf(env_, args ? args->nice_name : nullptr, g_process_name, sizeof(g_process_name));
+    g_is_child_zygote = is_child_zygote_args(args);
+    g_isolated_uid = is_android_isolated_uid(uid);
+    if (g_is_child_zygote || g_isolated_uid || (g_process_name[0] && is_forbidden_process_name(g_process_name))) {
+      if (api_) api_->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
+      return;
     }
+
+    // Use the module directory fd only for confirmed target processes, because
+    // absolute /data/adb/modules/... paths may be unavailable inside app namespaces.
+    // The fd is not exempted before target confirmation, so non-target processes
+    // do not keep a module fd open.
+    g_module_fd = api_ ? api_->getModuleDir() : MODULE_FD_NONE;
 
     static char targets[READ_LIMIT];
     int target_len = read_file_module_or_abs(
@@ -1112,12 +1304,12 @@ public:
         READ_LIMIT);
     g_target = target_len > 0 && uid_in_out_program(targets, uid);
     if (!g_target) {
-      write_status_at(g_module_fd, target_len > 0 ? "target_missed" : "target_file_missing", uid, false, false, 0, 0);
+      close_module_fd_if_open();
       if (api_) api_->setOption(zygisk::Option::DLCLOSE_MODULE_LIBRARY);
       return;
     }
 
-    write_status_at(g_module_fd, "target_matched", uid, true, false, 0, 0);
+    if (g_module_fd >= 0 && api_) api_->exemptFd(g_module_fd);
 
     g_should_install_hooks = true;
     reload_runtime_state(true, "runtime_initial_load");
@@ -1126,17 +1318,16 @@ public:
   void postAppSpecialize(const zygisk::AppSpecializeArgs *) override {
     if (!g_target || !g_should_install_hooks) return;
     reload_runtime_state(false, nullptr);
-    write_status_at(g_module_fd, "post_specialize_entered", g_uid, true, g_enabled, g_interface_count, 0);
     int registered = register_hooks_from_maps(api_);
     bool committed = api_ && registered > 0 && api_->pltHookCommit();
     g_commit_ok = committed ? 1 : 0;
     if (committed) refresh_hidden_indices();
-    write_status_at(g_module_fd, committed ? "hooks_ready" : "hook_failed", g_uid, true, g_enabled, g_interface_count, registered);
   }
 
 
 private:
   zygisk::Api *api_ = nullptr;
+  JNIEnv *env_ = nullptr;
 };
 } // namespace
 

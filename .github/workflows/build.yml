@@ -94,14 +94,50 @@ jobs:
 
       - name: Install Android NDK cross-linker
         run: |
+          set -euo pipefail
           yes | sdkmanager "ndk;27.2.12479018" > /dev/null 2>&1
-          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls $ANDROID_SDK_ROOT/ndk | sort -V | tail -1)"
-          echo "NDK_ROOT=$NDK_ROOT" >> $GITHUB_ENV
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          ANDROID_CC="$NDK_BIN/aarch64-linux-android21-clang"
+          ANDROID_CXX="$NDK_BIN/aarch64-linux-android21-clang++"
+          ANDROID_AR="$NDK_BIN/llvm-ar"
+          ANDROID_RANLIB="$NDK_BIN/llvm-ranlib"
+
+          test -x "$ANDROID_CC" || { echo "::error::Android C compiler not found: $ANDROID_CC"; exit 1; }
+          test -x "$ANDROID_CXX" || { echo "::error::Android C++ compiler not found: $ANDROID_CXX"; exit 1; }
+          test -x "$ANDROID_AR" || { echo "::error::Android archiver not found: $ANDROID_AR"; exit 1; }
+          test -x "$ANDROID_RANLIB" || { echo "::error::Android ranlib not found: $ANDROID_RANLIB"; exit 1; }
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_CC"
+            echo "CC_aarch64_linux_android=$ANDROID_CC"
+            echo "CXX_aarch64_linux_android=$ANDROID_CXX"
+            echo "AR_aarch64_linux_android=$ANDROID_AR"
+            echo "RANLIB_aarch64_linux_android=$ANDROID_RANLIB"
+          } >> "$GITHUB_ENV"
+
           mkdir -p ~/.cargo
           cat >> ~/.cargo/config.toml <<EOF
           [target.aarch64-linux-android]
-          linker = "$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android21-clang"
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
           EOF
+
+      - name: Verify Android Rust cross toolchain
+        run: |
+          set -euo pipefail
+          echo "NDK_ROOT=$NDK_ROOT"
+          echo "CC_aarch64_linux_android=$CC_aarch64_linux_android"
+          echo "AR_aarch64_linux_android=$AR_aarch64_linux_android"
+          "$CC_aarch64_linux_android" --version | head -1
+          "$AR_aarch64_linux_android" --version | head -1
+          rustc --print target-list | grep -qx '${{ env.CARGO_BUILD_TARGET }}'
+          cargo -V
+          rustc -V
 
       - name: Setup Gradle ${{ env.GRADLE_VERSION }}
         uses: gradle/actions/setup-gradle@v5

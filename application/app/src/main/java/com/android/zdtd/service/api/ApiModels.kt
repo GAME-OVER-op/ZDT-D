@@ -36,6 +36,16 @@ object ApiModels {
     val amneziaWg: ProcAgg = ProcAgg(),
     val t2s: ProcAgg = ProcAgg(),
     val opera: OperaAgg? = null,
+    val runtimeState: String = "unknown",
+    val actualRuntimeState: String = "unknown",
+    val uiState: String = "unknown",
+    val uiRunning: Boolean? = null,
+    val startInProgress: Boolean = false,
+    val stopInProgress: Boolean = false,
+    val servicesPartial: Boolean = false,
+    val daemonPid: Int = 0,
+    val statusUpdatedAtUnix: Long = 0L,
+    val lastError: String = "",
   )
 
   data class Profile(
@@ -126,6 +136,10 @@ object ApiModels {
     } else {
       null
     }
+    val ui = o.optJSONObject("ui_status") ?: o
+    val uiState = normalizeRuntimeState(ui.optString("state", ""))
+    val apiRuntimeState = normalizeRuntimeState(o.optString("runtime_state", ""))
+    val apiActualRuntimeState = normalizeRuntimeState(o.optString("actual_runtime_state", ""))
     return StatusReport(
       zdtd = parseProcAgg(o.optJSONObject("zdtd")),
       zapret = parseProcAgg(o.optJSONObject("zapret")),
@@ -142,15 +156,75 @@ object ApiModels {
       amneziaWg = parseProcAgg(o.optJSONObject("amneziawg")),
       t2s = parseProcAgg(o.optJSONObject("t2s")),
       opera = opera,
+      runtimeState = apiRuntimeState,
+      actualRuntimeState = apiActualRuntimeState,
+      uiState = uiState,
+      uiRunning = if (ui.has("running")) jsonBool(ui, "running", false) else null,
+      startInProgress = jsonBool(ui, "start_in_progress", jsonBool(o, "start_in_progress", false)),
+      stopInProgress = jsonBool(ui, "stop_in_progress", jsonBool(o, "stop_in_progress", false)),
+      servicesPartial = jsonBool(ui, "services_partial", jsonBool(ui, "partial", jsonBool(o, "services_partial", false))),
+      daemonPid = ui.optInt("daemon_pid", 0),
+      statusUpdatedAtUnix = ui.optLong("updated_at_unix", 0L),
+      lastError = ui.optString("last_error", ""),
+    )
+  }
+
+  fun parseStatusFile(raw: String?): JSONObject? {
+    val text = raw?.trim().orEmpty()
+    if (text.isBlank()) return null
+    return runCatching { JSONObject(text) }.getOrNull()
+  }
+
+  fun applyStatusFile(report: StatusReport?, fileObj: JSONObject?): StatusReport? {
+    if (fileObj == null) return report
+    val base = report ?: StatusReport()
+    val state = normalizeRuntimeState(fileObj.optString("state", ""))
+    return base.copy(
+      uiState = state,
+      uiRunning = if (fileObj.has("running")) jsonBool(fileObj, "running", false) else base.uiRunning,
+      startInProgress = jsonBool(fileObj, "start_in_progress", base.startInProgress),
+      stopInProgress = jsonBool(fileObj, "stop_in_progress", base.stopInProgress),
+      servicesPartial = jsonBool(fileObj, "services_partial", jsonBool(fileObj, "partial", base.servicesPartial)),
+      daemonPid = fileObj.optInt("daemon_pid", base.daemonPid),
+      statusUpdatedAtUnix = fileObj.optLong("updated_at_unix", base.statusUpdatedAtUnix),
+      lastError = fileObj.optString("last_error", base.lastError),
     )
   }
 
   fun isServiceOn(r: StatusReport?): Boolean {
     if (r == null) return false
+    r.uiRunning?.let { return it || r.startInProgress || r.stopInProgress }
+    when (r.uiState) {
+      "on", "partial", "starting", "stopping", "busy" -> return true
+      "off", "error" -> return false
+    }
+    when (r.actualRuntimeState) {
+      "on", "partial", "starting", "stopping", "busy" -> return true
+      "off", "error" -> return false
+    }
+    when (r.runtimeState) {
+      "on", "partial", "starting", "stopping", "busy" -> return true
+      "off", "error" -> return false
+    }
     val opera = r.opera
     val sum = r.zapret.count + r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.dpitunnel.count + r.singBox.count + r.wireProxy.count + r.tor.count + r.openVpn.count + r.tun2Socks.count + r.mihomo.count + r.amneziaWg.count +
       (opera?.opera?.count ?: 0) + r.t2s.count + (opera?.byedpi?.count ?: 0)
     return sum > 0
+  }
+
+  fun isServiceStopped(r: StatusReport?): Boolean = !isServiceOn(r)
+
+  private fun normalizeRuntimeState(raw: String): String {
+    return when (raw.trim().lowercase(Locale.ROOT)) {
+      "on", "running", "run", "started" -> "on"
+      "partial", "partially_running" -> "partial"
+      "starting", "start", "busy_start" -> "starting"
+      "stopping", "stop", "busy_stop" -> "stopping"
+      "busy" -> "busy"
+      "off", "stopped", "down", "disabled" -> "off"
+      "error", "failed", "fail" -> "error"
+      else -> "unknown"
+    }
   }
 
   fun computeTotals(r: StatusReport?): ProcAgg {

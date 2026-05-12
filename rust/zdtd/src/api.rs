@@ -14,7 +14,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use crate::{daemon, daemon::SharedState, protector, settings, stats};
+use crate::{api_status, daemon, daemon::SharedState, protector, settings, stats};
 
 const MAX_HEADER: usize = 16 * 1024;
 // Allow uploading strategic files (including binaries). The API is local-only and authenticated,
@@ -5141,7 +5141,7 @@ fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
         path: path.clone(),
     };
 
-    let (token, services_running, runtime_state, start_in_progress, stop_in_progress, services_partial) = {
+    let (token, services_running, memory_runtime_state, memory_start_in_progress, memory_stop_in_progress, memory_services_partial) = {
         let st = daemon::lock_state(&state);
         (
             st.token.clone(),
@@ -5152,6 +5152,20 @@ fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
             st.services_partial,
         )
     };
+    let api_status_snapshot = api_status::read().ok().flatten();
+    let runtime_state = api_status::runtime_state_for_api(api_status_snapshot.as_ref(), &memory_runtime_state);
+    let start_in_progress = api_status_snapshot
+        .as_ref()
+        .map(|s| s.start_in_progress)
+        .unwrap_or(memory_start_in_progress);
+    let stop_in_progress = api_status_snapshot
+        .as_ref()
+        .map(|s| s.stop_in_progress)
+        .unwrap_or(memory_stop_in_progress);
+    let services_partial = api_status_snapshot
+        .as_ref()
+        .map(|s| s.services_partial || s.partial)
+        .unwrap_or(memory_services_partial);
 
     // Only /api/* is exposed. Everything else -> empty 404.
     if !path.starts_with("/api/") {
@@ -5204,6 +5218,9 @@ match (method.as_str(), path.as_str()) {
                 obj.insert("start_in_progress".to_string(), json!(start_in_progress));
                 obj.insert("stop_in_progress".to_string(), json!(stop_in_progress));
                 obj.insert("services_partial".to_string(), json!(services_partial));
+                if let Some(api_st) = &api_status_snapshot {
+                    obj.insert("ui_status".to_string(), json!(api_st));
+                }
             } else {
                 value = json!({
                     "ok": true,
@@ -5214,6 +5231,7 @@ match (method.as_str(), path.as_str()) {
                     "start_in_progress": start_in_progress,
                     "stop_in_progress": stop_in_progress,
                     "services_partial": services_partial,
+                    "ui_status": api_status_snapshot,
                 });
             }
             write_json(stream, 200, value)

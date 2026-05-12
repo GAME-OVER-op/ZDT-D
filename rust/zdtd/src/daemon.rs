@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 
-use crate::{api, config::Config, logging, protector, runtime, settings, stats};
+use crate::{api, api_status, config::Config, logging, protector, runtime, settings, stats};
 
 #[derive(Debug, Clone)]
 pub struct State {
@@ -88,6 +88,7 @@ pub fn run(_cfg: &Config) -> Result<()> {
         stop_in_progress: false,
         start: start.clone(),
     }));
+    api_status::write_off();
 
     // Start API server immediately, and perform autostart in background if enabled=true.
     if start.enabled {
@@ -112,7 +113,8 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
             return Ok(false);
         }
         if st.services_running {
-            // Already running; nothing to do.
+            // Already running; nothing to do. Refresh UI-state file in case it was removed.
+            api_status::write_on(st.services_partial);
             logging::info("start ignored: services already running");
             return Ok(false);
         }
@@ -128,6 +130,7 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
     if let Err(e) = settings::write_start_settings(&start) {
         let mut st = lock_state(state);
         st.start_in_progress = false;
+        api_status::write_error_off(&format!("start prepare failed: {e:#}"));
         return Err(e);
     }
     {
@@ -135,6 +138,7 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
         // Update cached start settings.
         st.start = start.clone();
     }
+    api_status::write_starting();
 
     logging::info("start requested -> scheduling start_full in background");
 
@@ -145,12 +149,14 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
             Ok(res) => match res {
                 Ok(()) => {
                     let start_now = settings::read_start_settings().unwrap_or_default();
+                    let partial = runtime::last_start_partial();
                     {
                         let mut st = lock_state(&st_arc);
                         st.services_running = true;
-                        st.services_partial = runtime::last_start_partial();
+                        st.services_partial = partial;
                         st.start = start_now;
                     }
+                    api_status::write_on(partial);
 
                     protector::activate();
 
@@ -160,6 +166,7 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
                 Err(e) => {
                     logging::warn(&format!("start_full failed: {e:#}"));
                     crate::scan_detector::stop();
+                    api_status::write_error_off(&format!("start_full failed: {e:#}"));
                     let mut st = lock_state(&st_arc);
                     st.services_running = false;
                     st.services_partial = false;
@@ -169,6 +176,7 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
                 logging::warn("start thread panicked");
                 crate::logging::user_error("Ошибка запуска: внутренний сбой потока");
                 crate::scan_detector::stop();
+                api_status::write_error_off("start thread panicked");
                 let mut st = lock_state(&st_arc);
                 st.services_running = false;
                 st.services_partial = false;
@@ -209,12 +217,14 @@ pub fn handle_stop_async(state: &SharedState) -> Result<bool> {
     if let Err(e) = settings::write_start_settings(&start) {
         let mut st = lock_state(state);
         st.stop_in_progress = false;
+        api_status::write_error_off(&format!("stop prepare failed: {e:#}"));
         return Err(e);
     }
     {
         let mut st = lock_state(state);
         st.start = start.clone();
     }
+    api_status::write_stopping();
 
     logging::info("stop requested -> scheduling stop_full in background");
 
@@ -232,6 +242,7 @@ pub fn handle_stop_async(state: &SharedState) -> Result<bool> {
                         st.services_running = false;
                         st.services_partial = false;
                     }
+                    api_status::write_off();
                     protector::deactivate();
                     crate::scan_detector::stop();
 
@@ -240,11 +251,13 @@ pub fn handle_stop_async(state: &SharedState) -> Result<bool> {
                 }
                 Err(e) => {
                     logging::warn(&format!("stop_full failed: {e:#}"));
+                    api_status::write_error_off(&format!("stop_full failed: {e:#}"));
                 }
             },
             Err(_) => {
                 logging::warn("stop thread panicked");
                 crate::logging::user_error("Ошибка остановки: внутренний сбой потока");
+                api_status::write_error_off("stop thread panicked");
             }
         }
         let mut st = lock_state(&st_arc);

@@ -41,7 +41,11 @@ class ApiClient(
 
   fun getStatus(): ApiModels.StatusReport? {
     val obj = requestJson("GET", "/api/status", null)
-    return ApiModels.parseStatusReport(obj)
+    val report = ApiModels.parseStatusReport(obj)
+    val fileObj = runCatching {
+      ApiModels.parseStatusFile(rootManager.readTextFile("/data/adb/modules/ZDT-D/api/status.json"))
+    }.getOrNull()
+    return ApiModels.applyStatusFile(report, fileObj)
   }
 
   fun startService(): Boolean = requestOk("POST", "/api/start", null)

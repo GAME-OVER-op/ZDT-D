@@ -53,6 +53,26 @@ where
 }
 
 const API_PORT: u16 = 1006;
+const RESERVED_SYSTEM_PORT_LIMIT: u16 = 1024;
+
+fn is_reserved_system_port_for_proxyinfo(port: u16) -> bool {
+    port != API_PORT && port > 0 && port < RESERVED_SYSTEM_PORT_LIMIT
+}
+
+fn drop_reserved_system_ports(label: &str, ports: &mut BTreeSet<u16>) {
+    let skipped: Vec<u16> = ports
+        .iter()
+        .copied()
+        .filter(|&port| is_reserved_system_port_for_proxyinfo(port))
+        .collect();
+    for port in skipped {
+        ports.remove(&port);
+        logging::warn(&format!(
+            "proxyInfo: skip {} protected port {}: ports below 1024 are reserved by the system and will not be blocked",
+            label, port
+        ));
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EnabledJson {
@@ -928,6 +948,13 @@ fn install_global_tcp_rules_v4(uids: &[u32], ports: &[u16]) -> Result<()> {
     }
     for &uid in uids {
         for &port in ports {
+            if is_reserved_system_port_for_proxyinfo(port) {
+                logging::warn(&format!(
+                    "proxyInfo: skip global protected port {}: ports below 1024 are reserved by the system and will not be blocked",
+                    port
+                ));
+                continue;
+            }
             let args = vec![
                 "-A".to_string(),
                 PROXY_CHAIN.to_string(),
@@ -1177,6 +1204,9 @@ pub fn collect_protected_port_sets() -> Result<(BTreeSet<u16>, BTreeSet<u16>)> {
     collect_myproxy_ports(&mut local, &mut global)?;
     collect_myprogram_ports(&mut local)?;
     collect_mihomo_ports(&mut local)?;
+    drop_reserved_system_ports("local", &mut local);
+    drop_reserved_system_ports("global", &mut global);
+    local.insert(API_PORT);
     Ok((local, global))
 }
 

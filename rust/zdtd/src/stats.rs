@@ -38,6 +38,8 @@ pub struct StatusReport {
     pub amneziawg: UsageAgg,
     pub tun2socks: UsageAgg,
     pub mihomo: UsageAgg,
+    pub mieru: UsageAgg,
+    pub tun2proxy: UsageAgg,
     pub tor: UsageAgg,
     pub t2s: UsageAgg,       // t2s used by opera-proxy, sing-box, wireproxy and tor
     pub opera: OperaAgg,    // opera-proxy + t2s + operaproxy-byedpi
@@ -70,6 +72,8 @@ pub(crate) fn protected_pids() -> Vec<u32> {
     pids.extend(amneziawg_pids());
     pids.extend(tun2socks_pids());
     pids.extend(mihomo_pids());
+    pids.extend(mieru_pids());
+    pids.extend(mieru_tun2proxy_pids());
     pids.extend(tor_pids());
     pids.extend(pidof("byedpi"));
     pids.sort_unstable();
@@ -124,6 +128,8 @@ pub fn collect_status() -> Result<StatusReport> {
     let amneziawg_pids = amneziawg_pids();
     let tun2socks_pids = tun2socks_pids();
     let mihomo_pids = mihomo_pids();
+    let mieru_pids = mieru_pids();
+    let mieru_tun2proxy_pids = mieru_tun2proxy_pids();
     let tor_pids = tor_pids();
 
     let mut byedpi_all = pidof("byedpi");
@@ -156,6 +162,8 @@ pub fn collect_status() -> Result<StatusReport> {
         amneziawg: agg(&amneziawg_pids),
         tun2socks: agg(&tun2socks_pids),
         mihomo: agg(&mihomo_pids),
+        mieru: agg(&mieru_pids),
+        tun2proxy: agg(&mieru_tun2proxy_pids),
         tor: agg(&tor_pids),
         t2s: agg(&t2s_all_pids),
         opera: OperaAgg {
@@ -367,6 +375,20 @@ fn amneziawg_pids() -> Vec<u32> {
 
 fn mihomo_pids() -> Vec<u32> {
     crate::programs::mihomo::main_pids_exact()
+        .into_iter()
+        .filter_map(|p| u32::try_from(p).ok())
+        .collect()
+}
+
+fn mieru_pids() -> Vec<u32> {
+    crate::programs::mieru::main_pids_exact()
+        .into_iter()
+        .filter_map(|p| u32::try_from(p).ok())
+        .collect()
+}
+
+fn mieru_tun2proxy_pids() -> Vec<u32> {
+    crate::programs::mieru::tun2proxy_pids_exact()
         .into_iter()
         .filter_map(|p| u32::try_from(p).ok())
         .collect()

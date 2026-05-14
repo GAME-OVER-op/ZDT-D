@@ -442,6 +442,11 @@ private fun buildProgramLogsListScript(target: ProgramLogTarget): String {
         addStatic("mihomo.log", "$base/mihomo.log")
         addStatic("tun2socks.log", "$base/tun2socks.log")
       }
+      "mieru" -> {
+        val base = "/data/adb/modules/ZDT-D/working_folder/mieru/profile/$profile/log"
+        addStatic("mieru.log", "$base/mieru.log")
+        addStatic("tun2proxy.log", "$base/tun2proxy.log")
+      }
     }
   }
 

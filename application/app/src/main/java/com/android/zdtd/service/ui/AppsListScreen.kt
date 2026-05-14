@@ -66,6 +66,8 @@ fun AppsListScreen(
 
   val isCompactWidth = rememberIsCompactWidth()
   val isShortHeight = rememberIsShortHeight()
+  val landscapeControl = rememberUseLandscapeControlLayout()
+  val compactCards = isCompactWidth && !landscapeControl
   val cardPadding = if (isCompactWidth) 14.dp else 16.dp
   val sectionGap = if (isShortHeight) 8.dp else 12.dp
   var query by rememberSaveable { mutableStateOf("") }
@@ -113,7 +115,7 @@ fun AppsListScreen(
   ) {
     item {
       ProgramsHeaderCard(
-        compact = isCompactWidth,
+        compact = compactCards,
         shortHeight = isShortHeight,
         total = all.size,
         shown = filtered.size,
@@ -152,36 +154,80 @@ fun AppsListScreen(
     if (core.isNotEmpty()) {
       item(key = "hdr_core") {
         SectionHeader(
-          compact = isCompactWidth,
+          compact = compactCards,
           title = stringResource(R.string.apps_list_section_core),
           subtitle = stringResource(R.string.apps_list_items_count, core.size),
         )
       }
-      items(core, key = { it.id }, contentType = { "program_card" }) { p ->
-        ProgramCard(
-          compact = isCompactWidth,
-          program = p,
-          onClick = { onOpenProgram(p.id) },
-          horizontalPadding = cardPadding,
-        )
+      if (landscapeControl) {
+        items(core.chunked(2), key = { row -> row.joinToString("|") { it.id } }, contentType = { "program_card_row" }) { row ->
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            row.forEach { p ->
+              ProgramCard(
+                modifier = Modifier.weight(1f),
+                compact = false,
+                program = p,
+                onClick = { onOpenProgram(p.id) },
+                horizontalPadding = 0.dp,
+              )
+            }
+            if (row.size == 1) Spacer(Modifier.weight(1f))
+          }
+        }
+      } else {
+        items(core, key = { it.id }, contentType = { "program_card" }) { p ->
+          ProgramCard(
+            compact = isCompactWidth,
+            program = p,
+            onClick = { onOpenProgram(p.id) },
+            horizontalPadding = cardPadding,
+          )
+        }
       }
     }
 
     if (prof.isNotEmpty()) {
       item(key = "hdr_profiles") {
         SectionHeader(
-          compact = isCompactWidth,
+          compact = compactCards,
           title = stringResource(R.string.apps_list_section_profiles),
           subtitle = stringResource(R.string.apps_list_items_count, prof.size),
         )
       }
-      items(prof, key = { it.id }, contentType = { "program_card" }) { p ->
-        ProgramCard(
-          compact = isCompactWidth,
-          program = p,
-          onClick = { onOpenProgram(p.id) },
-          horizontalPadding = cardPadding,
-        )
+      if (landscapeControl) {
+        items(prof.chunked(2), key = { row -> row.joinToString("|") { it.id } }, contentType = { "program_card_row" }) { row ->
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            row.forEach { p ->
+              ProgramCard(
+                modifier = Modifier.weight(1f),
+                compact = false,
+                program = p,
+                onClick = { onOpenProgram(p.id) },
+                horizontalPadding = 0.dp,
+              )
+            }
+            if (row.size == 1) Spacer(Modifier.weight(1f))
+          }
+        }
+      } else {
+        items(prof, key = { it.id }, contentType = { "program_card" }) { p ->
+          ProgramCard(
+            compact = isCompactWidth,
+            program = p,
+            onClick = { onOpenProgram(p.id) },
+            horizontalPadding = cardPadding,
+          )
+        }
       }
     }
 
@@ -418,6 +464,7 @@ private fun EmptyState(title: String, hint: String) {
 
 @Composable
 private fun ProgramCard(
+  modifier: Modifier = Modifier,
   compact: Boolean,
   program: ApiModels.Program,
   onClick: () -> Unit,
@@ -460,7 +507,7 @@ private fun ProgramCard(
 
   Card(
     onClick = onClick,
-    modifier = Modifier
+    modifier = modifier
       .fillMaxWidth()
       .padding(horizontal = horizontalPadding),
     colors = CardDefaults.cardColors(containerColor = containerColor),

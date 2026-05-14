@@ -53,7 +53,7 @@ interface ZdtdActions {
   fun closeBackupProgress()
 
 
-  // ----- Program updates (zapret / zapret2 via GitHub) -----
+  // ----- Program updates (zapret / zapret2 / mihomo / mieru via GitHub) -----
   /** Check zapret (nfqws) installed/latest versions. Requires the service to be stopped. */
   fun checkZapretNow()
 
@@ -66,7 +66,19 @@ interface ZdtdActions {
   /** Download and install latest zapret2 (nfqws2 + lua). Requires the service to be stopped. */
   fun updateZapret2Now()
 
-  /** Stop the daemon once and auto-run check for both zapret + zapret2 when it becomes OFF. */
+  /** Check mihomo installed/latest versions. Requires the service to be stopped. */
+  fun checkMihomoNow()
+
+  /** Download and install selected/latest mihomo. Requires the service to be stopped. */
+  fun updateMihomoNow()
+
+  /** Check mieru installed/latest versions. Requires the service to be stopped. */
+  fun checkMieruNow()
+
+  /** Download and install selected/latest mieru. Requires the service to be stopped. */
+  fun updateMieruNow()
+
+  /** Stop the daemon once and auto-run check for supported program updates when it becomes OFF. */
   fun stopServiceForProgramUpdatesAndCheck()
 
   /** Load the full list of zapret releases (for selecting a specific version). */
@@ -75,11 +87,23 @@ interface ZdtdActions {
   /** Load the full list of zapret2 releases (for selecting a specific version). */
   fun loadZapret2Releases()
 
+  /** Load the full list of mihomo releases (for selecting a specific version). */
+  fun loadMihomoReleases()
+
+  /** Load the full list of mieru releases (for selecting a specific version). */
+  fun loadMieruReleases()
+
   /** Set a specific target release for zapret. Pass nulls to use Latest. */
   fun selectZapretRelease(version: String?, downloadUrl: String?)
 
   /** Set a specific target release for zapret2. Pass nulls to use Latest. */
   fun selectZapret2Release(version: String?, downloadUrl: String?)
+
+  /** Set a specific target release for mihomo. Pass nulls to use Latest. */
+  fun selectMihomoRelease(version: String?, downloadUrl: String?)
+
+  /** Set a specific target release for mieru. Pass nulls to use Latest. */
+  fun selectMieruRelease(version: String?, downloadUrl: String?)
 
   /** Reset transient errors/progress in program update UI. */
   fun resetProgramUpdatesUi()

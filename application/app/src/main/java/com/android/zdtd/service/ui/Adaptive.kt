@@ -67,6 +67,16 @@ internal fun rememberUseScrollableTabs(): Boolean {
   return remember(width) { width < 420 }
 }
 
+@Composable
+internal fun rememberUseLandscapeControlLayout(): Boolean {
+  val configuration = LocalConfiguration.current
+  val width = configuration.screenWidthDp
+  val height = configuration.screenHeightDp
+  return remember(width, height) {
+    width >= 640 && width > height
+  }
+}
+
 
 @Composable
 internal fun rememberNeedsMinWidthScaling(minWidthDp: Int = 420): Boolean {

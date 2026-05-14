@@ -25,11 +25,13 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.ArrowBack
@@ -44,9 +46,9 @@ import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -59,10 +61,12 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
@@ -787,6 +791,7 @@ private fun MainShell(
 
   val snackHost = remember { SnackbarHostState() }
   val uiState by uiStateFlow.collectAsStateWithLifecycle()
+  val landscapeControl = rememberUseLandscapeControlLayout()
 
   DaemonUnavailableDialogHost(uiState = uiState)
 
@@ -833,11 +838,19 @@ private fun MainShell(
   if (showLogs) {
     // Collect logs ONLY when the sheet is open.
     val logs by logsFlow.collectAsStateWithLifecycle()
-    LogsBottomSheet(
-      logs = logs,
-      onClear = actions::clearLogs,
-      onDismiss = { showLogs = false },
-    )
+    if (landscapeControl) {
+      LandscapeLogsShelf(
+        logs = logs,
+        onClear = actions::clearLogs,
+        onDismiss = { showLogs = false },
+      )
+    } else {
+      LogsBottomSheet(
+        logs = logs,
+        onClear = actions::clearLogs,
+        onDismiss = { showLogs = false },
+      )
+    }
   }
 
   programLogsTarget?.let { target ->
@@ -912,6 +925,80 @@ private fun MainShell(
       if (settingsCloseRequested) closeSettings()
     }
 
+    if (landscapeControl) {
+      LandscapeSettingsShelf(
+        onDismiss = { closeSettings() },
+      ) {
+        Box(
+          modifier = Modifier
+            .fillMaxSize()
+            .animateContentSize(animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)),
+        ) {
+          Crossfade(
+            targetState = settingsContentReady,
+            animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+            label = "settingsContentReadyLandscape",
+          ) { ready ->
+            if (!ready) {
+              Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center,
+              ) {
+                Column(
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                  verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                  CircularProgressIndicator()
+                  Text(
+                    text = stringResource(R.string.common_loading),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                  )
+                }
+              }
+            } else {
+              AppUpdateSettings(
+                enabled = appUpdate.enabled,
+                onToggle = actions::setAppUpdateChecksEnabled,
+                onCheckNow = actions::checkAppUpdateNow,
+                daemonNotificationEnabled = appUpdate.daemonStatusNotificationEnabled,
+                onToggleDaemonNotification = actions::setDaemonStatusNotificationsEnabled,
+                languageMode = appUpdate.languageMode,
+                onLanguageModeChange = actions::setAppLanguageMode,
+                protectorMode = appUpdate.protectorMode,
+                onProtectorModeChange = actions::setProtectorMode,
+                hotspotT2sEnabled = appUpdate.hotspotT2sEnabled,
+                hotspotT2sTarget = appUpdate.hotspotT2sTarget,
+                hotspotT2sSingboxProfile = appUpdate.hotspotT2sSingboxProfile,
+                hotspotT2sWireproxyProfile = appUpdate.hotspotT2sWireproxyProfile,
+                hotspotSingboxProfiles = appUpdate.hotspotSingboxProfiles,
+                hotspotWireproxyProfiles = appUpdate.hotspotWireproxyProfiles,
+                onHotspotT2sEnabledChange = actions::setHotspotT2sEnabled,
+                onHotspotT2sTargetChange = actions::setHotspotT2sTarget,
+                onHotspotT2sSingboxProfileChange = actions::setHotspotT2sSingboxProfile,
+                onHotspotT2sWireproxyProfileChange = actions::setHotspotT2sWireproxyProfile,
+                proxyInfoEnabled = appUpdate.proxyInfoEnabled,
+                proxyInfoBusy = appUpdate.proxyInfoBusy,
+                proxyInfoAppsContent = appUpdate.proxyInfoAppsContent,
+                onProxyInfoEnabledChange = actions::setProxyInfoEnabled,
+                onLoadAppAssignments = actions::loadAppAssignments,
+                onProxyInfoAppsSave = actions::saveProxyInfoApps,
+                onProxyInfoAppsSaveRemovingConflicts = actions::saveProxyInfoAppsRemovingConflicts,
+                blockedQuicEnabled = appUpdate.blockedQuicEnabled,
+                blockedQuicBusy = appUpdate.blockedQuicBusy,
+                blockedQuicAppsContent = appUpdate.blockedQuicAppsContent,
+                onBlockedQuicEnabledChange = actions::setBlockedQuicEnabled,
+                onBlockedQuicAppsSave = actions::saveBlockedQuicApps,
+                resettingModuleIdentifier = appUpdate.resettingModuleIdentifier,
+                onResetModuleIdentifier = actions::resetModuleIdentifier,
+                onDeleteModule = { closeSettings { showDeleteModule = true } },
+                landscapeColumns = true,
+              )
+            }
+          }
+        }
+      }
+    } else {
     ModalBottomSheet(
       onDismissRequest = { closeSettings() },
       sheetState = sheetState,
@@ -982,11 +1069,14 @@ private fun MainShell(
               resettingModuleIdentifier = appUpdate.resettingModuleIdentifier,
               onResetModuleIdentifier = actions::resetModuleIdentifier,
               onDeleteModule = { closeSettings { showDeleteModule = true } },
+              landscapeColumns = landscapeControl,
             )
           }
         }
       }
       Spacer(Modifier.height(16.dp))
+    }
+
     }
   }
 
@@ -1124,113 +1214,155 @@ private fun MainShell(
           alpha = mainContentAlpha
         }
     ) {
-      Scaffold(
-        topBar = {
-        TopAppBar(
-          title = {
-            val isHomeTitle = tab == Tab.HOME
-            Text(
-              title,
-              letterSpacing = 2.sp,
-              modifier = if (isHomeTitle) {
-                Modifier.clickable(
-                  interactionSource = remember { MutableInteractionSource() },
-                  indication = null,
-                ) {
-                  showWorldMapPrompt = true
-                }
-              } else {
-                Modifier
-              },
-            )
-          },
-          navigationIcon = {
-            if (canGoBack) {
-              IconButton(onClick = {
-                appsRoute = when (val r = appsRoute) {
-                  is AppsRoute.Profile -> AppsRoute.Program(r.programId)
-                  is AppsRoute.Program -> AppsRoute.List
-                  AppsRoute.List -> AppsRoute.List
-                }
-              }) { Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back)) }
+      if (landscapeControl) {
+        LandscapeShellContent(
+          tab = tab,
+          onTabChange = { tab = it },
+          title = title,
+          canGoBack = canGoBack,
+          onBack = {
+            appsRoute = when (val r = appsRoute) {
+              is AppsRoute.Profile -> AppsRoute.Program(r.programId)
+              is AppsRoute.Program -> AppsRoute.List
+              AppsRoute.List -> AppsRoute.List
             }
           },
-          actions = {
-            TopBarActionCluster(
-              programLogTarget = currentProgramLogTarget,
-              onOpenLogs = { target ->
-                if (target == null) showLogs = true else programLogsTarget = target
-              },
-              onOpenBackup = { showBackup = true },
-              onOpenProgramUpdates = {
-                showProgramUpdates = true
-                actions.resetProgramUpdatesUi()
-              },
-              onOpenSettings = {
-                settingsCloseRequested = false
-                showSettings = true
-              },
+          onTitleClick = { if (tab == Tab.HOME) showWorldMapPrompt = true },
+          homeTabLabel = homeTabLabel,
+          statsTabLabel = statsTabLabel,
+          appsTabLabel = appsTabLabel,
+          supportTabLabel = supportTabLabel,
+          programLogTarget = currentProgramLogTarget,
+          onOpenLogs = { target ->
+            if (target == null) showLogs = true else programLogsTarget = target
+          },
+          onOpenBackup = { showBackup = true },
+          onOpenProgramUpdates = {
+            showProgramUpdates = true
+            actions.resetProgramUpdatesUi()
+          },
+          onOpenSettings = {
+            settingsCloseRequested = false
+            showSettings = true
+          },
+          appUpdate = appUpdate,
+          uiStateFlow = uiStateFlow,
+          appsRoute = appsRoute,
+          onOpenProgram = { appsRoute = AppsRoute.Program(it) },
+          onOpenProfile = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) },
+          actions = actions,
+          snackHost = snackHost,
+        )
+      } else {
+        Scaffold(
+          topBar = {
+          TopAppBar(
+            title = {
+              val isHomeTitle = tab == Tab.HOME
+              Text(
+                title,
+                letterSpacing = 2.sp,
+                modifier = if (isHomeTitle) {
+                  Modifier.clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                  ) {
+                    showWorldMapPrompt = true
+                  }
+                } else {
+                  Modifier
+                },
+              )
+            },
+            navigationIcon = {
+              if (canGoBack) {
+                IconButton(onClick = {
+                  appsRoute = when (val r = appsRoute) {
+                    is AppsRoute.Profile -> AppsRoute.Program(r.programId)
+                    is AppsRoute.Program -> AppsRoute.List
+                    AppsRoute.List -> AppsRoute.List
+                  }
+                }) { Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back)) }
+              }
+            },
+            actions = {
+              TopBarActionCluster(
+                programLogTarget = currentProgramLogTarget,
+                onOpenLogs = { target ->
+                  if (target == null) showLogs = true else programLogsTarget = target
+                },
+                onOpenBackup = { showBackup = true },
+                onOpenProgramUpdates = {
+                  showProgramUpdates = true
+                  actions.resetProgramUpdatesUi()
+                },
+                onOpenSettings = {
+                  settingsCloseRequested = false
+                  showSettings = true
+                },
+              )
+            }
+          )
+        },
+        bottomBar = {
+          NavigationBar {
+            NavigationBarItem(
+              selected = tab == Tab.HOME,
+              onClick = { tab = Tab.HOME },
+              icon = { Icon(Icons.Filled.Power, contentDescription = if (compactBottomBar) homeTabLabel else null) },
+              label = if (compactBottomBar) null else ({ Text(homeTabLabel) }),
+              alwaysShowLabel = !compactBottomBar,
+            )
+            NavigationBarItem(
+              selected = tab == Tab.STATS,
+              onClick = { tab = Tab.STATS },
+              icon = { Icon(Icons.Filled.Equalizer, contentDescription = if (compactBottomBar) statsTabLabel else null) },
+              label = if (compactBottomBar) null else ({ Text(statsTabLabel) }),
+              alwaysShowLabel = !compactBottomBar,
+            )
+            NavigationBarItem(
+              selected = tab == Tab.APPS,
+              onClick = { tab = Tab.APPS },
+              icon = { Icon(Icons.Filled.Apps, contentDescription = if (compactBottomBar) appsTabLabel else null) },
+              label = if (compactBottomBar) null else ({ Text(appsTabLabel) }),
+              alwaysShowLabel = !compactBottomBar,
+            )
+
+            NavigationBarItem(
+              selected = tab == Tab.SUPPORT,
+              onClick = { tab = Tab.SUPPORT },
+              icon = { Icon(Icons.Filled.Info, contentDescription = if (compactBottomBar) supportTabLabel else null) },
+              label = if (compactBottomBar) null else ({ Text(supportTabLabel) }),
+              alwaysShowLabel = !compactBottomBar,
             )
           }
-        )
-      },
-      bottomBar = {
-        NavigationBar {
-          NavigationBarItem(
-            selected = tab == Tab.HOME,
-            onClick = { tab = Tab.HOME },
-            icon = { Icon(Icons.Filled.Power, contentDescription = if (compactBottomBar) homeTabLabel else null) },
-            label = if (compactBottomBar) null else ({ Text(homeTabLabel) }),
-            alwaysShowLabel = !compactBottomBar,
-          )
-          NavigationBarItem(
-            selected = tab == Tab.STATS,
-            onClick = { tab = Tab.STATS },
-            icon = { Icon(Icons.Filled.Equalizer, contentDescription = if (compactBottomBar) statsTabLabel else null) },
-            label = if (compactBottomBar) null else ({ Text(statsTabLabel) }),
-            alwaysShowLabel = !compactBottomBar,
-          )
-          NavigationBarItem(
-            selected = tab == Tab.APPS,
-            onClick = { tab = Tab.APPS },
-            icon = { Icon(Icons.Filled.Apps, contentDescription = if (compactBottomBar) appsTabLabel else null) },
-            label = if (compactBottomBar) null else ({ Text(appsTabLabel) }),
-            alwaysShowLabel = !compactBottomBar,
-          )
-
-          NavigationBarItem(
-            selected = tab == Tab.SUPPORT,
-            onClick = { tab = Tab.SUPPORT },
-            icon = { Icon(Icons.Filled.Info, contentDescription = if (compactBottomBar) supportTabLabel else null) },
-            label = if (compactBottomBar) null else ({ Text(supportTabLabel) }),
-            alwaysShowLabel = !compactBottomBar,
-          )
-        }
-      },
-      snackbarHost = { SnackbarHost(snackHost) },
-      ) { padding ->
-        Column(
-          Modifier
-            .fillMaxSize()
-            .padding(padding),
-        ) {
-          AppUpdateBanner(
-            state = appUpdate,
-            onDismiss = actions::dismissAppUpdateBanner,
-            onUpdate = {
-              if (appUpdate.downloading) actions.cancelAppUpdateDownload() else actions.startAppUpdateDownload()
-            },
-          )
-          Box(Modifier.fillMaxSize()) {
-            TabBody(
-              tab = tab,
-              uiStateFlow = uiStateFlow,
-              appsRoute = appsRoute,
-              onOpenProgram = { appsRoute = AppsRoute.Program(it) },
-              onOpenProfile = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) },
-              actions = actions,
-              snackHost = snackHost,
+        },
+        snackbarHost = { SnackbarHost(snackHost) },
+        ) { padding ->
+          Column(
+            Modifier
+              .fillMaxSize()
+              .padding(padding),
+          ) {
+            AppUpdateBanner(
+              state = appUpdate,
+              onDismiss = actions::dismissAppUpdateBanner,
+              onUpdate = {
+                if (appUpdate.downloading) actions.cancelAppUpdateDownload() else actions.startAppUpdateDownload()
+              },
             )
+            Box(Modifier.fillMaxSize()) {
+              TabBody(
+                tab = tab,
+                uiStateFlow = uiStateFlow,
+                appsRoute = appsRoute,
+                onOpenProgram = { appsRoute = AppsRoute.Program(it) },
+                onOpenProfile = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) },
+                actions = actions,
+                snackHost = snackHost,
+                landscapeControl = false,
+              )
+            }
           }
         }
       }
@@ -1246,6 +1378,379 @@ private fun MainShell(
     }
   }
 }
+
+
+@Composable
+private fun LandscapeShellContent(
+  tab: Tab,
+  onTabChange: (Tab) -> Unit,
+  title: String,
+  canGoBack: Boolean,
+  onBack: () -> Unit,
+  onTitleClick: () -> Unit,
+  homeTabLabel: String,
+  statsTabLabel: String,
+  appsTabLabel: String,
+  supportTabLabel: String,
+  programLogTarget: ProgramLogTarget?,
+  onOpenLogs: (ProgramLogTarget?) -> Unit,
+  onOpenBackup: () -> Unit,
+  onOpenProgramUpdates: () -> Unit,
+  onOpenSettings: () -> Unit,
+  appUpdate: AppUpdateUiState,
+  uiStateFlow: StateFlow<UiState>,
+  appsRoute: AppsRoute,
+  onOpenProgram: (String) -> Unit,
+  onOpenProfile: (String, String) -> Unit,
+  actions: ZdtdActions,
+  snackHost: SnackbarHostState,
+) {
+  Box(
+    modifier = Modifier
+      .fillMaxSize()
+      .windowInsetsPadding(WindowInsets.safeDrawing),
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(end = 104.dp),
+    ) {
+      LandscapeContentHeader(
+        title = title,
+        canGoBack = canGoBack,
+        onBack = onBack,
+        onTitleClick = onTitleClick,
+        isHome = tab == Tab.HOME,
+      )
+      AppUpdateBanner(
+        state = appUpdate,
+        onDismiss = actions::dismissAppUpdateBanner,
+        onUpdate = {
+          if (appUpdate.downloading) actions.cancelAppUpdateDownload() else actions.startAppUpdateDownload()
+        },
+      )
+      Box(Modifier.fillMaxSize()) {
+        TabBody(
+          tab = tab,
+          uiStateFlow = uiStateFlow,
+          appsRoute = appsRoute,
+          onOpenProgram = onOpenProgram,
+          onOpenProfile = onOpenProfile,
+          actions = actions,
+          snackHost = snackHost,
+          landscapeControl = true,
+        )
+      }
+    }
+
+    LandscapeQuickActions(
+      modifier = Modifier
+        .align(Alignment.TopEnd)
+        .padding(top = 10.dp, end = 10.dp),
+      programLogTarget = programLogTarget,
+      onOpenLogs = onOpenLogs,
+      onOpenBackup = onOpenBackup,
+      onOpenProgramUpdates = onOpenProgramUpdates,
+      onOpenSettings = onOpenSettings,
+    )
+
+    LandscapeRightNav(
+      modifier = Modifier
+        .align(Alignment.BottomEnd)
+        .padding(end = 12.dp, bottom = 12.dp),
+      tab = tab,
+      onTabChange = onTabChange,
+      homeTabLabel = homeTabLabel,
+      statsTabLabel = statsTabLabel,
+      appsTabLabel = appsTabLabel,
+      supportTabLabel = supportTabLabel,
+    )
+  }
+}
+
+@Composable
+private fun LandscapeContentHeader(
+  title: String,
+  canGoBack: Boolean,
+  onBack: () -> Unit,
+  onTitleClick: () -> Unit,
+  isHome: Boolean,
+) {
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .height(52.dp)
+      .padding(start = 14.dp, end = 8.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    if (canGoBack) {
+      IconButton(onClick = onBack) {
+        Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
+      }
+    }
+    Text(
+      text = title,
+      letterSpacing = 1.6.sp,
+      style = MaterialTheme.typography.titleLarge,
+      fontWeight = FontWeight.SemiBold,
+      modifier = if (isHome) {
+        Modifier.clickable(
+          interactionSource = remember { MutableInteractionSource() },
+          indication = null,
+        ) { onTitleClick() }
+      } else {
+        Modifier
+      },
+    )
+  }
+}
+
+@Composable
+private fun LandscapeQuickActions(
+  modifier: Modifier = Modifier,
+  programLogTarget: ProgramLogTarget?,
+  onOpenLogs: (ProgramLogTarget?) -> Unit,
+  onOpenBackup: () -> Unit,
+  onOpenProgramUpdates: () -> Unit,
+  onOpenSettings: () -> Unit,
+) {
+  Surface(
+    modifier = modifier,
+    shape = RoundedCornerShape(28.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+    tonalElevation = 3.dp,
+    shadowElevation = 8.dp,
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+      IconButton(onClick = { onOpenSettings() }, modifier = Modifier.size(44.dp)) {
+        Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings), modifier = Modifier.size(26.dp))
+      }
+      IconButton(onClick = { onOpenProgramUpdates() }, modifier = Modifier.size(48.dp)) {
+        Icon(
+          painter = painterResource(R.drawable.ic_program_updates_custom),
+          contentDescription = stringResource(R.string.cd_program_updates),
+          modifier = Modifier.size(38.dp),
+          tint = Color.White,
+        )
+      }
+      IconButton(onClick = { onOpenBackup() }, modifier = Modifier.size(44.dp)) {
+        Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup), modifier = Modifier.size(26.dp))
+      }
+      IconButton(onClick = { onOpenLogs(programLogTarget) }, modifier = Modifier.size(44.dp)) {
+        Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs), modifier = Modifier.size(26.dp))
+      }
+    }
+  }
+}
+
+@Composable
+private fun LandscapeRightNav(
+  modifier: Modifier = Modifier,
+  tab: Tab,
+  onTabChange: (Tab) -> Unit,
+  homeTabLabel: String,
+  statsTabLabel: String,
+  appsTabLabel: String,
+  supportTabLabel: String,
+) {
+  Surface(
+    modifier = modifier
+      .width(76.dp)
+      .fillMaxHeight(0.70f),
+    shape = RoundedCornerShape(38.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+    tonalElevation = 3.dp,
+    shadowElevation = 8.dp,
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(vertical = 12.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.SpaceEvenly,
+    ) {
+      LandscapeNavIcon(
+        selected = tab == Tab.HOME,
+        onClick = { onTabChange(Tab.HOME) },
+        icon = { Icon(Icons.Filled.Power, contentDescription = homeTabLabel, modifier = Modifier.size(30.dp)) },
+      )
+      LandscapeNavIcon(
+        selected = tab == Tab.STATS,
+        onClick = { onTabChange(Tab.STATS) },
+        icon = { Icon(Icons.Filled.Equalizer, contentDescription = statsTabLabel, modifier = Modifier.size(30.dp)) },
+      )
+      LandscapeNavIcon(
+        selected = tab == Tab.APPS,
+        onClick = { onTabChange(Tab.APPS) },
+        icon = { Icon(Icons.Filled.Apps, contentDescription = appsTabLabel, modifier = Modifier.size(30.dp)) },
+      )
+      LandscapeNavIcon(
+        selected = tab == Tab.SUPPORT,
+        onClick = { onTabChange(Tab.SUPPORT) },
+        icon = { Icon(Icons.Filled.Info, contentDescription = supportTabLabel, modifier = Modifier.size(30.dp)) },
+      )
+    }
+  }
+}
+
+@Composable
+private fun LandscapeNavIcon(
+  selected: Boolean,
+  onClick: () -> Unit,
+  icon: @Composable () -> Unit,
+) {
+  val bgAlpha by animateFloatAsState(
+    targetValue = if (selected) 0.24f else 0.0f,
+    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+    label = "landscape_nav_bg",
+  )
+  Box(
+    modifier = Modifier
+      .size(58.dp)
+      .clip(CircleShape)
+      .background(MaterialTheme.colorScheme.primary.copy(alpha = bgAlpha))
+      .clickable(onClick = onClick),
+    contentAlignment = Alignment.Center,
+  ) {
+    CompositionLocalProvider(
+      LocalContentColor provides if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+    ) {
+      icon()
+    }
+  }
+}
+
+
+@Composable
+private fun LandscapeSettingsShelf(
+  onDismiss: () -> Unit,
+  content: @Composable () -> Unit,
+) {
+  Dialog(
+    onDismissRequest = onDismiss,
+    properties = DialogProperties(usePlatformDefaultWidth = false),
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
+        .windowInsetsPadding(WindowInsets.safeDrawing),
+      contentAlignment = Alignment.CenterStart,
+    ) {
+      Surface(
+        modifier = Modifier
+          .fillMaxHeight(0.94f)
+          .fillMaxWidth(0.78f)
+          .padding(start = 14.dp, top = 8.dp, bottom = 8.dp),
+        shape = RoundedCornerShape(28.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+        tonalElevation = 4.dp,
+        shadowElevation = 10.dp,
+      ) {
+        Box(Modifier.fillMaxSize()) {
+          content()
+          IconButton(
+            onClick = onDismiss,
+            modifier = Modifier
+              .align(Alignment.TopEnd)
+              .padding(8.dp),
+          ) {
+            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_close))
+          }
+        }
+      }
+    }
+  }
+}
+
+
+@Composable
+private fun LandscapeLogsShelf(
+  logs: List<LogLine>,
+  onClear: () -> Unit,
+  onDismiss: () -> Unit,
+) {
+  var shelfVisible by remember { mutableStateOf(false) }
+
+  LaunchedEffect(Unit) {
+    shelfVisible = true
+  }
+
+  Dialog(
+    onDismissRequest = onDismiss,
+    properties = DialogProperties(usePlatformDefaultWidth = false),
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
+        .windowInsetsPadding(WindowInsets.safeDrawing),
+      contentAlignment = Alignment.CenterStart,
+    ) {
+      AnimatedVisibility(
+        visible = shelfVisible,
+        enter = fadeIn(tween(durationMillis = 180, easing = FastOutSlowInEasing)) +
+          slideInHorizontally(
+            animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+            initialOffsetX = { -it / 3 },
+          ) +
+          scaleIn(
+            animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+            initialScale = 0.96f,
+          ),
+        exit = fadeOut(tween(durationMillis = 120)) +
+          slideOutHorizontally(
+            animationSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing),
+            targetOffsetX = { -it / 4 },
+          ),
+      ) {
+        Surface(
+          modifier = Modifier
+            .fillMaxHeight()
+            .fillMaxWidth(0.58f)
+            .padding(start = 14.dp, top = 12.dp, bottom = 12.dp),
+          shape = RoundedCornerShape(28.dp),
+          color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+          tonalElevation = 4.dp,
+          shadowElevation = 10.dp,
+        ) {
+          Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+              Text(stringResource(R.string.logs_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+              Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(onClick = onClear) { Text(stringResource(R.string.action_clear)) }
+                Button(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+              }
+            }
+            if (logs.isEmpty()) {
+              Text(stringResource(R.string.logs_empty), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+            } else {
+              androidx.compose.foundation.lazy.LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+              ) {
+                items(logs.size) { idx ->
+                  val l = logs[idx]
+                  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.65f))) {
+                    Column(Modifier.padding(12.dp)) {
+                      Text("${l.ts} • ${l.level}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                      Spacer(Modifier.height(4.dp))
+                      Text(l.msg)
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 
 private fun supportsProgramLogs(programId: String, profile: String?): Boolean {
   return if (profile == null) {
@@ -1264,6 +1769,7 @@ private fun supportsProgramLogs(programId: String, profile: String?): Boolean {
       "amneziawg",
       "tun2socks",
       "mihomo",
+      "mieru",
     )
   }
 }
@@ -1315,7 +1821,14 @@ private fun TopBarFullActions(
   Row(verticalAlignment = Alignment.CenterVertically) {
     IconButton(onClick = onOpenLogs) { Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs)) }
     IconButton(onClick = onOpenBackup) { Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup)) }
-    IconButton(onClick = onOpenProgramUpdates) { Icon(Icons.Filled.SystemUpdateAlt, contentDescription = stringResource(R.string.cd_program_updates)) }
+    IconButton(onClick = onOpenProgramUpdates, modifier = Modifier.size(48.dp)) {
+      Icon(
+        painter = painterResource(R.drawable.ic_program_updates_custom),
+        contentDescription = stringResource(R.string.cd_program_updates),
+        modifier = Modifier.size(36.dp),
+        tint = Color.White,
+      )
+    }
     IconButton(onClick = onOpenSettings) { Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings)) }
   }
 }
@@ -1382,6 +1895,7 @@ private fun TabBody(
   onOpenProfile: (String, String) -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  landscapeControl: Boolean = false,
 ) {
   val stateHolder = rememberSaveableStateHolder()
   val focusManager = LocalFocusManager.current

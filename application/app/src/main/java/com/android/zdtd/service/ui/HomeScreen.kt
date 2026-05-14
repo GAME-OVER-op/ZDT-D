@@ -37,6 +37,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.zdtd.service.R
@@ -75,9 +76,23 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
   val powerButtonSize = rememberAdaptivePowerButtonSize()
   val isCompactWidth = rememberIsCompactWidth()
   val isShortHeight = rememberIsShortHeight()
+  val landscapeControl = rememberUseLandscapeControlLayout()
   val contentSpacing = if (isShortHeight) 12.dp else 18.dp
 
   // NOTE: stage16 had a simple image-based power button without transition animations.
+
+  if (landscapeControl) {
+    LandscapeHomeContent(
+      online = online,
+      on = on,
+      busy = busy,
+      scale = scale,
+      logTail = logTail,
+      detailedLogTail = detailedLogTail,
+      actions = actions,
+    )
+    return
+  }
 
   Column(
     Modifier
@@ -473,6 +488,199 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
                     }
                   }
                 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun LandscapeHomeContent(
+  online: Boolean,
+  on: Boolean,
+  busy: Boolean,
+  scale: Float,
+  logTail: String,
+  detailedLogTail: String,
+  actions: ZdtdActions,
+) {
+  val noLogDataText = stringResource(R.string.home_no_log_data)
+  val mainLogsText = stringResource(R.string.home_logs_main)
+  val detailedLogsText = stringResource(R.string.home_logs_detailed)
+  var logSourceMenuExpanded by remember { mutableStateOf(false) }
+  var selectedLogSource by remember { mutableStateOf(HomeLogSource.MAIN) }
+  val activeLogTail = when (selectedLogSource) {
+    HomeLogSource.MAIN -> logTail
+    HomeLogSource.DETAILED -> detailedLogTail
+  }
+  val lines = remember(activeLogTail, noLogDataText) {
+    activeLogTail.trimEnd()
+      .split('\n')
+      .asSequence()
+      .map { it.trimEnd() }
+      .filter { it.isNotBlank() }
+      .toList()
+      .takeLast(40)
+      .ifEmpty { listOf(noLogDataText) }
+      .map(::parseDaemonLogUiLine)
+      .asReversed()
+  }
+  val powerPainter = remember(on) { if (on) R.drawable.power_on else R.drawable.power_off }
+  val statusText = if (online) stringResource(R.string.home_online) else stringResource(R.string.home_offline)
+
+  Row(
+    modifier = Modifier
+      .fillMaxSize()
+      .padding(horizontal = 18.dp, vertical = 12.dp),
+    horizontalArrangement = Arrangement.spacedBy(14.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Card(
+      modifier = Modifier
+        .weight(0.44f)
+        .fillMaxHeight(),
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
+      shape = RoundedCornerShape(26.dp),
+      border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+    ) {
+      Column(
+        modifier = Modifier
+          .fillMaxSize()
+          .padding(14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+      ) {
+        AssistChip(
+          onClick = { actions.refreshStatus() },
+          label = { Text(stringResource(R.string.home_daemon_status_fmt, statusText)) },
+          leadingIcon = {
+            val c = if (online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
+            Box(Modifier.size(10.dp).clip(CircleShape).background(c))
+          },
+        )
+        Spacer(Modifier.height(10.dp))
+        Box(
+          contentAlignment = Alignment.Center,
+          modifier = Modifier
+            .size(168.dp)
+            .scale(scale)
+            .clip(CircleShape)
+            .clickable(enabled = !busy) { actions.toggleService() },
+        ) {
+          Image(
+            painter = painterResource(powerPainter),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize().clip(CircleShape),
+          )
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+          if (on) stringResource(R.string.home_power_running) else stringResource(R.string.home_power_stopped),
+          style = MaterialTheme.typography.titleLarge,
+          fontWeight = FontWeight.SemiBold,
+          textAlign = TextAlign.Center,
+        )
+        Text(
+          if (on) stringResource(R.string.home_service_active_hint) else stringResource(R.string.home_service_stopped_hint),
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+          textAlign = TextAlign.Center,
+        )
+      }
+    }
+
+    Card(
+      modifier = Modifier
+        .weight(0.56f)
+        .fillMaxHeight(),
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
+      shape = RoundedCornerShape(26.dp),
+      border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+    ) {
+      Column(Modifier.fillMaxSize().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            Box {
+              IconButton(
+                onClick = { logSourceMenuExpanded = true },
+                modifier = Modifier.size(34.dp),
+              ) {
+                Icon(
+                  imageVector = Icons.Filled.Menu,
+                  contentDescription = stringResource(R.string.home_logs_source_menu),
+                  modifier = Modifier.size(20.dp),
+                )
+              }
+              DropdownMenu(
+                expanded = logSourceMenuExpanded,
+                onDismissRequest = { logSourceMenuExpanded = false },
+              ) {
+                DropdownMenuItem(
+                  text = { Text(mainLogsText) },
+                  onClick = {
+                    selectedLogSource = HomeLogSource.MAIN
+                    logSourceMenuExpanded = false
+                  },
+                )
+                DropdownMenuItem(
+                  text = { Text(detailedLogsText) },
+                  onClick = {
+                    selectedLogSource = HomeLogSource.DETAILED
+                    logSourceMenuExpanded = false
+                  },
+                )
+              }
+            }
+            Text(stringResource(R.string.home_daemon_logs_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+          }
+          AssistChip(
+            onClick = { logSourceMenuExpanded = true },
+            label = {
+              Text(
+                if (selectedLogSource == HomeLogSource.MAIN) mainLogsText else detailedLogsText,
+                style = MaterialTheme.typography.labelSmall,
+              )
+            },
+          )
+        }
+        Surface(
+          tonalElevation = 0.dp,
+          color = MaterialTheme.colorScheme.surface.copy(alpha = 0.42f),
+          shape = RoundedCornerShape(16.dp),
+          border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+          modifier = Modifier.weight(1f).fillMaxWidth(),
+        ) {
+          LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 8.dp),
+            reverseLayout = true,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            items(lines.size) { index ->
+              val line = lines[index]
+              Surface(
+                color = when (line.level) {
+                  DaemonLogLevel.WARN -> Color(0xFF2F3136)
+                  DaemonLogLevel.INFO -> Color(0xFF4A1F1F)
+                  DaemonLogLevel.ERROR -> Color(0xFF5A1B1B)
+                  DaemonLogLevel.NOTICE -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.70f)
+                  DaemonLogLevel.OTHER -> MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
+                },
+                shape = RoundedCornerShape(12.dp),
+              ) {
+                Text(
+                  text = if (line.level == DaemonLogLevel.OTHER) line.text else "${line.level.label} ${line.text}",
+                  modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                  style = MaterialTheme.typography.bodySmall,
+                  fontFamily = FontFamily.Monospace,
+                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+                )
               }
             }
           }

@@ -9,7 +9,7 @@ import java.net.URLEncoder
 import java.util.Locale
 import kotlin.coroutines.resume
 
-private val vpnTunProgramIds = listOf("openvpn", "tun2socks", "myvpn", "mihomo", "amneziawg")
+private val vpnTunProgramIds = listOf("openvpn", "tun2socks", "myvpn", "mihomo", "mieru", "amneziawg")
 
 private suspend fun awaitLoadJsonVpnTunGuard(actions: ZdtdActions, path: String): JSONObject? =
   suspendCancellableCoroutine { cont -> actions.loadJsonData(path) { cont.resume(it) } }
@@ -29,6 +29,7 @@ private fun defaultTunForVpnProgram(programId: String): String = when (programId
   "myvpn" -> "tun9"
   "mihomo" -> "tun20"
   "amneziawg" -> "awg1"
+  "sing-box" -> "sbtun0"
   else -> "tun1"
 }
 
@@ -54,6 +55,7 @@ internal suspend fun loadUsedVpnTunNames(
     for (profile in program.profiles) {
       if (programId == excludeProgramId && profile.name == excludeProfile) continue
       val raw = awaitLoadJsonVpnTunGuard(actions, "${vpnProfileApiPath(programId, profile.name)}/setting")
+      val data = vpnSettingObject(raw)
       val tun = tunFromSetting(programId, raw)
       if (tun.isNotBlank()) used += tun.lowercase(Locale.ROOT)
     }

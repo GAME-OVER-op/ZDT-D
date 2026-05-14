@@ -42,84 +42,211 @@ fun ProgramUpdatesDialog(
   onDismiss: () -> Unit,
   actions: ZdtdActions,
 ) {
-  val compact = rememberIsCompactWidth() || rememberIsShortHeight()
-  var picking by remember { mutableStateOf<String?>(null) } // "zapret" | "zapret2"
+  val landscape = rememberUseLandscapeControlLayout()
+  val compact = !landscape && (rememberIsCompactWidth() || rememberIsShortHeight())
+  val contentPadding = if (compact) 12.dp else 16.dp
+  var picking by remember { mutableStateOf<String?>(null) } // "zapret" | "zapret2" | "mihomo" | "mieru"
+
+  fun enabledFor(item: ProgramUpdateItemUi): Boolean {
+    return !serviceRunning && !item.updating && !item.checking && !state.stoppingService
+  }
 
   Dialog(
     onDismissRequest = onDismiss,
-    properties = DialogProperties(dismissOnClickOutside = true),
+    properties = DialogProperties(
+      dismissOnClickOutside = true,
+      usePlatformDefaultWidth = !landscape,
+    ),
   ) {
-    Surface(
-      shape = MaterialTheme.shapes.extraLarge,
-      tonalElevation = 8.dp,
+    Box(
       modifier = Modifier
-        .fillMaxWidth()
-        .widthIn(max = 640.dp)
-        .padding(if (compact) 12.dp else 16.dp)
+        .fillMaxSize()
+        .windowInsetsPadding(WindowInsets.safeDrawing),
+      contentAlignment = if (landscape) Alignment.CenterStart else Alignment.Center,
     ) {
-      Column(Modifier.padding(if (compact) 12.dp else 16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          Text(stringResource(R.string.program_updates_title), style = MaterialTheme.typography.titleLarge, maxLines = 2, modifier = Modifier.weight(1f))
-                    IconButton(onClick = actions::resetProgramUpdatesUi) {
-            Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.program_updates_reset_cd))
+      Surface(
+        shape = MaterialTheme.shapes.extraLarge,
+        tonalElevation = 8.dp,
+        modifier = if (landscape) {
+          Modifier
+            .fillMaxHeight(0.94f)
+            .fillMaxWidth(0.74f)
+            .padding(start = 14.dp, top = 8.dp, bottom = 8.dp)
+        } else {
+          Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(if (compact) 0.88f else 0.82f)
+            .widthIn(max = 640.dp)
+            .padding(if (compact) 12.dp else 16.dp)
+        },
+      ) {
+        Column(
+          modifier = Modifier
+            .fillMaxSize()
+            .padding(contentPadding),
+          verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+              stringResource(R.string.program_updates_title),
+              style = MaterialTheme.typography.titleLarge,
+              maxLines = 2,
+              modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = actions::resetProgramUpdatesUi) {
+              Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.program_updates_reset_cd))
+            }
           }
-        }
 
-        Spacer(Modifier.height(6.dp))
-        Text(
-          stringResource(R.string.program_updates_desc),
-          style = MaterialTheme.typography.bodySmall,
-        )
+          Text(
+            stringResource(R.string.program_updates_desc),
+            style = MaterialTheme.typography.bodySmall,
+          )
 
-        if (serviceRunning) {
-          Spacer(Modifier.height(12.dp))
-          Card(colors = CardDefaults.cardColors()) {
-            Column(Modifier.padding(12.dp)) {
-              Text(stringResource(R.string.program_updates_service_running_title), fontWeight = FontWeight.SemiBold)
-              Spacer(Modifier.height(6.dp))
-              Text(
-                stringResource(R.string.program_updates_service_running_desc),
-                style = MaterialTheme.typography.bodySmall,
-              )
-              Spacer(Modifier.height(10.dp))
-              Button(
-                onClick = actions::stopServiceForProgramUpdatesAndCheck,
-                enabled = !state.stoppingService,
-                modifier = if (compact) Modifier.fillMaxWidth() else Modifier,
-              ) {
-                Text(if (state.stoppingService) stringResource(R.string.program_updates_stopping) else stringResource(R.string.program_updates_stop_and_check))
+          LazyColumn(
+            modifier = Modifier
+              .fillMaxWidth()
+              .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            if (serviceRunning) {
+              item(key = "service_running") {
+                Card(colors = CardDefaults.cardColors()) {
+                  Column(Modifier.padding(12.dp)) {
+                    Text(stringResource(R.string.program_updates_service_running_title), fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                      stringResource(R.string.program_updates_service_running_desc),
+                      style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    Button(
+                      onClick = actions::stopServiceForProgramUpdatesAndCheck,
+                      enabled = !state.stoppingService,
+                      modifier = if (compact) Modifier.fillMaxWidth() else Modifier,
+                    ) {
+                      Text(if (state.stoppingService) stringResource(R.string.program_updates_stopping) else stringResource(R.string.program_updates_stop_and_check))
+                    }
+                  }
+                }
+              }
+            }
+
+            if (landscape) {
+              item(key = "updates_row_1") {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                  ProgramUpdateCard(
+                    modifier = Modifier.weight(1f),
+                    item = state.zapret,
+                    enabled = enabledFor(state.zapret),
+                    onCheck = actions::checkZapretNow,
+                    onUpdate = actions::updateZapretNow,
+                    onPickVersion = {
+                      picking = "zapret"
+                      if (state.zapret.releases.isEmpty() && !state.zapret.releasesLoading) actions.loadZapretReleases()
+                    },
+                  )
+                  ProgramUpdateCard(
+                    modifier = Modifier.weight(1f),
+                    item = state.zapret2,
+                    enabled = enabledFor(state.zapret2),
+                    onCheck = actions::checkZapret2Now,
+                    onUpdate = actions::updateZapret2Now,
+                    onPickVersion = {
+                      picking = "zapret2"
+                      if (state.zapret2.releases.isEmpty() && !state.zapret2.releasesLoading) actions.loadZapret2Releases()
+                    },
+                  )
+                }
+              }
+
+              item(key = "updates_row_2") {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                  ProgramUpdateCard(
+                    modifier = Modifier.weight(1f),
+                    item = state.mihomo,
+                    enabled = enabledFor(state.mihomo),
+                    onCheck = actions::checkMihomoNow,
+                    onUpdate = actions::updateMihomoNow,
+                    onPickVersion = {
+                      picking = "mihomo"
+                      if (state.mihomo.releases.isEmpty() && !state.mihomo.releasesLoading) actions.loadMihomoReleases()
+                    },
+                  )
+                  ProgramUpdateCard(
+                    modifier = Modifier.weight(1f),
+                    item = state.mieru,
+                    enabled = enabledFor(state.mieru),
+                    onCheck = actions::checkMieruNow,
+                    onUpdate = actions::updateMieruNow,
+                    onPickVersion = {
+                      picking = "mieru"
+                      if (state.mieru.releases.isEmpty() && !state.mieru.releasesLoading) actions.loadMieruReleases()
+                    },
+                  )
+                }
+              }
+            } else {
+              item(key = "zapret") {
+                ProgramUpdateCard(
+                  item = state.zapret,
+                  enabled = enabledFor(state.zapret),
+                  onCheck = actions::checkZapretNow,
+                  onUpdate = actions::updateZapretNow,
+                  onPickVersion = {
+                    picking = "zapret"
+                    if (state.zapret.releases.isEmpty() && !state.zapret.releasesLoading) actions.loadZapretReleases()
+                  },
+                )
+              }
+              item(key = "zapret2") {
+                ProgramUpdateCard(
+                  item = state.zapret2,
+                  enabled = enabledFor(state.zapret2),
+                  onCheck = actions::checkZapret2Now,
+                  onUpdate = actions::updateZapret2Now,
+                  onPickVersion = {
+                    picking = "zapret2"
+                    if (state.zapret2.releases.isEmpty() && !state.zapret2.releasesLoading) actions.loadZapret2Releases()
+                  },
+                )
+              }
+              item(key = "mihomo") {
+                ProgramUpdateCard(
+                  item = state.mihomo,
+                  enabled = enabledFor(state.mihomo),
+                  onCheck = actions::checkMihomoNow,
+                  onUpdate = actions::updateMihomoNow,
+                  onPickVersion = {
+                    picking = "mihomo"
+                    if (state.mihomo.releases.isEmpty() && !state.mihomo.releasesLoading) actions.loadMihomoReleases()
+                  },
+                )
+              }
+              item(key = "mieru") {
+                ProgramUpdateCard(
+                  item = state.mieru,
+                  enabled = enabledFor(state.mieru),
+                  onCheck = actions::checkMieruNow,
+                  onUpdate = actions::updateMieruNow,
+                  onPickVersion = {
+                    picking = "mieru"
+                    if (state.mieru.releases.isEmpty() && !state.mieru.releasesLoading) actions.loadMieruReleases()
+                  },
+                )
               }
             }
           }
-        }
 
-        Spacer(Modifier.height(12.dp))
-        ProgramUpdateCard(
-          item = state.zapret,
-          enabled = !serviceRunning && !state.zapret.updating && !state.zapret.checking && !state.stoppingService,
-          onCheck = actions::checkZapretNow,
-          onUpdate = actions::updateZapretNow,
-          onPickVersion = {
-            picking = "zapret"
-            if (state.zapret.releases.isEmpty() && !state.zapret.releasesLoading) actions.loadZapretReleases()
-          },
-        )
-
-        Spacer(Modifier.height(12.dp))
-        ProgramUpdateCard(
-          item = state.zapret2,
-          enabled = !serviceRunning && !state.zapret2.updating && !state.zapret2.checking && !state.stoppingService,
-          onCheck = actions::checkZapret2Now,
-          onUpdate = actions::updateZapret2Now,
-          onPickVersion = {
-            picking = "zapret2"
-            if (state.zapret2.releases.isEmpty() && !state.zapret2.releasesLoading) actions.loadZapret2Releases()
-          },
-        )
-
-        Spacer(Modifier.height(14.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-          TextButton(onClick = onDismiss) { Text(stringResource(R.string.backup_close)) }
+          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.backup_close)) }
+          }
         }
       }
     }
@@ -128,20 +255,51 @@ fun ProgramUpdatesDialog(
   // Version picker dialog (separate from the main dialog)
   val pick = picking
   if (pick != null) {
-    val item = if (pick == "zapret") state.zapret else state.zapret2
+    val item = when (pick) {
+      "zapret" -> state.zapret
+      "zapret2" -> state.zapret2
+      "mihomo" -> state.mihomo
+      "mieru" -> state.mieru
+      else -> state.zapret
+    }
     ReleasePickerDialog(
-      title = if (pick == "zapret") stringResource(R.string.program_updates_pick_zapret_title) else stringResource(R.string.program_updates_pick_zapret2_title),
+      title = when (pick) {
+        "zapret" -> stringResource(R.string.program_updates_pick_zapret_title)
+        "zapret2" -> stringResource(R.string.program_updates_pick_zapret2_title)
+        "mihomo" -> stringResource(R.string.program_updates_pick_mihomo_title)
+        "mieru" -> stringResource(R.string.program_updates_pick_mieru_title)
+        else -> stringResource(R.string.program_updates_pick_zapret_title)
+      },
       stateItem = item,
-      minVersion = if (pick == "zapret") "v71.4" else "v0.8.6",
+      minVersion = when (pick) {
+        "zapret" -> "v71.4"
+        "zapret2" -> "v0.8.6"
+        else -> "v0.0.0"
+      },
       onRefresh = {
-        if (pick == "zapret") actions.loadZapretReleases() else actions.loadZapret2Releases()
+        when (pick) {
+          "zapret" -> actions.loadZapretReleases()
+          "zapret2" -> actions.loadZapret2Releases()
+          "mihomo" -> actions.loadMihomoReleases()
+          "mieru" -> actions.loadMieruReleases()
+        }
       },
       onSelectLatest = {
-        if (pick == "zapret") actions.selectZapretRelease(null, null) else actions.selectZapret2Release(null, null)
+        when (pick) {
+          "zapret" -> actions.selectZapretRelease(null, null)
+          "zapret2" -> actions.selectZapret2Release(null, null)
+          "mihomo" -> actions.selectMihomoRelease(null, null)
+          "mieru" -> actions.selectMieruRelease(null, null)
+        }
         picking = null
       },
       onSelectRelease = { v, url ->
-        if (pick == "zapret") actions.selectZapretRelease(v, url) else actions.selectZapret2Release(v, url)
+        when (pick) {
+          "zapret" -> actions.selectZapretRelease(v, url)
+          "zapret2" -> actions.selectZapret2Release(v, url)
+          "mihomo" -> actions.selectMihomoRelease(v, url)
+          "mieru" -> actions.selectMieruRelease(v, url)
+        }
         picking = null
       },
       onDismiss = { picking = null },
@@ -149,17 +307,17 @@ fun ProgramUpdatesDialog(
   }
 }
 
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProgramUpdateCard(
+  modifier: Modifier = Modifier,
   item: ProgramUpdateItemUi,
   enabled: Boolean,
   onCheck: () -> Unit,
   onUpdate: () -> Unit,
   onPickVersion: () -> Unit,
 ) {
-  Card(colors = CardDefaults.cardColors(), modifier = Modifier.fillMaxWidth()) {
+  Card(colors = CardDefaults.cardColors(), modifier = modifier.fillMaxWidth()) {
     Column(Modifier.padding(12.dp)) {
       Row(verticalAlignment = Alignment.CenterVertically) {
         Text(item.titleRes?.let { stringResource(it) } ?: item.title, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 2)

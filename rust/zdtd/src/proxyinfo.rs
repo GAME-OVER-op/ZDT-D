@@ -145,6 +145,8 @@ fn default_operaproxy_t2s_web_port() -> u16 {
 #[derive(Debug, Deserialize, Default)]
 struct SingboxProfileSetting {
     #[serde(default)]
+    mode: String,
+    #[serde(default)]
     t2s_port: u16,
     #[serde(default = "default_t2s_web_port")]
     t2s_web_port: u16,
@@ -1078,7 +1080,7 @@ fn is_protectable_project_ipv4(ip: Ipv4Addr) -> bool {
 fn is_proxyinfo_project_vpn_owner(owner: &str) -> bool {
     matches!(
         owner.trim().to_ascii_lowercase().as_str(),
-        "openvpn" | "myvpn" | "tun2socks" | "tun2proxy" | "mihomo" | "amneziawg"
+        "openvpn" | "myvpn" | "tun2socks" | "tun2proxy" | "mihomo" | "mieru" | "amneziawg"
     )
 }
 
@@ -1204,6 +1206,7 @@ pub fn collect_protected_port_sets() -> Result<(BTreeSet<u16>, BTreeSet<u16>)> {
     collect_myproxy_ports(&mut local, &mut global)?;
     collect_myprogram_ports(&mut local)?;
     collect_mihomo_ports(&mut local)?;
+    collect_mieru_ports(&mut local)?;
     drop_reserved_system_ports("local", &mut local);
     drop_reserved_system_ports("global", &mut global);
     local.insert(API_PORT);
@@ -1511,6 +1514,26 @@ fn collect_mihomo_ports(out: &mut BTreeSet<u16>) -> Result<()> {
             }
         }
         collect_mihomo_yaml_ports_from_dir(&profile_dir, out);
+    }
+    Ok(())
+}
+
+
+fn collect_mieru_ports(out: &mut BTreeSet<u16>) -> Result<()> {
+    let active_path = working_program_dir("mieru").join("active.json");
+    if !active_path.is_file() { return Ok(()); }
+    let active: ProfilesActive = read_json_file(&active_path).unwrap_or_default();
+    let root = working_program_dir("mieru").join("profile");
+    for (name, st) in active.profiles {
+        if !st.enabled { continue; }
+        let setting_path = root.join(&name).join("setting.json");
+        if let Ok(v) = read_json_file::<Value>(&setting_path) {
+            for key in ["socks5_port", "rpc_port"] {
+                if let Some(port) = v.get(key).and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
+                    if port != 0 { out.insert(port); }
+                }
+            }
+        }
     }
     Ok(())
 }

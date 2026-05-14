@@ -1107,6 +1107,9 @@ fn create_singbox_server_named(profile: &str, requested: &str) -> Result<String>
     let name = requested.trim();
     ensure_valid_singbox_profile_name(name)?;
     ensure_singbox_profile_layout(profile)?;
+    if singbox_profile_mode_is_vpn(profile) {
+        anyhow::bail!("singbox_vpn_requires_single_server: VPN-режим sing-box поддерживает только один сервер. Переключите профиль в proxy или используйте существующий сервер.");
+    }
 
     let root = singbox_server_root(profile, name);
     if root.exists() {
@@ -1153,6 +1156,48 @@ fn create_singbox_server_next(profile: &str) -> Result<String> {
     create_singbox_server_named(profile, &next)?;
     Ok(next)
 }
+
+fn singbox_profile_setting_or_default(profile: &str) -> serde_json::Value {
+    let p = singbox_profile_root(profile).join("setting.json");
+    read_json::<serde_json::Value>(&p).unwrap_or_else(|_| default_singbox_profile_setting_value(12345, 8001))
+}
+
+fn singbox_profile_mode_is_vpn(_profile: &str) -> bool { false }
+
+fn singbox_server_names(profile: &str) -> Result<Vec<String>> {
+    let root = singbox_profile_root(profile).join("server");
+    fs::create_dir_all(&root)?;
+    let mut out = Vec::new();
+    if let Ok(rd) = fs::read_dir(&root) {
+        for ent in rd.flatten() {
+            let path = ent.path();
+            if !path.is_dir() { continue; }
+            let Some(name) = path.file_name().and_then(|s| s.to_str()) else { continue; };
+            if name.starts_with('.') { continue; }
+            ensure_valid_singbox_profile_name(name)?;
+            out.push(name.to_string());
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+fn ensure_singbox_vpn_single_server(profile: &str) -> Result<String> {
+    let names = singbox_server_names(profile)?;
+    if names.len() != 1 {
+        anyhow::bail!("singbox_vpn_requires_single_server: VPN-режим sing-box поддерживает только один сервер. Удалите лишние серверы или оставьте режим proxy.");
+    }
+    Ok(names[0].clone())
+}
+
+fn normalize_and_write_singbox_profile_setting(profile: &str, v: serde_json::Value) -> Result<serde_json::Value> {
+    let setting = crate::programs::singbox::normalize_setting_value(v)?;
+    let normalized = serde_json::to_value(&setting)?;
+    let p = singbox_profile_root(profile).join("setting.json");
+    write_json_pretty(&p, &normalized)?;
+    Ok(normalized)
+}
+
 
 
 
@@ -1706,6 +1751,44 @@ fn create_mihomo_profile_next() -> Result<String> {
     anyhow::bail!("no free mihomo profile name")
 }
 
+fn mieru_active_path() -> PathBuf { crate::programs::mieru::active_path() }
+fn mieru_profiles_root() -> PathBuf { crate::programs::mieru::profiles_root() }
+fn mieru_deleted_root() -> PathBuf { program_root("mieru").join(".deleted") }
+fn mieru_deleted_profiles_root() -> PathBuf { mieru_deleted_root().join("profiles") }
+fn mieru_profile_root(profile: &str) -> PathBuf { crate::programs::mieru::profile_root(profile) }
+
+fn ensure_mieru_profile_layout(profile: &str) -> Result<()> {
+    crate::programs::mieru::ensure_profile_layout(profile)
+}
+
+fn create_mieru_profile_named(requested: &str) -> Result<String> {
+    let name = requested.trim();
+    crate::programs::mieru::ensure_valid_profile_name(name)?;
+    crate::programs::mieru::ensure_root_layout()?;
+    let active_path = mieru_active_path();
+    let mut active: ProfilesActive = read_json(&active_path).unwrap_or_default();
+    if active.profiles.contains_key(name) { anyhow::bail!("profile already exists"); }
+    active.profiles.insert(name.to_string(), ProfileState { enabled: false });
+    write_json_pretty(&active_path, &active)?;
+    ensure_mieru_profile_layout(name)?;
+    crate::programs::mieru::assign_free_ports_for_profile(name)?;
+    Ok(name.to_string())
+}
+
+fn create_mieru_profile_next() -> Result<String> {
+    crate::programs::mieru::ensure_root_layout()?;
+    let active: ProfilesActive = read_json(&mieru_active_path()).unwrap_or_default();
+    for n in 1..=9999u32 {
+        let next = format!("profile{n}");
+        if next.len() > 10 { break; }
+        if !active.profiles.contains_key(&next) {
+            create_mieru_profile_named(&next)?;
+            return Ok(next);
+        }
+    }
+    anyhow::bail!("no free mieru profile name")
+}
+
 fn validate_cross_vpn_tun_claim(program_id: &str, profile: &str, tun: &str) -> Result<()> {
     let this_label = format!("{program_id}/{profile}");
     for (other_label, other_tun) in crate::programs::openvpn::enabled_tun_claims()
@@ -1714,6 +1797,8 @@ fn validate_cross_vpn_tun_claim(program_id: &str, profile: &str, tun: &str) -> R
         .chain(crate::programs::tun2socks::enabled_tun_claims().into_iter())
         .chain(crate::programs::myvpn::enabled_tun_claims().into_iter())
         .chain(crate::programs::mihomo::enabled_tun_claims().into_iter())
+        .chain(crate::programs::mieru::enabled_tun_claims().into_iter())
+        .chain(crate::programs::singbox::enabled_tun_claims().into_iter())
     {
         if other_label != this_label && other_tun == tun {
             anyhow::bail!("VPN tun conflict: tun {tun} is already used by {other_label}");
@@ -1900,7 +1985,7 @@ fn app_domain(program_id: &str) -> Option<&'static str> {
         // Intentional exceptions are the ZDT-D launch marker and blockedquic: the
         // marker is ignored by package conflict parsing, and blockedquic has no app
         // routing domain so QUIC blocking may coexist with VPN/netd routing.
-        "vpn-netd" | "openvpn" | "amneziawg" | "tun2socks" | "myvpn" | "mihomo" | "wireguard" => Some("exclusive_network"),
+        "vpn-netd" | "openvpn" | "amneziawg" | "tun2socks" | "myvpn" | "mihomo" | "mieru" | "wireguard" => Some("exclusive_network"),
         "operaproxy" | "sing-box" | "wireproxy" | "myproxy" | "myprogram" | "tor" | "dpitunnel" | "byedpi" => Some("tunnel"),
         "nfqws" | "nfqws2" => Some("zapret"),
         // blockedquic only conflicts with proxyInfo protection; it must not block VPN/tunnel app lists.
@@ -2152,6 +2237,23 @@ fn collect_assignment_files_uncached() -> Vec<AppAssignmentFile> {
                 "user",
                 path.join("app/uid/user_program"),
                 format!("/api/programs/mihomo/profiles/{profile}/apps/user"),
+            );
+        }
+    }
+
+    let mieru_root = mieru_profiles_root();
+    if let Ok(rd) = fs::read_dir(&mieru_root) {
+        for ent in rd.flatten() {
+            let path = ent.path();
+            if !path.is_dir() { continue; }
+            let Some(profile) = path.file_name().and_then(|s| s.to_str()).map(|s| s.to_string()) else { continue; };
+            push_assignment_file(
+                &mut out,
+                "mieru",
+                Some(profile.clone()),
+                "user",
+                path.join("app/uid/user_program"),
+                format!("/api/programs/mieru/profiles/{profile}/apps/user"),
             );
         }
     }
@@ -2565,6 +2667,22 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
             "id": "mihomo",
             "name": "mihomo",
             "type": "mihomo_profiles",
+            "profiles": profiles
+        }));
+    }
+
+    // mieru (mieru SOCKS5 backend + tun2proxy/tun2socks + VPN/netd profiles)
+    {
+        let active: ProfilesActive = read_json(&mieru_active_path()).unwrap_or_default();
+        let mut profiles = Vec::new();
+        for (name, st) in active.profiles {
+            profiles.push(json!({"name": name, "enabled": st.enabled}));
+        }
+        profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+        out.push(json!({
+            "id": "mieru",
+            "name": "mieru",
+            "type": "mieru_profiles",
             "profiles": profiles
         }));
     }
@@ -3437,6 +3555,154 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
             match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
         }
 
+        // --- mieru profile API
+        ("GET", ["api", "programs", "mieru", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::mieru::ensure_root_layout()?;
+                let active: ProfilesActive = read_json(&mieru_active_path()).unwrap_or_default();
+                let mut profiles = Vec::new();
+                for (name, st) in active.profiles {
+                    profiles.push(json!({"name": name, "enabled": st.enabled}));
+                }
+                profiles.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
+                Ok(json!({"ok": true, "profiles": profiles}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("POST", ["api", "programs", "mieru", "profiles"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                #[derive(Deserialize)]
+                struct Req { #[serde(default)] name: Option<String> }
+                let req: Req = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let profile = match req.name.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+                    Some(name) => create_mieru_profile_named(name)?,
+                    None => create_mieru_profile_next()?,
+                };
+                Ok(json!({"ok": true, "profile": profile}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("PUT", ["api", "programs", "mieru", "profiles", profile, "enabled"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::mieru::ensure_valid_profile_name(profile)?;
+                let req: EnabledReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let p = mieru_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                let st = active.profiles.get_mut(*profile)
+                    .ok_or_else(|| anyhow::anyhow!("profile not found"))?;
+                st.enabled = req.enabled;
+                crate::programs::mieru::validate_enabled_tun_uniqueness_with_override(Some(profile), None, Some(req.enabled))?;
+                if req.enabled {
+                    let setting = crate::programs::mieru::read_setting(profile).unwrap_or_default();
+                    validate_cross_vpn_tun_claim("mieru", profile, &setting.tun)?;
+                    crate::programs::mieru::validate_port_uniqueness_with_override(Some(profile), None)?;
+                }
+                write_json_pretty(&p, &active)?;
+                Ok(())
+            })();
+            match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
+        }
+        ("DELETE", ["api", "programs", "mieru", "profiles", profile]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::mieru::ensure_valid_profile_name(profile)?;
+                let p = mieru_active_path();
+                let mut active: ProfilesActive = read_json(&p).unwrap_or_default();
+                if active.profiles.remove(*profile).is_none() { anyhow::bail!("profile not found"); }
+                write_json_pretty(&p, &active)?;
+                invalidate_assignment_cache();
+                let src = mieru_profile_root(profile);
+                if src.exists() {
+                    let deleted_dir = mieru_deleted_profiles_root();
+                    fs::create_dir_all(&deleted_dir).ok();
+                    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                    let dst = deleted_dir.join(format!("{profile}.{ts}"));
+                    let _ = fs::rename(&src, &dst);
+                }
+                Ok(())
+            })();
+            match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
+        }
+        ("GET", ["api", "programs", "mieru", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                crate::programs::mieru::ensure_valid_profile_name(profile)?;
+                ensure_mieru_profile_layout(profile)?;
+                let p = mieru_profile_root(profile).join("setting.json");
+                let v: serde_json::Value = read_json(&p)?;
+                Ok(json!({"ok": true, "data": v}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("PUT", ["api", "programs", "mieru", "profiles", profile, "setting"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::mieru::ensure_valid_profile_name(profile)?;
+                ensure_mieru_profile_layout(profile)?;
+                let v: serde_json::Value = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let setting = crate::programs::mieru::normalize_setting_value(v)?;
+                crate::programs::mieru::validate_enabled_tun_uniqueness_with_override(Some(profile), Some(&setting), None)?;
+                crate::programs::mieru::validate_port_uniqueness_with_override(Some(profile), Some(&setting))?;
+                if is_profile_enabled(&mieru_active_path(), profile) {
+                    validate_cross_vpn_tun_claim("mieru", profile, &setting.tun)?;
+                }
+                crate::programs::mieru::write_setting(profile, &setting)?;
+                Ok(())
+            })();
+            match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
+        }
+        ("GET", ["api", "programs", "mieru", "profiles", profile, "config"]) => {
+            let res = (|| -> Result<String> {
+                crate::programs::mieru::ensure_valid_profile_name(profile)?;
+                ensure_mieru_profile_layout(profile)?;
+                let p = mieru_profile_root(profile).join("config.json");
+                read_text_or_empty(&p)
+            })();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "mieru", "profiles", profile, "config"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::mieru::ensure_valid_profile_name(profile)?;
+                ensure_mieru_profile_layout(profile)?;
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let p = mieru_profile_root(profile).join("config.json");
+                write_text_atomic(&p, &req.content)?;
+                Ok(())
+            })();
+            match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
+        }
+        ("GET", ["api", "programs", "mieru", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<String> {
+                crate::programs::mieru::ensure_valid_profile_name(profile)?;
+                ensure_mieru_profile_layout(profile)?;
+                let p = mieru_profile_root(profile).join("app/uid/user_program");
+                read_text_or_empty(&p)
+            })();
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "mieru", "profiles", profile, "apps", "user"]) => {
+            let res = (|| -> Result<()> {
+                crate::programs::mieru::ensure_valid_profile_name(profile)?;
+                ensure_mieru_profile_layout(profile)?;
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let api_path = format!("/api/programs/mieru/profiles/{}/apps/user", profile);
+                validate_program_apps_content(&req.content, &api_path, "mieru", "common")?;
+                let p = mieru_profile_root(profile).join("app/uid/user_program");
+                write_text_atomic(&p, &req.content)?;
+                invalidate_assignment_cache();
+                Ok(())
+            })();
+            match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
+        }
+
         // --- sing-box profile/server API
         ("GET", ["api", "programs", "sing-box", "profiles"]) => {
             let res = (|| -> Result<serde_json::Value> {
@@ -3523,7 +3789,9 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     write_json_pretty(&p, &default_singbox_profile_setting_value(t2s_port, t2s_web_port))?;
                 }
                 let v: serde_json::Value = read_json(&p)?;
-                Ok(json!({"ok": true, "data": v}))
+                let setting = crate::programs::singbox::normalize_setting_value(v)?;
+                let normalized = serde_json::to_value(&setting)?;
+                Ok(json!({"ok": true, "data": normalized}))
             })();
             match res {
                 Ok(v) => write_json(stream, 200, v),
@@ -3536,15 +3804,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 ensure_singbox_profile_layout(profile)?;
                 let v: serde_json::Value = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                let t2s_port = v.get("t2s_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok())
-                    .ok_or_else(|| anyhow::anyhow!("t2s_port is required"))?;
-                let t2s_web_port = v.get("t2s_web_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok())
-                    .ok_or_else(|| anyhow::anyhow!("t2s_web_port is required"))?;
-                if t2s_port == 0 || t2s_web_port == 0 || t2s_port == t2s_web_port {
-                    anyhow::bail!("invalid t2s ports");
-                }
-                let p = singbox_profile_root(profile).join("setting.json");
-                write_json_pretty(&p, &v)?;
+                normalize_and_write_singbox_profile_setting(profile, v)?;
                 Ok(())
             })();
             match res {
@@ -3671,15 +3931,32 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 ensure_valid_singbox_profile_name(server)?;
                 let v: serde_json::Value = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                let port = v.get("port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok())
-                    .ok_or_else(|| anyhow::anyhow!("port is required"))?;
-                if port == 0 {
+                let existing_path = singbox_server_root(profile, server).join("setting.json");
+                let existing: serde_json::Value = read_json(&existing_path).unwrap_or_else(|_| default_singbox_server_setting_value(1080));
+                let enabled = v.get("enabled")
+                    .and_then(|x| x.as_bool())
+                    .or_else(|| existing.get("enabled").and_then(|x| x.as_bool()))
+                    .unwrap_or(false);
+                let mode_vpn = singbox_profile_mode_is_vpn(profile);
+                if mode_vpn {
+                    let only = ensure_singbox_vpn_single_server(profile)?;
+                    if only.as_str() != *server {
+                        anyhow::bail!("singbox_vpn_requires_single_server: VPN-режим sing-box поддерживает только один сервер.");
+                    }
+                }
+                let port = v.get("port")
+                    .and_then(|x| x.as_u64())
+                    .and_then(|x| u16::try_from(x).ok())
+                    .or_else(|| existing.get("port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()))
+                    .unwrap_or(1080);
+                if !mode_vpn && port == 0 {
                     anyhow::bail!("invalid port");
                 }
                 let root = singbox_server_root(profile, server);
                 fs::create_dir_all(root.join("log"))?;
                 let p = root.join("setting.json");
-                write_json_pretty(&p, &v)?;
+                write_json_pretty(&p, &json!({"enabled": enabled, "port": if port == 0 { 1080 } else { port }}))?;
+                crate::programs::singbox::normalize_config_for_profile_server(profile, server)?;
                 Ok(())
             })();
             match res {
@@ -3714,6 +3991,9 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 fs::create_dir_all(root.join("log"))?;
                 let p = root.join("config.json");
                 write_text_atomic(&p, &req.content)?;
+                if !req.content.trim().is_empty() {
+                    crate::programs::singbox::normalize_config_for_profile_server(profile, server)?;
+                }
                 Ok(())
             })();
             match res {

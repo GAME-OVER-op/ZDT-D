@@ -292,6 +292,7 @@ ClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules
         ("tun2socks", "active.json", PROFILES_DEFAULT_JSON),
         ("myvpn", "active.json", PROFILES_DEFAULT_JSON),
         ("mihomo", "active.json", PROFILES_DEFAULT_JSON),
+        ("mieru", "active.json", PROFILES_DEFAULT_JSON),
         ("dnscrypt", "active.json", ENABLED_FALSE_JSON),
         ("operaproxy", "active.json", ENABLED_FALSE_JSON),
         ("proxyInfo", "enabled.json", PROXYINFO_ENABLED_JSON),
@@ -310,6 +311,17 @@ ClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules
         if !state_path.exists() {
             fs::write(&state_path, default_content)
                 .with_context(|| format!("write {}", state_path.display()))?;
+        }
+
+        // Profile-based programs keep profile directories under working_folder/<program>/profile.
+        // Create the root eagerly so the Android app sees the same minimal layout after daemon start
+        // even before a first profile is created through the API.
+        match program {
+            "openvpn" | "amneziawg" | "tun2socks" | "myvpn" | "mihomo" | "mieru" => {
+                fs::create_dir_all(root.join("profile"))
+                    .with_context(|| format!("mkdir {}", root.join("profile").display()))?;
+            }
+            _ => {}
         }
     }
 

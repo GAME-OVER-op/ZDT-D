@@ -221,61 +221,66 @@ object SingBoxOneLineImporter {
   }
 
   private fun buildLegacyConfig(outbound: OutboundSpec, mixedPort: Int): JSONObject {
-    val dnsServers = JSONArray()
-      .put(JSONObject().put("address", "rcode://success").put("tag", "dns-block"))
-      .put(JSONObject().put("address", "local").put("detour", "direct").put("tag", "dns-local"))
-      .put(
-        JSONObject()
-          .put("address", "https://223.5.5.5/dns-query")
-          .put("address_resolver", "dns-local")
-          .put("detour", "direct")
-          .put("strategy", "ipv4_only")
-          .put("tag", "dns-direct")
-      )
-      .put(
-        JSONObject()
-          .put("address", "https://dns.google/dns-query")
-          .put("address_resolver", "dns-direct")
-          .put("strategy", "ipv4_only")
-          .put("tag", "dns-remote")
-      )
-      .put(
-        JSONObject()
-          .put("address", "fakeip")
-          .put("strategy", "ipv4_only")
-          .put("tag", "dns-fake")
-      )
-
+    val directDomains = linkedSetOf("dns.google")
+    if (outbound.server.isNotBlank() && !outbound.server.contains(':') && !outbound.server.matches(Regex("^(25[0-5]|2[0-4]\\d|1?\\d?\\d)(\\.(25[0-5]|2[0-4]\\d|1?\\d?\\d)){3}$"))) {
+      directDomains += outbound.server
+    }
     val dnsRules = JSONArray()
-      .put(JSONObject().put("domain", JSONArray().put("dns.google")).put("server", "dns-direct"))
-      .put(JSONObject().put("outbound", JSONArray().put("any")).put("server", "dns-direct"))
       .put(
         JSONObject()
-          .put("disable_cache", true)
-          .put("inbound", JSONArray().put("tun-in"))
+          .put("domain", JSONArray().also { arr -> directDomains.forEach { arr.put(it) } })
+          .put("server", "dns-direct")
+      )
+      .put(
+        JSONObject()
+          .put("inbound", JSONArray().put("mixed-in"))
+          .put("query_type", JSONArray().put("A").put("AAAA"))
           .put("server", "dns-fake")
+          .put("disable_cache", true)
       )
 
     val dns = JSONObject()
       .put(
-        "fakeip",
-        JSONObject()
-          .put("enabled", true)
-          .put("inet4_range", "198.18.0.0/15")
-          .put("inet6_range", "fc00::/18")
+        "servers",
+        JSONArray()
+          .put(JSONObject().put("type", "local").put("tag", "dns-local"))
+          .put(
+            JSONObject()
+              .put("type", "udp")
+              .put("tag", "dns-direct")
+              .put("server", "8.8.8.8")
+              .put("server_port", 53)
+          )
+          .put(
+            JSONObject()
+              .put("type", "https")
+              .put("tag", "dns-remote")
+              .put("server", "dns.google")
+              .put("server_port", 443)
+              .put("path", "/dns-query")
+              .put(
+                "domain_resolver",
+                JSONObject()
+                  .put("server", "dns-direct")
+                  .put("strategy", "ipv4_only")
+              )
+          )
+          .put(
+            JSONObject()
+              .put("type", "fakeip")
+              .put("tag", "dns-fake")
+              .put("inet4_range", "198.18.0.0/15")
+              .put("inet6_range", "fc00::/18")
+          )
       )
-      .put("final", "dns-remote")
-      .put("independent_cache", true)
       .put("rules", dnsRules)
-      .put("servers", dnsServers)
+      .put("final", "dns-remote")
+      .put("strategy", "ipv4_only")
 
     val inbounds = JSONArray().put(
       JSONObject()
-        .put("domain_strategy", "")
         .put("listen", "127.0.0.1")
         .put("listen_port", mixedPort)
-        .put("sniff", true)
-        .put("sniff_override_destination", false)
         .put("tag", "mixed-in")
         .put("type", "mixed")
     )
@@ -286,6 +291,7 @@ object SingBoxOneLineImporter {
       .put(JSONObject().put("tag", "bypass").put("type", "direct"))
 
     val routeRules = JSONArray()
+      .put(JSONObject().put("inbound", JSONArray().put("mixed-in")).put("action", "sniff"))
       .put(JSONObject().put("action", "hijack-dns").put("port", JSONArray().put(53)))
       .put(JSONObject().put("action", "hijack-dns").put("protocol", JSONArray().put("dns")))
       .put(
@@ -297,8 +303,15 @@ object SingBoxOneLineImporter {
 
     val route = JSONObject()
       .put("auto_detect_interface", true)
+      .put(
+        "default_domain_resolver",
+        JSONObject()
+          .put("server", "dns-direct")
+          .put("strategy", "ipv4_only")
+      )
       .put("rule_set", JSONArray())
       .put("rules", routeRules)
+      .put("final", "proxy")
 
     return JSONObject()
       .put("dns", dns)
@@ -428,7 +441,12 @@ object SingBoxOneLineImporter {
         .put("type", type)
         .put("server", server)
         .put("server_port", serverPort)
-        .put("domain_strategy", "prefer_ipv4")
+        .put(
+          "domain_resolver",
+          JSONObject()
+            .put("server", "dns-direct")
+            .put("strategy", "prefer_ipv4")
+        )
 
       when (type) {
         "vless" -> {

@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use std::{
     collections::BTreeMap,
@@ -10,7 +10,7 @@ use std::{
 use crate::{
     android::{boot, selinux::SelinuxGuard},
     iptables_backup,
-    programs::{amneziawg, byedpi, dnscrypt, dpitunnel, myproxy, myprogram, nfqws, nfqws2, openvpn, operaproxy, tor, tun2socks, myvpn, mihomo},
+    programs::{amneziawg, byedpi, dnscrypt, dpitunnel, myproxy, myprogram, nfqws, nfqws2, openvpn, operaproxy, tor, tun2socks, myvpn, mihomo, mieru},
     programs::{singbox, wireproxy},
     stats,
     settings,
@@ -103,7 +103,7 @@ pub fn start_full() -> Result<()> {
     // Then start DPI/tunnel stack in parallel and wait for all of them.
     let dpitunnel_handle = thread::spawn(dpitunnel::start_active_profiles);
     let byedpi_handle = thread::spawn(byedpi::start_active_profiles);
-    let singbox_handle = thread::spawn(singbox::start_if_enabled);
+    let singbox_handle = thread::spawn(singbox::start_t2s_if_enabled);
     wait_start_group(
         "dpi-stack",
         vec![
@@ -124,9 +124,9 @@ pub fn start_full() -> Result<()> {
 
     // VPN/netd profile programs: launch VPN engines, wait for TUN, then apply Android netd routing once.
     // VPN profile failures are best-effort: log to console/profile logs and continue the rest of startup.
-    let vpn_expected = openvpn::has_enabled_profiles() || amneziawg::has_enabled_profiles() || tun2socks::has_enabled_profiles() || myvpn::has_enabled_profiles() || mihomo::has_enabled_profiles();
+    let vpn_expected = openvpn::has_enabled_profiles() || amneziawg::has_enabled_profiles() || tun2socks::has_enabled_profiles() || myvpn::has_enabled_profiles() || mihomo::has_enabled_profiles() || mieru::has_enabled_profiles() || singbox::has_enabled_vpn_profiles();
     let mut vpn_profiles = Vec::new();
-    match validate_vpn_tun_claims_unique() {
+    match validate_vpn_claims_unique() {
         Ok(()) => {
             match openvpn::start_profiles_for_netd() {
                 Ok(items) => vpn_profiles.extend(items),
@@ -168,6 +168,22 @@ pub fn start_full() -> Result<()> {
                     crate::logging::user_warn("mihomo: ошибка запуска, запуск продолжен");
                 }
             }
+            match mieru::start_profiles_for_netd() {
+                Ok(items) => vpn_profiles.extend(items),
+                Err(e) => {
+                    log::warn!("mieru startup failed, continuing: {e:#}");
+                    mark_start_partial();
+                    crate::logging::user_warn("mieru: ошибка запуска, запуск продолжен");
+                }
+            }
+            match singbox::start_profiles_for_netd() {
+                Ok(items) => vpn_profiles.extend(items),
+                Err(e) => {
+                    log::warn!("sing-box vpn startup failed, continuing: {e:#}");
+                    mark_start_partial();
+                    crate::logging::user_warn("sing-box: ошибка запуска, запуск продолжен");
+                }
+            }
             if let Err(e) = crate::vpn_netd::start_profiles(vpn_profiles) {
                 log::warn!("vpn_netd apply failed, continuing: {e:#}");
                 mark_start_partial();
@@ -177,10 +193,10 @@ pub fn start_full() -> Result<()> {
             }
         }
         Err(e) => {
-            log::warn!("vpn tun conflict, skipping VPN/netd profiles and continuing: {e:#}");
+            log::warn!("vpn profile claim conflict, skipping VPN/netd profiles and continuing: {e:#}");
             mark_start_partial();
             if vpn_expected {
-                crate::logging::user_warn("VPN/netd: конфликт tun, запуск продолжен");
+                crate::logging::user_warn("VPN/netd: конфликт профилей, запуск продолжен");
             }
         }
     }
@@ -346,7 +362,9 @@ fn can_adopt_existing_runtime() -> bool {
         || amneziawg::has_enabled_profiles()
         || tun2socks::has_enabled_profiles()
         || myvpn::has_enabled_profiles()
-        || mihomo::has_enabled_profiles();
+        || mihomo::has_enabled_profiles()
+        || mieru::has_enabled_profiles()
+        || singbox::has_enabled_vpn_profiles();
     if vpn_expected && !crate::vpn_netd::applied_snapshot_path().is_file() {
         log::info!("runtime adoption: VPN profiles are expected but vpn_netd/applied.json is missing");
         return false;
@@ -397,11 +415,20 @@ fn enabled_runtime_processes_look_complete() -> bool {
     require_profile_program!("amneziawg", r.amneziawg.count);
     require_profile_program!("tun2socks", r.tun2socks.count);
     require_profile_program!("mihomo", r.mihomo.count);
+    require_profile_program!("mieru", r.mieru.count);
 
     if myvpn::has_enabled_profiles() {
         expected_any = true;
         if !vpn_netd_has_applied_owner("myvpn") {
             log::info!("runtime adoption: enabled myvpn profiles exist but vpn_netd snapshot has no myvpn owner");
+            return false;
+        }
+    }
+
+    if singbox::has_enabled_vpn_profiles() {
+        expected_any = true;
+        if !vpn_netd_has_applied_owner("singbox") {
+            log::info!("runtime adoption: enabled sing-box VPN profiles exist but vpn_netd snapshot has no singbox owner");
             return false;
         }
     }
@@ -647,14 +674,28 @@ fn validate_start_plan_best_effort() {
         had_warning = true;
         log::warn!("start plan warning: mihomo: {e:#}");
     }
-    if let Err(e) = validate_vpn_tun_claims_unique() {
+    if let Err(e) = mieru::validate_start_plan() {
         had_warning = true;
-        log::warn!("start plan warning: vpn tun claims: {e:#}");
+        log::warn!("start plan warning: mieru: {e:#}");
+    }
+    if let Err(e) = singbox::validate_start_plan() {
+        had_warning = true;
+        log::warn!("start plan warning: sing-box: {e:#}");
+    }
+    if let Err(e) = validate_vpn_claims_unique() {
+        had_warning = true;
+        log::warn!("start plan warning: vpn claims: {e:#}");
     }
 
     if had_warning {
         mark_start_partial();
     }
+}
+
+fn validate_vpn_claims_unique() -> Result<()> {
+    validate_vpn_tun_claims_unique()?;
+    validate_vpn_cidr_claims_unique()?;
+    Ok(())
 }
 
 fn validate_vpn_tun_claims_unique() -> Result<()> {
@@ -665,12 +706,71 @@ fn validate_vpn_tun_claims_unique() -> Result<()> {
         .chain(tun2socks::enabled_tun_claims().into_iter())
         .chain(myvpn::enabled_tun_claims().into_iter())
         .chain(mihomo::enabled_tun_claims().into_iter())
+        .chain(mieru::enabled_tun_claims().into_iter())
+        .chain(singbox::enabled_tun_claims().into_iter())
     {
         if let Some(other) = seen.insert(tun.clone(), label.clone()) {
             anyhow::bail!("VPN tun conflict: tun {tun} is used by {other} and {label}");
         }
     }
     Ok(())
+}
+
+fn validate_vpn_cidr_claims_unique() -> Result<()> {
+    let claims = amneziawg::enabled_cidr_claims()
+        .into_iter()
+        .chain(tun2socks::enabled_cidr_claims().into_iter())
+        .chain(myvpn::enabled_cidr_claims().into_iter())
+        .chain(mihomo::enabled_cidr_claims().into_iter())
+        .chain(mieru::enabled_cidr_claims().into_iter())
+        .chain(singbox::enabled_cidr_claims().into_iter())
+        .collect::<Vec<_>>();
+    for i in 0..claims.len() {
+        for j in (i + 1)..claims.len() {
+            if cidrs_overlap(&claims[i].1, &claims[j].1)? {
+                anyhow::bail!(
+                    "VPN CIDR conflict: {} {} overlaps with {} {}",
+                    claims[i].0,
+                    claims[i].1,
+                    claims[j].0,
+                    claims[j].1
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn cidrs_overlap(a: &str, b: &str) -> Result<bool> {
+    let (an, am) = cidr_network_mask(a)?;
+    let (bn, bm) = cidr_network_mask(b)?;
+    let a_start = an;
+    let a_end = an | !am;
+    let b_start = bn;
+    let b_end = bn | !bm;
+    Ok(a_start <= b_end && b_start <= a_end)
+}
+
+fn cidr_network_mask(cidr: &str) -> Result<(u32, u32)> {
+    let (ip, prefix_s) = cidr.split_once('/').ok_or_else(|| anyhow::anyhow!("bad cidr {cidr}"))?;
+    let prefix = prefix_s.parse::<u8>().with_context(|| format!("bad cidr prefix {cidr}"))?;
+    if prefix > 32 {
+        anyhow::bail!("bad cidr prefix {cidr}");
+    }
+    let addr = ipv4_to_u32(ip).ok_or_else(|| anyhow::anyhow!("bad cidr ip {cidr}"))?;
+    let mask = if prefix == 0 { 0 } else { u32::MAX << (32 - prefix) };
+    Ok((addr & mask, mask))
+}
+
+fn ipv4_to_u32(s: &str) -> Option<u32> {
+    let mut out = 0u32;
+    let mut count = 0usize;
+    for part in s.split('.') {
+        let n = part.parse::<u8>().ok()? as u32;
+        out = (out << 8) | n;
+        count += 1;
+    }
+    if count == 4 { Some(out) } else { None }
 }
 
 fn any_main_service_running() -> bool {
@@ -683,6 +783,7 @@ fn any_main_service_running() -> bool {
     let tun2socks_expected = tun2socks::has_enabled_profiles();
     let myvpn_expected = myvpn::has_enabled_profiles();
     let mihomo_expected = mihomo::has_enabled_profiles();
+    let singbox_vpn_expected = singbox::has_enabled_vpn_profiles();
 
     // Give processes a short moment to initialize; some binaries may exit immediately on bad args.
     for _ in 0..20 {
@@ -703,6 +804,8 @@ fn any_main_service_running() -> bool {
                 || (tun2socks_expected && tun2socks::is_running())
                 || (myvpn_expected && vpn_netd_has_applied_owner("myvpn"))
                 || (mihomo_expected && mihomo::is_running())
+                || (mieru::has_enabled_profiles() && mieru::is_running())
+                || (singbox_vpn_expected && singbox::is_running() && vpn_netd_has_applied_owner("singbox"))
             {
                 return true;
             }

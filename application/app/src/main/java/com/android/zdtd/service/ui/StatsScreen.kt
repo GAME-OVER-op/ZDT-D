@@ -106,10 +106,12 @@ fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
         ProcRow("OpenVPN", showRep?.openVpn ?: ApiModels.ProcAgg(), 9),
         ProcRow("tun2socks", showRep?.tun2Socks ?: ApiModels.ProcAgg(), 10),
         ProcRow("Mihomo", showRep?.mihomo ?: ApiModels.ProcAgg(), 11),
-        ProcRow("AmneziaWG", showRep?.amneziaWg ?: ApiModels.ProcAgg(), 12),
-        ProcRow("opera-proxy", showRep?.opera?.opera ?: ApiModels.ProcAgg(), 13),
-        ProcRow("t2s", showRep?.t2s ?: ApiModels.ProcAgg(), 14),
-        ProcRow("opera-ByeDPI", showRep?.opera?.byedpi ?: ApiModels.ProcAgg(), 15),
+        ProcRow("mieru", showRep?.mieru ?: ApiModels.ProcAgg(), 12),
+        ProcRow("tun2proxy", showRep?.tun2Proxy ?: ApiModels.ProcAgg(), 13),
+        ProcRow("AmneziaWG", showRep?.amneziaWg ?: ApiModels.ProcAgg(), 14),
+        ProcRow("opera-proxy", showRep?.opera?.opera ?: ApiModels.ProcAgg(), 15),
+        ProcRow("t2s", showRep?.t2s ?: ApiModels.ProcAgg(), 16),
+        ProcRow("opera-ByeDPI", showRep?.opera?.byedpi ?: ApiModels.ProcAgg(), 17),
       ).sortedWith(
         compareByDescending<ProcRow> { it.agg.count > 0 }
           .thenByDescending { it.agg.cpuPercent }
@@ -124,8 +126,9 @@ fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
   val cpuTitle = stringResource(R.string.stats_cpu_title)
   val isNarrowWidth = rememberIsNarrowWidth()
   val isShortHeight = rememberIsShortHeight()
-  val compactScreen = isNarrowWidth || isShortHeight
-  val listPadding = if (compactScreen) 12.dp else 16.dp
+  val landscapeControl = rememberUseLandscapeControlLayout()
+  val compactScreen = isNarrowWidth || (isShortHeight && !landscapeControl)
+  val listPadding = if (compactScreen) 12.dp else if (landscapeControl) 14.dp else 16.dp
   val sectionGap = if (compactScreen) 10.dp else 12.dp
   val cpuUnknown = stringResource(R.string.stats_unknown_cpu)
   val memTitle = stringResource(R.string.stats_memory_title)
@@ -134,26 +137,27 @@ fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
   val runningLower = stringResource(R.string.stats_running_lower)
   val stoppedLower = stringResource(R.string.stats_stopped_lower)
 
-  LazyColumn(
-    modifier = Modifier.fillMaxSize(),
-    state = listState,
-    contentPadding = PaddingValues(horizontal = listPadding, vertical = if (compactScreen) 12.dp else 16.dp),
-    verticalArrangement = Arrangement.spacedBy(sectionGap),
-  ) {
-    item {
-      StatusCard(
-        daemonOnline = daemonOnline,
-        runningServices = runningCount,
-        compact = compactScreen,
-      )
-    }
-
-    item {
-      if (compactScreen) {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+  if (landscapeControl) {
+    LazyColumn(
+      modifier = Modifier.fillMaxSize(),
+      state = listState,
+      contentPadding = PaddingValues(horizontal = listPadding, vertical = 12.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      item(key = "dashboard") {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          StatusCard(
+            modifier = Modifier.weight(1f),
+            daemonOnline = daemonOnline,
+            runningServices = runningCount,
+            compact = false,
+          )
           MetricCard(
-            modifier = Modifier.fillMaxWidth(),
-            compact = compactScreen,
+            modifier = Modifier.weight(1f),
+            compact = false,
             icon = { Icon(Icons.Outlined.Speed, contentDescription = null) },
             title = cpuTitle,
             subtitle = device.cpuName?.takeIf { it.isNotBlank() } ?: cpuUnknown,
@@ -163,42 +167,9 @@ fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
               stringResource(R.string.stats_clamped_from, fmtPct(cpuTotalRaw))
             } else null,
           )
-
-          MetricCard(
-            modifier = Modifier.fillMaxWidth(),
-            compact = compactScreen,
-            icon = { Icon(Icons.Outlined.Memory, contentDescription = null) },
-            title = memTitle,
-            subtitle = if (totalRamMb != null) {
-              stringResource(R.string.stats_total_fmt, mbToHuman(totalRamMb))
-            } else {
-              stringResource(R.string.stats_total_unknown)
-            },
-            value = mbToHuman(usedMb),
-            progress = usedFrac,
-            footnote = if (totalRamMb != null) {
-              stringResource(R.string.stats_free_fmt, mbToHuman(freeMb ?: 0.0))
-            } else null,
-          )
-        }
-      } else {
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
           MetricCard(
             modifier = Modifier.weight(1f),
-            compact = compactScreen,
-            icon = { Icon(Icons.Outlined.Speed, contentDescription = null) },
-            title = cpuTitle,
-            subtitle = device.cpuName?.takeIf { it.isNotBlank() } ?: cpuUnknown,
-            value = "${fmtPct(cpuTotalShown)}%",
-            progress = cpuProgress,
-            footnote = if (cpuTotalRaw > 100.0) {
-              stringResource(R.string.stats_clamped_from, fmtPct(cpuTotalRaw))
-            } else null,
-          )
-
-          MetricCard(
-            modifier = Modifier.weight(1f),
-            compact = compactScreen,
+            compact = false,
             icon = { Icon(Icons.Outlined.Memory, contentDescription = null) },
             title = memTitle,
             subtitle = if (totalRamMb != null) {
@@ -214,47 +185,176 @@ fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
           )
         }
       }
-    }
 
-    item {
-      SectionHeader(
-        title = stringResource(R.string.stats_processes_title),
-        trailing = if (daemonOnline) {
-          stringResource(R.string.stats_running_count, runningCount)
+      item(key = "process_header") {
+        SectionHeader(
+          title = stringResource(R.string.stats_processes_title),
+          trailing = if (daemonOnline) {
+            stringResource(R.string.stats_running_count, runningCount)
+          } else {
+            stringResource(R.string.stats_offline)
+          },
+          compact = false,
+        )
+      }
+
+      items(
+        items = rows.chunked(2),
+        key = { row -> row.joinToString("|") { it.name } },
+        contentType = { "proc_row" },
+      ) { row ->
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          row.forEach { proc ->
+            ProcCard(
+              modifier = Modifier.weight(1f),
+              name = proc.name,
+              agg = proc.agg,
+              totalRamMb = totalRamMb,
+              cpuLabel = cpuLabel,
+              ramLabel = ramLabel,
+              runningLower = runningLower,
+              stoppedLower = stoppedLower,
+              compact = false,
+            )
+          }
+          if (row.size == 1) Spacer(Modifier.weight(1f))
+        }
+      }
+
+      item { Spacer(Modifier.height(12.dp)) }
+    }
+  } else {
+    LazyColumn(
+      modifier = Modifier.fillMaxSize(),
+      state = listState,
+      contentPadding = PaddingValues(horizontal = listPadding, vertical = if (compactScreen) 12.dp else 16.dp),
+      verticalArrangement = Arrangement.spacedBy(sectionGap),
+    ) {
+      item {
+        StatusCard(
+          daemonOnline = daemonOnline,
+          runningServices = runningCount,
+          compact = compactScreen,
+        )
+      }
+
+      item {
+        if (compactScreen) {
+          Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            MetricCard(
+              modifier = Modifier.fillMaxWidth(),
+              compact = compactScreen,
+              icon = { Icon(Icons.Outlined.Speed, contentDescription = null) },
+              title = cpuTitle,
+              subtitle = device.cpuName?.takeIf { it.isNotBlank() } ?: cpuUnknown,
+              value = "${fmtPct(cpuTotalShown)}%",
+              progress = cpuProgress,
+              footnote = if (cpuTotalRaw > 100.0) {
+                stringResource(R.string.stats_clamped_from, fmtPct(cpuTotalRaw))
+              } else null,
+            )
+
+            MetricCard(
+              modifier = Modifier.fillMaxWidth(),
+              compact = compactScreen,
+              icon = { Icon(Icons.Outlined.Memory, contentDescription = null) },
+              title = memTitle,
+              subtitle = if (totalRamMb != null) {
+                stringResource(R.string.stats_total_fmt, mbToHuman(totalRamMb))
+              } else {
+                stringResource(R.string.stats_total_unknown)
+              },
+              value = mbToHuman(usedMb),
+              progress = usedFrac,
+              footnote = if (totalRamMb != null) {
+                stringResource(R.string.stats_free_fmt, mbToHuman(freeMb ?: 0.0))
+              } else null,
+            )
+          }
         } else {
-          stringResource(R.string.stats_offline)
-        },
-        compact = compactScreen,
-      )
+          Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+            MetricCard(
+              modifier = Modifier.weight(1f),
+              compact = compactScreen,
+              icon = { Icon(Icons.Outlined.Speed, contentDescription = null) },
+              title = cpuTitle,
+              subtitle = device.cpuName?.takeIf { it.isNotBlank() } ?: cpuUnknown,
+              value = "${fmtPct(cpuTotalShown)}%",
+              progress = cpuProgress,
+              footnote = if (cpuTotalRaw > 100.0) {
+                stringResource(R.string.stats_clamped_from, fmtPct(cpuTotalRaw))
+              } else null,
+            )
+
+            MetricCard(
+              modifier = Modifier.weight(1f),
+              compact = compactScreen,
+              icon = { Icon(Icons.Outlined.Memory, contentDescription = null) },
+              title = memTitle,
+              subtitle = if (totalRamMb != null) {
+                stringResource(R.string.stats_total_fmt, mbToHuman(totalRamMb))
+              } else {
+                stringResource(R.string.stats_total_unknown)
+              },
+              value = mbToHuman(usedMb),
+              progress = usedFrac,
+              footnote = if (totalRamMb != null) {
+                stringResource(R.string.stats_free_fmt, mbToHuman(freeMb ?: 0.0))
+              } else null,
+            )
+          }
+        }
+      }
+
+      item {
+        SectionHeader(
+          title = stringResource(R.string.stats_processes_title),
+          trailing = if (daemonOnline) {
+            stringResource(R.string.stats_running_count, runningCount)
+          } else {
+            stringResource(R.string.stats_offline)
+          },
+          compact = compactScreen,
+        )
+      }
+
+      val enablePlacementAnimations = !listState.isScrollInProgress
+
+      items(
+        items = rows,
+        key = { it.name },
+        contentType = { "proc" },
+      ) { row ->
+        ProcCard(
+          modifier = if (enablePlacementAnimations) Modifier.animateItemPlacement() else Modifier,
+          name = row.name,
+          agg = row.agg,
+          totalRamMb = totalRamMb,
+          cpuLabel = cpuLabel,
+          ramLabel = ramLabel,
+          runningLower = runningLower,
+          stoppedLower = stoppedLower,
+          compact = compactScreen,
+        )
+      }
+
+      item { Spacer(Modifier.height(12.dp)) }
     }
-
-    val enablePlacementAnimations = !listState.isScrollInProgress
-
-    items(
-      items = rows,
-      key = { it.name },
-      contentType = { "proc" },
-    ) { row ->
-      ProcCard(
-        modifier = if (enablePlacementAnimations) Modifier.animateItemPlacement() else Modifier,
-        name = row.name,
-        agg = row.agg,
-        totalRamMb = totalRamMb,
-        cpuLabel = cpuLabel,
-        ramLabel = ramLabel,
-        runningLower = runningLower,
-        stoppedLower = stoppedLower,
-        compact = compactScreen,
-      )
-    }
-
-    item { Spacer(Modifier.height(12.dp)) }
   }
 }
 
 @Composable
-private fun StatusCard(daemonOnline: Boolean, runningServices: Int, compact: Boolean) {
+private fun StatusCard(
+  modifier: Modifier = Modifier,
+  daemonOnline: Boolean,
+  runningServices: Int,
+  compact: Boolean,
+) {
   Surface(
+    modifier = modifier,
     shape = RoundedCornerShape(24.dp),
     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
     tonalElevation = 0.dp,

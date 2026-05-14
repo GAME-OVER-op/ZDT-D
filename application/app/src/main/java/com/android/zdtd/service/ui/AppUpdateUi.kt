@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -202,12 +204,160 @@ fun AppUpdateSettings(
   resettingModuleIdentifier: Boolean,
   onResetModuleIdentifier: () -> Unit,
   onDeleteModule: () -> Unit,
+  landscapeColumns: Boolean = false,
 ) {
   val compactWidth = rememberIsCompactWidth()
   var showHotspotWarning by remember { mutableStateOf(false) }
   var showResetIdentifierConfirm by remember { mutableStateOf(false) }
   var showProxyInfoConfigure by remember { mutableStateOf(false) }
   var showBlockedQuicConfigure by remember { mutableStateOf(false) }
+  if (landscapeColumns) {
+    Column(
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(16.dp),
+    ) {
+      Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+      Spacer(Modifier.height(12.dp))
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .weight(1f),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Column(
+          modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .verticalScroll(rememberScrollState()),
+          verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+          SettingsSwitchSection(
+            title = stringResource(R.string.app_update_check_title),
+            body = stringResource(R.string.app_update_check_body),
+            checked = enabled,
+            onCheckedChange = onToggle,
+          )
+          OutlinedButton(onClick = onCheckNow, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.app_update_check_now))
+          }
+          SettingsSwitchSection(
+            title = stringResource(R.string.settings_notifications_title),
+            body = stringResource(R.string.settings_notifications_body),
+            checked = daemonNotificationEnabled,
+            onCheckedChange = onToggleDaemonNotification,
+          )
+          ProtectorModeSection(
+            selectedMode = protectorMode,
+            onModeSelected = onProtectorModeChange,
+          )
+          HotspotT2sSection(
+            enabled = hotspotT2sEnabled,
+            target = hotspotT2sTarget,
+            singboxProfile = hotspotT2sSingboxProfile,
+            wireproxyProfile = hotspotT2sWireproxyProfile,
+            singboxProfiles = hotspotSingboxProfiles,
+            wireproxyProfiles = hotspotWireproxyProfiles,
+            compactWidth = false,
+            onEnabledChange = { checked ->
+              if (checked && !hotspotT2sEnabled) {
+                showHotspotWarning = true
+              } else {
+                onHotspotT2sEnabledChange(checked)
+              }
+            },
+            onTargetChange = onHotspotT2sTargetChange,
+            onSingboxProfileChange = onHotspotT2sSingboxProfileChange,
+            onWireproxyProfileChange = onHotspotT2sWireproxyProfileChange,
+          )
+        }
+
+        Column(
+          modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .verticalScroll(rememberScrollState()),
+          verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+          ProxyInfoSectionCard(
+            enabled = proxyInfoEnabled,
+            busy = proxyInfoBusy,
+            onEnabledChange = onProxyInfoEnabledChange,
+            onConfigure = { showProxyInfoConfigure = true },
+          )
+          BlockedQuicSectionCard(
+            enabled = blockedQuicEnabled,
+            busy = blockedQuicBusy,
+            onEnabledChange = onBlockedQuicEnabledChange,
+            onConfigure = { showBlockedQuicConfigure = true },
+          )
+          SettingsLanguageSection(
+            languageMode = languageMode,
+            compactWidth = false,
+            onLanguageModeChange = onLanguageModeChange,
+          )
+          Column(Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.settings_reset_identifier_title), style = MaterialTheme.typography.bodyLarge)
+            Text(
+              stringResource(R.string.settings_reset_identifier_body),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+            )
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(
+              onClick = { showResetIdentifierConfirm = true },
+              modifier = Modifier.fillMaxWidth(),
+              enabled = !resettingModuleIdentifier,
+            ) {
+              Text(stringResource(R.string.settings_reset_identifier_action))
+            }
+          }
+          Column(Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.settings_delete_module_title), style = MaterialTheme.typography.bodyLarge)
+            Text(
+              stringResource(R.string.settings_delete_module_body),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+            )
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(onClick = onDeleteModule, modifier = Modifier.fillMaxWidth()) {
+              Text(stringResource(R.string.settings_delete_module_action))
+            }
+          }
+        }
+      }
+    }
+
+    SettingsDialogsHost(
+      showHotspotWarning = showHotspotWarning,
+      onDismissHotspotWarning = { showHotspotWarning = false },
+      onAcceptHotspotWarning = {
+        showHotspotWarning = false
+        onHotspotT2sEnabledChange(true)
+      },
+      showResetIdentifierConfirm = showResetIdentifierConfirm,
+      onDismissResetIdentifierConfirm = { showResetIdentifierConfirm = false },
+      onConfirmResetIdentifier = {
+        showResetIdentifierConfirm = false
+        onResetModuleIdentifier()
+      },
+      resettingModuleIdentifier = resettingModuleIdentifier,
+      showProxyInfoConfigure = showProxyInfoConfigure,
+      proxyInfoAppsContent = proxyInfoAppsContent,
+      proxyInfoBusy = proxyInfoBusy,
+      onDismissProxyInfoConfigure = { if (!proxyInfoBusy) showProxyInfoConfigure = false },
+      onLoadAppAssignments = onLoadAppAssignments,
+      onProxyInfoAppsSave = onProxyInfoAppsSave,
+      onProxyInfoAppsSaveRemovingConflicts = onProxyInfoAppsSaveRemovingConflicts,
+      showBlockedQuicConfigure = showBlockedQuicConfigure,
+      blockedQuicAppsContent = blockedQuicAppsContent,
+      blockedQuicBusy = blockedQuicBusy,
+      onDismissBlockedQuicConfigure = { if (!blockedQuicBusy) showBlockedQuicConfigure = false },
+      onBlockedQuicAppsSave = onBlockedQuicAppsSave,
+    )
+    return
+  }
+
   // BottomSheet content may not have enough height on small screens.
   // Make it scrollable so the Language section is always reachable.
   Column(
@@ -486,6 +636,176 @@ fun AppUpdateSettings(
       }
     }
 
+  }
+}
+
+
+@Composable
+private fun SettingsSwitchSection(
+  title: String,
+  body: String,
+  checked: Boolean,
+  onCheckedChange: (Boolean) -> Unit,
+) {
+  Row(
+    Modifier.fillMaxWidth(),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.SpaceBetween,
+  ) {
+    Column(Modifier.weight(1f).padding(end = 12.dp)) {
+      Text(title, style = MaterialTheme.typography.bodyLarge)
+      Text(
+        body,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+      )
+    }
+    Switch(checked = checked, onCheckedChange = onCheckedChange)
+  }
+}
+
+@Composable
+private fun SettingsLanguageSection(
+  languageMode: String,
+  compactWidth: Boolean,
+  onLanguageModeChange: (String) -> Unit,
+) {
+  Column(Modifier.fillMaxWidth()) {
+    Text(stringResource(R.string.settings_language_title), style = MaterialTheme.typography.bodyLarge)
+    Text(
+      stringResource(R.string.settings_language_body),
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+    )
+
+    Spacer(Modifier.height(10.dp))
+
+    val selected = languageMode.lowercase().ifBlank { "auto" }
+    val isAuto = selected == "auto"
+    val isRu = selected == "ru"
+    val isEn = selected == "en"
+
+    if (compactWidth) {
+      Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (isAuto) {
+          Button(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_auto)) }
+        } else {
+          OutlinedButton(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_auto)) }
+        }
+        if (isRu) {
+          Button(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_ru)) }
+        } else {
+          OutlinedButton(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_ru)) }
+        }
+        if (isEn) {
+          Button(onClick = { onLanguageModeChange("en") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_en)) }
+        } else {
+          OutlinedButton(onClick = { onLanguageModeChange("en") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_en)) }
+        }
+      }
+    } else {
+      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (isAuto) {
+          Button(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_auto)) }
+        } else {
+          OutlinedButton(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_auto)) }
+        }
+
+        if (isRu) {
+          Button(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_ru)) }
+        } else {
+          OutlinedButton(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_ru)) }
+        }
+
+        if (isEn) {
+          Button(onClick = { onLanguageModeChange("en") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_en)) }
+        } else {
+          OutlinedButton(onClick = { onLanguageModeChange("en") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_en)) }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun SettingsDialogsHost(
+  showHotspotWarning: Boolean,
+  onDismissHotspotWarning: () -> Unit,
+  onAcceptHotspotWarning: () -> Unit,
+  showResetIdentifierConfirm: Boolean,
+  onDismissResetIdentifierConfirm: () -> Unit,
+  onConfirmResetIdentifier: () -> Unit,
+  resettingModuleIdentifier: Boolean,
+  showProxyInfoConfigure: Boolean,
+  proxyInfoAppsContent: String,
+  proxyInfoBusy: Boolean,
+  onDismissProxyInfoConfigure: () -> Unit,
+  onLoadAppAssignments: (((com.android.zdtd.service.api.ApiModels.AppAssignmentsState?) -> Unit) -> Unit),
+  onProxyInfoAppsSave: (String, (Boolean) -> Unit) -> Unit,
+  onProxyInfoAppsSaveRemovingConflicts: (String, (Boolean) -> Unit) -> Unit,
+  showBlockedQuicConfigure: Boolean,
+  blockedQuicAppsContent: String,
+  blockedQuicBusy: Boolean,
+  onDismissBlockedQuicConfigure: () -> Unit,
+  onBlockedQuicAppsSave: (String, (Boolean) -> Unit) -> Unit,
+) {
+  if (showHotspotWarning) {
+    AlertDialog(
+      onDismissRequest = onDismissHotspotWarning,
+      title = { Text(stringResource(R.string.settings_hotspot_warning_title)) },
+      text = { Text(stringResource(R.string.settings_hotspot_warning_body)) },
+      dismissButton = {
+        OutlinedButton(onClick = onDismissHotspotWarning) {
+          Text(stringResource(R.string.common_cancel))
+        }
+      },
+      confirmButton = {
+        Button(onClick = onAcceptHotspotWarning) {
+          Text(stringResource(R.string.settings_hotspot_warning_accept))
+        }
+      },
+    )
+  }
+
+  if (showResetIdentifierConfirm) {
+    AlertDialog(
+      onDismissRequest = onDismissResetIdentifierConfirm,
+      title = { Text(stringResource(R.string.settings_reset_identifier_title)) },
+      text = { Text(stringResource(R.string.settings_reset_identifier_confirm_body)) },
+      dismissButton = {
+        OutlinedButton(onClick = onDismissResetIdentifierConfirm) {
+          Text(stringResource(R.string.common_cancel))
+        }
+      },
+      confirmButton = {
+        Button(onClick = onConfirmResetIdentifier) {
+          Text(stringResource(R.string.settings_reset_identifier_confirm_action))
+        }
+      },
+    )
+  }
+
+  ModuleIdentifierResetProgressDialog(visible = resettingModuleIdentifier)
+
+  if (showProxyInfoConfigure) {
+    ProxyInfoAppsDialog(
+      initialContent = proxyInfoAppsContent,
+      saving = proxyInfoBusy,
+      onDismiss = onDismissProxyInfoConfigure,
+      onLoadAssignments = onLoadAppAssignments,
+      onSave = onProxyInfoAppsSave,
+      onSaveRemovingConflicts = onProxyInfoAppsSaveRemovingConflicts,
+    )
+  }
+
+  if (showBlockedQuicConfigure) {
+    BlockedQuicAppsDialog(
+      initialContent = blockedQuicAppsContent,
+      saving = blockedQuicBusy,
+      onDismiss = onDismissBlockedQuicConfigure,
+      onLoadAssignments = onLoadAppAssignments,
+      onSave = onBlockedQuicAppsSave,
+    )
   }
 }
 

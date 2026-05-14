@@ -17,3 +17,4 @@ pub mod amneziawg;
 pub mod tun2socks;
 pub mod myvpn;
 pub mod mihomo;
+pub mod mieru;

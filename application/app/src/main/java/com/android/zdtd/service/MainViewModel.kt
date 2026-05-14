@@ -41,6 +41,9 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
+import java.util.zip.GZIPInputStream
+import java.nio.charset.StandardCharsets
 import java.util.Locale
 import java.net.URLEncoder
 import java.time.LocalDateTime
@@ -202,7 +205,7 @@ data class BackupUiState(
 )
 
 
-// ----- Program updates (zapret / zapret2) -----
+// ----- Program updates (zapret / zapret2 / mihomo / mieru) -----
 
 data class ProgramReleaseUi(
   val version: String,
@@ -235,6 +238,8 @@ data class ProgramUpdatesUiState(
   val stoppingService: Boolean = false,
   val zapret: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_zapret_title),
   val zapret2: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_zapret2_title),
+  val mihomo: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_mihomo_title),
+  val mieru: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_mieru_title),
 )
 
 sealed class BackupEvent {
@@ -295,7 +300,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   private val _backupEvents = MutableSharedFlow<BackupEvent>(extraBufferCapacity = 8)
   val backupEvents: SharedFlow<BackupEvent> = _backupEvents.asSharedFlow()
 
-  // ----- Program updates (zapret / zapret2) -----
+  // ----- Program updates (zapret / zapret2 / mihomo / mieru) -----
   private val _programUpdates = MutableStateFlow(ProgramUpdatesUiState())
   val programUpdates: StateFlow<ProgramUpdatesUiState> = _programUpdates.asStateFlow()
 
@@ -2192,7 +2197,7 @@ if (mf.isNotBlank()) {
   }
 
 
-  // ----- Program updates (zapret / zapret2) -----
+  // ----- Program updates (zapret / zapret2 / mihomo / mieru) -----
 
   override fun resetProgramUpdatesUi() {
     _programUpdates.update { st ->
@@ -2212,6 +2217,32 @@ if (mf.isNotBlank()) {
           releasesError = null,
         ),
         zapret2 = st.zapret2.copy(
+          checking = false,
+          updating = false,
+          progressPercent = 0,
+          statusText = "",
+          errorText = null,
+          warningText = null,
+          selectedVersion = null,
+          selectedDownloadUrl = null,
+          releases = emptyList(),
+          releasesLoading = false,
+          releasesError = null,
+        ),
+        mihomo = st.mihomo.copy(
+          checking = false,
+          updating = false,
+          progressPercent = 0,
+          statusText = "",
+          errorText = null,
+          warningText = null,
+          selectedVersion = null,
+          selectedDownloadUrl = null,
+          releases = emptyList(),
+          releasesLoading = false,
+          releasesError = null,
+        ),
+        mieru = st.mieru.copy(
           checking = false,
           updating = false,
           progressPercent = 0,
@@ -2249,6 +2280,8 @@ if (mf.isNotBlank()) {
             st.copy(
               zapret = st.zapret.copy(errorText = str(R.string.program_updates_err_service_running)),
               zapret2 = st.zapret2.copy(errorText = str(R.string.program_updates_err_service_running)),
+              mihomo = st.mihomo.copy(errorText = str(R.string.program_updates_err_service_running)),
+              mieru = st.mieru.copy(errorText = str(R.string.program_updates_err_service_running)),
             )
           }
           return@launchIO
@@ -2259,6 +2292,8 @@ if (mf.isNotBlank()) {
         // Auto-check both after OFF + restore grace period.
         checkZapretInternal()
         checkZapret2Internal()
+        checkMihomoInternal()
+        checkMieruInternal()
       } finally {
         _programUpdates.update { it.copy(stoppingService = false) }
       }
@@ -2275,18 +2310,29 @@ if (mf.isNotBlank()) {
     launchIO { loadReleasesInternal(which = "zapret2") }
   }
 
+  override fun loadMihomoReleases() {
+    if (_rootState.value != RootState.GRANTED) return
+    launchIO { loadReleasesInternal(which = "mihomo") }
+  }
+
+  override fun loadMieruReleases() {
+    if (_rootState.value != RootState.GRANTED) return
+    launchIO { loadReleasesInternal(which = "mieru") }
+  }
+
   override fun selectZapretRelease(version: String?, downloadUrl: String?) {
     _programUpdates.update { st ->
       val installed = st.zapret.installedVersion
       val latest = st.zapret.latestVersion
       val target = version ?: latest
-      val updAvail = if (!installed.isNullOrBlank() && !target.isNullOrBlank()) compareVersions(installed, target) != 0 else false
+      val updAvail = isUpdateAvailableWithUnknownInstalled(installed, target)
       val warn = if (!target.isNullOrBlank()) buildDowngradeWarning(program = "zapret", targetVersion = target) else null
+      val detectWarn = if (installed.isNullOrBlank() && !target.isNullOrBlank()) str(R.string.program_updates_warn_installed_unknown) else null
       st.copy(
         zapret = st.zapret.copy(
           selectedVersion = version,
           selectedDownloadUrl = downloadUrl,
-          warningText = warn,
+          warningText = warn ?: detectWarn,
           updateAvailable = updAvail,
         )
       )
@@ -2298,13 +2344,50 @@ if (mf.isNotBlank()) {
       val installed = st.zapret2.installedVersion
       val latest = st.zapret2.latestVersion
       val target = version ?: latest
-      val updAvail = if (!installed.isNullOrBlank() && !target.isNullOrBlank()) compareVersions(installed, target) != 0 else false
+      val updAvail = isUpdateAvailableWithUnknownInstalled(installed, target)
       val warn = if (!target.isNullOrBlank()) buildDowngradeWarning(program = "zapret2", targetVersion = target) else null
+      val detectWarn = if (installed.isNullOrBlank() && !target.isNullOrBlank()) str(R.string.program_updates_warn_installed_unknown) else null
       st.copy(
         zapret2 = st.zapret2.copy(
           selectedVersion = version,
           selectedDownloadUrl = downloadUrl,
-          warningText = warn,
+          warningText = warn ?: detectWarn,
+          updateAvailable = updAvail,
+        )
+      )
+    }
+  }
+
+  override fun selectMihomoRelease(version: String?, downloadUrl: String?) {
+    _programUpdates.update { st ->
+      val installed = st.mihomo.installedVersion
+      val latest = st.mihomo.latestVersion
+      val target = version ?: latest
+      val updAvail = isUpdateAvailableWithUnknownInstalled(installed, target)
+      val detectWarn = if (installed.isNullOrBlank() && !target.isNullOrBlank()) str(R.string.program_updates_warn_installed_unknown) else null
+      st.copy(
+        mihomo = st.mihomo.copy(
+          selectedVersion = version,
+          selectedDownloadUrl = downloadUrl,
+          warningText = detectWarn,
+          updateAvailable = updAvail,
+        )
+      )
+    }
+  }
+
+  override fun selectMieruRelease(version: String?, downloadUrl: String?) {
+    _programUpdates.update { st ->
+      val installed = st.mieru.installedVersion
+      val latest = st.mieru.latestVersion
+      val target = version ?: latest
+      val updAvail = isUpdateAvailableWithUnknownInstalled(installed, target)
+      val detectWarn = if (installed.isNullOrBlank() && !target.isNullOrBlank()) str(R.string.program_updates_warn_installed_unknown) else null
+      st.copy(
+        mieru = st.mieru.copy(
+          selectedVersion = version,
+          selectedDownloadUrl = downloadUrl,
+          warningText = detectWarn,
           updateAvailable = updAvail,
         )
       )
@@ -2329,6 +2412,26 @@ if (mf.isNotBlank()) {
   override fun updateZapret2Now() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { updateZapret2Internal() }
+  }
+
+  override fun checkMihomoNow() {
+    if (_rootState.value != RootState.GRANTED) return
+    launchIO { checkMihomoInternal() }
+  }
+
+  override fun updateMihomoNow() {
+    if (_rootState.value != RootState.GRANTED) return
+    launchIO { updateMihomoInternal() }
+  }
+
+  override fun checkMieruNow() {
+    if (_rootState.value != RootState.GRANTED) return
+    launchIO { checkMieruInternal() }
+  }
+
+  override fun updateMieruNow() {
+    if (_rootState.value != RootState.GRANTED) return
+    launchIO { updateMieruInternal() }
   }
 
   private fun requireServiceStoppedForUpdates(): Boolean {
@@ -2358,13 +2461,6 @@ if (mf.isNotBlank()) {
         )
       )
     }.getOrNull()
-    if (installed.isNullOrBlank()) {
-      _programUpdates.update { st ->
-        st.copy(zapret = st.zapret.copy(checking = false, installedVersion = null, errorText = str(R.string.program_updates_err_detect_installed), statusText = ""))
-      }
-      return
-    }
-
     val latest = fetchLatestZapretAsset()
     if (latest == null) {
       _programUpdates.update { st ->
@@ -2375,8 +2471,9 @@ if (mf.isNotBlank()) {
 
     val (latestVer, latestUrl) = latest
     val targetVer = _programUpdates.value.zapret.selectedVersion ?: latestVer
-    val updAvail = compareVersions(installed, targetVer) != 0
+    val updAvail = isUpdateAvailableWithUnknownInstalled(installed, targetVer)
     val warn = buildDowngradeWarning(program = "zapret", targetVersion = targetVer)
+    val detectWarn = if (installed.isNullOrBlank()) str(R.string.program_updates_warn_installed_unknown) else null
 
     _programUpdates.update { st ->
       st.copy(
@@ -2385,7 +2482,7 @@ if (mf.isNotBlank()) {
           installedVersion = installed,
           latestVersion = latestVer,
           latestDownloadUrl = latestUrl,
-          warningText = warn,
+          warningText = warn ?: detectWarn,
           updateAvailable = updAvail,
           statusText = if (updAvail) str(R.string.prog_update_status_ready) else str(R.string.prog_update_status_already_installed),
           errorText = null,
@@ -2413,13 +2510,6 @@ if (mf.isNotBlank()) {
         )
       )
     }.getOrNull()
-    if (installed.isNullOrBlank()) {
-      _programUpdates.update { st ->
-        st.copy(zapret2 = st.zapret2.copy(checking = false, installedVersion = null, errorText = str(R.string.program_updates_err_detect_installed), statusText = ""))
-      }
-      return
-    }
-
     val latest = fetchLatestZapret2Asset()
     if (latest == null) {
       _programUpdates.update { st ->
@@ -2430,8 +2520,9 @@ if (mf.isNotBlank()) {
 
     val (latestVer, latestUrl) = latest
     val targetVer = _programUpdates.value.zapret2.selectedVersion ?: latestVer
-    val updAvail = compareVersions(installed, targetVer) != 0
+    val updAvail = isUpdateAvailableWithUnknownInstalled(installed, targetVer)
     val warn = buildDowngradeWarning(program = "zapret2", targetVersion = targetVer)
+    val detectWarn = if (installed.isNullOrBlank()) str(R.string.program_updates_warn_installed_unknown) else null
 
     _programUpdates.update { st ->
       st.copy(
@@ -2440,7 +2531,105 @@ if (mf.isNotBlank()) {
           installedVersion = installed,
           latestVersion = latestVer,
           latestDownloadUrl = latestUrl,
-          warningText = warn,
+          warningText = warn ?: detectWarn,
+          updateAvailable = updAvail,
+          statusText = if (updAvail) str(R.string.prog_update_status_ready) else str(R.string.prog_update_status_already_installed),
+          errorText = null,
+        )
+      )
+    }
+  }
+
+  private suspend fun checkMihomoInternal() {
+    if (!requireServiceStoppedForUpdates()) return
+    if (!isNetworkAvailable()) {
+      toast(str(R.string.mv_auto_002))
+      return
+    }
+
+    _programUpdates.update { st ->
+      st.copy(mihomo = st.mihomo.copy(checking = true, errorText = null, statusText = str(R.string.mv_auto_055), progressPercent = 0))
+    }
+
+    val installed = runCatching {
+      readInstalledVersionAny(
+        listOf(
+          "/data/adb/modules/ZDT-D/bin/mihomo",
+          "/data/adb/modules_update/ZDT-D/bin/mihomo",
+        )
+      )
+    }.getOrNull()
+
+    val latest = fetchLatestMihomoAsset()
+    if (latest == null) {
+      _programUpdates.update { st ->
+        st.copy(mihomo = st.mihomo.copy(checking = false, installedVersion = installed, errorText = str(R.string.program_updates_err_check_latest), statusText = ""))
+      }
+      return
+    }
+
+    val (latestVer, latestUrl) = latest
+    val targetVer = _programUpdates.value.mihomo.selectedVersion ?: latestVer
+    val updAvail = isUpdateAvailableWithUnknownInstalled(installed, targetVer)
+    val detectWarn = if (installed.isNullOrBlank()) str(R.string.program_updates_warn_installed_unknown) else null
+
+    _programUpdates.update { st ->
+      st.copy(
+        mihomo = st.mihomo.copy(
+          checking = false,
+          installedVersion = installed,
+          latestVersion = latestVer,
+          latestDownloadUrl = latestUrl,
+          warningText = detectWarn,
+          updateAvailable = updAvail,
+          statusText = if (updAvail) str(R.string.prog_update_status_ready) else str(R.string.prog_update_status_already_installed),
+          errorText = null,
+        )
+      )
+    }
+  }
+
+  private suspend fun checkMieruInternal() {
+    if (!requireServiceStoppedForUpdates()) return
+    if (!isNetworkAvailable()) {
+      toast(str(R.string.mv_auto_002))
+      return
+    }
+
+    _programUpdates.update { st ->
+      st.copy(mieru = st.mieru.copy(checking = true, errorText = null, statusText = str(R.string.mv_auto_055), progressPercent = 0))
+    }
+
+    val installed = runCatching {
+      readInstalledMieruVersion(
+        listOf(
+          "/data/adb/modules/ZDT-D/bin/mieru",
+          "/data/adb/modules_update/ZDT-D/bin/mieru",
+        )
+      )
+    }.getOrNull()
+
+    val latest = fetchLatestMieruAsset()
+    if (latest == null) {
+      _programUpdates.update { st ->
+        st.copy(mieru = st.mieru.copy(checking = false, installedVersion = installed, errorText = str(R.string.program_updates_err_check_latest), statusText = ""))
+      }
+      return
+    }
+
+    val (latestVer, latestUrl) = latest
+    val targetVer = _programUpdates.value.mieru.selectedVersion ?: latestVer
+    val updAvail = isUpdateAvailableWithUnknownInstalled(installed, targetVer)
+    val detectWarn = if (installed.isNullOrBlank()) str(R.string.program_updates_warn_installed_unknown) else null
+
+    _programUpdates.update { st ->
+      st.copy(
+        mieru = st.mieru.copy(
+          checking = false,
+          installedVersion = installed,
+          latestVersion = latestVer,
+          latestDownloadUrl = latestUrl,
+          warningText = detectWarn,
           updateAvailable = updAvail,
           statusText = if (updAvail) str(R.string.prog_update_status_ready) else str(R.string.prog_update_status_already_installed),
           errorText = null,
@@ -2507,7 +2696,7 @@ if (mf.isNotBlank()) {
         )
       )
     }.getOrNull()
-    val updAvail = if (!installed.isNullOrBlank()) compareVersions(installed, targetVer) != 0 else false
+    val updAvail = isUpdateAvailableWithUnknownInstalled(installed, targetVer)
     val warn = if (!targetVer.isNullOrBlank()) buildDowngradeWarning(program = "zapret", targetVersion = targetVer) else null
     _programUpdates.update { st ->
       st.copy(
@@ -2584,7 +2773,7 @@ if (mf.isNotBlank()) {
         )
       )
     }.getOrNull()
-    val updAvail = if (!installed.isNullOrBlank()) compareVersions(installed, targetVer) != 0 else false
+    val updAvail = isUpdateAvailableWithUnknownInstalled(installed, targetVer)
     val warn = if (!targetVer.isNullOrBlank()) buildDowngradeWarning(program = "zapret2", targetVersion = targetVer) else null
     _programUpdates.update { st ->
       st.copy(
@@ -2600,6 +2789,152 @@ if (mf.isNotBlank()) {
     }
   }
 
+  private suspend fun updateMihomoInternal() {
+    if (!requireServiceStoppedForUpdates()) return
+    val stBefore = _programUpdates.value.mihomo
+    if (stBefore.selectedVersion.isNullOrBlank() && (stBefore.latestVersion.isNullOrBlank() || stBefore.latestDownloadUrl.isNullOrBlank())) {
+      checkMihomoInternal()
+    }
+    val st0 = _programUpdates.value.mihomo
+    val url = st0.selectedDownloadUrl ?: st0.latestDownloadUrl
+    val targetVer = st0.selectedVersion ?: st0.latestVersion
+    if (url.isNullOrBlank() || targetVer.isNullOrBlank()) return
+
+    _programUpdates.update { st ->
+      st.copy(mihomo = st.mihomo.copy(updating = true, progressPercent = 0, errorText = null, statusText = str(R.string.mv_auto_056)))
+    }
+
+    val gzFile = File(ctx.cacheDir, "mihomo_target.gz")
+    val extracted = File(ctx.cacheDir, "mihomo_${System.currentTimeMillis()}")
+    runCatching { gzFile.delete() }
+    runCatching { extracted.delete() }
+
+    val okDl = downloadToFileWithProgress(url, gzFile) { pct ->
+      _programUpdates.update { st ->
+        val cur = st.mihomo
+        if (cur.progressPercent == pct) st else st.copy(mihomo = cur.copy(progressPercent = pct, statusText = str(R.string.prog_update_status_downloading_pct_fmt, pct)))
+      }
+    }
+    if (!okDl) {
+      _programUpdates.update { st -> st.copy(mihomo = st.mihomo.copy(updating = false, errorText = str(R.string.prog_update_error_download_failed), statusText = "")) }
+      return
+    }
+
+    _programUpdates.update { st -> st.copy(mihomo = st.mihomo.copy(statusText = str(R.string.mv_auto_057))) }
+    val okExtract = extractGzipSingle(gzFile, extracted)
+    if (!okExtract) {
+      _programUpdates.update { st -> st.copy(mihomo = st.mihomo.copy(updating = false, errorText = str(R.string.prog_update_error_archive_changed), statusText = "")) }
+      runCatching { gzFile.delete() }
+      return
+    }
+
+    _programUpdates.update { st -> st.copy(mihomo = st.mihomo.copy(statusText = str(R.string.mv_auto_058), progressPercent = 100)) }
+    val okInstall = installMihomoBinary(extracted)
+    runCatching { gzFile.delete() }
+    runCatching { extracted.delete() }
+
+    if (!okInstall) {
+      _programUpdates.update { st -> st.copy(mihomo = st.mihomo.copy(updating = false, errorText = str(R.string.prog_update_error_install_failed), statusText = "")) }
+      return
+    }
+
+    val installed = runCatching {
+      readInstalledVersionAny(
+        listOf(
+          "/data/adb/modules/ZDT-D/bin/mihomo",
+          "/data/adb/modules_update/ZDT-D/bin/mihomo",
+        )
+      )
+    }.getOrNull()
+    val updAvail = isUpdateAvailableWithUnknownInstalled(installed, targetVer)
+    val detectWarn = if (installed.isNullOrBlank()) str(R.string.program_updates_warn_installed_unknown) else null
+    _programUpdates.update { st ->
+      st.copy(
+        mihomo = st.mihomo.copy(
+          updating = false,
+          installedVersion = installed ?: st.mihomo.installedVersion,
+          updateAvailable = updAvail,
+          warningText = detectWarn,
+          statusText = str(R.string.prog_update_status_installed),
+          errorText = null,
+        )
+      )
+    }
+  }
+
+  private suspend fun updateMieruInternal() {
+    if (!requireServiceStoppedForUpdates()) return
+    val stBefore = _programUpdates.value.mieru
+    if (stBefore.selectedVersion.isNullOrBlank() && (stBefore.latestVersion.isNullOrBlank() || stBefore.latestDownloadUrl.isNullOrBlank())) {
+      checkMieruInternal()
+    }
+    val st0 = _programUpdates.value.mieru
+    val url = st0.selectedDownloadUrl ?: st0.latestDownloadUrl
+    val targetVer = st0.selectedVersion ?: st0.latestVersion
+    if (url.isNullOrBlank() || targetVer.isNullOrBlank()) return
+
+    _programUpdates.update { st ->
+      st.copy(mieru = st.mieru.copy(updating = true, progressPercent = 0, errorText = null, statusText = str(R.string.mv_auto_056)))
+    }
+
+    val tarGzFile = File(ctx.cacheDir, "mieru_target.tar.gz")
+    val extracted = File(ctx.cacheDir, "mieru_${System.currentTimeMillis()}")
+    runCatching { tarGzFile.delete() }
+    runCatching { extracted.delete() }
+
+    val okDl = downloadToFileWithProgress(url, tarGzFile) { pct ->
+      _programUpdates.update { st ->
+        val cur = st.mieru
+        if (cur.progressPercent == pct) st else st.copy(mieru = cur.copy(progressPercent = pct, statusText = str(R.string.prog_update_status_downloading_pct_fmt, pct)))
+      }
+    }
+    if (!okDl) {
+      _programUpdates.update { st -> st.copy(mieru = st.mieru.copy(updating = false, errorText = str(R.string.prog_update_error_download_failed), statusText = "")) }
+      return
+    }
+
+    _programUpdates.update { st -> st.copy(mieru = st.mieru.copy(statusText = str(R.string.mv_auto_057))) }
+    val okExtract = extractTarGzSingle(tarGzFile, { name -> name.substringAfterLast('/') == "mieru" }, extracted)
+    if (!okExtract) {
+      _programUpdates.update { st -> st.copy(mieru = st.mieru.copy(updating = false, errorText = str(R.string.prog_update_error_archive_changed), statusText = "")) }
+      runCatching { tarGzFile.delete() }
+      return
+    }
+
+    _programUpdates.update { st -> st.copy(mieru = st.mieru.copy(statusText = str(R.string.mv_auto_058), progressPercent = 100)) }
+    val okInstall = installMieruBinary(extracted)
+    runCatching { tarGzFile.delete() }
+    runCatching { extracted.delete() }
+
+    if (!okInstall) {
+      _programUpdates.update { st -> st.copy(mieru = st.mieru.copy(updating = false, errorText = str(R.string.prog_update_error_install_failed), statusText = "")) }
+      return
+    }
+
+    val installed = runCatching {
+      readInstalledMieruVersion(
+        listOf(
+          "/data/adb/modules/ZDT-D/bin/mieru",
+          "/data/adb/modules_update/ZDT-D/bin/mieru",
+        )
+      )
+    }.getOrNull()
+    val updAvail = isUpdateAvailableWithUnknownInstalled(installed, targetVer)
+    val detectWarn = if (installed.isNullOrBlank()) str(R.string.program_updates_warn_installed_unknown) else null
+    _programUpdates.update { st ->
+      st.copy(
+        mieru = st.mieru.copy(
+          updating = false,
+          installedVersion = installed ?: st.mieru.installedVersion,
+          updateAvailable = updAvail,
+          warningText = detectWarn,
+          statusText = str(R.string.prog_update_status_installed),
+          errorText = null,
+        )
+      )
+    }
+  }
+
   private suspend fun loadReleasesInternal(which: String) {
     if (!isNetworkAvailable()) {
       toast(str(R.string.mv_auto_002))
@@ -2607,6 +2942,8 @@ if (mf.isNotBlank()) {
         when (which) {
           "zapret" -> st.copy(zapret = st.zapret.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_no_internet)))
           "zapret2" -> st.copy(zapret2 = st.zapret2.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_no_internet)))
+          "mihomo" -> st.copy(mihomo = st.mihomo.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_no_internet)))
+          "mieru" -> st.copy(mieru = st.mieru.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_no_internet)))
           else -> st
         }
       }
@@ -2617,22 +2954,33 @@ if (mf.isNotBlank()) {
       when (which) {
         "zapret" -> st.copy(zapret = st.zapret.copy(releasesLoading = true, releasesError = null))
         "zapret2" -> st.copy(zapret2 = st.zapret2.copy(releasesLoading = true, releasesError = null))
+        "mihomo" -> st.copy(mihomo = st.mihomo.copy(releasesLoading = true, releasesError = null))
+        "mieru" -> st.copy(mieru = st.mieru.copy(releasesLoading = true, releasesError = null))
         else -> st
       }
     }
 
-    val (repo, prefix) = when (which) {
-      "zapret" -> Pair("bol-van/zapret", "zapret-v")
-      "zapret2" -> Pair("bol-van/zapret2", "zapret2-v")
+    val spec = when (which) {
+      "zapret" -> ReleaseAssetSpec(repo = "bol-van/zapret", assetPrefix = "zapret-v", assetSuffix = ".zip")
+      "zapret2" -> ReleaseAssetSpec(repo = "bol-van/zapret2", assetPrefix = "zapret2-v", assetSuffix = ".zip")
+      "mihomo" -> ReleaseAssetSpec(repo = "MetaCubeX/mihomo", assetPrefix = "mihomo-android-arm64-v8-v", assetSuffix = ".gz")
+      "mieru" -> ReleaseAssetSpec(
+        repo = "enfein/mieru",
+        assetPrefix = "mieru_",
+        assetSuffix = "_android_arm64.tar.gz",
+        versionRegex = Regex("""^mieru_([0-9]+(?:\.[0-9]+){1,3})_android_arm64\.tar\.gz$""")
+      )
       else -> return
     }
 
-    val releases = runCatching { fetchAllReleaseAssets(repo = repo, assetPrefix = prefix) }.getOrNull()
+    val releases = runCatching { fetchAllReleaseAssets(spec) }.getOrNull()
     if (releases == null || releases.isEmpty()) {
       _programUpdates.update { st ->
         when (which) {
           "zapret" -> st.copy(zapret = st.zapret.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_load_releases)))
           "zapret2" -> st.copy(zapret2 = st.zapret2.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_load_releases)))
+          "mihomo" -> st.copy(mihomo = st.mihomo.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_load_releases)))
+          "mieru" -> st.copy(mieru = st.mieru.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_load_releases)))
           else -> st
         }
       }
@@ -2643,9 +2991,33 @@ if (mf.isNotBlank()) {
       when (which) {
         "zapret" -> st.copy(zapret = st.zapret.copy(releasesLoading = false, releasesError = null, releases = releases))
         "zapret2" -> st.copy(zapret2 = st.zapret2.copy(releasesLoading = false, releasesError = null, releases = releases))
+        "mihomo" -> st.copy(mihomo = st.mihomo.copy(releasesLoading = false, releasesError = null, releases = releases))
+        "mieru" -> st.copy(mieru = st.mieru.copy(releasesLoading = false, releasesError = null, releases = releases))
         else -> st
       }
     }
+  }
+
+  private data class ReleaseAssetSpec(
+    val repo: String,
+    val assetPrefix: String,
+    val assetSuffix: String,
+    val versionRegex: Regex? = null,
+  )
+
+  private fun normalizeAssetVersion(name: String, spec: ReleaseAssetSpec): String {
+    spec.versionRegex?.matchEntire(name)?.let { m ->
+      val raw = m.groupValues.getOrNull(1).orEmpty()
+      if (raw.isNotBlank()) return if (raw.startsWith("v") || raw.startsWith("V")) raw else "v${raw}"
+    }
+    val verRaw = name.removePrefix(spec.assetPrefix).removeSuffix(spec.assetSuffix)
+    return if (verRaw.startsWith("v") || verRaw.startsWith("V")) verRaw else "v${verRaw}"
+  }
+
+  private fun isUpdateAvailableWithUnknownInstalled(installed: String?, target: String?): Boolean {
+    if (target.isNullOrBlank()) return false
+    if (installed.isNullOrBlank()) return true
+    return compareVersions(installed, target) != 0
   }
 
   /**
@@ -2693,16 +3065,56 @@ if (mf.isNotBlank()) {
     return null
   }
 
+  private suspend fun readInstalledMieruVersion(binaryPaths: List<String>): String? {
+    if (binaryPaths.isEmpty()) return null
+    val versionRegex = Regex("""\b(?:v)?([0-9]+(?:\.[0-9]+){1,3})\b""", RegexOption.IGNORE_CASE)
+
+    fun parseMieruVersion(text: String): String? {
+      val raw = versionRegex.find(text.trim())?.groupValues?.getOrNull(1) ?: return null
+      return "v${raw}"
+    }
+
+    for (p in binaryPaths) {
+      val rExist = root.execRootSh("test -f ${shQuote(p)}")
+      if (!rExist.isSuccess) continue
+      root.execRootSh("chmod 0755 ${shQuote(p)} 2>/dev/null || true")
+
+      val r1 = root.execRootSh("${shQuote(p)} version 2>&1 || true")
+      val out1 = (r1.out + r1.err).joinToString("\n").trim()
+      parseMieruVersion(out1)?.let { return it }
+
+      val r2 = root.execRootSh("su -lp 2000 -c ${shQuote("${p} version 2>&1")} || true")
+      val out2 = (r2.out + r2.err).joinToString("\n").trim()
+      parseMieruVersion(out2)?.let { return it }
+    }
+    return null
+  }
+
   private suspend fun fetchLatestZapretAsset(): Pair<String, String>? {
-    return fetchLatestAsset(repo = "bol-van/zapret", assetPrefix = "zapret-v")
+    return fetchLatestAsset(ReleaseAssetSpec(repo = "bol-van/zapret", assetPrefix = "zapret-v", assetSuffix = ".zip"))
   }
 
   private suspend fun fetchLatestZapret2Asset(): Pair<String, String>? {
-    return fetchLatestAsset(repo = "bol-van/zapret2", assetPrefix = "zapret2-v")
+    return fetchLatestAsset(ReleaseAssetSpec(repo = "bol-van/zapret2", assetPrefix = "zapret2-v", assetSuffix = ".zip"))
   }
 
-  private suspend fun fetchLatestAsset(repo: String, assetPrefix: String): Pair<String, String>? {
-    val url = "https://api.github.com/repos/${repo}/releases/latest"
+  private suspend fun fetchLatestMihomoAsset(): Pair<String, String>? {
+    return fetchLatestAsset(ReleaseAssetSpec(repo = "MetaCubeX/mihomo", assetPrefix = "mihomo-android-arm64-v8-v", assetSuffix = ".gz"))
+  }
+
+  private suspend fun fetchLatestMieruAsset(): Pair<String, String>? {
+    return fetchLatestAsset(
+      ReleaseAssetSpec(
+        repo = "enfein/mieru",
+        assetPrefix = "mieru_",
+        assetSuffix = "_android_arm64.tar.gz",
+        versionRegex = Regex("""^mieru_([0-9]+(?:\.[0-9]+){1,3})_android_arm64\.tar\.gz$""")
+      )
+    )
+  }
+
+  private suspend fun fetchLatestAsset(spec: ReleaseAssetSpec): Pair<String, String>? {
+    val url = "https://api.github.com/repos/${spec.repo}/releases/latest"
     val req = okhttp3.Request.Builder()
       .url(url)
       .header("User-Agent", "ZDT-D-Android")
@@ -2715,11 +3127,9 @@ if (mf.isNotBlank()) {
       for (i in 0 until assets.length()) {
         val a = assets.optJSONObject(i) ?: continue
         val name = a.optString("name")
-        if (name.startsWith(assetPrefix) && name.endsWith(".zip")) {
+        if (name.startsWith(spec.assetPrefix) && name.endsWith(spec.assetSuffix)) {
           val dl = a.optString("browser_download_url").takeIf { it.isNotBlank() } ?: continue
-          val ver = name.removePrefix(assetPrefix).removeSuffix(".zip")
-          val v = if (ver.startsWith("v")) ver else "v${ver}"
-          return Pair(v, dl)
+          return Pair(normalizeAssetVersion(name, spec), dl)
         }
       }
       return null
@@ -2730,11 +3140,11 @@ if (mf.isNotBlank()) {
    * Fetches ALL releases pages and returns a list of versions that have the expected zip asset.
    * GitHub API is paginated; we request 100 per page and keep going until an empty page.
    */
-  private suspend fun fetchAllReleaseAssets(repo: String, assetPrefix: String): List<ProgramReleaseUi> {
+  private suspend fun fetchAllReleaseAssets(spec: ReleaseAssetSpec): List<ProgramReleaseUi> {
     val out = LinkedHashMap<String, ProgramReleaseUi>() // preserve order, unique by version
     var page = 1
     while (true) {
-      val url = "https://api.github.com/repos/${repo}/releases?per_page=100&page=${page}"
+      val url = "https://api.github.com/repos/${spec.repo}/releases?per_page=100&page=${page}"
       val req = okhttp3.Request.Builder()
         .url(url)
         .header("User-Agent", "ZDT-D-Android")
@@ -2756,7 +3166,7 @@ if (mf.isNotBlank()) {
         for (j in 0 until assets.length()) {
           val a = assets.optJSONObject(j) ?: continue
           val name = a.optString("name")
-          if (name.startsWith(assetPrefix) && name.endsWith(".zip")) {
+          if (name.startsWith(spec.assetPrefix) && name.endsWith(spec.assetSuffix)) {
             val dl = a.optString("browser_download_url")
             if (dl.isNotBlank()) {
               foundName = name
@@ -2766,8 +3176,7 @@ if (mf.isNotBlank()) {
           }
         }
         if (foundName != null && foundUrl != null) {
-          val verRaw = foundName.removePrefix(assetPrefix).removeSuffix(".zip")
-          val v = if (verRaw.startsWith("v") || verRaw.startsWith("V")) verRaw else "v${verRaw}"
+          val v = normalizeAssetVersion(foundName, spec)
           if (!out.containsKey(v)) {
             out[v] = ProgramReleaseUi(version = v, downloadUrl = foundUrl, publishedAt = publishedAt)
           }
@@ -2894,9 +3303,107 @@ if (mf.isNotBlank()) {
     return extractedAny
   }
 
+  private fun extractGzipSingle(gzFile: File, outFile: File): Boolean {
+    outFile.parentFile?.mkdirs()
+    GZIPInputStream(gzFile.inputStream().buffered()).use { gis ->
+      outFile.outputStream().use { os ->
+        gis.copyTo(os)
+      }
+    }
+    return outFile.exists() && outFile.length() > 0L
+  }
+
+  private fun parseTarOctalSize(header: ByteArray): Long {
+    val raw = String(header, 124, 12, StandardCharsets.US_ASCII).trim('\u0000', ' ', '\n')
+    return raw.toLongOrNull(radix = 8) ?: 0L
+  }
+
+  private fun extractTarGzSingle(tarGzFile: File, match: (String) -> Boolean, outFile: File): Boolean {
+    outFile.parentFile?.mkdirs()
+    GZIPInputStream(tarGzFile.inputStream().buffered()).use { gis ->
+      val header = ByteArray(512)
+      while (true) {
+        var read = 0
+        while (read < header.size) {
+          val n = gis.read(header, read, header.size - read)
+          if (n <= 0) return false
+          read += n
+        }
+        if (header.all { it.toInt() == 0 }) break
+
+        val nameRaw = String(header, 0, 100, StandardCharsets.UTF_8).trim('\u0000')
+        val prefixRaw = String(header, 345, 155, StandardCharsets.UTF_8).trim('\u0000')
+        val name = if (prefixRaw.isNotBlank()) "${prefixRaw}/${nameRaw}" else nameRaw
+        val size = parseTarOctalSize(header).coerceAtLeast(0L)
+        val typeflag = header[156].toInt().toChar()
+        val isFile = typeflag == '0' || typeflag == '\u0000'
+
+        if (isFile && match(name)) {
+          outFile.outputStream().use { os ->
+            var remaining = size
+            val buf = ByteArray(64 * 1024)
+            while (remaining > 0) {
+              val n = gis.read(buf, 0, minOf(buf.size.toLong(), remaining).toInt())
+              if (n <= 0) break
+              os.write(buf, 0, n)
+              remaining -= n.toLong()
+            }
+          }
+          return outFile.exists() && outFile.length() > 0L
+        } else {
+          var remaining = size
+          val buf = ByteArray(64 * 1024)
+          while (remaining > 0) {
+            val n = gis.read(buf, 0, minOf(buf.size.toLong(), remaining).toInt())
+            if (n <= 0) break
+            remaining -= n.toLong()
+          }
+        }
+
+        val padding = (512 - (size % 512)) % 512
+        var skip = padding
+        val skipBuf = ByteArray(512)
+        while (skip > 0) {
+          val n = gis.read(skipBuf, 0, minOf(skipBuf.size.toLong(), skip).toInt())
+          if (n <= 0) break
+          skip -= n.toLong()
+        }
+      }
+    }
+    return false
+  }
+
   private suspend fun installZapretBinary(src: File): Boolean {
     val moduleRoot = "/data/adb/modules/ZDT-D"
     val dst = "${moduleRoot}/bin/nfqws"
+    if (!rootPathExists(moduleRoot)) return false
+    val script = """
+      set -e
+      mkdir -p ${shQuote(moduleRoot + "/bin")} 2>/dev/null || true
+      cp -f ${shQuote(src.absolutePath)} ${shQuote(dst)} 2>/dev/null || cat ${shQuote(src.absolutePath)} > ${shQuote(dst)}
+      chmod 0755 ${shQuote(dst)} 2>/dev/null || true
+    """.trimIndent()
+    val r = root.execRootSh(script)
+    return r.isSuccess
+  }
+
+  private suspend fun installMihomoBinary(src: File): Boolean {
+    val moduleRoot = "/data/adb/modules/ZDT-D"
+    val dst = "${moduleRoot}/bin/mihomo"
+    if (!rootPathExists(moduleRoot)) return false
+    val script = """
+      set -e
+      mkdir -p ${shQuote(moduleRoot + "/bin")} 2>/dev/null || true
+      cp -f ${shQuote(src.absolutePath)} ${shQuote(dst)} 2>/dev/null || cat ${shQuote(src.absolutePath)} > ${shQuote(dst)}
+      chmod 0755 ${shQuote(dst)} 2>/dev/null || true
+    """.trimIndent()
+    val r = root.execRootSh(script)
+    return r.isSuccess
+  }
+
+  private suspend fun installMieruBinary(src: File): Boolean {
+    val moduleRoot = "/data/adb/modules/ZDT-D"
+    val dst = "${moduleRoot}/bin/mieru"
     if (!rootPathExists(moduleRoot)) return false
     val script = """
       set -e
@@ -3202,16 +3709,169 @@ if (mf.isNotBlank()) {
 
   private data class BackupValidation(val ok: Boolean, val error: String? = null, val versionMismatch: Boolean = false)
 
+  private data class BackupArchiveReadResult(
+    val entries: List<String>,
+    val manifestText: String?,
+  )
+
+  private fun readBackupArchiveForValidation(path: String): BackupArchiveReadResult? {
+    var tmpFile: File? = null
+    val source = File(path)
+    val readableFile = if (source.exists() && source.canRead()) {
+      source
+    } else {
+      val tmp = File(ctx.cacheDir, "zdtb_validate_${System.currentTimeMillis()}_${Random.nextInt(10000)}.zdtb")
+      val r = root.execRootSh(
+        "rm -f ${shQuote(tmp.absolutePath)} 2>/dev/null || true; " +
+          "(cp -f ${shQuote(path)} ${shQuote(tmp.absolutePath)} 2>/dev/null || cat ${shQuote(path)} > ${shQuote(tmp.absolutePath)}) && " +
+          "chmod 0644 ${shQuote(tmp.absolutePath)} 2>/dev/null || true"
+      )
+      if (!r.isSuccess || !tmp.exists() || tmp.length() <= 0L) {
+        runCatching { tmp.delete() }
+        null
+      } else {
+        tmpFile = tmp
+        tmp
+      }
+    }
+
+    if (readableFile == null) return null
+    return try {
+      parseBackupTarGzForValidation(readableFile)
+    } catch (_: Throwable) {
+      null
+    } finally {
+      tmpFile?.let { runCatching { it.delete() } }
+    }
+  }
+
+  private fun parseBackupTarGzForValidation(file: File): BackupArchiveReadResult {
+    val entries = mutableListOf<String>()
+    var manifestText: String? = null
+
+    GZIPInputStream(file.inputStream().buffered()).use { input ->
+      var pendingLongName: String? = null
+      while (true) {
+        val header = ByteArray(512)
+        val headerRead = readFullyOrEof(input, header)
+        if (headerRead == 0) break
+        if (headerRead < 512) break
+        if (header.all { it == 0.toByte() }) break
+
+        val size = parseTarOctal(header, 124, 12)
+        val typeFlag = header[156].toInt().toChar()
+        var name = pendingLongName ?: tarHeaderName(header)
+        pendingLongName = null
+
+        if (typeFlag == 'L') {
+          val longNameBytes = if (size in 1L..8192L) readExactBytes(input, size.toInt()) else ByteArray(0)
+          if (size > 8192) skipFully(input, size)
+          skipTarPadding(input, size)
+          pendingLongName = cleanTarString(longNameBytes)
+          continue
+        }
+
+        if (name.isNotBlank() && entries.size < 5000) entries.add(name)
+
+        if (manifestText == null && name.endsWith("zdt_backup_manifest.json") && size in 1L..1_048_576L) {
+          val data = readExactBytes(input, size.toInt())
+          manifestText = String(data, StandardCharsets.UTF_8)
+          skipTarPadding(input, size)
+        } else {
+          skipTarEntry(input, size)
+        }
+      }
+    }
+
+    return BackupArchiveReadResult(entries = entries, manifestText = manifestText)
+  }
+
+  private fun readFullyOrEof(input: InputStream, buffer: ByteArray): Int {
+    var off = 0
+    while (off < buffer.size) {
+      val n = input.read(buffer, off, buffer.size - off)
+      if (n < 0) return off
+      off += n
+    }
+    return off
+  }
+
+  private fun readExactBytes(input: InputStream, count: Int): ByteArray {
+    val out = ByteArray(count)
+    var off = 0
+    while (off < count) {
+      val n = input.read(out, off, count - off)
+      if (n < 0) break
+      off += n
+    }
+    return if (off == count) out else out.copyOf(off)
+  }
+
+  private fun skipTarEntry(input: InputStream, size: Long) {
+    skipFully(input, size)
+    skipTarPadding(input, size)
+  }
+
+  private fun skipTarPadding(input: InputStream, size: Long) {
+    val padding = (512L - (size % 512L)) % 512L
+    if (padding > 0) skipFully(input, padding)
+  }
+
+  private fun skipFully(input: InputStream, bytes: Long) {
+    var left = bytes
+    val scratch = ByteArray(8192)
+    while (left > 0) {
+      val toRead = minOf(scratch.size.toLong(), left).toInt()
+      val n = input.read(scratch, 0, toRead)
+      if (n < 0) break
+      left -= n.toLong()
+    }
+  }
+
+  private fun parseTarOctal(header: ByteArray, offset: Int, length: Int): Long {
+    val raw = String(header, offset, length, StandardCharsets.US_ASCII)
+      .trim('\u0000', ' ', '\n', '\r', '\t')
+    return raw.takeIf { it.isNotBlank() }?.toLongOrNull(8) ?: 0L
+  }
+
+  private fun tarHeaderName(header: ByteArray): String {
+    val name = cleanTarString(header.copyOfRange(0, 100))
+    val prefix = cleanTarString(header.copyOfRange(345, 500))
+    return when {
+      prefix.isBlank() -> name
+      name.isBlank() -> prefix
+      else -> "$prefix/$name"
+    }
+  }
+
+  private fun cleanTarString(bytes: ByteArray): String {
+    val end = bytes.indexOfFirst { it == 0.toByte() }.let { if (it >= 0) it else bytes.size }
+    return String(bytes, 0, end, StandardCharsets.UTF_8).trim('\u0000', ' ', '\n', '\r', '\t')
+  }
+
+  private fun sanitizeManifestJson(raw: String): String {
+    val trimmed = raw.trim('\uFEFF', '\u0000', ' ', '\n', '\r', '\t')
+    val start = trimmed.indexOf('{')
+    val end = trimmed.lastIndexOf('}')
+    return if (start >= 0 && end > start) trimmed.substring(start, end + 1) else trimmed
+  }
+
   private suspend fun validateBackupFile(path: String, ignoreVersionCode: Boolean = false): BackupValidation {
-    // Quick list to detect bad paths (zip-slip style) and to ensure tar is readable.
-    val rList = root.execRootSh("tar -tzf ${shQuote(path)} 2>/dev/null || true")
-    val entries = rList.out
-      .joinToString("\n")
-      .lineSequence()
-      .map { it.trim() }
-      .filter { it.isNotEmpty() }
-      .take(5000)
-      .toList()
+    val appRead = readBackupArchiveForValidation(path)
+
+    val entries = if (appRead?.entries?.isNotEmpty() == true) {
+      appRead.entries
+    } else {
+      // Fallback only for archive listing. Manifest reading below still prefers app-side parsing.
+      val rList = root.execRootSh("tar -tzf ${shQuote(path)} 2>/dev/null || true")
+      rList.out
+        .joinToString("\n")
+        .lineSequence()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .take(5000)
+        .toList()
+    }
 
     if (entries.isEmpty()) {
       return BackupValidation(false, str(R.string.mv_auto_070))
@@ -3226,67 +3886,65 @@ if (mf.isNotBlank()) {
       return BackupValidation(false, str(R.string.mv_backup_suspicious_path, bad))
     }
 
-    // Manifest path can vary across tar writers (for example: "././zdt_backup_manifest.json").
-    // Toybox tar (especially older builds) may fail when we request a different path than the one stored.
     val manifestInTar = entries.firstOrNull { it.endsWith("zdt_backup_manifest.json") }
     if (manifestInTar == null) {
       return BackupValidation(false, str(R.string.mv_auto_071))
     }
 
-    fun normalizeTarPath(p: String): String {
-      var s = p.trim()
-      while (s.startsWith("./")) s = s.removePrefix("./")
-      while (s.startsWith("/")) s = s.removePrefix("/")
-      return s
-    }
-
-    val manifestNorm = normalizeTarPath(manifestInTar)
-    val candidates = listOf(
-      manifestInTar,
-      manifestNorm,
-      "./$manifestNorm",
-      "zdt_backup_manifest.json",
-      "./zdt_backup_manifest.json"
-    ).distinct()
-
-    // Read manifest. Prefer "tar -xO" (to stdout) to avoid file permission quirks.
-    val rStdout = root.execRootSh(
-      "(" + candidates.joinToString(" || ") { cand ->
-        "tar -xOzf ${shQuote(path)} ${shQuote(cand)} 2>/dev/null"
-      } + " || true)"
-    )
-    var manifestText = rStdout.out.joinToString("\n").trim()
+    var manifestText = appRead?.manifestText?.let { sanitizeManifestJson(it) }.orEmpty()
 
     if (manifestText.isBlank()) {
-      // Fallback: extract to temp dir and verify file existence+size.
-      // Avoid using tar -C (it is flaky on some older Toybox builds): use "cd tmp && tar -xzf".
-      val tmpDir = "/data/local/tmp/zdtb_chk_${System.currentTimeMillis()}"
-      root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true; mkdir -p ${shQuote(tmpDir)}")
-
-      for (cand in candidates) {
-        root.execRootSh("cd ${shQuote(tmpDir)} && tar -xzf ${shQuote(path)} ${shQuote(cand)} 2>/dev/null || true")
+      // Last-resort compatibility fallback for unusual archives/devices where app-side parsing failed.
+      fun normalizeTarPath(p: String): String {
+        var s = p.trim()
+        while (s.startsWith("./")) s = s.removePrefix("./")
+        while (s.startsWith("/")) s = s.removePrefix("/")
+        return s
       }
 
-      // Find the manifest robustly (in case tar created nested ./ paths).
-      val rFind = root.execRootSh(
-        "find ${shQuote(tmpDir)} -maxdepth 10 -name zdt_backup_manifest.json -type f -print -quit 2>/dev/null || true"
+      val manifestNorm = normalizeTarPath(manifestInTar)
+      val candidates = listOf(
+        manifestInTar,
+        manifestNorm,
+        "./$manifestNorm",
+        "zdt_backup_manifest.json",
+        "./zdt_backup_manifest.json"
+      ).distinct()
+
+      val rStdout = root.execRootSh(
+        "(" + candidates.joinToString(" || ") { cand ->
+          "tar -xOzf ${shQuote(path)} ${shQuote(cand)} 2>/dev/null"
+        } + " || true)"
       )
-      val found = rFind.out.joinToString("\n").trim()
-      if (found.isBlank()) {
-        root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
-        return BackupValidation(false, str(R.string.mv_auto_071))
-      }
+      manifestText = sanitizeManifestJson(rStdout.out.joinToString("\n"))
 
-      // Ensure it is non-empty before reading.
-      val rSizeOk = root.execRootSh("test -s ${shQuote(found)}")
-      if (!rSizeOk.isSuccess) {
-        root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
-        return BackupValidation(false, str(R.string.mv_auto_072))
-      }
+      if (manifestText.isBlank()) {
+        val tmpDir = "/data/local/tmp/zdtb_chk_${System.currentTimeMillis()}"
+        root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true; mkdir -p ${shQuote(tmpDir)}")
 
-      val rCat = root.execRootSh("cat ${shQuote(found)} 2>/dev/null || true")
-      manifestText = rCat.out.joinToString("\n").trim()
-      root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
+        for (cand in candidates) {
+          root.execRootSh("cd ${shQuote(tmpDir)} && tar -xzf ${shQuote(path)} ${shQuote(cand)} 2>/dev/null || true")
+        }
+
+        val rFind = root.execRootSh(
+          "find ${shQuote(tmpDir)} -maxdepth 10 -name zdt_backup_manifest.json -type f -print -quit 2>/dev/null || true"
+        )
+        val found = rFind.out.joinToString("\n").trim()
+        if (found.isBlank()) {
+          root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
+          return BackupValidation(false, str(R.string.mv_auto_071))
+        }
+
+        val rSizeOk = root.execRootSh("test -s ${shQuote(found)}")
+        if (!rSizeOk.isSuccess) {
+          root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
+          return BackupValidation(false, str(R.string.mv_auto_072))
+        }
+
+        val rCat = root.execRootSh("cat ${shQuote(found)} 2>/dev/null || true")
+        manifestText = sanitizeManifestJson(rCat.out.joinToString("\n"))
+        root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
+      }
     }
 
     if (manifestText.isBlank()) return BackupValidation(false, str(R.string.mv_auto_072))
@@ -3575,6 +4233,62 @@ private fun shQuote(s: String): String {
     }
   }
 
+  private val guardedProfileProgramIds = setOf(
+    "nfqws",
+    "nfqws2",
+    "byedpi",
+    "dpitunnel",
+    "sing-box",
+    "wireproxy",
+    "myproxy",
+    "myprogram",
+    "openvpn",
+    "amneziawg",
+    "tun2socks",
+    "myvpn",
+    "mihomo",
+    "mieru",
+  )
+
+  private fun normalizedProfileNameForGuard(name: String): String = name.trim().lowercase(Locale.ROOT)
+
+  private fun findProfileNameOwnerAcrossPrograms(
+    programs: List<ApiModels.Program>,
+    requestedName: String,
+    excludeProgramId: String,
+  ): ApiModels.Program? {
+    val needle = normalizedProfileNameForGuard(requestedName)
+    if (needle.isEmpty()) return null
+    return programs.firstOrNull { program ->
+      program.id in guardedProfileProgramIds &&
+        program.id != excludeProgramId &&
+        program.profiles.any { normalizedProfileNameForGuard(it.name) == needle }
+    }
+  }
+
+  private fun nextGlobalProfileName(programId: String, programs: List<ApiModels.Program>): String {
+    val used = programs
+      .filter { it.id in guardedProfileProgramIds }
+      .flatMap { it.profiles }
+      .map { normalizedProfileNameForGuard(it.name) }
+      .toSet()
+    val currentUsed = programs.firstOrNull { it.id == programId }
+      ?.profiles
+      ?.map { normalizedProfileNameForGuard(it.name) }
+      ?.toSet()
+      .orEmpty()
+    for (i in 1..9999) {
+      val candidate = "profile$i"
+      val normalized = normalizedProfileNameForGuard(candidate)
+      if (normalized !in used && normalized !in currentUsed) return candidate
+    }
+    return "profile${System.currentTimeMillis()}"
+  }
+
+  private suspend fun freshestProgramsForProfileGuard(): List<ApiModels.Program> {
+    return runCatching { api.getPrograms() }.getOrElse { _uiState.value.programs }
+  }
+
   override fun setProfileEnabled(programId: String, profile: String, enabled: Boolean, onDone: (Boolean) -> Unit) {
     launchIO {
       val ok = runCatching { api.setProfileEnabled(programId, profile, enabled) }.getOrDefault(false)
@@ -3605,8 +4319,12 @@ private fun shQuote(s: String): String {
 
   override fun createNextProfile(programId: String, onDone: (String?) -> Unit) {
     launchIO {
-      val before = _uiState.value.programs.firstOrNull { it.id == programId }?.profiles?.map { it.name }?.toSet().orEmpty()
-      val ok = runCatching { api.createProfile(programId) }.getOrDefault(false)
+      val guardPrograms = freshestProgramsForProfileGuard()
+      val requestedName = if (programId in guardedProfileProgramIds) nextGlobalProfileName(programId, guardPrograms) else ""
+      val before = guardPrograms.firstOrNull { it.id == programId }?.profiles?.map { it.name }?.toSet().orEmpty()
+      val ok = runCatching {
+        if (requestedName.isNotBlank()) api.createProfile(programId, requestedName) else api.createProfile(programId)
+      }.getOrDefault(false)
       if (!ok) {
         log("ERR", "$programId: create profile failed")
         withContext(Dispatchers.Main.immediate) { onDone(null) }
@@ -3618,7 +4336,10 @@ private fun shQuote(s: String): String {
       _uiState.update { it.copy(programs = programs) }
       lastProgramsFetchAtMs = System.currentTimeMillis()
       val after = programs.firstOrNull { it.id == programId }?.profiles?.map { it.name }?.toSet().orEmpty()
-      val created = (after - before).firstOrNull()
+      val created = when {
+        requestedName.isNotBlank() && after.contains(requestedName) -> requestedName
+        else -> (after - before).firstOrNull()
+      }
       log("OK", "$programId/${created ?: "(new)"} created (apply after stop/start)")
       withContext(Dispatchers.Main.immediate) { onDone(created) }
     }
@@ -3627,7 +4348,17 @@ private fun shQuote(s: String): String {
   override fun createNamedProfile(programId: String, profile: String, onDone: (String?) -> Unit) {
     launchIO {
       val p = profile.trim()
-      val before = _uiState.value.programs.firstOrNull { it.id == programId }?.profiles?.map { it.name }?.toSet().orEmpty()
+      val guardPrograms = freshestProgramsForProfileGuard()
+      if (programId in guardedProfileProgramIds) {
+        val owner = findProfileNameOwnerAcrossPrograms(guardPrograms, p, excludeProgramId = programId)
+        if (owner != null) {
+          log("ERR", "$programId: profile '$p' already exists in ${owner.id}")
+          withContext(Dispatchers.Main.immediate) { onDone(null) }
+          return@launchIO
+        }
+      }
+
+      val before = guardPrograms.firstOrNull { it.id == programId }?.profiles?.map { it.name }?.toSet().orEmpty()
       val ok = runCatching { api.createProfile(programId, p) }.getOrDefault(false)
       if (!ok) {
         log("ERR", "$programId: create profile '$p' failed")

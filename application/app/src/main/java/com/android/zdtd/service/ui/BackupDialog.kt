@@ -1,6 +1,8 @@
 package com.android.zdtd.service.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -42,7 +44,8 @@ fun BackupDialog(
   onDismiss: () -> Unit,
   actions: ZdtdActions,
 ) {
-  val compact = rememberIsCompactWidth() || rememberIsShortHeight()
+  val landscape = rememberUseLandscapeControlLayout()
+  val compact = !landscape && (rememberIsCompactWidth() || rememberIsShortHeight())
   var confirmRestore by remember { mutableStateOf<BackupItem?>(null) }
   var confirmDelete by remember { mutableStateOf<BackupItem?>(null) }
   var requireReopenAfterRestore by remember { mutableStateOf(false) }
@@ -65,117 +68,210 @@ fun BackupDialog(
         onDismiss()
       }
     },
-    properties = DialogProperties(dismissOnClickOutside = !state.progressVisible || state.progressFinished)
+    properties = DialogProperties(
+      dismissOnClickOutside = !state.progressVisible || state.progressFinished,
+      usePlatformDefaultWidth = !landscape,
+    )
   ) {
-    Surface(
-      shape = MaterialTheme.shapes.extraLarge,
-      tonalElevation = 8.dp,
+    Box(
       modifier = Modifier
-        .fillMaxWidth()
-        .widthIn(max = 640.dp)
-        .padding(if (compact) 12.dp else 16.dp)
+        .fillMaxSize()
+        .windowInsetsPadding(WindowInsets.safeDrawing),
+      contentAlignment = if (landscape) Alignment.CenterStart else Alignment.Center,
     ) {
-      Column(Modifier.padding(if (compact) 12.dp else 16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          Text(stringResource(R.string.backup_title), style = MaterialTheme.typography.titleLarge)
-          Spacer(Modifier.weight(1f))
-          IconButton(onClick = { requireReopenAfterRestore = false; actions.refreshBackups() }) {
-            Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.backup_refresh_cd))
-          }
-        }
-
-        Spacer(Modifier.height(6.dp))
-        Text(
-          stringResource(R.string.backup_desc),
-          style = MaterialTheme.typography.bodySmall,
-        )
-
-        Spacer(Modifier.height(12.dp))
-
-        if (compact) {
-          Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(
-              onClick = { actions.createBackup() },
-              enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,
-              modifier = Modifier.fillMaxWidth(),
-            ) { Text(stringResource(R.string.backup_create)) }
-
-            OutlinedButton(
-              onClick = { actions.requestBackupImport() },
-              enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,
-              modifier = Modifier.fillMaxWidth(),
-            ) { Text(stringResource(R.string.backup_import)) }
-          }
+      Surface(
+        shape = MaterialTheme.shapes.extraLarge,
+        tonalElevation = 8.dp,
+        modifier = if (landscape) {
+          Modifier
+            .fillMaxHeight(0.94f)
+            .fillMaxWidth(0.74f)
+            .padding(start = 14.dp, top = 8.dp, bottom = 8.dp)
         } else {
-          Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(
-              onClick = { actions.createBackup() },
-              enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,
-            ) { Text(stringResource(R.string.backup_create)) }
+          Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(if (compact) 0.88f else 0.82f)
+            .widthIn(max = 640.dp)
+            .padding(if (compact) 12.dp else 16.dp)
+        },
+      ) {
+        if (landscape) {
+          Column(
+            modifier = Modifier
+              .fillMaxSize()
+              .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            BackupDialogHeader(
+              onRefresh = { requireReopenAfterRestore = false; actions.refreshBackups() },
+            )
 
-            OutlinedButton(
-              onClick = { actions.requestBackupImport() },
-              enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,
-            ) { Text(stringResource(R.string.backup_import)) }
-          }
-        }
-
-        if (state.error != null) {
-          Spacer(Modifier.height(12.dp))
-          Text(state.error, color = MaterialTheme.colorScheme.error)
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        when {
-          state.loading -> {
             Row(
-              verticalAlignment = Alignment.CenterVertically,
+              modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
               horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-              CircularProgressIndicator(modifier = Modifier.size(18.dp))
-              Text(stringResource(R.string.backup_loading_list))
+              Surface(
+                modifier = Modifier
+                  .weight(0.42f)
+                  .fillMaxHeight(),
+                shape = MaterialTheme.shapes.extraLarge,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f),
+              ) {
+                Column(
+                  modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(14.dp),
+                  verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                  Text(
+                    stringResource(R.string.backup_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                  )
+                  Button(
+                    onClick = { actions.createBackup() },
+                    enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,
+                    modifier = Modifier.fillMaxWidth(),
+                  ) { Text(stringResource(R.string.backup_create)) }
+
+                  OutlinedButton(
+                    onClick = { actions.requestBackupImport() },
+                    enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,
+                    modifier = Modifier.fillMaxWidth(),
+                  ) { Text(stringResource(R.string.backup_import)) }
+
+                  if (state.error != null) {
+                    Text(state.error, color = MaterialTheme.colorScheme.error)
+                  }
+
+                  if (requireReopenAfterRestore && !state.progressVisible) {
+                    Text(
+                      stringResource(R.string.mv_backup_restore_reopen_hint),
+                      style = MaterialTheme.typography.bodySmall,
+                      color = MaterialTheme.colorScheme.primary,
+                    )
+                  }
+                }
+              }
+
+              Surface(
+                modifier = Modifier
+                  .weight(0.58f)
+                  .fillMaxHeight(),
+                shape = MaterialTheme.shapes.extraLarge,
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.50f),
+              ) {
+                Column(
+                  modifier = Modifier
+                    .fillMaxSize()
+                    .padding(14.dp),
+                  verticalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                  Text(stringResource(R.string.backup_yours), fontWeight = FontWeight.SemiBold)
+                  BackupListContent(
+                    modifier = Modifier
+                      .fillMaxWidth()
+                      .weight(1f),
+                    state = state,
+                    enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,
+                    onRestore = { confirmRestore = it },
+                    onShare = { actions.shareBackup(it.name) },
+                    onDelete = { confirmDelete = it },
+                  )
+                }
+              }
+            }
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+              TextButton(
+                onClick = { requireReopenAfterRestore = false; onDismiss() },
+                enabled = !state.progressVisible || state.progressFinished,
+              ) { Text(stringResource(R.string.backup_close)) }
             }
           }
-          state.items.isEmpty() -> {
-            Text(stringResource(R.string.backup_none_found))
-          }
-          else -> {
-            Text(stringResource(R.string.backup_yours), fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.height(8.dp))
-            LazyColumn(
+        } else {
+          Column(
+            Modifier
+              .fillMaxSize()
+              .verticalScroll(rememberScrollState())
+              .padding(if (compact) 12.dp else 16.dp)
+          ) {
+            BackupDialogHeader(
+              onRefresh = { requireReopenAfterRestore = false; actions.refreshBackups() },
+            )
+
+            Spacer(Modifier.height(6.dp))
+            Text(
+              stringResource(R.string.backup_desc),
+              style = MaterialTheme.typography.bodySmall,
+            )
+
+            Spacer(Modifier.height(12.dp))
+
+            if (compact) {
+              Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(
+                  onClick = { actions.createBackup() },
+                  enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,
+                  modifier = Modifier.fillMaxWidth(),
+                ) { Text(stringResource(R.string.backup_create)) }
+
+                OutlinedButton(
+                  onClick = { actions.requestBackupImport() },
+                  enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,
+                  modifier = Modifier.fillMaxWidth(),
+                ) { Text(stringResource(R.string.backup_import)) }
+              }
+            } else {
+              Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(
+                  onClick = { actions.createBackup() },
+                  enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,
+                ) { Text(stringResource(R.string.backup_create)) }
+
+                OutlinedButton(
+                  onClick = { actions.requestBackupImport() },
+                  enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,
+                ) { Text(stringResource(R.string.backup_import)) }
+              }
+            }
+
+            if (state.error != null) {
+              Spacer(Modifier.height(12.dp))
+              Text(state.error, color = MaterialTheme.colorScheme.error)
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            BackupListContent(
               modifier = Modifier
                 .fillMaxWidth()
                 .heightIn(max = if (compact) 320.dp else 420.dp),
-              verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-              items(state.items, key = { it.name }, contentType = { "backup_item" }) { item ->
-                BackupItemCard(
-                  item = item,
-                  enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,
-                  onRestore = { confirmRestore = item },
-                  onShare = { actions.shareBackup(item.name) },
-                  onDelete = { confirmDelete = item },
-                )
-              }
+              state = state,
+              enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,
+              onRestore = { confirmRestore = it },
+              onShare = { actions.shareBackup(it.name) },
+              onDelete = { confirmDelete = it },
+            )
+
+            Spacer(Modifier.height(12.dp))
+            if (requireReopenAfterRestore && !state.progressVisible) {
+              Text(
+                stringResource(R.string.mv_backup_restore_reopen_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+              )
+              Spacer(Modifier.height(8.dp))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+              TextButton(
+                onClick = { requireReopenAfterRestore = false; onDismiss() },
+                enabled = !state.progressVisible || state.progressFinished,
+              ) { Text(stringResource(R.string.backup_close)) }
             }
           }
-        }
-
-        Spacer(Modifier.height(12.dp))
-        if (requireReopenAfterRestore && !state.progressVisible) {
-          Text(
-            stringResource(R.string.mv_backup_restore_reopen_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.primary,
-          )
-          Spacer(Modifier.height(8.dp))
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-          TextButton(
-            onClick = { requireReopenAfterRestore = false; onDismiss() },
-            enabled = !state.progressVisible || state.progressFinished,
-          ) { Text(stringResource(R.string.backup_close)) }
         }
       }
     }
@@ -268,6 +364,62 @@ fun BackupDialog(
         confirmForceRestore = state.forceRestoreName
       },
     )
+  }
+}
+
+
+@Composable
+private fun BackupDialogHeader(onRefresh: () -> Unit) {
+  Row(verticalAlignment = Alignment.CenterVertically) {
+    Text(stringResource(R.string.backup_title), style = MaterialTheme.typography.titleLarge)
+    Spacer(Modifier.weight(1f))
+    IconButton(onClick = onRefresh) {
+      Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.backup_refresh_cd))
+    }
+  }
+}
+
+@Composable
+private fun BackupListContent(
+  modifier: Modifier,
+  state: BackupUiState,
+  enabled: Boolean,
+  onRestore: (BackupItem) -> Unit,
+  onShare: (BackupItem) -> Unit,
+  onDelete: (BackupItem) -> Unit,
+) {
+  when {
+    state.loading -> {
+      Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        CircularProgressIndicator(modifier = Modifier.size(18.dp))
+        Text(stringResource(R.string.backup_loading_list))
+      }
+    }
+    state.items.isEmpty() -> {
+      Box(modifier = modifier, contentAlignment = Alignment.TopStart) {
+        Text(stringResource(R.string.backup_none_found))
+      }
+    }
+    else -> {
+      LazyColumn(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        items(state.items, key = { it.name }, contentType = { "backup_item" }) { item ->
+          BackupItemCard(
+            item = item,
+            enabled = enabled,
+            onRestore = { onRestore(item) },
+            onShare = { onShare(item) },
+            onDelete = { onDelete(item) },
+          )
+        }
+      }
+    }
   }
 }
 

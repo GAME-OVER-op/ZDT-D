@@ -170,6 +170,12 @@ fun AppsHost(
           actions = actions,
           snackHost = snackHost,
         )
+        "mieru" -> MieruProfileScreen(
+          programs = programs,
+          profile = r.profile,
+          actions = actions,
+          snackHost = snackHost,
+        )
         else -> ProfileScreen(
           programs = programs,
           programId = r.programId,

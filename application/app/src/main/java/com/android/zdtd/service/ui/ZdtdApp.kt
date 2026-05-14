@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -61,12 +62,10 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
@@ -1530,12 +1529,11 @@ private fun LandscapeQuickActions(
       IconButton(onClick = { onOpenSettings() }, modifier = Modifier.size(44.dp)) {
         Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings), modifier = Modifier.size(26.dp))
       }
-      IconButton(onClick = { onOpenProgramUpdates() }, modifier = Modifier.size(48.dp)) {
+      IconButton(onClick = { onOpenProgramUpdates() }, modifier = Modifier.size(44.dp)) {
         Icon(
-          painter = painterResource(R.drawable.ic_program_updates_custom),
+          Icons.Filled.SystemUpdateAlt,
           contentDescription = stringResource(R.string.cd_program_updates),
-          modifier = Modifier.size(38.dp),
-          tint = Color.White,
+          modifier = Modifier.size(26.dp),
         )
       }
       IconButton(onClick = { onOpenBackup() }, modifier = Modifier.size(44.dp)) {
@@ -1821,12 +1819,10 @@ private fun TopBarFullActions(
   Row(verticalAlignment = Alignment.CenterVertically) {
     IconButton(onClick = onOpenLogs) { Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs)) }
     IconButton(onClick = onOpenBackup) { Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup)) }
-    IconButton(onClick = onOpenProgramUpdates, modifier = Modifier.size(48.dp)) {
+    IconButton(onClick = onOpenProgramUpdates) {
       Icon(
-        painter = painterResource(R.drawable.ic_program_updates_custom),
+        Icons.Filled.SystemUpdateAlt,
         contentDescription = stringResource(R.string.cd_program_updates),
-        modifier = Modifier.size(36.dp),
-        tint = Color.White,
       )
     }
     IconButton(onClick = onOpenSettings) { Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings)) }

@@ -84,21 +84,25 @@ fun BackupDialog(
         tonalElevation = 8.dp,
         modifier = if (landscape) {
           Modifier
-            .fillMaxHeight(0.94f)
             .fillMaxWidth(0.74f)
+            .widthIn(max = 900.dp)
+            .wrapContentHeight()
+            .heightIn(max = 520.dp)
             .padding(start = 14.dp, top = 8.dp, bottom = 8.dp)
         } else {
           Modifier
             .fillMaxWidth()
-            .fillMaxHeight(if (compact) 0.88f else 0.82f)
             .widthIn(max = 640.dp)
+            .wrapContentHeight()
+            .heightIn(max = if (compact) 620.dp else 700.dp)
             .padding(if (compact) 12.dp else 16.dp)
         },
       ) {
         if (landscape) {
           Column(
             modifier = Modifier
-              .fillMaxSize()
+              .fillMaxWidth()
+              .wrapContentHeight()
               .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
           ) {
@@ -107,21 +111,20 @@ fun BackupDialog(
             )
 
             Row(
-              modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
+              modifier = Modifier.fillMaxWidth(),
               horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
               Surface(
                 modifier = Modifier
                   .weight(0.42f)
-                  .fillMaxHeight(),
+                  .widthIn(max = 360.dp),
                 shape = MaterialTheme.shapes.extraLarge,
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f),
               ) {
                 Column(
                   modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
+                    .heightIn(max = 360.dp)
                     .verticalScroll(rememberScrollState())
                     .padding(14.dp),
                   verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -159,13 +162,14 @@ fun BackupDialog(
               Surface(
                 modifier = Modifier
                   .weight(0.58f)
-                  .fillMaxHeight(),
+                  .heightIn(max = 360.dp),
                 shape = MaterialTheme.shapes.extraLarge,
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.50f),
               ) {
                 Column(
                   modifier = Modifier
-                    .fillMaxSize()
+                    .fillMaxWidth()
+                    .wrapContentHeight()
                     .padding(14.dp),
                   verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
@@ -173,7 +177,7 @@ fun BackupDialog(
                   BackupListContent(
                     modifier = Modifier
                       .fillMaxWidth()
-                      .weight(1f),
+                      .heightIn(max = 292.dp),
                     state = state,
                     enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,
                     onRestore = { confirmRestore = it },
@@ -194,7 +198,8 @@ fun BackupDialog(
         } else {
           Column(
             Modifier
-              .fillMaxSize()
+              .fillMaxWidth()
+              .wrapContentHeight()
               .verticalScroll(rememberScrollState())
               .padding(if (compact) 12.dp else 16.dp)
           ) {
@@ -248,7 +253,7 @@ fun BackupDialog(
             BackupListContent(
               modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = if (compact) 320.dp else 420.dp),
+                .heightIn(max = if (compact) 260.dp else 340.dp),
               state = state,
               enabled = (!state.progressVisible || state.progressFinished) && !requireReopenAfterRestore,
               onRestore = { confirmRestore = it },
@@ -402,6 +407,22 @@ private fun BackupListContent(
     state.items.isEmpty() -> {
       Box(modifier = modifier, contentAlignment = Alignment.TopStart) {
         Text(stringResource(R.string.backup_none_found))
+      }
+    }
+    state.items.size <= 2 -> {
+      Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        state.items.forEach { item ->
+          BackupItemCard(
+            item = item,
+            enabled = enabled,
+            onRestore = { onRestore(item) },
+            onShare = { onShare(item) },
+            onDelete = { onDelete(item) },
+          )
+        }
       }
     }
     else -> {

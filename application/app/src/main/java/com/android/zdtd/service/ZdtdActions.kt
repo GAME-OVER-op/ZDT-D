@@ -53,7 +53,7 @@ interface ZdtdActions {
   fun closeBackupProgress()
 
 
-  // ----- Program updates (zapret / zapret2 / mihomo / mieru via GitHub) -----
+  // ----- Program updates (zapret / zapret2 / mihomo / mieru / opera-proxy via GitHub) -----
   /** Check zapret (nfqws) installed/latest versions. Requires the service to be stopped. */
   fun checkZapretNow()
 
@@ -78,6 +78,12 @@ interface ZdtdActions {
   /** Download and install selected/latest mieru. Requires the service to be stopped. */
   fun updateMieruNow()
 
+  /** Check opera-proxy installed/latest versions. Requires the service to be stopped. */
+  fun checkOperaProxyNow()
+
+  /** Download and install selected/latest opera-proxy. Requires the service to be stopped. */
+  fun updateOperaProxyNow()
+
   /** Stop the daemon once and auto-run check for supported program updates when it becomes OFF. */
   fun stopServiceForProgramUpdatesAndCheck()
 
@@ -93,6 +99,9 @@ interface ZdtdActions {
   /** Load the full list of mieru releases (for selecting a specific version). */
   fun loadMieruReleases()
 
+  /** Load the full list of opera-proxy releases (for selecting a specific version). */
+  fun loadOperaProxyReleases()
+
   /** Set a specific target release for zapret. Pass nulls to use Latest. */
   fun selectZapretRelease(version: String?, downloadUrl: String?)
 
@@ -104,6 +113,9 @@ interface ZdtdActions {
 
   /** Set a specific target release for mieru. Pass nulls to use Latest. */
   fun selectMieruRelease(version: String?, downloadUrl: String?)
+
+  /** Set a specific target release for opera-proxy. Pass nulls to use Latest. */
+  fun selectOperaProxyRelease(version: String?, downloadUrl: String?)
 
   /** Reset transient errors/progress in program update UI. */
   fun resetProgramUpdatesUi()

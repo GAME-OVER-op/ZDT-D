@@ -205,7 +205,7 @@ data class BackupUiState(
 )
 
 
-// ----- Program updates (zapret / zapret2 / mihomo / mieru) -----
+// ----- Program updates (zapret / zapret2 / mihomo / mieru / opera-proxy) -----
 
 data class ProgramReleaseUi(
   val version: String,
@@ -240,6 +240,7 @@ data class ProgramUpdatesUiState(
   val zapret2: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_zapret2_title),
   val mihomo: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_mihomo_title),
   val mieru: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_mieru_title),
+  val operaProxy: ProgramUpdateItemUi = ProgramUpdateItemUi(title = "", titleRes = R.string.program_updates_operaproxy_title),
 )
 
 sealed class BackupEvent {
@@ -300,7 +301,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   private val _backupEvents = MutableSharedFlow<BackupEvent>(extraBufferCapacity = 8)
   val backupEvents: SharedFlow<BackupEvent> = _backupEvents.asSharedFlow()
 
-  // ----- Program updates (zapret / zapret2 / mihomo / mieru) -----
+  // ----- Program updates (zapret / zapret2 / mihomo / mieru / opera-proxy) -----
   private val _programUpdates = MutableStateFlow(ProgramUpdatesUiState())
   val programUpdates: StateFlow<ProgramUpdatesUiState> = _programUpdates.asStateFlow()
 
@@ -2197,7 +2198,7 @@ if (mf.isNotBlank()) {
   }
 
 
-  // ----- Program updates (zapret / zapret2 / mihomo / mieru) -----
+  // ----- Program updates (zapret / zapret2 / mihomo / mieru / opera-proxy) -----
 
   override fun resetProgramUpdatesUi() {
     _programUpdates.update { st ->
@@ -2255,6 +2256,19 @@ if (mf.isNotBlank()) {
           releasesLoading = false,
           releasesError = null,
         ),
+        operaProxy = st.operaProxy.copy(
+          checking = false,
+          updating = false,
+          progressPercent = 0,
+          statusText = "",
+          errorText = null,
+          warningText = null,
+          selectedVersion = null,
+          selectedDownloadUrl = null,
+          releases = emptyList(),
+          releasesLoading = false,
+          releasesError = null,
+        ),
       )
     }
   }
@@ -2282,6 +2296,7 @@ if (mf.isNotBlank()) {
               zapret2 = st.zapret2.copy(errorText = str(R.string.program_updates_err_service_running)),
               mihomo = st.mihomo.copy(errorText = str(R.string.program_updates_err_service_running)),
               mieru = st.mieru.copy(errorText = str(R.string.program_updates_err_service_running)),
+              operaProxy = st.operaProxy.copy(errorText = str(R.string.program_updates_err_service_running)),
             )
           }
           return@launchIO
@@ -2294,6 +2309,7 @@ if (mf.isNotBlank()) {
         checkZapret2Internal()
         checkMihomoInternal()
         checkMieruInternal()
+        checkOperaProxyInternal()
       } finally {
         _programUpdates.update { it.copy(stoppingService = false) }
       }
@@ -2318,6 +2334,11 @@ if (mf.isNotBlank()) {
   override fun loadMieruReleases() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { loadReleasesInternal(which = "mieru") }
+  }
+
+  override fun loadOperaProxyReleases() {
+    if (_rootState.value != RootState.GRANTED) return
+    launchIO { loadReleasesInternal(which = "operaproxy") }
   }
 
   override fun selectZapretRelease(version: String?, downloadUrl: String?) {
@@ -2394,6 +2415,25 @@ if (mf.isNotBlank()) {
     }
   }
 
+
+  override fun selectOperaProxyRelease(version: String?, downloadUrl: String?) {
+    _programUpdates.update { st ->
+      val installed = st.operaProxy.installedVersion
+      val latest = st.operaProxy.latestVersion
+      val target = version ?: latest
+      val updAvail = isUpdateAvailableWithUnknownInstalled(installed, target)
+      val detectWarn = if (installed.isNullOrBlank() && !target.isNullOrBlank()) str(R.string.program_updates_warn_installed_unknown) else null
+      st.copy(
+        operaProxy = st.operaProxy.copy(
+          selectedVersion = version,
+          selectedDownloadUrl = downloadUrl,
+          warningText = detectWarn,
+          updateAvailable = updAvail,
+        )
+      )
+    }
+  }
+
   override fun checkZapretNow() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { checkZapretInternal() }
@@ -2432,6 +2472,16 @@ if (mf.isNotBlank()) {
   override fun updateMieruNow() {
     if (_rootState.value != RootState.GRANTED) return
     launchIO { updateMieruInternal() }
+  }
+
+  override fun checkOperaProxyNow() {
+    if (_rootState.value != RootState.GRANTED) return
+    launchIO { checkOperaProxyInternal() }
+  }
+
+  override fun updateOperaProxyNow() {
+    if (_rootState.value != RootState.GRANTED) return
+    launchIO { updateOperaProxyInternal() }
   }
 
   private fun requireServiceStoppedForUpdates(): Boolean {
@@ -2625,6 +2675,47 @@ if (mf.isNotBlank()) {
     _programUpdates.update { st ->
       st.copy(
         mieru = st.mieru.copy(
+          checking = false,
+          installedVersion = installed,
+          latestVersion = latestVer,
+          latestDownloadUrl = latestUrl,
+          warningText = detectWarn,
+          updateAvailable = updAvail,
+          statusText = if (updAvail) str(R.string.prog_update_status_ready) else str(R.string.prog_update_status_already_installed),
+          errorText = null,
+        )
+      )
+    }
+  }
+
+  private suspend fun checkOperaProxyInternal() {
+    if (!requireServiceStoppedForUpdates()) return
+    if (!isNetworkAvailable()) {
+      toast(str(R.string.mv_auto_002))
+      return
+    }
+
+    _programUpdates.update { st ->
+      st.copy(operaProxy = st.operaProxy.copy(checking = true, errorText = null, statusText = str(R.string.mv_auto_055), progressPercent = 0))
+    }
+
+    val installed = runCatching { readInstalledOperaProxyVersion() }.getOrNull()
+    val latest = fetchLatestOperaProxyAsset()
+    if (latest == null) {
+      _programUpdates.update { st ->
+        st.copy(operaProxy = st.operaProxy.copy(checking = false, installedVersion = installed, errorText = str(R.string.program_updates_err_check_latest), statusText = ""))
+      }
+      return
+    }
+
+    val (latestVer, latestUrl) = latest
+    val targetVer = _programUpdates.value.operaProxy.selectedVersion ?: latestVer
+    val updAvail = isUpdateAvailableWithUnknownInstalled(installed, targetVer)
+    val detectWarn = if (installed.isNullOrBlank()) str(R.string.program_updates_warn_installed_unknown) else null
+
+    _programUpdates.update { st ->
+      st.copy(
+        operaProxy = st.operaProxy.copy(
           checking = false,
           installedVersion = installed,
           latestVersion = latestVer,
@@ -2935,6 +3026,62 @@ if (mf.isNotBlank()) {
     }
   }
 
+  private suspend fun updateOperaProxyInternal() {
+    if (!requireServiceStoppedForUpdates()) return
+    val stBefore = _programUpdates.value.operaProxy
+    if (stBefore.selectedVersion.isNullOrBlank() && (stBefore.latestVersion.isNullOrBlank() || stBefore.latestDownloadUrl.isNullOrBlank())) {
+      checkOperaProxyInternal()
+    }
+    val st0 = _programUpdates.value.operaProxy
+    val url = st0.selectedDownloadUrl ?: st0.latestDownloadUrl
+    val targetVer = st0.selectedVersion ?: st0.latestVersion
+    if (url.isNullOrBlank() || targetVer.isNullOrBlank()) return
+
+    _programUpdates.update { st ->
+      st.copy(operaProxy = st.operaProxy.copy(updating = true, progressPercent = 0, errorText = null, statusText = str(R.string.mv_auto_056)))
+    }
+
+    val binFile = File(ctx.cacheDir, "opera_proxy_${System.currentTimeMillis()}")
+    runCatching { binFile.delete() }
+
+    val okDl = downloadToFileWithProgress(url, binFile) { pct ->
+      _programUpdates.update { st ->
+        val cur = st.operaProxy
+        if (cur.progressPercent == pct) st else st.copy(operaProxy = cur.copy(progressPercent = pct, statusText = str(R.string.prog_update_status_downloading_pct_fmt, pct)))
+      }
+    }
+    if (!okDl) {
+      _programUpdates.update { st -> st.copy(operaProxy = st.operaProxy.copy(updating = false, errorText = str(R.string.prog_update_error_download_failed), statusText = "")) }
+      runCatching { binFile.delete() }
+      return
+    }
+
+    _programUpdates.update { st -> st.copy(operaProxy = st.operaProxy.copy(statusText = str(R.string.mv_auto_058), progressPercent = 100)) }
+    val okInstall = installOperaProxyBinary(binFile)
+    runCatching { binFile.delete() }
+
+    if (!okInstall) {
+      _programUpdates.update { st -> st.copy(operaProxy = st.operaProxy.copy(updating = false, errorText = str(R.string.prog_update_error_install_failed), statusText = "")) }
+      return
+    }
+
+    val installed = runCatching { readInstalledOperaProxyVersion() }.getOrNull()
+    val updAvail = isUpdateAvailableWithUnknownInstalled(installed, targetVer)
+    val detectWarn = if (installed.isNullOrBlank()) str(R.string.program_updates_warn_installed_unknown) else null
+    _programUpdates.update { st ->
+      st.copy(
+        operaProxy = st.operaProxy.copy(
+          updating = false,
+          installedVersion = installed ?: st.operaProxy.installedVersion,
+          updateAvailable = updAvail,
+          warningText = detectWarn,
+          statusText = str(R.string.prog_update_status_installed),
+          errorText = null,
+        )
+      )
+    }
+  }
+
   private suspend fun loadReleasesInternal(which: String) {
     if (!isNetworkAvailable()) {
       toast(str(R.string.mv_auto_002))
@@ -2944,6 +3091,7 @@ if (mf.isNotBlank()) {
           "zapret2" -> st.copy(zapret2 = st.zapret2.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_no_internet)))
           "mihomo" -> st.copy(mihomo = st.mihomo.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_no_internet)))
           "mieru" -> st.copy(mieru = st.mieru.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_no_internet)))
+          "operaproxy" -> st.copy(operaProxy = st.operaProxy.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_no_internet)))
           else -> st
         }
       }
@@ -2956,6 +3104,7 @@ if (mf.isNotBlank()) {
         "zapret2" -> st.copy(zapret2 = st.zapret2.copy(releasesLoading = true, releasesError = null))
         "mihomo" -> st.copy(mihomo = st.mihomo.copy(releasesLoading = true, releasesError = null))
         "mieru" -> st.copy(mieru = st.mieru.copy(releasesLoading = true, releasesError = null))
+        "operaproxy" -> st.copy(operaProxy = st.operaProxy.copy(releasesLoading = true, releasesError = null))
         else -> st
       }
     }
@@ -2970,6 +3119,7 @@ if (mf.isNotBlank()) {
         assetSuffix = "_android_arm64.tar.gz",
         versionRegex = Regex("""^mieru_([0-9]+(?:\.[0-9]+){1,3})_android_arm64\.tar\.gz$""")
       )
+      "operaproxy" -> operaProxyReleaseSpec()
       else -> return
     }
 
@@ -2981,6 +3131,7 @@ if (mf.isNotBlank()) {
           "zapret2" -> st.copy(zapret2 = st.zapret2.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_load_releases)))
           "mihomo" -> st.copy(mihomo = st.mihomo.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_load_releases)))
           "mieru" -> st.copy(mieru = st.mieru.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_load_releases)))
+          "operaproxy" -> st.copy(operaProxy = st.operaProxy.copy(releasesLoading = false, releasesError = str(R.string.program_updates_err_load_releases)))
           else -> st
         }
       }
@@ -2993,6 +3144,7 @@ if (mf.isNotBlank()) {
         "zapret2" -> st.copy(zapret2 = st.zapret2.copy(releasesLoading = false, releasesError = null, releases = releases))
         "mihomo" -> st.copy(mihomo = st.mihomo.copy(releasesLoading = false, releasesError = null, releases = releases))
         "mieru" -> st.copy(mieru = st.mieru.copy(releasesLoading = false, releasesError = null, releases = releases))
+        "operaproxy" -> st.copy(operaProxy = st.operaProxy.copy(releasesLoading = false, releasesError = null, releases = releases))
         else -> st
       }
     }
@@ -3000,18 +3152,40 @@ if (mf.isNotBlank()) {
 
   private data class ReleaseAssetSpec(
     val repo: String,
-    val assetPrefix: String,
-    val assetSuffix: String,
+    val assetPrefix: String = "",
+    val assetSuffix: String = "",
     val versionRegex: Regex? = null,
+    val exactAssetName: String? = null,
+    val versionFromTagName: Boolean = false,
   )
 
-  private fun normalizeAssetVersion(name: String, spec: ReleaseAssetSpec): String {
+  private fun operaProxyReleaseSpec(): ReleaseAssetSpec = ReleaseAssetSpec(
+    repo = "Alexey71/opera-proxy",
+    exactAssetName = "opera-proxy.android-arm64",
+    versionFromTagName = true,
+  )
+
+  private fun normalizeReleaseVersion(raw: String): String {
+    val v = raw.trim()
+    return if (v.startsWith("v") || v.startsWith("V")) v.lowercase() else "v${v}"
+  }
+
+  private fun releaseAssetMatches(name: String, spec: ReleaseAssetSpec): Boolean {
+    spec.exactAssetName?.let { return name == it }
+    return name.startsWith(spec.assetPrefix) && name.endsWith(spec.assetSuffix)
+  }
+
+  private fun normalizeAssetVersion(name: String, spec: ReleaseAssetSpec, tagName: String? = null): String {
+    if (spec.versionFromTagName) {
+      val raw = tagName?.takeIf { it.isNotBlank() } ?: name
+      return normalizeReleaseVersion(raw)
+    }
     spec.versionRegex?.matchEntire(name)?.let { m ->
       val raw = m.groupValues.getOrNull(1).orEmpty()
-      if (raw.isNotBlank()) return if (raw.startsWith("v") || raw.startsWith("V")) raw else "v${raw}"
+      if (raw.isNotBlank()) return normalizeReleaseVersion(raw)
     }
     val verRaw = name.removePrefix(spec.assetPrefix).removeSuffix(spec.assetSuffix)
-    return if (verRaw.startsWith("v") || verRaw.startsWith("V")) verRaw else "v${verRaw}"
+    return normalizeReleaseVersion(verRaw)
   }
 
   private fun isUpdateAvailableWithUnknownInstalled(installed: String?, target: String?): Boolean {
@@ -3090,6 +3264,29 @@ if (mf.isNotBlank()) {
     return null
   }
 
+  private suspend fun readInstalledOperaProxyVersion(): String? {
+    val p = "/data/adb/modules/ZDT-D/bin/opera-proxy"
+    val versionRegex = Regex("""\bv[0-9]+(?:\.[0-9]+){1,3}\b""", RegexOption.IGNORE_CASE)
+
+    fun parseOperaProxyVersion(text: String): String? {
+      return versionRegex.find(text.trim())?.value?.lowercase()
+    }
+
+    val rExist = root.execRootSh("test -f ${shQuote(p)}")
+    if (!rExist.isSuccess) return null
+    root.execRootSh("chmod 0755 ${shQuote(p)} 2>/dev/null || true")
+
+    val r1 = root.execRootSh("${shQuote(p)} -version 2>&1 || true")
+    val out1 = (r1.out + r1.err).joinToString("\n").trim()
+    parseOperaProxyVersion(out1)?.let { return it }
+
+    val r2 = root.execRootSh("su -lp 2000 -c ${shQuote("${p} -version 2>&1")} || true")
+    val out2 = (r2.out + r2.err).joinToString("\n").trim()
+    parseOperaProxyVersion(out2)?.let { return it }
+
+    return null
+  }
+
   private suspend fun fetchLatestZapretAsset(): Pair<String, String>? {
     return fetchLatestAsset(ReleaseAssetSpec(repo = "bol-van/zapret", assetPrefix = "zapret-v", assetSuffix = ".zip"))
   }
@@ -3113,6 +3310,10 @@ if (mf.isNotBlank()) {
     )
   }
 
+  private suspend fun fetchLatestOperaProxyAsset(): Pair<String, String>? {
+    return fetchLatestAsset(operaProxyReleaseSpec())
+  }
+
   private suspend fun fetchLatestAsset(spec: ReleaseAssetSpec): Pair<String, String>? {
     val url = "https://api.github.com/repos/${spec.repo}/releases/latest"
     val req = okhttp3.Request.Builder()
@@ -3123,13 +3324,14 @@ if (mf.isNotBlank()) {
       if (resp.code != 200) return null
       val body = resp.body?.string() ?: return null
       val js = runCatching { org.json.JSONObject(body) }.getOrNull() ?: return null
+      val tagName = js.optString("tag_name")
       val assets = js.optJSONArray("assets") ?: return null
       for (i in 0 until assets.length()) {
         val a = assets.optJSONObject(i) ?: continue
         val name = a.optString("name")
-        if (name.startsWith(spec.assetPrefix) && name.endsWith(spec.assetSuffix)) {
+        if (releaseAssetMatches(name, spec)) {
           val dl = a.optString("browser_download_url").takeIf { it.isNotBlank() } ?: continue
-          return Pair(normalizeAssetVersion(name, spec), dl)
+          return Pair(normalizeAssetVersion(name, spec, tagName), dl)
         }
       }
       return null
@@ -3160,13 +3362,14 @@ if (mf.isNotBlank()) {
       for (i in 0 until arr.length()) {
         val rel = arr.optJSONObject(i) ?: continue
         val publishedAt = rel.optString("published_at")
+        val tagName = rel.optString("tag_name")
         val assets = rel.optJSONArray("assets") ?: continue
         var foundName: String? = null
         var foundUrl: String? = null
         for (j in 0 until assets.length()) {
           val a = assets.optJSONObject(j) ?: continue
           val name = a.optString("name")
-          if (name.startsWith(spec.assetPrefix) && name.endsWith(spec.assetSuffix)) {
+          if (releaseAssetMatches(name, spec)) {
             val dl = a.optString("browser_download_url")
             if (dl.isNotBlank()) {
               foundName = name
@@ -3176,7 +3379,7 @@ if (mf.isNotBlank()) {
           }
         }
         if (foundName != null && foundUrl != null) {
-          val v = normalizeAssetVersion(foundName, spec)
+          val v = normalizeAssetVersion(foundName, spec, tagName)
           if (!out.containsKey(v)) {
             out[v] = ProgramReleaseUi(version = v, downloadUrl = foundUrl, publishedAt = publishedAt)
           }
@@ -3404,6 +3607,20 @@ if (mf.isNotBlank()) {
   private suspend fun installMieruBinary(src: File): Boolean {
     val moduleRoot = "/data/adb/modules/ZDT-D"
     val dst = "${moduleRoot}/bin/mieru"
+    if (!rootPathExists(moduleRoot)) return false
+    val script = """
+      set -e
+      mkdir -p ${shQuote(moduleRoot + "/bin")} 2>/dev/null || true
+      cp -f ${shQuote(src.absolutePath)} ${shQuote(dst)} 2>/dev/null || cat ${shQuote(src.absolutePath)} > ${shQuote(dst)}
+      chmod 0755 ${shQuote(dst)} 2>/dev/null || true
+    """.trimIndent()
+    val r = root.execRootSh(script)
+    return r.isSuccess
+  }
+
+  private suspend fun installOperaProxyBinary(src: File): Boolean {
+    val moduleRoot = "/data/adb/modules/ZDT-D"
+    val dst = "${moduleRoot}/bin/opera-proxy"
     if (!rootPathExists(moduleRoot)) return false
     val script = """
       set -e

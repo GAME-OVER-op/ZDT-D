@@ -29,6 +29,9 @@
   <a href="https://t.me/module_ggover">
     <img src="https://img.shields.io/badge/Telegram-Join%20Group-blue?style=flat-square&logo=telegram" alt="Telegram Group" />
   </a>
+  <a href="https://tokei.kojix2.net/github/GAME-OVER-op/ZDT-D">
+   <img src="https://img.shields.io/endpoint?url=https%3A%2F%2Ftokei.kojix2.net%2Fbadge%2Fgithub%2FGAME-OVER-op%2FZDT-D%2Flines&style=flat-square&logo=github" alt="Lines of Code" />
+  </a>
 </p>
 
 <p align="center">

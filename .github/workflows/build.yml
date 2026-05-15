@@ -2,6 +2,8 @@ name: Build ZDT-D
 
 on:
   push:
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       build_type:
@@ -12,6 +14,10 @@ on:
         options:
           - Debug
           - Release
+
+concurrency:
+  group: zdt-d-service-build
+  cancel-in-progress: true
 
 env:
   ANDROID_API_LEVEL: 34
@@ -35,6 +41,9 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+
+      - name: Mark build start time
+        run: echo "BUILD_START_TS=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Read version from module.prop
         id: version
@@ -323,3 +332,120 @@ jobs:
           path: out/dist/app-release.apk
           retention-days: 30
           archive: false
+
+      - name: Publish service release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          SERVICE_TAG="service-build"
+          SERVICE_TITLE="ZDT-D Service Build"
+          APK_SOURCE="out/dist/app-release.apk"
+          APK_RELEASE="out/dist/ZDT-D-service-build.apk"
+
+          test -s "$APK_SOURCE" || { echo "::error::APK does not exist: $APK_SOURCE"; exit 1; }
+          cp -f "$APK_SOURCE" "$APK_RELEASE"
+
+          BUILD_END_TS="$(date +%s)"
+          BUILD_START_TS="${BUILD_START_TS:-$BUILD_END_TS}"
+          BUILD_DURATION_SEC=$((BUILD_END_TS - BUILD_START_TS))
+          BUILD_DURATION="$(printf '%02d:%02d:%02d' $((BUILD_DURATION_SEC / 3600)) $(((BUILD_DURATION_SEC % 3600) / 60)) $((BUILD_DURATION_SEC % 60)))"
+
+          BUILD_TIME_UTC="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          APK_SIZE_BYTES="$(stat -c%s "$APK_RELEASE")"
+          APK_SIZE_HUMAN="$(numfmt --to=iec --suffix=B --format='%.2f' "$APK_SIZE_BYTES")"
+
+          FULL_SHA="$(git rev-parse HEAD)"
+          SHORT_SHA="$(git rev-parse --short=7 HEAD)"
+          REPO_URL="https://github.com/${{ github.repository }}"
+          RUN_URL="${REPO_URL}/actions/runs/${{ github.run_id }}"
+          VERSION_CODE="${{ steps.version.outputs.version_code }}"
+          VERSION_NAME="${{ steps.version.outputs.version_name }}"
+          BUILD_TYPE="${{ env.BUILD_TYPE }}"
+
+          if [[ -z "$VERSION_NAME" ]]; then
+            VERSION_NAME="unknown"
+          fi
+
+          PREV_SHA=""
+          if git ls-remote --exit-code --tags origin "refs/tags/${SERVICE_TAG}" >/dev/null 2>&1; then
+            git fetch --force origin "refs/tags/${SERVICE_TAG}:refs/tags/${SERVICE_TAG}"
+            PREV_SHA="$(git rev-list -n 1 "$SERVICE_TAG" 2>/dev/null || true)"
+          fi
+
+          if [[ -n "$PREV_SHA" && "$PREV_SHA" != "$FULL_SHA" ]]; then
+            COMPARE_URL="${REPO_URL}/compare/${PREV_SHA}...${FULL_SHA}"
+            TOTAL_COMMITS="$(git rev-list --count "${PREV_SHA}..${FULL_SHA}" 2>/dev/null || echo 0)"
+            CHANGELOG="$(git log --no-merges --pretty=format:'- %s (`%h`)' -n 30 "${PREV_SHA}..${FULL_SHA}" || true)"
+            if [[ -z "$CHANGELOG" ]]; then
+              CHANGELOG="- No commit messages found for this range."
+            fi
+            if [[ "$TOTAL_COMMITS" =~ ^[0-9]+$ && "$TOTAL_COMMITS" -gt 30 ]]; then
+              CHANGELOG="${CHANGELOG}"$'\n'"- ...and $((TOTAL_COMMITS - 30)) more commits."
+            fi
+          elif [[ -n "$PREV_SHA" && "$PREV_SHA" == "$FULL_SHA" ]]; then
+            COMPARE_URL="${REPO_URL}/commit/${FULL_SHA}"
+            CHANGELOG="- No source changes since the previous service build."
+          else
+            COMPARE_URL="${REPO_URL}/commit/${FULL_SHA}"
+            CHANGELOG="- Initial service build for this technical release."
+          fi
+
+          cat > release_notes.md <<EOF
+          # ZDT-D Service Build
+
+          This is an automatically generated technical build produced by GitHub Actions.
+
+          The post is updated after every successful workflow run and always reflects the latest service build from the repository.
+
+          ## Build information
+
+          | Field | Value |
+          | --- | --- |
+          | Version | ${VERSION_NAME} |
+          | Version code | ${VERSION_CODE} |
+          | Build type | ${BUILD_TYPE} |
+          | Commit | [\`${SHORT_SHA}\`](${REPO_URL}/commit/${FULL_SHA}) |
+          | Last build time | ${BUILD_TIME_UTC} |
+          | Build duration | ${BUILD_DURATION} |
+          | APK size | ${APK_SIZE_HUMAN} |
+          | Workflow run | [#${{ github.run_number }}](${RUN_URL}) |
+
+          ## Changes
+
+          [Compare changes](${COMPARE_URL})
+
+          ### Commit list
+
+          ${CHANGELOG}
+
+          ## Installation notice
+
+          This APK is signed by the GitHub Actions build environment and can have a different signature than the APK from the main public release.
+
+          Because of the different signature, Android may block installation over an already installed release build.
+
+          To install this service build, first remove the ZDT-D application installed from the main release, then install the APK attached to this service build.
+
+          The module itself is installed and updated from inside the application by the universal installer for Magisk, KernelSU, APatch, and compatible managers.
+          EOF
+
+          sed -i 's/^          //' release_notes.md
+
+          echo "===== Service release notes ====="
+          cat release_notes.md
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "$SERVICE_TAG" "$FULL_SHA"
+          git push -f origin "refs/tags/${SERVICE_TAG}"
+
+          if gh release view "$SERVICE_TAG" >/dev/null 2>&1; then
+            gh release edit "$SERVICE_TAG" --title "$SERVICE_TITLE" --notes-file release_notes.md --prerelease
+          else
+            gh release create "$SERVICE_TAG" --target "$FULL_SHA" --title "$SERVICE_TITLE" --notes-file release_notes.md --prerelease --latest=false
+          fi
+
+          gh release upload "$SERVICE_TAG" "$APK_RELEASE" --clobber

@@ -45,7 +45,7 @@ fun ProgramUpdatesDialog(
   val landscape = rememberUseLandscapeControlLayout()
   val compact = !landscape && (rememberIsCompactWidth() || rememberIsShortHeight())
   val contentPadding = if (compact) 12.dp else 16.dp
-  var picking by remember { mutableStateOf<String?>(null) } // "zapret" | "zapret2" | "mihomo" | "mieru"
+  var picking by remember { mutableStateOf<String?>(null) } // "zapret" | "zapret2" | "mihomo" | "mieru" | "operaproxy"
 
   fun enabledFor(item: ProgramUpdateItemUi): Boolean {
     return !serviceRunning && !item.updating && !item.checking && !state.stoppingService
@@ -192,6 +192,26 @@ fun ProgramUpdatesDialog(
                   )
                 }
               }
+
+              item(key = "updates_row_3") {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                  ProgramUpdateCard(
+                    modifier = Modifier.weight(1f),
+                    item = state.operaProxy,
+                    enabled = enabledFor(state.operaProxy),
+                    onCheck = actions::checkOperaProxyNow,
+                    onUpdate = actions::updateOperaProxyNow,
+                    onPickVersion = {
+                      picking = "operaproxy"
+                      if (state.operaProxy.releases.isEmpty() && !state.operaProxy.releasesLoading) actions.loadOperaProxyReleases()
+                    },
+                  )
+                  Spacer(modifier = Modifier.weight(1f))
+                }
+              }
             } else {
               item(key = "zapret") {
                 ProgramUpdateCard(
@@ -241,6 +261,18 @@ fun ProgramUpdatesDialog(
                   },
                 )
               }
+              item(key = "operaproxy") {
+                ProgramUpdateCard(
+                  item = state.operaProxy,
+                  enabled = enabledFor(state.operaProxy),
+                  onCheck = actions::checkOperaProxyNow,
+                  onUpdate = actions::updateOperaProxyNow,
+                  onPickVersion = {
+                    picking = "operaproxy"
+                    if (state.operaProxy.releases.isEmpty() && !state.operaProxy.releasesLoading) actions.loadOperaProxyReleases()
+                  },
+                )
+              }
             }
           }
 
@@ -260,6 +292,7 @@ fun ProgramUpdatesDialog(
       "zapret2" -> state.zapret2
       "mihomo" -> state.mihomo
       "mieru" -> state.mieru
+      "operaproxy" -> state.operaProxy
       else -> state.zapret
     }
     ReleasePickerDialog(
@@ -268,6 +301,7 @@ fun ProgramUpdatesDialog(
         "zapret2" -> stringResource(R.string.program_updates_pick_zapret2_title)
         "mihomo" -> stringResource(R.string.program_updates_pick_mihomo_title)
         "mieru" -> stringResource(R.string.program_updates_pick_mieru_title)
+        "operaproxy" -> stringResource(R.string.program_updates_pick_operaproxy_title)
         else -> stringResource(R.string.program_updates_pick_zapret_title)
       },
       stateItem = item,
@@ -282,6 +316,7 @@ fun ProgramUpdatesDialog(
           "zapret2" -> actions.loadZapret2Releases()
           "mihomo" -> actions.loadMihomoReleases()
           "mieru" -> actions.loadMieruReleases()
+          "operaproxy" -> actions.loadOperaProxyReleases()
         }
       },
       onSelectLatest = {
@@ -290,6 +325,7 @@ fun ProgramUpdatesDialog(
           "zapret2" -> actions.selectZapret2Release(null, null)
           "mihomo" -> actions.selectMihomoRelease(null, null)
           "mieru" -> actions.selectMieruRelease(null, null)
+          "operaproxy" -> actions.selectOperaProxyRelease(null, null)
         }
         picking = null
       },
@@ -299,6 +335,7 @@ fun ProgramUpdatesDialog(
           "zapret2" -> actions.selectZapret2Release(v, url)
           "mihomo" -> actions.selectMihomoRelease(v, url)
           "mieru" -> actions.selectMieruRelease(v, url)
+          "operaproxy" -> actions.selectOperaProxyRelease(v, url)
         }
         picking = null
       },

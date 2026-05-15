@@ -2,7 +2,14 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUT_SO="${1:-$ROOT_DIR/out/arm64-v8a.so}"
+REQUESTED_OUT="${1:-}"
+if [[ "$REQUESTED_OUT" == "module" || "$REQUESTED_OUT" == "--module" ]]; then
+  OUT_SO="$ROOT_DIR/zygisk/arm64-v8a.so"
+elif [[ -n "$REQUESTED_OUT" ]]; then
+  OUT_SO="$REQUESTED_OUT"
+else
+  OUT_SO="$ROOT_DIR/out/arm64-v8a.so"
+fi
 API_LEVEL="${ANDROID_API_LEVEL:-24}"
 SRC="$ROOT_DIR/src/main.cpp"
 INCLUDE="$ROOT_DIR/include"

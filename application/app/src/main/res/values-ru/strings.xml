@@ -1465,6 +1465,10 @@ APatch: 10700+</string>
     <string name="mihomo_pending_add_proxy_group_desc">Proxy %1$s уже сохранён в proxies. Сохраните ожидающее изменение, чтобы добавить его в группу Proxy, или отмените и оставьте конфиг как есть.</string>
     <string name="mihomo_pending_details">Изменение</string>
 
+    <string name="web_panel_action_back">Назад</string>
+    <string name="web_panel_action_refresh">Обновить</string>
+    <string name="web_panel_action_reset">Сбросить страницу</string>
+    <string name="web_panel_loading_page">Открываем веб-панель…</string>
     <string name="web_panel_open">Веб-панель</string>
     <string name="web_panel_unavailable">Кажется, служба не запущена или веб-панель настроена неверно</string>
     <string name="program_logs_title">Логи инструмента</string>

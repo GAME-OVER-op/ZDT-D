@@ -533,13 +533,14 @@ fn actual_runtime_has_services() -> bool {
 }
 
 fn runtime_uses_iptables_paths() -> bool {
-    let bridge_app_routing = (operaproxy_enabled() && operaproxy_has_routed_app_outputs())
+    let app_routing = (operaproxy_enabled() && operaproxy_has_routed_app_outputs())
         || profile_program_has_routed_app_outputs("wireproxy")
-        || profile_program_has_routed_app_outputs("singbox");
+        || profile_program_has_routed_app_outputs("singbox")
+        || (tor_enabled() && tor_has_routed_app_outputs());
 
     match stats::collect_status() {
         Ok(r) => {
-            // sing-box / wireproxy / operaproxy can now run in marker-only
+            // sing-box / wireproxy / operaproxy / tor can run in marker-only
             // server mode without t2s app routing and without NAT_DPI/MANGLE_APP
             // anchors. Only require those anchors when their resolved UID output
             // files contain real app routes. Hotspot-only PREROUTING is not this
@@ -550,12 +551,15 @@ fn runtime_uses_iptables_paths() -> bool {
                 || r.dpitunnel.count > 0
                 || r.myproxy.count > 0
                 || r.myprogram.count > 0
-                || r.tor.count > 0
                 || r.dnscrypt.count > 0
-                || bridge_app_routing
+                || app_routing
         }
-        Err(_) => bridge_app_routing,
+        Err(_) => app_routing,
     }
+}
+
+fn tor_has_routed_app_outputs() -> bool {
+    count_valid_uid_pairs_runtime(&settings::tor_out_program_path()) > 0
 }
 
 fn operaproxy_has_routed_app_outputs() -> bool {

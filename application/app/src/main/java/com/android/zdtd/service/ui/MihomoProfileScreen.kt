@@ -2378,7 +2378,7 @@ fun MihomoProfileScreen(
     }
   }
 
-  fun saveYaml(newText: String = yamlText, notify: Boolean = true) {
+  fun saveYaml(newText: String = yamlText, notify: Boolean = true, afterSuccess: (() -> Unit)? = null) {
     val normalizedText = sanitizeMihomoUserConfigYaml(rewriteMihomoExplicitIpv4Conflicts(newText, usedVpnIpv4Cidrs))
     yamlSaving = true
     actions.saveText("$basePath/config", normalizedText) { ok ->
@@ -2387,6 +2387,7 @@ fun MihomoProfileScreen(
         yamlText = normalizedText
         lastSavedYamlText = normalizedText
         pendingChanges = pendingChanges.filter { it.yaml.trimEnd() != normalizedText.trimEnd() }
+        afterSuccess?.invoke()
         if (notify) showSnack(context.getString(R.string.saved_apply_after_restart))
       } else {
         queuePendingChange(
@@ -2547,7 +2548,11 @@ fun MihomoProfileScreen(
         profile = profile,
         yamlText = yamlText,
         usedControllerPorts = usedMihomoControllerPorts,
-        onSaveYaml = { updated -> saveYaml(updated) },
+        onSaveYaml = { updated ->
+          saveYaml(updated, afterSuccess = {
+            actions.clearMihomoProfileUi(profile)
+          })
+        },
       )
       2 -> MihomoYamlTab(
         profile = profile,

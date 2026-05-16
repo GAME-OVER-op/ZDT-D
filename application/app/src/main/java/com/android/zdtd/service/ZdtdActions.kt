@@ -149,6 +149,9 @@ interface ZdtdActions {
   fun setProfileEnabled(programId: String, profile: String, enabled: Boolean, onDone: (Boolean) -> Unit = {})
   fun deleteProfile(programId: String, profile: String, onDone: (Boolean) -> Unit = {})
 
+  /** Clear downloaded Mihomo dashboard UI files for one profile. */
+  fun clearMihomoProfileUi(profile: String, onDone: (Boolean) -> Unit = {})
+
   /**
    * Create the next profile for a program (server chooses the name).
    * Returns the created profile name (if detected), otherwise null.

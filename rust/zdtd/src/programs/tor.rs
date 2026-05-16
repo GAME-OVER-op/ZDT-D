@@ -397,7 +397,10 @@ pub fn validate_enable_requirements() -> Result<()> {
     let setting = load_setting()?;
     let torrc = normalize_torrc_content(&read_torrc_text()?);
     let socks_port = validate_torrc_ready(&torrc)?;
-    validate_setting(&setting, socks_port)?;
+    let _ = rebuild_out_program()?;
+    if has_routed_app_outputs() {
+        validate_setting(&setting, socks_port)?;
+    }
     Ok(())
 }
 
@@ -409,7 +412,8 @@ pub fn start_if_enabled() -> Result<()> {
         return Ok(());
     }
 
-    validate_enable_requirements()?;
+    ensure_file(TOR_BIN)?;
+    ensure_file(LYREBIRD_BIN)?;
     let setting = load_setting()?;
 
     let torrc_raw = read_torrc_text()?;
@@ -418,15 +422,6 @@ pub fn start_if_enabled() -> Result<()> {
         write_torrc_text(&torrc_raw)?;
     }
     let socks_port = validate_torrc_ready(&normalized_torrc)?;
-    validate_setting(&setting, socks_port)?;
-
-    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, true, false, false, false)
-        .unwrap_or_default();
-    for port in [socks_port, setting.t2s_port, setting.t2s_web_port] {
-        if external_used.contains(&port) {
-            anyhow::bail!("port conflict detected: {}", port);
-        }
-    }
 
     let _ = rebuild_out_program()?;
     let resolved = count_valid_uid_pairs(&out_program_path()).unwrap_or(0);
@@ -435,46 +430,76 @@ pub fn start_if_enabled() -> Result<()> {
         warn!("tor: no resolved apps -> skip start/iptables");
         return Ok(());
     }
+    let needs_t2s = resolved > 0;
     if resolved == 0 && has_launch_marker {
-        info!("tor: launch marker present, starting without routing app UIDs");
+        info!("tor: launch marker present, starting only tor without t2s/app routing");
+    }
+
+    if needs_t2s {
+        validate_setting(&setting, socks_port)?;
+    }
+
+    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, true, false, false, false)
+        .unwrap_or_default();
+    let mut ports_to_check = vec![socks_port];
+    if needs_t2s {
+        ports_to_check.push(setting.t2s_port);
+        ports_to_check.push(setting.t2s_web_port);
+    }
+    for port in ports_to_check {
+        if external_used.contains(&port) {
+            anyhow::bail!("port conflict detected: {}", port);
+        }
     }
 
     crate::logging::user_info("Tor: запуск");
 
     truncate_file(&tor_log_path())?;
-    truncate_file(&t2s_log_path())?;
-
     spawn_tor(&torrc_path(), &tor_log_path())?;
-    let t2s_bin = find_bin("t2s")?;
-    spawn_t2s(
-        &t2s_bin,
-        "127.0.0.1",
-        setting.t2s_port,
-        setting.t2s_web_port,
-        &socks_port.to_string(),
-        &t2s_log_path(),
-    )?;
 
-    iptables_port::apply(
-        &out_program_path(),
-        setting.t2s_port,
-        ProtoChoice::Tcp,
-        None,
-        DpiTunnelOptions {
-            port_preference: 1,
-            ..DpiTunnelOptions::default()
-        },
-    )
-    .with_context(|| "iptables tor")?;
+    if needs_t2s {
+        truncate_file(&t2s_log_path())?;
+        let t2s_bin = find_bin("t2s")?;
+        spawn_t2s(
+            &t2s_bin,
+            "127.0.0.1",
+            setting.t2s_port,
+            setting.t2s_web_port,
+            &socks_port.to_string(),
+            &t2s_log_path(),
+        )?;
 
-    info!(
-        "tor: apps={} socks_port={} t2s_port={} t2s_web_port={}",
-        resolved,
-        socks_port,
-        setting.t2s_port,
-        setting.t2s_web_port,
-    );
+        iptables_port::apply(
+            &out_program_path(),
+            setting.t2s_port,
+            ProtoChoice::Tcp,
+            None,
+            DpiTunnelOptions {
+                port_preference: 1,
+                ..DpiTunnelOptions::default()
+            },
+        )
+        .with_context(|| "iptables tor")?;
+
+        info!(
+            "tor: apps={} socks_port={} t2s_port={} t2s_web_port={}",
+            resolved,
+            socks_port,
+            setting.t2s_port,
+            setting.t2s_web_port,
+        );
+    } else {
+        info!(
+            "tor: apps=0 launch_marker={} socks_port={} t2s=disabled",
+            has_launch_marker,
+            socks_port,
+        );
+    }
     Ok(())
+}
+
+pub fn has_routed_app_outputs() -> bool {
+    count_valid_uid_pairs(&out_program_path()).unwrap_or(0) > 0
 }
 
 fn validate_setting(setting: &Setting, socks_port: u16) -> Result<()> {

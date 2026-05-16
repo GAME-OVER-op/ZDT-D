@@ -4534,6 +4534,31 @@ private fun shQuote(s: String): String {
     }
   }
 
+  override fun clearMihomoProfileUi(profile: String, onDone: (Boolean) -> Unit) {
+    launchIO {
+      val safeProfile = profile.trim().ifBlank { "main" }
+      val ok = if (safeProfile.contains('/') || safeProfile.contains('\\') || safeProfile == "." || safeProfile == ".." || safeProfile.contains("../")) {
+        false
+      } else {
+        val uiDir = "/data/adb/modules/ZDT-D/working_folder/mihomo/profile/$safeProfile/work/ui"
+        val script = """
+          ui_dir=${shQuote(uiDir)}
+          if [ -L "${'$'}ui_dir" ]; then
+            rm -f "${'$'}ui_dir" || exit 1
+          fi
+          mkdir -p "${'$'}ui_dir" || exit 1
+          rm -rf "${'$'}ui_dir"/* "${'$'}ui_dir"/.[!.]* "${'$'}ui_dir"/..?* 2>/dev/null || true
+          mkdir -p "${'$'}ui_dir" || exit 1
+          chmod 0755 "${'$'}ui_dir" 2>/dev/null || true
+        """.trimIndent()
+        runCatching { root.execRootSh(script).isSuccess }.getOrDefault(false)
+      }
+      if (ok) log("OK", "mihomo/$safeProfile UI cache cleared")
+      else log("ERR", "mihomo/$safeProfile UI cache clear failed")
+      withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
   override fun createNextProfile(programId: String, onDone: (String?) -> Unit) {
     launchIO {
       val guardPrograms = freshestProgramsForProfileGuard()

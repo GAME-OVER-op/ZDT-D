@@ -1465,6 +1465,10 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="mihomo_pending_add_proxy_group_desc">Proxy %1$s is saved in proxies. Save this pending change to add it to group Proxy, or cancel to keep the config as it is.</string>
     <string name="mihomo_pending_details">Change</string>
 
+    <string name="web_panel_action_back">Back</string>
+    <string name="web_panel_action_refresh">Refresh</string>
+    <string name="web_panel_action_reset">Reset page</string>
+    <string name="web_panel_loading_page">Opening web panel…</string>
     <string name="web_panel_open">Web panel</string>
     <string name="web_panel_unavailable">It looks like the service is not running or the web panel is configured incorrectly</string>
     <string name="program_logs_title">Tool logs</string>

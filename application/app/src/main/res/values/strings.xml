@@ -1074,6 +1074,8 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="world_map_traffic_mb">Traffic %1$.1f MB</string>
     <string name="world_map_traffic_kb">Traffic %1$.0f KB</string>
     <string name="world_map_traffic_b">Traffic %1$d B</string>
+    <string name="world_map_preparing_title">Preparing map…</string>
+    <string name="world_map_preparing_body">Collecting active connections before drawing the map.</string>
     <string name="world_map_you">YOU</string>
     <string name="world_map_peer_traffic_meta">↑%1$d%%  ↓%2$d%%  •  %3$d ms</string>
     <string name="world_map_activity_very_high">very high activity</string>

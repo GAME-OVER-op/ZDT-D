@@ -31,7 +31,6 @@ object ApiModels {
     val wireProxy: ProcAgg = ProcAgg(),
     val tor: ProcAgg = ProcAgg(),
     val openVpn: ProcAgg = ProcAgg(),
-    val tun2Socks: ProcAgg = ProcAgg(),
     val mihomo: ProcAgg = ProcAgg(),
     val mieru: ProcAgg = ProcAgg(),
     val tun2Proxy: ProcAgg = ProcAgg(),
@@ -153,7 +152,6 @@ object ApiModels {
       wireProxy = parseProcAgg(o.optJSONObject("wireproxy")),
       tor = parseProcAgg(o.optJSONObject("tor")),
       openVpn = parseProcAgg(o.optJSONObject("openvpn")),
-      tun2Socks = parseProcAgg(o.optJSONObject("tun2socks")),
       mihomo = parseProcAgg(o.optJSONObject("mihomo")),
       mieru = parseProcAgg(o.optJSONObject("mieru")),
       tun2Proxy = parseProcAgg(o.optJSONObject("tun2proxy")),
@@ -211,7 +209,7 @@ object ApiModels {
       "off", "error" -> return false
     }
     val opera = r.opera
-    val sum = r.zapret.count + r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.dpitunnel.count + r.singBox.count + r.wireProxy.count + r.tor.count + r.openVpn.count + r.tun2Socks.count + r.mihomo.count + r.mieru.count + r.tun2Proxy.count + r.amneziaWg.count +
+    val sum = r.zapret.count + r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.dpitunnel.count + r.singBox.count + r.wireProxy.count + r.tor.count + r.openVpn.count + r.mihomo.count + r.mieru.count + r.tun2Proxy.count + r.amneziaWg.count +
       (opera?.opera?.count ?: 0) + r.t2s.count + (opera?.byedpi?.count ?: 0)
     return sum > 0
   }
@@ -244,7 +242,6 @@ object ApiModels {
       add(r.wireProxy)
       add(r.tor)
       add(r.openVpn)
-      add(r.tun2Socks)
       add(r.mihomo)
       add(r.mieru)
       add(r.tun2Proxy)

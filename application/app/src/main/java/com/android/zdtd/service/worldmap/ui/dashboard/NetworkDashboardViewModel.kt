@@ -29,14 +29,15 @@ data class DashboardUiState(
     val lastError: String? = null,
     val sessionDurationMs: Long = 0L,
     val sessionTrafficBytes: Long = 0L,
+    val isPreparingMap: Boolean = true,
 )
 
 private const val POLL_INTERVAL_MS = 2_000L
-private const val FRAME_INTERVAL_MS = 42L
-private const val IDLE_FRAME_INTERVAL_MS = 160L
-private const val QUIET_FRAME_INTERVAL_MS = 84L
-private const val VISIBILITY_STEP = 0.016f
-private const val ACTIVITY_STEP = 0.014f
+private const val FRAME_INTERVAL_MS = 8L
+private const val IDLE_FRAME_INTERVAL_MS = 120L
+private const val QUIET_FRAME_INTERVAL_MS = 16L
+private const val VISIBILITY_STEP = 0.010f
+private const val ACTIVITY_STEP = 0.010f
 private const val PACKET_DRAIN_MS = 1_650L
 
 class NetworkDashboardViewModel(
@@ -60,6 +61,7 @@ class NetworkDashboardViewModel(
     private var sessionStartedAtMs = 0L
     private var lastTrafficSnapshotBytes: Long? = null
     private var sessionTrafficBytes = 0L
+    private var initialSnapshotReady = false
 
 
     private data class QueueSnapshot(
@@ -176,6 +178,7 @@ class NetworkDashboardViewModel(
         if (!rootReady) {
             lastError = strings.rootUnavailable()
             previousQueueSnapshots.clear()
+            initialSnapshotReady = true
             markAllInactive(ClosingSide.UNKNOWN)
             emitUiState()
             return
@@ -192,6 +195,15 @@ class NetworkDashboardViewModel(
                 }
                 lastTrafficSnapshotBytes = totalBytes
             }
+
+            val geoCandidates = samples
+                .asSequence()
+                .filter { it.protocol in geoProtocols }
+                .map { it.remoteIp }
+                .distinct()
+                .take(MAX_GEO_REQUESTS_PER_CYCLE)
+                .toList()
+
             val mappedPeers = enhancePeerActivity(
                 PeerVisualMapper.map(
                     connections = samples,
@@ -201,32 +213,29 @@ class NetworkDashboardViewModel(
                 )
             )
             syncPeers(mappedPeers)
+            initialSnapshotReady = true
             emitUiState()
-            viewModelScope.launch {
-                val geoCandidates = samples
-                    .asSequence()
-                    .filter { it.protocol in geoProtocols }
-                    .map { it.remoteIp }
-                    .distinct()
-                    .take(MAX_GEO_REQUESTS_PER_CYCLE)
-                    .toList()
 
-                val changed = geoRepository.resolveMissing(geoCandidates)
-                if (changed && lastSamples.isNotEmpty()) {
-                    val remappedPeers = enhancePeerActivity(
-                        PeerVisualMapper.map(
-                            connections = lastSamples,
-                            locationForIp = { ip -> geoRepository.cached(ip) },
-                            stateForIp = { ip -> geoRepository.stateFor(ip) },
-                            strings = strings,
+            if (geoCandidates.isNotEmpty()) {
+                viewModelScope.launch {
+                    val changed = geoRepository.resolveMissing(geoCandidates)
+                    if (changed && lastSamples.isNotEmpty()) {
+                        val remappedPeers = enhancePeerActivity(
+                            PeerVisualMapper.map(
+                                connections = lastSamples,
+                                locationForIp = { ip -> geoRepository.cached(ip) },
+                                stateForIp = { ip -> geoRepository.stateFor(ip) },
+                                strings = strings,
+                            )
                         )
-                    )
-                    syncPeers(remappedPeers)
-                    emitUiState()
+                        syncPeers(remappedPeers)
+                        emitUiState()
+                    }
                 }
             }
         }.onFailure { error ->
             lastError = error.message ?: strings.readConnectionsFailed()
+            initialSnapshotReady = true
             markAllInactive(ClosingSide.UNKNOWN)
             emitUiState()
         }
@@ -381,6 +390,7 @@ class NetworkDashboardViewModel(
             lastError = lastError,
             sessionDurationMs = if (sessionStartedAtMs == 0L) 0L else (SystemClock.elapsedRealtime() - sessionStartedAtMs).coerceAtLeast(0L),
             sessionTrafficBytes = sessionTrafficBytes,
+            isPreparingMap = !initialSnapshotReady,
         )
     }
 

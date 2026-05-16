@@ -71,16 +71,30 @@ class RootConnectionRepository(
     }
 
     private fun executeSsBlocks(): List<SsBlock> {
-        val commands = listOf(
+        val primaryCommands = listOf(
             CommandSpec("tcp", "ss -H -tinmep 2>/dev/null | head -n 256"),
             CommandSpec("udp", "ss -H -uanepm 2>/dev/null | head -n 192"),
+        )
+        val fallbackCommands = listOf(
             CommandSpec("tcp", "ss -H -tinep 2>/dev/null | head -n 256"),
             CommandSpec("udp", "ss -H -uanep 2>/dev/null | head -n 192"),
             CommandSpec("tcp", "ss -H -tuna 2>/dev/null | head -n 192"),
         )
 
-        val collected = mutableListOf<SsBlock>()
         var lastError = strings.failedConnectionsCommand()
+        val collected = collectSsBlocks(primaryCommands) { error -> lastError = error.ifBlank { lastError } }
+        if (collected.isNotEmpty()) return collected
+
+        val fallback = collectSsBlocks(fallbackCommands) { error -> lastError = error.ifBlank { lastError } }
+        if (fallback.isNotEmpty()) return fallback
+        error(lastError)
+    }
+
+    private fun collectSsBlocks(
+        commands: List<CommandSpec>,
+        onError: (String) -> Unit,
+    ): List<SsBlock> {
+        val collected = mutableListOf<SsBlock>()
         commands.forEach { spec ->
             val result = Shell.cmd(spec.command).exec()
             if (result.code == 0 && result.out.isNotEmpty()) {
@@ -88,11 +102,10 @@ class RootConnectionRepository(
                     SsBlock(protocolBase = spec.protocolBase, block = block)
                 }
             } else {
-                lastError = result.err.joinToString(separator = "\n").ifBlank { lastError }
+                onError(result.err.joinToString(separator = "\n"))
             }
         }
-        if (collected.isNotEmpty()) return collected
-        error(lastError)
+        return collected
     }
 
     private fun groupSsBlocks(lines: List<String>): List<String> {

@@ -104,14 +104,13 @@ fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
         ProcRow("WireProxy", showRep?.wireProxy ?: ApiModels.ProcAgg(), 7),
         ProcRow("Tor", showRep?.tor ?: ApiModels.ProcAgg(), 8),
         ProcRow("OpenVPN", showRep?.openVpn ?: ApiModels.ProcAgg(), 9),
-        ProcRow("tun2socks", showRep?.tun2Socks ?: ApiModels.ProcAgg(), 10),
-        ProcRow("Mihomo", showRep?.mihomo ?: ApiModels.ProcAgg(), 11),
-        ProcRow("mieru", showRep?.mieru ?: ApiModels.ProcAgg(), 12),
-        ProcRow("tun2proxy", showRep?.tun2Proxy ?: ApiModels.ProcAgg(), 13),
-        ProcRow("AmneziaWG", showRep?.amneziaWg ?: ApiModels.ProcAgg(), 14),
-        ProcRow("opera-proxy", showRep?.opera?.opera ?: ApiModels.ProcAgg(), 15),
-        ProcRow("t2s", showRep?.t2s ?: ApiModels.ProcAgg(), 16),
-        ProcRow("opera-ByeDPI", showRep?.opera?.byedpi ?: ApiModels.ProcAgg(), 17),
+        ProcRow("Mihomo", showRep?.mihomo ?: ApiModels.ProcAgg(), 10),
+        ProcRow("mieru", showRep?.mieru ?: ApiModels.ProcAgg(), 11),
+        ProcRow("tun2proxy", showRep?.tun2Proxy ?: ApiModels.ProcAgg(), 12),
+        ProcRow("AmneziaWG", showRep?.amneziaWg ?: ApiModels.ProcAgg(), 13),
+        ProcRow("opera-proxy", showRep?.opera?.opera ?: ApiModels.ProcAgg(), 14),
+        ProcRow("t2s", showRep?.t2s ?: ApiModels.ProcAgg(), 15),
+        ProcRow("opera-ByeDPI", showRep?.opera?.byedpi ?: ApiModels.ProcAgg(), 16),
       ).sortedWith(
         compareByDescending<ProcRow> { it.agg.count > 0 }
           .thenByDescending { it.agg.cpuPercent }

@@ -36,10 +36,13 @@ pub struct StatusReport {
     pub myprogram: UsageAgg,
     pub openvpn: UsageAgg,
     pub amneziawg: UsageAgg,
+    // Internal-only compatibility bucket used by runtime adoption checks.
+    // Do not expose it through /api/status: UI should use `tun2proxy`.
+    #[serde(skip_serializing)]
     pub tun2socks: UsageAgg,
     pub mihomo: UsageAgg,
     pub mieru: UsageAgg,
-    pub tun2proxy: UsageAgg,
+    pub tun2proxy: UsageAgg, // combined tun2socks/tun2proxy helper processes
     pub tor: UsageAgg,
     pub t2s: UsageAgg,       // t2s used by opera-proxy, sing-box, wireproxy and tor
     pub opera: OperaAgg,    // opera-proxy + t2s + operaproxy-byedpi
@@ -128,8 +131,15 @@ pub fn collect_status() -> Result<StatusReport> {
     let amneziawg_pids = amneziawg_pids();
     let tun2socks_pids = tun2socks_pids();
     let mihomo_pids = mihomo_pids();
+    let mihomo_tun2socks_pids = mihomo_tun2socks_pids();
     let mieru_pids = mieru_pids();
     let mieru_tun2proxy_pids = mieru_tun2proxy_pids();
+    let mut tun2proxy_pids = Vec::new();
+    tun2proxy_pids.extend(tun2socks_pids.iter().copied());
+    tun2proxy_pids.extend(mihomo_tun2socks_pids.iter().copied());
+    tun2proxy_pids.extend(mieru_tun2proxy_pids.iter().copied());
+    tun2proxy_pids.sort_unstable();
+    tun2proxy_pids.dedup();
     let tor_pids = tor_pids();
 
     let mut byedpi_all = pidof("byedpi");
@@ -163,7 +173,7 @@ pub fn collect_status() -> Result<StatusReport> {
         tun2socks: agg(&tun2socks_pids),
         mihomo: agg(&mihomo_pids),
         mieru: agg(&mieru_pids),
-        tun2proxy: agg(&mieru_tun2proxy_pids),
+        tun2proxy: agg(&tun2proxy_pids),
         tor: agg(&tor_pids),
         t2s: agg(&t2s_all_pids),
         opera: OperaAgg {
@@ -389,6 +399,13 @@ fn mieru_pids() -> Vec<u32> {
 
 fn mieru_tun2proxy_pids() -> Vec<u32> {
     crate::programs::mieru::tun2proxy_pids_exact()
+        .into_iter()
+        .filter_map(|p| u32::try_from(p).ok())
+        .collect()
+}
+
+fn mihomo_tun2socks_pids() -> Vec<u32> {
+    crate::programs::mihomo::tun2socks_pids_exact()
         .into_iter()
         .filter_map(|p| u32::try_from(p).ok())
         .collect()

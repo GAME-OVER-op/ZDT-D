@@ -1074,6 +1074,8 @@ APatch: 10700+</string>
     <string name="world_map_traffic_mb">Трафик %1$.1f MB</string>
     <string name="world_map_traffic_kb">Трафик %1$.0f KB</string>
     <string name="world_map_traffic_b">Трафик %1$d B</string>
+    <string name="world_map_preparing_title">Подготовка карты…</string>
+    <string name="world_map_preparing_body">Собираем активные соединения перед показом карты.</string>
     <string name="world_map_you">ВЫ</string>
     <string name="world_map_peer_traffic_meta">↑%1$d%%  ↓%2$d%%  •  %3$d мс</string>
     <string name="world_map_activity_very_high">очень высокая активность</string>

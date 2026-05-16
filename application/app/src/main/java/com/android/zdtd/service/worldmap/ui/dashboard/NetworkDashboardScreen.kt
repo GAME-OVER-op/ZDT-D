@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.rounded.Public
 import androidx.compose.material.icons.rounded.Router
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -56,10 +58,13 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -109,6 +114,12 @@ fun NetworkDashboardScreen(
         }
     }
 
+    val configuration = LocalConfiguration.current
+    val useTabletLayout = remember(configuration.screenWidthDp, configuration.screenHeightDp) {
+        configuration.screenWidthDp >= 720 ||
+            (configuration.screenWidthDp >= 640 && configuration.screenWidthDp > configuration.screenHeightDp)
+    }
+
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -127,44 +138,124 @@ fun NetworkDashboardScreen(
         },
         containerColor = Color(0xFF070707),
     ) { padding ->
+        if (useTabletLayout) {
+            TabletDashboardContent(
+                state = state,
+                lastError = lastError,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF070707))
+                    .padding(padding),
+            )
+        } else {
+            PhoneDashboardContent(
+                state = state,
+                lastError = lastError,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF070707))
+                    .padding(padding),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PhoneDashboardContent(
+    state: DashboardUiState,
+    lastError: String?,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(
+        modifier = modifier,
+        contentPadding = PaddingValues(bottom = 24.dp),
+    ) {
+        item(key = "header", contentType = "header") {
+            DashboardHeader(
+                connectionsCount = state.peers.count { it.isActive },
+                isRootReady = state.isRootReady,
+                sessionDurationMs = state.sessionDurationMs,
+                sessionTrafficBytes = state.sessionTrafficBytes,
+            )
+        }
+
+        item(key = "map", contentType = "map") {
+            MapStageCard(
+                peers = state.peers,
+                isPreparing = state.isPreparingMap,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+            )
+        }
+
+        item(key = "error", contentType = "error") {
+            if (lastError != null) {
+                Text(
+                    text = lastError,
+                    color = Color(0xFFB79A9A),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                )
+            } else {
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+        }
+
+        items(
+            items = state.peers,
+            key = { it.id },
+            contentType = { "peer" },
+        ) { peer ->
+            PeerCard(peer = peer)
+        }
+    }
+}
+
+@Composable
+private fun TabletDashboardContent(
+    state: DashboardUiState,
+    lastError: String?,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1.18f)
+                .fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            DashboardHeader(
+                connectionsCount = state.peers.count { it.isActive },
+                isRootReady = state.isRootReady,
+                sessionDurationMs = state.sessionDurationMs,
+                sessionTrafficBytes = state.sessionTrafficBytes,
+            )
+            MapStageCard(
+                peers = state.peers,
+                isPreparing = state.isPreparingMap,
+                height = 540.dp,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (lastError != null) {
+                Text(
+                    text = lastError,
+                    color = Color(0xFFB79A9A),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(horizontal = 6.dp),
+                )
+            }
+        }
+
         LazyColumn(
             modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0xFF070707))
-                .padding(padding),
+                .weight(0.82f)
+                .fillMaxHeight(),
             contentPadding = PaddingValues(bottom = 24.dp),
         ) {
-            item(key = "header", contentType = "header") {
-                DashboardHeader(
-                    connectionsCount = state.peers.count { it.isActive },
-                    isRootReady = state.isRootReady,
-                    sessionDurationMs = state.sessionDurationMs,
-                    sessionTrafficBytes = state.sessionTrafficBytes,
-                )
-            }
-
-            item(key = "map", contentType = "map") {
-                NetworkMapCard(
-                    peers = state.peers,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
-                )
-            }
-
-            item(key = "error", contentType = "error") {
-                if (lastError != null) {
-                    Text(
-                        text = lastError,
-                        color = Color(0xFFB79A9A),
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-                    )
-                } else {
-                    Spacer(modifier = Modifier.height(12.dp))
-                }
-            }
-
             items(
                 items = state.peers,
                 key = { it.id },
@@ -266,10 +357,81 @@ private fun formatTraffic(bytes: Long): String {
     }
 }
 
+
+@Composable
+private fun MapStageCard(
+    peers: List<PeerVisual>,
+    isPreparing: Boolean,
+    modifier: Modifier = Modifier,
+    height: Dp = 392.dp,
+) {
+    if (isPreparing) {
+        PreparingMapCard(
+            modifier = modifier,
+            height = height,
+        )
+    } else {
+        NetworkMapCard(
+            peers = peers,
+            modifier = modifier,
+            height = height,
+        )
+    }
+}
+
+@Composable
+private fun PreparingMapCard(
+    modifier: Modifier = Modifier,
+    height: Dp = 392.dp,
+) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF13090B)),
+        shape = RoundedCornerShape(24.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(height)
+                .background(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(Color(0xFF150809), Color(0xFF050304)),
+                    ),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.padding(horizontal = 28.dp),
+            ) {
+                CircularProgressIndicator(
+                    color = Color(0xFFFF5A52),
+                    trackColor = Color(0x33FF5A52),
+                    strokeWidth = 3.dp,
+                )
+                Text(
+                    text = stringResource(R.string.world_map_preparing_title),
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = stringResource(R.string.world_map_preparing_body),
+                    color = Color(0xFFD2B5B5),
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun NetworkMapCard(
     peers: List<PeerVisual>,
     modifier: Modifier = Modifier,
+    height: Dp = 392.dp,
 ) {
     Card(
         modifier = modifier,
@@ -341,6 +503,7 @@ private fun NetworkMapCard(
         }
 
         val packetEngine = remember { PacketEngine() }
+        val routeCache = remember { RouteGeometryCache() }
         val packetsByPeer = remember(displayPeers, nowMs) { packetEngine.update(displayPeers, nowMs) }
         val activePeerCount = displayPeers.count { it.isActive }
         val lineDensityScale = when {
@@ -353,7 +516,7 @@ private fun NetworkMapCard(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(392.dp)
+                .height(height)
                 .background(
                     brush = Brush.verticalGradient(
                         colors = listOf(Color(0xFF150809), Color(0xFF050304)),
@@ -377,7 +540,7 @@ private fun NetworkMapCard(
 
                 displayPeers.forEach { peer ->
                     val peerOffset = Offset(size.width * peer.x, size.height * peer.y)
-                    val route = buildPeerRoute(user = user, peer = peerOffset, size = size, seed = peer.seed)
+                    val route = routeCache.routeFor(peer.id, user = user, peer = peerOffset, size = size, seed = peer.seed)
                     val visibleRange = visibleRangeForPeer(peer)
                     val easedVisibility = easeOutCubic(peer.visibility)
                     val hotness = (0.70f + peer.activityScore * 0.85f).coerceIn(0.70f, 1.55f)
@@ -459,6 +622,40 @@ private data class WorldFrame(
 private data class RouteGeometry(
     val points: List<Offset>,
 )
+
+private data class RouteGeometryCacheKey(
+    val peerId: String,
+    val width: Int,
+    val height: Int,
+    val seed: Int,
+    val peerX: Int,
+    val peerY: Int,
+)
+
+private class RouteGeometryCache {
+    private val routes = LinkedHashMap<RouteGeometryCacheKey, RouteGeometry>()
+
+    fun routeFor(
+        peerId: String,
+        user: Offset,
+        peer: Offset,
+        size: Size,
+        seed: Int,
+    ): RouteGeometry {
+        val key = RouteGeometryCacheKey(
+            peerId = peerId,
+            width = size.width.roundToInt(),
+            height = size.height.roundToInt(),
+            seed = seed,
+            peerX = peer.x.roundToInt(),
+            peerY = peer.y.roundToInt(),
+        )
+        return routes.getOrPut(key) {
+            if (routes.size > 96) routes.clear()
+            buildPeerRoute(user = user, peer = peer, size = size, seed = seed)
+        }
+    }
+}
 
 private data class RoutePosition(
     val point: Offset,
@@ -657,8 +854,7 @@ private fun DrawScope.drawWorldLand(
     world: WorldFrame,
     pulse: Float,
 ) {
-    WorldLandData.polygons.forEach { coords ->
-        val path = polygonPath(world, coords)
+    WorldLandPathCache.pathsFor(world).forEach { path ->
         drawPath(
             path = path,
             color = Color(0x14A53131),
@@ -673,6 +869,32 @@ private fun DrawScope.drawWorldLand(
             color = Color(0xFFFF847C).copy(alpha = 0.18f + pulse * 0.05f),
             style = Stroke(width = 0.52f + pulse * 0.06f, cap = StrokeCap.Round),
         )
+    }
+}
+
+private data class WorldLandPathCacheKey(
+    val left: Int,
+    val top: Int,
+    val width: Int,
+    val height: Int,
+)
+
+private object WorldLandPathCache {
+    private var key: WorldLandPathCacheKey? = null
+    private var paths: List<Path> = emptyList()
+
+    fun pathsFor(world: WorldFrame): List<Path> {
+        val nextKey = WorldLandPathCacheKey(
+            left = world.left.roundToInt(),
+            top = world.top.roundToInt(),
+            width = world.width.roundToInt(),
+            height = world.height.roundToInt(),
+        )
+        if (key != nextKey) {
+            key = nextKey
+            paths = WorldLandData.polygons.map { coords -> polygonPath(world, coords) }
+        }
+        return paths
     }
 }
 
@@ -830,7 +1052,7 @@ private fun DrawScope.drawPacketStreams(
     val span = (visibleRange.endInclusive - visibleRange.start).coerceAtLeast(0f)
     if (span <= 0.01f || packets.isEmpty()) return
 
-    packets.sortedBy { it.progress }.forEach { packet ->
+    packets.forEach { packet ->
         val routeFraction = if (packet.outgoing) {
             interpolateRange(visibleRange, packet.progress)
         } else {
@@ -1139,9 +1361,6 @@ private fun rememberAnimationClockMillis(enabled: Boolean): Long {
         }
         while (true) {
             withFrameMillis { frameTime.longValue = it }
-            // The map animation is decorative. Throttling it keeps the visual style
-            // but prevents the world map from invalidating composition every display frame.
-            delay(66L)
         }
     }
     return frameTime.longValue

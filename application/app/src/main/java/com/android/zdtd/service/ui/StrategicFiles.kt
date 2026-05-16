@@ -108,6 +108,7 @@ private fun StrategicTextDirSection(
   var expanded by remember { mutableStateOf<String?>(null) }
   var fileLoading by remember { mutableStateOf(false) }
   var text by remember { mutableStateOf("") }
+  var lastLoadedText by remember { mutableStateOf("") }
   var tooLarge by remember { mutableStateOf(false) }
   var loadError by remember { mutableStateOf<String?>(null) }
   var saving by remember { mutableStateOf(false) }
@@ -221,11 +222,13 @@ private fun StrategicTextDirSection(
                   if (expanded == f) {
                     expanded = null
                     text = ""
+                    lastLoadedText = ""
                     tooLarge = false
                     loadError = null
                   } else {
                     expanded = f
                     text = ""
+                    lastLoadedText = ""
                     tooLarge = false
                     loadError = null
 
@@ -239,8 +242,10 @@ private fun StrategicTextDirSection(
                         if (content == null) {
                           loadError = msgCantLoadFile
                           text = ""
+                          lastLoadedText = ""
                         } else {
                           text = content
+                          lastLoadedText = content
                         }
                         fileLoading = false
                       }
@@ -275,6 +280,7 @@ private fun StrategicTextDirSection(
                           if (expanded == f) {
                             expanded = null
                             text = ""
+                            lastLoadedText = ""
                           }
                           refresh()
                         }
@@ -309,6 +315,7 @@ private fun StrategicTextDirSection(
                           if (expanded == f) {
                             expanded = null
                             text = ""
+                            lastLoadedText = ""
                           }
                           refresh()
                         }
@@ -378,10 +385,11 @@ private fun StrategicTextDirSection(
                           saving = true
                           actions.saveStrategicText(dir, f, text) { ok ->
                             saving = false
+                            if (ok) lastLoadedText = text
                             showSnack(if (ok) msgSaved else msgSaveFailed)
                           }
                         },
-                        enabled = !saving,
+                        enabled = !saving && text != lastLoadedText,
                         modifier = if (compactWidth) Modifier.fillMaxWidth() else Modifier,
                       ) { Text(stringResource(R.string.common_save)) }
                     }

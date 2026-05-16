@@ -146,6 +146,7 @@ struct T2sProfilePlan {
     setting: ProfileSetting,
     uid_out: PathBuf,
     uid_count: usize,
+    needs_t2s: bool,
     t2s_log: PathBuf,
     servers: Vec<ServerPlan>,
 }
@@ -295,6 +296,11 @@ pub fn start_t2s_if_enabled() -> Result<()> {
         return Ok(());
     }
 
+    let api_settings = settings::load_api_settings().unwrap_or_default();
+    let hotspot_profile = api_settings
+        .hotspot_t2s_singbox_profile()
+        .map(|s| s.to_string());
+
     let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding(true, false)
         .unwrap_or_else(|_| BTreeSet::new());
     let mut own_used = BTreeSet::<u16>::new();
@@ -302,10 +308,12 @@ pub fn start_t2s_if_enabled() -> Result<()> {
     let mut had_error = false;
 
     for name in enabled_names {
-        match build_t2s_profile_plan(&name, &external_used, &own_used) {
+        match build_t2s_profile_plan(&name, &external_used, &own_used, hotspot_profile.as_deref()) {
             Ok(Some(plan)) => {
-                own_used.insert(plan.setting.t2s_port);
-                own_used.insert(plan.setting.t2s_web_port);
+                if plan.needs_t2s {
+                    own_used.insert(plan.setting.t2s_port);
+                    own_used.insert(plan.setting.t2s_web_port);
+                }
                 for srv in &plan.servers {
                     own_used.insert(srv.port);
                 }
@@ -327,11 +335,11 @@ pub fn start_t2s_if_enabled() -> Result<()> {
         return Ok(());
     }
 
-    let t2s_bin = find_bin("t2s")?;
-    let api_settings = settings::load_api_settings().unwrap_or_default();
-    let hotspot_profile = api_settings
-        .hotspot_t2s_singbox_profile()
-        .map(|s| s.to_string());
+    let t2s_bin = if plans.iter().any(|plan| plan.needs_t2s) {
+        Some(find_bin("t2s")?)
+    } else {
+        None
+    };
     if api_settings.hotspot_t2s_for_singbox() && hotspot_profile.is_none() {
         warn!("sing-box: hotspot target is sing-box, but no hotspot profile is selected; using 127.0.0.1 for all profiles");
     }
@@ -364,43 +372,58 @@ pub fn start_t2s_if_enabled() -> Result<()> {
         let hotspot_for_plan = hotspot_profile.as_deref() == Some(plan.name.as_str());
         let t2s_listen_addr = if hotspot_for_plan { "0.0.0.0" } else { "127.0.0.1" };
 
-        truncate_file(&plan.t2s_log)?;
-        spawn_t2s(
-            &t2s_bin,
-            t2s_listen_addr,
-            plan.setting.t2s_port,
-            plan.setting.t2s_web_port,
-            &ports_csv,
-            &plan.t2s_log,
-        )
-        .with_context(|| format!("spawn t2s profile={}", plan.name))?;
+        if plan.needs_t2s {
+            let t2s_bin = t2s_bin.as_ref().context("t2s binary path missing for sing-box profile")?;
+            truncate_file(&plan.t2s_log)?;
+            spawn_t2s(
+                t2s_bin,
+                t2s_listen_addr,
+                plan.setting.t2s_port,
+                plan.setting.t2s_web_port,
+                &ports_csv,
+                &plan.t2s_log,
+            )
+            .with_context(|| format!("spawn t2s profile={}", plan.name))?;
 
-        if hotspot_for_plan {
-            apply_hotspot_prerouting_redirect(plan.setting.t2s_port)?;
+            if hotspot_for_plan {
+                apply_hotspot_prerouting_redirect(plan.setting.t2s_port)?;
+            }
+
+            if plan.uid_count > 0 {
+                iptables_port::apply(
+                    &plan.uid_out,
+                    plan.setting.t2s_port,
+                    ProtoChoice::Tcp,
+                    None,
+                    DpiTunnelOptions {
+                        port_preference: 1,
+                        ..DpiTunnelOptions::default()
+                    },
+                )
+                .with_context(|| format!("iptables profile={}", plan.name))?;
+            } else {
+                info!("sing-box: profile={} has no routed app UIDs; only hotspot routing uses t2s", plan.name);
+            }
+
+            info!(
+                "sing-box: t2s profile={} apps={} servers={} t2s_port={} t2s_web_port={} socks_ports={} listen_addr={}",
+                plan.name,
+                plan.uid_count,
+                plan.servers.len(),
+                plan.setting.t2s_port,
+                plan.setting.t2s_web_port,
+                ports_csv,
+                t2s_listen_addr,
+            );
+        } else {
+            info!(
+                "sing-box: profile={} apps={} servers={} socks_ports={} mode=server-only",
+                plan.name,
+                plan.uid_count,
+                plan.servers.len(),
+                ports_csv,
+            );
         }
-
-        iptables_port::apply(
-            &plan.uid_out,
-            plan.setting.t2s_port,
-            ProtoChoice::Tcp,
-            None,
-            DpiTunnelOptions {
-                port_preference: 1,
-                ..DpiTunnelOptions::default()
-            },
-        )
-        .with_context(|| format!("iptables profile={}", plan.name))?;
-
-        info!(
-            "sing-box: t2s profile={} apps={} servers={} t2s_port={} t2s_web_port={} socks_ports={} listen_addr={}",
-            plan.name,
-            plan.uid_count,
-            plan.servers.len(),
-            plan.setting.t2s_port,
-            plan.setting.t2s_web_port,
-            ports_csv,
-            t2s_listen_addr,
-        );
     }
 
     if had_error {
@@ -418,6 +441,7 @@ fn build_t2s_profile_plan(
     profile: &str,
     external_used: &BTreeSet<u16>,
     own_used: &BTreeSet<u16>,
+    hotspot_profile: Option<&str>,
 ) -> Result<Option<T2sProfilePlan>> {
     ensure_valid_profile_name(profile)?;
 
@@ -448,11 +472,16 @@ fn build_t2s_profile_plan(
         info!("sing-box: profile '{}' uses launch marker; starting without routing app UIDs", profile);
     }
 
-    validate_t2s_profile_ports(profile, &setting, external_used, own_used)?;
+    let needs_t2s = resolved > 0 || hotspot_profile == Some(profile);
+    if needs_t2s {
+        validate_t2s_profile_ports(profile, &setting, external_used, own_used)?;
+    }
 
     let mut reserved = BTreeSet::new();
-    reserved.insert(setting.t2s_port);
-    reserved.insert(setting.t2s_web_port);
+    if needs_t2s {
+        reserved.insert(setting.t2s_port);
+        reserved.insert(setting.t2s_web_port);
+    }
     let servers = collect_t2s_profile_servers(profile, &setting, external_used, own_used, &reserved)?;
     if servers.is_empty() {
         warn!("sing-box: profile '{}' has no runnable t2s servers", profile);
@@ -464,6 +493,7 @@ fn build_t2s_profile_plan(
         setting,
         uid_out,
         uid_count: resolved,
+        needs_t2s,
         t2s_log: profile_t2s_log_path(profile),
         servers,
     }))
@@ -662,6 +692,10 @@ pub fn validate_start_plan() -> Result<()> {
         errors.push(format!("binary missing: {SINGBOX_BIN}"));
     }
 
+    let api_settings = settings::load_api_settings().unwrap_or_default();
+    let hotspot_profile = api_settings
+        .hotspot_t2s_singbox_profile()
+        .map(|s| s.to_string());
     let mut seen_t2s_ports = BTreeMap::<u16, String>::new();
     let used_ports = crate::ports::collect_used_ports_for_conflict_check_excluding(true, false).unwrap_or_default();
 
@@ -670,23 +704,42 @@ pub fn validate_start_plan() -> Result<()> {
             ensure_valid_profile_name(&name)?;
             let profile_dir = profile_root(&name);
             let setting = read_setting(&name)?;
-            validate_t2s_profile_ports(&name, &setting, &used_ports, &BTreeSet::new())?;
-            for (port, label) in [
-                (setting.t2s_port, "t2s_port"),
-                (setting.t2s_web_port, "t2s_web_port"),
-            ] {
-                if let Some(other) = seen_t2s_ports.insert(port, format!("{name}/{label}")) {
-                    bail!("port {} is used by {} and {}", port, other, name);
-                }
-            }
             let servers = list_enabled_server_settings(&name)?;
             if servers.is_empty() {
                 bail!("no enabled t2s servers");
             }
             let app_in = profile_dir.join("app/uid/user_program");
             let apps_raw = fs::read_to_string(&app_in).with_context(|| format!("read {}", app_in.display()))?;
-            if apps_raw.lines().map(str::trim).all(|l| l.is_empty() || l.starts_with('#')) {
+            let mut has_marker = false;
+            let mut has_real_app = false;
+            for line in apps_raw.lines() {
+                let mut s = line.trim();
+                if let Some((left, _)) = s.split_once('#') {
+                    s = left.trim();
+                }
+                if s.is_empty() {
+                    continue;
+                }
+                if pkg_uid::is_launch_marker_package(s) {
+                    has_marker = true;
+                } else {
+                    has_real_app = true;
+                }
+            }
+            if !has_marker && !has_real_app {
                 bail!("app list is empty: {}", app_in.display());
+            }
+            let needs_t2s = has_real_app || hotspot_profile.as_deref() == Some(name.as_str());
+            if needs_t2s {
+                validate_t2s_profile_ports(&name, &setting, &used_ports, &BTreeSet::new())?;
+                for (port, label) in [
+                    (setting.t2s_port, "t2s_port"),
+                    (setting.t2s_web_port, "t2s_web_port"),
+                ] {
+                    if let Some(other) = seen_t2s_ports.insert(port, format!("{name}/{label}")) {
+                        bail!("port {} is used by {} and {}", port, other, name);
+                    }
+                }
             }
             Ok(())
         })();

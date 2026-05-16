@@ -160,7 +160,9 @@ fun BlockedQuicAppsDialog(
   val ctx = androidx.compose.ui.platform.LocalContext.current
   val pm = ctx.packageManager
   var query by remember { mutableStateOf("") }
-  var selected by remember(initialContent) { mutableStateOf(parsePkgList(initialContent) - ZDTD_APP_PACKAGE_NAME) }
+  val initialSelected = remember(initialContent) { parsePkgList(initialContent) - ZDTD_APP_PACKAGE_NAME }
+  var selected by remember(initialSelected) { mutableStateOf(initialSelected) }
+  val hasChanges = selected != initialSelected
   var assignments by remember { mutableStateOf<ApiModels.AppAssignmentsState?>(null) }
   var conflictPackages by remember { mutableStateOf<Set<String>>(emptySet()) }
   val iconCache = remember { AppIconMemoryCache.map }
@@ -214,6 +216,7 @@ fun BlockedQuicAppsDialog(
   val selectedConflicts = remember(selected, assignments) { computeProxyInfoConflicts(selected) }
 
   fun attemptSave() {
+    if (!hasChanges) return
     val payload = (selected - ZDTD_APP_PACKAGE_NAME).sorted().joinToString("\n")
     if (selectedConflicts.isEmpty()) {
       onSave(payload) { ok -> if (ok) onDismiss() }
@@ -284,9 +287,9 @@ fun BlockedQuicAppsDialog(
               }
               Surface(
                 shape = CircleShape,
-                color = if (saving) MaterialTheme.colorScheme.primary.copy(alpha = 0.60f) else MaterialTheme.colorScheme.primary,
+                color = if (saving || !hasChanges) MaterialTheme.colorScheme.primary.copy(alpha = 0.38f) else MaterialTheme.colorScheme.primary,
               ) {
-                IconButton(onClick = { attemptSave() }, enabled = !saving, modifier = Modifier.size(40.dp)) {
+                IconButton(onClick = { attemptSave() }, enabled = !saving && hasChanges, modifier = Modifier.size(40.dp)) {
                   Icon(
                     imageVector = Icons.Filled.Check,
                     contentDescription = stringResource(R.string.common_save),
@@ -442,7 +445,7 @@ fun BlockedQuicAppsDialog(
             Button(
               onClick = { attemptSave() },
               modifier = Modifier.weight(1f),
-              enabled = !saving,
+              enabled = !saving && hasChanges,
             ) {
               if (saving) {
                 CircularProgressIndicator(

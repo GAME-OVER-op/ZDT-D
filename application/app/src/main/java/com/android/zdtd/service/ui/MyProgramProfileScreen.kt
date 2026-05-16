@@ -274,6 +274,7 @@ fun MyProgramProfileScreen(
   var syncedT2sPorts by remember(profile) { mutableStateOf("") }
   var syncedProtectPorts by remember(profile) { mutableStateOf("") }
   var binFiles by remember(profile) { mutableStateOf<List<MyProgramBinFileUi>>(emptyList()) }
+  var selectedApps by remember(profile) { mutableStateOf(emptySet<String>()) }
 
   var appsMode by remember(profile) { mutableStateOf(true) }
   var routeMode by remember(profile) { mutableStateOf("t2s") }
@@ -312,6 +313,7 @@ fun MyProgramProfileScreen(
       val command = awaitLoadTextMyProgram(actions, "$basePath/command")
       val t2sPorts = awaitLoadTextMyProgram(actions, "$basePath/t2s_ports")
       val protectPorts = awaitLoadTextMyProgram(actions, "$basePath/protect_ports")
+      val apps = parsePkgList(awaitLoadTextMyProgram(actions, "$basePath/apps/user").orEmpty())
       val binObj = awaitLoadJsonMyProgram(actions, "$basePath/bin")
 
       val parsedSetting = parseMyProgramSettingUi(settingObj)
@@ -338,6 +340,7 @@ fun MyProgramProfileScreen(
       protectPortsText = protectPorts ?: ""
       protectPortsInitialized = true
 
+      selectedApps = apps
       binFiles = parseMyProgramBinFiles(binObj)
       loading = false
     }
@@ -446,7 +449,7 @@ fun MyProgramProfileScreen(
   val routeModeTransparent = routeMode == "transparent"
   val t2sWebPanelPort = remember(t2sWebPortText) { t2sWebPortText.trim().toIntOrNull()?.takeIf { it in 1..65535 } }
   val myProgramPanelUrl = remember(t2sWebPanelPort) { t2sWebPanelPort?.let { myProgramWebPanelUrl(it) } }
-  val myProgramWebPanelVisible = prof?.enabled == true && appsMode && routeModeT2s && t2sWebPanelPort != null
+  val myProgramWebPanelVisible = prof?.enabled == true && appsMode && routeModeT2s && t2sWebPanelPort != null && !isOnlyZdtdAppSelected(selectedApps)
   val settingsPortsSame = appsMode && routeModeT2s && t2sPortText.isNotBlank() && t2sPortText == t2sWebPortText
   val transparentPortError = appsMode && routeModeTransparent && transparentPortText.isNotBlank() && transparentPortText.toIntOrNull()?.let { it !in 1..65535 } != false
 
@@ -587,6 +590,7 @@ fun MyProgramProfileScreen(
         path = "$basePath/apps/user",
         actions = actions,
         snackHost = snackHost,
+        onSavedSelection = { selectedApps = it },
       )
 
       if (routeModeT2s) {

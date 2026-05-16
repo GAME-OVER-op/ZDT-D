@@ -56,13 +56,19 @@ android {
 
   buildTypes {
     debug {
-      minifyEnabled false
+      // Debug is intentionally optimized too, so debug APK size and runtime behavior
+      // stay close to release while keeping debuggable=true.
+      minifyEnabled true
+      shrinkResources true
       signingConfig signingConfigs.zdt
       debuggable true
+      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
     }
     release {
-      minifyEnabled false
+      minifyEnabled true
+      shrinkResources true
       signingConfig signingConfigs.zdt
+      debuggable false
       proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
     }
   }
@@ -142,7 +148,7 @@ tasks.named('preBuild') {
 
 android.applicationVariants.all { variant ->
   variant.outputs.all {
-    outputFileName = 'app-release.apk'
+    outputFileName = "ZDT-D-${variant.name}-v${variant.versionName}.apk"
   }
 }
 

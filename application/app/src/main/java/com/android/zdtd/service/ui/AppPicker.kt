@@ -212,28 +212,35 @@ fun NfqwsAppListsSection(
   pfx: String,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  onSavedSelection: ((String, Set<String>) -> Unit)? = null,
 ) {
   Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    val userPath = "$pfx/apps/user"
+    val mobilePath = "$pfx/apps/mobile"
+    val wifiPath = "$pfx/apps/wifi"
     AppListPickerCard(
       title = stringResource(R.string.app_picker_apps_common_title),
       desc = stringResource(R.string.app_picker_apps_common_desc),
-      path = "$pfx/apps/user",
+      path = userPath,
       actions = actions,
       snackHost = snackHost,
+      onSavedSelection = { onSavedSelection?.invoke(userPath, it) },
     )
     AppListPickerCard(
       title = stringResource(R.string.app_picker_apps_mobile_title),
       desc = stringResource(R.string.app_picker_apps_mobile_desc),
-      path = "$pfx/apps/mobile",
+      path = mobilePath,
       actions = actions,
       snackHost = snackHost,
+      onSavedSelection = { onSavedSelection?.invoke(mobilePath, it) },
     )
     AppListPickerCard(
       title = stringResource(R.string.app_picker_apps_wifi_title),
       desc = stringResource(R.string.app_picker_apps_wifi_desc),
-      path = "$pfx/apps/wifi",
+      path = wifiPath,
       actions = actions,
       snackHost = snackHost,
+      onSavedSelection = { onSavedSelection?.invoke(wifiPath, it) },
     )
   }
 }
@@ -265,7 +272,8 @@ private fun AppPickerSheet(
   }
 
   var query by remember { mutableStateOf("") }
-  var selected by remember { mutableStateOf(initialSelected) }
+  var selected by remember(initialSelected) { mutableStateOf(initialSelected) }
+  val hasChanges = selected != initialSelected
 
   // Cache app icons across sheet opens and list item disposals (important for smooth scrolling).
   val iconCache = remember { AppIconMemoryCache.map }
@@ -433,8 +441,11 @@ private fun AppPickerSheet(
                 Icon(Icons.Default.Close, contentDescription = stringResource(R.string.app_picker_cancel))
               }
             }
-            Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
-              IconButton(onClick = { onSave(selected) }, modifier = Modifier.size(40.dp)) {
+            Surface(
+              shape = CircleShape,
+              color = if (hasChanges) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.38f),
+            ) {
+              IconButton(onClick = { onSave(selected) }, enabled = hasChanges, modifier = Modifier.size(40.dp)) {
                 Icon(
                   imageVector = Icons.Default.Check,
                   contentDescription = stringResource(R.string.app_picker_save),
@@ -461,7 +472,7 @@ private fun AppPickerSheet(
           Spacer(Modifier.width(12.dp))
           Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.app_picker_cancel)) }
-            Button(onClick = { onSave(selected) }) { Text(stringResource(R.string.app_picker_save)) }
+            Button(onClick = { onSave(selected) }, enabled = hasChanges) { Text(stringResource(R.string.app_picker_save)) }
           }
         }
       }
@@ -697,6 +708,9 @@ fun parsePkgList(content: String?): Set<String> {
     .filterNot { it.startsWith("#") || it.startsWith("//") }
     .toSet()
 }
+
+fun isOnlyZdtdAppSelected(packages: Set<String>): Boolean =
+  packages.size == 1 && packages.contains(ZDTD_APP_PACKAGE_NAME)
 
 private object InstalledAppMemoryCache {
   private const val TtlMs = 120_000L

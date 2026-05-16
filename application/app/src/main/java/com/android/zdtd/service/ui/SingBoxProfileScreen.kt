@@ -1,11 +1,13 @@
 package com.android.zdtd.service.ui
 
+import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -32,7 +35,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -55,12 +60,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.R
+import com.android.zdtd.service.LocalWebPanelActivity
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.net.URLEncoder
 
 private const val SINGBOX_MODE_T2S = "t2s"
@@ -130,6 +140,55 @@ private fun SingBoxProfileSettingUi.toJson(): JSONObject {
     .put("t2s_web_port", t2sWebPort ?: 8001)
 }
 
+private fun singBoxWebPanelUrl(port: Int): String = "http://127.0.0.1:$port/"
+
+private fun singBoxWebPanelScope(profile: String): String = "profile/sing-box/${profile.ifBlank { "main" }}"
+
+private suspend fun isSingBoxWebPanelPortOpen(port: Int): Boolean = withContext(Dispatchers.IO) {
+  runCatching {
+    Socket().use { socket ->
+      socket.connect(InetSocketAddress("127.0.0.1", port), 850)
+    }
+    true
+  }.getOrDefault(false)
+}
+
+@Composable
+private fun SingBoxWebPanelCard(
+  checking: Boolean,
+  onOpen: () -> Unit,
+) {
+  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))) {
+    Row(
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Text(
+        text = stringResource(R.string.web_panel_open),
+        modifier = Modifier.weight(1f),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+      )
+      FilledTonalIconButton(
+        onClick = onOpen,
+        enabled = !checking,
+      ) {
+        if (checking) {
+          CircularProgressIndicator(
+            modifier = Modifier.width(20.dp).height(20.dp),
+            strokeWidth = 2.dp,
+          )
+        } else {
+          Icon(
+            imageVector = Icons.Filled.Public,
+            contentDescription = stringResource(R.string.web_panel_open),
+          )
+        }
+      }
+    }
+  }
+}
 
 private fun parseDnsText(text: String): List<String> = text
   .split(',', '\n', ';', ' ')
@@ -522,8 +581,17 @@ fun SingBoxProfileScreen(
   var importTargetServer by remember(profile) { mutableStateOf<String?>(null) }
   var editServer by remember(profile) { mutableStateOf<String?>(null) }
   var editText by remember(profile) { mutableStateOf("") }
+  var editLastLoadedText by remember(profile) { mutableStateOf("") }
   var editLoading by remember(profile) { mutableStateOf(false) }
   var pendingConfigPlan by remember(profile) { mutableStateOf<ServerConfigPortPlan?>(null) }
+  var singBoxWebPanelChecking by remember(profile) { mutableStateOf(false) }
+  var selectedApps by remember(profile) { mutableStateOf(emptySet<String>()) }
+
+  fun refreshApps() {
+    actions.loadText("$basePath/apps/user") { content ->
+      selectedApps = parsePkgList(content)
+    }
+  }
 
   fun refreshSetting() {
     settingLoading = true
@@ -597,6 +665,7 @@ fun SingBoxProfileScreen(
   fun refreshAll() {
     refreshSetting()
     refreshServers()
+    refreshApps()
     refreshGlobalPortRegistry()
   }
 
@@ -610,6 +679,7 @@ fun SingBoxProfileScreen(
     val encodedServer = URLEncoder.encode(serverName, "UTF-8")
     actions.loadText("$basePath/servers/$encodedServer/config") { txt ->
       editText = txt ?: ""
+      editLastLoadedText = editText
       editLoading = false
     }
   }
@@ -732,6 +802,7 @@ fun SingBoxProfileScreen(
       if (current == null || finalPort == null) {
         editLoading = false
         editText = updatedConfig
+        editLastLoadedText = updatedConfig
         editServer = null
         showSnack(context.getString(R.string.common_saved))
         refreshServers()
@@ -745,6 +816,7 @@ fun SingBoxProfileScreen(
         editLoading = false
         if (settingOk) {
           editText = updatedConfig
+          editLastLoadedText = updatedConfig
           editServer = null
           showSnack(context.getString(R.string.common_saved))
           refreshServers()
@@ -892,7 +964,7 @@ fun SingBoxProfileScreen(
         }
       },
       confirmButton = {
-        Button(enabled = !editLoading, onClick = {
+        Button(enabled = !editLoading && editText != editLastLoadedText, onClick = {
           val serverName = editServer ?: return@Button
           val parsed = runCatching { JSONObject(editText.trim()) }.getOrElse {
             showSnack(context.getString(R.string.singbox_invalid_json_fmt, it.message ?: context.getString(R.string.singbox_parse_error)))
@@ -997,6 +1069,11 @@ fun SingBoxProfileScreen(
     return
   }
 
+  val activeSetting = currentProfileSetting()
+  val activeWebPanelPort = activeSetting.t2sWebPort?.takeIf { it in 1..65535 }
+  val singBoxPanelUrl = remember(activeWebPanelPort) { activeWebPanelPort?.let { singBoxWebPanelUrl(it) } }
+  val singBoxWebPanelVisible = prof?.enabled == true && activeSetting.isT2s && activeWebPanelPort != null && !isOnlyZdtdAppSelected(selectedApps)
+
   Column(
     Modifier
       .fillMaxSize()
@@ -1006,7 +1083,6 @@ fun SingBoxProfileScreen(
       .animateContentSize(),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    val activeSetting = currentProfileSetting()
     Text("sing-box / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 2)
     Text(
       toolDescription("sing-box"),
@@ -1030,6 +1106,38 @@ fun SingBoxProfileScreen(
         loading = settingLoading,
         saving = settingSaving,
         onSave = ::saveProfileSetting,
+      )
+    }
+
+    AnimatedVisibility(
+      visible = singBoxWebPanelVisible,
+      enter = fadeIn(tween(180)) + expandVertically(animationSpec = tween(220)),
+      exit = fadeOut(tween(140)) + shrinkVertically(animationSpec = tween(180)),
+    ) {
+      SingBoxWebPanelCard(
+        checking = singBoxWebPanelChecking,
+        onOpen = {
+          val port = activeWebPanelPort
+          val url = singBoxPanelUrl
+          if (port == null || url == null) {
+            showSnack(context.getString(R.string.web_panel_unavailable))
+          } else if (!singBoxWebPanelChecking) {
+            scope.launch {
+              singBoxWebPanelChecking = true
+              val available = isSingBoxWebPanelPortOpen(port)
+              singBoxWebPanelChecking = false
+              if (available) {
+                context.startActivity(
+                  Intent(context, LocalWebPanelActivity::class.java)
+                    .putExtra(LocalWebPanelActivity.EXTRA_SCOPE_KEY, singBoxWebPanelScope(profile))
+                    .putExtra(LocalWebPanelActivity.EXTRA_DEFAULT_URL, url)
+                )
+              } else {
+                showSnack(context.getString(R.string.web_panel_unavailable))
+              }
+            }
+          }
+        },
       )
     }
 
@@ -1090,6 +1198,7 @@ fun SingBoxProfileScreen(
       path = "$basePath/apps/user",
       actions = actions,
       snackHost = snackHost,
+      onSavedSelection = { selectedApps = it },
     )
 
     SingBoxServersSection(

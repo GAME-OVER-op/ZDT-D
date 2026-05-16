@@ -8,5 +8,19 @@
     "https://dns.adguard-dns.com/dns-query",
     "https://dns.quad9.net/dns-query",
     "https://dns.comss.one/dns-query",
-    "https://router.comss.one/dns-query"
+    "https://router.comss.one/dns-query",
+    "https://dns.google/dns-query",
+    "tls://dns.google:853",
+    "https://cloudflare-dns.com/dns-query",
+    "tls://cloudflare-dns.com:853",
+    "tls://dns.adguard-dns.com:853",
+    "https://family.adguard-dns.com/dns-query",
+    "https://unfiltered.adguard-dns.com/dns-query",
+    "https://dns.mullvad.net/dns-query",
+    "https://adblock.dns.mullvad.net/dns-query",
+    "https://protective.joindns4.eu/dns-query",
+    "https://doh.kel.pe",
+    "https://dns.adnull.com/dns-query",
+    "https://dns.alidns.com/dns-query",
+    "https://adfreedns.top/dns-query"
 ]

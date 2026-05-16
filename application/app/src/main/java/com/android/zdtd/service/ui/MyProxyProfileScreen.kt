@@ -75,6 +75,9 @@ private data class MyProxyUpstreamUi(
 private suspend fun awaitLoadJsonMyProxy(actions: ZdtdActions, path: String): JSONObject? =
   suspendCancellableCoroutine { cont -> actions.loadJsonData(path) { cont.resume(it) } }
 
+private suspend fun awaitLoadTextMyProxy(actions: ZdtdActions, path: String): String? =
+  suspendCancellableCoroutine { cont -> actions.loadText(path) { cont.resume(it) } }
+
 private suspend fun awaitSaveJsonMyProxy(actions: ZdtdActions, path: String, obj: JSONObject): Boolean =
   suspendCancellableCoroutine { cont -> actions.saveJsonData(path, obj) { cont.resume(it) } }
 
@@ -192,16 +195,19 @@ fun MyProxyProfileScreen(
   var settingInitialized by remember(profile) { mutableStateOf(false) }
   var proxyInitialized by remember(profile) { mutableStateOf(false) }
   var myProxyWebPanelChecking by remember(profile) { mutableStateOf(false) }
+  var selectedApps by remember(profile) { mutableStateOf(emptySet<String>()) }
 
   fun loadAll() {
     loading = true
     scope.launch {
       val settingObj = awaitLoadJsonMyProxy(actions, "$basePath/setting")
       val proxyObj = awaitLoadJsonMyProxy(actions, "$basePath/proxy")
+      val apps = parsePkgList(awaitLoadTextMyProxy(actions, "$basePath/apps/user").orEmpty())
       val parsedSetting = parseMyProxySettingUi(settingObj)
       val parsedProxy = parseMyProxyUpstreamUi(proxyObj)
       syncedSetting = parsedSetting
       syncedProxy = parsedProxy
+      selectedApps = apps
       t2sPortText = parsedSetting.t2sPort?.toString().orEmpty()
       t2sWebPortText = parsedSetting.t2sWebPort?.toString().orEmpty()
       hostText = parsedProxy.host
@@ -259,7 +265,7 @@ fun MyProxyProfileScreen(
 
   val t2sWebPanelPort = remember(t2sWebPortText) { t2sWebPortText.trim().toIntOrNull()?.takeIf { it in 1..65535 } }
   val myProxyPanelUrl = remember(t2sWebPanelPort) { t2sWebPanelPort?.let { myProxyWebPanelUrl(it) } }
-  val myProxyWebPanelVisible = prof?.enabled == true && t2sWebPanelPort != null
+  val myProxyWebPanelVisible = prof?.enabled == true && t2sWebPanelPort != null && !isOnlyZdtdAppSelected(selectedApps)
 
   Column(
     Modifier
@@ -320,6 +326,7 @@ fun MyProxyProfileScreen(
       path = "$basePath/apps/user",
       actions = actions,
       snackHost = snackHost,
+      onSavedSelection = { selectedApps = it },
     )
 
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {

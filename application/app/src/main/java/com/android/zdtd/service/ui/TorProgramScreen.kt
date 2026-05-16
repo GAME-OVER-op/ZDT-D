@@ -697,6 +697,7 @@ private fun TorBridgeDialog(
   var text by remember(initialText) { mutableStateOf(initialText) }
   var attemptedSave by remember { mutableStateOf(false) }
   val normalizedLines = remember(text) { normalizeTorBridgeLines(text) }
+  val initialNormalizedLines = remember(initialText) { normalizeTorBridgeLines(initialText) }
   val rawNonBlankLines = remember(text) { text.lines().map { it.trim() }.filter { it.isNotBlank() } }
   val hasInvalidLines = remember(text) { rawNonBlankLines.isNotEmpty() && normalizedLines.size != rawNonBlankLines.size }
   val hasMultipleLines = rawNonBlankLines.size > 1
@@ -705,6 +706,10 @@ private fun TorBridgeDialog(
       hasInvalidLines ||
       (isEditing && hasMultipleLines)
   )
+  val inputValid = normalizedLines.isNotEmpty() && !hasInvalidLines && !(isEditing && hasMultipleLines)
+  val hasChanges = !isEditing || normalizedLines.firstOrNull() != initialNormalizedLines.firstOrNull()
+  val canSave = inputValid && hasChanges
+
   val supportingMessageRes = when {
     attemptedSave && normalizedLines.isEmpty() -> R.string.tor_bridge_input_required
     attemptedSave && hasInvalidLines -> R.string.tor_bridge_input_invalid
@@ -714,7 +719,7 @@ private fun TorBridgeDialog(
 
   fun attemptSave() {
     attemptedSave = true
-    if (normalizedLines.isEmpty() || hasInvalidLines || (isEditing && hasMultipleLines)) return
+    if (!canSave) return
     onSave(if (isEditing) listOf(normalizedLines.first()) else normalizedLines)
   }
 
@@ -765,8 +770,8 @@ private fun TorBridgeDialog(
                   Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_cancel))
                 }
               }
-              Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
-                IconButton(onClick = { attemptSave() }, modifier = Modifier.size(40.dp)) {
+              Surface(shape = CircleShape, color = if (canSave) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)) {
+                IconButton(onClick = { attemptSave() }, enabled = canSave, modifier = Modifier.size(40.dp)) {
                   Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.common_save), tint = MaterialTheme.colorScheme.onPrimary)
                 }
               }
@@ -831,7 +836,7 @@ private fun TorBridgeDialog(
               Text(stringResource(R.string.common_cancel))
             }
             Spacer(Modifier.width(8.dp))
-            Button(onClick = { attemptSave() }) {
+            Button(onClick = { attemptSave() }, enabled = canSave) {
               Text(stringResource(R.string.common_save))
             }
           }

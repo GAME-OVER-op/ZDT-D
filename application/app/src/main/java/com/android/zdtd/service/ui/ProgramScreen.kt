@@ -81,6 +81,43 @@ fun ProgramScreen(
 
   var showCreateProfile by remember { mutableStateOf(false) }
   var operaWebPanelChecking by remember(program.id) { mutableStateOf(false) }
+  var operaAppSelections by remember(program.id) { mutableStateOf<Map<String, Set<String>>>(emptyMap()) }
+
+  val operaAppPaths = remember(program.id) {
+    if (program.id == "operaproxy") {
+      listOf(
+        "/api/programs/operaproxy/apps/user",
+        "/api/programs/operaproxy/apps/mobile",
+        "/api/programs/operaproxy/apps/wifi",
+      )
+    } else {
+      emptyList()
+    }
+  }
+  val operaSelectedApps = remember(operaAppSelections) { operaAppSelections.values.flatMap { it }.toSet() }
+  val operaWebPanelVisible = program.enabled && !isOnlyZdtdAppSelected(operaSelectedApps)
+
+  fun refreshOperaAppSelections() {
+    if (operaAppPaths.isEmpty()) {
+      operaAppSelections = emptyMap()
+      return
+    }
+    val next = linkedMapOf<String, Set<String>>()
+    var remaining = operaAppPaths.size
+    operaAppPaths.forEach { path ->
+      actions.loadText(path) { content ->
+        next[path] = parsePkgList(content)
+        remaining -= 1
+        if (remaining == 0) {
+          operaAppSelections = next
+        }
+      }
+    }
+  }
+
+  LaunchedEffect(program.id) {
+    refreshOperaAppSelections()
+  }
 
   fun showSnack(msg: String) {
     scope.launch { snackHost.showSnackbar(msg) }
@@ -148,7 +185,7 @@ fun ProgramScreen(
             onCheckedChange = { v -> actions.setProgramEnabled(program.id, v) },
           )
           AnimatedVisibility(
-            visible = program.enabled,
+            visible = operaWebPanelVisible,
             enter = fadeIn(tween(180)) + expandVertically(animationSpec = tween(220)),
             exit = fadeOut(tween(140)) + shrinkVertically(animationSpec = tween(180)),
           ) {
@@ -248,7 +285,13 @@ isProfileProgramType(program.type) -> {
 
       program.id == "operaproxy" -> {
         item {
-          OperaProxySection(actions = actions, snackHost = snackHost)
+          OperaProxySection(
+            actions = actions,
+            snackHost = snackHost,
+            onAppsSelectionSaved = { path, selected ->
+              operaAppSelections = operaAppSelections + (path to selected)
+            },
+          )
         }
       }
 
@@ -567,6 +610,7 @@ private fun SingBoxSection(
 
   var editProfile by remember { mutableStateOf<String?>(null) }
   var editText by remember { mutableStateOf("") }
+  var editLastLoadedText by remember { mutableStateOf("") }
   var editLoading by remember { mutableStateOf(false) }
 
   var showCreate by remember { mutableStateOf(false) }
@@ -589,6 +633,7 @@ private fun SingBoxSection(
     actions.loadText("/api/programs/sing-box/profiles/$profEnc/config") { txt ->
       editLoading = false
       editText = txt ?: ""
+      editLastLoadedText = editText
     }
   }
 
@@ -637,6 +682,7 @@ private fun SingBoxSection(
       if (currentSetting == null || portToSave == null) {
         editLoading = false
         editText = updatedConfig
+        editLastLoadedText = updatedConfig
         showSnack(context.getString(R.string.saved))
         editProfile = null
         return@saveText
@@ -650,6 +696,7 @@ private fun SingBoxSection(
           setting = updatedSetting
           rawJson = obj
           editText = updatedConfig
+          editLastLoadedText = updatedConfig
           showSnack(context.getString(R.string.saved))
           editProfile = null
         } else {
@@ -779,7 +826,7 @@ private fun SingBoxSection(
         }
       },
       confirmButton = {
-        Button(enabled = !editLoading, onClick = {
+        Button(enabled = !editLoading && editText != editLastLoadedText, onClick = {
           val prof = editProfile ?: return@Button
           val parsed = runCatching { JSONObject(editText.trim()) }.getOrElse {
             showSnack(context.getString(R.string.singbox_invalid_json_fmt, it.message ?: context.getString(R.string.singbox_parse_error)))
@@ -1579,7 +1626,11 @@ private fun normalizeProfileName(input: String): String {
 }
 
 @Composable
-private fun OperaProxySection(actions: ZdtdActions, snackHost: SnackbarHostState) {
+private fun OperaProxySection(
+  actions: ZdtdActions,
+  snackHost: SnackbarHostState,
+  onAppsSelectionSaved: ((String, Set<String>) -> Unit)? = null,
+) {
   var tab by remember { mutableStateOf(0) }
   val useScrollableTabs = rememberUseScrollableTabs()
 
@@ -1613,6 +1664,7 @@ private fun OperaProxySection(actions: ZdtdActions, snackHost: SnackbarHostState
           pfx = "/api/programs/operaproxy",
           actions = actions,
           snackHost = snackHost,
+          onSavedSelection = onAppsSelectionSaved,
         )
       }
       1 -> {
@@ -1884,19 +1936,21 @@ private fun OperaSniServerDialog(
   val contentPadding = if (compactMode) 14.dp else 20.dp
   val scrollState = rememberScrollState()
 
-  val sniError = attemptedSave && sni.trim().isEmpty()
+  val currentItem = OperaSniItemUi(
+    sni = sni.trim(),
+    useByedpi = useByedpi,
+    overrideProxyAddress = address.trim(),
+  )
+  val inputValid = currentItem.sni.isNotEmpty() && isValidOverrideProxyAddress(address)
+  val hasChanges = !isEditing || currentItem != initial
+  val canSave = inputValid && hasChanges
+  val sniError = attemptedSave && currentItem.sni.isEmpty()
   val addressError = attemptedSave && !isValidOverrideProxyAddress(address)
 
   fun attemptSave() {
     attemptedSave = true
-    if (sniError || addressError) return
-    onSave(
-      OperaSniItemUi(
-        sni = sni.trim(),
-        useByedpi = useByedpi,
-        overrideProxyAddress = address.trim(),
-      )
-    )
+    if (!canSave) return
+    onSave(currentItem)
   }
 
   Dialog(
@@ -1954,8 +2008,8 @@ private fun OperaSniServerDialog(
                   Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_cancel))
                 }
               }
-              Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary) {
-                IconButton(onClick = { attemptSave() }, modifier = Modifier.size(40.dp)) {
+              Surface(shape = CircleShape, color = if (canSave) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)) {
+                IconButton(onClick = { attemptSave() }, enabled = canSave, modifier = Modifier.size(40.dp)) {
                   Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.common_save), tint = MaterialTheme.colorScheme.onPrimary)
                 }
               }
@@ -2033,7 +2087,7 @@ private fun OperaSniServerDialog(
               Text(stringResource(R.string.common_cancel))
             }
             Spacer(Modifier.width(8.dp))
-            Button(onClick = { attemptSave() }) {
+            Button(onClick = { attemptSave() }, enabled = canSave) {
               Text(stringResource(R.string.common_save))
             }
           }
@@ -2183,13 +2237,28 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
   var verbosity       by remember { mutableStateOf("") }
   var loaded          by remember { mutableStateOf(false) }
   var saving          by remember { mutableStateOf(false) }
+  var lastSavedArgsJson by remember { mutableStateOf<String?>(null) }
 
   // Bootstrap DNS: list of resolver URL strings
   var dnsResolvers    by remember { mutableStateOf(listOf<String>()) }
+  var lastSavedDnsResolvers by remember { mutableStateOf<List<String>?>(null) }
   var dnsLoaded       by remember { mutableStateOf(false) }
   var dnsSaving       by remember { mutableStateOf(false) }
   // New resolver input field
   var dnsNewEntry     by remember { mutableStateOf("") }
+
+  fun buildArgsJson(): JSONObject = JSONObject().apply {
+    put("api_proxy",                    apiProxy.trim())
+    put("api_user_agent",               apiUserAgent.trim())
+    put("init_retry_interval",          initRetry.trim())
+    put("server_selection",             serverSelection.trim())
+    put("server_selection_dl_limit",    dlLimit.trim().toLongOrNull() ?: 204800L)
+    put("server_selection_test_url",    testUrl.trim())
+    put("verbosity",                    verbosity.trim().toIntOrNull() ?: 50)
+  }
+
+  fun normalizeDnsResolvers(list: List<String>): List<String> =
+    list.map { it.trim() }.filter { it.isNotEmpty() }
 
   // Load current args from daemon on first compose
   LaunchedEffect(Unit) {
@@ -2203,6 +2272,7 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
         testUrl         = obj.optString("server_selection_test_url", "https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular.min.js")
         verbosity       = obj.optInt("verbosity",                    50).toString()
       }
+      lastSavedArgsJson = buildArgsJson().toString()
       loaded = true
     }
     // Load bootstrap DNS resolvers list
@@ -2216,6 +2286,7 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
         }
       }
       // If still empty after load, show defaults hint via empty list
+      lastSavedDnsResolvers = normalizeDnsResolvers(dnsResolvers)
       dnsLoaded = true
     }
   }
@@ -2235,18 +2306,11 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
       snack(context.getString(R.string.opera_args_api_proxy_invalid))
       return
     }
-    val obj = JSONObject().apply {
-      put("api_proxy",                    apiProxy.trim())
-      put("api_user_agent",               apiUserAgent.trim())
-      put("init_retry_interval",          initRetry.trim())
-      put("server_selection",             serverSelection.trim())
-      put("server_selection_dl_limit",    dlLimit.trim().toLongOrNull() ?: 204800L)
-      put("server_selection_test_url",    testUrl.trim())
-      put("verbosity",                    verbosity.trim().toIntOrNull() ?: 50)
-    }
+    val obj = buildArgsJson()
     saving = true
     actions.saveJsonData(apiPath, obj) { ok ->
       saving = false
+      if (ok) lastSavedArgsJson = obj.toString()
       snack(if (ok) context.getString(R.string.saved) else context.getString(R.string.save_failed))
     }
   }
@@ -2264,6 +2328,7 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
     // saveJsonData wraps in JSONObject, so we use saveText with raw JSON
     actions.saveText(dnsApiPath, arr.toString()) { ok ->
       dnsSaving = false
+      if (ok) lastSavedDnsResolvers = list
       snack(if (ok) context.getString(R.string.saved) else context.getString(R.string.save_failed))
     }
   }
@@ -2272,6 +2337,9 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
     return
   }
+
+  val argsDirty = lastSavedArgsJson?.let { buildArgsJson().toString() != it } == true
+  val dnsDirty = lastSavedDnsResolvers?.let { normalizeDnsResolvers(dnsResolvers) != it } == true
 
   Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
 
@@ -2504,7 +2572,7 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
           // Save DNS button (separate from main args save)
           OutlinedButton(
             onClick = { saveDns() },
-            enabled = !dnsSaving && dnsLoaded,
+            enabled = !dnsSaving && dnsLoaded && dnsDirty,
             modifier = Modifier.fillMaxWidth(),
           ) {
             if (dnsSaving) {
@@ -2521,7 +2589,7 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
     // ── Save button ──
     Button(
       onClick = { save() },
-      enabled = !saving && loaded,
+      enabled = !saving && loaded && argsDirty,
       modifier = Modifier.fillMaxWidth(),
     ) {
       if (saving) {

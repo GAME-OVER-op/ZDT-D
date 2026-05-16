@@ -6,6 +6,7 @@ mod config;
 mod daemon;
 mod iptables;
 mod iptables_backup;
+mod internet_wait;
 mod logging;
 mod ports;
 mod proxyinfo;

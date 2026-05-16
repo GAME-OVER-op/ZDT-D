@@ -3,6 +3,7 @@ use anyhow::{Context, Result};
 use std::{
     collections::BTreeMap,
     panic::{self, AssertUnwindSafe},
+    path::Path,
     sync::atomic::{AtomicBool, Ordering},
     thread,
     time::Duration,
@@ -55,6 +56,8 @@ pub fn start_full() -> Result<()> {
         crate::logging::user_info("Инициализация завершена");
         return Ok(());
     }
+
+    crate::internet_wait::wait_before_start_if_needed();
 
     truncate_profile_logs();
     crate::logging::user_info("Подготовка: запуск");
@@ -124,7 +127,7 @@ pub fn start_full() -> Result<()> {
 
     // VPN/netd profile programs: launch VPN engines, wait for TUN, then apply Android netd routing once.
     // VPN profile failures are best-effort: log to console/profile logs and continue the rest of startup.
-    let vpn_expected = openvpn::has_enabled_profiles() || amneziawg::has_enabled_profiles() || tun2socks::has_enabled_profiles() || myvpn::has_enabled_profiles() || mihomo::has_enabled_profiles() || mieru::has_enabled_profiles() || singbox::has_enabled_vpn_profiles();
+    let vpn_expected = openvpn::has_enabled_profiles() || amneziawg::has_enabled_profiles() || tun2socks::has_enabled_profiles() || myvpn::has_enabled_profiles() || mihomo::has_enabled_profiles() || mieru::has_profiles_requiring_netd() || singbox::has_enabled_vpn_profiles();
     let mut vpn_profiles = Vec::new();
     match validate_vpn_claims_unique() {
         Ok(()) => {
@@ -363,7 +366,7 @@ fn can_adopt_existing_runtime() -> bool {
         || tun2socks::has_enabled_profiles()
         || myvpn::has_enabled_profiles()
         || mihomo::has_enabled_profiles()
-        || mieru::has_enabled_profiles()
+        || mieru::has_profiles_requiring_netd()
         || singbox::has_enabled_vpn_profiles();
     if vpn_expected && !crate::vpn_netd::applied_snapshot_path().is_file() {
         log::info!("runtime adoption: VPN profiles are expected but vpn_netd/applied.json is missing");
@@ -511,7 +514,11 @@ fn actual_runtime_has_services() -> bool {
             || r.tor.count > 0
             || r.opera.opera.count > 0
             || r.dnscrypt.count > 0
+            || r.openvpn.count > 0
             || r.amneziawg.count > 0
+            || r.tun2socks.count > 0
+            || r.mihomo.count > 0
+            || r.mieru.count > 0
         {
             return true;
         }
@@ -521,26 +528,86 @@ fn actual_runtime_has_services() -> bool {
         || amneziawg::is_running()
         || tun2socks::is_running()
         || mihomo::is_running()
+        || mieru::is_running()
         || vpn_netd_has_applied_owner("myvpn")
 }
 
 fn runtime_uses_iptables_paths() -> bool {
+    let bridge_app_routing = (operaproxy_enabled() && operaproxy_has_routed_app_outputs())
+        || profile_program_has_routed_app_outputs("wireproxy")
+        || profile_program_has_routed_app_outputs("singbox");
+
     match stats::collect_status() {
         Ok(r) => {
+            // sing-box / wireproxy / operaproxy can now run in marker-only
+            // server mode without t2s app routing and without NAT_DPI/MANGLE_APP
+            // anchors. Only require those anchors when their resolved UID output
+            // files contain real app routes. Hotspot-only PREROUTING is not this
+            // OUTPUT/MANGLE anchor path.
             r.zapret.count > 0
                 || r.zapret2.count > 0
                 || r.byedpi.count > 0
                 || r.dpitunnel.count > 0
-                || r.sing_box.count > 0
-                || r.wireproxy.count > 0
                 || r.myproxy.count > 0
                 || r.myprogram.count > 0
                 || r.tor.count > 0
-                || r.opera.opera.count > 0
                 || r.dnscrypt.count > 0
+                || bridge_app_routing
         }
-        Err(_) => false,
+        Err(_) => bridge_app_routing,
     }
+}
+
+fn operaproxy_has_routed_app_outputs() -> bool {
+    let root = settings::working_program_root_path("operaproxy");
+    [
+        root.join("app/out/user_program"),
+        root.join("app/out/mobile_program"),
+        root.join("app/out/wifi_program"),
+    ]
+    .iter()
+    .any(|p| count_valid_uid_pairs_runtime(p) > 0)
+}
+
+fn profile_program_has_routed_app_outputs(program: &str) -> bool {
+    let active_path = settings::working_program_root_path(program).join("active.json");
+    let Ok(raw) = std::fs::read_to_string(active_path) else { return false; };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { return false; };
+    let Some(profiles) = v.get("profiles").and_then(|p| p.as_object()) else { return false; };
+
+    profiles.iter().any(|(name, st)| {
+        profile_state_enabled(st)
+            && count_valid_uid_pairs_runtime(
+                &settings::working_program_root_path(program)
+                    .join("profile")
+                    .join(name)
+                    .join("app/out/user_program"),
+            ) > 0
+    })
+}
+
+fn profile_state_enabled(st: &serde_json::Value) -> bool {
+    st.get("enabled")
+        .and_then(|x| x.as_bool())
+        .unwrap_or_else(|| st.get("enabled").and_then(|x| x.as_i64()).unwrap_or(0) != 0)
+}
+
+fn count_valid_uid_pairs_runtime(path: &Path) -> usize {
+    let Ok(raw) = std::fs::read_to_string(path) else { return 0; };
+    raw.lines()
+        .filter(|line| {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                return false;
+            }
+            line.split_once('=')
+                .map(|(_, uid_s)| {
+                    let uid_s = uid_s.trim();
+                    !uid_s.is_empty() && uid_s.chars().all(|c| c.is_ascii_digit())
+                })
+                .unwrap_or(false)
+        })
+        .count()
 }
 
 fn iptables_runtime_anchors_present() -> bool {

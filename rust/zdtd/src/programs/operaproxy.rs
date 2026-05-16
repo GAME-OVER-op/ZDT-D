@@ -306,6 +306,10 @@ pub fn start_if_enabled() -> Result<()> {
     let port_cfg: PortJson = read_json(Path::new(PORT_JSON))
         .with_context(|| format!("read {}", PORT_JSON))?;
 
+    let api_settings = settings::load_api_settings().unwrap_or_default();
+    let hotspot_t2s = api_settings.hotspot_t2s_for_operaproxy();
+    let needs_t2s = resolved_total > 0 || hotspot_t2s;
+
     // opera-proxy region (EU/AS/AM) from config/server.txt, validated against whitelist
     let country = read_server_region(Path::new(SERVER_TXT));
 
@@ -322,8 +326,8 @@ pub fn start_if_enabled() -> Result<()> {
     let service_count = sni_list.len();
     let any_uses_byedpi = sni_list.iter().any(|x| x.use_byedpi);
 
-    // Port intersection guard: byedpi, t2s, and all opera ports must be unique
-    if has_port_intersection(&port_cfg, service_count) {
+    // Port intersection guard: byedpi, optional t2s, and all opera ports must be unique
+    if has_port_intersection(&port_cfg, service_count, needs_t2s) {
         warn!(
             "operaproxy: port intersection detected (t2s_port={}, byedpi_port={}, opera_start_port={}) -> skip",
             port_cfg.t2s_port, port_cfg.byedpi_port, port_cfg.opera_start_port
@@ -442,25 +446,27 @@ pub fn start_if_enabled() -> Result<()> {
         info!("operaproxy: skipping byedpi restart (no sni entries require byedpi)");
     }
 
-    crate::logging::user_info("Opera: t2s");
-    // 5) Start t2s (hardcoded args + dynamic listen port + socks ports)
-    let api_settings = settings::load_api_settings().unwrap_or_default();
-    let hotspot_t2s = api_settings.hotspot_t2s_for_operaproxy();
-    let t2s_listen_addr = if hotspot_t2s { "0.0.0.0" } else { "127.0.0.1" };
+    if needs_t2s {
+        crate::logging::user_info("Opera: t2s");
+        // 5) Start t2s (hardcoded args + dynamic listen port + socks ports)
+        let t2s_listen_addr = if hotspot_t2s { "0.0.0.0" } else { "127.0.0.1" };
 
-    let t2s_bin = find_bin("t2s")?;
-    let t2s_log = log_dir.join("t2s.log");
-    truncate_file(&t2s_log)?;
+        let t2s_bin = find_bin("t2s")?;
+        let t2s_log = log_dir.join("t2s.log");
+        truncate_file(&t2s_log)?;
 
-    spawn_t2s(&t2s_bin, t2s_listen_addr, port_cfg.t2s_port, &ports_csv, &t2s_log)?;
-    info!(
-        "operaproxy: t2s started listen_addr={} listen_port={} socks_ports={}",
-        t2s_listen_addr,
-        port_cfg.t2s_port,
-        ports_csv
-    );
-    if hotspot_t2s {
-        apply_hotspot_prerouting_redirect(port_cfg.t2s_port)?;
+        spawn_t2s(&t2s_bin, t2s_listen_addr, port_cfg.t2s_port, &ports_csv, &t2s_log)?;
+        info!(
+            "operaproxy: t2s started listen_addr={} listen_port={} socks_ports={}",
+            t2s_listen_addr,
+            port_cfg.t2s_port,
+            ports_csv
+        );
+        if hotspot_t2s {
+            apply_hotspot_prerouting_redirect(port_cfg.t2s_port)?;
+        }
+    } else {
+        info!("operaproxy: launch marker only and hotspot disabled; skipping t2s");
     }
 
     crate::logging::user_info("Opera: iptables");
@@ -646,10 +652,12 @@ fn read_server_region(path: &Path) -> String {
     default
 }
 
-fn has_port_intersection(cfg: &PortJson, service_count: usize) -> bool {
+fn has_port_intersection(cfg: &PortJson, service_count: usize, include_t2s: bool) -> bool {
     let mut set = BTreeSet::new();
     let mut all = Vec::new();
-    all.push(cfg.t2s_port);
+    if include_t2s {
+        all.push(cfg.t2s_port);
+    }
     all.push(cfg.byedpi_port);
     for i in 0..service_count {
         all.push(cfg.opera_start_port.saturating_add(i as u16));

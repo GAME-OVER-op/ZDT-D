@@ -5,6 +5,7 @@ use std::{
     io::Write,
     path::{Path, PathBuf},
     process::Command,
+    time::Duration,
     sync::{
         atomic::{AtomicU8, Ordering},
         Mutex,
@@ -207,6 +208,7 @@ fn user_localize_en(msg: &str) -> String {
         "sing-box: VPN profiles" => return "sing-box: start".to_string(),
         "sing-box: ошибка запуска, запуск продолжен" => return "sing-box: startup error, continuing".to_string(),
         "sing-box: часть профилей не запущена, запуск продолжен" => return "sing-box: some profiles did not start, continuing".to_string(),
+        "wireproxy: socks5 profiles" => return "wireproxy: start".to_string(),
         "VPN/netd: ошибка применения, запуск продолжен" => return "VPN/netd: apply error, continuing".to_string(),
         "VPN/netd: конфликт tun, запуск продолжен" => return "VPN/netd: TUN conflict, continuing".to_string(),
         "VPN/netd: конфликт профилей, запуск продолжен" => return "VPN/netd: profile conflict, continuing".to_string(),
@@ -246,7 +248,9 @@ fn user_localize_ru(msg: &str) -> String {
         "sing-box: VPN profiles" => "sing-box: запуск".to_string(),
         "sing-box: startup error, continuing" => "sing-box: ошибка запуска, запуск продолжен".to_string(),
         "sing-box: some profiles did not start, continuing" => "sing-box: часть профилей не запущена, запуск продолжен".to_string(),
-        "wireproxy: socks5 profiles" => "wireproxy: socks5 профили".to_string(),
+        "wireproxy: socks5 profiles" => "wireproxy: запуск".to_string(),
+        "wireproxy: start" => "wireproxy: запуск".to_string(),
+        "wireproxy: запуск" => "wireproxy: запуск".to_string(),
         "Startup: initialization" => "Запуск: инициализация".to_string(),
         "Initialization complete" => "Инициализация завершена".to_string(),
         "Preparation: start" => "Подготовка: запуск".to_string(),
@@ -380,6 +384,69 @@ pub fn user_update_line(prefix: &str, msg: &str) {
     let _ = fs::write(&path, out);
 
     let _ = trim_file_keep_last_utf8(&path, USER_LOG_MAX_BYTES);
+}
+
+// --- internet wait dynamic user-log lines -----------------------------------
+
+fn format_countdown_duration(d: Duration) -> String {
+    let mut secs = d.as_secs();
+    if d.subsec_nanos() > 0 {
+        secs = secs.saturating_add(1);
+    }
+    format!("{}m{:02}s", secs / 60, secs % 60)
+}
+
+fn internet_wait_prefix() -> String {
+    if current_user_lang() == LANG_RU {
+        "INFO  Ожидание подключения к интернету".to_string()
+    } else {
+        "INFO  Waiting for internet connection".to_string()
+    }
+}
+
+pub fn user_internet_wait_countdown(remaining: Duration) {
+    let prefix = internet_wait_prefix();
+    let time = format_countdown_duration(remaining);
+    let msg = if current_user_lang() == LANG_RU {
+        format!(
+            "INFO  Ожидание подключения к интернету, автоматический старт через {time}. Для пропуска нажмите кнопку запуска повторно"
+        )
+    } else {
+        format!(
+            "INFO  Waiting for internet connection, automatic start in {time}. Press Start again to skip"
+        )
+    };
+    user_update_line(&prefix, &msg);
+}
+
+pub fn user_internet_wait_finished() {
+    let prefix = internet_wait_prefix();
+    let msg = if current_user_lang() == LANG_RU {
+        "INFO  Ожидание подключения к интернету завершено, запуск продолжается"
+    } else {
+        "INFO  Internet connection wait finished, startup continues"
+    };
+    user_update_line(&prefix, msg);
+}
+
+pub fn user_internet_wait_skipped() {
+    let prefix = internet_wait_prefix();
+    let msg = if current_user_lang() == LANG_RU {
+        "INFO  Ожидание подключения к интернету пропущено повторным запуском, запуск продолжается"
+    } else {
+        "INFO  Internet connection wait skipped by repeated Start request, startup continues"
+    };
+    user_update_line(&prefix, msg);
+}
+
+pub fn user_internet_wait_timeout() {
+    let prefix = internet_wait_prefix();
+    let msg = if current_user_lang() == LANG_RU {
+        "INFO  Ожидание подключения к интернету завершено по таймеру, запуск продолжается"
+    } else {
+        "INFO  Internet connection wait timed out, startup continues"
+    };
+    user_update_line(&prefix, msg);
 }
 
 fn trim_file_keep_last_utf8(path: &Path, max_bytes: usize) -> Result<()> {

@@ -2236,8 +2236,10 @@ fun MihomoProfileScreen(
   var syncedSetting by remember(profile) { mutableStateOf(MihomoSettingUi()) }
   var settingInitialized by remember(profile) { mutableStateOf(false) }
   var yamlText by remember(profile) { mutableStateOf("") }
+  var lastSavedYamlText by remember(profile) { mutableStateOf("") }
   var yamlLoading by remember(profile) { mutableStateOf(true) }
   var yamlSaving by remember(profile) { mutableStateOf(false) }
+  var selectedApps by remember(profile) { mutableStateOf(emptySet<String>()) }
   var appCount by remember(profile) { mutableStateOf(0) }
   var usedVpnTuns by remember(profile) { mutableStateOf(emptySet<String>()) }
   var usedMihomoPorts by remember(profile) { mutableStateOf(emptySet<Int>()) }
@@ -2262,7 +2264,7 @@ fun MihomoProfileScreen(
       val ports = loadUsedMihomoMixedPorts(actions, programs, excludeProfile = profile)
       val controllerPorts = loadUsedMihomoControllerPorts(actions, programs, excludeProfile = profile)
       val usedIpv4 = loadUsedVpnIpv4Cidrs(actions, programs, excludeProgramId = "mihomo", excludeProfile = profile)
-      val apps = parsePkgList(awaitLoadTextMihomo(actions, "$basePath/apps/user").orEmpty()).size
+      val apps = parsePkgList(awaitLoadTextMihomo(actions, "$basePath/apps/user").orEmpty())
       val cfg = awaitLoadTextMihomo(actions, "$basePath/config").orEmpty().ifBlank {
         rewriteMihomoExplicitIpv4Conflicts(mihomoSampleConfig(profile, nextFreeMihomoControllerPort(controllerPorts)), usedIpv4)
       }
@@ -2277,8 +2279,10 @@ fun MihomoProfileScreen(
       logLevel = setting.logLevel
       tun2socksLogLevel = setting.tun2socksLogLevel
       settingInitialized = true
-      appCount = apps
+      selectedApps = apps
+      appCount = apps.size
       yamlText = cfg
+      lastSavedYamlText = cfg
       loading = false
       yamlLoading = false
     }
@@ -2296,7 +2300,7 @@ fun MihomoProfileScreen(
   val mihomoIpv4SelfOverlap = remember(mihomoIpv4Cidrs) { vpnIpv4CidrsOverlapEachOther(mihomoIpv4Cidrs) }
   val mihomoIpv4Conflict = remember(mihomoIpv4Cidrs, usedVpnIpv4Cidrs) { vpnIpv4CidrsConflict(mihomoIpv4Cidrs, usedVpnIpv4Cidrs) }
   val webPanelUrl = remember(controllerPort) { controllerPort?.let { mihomoWebPanelUrl(it) } }
-  val webPanelVisible = prof?.enabled == true && controllerPort != null
+  val webPanelVisible = prof?.enabled == true && controllerPort != null && !isOnlyZdtdAppSelected(selectedApps)
 
   LaunchedEffect(tunText, mixedPortText, logLevel, tun2socksLogLevel, settingInitialized) {
     if (!settingInitialized || loading) return@LaunchedEffect
@@ -2341,6 +2345,7 @@ fun MihomoProfileScreen(
       yamlSaving = false
       if (ok) {
         yamlText = normalizedText
+        lastSavedYamlText = normalizedText
         removePendingChange(change.id)
         if (notify) showSnack(context.getString(R.string.saved_apply_after_restart))
       } else {
@@ -2363,6 +2368,7 @@ fun MihomoProfileScreen(
       yamlSaving = false
       if (ok) {
         yamlText = normalizedText
+        lastSavedYamlText = normalizedText
         pendingChanges = emptyList()
         pendingExpanded = false
         showSnack(context.getString(R.string.saved_apply_after_restart))
@@ -2379,6 +2385,7 @@ fun MihomoProfileScreen(
       yamlSaving = false
       if (ok) {
         yamlText = normalizedText
+        lastSavedYamlText = normalizedText
         pendingChanges = pendingChanges.filter { it.yaml.trimEnd() != normalizedText.trimEnd() }
         if (notify) showSnack(context.getString(R.string.saved_apply_after_restart))
       } else {
@@ -2547,6 +2554,7 @@ fun MihomoProfileScreen(
         yamlText = yamlText,
         onYamlChange = { yamlText = it },
         saving = yamlSaving,
+        hasChanges = yamlText != lastSavedYamlText,
         onSave = { saveYaml() },
         onRestoreSample = { yamlText = mihomoSampleConfig(profile, nextFreeMihomoControllerPort(usedMihomoControllerPorts)) },
       )
@@ -2594,7 +2602,10 @@ fun MihomoProfileScreen(
           actions = actions,
           snackHost = snackHost,
           saveFailedMessage = stringResource(R.string.mihomo_app_conflict_error),
-          onSavedSelection = { appCount = it.size },
+          onSavedSelection = {
+            selectedApps = it
+            appCount = it.size
+          },
         )
         if ((prof?.enabled == true) && appCount == 0) {
           Surface(
@@ -3050,6 +3061,7 @@ private fun MihomoYamlTab(
   yamlText: String,
   onYamlChange: (String) -> Unit,
   saving: Boolean,
+  hasChanges: Boolean,
   onSave: () -> Unit,
   onRestoreSample: () -> Unit,
 ) {
@@ -3094,7 +3106,7 @@ private fun MihomoYamlTab(
         }
       }
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = onSave, enabled = !saving, modifier = Modifier.weight(1f)) {
+        Button(onClick = onSave, enabled = !saving && hasChanges, modifier = Modifier.weight(1f)) {
           Text(if (saving) "..." else stringResource(R.string.action_save))
         }
         OutlinedButton(onClick = onRestoreSample, enabled = !saving, modifier = Modifier.weight(1f)) {
@@ -3118,7 +3130,9 @@ private fun MihomoSectionTab(
   templateProvider: (String) -> String,
   onSaveSection: (String) -> Unit,
 ) {
-  var sectionText by remember(yamlText, section) { mutableStateOf(extractTopLevelYamlSection(yamlText, section)) }
+  val initialSectionText = remember(yamlText, section) { extractTopLevelYamlSection(yamlText, section) }
+  var sectionText by remember(initialSectionText, section) { mutableStateOf(initialSectionText) }
+  val hasChanges = sectionText != initialSectionText
   Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -3151,7 +3165,7 @@ private fun MihomoSectionTab(
         textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
         minLines = 12,
       )
-      Button(onClick = { onSaveSection(sectionText) }, modifier = Modifier.fillMaxWidth()) {
+      Button(onClick = { onSaveSection(sectionText) }, enabled = hasChanges, modifier = Modifier.fillMaxWidth()) {
         Text(stringResource(R.string.action_save))
       }
     }
@@ -3168,8 +3182,11 @@ private fun MihomoDashboardTab(
   val currentUrl = remember(yamlText, profile) { extractTopLevelScalar(yamlText, "external-ui-url") }
   val initialPreset = remember(currentUrl) { mihomoDashboardPresets.firstOrNull { it.url == currentUrl } }
   val fallbackController = remember(usedControllerPorts) { mihomoDefaultController(nextFreeMihomoControllerPort(usedControllerPorts)) }
-  var controller by remember(yamlText, profile, fallbackController) { mutableStateOf(extractTopLevelScalar(yamlText, "external-controller").ifBlank { fallbackController }) }
-  var secret by remember(yamlText, profile) { mutableStateOf(extractTopLevelScalar(yamlText, "secret")) }
+  val initialController = remember(yamlText, profile, fallbackController) { extractTopLevelScalar(yamlText, "external-controller").ifBlank { fallbackController } }
+  val initialSecret = remember(yamlText, profile) { extractTopLevelScalar(yamlText, "secret") }
+  val initialDashboardUrl = remember(currentUrl) { currentUrl.ifBlank { mihomoDashboardPresets.first().url } }
+  var controller by remember(yamlText, profile, fallbackController) { mutableStateOf(initialController) }
+  var secret by remember(yamlText, profile) { mutableStateOf(initialSecret) }
   var selectedPreset by remember(yamlText, profile) { mutableStateOf(initialPreset) }
   var customUrl by remember(yamlText, profile) { mutableStateOf(if (initialPreset == null) currentUrl else "") }
   var presetMenuExpanded by remember { mutableStateOf(false) }
@@ -3180,6 +3197,28 @@ private fun MihomoDashboardTab(
   val controllerPort = remember(finalController) { parseMihomoControllerPort(finalController) }
   val controllerPortConflict = controllerPort != null && controllerPort in usedControllerPorts
   val controllerValid = controllerPort != null && !controllerPortConflict
+  val dashboardYaml = remember(yamlText, finalController, secret, finalDashboardUrl, profile) {
+    replaceTopLevelScalars(
+      yamlText,
+      linkedMapOf(
+        "external-controller" to finalController,
+        "secret" to yamlQuote(secret),
+        "external-ui" to yamlQuote(defaultMihomoExternalUiPath(profile)),
+        "external-ui-url" to yamlQuote(finalDashboardUrl.ifBlank { mihomoDashboardPresets.first().url }),
+      ),
+    )
+  }
+  val hasChanges = listOf(
+    finalController,
+    secret,
+    finalDashboardUrl.ifBlank { mihomoDashboardPresets.first().url },
+    defaultMihomoExternalUiPath(profile),
+  ) != listOf(
+    initialController,
+    initialSecret,
+    initialDashboardUrl,
+    defaultMihomoExternalUiPath(profile),
+  )
 
   Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -3267,19 +3306,9 @@ private fun MihomoDashboardTab(
 
       Button(
         onClick = {
-          onSaveYaml(
-            replaceTopLevelScalars(
-              yamlText,
-              linkedMapOf(
-                "external-controller" to finalController,
-                "secret" to yamlQuote(secret),
-                "external-ui" to yamlQuote(defaultMihomoExternalUiPath(profile)),
-                "external-ui-url" to yamlQuote(finalDashboardUrl.ifBlank { mihomoDashboardPresets.first().url }),
-              ),
-            ),
-          )
+          onSaveYaml(dashboardYaml)
         },
-        enabled = controllerValid,
+        enabled = controllerValid && hasChanges,
         modifier = Modifier.fillMaxWidth(),
       ) { Text(stringResource(R.string.action_save)) }
       Text(
@@ -3845,33 +3874,38 @@ private fun MihomoEditGroupDialog(initialRaw: String, policyNames: List<String>,
   val types = listOf("select", "url-test", "fallback", "load-balance", "relay")
   val visiblePolicies = remember(policyNames, selectedProxies, name) { (selectedProxies + policyNames).map { it.trim() }.filter { it.isNotBlank() && it != name }.distinct() }
   val visibleProviders = remember(providerNames, selectedUse) { (selectedUse + providerNames).map { it.trim() }.filter { it.isNotBlank() }.distinct() }
-  val generatedRaw = remember(raw, name, type, selectedProxies, selectedUse, includeAll, includeAllProxies, includeAllProviders, filter, excludeFilter, excludeType, url, interval, lazy, timeout, maxFailedTimes, expectedStatus, disableUdp, hidden, icon, strategy) {
-    buildMihomoGroupFromDraft(
-      raw,
-      MihomoGroupDraft(
-        name = name.ifBlank { "Proxy" },
-        type = type.ifBlank { "select" },
-        proxies = selectedProxies.filter { it != name },
-        use = selectedUse,
-        includeAll = includeAll,
-        includeAllProxies = includeAllProxies,
-        includeAllProviders = includeAllProviders,
-        filter = filter,
-        excludeFilter = excludeFilter,
-        excludeType = excludeType,
-        url = url,
-        interval = interval,
-        lazy = lazy,
-        timeout = timeout,
-        maxFailedTimes = maxFailedTimes,
-        expectedStatus = expectedStatus,
-        disableUdp = disableUdp,
-        hidden = hidden,
-        icon = icon,
-        strategy = strategy,
-      )
+  val currentDraft = MihomoGroupDraft(
+    name = name.ifBlank { "Proxy" },
+    type = type.ifBlank { "select" },
+    proxies = selectedProxies.filter { it != name }.distinct(),
+    use = selectedUse.distinct(),
+    includeAll = includeAll,
+    includeAllProxies = includeAllProxies,
+    includeAllProviders = includeAllProviders,
+    filter = filter,
+    excludeFilter = excludeFilter,
+    excludeType = excludeType,
+    url = url,
+    interval = interval,
+    lazy = lazy,
+    timeout = timeout,
+    maxFailedTimes = maxFailedTimes,
+    expectedStatus = expectedStatus,
+    disableUdp = disableUdp,
+    hidden = hidden,
+    icon = icon,
+    strategy = strategy,
+  )
+  val initialDraft = remember(initialRaw) {
+    initial.copy(
+      proxies = initial.proxies.filter { it != initial.name }.distinct(),
+      use = initial.use.distinct(),
     )
   }
+  val generatedRaw = remember(raw, currentDraft) {
+    buildMihomoGroupFromDraft(raw, currentDraft)
+  }
+  val hasChanges = currentDraft != initialDraft
   AlertDialog(
     onDismissRequest = onDismiss,
     title = { Text(stringResource(R.string.mihomo_edit_group_title)) },
@@ -3978,7 +4012,7 @@ private fun MihomoEditGroupDialog(initialRaw: String, policyNames: List<String>,
       }
     },
     confirmButton = {
-      Button(onClick = { onSave(generatedRaw) }) {
+      Button(onClick = { onSave(generatedRaw) }, enabled = hasChanges) {
         Text(stringResource(R.string.action_save))
       }
     },
@@ -4310,48 +4344,47 @@ private fun MihomoEditProviderDialog(ruleProvider: Boolean, initialRaw: String, 
   val behaviors = listOf("domain", "ipcidr", "classical")
   val formats = listOf("", "yaml", "text", "mrs")
   val defaultFormatLabel = stringResource(R.string.mihomo_value_default)
-  val generatedRaw = remember(raw, name, type, url, path, interval, behavior, healthCheck, format, proxy, sizeLimit, headerUserAgent, headerAuthorization, healthUrl, healthInterval, healthTimeout, healthLazy, healthExpectedStatus, overridePrefix, overrideSuffix, overrideTfo, overrideMptcp, overrideUdp, overrideUdpOverTcp, overrideDown, overrideUp, overrideSkipCertVerify, overrideDialerProxy, overrideInterfaceName, overrideRoutingMark, overrideIpVersion, overrideProxyName, filter, excludeFilter, excludeType, ruleProvider) {
-    buildMihomoProviderFromDraft(
-      raw,
-      MihomoProviderDraft(
-        name = name,
-        type = type,
-        url = url,
-        path = path,
-        interval = interval,
-        behavior = behavior,
-        healthCheck = healthCheck,
-        format = format,
-        proxy = proxy,
-        sizeLimit = sizeLimit,
-        headerUserAgent = headerUserAgent,
-        headerAuthorization = headerAuthorization,
-        healthUrl = healthUrl,
-        healthInterval = healthInterval,
-        healthTimeout = healthTimeout,
-        healthLazy = healthLazy,
-        healthExpectedStatus = healthExpectedStatus,
-        overridePrefix = overridePrefix,
-        overrideSuffix = overrideSuffix,
-        overrideTfo = overrideTfo,
-        overrideMptcp = overrideMptcp,
-        overrideUdp = overrideUdp,
-        overrideUdpOverTcp = overrideUdpOverTcp,
-        overrideDown = overrideDown,
-        overrideUp = overrideUp,
-        overrideSkipCertVerify = overrideSkipCertVerify,
-        overrideDialerProxy = overrideDialerProxy,
-        overrideInterfaceName = overrideInterfaceName,
-        overrideRoutingMark = overrideRoutingMark,
-        overrideIpVersion = overrideIpVersion,
-        overrideProxyName = overrideProxyName,
-        filter = filter,
-        excludeFilter = excludeFilter,
-        excludeType = excludeType,
-      ),
-      ruleProvider,
-    )
+  val currentDraft = MihomoProviderDraft(
+    name = name,
+    type = type,
+    url = url,
+    path = path,
+    interval = interval,
+    behavior = behavior,
+    healthCheck = healthCheck,
+    format = format,
+    proxy = proxy,
+    sizeLimit = sizeLimit,
+    headerUserAgent = headerUserAgent,
+    headerAuthorization = headerAuthorization,
+    healthUrl = healthUrl,
+    healthInterval = healthInterval,
+    healthTimeout = healthTimeout,
+    healthLazy = healthLazy,
+    healthExpectedStatus = healthExpectedStatus,
+    overridePrefix = overridePrefix,
+    overrideSuffix = overrideSuffix,
+    overrideTfo = overrideTfo,
+    overrideMptcp = overrideMptcp,
+    overrideUdp = overrideUdp,
+    overrideUdpOverTcp = overrideUdpOverTcp,
+    overrideDown = overrideDown,
+    overrideUp = overrideUp,
+    overrideSkipCertVerify = overrideSkipCertVerify,
+    overrideDialerProxy = overrideDialerProxy,
+    overrideInterfaceName = overrideInterfaceName,
+    overrideRoutingMark = overrideRoutingMark,
+    overrideIpVersion = overrideIpVersion,
+    overrideProxyName = overrideProxyName,
+    filter = filter,
+    excludeFilter = excludeFilter,
+    excludeType = excludeType,
+  )
+  val generatedRaw = remember(raw, currentDraft, ruleProvider) {
+    buildMihomoProviderFromDraft(raw, currentDraft, ruleProvider)
   }
+  val hasChanges = currentDraft != initial || raw.trimEnd() != initialRaw.trimEnd()
+
   AlertDialog(
     onDismissRequest = onDismiss,
     title = { Text(stringResource(R.string.mihomo_edit_provider_title)) },
@@ -4420,7 +4453,7 @@ private fun MihomoEditProviderDialog(ruleProvider: Boolean, initialRaw: String, 
       }
     },
     confirmButton = {
-      Button(onClick = { onSave(generatedRaw) }) {
+      Button(onClick = { onSave(generatedRaw) }, enabled = hasChanges) {
         Text(stringResource(R.string.action_save))
       }
     },
@@ -4778,6 +4811,54 @@ private fun MihomoProxySmartEditorDialog(initialText: String, onDismiss: () -> U
   val generatedRaw = remember(rawText, name, type, server, port, username, secret, uuid, cipher, udp, tls, skipCert, serverName, network, flow, packetEncoding, wsPath, wsHost, grpcService, realityPublicKey, realityShortId) {
     buildMihomoProxyBlockFromFields(rawText, name, type, server, port, username, secret, uuid, cipher, udp, tls, skipCert, serverName, network, flow, packetEncoding, wsPath, wsHost, grpcService, realityPublicKey, realityShortId)
   }
+  val isEditing = initialText.trim().isNotEmpty()
+  val initialSignature = remember(initialText) {
+    listOf(
+      readMihomoBlockScalar(initialText, "name").ifBlank { "NEW-PROXY" },
+      initialType,
+      readMihomoBlockScalar(initialText, "server"),
+      readMihomoBlockScalar(initialText, "port"),
+      readMihomoBlockScalar(initialText, "username"),
+      readMihomoBlockScalar(initialText, mihomoProxyAuthKey(initialType)),
+      readMihomoBlockScalar(initialText, "uuid"),
+      readMihomoBlockScalar(initialText, "cipher"),
+      readMihomoBlockBool(initialText, "udp"),
+      readMihomoBlockBool(initialText, "tls"),
+      readMihomoBlockBool(initialText, "skip-cert-verify"),
+      readMihomoBlockScalar(initialText, "network").ifBlank { "tcp" },
+      readMihomoBlockScalar(initialText, mihomoProxyServerNameKey(initialType)),
+      readMihomoBlockScalar(initialText, "flow"),
+      readMihomoBlockScalar(initialText, "packet-encoding"),
+      readMihomoNestedScalar(initialText, "ws-opts", "path"),
+      readMihomoWsHost(initialText),
+      readMihomoNestedScalar(initialText, "grpc-opts", "grpc-service-name"),
+      readMihomoNestedScalar(initialText, "reality-opts", "public-key"),
+      readMihomoNestedScalar(initialText, "reality-opts", "short-id"),
+    )
+  }
+  val currentSignature = listOf(
+    name,
+    type,
+    server,
+    port,
+    username,
+    secret,
+    uuid,
+    cipher,
+    udp,
+    tls,
+    skipCert,
+    network,
+    serverName,
+    flow,
+    packetEncoding,
+    wsPath,
+    wsHost,
+    grpcService,
+    realityPublicKey,
+    realityShortId,
+  )
+  val hasChanges = !isEditing || currentSignature != initialSignature || rawText.trimEnd() != initialText.trimEnd()
   var previewRaw by remember(initialText) { mutableStateOf(generatedRaw) }
   LaunchedEffect(generatedRaw) {
     delay(220)
@@ -4881,7 +4962,7 @@ private fun MihomoProxySmartEditorDialog(initialText: String, onDismiss: () -> U
     },
     confirmButton = {
       Button(
-        enabled = name.isNotBlank() && type.isNotBlank() && !portInvalid,
+        enabled = name.isNotBlank() && type.isNotBlank() && !portInvalid && hasChanges,
         onClick = {
           onSave(generatedRaw.trimEnd())
         },
@@ -4905,7 +4986,7 @@ private fun MihomoRawBlockDialog(title: String, initialText: String, onDismiss: 
         textStyle = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
       )
     },
-    confirmButton = { Button(onClick = { onSave(text) }) { Text(stringResource(R.string.action_save)) } },
+    confirmButton = { Button(onClick = { onSave(text) }, enabled = text != initialText) { Text(stringResource(R.string.action_save)) } },
     dismissButton = { OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )
 }
@@ -4917,15 +4998,18 @@ private fun MihomoSingleLineDialog(title: String, initialText: String, onDismiss
     onDismissRequest = onDismiss,
     title = { Text(title) },
     text = { OutlinedTextField(value = text, onValueChange = { text = it }, modifier = Modifier.fillMaxWidth(), singleLine = false) },
-    confirmButton = { Button(onClick = { onSave(text) }) { Text(stringResource(R.string.action_save)) } },
+    confirmButton = { Button(onClick = { onSave(text) }, enabled = text != initialText) { Text(stringResource(R.string.action_save)) } },
     dismissButton = { OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )
 }
 
 @Composable
 private fun MihomoProvidersTab(yamlText: String, onSaveYaml: (String) -> Unit) {
-  var proxyProviders by remember(yamlText) { mutableStateOf(extractTopLevelYamlSection(yamlText, "proxy-providers")) }
-  var ruleProviders by remember(yamlText) { mutableStateOf(extractTopLevelYamlSection(yamlText, "rule-providers")) }
+  val initialProxyProviders = remember(yamlText) { extractTopLevelYamlSection(yamlText, "proxy-providers") }
+  val initialRuleProviders = remember(yamlText) { extractTopLevelYamlSection(yamlText, "rule-providers") }
+  var proxyProviders by remember(initialProxyProviders) { mutableStateOf(initialProxyProviders) }
+  var ruleProviders by remember(initialRuleProviders) { mutableStateOf(initialRuleProviders) }
+  val hasChanges = proxyProviders != initialProxyProviders || ruleProviders != initialRuleProviders
   Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
     MihomoProviderCard(
       title = stringResource(R.string.mihomo_proxy_providers_title),
@@ -4965,6 +5049,7 @@ private fun MihomoProvidersTab(yamlText: String, onSaveYaml: (String) -> Unit) {
         val withProxy = replaceTopLevelYamlSection(yamlText, "proxy-providers", proxyProviders)
         onSaveYaml(replaceTopLevelYamlSection(withProxy, "rule-providers", ruleProviders))
       },
+      enabled = hasChanges,
       modifier = Modifier.fillMaxWidth(),
     ) { Text(stringResource(R.string.action_save)) }
   }
@@ -5131,21 +5216,29 @@ private fun MihomoAdvancedCompatibilityTab(yamlText: String, onSaveYaml: (String
 
 @Composable
 private fun MihomoAdvancedTab(yamlText: String, onSaveYaml: (String) -> Unit) {
-  var external by remember(yamlText) {
-    mutableStateOf(
-      listOf("external-controller", "external-ui", "external-ui-url", "secret")
-        .mapNotNull { key -> yamlText.lineSequence().firstOrNull { it.startsWith("$key:") } }
-        .joinToString("\n")
-        .ifBlank {
-          """
+  val externalKeys = listOf("external-controller", "external-ui", "external-ui-url", "secret")
+  val initialExternal = remember(yamlText) {
+    externalKeys
+      .mapNotNull { key -> yamlText.lineSequence().firstOrNull { it.startsWith("$key:") } }
+      .joinToString("\n")
+      .ifBlank {
+        """
 external-controller: 127.0.0.1:19090
 secret: ""
 external-ui: "/data/adb/modules/ZDT-D/working_folder/mihomo/profile/main/work/ui"
 external-ui-url: "https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-pages.zip"
 """.trimIndent()
-        }
-    )
+      }
   }
+  var external by remember(yamlText) { mutableStateOf(initialExternal) }
+  val cleanedYaml = remember(yamlText) {
+    yamlText.lineSequence()
+      .filterNot { line -> externalKeys.any { key -> line.startsWith("$key:") } }
+      .joinToString("\n")
+      .trimEnd()
+  }
+  val advancedYaml = (external.trimEnd() + "\n\n" + cleanedYaml + "\n")
+  val hasChanges = advancedYaml.trimEnd() != yamlText.trimEnd()
   Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       Text(stringResource(R.string.mihomo_advanced_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -5162,13 +5255,8 @@ external-ui-url: "https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-
       )
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         OutlinedButton(
-          onClick = {
-            val cleaned = yamlText.lineSequence()
-              .filterNot { line -> listOf("external-controller:", "external-ui:", "external-ui-url:", "secret:").any { line.startsWith(it) } }
-              .joinToString("\n")
-              .trimEnd()
-            onSaveYaml(external.trimEnd() + "\n\n" + cleaned + "\n")
-          },
+          onClick = { onSaveYaml(advancedYaml) },
+          enabled = hasChanges,
           modifier = Modifier.weight(1f),
         ) {
           Icon(Icons.Filled.ContentCopy, contentDescription = null)

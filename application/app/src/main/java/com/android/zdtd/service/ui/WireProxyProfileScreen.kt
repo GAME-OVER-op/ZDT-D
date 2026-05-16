@@ -398,6 +398,13 @@ fun WireProxyProfileScreen(
   var editorLoading by remember(profile) { mutableStateOf(false) }
   var editorSaving by remember(profile) { mutableStateOf(false) }
   var wireProxyWebPanelChecking by remember(profile) { mutableStateOf(false) }
+  var selectedApps by remember(profile) { mutableStateOf(emptySet<String>()) }
+
+  fun refreshApps() {
+    actions.loadText("$basePath/apps/user") { content ->
+      selectedApps = parsePkgList(content)
+    }
+  }
 
   fun refreshSetting() {
     settingLoading = true
@@ -420,6 +427,7 @@ fun WireProxyProfileScreen(
   LaunchedEffect(profile) {
     refreshSetting()
     refreshServers()
+    refreshApps()
   }
 
   LaunchedEffect(program?.profiles, globalPortRefreshSeq) {
@@ -545,7 +553,7 @@ fun WireProxyProfileScreen(
 
   val wireProxyWebPanelPort = setting?.t2sWebPort
   val wireProxyPanelUrl = remember(wireProxyWebPanelPort) { wireProxyWebPanelPort?.let { wireProxyWebPanelUrl(it) } }
-  val wireProxyWebPanelVisible = prof?.enabled == true && wireProxyWebPanelPort != null
+  val wireProxyWebPanelVisible = prof?.enabled == true && wireProxyWebPanelPort != null && !isOnlyZdtdAppSelected(selectedApps)
 
   Column(
     Modifier
@@ -626,6 +634,7 @@ fun WireProxyProfileScreen(
       path = "$basePath/apps/user",
       actions = actions,
       snackHost = snackHost,
+      onSavedSelection = { selectedApps = it },
     )
 
     ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f))) {
@@ -955,6 +964,7 @@ private fun WireProxyConfigDialog(
   val shortHeight = rememberIsShortHeight()
   val useCompactHeader = shortHeight || narrowWidth
   var text by remember(profile, server, initialText) { mutableStateOf(initialText) }
+  val configDirty = text != initialText
   val bind = remember(text) { parseWireProxySocks5Bind(text) }
   val ignoredLabel = remember(profile, server) { wireProxyServerPortLabel(profile, server) }
   val conflict = bind?.port?.let { findWireProxyPortConflictLabel(registry, it, ignoredLabel) }
@@ -1010,8 +1020,8 @@ private fun WireProxyConfigDialog(
                 Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_cancel))
               }
             }
-            Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primary) {
-              IconButton(onClick = { onSave(text) }, modifier = Modifier.size(40.dp), enabled = !saving && !loading) {
+            Surface(shape = MaterialTheme.shapes.extraLarge, color = if (configDirty) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)) {
+              IconButton(onClick = { onSave(text) }, modifier = Modifier.size(40.dp), enabled = !saving && !loading && configDirty) {
                 Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.common_save), tint = MaterialTheme.colorScheme.onPrimary)
               }
             }
@@ -1028,7 +1038,7 @@ private fun WireProxyConfigDialog(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
               OutlinedButton(onClick = onDismiss, enabled = !saving) { Text(stringResource(R.string.common_cancel)) }
-              Button(onClick = { onSave(text) }, enabled = !saving && !loading) { Text(stringResource(R.string.common_save)) }
+              Button(onClick = { onSave(text) }, enabled = !saving && !loading && configDirty) { Text(stringResource(R.string.common_save)) }
             }
           }
         }

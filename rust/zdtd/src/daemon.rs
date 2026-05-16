@@ -107,8 +107,13 @@ pub fn run(_cfg: &Config) -> Result<()> {
 pub fn handle_start_async(state: &SharedState) -> Result<bool> {
     {
         let mut st = lock_state(state);
-        // Do not allow start/stop to overlap. If an operation is running, ignore.
+        // Do not allow start/stop to overlap. If a start is waiting for
+        // internet, a repeated Start request is used as an explicit skip.
         if st.start_in_progress || st.stop_in_progress {
+            if st.start_in_progress && !st.stop_in_progress && crate::internet_wait::request_skip() {
+                logging::info("start request accepted: internet wait skipped");
+                return Ok(true);
+            }
             logging::info("start ignored: another operation is in progress");
             return Ok(false);
         }

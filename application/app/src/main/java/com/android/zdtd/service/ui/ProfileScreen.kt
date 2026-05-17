@@ -97,7 +97,7 @@ fun ProfileScreen(
           0 -> {
             // Apps lists: for nfqws/dpitunnel -> common/mobile/wifi; others -> common only.
             if (programId == "nfqws" || programId == "nfqws2" || programId == "dpitunnel") {
-              NfqwsAppListsSection(pfx = pfx, actions = actions, snackHost = snackHost)
+              NfqwsAppListsSection(pfx = pfx, actions = actions, snackHost = snackHost, programs = programs)
             } else {
               AppListPickerCard(
                 title = stringResource(R.string.apps_common_title),
@@ -105,6 +105,7 @@ fun ProfileScreen(
                 path = "$pfx/apps/user",
                 actions = actions,
                 snackHost = snackHost,
+                programs = programs,
               )
             }
           }

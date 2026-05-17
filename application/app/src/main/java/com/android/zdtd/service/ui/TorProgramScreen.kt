@@ -271,6 +271,7 @@ private fun TorSectionCard(
 @Composable
 fun TorSection(
   program: ApiModels.Program,
+  programs: List<ApiModels.Program>,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
@@ -476,6 +477,7 @@ fun TorSection(
       initialContent = appsInitialContent,
       actions = actions,
       snackHost = snackHost,
+      programs = programs,
     )
 
     TorSectionCard(

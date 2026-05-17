@@ -194,6 +194,17 @@ interface ZdtdActions {
   fun loadText(path: String, onDone: (String?) -> Unit)
   fun saveText(path: String, content: String, onDone: (Boolean) -> Unit)
 
+  /**
+   * Save an app list after removing selected packages from inactive conflicting app lists.
+   * removalsByPath maps source app-list API paths to packages that must be removed there.
+   */
+  fun saveAppListResolvingConflicts(
+    targetPath: String,
+    targetContent: String,
+    removalsByPath: Map<String, Set<String>>,
+    onDone: (Boolean) -> Unit,
+  )
+
   /** Root-only: read a text file from filesystem (e.g. /data/adb/...). */
   fun loadRootTextFile(path: String, onDone: (String?) -> Unit)
 

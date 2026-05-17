@@ -590,6 +590,7 @@ fun MyProgramProfileScreen(
         path = "$basePath/apps/user",
         actions = actions,
         snackHost = snackHost,
+      programs = programs,
         onSavedSelection = { selectedApps = it },
       )
 

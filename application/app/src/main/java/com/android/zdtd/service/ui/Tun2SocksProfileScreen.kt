@@ -524,6 +524,7 @@ fun Tun2SocksProfileScreen(
       path = "$basePath/apps/user",
       actions = actions,
       snackHost = snackHost,
+      programs = programs,
       saveFailedMessage = stringResource(R.string.tun2socks_app_conflict_error),
       onSavedSelection = { appCount = it.size },
     )

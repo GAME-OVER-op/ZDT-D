@@ -344,6 +344,7 @@ fun MieruProfileScreen(
         path = "$basePath/apps/user",
         actions = actions,
         snackHost = snackHost,
+      programs = programs,
       )
       1 -> Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

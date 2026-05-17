@@ -127,7 +127,13 @@ pub fn start_full() -> Result<()> {
 
     // VPN/netd profile programs: launch VPN engines, wait for TUN, then apply Android netd routing once.
     // VPN profile failures are best-effort: log to console/profile logs and continue the rest of startup.
-    let vpn_expected = openvpn::has_enabled_profiles() || amneziawg::has_enabled_profiles() || tun2socks::has_enabled_profiles() || myvpn::has_enabled_profiles() || mihomo::has_enabled_profiles() || mieru::has_profiles_requiring_netd() || singbox::has_enabled_vpn_profiles();
+    let vpn_expected = openvpn::has_enabled_profiles()
+        || amneziawg::has_enabled_profiles()
+        || tun2socks::has_enabled_profiles()
+        || myvpn::has_enabled_profiles()
+        || mihomo::has_profiles_requiring_netd()
+        || mieru::has_profiles_requiring_netd()
+        || singbox::has_enabled_vpn_profiles();
     let mut vpn_profiles = Vec::new();
     match validate_vpn_claims_unique() {
         Ok(()) => {
@@ -365,7 +371,7 @@ fn can_adopt_existing_runtime() -> bool {
         || amneziawg::has_enabled_profiles()
         || tun2socks::has_enabled_profiles()
         || myvpn::has_enabled_profiles()
-        || mihomo::has_enabled_profiles()
+        || mihomo::has_profiles_requiring_netd()
         || mieru::has_profiles_requiring_netd()
         || singbox::has_enabled_vpn_profiles();
     if vpn_expected && !crate::vpn_netd::applied_snapshot_path().is_file() {

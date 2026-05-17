@@ -827,6 +827,9 @@ APatch: 10700+</string>
     <string name="settings_reset_identifier_failed">Не удалось сбросить идентификатор</string>
 
     <string name="app_picker_conflict_used_in">Используется в %1$s</string>
+    <string name="app_picker_conflict_will_move">Будет удалено из %1$s при сохранении</string>
+    <string name="app_picker_move_conflict_title">Удалить приложение из другого списка?</string>
+    <string name="app_picker_move_conflict_body">Одно или несколько выбранных приложений уже есть в списках выключенных инструментов. Удалить их оттуда и добавить сюда?</string>
     <string name="apps_conflict_slot_common">Общий</string>
     <string name="apps_conflict_slot_wifi">Wi-Fi</string>
     <string name="apps_conflict_slot_mobile">Мобильный</string>
@@ -1462,6 +1465,13 @@ APatch: 10700+</string>
     <string name="mihomo_pending_apply">Сохранить изменения</string>
     <string name="mihomo_pending_discard">Отменить</string>
     <string name="mihomo_pending_save_failed_title">Конфиг не сохранён</string>
+    <string name="mihomo_yaml_dashboard_fix_title">Перед сохранением нужно исправить поля панели</string>
+    <string name="mihomo_yaml_fix_controller">Controller будет изменён на: %1$s</string>
+    <string name="mihomo_yaml_fix_external_ui">external-ui будет изменён на путь UI текущего профиля: %1$s</string>
+    <string name="mihomo_yaml_fix_dashboard_url">external-ui-url будет задан дефолтным пресетом: %1$s</string>
+    <string name="mihomo_yaml_fix_and_save">Исправить и сохранить</string>
+    <string name="mihomo_save_failed_unknown_reason">Приложение отправило конфиг daemon, но daemon/API отклонил запись или не вернул успешный ответ. Точную причину нужно смотреть в логах daemon.</string>
+    <string name="mihomo_yaml_save_failed_after_fix">Сохранение всё равно не удалось после локальных исправлений:\n%1$s\nОставшаяся причина, скорее всего, на стороне daemon/API. Точную ошибку записи нужно смотреть в логах daemon.</string>
     <string name="mihomo_pending_save_failed_desc">Последнее изменение config.yaml не удалось записать. Его можно повторить отсюда, чтобы не вводить заново.</string>
     <string name="mihomo_pending_add_proxy_group_title">Изменение группы не сохранено</string>
     <string name="mihomo_pending_add_proxy_group_desc">Proxy %1$s уже сохранён в proxies. Сохраните ожидающее изменение, чтобы добавить его в группу Proxy, или отмените и оставьте конфиг как есть.</string>

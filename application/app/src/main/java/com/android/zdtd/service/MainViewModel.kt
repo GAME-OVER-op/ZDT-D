@@ -4788,6 +4788,65 @@ private fun shQuote(s: String): String {
     }
   }
 
+  override fun saveAppListResolvingConflicts(
+    targetPath: String,
+    targetContent: String,
+    removalsByPath: Map<String, Set<String>>,
+    onDone: (Boolean) -> Unit,
+  ) {
+    fun parseAppPackages(content: String): Set<String> {
+      return content
+        .lineSequence()
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .filterNot { it.startsWith("#") || it.startsWith("//") }
+        .toSet()
+    }
+
+    fun formatAppPackages(packages: Set<String>): String {
+      return if (packages.isEmpty()) "" else packages.sorted().joinToString("\n", postfix = "\n")
+    }
+
+    launchIO {
+      val ok = runCatching {
+        val removals = removalsByPath
+          .filterKeys { it.isNotBlank() && it != targetPath }
+          .mapValues { (_, pkgs) -> pkgs.map { it.trim() }.filter { it.isNotEmpty() }.toSet() }
+          .filterValues { it.isNotEmpty() }
+
+        val originals = linkedMapOf<String, String>()
+        for ((sourcePath, packagesToRemove) in removals) {
+          val current = api.getTextContent(sourcePath)
+          originals[sourcePath] = current
+          val updated = parseAppPackages(current) - packagesToRemove
+          val saved = api.putTextContent(sourcePath, formatAppPackages(updated))
+          if (!saved) {
+            log("ERR", "$sourcePath: conflict removal failed")
+            return@runCatching false
+          }
+          log("OK", "$sourcePath: removed moved app(s)")
+        }
+
+        val targetSaved = api.putTextContent(targetPath, targetContent)
+        if (!targetSaved) {
+          log("ERR", "$targetPath: save failed")
+          for ((sourcePath, originalContent) in originals) {
+            val rolledBack = runCatching { api.putTextContent(sourcePath, originalContent) }.getOrDefault(false)
+            if (rolledBack) log("OK", "$sourcePath: conflict removal rolled back")
+            else log("ERR", "$sourcePath: rollback after target save failure failed")
+          }
+        }
+        targetSaved
+      }.getOrElse {
+        log("ERR", "$targetPath: save with conflict removal failed: ${it.message ?: it}")
+        false
+      }
+
+      if (ok) log("OK", "$targetPath: saved and conflicts resolved (apply after stop/start)")
+      withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
   override fun saveRootTextFile(path: String, content: String, onDone: (Boolean) -> Unit) {
     launchIO {
       val ok = runCatching { root.writeTextFile(path, content) }.getOrDefault(false)

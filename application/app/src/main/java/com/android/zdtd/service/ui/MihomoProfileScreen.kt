@@ -569,6 +569,19 @@ private data class MihomoDashboardPreset(
   val url: String,
 )
 
+private data class MihomoDashboardYamlFix(
+  val yaml: String,
+  val fixedController: String,
+  val fixedDashboardUrl: String,
+  val desiredExternalUiPath: String,
+  val controllerChanged: Boolean,
+  val externalUiChanged: Boolean,
+  val dashboardUrlChanged: Boolean,
+) {
+  val hasFixes: Boolean
+    get() = controllerChanged || externalUiChanged || dashboardUrlChanged
+}
+
 private data class MihomoProxyPreset(
   val title: String,
   val type: String,
@@ -622,6 +635,48 @@ private fun extractTopLevelScalar(yaml: String, key: String): String {
     ?.trim()
     ?.trim('"')
     .orEmpty()
+}
+
+private fun mihomoFixedControllerForDashboard(rawController: String, usedControllerPorts: Set<Int>): String {
+  val currentPort = parseMihomoControllerPort(rawController)
+  return when {
+    rawController.isBlank() -> mihomoDefaultController(nextFreeMihomoControllerPort(usedControllerPorts))
+    currentPort == null -> mihomoDefaultController(nextFreeMihomoControllerPort(usedControllerPorts))
+    currentPort in usedControllerPorts -> mihomoDefaultController(nextFreeMihomoControllerPort(usedControllerPorts))
+    else -> rawController.trim()
+  }
+}
+
+private fun buildMihomoDashboardYamlFix(
+  yaml: String,
+  profile: String,
+  usedControllerPorts: Set<Int>,
+): MihomoDashboardYamlFix {
+  val currentController = extractTopLevelScalar(yaml, "external-controller")
+  val fixedController = mihomoFixedControllerForDashboard(currentController, usedControllerPorts)
+  val currentExternalUi = extractTopLevelScalar(yaml, "external-ui")
+  val desiredExternalUiPath = defaultMihomoExternalUiPath(profile)
+  val currentDashboardUrl = extractTopLevelScalar(yaml, "external-ui-url")
+  val fixedDashboardUrl = currentDashboardUrl.ifBlank { mihomoDashboardPresets.first().url }
+  val secret = extractTopLevelScalar(yaml, "secret")
+  val fixedYaml = replaceTopLevelScalars(
+    yaml,
+    linkedMapOf(
+      "external-controller" to fixedController,
+      "secret" to yamlQuote(secret),
+      "external-ui" to yamlQuote(desiredExternalUiPath),
+      "external-ui-url" to yamlQuote(fixedDashboardUrl),
+    ),
+  )
+  return MihomoDashboardYamlFix(
+    yaml = fixedYaml,
+    fixedController = fixedController,
+    fixedDashboardUrl = fixedDashboardUrl,
+    desiredExternalUiPath = desiredExternalUiPath,
+    controllerChanged = currentController.trim() != fixedController,
+    externalUiChanged = currentExternalUi.trim() != desiredExternalUiPath,
+    dashboardUrlChanged = currentDashboardUrl.trim().isBlank(),
+  )
 }
 
 private fun yamlQuote(value: String): String = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
@@ -2300,7 +2355,7 @@ fun MihomoProfileScreen(
   val mihomoIpv4SelfOverlap = remember(mihomoIpv4Cidrs) { vpnIpv4CidrsOverlapEachOther(mihomoIpv4Cidrs) }
   val mihomoIpv4Conflict = remember(mihomoIpv4Cidrs, usedVpnIpv4Cidrs) { vpnIpv4CidrsConflict(mihomoIpv4Cidrs, usedVpnIpv4Cidrs) }
   val webPanelUrl = remember(controllerPort) { controllerPort?.let { mihomoWebPanelUrl(it) } }
-  val webPanelVisible = prof?.enabled == true && controllerPort != null && !isOnlyZdtdAppSelected(selectedApps)
+  val webPanelVisible = prof?.enabled == true && controllerPort != null
 
   LaunchedEffect(tunText, mixedPortText, logLevel, tun2socksLogLevel, settingInitialized) {
     if (!settingInitialized || loading) return@LaunchedEffect
@@ -2378,7 +2433,12 @@ fun MihomoProfileScreen(
     }
   }
 
-  fun saveYaml(newText: String = yamlText, notify: Boolean = true, afterSuccess: (() -> Unit)? = null) {
+  fun saveYaml(
+    newText: String = yamlText,
+    notify: Boolean = true,
+    afterSuccess: (() -> Unit)? = null,
+    failureDetail: String? = null,
+  ) {
     val normalizedText = sanitizeMihomoUserConfigYaml(rewriteMihomoExplicitIpv4Conflicts(newText, usedVpnIpv4Cidrs))
     yamlSaving = true
     actions.saveText("$basePath/config", normalizedText) { ok ->
@@ -2390,12 +2450,13 @@ fun MihomoProfileScreen(
         afterSuccess?.invoke()
         if (notify) showSnack(context.getString(R.string.saved_apply_after_restart))
       } else {
+        val detail = failureDetail ?: context.getString(R.string.mihomo_save_failed_unknown_reason)
         queuePendingChange(
           MihomoPendingChange(
             id = "save-failed-${normalizedText.hashCode()}",
             title = context.getString(R.string.mihomo_pending_save_failed_title),
             message = context.getString(R.string.mihomo_pending_save_failed_desc),
-            detail = context.getString(R.string.save_failed),
+            detail = detail,
             yaml = normalizedText,
           )
         )
@@ -2557,10 +2618,17 @@ fun MihomoProfileScreen(
       2 -> MihomoYamlTab(
         profile = profile,
         yamlText = yamlText,
+        usedControllerPorts = usedMihomoControllerPorts,
         onYamlChange = { yamlText = it },
         saving = yamlSaving,
         hasChanges = yamlText != lastSavedYamlText,
-        onSave = { saveYaml() },
+        onSaveYaml = { updated, failureDetail, clearUiAfterSave ->
+          saveYaml(
+            updated,
+            failureDetail = failureDetail,
+            afterSuccess = if (clearUiAfterSave) { { actions.clearMihomoProfileUi(profile) } } else null,
+          )
+        },
         onRestoreSample = { yamlText = mihomoSampleConfig(profile, nextFreeMihomoControllerPort(usedMihomoControllerPorts)) },
       )
       3 -> MihomoRawSectionEditorTab(
@@ -2606,6 +2674,7 @@ fun MihomoProfileScreen(
           path = "$basePath/apps/user",
           actions = actions,
           snackHost = snackHost,
+      programs = programs,
           saveFailedMessage = stringResource(R.string.mihomo_app_conflict_error),
           onSavedSelection = {
             selectedApps = it
@@ -3064,12 +3133,33 @@ private fun ChipRow(options: List<String>, selected: String, onSelected: (String
 private fun MihomoYamlTab(
   profile: String,
   yamlText: String,
+  usedControllerPorts: Set<Int>,
   onYamlChange: (String) -> Unit,
   saving: Boolean,
   hasChanges: Boolean,
-  onSave: () -> Unit,
+  onSaveYaml: (String, String?, Boolean) -> Unit,
   onRestoreSample: () -> Unit,
 ) {
+  val dashboardFix = remember(yamlText, profile, usedControllerPorts) {
+    buildMihomoDashboardYamlFix(yamlText, profile, usedControllerPorts)
+  }
+  val controllerFixReason = if (dashboardFix.controllerChanged) {
+    stringResource(R.string.mihomo_yaml_fix_controller, dashboardFix.fixedController)
+  } else null
+  val externalUiFixReason = if (dashboardFix.externalUiChanged) {
+    stringResource(R.string.mihomo_yaml_fix_external_ui, dashboardFix.desiredExternalUiPath)
+  } else null
+  val dashboardUrlFixReason = if (dashboardFix.dashboardUrlChanged) {
+    stringResource(R.string.mihomo_yaml_fix_dashboard_url, mihomoDashboardPresets.first().title)
+  } else null
+  val fixReasons = listOfNotNull(controllerFixReason, externalUiFixReason, dashboardUrlFixReason)
+  val saveTargetYaml = if (dashboardFix.hasFixes) dashboardFix.yaml else yamlText
+  val clearUiAfterSave = dashboardFix.externalUiChanged || dashboardFix.dashboardUrlChanged
+  val saveFailureDetail = if (dashboardFix.hasFixes) {
+    stringResource(R.string.mihomo_yaml_save_failed_after_fix, fixReasons.joinToString("\n"))
+  } else {
+    stringResource(R.string.mihomo_save_failed_unknown_reason)
+  }
   Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       Text(stringResource(R.string.mihomo_yaml_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -3091,6 +3181,27 @@ private fun MihomoYamlTab(
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
       )
+      if (dashboardFix.hasFixes) {
+        Surface(
+          color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.36f),
+          shape = MaterialTheme.shapes.medium,
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.24f)),
+        ) {
+          Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+              stringResource(R.string.mihomo_yaml_dashboard_fix_title),
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.SemiBold,
+              color = MaterialTheme.colorScheme.onSurface,
+            )
+            Text(
+              fixReasons.joinToString("\n"),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+            )
+          }
+        }
+      }
       val managedFields = remember(yamlText) { findMihomoManagedTopLevelKeys(yamlText) }
       if (managedFields.isNotEmpty()) {
         Surface(
@@ -3111,8 +3222,18 @@ private fun MihomoYamlTab(
         }
       }
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = onSave, enabled = !saving && hasChanges, modifier = Modifier.weight(1f)) {
-          Text(if (saving) "..." else stringResource(R.string.action_save))
+        Button(
+          onClick = { onSaveYaml(saveTargetYaml, saveFailureDetail, clearUiAfterSave) },
+          enabled = !saving && (hasChanges || dashboardFix.hasFixes),
+          modifier = Modifier.weight(1f),
+        ) {
+          Text(
+            when {
+              saving -> "..."
+              dashboardFix.hasFixes -> stringResource(R.string.mihomo_yaml_fix_and_save)
+              else -> stringResource(R.string.action_save)
+            }
+          )
         }
         OutlinedButton(onClick = onRestoreSample, enabled = !saving, modifier = Modifier.weight(1f)) {
           Icon(Icons.Filled.Restore, contentDescription = null)
@@ -3184,13 +3305,17 @@ private fun MihomoDashboardTab(
   usedControllerPorts: Set<Int>,
   onSaveYaml: (String) -> Unit,
 ) {
+  val desiredExternalUiPath = remember(profile) { defaultMihomoExternalUiPath(profile) }
   val currentUrl = remember(yamlText, profile) { extractTopLevelScalar(yamlText, "external-ui-url") }
+  val currentController = remember(yamlText, profile) { extractTopLevelScalar(yamlText, "external-controller") }
+  val currentExternalUiPath = remember(yamlText, profile) { extractTopLevelScalar(yamlText, "external-ui") }
   val initialPreset = remember(currentUrl) { mihomoDashboardPresets.firstOrNull { it.url == currentUrl } }
-  val fallbackController = remember(usedControllerPorts) { mihomoDefaultController(nextFreeMihomoControllerPort(usedControllerPorts)) }
-  val initialController = remember(yamlText, profile, fallbackController) { extractTopLevelScalar(yamlText, "external-controller").ifBlank { fallbackController } }
+  val initialController = remember(currentController, usedControllerPorts) {
+    mihomoFixedControllerForDashboard(currentController, usedControllerPorts)
+  }
   val initialSecret = remember(yamlText, profile) { extractTopLevelScalar(yamlText, "secret") }
   val initialDashboardUrl = remember(currentUrl) { currentUrl.ifBlank { mihomoDashboardPresets.first().url } }
-  var controller by remember(yamlText, profile, fallbackController) { mutableStateOf(initialController) }
+  var controller by remember(yamlText, profile, initialController) { mutableStateOf(initialController) }
   var secret by remember(yamlText, profile) { mutableStateOf(initialSecret) }
   var selectedPreset by remember(yamlText, profile) { mutableStateOf(initialPreset) }
   var customUrl by remember(yamlText, profile) { mutableStateOf(if (initialPreset == null) currentUrl else "") }
@@ -3198,32 +3323,27 @@ private fun MihomoDashboardTab(
   val customTitle = stringResource(R.string.mihomo_dashboard_custom)
   val selectedTitle = selectedPreset?.title ?: customTitle
   val finalDashboardUrl = selectedPreset?.url ?: customUrl.trim()
-  val finalController = controller.ifBlank { fallbackController }
+  val finalController = controller.ifBlank { mihomoFixedControllerForDashboard(currentController, usedControllerPorts) }
   val controllerPort = remember(finalController) { parseMihomoControllerPort(finalController) }
   val controllerPortConflict = controllerPort != null && controllerPort in usedControllerPorts
   val controllerValid = controllerPort != null && !controllerPortConflict
-  val dashboardYaml = remember(yamlText, finalController, secret, finalDashboardUrl, profile) {
+  val normalizedFinalDashboardUrl = finalDashboardUrl.ifBlank { mihomoDashboardPresets.first().url }
+  val dashboardYaml = remember(yamlText, finalController, secret, normalizedFinalDashboardUrl, desiredExternalUiPath) {
     replaceTopLevelScalars(
       yamlText,
       linkedMapOf(
         "external-controller" to finalController,
         "secret" to yamlQuote(secret),
-        "external-ui" to yamlQuote(defaultMihomoExternalUiPath(profile)),
-        "external-ui-url" to yamlQuote(finalDashboardUrl.ifBlank { mihomoDashboardPresets.first().url }),
+        "external-ui" to yamlQuote(desiredExternalUiPath),
+        "external-ui-url" to yamlQuote(normalizedFinalDashboardUrl),
       ),
     )
   }
-  val hasChanges = listOf(
-    finalController,
-    secret,
-    finalDashboardUrl.ifBlank { mihomoDashboardPresets.first().url },
-    defaultMihomoExternalUiPath(profile),
-  ) != listOf(
-    initialController,
-    initialSecret,
-    initialDashboardUrl,
-    defaultMihomoExternalUiPath(profile),
-  )
+  val hasChanges =
+    finalController != currentController ||
+      secret != initialSecret ||
+      normalizedFinalDashboardUrl != currentUrl ||
+      currentExternalUiPath != desiredExternalUiPath
 
   Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -3302,7 +3422,7 @@ private fun MihomoDashboardTab(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
       ) {
         Text(
-          stringResource(R.string.mihomo_dashboard_path_fixed_hint, defaultMihomoExternalUiPath(profile)),
+          stringResource(R.string.mihomo_dashboard_path_fixed_hint, desiredExternalUiPath),
           modifier = Modifier.fillMaxWidth().padding(10.dp),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),

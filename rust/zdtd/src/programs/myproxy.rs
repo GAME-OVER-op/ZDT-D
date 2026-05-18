@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
@@ -50,8 +51,17 @@ impl Default for ProfileSetting {
 pub struct ProxyConfig {
     #[serde(default)]
     pub host: String,
+    /// Upstream SOCKS5 port definition.
+    ///
+    /// Backward compatible formats accepted by the API/runtime:
+    /// - number: 1080
+    /// - string: "1080" or "1080,1081,1082"
+    /// - array: [1080, 1081, 1082]
+    #[serde(default = "default_proxy_port_value")]
+    pub port: Value,
+    /// Optional explicit multi-port list. If non-empty, it has priority over `port`.
     #[serde(default)]
-    pub port: u16,
+    pub ports: Vec<u16>,
     #[serde(default)]
     pub user: String,
     #[serde(default)]
@@ -60,8 +70,71 @@ pub struct ProxyConfig {
 
 impl Default for ProxyConfig {
     fn default() -> Self {
-        Self { host: "127.0.0.1".to_string(), port: 1080, user: String::new(), pass: String::new() }
+        Self {
+            host: "127.0.0.1".to_string(),
+            port: default_proxy_port_value(),
+            ports: Vec::new(),
+            user: String::new(),
+            pass: String::new(),
+        }
     }
+}
+
+fn default_proxy_port_value() -> Value { Value::from(1080u16) }
+
+impl ProxyConfig {
+    pub fn effective_ports(&self) -> Result<Vec<u16>> {
+        let mut out = Vec::<u16>::new();
+        if !self.ports.is_empty() {
+            out.extend(self.ports.iter().copied());
+        } else {
+            collect_ports_from_value(&self.port, &mut out)?;
+        }
+        normalize_ports(out)
+    }
+
+    pub fn effective_ports_csv(&self) -> Result<String> {
+        Ok(self.effective_ports()?.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(","))
+    }
+}
+
+fn collect_ports_from_value(v: &Value, out: &mut Vec<u16>) -> Result<()> {
+    match v {
+        Value::Number(n) => {
+            let Some(raw) = n.as_u64() else { anyhow::bail!("proxy port must be a valid number"); };
+            let port = u16::try_from(raw).map_err(|_| anyhow::anyhow!("proxy port out of range: {raw}"))?;
+            out.push(port);
+        }
+        Value::String(s) => {
+            for part in s.split(',') {
+                let part = part.trim();
+                if part.is_empty() { continue; }
+                let raw: u16 = part.parse().map_err(|_| anyhow::anyhow!("invalid proxy port: {part}"))?;
+                out.push(raw);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                collect_ports_from_value(item, out)?;
+            }
+        }
+        Value::Null => {}
+        _ => anyhow::bail!("proxy port must be a number, comma-separated string, or array"),
+    }
+    Ok(())
+}
+
+fn normalize_ports(ports: Vec<u16>) -> Result<Vec<u16>> {
+    let mut seen = BTreeSet::<u16>::new();
+    let mut out = Vec::<u16>::new();
+    for port in ports {
+        if port == 0 { anyhow::bail!("proxy port must be > 0"); }
+        if seen.insert(port) {
+            out.push(port);
+        }
+    }
+    if out.is_empty() { anyhow::bail!("proxy port is required"); }
+    Ok(out)
 }
 
 #[derive(Debug, Clone)]
@@ -150,7 +223,7 @@ pub fn start_if_enabled() -> Result<()> {
             plan.setting.t2s_port,
             plan.setting.t2s_web_port,
             plan.proxy.host,
-            plan.proxy.port,
+            plan.proxy.effective_ports_csv().unwrap_or_else(|_| "?".to_string()),
             (!plan.proxy.user.is_empty() || !plan.proxy.pass.is_empty())
         );
     }
@@ -208,7 +281,8 @@ fn validate_profile_setting(
         anyhow::bail!("invalid profile ports");
     }
     validate_proxy_config(proxy)?;
-    if setting.t2s_port == proxy.port || setting.t2s_web_port == proxy.port {
+    let upstream_ports = proxy.effective_ports()?;
+    if upstream_ports.iter().any(|p| *p == setting.t2s_port || *p == setting.t2s_web_port) {
         anyhow::bail!("t2s ports must not match upstream port");
     }
     for port in [setting.t2s_port, setting.t2s_web_port] {
@@ -227,9 +301,7 @@ pub fn validate_proxy_config(proxy: &ProxyConfig) -> Result<()> {
     if proxy.host.trim().is_empty() {
         anyhow::bail!("proxy host is required");
     }
-    if proxy.port == 0 {
-        anyhow::bail!("proxy port must be > 0");
-    }
+    let _ = proxy.effective_ports()?;
     let user_empty = proxy.user.trim().is_empty();
     let pass_empty = proxy.pass.trim().is_empty();
     if user_empty ^ pass_empty {
@@ -313,7 +385,7 @@ fn spawn_t2s(bin: &Path, setting: &ProfileSetting, proxy: &ProxyConfig, log_path
         .arg("--socks-host")
         .arg(proxy.host.trim())
         .arg("--socks-port")
-        .arg(proxy.port.to_string())
+        .arg(proxy.effective_ports_csv()?)
         .arg("--max-conns")
         .arg("1200")
         .arg("--idle-timeout")
@@ -343,7 +415,7 @@ fn spawn_t2s(bin: &Path, setting: &ProfileSetting, proxy: &ProxyConfig, log_path
     let child = cmd.spawn().with_context(|| format!("spawn {}", bin.display()))?;
     info!(
         "spawned t2s pid={} listen_addr=127.0.0.1 listen_port={} socks_host={} socks_port={} web_port={} log={}",
-        child.id(), setting.t2s_port, proxy.host, proxy.port, setting.t2s_web_port, log_path.display()
+        child.id(), setting.t2s_port, proxy.host, proxy.effective_ports_csv().unwrap_or_else(|_| "?".to_string()), setting.t2s_web_port, log_path.display()
     );
     Ok(())
 }

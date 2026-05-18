@@ -54,6 +54,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -67,7 +68,7 @@ private data class MyProxySettingUi(
 
 private data class MyProxyUpstreamUi(
   val host: String,
-  val port: Int?,
+  val ports: List<Int>,
   val user: String,
   val pass: String,
 )
@@ -89,11 +90,60 @@ private fun parseMyProxySettingUi(obj: JSONObject?): MyProxySettingUi {
   )
 }
 
+private fun parseMyProxyPortToken(token: String): Int? =
+  token.trim().takeIf { it.isNotEmpty() && it.all(Char::isDigit) }?.toIntOrNull()?.takeIf { it in 1..65535 }
+
+private fun normalizeMyProxyPortList(raw: String): List<Int>? {
+  val ports = raw
+    .split(',')
+    .mapNotNull { part ->
+      val trimmed = part.trim()
+      if (trimmed.isEmpty()) null else parseMyProxyPortToken(trimmed) ?: return null
+    }
+    .distinct()
+  return ports.takeIf { it.isNotEmpty() }
+}
+
+private fun parseMyProxyPortValue(value: Any?): List<Int> = when (value) {
+  null, JSONObject.NULL -> emptyList()
+  is Number -> value.toInt().takeIf { it in 1..65535 }?.let { listOf(it) } ?: emptyList()
+  is String -> normalizeMyProxyPortList(value).orEmpty()
+  is JSONArray -> {
+    val out = mutableListOf<Int>()
+    for (i in 0 until value.length()) {
+      when (val item = value.opt(i)) {
+        is Number -> item.toInt().takeIf { it in 1..65535 }?.let(out::add)
+        is String -> parseMyProxyPortToken(item)?.let(out::add)
+      }
+    }
+    out.distinct()
+  }
+  else -> emptyList()
+}
+
+private fun myProxyPortsJsonArray(ports: List<Int>): JSONArray = JSONArray().apply {
+  ports.forEach { put(it) }
+}
+
+private fun buildMyProxyUpstreamJson(host: String, ports: List<Int>, user: String, pass: String): JSONObject =
+  JSONObject()
+    .put("host", host)
+    .put("user", user)
+    .put("pass", pass)
+    .also { obj ->
+      if (ports.size == 1) {
+        obj.put("port", ports.first())
+      } else {
+        obj.put("ports", myProxyPortsJsonArray(ports))
+      }
+    }
+
 private fun parseMyProxyUpstreamUi(obj: JSONObject?): MyProxyUpstreamUi {
   val data = obj?.optJSONObject("data") ?: obj
+  val portsFromArray = parseMyProxyPortValue(data?.opt("ports"))
   return MyProxyUpstreamUi(
     host = data?.optString("host", "")?.trim().orEmpty(),
-    port = data?.optInt("port", 0)?.takeIf { it in 1..65535 },
+    ports = portsFromArray.takeIf { it.isNotEmpty() } ?: parseMyProxyPortValue(data?.opt("port")),
     user = data?.optString("user", "")?.trim().orEmpty(),
     pass = data?.optString("pass", "") ?: "",
   )
@@ -183,7 +233,7 @@ fun MyProxyProfileScreen(
   var proxySaving by remember(profile) { mutableStateOf(false) }
 
   var syncedSetting by remember(profile) { mutableStateOf(MyProxySettingUi(null, null)) }
-  var syncedProxy by remember(profile) { mutableStateOf(MyProxyUpstreamUi("", null, "", "")) }
+  var syncedProxy by remember(profile) { mutableStateOf(MyProxyUpstreamUi("", emptyList(), "", "")) }
 
   var t2sPortText by remember(profile) { mutableStateOf("") }
   var t2sWebPortText by remember(profile) { mutableStateOf("") }
@@ -211,7 +261,7 @@ fun MyProxyProfileScreen(
       t2sPortText = parsedSetting.t2sPort?.toString().orEmpty()
       t2sWebPortText = parsedSetting.t2sWebPort?.toString().orEmpty()
       hostText = parsedProxy.host
-      proxyPortText = parsedProxy.port?.toString().orEmpty()
+      proxyPortText = parsedProxy.ports.joinToString(",")
       userText = parsedProxy.user
       passText = parsedProxy.pass
       settingInitialized = true
@@ -245,19 +295,20 @@ fun MyProxyProfileScreen(
     if (!proxyInitialized) return@LaunchedEffect
     delay(700)
     val host = hostText.trim()
-    val port = proxyPortText.trim().toIntOrNull()
+    val ports = normalizeMyProxyPortList(proxyPortText.trim()).orEmpty()
     val user = userText.trim()
     val pass = passText
-    val current = MyProxyUpstreamUi(host = host, port = port, user = user, pass = pass)
+    val current = MyProxyUpstreamUi(host = host, ports = ports, user = user, pass = pass)
     if (current == syncedProxy) return@LaunchedEffect
     if (host.isBlank()) return@LaunchedEffect
-    if (port !in 1..65535) return@LaunchedEffect
+    if (ports.isEmpty()) return@LaunchedEffect
+    if (normalizeMyProxyPortList(proxyPortText.trim()) == null) return@LaunchedEffect
     if ((user.isBlank()) xor pass.isBlank()) return@LaunchedEffect
     proxySaving = true
     val ok = awaitSaveJsonMyProxy(
       actions,
       "$basePath/proxy",
-      JSONObject().put("host", host).put("port", port).put("user", user).put("pass", pass)
+      buildMyProxyUpstreamJson(host, ports, user, pass)
     )
     proxySaving = false
     if (ok) syncedProxy = current else showSnack(context.getString(R.string.myproxy_auto_save_failed))
@@ -392,15 +443,23 @@ fun MyProxyProfileScreen(
           isError = hostText.isBlank(),
         )
         FieldHint(stringResource(R.string.myproxy_proxy_port_hint))
+        val proxyPortsValid = proxyPortText.isNotBlank() && normalizeMyProxyPortList(proxyPortText) != null
         OutlinedTextField(
           value = proxyPortText,
-          onValueChange = { proxyPortText = it.filter(Char::isDigit).take(5) },
+          onValueChange = { proxyPortText = it.filter { ch -> ch.isDigit() || ch == ',' || ch.isWhitespace() }.take(128) },
           label = { Text(stringResource(R.string.myproxy_proxy_port_label)) },
           modifier = Modifier.fillMaxWidth(),
-          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
           singleLine = true,
-          isError = proxyPortText.isNotBlank() && proxyPortText.toIntOrNull()?.let { it !in 1..65535 } != false,
+          isError = proxyPortText.isNotBlank() && !proxyPortsValid,
         )
+        if (proxyPortText.isNotBlank() && !proxyPortsValid) {
+          Text(
+            stringResource(R.string.myproxy_proxy_ports_invalid),
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall,
+          )
+        }
         FieldHint(stringResource(R.string.myproxy_user_hint))
         OutlinedTextField(
           value = userText,

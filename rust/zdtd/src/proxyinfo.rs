@@ -1450,12 +1450,40 @@ fn collect_myproxy_ports(local: &mut BTreeSet<u16>, global: &mut BTreeSet<u16>) 
         }
         let proxy_path = profile_dir.join("proxy.json");
         if let Ok(v) = read_json_file::<Value>(&proxy_path) {
-            if let Some(port) = v.get("port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
-                if port != 0 { global.insert(port); }
-            }
+            collect_myproxy_upstream_ports_from_value(&v, global);
         }
     }
     Ok(())
+}
+
+fn collect_myproxy_upstream_ports_from_value(v: &Value, out: &mut BTreeSet<u16>) {
+    if let Some(ports) = v.get("ports").and_then(|x| x.as_array()) {
+        for item in ports {
+            collect_proxy_port_value(item, out);
+        }
+        if !ports.is_empty() { return; }
+    }
+    if let Some(port_value) = v.get("port") {
+        collect_proxy_port_value(port_value, out);
+    }
+}
+
+fn collect_proxy_port_value(v: &Value, out: &mut BTreeSet<u16>) {
+    if let Some(port) = v.as_u64().and_then(|x| u16::try_from(x).ok()) {
+        if port != 0 { out.insert(port); }
+        return;
+    }
+    if let Some(s) = v.as_str() {
+        for part in s.split(',') {
+            if let Ok(port) = part.trim().parse::<u16>() {
+                if port != 0 { out.insert(port); }
+            }
+        }
+        return;
+    }
+    if let Some(items) = v.as_array() {
+        for item in items { collect_proxy_port_value(item, out); }
+    }
 }
 
 

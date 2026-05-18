@@ -979,11 +979,12 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="myproxy_ports_autosave_hint">Valid changes are saved automatically after a short pause.</string>
     <string name="myproxy_ports_saving">Saving changes…</string>
     <string name="myproxy_upstream_title">Upstream SOCKS5</string>
-    <string name="myproxy_upstream_desc">Each profile uses one SOCKS5 upstream server.</string>
+    <string name="myproxy_upstream_desc">Each profile uses one SOCKS5 upstream server. Multiple upstream ports can be separated by commas.</string>
     <string name="myproxy_host_label">Host</string>
-    <string name="myproxy_proxy_port_label">Port</string>
+    <string name="myproxy_proxy_port_label">Port(s)</string>
     <string name="myproxy_user_label">Username</string>
     <string name="myproxy_pass_label">Password</string>
+    <string name="myproxy_proxy_ports_invalid">Enter ports from 1 to 65535, separated by commas.</string>
     <string name="myproxy_credentials_pair_required">If username or password is used, fill in both fields.</string>
     <string name="myproxy_auto_save_failed">Failed to auto-save changes</string>
 
@@ -1060,7 +1061,7 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="myproxy_t2s_port_hint">Local port where t2s receives app traffic.</string>
     <string name="myproxy_t2s_web_port_hint">Local service web port used by t2s.</string>
     <string name="myproxy_host_hint">SOCKS5 proxy address: server IP or domain.</string>
-    <string name="myproxy_proxy_port_hint">SOCKS5 proxy port on the server.</string>
+    <string name="myproxy_proxy_port_hint">SOCKS5 proxy upstream port or ports on the server, separated by commas.</string>
     <string name="myproxy_user_hint">SOCKS5 username. Leave empty if auth is not required.</string>
     <string name="myproxy_pass_hint">SOCKS5 password. Leave empty if auth is not required.</string>
 

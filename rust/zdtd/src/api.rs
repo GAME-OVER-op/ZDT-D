@@ -4691,7 +4691,10 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 if t2s_port == 0 || t2s_web_port == 0 || t2s_port == t2s_web_port { anyhow::bail!("invalid ports"); }
                 let proxy_path = myproxy_profile_root(profile).join("proxy.json");
                 if let Ok(proxy_cfg) = read_json::<crate::programs::myproxy::ProxyConfig>(&proxy_path) {
-                    if t2s_port == proxy_cfg.port || t2s_web_port == proxy_cfg.port { anyhow::bail!("t2s ports must not match upstream port"); }
+                    let upstream_ports = proxy_cfg.effective_ports()?;
+                    if upstream_ports.iter().any(|p| *p == t2s_port || *p == t2s_web_port) {
+                        anyhow::bail!("t2s ports must not match upstream port");
+                    }
                 }
                 let p = myproxy_profile_root(profile).join("setting.json");
                 write_json_pretty(&p, &v)?;
@@ -4743,7 +4746,10 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 if let Ok(setting_v) = read_json::<serde_json::Value>(&setting_path) {
                     let t2s_port = setting_v.get("t2s_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
                     let t2s_web_port = setting_v.get("t2s_web_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
-                    if proxy_cfg.port == t2s_port || proxy_cfg.port == t2s_web_port { anyhow::bail!("upstream port must not match t2s ports"); }
+                    let upstream_ports = proxy_cfg.effective_ports()?;
+                    if upstream_ports.iter().any(|p| *p == t2s_port || *p == t2s_web_port) {
+                        anyhow::bail!("upstream port must not match t2s ports");
+                    }
                 }
                 let p = myproxy_profile_root(profile).join("proxy.json");
                 write_json_pretty(&p, &proxy_cfg)?;

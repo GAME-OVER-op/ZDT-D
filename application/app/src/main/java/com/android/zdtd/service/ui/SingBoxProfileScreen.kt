@@ -1097,19 +1097,6 @@ fun SingBoxProfileScreen(
     )
 
     AnimatedVisibility(
-      visible = activeSetting.isT2s,
-      enter = fadeIn() + expandVertically(),
-      exit = fadeOut() + shrinkVertically(),
-    ) {
-      SingBoxProfileSettingCard(
-        setting = activeSetting,
-        loading = settingLoading,
-        saving = settingSaving,
-        onSave = ::saveProfileSetting,
-      )
-    }
-
-    AnimatedVisibility(
       visible = singBoxWebPanelVisible,
       enter = fadeIn(tween(180)) + expandVertically(animationSpec = tween(220)),
       exit = fadeOut(tween(140)) + shrinkVertically(animationSpec = tween(180)),
@@ -1141,6 +1128,18 @@ fun SingBoxProfileScreen(
       )
     }
 
+    AnimatedVisibility(
+      visible = activeSetting.isT2s,
+      enter = fadeIn() + expandVertically(),
+      exit = fadeOut() + shrinkVertically(),
+    ) {
+      SingBoxProfileSettingCard(
+        setting = activeSetting,
+        loading = settingLoading,
+        saving = settingSaving,
+        onSave = ::saveProfileSetting,
+      )
+    }
     AnimatedVisibility(
       visible = false,
       enter = fadeIn() + expandVertically(),

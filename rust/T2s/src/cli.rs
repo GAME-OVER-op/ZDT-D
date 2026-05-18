@@ -1,5 +1,13 @@
 use anyhow::{anyhow, Result};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum BackendMode {
+    /// Balance traffic across all GREEN SOCKS5 backends (current/default behavior).
+    Balance,
+    /// Use backend priority groups; fall back to the next group only when the previous group has no GREEN backend.
+    Priority,
+}
 
 #[derive(Clone, Debug, Parser)]
 #[command(
@@ -51,6 +59,11 @@ pub struct Args {
     pub socks_user: Option<String>,
     #[arg(long)]
     pub socks_pass: Option<String>,
+
+    #[arg(long, value_enum, default_value = "balance", help="SOCKS5 backend selection mode: balance or priority")]
+    pub backend_mode: BackendMode,
+    #[arg(long, help="Priority groups for --backend-mode priority. Example: 1145,1146;1147. If omitted, --socks-port order is used as 1145;1146;1147")]
+    pub backend_priority: Option<String>,
 
     #[arg(long)]
     pub target_host: Option<String>,

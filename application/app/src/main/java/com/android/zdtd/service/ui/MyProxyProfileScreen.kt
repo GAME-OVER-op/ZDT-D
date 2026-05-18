@@ -26,6 +26,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -69,6 +70,8 @@ private data class MyProxySettingUi(
 private data class MyProxyUpstreamUi(
   val host: String,
   val ports: List<Int>,
+  val backendMode: String,
+  val backendPriority: String,
   val user: String,
   val pass: String,
 )
@@ -121,20 +124,51 @@ private fun parseMyProxyPortValue(value: Any?): List<Int> = when (value) {
   else -> emptyList()
 }
 
-private fun myProxyPortsJsonArray(ports: List<Int>): JSONArray = JSONArray().apply {
-  ports.forEach { put(it) }
+private fun normalizeMyProxyBackendMode(raw: String?): String =
+  if (raw?.trim()?.lowercase() == "priority") "priority" else "balance"
+
+private fun normalizeMyProxyBackendPriority(raw: String, allowedPorts: List<Int>): String? {
+  val text = raw.trim()
+  if (text.isEmpty()) return ""
+  val allowed = allowedPorts.toSet()
+  if (allowed.isEmpty()) return null
+  val used = linkedSetOf<Int>()
+  val groups = mutableListOf<String>()
+  for (groupRaw in text.split(';')) {
+    val groupText = groupRaw.trim()
+    if (groupText.isEmpty()) return null
+    val groupPorts = mutableListOf<Int>()
+    for (token in groupText.split(',')) {
+      val port = parseMyProxyPortToken(token) ?: return null
+      if (port !in allowed) return null
+      if (!used.add(port)) return null
+      groupPorts += port
+    }
+    if (groupPorts.isEmpty()) return null
+    groups += groupPorts.joinToString(",")
+  }
+  return groups.joinToString(";")
 }
 
-private fun buildMyProxyUpstreamJson(host: String, ports: List<Int>, user: String, pass: String): JSONObject =
+private fun buildMyProxyUpstreamJson(
+  host: String,
+  ports: List<Int>,
+  backendMode: String,
+  backendPriority: String,
+  user: String,
+  pass: String,
+): JSONObject =
   JSONObject()
     .put("host", host)
+    .put("backend_mode", normalizeMyProxyBackendMode(backendMode))
+    .put("backend_priority", if (normalizeMyProxyBackendMode(backendMode) == "priority") backendPriority else "")
     .put("user", user)
     .put("pass", pass)
     .also { obj ->
       if (ports.size == 1) {
         obj.put("port", ports.first())
       } else {
-        obj.put("ports", myProxyPortsJsonArray(ports))
+        obj.put("port", ports.joinToString(","))
       }
     }
 
@@ -144,6 +178,8 @@ private fun parseMyProxyUpstreamUi(obj: JSONObject?): MyProxyUpstreamUi {
   return MyProxyUpstreamUi(
     host = data?.optString("host", "")?.trim().orEmpty(),
     ports = portsFromArray.takeIf { it.isNotEmpty() } ?: parseMyProxyPortValue(data?.opt("port")),
+    backendMode = normalizeMyProxyBackendMode(data?.optString("backend_mode", "balance")),
+    backendPriority = data?.optString("backend_priority", "")?.trim().orEmpty(),
     user = data?.optString("user", "")?.trim().orEmpty(),
     pass = data?.optString("pass", "") ?: "",
   )
@@ -233,12 +269,14 @@ fun MyProxyProfileScreen(
   var proxySaving by remember(profile) { mutableStateOf(false) }
 
   var syncedSetting by remember(profile) { mutableStateOf(MyProxySettingUi(null, null)) }
-  var syncedProxy by remember(profile) { mutableStateOf(MyProxyUpstreamUi("", emptyList(), "", "")) }
+  var syncedProxy by remember(profile) { mutableStateOf(MyProxyUpstreamUi("", emptyList(), "balance", "", "", "")) }
 
   var t2sPortText by remember(profile) { mutableStateOf("") }
   var t2sWebPortText by remember(profile) { mutableStateOf("") }
   var hostText by remember(profile) { mutableStateOf("") }
   var proxyPortText by remember(profile) { mutableStateOf("") }
+  var backendMode by remember(profile) { mutableStateOf("balance") }
+  var backendPriorityText by remember(profile) { mutableStateOf("") }
   var userText by remember(profile) { mutableStateOf("") }
   var passText by remember(profile) { mutableStateOf("") }
 
@@ -262,6 +300,8 @@ fun MyProxyProfileScreen(
       t2sWebPortText = parsedSetting.t2sWebPort?.toString().orEmpty()
       hostText = parsedProxy.host
       proxyPortText = parsedProxy.ports.joinToString(",")
+      backendMode = parsedProxy.backendMode
+      backendPriorityText = parsedProxy.backendPriority
       userText = parsedProxy.user
       passText = parsedProxy.pass
       settingInitialized = true
@@ -291,27 +331,45 @@ fun MyProxyProfileScreen(
     if (ok) syncedSetting = current else showSnack(context.getString(R.string.myproxy_auto_save_failed))
   }
 
-  LaunchedEffect(hostText, proxyPortText, userText, passText, proxyInitialized) {
+  LaunchedEffect(hostText, proxyPortText, backendMode, backendPriorityText, userText, passText, proxyInitialized) {
     if (!proxyInitialized) return@LaunchedEffect
     delay(700)
     val host = hostText.trim()
-    val ports = normalizeMyProxyPortList(proxyPortText.trim()).orEmpty()
+    val ports = normalizeMyProxyPortList(proxyPortText.trim())
+    val mode = normalizeMyProxyBackendMode(backendMode)
+    val priority = if (mode == "priority" && ports != null) {
+      normalizeMyProxyBackendPriority(backendPriorityText, ports)
+    } else {
+      ""
+    }
     val user = userText.trim()
     val pass = passText
-    val current = MyProxyUpstreamUi(host = host, ports = ports, user = user, pass = pass)
-    if (current == syncedProxy) return@LaunchedEffect
     if (host.isBlank()) return@LaunchedEffect
-    if (ports.isEmpty()) return@LaunchedEffect
-    if (normalizeMyProxyPortList(proxyPortText.trim()) == null) return@LaunchedEffect
+    val portsForSave = ports?.takeIf { it.isNotEmpty() } ?: return@LaunchedEffect
+    val priorityForSave = priority ?: return@LaunchedEffect
     if ((user.isBlank()) xor pass.isBlank()) return@LaunchedEffect
+    val current = MyProxyUpstreamUi(
+      host = host,
+      ports = portsForSave,
+      backendMode = mode,
+      backendPriority = priorityForSave,
+      user = user,
+      pass = pass,
+    )
+    if (current == syncedProxy) return@LaunchedEffect
     proxySaving = true
     val ok = awaitSaveJsonMyProxy(
       actions,
       "$basePath/proxy",
-      buildMyProxyUpstreamJson(host, ports, user, pass)
+      buildMyProxyUpstreamJson(host, portsForSave, mode, priorityForSave, user, pass)
     )
     proxySaving = false
-    if (ok) syncedProxy = current else showSnack(context.getString(R.string.myproxy_auto_save_failed))
+    if (ok) {
+      syncedProxy = current
+      if (mode == "priority" && backendPriorityText.trim() != priorityForSave) backendPriorityText = priorityForSave
+    } else {
+      showSnack(context.getString(R.string.myproxy_auto_save_failed))
+    }
   }
 
   val t2sWebPanelPort = remember(t2sWebPortText) { t2sWebPortText.trim().toIntOrNull()?.takeIf { it in 1..65535 } }
@@ -459,6 +517,68 @@ fun MyProxyProfileScreen(
             color = MaterialTheme.colorScheme.error,
             style = MaterialTheme.typography.bodySmall,
           )
+        }
+        Text(
+          stringResource(R.string.myproxy_backend_mode_title),
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.SemiBold,
+        )
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          FilterChip(
+            selected = backendMode == "balance",
+            onClick = { backendMode = "balance" },
+            label = { Text(stringResource(R.string.myproxy_backend_mode_balance)) },
+          )
+          FilterChip(
+            selected = backendMode == "priority",
+            onClick = { backendMode = "priority" },
+            label = { Text(stringResource(R.string.myproxy_backend_mode_priority)) },
+          )
+        }
+        Text(
+          if (backendMode == "priority") {
+            stringResource(R.string.myproxy_backend_mode_priority_desc)
+          } else {
+            stringResource(R.string.myproxy_backend_mode_balance_desc)
+          },
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+        )
+        AnimatedVisibility(
+          visible = backendMode == "priority",
+          enter = fadeIn(tween(160)) + expandVertically(animationSpec = tween(180)),
+          exit = fadeOut(tween(120)) + shrinkVertically(animationSpec = tween(150)),
+        ) {
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            FieldHint(stringResource(R.string.myproxy_backend_priority_hint))
+            val priorityAllowedPorts = normalizeMyProxyPortList(proxyPortText).orEmpty()
+            val backendPriorityValid = backendPriorityText.isBlank() ||
+              normalizeMyProxyBackendPriority(backendPriorityText, priorityAllowedPorts) != null
+            OutlinedTextField(
+              value = backendPriorityText,
+              onValueChange = {
+                backendPriorityText = it.filter { ch ->
+                  ch.isDigit() || ch == ',' || ch == ';' || ch.isWhitespace()
+                }.take(192)
+              },
+              label = { Text(stringResource(R.string.myproxy_backend_priority_label)) },
+              modifier = Modifier.fillMaxWidth(),
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+              singleLine = true,
+              isError = backendPriorityText.isNotBlank() && !backendPriorityValid,
+            )
+            if (backendPriorityText.isNotBlank() && !backendPriorityValid) {
+              Text(
+                stringResource(R.string.myproxy_backend_priority_invalid),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+              )
+            }
+          }
         }
         FieldHint(stringResource(R.string.myproxy_user_hint))
         OutlinedTextField(

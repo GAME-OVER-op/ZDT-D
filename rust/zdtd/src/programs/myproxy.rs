@@ -62,6 +62,18 @@ pub struct ProxyConfig {
     /// Optional explicit multi-port list. If non-empty, it has priority over `port`.
     #[serde(default)]
     pub ports: Vec<u16>,
+    /// Backend selection mode for t2s upstream SOCKS5 servers.
+    ///
+    /// - balance: old round-robin behaviour between alive backends.
+    /// - priority: use priority groups, falling back to the next group and then direct.
+    #[serde(default = "default_backend_mode")]
+    pub backend_mode: String,
+    /// Optional priority groups for backend_mode=priority.
+    ///
+    /// Format: "1145,1146;1147".
+    /// If empty in priority mode, t2s builds priorities from --socks-port order.
+    #[serde(default)]
+    pub backend_priority: String,
     #[serde(default)]
     pub user: String,
     #[serde(default)]
@@ -74,6 +86,8 @@ impl Default for ProxyConfig {
             host: "127.0.0.1".to_string(),
             port: default_proxy_port_value(),
             ports: Vec::new(),
+            backend_mode: default_backend_mode(),
+            backend_priority: String::new(),
             user: String::new(),
             pass: String::new(),
         }
@@ -81,6 +95,7 @@ impl Default for ProxyConfig {
 }
 
 fn default_proxy_port_value() -> Value { Value::from(1080u16) }
+fn default_backend_mode() -> String { "balance".to_string() }
 
 impl ProxyConfig {
     pub fn effective_ports(&self) -> Result<Vec<u16>> {
@@ -95,6 +110,18 @@ impl ProxyConfig {
 
     pub fn effective_ports_csv(&self) -> Result<String> {
         Ok(self.effective_ports()?.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(","))
+    }
+
+    pub fn effective_backend_mode(&self) -> Result<&'static str> {
+        match self.backend_mode.trim().to_ascii_lowercase().as_str() {
+            "" | "balance" => Ok("balance"),
+            "priority" => Ok("priority"),
+            other => anyhow::bail!("invalid backend_mode: {other}; expected balance or priority"),
+        }
+    }
+
+    pub fn backend_priority_trimmed(&self) -> &str {
+        self.backend_priority.trim()
     }
 }
 
@@ -301,11 +328,53 @@ pub fn validate_proxy_config(proxy: &ProxyConfig) -> Result<()> {
     if proxy.host.trim().is_empty() {
         anyhow::bail!("proxy host is required");
     }
-    let _ = proxy.effective_ports()?;
+    let ports = proxy.effective_ports()?;
+    let backend_mode = proxy.effective_backend_mode()?;
+    validate_backend_priority(proxy.backend_priority_trimmed(), backend_mode, &ports)?;
     let user_empty = proxy.user.trim().is_empty();
     let pass_empty = proxy.pass.trim().is_empty();
     if user_empty ^ pass_empty {
         anyhow::bail!("proxy user and pass must both be set or both be empty");
+    }
+    Ok(())
+}
+
+fn validate_backend_priority(raw: &str, backend_mode: &str, effective_ports: &[u16]) -> Result<()> {
+    if raw.trim().is_empty() {
+        return Ok(());
+    }
+    if backend_mode != "priority" {
+        anyhow::bail!("backend_priority can be used only when backend_mode is priority");
+    }
+
+    let allowed = effective_ports.iter().copied().collect::<BTreeSet<_>>();
+    let mut seen = BTreeSet::<u16>::new();
+    for group in raw.split(';') {
+        let group = group.trim();
+        if group.is_empty() {
+            anyhow::bail!("backend_priority contains an empty group");
+        }
+        let mut group_has_port = false;
+        for part in group.split(',') {
+            let part = part.trim();
+            if part.is_empty() {
+                anyhow::bail!("backend_priority contains an empty port");
+            }
+            let port: u16 = part.parse().map_err(|_| anyhow::anyhow!("invalid backend_priority port: {part}"))?;
+            if port == 0 {
+                anyhow::bail!("backend_priority port must be > 0");
+            }
+            if !allowed.contains(&port) {
+                anyhow::bail!("backend_priority port {} is not listed in socks ports", port);
+            }
+            if !seen.insert(port) {
+                anyhow::bail!("backend_priority contains duplicate port: {}", port);
+            }
+            group_has_port = true;
+        }
+        if !group_has_port {
+            anyhow::bail!("backend_priority contains an empty group");
+        }
     }
     Ok(())
 }
@@ -386,6 +455,8 @@ fn spawn_t2s(bin: &Path, setting: &ProfileSetting, proxy: &ProxyConfig, log_path
         .arg(proxy.host.trim())
         .arg("--socks-port")
         .arg(proxy.effective_ports_csv()?)
+        .arg("--backend-mode")
+        .arg(proxy.effective_backend_mode()?)
         .arg("--max-conns")
         .arg("1200")
         .arg("--idle-timeout")
@@ -399,6 +470,10 @@ fn spawn_t2s(bin: &Path, setting: &ProfileSetting, proxy: &ProxyConfig, log_path
         .stdin(Stdio::null())
         .stdout(Stdio::from(logf))
         .stderr(Stdio::from(logf_err));
+
+    if proxy.effective_backend_mode()? == "priority" && !proxy.backend_priority_trimmed().is_empty() {
+        cmd.arg("--backend-priority").arg(proxy.backend_priority_trimmed());
+    }
 
     if !proxy.user.trim().is_empty() || !proxy.pass.trim().is_empty() {
         cmd.arg("--socks-user").arg(proxy.user.trim())
@@ -414,8 +489,15 @@ fn spawn_t2s(bin: &Path, setting: &ProfileSetting, proxy: &ProxyConfig, log_path
 
     let child = cmd.spawn().with_context(|| format!("spawn {}", bin.display()))?;
     info!(
-        "spawned t2s pid={} listen_addr=127.0.0.1 listen_port={} socks_host={} socks_port={} web_port={} log={}",
-        child.id(), setting.t2s_port, proxy.host, proxy.effective_ports_csv().unwrap_or_else(|_| "?".to_string()), setting.t2s_web_port, log_path.display()
+        "spawned t2s pid={} listen_addr=127.0.0.1 listen_port={} socks_host={} socks_port={} backend_mode={} backend_priority={} web_port={} log={}",
+        child.id(),
+        setting.t2s_port,
+        proxy.host,
+        proxy.effective_ports_csv().unwrap_or_else(|_| "?".to_string()),
+        proxy.effective_backend_mode().unwrap_or("balance"),
+        proxy.backend_priority_trimmed(),
+        setting.t2s_web_port,
+        log_path.display()
     );
     Ok(())
 }

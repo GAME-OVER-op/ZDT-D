@@ -984,6 +984,14 @@ APatch: 10700+</string>
     <string name="myproxy_pass_label">Пароль</string>
     <string name="myproxy_proxy_ports_invalid">Укажите порты от 1 до 65535 через запятую.</string>
     <string name="myproxy_credentials_pair_required">Если указан логин или пароль, заполните оба поля.</string>
+    <string name="myproxy_backend_mode_title">Режим backend</string>
+    <string name="myproxy_backend_mode_balance">Балансировка</string>
+    <string name="myproxy_backend_mode_priority">Приоритет</string>
+    <string name="myproxy_backend_mode_balance_desc">Трафик распределяется между всеми живыми SOCKS5 backend-серверами.</string>
+    <string name="myproxy_backend_mode_priority_desc">Сначала используется первая группа backend-серверов. Если она недоступна, используется следующая.</string>
+    <string name="myproxy_backend_priority_label">Приоритет backend</string>
+    <string name="myproxy_backend_priority_hint">Пример: 1145,1146;1147. Оставьте пустым, чтобы использовать порядок SOCKS5 портов.</string>
+    <string name="myproxy_backend_priority_invalid">Используйте только порты из списка SOCKS5. Группы разделяются через ;, порты — через запятую. Дубли не допускаются.</string>
     <string name="myproxy_auto_save_failed">Не удалось выполнить автосохранение</string>
 
     <string name="tab_opera_args">Аргументы</string>

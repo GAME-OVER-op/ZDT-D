@@ -986,6 +986,14 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="myproxy_pass_label">Password</string>
     <string name="myproxy_proxy_ports_invalid">Enter ports from 1 to 65535, separated by commas.</string>
     <string name="myproxy_credentials_pair_required">If username or password is used, fill in both fields.</string>
+    <string name="myproxy_backend_mode_title">Backend mode</string>
+    <string name="myproxy_backend_mode_balance">Balance</string>
+    <string name="myproxy_backend_mode_priority">Priority</string>
+    <string name="myproxy_backend_mode_balance_desc">Traffic is distributed between all alive SOCKS5 backend servers.</string>
+    <string name="myproxy_backend_mode_priority_desc">The first backend group is used first. If it is unavailable, the next group is used.</string>
+    <string name="myproxy_backend_priority_label">Backend priority</string>
+    <string name="myproxy_backend_priority_hint">Example: 1145,1146;1147. Leave empty to use the SOCKS5 port order.</string>
+    <string name="myproxy_backend_priority_invalid">Use only ports from the SOCKS5 ports list. Separate groups with ; and ports with commas. Duplicates are not allowed.</string>
     <string name="myproxy_auto_save_failed">Failed to auto-save changes</string>
 
     <string name="tab_opera_args">Args</string>

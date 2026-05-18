@@ -1,4 +1,4 @@
-use crate::cli::Args;
+use crate::cli::{Args, BackendMode};
 use crate::socks5::TargetAddr;
 use anyhow::{anyhow, Context, Result};
 use parking_lot::Mutex;
@@ -402,6 +402,12 @@ pub struct SocksBackends {
     backend_cooldown_until_ts: Vec<u64>,
     internet_probe_fail_streak: Vec<u8>,
     next_internet_probe_after_ts: Vec<u64>,
+    backend_mode: BackendMode,
+    /// Priority groups by SOCKS5 port. In priority mode each inner Vec is one priority level.
+    /// Multiple ports in one level are balanced with round-robin; the next level is used only
+    /// when the previous level has no selectable GREEN backend.
+    priority_groups: Vec<Vec<u16>>,
+    priority_rr: Vec<usize>,
     rr: usize,
     check_rr: usize,
     active_check_rr: usize,
@@ -445,6 +451,8 @@ impl SocksBackends {
         if addrs.is_empty() {
             return Err(anyhow!("no SOCKS backends after resolution"));
         }
+        let priority_groups = Self::build_priority_groups(args, &addrs)?;
+        let priority_rr = vec![0; priority_groups.len()];
         let now = now_ts();
         let auth_override = vec![None; addrs.len()];
 
@@ -489,6 +497,9 @@ impl SocksBackends {
             backend_cooldown_until_ts,
             internet_probe_fail_streak,
             next_internet_probe_after_ts,
+            backend_mode: args.backend_mode,
+            priority_groups,
+            priority_rr,
             rr: 0,
             check_rr: 0,
             active_check_rr: 0,
@@ -496,6 +507,112 @@ impl SocksBackends {
             burst_check_rr: 0,
             check_cycle: 0,
         })
+    }
+
+    fn build_priority_groups(args: &Args, addrs: &[SocketAddr]) -> Result<Vec<Vec<u16>>> {
+        if args.backend_mode != BackendMode::Priority {
+            return Ok(Vec::new());
+        }
+
+        let configured_ports = args.socks_ports();
+        let mut groups: Vec<Vec<u16>> = Vec::new();
+        let mut seen: Vec<u16> = Vec::new();
+
+        if let Some(spec) = args.backend_priority.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            for raw_group in spec.split(';') {
+                let mut group: Vec<u16> = Vec::new();
+                for raw_port in raw_group.split(',') {
+                    let port_s = raw_port.trim();
+                    if port_s.is_empty() {
+                        continue;
+                    }
+                    let port = port_s
+                        .parse::<u16>()
+                        .with_context(|| format!("invalid --backend-priority port: {}", port_s))?;
+                    if !addrs.iter().any(|sa| sa.port() == port) {
+                        return Err(anyhow!(
+                            "--backend-priority port {} does not match any configured SOCKS backend",
+                            port
+                        ));
+                    }
+                    if !seen.contains(&port) {
+                        seen.push(port);
+                        group.push(port);
+                    }
+                }
+                if !group.is_empty() {
+                    groups.push(group);
+                }
+            }
+
+            if groups.is_empty() {
+                return Err(anyhow!("--backend-priority did not contain any valid port groups"));
+            }
+        }
+
+        // If the priority list is omitted, use the --socks-port order as separate
+        // priority levels: 1145,1146,1147 -> 1145;1146;1147.
+        // If an explicit list omits a configured port, keep that port as a lower
+        // priority fallback instead of silently making it unreachable.
+        for port in configured_ports {
+            if addrs.iter().any(|sa| sa.port() == port) && !seen.contains(&port) {
+                seen.push(port);
+                groups.push(vec![port]);
+            }
+        }
+
+        if groups.is_empty() {
+            for sa in addrs {
+                let port = sa.port();
+                if !seen.contains(&port) {
+                    seen.push(port);
+                    groups.push(vec![port]);
+                }
+            }
+        }
+
+        Ok(groups)
+    }
+
+    fn protector_mode_enabled(&self) -> bool {
+        self.backend_mode != BackendMode::Priority && protector_mode_forced_green()
+    }
+
+    fn healthy_indices_by_ports(&self, ports: &[u16], now: u64, respect_cooldown: bool) -> Vec<usize> {
+        self.addrs
+            .iter()
+            .enumerate()
+            .filter(|(idx, sa)| {
+                ports.contains(&sa.port())
+                    && self.status.get(*idx).map(|s| s.healthy).unwrap_or(false)
+                    && (!respect_cooldown || !self.backend_in_cooldown_idx(*idx, now))
+            })
+            .map(|(idx, _)| idx)
+            .collect()
+    }
+
+    fn priority_select_index(&mut self, respect_cooldown: bool) -> Option<usize> {
+        let now = now_ts();
+        for group_idx in 0..self.priority_groups.len() {
+            let candidates = self.healthy_indices_by_ports(&self.priority_groups[group_idx], now, respect_cooldown);
+            if candidates.is_empty() {
+                continue;
+            }
+            let cursor = self.priority_rr.get_mut(group_idx)?;
+            return Self::pick_from_bucket(&candidates, cursor);
+        }
+        None
+    }
+
+    fn priority_capacity_backend_count(&self, respect_cooldown: bool) -> usize {
+        let now = now_ts();
+        for group in &self.priority_groups {
+            let count = self.healthy_indices_by_ports(group, now, respect_cooldown).len();
+            if count > 0 {
+                return count;
+            }
+        }
+        0
     }
 
     pub fn len(&self) -> usize { self.addrs.len() }
@@ -506,8 +623,16 @@ impl SocksBackends {
     /// If every GREEN backend is cooling down, fall back to all GREEN backends because
     /// select_rr_with_auth() does the same instead of reporting no backend.
     pub fn connect_capacity_backend_count(&self) -> usize {
-        if protector_mode_forced_green() {
+        if self.protector_mode_enabled() {
             return self.addrs.len();
+        }
+
+        if self.backend_mode == BackendMode::Priority {
+            let selectable = self.priority_capacity_backend_count(true);
+            if selectable > 0 {
+                return selectable;
+            }
+            return self.priority_capacity_backend_count(false);
         }
 
         let now = now_ts();
@@ -641,7 +766,7 @@ impl SocksBackends {
         if idx >= self.status.len() {
             return None;
         }
-        if protector_mode_forced_green() {
+        if self.protector_mode_enabled() {
             return Some(BackendState::Green);
         }
         self.status.get(idx).map(|s| s.state)
@@ -656,7 +781,7 @@ impl SocksBackends {
     }
 
     pub fn choose_burst_recheck_index(&mut self, global_auth: Option<&(String, String)>, ignore_normal_due: bool) -> Option<(usize, Option<(String, String)>)> {
-        if protector_mode_forced_green() || self.any_green() {
+        if self.protector_mode_enabled() || self.any_green() {
             return None;
         }
         let now = now_ts();
@@ -701,7 +826,7 @@ impl SocksBackends {
     }
 
     pub fn any_healthy(&self) -> bool {
-        if protector_mode_forced_green() {
+        if self.protector_mode_enabled() {
             return !self.addrs.is_empty();
         }
         self.status.iter().any(|s| s.healthy)
@@ -709,7 +834,7 @@ impl SocksBackends {
 
     /// Returns true if there is at least one GREEN backend (responding + Internet OK).
     pub fn any_green(&self) -> bool {
-        if protector_mode_forced_green() {
+        if self.protector_mode_enabled() {
             return !self.addrs.is_empty();
         }
         self.any_healthy()
@@ -775,7 +900,7 @@ impl SocksBackends {
 
 
     pub fn snapshot(&self) -> Vec<BackendStatus> {
-        if protector_mode_forced_green() {
+        if self.protector_mode_enabled() {
             return self.status.iter().cloned().map(|mut s| {
                 s.state = BackendState::Green;
                 s.healthy = true;
@@ -813,6 +938,12 @@ impl SocksBackends {
         self.backend_cooldown_until_ts.push(0);
         self.internet_probe_fail_streak.push(0);
         self.next_internet_probe_after_ts.push(0);
+        if self.backend_mode == BackendMode::Priority
+            && !self.priority_groups.iter().any(|group| group.contains(&addr.port()))
+        {
+            self.priority_groups.push(vec![addr.port()]);
+            self.priority_rr.push(0);
+        }
     }
 
     pub fn remove(&mut self, addr: SocketAddr) {
@@ -838,9 +969,16 @@ impl SocksBackends {
             if self.burst_check_rr >= self.addrs.len() { self.burst_check_rr = 0; }
         }
     }
-pub fn select_rr_with_auth(&mut self, global_auth: Option<&(String, String)>) -> Result<(usize, SocketAddr, Option<(String, String)>)> {
+    pub fn select_rr_with_auth(&mut self, global_auth: Option<&(String, String)>) -> Result<(usize, SocketAddr, Option<(String, String)>)> {
+        if self.backend_mode == BackendMode::Priority {
+            if let Some(idx) = self.priority_select_index(true).or_else(|| self.priority_select_index(false)) {
+                return Ok((idx, self.addrs[idx], self.effective_auth_at(idx, global_auth)));
+            }
+            return Err(anyhow!("no GREEN backends"));
+        }
+
         let now = now_ts();
-        let mut candidates: Vec<usize> = if protector_mode_forced_green() {
+        let mut candidates: Vec<usize> = if self.protector_mode_enabled() {
             (0..self.addrs.len()).collect()
         } else {
             self.status
@@ -851,7 +989,7 @@ pub fn select_rr_with_auth(&mut self, global_auth: Option<&(String, String)>) ->
                 .collect()
         };
         if candidates.is_empty() {
-            candidates = if protector_mode_forced_green() {
+            candidates = if self.protector_mode_enabled() {
                 (0..self.addrs.len()).collect()
             } else {
                 self.status.iter().enumerate().filter(|(_, s)| s.healthy).map(|(i, _)| i).collect()

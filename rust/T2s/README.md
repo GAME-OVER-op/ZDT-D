@@ -21,6 +21,7 @@ This build is **TCP-only**. It does not proxy UDP and does not implement DNS han
 - Transparent TCP proxying via Linux `SO_ORIGINAL_DST`
 - Forwarding through SOCKS5 with optional username/password authentication
 - Multiple SOCKS5 backends
+- Backend selection modes: balance and priority
 - Backend health checks with runtime state tracking
 - Direct fallback when policy allows it and no GREEN backend is available
 - Optional web UI and JSON API
@@ -41,6 +42,9 @@ This build is **TCP-only**. It does not proxy UDP and does not implement DNS han
   - Example: `--socks-host 10.0.0.1,10.0.0.2 --socks-port 1080,1081`
   - creates up to 4 backend endpoints.
 - Direct connections are not treated as a permanent bypass. When GREEN backends recover, the runtime enforcement loop can terminate direct connections.
+- Backend selection defaults to `balance`, which distributes traffic across all GREEN SOCKS5 backends.
+- In `priority` mode, t2s uses the first priority group that has a GREEN backend. If `--backend-priority` is omitted, the order from `--socks-port` becomes the priority order, for example `1145,1146,1147` means `1145 -> 1146 -> 1147 -> direct`.
+- In `priority` mode, the ZDT-D `protector_mode` forced-GREEN setting is ignored and treated as off, so failed priority backends do not stay artificially selectable.
 - Initial Host / CONNECT / TLS SNI sniffing is adaptive: under normal load it uses a staged budget up to 200 ms (80 -> 120 -> 160 -> 200 ms total budget), under heavier load it falls back to a single fast 80 ms attempt, and under overload it may skip sniffing entirely when no host-based rules depend on that metadata.
 - The `reset` action in `TRAFFIC_RULES` is accepted by the parser, but in the current implementation it behaves as an early connection termination rather than a low-level crafted TCP RST.
 
@@ -84,6 +88,31 @@ iptables -t nat -A OUTPUT -p tcp -j REDIRECT --to-ports 11290
   --target-port 443
 ```
 
+### 3) Priority backend mode
+
+Use the first live port, then fall back to the next one. If all SOCKS5 backends are dead, traffic falls back to direct mode.
+
+```bash
+./target/release/t2s \
+  --listen-addr 127.0.0.1 \
+  --listen-port 11290 \
+  --socks-host 127.0.0.1 \
+  --socks-port 1145,1146,1147 \
+  --backend-mode priority
+```
+
+Use two ports as the first priority level, then fall back to the third:
+
+```bash
+./target/release/t2s \
+  --listen-addr 127.0.0.1 \
+  --listen-port 11290 \
+  --socks-host 127.0.0.1 \
+  --socks-port 1145,1146,1147 \
+  --backend-mode priority \
+  --backend-priority "1145,1146;1147"
+```
+
 ## Command-line arguments
 
 ### Listeners
@@ -98,8 +127,16 @@ iptables -t nat -A OUTPUT -p tcp -j REDIRECT --to-ports 11290
 - `--socks-port <PORT[,PORT...]>`: required, comma-separated SOCKS5 port list
 - `--socks-user <USER>`: optional SOCKS5 username used as the global fallback for startup backends
 - `--socks-pass <PASS>`: optional SOCKS5 password used as the global fallback for startup backends
+- `--backend-mode <balance|priority>`: backend selection mode. Default: `balance`
+- `--backend-priority <GROUPS>`: priority groups for `--backend-mode priority`. Example: `1145,1146;1147`
 
 Startup backends built from `--socks-host` and `--socks-port` share the same CLI auth fallback. Per-backend credentials are available only for backends added later through the web/API.
+
+Backend mode behavior:
+
+- `balance`: current/default behavior; all GREEN backends participate in round-robin balancing. ZDT-D `protector_mode` keeps its previous behavior.
+- `priority`: ports are selected by priority group. Ports separated by `,` are balanced within the same group; groups separated by `;` are fallback levels. If all backends are dead, direct fallback is used. ZDT-D `protector_mode` is ignored in this mode.
+- If `--backend-mode priority` is enabled and `--backend-priority` is not specified, the `--socks-port` order is used as separate priority groups. Example: `--socks-port 1145,1146,1147` behaves like `--backend-priority "1145;1146;1147"`.
 
 ### Target selection
 

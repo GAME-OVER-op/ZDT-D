@@ -1429,7 +1429,15 @@ fn default_myproxy_profile_setting_value(t2s_port: u16, t2s_web_port: u16) -> se
 }
 
 fn default_myproxy_proxy_value() -> serde_json::Value {
-    json!({"host": "127.0.0.1", "port": 1080, "user": "", "pass": ""})
+    json!({
+        "host": "127.0.0.1",
+        "port": 1080,
+        "ports": [1080],
+        "backend_mode": "balance",
+        "backend_priority": "",
+        "user": "",
+        "pass": ""
+    })
 }
 
 fn ensure_myproxy_profile_layout(profile: &str) -> Result<()> {

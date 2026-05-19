@@ -25,6 +25,8 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import java.net.URI
 
 class LocalWebPanelActivity : Activity() {
@@ -45,6 +47,8 @@ class LocalWebPanelActivity : Activity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    window.statusBarColor = Color.BLACK
+    window.navigationBarColor = Color.BLACK
 
     defaultUrl = intent.getStringExtra(EXTRA_DEFAULT_URL)
       ?.takeIf { isLocalHttpUrl(it) }
@@ -130,10 +134,20 @@ class LocalWebPanelActivity : Activity() {
       addView(createToolbar())
       addView(contentFrame)
     }
+    applySystemBarInsets(root)
     setContentView(root)
+    ViewCompat.requestApplyInsets(root)
 
     showLoadingOverlay(animate = false)
     loadDefaultPage(clearData = false, fresh = true)
+  }
+
+  private fun applySystemBarInsets(root: View) {
+    ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+      val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+      view.setPadding(0, bars.top, 0, bars.bottom)
+      insets
+    }
   }
 
   override fun onDestroy() {

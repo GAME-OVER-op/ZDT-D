@@ -1009,14 +1009,21 @@ private fun MainShell(
         }
       }
     } else {
-    ModalBottomSheet(
-      onDismissRequest = { dismissSettings() },
-      sheetState = sheetState,
-    ) {
-      Box(
-        modifier = Modifier.fillMaxWidth(),
+      ModalBottomSheet(
+        onDismissRequest = { dismissSettings() },
+        sheetState = sheetState,
+        contentWindowInsets = { WindowInsets.safeDrawing },
       ) {
-        Crossfade(
+        BoxWithConstraints(
+          modifier = Modifier.fillMaxWidth(),
+        ) {
+          val settingsSheetMaxHeight = maxHeight * 0.90f
+          Box(
+            modifier = Modifier
+              .fillMaxWidth()
+              .heightIn(max = settingsSheetMaxHeight),
+          ) {
+            Crossfade(
           targetState = settingsContentReady,
           animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
           label = "settingsContentReady",
@@ -1079,12 +1086,12 @@ private fun MainShell(
               onDeleteModule = { closeSettings { showDeleteModule = true } },
               landscapeColumns = landscapeControl,
             )
+            }
           }
         }
+        }
+        Spacer(Modifier.height(16.dp))
       }
-      Spacer(Modifier.height(16.dp))
-    }
-
     }
   }
 

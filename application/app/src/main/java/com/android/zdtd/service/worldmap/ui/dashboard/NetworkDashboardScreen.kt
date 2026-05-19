@@ -83,6 +83,7 @@ import com.android.zdtd.service.worldmap.model.PeerVisual
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
@@ -704,15 +705,16 @@ private fun NetworkMapCardContent(
             }
         }
 
+        val displayRoutes = remember(displayPeers) { buildMapRouteVisuals(displayPeers) }
         val packetEngine = remember { PacketEngine() }
         val routeCache = remember { RouteGeometryCache() }
-        val packetsByPeer = remember(displayPeers, nowMs) { packetEngine.update(displayPeers, nowMs) }
-        val activePeerCount = displayPeers.count { it.isActive }
-        routeCache.prepareForPeerCount(activePeerCount)
+        val packetsByRoute = remember(displayRoutes, nowMs) { packetEngine.update(displayRoutes, nowMs) }
+        val activeRouteCount = displayRoutes.count { it.isActive }
+        routeCache.prepareForPeerCount(max(displayRoutes.size, activeRouteCount))
         val lineDensityScale = when {
-            activePeerCount > 18 -> 0.36f
-            activePeerCount > 12 -> 0.46f
-            activePeerCount > 8 -> 0.60f
+            activeRouteCount > 18 -> 0.36f
+            activeRouteCount > 12 -> 0.46f
+            activeRouteCount > 8 -> 0.60f
             else -> 0.92f
         }
 
@@ -741,44 +743,46 @@ private fun NetworkMapCardContent(
                 drawWorldGrid(world = world)
                 drawWorldLand(world = world, pulse = pulse)
 
-                displayPeers.forEach { peer ->
-                    val peerOffset = Offset(size.width * peer.x, size.height * peer.y)
-                    val route = routeCache.routeFor(peer.id, user = user, peer = peerOffset, size = size, seed = peer.seed)
-                    val visibleRange = visibleRangeForPeer(peer)
-                    val easedVisibility = easeOutCubic(peer.visibility)
-                    val hotness = (0.70f + peer.activityScore * 0.85f).coerceIn(0.70f, 1.55f)
-                    val lineAlpha = (((0.10f + 0.90f * easedVisibility) * lineDensityScale) * hotness).coerceIn(0.08f, 1f)
+                displayRoutes.forEach { routeVisual ->
+                    val routeOffset = Offset(size.width * routeVisual.x, size.height * routeVisual.y)
+                    val route = routeCache.routeFor(routeVisual.id, user = user, peer = routeOffset, size = size, seed = routeVisual.seed)
+                    val visibleRange = visibleRangeForRoute(routeVisual)
+                    val easedVisibility = easeOutCubic(routeVisual.visibility)
+                    val hotness = (0.70f + routeVisual.activityScore * 0.85f).coerceIn(0.70f, 1.55f)
+                    val connectionBoost = (1f + ln(1f + routeVisual.connectionCount.toFloat()) * 0.10f).coerceIn(1f, 1.45f)
+                    val lineAlpha = (((0.10f + 0.90f * easedVisibility) * lineDensityScale) * hotness * connectionBoost).coerceIn(0.08f, 1f)
+                    val coreWidth = (0.22f + ln(1f + routeVisual.connectionCount.toFloat()) * 0.025f).coerceIn(0.22f, 0.42f)
 
                     drawRoutePath(
                         points = route.points,
                         range = visibleRange,
-                        color = Color(0x24C53F3F).copy(alpha = 0.24f * lineAlpha),
-                        width = 0.72f,
+                        color = Color(0x24C53F3F).copy(alpha = 0.22f * lineAlpha),
+                        width = 0.72f * connectionBoost,
                     )
                     drawRoutePath(
                         points = route.points,
                         range = visibleRange,
-                        color = Color(0xFFFF6B63).copy(alpha = 0.64f * lineAlpha),
-                        width = 0.22f,
+                        color = Color(0xFFFF6B63).copy(alpha = 0.62f * lineAlpha),
+                        width = coreWidth,
                     )
 
                     drawPacketStreams(
                         route = route,
-                        peer = peer,
+                        routeVisual = routeVisual,
                         visibleRange = visibleRange,
-                        packets = packetsByPeer[peer.id].orEmpty(),
+                        packets = packetsByRoute[routeVisual.id].orEmpty(),
                     )
-                    val markerAlpha = if (peer.isActive) {
-                        ((0.05f + 0.95f * smoothStep(peer.visibility.coerceIn(0f, 1f))) * (0.82f + peer.activityScore * 0.42f)).coerceIn(0f, 1f)
+                    val markerAlpha = if (routeVisual.isActive) {
+                        ((0.05f + 0.95f * smoothStep(routeVisual.visibility.coerceIn(0f, 1f))) * (0.82f + routeVisual.activityScore * 0.42f)).coerceIn(0f, 1f)
                     } else {
-                        (0.04f + 0.96f * easeOutCubic(peer.visibility)).coerceIn(0f, 1f)
+                        (0.04f + 0.96f * easeOutCubic(routeVisual.visibility)).coerceIn(0f, 1f)
                     }
                     drawPeerCluster(
-                        center = peerOffset,
-                        seed = peer.seed,
+                        center = routeOffset,
+                        seed = routeVisual.seed,
                         pulse = pulse,
                         alpha = markerAlpha,
-                        activityScore = peer.activityScore,
+                        activityScore = routeVisual.activityScore,
                     )
                 }
 
@@ -831,7 +835,7 @@ private data class WorldFrame(
 }
 
 private const val MAP_PACKET_DRAIN_MS = 1_650L
-private const val MAP_ROUTE_CLOSE_FADE_MS = 1_800L
+private const val MAP_ROUTE_CLOSE_FADE_MS = 4_000L
 
 private fun PeerVisual.withFrameCloseProgress(nowMs: Long): PeerVisual {
     if (isActive || nowMs <= 0L) return this
@@ -850,6 +854,96 @@ private fun PeerVisual.withFrameCloseProgress(nowMs: Long): PeerVisual {
         txActivity = max(txActivity, activityScore * 0.10f * activityEnvelope),
         rxActivity = max(rxActivity, activityScore * 0.10f * activityEnvelope),
     )
+}
+
+private data class MapRouteVisual(
+    val id: String,
+    val x: Float,
+    val y: Float,
+    val seed: Int,
+    val protocol: String,
+    val isActive: Boolean,
+    val visibility: Float,
+    val txActivity: Float,
+    val rxActivity: Float,
+    val activityScore: Float,
+    val closingSide: ClosingSide,
+    val connectionCount: Int,
+)
+
+private fun buildMapRouteVisuals(peers: List<PeerVisual>): List<MapRouteVisual> {
+    if (peers.isEmpty()) return emptyList()
+
+    data class Accumulator(
+        val key: String,
+        var x: Float,
+        var y: Float,
+        var seed: Int,
+        var protocol: String,
+        var count: Int = 0,
+        var activeCount: Int = 0,
+        var visibility: Float = 0f,
+        var maxTxActivity: Float = 0f,
+        var maxRxActivity: Float = 0f,
+        var sumTxActivity: Float = 0f,
+        var sumRxActivity: Float = 0f,
+        var maxActivityScore: Float = 0f,
+        var sumActivityScore: Float = 0f,
+        var closingSide: ClosingSide = ClosingSide.NONE,
+    )
+
+    val groups = LinkedHashMap<String, Accumulator>()
+    peers.forEach { peer ->
+        val key = routeGroupKey(peer)
+        val group = groups.getOrPut(key) {
+            Accumulator(
+                key = key,
+                x = peer.x,
+                y = peer.y,
+                seed = abs(key.hashCode()),
+                protocol = peer.protocol,
+            )
+        }
+        group.count += 1
+        if (peer.isActive) group.activeCount += 1
+        group.visibility = max(group.visibility, peer.visibility)
+        group.maxTxActivity = max(group.maxTxActivity, peer.txActivity)
+        group.maxRxActivity = max(group.maxRxActivity, peer.rxActivity)
+        group.sumTxActivity += peer.txActivity
+        group.sumRxActivity += peer.rxActivity
+        group.maxActivityScore = max(group.maxActivityScore, peer.activityScore)
+        group.sumActivityScore += peer.activityScore
+        if (group.closingSide == ClosingSide.NONE && peer.closingSide != ClosingSide.NONE) {
+            group.closingSide = peer.closingSide
+        }
+    }
+
+    return groups.values.map { group ->
+        val count = group.count.coerceAtLeast(1)
+        val avgTx = group.sumTxActivity / count
+        val avgRx = group.sumRxActivity / count
+        val avgScore = group.sumActivityScore / count
+        MapRouteVisual(
+            id = "route:${group.key}",
+            x = group.x,
+            y = group.y,
+            seed = group.seed,
+            protocol = group.protocol,
+            isActive = group.activeCount > 0,
+            visibility = group.visibility.coerceIn(0f, 1f),
+            txActivity = (group.maxTxActivity + avgTx * 0.75f + ln(1f + count.toFloat()) * 0.035f).coerceIn(0f, 1f),
+            rxActivity = (group.maxRxActivity + avgRx * 0.75f + ln(1f + count.toFloat()) * 0.035f).coerceIn(0f, 1f),
+            activityScore = (group.maxActivityScore + avgScore * 0.55f + ln(1f + count.toFloat()) * 0.040f).coerceIn(0f, 1f),
+            closingSide = group.closingSide,
+            connectionCount = count,
+        )
+    }
+}
+
+private fun routeGroupKey(peer: PeerVisual): String {
+    val x = (peer.x * 1000f).roundToInt()
+    val y = (peer.y * 1000f).roundToInt()
+    return "$x:$y"
 }
 
 private data class RouteGeometry(
@@ -962,26 +1056,26 @@ private class PacketEngine {
     private val peerStates = LinkedHashMap<String, PeerState>()
     private var lastUpdateMs: Long = 0L
 
-    fun update(peers: List<PeerVisual>, nowMs: Long): Map<String, List<PacketParticle>> {
+    fun update(routes: List<MapRouteVisual>, nowMs: Long): Map<String, List<PacketParticle>> {
         val dt = if (lastUpdateMs == 0L) 0.016f else ((nowMs - lastUpdateMs).coerceIn(8L, 56L) / 1000f)
         lastUpdateMs = nowMs
 
-        val activeIds = HashSet<String>(peers.size)
-        val result = LinkedHashMap<String, List<PacketParticle>>(peers.size)
-        val activePeerCount = peers.count { it.isActive }
+        val activeIds = HashSet<String>(routes.size)
+        val result = LinkedHashMap<String, List<PacketParticle>>(routes.size)
+        val activeRouteCount = routes.count { it.isActive }
         val densityScale = when {
-            activePeerCount > 20 -> 0.56f
-            activePeerCount > 14 -> 0.68f
-            activePeerCount > 10 -> 0.82f
+            activeRouteCount > 20 -> 0.56f
+            activeRouteCount > 14 -> 0.68f
+            activeRouteCount > 10 -> 0.82f
             else -> 1f
         }
 
-        peers.forEach { peer ->
-            activeIds += peer.id
-            val state = peerStates.getOrPut(peer.id) { PeerState() }
-            updateLane(state.outbound, peer = peer, activity = peer.txActivity, outgoing = true, dt = dt, densityScale = densityScale)
-            updateLane(state.inbound, peer = peer, activity = peer.rxActivity, outgoing = false, dt = dt, densityScale = densityScale)
-            result[peer.id] = buildList {
+        routes.forEach { route ->
+            activeIds += route.id
+            val state = peerStates.getOrPut(route.id) { PeerState() }
+            updateLane(state.outbound, route = route, activity = route.txActivity, outgoing = true, dt = dt, densityScale = densityScale)
+            updateLane(state.inbound, route = route, activity = route.rxActivity, outgoing = false, dt = dt, densityScale = densityScale)
+            result[route.id] = buildList {
                 state.outbound.particles.forEach { add(it.snapshot()) }
                 state.inbound.particles.forEach { add(it.snapshot()) }
             }
@@ -1001,40 +1095,39 @@ private class PacketEngine {
 
     private fun updateLane(
         lane: LaneState,
-        peer: PeerVisual,
+        route: MapRouteVisual,
         activity: Float,
         outgoing: Boolean,
         dt: Float,
         densityScale: Float,
     ) {
         val clampedActivity = activity.coerceIn(0f, 1f)
-        val appearFactor = (peer.visibility.coerceIn(0f, 1f) * 1.15f).coerceIn(0f, 1f)
+        val appearFactor = (route.visibility.coerceIn(0f, 1f) * 1.15f).coerceIn(0f, 1f)
+        val routeLoad = routeParticleLoad(route.connectionCount, clampedActivity)
         val spawnRateBase = when {
-            !peer.isActive -> 0f
+            !route.isActive -> 0f
             clampedActivity < 0.08f -> 0.34f
             else -> 0.38f + clampedActivity * (if (outgoing) 1.9f else 1.65f)
         }
-        val spawnRate = spawnRateBase * densityScale * (0.35f + 0.65f * appearFactor)
+        val spawnRate = spawnRateBase * routeLoad * densityScale * (0.35f + 0.65f * appearFactor)
         val maxParticlesBase = when {
             clampedActivity >= 0.82f -> 4
             clampedActivity >= 0.44f -> 3
             clampedActivity >= 0.16f -> 2
             else -> 1
         }
-        val maxParticles = when {
-            densityScale < 0.60f -> minOf(2, maxParticlesBase)
-            densityScale < 0.75f -> minOf(3, maxParticlesBase)
-            else -> maxParticlesBase
-        }
+        val maxParticles = ((maxParticlesBase + ln(1f + route.connectionCount.toFloat()) * 1.35f) * routeLoad.coerceAtMost(2.2f))
+            .roundToInt()
+            .coerceIn(1, 12)
 
         lane.accumulator += spawnRate * dt
-        if (peer.isActive && lane.particles.isEmpty() && lane.accumulator >= 0.42f) {
+        if (route.isActive && lane.particles.isEmpty() && lane.accumulator >= 0.42f) {
             lane.accumulator -= 0.42f
-            lane.particles += spawnParticle(peer = peer, outgoing = outgoing, activity = clampedActivity, serial = lane.serial++)
+            lane.particles += spawnParticle(route = route, outgoing = outgoing, activity = clampedActivity, serial = lane.serial++)
         }
         while (lane.accumulator >= 1f && lane.particles.size < maxParticles) {
             lane.accumulator -= 1f
-            lane.particles += spawnParticle(peer = peer, outgoing = outgoing, activity = clampedActivity, serial = lane.serial++)
+            lane.particles += spawnParticle(route = route, outgoing = outgoing, activity = clampedActivity, serial = lane.serial++)
         }
         lane.accumulator = lane.accumulator.coerceIn(0f, 1.25f)
 
@@ -1048,17 +1141,24 @@ private class PacketEngine {
         }
     }
 
+    private fun routeParticleLoad(connectionCount: Int, activity: Float): Float {
+        val countBoost = 1f + ln(1f + connectionCount.toFloat()) * 0.38f
+        val activityBoost = 0.72f + activity.coerceIn(0f, 1f) * 0.88f
+        return (countBoost * activityBoost).coerceIn(0.55f, 3.4f)
+    }
+
     private fun spawnParticle(
-        peer: PeerVisual,
+        route: MapRouteVisual,
         outgoing: Boolean,
         activity: Float,
         serial: Int,
     ): MutablePacket {
-        val serialSeed = peer.seed + serial * 17 + if (outgoing) 11 else 23
+        val serialSeed = route.seed + serial * 17 + if (outgoing) 11 else 23
         val jitter = (((serialSeed % 9) - 4) * 0.0045f)
-        val protocolBoost = if (peer.protocol.startsWith("udp")) 0.015f else 0f
-        val speed = ((if (outgoing) 0.15f else 0.13f) + activity * (if (outgoing) 0.095f else 0.082f) + protocolBoost + jitter)
-            .coerceIn(0.11f, 0.31f)
+        val protocolBoost = if (route.protocol.startsWith("udp")) 0.015f else 0f
+        val connectionBoost = (ln(1f + route.connectionCount.toFloat()) * 0.010f).coerceIn(0f, 0.045f)
+        val speed = ((if (outgoing) 0.15f else 0.13f) + activity * (if (outgoing) 0.095f else 0.082f) + protocolBoost + connectionBoost + jitter)
+            .coerceIn(0.11f, 0.36f)
         val alpha = (0.42f + activity * 0.42f + if (outgoing) 0.06f else 0f).coerceIn(0.36f, 0.9f)
         val scale = (0.84f + activity * 0.20f + ((serialSeed % 5) - 2) * 0.015f).coerceIn(0.76f, 1.08f)
         return MutablePacket(
@@ -1223,12 +1323,12 @@ private fun cubicPoint(start: Offset, control1: Offset, control2: Offset, end: O
     )
 }
 
-private fun visibleRangeForPeer(peer: PeerVisual): ClosedFloatingPointRange<Float> {
-    val eased = easeInOut(peer.visibility)
-    return if (peer.isActive) {
+private fun visibleRangeForRoute(route: MapRouteVisual): ClosedFloatingPointRange<Float> {
+    val eased = easeInOut(route.visibility)
+    return if (route.isActive) {
         0f..eased
     } else {
-        when (peer.closingSide) {
+        when (route.closingSide) {
             ClosingSide.LOCAL -> (1f - eased).coerceIn(0f, 1f)..1f
             ClosingSide.REMOTE -> 0f..eased.coerceIn(0f, 1f)
             ClosingSide.UNKNOWN, ClosingSide.NONE -> 0f..eased.coerceIn(0f, 1f)
@@ -1311,11 +1411,11 @@ private fun pathFromPoints(points: List<Offset>): Path {
 
 private fun DrawScope.drawPacketStreams(
     route: RouteGeometry,
-    peer: PeerVisual,
+    routeVisual: MapRouteVisual,
     visibleRange: ClosedFloatingPointRange<Float>,
     packets: List<PacketParticle>,
 ) {
-    val visibility = easeOutCubic(peer.visibility)
+    val visibility = easeOutCubic(routeVisual.visibility)
     if (visibility <= 0.20f) return
     val span = (visibleRange.endInclusive - visibleRange.start).coerceAtLeast(0f)
     if (span <= 0.01f || packets.isEmpty()) return

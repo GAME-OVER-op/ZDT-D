@@ -41,9 +41,10 @@ private const val QUIET_FRAME_INTERVAL_MS = 100L
 private const val VISIBILITY_STEP = 0.022f
 private const val ACTIVITY_STEP = 0.030f
 private const val PACKET_DRAIN_MS = 1_650L
-private const val ROUTE_CLOSE_FADE_MS = 1_800L
+private const val ROUTE_CLOSE_FADE_MS = 4_000L
 private const val CLOSE_REMOVAL_GRACE_MS = 240L
 private const val CLOSE_CONFIRMATION_DELAY_MS = 1_200L
+private const val CLOSE_CONFIRMATION_MISSES = 3
 
 class NetworkDashboardViewModel(
     application: Application,
@@ -297,6 +298,7 @@ class NetworkDashboardViewModel(
                     targetRxActivity = peer.rxActivity,
                     appearStartedAtMs = SystemClock.uptimeMillis() + (peer.seed % 7) * 32L,
                     missingSinceMs = null,
+                    missingCount = 0,
                 )
             } else {
                 renderPeers[peer.id] = current.copy(
@@ -313,6 +315,7 @@ class NetworkDashboardViewModel(
                     pendingFadeOut = false,
                     appearStartedAtMs = current.appearStartedAtMs,
                     missingSinceMs = null,
+                    missingCount = 0,
                 )
             }
         }
@@ -325,22 +328,26 @@ class NetworkDashboardViewModel(
                 if (!current.peer.isActive) {
                     renderPeers[id] = current.copy(
                         missingSinceMs = current.missingSinceMs ?: now,
+                        missingCount = max(current.missingCount, 1),
                     )
                     return@forEach
                 }
 
                 val missingSince = current.missingSinceMs
+                val nextMissingCount = (current.missingCount + 1).coerceAtLeast(1)
                 if (missingSince == null) {
                     renderPeers[id] = current.copy(
                         missingSinceMs = now,
+                        missingCount = 1,
                         targetTxActivity = current.targetTxActivity * 0.72f,
                         targetRxActivity = current.targetRxActivity * 0.72f,
                     )
                     return@forEach
                 }
 
-                if (now - missingSince < CLOSE_CONFIRMATION_DELAY_MS) {
+                if (nextMissingCount < CLOSE_CONFIRMATION_MISSES || now - missingSince < CLOSE_CONFIRMATION_DELAY_MS) {
                     renderPeers[id] = current.copy(
+                        missingCount = nextMissingCount,
                         targetTxActivity = current.targetTxActivity * 0.72f,
                         targetRxActivity = current.targetRxActivity * 0.72f,
                     )
@@ -361,6 +368,7 @@ class NetworkDashboardViewModel(
                     targetRxActivity = current.targetRxActivity * 0.82f,
                     pendingFadeOut = true,
                     missingSinceMs = missingSince,
+                    missingCount = nextMissingCount,
                 )
             }
         }
@@ -382,6 +390,7 @@ class NetworkDashboardViewModel(
                 targetRxActivity = current.targetRxActivity * 0.82f,
                 pendingFadeOut = true,
                 missingSinceMs = now,
+                missingCount = CLOSE_CONFIRMATION_MISSES,
             )
         }
     }
@@ -500,6 +509,7 @@ class NetworkDashboardViewModel(
         val pendingFadeOut: Boolean = false,
         val appearStartedAtMs: Long = 0L,
         val missingSinceMs: Long? = null,
+        val missingCount: Int = 0,
     )
 
     private companion object {

@@ -35,11 +35,11 @@ data class DashboardUiState(
 )
 
 private const val POLL_INTERVAL_MS = 2_000L
-private const val FRAME_INTERVAL_MS = 8L
-private const val IDLE_FRAME_INTERVAL_MS = 120L
-private const val QUIET_FRAME_INTERVAL_MS = 16L
-private const val VISIBILITY_STEP = 0.010f
-private const val ACTIVITY_STEP = 0.010f
+private const val FRAME_INTERVAL_MS = 33L
+private const val IDLE_FRAME_INTERVAL_MS = 250L
+private const val QUIET_FRAME_INTERVAL_MS = 100L
+private const val VISIBILITY_STEP = 0.035f
+private const val ACTIVITY_STEP = 0.045f
 private const val PACKET_DRAIN_MS = 1_650L
 
 class NetworkDashboardViewModel(

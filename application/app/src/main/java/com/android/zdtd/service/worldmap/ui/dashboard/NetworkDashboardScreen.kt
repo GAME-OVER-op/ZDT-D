@@ -49,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.withFrameMillis
@@ -290,8 +291,24 @@ private fun DashboardHeader(
     sessionDurationMs: Long,
     sessionTrafficBytes: Long,
 ) {
+    val displayedConnectionsCountState = remember { mutableIntStateOf(connectionsCount) }
+    val displayedConnectionsCount = displayedConnectionsCountState.intValue
     val displayedTrafficBytesState = remember { mutableLongStateOf(sessionTrafficBytes) }
     val displayedTrafficBytes = displayedTrafficBytesState.longValue
+
+    LaunchedEffect(connectionsCount) {
+        while (displayedConnectionsCountState.intValue != connectionsCount) {
+            val current = displayedConnectionsCountState.intValue
+            val delta = connectionsCount - current
+            val step = maxOf(1, kotlin.math.abs(delta) / 10)
+            displayedConnectionsCountState.intValue = if (delta > 0) {
+                minOf(connectionsCount, current + step)
+            } else {
+                maxOf(connectionsCount, current - step)
+            }
+            delay(40L)
+        }
+    }
 
     LaunchedEffect(sessionTrafficBytes) {
         if (sessionTrafficBytes <= displayedTrafficBytesState.longValue) {
@@ -321,7 +338,7 @@ private fun DashboardHeader(
                 tint = Color(0xFFFF5A52),
             )
             Text(
-                text = pluralStringResource(R.plurals.world_map_connections_count, connectionsCount, connectionsCount),
+                text = pluralStringResource(R.plurals.world_map_connections_count, displayedConnectionsCount, displayedConnectionsCount),
                 color = Color.White,
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(start = 8.dp),
@@ -691,6 +708,7 @@ private fun NetworkMapCardContent(
         val routeCache = remember { RouteGeometryCache() }
         val packetsByPeer = remember(displayPeers, nowMs) { packetEngine.update(displayPeers, nowMs) }
         val activePeerCount = displayPeers.count { it.isActive }
+        routeCache.prepareForPeerCount(activePeerCount)
         val lineDensityScale = when {
             activePeerCount > 18 -> 0.36f
             activePeerCount > 12 -> 0.46f
@@ -826,7 +844,15 @@ private data class RouteGeometryCacheKey(
 )
 
 private class RouteGeometryCache {
-    private val routes = LinkedHashMap<RouteGeometryCacheKey, RouteGeometry>()
+    private val routes = java.util.LinkedHashMap<RouteGeometryCacheKey, RouteGeometry>(128, 0.75f, true)
+    private var targetBytes: Int = MIN_ROUTE_CACHE_BYTES
+    private var estimatedBytes: Int = 0
+
+    fun prepareForPeerCount(peerCount: Int) {
+        targetBytes = (peerCount.coerceAtLeast(1) * BYTES_PER_PEER_HINT)
+            .coerceIn(MIN_ROUTE_CACHE_BYTES, MAX_ROUTE_CACHE_BYTES)
+        trimToTarget()
+    }
 
     fun routeFor(
         peerId: String,
@@ -843,10 +869,37 @@ private class RouteGeometryCache {
             peerX = peer.x.roundToInt(),
             peerY = peer.y.roundToInt(),
         )
-        return routes.getOrPut(key) {
-            if (routes.size > 96) routes.clear()
-            buildPeerRoute(user = user, peer = peer, size = size, seed = seed)
+        routes[key]?.let { return it }
+
+        val route = buildPeerRoute(user = user, peer = peer, size = size, seed = seed)
+        routes[key] = route
+        estimatedBytes += route.estimatedBytes()
+        trimToTarget()
+        return route
+    }
+
+    private fun trimToTarget() {
+        val iterator = routes.entries.iterator()
+        while (estimatedBytes > targetBytes && iterator.hasNext()) {
+            val entry = iterator.next()
+            estimatedBytes -= entry.value.estimatedBytes()
+            iterator.remove()
         }
+        if (estimatedBytes < 0) {
+            estimatedBytes = routes.values.sumOf { it.estimatedBytes() }
+        }
+    }
+
+    private fun RouteGeometry.estimatedBytes(): Int {
+        return ROUTE_BASE_BYTES + points.size * BYTES_PER_ROUTE_POINT
+    }
+
+    private companion object {
+        private const val MIN_ROUTE_CACHE_BYTES = 2 * 1024 * 1024
+        private const val MAX_ROUTE_CACHE_BYTES = 10 * 1024 * 1024
+        private const val BYTES_PER_PEER_HINT = 4 * 1024
+        private const val ROUTE_BASE_BYTES = 256
+        private const val BYTES_PER_ROUTE_POINT = 24
     }
 }
 

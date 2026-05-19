@@ -145,6 +145,7 @@ class GeoLocationRepository(
                 .filter { !cache.containsKey(it) }
                 .filter { !failed.contains(it) }
                 .filter { !inFlight.contains(it) }
+                .take(MAX_LOCAL_GEO_RESOLVE_PER_CYCLE)
                 .toList()
                 .also { batch -> inFlight += batch }
         }
@@ -448,6 +449,7 @@ class GeoLocationRepository(
         private const val GEO_DB_DIR = "geo"
         private const val GEO_DB_DOWNLOAD_URL = "https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/dbip-city-lite.mmdb.gz"
         private const val MAX_CACHE_SIZE = 4096
+        private const val MAX_LOCAL_GEO_RESOLVE_PER_CYCLE = 64
         private const val MIN_EXPECTED_DB_BYTES = 1_000_000L
         private const val MIN_EXPECTED_ARCHIVE_BYTES = 512_000L
         private const val PROGRESS_EMIT_BYTES = 512L * 1024L

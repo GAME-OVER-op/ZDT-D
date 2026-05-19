@@ -2,7 +2,6 @@ package com.android.zdtd.service
 
 import android.os.Bundle
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.material3.Surface
 import androidx.compose.ui.graphics.Color
@@ -14,8 +13,6 @@ import com.android.zdtd.service.worldmap.ui.dashboard.NetworkDashboardViewModel
 class WorldMapActivity : AppCompatActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
-    enableEdgeToEdge()
-
     setContent {
       ZdtdTheme {
         Surface(color = Color(0xFF090B1A)) {

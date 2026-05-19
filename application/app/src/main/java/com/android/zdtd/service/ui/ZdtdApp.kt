@@ -884,10 +884,8 @@ private fun MainShell(
   val appUpdate by appUpdateFlow.collectAsStateWithLifecycle()
 
   if (showSettings) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val settingsScope = rememberCoroutineScope()
     var settingsContentReady by remember { mutableStateOf(false) }
-    var settingsClosing by remember { mutableStateOf(false) }
 
     fun resetInvalidHotspotT2sIfNeeded() {
       val hotspotInvalid = appUpdate.hotspotT2sEnabled && (
@@ -899,15 +897,28 @@ private fun MainShell(
       }
     }
 
+    fun dismissSettings(afterClose: (() -> Unit)? = null) {
+      resetInvalidHotspotT2sIfNeeded()
+      showSettings = false
+      settingsCloseRequested = false
+      afterClose?.invoke()
+    }
+
+    val sheetState = rememberModalBottomSheetState(
+      skipPartiallyExpanded = true,
+      confirmValueChange = { target ->
+        if (target == SheetValue.Hidden) {
+          resetInvalidHotspotT2sIfNeeded()
+        }
+        true
+      },
+    )
+
     fun closeSettings(afterClose: (() -> Unit)? = null) {
-      if (settingsClosing) return
-      settingsClosing = true
       resetInvalidHotspotT2sIfNeeded()
       settingsScope.launch {
         runCatching { sheetState.hide() }
-        showSettings = false
-        settingsCloseRequested = false
-        afterClose?.invoke()
+        dismissSettings(afterClose)
       }
     }
 
@@ -999,13 +1010,11 @@ private fun MainShell(
       }
     } else {
     ModalBottomSheet(
-      onDismissRequest = { closeSettings() },
+      onDismissRequest = { dismissSettings() },
       sheetState = sheetState,
     ) {
       Box(
-        modifier = Modifier
-          .fillMaxWidth()
-          .animateContentSize(animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)),
+        modifier = Modifier.fillMaxWidth(),
       ) {
         Crossfade(
           targetState = settingsContentReady,
@@ -1254,89 +1263,90 @@ private fun MainShell(
         )
       } else {
         Scaffold(
+          modifier = Modifier.fillMaxSize(),
           topBar = {
-          TopAppBar(
-            title = {
-              val isHomeTitle = tab == Tab.HOME
-              Text(
-                title,
-                letterSpacing = 2.sp,
-                modifier = if (isHomeTitle) {
-                  Modifier.clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                  ) {
-                    showWorldMapPrompt = true
-                  }
-                } else {
-                  Modifier
+            TopAppBar(
+                title = {
+                  val isHomeTitle = tab == Tab.HOME
+                  Text(
+                    title,
+                    letterSpacing = 2.sp,
+                    modifier = if (isHomeTitle) {
+                      Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                      ) {
+                        showWorldMapPrompt = true
+                      }
+                    } else {
+                      Modifier
+                    },
+                  )
                 },
+                navigationIcon = {
+                  if (canGoBack) {
+                    IconButton(onClick = {
+                      appsRoute = when (val r = appsRoute) {
+                        is AppsRoute.Profile -> AppsRoute.Program(r.programId)
+                        is AppsRoute.Program -> AppsRoute.List
+                        AppsRoute.List -> AppsRoute.List
+                      }
+                    }) { Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back)) }
+                  }
+                },
+                actions = {
+                  TopBarActionCluster(
+                    programLogTarget = currentProgramLogTarget,
+                    onOpenLogs = { target ->
+                      if (target == null) showLogs = true else programLogsTarget = target
+                    },
+                    onOpenBackup = { showBackup = true },
+                    onOpenProgramUpdates = {
+                      showProgramUpdates = true
+                      actions.resetProgramUpdatesUi()
+                    },
+                    onOpenSettings = {
+                      settingsCloseRequested = false
+                      showSettings = true
+                    },
+                  )
+                }
               )
             },
-            navigationIcon = {
-              if (canGoBack) {
-                IconButton(onClick = {
-                  appsRoute = when (val r = appsRoute) {
-                    is AppsRoute.Profile -> AppsRoute.Program(r.programId)
-                    is AppsRoute.Program -> AppsRoute.List
-                    AppsRoute.List -> AppsRoute.List
-                  }
-                }) { Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back)) }
+          bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                  selected = tab == Tab.HOME,
+                  onClick = { tab = Tab.HOME },
+                  icon = { Icon(Icons.Filled.Power, contentDescription = if (compactBottomBar) homeTabLabel else null) },
+                  label = if (compactBottomBar) null else ({ Text(homeTabLabel) }),
+                  alwaysShowLabel = !compactBottomBar,
+                )
+                NavigationBarItem(
+                  selected = tab == Tab.STATS,
+                  onClick = { tab = Tab.STATS },
+                  icon = { Icon(Icons.Filled.Equalizer, contentDescription = if (compactBottomBar) statsTabLabel else null) },
+                  label = if (compactBottomBar) null else ({ Text(statsTabLabel) }),
+                  alwaysShowLabel = !compactBottomBar,
+                )
+                NavigationBarItem(
+                  selected = tab == Tab.APPS,
+                  onClick = { tab = Tab.APPS },
+                  icon = { Icon(Icons.Filled.Apps, contentDescription = if (compactBottomBar) appsTabLabel else null) },
+                  label = if (compactBottomBar) null else ({ Text(appsTabLabel) }),
+                  alwaysShowLabel = !compactBottomBar,
+                )
+
+                NavigationBarItem(
+                  selected = tab == Tab.SUPPORT,
+                  onClick = { tab = Tab.SUPPORT },
+                  icon = { Icon(Icons.Filled.Info, contentDescription = if (compactBottomBar) supportTabLabel else null) },
+                  label = if (compactBottomBar) null else ({ Text(supportTabLabel) }),
+                  alwaysShowLabel = !compactBottomBar,
+                )
               }
             },
-            actions = {
-              TopBarActionCluster(
-                programLogTarget = currentProgramLogTarget,
-                onOpenLogs = { target ->
-                  if (target == null) showLogs = true else programLogsTarget = target
-                },
-                onOpenBackup = { showBackup = true },
-                onOpenProgramUpdates = {
-                  showProgramUpdates = true
-                  actions.resetProgramUpdatesUi()
-                },
-                onOpenSettings = {
-                  settingsCloseRequested = false
-                  showSettings = true
-                },
-              )
-            }
-          )
-        },
-        bottomBar = {
-          NavigationBar {
-            NavigationBarItem(
-              selected = tab == Tab.HOME,
-              onClick = { tab = Tab.HOME },
-              icon = { Icon(Icons.Filled.Power, contentDescription = if (compactBottomBar) homeTabLabel else null) },
-              label = if (compactBottomBar) null else ({ Text(homeTabLabel) }),
-              alwaysShowLabel = !compactBottomBar,
-            )
-            NavigationBarItem(
-              selected = tab == Tab.STATS,
-              onClick = { tab = Tab.STATS },
-              icon = { Icon(Icons.Filled.Equalizer, contentDescription = if (compactBottomBar) statsTabLabel else null) },
-              label = if (compactBottomBar) null else ({ Text(statsTabLabel) }),
-              alwaysShowLabel = !compactBottomBar,
-            )
-            NavigationBarItem(
-              selected = tab == Tab.APPS,
-              onClick = { tab = Tab.APPS },
-              icon = { Icon(Icons.Filled.Apps, contentDescription = if (compactBottomBar) appsTabLabel else null) },
-              label = if (compactBottomBar) null else ({ Text(appsTabLabel) }),
-              alwaysShowLabel = !compactBottomBar,
-            )
-
-            NavigationBarItem(
-              selected = tab == Tab.SUPPORT,
-              onClick = { tab = Tab.SUPPORT },
-              icon = { Icon(Icons.Filled.Info, contentDescription = if (compactBottomBar) supportTabLabel else null) },
-              label = if (compactBottomBar) null else ({ Text(supportTabLabel) }),
-              alwaysShowLabel = !compactBottomBar,
-            )
-          }
-        },
-        snackbarHost = { SnackbarHost(snackHost) },
+            snackbarHost = { SnackbarHost(snackHost) },
         ) { padding ->
           Column(
             Modifier

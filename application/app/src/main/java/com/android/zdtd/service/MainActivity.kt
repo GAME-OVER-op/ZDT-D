@@ -8,7 +8,6 @@ import android.widget.Toast
 import android.os.Build
 import androidx.appcompat.app.AppCompatActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.getValue
@@ -54,8 +53,6 @@ class MainActivity : AppCompatActivity() {
     runCatching {
       AppLanguageSupport.applyPersistedAppLocale(applicationContext)
     }
-
-    enableEdgeToEdge()
 
     // Capture crashes to a local file so we can diagnose issues even without logcat.
     CrashLogger.install(applicationContext)

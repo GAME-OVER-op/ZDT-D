@@ -94,26 +94,30 @@ android {
   }
 }
 
-// Sync generated module payload from the repo root when it already exists.
-// module.prop is always taken from the single source of truth in ../../module.prop
-// and copied into generated assets only for packaging into the APK.
-tasks.register('syncGeneratedModuleAssets') {
-  doLast {
-    generatedAssetsDir.mkdirs()
-    if (generatedModuleZip.exists()) {
-      ant.copy(file: generatedModuleZip, tofile: zdtModuleZip, overwrite: true)
-      println("[ZDT-D] synced generated module zip: ${generatedModuleZip}")
-    }
-    ant.copy(file: rootModuleProp, tofile: bundledModuleProp, overwrite: true)
-    println("[ZDT-D] synced module.prop from root: ${rootModuleProp}")
-  }
-}
+// Prepare generated assets used by the APK installer.
+// The previous implementation used two independent preBuild tasks that could touch
+// the same generated zdt_module.zip in parallel. On GitHub Actions this sometimes
+// failed inside Ant copy with a cryptic "1 >= 1" error. Keep all writes to the
+// generated assets directory inside one task and use java.nio copy operations.
+tasks.register('prepareZdtGeneratedAssets') {
+  inputs.file(rootModuleProp).withPathSensitivity(PathSensitivity.RELATIVE)
+  inputs.file(generatedModuleZip).optional().withPathSensitivity(PathSensitivity.RELATIVE)
+  outputs.file(zdtModuleZip)
+  outputs.file(bundledModuleProp)
 
-// Fallback placeholder so Android build does not fail when the module archive was not generated yet.
-tasks.register('ensureZdtModuleZip') {
   doLast {
     generatedAssetsDir.mkdirs()
-    if (!zdtModuleZip.exists()) {
+
+    if (generatedModuleZip.exists()) {
+      if (generatedModuleZip.canonicalPath != zdtModuleZip.canonicalPath) {
+        java.nio.file.Files.copy(
+            generatedModuleZip.toPath(),
+            zdtModuleZip.toPath(),
+            java.nio.file.StandardCopyOption.REPLACE_EXISTING
+        )
+      }
+      println("[ZDT-D] synced generated module zip: ${generatedModuleZip}")
+    } else if (!zdtModuleZip.exists()) {
       def fos = new FileOutputStream(zdtModuleZip)
       def zos = new java.util.zip.ZipOutputStream(fos)
       try {
@@ -125,17 +129,31 @@ tasks.register('ensureZdtModuleZip') {
         zos.close()
         fos.close()
       }
+      println("[ZDT-D] created placeholder module zip: ${zdtModuleZip}")
     }
-    if (!bundledModuleProp.exists()) {
-      ant.copy(file: rootModuleProp, tofile: bundledModuleProp, overwrite: true)
-    }
+
+    java.nio.file.Files.copy(
+        rootModuleProp.toPath(),
+        bundledModuleProp.toPath(),
+        java.nio.file.StandardCopyOption.REPLACE_EXISTING
+    )
+    println("[ZDT-D] synced module.prop from root: ${rootModuleProp}")
   }
+}
+
+// Compatibility task names for manual Gradle usage. They only depend on the
+// single writer task above and do not touch generated files themselves.
+tasks.register('syncGeneratedModuleAssets') {
+  dependsOn('prepareZdtGeneratedAssets')
+}
+
+tasks.register('ensureZdtModuleZip') {
+  dependsOn('prepareZdtGeneratedAssets')
 }
 
 // Run before building so generated assets are always present.
 tasks.named('preBuild') {
-  dependsOn('syncGeneratedModuleAssets')
-  dependsOn('ensureZdtModuleZip')
+  dependsOn('prepareZdtGeneratedAssets')
 }
 
 dependencies {

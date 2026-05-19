@@ -1075,7 +1075,7 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 
     <string name="world_map_title">World map</string>
     <string name="world_map_prompt_title">Open world map?</string>
-    <string name="world_map_prompt_body">Note: while this window is active, CPU usage may increase to render the map.</string>
+    <string name="world_map_prompt_body">Note: while this window is active, CPU usage may increase to render the map. If the local geolocation database is not installed, ZDT-D will download dbip-city-lite.mmdb.gz from GitHub. Internet is required for this preparation.</string>
 
 
     <plurals name="world_map_connections_count">
@@ -1106,6 +1106,18 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="world_map_closing_remote">remote</string>
     <string name="world_map_closing_unknown">unknown</string>
     <string name="world_map_geo_label_format">%1$s • %2$s</string>
+    <string name="world_map_geo_source">IP geolocation data by DB-IP.com • DB-IP Lite City MMDB</string>
+    <string name="world_map_geo_db_prepare_title">Preparing local geo database</string>
+    <string name="world_map_geo_db_prepare_body">The World Map downloads this local DB-IP Lite City MMDB component once, unpacks it on the device, and then resolves IP locations offline.</string>
+    <string name="world_map_geo_db_component">Component: %1$s</string>
+    <string name="world_map_geo_db_internet_required">Internet is required only to download this component.</string>
+    <string name="world_map_geo_db_downloading">Downloading component…</string>
+    <string name="world_map_geo_db_download_progress">%1$d%% • %2$s / %3$s</string>
+    <string name="world_map_geo_db_download_progress_unknown">%1$s downloaded</string>
+    <string name="world_map_geo_db_unpacking">Unpacking database…</string>
+    <string name="world_map_geo_db_verifying">Verifying database…</string>
+    <string name="world_map_geo_db_failed">Failed to prepare the local geo database.</string>
+    <string name="world_map_geo_db_retry">Retry</string>
 
 
     <!-- myvpn profiles -->

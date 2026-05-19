@@ -1,6 +1,7 @@
 package com.android.zdtd.service.worldmap.ui.dashboard
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -37,8 +38,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -71,6 +74,8 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.zdtd.service.R
 import com.android.zdtd.service.worldmap.model.ClosingSide
+import com.android.zdtd.service.worldmap.root.GeoDatabaseStage
+import com.android.zdtd.service.worldmap.root.GeoDatabaseState
 import com.android.zdtd.service.worldmap.model.PeerVisual
 import kotlin.math.PI
 import kotlin.math.abs
@@ -142,6 +147,7 @@ fun NetworkDashboardScreen(
             TabletDashboardContent(
                 state = state,
                 lastError = lastError,
+                onRetryGeoDatabase = viewModel::retryGeoDatabasePreparation,
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color(0xFF070707))
@@ -151,6 +157,7 @@ fun NetworkDashboardScreen(
             PhoneDashboardContent(
                 state = state,
                 lastError = lastError,
+                onRetryGeoDatabase = viewModel::retryGeoDatabasePreparation,
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color(0xFF070707))
@@ -164,6 +171,7 @@ fun NetworkDashboardScreen(
 private fun PhoneDashboardContent(
     state: DashboardUiState,
     lastError: String?,
+    onRetryGeoDatabase: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyColumn(
@@ -183,6 +191,8 @@ private fun PhoneDashboardContent(
             MapStageCard(
                 peers = state.peers,
                 isPreparing = state.isPreparingMap,
+                geoDatabaseState = state.geoDatabaseState,
+                onRetryGeoDatabase = onRetryGeoDatabase,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
@@ -216,6 +226,7 @@ private fun PhoneDashboardContent(
 private fun TabletDashboardContent(
     state: DashboardUiState,
     lastError: String?,
+    onRetryGeoDatabase: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -237,6 +248,8 @@ private fun TabletDashboardContent(
             MapStageCard(
                 peers = state.peers,
                 isPreparing = state.isPreparingMap,
+                geoDatabaseState = state.geoDatabaseState,
+                onRetryGeoDatabase = onRetryGeoDatabase,
                 height = 540.dp,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -358,29 +371,26 @@ private fun formatTraffic(bytes: Long): String {
 }
 
 
-@Composable
-private fun MapStageCard(
-    peers: List<PeerVisual>,
-    isPreparing: Boolean,
-    modifier: Modifier = Modifier,
-    height: Dp = 392.dp,
-) {
-    if (isPreparing) {
-        PreparingMapCard(
-            modifier = modifier,
-            height = height,
-        )
-    } else {
-        NetworkMapCard(
-            peers = peers,
-            modifier = modifier,
-            height = height,
-        )
+
+private fun compactBytes(bytes: Long): String {
+    val safe = bytes.coerceAtLeast(0L).toDouble()
+    val kb = 1024.0
+    val mb = kb * 1024.0
+    val gb = mb * 1024.0
+    return when {
+        safe >= gb -> String.format("%.2f GB", safe / gb)
+        safe >= mb -> String.format("%.1f MB", safe / mb)
+        safe >= kb -> String.format("%.0f KB", safe / kb)
+        else -> "${bytes.coerceAtLeast(0L)} B"
     }
 }
 
 @Composable
-private fun PreparingMapCard(
+private fun MapStageCard(
+    peers: List<PeerVisual>,
+    isPreparing: Boolean,
+    geoDatabaseState: GeoDatabaseState,
+    onRetryGeoDatabase: () -> Unit,
     modifier: Modifier = Modifier,
     height: Dp = 392.dp,
 ) {
@@ -389,37 +399,215 @@ private fun PreparingMapCard(
         colors = CardDefaults.cardColors(containerColor = Color(0xFF13090B)),
         shape = RoundedCornerShape(24.dp),
     ) {
-        Box(
+        Crossfade(
+            targetState = when {
+                !geoDatabaseState.isReady -> "geo"
+                isPreparing -> "prepare"
+                else -> "map"
+            },
+            label = "world-map-stage",
+        ) { target ->
+            when (target) {
+                "geo" -> GeoDatabasePreparationCard(
+                    state = geoDatabaseState,
+                    onRetry = onRetryGeoDatabase,
+                    height = height,
+                )
+                "prepare" -> PreparingMapCard(height = height)
+                else -> NetworkMapCardContent(
+                    peers = peers,
+                    height = height,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreparingMapCard(
+    height: Dp = 392.dp,
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(height)
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color(0xFF150809), Color(0xFF050304)),
+                ),
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.padding(horizontal = 28.dp),
+        ) {
+            CircularProgressIndicator(
+                color = Color(0xFFFF5A52),
+                trackColor = Color(0x33FF5A52),
+                strokeWidth = 3.dp,
+            )
+            Text(
+                text = stringResource(R.string.world_map_preparing_title),
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+            Text(
+                text = stringResource(R.string.world_map_preparing_body),
+                color = Color(0xFFD2B5B5),
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun GeoDatabasePreparationCard(
+    state: GeoDatabaseState,
+    onRetry: () -> Unit,
+    height: Dp = 392.dp,
+) {
+    val progress = (state.progressPercent.coerceIn(0, 100) / 100f)
+    val stageText = when (state.stage) {
+        GeoDatabaseStage.DOWNLOADING -> stringResource(R.string.world_map_geo_db_downloading)
+        GeoDatabaseStage.UNPACKING -> stringResource(R.string.world_map_geo_db_unpacking)
+        GeoDatabaseStage.VERIFYING -> stringResource(R.string.world_map_geo_db_verifying)
+        GeoDatabaseStage.FAILED -> stringResource(R.string.world_map_geo_db_failed)
+        else -> stringResource(R.string.world_map_geo_db_prepare_title)
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(height)
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color(0xFF180B0D), Color(0xFF060304)),
+                ),
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(13.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(height)
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(Color(0xFF150809), Color(0xFF050304)),
-                    ),
-                ),
-            contentAlignment = Alignment.Center,
+                .padding(horizontal = 28.dp),
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.padding(horizontal = 28.dp),
+            Box(
+                modifier = Modifier
+                    .size(54.dp)
+                    .background(Color(0x22FF5A52), CircleShape),
+                contentAlignment = Alignment.Center,
             ) {
-                CircularProgressIndicator(
-                    color = Color(0xFFFF5A52),
-                    trackColor = Color(0x33FF5A52),
-                    strokeWidth = 3.dp,
+                if (state.stage == GeoDatabaseStage.DOWNLOADING && state.totalBytes > 0L) {
+                    CircularProgressIndicator(
+                        progress = { progress },
+                        color = Color(0xFFFF5A52),
+                        trackColor = Color(0x33FF5A52),
+                        strokeWidth = 4.dp,
+                    )
+                } else if (state.stage != GeoDatabaseStage.FAILED) {
+                    CircularProgressIndicator(
+                        color = Color(0xFFFF5A52),
+                        trackColor = Color(0x33FF5A52),
+                        strokeWidth = 4.dp,
+                    )
+                }
+                Icon(
+                    imageVector = Icons.Rounded.Public,
+                    contentDescription = null,
+                    tint = Color(0xFFFFB4AE),
+                    modifier = Modifier.size(28.dp),
                 )
+            }
+
+            Text(
+                text = stringResource(R.string.world_map_geo_db_prepare_title),
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = stageText,
+                color = Color(0xFFFFB4AE),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = stringResource(R.string.world_map_geo_db_component, state.fileName),
+                color = Color(0xFFE4C7C7),
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+            )
+            Text(
+                text = stringResource(R.string.world_map_geo_db_prepare_body),
+                color = Color(0xFFC7AAAA),
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+            )
+
+            if (state.stage == GeoDatabaseStage.DOWNLOADING) {
+                if (state.totalBytes > 0L) {
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(7.dp),
+                        color = Color(0xFFFF5A52),
+                        trackColor = Color(0x33FF5A52),
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.world_map_geo_db_download_progress,
+                            state.progressPercent.coerceIn(0, 100),
+                            compactBytes(state.downloadedBytes),
+                            compactBytes(state.totalBytes),
+                        ),
+                        color = Color(0xFFD2B5B5),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                } else {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(7.dp),
+                        color = Color(0xFFFF5A52),
+                        trackColor = Color(0x33FF5A52),
+                    )
+                    Text(
+                        text = stringResource(
+                            R.string.world_map_geo_db_download_progress_unknown,
+                            compactBytes(state.downloadedBytes),
+                        ),
+                        color = Color(0xFFD2B5B5),
+                        style = MaterialTheme.typography.labelMedium,
+                    )
+                }
+            }
+
+            if (state.stage == GeoDatabaseStage.FAILED) {
                 Text(
-                    text = stringResource(R.string.world_map_preparing_title),
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
+                    text = state.errorMessage ?: stringResource(R.string.world_map_geo_db_failed),
+                    color = Color(0xFFFFB4AE),
+                    style = MaterialTheme.typography.bodySmall,
+                    textAlign = TextAlign.Center,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
                 )
+                TextButton(onClick = onRetry) {
+                    Text(text = stringResource(R.string.world_map_geo_db_retry))
+                }
+            } else {
                 Text(
-                    text = stringResource(R.string.world_map_preparing_body),
-                    color = Color(0xFFD2B5B5),
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = stringResource(R.string.world_map_geo_db_internet_required),
+                    color = Color(0x99D2B5B5),
+                    style = MaterialTheme.typography.labelSmall,
                     textAlign = TextAlign.Center,
                 )
             }
@@ -428,16 +616,10 @@ private fun PreparingMapCard(
 }
 
 @Composable
-private fun NetworkMapCard(
+private fun NetworkMapCardContent(
     peers: List<PeerVisual>,
-    modifier: Modifier = Modifier,
     height: Dp = 392.dp,
 ) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF13090B)),
-        shape = RoundedCornerShape(24.dp),
-    ) {
         val hasAnimatedContent = peers.isNotEmpty()
         val pulse = if (hasAnimatedContent) {
             val infinite = rememberInfiniteTransition(label = "network-pulse")
@@ -595,9 +777,17 @@ private fun NetworkMapCard(
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 36.dp),
             )
+
+            Text(
+                text = stringResource(R.string.world_map_geo_source),
+                color = Color(0x99D2B5B5),
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = 14.dp, bottom = 12.dp),
+            )
         }
     }
-}
 
 private data class WorldFrame(
     val left: Float,

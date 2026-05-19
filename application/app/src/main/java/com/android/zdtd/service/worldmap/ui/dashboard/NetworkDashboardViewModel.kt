@@ -8,6 +8,7 @@ import com.android.zdtd.service.worldmap.WorldMapStrings
 import com.android.zdtd.service.worldmap.model.ClosingSide
 import com.android.zdtd.service.worldmap.model.ConnectionSample
 import com.android.zdtd.service.worldmap.model.PeerVisual
+import com.android.zdtd.service.worldmap.root.GeoDatabaseState
 import com.android.zdtd.service.worldmap.root.GeoLocationRepository
 import com.android.zdtd.service.worldmap.root.PeerVisualMapper
 import com.android.zdtd.service.worldmap.root.RootConnectionRepository
@@ -30,6 +31,7 @@ data class DashboardUiState(
     val sessionDurationMs: Long = 0L,
     val sessionTrafficBytes: Long = 0L,
     val isPreparingMap: Boolean = true,
+    val geoDatabaseState: GeoDatabaseState = GeoDatabaseState(),
 )
 
 private const val POLL_INTERVAL_MS = 2_000L
@@ -46,13 +48,14 @@ class NetworkDashboardViewModel(
 
     private val strings = WorldMapStrings(application.applicationContext)
     private val repository = RootConnectionRepository(strings)
-    private val geoRepository = GeoLocationRepository(strings)
+    private val geoRepository = GeoLocationRepository(application.applicationContext, strings)
 
     private val _uiState = MutableStateFlow(DashboardUiState())
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
     private var pollingJob: Job? = null
     private var animatorJob: Job? = null
+    private var geoDatabaseJob: Job? = null
     private val renderPeers = LinkedHashMap<String, RenderPeer>()
     private var rootReady = false
     private var lastError: String? = null
@@ -63,6 +66,13 @@ class NetworkDashboardViewModel(
     private var sessionTrafficBytes = 0L
     private var initialSnapshotReady = false
 
+    init {
+        viewModelScope.launch {
+            geoRepository.databaseState.collect {
+                emitUiState()
+            }
+        }
+    }
 
     private data class QueueSnapshot(
         val sendQueue: Long,
@@ -139,11 +149,17 @@ class NetworkDashboardViewModel(
         if (sessionStartedAtMs == 0L) {
             sessionStartedAtMs = SystemClock.elapsedRealtime()
         }
+        startGeoDatabasePreparationIfNeeded()
         if (pollingJob?.isActive == true) return
         pollingJob = viewModelScope.launch {
             while (isActive) {
-                refreshSnapshot()
-                delay(POLL_INTERVAL_MS)
+                if (geoRepository.isDatabaseReady()) {
+                    refreshSnapshot()
+                    delay(POLL_INTERVAL_MS)
+                } else {
+                    emitUiState()
+                    delay(GEO_DB_WAIT_INTERVAL_MS)
+                }
             }
         }
         if (animatorJob?.isActive != true) {
@@ -168,8 +184,27 @@ class NetworkDashboardViewModel(
         animatorJob = null
     }
 
+    fun retryGeoDatabasePreparation() {
+        startGeoDatabasePreparationIfNeeded(force = true)
+    }
+
+    private fun startGeoDatabasePreparationIfNeeded(force: Boolean = false) {
+        if (!force && geoRepository.isDatabaseReady()) return
+        if (geoDatabaseJob?.isActive == true) return
+        geoDatabaseJob = viewModelScope.launch {
+            val ready = geoRepository.prepareDatabase()
+            if (ready) {
+                initialSnapshotReady = false
+                emitUiState()
+            } else {
+                emitUiState()
+            }
+        }
+    }
+
     override fun onCleared() {
         stopMonitoring()
+        geoRepository.close()
         super.onCleared()
     }
 
@@ -201,7 +236,6 @@ class NetworkDashboardViewModel(
                 .filter { it.protocol in geoProtocols }
                 .map { it.remoteIp }
                 .distinct()
-                .take(MAX_GEO_REQUESTS_PER_CYCLE)
                 .toList()
 
             val mappedPeers = enhancePeerActivity(
@@ -390,7 +424,8 @@ class NetworkDashboardViewModel(
             lastError = lastError,
             sessionDurationMs = if (sessionStartedAtMs == 0L) 0L else (SystemClock.elapsedRealtime() - sessionStartedAtMs).coerceAtLeast(0L),
             sessionTrafficBytes = sessionTrafficBytes,
-            isPreparingMap = !initialSnapshotReady,
+            isPreparingMap = !geoRepository.databaseState.value.isReady || !initialSnapshotReady,
+            geoDatabaseState = geoRepository.databaseState.value,
         )
     }
 
@@ -430,7 +465,7 @@ class NetworkDashboardViewModel(
     )
 
     private companion object {
+        private const val GEO_DB_WAIT_INTERVAL_MS = 350L
         private val geoProtocols = setOf("tcp", "tcp6", "udp", "udp6")
-        private const val MAX_GEO_REQUESTS_PER_CYCLE = 8
     }
 }

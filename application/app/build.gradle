@@ -161,6 +161,9 @@ dependencies {
   // Networking
   implementation 'com.squareup.okhttp3:okhttp:5.3.2'
 
+  // Offline MMDB reader for bundled DB-IP Lite City geolocation database
+  implementation 'com.maxmind.db:maxmind-db:4.1.0'
+
   // Root shell helper (Magisk author)
   implementation 'com.github.topjohnwu.libsu:core:6.0.0'
 

@@ -31,6 +31,8 @@ class WorldMapStrings(private val context: Context) {
 
     fun geoResolving(): String = context.getString(R.string.world_map_geo_resolving)
 
+    fun geoSourceAttribution(): String = context.getString(R.string.world_map_geo_source)
+
     fun unknownState(): String = context.getString(R.string.world_map_unknown_state)
 
     fun unknownLocation(): String = context.getString(R.string.world_map_unknown_location)

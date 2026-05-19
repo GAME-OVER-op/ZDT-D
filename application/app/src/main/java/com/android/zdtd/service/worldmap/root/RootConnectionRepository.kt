@@ -47,7 +47,6 @@ class RootConnectionRepository(
                 .filterNot { isLocalAddress(it.remoteIp) }
                 .filter { looksLikeInternetAddress(it.remoteIp) }
                 .distinctBy { "${it.protocol}:${it.remoteIp}:${it.remotePort}" }
-                .take(MAX_CONNECTIONS)
                 .toList()
         }
     }
@@ -72,13 +71,13 @@ class RootConnectionRepository(
 
     private fun executeSsBlocks(): List<SsBlock> {
         val primaryCommands = listOf(
-            CommandSpec("tcp", "ss -H -tinmep 2>/dev/null | head -n 256"),
-            CommandSpec("udp", "ss -H -uanepm 2>/dev/null | head -n 192"),
+            CommandSpec("tcp", "ss -H -tinmep 2>/dev/null"),
+            CommandSpec("udp", "ss -H -uanepm 2>/dev/null"),
         )
         val fallbackCommands = listOf(
-            CommandSpec("tcp", "ss -H -tinep 2>/dev/null | head -n 256"),
-            CommandSpec("udp", "ss -H -uanep 2>/dev/null | head -n 192"),
-            CommandSpec("tcp", "ss -H -tuna 2>/dev/null | head -n 192"),
+            CommandSpec("tcp", "ss -H -tinep 2>/dev/null"),
+            CommandSpec("udp", "ss -H -uanep 2>/dev/null"),
+            CommandSpec("tcp", "ss -H -tuna 2>/dev/null"),
         )
 
         var lastError = strings.failedConnectionsCommand()
@@ -274,7 +273,6 @@ class RootConnectionRepository(
 
     private companion object {
         private const val ROOT_CACHE_MS = 12_000L
-        private const val MAX_CONNECTIONS = 32
         private const val TCP_SEGMENT_FALLBACK_BYTES = 1460L
 
         private val supportedProtocols = setOf(

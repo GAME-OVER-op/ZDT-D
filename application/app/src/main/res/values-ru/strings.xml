@@ -1073,7 +1073,7 @@ APatch: 10700+</string>
 
     <string name="world_map_title">Карта мира</string>
     <string name="world_map_prompt_title">Вы желаете открыть карту мира?</string>
-    <string name="world_map_prompt_body">Примечание: пока окно будет активно, возможно повышение потребления CPU для показа карты.</string>
+    <string name="world_map_prompt_body">Примечание: пока окно будет активно, возможно повышение потребления CPU для показа карты. Если локальная база геолокации не установлена, ZDT-D скачает dbip-city-lite.mmdb.gz с GitHub. Для подготовки понадобится интернет.</string>
 
 
     <plurals name="world_map_connections_count">
@@ -1106,6 +1106,18 @@ APatch: 10700+</string>
     <string name="world_map_closing_remote">удалённо</string>
     <string name="world_map_closing_unknown">неизвестно</string>
     <string name="world_map_geo_label_format">%1$s • %2$s</string>
+    <string name="world_map_geo_source">Геоданные IP от DB-IP.com • DB-IP Lite City MMDB</string>
+    <string name="world_map_geo_db_prepare_title">Подготовка локальной базы геолокации</string>
+    <string name="world_map_geo_db_prepare_body">Карта мира один раз скачивает локальный компонент DB-IP Lite City MMDB, распаковывает его на устройстве и затем определяет местоположение IP офлайн.</string>
+    <string name="world_map_geo_db_component">Компонент: %1$s</string>
+    <string name="world_map_geo_db_internet_required">Интернет нужен только для загрузки этого компонента.</string>
+    <string name="world_map_geo_db_downloading">Загрузка компонента…</string>
+    <string name="world_map_geo_db_download_progress">%1$d%% • %2$s / %3$s</string>
+    <string name="world_map_geo_db_download_progress_unknown">Загружено %1$s</string>
+    <string name="world_map_geo_db_unpacking">Распаковка базы…</string>
+    <string name="world_map_geo_db_verifying">Проверка базы…</string>
+    <string name="world_map_geo_db_failed">Не удалось подготовить локальную базу геолокации.</string>
+    <string name="world_map_geo_db_retry">Повторить</string>
 
 
     <!-- myvpn profiles -->

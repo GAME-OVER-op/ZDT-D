@@ -101,3 +101,31 @@ ZDT_COMPILE_SDK=36 make debug
 - `compose-bom 2026.05.00`
 - `okhttp 5.3.2`
 - `libsu 6.0.0`
+
+## World Map geolocation component
+
+The APK does not bundle the DB-IP MMDB file.
+
+When the user opens the World Map and accepts the warning dialog, the application downloads the optional runtime component on demand:
+
+```text
+https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/dbip-city-lite.mmdb.gz
+```
+
+Runtime flow:
+
+```text
+files/geo/dbip-city-lite.mmdb.gz  -> downloaded temporary archive
+files/geo/dbip-city-lite.mmdb     -> unpacked local database
+```
+
+After successful unpacking and verification, the `.gz` archive is deleted to save storage.
+
+Source and attribution:
+
+```text
+DB-IP Lite City MMDB
+IP geolocation data by DB-IP.com
+```
+
+The World Map no longer sends IP addresses to external geolocation API services. The only network request is the optional component download from the ZDT-D GitHub release.

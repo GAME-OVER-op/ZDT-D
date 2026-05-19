@@ -685,7 +685,7 @@ private fun NetworkMapCardContent(
         val displayPeers = remember(peers, nowMs, startupSequenceStartMs) {
             peers.map { peer ->
                 if (!peer.isActive) {
-                    peer
+                    peer.withFrameCloseProgress(nowMs)
                 } else {
                     val staggerMs = 120L + (peer.seed % 13) * 70L
                     val revealProgress = if (startupSequenceStartMs == 0L) {
@@ -828,6 +828,28 @@ private data class WorldFrame(
             )
         }
     }
+}
+
+private const val MAP_PACKET_DRAIN_MS = 1_650L
+private const val MAP_ROUTE_CLOSE_FADE_MS = 1_800L
+
+private fun PeerVisual.withFrameCloseProgress(nowMs: Long): PeerVisual {
+    if (isActive || nowMs <= 0L) return this
+    val closeStartedAt = closeStartedAtMs ?: return this
+    val elapsedMs = (nowMs - closeStartedAt).coerceAtLeast(0L)
+    val visibilityForFrame = if (elapsedMs <= MAP_PACKET_DRAIN_MS) {
+        visibility.coerceAtLeast(0.86f)
+    } else {
+        val progress = ((elapsedMs - MAP_PACKET_DRAIN_MS).toFloat() / MAP_ROUTE_CLOSE_FADE_MS.toFloat()).coerceIn(0f, 1f)
+        1f - smoothStep(progress)
+    }.coerceIn(0f, 1f)
+    val activityEnvelope = (1f - smoothStep((elapsedMs.toFloat() / (MAP_PACKET_DRAIN_MS + MAP_ROUTE_CLOSE_FADE_MS).toFloat()).coerceIn(0f, 1f)))
+        .coerceIn(0f, 1f)
+    return copy(
+        visibility = visibilityForFrame,
+        txActivity = max(txActivity, activityScore * 0.10f * activityEnvelope),
+        rxActivity = max(rxActivity, activityScore * 0.10f * activityEnvelope),
+    )
 }
 
 private data class RouteGeometry(

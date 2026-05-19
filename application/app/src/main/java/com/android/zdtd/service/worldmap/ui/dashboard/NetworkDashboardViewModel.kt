@@ -38,9 +38,12 @@ private const val POLL_INTERVAL_MS = 2_000L
 private const val FRAME_INTERVAL_MS = 33L
 private const val IDLE_FRAME_INTERVAL_MS = 250L
 private const val QUIET_FRAME_INTERVAL_MS = 100L
-private const val VISIBILITY_STEP = 0.035f
-private const val ACTIVITY_STEP = 0.045f
+private const val VISIBILITY_STEP = 0.022f
+private const val ACTIVITY_STEP = 0.030f
 private const val PACKET_DRAIN_MS = 1_650L
+private const val ROUTE_CLOSE_FADE_MS = 1_800L
+private const val CLOSE_REMOVAL_GRACE_MS = 240L
+private const val CLOSE_CONFIRMATION_DELAY_MS = 1_200L
 
 class NetworkDashboardViewModel(
     application: Application,
@@ -293,6 +296,7 @@ class NetworkDashboardViewModel(
                     targetTxActivity = peer.txActivity,
                     targetRxActivity = peer.rxActivity,
                     appearStartedAtMs = SystemClock.uptimeMillis() + (peer.seed % 7) * 32L,
+                    missingSinceMs = null,
                 )
             } else {
                 renderPeers[peer.id] = current.copy(
@@ -308,15 +312,43 @@ class NetworkDashboardViewModel(
                     targetRxActivity = peer.rxActivity,
                     pendingFadeOut = false,
                     appearStartedAtMs = current.appearStartedAtMs,
+                    missingSinceMs = null,
                 )
             }
         }
 
+        val now = SystemClock.uptimeMillis()
         renderPeers.keys.toList().forEach { id ->
             if (id !in activeIds) {
                 val current = renderPeers[id] ?: return@forEach
+
+                if (!current.peer.isActive) {
+                    renderPeers[id] = current.copy(
+                        missingSinceMs = current.missingSinceMs ?: now,
+                    )
+                    return@forEach
+                }
+
+                val missingSince = current.missingSinceMs
+                if (missingSince == null) {
+                    renderPeers[id] = current.copy(
+                        missingSinceMs = now,
+                        targetTxActivity = current.targetTxActivity * 0.72f,
+                        targetRxActivity = current.targetRxActivity * 0.72f,
+                    )
+                    return@forEach
+                }
+
+                if (now - missingSince < CLOSE_CONFIRMATION_DELAY_MS) {
+                    renderPeers[id] = current.copy(
+                        targetTxActivity = current.targetTxActivity * 0.72f,
+                        targetRxActivity = current.targetRxActivity * 0.72f,
+                    )
+                    return@forEach
+                }
+
                 val closingSide = inferClosingSide(current.peer)
-                val closeStartedAt = current.peer.closeStartedAtMs ?: SystemClock.uptimeMillis()
+                val closeStartedAt = current.peer.closeStartedAtMs ?: now
                 renderPeers[id] = current.copy(
                     peer = current.peer.copy(
                         isActive = false,
@@ -328,6 +360,7 @@ class NetworkDashboardViewModel(
                     targetTxActivity = current.targetTxActivity * 0.82f,
                     targetRxActivity = current.targetRxActivity * 0.82f,
                     pendingFadeOut = true,
+                    missingSinceMs = missingSince,
                 )
             }
         }
@@ -348,6 +381,7 @@ class NetworkDashboardViewModel(
                 targetTxActivity = current.targetTxActivity * 0.82f,
                 targetRxActivity = current.targetRxActivity * 0.82f,
                 pendingFadeOut = true,
+                missingSinceMs = now,
             )
         }
     }
@@ -404,7 +438,10 @@ class NetworkDashboardViewModel(
             }
 
             val currentValue = entry.value
-            if (!currentValue.peer.isActive && currentValue.visibility <= 0.02f && currentValue.peer.txActivity <= 0.02f && currentValue.peer.rxActivity <= 0.02f) {
+            val closeStartedAt = currentValue.peer.closeStartedAtMs
+            val closeAnimationFinished = closeStartedAt != null &&
+                now - closeStartedAt >= PACKET_DRAIN_MS + ROUTE_CLOSE_FADE_MS + CLOSE_REMOVAL_GRACE_MS
+            if (!currentValue.peer.isActive && closeAnimationFinished && currentValue.visibility <= 0.02f && currentValue.peer.txActivity <= 0.02f && currentValue.peer.rxActivity <= 0.02f) {
                 iterator.remove()
                 changed = true
             }
@@ -462,6 +499,7 @@ class NetworkDashboardViewModel(
         val targetRxActivity: Float,
         val pendingFadeOut: Boolean = false,
         val appearStartedAtMs: Long = 0L,
+        val missingSinceMs: Long? = null,
     )
 
     private companion object {

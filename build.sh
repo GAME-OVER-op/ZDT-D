@@ -16,14 +16,14 @@ APK_OUT_DIR="$OUT_DIR/apk"
 DIST_DIR="$OUT_DIR/dist"
 TOOLS_DIR="$ROOT_DIR/.tools"
 DOWNLOADS_DIR="$TOOLS_DIR/downloads"
-GRADLE_VERSION="${GRADLE_VERSION:-8.2}"
+GRADLE_VERSION="${GRADLE_VERSION:-9.4.1}"
 GRADLE_BASE_DIR="$TOOLS_DIR/gradle"
 LOCAL_GRADLE_HOME="$GRADLE_BASE_DIR/gradle-$GRADLE_VERSION"
 LOCAL_GRADLE_CMD="$LOCAL_GRADLE_HOME/bin/gradle"
 ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-$HOME/Android/Sdk}}"
 ANDROID_HOME="$ANDROID_SDK_ROOT"
-ANDROID_API_LEVEL="${ANDROID_API_LEVEL:-34}"
-ANDROID_BUILD_TOOLS_VERSION="${ANDROID_BUILD_TOOLS_VERSION:-34.0.0}"
+ANDROID_API_LEVEL="${ANDROID_API_LEVEL:-36}"
+ANDROID_BUILD_TOOLS_VERSION="${ANDROID_BUILD_TOOLS_VERSION:-36.0.0}"
 CMDLINE_TOOLS_REVISION="${CMDLINE_TOOLS_REVISION:-14742923}"
 CMDLINE_TOOLS_ZIP="commandlinetools-linux-${CMDLINE_TOOLS_REVISION}_latest.zip"
 CMDLINE_TOOLS_URL="${CMDLINE_TOOLS_URL:-https://dl.google.com/android/repository/${CMDLINE_TOOLS_ZIP}}"
@@ -32,6 +32,11 @@ TERMUX_PREFIX_DEFAULT="/data/data/com.termux/files/usr"
 TERMUX_PREFIX="${PREFIX:-$TERMUX_PREFIX_DEFAULT}"
 AAPT2_TERMUX="$TERMUX_PREFIX/bin/aapt2"
 AAPT2_SDK="$ANDROID_SDK_ROOT/build-tools/$ANDROID_BUILD_TOOLS_VERSION/aapt2"
+LZ_SDK_TOOLS_VERSION="${LZ_SDK_TOOLS_VERSION:-35.0.2}"
+LZ_SDK_TOOLS_DIR="${LZ_SDK_TOOLS_DIR:-$HOME/android-sdk-tools-lzhiyong-$LZ_SDK_TOOLS_VERSION}"
+LZ_SDK_TOOLS_ZIP="$DOWNLOADS_DIR/android-sdk-tools-static-aarch64-$LZ_SDK_TOOLS_VERSION.zip"
+LZ_SDK_TOOLS_URL="${LZ_SDK_TOOLS_URL:-https://github.com/Lzhiyong/sdk-tools/releases/download/${LZ_SDK_TOOLS_VERSION}/android-sdk-tools-static-aarch64.zip}"
+LZ_AAPT2="$LZ_SDK_TOOLS_DIR/build-tools/aapt2"
 LOCAL_PROPERTIES_FILE="$APP_DIR/local.properties"
 MODE="${1:-apk}"
 BUILD_TYPE="${BUILD_TYPE:-Debug}"
@@ -275,6 +280,44 @@ download_file() {
   fi
 }
 
+
+download_file_resumable() {
+  local url="$1" out="$2"
+  mkdir -p "$(dirname "$out")"
+  if command -v aria2c >/dev/null 2>&1; then
+    aria2c \
+      -x 4 \
+      -s 4 \
+      -k 1M \
+      --continue=true \
+      --max-tries=50 \
+      --retry-wait=5 \
+      --timeout=60 \
+      --connect-timeout=30 \
+      --summary-interval=10 \
+      -d "$(dirname "$out")" \
+      -o "$(basename "$out")" \
+      "$url"
+  elif command -v curl >/dev/null 2>&1; then
+    curl -L --http1.1 --fail \
+      --retry 20 \
+      --retry-delay 3 \
+      --retry-all-errors \
+      --connect-timeout 30 \
+      -o "$out" \
+      "$url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -c \
+      --tries=20 \
+      --timeout=30 \
+      --waitretry=3 \
+      -O "$out" \
+      "$url"
+  else
+    fail 'Нужен aria2c, curl или wget для скачивания зависимостей.'
+  fi
+}
+
 escape_for_local_properties() {
   printf '%s' "$1" | sed 's#\\#\\\\#g'
 }
@@ -285,15 +328,67 @@ read_local_properties_sdk_dir() {
   fi
 }
 
+
+android_jar_ok() {
+  local jar="$1"
+  [[ -s "$jar" ]] || return 1
+  if command -v unzip >/dev/null 2>&1; then
+    unzip -tq "$jar" >/dev/null 2>&1 || return 1
+  elif command -v jar >/dev/null 2>&1; then
+    jar tf "$jar" >/dev/null 2>&1 || return 1
+  fi
+  return 0
+}
+
+aapt2_can_link_android_jar() {
+  local jar="$1" aapt2="$2" tmp_dir manifest out_apk
+  [[ -s "$jar" ]] || return 1
+  mkdir -p "$OUT_DIR"
+  [[ -n "$aapt2" && -x "$aapt2" ]] || return 0
+  tmp_dir="$(mktemp -d "$OUT_DIR/.aapt2-check.XXXXXX")" || return 1
+  mkdir -p "$tmp_dir"
+  manifest="$tmp_dir/AndroidManifest.xml"
+  out_apk="$tmp_dir/check.apk"
+  cat > "$manifest" <<'MANIFEST'
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="com.android.zdtd.aapt2check">
+    <uses-sdk android:minSdkVersion="26" />
+    <application />
+</manifest>
+MANIFEST
+  "$aapt2" link -I "$jar" --manifest "$manifest" -o "$out_apk" >/dev/null 2>&1
+  local status=$?
+  rm -rf "$tmp_dir"
+  return "$status"
+}
+
+android_platform_ok() {
+  local sdk_root="$1" aapt2="${2:-}"
+  local android_jar="$sdk_root/platforms/android-$ANDROID_API_LEVEL/android.jar"
+  android_jar_ok "$android_jar" || return 1
+  aapt2_can_link_android_jar "$android_jar" "$aapt2" || return 1
+}
+
+cleanup_broken_android_sdk_packages() {
+  local sdk_root="$1" aapt2="${2:-}"
+  [[ -n "$sdk_root" && -d "$sdk_root" ]] || return 0
+  local platform_dir="$sdk_root/platforms/android-$ANDROID_API_LEVEL"
+  local android_jar="$platform_dir/android.jar"
+  if [[ -d "$platform_dir" ]] && ! android_platform_ok "$sdk_root" "$aapt2"; then
+    warn "Android SDK platform android-$ANDROID_API_LEVEL повреждена, установлена не полностью или несовместима с текущим aapt2: $android_jar. Удаляю перед переустановкой."
+    rm -rf "$platform_dir"
+  fi
+}
+
 is_valid_android_sdk_root() {
-  local root="$1"
+  local root="$1" aapt2="${2:-}"
   [[ -n "$root" ]] || return 1
   [[ -d "$root" ]] || return 1
-  [[ -f "$root/platforms/android-$ANDROID_API_LEVEL/android.jar" ]] || return 1
+  android_platform_ok "$root" "$aapt2" || return 1
   [[ -d "$root/build-tools/$ANDROID_BUILD_TOOLS_VERSION" ]] || return 1
 }
 
 auto_detect_android_sdk_root() {
+  local aapt2="${1:-}"
   local candidates=()
   [[ -n "${ANDROID_SDK_ROOT:-}" ]] && candidates+=("$ANDROID_SDK_ROOT")
   [[ -n "${ANDROID_HOME:-}" ]] && candidates+=("$ANDROID_HOME")
@@ -308,7 +403,7 @@ auto_detect_android_sdk_root() {
   )
   local cand
   for cand in "${candidates[@]}"; do
-    if is_valid_android_sdk_root "$cand"; then
+    if is_valid_android_sdk_root "$cand" "$aapt2"; then
       printf '%s' "$cand"
       return 0
     fi
@@ -317,8 +412,10 @@ auto_detect_android_sdk_root() {
 }
 
 ensure_android_sdk_ready() {
-  local detected=''
-  detected="$(auto_detect_android_sdk_root 2>/dev/null || true)"
+  local detected='' aapt2=''
+  aapt2="$(select_aapt2_override 2>/dev/null || true)"
+  cleanup_broken_android_sdk_packages "$ANDROID_SDK_ROOT" "$aapt2"
+  detected="$(auto_detect_android_sdk_root "$aapt2" 2>/dev/null || true)"
   if [[ -n "$detected" ]]; then
     ANDROID_SDK_ROOT="$detected"
     ANDROID_HOME="$detected"
@@ -326,9 +423,9 @@ ensure_android_sdk_ready() {
     AAPT2_SDK="$ANDROID_SDK_ROOT/build-tools/$ANDROID_BUILD_TOOLS_VERSION/aapt2"
     return 0
   fi
-  warn "Android SDK API $ANDROID_API_LEVEL / Build-Tools $ANDROID_BUILD_TOOLS_VERSION не найдены. Пробую установить автоматически."
+  warn "Android SDK API $ANDROID_API_LEVEL / Build-Tools $ANDROID_BUILD_TOOLS_VERSION не найдены, повреждены или установлены не полностью. Пробую установить автоматически."
   install_android_sdk_packages
-  detected="$(auto_detect_android_sdk_root 2>/dev/null || true)"
+  detected="$(auto_detect_android_sdk_root "$aapt2" 2>/dev/null || true)"
   if [[ -n "$detected" ]]; then
     ANDROID_SDK_ROOT="$detected"
     ANDROID_HOME="$detected"
@@ -336,7 +433,7 @@ ensure_android_sdk_ready() {
     AAPT2_SDK="$ANDROID_SDK_ROOT/build-tools/$ANDROID_BUILD_TOOLS_VERSION/aapt2"
     return 0
   fi
-  fail "Android SDK всё ещё не готов. Ожидаю android.jar в $ANDROID_SDK_ROOT/platforms/android-$ANDROID_API_LEVEL/"
+  fail "Android SDK всё ещё не готов. Ожидаю исправный android.jar, совместимый с текущим aapt2, в $ANDROID_SDK_ROOT/platforms/android-$ANDROID_API_LEVEL/"
 }
 
 ensure_gradle_ready() {
@@ -351,7 +448,7 @@ ensure_gradle_ready() {
 ensure_termux_build_prereqs() {
   is_termux_runtime || return 0
   local missing=()
-  local required=(javac keytool zip unzip make git find curl rustc cargo aapt2 pkg-config file clang++)
+  local required=(javac keytool zip unzip make git find curl aria2c rustc cargo aapt2 pkg-config file clang++)
   local cmd
   for cmd in "${required[@]}"; do
     cmd_exists "$cmd" || missing+=("$cmd")
@@ -369,6 +466,48 @@ ensure_termux_build_prereqs() {
   fi
 }
 
+ensure_lzhiyong_aapt2() {
+  is_termux_runtime || return 1
+  if [[ -x "$LZ_AAPT2" ]]; then
+    return 0
+  fi
+
+  mkdir -p "$DOWNLOADS_DIR" "$LZ_SDK_TOOLS_DIR"
+  warn "Для compileSdk $ANDROID_API_LEVEL в Termux нужен совместимый aapt2. Скачиваю lzhiyong android-sdk-tools $LZ_SDK_TOOLS_VERSION."
+  if ! download_file_resumable "$LZ_SDK_TOOLS_URL" "$LZ_SDK_TOOLS_ZIP"; then
+    warn "Не удалось скачать lzhiyong android-sdk-tools: $LZ_SDK_TOOLS_URL"
+    return 1
+  fi
+
+  rm -rf "$LZ_SDK_TOOLS_DIR"
+  mkdir -p "$LZ_SDK_TOOLS_DIR"
+  if ! unzip -q -o "$LZ_SDK_TOOLS_ZIP" -d "$LZ_SDK_TOOLS_DIR"; then
+    warn "Не удалось распаковать $LZ_SDK_TOOLS_ZIP"
+    return 1
+  fi
+
+  if [[ ! -x "$LZ_AAPT2" ]]; then
+    local found=''
+    found="$(find "$LZ_SDK_TOOLS_DIR" -type f -name aapt2 | head -n 1 || true)"
+    if [[ -n "$found" ]]; then
+      mkdir -p "$(dirname "$LZ_AAPT2")"
+      cp -f "$found" "$LZ_AAPT2"
+    fi
+  fi
+
+  chmod 755 "$LZ_AAPT2" 2>/dev/null || true
+  if [[ ! -x "$LZ_AAPT2" ]]; then
+    warn "aapt2 не найден в lzhiyong tools: $LZ_AAPT2"
+    return 1
+  fi
+
+  "$LZ_AAPT2" version >/dev/null 2>&1 || {
+    warn "lzhiyong aapt2 не запускается: $LZ_AAPT2"
+    return 1
+  }
+  return 0
+}
+
 select_aapt2_override() {
   if [[ -n "${AAPT2_OVERRIDE:-}" ]]; then
     [[ -x "$AAPT2_OVERRIDE" ]] || fail "AAPT2_OVERRIDE задан, но файл не исполняемый: $AAPT2_OVERRIDE"
@@ -376,16 +515,23 @@ select_aapt2_override() {
     return 0
   fi
   if is_termux_runtime; then
+    if [[ "$ANDROID_API_LEVEL" =~ ^[0-9]+$ ]] && (( ANDROID_API_LEVEL >= 35 )); then
+      if ensure_lzhiyong_aapt2; then
+        printf '%s' "$LZ_AAPT2"
+        return 0
+      fi
+      warn "Не удалось подготовить lzhiyong aapt2. Будет проверен штатный Termux aapt2, но для android-$ANDROID_API_LEVEL он часто несовместим."
+    fi
     [[ -x "$AAPT2_TERMUX" ]] || fail "В Termux нужен пакет aapt2: ожидается $AAPT2_TERMUX"
-    printf '%s' "$AAPT2_TERMUX"
-    return 0
-  fi
-  if [[ -x "$AAPT2_TERMUX" ]]; then
     printf '%s' "$AAPT2_TERMUX"
     return 0
   fi
   if [[ -x "$AAPT2_SDK" ]]; then
     printf '%s' "$AAPT2_SDK"
+    return 0
+  fi
+  if [[ -x "$AAPT2_TERMUX" ]]; then
+    printf '%s' "$AAPT2_TERMUX"
     return 0
   fi
   return 1
@@ -517,21 +663,22 @@ doctor() {
   else
     printf '  [..] sdkmanager not found yet -> %s\n' "$SDKMANAGER_BIN"
   fi
-  if [[ -d "$ANDROID_SDK_ROOT/platforms/android-$ANDROID_API_LEVEL" ]]; then
-    printf '  [ok] platforms;android-%s\n' "$ANDROID_API_LEVEL"
-  else
-    printf '  [..] missing platforms;android-%s\n' "$ANDROID_API_LEVEL"
-  fi
-  if [[ -d "$ANDROID_SDK_ROOT/build-tools/$ANDROID_BUILD_TOOLS_VERSION" ]]; then
-    printf '  [ok] build-tools;%s\n' "$ANDROID_BUILD_TOOLS_VERSION"
-  else
-    printf '  [..] missing build-tools;%s\n' "$ANDROID_BUILD_TOOLS_VERSION"
-  fi
   local aapt2_path=''
   if aapt2_path="$(select_aapt2_override 2>/dev/null)"; then
     printf '  [ok] aapt2 -> %s\n' "$aapt2_path"
   else
     printf '  [..] aapt2 override not found\n'
+  fi
+  if android_platform_ok "$ANDROID_SDK_ROOT" "$aapt2_path"; then
+    printf '  [ok] platforms;android-%s android.jar compatible with aapt2\n' "$ANDROID_API_LEVEL"
+  else
+    printf '  [!!] broken/missing/incompatible platforms;android-%s android.jar\n' "$ANDROID_API_LEVEL"
+    missing=1
+  fi
+  if [[ -d "$ANDROID_SDK_ROOT/build-tools/$ANDROID_BUILD_TOOLS_VERSION" ]]; then
+    printf '  [ok] build-tools;%s\n' "$ANDROID_BUILD_TOOLS_VERSION"
+  else
+    printf '  [..] missing build-tools;%s\n' "$ANDROID_BUILD_TOOLS_VERSION"
   fi
   mkdir -p "$PREBUILT_BIN_DIR"
   local ext_missing=0 bin
@@ -549,8 +696,8 @@ doctor() {
 
 install_termux_packages() {
   cmd_exists pkg || fail 'Этот режим рассчитан на Termux: команда pkg не найдена.'
-  msg 'Устанавливаю/дополняю пакеты Termux: openjdk-17, rust, clang, unzip, zip, curl, wget, make, git, aapt2, binutils, pkg-config, file'
-  pkg install -y openjdk-17 rust clang unzip zip curl wget make git aapt2 binutils pkg-config file
+  msg 'Устанавливаю/дополняю пакеты Termux: openjdk-17, rust, clang, unzip, zip, curl, wget, aria2, make, git, aapt2, binutils, pkg-config, file'
+  pkg install -y openjdk-17 rust clang unzip zip curl wget aria2 make git aapt2 binutils pkg-config file
   hash -r || true
   ensure_java_home
 }
@@ -561,10 +708,6 @@ install_gradle_local() {
   mkdir -p "$GRADLE_BASE_DIR" "$DOWNLOADS_DIR"
   local requested_version="$GRADLE_VERSION"
   local resolved_version="$requested_version"
-  if [[ "$requested_version" == "8.2.2" ]]; then
-    warn 'Gradle 8.2.2 не существует как дистрибутив; использую Gradle 8.2 для AGP 8.2.x.'
-    resolved_version='8.2'
-  fi
   local resolved_home="$GRADLE_BASE_DIR/gradle-$resolved_version"
   local resolved_cmd="$resolved_home/bin/gradle"
   if [[ -x "$resolved_cmd" ]]; then
@@ -597,19 +740,59 @@ install_android_cmdline_tools() {
   [[ -x "$SDKMANAGER_BIN" ]] || fail "sdkmanager не найден после установки: $SDKMANAGER_BIN"
 }
 
+android_platform_direct_url() {
+  case "$ANDROID_API_LEVEL" in
+    36) printf '%s' 'https://dl.google.com/android/repository/platform-36_r01.zip' ;;
+    *) return 1 ;;
+  esac
+}
+
+install_android_platform_direct() {
+  local url zip tmp_unpack found platform_dir
+  url="$(android_platform_direct_url)" || return 1
+  zip="$DOWNLOADS_DIR/platform-$ANDROID_API_LEVEL.zip"
+  tmp_unpack="$DOWNLOADS_DIR/platform-$ANDROID_API_LEVEL-unpack"
+
+  warn "sdkmanager не смог подготовить platforms;android-$ANDROID_API_LEVEL. Пробую прямую загрузку: $url"
+  download_file_resumable "$url" "$zip" || return 1
+  rm -rf "$tmp_unpack"
+  mkdir -p "$tmp_unpack"
+  unzip -q -o "$zip" -d "$tmp_unpack" || return 1
+  found="$(find "$tmp_unpack" -type f -name android.jar | head -n 1 || true)"
+  [[ -n "$found" ]] || return 1
+  platform_dir="$(dirname "$found")"
+  rm -rf "$ANDROID_SDK_ROOT/platforms/android-$ANDROID_API_LEVEL"
+  mkdir -p "$ANDROID_SDK_ROOT/platforms"
+  cp -a "$platform_dir" "$ANDROID_SDK_ROOT/platforms/android-$ANDROID_API_LEVEL"
+  android_platform_ok "$ANDROID_SDK_ROOT" "$(select_aapt2_override 2>/dev/null || true)"
+}
+
 install_android_sdk_packages() {
   ensure_java_home
   install_android_cmdline_tools
+  cleanup_broken_android_sdk_packages "$ANDROID_SDK_ROOT" "$(select_aapt2_override 2>/dev/null || true)"
   mkdir -p "$HOME/.android"
   : > "$HOME/.android/repositories.cfg"
   msg 'Принимаю лицензии Android SDK'
   yes | JAVA_HOME="$JAVA_HOME" PATH="$JAVA_HOME/bin:$PATH" "$SDKMANAGER_BIN" --sdk_root="$ANDROID_SDK_ROOT" --licenses >/dev/null || true
-  msg "Устанавливаю Android SDK пакеты: platform-tools, platforms;android-$ANDROID_API_LEVEL, build-tools;$ANDROID_BUILD_TOOLS_VERSION"
+
+  msg "Устанавливаю Android SDK пакеты: platform-tools, build-tools;$ANDROID_BUILD_TOOLS_VERSION"
   JAVA_HOME="$JAVA_HOME" PATH="$JAVA_HOME/bin:$PATH" \
   "$SDKMANAGER_BIN" --sdk_root="$ANDROID_SDK_ROOT" \
     "platform-tools" \
-    "platforms;android-$ANDROID_API_LEVEL" \
-    "build-tools;$ANDROID_BUILD_TOOLS_VERSION"
+    "build-tools;$ANDROID_BUILD_TOOLS_VERSION" || warn "sdkmanager не смог установить platform-tools/build-tools полностью. Продолжаю проверку установленных пакетов."
+
+  msg "Устанавливаю Android SDK platform: platforms;android-$ANDROID_API_LEVEL"
+  JAVA_HOME="$JAVA_HOME" PATH="$JAVA_HOME/bin:$PATH" \
+  "$SDKMANAGER_BIN" --sdk_root="$ANDROID_SDK_ROOT" \
+    "platforms;android-$ANDROID_API_LEVEL" || warn "sdkmanager не смог установить platforms;android-$ANDROID_API_LEVEL."
+
+  if ! android_platform_ok "$ANDROID_SDK_ROOT" "$(select_aapt2_override 2>/dev/null || true)"; then
+    install_android_platform_direct || fail "Android SDK platform android-$ANDROID_API_LEVEL установлена, но android.jar не читается или несовместим с текущим aapt2. Проверь $ANDROID_SDK_ROOT/platforms/android-$ANDROID_API_LEVEL и AAPT2_OVERRIDE."
+  fi
+
+  [[ -d "$ANDROID_SDK_ROOT/build-tools/$ANDROID_BUILD_TOOLS_VERSION" ]] \
+    || fail "Не найдены build-tools;$ANDROID_BUILD_TOOLS_VERSION в $ANDROID_SDK_ROOT/build-tools/. Установи их через sdkmanager."
 }
 
 patch_paths() {
@@ -1172,6 +1355,7 @@ build_apk() {
   java_home="$JAVA_HOME"
   gradle_workers="$(detect_gradle_workers)"
   aapt2_override="$(select_aapt2_override 2>/dev/null || true)"
+  GRADLE_FLAGS+=("-PzdtCompileSdk=$ANDROID_API_LEVEL")
   run_gradle_stage apk 'Build APK' "$gradle_cmd" "$java_home" "$gradle_workers" "$aapt2_override"
   run_simple_stage final 'Final validation' validate_apk_artifacts
   set_dashboard_current 'Build finished successfully'

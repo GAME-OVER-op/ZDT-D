@@ -328,7 +328,7 @@ fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
         contentType = { "proc" },
       ) { row ->
         ProcCard(
-          modifier = if (enablePlacementAnimations) Modifier.animateItemPlacement() else Modifier,
+          modifier = if (enablePlacementAnimations) Modifier.animateItem() else Modifier,
           name = row.name,
           agg = row.agg,
           totalRamMb = totalRamMb,

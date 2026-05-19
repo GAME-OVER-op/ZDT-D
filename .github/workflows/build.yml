@@ -20,9 +20,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ANDROID_API_LEVEL: 34
-  ANDROID_BUILD_TOOLS_VERSION: "34.0.0"
-  GRADLE_VERSION: "8.2"
+  ANDROID_API_LEVEL: 36
+  ZDT_COMPILE_SDK: 36
+  ANDROID_BUILD_TOOLS_VERSION: "36.0.0"
+  GRADLE_VERSION: "9.4.1"
   CARGO_PROFILE: release
   CARGO_BUILD_TARGET: aarch64-linux-android
   BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
@@ -312,6 +313,7 @@ jobs:
           gradle \
             --no-daemon \
             --max-workers=$(nproc) \
+            "-PzdtCompileSdk=${{ env.ZDT_COMPILE_SDK }}" \
             "assemble${{ env.BUILD_TYPE }}"
 
       - name: Collect final artifacts

@@ -1,6 +1,6 @@
 plugins {
   id 'com.android.application'
-  id 'org.jetbrains.kotlin.android'
+  id 'org.jetbrains.kotlin.plugin.compose'
 }
 
 
@@ -25,18 +25,19 @@ rootModuleProp.withInputStream { moduleProps.load(it) }
 def moduleVersionCode = (moduleProps.getProperty('versionCode') ?: '1').trim().toInteger()
 def moduleVersionName = (moduleProps.getProperty('version') ?: '1.0').trim()
 def generatedAssetsDir = file("$buildDir/generated/zdt-assets/main")
+def zdtCompileSdk = (findProperty('zdtCompileSdk') ?: System.getenv('ZDT_COMPILE_SDK') ?: '36').toString().trim().toInteger()
 def generatedModuleZip = file('../../out/module/zdt_module.zip')
 def zdtModuleZip = file("$generatedAssetsDir/zdt_module.zip")
 def bundledModuleProp = file("$generatedAssetsDir/module.prop")
 
 android {
   namespace 'com.android.zdtd.service'
-  compileSdk 34
+  compileSdk zdtCompileSdk
 
   defaultConfig {
     applicationId 'com.android.zdtd.service'
     minSdk 26
-    targetSdk 34
+    targetSdk 36
     versionCode moduleVersionCode
     versionName moduleVersionName
   }
@@ -78,21 +79,12 @@ android {
     targetCompatibility JavaVersion.VERSION_17
   }
 
-  kotlinOptions {
-    jvmTarget = '17'
-  }
-
   buildFeatures {
     // Some environments disable BuildConfig generation via global defaults.
     // We rely on BuildConfig.VERSION_CODE/NAME and APPLICATION_ID, so force-enable it.
     buildConfig true
     viewBinding false
     compose true
-  }
-
-  composeOptions {
-    // Kotlin 1.9.22
-    kotlinCompilerExtensionVersion '1.5.8'
   }
 
   sourceSets {
@@ -146,19 +138,13 @@ tasks.named('preBuild') {
   dependsOn('ensureZdtModuleZip')
 }
 
-android.applicationVariants.all { variant ->
-  variant.outputs.all {
-    outputFileName = "ZDT-D-${variant.name}-v${variant.versionName}.apk"
-  }
-}
-
 dependencies {
-  implementation 'androidx.core:core-ktx:1.12.0'
-  implementation 'androidx.appcompat:appcompat:1.6.1'
-  implementation 'androidx.activity:activity-compose:1.8.2'
+  implementation 'androidx.core:core-ktx:1.18.0'
+  implementation 'androidx.appcompat:appcompat:1.7.1'
+  implementation 'androidx.activity:activity-compose:1.13.0'
 
   // Compose
-  implementation platform('androidx.compose:compose-bom:2024.02.00')
+  implementation platform('androidx.compose:compose-bom:2026.05.00')
   implementation 'androidx.compose.ui:ui'
   implementation 'androidx.compose.ui:ui-tooling-preview'
   implementation 'androidx.compose.foundation:foundation'
@@ -167,16 +153,16 @@ dependencies {
   implementation 'androidx.compose.material:material-icons-extended'
 
   // Lifecycle / coroutines helpers
-  implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
-  implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0'
-  implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0'
-  implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.7.0'
+  implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.10.0'
+  implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.10.0'
+  implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0'
+  implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.10.0'
 
   // Networking
-  implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+  implementation 'com.squareup.okhttp3:okhttp:5.3.2'
 
   // Root shell helper (Magisk author)
-  implementation 'com.github.topjohnwu.libsu:core:5.2.2'
+  implementation 'com.github.topjohnwu.libsu:core:6.0.0'
 
   debugImplementation 'androidx.compose.ui:ui-tooling'
 }

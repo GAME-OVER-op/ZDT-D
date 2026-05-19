@@ -27,6 +27,7 @@ const DNSCRYPT_SETTING_MAX_BYTES: u64 = 200 * 1024;
 
 const STATUS_CACHE_TTL: Duration = Duration::from_secs(2);
 const ASSIGNMENT_CACHE_TTL: Duration = Duration::from_secs(2);
+const API_SLOW_WARN_THRESHOLD: Duration = Duration::from_millis(8000);
 
 #[derive(Clone)]
 struct StatusCacheEntry {
@@ -91,7 +92,7 @@ fn spawn_status_refresh(services_running: bool) {
         match res {
             Ok(Ok(report)) => {
                 let elapsed = started.elapsed();
-                if elapsed > Duration::from_millis(500) {
+                if elapsed > API_SLOW_WARN_THRESHOLD {
                     log::warn!("api status refresh slow: duration_ms={}", elapsed.as_millis());
                 }
                 store_status_cache(report);
@@ -5419,7 +5420,7 @@ fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
     impl Drop for SlowRequestGuard {
         fn drop(&mut self) {
             let elapsed = self.started.elapsed();
-            if elapsed > Duration::from_millis(500) {
+            if elapsed > API_SLOW_WARN_THRESHOLD {
                 log::warn!(
                     "api slow request: method={} path={} duration_ms={}",
                     self.method,

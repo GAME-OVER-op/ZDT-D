@@ -331,7 +331,6 @@ jobs:
           name: zdtd-daemon
           path: rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}/zdtd
           retention-days: 1
-          archive: false
 
   build_t2s:
     name: Compile t2s proxy
@@ -433,7 +432,6 @@ jobs:
           name: t2s-proxy
           path: rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}/t2s
           retention-days: 1
-          archive: false
 
   build_zygisk:
     name: Compile Zygisk module
@@ -490,7 +488,6 @@ jobs:
           name: zygisk-arm64
           path: out/zygisk/arm64-v8a.so
           retention-days: 1
-          archive: false
 
   pack_module:
     name: Pack ZDT-D module
@@ -591,7 +588,6 @@ jobs:
           name: zdt-module-zip
           path: out/module/zdt_module.zip
           retention-days: 1
-          archive: false
 
   build_apk:
     name: Build Android application
@@ -703,7 +699,6 @@ jobs:
           name: zdt-apk
           path: out/dist/app-release.apk
           retention-days: 30
-          archive: false
 
       - name: Upload module artifact
         uses: actions/upload-artifact@v7
@@ -711,7 +706,6 @@ jobs:
           name: zdt-module-final
           path: out/dist/zdt_module.zip
           retention-days: 30
-          archive: false
 
   publish_service:
     name: Publish service build

@@ -127,8 +127,19 @@ private fun parseMyProxyPortValue(value: Any?): List<Int> = when (value) {
 private fun normalizeMyProxyBackendMode(raw: String?): String =
   if (raw?.trim()?.lowercase() == "priority") "priority" else "balance"
 
+private fun sanitizeMyProxyBackendPriorityInput(raw: String): String = buildString {
+  raw.forEach { ch ->
+    when {
+      ch.isDigit() -> append(ch)
+      ch == ',' || ch == '，' || ch == '﹐' || ch == '､' || ch == '、' -> append(',')
+      ch == ';' || ch == '；' || ch == '﹔' || ch == '︔' || ch == ';' || ch == '؛' -> append(';')
+      ch.isWhitespace() -> append(ch)
+    }
+  }
+}.take(192)
+
 private fun normalizeMyProxyBackendPriority(raw: String, allowedPorts: List<Int>): String? {
-  val text = raw.trim()
+  val text = sanitizeMyProxyBackendPriorityInput(raw).trim()
   if (text.isEmpty()) return ""
   val allowed = allowedPorts.toSet()
   if (allowed.isEmpty()) return null
@@ -179,7 +190,7 @@ private fun parseMyProxyUpstreamUi(obj: JSONObject?): MyProxyUpstreamUi {
     host = data?.optString("host", "")?.trim().orEmpty(),
     ports = portsFromArray.takeIf { it.isNotEmpty() } ?: parseMyProxyPortValue(data?.opt("port")),
     backendMode = normalizeMyProxyBackendMode(data?.optString("backend_mode", "balance")),
-    backendPriority = data?.optString("backend_priority", "")?.trim().orEmpty(),
+    backendPriority = sanitizeMyProxyBackendPriorityInput(data?.optString("backend_priority", "").orEmpty()).trim(),
     user = data?.optString("user", "")?.trim().orEmpty(),
     pass = data?.optString("pass", "") ?: "",
   )
@@ -561,13 +572,11 @@ fun MyProxyProfileScreen(
             OutlinedTextField(
               value = backendPriorityText,
               onValueChange = {
-                backendPriorityText = it.filter { ch ->
-                  ch.isDigit() || ch == ',' || ch == ';' || ch.isWhitespace()
-                }.take(192)
+                backendPriorityText = sanitizeMyProxyBackendPriorityInput(it)
               },
               label = { Text(stringResource(R.string.myproxy_backend_priority_label)) },
               modifier = Modifier.fillMaxWidth(),
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
               singleLine = true,
               isError = backendPriorityText.isNotBlank() && !backendPriorityValid,
             )

@@ -34,16 +34,17 @@ data class DashboardUiState(
     val geoDatabaseState: GeoDatabaseState = GeoDatabaseState(),
 )
 
-private const val POLL_INTERVAL_MS = 2_000L
+private const val POLL_INTERVAL_MS = 1_000L
 private const val FRAME_INTERVAL_MS = 33L
 private const val IDLE_FRAME_INTERVAL_MS = 250L
 private const val QUIET_FRAME_INTERVAL_MS = 100L
 private const val VISIBILITY_STEP = 0.022f
 private const val ACTIVITY_STEP = 0.030f
+private const val ACTIVITY_SCORE_STEP = 0.024f
 private const val PACKET_DRAIN_MS = 1_650L
 private const val ROUTE_CLOSE_FADE_MS = 4_000L
 private const val CLOSE_REMOVAL_GRACE_MS = 240L
-private const val CLOSE_CONFIRMATION_DELAY_MS = 1_200L
+private const val CLOSE_CONFIRMATION_DELAY_MS = 900L
 private const val CLOSE_CONFIRMATION_MISSES = 3
 
 class NetworkDashboardViewModel(
@@ -65,6 +66,7 @@ class NetworkDashboardViewModel(
     private var lastError: String? = null
     private var lastSamples: List<ConnectionSample> = emptyList()
     private var previousQueueSnapshots = LinkedHashMap<String, QueueSnapshot>()
+    private var previousQueueSnapshotAtMs: Long? = null
     private var sessionStartedAtMs = 0L
     private var lastTrafficSnapshotBytes: Long? = null
     private var sessionTrafficBytes = 0L
@@ -87,6 +89,14 @@ class NetworkDashboardViewModel(
     )
 
     private fun enhancePeerActivity(mappedPeers: List<PeerVisual>): List<PeerVisual> {
+        val nowMs = SystemClock.elapsedRealtime()
+        val previousAtMs = previousQueueSnapshotAtMs
+        val elapsedSeconds = if (previousAtMs == null) {
+            POLL_INTERVAL_MS / 1000f
+        } else {
+            ((nowMs - previousAtMs).coerceAtLeast(100L).toFloat() / 1000f)
+        }.coerceIn(0.10f, 8.0f)
+
         val nextSnapshots = LinkedHashMap<String, QueueSnapshot>(mappedPeers.size)
         val tuned = mappedPeers.map { peer ->
             val current = QueueSnapshot(
@@ -103,12 +113,16 @@ class NetworkDashboardViewModel(
             val recvDelta = if (previous == null) 0L else kotlin.math.abs(peer.recvQueue - previous.recvQueue)
             val txByteDelta = if (previous == null || peer.txCounterBytes < previous.txCounterBytes) 0L else (peer.txCounterBytes - previous.txCounterBytes)
             val rxByteDelta = if (previous == null || peer.rxCounterBytes < previous.rxCounterBytes) 0L else (peer.rxCounterBytes - previous.rxCounterBytes)
+            val txBytesPerSecond = txByteDelta.toFloat() / elapsedSeconds
+            val rxBytesPerSecond = rxByteDelta.toFloat() / elapsedSeconds
+            val txMegabytesPerSecond = bytesPerSecondToMegabytes(txBytesPerSecond)
+            val rxMegabytesPerSecond = bytesPerSecondToMegabytes(rxBytesPerSecond)
 
             val queueSignal = max(peer.txActivity, peer.rxActivity)
-            val throughputSignal = throughputSignal(txByteDelta, rxByteDelta, peer.protocol)
+            val throughputSignal = throughputSignal(txBytesPerSecond, rxBytesPerSecond, peer.protocol)
             val combinedScore = when {
-                txByteDelta > 0L || rxByteDelta > 0L -> (queueSignal * 0.18f + throughputSignal * 1.02f).coerceIn(0f, 1f)
-                else -> (queueSignal * 0.48f + queueDeltaSignal(sendDelta, recvDelta) * 0.72f).coerceIn(0f, 0.82f)
+                txByteDelta > 0L || rxByteDelta > 0L -> (queueSignal * 0.12f + throughputSignal * 1.05f).coerceIn(0f, 1f)
+                else -> (queueSignal * 0.38f + queueDeltaSignal(sendDelta, recvDelta) * 0.56f).coerceIn(0f, 0.72f)
             }
 
             val directionFromBytes = txByteDelta.toFloat() / (txByteDelta + rxByteDelta).coerceAtLeast(1L).toFloat()
@@ -119,11 +133,13 @@ class NetworkDashboardViewModel(
             }.coerceIn(0.08f, 0.92f)
             val rxBias = (1f - txBias).coerceIn(0.08f, 0.92f)
 
-            val tunedTx = max(peer.txActivity * 0.22f, combinedScore * txBias * 1.28f).coerceIn(0f, 1f)
-            val tunedRx = max(peer.rxActivity * 0.22f, combinedScore * rxBias * 1.28f).coerceIn(0f, 1f)
+            val tunedTx = max(peer.txActivity * 0.18f, combinedScore * txBias * 1.18f).coerceIn(0f, 1f)
+            val tunedRx = max(peer.rxActivity * 0.18f, combinedScore * rxBias * 1.18f).coerceIn(0f, 1f)
             val label = strings.enhancedActivityLabel(combinedScore)
 
             peer.copy(
+                txMegabytesPerSecond = txMegabytesPerSecond,
+                rxMegabytesPerSecond = rxMegabytesPerSecond,
                 txActivity = tunedTx,
                 rxActivity = tunedRx,
                 activityScore = combinedScore,
@@ -131,7 +147,13 @@ class NetworkDashboardViewModel(
             )
         }
         previousQueueSnapshots = nextSnapshots
+        previousQueueSnapshotAtMs = nowMs
         return tuned
+    }
+
+    private fun bytesPerSecondToMegabytes(bytesPerSecond: Float): Float {
+        if (bytesPerSecond <= 0f) return 0f
+        return bytesPerSecond / BYTES_IN_MEGABYTE
     }
 
     private fun queueDeltaSignal(sendDelta: Long, recvDelta: Long): Float {
@@ -141,12 +163,12 @@ class NetworkDashboardViewModel(
         return (0.08f + normalized * 0.92f).coerceIn(0f, 1f)
     }
 
-    private fun throughputSignal(txByteDelta: Long, rxByteDelta: Long, protocol: String): Float {
-        val dominant = max(txByteDelta, rxByteDelta).toFloat()
+    private fun throughputSignal(txBytesPerSecond: Float, rxBytesPerSecond: Float, protocol: String): Float {
+        val dominant = max(txBytesPerSecond, rxBytesPerSecond)
         if (dominant <= 0f) return 0f
-        val windowRef = if (protocol.startsWith("tcp")) 524_288f else 131_072f
+        val windowRef = if (protocol.startsWith("tcp")) 1_048_576f else 262_144f
         val normalized = (ln(1f + dominant) / ln(1f + windowRef)).coerceIn(0f, 1f)
-        return (0.12f + normalized * 0.88f).coerceIn(0f, 1f)
+        return (0.08f + normalized * 0.92f).coerceIn(0f, 1f)
     }
 
     fun startMonitoring() {
@@ -217,6 +239,7 @@ class NetworkDashboardViewModel(
         if (!rootReady) {
             lastError = strings.rootUnavailable()
             previousQueueSnapshots.clear()
+            previousQueueSnapshotAtMs = null
             initialSnapshotReady = true
             markAllInactive(ClosingSide.UNKNOWN)
             emitUiState()
@@ -258,14 +281,23 @@ class NetworkDashboardViewModel(
                 viewModelScope.launch {
                     val changed = geoRepository.resolveMissing(geoCandidates)
                     if (changed && lastSamples.isNotEmpty()) {
-                        val remappedPeers = enhancePeerActivity(
-                            PeerVisualMapper.map(
-                                connections = lastSamples,
-                                locationForIp = { ip -> geoRepository.cached(ip) },
-                                stateForIp = { ip -> geoRepository.stateFor(ip) },
-                                strings = strings,
-                            )
-                        )
+                        val remappedPeers = PeerVisualMapper.map(
+                            connections = lastSamples,
+                            locationForIp = { ip -> geoRepository.cached(ip) },
+                            stateForIp = { ip -> geoRepository.stateFor(ip) },
+                            strings = strings,
+                        ).map { peer ->
+                            renderPeers[peer.id]?.peer?.let { current ->
+                                peer.copy(
+                                    txMegabytesPerSecond = current.txMegabytesPerSecond,
+                                    rxMegabytesPerSecond = current.rxMegabytesPerSecond,
+                                    txActivity = current.txActivity,
+                                    rxActivity = current.rxActivity,
+                                    activityScore = current.activityScore,
+                                    activityLabel = current.activityLabel,
+                                )
+                            } ?: peer
+                        }
                         syncPeers(remappedPeers)
                         emitUiState()
                     }
@@ -273,6 +305,7 @@ class NetworkDashboardViewModel(
             }
         }.onFailure { error ->
             lastError = error.message ?: strings.readConnectionsFailed()
+            previousQueueSnapshotAtMs = null
             initialSnapshotReady = true
             markAllInactive(ClosingSide.UNKNOWN)
             emitUiState()
@@ -291,11 +324,13 @@ class NetworkDashboardViewModel(
                         visibility = 0f,
                         txActivity = 0f,
                         rxActivity = 0f,
+                        activityScore = 0f,
                     ),
                     visibility = 0f,
                     targetVisibility = 0f,
                     targetTxActivity = peer.txActivity,
                     targetRxActivity = peer.rxActivity,
+                    targetActivityScore = peer.activityScore,
                     appearStartedAtMs = SystemClock.uptimeMillis() + (peer.seed % 7) * 32L,
                     missingSinceMs = null,
                     missingCount = 0,
@@ -306,12 +341,14 @@ class NetworkDashboardViewModel(
                         visibility = current.visibility,
                         txActivity = current.peer.txActivity,
                         rxActivity = current.peer.rxActivity,
+                        activityScore = current.peer.activityScore,
                         closingSide = ClosingSide.NONE,
                         closeStartedAtMs = null,
                     ),
                     targetVisibility = 1f,
                     targetTxActivity = peer.txActivity,
                     targetRxActivity = peer.rxActivity,
+                    targetActivityScore = peer.activityScore,
                     pendingFadeOut = false,
                     appearStartedAtMs = current.appearStartedAtMs,
                     missingSinceMs = null,
@@ -341,6 +378,7 @@ class NetworkDashboardViewModel(
                         missingCount = 1,
                         targetTxActivity = current.targetTxActivity * 0.72f,
                         targetRxActivity = current.targetRxActivity * 0.72f,
+                        targetActivityScore = current.targetActivityScore * 0.78f,
                     )
                     return@forEach
                 }
@@ -350,6 +388,7 @@ class NetworkDashboardViewModel(
                         missingCount = nextMissingCount,
                         targetTxActivity = current.targetTxActivity * 0.72f,
                         targetRxActivity = current.targetRxActivity * 0.72f,
+                        targetActivityScore = current.targetActivityScore * 0.78f,
                     )
                     return@forEach
                 }
@@ -366,6 +405,7 @@ class NetworkDashboardViewModel(
                     targetVisibility = 1f,
                     targetTxActivity = current.targetTxActivity * 0.82f,
                     targetRxActivity = current.targetRxActivity * 0.82f,
+                    targetActivityScore = current.targetActivityScore * 0.82f,
                     pendingFadeOut = true,
                     missingSinceMs = missingSince,
                     missingCount = nextMissingCount,
@@ -388,6 +428,7 @@ class NetworkDashboardViewModel(
                 targetVisibility = 1f,
                 targetTxActivity = current.targetTxActivity * 0.82f,
                 targetRxActivity = current.targetRxActivity * 0.82f,
+                targetActivityScore = current.targetActivityScore * 0.82f,
                 pendingFadeOut = true,
                 missingSinceMs = now,
                 missingCount = CLOSE_CONFIRMATION_MISSES,
@@ -419,15 +460,18 @@ class NetworkDashboardViewModel(
             val decayFactor = if (item.peer.isActive) 1f else 0.972f
             val targetTx = if (item.peer.isActive) item.targetTxActivity else item.targetTxActivity * decayFactor
             val targetRx = if (item.peer.isActive) item.targetRxActivity else item.targetRxActivity * decayFactor
+            val targetScore = if (item.peer.isActive) item.targetActivityScore else item.targetActivityScore * decayFactor
 
             val newVisibility = stepTowards(item.visibility, item.targetVisibility, VISIBILITY_STEP)
             val newTx = stepTowards(item.peer.txActivity, targetTx, ACTIVITY_STEP)
             val newRx = stepTowards(item.peer.rxActivity, targetRx, ACTIVITY_STEP)
+            val newScore = stepTowards(item.peer.activityScore, targetScore, ACTIVITY_SCORE_STEP)
 
             val peerChanged =
                 abs(newVisibility - item.visibility) > 0.0001f ||
                     abs(newTx - item.peer.txActivity) > 0.0001f ||
                     abs(newRx - item.peer.rxActivity) > 0.0001f ||
+                    abs(newScore - item.peer.activityScore) > 0.0001f ||
                     item !== entry.value
 
             if (peerChanged) {
@@ -438,10 +482,12 @@ class NetworkDashboardViewModel(
                             visibility = newVisibility,
                             txActivity = newTx,
                             rxActivity = newRx,
+                            activityScore = newScore,
                         ),
                         visibility = newVisibility,
                         targetTxActivity = targetTx,
                         targetRxActivity = targetRx,
+                        targetActivityScore = targetScore,
                     ),
                 )
             }
@@ -506,6 +552,7 @@ class NetworkDashboardViewModel(
         val targetVisibility: Float,
         val targetTxActivity: Float,
         val targetRxActivity: Float,
+        val targetActivityScore: Float,
         val pendingFadeOut: Boolean = false,
         val appearStartedAtMs: Long = 0L,
         val missingSinceMs: Long? = null,
@@ -514,6 +561,7 @@ class NetworkDashboardViewModel(
 
     private companion object {
         private const val GEO_DB_WAIT_INTERVAL_MS = 350L
+        private const val BYTES_IN_MEGABYTE = 1024f * 1024f
         private val geoProtocols = setOf("tcp", "tcp6", "udp", "udp6")
     }
 }

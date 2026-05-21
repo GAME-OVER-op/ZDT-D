@@ -34,6 +34,8 @@ data class PeerVisual(
     val recvQueue: Long,
     val txCounterBytes: Long = 0,
     val rxCounterBytes: Long = 0,
+    val txMegabytesPerSecond: Float = 0f,
+    val rxMegabytesPerSecond: Float = 0f,
     val txActivity: Float,
     val rxActivity: Float,
     val activityScore: Float = 0f,

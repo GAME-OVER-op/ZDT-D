@@ -83,6 +83,7 @@ import com.android.zdtd.service.worldmap.model.PeerVisual
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.exp
 import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
@@ -866,6 +867,8 @@ private data class MapRouteVisual(
     val visibility: Float,
     val txActivity: Float,
     val rxActivity: Float,
+    val txMegabytesPerSecond: Float,
+    val rxMegabytesPerSecond: Float,
     val activityScore: Float,
     val closingSide: ClosingSide,
     val connectionCount: Int,
@@ -887,6 +890,8 @@ private fun buildMapRouteVisuals(peers: List<PeerVisual>): List<MapRouteVisual> 
         var maxRxActivity: Float = 0f,
         var sumTxActivity: Float = 0f,
         var sumRxActivity: Float = 0f,
+        var sumTxMegabytesPerSecond: Float = 0f,
+        var sumRxMegabytesPerSecond: Float = 0f,
         var maxActivityScore: Float = 0f,
         var sumActivityScore: Float = 0f,
         var closingSide: ClosingSide = ClosingSide.NONE,
@@ -911,6 +916,10 @@ private fun buildMapRouteVisuals(peers: List<PeerVisual>): List<MapRouteVisual> 
         group.maxRxActivity = max(group.maxRxActivity, peer.rxActivity)
         group.sumTxActivity += peer.txActivity
         group.sumRxActivity += peer.rxActivity
+        if (peer.isActive) {
+            group.sumTxMegabytesPerSecond += peer.txMegabytesPerSecond.coerceAtLeast(0f)
+            group.sumRxMegabytesPerSecond += peer.rxMegabytesPerSecond.coerceAtLeast(0f)
+        }
         group.maxActivityScore = max(group.maxActivityScore, peer.activityScore)
         group.sumActivityScore += peer.activityScore
         if (group.closingSide == ClosingSide.NONE && peer.closingSide != ClosingSide.NONE) {
@@ -933,6 +942,8 @@ private fun buildMapRouteVisuals(peers: List<PeerVisual>): List<MapRouteVisual> 
             visibility = group.visibility.coerceIn(0f, 1f),
             txActivity = (group.maxTxActivity + avgTx * 0.75f + ln(1f + count.toFloat()) * 0.035f).coerceIn(0f, 1f),
             rxActivity = (group.maxRxActivity + avgRx * 0.75f + ln(1f + count.toFloat()) * 0.035f).coerceIn(0f, 1f),
+            txMegabytesPerSecond = group.sumTxMegabytesPerSecond.coerceAtLeast(0f),
+            rxMegabytesPerSecond = group.sumRxMegabytesPerSecond.coerceAtLeast(0f),
             activityScore = (group.maxActivityScore + avgScore * 0.55f + ln(1f + count.toFloat()) * 0.040f).coerceIn(0f, 1f),
             closingSide = group.closingSide,
             connectionCount = count,
@@ -1046,6 +1057,7 @@ private class PacketEngine {
         val particles: MutableList<MutablePacket> = mutableListOf(),
         var accumulator: Float = 0f,
         var serial: Int = 0,
+        var visualMegabytesPerSecond: Float = 0f,
     )
 
     private data class PeerState(
@@ -1056,6 +1068,10 @@ private class PacketEngine {
     private val peerStates = LinkedHashMap<String, PeerState>()
     private var lastUpdateMs: Long = 0L
 
+    companion object {
+        private const val SPEED_SMOOTHING_SECONDS = 0.55f
+    }
+
     fun update(routes: List<MapRouteVisual>, nowMs: Long): Map<String, List<PacketParticle>> {
         val dt = if (lastUpdateMs == 0L) 0.016f else ((nowMs - lastUpdateMs).coerceIn(8L, 56L) / 1000f)
         lastUpdateMs = nowMs
@@ -1064,17 +1080,33 @@ private class PacketEngine {
         val result = LinkedHashMap<String, List<PacketParticle>>(routes.size)
         val activeRouteCount = routes.count { it.isActive }
         val densityScale = when {
-            activeRouteCount > 20 -> 0.56f
-            activeRouteCount > 14 -> 0.68f
-            activeRouteCount > 10 -> 0.82f
+            activeRouteCount > 20 -> 0.68f
+            activeRouteCount > 14 -> 0.78f
+            activeRouteCount > 10 -> 0.90f
             else -> 1f
         }
 
         routes.forEach { route ->
             activeIds += route.id
             val state = peerStates.getOrPut(route.id) { PeerState() }
-            updateLane(state.outbound, route = route, activity = route.txActivity, outgoing = true, dt = dt, densityScale = densityScale)
-            updateLane(state.inbound, route = route, activity = route.rxActivity, outgoing = false, dt = dt, densityScale = densityScale)
+            updateLane(
+                state.outbound,
+                route = route,
+                activity = route.txActivity,
+                targetMegabytesPerSecond = route.txMegabytesPerSecond,
+                outgoing = true,
+                dt = dt,
+                densityScale = densityScale,
+            )
+            updateLane(
+                state.inbound,
+                route = route,
+                activity = route.rxActivity,
+                targetMegabytesPerSecond = route.rxMegabytesPerSecond,
+                outgoing = false,
+                dt = dt,
+                densityScale = densityScale,
+            )
             result[route.id] = buildList {
                 state.outbound.particles.forEach { add(it.snapshot()) }
                 state.inbound.particles.forEach { add(it.snapshot()) }
@@ -1097,37 +1129,39 @@ private class PacketEngine {
         lane: LaneState,
         route: MapRouteVisual,
         activity: Float,
+        targetMegabytesPerSecond: Float,
         outgoing: Boolean,
         dt: Float,
         densityScale: Float,
     ) {
         val clampedActivity = activity.coerceIn(0f, 1f)
         val appearFactor = (route.visibility.coerceIn(0f, 1f) * 1.15f).coerceIn(0f, 1f)
-        val routeLoad = routeParticleLoad(route.connectionCount, clampedActivity)
-        val spawnRateBase = when {
-            !route.isActive -> 0f
-            clampedActivity < 0.08f -> 0.34f
-            else -> 0.38f + clampedActivity * (if (outgoing) 1.9f else 1.65f)
+        val targetSpeed = if (route.isActive) targetMegabytesPerSecond.coerceAtLeast(0f) else 0f
+        val speedAlpha = (1f - exp(-dt / SPEED_SMOOTHING_SECONDS)).coerceIn(0.04f, 0.32f)
+        lane.visualMegabytesPerSecond += (targetSpeed - lane.visualMegabytesPerSecond) * speedAlpha
+        if (!route.isActive && lane.visualMegabytesPerSecond < 0.002f) {
+            lane.visualMegabytesPerSecond = 0f
         }
-        val spawnRate = spawnRateBase * routeLoad * densityScale * (0.35f + 0.65f * appearFactor)
-        val maxParticlesBase = when {
-            clampedActivity >= 0.82f -> 4
-            clampedActivity >= 0.44f -> 3
-            clampedActivity >= 0.16f -> 2
-            else -> 1
+
+        val particleBudget = particleBudgetForMegabytesPerSecond(lane.visualMegabytesPerSecond)
+        val speedFactor = (lane.visualMegabytesPerSecond / 5f).coerceIn(0f, 1f)
+        val spawnRate = if (route.isActive && particleBudget > 0) {
+            val baseSpeed = particleSpeedBase(outgoing = outgoing, speedFactor = speedFactor, protocol = route.protocol)
+            (particleBudget * baseSpeed * 1.35f * densityScale * (0.42f + 0.58f * appearFactor))
+                .coerceIn(0.12f, 12.0f)
+        } else {
+            0f
         }
-        val maxParticles = ((maxParticlesBase + ln(1f + route.connectionCount.toFloat()) * 1.35f) * routeLoad.coerceAtMost(2.2f))
-            .roundToInt()
-            .coerceIn(1, 12)
+        val maxParticles = particleBudget
 
         lane.accumulator += spawnRate * dt
-        if (route.isActive && lane.particles.isEmpty() && lane.accumulator >= 0.42f) {
-            lane.accumulator -= 0.42f
-            lane.particles += spawnParticle(route = route, outgoing = outgoing, activity = clampedActivity, serial = lane.serial++)
+        if (route.isActive && maxParticles > 0 && lane.particles.isEmpty() && lane.accumulator >= 0.18f) {
+            lane.accumulator -= 0.18f
+            lane.particles += spawnParticle(route = route, outgoing = outgoing, activity = clampedActivity, speedFactor = speedFactor, serial = lane.serial++)
         }
         while (lane.accumulator >= 1f && lane.particles.size < maxParticles) {
             lane.accumulator -= 1f
-            lane.particles += spawnParticle(route = route, outgoing = outgoing, activity = clampedActivity, serial = lane.serial++)
+            lane.particles += spawnParticle(route = route, outgoing = outgoing, activity = clampedActivity, speedFactor = speedFactor, serial = lane.serial++)
         }
         lane.accumulator = lane.accumulator.coerceIn(0f, 1.25f)
 
@@ -1141,26 +1175,52 @@ private class PacketEngine {
         }
     }
 
-    private fun routeParticleLoad(connectionCount: Int, activity: Float): Float {
-        val countBoost = 1f + ln(1f + connectionCount.toFloat()) * 0.38f
-        val activityBoost = 0.72f + activity.coerceIn(0f, 1f) * 0.88f
-        return (countBoost * activityBoost).coerceIn(0.55f, 3.4f)
+    private fun particleBudgetForMegabytesPerSecond(megabytesPerSecond: Float): Int {
+        return when {
+            megabytesPerSecond < 0.005f -> 1
+            megabytesPerSecond < 0.025f -> 1
+            megabytesPerSecond < 0.05f -> 2
+            megabytesPerSecond < 0.25f -> 3
+            megabytesPerSecond < 0.50f -> 4
+            megabytesPerSecond < 1.00f -> 5
+            megabytesPerSecond < 1.25f -> 6
+            megabytesPerSecond < 1.50f -> 7
+            megabytesPerSecond < 1.75f -> 8
+            megabytesPerSecond < 2.00f -> 9
+            megabytesPerSecond < 2.25f -> 10
+            megabytesPerSecond < 2.50f -> 11
+            megabytesPerSecond < 2.75f -> 12
+            megabytesPerSecond < 3.00f -> 13
+            megabytesPerSecond < 3.25f -> 14
+            megabytesPerSecond < 3.50f -> 15
+            megabytesPerSecond < 3.75f -> 16
+            megabytesPerSecond < 4.00f -> 18
+            megabytesPerSecond < 4.50f -> 20
+            megabytesPerSecond < 5.00f -> 22
+            else -> 24
+        }
+    }
+
+    private fun particleSpeedBase(outgoing: Boolean, speedFactor: Float, protocol: String): Float {
+        val protocolBoost = if (protocol.startsWith("udp")) 0.015f else 0f
+        val base = if (outgoing) 0.145f else 0.125f
+        return (base + speedFactor.coerceIn(0f, 1f) * 0.115f + protocolBoost).coerceIn(0.10f, 0.36f)
     }
 
     private fun spawnParticle(
         route: MapRouteVisual,
         outgoing: Boolean,
         activity: Float,
+        speedFactor: Float,
         serial: Int,
     ): MutablePacket {
         val serialSeed = route.seed + serial * 17 + if (outgoing) 11 else 23
         val jitter = (((serialSeed % 9) - 4) * 0.0045f)
-        val protocolBoost = if (route.protocol.startsWith("udp")) 0.015f else 0f
-        val connectionBoost = (ln(1f + route.connectionCount.toFloat()) * 0.010f).coerceIn(0f, 0.045f)
-        val speed = ((if (outgoing) 0.15f else 0.13f) + activity * (if (outgoing) 0.095f else 0.082f) + protocolBoost + connectionBoost + jitter)
-            .coerceIn(0.11f, 0.36f)
-        val alpha = (0.42f + activity * 0.42f + if (outgoing) 0.06f else 0f).coerceIn(0.36f, 0.9f)
-        val scale = (0.84f + activity * 0.20f + ((serialSeed % 5) - 2) * 0.015f).coerceIn(0.76f, 1.08f)
+        val speed = (particleSpeedBase(outgoing = outgoing, speedFactor = speedFactor, protocol = route.protocol) + jitter)
+            .coerceIn(0.10f, 0.36f)
+        val speedGlow = speedFactor.coerceIn(0f, 1f)
+        val alpha = (0.34f + speedGlow * 0.42f + activity * 0.18f + if (outgoing) 0.06f else 0f).coerceIn(0.30f, 0.9f)
+        val scale = (0.78f + speedGlow * 0.24f + activity * 0.08f + ((serialSeed % 5) - 2) * 0.015f).coerceIn(0.72f, 1.10f)
         return MutablePacket(
             progress = 0f,
             speed = speed,
@@ -1525,19 +1585,40 @@ private fun DrawScope.drawPeerCluster(
     alpha: Float,
     activityScore: Float = 0f,
 ) {
-    val glowBoost = (0.82f + activityScore * 1.05f).coerceIn(0.82f, 1.95f)
+    val score = activityScore.coerceIn(0f, 1f)
+    val mediumGlow = smoothStep(((score - 0.18f) / 0.38f).coerceIn(0f, 1f))
+    val hotGlow = smoothStep(((score - 0.58f) / 0.42f).coerceIn(0f, 1f))
+    val baseGlowAlpha = (0.20f * alpha + 0.08f * alpha * score).coerceIn(0f, 0.34f)
+    val mediumGlowAlpha = (0.18f * alpha * mediumGlow).coerceIn(0f, 0.24f)
+    val hotGlowAlpha = (0.16f * alpha * hotGlow).coerceIn(0f, 0.22f)
+
     drawCircle(
-        color = Color(0x22FF4A42).copy(alpha = (0.34f * alpha * glowBoost).coerceAtMost(1f)),
-        radius = 2.9f + pulse * 0.55f + activityScore * 2.1f,
+        color = Color(0x22FF4A42).copy(alpha = baseGlowAlpha),
+        radius = 2.8f + pulse * 0.42f + score * 0.95f,
         center = center,
     )
+    if (mediumGlowAlpha > 0.01f) {
+        drawCircle(
+            color = Color(0x33FF5A52).copy(alpha = mediumGlowAlpha),
+            radius = 4.2f + pulse * 0.55f + mediumGlow * 1.7f,
+            center = center,
+        )
+    }
+    if (hotGlowAlpha > 0.01f) {
+        drawCircle(
+            color = Color(0x38FF2D2D).copy(alpha = hotGlowAlpha),
+            radius = 6.1f + pulse * 0.75f + hotGlow * 2.4f,
+            center = center,
+        )
+    }
 
+    val dotGlowBoost = (0.92f + mediumGlow * 0.34f + hotGlow * 0.48f).coerceIn(0.92f, 1.74f)
     clusterOffsets(seed).forEachIndexed { index, offset ->
         val point = center + offset
-        val radius = 0.50f + ((seed + index) % 3) * 0.10f + activityScore * 0.20f
+        val radius = 0.50f + ((seed + index) % 3) * 0.10f + score * 0.14f
         drawCircle(
-            color = Color(0x44FF7066).copy(alpha = (0.26f * alpha * glowBoost).coerceAtMost(1f)),
-            radius = radius * 1.42f,
+            color = Color(0x44FF7066).copy(alpha = (0.22f * alpha * dotGlowBoost).coerceAtMost(1f)),
+            radius = radius * (1.32f + mediumGlow * 0.16f + hotGlow * 0.22f),
             center = point,
         )
         drawCircle(

@@ -33,11 +33,11 @@ permissions:
   contents: write
 
 jobs:
-  detect_changes:
-    name: Detect build need
+  check_paths:
+    name: Check tracked changes
     runs-on: ubuntu-latest
     outputs:
-      should_build: ${{ steps.detect.outputs.should_build }}
+      paths_changed: ${{ steps.detect.outputs.paths_changed }}
       reason: ${{ steps.detect.outputs.reason }}
 
     steps:
@@ -46,24 +46,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect changed build inputs
+      - name: Detect tracked build paths
         id: detect
         env:
           EVENT_NAME: ${{ github.event_name }}
           BEFORE_SHA: ${{ github.event.before }}
           HEAD_SHA: ${{ github.sha }}
-          FORCE_PHRASE: auto run compile
         run: |
           set -euo pipefail
 
-          should_build=false
-          reason="No build-related changes detected"
+          paths_changed=false
+          reason="No tracked build paths changed"
           changed_files=""
-          commit_messages=""
 
           if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            should_build=true
-            reason="Manual workflow_dispatch run"
+            reason="Manual workflow_dispatch run; path check is bypassed by build gate"
           else
             base="$BEFORE_SHA"
             head="$HEAD_SHA"
@@ -78,25 +75,20 @@ jobs:
 
             if [[ -n "$base" ]]; then
               changed_files="$(git diff --name-only "$base" "$head" || true)"
-              commit_messages="$(git log --format=%B "${base}..${head}" || true)"
             else
               changed_files="$(git diff-tree --no-commit-id --name-only -r "$head" || true)"
-              commit_messages="$(git log -1 --format=%B "$head" || true)"
             fi
 
-            if printf '%s\n' "$commit_messages" | grep -qiF "$FORCE_PHRASE"; then
-              should_build=true
-              reason="Commit message contains '$FORCE_PHRASE'"
-            elif printf '%s\n' "$changed_files" | grep -Eq '^(application/|zygisk/|rust/|module_template/|prebuilt/|module\.prop$)'; then
-              should_build=true
-              reason="Build-related files changed"
+            if printf '%s\n' "$changed_files" | grep -Eq '^(application/|zygisk/|rust/|module_template/|prebuilt/|module\.prop$)'; then
+              paths_changed=true
+              reason="Tracked build paths changed"
             fi
           fi
 
           {
-            echo "### ZDT-D build gate"
+            echo "### Check tracked changes"
             echo
-            echo "Should build: \`$should_build\`"
+            echo "Paths changed: \`$paths_changed\`"
             echo "Reason: $reason"
             echo
             echo "Tracked paths:"
@@ -106,8 +98,6 @@ jobs:
             echo "- module_template/**"
             echo "- prebuilt/**"
             echo "- module.prop"
-            echo
-            echo "Force phrase: \`$FORCE_PHRASE\`"
             if [[ -n "$changed_files" ]]; then
               echo
               echo "Changed files:"
@@ -115,17 +105,15 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-          echo "should_build=$should_build" >> "$GITHUB_OUTPUT"
+          echo "paths_changed=$paths_changed" >> "$GITHUB_OUTPUT"
           echo "reason=$reason" >> "$GITHUB_OUTPUT"
 
-          echo "should_build=$should_build"
-          echo "reason=$reason"
-
-  build:
-    name: Build module + APK
+  check_force_phrase:
+    name: Check manual compile phrase
     runs-on: ubuntu-latest
-    needs: detect_changes
-    if: needs.detect_changes.outputs.should_build == 'true'
+    outputs:
+      force_compile: ${{ steps.detect.outputs.force_compile }}
+      reason: ${{ steps.detect.outputs.reason }}
 
     steps:
       - name: Checkout repository
@@ -133,59 +121,130 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Mark build start time
-        run: echo "BUILD_START_TS=$(date +%s)" >> "$GITHUB_ENV"
-
-      - name: Read version from module.prop
-        id: version
+      - name: Detect force phrase
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+          FORCE_PHRASE: auto run compile
         run: |
-          VERSION_CODE=$(grep -m1 '^versionCode=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')
-          VERSION_NAME=$(grep -m1 '^version=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')
+          set -euo pipefail
 
-          if [[ -z "$VERSION_CODE" ]]; then
-            echo "::error::versionCode dont found in module.prop"
-            exit 1
-          fi
+          force_compile=false
+          reason="Force phrase not found"
+          commit_messages=""
 
-          if [[ -n "$VERSION_NAME" ]]; then
-            TAG="v${VERSION_NAME}-build${VERSION_CODE}"
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            reason="Manual workflow_dispatch run; force phrase check is bypassed by build gate"
           else
-            TAG="v${VERSION_CODE}"
+            base="$BEFORE_SHA"
+            head="$HEAD_SHA"
+
+            if [[ -z "$base" || "$base" =~ ^0+$ ]] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+              if git rev-parse "${head}^" >/dev/null 2>&1; then
+                base="$(git rev-parse "${head}^")"
+              else
+                base=""
+              fi
+            fi
+
+            if [[ -n "$base" ]]; then
+              commit_messages="$(git log --format=%B "${base}..${head}" || true)"
+            else
+              commit_messages="$(git log -1 --format=%B "$head" || true)"
+            fi
+
+            if printf '%s\n' "$commit_messages" | grep -qiF "$FORCE_PHRASE"; then
+              force_compile=true
+              reason="Commit message contains '$FORCE_PHRASE'"
+            fi
           fi
 
-          echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
-          echo "version_name=$VERSION_NAME"  >> $GITHUB_OUTPUT
-          echo "tag=$TAG"                    >> $GITHUB_OUTPUT
-          echo "Version: code=$VERSION_CODE name=$VERSION_NAME → tag=$TAG"
+          {
+            echo "### Check manual compile phrase"
+            echo
+            echo "Force compile: \`$force_compile\`"
+            echo "Reason: $reason"
+            echo
+            echo "Force phrase: \`$FORCE_PHRASE\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Check existing tag
-        id: tag_check
+          echo "force_compile=$force_compile" >> "$GITHUB_OUTPUT"
+          echo "reason=$reason" >> "$GITHUB_OUTPUT"
+
+  build_gate:
+    name: ZDT-D build gate
+    runs-on: ubuntu-latest
+    needs:
+      - check_paths
+      - check_force_phrase
+    outputs:
+      should_build: ${{ steps.gate.outputs.should_build }}
+      reason: ${{ steps.gate.outputs.reason }}
+      build_start_ts: ${{ steps.gate.outputs.build_start_ts }}
+
+    steps:
+      - name: Decide whether to compile
+        id: gate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PATHS_CHANGED: ${{ needs.check_paths.outputs.paths_changed }}
+          FORCE_COMPILE: ${{ needs.check_force_phrase.outputs.force_compile }}
+          PATH_REASON: ${{ needs.check_paths.outputs.reason }}
+          FORCE_REASON: ${{ needs.check_force_phrase.outputs.reason }}
         run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
-            echo "exists=true"  >> $GITHUB_OUTPUT
-            echo "Tag $TAG already exist — recreate"
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "New tag $TAG."
+          set -euo pipefail
+
+          should_build=false
+          reason="No build-related changes detected"
+
+          if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            should_build=true
+            reason="Manual workflow_dispatch run"
+          elif [[ "$FORCE_COMPILE" == "true" ]]; then
+            should_build=true
+            reason="$FORCE_REASON"
+          elif [[ "$PATHS_CHANGED" == "true" ]]; then
+            should_build=true
+            reason="$PATH_REASON"
           fi
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+          build_start_ts="$(date +%s)"
+
+          {
+            echo "### ZDT-D build gate"
+            echo
+            echo "Should build: \`$should_build\`"
+            echo "Reason: $reason"
+            echo
+            echo "Inputs:"
+            echo "- Tracked paths changed: \`$PATHS_CHANGED\`"
+            echo "- Force phrase matched: \`$FORCE_COMPILE\`"
+            echo "- Event: \`$EVENT_NAME\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "should_build=$should_build" >> "$GITHUB_OUTPUT"
+          echo "reason=$reason" >> "$GITHUB_OUTPUT"
+          echo "build_start_ts=$build_start_ts" >> "$GITHUB_OUTPUT"
+
+          echo "should_build=$should_build"
+          echo "reason=$reason"
+
+  build_zdtd:
+    name: Compile zdtd daemon
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
         with:
-          distribution: temurin
-          java-version: '17'
+          fetch-depth: 0
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
-        run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-${{ env.ANDROID_API_LEVEL }}" \
-            "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}"
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -196,6 +255,7 @@ jobs:
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
           sdkmanager "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
@@ -226,55 +286,35 @@ jobs:
           } >> "$GITHUB_ENV"
 
           mkdir -p ~/.cargo
-          cat >> ~/.cargo/config.toml <<EOF
+          cat >> ~/.cargo/config.toml <<EOF2
           [target.aarch64-linux-android]
           linker = "$ANDROID_CC"
           ar = "$ANDROID_AR"
-          EOF
+          EOF2
 
-      - name: Verify Android Rust cross toolchain
-        run: |
-          set -euo pipefail
-          echo "NDK_ROOT=$NDK_ROOT"
-          echo "CC_aarch64_linux_android=$CC_aarch64_linux_android"
-          echo "AR_aarch64_linux_android=$AR_aarch64_linux_android"
-          "$CC_aarch64_linux_android" --version | head -1
-          "$AR_aarch64_linux_android" --version | head -1
-          rustc --print target-list | grep -qx '${{ env.CARGO_BUILD_TARGET }}'
-          cargo -V
-          rustc -V
-
-      - name: Setup Gradle ${{ env.GRADLE_VERSION }}
-        uses: gradle/actions/setup-gradle@v5
-        with:
-          gradle-version: ${{ env.GRADLE_VERSION }}
-          cache-read-only: false
-
-      - name: Cache Cargo registry & build
+      - name: Cache Cargo registry & zdtd build
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: cargo-aarch64-linux-android-${{ hashFiles('rust/**/Cargo.lock') }}
+          key: cargo-zdtd-aarch64-linux-android-${{ hashFiles('rust/**/Cargo.lock') }}
           restore-keys: |
+            cargo-zdtd-aarch64-linux-android-
             cargo-aarch64-linux-android-
 
-      - name: Check prebuilt binaries
+      - name: Verify Android Rust cross toolchain
         run: |
-          REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg)
-          MISSING=()
-          for bin in "${REQUIRED[@]}"; do
-            [[ -f "prebuilt/bin/arm64-v8a/$bin" ]] || MISSING+=("$bin")
-          done
-          if [[ ${#MISSING[@]} -gt 0 ]]; then
-            echo "::error::Binaries doesn't exist: ${MISSING[*]}"
-            exit 1
-          fi
-          echo "All binaries found"
+          set -euo pipefail
+          echo "NDK_ROOT=$NDK_ROOT"
+          "$CC_aarch64_linux_android" --version | head -1
+          "$AR_aarch64_linux_android" --version | head -1
+          rustc --print target-list | grep -qx '${{ env.CARGO_BUILD_TARGET }}'
+          cargo -V
+          rustc -V
 
-      - name: Build zdtd (Rust, aarch64-linux-android)
+      - name: Build zdtd
         working-directory: rust/zdtd
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
@@ -285,7 +325,98 @@ jobs:
           RUSTC_WRAPPER: ""
         run: cargo build --profile ${{ env.CARGO_PROFILE }} --target ${{ env.CARGO_BUILD_TARGET }}
 
-      - name: Build t2s (Rust, aarch64-linux-android)
+      - name: Upload zdtd binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: zdtd-daemon
+          path: rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}/zdtd
+          retention-days: 1
+          archive: false
+
+  build_t2s:
+    name: Compile t2s proxy
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install Android NDK cross-linker
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          ANDROID_CC="$NDK_BIN/aarch64-linux-android21-clang"
+          ANDROID_CXX="$NDK_BIN/aarch64-linux-android21-clang++"
+          ANDROID_AR="$NDK_BIN/llvm-ar"
+          ANDROID_RANLIB="$NDK_BIN/llvm-ranlib"
+
+          test -x "$ANDROID_CC" || { echo "::error::Android C compiler not found: $ANDROID_CC"; exit 1; }
+          test -x "$ANDROID_CXX" || { echo "::error::Android C++ compiler not found: $ANDROID_CXX"; exit 1; }
+          test -x "$ANDROID_AR" || { echo "::error::Android archiver not found: $ANDROID_AR"; exit 1; }
+          test -x "$ANDROID_RANLIB" || { echo "::error::Android ranlib not found: $ANDROID_RANLIB"; exit 1; }
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_CC"
+            echo "CC_aarch64_linux_android=$ANDROID_CC"
+            echo "CXX_aarch64_linux_android=$ANDROID_CXX"
+            echo "AR_aarch64_linux_android=$ANDROID_AR"
+            echo "RANLIB_aarch64_linux_android=$ANDROID_RANLIB"
+          } >> "$GITHUB_ENV"
+
+          mkdir -p ~/.cargo
+          cat >> ~/.cargo/config.toml <<EOF2
+          [target.aarch64-linux-android]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
+          EOF2
+
+      - name: Cache Cargo registry & t2s build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-t2s-aarch64-linux-android-${{ hashFiles('rust/**/Cargo.lock') }}
+          restore-keys: |
+            cargo-t2s-aarch64-linux-android-
+            cargo-aarch64-linux-android-
+
+      - name: Verify Android Rust cross toolchain
+        run: |
+          set -euo pipefail
+          echo "NDK_ROOT=$NDK_ROOT"
+          "$CC_aarch64_linux_android" --version | head -1
+          "$AR_aarch64_linux_android" --version | head -1
+          rustc --print target-list | grep -qx '${{ env.CARGO_BUILD_TARGET }}'
+          cargo -V
+          rustc -V
+
+      - name: Build t2s
         working-directory: rust/T2s
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
@@ -296,7 +427,45 @@ jobs:
           RUSTC_WRAPPER: ""
         run: cargo build --profile ${{ env.CARGO_PROFILE }} --target ${{ env.CARGO_BUILD_TARGET }}
 
-      - name: Build Zygisk (arm64-v8a)
+      - name: Upload t2s binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: t2s-proxy
+          path: rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}/t2s
+          retention-days: 1
+          archive: false
+
+  build_zygisk:
+    name: Compile Zygisk module
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          echo "NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
+
+      - name: Build Zygisk arm64-v8a
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
@@ -315,14 +484,74 @@ jobs:
             exit 1
           fi
 
-      - name: Pack Magisk module (zdt_module.zip)
+      - name: Upload Zygisk binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: zygisk-arm64
+          path: out/zygisk/arm64-v8a.so
+          retention-days: 1
+          archive: false
+
+  pack_module:
+    name: Pack ZDT-D module
+    runs-on: ubuntu-latest
+    needs:
+      - build_zdtd
+      - build_t2s
+      - build_zygisk
+    if: needs.build_zdtd.result == 'success' && needs.build_t2s.result == 'success' && needs.build_zygisk.result == 'success'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download zdtd binary
+        uses: actions/download-artifact@v7
+        with:
+          name: zdtd-daemon
+          path: out/artifacts/zdtd
+
+      - name: Download t2s binary
+        uses: actions/download-artifact@v7
+        with:
+          name: t2s-proxy
+          path: out/artifacts/t2s
+
+      - name: Download Zygisk binary
+        uses: actions/download-artifact@v7
+        with:
+          name: zygisk-arm64
+          path: out/zygisk
+
+      - name: Check prebuilt binaries
+        run: |
+          REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg)
+          MISSING=()
+          for bin in "${REQUIRED[@]}"; do
+            [[ -f "prebuilt/bin/arm64-v8a/$bin" ]] || MISSING+=("$bin")
+          done
+          if [[ ${#MISSING[@]} -gt 0 ]]; then
+            echo "::error::Binaries doesn't exist: ${MISSING[*]}"
+            exit 1
+          fi
+          echo "All binaries found"
+
+      - name: Pack Magisk module archive
         run: |
           set -euo pipefail
 
           MODULE_BUILD_DIR="out/module_build/module_root"
           MODULE_ZIP="out/module/zdt_module.zip"
           PREBUILT="prebuilt/bin/arm64-v8a"
-          CARGO_OUT="rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}"
+          ZDTD_BIN="out/artifacts/zdtd/zdtd"
+          T2S_BIN="out/artifacts/t2s/t2s"
+          ZYGISK_SO="out/zygisk/arm64-v8a.so"
+
+          test -s "$ZDTD_BIN" || { echo "::error::zdtd artifact missing: $ZDTD_BIN"; exit 1; }
+          test -s "$T2S_BIN" || { echo "::error::t2s artifact missing: $T2S_BIN"; exit 1; }
+          test -s "$ZYGISK_SO" || { echo "::error::Zygisk artifact missing: $ZYGISK_SO"; exit 1; }
 
           rm -rf out/module_build
           mkdir -p "$MODULE_BUILD_DIR" out/module
@@ -335,10 +564,10 @@ jobs:
           rm -f "$MODULE_BUILD_DIR/zygisk/unloaded" 2>/dev/null || true
 
           mkdir -p "$MODULE_BUILD_DIR/bin" "$MODULE_BUILD_DIR/zygisk"
-          cp -f "out/zygisk/arm64-v8a.so" "$MODULE_BUILD_DIR/zygisk/arm64-v8a.so" && chmod 644 "$MODULE_BUILD_DIR/zygisk/arm64-v8a.so"
+          cp -f "$ZYGISK_SO" "$MODULE_BUILD_DIR/zygisk/arm64-v8a.so" && chmod 644 "$MODULE_BUILD_DIR/zygisk/arm64-v8a.so"
 
-          cp -f "$CARGO_OUT/zdtd" "$MODULE_BUILD_DIR/bin/zdtd" && chmod 755 "$MODULE_BUILD_DIR/bin/zdtd"
-          cp -f "$CARGO_OUT/t2s"  "$MODULE_BUILD_DIR/bin/t2s"  && chmod 755 "$MODULE_BUILD_DIR/bin/t2s"
+          cp -f "$ZDTD_BIN" "$MODULE_BUILD_DIR/bin/zdtd" && chmod 755 "$MODULE_BUILD_DIR/bin/zdtd"
+          cp -f "$T2S_BIN"  "$MODULE_BUILD_DIR/bin/t2s"  && chmod 755 "$MODULE_BUILD_DIR/bin/t2s"
 
           for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg; do
             cp -f "$PREBUILT/$bin" "$MODULE_BUILD_DIR/bin/$bin" && chmod 755 "$MODULE_BUILD_DIR/bin/$bin"
@@ -354,7 +583,56 @@ jobs:
             exit 1
           fi
 
-          echo "MODULE_ZIP=$MODULE_ZIP" >> $GITHUB_ENV
+          ls -lh "$MODULE_ZIP"
+
+      - name: Upload module archive
+        uses: actions/upload-artifact@v7
+        with:
+          name: zdt-module-zip
+          path: out/module/zdt_module.zip
+          retention-days: 1
+          archive: false
+
+  build_apk:
+    name: Build Android application
+    runs-on: ubuntu-latest
+    needs: pack_module
+    if: needs.pack_module.result == 'success'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-${{ env.ANDROID_API_LEVEL }}" \
+            "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}"
+
+      - name: Setup Gradle ${{ env.GRADLE_VERSION }}
+        uses: gradle/actions/setup-gradle@v5
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          cache-read-only: false
+
+      - name: Download module archive
+        uses: actions/download-artifact@v7
+        with:
+          name: zdt-module-zip
+          path: out/module
 
       - name: Locate Android project root
         run: |
@@ -368,6 +646,7 @@ jobs:
           GRADLE_PROJECT_DIR=$(dirname "$SETTINGS")
           echo "GRADLE_PROJECT_DIR=$GRADLE_PROJECT_DIR" >> $GITHUB_ENV
           echo "Android project root: $GRADLE_PROJECT_DIR"
+          test -s out/module/zdt_module.zip || { echo "::error::Downloaded module zip is missing"; exit 1; }
 
       - name: Write local.properties & keystore config
         run: |
@@ -394,7 +673,7 @@ jobs:
             echo "keyPassword=android"
           } > "$GRADLE_PROJECT_DIR/keystore.properties"
 
-      - name: Build APK (assemble${{ env.BUILD_TYPE }})
+      - name: Build APK assemble${{ env.BUILD_TYPE }}
         working-directory: ${{ env.GRADLE_PROJECT_DIR }}
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
@@ -413,22 +692,51 @@ jobs:
           APK=$(find "$GRADLE_PROJECT_DIR" -path '*/build/outputs/apk/*.apk' | sort | tail -1)
           [[ -n "$APK" ]] || { echo "::error::APK does not exist"; exit 1; }
 
-          cp -f "$APK"        out/dist/app-release.apk
-          cp -f "$MODULE_ZIP" out/dist/zdt_module.zip
+          cp -f "$APK" out/dist/app-release.apk
+          cp -f out/module/zdt_module.zip out/dist/zdt_module.zip
 
           ls -lh out/dist/
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v7
         with:
+          name: zdt-apk
           path: out/dist/app-release.apk
           retention-days: 30
           archive: false
 
+      - name: Upload module artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: zdt-module-final
+          path: out/dist/zdt_module.zip
+          retention-days: 30
+          archive: false
+
+  publish_service:
+    name: Publish service build
+    runs-on: ubuntu-latest
+    needs:
+      - build_gate
+      - build_apk
+    if: github.ref == 'refs/heads/main' && needs.build_apk.result == 'success'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: zdt-apk
+          path: out/dist
+
       - name: Publish service release
-        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
+          BUILD_START_TS: ${{ needs.build_gate.outputs.build_start_ts }}
         run: |
           set -euo pipefail
 
@@ -439,6 +747,17 @@ jobs:
 
           test -s "$APK_SOURCE" || { echo "::error::APK does not exist: $APK_SOURCE"; exit 1; }
           cp -f "$APK_SOURCE" "$APK_RELEASE"
+
+          VERSION_CODE=$(grep -m1 '^versionCode=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')
+          VERSION_NAME=$(grep -m1 '^version=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')
+
+          if [[ -z "$VERSION_CODE" ]]; then
+            echo "::error::versionCode dont found in module.prop"
+            exit 1
+          fi
+          if [[ -z "$VERSION_NAME" ]]; then
+            VERSION_NAME="unknown"
+          fi
 
           BUILD_END_TS="$(date +%s)"
           BUILD_START_TS="${BUILD_START_TS:-$BUILD_END_TS}"
@@ -453,13 +772,7 @@ jobs:
           SHORT_SHA="$(git rev-parse --short=7 HEAD)"
           REPO_URL="https://github.com/${{ github.repository }}"
           RUN_URL="${REPO_URL}/actions/runs/${{ github.run_id }}"
-          VERSION_CODE="${{ steps.version.outputs.version_code }}"
-          VERSION_NAME="${{ steps.version.outputs.version_name }}"
           BUILD_TYPE="${{ env.BUILD_TYPE }}"
-
-          if [[ -z "$VERSION_NAME" ]]; then
-            VERSION_NAME="unknown"
-          fi
 
           PREV_SHA=""
           if git ls-remote --exit-code --tags origin "refs/tags/${SERVICE_TAG}" >/dev/null 2>&1; then
@@ -485,7 +798,7 @@ jobs:
             CHANGELOG="- Initial service build for this technical release."
           fi
 
-          cat > release_notes.md <<EOF
+          cat > release_notes.md <<EOF2
           # ZDT-D Service Build
 
           This is an automatically generated technical build produced by GitHub Actions.
@@ -522,7 +835,7 @@ jobs:
           To install this service build, first remove the ZDT-D application installed from the main release, then install the APK attached to this service build.
 
           The module itself is installed and updated from inside the application by the universal installer for Magisk, KernelSU, APatch, and compatible managers.
-          EOF
+          EOF2
 
           sed -i 's/^          //' release_notes.md
 

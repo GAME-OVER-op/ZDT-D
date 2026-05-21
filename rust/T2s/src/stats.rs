@@ -615,6 +615,63 @@ impl SocksBackends {
         0
     }
 
+    /// In priority mode, returns all configured backends from priority groups below
+    /// the group that contains `restored_backend`.
+    ///
+    /// This is used when a higher-priority backend recovers: existing connections
+    /// pinned to lower-priority fallback backends must be cancelled so clients
+    /// reconnect through the preferred group.
+    pub fn lower_priority_backend_addrs_after(&self, restored_backend: SocketAddr) -> Vec<SocketAddr> {
+        if self.backend_mode != BackendMode::Priority {
+            return Vec::new();
+        }
+
+        let restored_port = restored_backend.port();
+        let Some(group_idx) = self.priority_groups
+            .iter()
+            .position(|group| group.contains(&restored_port))
+        else {
+            return Vec::new();
+        };
+
+        let lower_ports: Vec<u16> = self.priority_groups
+            .iter()
+            .skip(group_idx + 1)
+            .flat_map(|group| group.iter().copied())
+            .collect();
+
+        if lower_ports.is_empty() {
+            return Vec::new();
+        }
+
+        self.addrs
+            .iter()
+            .copied()
+            .filter(|addr| lower_ports.contains(&addr.port()))
+            .collect()
+    }
+
+    /// Returns all configured backends that are currently not effectively GREEN.
+    ///
+    /// This is a safety net for established SOCKS connections: even if a backend
+    /// health transition was missed or happened before a connection was fully
+    /// registered as established, proxy_enforce_loop can still cancel connections
+    /// pinned to non-working backends. In balance mode this respects the existing
+    /// protector_mode behavior; in priority mode protector_mode is already ignored
+    /// by protector_mode_enabled().
+    pub fn non_green_backend_addrs(&self) -> Vec<SocketAddr> {
+        if self.protector_mode_enabled() {
+            return Vec::new();
+        }
+
+        self.addrs
+            .iter()
+            .enumerate()
+            .filter(|(idx, _)| self.status.get(*idx).map(|s| s.state != BackendState::Green).unwrap_or(true))
+            .map(|(_, addr)| *addr)
+            .collect()
+    }
+
     pub fn len(&self) -> usize { self.addrs.len() }
     pub fn addr_at(&self, idx: usize) -> Option<SocketAddr> { self.addrs.get(idx).copied() }
 
@@ -770,6 +827,18 @@ impl SocksBackends {
             return Some(BackendState::Green);
         }
         self.status.get(idx).map(|s| s.state)
+    }
+
+    /// Returns the real probed backend state without protector-mode overrides.
+    pub fn raw_state_at(&self, idx: usize) -> Option<BackendState> {
+        self.status.get(idx).map(|s| s.state)
+    }
+
+    pub fn raw_state_for_addr(&self, addr: SocketAddr) -> Option<BackendState> {
+        self.addrs
+            .iter()
+            .position(|a| *a == addr)
+            .and_then(|idx| self.raw_state_at(idx))
     }
 
     pub fn last_full_probe_at(&self, idx: usize) -> Option<u64> {
@@ -1460,6 +1529,21 @@ impl ConnRegistry {
         n
     }
 
+    /// Cancels established SOCKS connections pinned to a backend that just became unhealthy.
+    /// Pending/connecting attempts are intentionally left alone so they can retry another backend.
+    pub fn kill_backend(&self, backend: SocketAddr) -> usize {
+        let backend = backend.to_string();
+        let mut n = 0usize;
+        let g = self.inner.lock();
+        for (info, token) in g.values() {
+            if info.mode.as_deref() == Some("socks") && info.backend.as_deref() == Some(backend.as_str()) {
+                token.cancel();
+                n += 1;
+            }
+        }
+        n
+    }
+
     /// Cancels connections that are stuck in SOCKS mode and have not transferred any bytes.
     /// Useful after connectivity blips where some clients keep a half-open socket.
     pub fn kill_stuck_socks_zero_traffic(&self, older_than_secs: u64) -> usize {
@@ -1735,7 +1819,20 @@ async fn refresh_backend_index_once(
     let mut b = state.backends.lock();
     let before_any_healthy = b.any_healthy();
     let before_any_green = b.any_green();
+    let before_state = b.raw_state_at(idx);
     let changed = b.update(idx, socks_ping_ms.is_some(), err, socks_ping_ms, internet_ping_ms, ttl, probe_mode == ProbeMode::Full);
+    let after_state = b.raw_state_at(idx);
+    let kill_unhealthy_backend = changed
+        && before_state == Some(BackendState::Green)
+        && after_state != Some(BackendState::Green);
+    let lower_priority_backends_to_kill = if changed
+        && before_state != Some(BackendState::Green)
+        && after_state == Some(BackendState::Green)
+    {
+        b.lower_priority_backend_addrs_after(backend)
+    } else {
+        Vec::new()
+    };
     let after_any_healthy = b.any_healthy();
     let after_any_green = b.any_green();
     let after_any_yellow = b.any_yellow();
@@ -1752,6 +1849,31 @@ async fn refresh_backend_index_once(
         && (before_any_green || !before_any_healthy || probe_mode == ProbeMode::Full);
     let wake_backend = changed && should_wake_backend_loops(before_any_healthy, after_any_healthy, before_any_green, after_any_green);
     drop(b);
+    if kill_unhealthy_backend {
+        let killed = state.conns.kill_backend(backend);
+        if killed > 0 {
+            tracing::info!(
+                "backend {} became unhealthy ({:?} -> {:?}); cancelled {} pinned SOCKS connections",
+                backend,
+                before_state,
+                after_state,
+                killed
+            );
+        }
+    }
+    for lower_backend in lower_priority_backends_to_kill {
+        let killed = state.conns.kill_backend(lower_backend);
+        if killed > 0 {
+            tracing::info!(
+                "priority backend {} recovered ({:?} -> {:?}); cancelled {} lower-priority SOCKS connections on {}",
+                backend,
+                before_state,
+                after_state,
+                killed,
+                lower_backend
+            );
+        }
+    }
     if wake_backend {
         state.runtime.backend_wake_throttled(750);
     }
@@ -1978,6 +2100,7 @@ pub async fn backend_health_loop(state: crate::AppState) {
         let has_direct = state.conns.has_mode("direct");
         let connecting_now = state.conns.count_modes(&["pending", "wait_backend", "socks_connecting"]);
         let urgent_work = has_direct || connecting_now > 0;
+        let priority_active_refresh = state.args.backend_mode == BackendMode::Priority && active > 0;
         let idle_without_work = !ui_open && !urgent_work && quiet_for >= Duration::from_secs(60);
         let deep_idle = !ui_open && active == 0 && quiet_for >= Duration::from_secs(3 * 60);
         let quiet_lingering_only = idle_without_work && active > 0;
@@ -2006,10 +2129,14 @@ pub async fn backend_health_loop(state: crate::AppState) {
             applied_cadence = current_desired;
         }
 
-        let allow_refresh = ui_open || had_traffic || urgent_work || quiet_for < Duration::from_secs(2 * 60);
+        let allow_refresh = ui_open
+            || had_traffic
+            || urgent_work
+            || quiet_for < Duration::from_secs(2 * 60)
+            || priority_active_refresh;
         if allow_refresh {
             let green_available = state.backends.lock().any_green();
-            let refresh_mode = if force_full_sweep || !green_available || woke_from_quiet {
+            let refresh_mode = if priority_active_refresh || force_full_sweep || !green_available || woke_from_quiet {
                 HealthRefreshMode::FullSweep
             } else {
                 HealthRefreshMode::RoundRobinOne
@@ -2025,7 +2152,24 @@ pub async fn backend_health_loop(state: crate::AppState) {
             force_full_sweep = false;
         }
 
-        let interval = if deep_idle {
+        let priority_active_interval = if priority_active_refresh {
+            // Priority mode needs quicker recovery detection while clients are active:
+            // a higher-priority backend coming back should move traffic back promptly.
+            // Keep the active polling bounded between 15 and 60 seconds.
+            if urgent_work || had_traffic || quiet_for < Duration::from_secs(30) {
+                Some(Duration::from_secs(15))
+            } else if quiet_for < Duration::from_secs(2 * 60) {
+                Some(Duration::from_secs(30))
+            } else {
+                Some(Duration::from_secs(60))
+            }
+        } else {
+            None
+        };
+
+        let interval = if let Some(priority_interval) = priority_active_interval {
+            priority_interval
+        } else if deep_idle {
             // In deep idle, avoid periodic network probes entirely.
             // Wake on backend-state changes / first new connection, and keep only
             // a very rare safety tick so phones can actually sleep.
@@ -2116,7 +2260,8 @@ async fn first_successful_probe(
 
 pub async fn proxy_enforce_loop(state: crate::AppState) {
     // Kill stale connections that got established in DIRECT mode while there were no GREEN backends,
-    // so clients will reconnect through SOCKS as soon as backends recover.
+    // and cancel SOCKS connections that are still pinned to non-GREEN backends.
+    // This makes clients reconnect through the current live backend set.
     let mut had_green = false;
 
     let mut idle_since: Option<tokio::time::Instant> = None;
@@ -2146,9 +2291,18 @@ pub async fn proxy_enforce_loop(state: crate::AppState) {
             && connecting_now == 0
             && quiet_for >= Duration::from_secs(60);
         let deep_idle = ui == 0 && active == 0 && quiet_for >= Duration::from_secs(3 * 60);
-        let green = if deep_idle { false } else { state.backends.lock().any_green() };
+        let (green, non_green_backends) = if deep_idle {
+            (false, Vec::new())
+        } else {
+            let b = state.backends.lock();
+            let green = b.any_green();
+            let non_green_backends = if active > 0 { b.non_green_backend_addrs() } else { Vec::new() };
+            (green, non_green_backends)
+        };
+        let has_non_green_backends = !non_green_backends.is_empty();
         let recovery_edge = !had_green && green;
-        let needs_enforce = !deep_idle && (has_direct || connecting_now > 0 || recovery_edge);
+        let needs_enforce = !deep_idle
+            && (has_direct || connecting_now > 0 || recovery_edge || has_non_green_backends);
 
         if needs_enforce {
             // Safety net: if any DIRECT connections exist while GREEN backends are available,
@@ -2165,6 +2319,19 @@ pub async fn proxy_enforce_loop(state: crate::AppState) {
                 let killed_stuck = state.conns.kill_stuck_socks_zero_traffic(15);
                 if killed_stuck > 0 {
                     tracing::info!("proxy enforce: cancelled {} stuck SOCKS connections after recovery", killed_stuck);
+                }
+            }
+
+            if has_non_green_backends {
+                for backend in &non_green_backends {
+                    let killed_backend = state.conns.kill_backend(*backend);
+                    if killed_backend > 0 {
+                        tracing::info!(
+                            "proxy enforce: cancelled {} SOCKS connections pinned to non-GREEN backend {}",
+                            killed_backend,
+                            backend
+                        );
+                    }
                 }
             }
 

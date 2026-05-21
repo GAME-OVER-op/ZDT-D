@@ -861,13 +861,29 @@ async fn connect_socks(
                 state.stats.inc_socks_fail();
                 let err_text = format!("{:#}", e);
                 let mut b = state.backends.lock();
+                let before_state = b.raw_state_for_addr(backend);
                 let wake_backend = if let Some(inflight) = b.inflight_connects(backend) {
                     let prefix = if is_soft_backend_failure(&err_text) { "soft runtime failure" } else { "runtime failure" };
                     b.mark_backend_failed(backend, format!("{}: {} (inflight={})", prefix, err_text, inflight))
                 } else {
                     b.mark_backend_failed(backend, err_text)
                 };
+                let after_state = b.raw_state_for_addr(backend);
+                let kill_unhealthy_backend = before_state == Some(stats::BackendState::Green)
+                    && after_state != Some(stats::BackendState::Green);
                 drop(b);
+                if kill_unhealthy_backend {
+                    let killed = state.conns.kill_backend(backend);
+                    if killed > 0 {
+                        tracing::info!(
+                            "backend {} failed at runtime ({:?} -> {:?}); cancelled {} pinned SOCKS connections",
+                            backend,
+                            before_state,
+                            after_state,
+                            killed
+                        );
+                    }
+                }
                 if wake_backend {
                     state.runtime.backend_wake_throttled(2500);
                 }

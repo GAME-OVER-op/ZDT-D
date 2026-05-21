@@ -136,6 +136,9 @@ Backend mode behavior:
 
 - `balance`: current/default behavior; all GREEN backends participate in round-robin balancing. ZDT-D `protector_mode` keeps its previous behavior.
 - `priority`: ports are selected by priority group. Ports separated by `,` are balanced within the same group; groups separated by `;` are fallback levels. If all backends are dead, direct fallback is used. ZDT-D `protector_mode` is ignored in this mode.
+- If any backend becomes unhealthy, active SOCKS connections pinned to it are cancelled so clients can reconnect through another live backend or direct fallback. This applies to both `balance` and `priority` modes.
+- In `priority` mode, if a higher-priority backend recovers, active connections pinned to lower-priority fallback groups are cancelled so clients can reconnect through the preferred group.
+- In `priority` mode, while there are active connections, backend health is checked more frequently with full sweeps every 15-60 seconds so recovery/fallback changes are applied faster.
 - If `--backend-mode priority` is enabled and `--backend-priority` is not specified, the `--socks-port` order is used as separate priority groups. Example: `--socks-port 1145,1146,1147` behaves like `--backend-priority "1145;1146;1147"`.
 
 ### Target selection

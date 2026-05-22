@@ -358,129 +358,65 @@ fun AppUpdateSettings(
     return
   }
 
-  // BottomSheet content may not have enough height on small screens.
-  // Make it scrollable so the Language section is always reachable.
   Column(
-    Modifier
+    modifier = Modifier
       .fillMaxWidth()
       .verticalScroll(rememberScrollState())
-      .padding(16.dp)
+      .padding(horizontal = 16.dp)
+      .padding(bottom = 22.dp),
+    verticalArrangement = Arrangement.spacedBy(14.dp),
   ) {
-    Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-    Spacer(Modifier.height(12.dp))
-    if (compactWidth) {
-      Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Column(Modifier.fillMaxWidth()) {
-          Text(stringResource(R.string.app_update_check_title), style = MaterialTheme.typography.bodyLarge)
-          Text(
-            stringResource(R.string.app_update_check_body),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-          )
-        }
-        Switch(checked = enabled, onCheckedChange = onToggle)
-      }
-    } else {
-      Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-          Text(stringResource(R.string.app_update_check_title), style = MaterialTheme.typography.bodyLarge)
-          Text(
-            stringResource(R.string.app_update_check_body),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-          )
-        }
-        Switch(checked = enabled, onCheckedChange = onToggle)
-      }
-    }
-    Spacer(Modifier.height(12.dp))
-    OutlinedButton(onClick = onCheckNow, modifier = Modifier.fillMaxWidth()) {
-      Text(stringResource(R.string.app_update_check_now))
-    }
+    SettingsHeaderCard()
 
-    Spacer(Modifier.height(18.dp))
-
-    if (compactWidth) {
-      Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Column(Modifier.fillMaxWidth()) {
-          Text(stringResource(R.string.settings_notifications_title), style = MaterialTheme.typography.bodyLarge)
-          Text(
-            stringResource(R.string.settings_notifications_body),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-          )
-        }
-        Switch(checked = daemonNotificationEnabled, onCheckedChange = onToggleDaemonNotification)
-      }
-    } else {
-      Row(
-        Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-      ) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-          Text(stringResource(R.string.settings_notifications_title), style = MaterialTheme.typography.bodyLarge)
-          Text(
-            stringResource(R.string.settings_notifications_body),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-          )
-        }
-        Switch(checked = daemonNotificationEnabled, onCheckedChange = onToggleDaemonNotification)
-      }
-    }
-
-    Spacer(Modifier.height(18.dp))
-
-    ProtectorModeSection(
-      selectedMode = protectorMode,
-      onModeSelected = onProtectorModeChange,
+    SettingsSwitchSection(
+      title = stringResource(R.string.app_update_check_title),
+      body = stringResource(R.string.app_update_check_body),
+      checked = enabled,
+      onCheckedChange = onToggle,
     )
 
-    Spacer(Modifier.height(18.dp))
-
-    HotspotT2sSection(
-      enabled = hotspotT2sEnabled,
-      target = hotspotT2sTarget,
-      singboxProfile = hotspotT2sSingboxProfile,
-      wireproxyProfile = hotspotT2sWireproxyProfile,
-      singboxProfiles = hotspotSingboxProfiles,
-      wireproxyProfiles = hotspotWireproxyProfiles,
-      compactWidth = compactWidth,
-      onEnabledChange = { checked ->
-        if (checked && !hotspotT2sEnabled) {
-          showHotspotWarning = true
-        } else {
-          onHotspotT2sEnabledChange(checked)
-        }
-      },
-      onTargetChange = onHotspotT2sTargetChange,
-      onSingboxProfileChange = onHotspotT2sSingboxProfileChange,
-      onWireproxyProfileChange = onHotspotT2sWireproxyProfileChange,
+    SettingsActionCard(
+      title = stringResource(R.string.app_update_check_now),
+      body = stringResource(R.string.app_update_check_body),
+      actionText = stringResource(R.string.app_update_check_now),
+      onClick = onCheckNow,
     )
 
-    if (showHotspotWarning) {
-      AlertDialog(
-        onDismissRequest = { showHotspotWarning = false },
-        title = { Text(stringResource(R.string.settings_hotspot_warning_title)) },
-        text = { Text(stringResource(R.string.settings_hotspot_warning_body)) },
-        dismissButton = {
-          OutlinedButton(onClick = { showHotspotWarning = false }) {
-            Text(stringResource(R.string.common_cancel))
-          }
-        },
-        confirmButton = {
-          Button(onClick = {
-            showHotspotWarning = false
-            onHotspotT2sEnabledChange(true)
-          }) {
-            Text(stringResource(R.string.settings_hotspot_warning_accept))
-          }
-        },
+    SettingsSwitchSection(
+      title = stringResource(R.string.settings_notifications_title),
+      body = stringResource(R.string.settings_notifications_body),
+      checked = daemonNotificationEnabled,
+      onCheckedChange = onToggleDaemonNotification,
+    )
+
+    SettingsSectionCard {
+      ProtectorModeSection(
+        selectedMode = protectorMode,
+        onModeSelected = onProtectorModeChange,
       )
     }
 
-    Spacer(Modifier.height(18.dp))
+    SettingsSectionCard {
+      HotspotT2sSection(
+        enabled = hotspotT2sEnabled,
+        target = hotspotT2sTarget,
+        singboxProfile = hotspotT2sSingboxProfile,
+        wireproxyProfile = hotspotT2sWireproxyProfile,
+        singboxProfiles = hotspotSingboxProfiles,
+        wireproxyProfiles = hotspotWireproxyProfiles,
+        compactWidth = compactWidth,
+        onEnabledChange = { checked ->
+          if (checked && !hotspotT2sEnabled) {
+            showHotspotWarning = true
+          } else {
+            onHotspotT2sEnabledChange(checked)
+          }
+        },
+        onTargetChange = onHotspotT2sTargetChange,
+        onSingboxProfileChange = onHotspotT2sSingboxProfileChange,
+        onWireproxyProfileChange = onHotspotT2sWireproxyProfileChange,
+      )
+    }
 
     ProxyInfoSectionCard(
       enabled = proxyInfoEnabled,
@@ -489,19 +425,6 @@ fun AppUpdateSettings(
       onConfigure = { showProxyInfoConfigure = true },
     )
 
-    if (showProxyInfoConfigure) {
-      ProxyInfoAppsDialog(
-        initialContent = proxyInfoAppsContent,
-        saving = proxyInfoBusy,
-        onDismiss = { if (!proxyInfoBusy) showProxyInfoConfigure = false },
-        onLoadAssignments = onLoadAppAssignments,
-        onSave = onProxyInfoAppsSave,
-        onSaveRemovingConflicts = onProxyInfoAppsSaveRemovingConflicts,
-      )
-    }
-
-    Spacer(Modifier.height(18.dp))
-
     BlockedQuicSectionCard(
       enabled = blockedQuicEnabled,
       busy = blockedQuicBusy,
@@ -509,136 +432,104 @@ fun AppUpdateSettings(
       onConfigure = { showBlockedQuicConfigure = true },
     )
 
-    if (showBlockedQuicConfigure) {
-      BlockedQuicAppsDialog(
-        initialContent = blockedQuicAppsContent,
-        saving = blockedQuicBusy,
-        onDismiss = { if (!blockedQuicBusy) showBlockedQuicConfigure = false },
-        onLoadAssignments = onLoadAppAssignments,
-        onSave = onBlockedQuicAppsSave,
-      )
-    }
+    SettingsLanguageSection(
+      languageMode = languageMode,
+      compactWidth = compactWidth,
+      onLanguageModeChange = onLanguageModeChange,
+    )
 
-    Spacer(Modifier.height(18.dp))
+    SettingsActionCard(
+      title = stringResource(R.string.settings_reset_identifier_title),
+      body = stringResource(R.string.settings_reset_identifier_body),
+      actionText = stringResource(R.string.settings_reset_identifier_action),
+      enabled = !resettingModuleIdentifier,
+      onClick = { showResetIdentifierConfirm = true },
+    )
 
-    Column(Modifier.fillMaxWidth()) {
-      Text(stringResource(R.string.settings_language_title), style = MaterialTheme.typography.bodyLarge)
-      Text(
-        stringResource(R.string.settings_language_body),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-      )
-
-      Spacer(Modifier.height(10.dp))
-
-      val selected = languageMode.lowercase().ifBlank { "auto" }
-      val isAuto = selected == "auto"
-      val isRu = selected == "ru"
-      val isEn = selected == "en"
-
-      if (compactWidth) {
-        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          if (isAuto) {
-            Button(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_auto)) }
-          } else {
-            OutlinedButton(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_auto)) }
-          }
-          if (isRu) {
-            Button(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_ru)) }
-          } else {
-            OutlinedButton(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_ru)) }
-          }
-          if (isEn) {
-            Button(onClick = { onLanguageModeChange("en") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_en)) }
-          } else {
-            OutlinedButton(onClick = { onLanguageModeChange("en") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_en)) }
-          }
-        }
-      } else {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-          if (isAuto) {
-            Button(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_auto)) }
-          } else {
-            OutlinedButton(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_auto)) }
-          }
-
-          if (isRu) {
-            Button(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_ru)) }
-          } else {
-            OutlinedButton(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_ru)) }
-          }
-
-          if (isEn) {
-            Button(onClick = { onLanguageModeChange("en") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_en)) }
-          } else {
-            OutlinedButton(onClick = { onLanguageModeChange("en") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_en)) }
-          }
-        }
-      }
-    }
-
-
-    Spacer(Modifier.height(18.dp))
-
-    Column(Modifier.fillMaxWidth()) {
-      Text(stringResource(R.string.settings_reset_identifier_title), style = MaterialTheme.typography.bodyLarge)
-      Text(
-        stringResource(R.string.settings_reset_identifier_body),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-      )
-      Spacer(Modifier.height(10.dp))
-      OutlinedButton(
-        onClick = { showResetIdentifierConfirm = true },
-        modifier = Modifier.fillMaxWidth(),
-        enabled = !resettingModuleIdentifier,
-      ) {
-        Text(stringResource(R.string.settings_reset_identifier_action))
-      }
-    }
-
-    if (showResetIdentifierConfirm) {
-      AlertDialog(
-        onDismissRequest = { showResetIdentifierConfirm = false },
-        title = { Text(stringResource(R.string.settings_reset_identifier_title)) },
-        text = { Text(stringResource(R.string.settings_reset_identifier_confirm_body)) },
-        dismissButton = {
-          OutlinedButton(onClick = { showResetIdentifierConfirm = false }) {
-            Text(stringResource(R.string.common_cancel))
-          }
-        },
-        confirmButton = {
-          Button(onClick = {
-            showResetIdentifierConfirm = false
-            onResetModuleIdentifier()
-          }) {
-            Text(stringResource(R.string.settings_reset_identifier_confirm_action))
-          }
-        },
-      )
-    }
-
-    ModuleIdentifierResetProgressDialog(visible = resettingModuleIdentifier)
-
-
-    Spacer(Modifier.height(18.dp))
-
-    Column(Modifier.fillMaxWidth()) {
-      Text(stringResource(R.string.settings_delete_module_title), style = MaterialTheme.typography.bodyLarge)
-      Text(
-        stringResource(R.string.settings_delete_module_body),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-      )
-      Spacer(Modifier.height(10.dp))
-      OutlinedButton(onClick = onDeleteModule, modifier = Modifier.fillMaxWidth()) {
-        Text(stringResource(R.string.settings_delete_module_action))
-      }
-    }
-
+    SettingsActionCard(
+      title = stringResource(R.string.settings_delete_module_title),
+      body = stringResource(R.string.settings_delete_module_body),
+      actionText = stringResource(R.string.settings_delete_module_action),
+      danger = true,
+      onClick = onDeleteModule,
+    )
   }
+
+  SettingsDialogsHost(
+    showHotspotWarning = showHotspotWarning,
+    onDismissHotspotWarning = { showHotspotWarning = false },
+    onAcceptHotspotWarning = {
+      showHotspotWarning = false
+      onHotspotT2sEnabledChange(true)
+    },
+    showResetIdentifierConfirm = showResetIdentifierConfirm,
+    onDismissResetIdentifierConfirm = { showResetIdentifierConfirm = false },
+    onConfirmResetIdentifier = {
+      showResetIdentifierConfirm = false
+      onResetModuleIdentifier()
+    },
+    resettingModuleIdentifier = resettingModuleIdentifier,
+    showProxyInfoConfigure = showProxyInfoConfigure,
+    proxyInfoAppsContent = proxyInfoAppsContent,
+    proxyInfoBusy = proxyInfoBusy,
+    onDismissProxyInfoConfigure = { if (!proxyInfoBusy) showProxyInfoConfigure = false },
+    onLoadAppAssignments = onLoadAppAssignments,
+    onProxyInfoAppsSave = onProxyInfoAppsSave,
+    onProxyInfoAppsSaveRemovingConflicts = onProxyInfoAppsSaveRemovingConflicts,
+    showBlockedQuicConfigure = showBlockedQuicConfigure,
+    blockedQuicAppsContent = blockedQuicAppsContent,
+    blockedQuicBusy = blockedQuicBusy,
+    onDismissBlockedQuicConfigure = { if (!blockedQuicBusy) showBlockedQuicConfigure = false },
+    onBlockedQuicAppsSave = onBlockedQuicAppsSave,
+  )
 }
 
+
+
+@Composable
+private fun SettingsHeaderCard() {
+  Surface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
+  ) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 16.dp, vertical = 14.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Box(
+        modifier = Modifier
+          .size(46.dp)
+          .clip(androidx.compose.foundation.shape.CircleShape)
+          .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)),
+        contentAlignment = Alignment.Center,
+      ) {
+        Icon(
+          imageVector = Icons.Filled.AddCircle,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.primary,
+        )
+      }
+      Column(Modifier.weight(1f)) {
+        Text(
+          text = stringResource(R.string.settings_title),
+          style = MaterialTheme.typography.titleLarge,
+          fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+          text = stringResource(R.string.settings_subtitle),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
+        )
+      }
+    }
+  }
+}
 
 @Composable
 private fun SettingsSwitchSection(
@@ -647,20 +538,78 @@ private fun SettingsSwitchSection(
   checked: Boolean,
   onCheckedChange: (Boolean) -> Unit,
 ) {
-  Row(
-    Modifier.fillMaxWidth(),
-    verticalAlignment = Alignment.CenterVertically,
-    horizontalArrangement = Arrangement.SpaceBetween,
-  ) {
-    Column(Modifier.weight(1f).padding(end = 12.dp)) {
-      Text(title, style = MaterialTheme.typography.bodyLarge)
-      Text(
-        body,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-      )
+  SettingsSectionCard {
+    Row(
+      Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+      Column(Modifier.weight(1f).padding(end = 12.dp)) {
+        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(4.dp))
+        Text(
+          body,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
+        )
+      }
+      Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
-    Switch(checked = checked, onCheckedChange = onCheckedChange)
+  }
+}
+
+@Composable
+private fun SettingsActionCard(
+  title: String,
+  body: String,
+  actionText: String,
+  onClick: () -> Unit,
+  enabled: Boolean = true,
+  danger: Boolean = false,
+) {
+  val shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp)
+  val accent = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+  val clickModifier = if (enabled) Modifier.clickable(onClick = onClick) else Modifier
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .clip(shape)
+      .then(clickModifier),
+    shape = shape,
+    color = if (danger) MaterialTheme.colorScheme.error.copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
+  ) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 14.dp, vertical = 13.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Column(Modifier.weight(1f)) {
+        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(3.dp))
+        Text(
+          body,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+        )
+      }
+      Surface(
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
+        color = accent.copy(alpha = if (enabled) 0.18f else 0.08f),
+      ) {
+        Text(
+          text = actionText,
+          modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+          style = MaterialTheme.typography.labelMedium,
+          fontWeight = FontWeight.SemiBold,
+          color = accent.copy(alpha = if (enabled) 1f else 0.45f),
+          textAlign = TextAlign.Center,
+        )
+      }
+    }
   }
 }
 
@@ -670,62 +619,87 @@ private fun SettingsLanguageSection(
   compactWidth: Boolean,
   onLanguageModeChange: (String) -> Unit,
 ) {
-  Column(Modifier.fillMaxWidth()) {
-    Text(stringResource(R.string.settings_language_title), style = MaterialTheme.typography.bodyLarge)
+  SettingsSectionCard {
+    Text(stringResource(R.string.settings_language_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
     Text(
       stringResource(R.string.settings_language_body),
       style = MaterialTheme.typography.bodySmall,
-      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
     )
 
-    Spacer(Modifier.height(10.dp))
-
     val selected = languageMode.lowercase().ifBlank { "auto" }
-    val isAuto = selected == "auto"
-    val isRu = selected == "ru"
-    val isEn = selected == "en"
+    val items = listOf(
+      "auto" to stringResource(R.string.language_auto),
+      "ru" to stringResource(R.string.language_ru),
+      "en" to stringResource(R.string.language_en),
+    )
 
-    if (compactWidth) {
-      Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (isAuto) {
-          Button(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_auto)) }
-        } else {
-          OutlinedButton(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_auto)) }
+    Surface(
+      modifier = Modifier.fillMaxWidth(),
+      shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
+      color = MaterialTheme.colorScheme.surface.copy(alpha = 0.52f),
+      tonalElevation = 0.dp,
+      shadowElevation = 0.dp,
+    ) {
+      if (compactWidth) {
+        Column(
+          modifier = Modifier.fillMaxWidth().padding(5.dp),
+          verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+          items.forEach { (value, label) ->
+            SettingsSegmentButton(
+              text = label,
+              selected = selected == value,
+              onClick = { onLanguageModeChange(value) },
+              modifier = Modifier.fillMaxWidth(),
+            )
+          }
         }
-        if (isRu) {
-          Button(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_ru)) }
-        } else {
-          OutlinedButton(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_ru)) }
-        }
-        if (isEn) {
-          Button(onClick = { onLanguageModeChange("en") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_en)) }
-        } else {
-          OutlinedButton(onClick = { onLanguageModeChange("en") }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.language_en)) }
-        }
-      }
-    } else {
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        if (isAuto) {
-          Button(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_auto)) }
-        } else {
-          OutlinedButton(onClick = { onLanguageModeChange("auto") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_auto)) }
-        }
-
-        if (isRu) {
-          Button(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_ru)) }
-        } else {
-          OutlinedButton(onClick = { onLanguageModeChange("ru") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_ru)) }
-        }
-
-        if (isEn) {
-          Button(onClick = { onLanguageModeChange("en") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_en)) }
-        } else {
-          OutlinedButton(onClick = { onLanguageModeChange("en") }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.language_en)) }
+      } else {
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(5.dp),
+          horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+          items.forEach { (value, label) ->
+            SettingsSegmentButton(
+              text = label,
+              selected = selected == value,
+              onClick = { onLanguageModeChange(value) },
+              modifier = Modifier.weight(1f),
+            )
+          }
         }
       }
     }
   }
 }
+
+@Composable
+private fun SettingsSegmentButton(
+  text: String,
+  selected: Boolean,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp)
+  Box(
+    modifier = modifier
+      .clip(shape)
+      .background(if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.20f) else Color.Transparent)
+      .clickable(onClick = onClick)
+      .padding(horizontal = 10.dp, vertical = 10.dp),
+    contentAlignment = Alignment.Center,
+  ) {
+    Text(
+      text = text,
+      style = MaterialTheme.typography.labelLarge,
+      fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+      color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
+      textAlign = TextAlign.Center,
+    )
+  }
+}
+
 
 @Composable
 private fun SettingsDialogsHost(
@@ -749,41 +723,26 @@ private fun SettingsDialogsHost(
   onDismissBlockedQuicConfigure: () -> Unit,
   onBlockedQuicAppsSave: (String, (Boolean) -> Unit) -> Unit,
 ) {
-  if (showHotspotWarning) {
-    AlertDialog(
-      onDismissRequest = onDismissHotspotWarning,
-      title = { Text(stringResource(R.string.settings_hotspot_warning_title)) },
-      text = { Text(stringResource(R.string.settings_hotspot_warning_body)) },
-      dismissButton = {
-        OutlinedButton(onClick = onDismissHotspotWarning) {
-          Text(stringResource(R.string.common_cancel))
-        }
-      },
-      confirmButton = {
-        Button(onClick = onAcceptHotspotWarning) {
-          Text(stringResource(R.string.settings_hotspot_warning_accept))
-        }
-      },
-    )
-  }
+  SettingsConfirmDialog(
+    visible = showHotspotWarning,
+    title = stringResource(R.string.settings_hotspot_warning_title),
+    body = stringResource(R.string.settings_hotspot_warning_body),
+    confirmText = stringResource(R.string.settings_hotspot_warning_accept),
+    dismissText = stringResource(R.string.common_cancel),
+    danger = true,
+    onDismiss = onDismissHotspotWarning,
+    onConfirm = onAcceptHotspotWarning,
+  )
 
-  if (showResetIdentifierConfirm) {
-    AlertDialog(
-      onDismissRequest = onDismissResetIdentifierConfirm,
-      title = { Text(stringResource(R.string.settings_reset_identifier_title)) },
-      text = { Text(stringResource(R.string.settings_reset_identifier_confirm_body)) },
-      dismissButton = {
-        OutlinedButton(onClick = onDismissResetIdentifierConfirm) {
-          Text(stringResource(R.string.common_cancel))
-        }
-      },
-      confirmButton = {
-        Button(onClick = onConfirmResetIdentifier) {
-          Text(stringResource(R.string.settings_reset_identifier_confirm_action))
-        }
-      },
-    )
-  }
+  SettingsConfirmDialog(
+    visible = showResetIdentifierConfirm,
+    title = stringResource(R.string.settings_reset_identifier_title),
+    body = stringResource(R.string.settings_reset_identifier_confirm_body),
+    confirmText = stringResource(R.string.settings_reset_identifier_confirm_action),
+    dismissText = stringResource(R.string.common_cancel),
+    onDismiss = onDismissResetIdentifierConfirm,
+    onConfirm = onConfirmResetIdentifier,
+  )
 
   ModuleIdentifierResetProgressDialog(visible = resettingModuleIdentifier)
 
@@ -809,14 +768,86 @@ private fun SettingsDialogsHost(
   }
 }
 
+@Composable
+private fun SettingsConfirmDialog(
+  visible: Boolean,
+  title: String,
+  body: String,
+  confirmText: String,
+  dismissText: String,
+  danger: Boolean = false,
+  onDismiss: () -> Unit,
+  onConfirm: () -> Unit,
+) {
+  if (!visible) return
+  val accent = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+  Dialog(onDismissRequest = onDismiss) {
+    Surface(
+      modifier = Modifier.fillMaxWidth(),
+      shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+      color = MaterialTheme.colorScheme.surface,
+      tonalElevation = 8.dp,
+    ) {
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 18.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          Box(
+            modifier = Modifier
+              .size(42.dp)
+              .clip(androidx.compose.foundation.shape.CircleShape)
+              .background(accent.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center,
+          ) {
+            Icon(Icons.Filled.AddCircle, contentDescription = null, tint = accent)
+          }
+          Text(
+            text = title,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+          )
+        }
+        Text(
+          text = body,
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.76f),
+        )
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+          OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+            Text(dismissText)
+          }
+          Button(onClick = onConfirm, modifier = Modifier.weight(1f)) {
+            Text(confirmText)
+          }
+        }
+      }
+    }
+  }
+}
+
 
 @Composable
 private fun SettingsSectionCard(
   modifier: Modifier = Modifier,
   content: @Composable ColumnScope.() -> Unit,
 ) {
-  ElevatedCard(
+  Surface(
     modifier = modifier.fillMaxWidth(),
+    shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp),
+    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
   ) {
     Column(
       modifier = Modifier
@@ -1174,15 +1205,25 @@ private fun ModuleIdentifierResetProgressDialog(visible: Boolean) {
     properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
   ) {
     Surface(
-      shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp),
-      tonalElevation = 6.dp,
+      modifier = Modifier.fillMaxWidth(),
+      shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+      color = MaterialTheme.colorScheme.surface,
+      tonalElevation = 8.dp,
     ) {
       Column(
         modifier = Modifier.padding(horizontal = 24.dp, vertical = 22.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
       ) {
-        CircularProgressIndicator()
+        Box(
+          modifier = Modifier
+            .size(56.dp)
+            .clip(androidx.compose.foundation.shape.CircleShape)
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+          contentAlignment = Alignment.Center,
+        ) {
+          CircularProgressIndicator(modifier = Modifier.size(30.dp))
+        }
         Text(
           text = stringResource(R.string.settings_reset_identifier_wait_title),
           style = MaterialTheme.typography.titleMedium,

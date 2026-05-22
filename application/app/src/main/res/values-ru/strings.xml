@@ -464,6 +464,7 @@
     <string name="app_update_available_version_code_fmt"> (code=%1$d)</string>
     <string name="app_update_urgent_body">Исправление ошибок предыдущего обновления.</string>
     <string name="settings_title">Настройки</string>
+    <string name="settings_subtitle">Обновления, уведомления, язык, точка доступа и обслуживание модуля.</string>
     <string name="app_update_check_title">Проверять обновления</string>
     <string name="app_update_check_body">Проверка выполняется в фоне при открытии приложения (не чаще 1 раза в 12 часов).</string>
     <string name="app_update_check_now">Проверить сейчас</string>

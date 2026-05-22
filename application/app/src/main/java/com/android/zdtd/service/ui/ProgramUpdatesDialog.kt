@@ -1,17 +1,34 @@
 package com.android.zdtd.service.ui
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SystemUpdateAlt
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -20,20 +37,26 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import com.android.zdtd.service.R
-import com.android.zdtd.service.ProgramUpdateItemUi
 import com.android.zdtd.service.ProgramReleaseUi
+import com.android.zdtd.service.ProgramUpdateItemUi
 import com.android.zdtd.service.ProgramUpdatesUiState
+import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
-
 
 @Composable
 fun ProgramUpdatesDialog(
@@ -45,7 +68,7 @@ fun ProgramUpdatesDialog(
   val landscape = rememberUseLandscapeControlLayout()
   val compact = !landscape && (rememberIsCompactWidth() || rememberIsShortHeight())
   val contentPadding = if (compact) 12.dp else 16.dp
-  var picking by remember { mutableStateOf<String?>(null) } // "zapret" | "zapret2" | "mihomo" | "mieru" | "operaproxy"
+  var picking by remember { mutableStateOf<String?>(null) }
 
   fun enabledFor(item: ProgramUpdateItemUi): Boolean {
     return !serviceRunning && !item.updating && !item.checking && !state.stoppingService
@@ -55,7 +78,7 @@ fun ProgramUpdatesDialog(
     onDismissRequest = onDismiss,
     properties = DialogProperties(
       dismissOnClickOutside = true,
-      usePlatformDefaultWidth = !landscape,
+      usePlatformDefaultWidth = false,
     ),
   ) {
     Box(
@@ -64,82 +87,144 @@ fun ProgramUpdatesDialog(
         .windowInsetsPadding(WindowInsets.safeDrawing),
       contentAlignment = if (landscape) Alignment.CenterStart else Alignment.Center,
     ) {
+      val accent = Color(0xFF38BDF8)
+      val accent2 = Color(0xFFA78BFA)
       Surface(
-        shape = MaterialTheme.shapes.extraLarge,
-        tonalElevation = 8.dp,
         modifier = if (landscape) {
           Modifier
             .fillMaxHeight(0.94f)
-            .fillMaxWidth(0.74f)
+            .fillMaxWidth(0.76f)
+            .widthIn(max = 920.dp)
             .padding(start = 14.dp, top = 8.dp, bottom = 8.dp)
         } else {
           Modifier
             .fillMaxWidth()
             .fillMaxHeight(if (compact) 0.88f else 0.82f)
-            .widthIn(max = 640.dp)
+            .widthIn(max = 660.dp)
             .padding(if (compact) 12.dp else 16.dp)
         },
+        shape = RoundedCornerShape(if (compact) 26.dp else 32.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+        tonalElevation = 0.dp,
+        shadowElevation = 18.dp,
       ) {
-        Column(
-          modifier = Modifier
-            .fillMaxSize()
-            .padding(contentPadding),
-          verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-              stringResource(R.string.program_updates_title),
-              style = MaterialTheme.typography.titleLarge,
-              maxLines = 2,
-              modifier = Modifier.weight(1f),
+        Box(
+          modifier = Modifier.background(
+            Brush.linearGradient(
+              colors = listOf(
+                accent.copy(alpha = 0.14f),
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.66f),
+                accent2.copy(alpha = 0.12f),
+              )
             )
-            IconButton(onClick = actions::resetProgramUpdatesUi) {
-              Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.program_updates_reset_cd))
-            }
-          }
-
-          Text(
-            stringResource(R.string.program_updates_desc),
-            style = MaterialTheme.typography.bodySmall,
           )
-
-          LazyColumn(
+        ) {
+          Column(
             modifier = Modifier
-              .fillMaxWidth()
-              .weight(1f),
+              .fillMaxSize()
+              .padding(contentPadding),
             verticalArrangement = Arrangement.spacedBy(12.dp),
           ) {
-            if (serviceRunning) {
-              item(key = "service_running") {
-                Card(colors = CardDefaults.cardColors()) {
-                  Column(Modifier.padding(12.dp)) {
-                    Text(stringResource(R.string.program_updates_service_running_title), fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                      stringResource(R.string.program_updates_service_running_desc),
-                      style = MaterialTheme.typography.bodySmall,
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Button(
-                      onClick = actions::stopServiceForProgramUpdatesAndCheck,
-                      enabled = !state.stoppingService,
-                      modifier = if (compact) Modifier.fillMaxWidth() else Modifier,
-                    ) {
-                      Text(if (state.stoppingService) stringResource(R.string.program_updates_stopping) else stringResource(R.string.program_updates_stop_and_check))
-                    }
-                  }
+            ProgramUpdatesHeader(onRefresh = actions::resetProgramUpdatesUi)
+
+            LazyColumn(
+              modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+              verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+              if (serviceRunning) {
+                item(key = "service_running") {
+                  ServiceRunningUpdateCard(
+                    stopping = state.stoppingService,
+                    onStopAndCheck = actions::stopServiceForProgramUpdatesAndCheck,
+                  )
                 }
               }
-            }
 
-            if (landscape) {
-              item(key = "updates_row_1") {
-                Row(
-                  modifier = Modifier.fillMaxWidth(),
-                  horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
+              if (landscape) {
+                item(key = "updates_row_1") {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                  ) {
+                    ProgramUpdateCard(
+                      modifier = Modifier.weight(1f),
+                      item = state.zapret,
+                      enabled = enabledFor(state.zapret),
+                      onCheck = actions::checkZapretNow,
+                      onUpdate = actions::updateZapretNow,
+                      onPickVersion = {
+                        picking = "zapret"
+                        if (state.zapret.releases.isEmpty() && !state.zapret.releasesLoading) actions.loadZapretReleases()
+                      },
+                    )
+                    ProgramUpdateCard(
+                      modifier = Modifier.weight(1f),
+                      item = state.zapret2,
+                      enabled = enabledFor(state.zapret2),
+                      onCheck = actions::checkZapret2Now,
+                      onUpdate = actions::updateZapret2Now,
+                      onPickVersion = {
+                        picking = "zapret2"
+                        if (state.zapret2.releases.isEmpty() && !state.zapret2.releasesLoading) actions.loadZapret2Releases()
+                      },
+                    )
+                  }
+                }
+                item(key = "updates_row_2") {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                  ) {
+                    ProgramUpdateCard(
+                      modifier = Modifier.weight(1f),
+                      item = state.mihomo,
+                      enabled = enabledFor(state.mihomo),
+                      onCheck = actions::checkMihomoNow,
+                      onUpdate = actions::updateMihomoNow,
+                      onPickVersion = {
+                        picking = "mihomo"
+                        if (state.mihomo.releases.isEmpty() && !state.mihomo.releasesLoading) actions.loadMihomoReleases()
+                      },
+                    )
+                    ProgramUpdateCard(
+                      modifier = Modifier.weight(1f),
+                      item = state.mieru,
+                      enabled = enabledFor(state.mieru),
+                      onCheck = actions::checkMieruNow,
+                      onUpdate = actions::updateMieruNow,
+                      onPickVersion = {
+                        picking = "mieru"
+                        if (state.mieru.releases.isEmpty() && !state.mieru.releasesLoading) actions.loadMieruReleases()
+                      },
+                    )
+                  }
+                }
+                item(key = "updates_row_3") {
+                  Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                  ) {
+                    ProgramUpdateCard(
+                      modifier = Modifier.weight(1f),
+                      item = state.operaProxy,
+                      enabled = enabledFor(state.operaProxy),
+                      onCheck = actions::checkOperaProxyNow,
+                      onUpdate = actions::updateOperaProxyNow,
+                      onPickVersion = {
+                        picking = "operaproxy"
+                        if (state.operaProxy.releases.isEmpty() && !state.operaProxy.releasesLoading) actions.loadOperaProxyReleases()
+                      },
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                  }
+                }
+              } else {
+                item(key = "zapret") {
                   ProgramUpdateCard(
-                    modifier = Modifier.weight(1f),
                     item = state.zapret,
                     enabled = enabledFor(state.zapret),
                     onCheck = actions::checkZapretNow,
@@ -149,8 +234,9 @@ fun ProgramUpdatesDialog(
                       if (state.zapret.releases.isEmpty() && !state.zapret.releasesLoading) actions.loadZapretReleases()
                     },
                   )
+                }
+                item(key = "zapret2") {
                   ProgramUpdateCard(
-                    modifier = Modifier.weight(1f),
                     item = state.zapret2,
                     enabled = enabledFor(state.zapret2),
                     onCheck = actions::checkZapret2Now,
@@ -161,15 +247,8 @@ fun ProgramUpdatesDialog(
                     },
                   )
                 }
-              }
-
-              item(key = "updates_row_2") {
-                Row(
-                  modifier = Modifier.fillMaxWidth(),
-                  horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
+                item(key = "mihomo") {
                   ProgramUpdateCard(
-                    modifier = Modifier.weight(1f),
                     item = state.mihomo,
                     enabled = enabledFor(state.mihomo),
                     onCheck = actions::checkMihomoNow,
@@ -179,8 +258,9 @@ fun ProgramUpdatesDialog(
                       if (state.mihomo.releases.isEmpty() && !state.mihomo.releasesLoading) actions.loadMihomoReleases()
                     },
                   )
+                }
+                item(key = "mieru") {
                   ProgramUpdateCard(
-                    modifier = Modifier.weight(1f),
                     item = state.mieru,
                     enabled = enabledFor(state.mieru),
                     onCheck = actions::checkMieruNow,
@@ -191,15 +271,8 @@ fun ProgramUpdatesDialog(
                     },
                   )
                 }
-              }
-
-              item(key = "updates_row_3") {
-                Row(
-                  modifier = Modifier.fillMaxWidth(),
-                  horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
+                item(key = "operaproxy") {
                   ProgramUpdateCard(
-                    modifier = Modifier.weight(1f),
                     item = state.operaProxy,
                     enabled = enabledFor(state.operaProxy),
                     onCheck = actions::checkOperaProxyNow,
@@ -209,82 +282,19 @@ fun ProgramUpdatesDialog(
                       if (state.operaProxy.releases.isEmpty() && !state.operaProxy.releasesLoading) actions.loadOperaProxyReleases()
                     },
                   )
-                  Spacer(modifier = Modifier.weight(1f))
                 }
               }
-            } else {
-              item(key = "zapret") {
-                ProgramUpdateCard(
-                  item = state.zapret,
-                  enabled = enabledFor(state.zapret),
-                  onCheck = actions::checkZapretNow,
-                  onUpdate = actions::updateZapretNow,
-                  onPickVersion = {
-                    picking = "zapret"
-                    if (state.zapret.releases.isEmpty() && !state.zapret.releasesLoading) actions.loadZapretReleases()
-                  },
-                )
-              }
-              item(key = "zapret2") {
-                ProgramUpdateCard(
-                  item = state.zapret2,
-                  enabled = enabledFor(state.zapret2),
-                  onCheck = actions::checkZapret2Now,
-                  onUpdate = actions::updateZapret2Now,
-                  onPickVersion = {
-                    picking = "zapret2"
-                    if (state.zapret2.releases.isEmpty() && !state.zapret2.releasesLoading) actions.loadZapret2Releases()
-                  },
-                )
-              }
-              item(key = "mihomo") {
-                ProgramUpdateCard(
-                  item = state.mihomo,
-                  enabled = enabledFor(state.mihomo),
-                  onCheck = actions::checkMihomoNow,
-                  onUpdate = actions::updateMihomoNow,
-                  onPickVersion = {
-                    picking = "mihomo"
-                    if (state.mihomo.releases.isEmpty() && !state.mihomo.releasesLoading) actions.loadMihomoReleases()
-                  },
-                )
-              }
-              item(key = "mieru") {
-                ProgramUpdateCard(
-                  item = state.mieru,
-                  enabled = enabledFor(state.mieru),
-                  onCheck = actions::checkMieruNow,
-                  onUpdate = actions::updateMieruNow,
-                  onPickVersion = {
-                    picking = "mieru"
-                    if (state.mieru.releases.isEmpty() && !state.mieru.releasesLoading) actions.loadMieruReleases()
-                  },
-                )
-              }
-              item(key = "operaproxy") {
-                ProgramUpdateCard(
-                  item = state.operaProxy,
-                  enabled = enabledFor(state.operaProxy),
-                  onCheck = actions::checkOperaProxyNow,
-                  onUpdate = actions::updateOperaProxyNow,
-                  onPickVersion = {
-                    picking = "operaproxy"
-                    if (state.operaProxy.releases.isEmpty() && !state.operaProxy.releasesLoading) actions.loadOperaProxyReleases()
-                  },
-                )
-              }
             }
-          }
 
-          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.backup_close)) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+              TextButton(onClick = onDismiss) { Text(stringResource(R.string.backup_close)) }
+            }
           }
         }
       }
     }
   }
 
-  // Version picker dialog (separate from the main dialog)
   val pick = picking
   if (pick != null) {
     val item = when (pick) {
@@ -344,7 +354,82 @@ fun ProgramUpdatesDialog(
   }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProgramUpdatesHeader(onRefresh: () -> Unit) {
+  Row(
+    modifier = Modifier.fillMaxWidth(),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Surface(
+      modifier = Modifier.size(42.dp),
+      shape = CircleShape,
+      color = Color(0xFF38BDF8).copy(alpha = 0.18f),
+      border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.34f)),
+    ) {
+      Box(contentAlignment = Alignment.Center) {
+        Icon(Icons.Filled.SystemUpdateAlt, contentDescription = null, tint = Color(0xFF7DD3FC))
+      }
+    }
+    Spacer(Modifier.width(12.dp))
+    Column(Modifier.weight(1f)) {
+      Text(
+        stringResource(R.string.program_updates_title),
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.Bold,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+      )
+      Text(
+        stringResource(R.string.program_updates_desc),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+      )
+    }
+    IconButton(onClick = onRefresh) {
+      Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.program_updates_reset_cd))
+    }
+  }
+}
+
+@Composable
+private fun ServiceRunningUpdateCard(
+  stopping: Boolean,
+  onStopAndCheck: () -> Unit,
+) {
+  val accent = Color(0xFFF59E0B)
+  Surface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(24.dp),
+    color = accent.copy(alpha = 0.10f),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.26f)),
+  ) {
+    Column(
+      modifier = Modifier.padding(14.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      Text(
+        stringResource(R.string.program_updates_service_running_title),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+      )
+      Text(
+        stringResource(R.string.program_updates_service_running_desc),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+      )
+      Button(
+        onClick = onStopAndCheck,
+        enabled = !stopping,
+        shape = RoundedCornerShape(18.dp),
+      ) {
+        Text(if (stopping) stringResource(R.string.program_updates_stopping) else stringResource(R.string.program_updates_stop_and_check))
+      }
+    }
+  }
+}
+
 @Composable
 private fun ProgramUpdateCard(
   modifier: Modifier = Modifier,
@@ -354,90 +439,113 @@ private fun ProgramUpdateCard(
   onUpdate: () -> Unit,
   onPickVersion: () -> Unit,
 ) {
-  Card(colors = CardDefaults.cardColors(), modifier = modifier.fillMaxWidth()) {
-    Column(Modifier.padding(12.dp)) {
+  val compact = rememberIsCompactWidth()
+  val accent = if (item.updateAvailable) Color(0xFF22C55E) else Color(0xFF38BDF8)
+  Surface(
+    modifier = modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(24.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f),
+    border = BorderStroke(1.dp, accent.copy(alpha = if (item.updateAvailable) 0.38f else 0.18f)),
+  ) {
+    Column(
+      modifier = Modifier.padding(14.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
       Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(item.titleRes?.let { stringResource(it) } ?: item.title, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 2)
-                IconButton(onClick = onPickVersion, enabled = enabled) {
-          Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.program_updates_select_version_cd))
+        Surface(
+          modifier = Modifier.size(36.dp),
+          shape = CircleShape,
+          color = accent.copy(alpha = 0.14f),
+          border = BorderStroke(1.dp, accent.copy(alpha = 0.24f)),
+        ) {
+          Box(contentAlignment = Alignment.Center) {
+            if (item.checking || item.updating) {
+              CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            } else {
+              Icon(Icons.Filled.SystemUpdateAlt, contentDescription = null, tint = accent, modifier = Modifier.size(19.dp))
+            }
+          }
         }
-        if (item.updateAvailable) {
-          Icon(Icons.Filled.SystemUpdateAlt, contentDescription = null)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+          Text(
+            item.titleRes?.let { stringResource(it) } ?: item.title,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Text(
+            stringResource(
+              R.string.program_updates_installed_latest_fmt,
+              item.installedVersion ?: "—",
+              item.latestVersion ?: "—",
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+            maxLines = 2,
+          )
+        }
+        IconButton(onClick = onPickVersion, enabled = enabled) {
+          Icon(Icons.Filled.MoreVert, contentDescription = stringResource(R.string.program_updates_select_version_cd))
         }
       }
 
-      Spacer(Modifier.height(6.dp))
-      Text(
-        stringResource(
-          R.string.program_updates_installed_latest_fmt,
-          item.installedVersion ?: "—",
-          item.latestVersion ?: "—",
-        ),
-        style = MaterialTheme.typography.bodySmall,
-      )
-
       val target = item.selectedVersion ?: item.latestVersion
       if (target != null) {
-        Spacer(Modifier.height(4.dp))
         val suffix = if (item.selectedVersion != null) {
           stringResource(R.string.program_updates_target_selected_suffix)
         } else {
           stringResource(R.string.program_updates_target_latest_suffix)
         }
-        Text(
-          stringResource(R.string.program_updates_target_fmt, target, suffix),
-          style = MaterialTheme.typography.bodySmall,
+        ProgramUpdateInfoPill(
+          text = stringResource(R.string.program_updates_target_fmt, target, suffix),
+          accent = accent,
         )
       }
 
       if (item.warningText != null) {
-        Spacer(Modifier.height(6.dp))
-        Text(item.warningText, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        ProgramUpdateMessage(text = item.warningText, accent = Color(0xFFF59E0B))
       }
-
       if (item.statusText.isNotBlank()) {
-        Spacer(Modifier.height(6.dp))
-        Text(item.statusText, style = MaterialTheme.typography.bodySmall)
+        ProgramUpdateMessage(text = item.statusText, accent = Color(0xFF38BDF8))
       }
-
       if (item.errorText != null) {
-        Spacer(Modifier.height(6.dp))
-        Text(item.errorText, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        ProgramUpdateMessage(text = item.errorText, accent = MaterialTheme.colorScheme.error)
       }
 
       if (item.checking || item.updating) {
-        Spacer(Modifier.height(10.dp))
         LinearProgressIndicator(
-          progress = (item.progressPercent.coerceIn(0, 100)) / 100f,
+          progress = item.progressPercent.coerceIn(0, 100) / 100f,
           modifier = Modifier.fillMaxWidth(),
         )
       }
 
-      Spacer(Modifier.height(10.dp))
-      if (rememberIsCompactWidth()) {
+      if (compact) {
         Column(
           modifier = Modifier.fillMaxWidth(),
-          verticalArrangement = Arrangement.spacedBy(10.dp),
+          verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-          OutlinedButton(onClick = onCheck, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
+          OutlinedButton(onClick = onCheck, enabled = enabled, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
             Text(if (item.checking) stringResource(R.string.program_updates_checking) else stringResource(R.string.program_updates_check))
           }
           Button(
             onClick = onUpdate,
             enabled = enabled && item.updateAvailable,
             modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
           ) {
             Text(if (item.updating) stringResource(R.string.program_updates_updating) else stringResource(R.string.program_updates_update))
           }
         }
       } else {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-          OutlinedButton(onClick = onCheck, enabled = enabled) {
+          OutlinedButton(onClick = onCheck, enabled = enabled, shape = RoundedCornerShape(16.dp)) {
             Text(if (item.checking) stringResource(R.string.program_updates_checking) else stringResource(R.string.program_updates_check))
           }
           Button(
             onClick = onUpdate,
             enabled = enabled && item.updateAvailable,
+            shape = RoundedCornerShape(16.dp),
           ) {
             Text(if (item.updating) stringResource(R.string.program_updates_updating) else stringResource(R.string.program_updates_update))
           }
@@ -446,7 +554,6 @@ private fun ProgramUpdateCard(
     }
   }
 }
-
 
 @Composable
 private fun ReleasePickerDialog(
@@ -463,152 +570,244 @@ private fun ReleasePickerDialog(
   var showWarn by remember { mutableStateOf(false) }
 
   if (showWarn && pending != null) {
-    AlertDialog(
-      onDismissRequest = { showWarn = false; pending = null },
-      title = { Text(stringResource(R.string.program_updates_warning_title)) },
-      text = {
-        Text(stringResource(R.string.program_updates_warning_text_fmt, pending!!.version, minVersion))
+    ProgramUpdateWarningDialog(
+      title = stringResource(R.string.program_updates_warning_title),
+      text = stringResource(R.string.program_updates_warning_text_fmt, pending!!.version, minVersion),
+      onDismiss = { showWarn = false; pending = null },
+      onConfirm = {
+        val p = pending
+        showWarn = false
+        pending = null
+        if (p != null) onSelectRelease(p.version, p.downloadUrl)
       },
-      confirmButton = {
-        TextButton(onClick = {
-          val p = pending
-          showWarn = false
-          pending = null
-          if (p != null) onSelectRelease(p.version, p.downloadUrl)
-        }) { Text(stringResource(R.string.program_updates_continue)) }
-      },
-      dismissButton = {
-        TextButton(onClick = { showWarn = false; pending = null }) { Text(stringResource(R.string.backup_cancel)) }
-      }
     )
   }
 
   Dialog(
     onDismissRequest = onDismiss,
-    properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true),
+    properties = DialogProperties(dismissOnBackPress = true, dismissOnClickOutside = true, usePlatformDefaultWidth = false),
   ) {
-    Surface(
-      shape = MaterialTheme.shapes.extraLarge,
-      tonalElevation = 8.dp,
-      modifier = Modifier
-        .fillMaxWidth()
-        .widthIn(max = 640.dp)
-        .padding(if (compact) 12.dp else 16.dp)
-    ) {
-      Column(Modifier.padding(if (compact) 12.dp else 16.dp)) {
+    StyledUpdateDialogSurface(compact = compact, accent = Color(0xFFA78BFA)) {
+      Column(
+        modifier = Modifier.padding(if (compact) 14.dp else 16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-          Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 2, modifier = Modifier.weight(1f))
-                    IconButton(onClick = onRefresh) { Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.program_updates_refresh_cd)) }
+          Surface(
+            modifier = Modifier.size(40.dp),
+            shape = CircleShape,
+            color = Color(0xFFA78BFA).copy(alpha = 0.16f),
+            border = BorderStroke(1.dp, Color(0xFFA78BFA).copy(alpha = 0.30f)),
+          ) {
+            Box(contentAlignment = Alignment.Center) {
+              Icon(Icons.Filled.MoreVert, contentDescription = null, tint = Color(0xFFD8B4FE))
+            }
+          }
+          Spacer(Modifier.width(12.dp))
+          Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(
+              stringResource(R.string.program_updates_choose_version_hint),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+              maxLines = 2,
+            )
+          }
+          IconButton(onClick = onRefresh) {
+            Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.program_updates_refresh_cd))
+          }
         }
 
-        Spacer(Modifier.height(6.dp))
-        Text(stringResource(R.string.program_updates_choose_version_hint), style = MaterialTheme.typography.bodySmall)
-
         if (stateItem.releasesLoading) {
-          Spacer(Modifier.height(10.dp))
           LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
         if (stateItem.releasesError != null) {
-          Spacer(Modifier.height(10.dp))
-          Text(stateItem.releasesError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+          ProgramUpdateMessage(text = stateItem.releasesError, accent = MaterialTheme.colorScheme.error)
         }
 
-        Spacer(Modifier.height(12.dp))
         LazyColumn(
           modifier = Modifier
             .fillMaxWidth()
-            .heightIn(max = if (compact) 320.dp else 420.dp),
+            .heightIn(max = if (compact) 330.dp else 430.dp),
           verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
           item {
-            Card(colors = CardDefaults.cardColors(), modifier = Modifier.fillMaxWidth()) {
-              if (compact) {
-                Column(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                  verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                  Column {
-                    Text(stringResource(R.string.program_updates_latest_auto_title), fontWeight = FontWeight.SemiBold)
-                    Text(stringResource(R.string.program_updates_latest_auto_desc), style = MaterialTheme.typography.bodySmall)
-                  }
-                  Button(onClick = onSelectLatest, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.program_updates_select)) }
-                }
-              } else {
-                Row(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                ) {
-                  Column(Modifier.weight(1f)) {
-                    Text(stringResource(R.string.program_updates_latest_auto_title), fontWeight = FontWeight.SemiBold)
-                    Text(stringResource(R.string.program_updates_latest_auto_desc), style = MaterialTheme.typography.bodySmall)
-                  }
-                  Button(onClick = onSelectLatest) { Text(stringResource(R.string.program_updates_select)) }
-                }
-              }
-            }
+            ReleaseCard(
+              title = stringResource(R.string.program_updates_latest_auto_title),
+              subtitle = stringResource(R.string.program_updates_latest_auto_desc),
+              selected = stateItem.selectedVersion == null,
+              onSelect = onSelectLatest,
+            )
           }
 
-          items(stateItem.releases, key = { it.version }, contentType = { "program_release" }) { r ->
-            Card(colors = CardDefaults.cardColors(), modifier = Modifier.fillMaxWidth()) {
-              val isSelected = stateItem.selectedVersion == r.version
-              val label = if (isSelected) stringResource(R.string.program_updates_selected) else stringResource(R.string.program_updates_select)
-              if (compact) {
-                Column(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                  verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                  Column {
-                    Text(r.version, fontWeight = FontWeight.SemiBold)
-                    val date = r.publishedAt.take(10)
-                    if (date.isNotBlank()) Text(date, style = MaterialTheme.typography.bodySmall)
-                  }
-                  Button(onClick = {
-                    if (isBelowMin(r.version, minVersion)) {
-                      pending = r
-                      showWarn = true
-                    } else {
-                      onSelectRelease(r.version, r.downloadUrl)
-                    }
-                  }, modifier = Modifier.fillMaxWidth()) { Text(label) }
+          items(stateItem.releases, key = { it.version }, contentType = { "program_release" }) { release ->
+            val isSelected = stateItem.selectedVersion == release.version
+            val date = release.publishedAt.take(10)
+            ReleaseCard(
+              title = release.version,
+              subtitle = date,
+              selected = isSelected,
+              onSelect = {
+                if (isBelowMin(release.version, minVersion)) {
+                  pending = release
+                  showWarn = true
+                } else {
+                  onSelectRelease(release.version, release.downloadUrl)
                 }
-              } else {
-                Row(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                  verticalAlignment = Alignment.CenterVertically,
-                ) {
-                  Column(Modifier.weight(1f)) {
-                    Text(r.version, fontWeight = FontWeight.SemiBold)
-                    val date = r.publishedAt.take(10)
-                    if (date.isNotBlank()) Text(date, style = MaterialTheme.typography.bodySmall)
-                  }
-                  Button(onClick = {
-                    if (isBelowMin(r.version, minVersion)) {
-                      pending = r
-                      showWarn = true
-                    } else {
-                      onSelectRelease(r.version, r.downloadUrl)
-                    }
-                  }) { Text(label) }
-                }
-              }
-            }
+              },
+            )
           }
         }
 
-        Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
           TextButton(onClick = onDismiss) { Text(stringResource(R.string.backup_close)) }
         }
       }
     }
+  }
+}
+
+@Composable
+private fun ReleaseCard(
+  title: String,
+  subtitle: String,
+  selected: Boolean,
+  onSelect: () -> Unit,
+) {
+  val compact = rememberIsCompactWidth()
+  val accent = if (selected) Color(0xFF22C55E) else Color(0xFFA78BFA)
+  Surface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(20.dp),
+    color = if (selected) accent.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface.copy(alpha = 0.66f),
+    border = BorderStroke(1.dp, accent.copy(alpha = if (selected) 0.36f else 0.16f)),
+  ) {
+    if (compact) {
+      Column(
+        modifier = Modifier.padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        Column {
+          Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+          if (subtitle.isNotBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f))
+        }
+        Button(onClick = onSelect, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+          Text(if (selected) stringResource(R.string.program_updates_selected) else stringResource(R.string.program_updates_select))
+        }
+      }
+    } else {
+      Row(
+        modifier = Modifier.padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Column(Modifier.weight(1f)) {
+          Text(title, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+          if (subtitle.isNotBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f))
+        }
+        Button(onClick = onSelect, shape = RoundedCornerShape(16.dp)) {
+          Text(if (selected) stringResource(R.string.program_updates_selected) else stringResource(R.string.program_updates_select))
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun ProgramUpdateWarningDialog(
+  title: String,
+  text: String,
+  onDismiss: () -> Unit,
+  onConfirm: () -> Unit,
+) {
+  val compact = rememberIsCompactWidth() || rememberIsShortHeight()
+  val accent = Color(0xFFF59E0B)
+  Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    StyledUpdateDialogSurface(compact = compact, accent = accent) {
+      Column(
+        modifier = Modifier.padding(if (compact) 16.dp else 18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        ProgramUpdateMessage(text = text, accent = accent)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+          OutlinedButton(onClick = onDismiss, shape = RoundedCornerShape(16.dp)) { Text(stringResource(R.string.backup_cancel)) }
+          Spacer(Modifier.width(8.dp))
+          Button(onClick = onConfirm, shape = RoundedCornerShape(16.dp)) { Text(stringResource(R.string.program_updates_continue)) }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun StyledUpdateDialogSurface(
+  compact: Boolean,
+  accent: Color,
+  content: @Composable () -> Unit,
+) {
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .widthIn(max = 640.dp)
+      .padding(if (compact) 18.dp else 24.dp),
+    shape = RoundedCornerShape(if (compact) 26.dp else 30.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+    tonalElevation = 0.dp,
+    shadowElevation = 16.dp,
+  ) {
+    Box(
+      modifier = Modifier.background(
+        Brush.linearGradient(
+          colors = listOf(
+            accent.copy(alpha = 0.14f),
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+          )
+        )
+      )
+    ) {
+      content()
+    }
+  }
+}
+
+@Composable
+private fun ProgramUpdateInfoPill(
+  text: String,
+  accent: Color,
+) {
+  Surface(
+    shape = RoundedCornerShape(999.dp),
+    color = accent.copy(alpha = 0.12f),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.22f)),
+  ) {
+    Text(
+      text,
+      modifier = Modifier.padding(start = 10.dp, top = 5.dp, end = 10.dp, bottom = 5.dp),
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+      maxLines = 2,
+    )
+  }
+}
+
+@Composable
+private fun ProgramUpdateMessage(
+  text: String,
+  accent: Color,
+) {
+  Surface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(18.dp),
+    color = accent.copy(alpha = 0.10f),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.24f)),
+  ) {
+    Text(
+      text,
+      modifier = Modifier.padding(12.dp),
+      style = MaterialTheme.typography.bodySmall,
+      color = if (accent == MaterialTheme.colorScheme.error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+    )
   }
 }
 

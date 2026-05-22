@@ -172,6 +172,7 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="app_update_available_version_code_fmt"> (code=%1$d)</string>
     <string name="app_update_urgent_body">Bugfix for the previous update.</string>
     <string name="settings_title">Settings</string>
+    <string name="settings_subtitle">Controls for updates, notifications, language, hotspot routing and module maintenance.</string>
     <string name="app_update_check_title">Check for updates</string>
     <string name="app_update_check_body">Checks are performed in the background when you open the app (no more than once every 12 hours).</string>
     <string name="app_update_check_now">Check now</string>

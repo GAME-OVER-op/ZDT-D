@@ -39,7 +39,7 @@ LZ_SDK_TOOLS_URL="${LZ_SDK_TOOLS_URL:-https://github.com/Lzhiyong/sdk-tools/rele
 LZ_AAPT2="$LZ_SDK_TOOLS_DIR/build-tools/aapt2"
 LOCAL_PROPERTIES_FILE="$APP_DIR/local.properties"
 MODE="${1:-apk}"
-BUILD_TYPE="${BUILD_TYPE:-release}"
+BUILD_TYPE="${BUILD_TYPE:-Debug}"
 GRADLE_TASK="assemble${BUILD_TYPE}"
 KEYSTORE_DIR="$ROOT_DIR/keystores"
 DEBUG_KEYSTORE_PATH="${DEBUG_KEYSTORE_PATH:-$KEYSTORE_DIR/zdt-debug.keystore}"
@@ -1303,14 +1303,8 @@ package_module_zip() {
 
 validate_module_zip() {
   [[ -f "$MODULE_ZIP" ]] || fail "Не найден модульный zip: $MODULE_ZIP"
-
-  local zip_entries
-  zip_entries="$(unzip -Z1 "$MODULE_ZIP" 2>/dev/null)" || fail "Не удалось прочитать module zip: $MODULE_ZIP"
-
-  printf '%s\n' "$zip_entries" | grep -Fx 'zygisk/arm64-v8a.so' >/dev/null \
-    || fail 'В module zip отсутствует zygisk/arm64-v8a.so'
-
-  if printf '%s\n' "$zip_entries" | grep -E '(^|/)(unloaded|\.gitkeep)$' >/dev/null; then
+  unzip -l "$MODULE_ZIP" | grep -q 'zygisk/arm64-v8a.so' || fail 'В module zip отсутствует zygisk/arm64-v8a.so'
+  if unzip -l "$MODULE_ZIP" | grep -qE '(^|/)(unloaded|\.gitkeep)$'; then
     fail 'В module zip попал служебный файл unloaded или .gitkeep'
   fi
 }

@@ -1303,8 +1303,14 @@ package_module_zip() {
 
 validate_module_zip() {
   [[ -f "$MODULE_ZIP" ]] || fail "Не найден модульный zip: $MODULE_ZIP"
-  unzip -l "$MODULE_ZIP" | grep -q 'zygisk/arm64-v8a.so' || fail 'В module zip отсутствует zygisk/arm64-v8a.so'
-  if unzip -l "$MODULE_ZIP" | grep -qE '(^|/)(unloaded|\.gitkeep)$'; then
+
+  local zip_entries
+  zip_entries="$(unzip -Z1 "$MODULE_ZIP" 2>/dev/null)" || fail "Не удалось прочитать module zip: $MODULE_ZIP"
+
+  printf '%s\n' "$zip_entries" | grep -Fx 'zygisk/arm64-v8a.so' >/dev/null \
+    || fail 'В module zip отсутствует zygisk/arm64-v8a.so'
+
+  if printf '%s\n' "$zip_entries" | grep -E '(^|/)(unloaded|\.gitkeep)$' >/dev/null; then
     fail 'В module zip попал служебный файл unloaded или .gitkeep'
   fi
 }

@@ -574,8 +574,9 @@ jobs:
           zip -qr "../../../$MODULE_ZIP" .
           popd > /dev/null
 
-          unzip -l "$MODULE_ZIP" | grep -q 'zygisk/arm64-v8a.so' || { echo "::error::Zygisk binary missing in module zip"; exit 1; }
-          if unzip -l "$MODULE_ZIP" | grep -qE '(^|/)(unloaded|\.gitkeep)$'; then
+          ZIP_ENTRIES="$(unzip -Z1 "$MODULE_ZIP" 2>/dev/null)" || { echo "::error::Unable to read module zip"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'zygisk/arm64-v8a.so' >/dev/null || { echo "::error::Zygisk binary missing in module zip"; exit 1; }
+          if printf '%s\n' "$ZIP_ENTRIES" | grep -E '(^|/)(unloaded|\.gitkeep)$' >/dev/null; then
             echo "::error::unloaded or .gitkeep leaked into module zip"
             exit 1
           fi
@@ -644,29 +645,41 @@ jobs:
           echo "Android project root: $GRADLE_PROJECT_DIR"
           test -s out/module/zdt_module.zip || { echo "::error::Downloaded module zip is missing"; exit 1; }
 
-      - name: Write local.properties & keystore config
+      - name: Write local.properties & restore signing keystore
+        env:
+          ZDT_KEYSTORE_BASE64: ${{ secrets.ZDT_KEYSTORE_BASE64 }}
+          ZDT_KEYSTORE_PASSWORD: ${{ secrets.ZDT_KEYSTORE_PASSWORD }}
+          ZDT_KEY_ALIAS: ${{ secrets.ZDT_KEY_ALIAS }}
+          ZDT_KEY_PASSWORD: ${{ secrets.ZDT_KEY_PASSWORD }}
         run: |
+          set -euo pipefail
+
           echo "sdk.dir=$ANDROID_SDK_ROOT" > "$GRADLE_PROJECT_DIR/local.properties"
+
+          for name in ZDT_KEYSTORE_BASE64 ZDT_KEYSTORE_PASSWORD ZDT_KEY_ALIAS ZDT_KEY_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::$name GitHub Actions secret is missing or empty"
+              exit 1
+            fi
+          done
 
           KEYSTORE_PATH="$(pwd)/keystores/zdt-debug.keystore"
           mkdir -p "$(dirname "$KEYSTORE_PATH")"
 
-          if [[ ! -f "$KEYSTORE_PATH" ]]; then
-            keytool -genkeypair \
-              -keystore "$KEYSTORE_PATH" \
-              -storepass android \
-              -keypass android \
-              -alias androiddebugkey \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US" \
-              > /dev/null 2>&1
-          fi
+          printf '%s' "$ZDT_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+
+          keytool -list \
+            -keystore "$KEYSTORE_PATH" \
+            -storepass "$ZDT_KEYSTORE_PASSWORD" \
+            -alias "$ZDT_KEY_ALIAS" \
+            >/dev/null
 
           {
             echo "storeFile=$KEYSTORE_PATH"
-            echo "storePassword=android"
-            echo "keyAlias=androiddebugkey"
-            echo "keyPassword=android"
+            echo "storePassword=$ZDT_KEYSTORE_PASSWORD"
+            echo "keyAlias=$ZDT_KEY_ALIAS"
+            echo "keyPassword=$ZDT_KEY_PASSWORD"
           } > "$GRADLE_PROJECT_DIR/keystore.properties"
 
       - name: Build APK assemble${{ env.BUILD_TYPE }}
@@ -683,10 +696,22 @@ jobs:
 
       - name: Collect final artifacts
         run: |
+          set -euo pipefail
           mkdir -p out/dist
 
-          APK=$(find "$GRADLE_PROJECT_DIR" -path '*/build/outputs/apk/*.apk' | sort | tail -1)
+          APK=$(find "$GRADLE_PROJECT_DIR" -path '*/build/outputs/apk/*.apk' -type f | sort | tail -1)
           [[ -n "$APK" ]] || { echo "::error::APK does not exist"; exit 1; }
+
+          APK_ENTRIES="$(unzip -Z1 "$APK" 2>/dev/null)" || { echo "::error::Unable to read APK: $APK"; exit 1; }
+          if ! printf '%s\n' "$APK_ENTRIES" | grep -Fx 'AndroidManifest.xml' >/dev/null; then
+            echo "::error::Gradle output is not an installable APK or AndroidManifest.xml is missing: $APK"
+            printf '%s\n' "$APK_ENTRIES" | head -80 || true
+            exit 1
+          fi
+
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${{ env.ANDROID_BUILD_TOOLS_VERSION }}/apksigner"
+          [[ -x "$APKSIGNER" ]] || { echo "::error::apksigner not found: $APKSIGNER"; exit 1; }
+          "$APKSIGNER" verify --verbose "$APK"
 
           cp -f "$APK" out/dist/app-release.apk
           cp -f out/module/zdt_module.zip out/dist/zdt_module.zip
@@ -822,11 +847,11 @@ jobs:
 
           ## Installation notice
 
-          This APK is signed by the GitHub Actions build environment and can have a different signature than the APK from the main public release.
+          This APK is signed with the project service signing key restored from GitHub Actions secrets.
 
-          Because of the different signature, Android may block installation over an already installed release build.
+          It can update an already installed ZDT-D build only when the installed APK was signed with the same key.
 
-          To install this service build, first remove the ZDT-D application installed from the main release, then install the APK attached to this service build.
+          If Android reports a signature conflict during installation, remove the previously installed ZDT-D application first, then install the APK attached to this service build.
 
           The module itself is installed and updated from inside the application by the universal installer for Magisk, KernelSU, APatch, and compatible managers.
           EOF2

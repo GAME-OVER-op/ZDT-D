@@ -117,51 +117,57 @@ fun ZdtdApp(
 ) {
   val setup by setupFlow.collectAsStateWithLifecycle()
 
-  when (setup.step) {
-    SetupStep.WELCOME -> WelcomeScreen(onAccept = actions::acceptWelcome)
-    SetupStep.ROOT -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
-    SetupStep.INSTALL -> InstallModuleScreen(
-      rootState = rootState,
-      setup = setup,
-      onInstall = actions::beginModuleInstall,
-      onManualConfirm = actions::confirmManualInstall,
-      onManualDismiss = actions::dismissManualInstallDialog,
-      onContinue = actions::continueAfterInstall,
-      onReboot = actions::rebootNow,
-      onRefreshConflicts = actions::refreshInstallConflicts,
-      onToggleConflictRemove = actions::setInstallConflictMarked,
-      onRefreshZygiskInstallMarker = actions::refreshZygiskInstallMarker,
-      onToggleZygiskInstall = actions::requestSetInstallZygisk,
-      onConfirmZygiskInstall = actions::confirmInstallZygisk,
-      onDismissZygiskInstallConfirm = actions::dismissInstallZygiskConfirm,
-      onDismissZygiskInstallRecovery = actions::dismissZygiskInstallRecoveryDialog,
-      onRetryInstallWithoutZygisk = actions::retryInstallWithoutZygisk,
-    )
-    SetupStep.REBOOT -> {
-      when (rootState) {
-        RootState.CHECKING -> SplashScreen()
-        RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
-        RootState.GRANTED -> RebootRequiredScreen(
-          setup = setup,
-          text = setup.rebootRequiredText,
-          onReboot = actions::rebootNow,
-        )
-      }
-    }
-    SetupStep.DONE -> {
-      when (rootState) {
-        RootState.CHECKING -> SplashScreen()
-        RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
-        RootState.GRANTED -> {
-          UpdatePromptDialog(setup = setup, onUpdate = actions::openModuleInstaller, onSkip = actions::dismissUpdatePrompt)
-          MainShell(
-            uiStateFlow = uiStateFlow,
-            logsFlow = logsFlow,
-            appUpdateFlow = appUpdateFlow,
-            backupFlow = backupFlow,
-            programUpdatesFlow = programUpdatesFlow,
-            actions = actions,
+  Crossfade(
+    targetState = setup.step,
+    animationSpec = tween(durationMillis = 340, easing = FastOutSlowInEasing),
+    label = "setup_step_crossfade",
+  ) { setupStep ->
+    when (setupStep) {
+      SetupStep.WELCOME -> WelcomeScreen(onAccept = actions::acceptWelcome)
+      SetupStep.ROOT -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
+      SetupStep.INSTALL -> InstallModuleScreen(
+        rootState = rootState,
+        setup = setup,
+        onInstall = actions::beginModuleInstall,
+        onManualConfirm = actions::confirmManualInstall,
+        onManualDismiss = actions::dismissManualInstallDialog,
+        onContinue = actions::continueAfterInstall,
+        onReboot = actions::rebootNow,
+        onRefreshConflicts = actions::refreshInstallConflicts,
+        onToggleConflictRemove = actions::setInstallConflictMarked,
+        onRefreshZygiskInstallMarker = actions::refreshZygiskInstallMarker,
+        onToggleZygiskInstall = actions::requestSetInstallZygisk,
+        onConfirmZygiskInstall = actions::confirmInstallZygisk,
+        onDismissZygiskInstallConfirm = actions::dismissInstallZygiskConfirm,
+        onDismissZygiskInstallRecovery = actions::dismissZygiskInstallRecoveryDialog,
+        onRetryInstallWithoutZygisk = actions::retryInstallWithoutZygisk,
+      )
+      SetupStep.REBOOT -> {
+        when (rootState) {
+          RootState.CHECKING -> SplashScreen()
+          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
+          RootState.GRANTED -> RebootRequiredScreen(
+            setup = setup,
+            text = setup.rebootRequiredText,
+            onReboot = actions::rebootNow,
           )
+        }
+      }
+      SetupStep.DONE -> {
+        when (rootState) {
+          RootState.CHECKING -> SplashScreen()
+          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
+          RootState.GRANTED -> {
+            UpdatePromptDialog(setup = setup, onUpdate = actions::openModuleInstaller, onSkip = actions::dismissUpdatePrompt)
+            MainShell(
+              uiStateFlow = uiStateFlow,
+              logsFlow = logsFlow,
+              appUpdateFlow = appUpdateFlow,
+              backupFlow = backupFlow,
+              programUpdatesFlow = programUpdatesFlow,
+              actions = actions,
+            )
+          }
         }
       }
     }

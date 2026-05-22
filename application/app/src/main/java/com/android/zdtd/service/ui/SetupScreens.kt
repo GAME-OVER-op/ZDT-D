@@ -16,7 +16,11 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.rememberScrollState
@@ -24,6 +28,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SystemUpdateAlt
@@ -37,8 +42,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -92,52 +99,36 @@ fun WelcomeScreen(onAccept: () -> Unit) {
   val arm64Ok = remember { isArm64OnlySupported() }
   val screenPadding = rememberAdaptiveScreenPadding()
   SetupScaffold { padding ->
-    Box(
-      Modifier
-        .fillMaxSize()
-        .padding(padding),
-      contentAlignment = Alignment.Center,
-    ) {
+    SetupScreenBackground(padding = padding) {
       Column(
         modifier = Modifier
           .padding(screenPadding)
+          .widthIn(max = 620.dp)
           .fillMaxWidth()
           .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.Start,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(14.dp),
       ) {
-        Text(
-          text = stringResource(R.string.setup_welcome_title),
-          style = MaterialTheme.typography.headlineSmall,
-          fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-          text = stringResource(R.string.setup_welcome_body),
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
-          textAlign = TextAlign.Start,
-        )
-        Spacer(Modifier.height(16.dp))
-
-        Text(stringResource(R.string.setup_features_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(8.dp))
-        Text(
-          text = stringResource(R.string.setup_features_body),
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
-          textAlign = TextAlign.Start,
+        SetupStepHeader(currentStep = 1)
+        SetupHeroCard(
+          icon = Icons.Filled.Security,
+          stepLabel = "01 / 03",
+          title = stringResource(R.string.setup_welcome_title),
+          body = stringResource(R.string.setup_welcome_body),
+          accent = MaterialTheme.colorScheme.primary,
         )
 
-        Spacer(Modifier.height(16.dp))
-        Text(stringResource(R.string.setup_notes_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(8.dp))
-        Text(
-          text = stringResource(R.string.setup_notes_body),
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+        SetupInfoCard(
+          title = stringResource(R.string.setup_features_title),
+          body = stringResource(R.string.setup_features_body),
+          accent = MaterialTheme.colorScheme.secondary,
+        )
+        SetupInfoCard(
+          title = stringResource(R.string.setup_notes_title),
+          body = stringResource(R.string.setup_notes_body),
+          accent = MaterialTheme.colorScheme.tertiary,
         )
 
-        Spacer(Modifier.height(22.dp))
         SetupPrimaryButton(
           onClick = onAccept,
           enabled = arm64Ok,
@@ -146,14 +137,13 @@ fun WelcomeScreen(onAccept: () -> Unit) {
         )
 
         if (!arm64Ok) {
-          Spacer(Modifier.height(10.dp))
-          Text(
-            text = stringResource(
+          SetupInfoCard(
+            title = stringResource(R.string.common_attention),
+            body = stringResource(
               R.string.setup_arch_unsupported_fmt,
               Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown",
             ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
+            accent = MaterialTheme.colorScheme.error,
           )
         }
       }
@@ -166,75 +156,55 @@ fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit) {
   val arm64Ok = remember { isArm64OnlySupported() }
   val screenPadding = rememberAdaptiveScreenPadding()
   SetupScaffold { padding ->
-    Box(
-      Modifier
-        .fillMaxSize()
-        .padding(padding),
-      contentAlignment = Alignment.Center,
-    ) {
+    SetupScreenBackground(padding = padding) {
       Column(
         modifier = Modifier
           .padding(screenPadding)
+          .widthIn(max = 620.dp)
           .fillMaxWidth()
           .animateContentSize(animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing))
           .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(14.dp),
       ) {
-        Icon(
-          imageVector = Icons.Filled.Security,
-          contentDescription = null,
-          modifier = Modifier.size(52.dp),
+        SetupStepHeader(currentStep = 2)
+        SetupHeroCard(
+          icon = Icons.Filled.Security,
+          stepLabel = "02 / 03",
+          title = stringResource(R.string.setup_root_title),
+          body = stringResource(R.string.setup_root_body),
+          accent = MaterialTheme.colorScheme.secondary,
+          bodyTextAlign = TextAlign.Start,
         )
-        Spacer(Modifier.height(10.dp))
-        Text(
-          text = stringResource(R.string.setup_root_title),
-          style = MaterialTheme.typography.titleLarge,
-          fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(Modifier.height(10.dp))
-        Text(
-          text = stringResource(R.string.setup_root_body),
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
-        )
-
-        Spacer(Modifier.height(18.dp))
 
         when (rootState) {
           RootState.CHECKING -> {
-            CircularProgressIndicator()
-            Spacer(Modifier.height(12.dp))
-            Text(
-              text = stringResource(R.string.setup_root_waiting),
-              style = MaterialTheme.typography.bodyMedium,
-              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-            )
+            SetupProgressCard(text = stringResource(R.string.setup_root_waiting))
           }
           RootState.DENIED, RootState.GRANTED -> {
             val enabled = arm64Ok && rootState != RootState.CHECKING
-            Button(
+            SetupPrimaryButton(
               onClick = onRequest,
               enabled = enabled,
               modifier = Modifier.fillMaxWidth(),
-            ) { Text(stringResource(R.string.setup_request_root)) }
+              text = stringResource(R.string.setup_request_root),
+            )
 
             if (!arm64Ok) {
-              Spacer(Modifier.height(10.dp))
-              Text(
-                text = stringResource(
+              SetupInfoCard(
+                title = stringResource(R.string.common_attention),
+                body = stringResource(
                   R.string.setup_arch_unsupported_fmt,
                   Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown",
                 ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
+                accent = MaterialTheme.colorScheme.error,
               )
             }
             if (rootState == RootState.DENIED) {
-              Spacer(Modifier.height(10.dp))
-              Text(
-                text = stringResource(R.string.setup_root_denied),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.error,
+              SetupInfoCard(
+                title = stringResource(R.string.common_attention),
+                body = stringResource(R.string.setup_root_denied),
+                accent = MaterialTheme.colorScheme.error,
               )
             }
           }
@@ -417,36 +387,23 @@ fun InstallModuleScreen(
   }
 
   SetupScaffold { padding ->
-    Box(
-      Modifier
-        .fillMaxSize()
-        .padding(padding),
-      contentAlignment = Alignment.Center,
-    ) {
+    SetupScreenBackground(padding = padding) {
       Column(
         modifier = Modifier
           .padding(screenPadding)
+          .widthIn(max = 620.dp)
           .fillMaxWidth()
           .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
       ) {
-        Icon(
-          imageVector = Icons.Filled.SystemUpdateAlt,
-          contentDescription = null,
-          modifier = Modifier.size(52.dp),
-        )
-        Spacer(Modifier.height(10.dp))
-        Text(
-          text = stringResource(R.string.setup_install_title),
-          style = MaterialTheme.typography.titleLarge,
-          fontWeight = FontWeight.SemiBold,
-        )
-        Spacer(Modifier.height(10.dp))
-        Text(
-          text = stringResource(R.string.setup_install_body),
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
-          textAlign = TextAlign.Center,
+        SetupStepHeader(currentStep = 3)
+        Spacer(Modifier.height(4.dp))
+        SetupHeroCard(
+          icon = Icons.Filled.SystemUpdateAlt,
+          stepLabel = "03 / 03",
+          title = stringResource(R.string.setup_install_title),
+          body = stringResource(R.string.setup_install_body),
+          accent = MaterialTheme.colorScheme.primary,
         )
 
         if (setup.installerLabel.isNotBlank()) {
@@ -774,6 +731,254 @@ fun InstallModuleScreen(
           }
         }
       }
+    }
+  }
+}
+
+
+@Composable
+private fun SetupScreenBackground(
+  padding: PaddingValues,
+  content: @Composable BoxScope.() -> Unit,
+) {
+  Box(
+    modifier = Modifier
+      .fillMaxSize()
+      .padding(padding)
+      .background(
+        Brush.linearGradient(
+          listOf(
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+            MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f),
+          ),
+        ),
+      ),
+    contentAlignment = Alignment.Center,
+    content = content,
+  )
+}
+
+@Composable
+private fun SetupStepHeader(currentStep: Int) {
+  Surface(
+    shape = RoundedCornerShape(999.dp),
+    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.40f),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      repeat(3) { index ->
+        val step = index + 1
+        val active = step <= currentStep
+        Box(
+          modifier = Modifier
+            .height(7.dp)
+            .width(if (active) 30.dp else 9.dp)
+            .clip(RoundedCornerShape(999.dp))
+            .background(
+              if (active) {
+                Brush.horizontalGradient(
+                  listOf(
+                    MaterialTheme.colorScheme.primary,
+                    MaterialTheme.colorScheme.secondary,
+                  ),
+                )
+              } else {
+                Brush.horizontalGradient(
+                  listOf(
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.20f),
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                  ),
+                )
+              },
+            ),
+        )
+      }
+      Text(
+        text = "$currentStep / 3",
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+      )
+    }
+  }
+}
+
+@Composable
+private fun SetupHeroCard(
+  icon: ImageVector,
+  stepLabel: String,
+  title: String,
+  body: String,
+  accent: androidx.compose.ui.graphics.Color,
+  modifier: Modifier = Modifier,
+  bodyTextAlign: TextAlign = TextAlign.Center,
+) {
+  Surface(
+    modifier = modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(30.dp),
+    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+    shadowElevation = 2.dp,
+  ) {
+    Box(
+      modifier = Modifier
+        .background(
+          Brush.linearGradient(
+            listOf(
+              accent.copy(alpha = 0.18f),
+              MaterialTheme.colorScheme.surface.copy(alpha = 0.10f),
+              MaterialTheme.colorScheme.secondary.copy(alpha = 0.08f),
+            ),
+          ),
+        )
+        .padding(18.dp),
+    ) {
+      Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+      ) {
+        Surface(
+          shape = RoundedCornerShape(999.dp),
+          color = accent.copy(alpha = 0.14f),
+          border = BorderStroke(1.dp, accent.copy(alpha = 0.32f)),
+        ) {
+          Text(
+            text = stepLabel,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = accent,
+          )
+        }
+        Spacer(Modifier.height(14.dp))
+        Box(
+          modifier = Modifier
+            .size(66.dp)
+            .clip(CircleShape)
+            .background(
+              Brush.linearGradient(
+                listOf(
+                  accent.copy(alpha = 0.92f),
+                  MaterialTheme.colorScheme.secondary.copy(alpha = 0.78f),
+                ),
+              ),
+            ),
+          contentAlignment = Alignment.Center,
+        ) {
+          Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onPrimary,
+            modifier = Modifier.size(34.dp),
+          )
+        }
+        Spacer(Modifier.height(16.dp))
+        Text(
+          text = title,
+          style = MaterialTheme.typography.headlineSmall,
+          fontWeight = FontWeight.Bold,
+          color = MaterialTheme.colorScheme.onSurface,
+          textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+          text = body,
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+          textAlign = bodyTextAlign,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun SetupInfoCard(
+  title: String,
+  body: String,
+  accent: androidx.compose.ui.graphics.Color,
+  modifier: Modifier = Modifier,
+) {
+  Surface(
+    modifier = modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(24.dp),
+    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.24f)),
+  ) {
+    Row(
+      modifier = Modifier
+        .background(
+          Brush.linearGradient(
+            listOf(
+              accent.copy(alpha = 0.10f),
+              MaterialTheme.colorScheme.surface.copy(alpha = 0.04f),
+            ),
+          ),
+        )
+        .padding(14.dp),
+      verticalAlignment = Alignment.Top,
+    ) {
+      Box(
+        modifier = Modifier
+          .size(34.dp)
+          .clip(CircleShape)
+          .background(accent.copy(alpha = 0.16f)),
+        contentAlignment = Alignment.Center,
+      ) {
+        Icon(
+          imageVector = if (accent == MaterialTheme.colorScheme.error) Icons.Filled.ErrorOutline else Icons.Filled.CheckCircle,
+          contentDescription = null,
+          tint = accent,
+          modifier = Modifier.size(19.dp),
+        )
+      }
+      Spacer(Modifier.width(12.dp))
+      Column(
+        modifier = Modifier.weight(1f),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
+        Text(
+          text = title,
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.SemiBold,
+          color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+          text = body,
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun SetupProgressCard(text: String) {
+  Surface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(24.dp),
+    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
+  ) {
+    Row(
+      modifier = Modifier.padding(16.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.Center,
+    ) {
+      CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.5.dp)
+      Spacer(Modifier.width(12.dp))
+      Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
+      )
     }
   }
 }

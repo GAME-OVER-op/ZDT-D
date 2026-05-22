@@ -68,41 +68,89 @@ fun BlockedQuicSectionCard(
 ) {
   var showWarning by remember { mutableStateOf(false) }
   val compactWidth = rememberIsCompactWidth()
+  val shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp)
+  val accent = MaterialTheme.colorScheme.tertiary
 
-  Column(modifier = Modifier.fillMaxWidth()) {
-    if (compactWidth) {
-      Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Column(Modifier.fillMaxWidth()) {
-          Text(stringResource(R.string.settings_blockedquic_title), style = MaterialTheme.typography.bodyLarge)
-          Text(
-            stringResource(R.string.settings_blockedquic_body),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-          )
-        }
-        Switch(
-          checked = enabled,
-          onCheckedChange = { checked ->
-            if (busy) return@Switch
-            if (checked && !enabled) showWarning = true else onEnabledChange(checked)
-          },
-          enabled = !busy,
-        )
-      }
-    } else {
+  Surface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = shape,
+    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 14.dp, vertical = 13.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
       Row(
-        Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
       ) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-          Text(stringResource(R.string.settings_blockedquic_title), style = MaterialTheme.typography.bodyLarge)
+        Surface(
+          shape = CircleShape,
+          color = accent.copy(alpha = if (enabled) 0.22f else 0.12f),
+          tonalElevation = 0.dp,
+          shadowElevation = 0.dp,
+        ) {
+          Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
+            Icon(
+              imageVector = Icons.Filled.Close,
+              contentDescription = null,
+              tint = accent.copy(alpha = if (enabled) 1f else 0.62f),
+            )
+          }
+        }
+
+        Column(Modifier.weight(1f)) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            Text(
+              stringResource(R.string.settings_blockedquic_title),
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.SemiBold,
+              modifier = Modifier.weight(1f),
+            )
+            Surface(
+              shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
+              color = if (enabled) accent.copy(alpha = 0.18f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f),
+            ) {
+              Text(
+                text = if (enabled) stringResource(R.string.enabled_state_on) else stringResource(R.string.enabled_state_off),
+                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = if (enabled) accent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+              )
+            }
+          }
+          Spacer(Modifier.height(3.dp))
           Text(
             stringResource(R.string.settings_blockedquic_body),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
           )
         }
+
+        if (!compactWidth) {
+          Switch(
+            checked = enabled,
+            onCheckedChange = { checked ->
+              if (busy) return@Switch
+              if (checked && !enabled) showWarning = true else onEnabledChange(checked)
+            },
+            enabled = !busy,
+          )
+        }
+      }
+
+      if (compactWidth) {
         Switch(
           checked = enabled,
           onCheckedChange = { checked ->
@@ -112,16 +160,35 @@ fun BlockedQuicSectionCard(
           enabled = !busy,
         )
       }
-    }
 
-    AnimatedVisibility(visible = enabled) {
-      Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
-        OutlinedButton(
-          onClick = onConfigure,
-          modifier = Modifier.fillMaxWidth(),
-          enabled = !busy,
+      AnimatedVisibility(visible = enabled) {
+        Surface(
+          modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !busy, onClick = onConfigure),
+          shape = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+          color = accent.copy(alpha = 0.12f),
+          tonalElevation = 0.dp,
+          shadowElevation = 0.dp,
         ) {
-          Text(stringResource(R.string.settings_blockedquic_configure))
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+          ) {
+            Text(
+              stringResource(R.string.settings_blockedquic_configure),
+              style = MaterialTheme.typography.labelLarge,
+              fontWeight = FontWeight.SemiBold,
+              color = accent.copy(alpha = if (busy) 0.5f else 1f),
+            )
+            if (busy) {
+              Spacer(Modifier.width(8.dp))
+              CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            }
+          }
         }
       }
     }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -41,12 +42,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.RootConfigManager
 import com.android.zdtd.service.R
 
 @Composable
-fun SupportScreen() {
+fun SupportScreen(topContentPadding: Dp = 0.dp) {
   val context = LocalContext.current
   val configuration = LocalConfiguration.current
   val isCompactWidth = rememberIsCompactWidth()
@@ -108,10 +110,16 @@ fun SupportScreen() {
     }
   }
 
+  val screenPadding = rememberAdaptiveScreenPadding()
+
   LazyColumn(
-    modifier = Modifier
-      .fillMaxSize()
-      .padding(rememberAdaptiveScreenPadding()),
+    modifier = Modifier.fillMaxSize(),
+    contentPadding = PaddingValues(
+      start = screenPadding,
+      top = topContentPadding + screenPadding,
+      end = screenPadding,
+      bottom = screenPadding,
+    ),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     item {

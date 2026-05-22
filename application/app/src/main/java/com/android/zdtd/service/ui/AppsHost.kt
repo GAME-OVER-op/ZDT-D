@@ -20,6 +20,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.zdtd.service.R
 import com.android.zdtd.service.UiState
@@ -36,6 +38,8 @@ fun AppsHost(
   onOpenProfile: (String, String) -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  topContentPadding: Dp = 0.dp,
+  bottomContentPadding: Dp = 0.dp,
 ) {
   val programs by remember(uiStateFlow) {
     uiStateFlow.map { it.programs }.distinctUntilChanged()
@@ -75,6 +79,8 @@ fun AppsHost(
         daemonOnline = daemonOnline,
         onOpenProgram = onOpenProgram,
         listState = listState,
+        topContentPadding = topContentPadding,
+        bottomContentPadding = bottomContentPadding,
       )
       is AppsRoute.Program -> when (r.programId) {
         "openvpn" -> OpenVpnProgramScreen(
@@ -82,30 +88,39 @@ fun AppsHost(
           onOpenProfile = onOpenProfile,
           actions = actions,
           snackHost = snackHost,
+          topContentPadding = topContentPadding,
         )
         "amneziawg" -> AmneziaWgProgramScreen(
           programs = programs,
           onOpenProfile = onOpenProfile,
           actions = actions,
           snackHost = snackHost,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
         )
         "tun2socks" -> Tun2SocksProgramScreen(
           programs = programs,
           onOpenProfile = onOpenProfile,
           actions = actions,
           snackHost = snackHost,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
         )
         "myvpn" -> MyVpnProgramScreen(
           programs = programs,
           onOpenProfile = onOpenProfile,
           actions = actions,
           snackHost = snackHost,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
         )
         "mihomo" -> MihomoProgramScreen(
           programs = programs,
           onOpenProfile = onOpenProfile,
           actions = actions,
           snackHost = snackHost,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
         )
         else -> ProgramScreen(
           programs = programs,
@@ -113,6 +128,7 @@ fun AppsHost(
           onOpenProfile = onOpenProfile,
           actions = actions,
           snackHost = snackHost,
+          topContentPadding = topContentPadding,
         )
       }
       is AppsRoute.Profile -> when (r.programId) {
@@ -121,60 +137,80 @@ fun AppsHost(
           profile = r.profile,
           actions = actions,
           snackHost = snackHost,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
         )
         "wireproxy" -> WireProxyProfileScreen(
           programs = programs,
           profile = r.profile,
           actions = actions,
           snackHost = snackHost,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
         )
         "myproxy" -> MyProxyProfileScreen(
           programs = programs,
           profile = r.profile,
           actions = actions,
           snackHost = snackHost,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
         )
         "myprogram" -> MyProgramProfileScreen(
           programs = programs,
           profile = r.profile,
           actions = actions,
           snackHost = snackHost,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
         )
         "openvpn" -> OpenVpnProfileScreen(
           programs = programs,
           profile = r.profile,
           actions = actions,
           snackHost = snackHost,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
         )
         "amneziawg" -> AmneziaWgProfileScreen(
           programs = programs,
           profile = r.profile,
           actions = actions,
           snackHost = snackHost,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
         )
         "tun2socks" -> Tun2SocksProfileScreen(
           programs = programs,
           profile = r.profile,
           actions = actions,
           snackHost = snackHost,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
         )
         "myvpn" -> MyVpnProfileScreen(
           programs = programs,
           profile = r.profile,
           actions = actions,
           snackHost = snackHost,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
         )
         "mihomo" -> MihomoProfileScreen(
           programs = programs,
           profile = r.profile,
           actions = actions,
           snackHost = snackHost,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
         )
         "mieru" -> MieruProfileScreen(
           programs = programs,
           profile = r.profile,
           actions = actions,
           snackHost = snackHost,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
         )
         else -> ProfileScreen(
           programs = programs,
@@ -182,6 +218,8 @@ fun AppsHost(
           profile = r.profile,
           actions = actions,
           snackHost = snackHost,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
         )
       }
       else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(stringResource(R.string.apps_host_unknown_route)) }

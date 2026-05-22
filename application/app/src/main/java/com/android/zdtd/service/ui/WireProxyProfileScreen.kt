@@ -1,5 +1,13 @@
 package com.android.zdtd.service.ui
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -65,6 +73,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.android.zdtd.service.R
@@ -326,40 +335,154 @@ private suspend fun isWireProxyWebPanelPortOpen(port: Int): Boolean = withContex
 }
 
 @Composable
+private fun WireProxySectionCard(
+  title: String,
+  desc: String? = null,
+  accent: Color = Color(0xFF38BDF8),
+  icon: @Composable (() -> Unit)? = null,
+  trailing: @Composable (() -> Unit)? = null,
+  modifier: Modifier = Modifier,
+  content: @Composable (() -> Unit)? = null,
+) {
+  val compact = rememberIsCompactWidth()
+  val shape = RoundedCornerShape(if (compact) 20.dp else 24.dp)
+  Surface(
+    modifier = modifier.fillMaxWidth(),
+    shape = shape,
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.64f),
+    contentColor = MaterialTheme.colorScheme.onSurface,
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .background(
+          Brush.linearGradient(
+            listOf(
+              accent.copy(alpha = 0.13f),
+              MaterialTheme.colorScheme.surface.copy(alpha = 0.05f),
+              Color.Transparent,
+            )
+          ),
+          shape = shape,
+        )
+        .padding(if (compact) 12.dp else 14.dp),
+    ) {
+      Column(verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp)) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp),
+        ) {
+          if (icon != null) {
+            Surface(
+              modifier = Modifier.size(if (compact) 42.dp else 46.dp),
+              shape = CircleShape,
+              color = accent.copy(alpha = 0.16f),
+              contentColor = accent,
+              border = BorderStroke(1.dp, accent.copy(alpha = 0.38f)),
+            ) {
+              Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { icon() }
+            }
+          }
+          Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+              title,
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.93f),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+            if (desc != null) {
+              Text(
+                desc,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+          }
+          if (trailing != null) trailing()
+        }
+        if (content != null) content()
+      }
+    }
+  }
+}
+
+@Composable
+private fun WireProxyProfileEnabledCard(
+  checked: Boolean,
+  onCheckedChange: (Boolean) -> Unit,
+) {
+  val accent = if (checked) Color(0xFF22C55E) else Color(0xFFEF4444)
+  WireProxySectionCard(
+    title = stringResource(R.string.enabled_card_profile_title),
+    desc = stringResource(R.string.enabled_card_apply_hint),
+    accent = accent,
+    icon = {
+      Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(22.dp))
+    },
+    trailing = {
+      Switch(checked = checked, onCheckedChange = onCheckedChange)
+    },
+  ) {
+    Surface(
+      shape = RoundedCornerShape(100.dp),
+      color = accent.copy(alpha = 0.16f),
+      contentColor = accent,
+      border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+    ) {
+      Text(
+        text = stringResource(if (checked) R.string.enabled_state_on else R.string.enabled_state_off),
+        modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp),
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+      )
+    }
+  }
+}
+
+@Composable
 private fun WireProxyWebPanelCard(
   checking: Boolean,
   onOpen: () -> Unit,
 ) {
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))) {
-    Row(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Text(
-        text = stringResource(R.string.web_panel_open),
-        modifier = Modifier.weight(1f),
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.SemiBold,
-      )
-      FilledTonalIconButton(
-        onClick = onOpen,
-        enabled = !checking,
-      ) {
-        if (checking) {
-          CircularProgressIndicator(
-            modifier = Modifier.width(20.dp).height(20.dp),
-            strokeWidth = 2.dp,
-          )
-        } else {
-          Icon(
-            imageVector = Icons.Filled.Public,
-            contentDescription = stringResource(R.string.web_panel_open),
-          )
-        }
+  val accent = Color(0xFF38BDF8)
+  WireProxySectionCard(
+    title = stringResource(R.string.web_panel_open),
+    desc = "127.0.0.1 web UI",
+    accent = accent,
+    icon = {
+      if (checking) {
+        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+      } else {
+        Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(22.dp))
       }
-    }
-  }
+    },
+    trailing = {
+      Surface(
+        modifier = Modifier.clickable(enabled = !checking) { onOpen() },
+        shape = RoundedCornerShape(100.dp),
+        color = accent.copy(alpha = 0.16f),
+        contentColor = Color(0xFF7DD3FC),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
+      ) {
+        Text(
+          stringResource(R.string.support_open),
+          modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+          style = MaterialTheme.typography.labelLarge,
+          fontWeight = FontWeight.Bold,
+          maxLines = 1,
+        )
+      }
+    },
+  )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -369,8 +492,12 @@ fun WireProxyProfileScreen(
   profile: String,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  topContentPadding: Dp = 0.dp,
+  bottomContentPadding: Dp = 0.dp,
 ) {
   val compact = rememberIsCompactWidth()
+  val effectiveTopContentPadding = topContentPadding + 12.dp
+  val effectiveBottomContentPadding = bottomContentPadding + if (compact) 12.dp else 16.dp
   val program = programs.firstOrNull { it.id == "wireproxy" }
   val prof = program?.profiles?.firstOrNull { it.name == profile }
   val encodedProfile = remember(profile) { URLEncoder.encode(profile, "UTF-8") }
@@ -558,20 +685,14 @@ fun WireProxyProfileScreen(
   Column(
     Modifier
       .fillMaxSize()
-      .padding(if (compact) 12.dp else 16.dp)
       .verticalScroll(scroll)
-      .navigationBarsPadding(),
+      .padding(horizontal = if (compact) 12.dp else 16.dp)
+      .animateContentSize(),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    Text("${program?.name ?: "WireProxy"} / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 2)
-    Text(
-      toolDescription("wireproxy"),
-      style = MaterialTheme.typography.bodySmall,
-      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-    )
+    Spacer(Modifier.height(effectiveTopContentPadding))
 
-    EnabledCard(
-      title = stringResource(R.string.enabled_card_profile_title),
+    WireProxyProfileEnabledCard(
       checked = prof?.enabled ?: false,
       onCheckedChange = { v -> actions.setProfileEnabled("wireproxy", profile, v) },
     )
@@ -638,22 +759,31 @@ fun WireProxyProfileScreen(
       onSavedSelection = { selectedApps = it },
     )
 
-    ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f))) {
-      Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          Text(stringResource(R.string.wireproxy_servers_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-          Text(
-            stringResource(R.string.wireproxy_servers_desc),
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-            style = MaterialTheme.typography.bodySmall,
-          )
-          FilledTonalButton(onClick = { showCreateServer = true }, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Filled.Add, contentDescription = null)
-            Spacer(Modifier.width(6.dp))
-            Text(stringResource(R.string.wireproxy_add_server))
+    WireProxySectionCard(
+      title = stringResource(R.string.wireproxy_servers_title),
+      desc = stringResource(R.string.wireproxy_servers_desc),
+      accent = Color(0xFF22C55E),
+      icon = { Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(22.dp)) },
+      trailing = {
+        Surface(
+          modifier = Modifier.clickable { showCreateServer = true },
+          shape = RoundedCornerShape(100.dp),
+          color = Color(0xFF22C55E).copy(alpha = 0.16f),
+          contentColor = Color(0xFF86EFAC),
+          border = BorderStroke(1.dp, Color(0xFF22C55E).copy(alpha = 0.34f)),
+        ) {
+          Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text(stringResource(R.string.wireproxy_add_server), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
           }
         }
-
+      },
+    ) {
+      Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (serversLoading) {
           LinearProgressIndicator(Modifier.fillMaxWidth())
         } else if (servers.isEmpty()) {
@@ -699,7 +829,7 @@ fun WireProxyProfileScreen(
       }
     }
 
-    Spacer(Modifier.height(80.dp))
+    Spacer(Modifier.height(effectiveBottomContentPadding))
   }
 }
 
@@ -742,15 +872,13 @@ private fun WireProxyProfileSettingsCard(
     }
   }
 
-  ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f))) {
-    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Text(stringResource(R.string.wireproxy_profile_settings_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-      Text(
-        stringResource(R.string.wireproxy_profile_settings_desc),
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-        style = MaterialTheme.typography.bodySmall,
-      )
-
+  WireProxySectionCard(
+    title = stringResource(R.string.wireproxy_profile_settings_title),
+    desc = stringResource(R.string.wireproxy_profile_settings_desc),
+    accent = Color(0xFF60A5FA),
+    icon = { Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(22.dp)) },
+  ) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       if (loading || saving) {
         LinearProgressIndicator(Modifier.fillMaxWidth())
       }
@@ -844,35 +972,55 @@ private fun WireProxyServerCard(
     }
   }
 
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f))) {
-    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-          Text(server.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-          Text(
-            when {
-              saving -> stringResource(R.string.common_loading)
-              server.bindPort != null -> stringResource(R.string.wireproxy_server_bind_fmt, server.bindHost ?: "127.0.0.1", server.bindPort)
-              else -> stringResource(R.string.wireproxy_server_bind_missing)
-            },
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-          )
+  val accent = if (enabled) Color(0xFF22C55E) else Color(0xFF94A3B8)
+  Surface(
+    shape = RoundedCornerShape(18.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.54f),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.26f)),
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth().padding(12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      Surface(
+        modifier = Modifier.size(36.dp),
+        shape = CircleShape,
+        color = accent.copy(alpha = 0.16f),
+        contentColor = accent,
+      ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+          Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(19.dp))
+        }
+      }
+      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(
+          server.name,
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.Bold,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          when {
+            saving -> stringResource(R.string.common_loading)
+            server.bindPort != null -> stringResource(R.string.wireproxy_server_bind_fmt, server.bindHost ?: "127.0.0.1", server.bindPort)
+            else -> stringResource(R.string.wireproxy_server_bind_missing)
+          },
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        FilledTonalIconButton(onClick = onEdit, modifier = Modifier.size(38.dp)) {
+          Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.action_edit), modifier = Modifier.size(19.dp))
+        }
+        FilledTonalIconButton(onClick = onDelete, modifier = Modifier.size(38.dp)) {
+          Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.action_delete), modifier = Modifier.size(19.dp))
         }
         Switch(checked = enabled, onCheckedChange = { enabled = it })
-      }
-
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onEdit, modifier = Modifier.weight(1f)) {
-          Icon(Icons.Filled.Edit, contentDescription = null)
-          Spacer(Modifier.width(6.dp))
-          Text(stringResource(R.string.action_edit))
-        }
-        OutlinedButton(onClick = onDelete, modifier = Modifier.weight(1f)) {
-          Icon(Icons.Filled.Delete, contentDescription = null)
-          Spacer(Modifier.width(6.dp))
-          Text(stringResource(R.string.action_delete))
-        }
       }
     }
   }

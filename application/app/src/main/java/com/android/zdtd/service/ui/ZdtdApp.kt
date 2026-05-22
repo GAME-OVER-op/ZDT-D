@@ -3,18 +3,19 @@ package com.android.zdtd.service.ui
 import android.app.Activity
 import android.content.Intent
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -24,7 +25,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -58,18 +59,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.zdtd.service.LogLine
@@ -1163,6 +1169,12 @@ private fun MainShell(
   val statsTabLabel = stringResource(R.string.nav_stats)
   val appsTabLabel = stringResource(R.string.nav_programs)
   val supportTabLabel = stringResource(R.string.nav_support)
+  val floatingBottomBarReserve = WindowInsets.navigationBars
+    .asPaddingValues()
+    .calculateBottomPadding() + (if (compactBottomBar) 82.dp else 94.dp)
+  val floatingTopBarReserve = WindowInsets.statusBars
+    .asPaddingValues()
+    .calculateTopPadding() + 74.dp
 
   LaunchedEffect(tab) {
     actions.setActiveMainTab(tab.name)
@@ -1174,8 +1186,15 @@ private fun MainShell(
     tab == Tab.STATS -> stringResource(R.string.nav_stats)
     tab == Tab.SUPPORT -> stringResource(R.string.nav_support)
     tab == Tab.APPS && appsRoute == AppsRoute.List -> stringResource(R.string.nav_programs)
-    tab == Tab.APPS && appsRoute is AppsRoute.Program -> stringResource(R.string.title_program)
-    tab == Tab.APPS && appsRoute is AppsRoute.Profile -> stringResource(R.string.title_profile)
+    tab == Tab.APPS && appsRoute is AppsRoute.Program -> {
+      val route = appsRoute as AppsRoute.Program
+      uiState.programs.firstOrNull { it.id == route.programId }?.name ?: route.programId
+    }
+    tab == Tab.APPS && appsRoute is AppsRoute.Profile -> {
+      val route = appsRoute as AppsRoute.Profile
+      val programName = uiState.programs.firstOrNull { it.id == route.programId }?.name ?: route.programId
+      "$programName / ${route.profile}"
+    }
     else -> stringResource(R.string.app_name)
   }
 
@@ -1218,15 +1237,35 @@ private fun MainShell(
   val mainContentVisible = !uiState.startup.visible
   val mainContentAlpha by animateFloatAsState(
     targetValue = if (mainContentVisible) 1f else 0f,
-    animationSpec = tween(durationMillis = 360),
+    animationSpec = tween(durationMillis = 520, easing = FastOutSlowInEasing),
     label = "main_shell_alpha",
   )
-  Box(Modifier.fillMaxSize()) {
+  val mainContentSlide by animateDpAsState(
+    targetValue = if (mainContentVisible) 0.dp else 54.dp,
+    animationSpec = tween(durationMillis = 560, easing = FastOutSlowInEasing),
+    label = "main_shell_slide_from_right",
+  )
+  val density = LocalDensity.current
+  val mainContentSlidePx = with(density) { mainContentSlide.toPx() }
+  Box(
+    modifier = Modifier
+      .fillMaxSize()
+      .background(
+        Brush.verticalGradient(
+          colors = listOf(
+            MaterialTheme.colorScheme.background,
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+            MaterialTheme.colorScheme.background,
+          ),
+        ),
+      ),
+  ) {
     Box(
       modifier = Modifier
         .fillMaxSize()
         .graphicsLayer {
           alpha = mainContentAlpha
+          translationX = mainContentSlidePx
         }
     ) {
       if (landscapeControl) {
@@ -1271,89 +1310,9 @@ private fun MainShell(
       } else {
         Scaffold(
           modifier = Modifier.fillMaxSize(),
-          topBar = {
-            TopAppBar(
-                title = {
-                  val isHomeTitle = tab == Tab.HOME
-                  Text(
-                    title,
-                    letterSpacing = 2.sp,
-                    modifier = if (isHomeTitle) {
-                      Modifier.clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null,
-                      ) {
-                        showWorldMapPrompt = true
-                      }
-                    } else {
-                      Modifier
-                    },
-                  )
-                },
-                navigationIcon = {
-                  if (canGoBack) {
-                    IconButton(onClick = {
-                      appsRoute = when (val r = appsRoute) {
-                        is AppsRoute.Profile -> AppsRoute.Program(r.programId)
-                        is AppsRoute.Program -> AppsRoute.List
-                        AppsRoute.List -> AppsRoute.List
-                      }
-                    }) { Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back)) }
-                  }
-                },
-                actions = {
-                  TopBarActionCluster(
-                    programLogTarget = currentProgramLogTarget,
-                    onOpenLogs = { target ->
-                      if (target == null) showLogs = true else programLogsTarget = target
-                    },
-                    onOpenBackup = { showBackup = true },
-                    onOpenProgramUpdates = {
-                      showProgramUpdates = true
-                      actions.resetProgramUpdatesUi()
-                    },
-                    onOpenSettings = {
-                      settingsCloseRequested = false
-                      showSettings = true
-                    },
-                  )
-                }
-              )
-            },
-          bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                  selected = tab == Tab.HOME,
-                  onClick = { tab = Tab.HOME },
-                  icon = { Icon(Icons.Filled.Power, contentDescription = if (compactBottomBar) homeTabLabel else null) },
-                  label = if (compactBottomBar) null else ({ Text(homeTabLabel) }),
-                  alwaysShowLabel = !compactBottomBar,
-                )
-                NavigationBarItem(
-                  selected = tab == Tab.STATS,
-                  onClick = { tab = Tab.STATS },
-                  icon = { Icon(Icons.Filled.Equalizer, contentDescription = if (compactBottomBar) statsTabLabel else null) },
-                  label = if (compactBottomBar) null else ({ Text(statsTabLabel) }),
-                  alwaysShowLabel = !compactBottomBar,
-                )
-                NavigationBarItem(
-                  selected = tab == Tab.APPS,
-                  onClick = { tab = Tab.APPS },
-                  icon = { Icon(Icons.Filled.Apps, contentDescription = if (compactBottomBar) appsTabLabel else null) },
-                  label = if (compactBottomBar) null else ({ Text(appsTabLabel) }),
-                  alwaysShowLabel = !compactBottomBar,
-                )
-
-                NavigationBarItem(
-                  selected = tab == Tab.SUPPORT,
-                  onClick = { tab = Tab.SUPPORT },
-                  icon = { Icon(Icons.Filled.Info, contentDescription = if (compactBottomBar) supportTabLabel else null) },
-                  label = if (compactBottomBar) null else ({ Text(supportTabLabel) }),
-                  alwaysShowLabel = !compactBottomBar,
-                )
-              }
-            },
-            snackbarHost = { SnackbarHost(snackHost) },
+          containerColor = Color.Transparent,
+          contentColor = MaterialTheme.colorScheme.onBackground,
+          contentWindowInsets = WindowInsets(0, 0, 0, 0),
         ) { padding ->
           Column(
             Modifier
@@ -1377,11 +1336,66 @@ private fun MainShell(
                 actions = actions,
                 snackHost = snackHost,
                 landscapeControl = false,
+                topContentPadding = floatingTopBarReserve,
+                bottomContentPadding = floatingBottomBarReserve + 18.dp,
               )
             }
           }
         }
+
+        FloatingTopBarCard(
+          modifier = Modifier
+            .align(Alignment.TopCenter)
+            .zIndex(2f),
+          title = title,
+          canGoBack = canGoBack,
+          onBack = {
+            appsRoute = when (val r = appsRoute) {
+              is AppsRoute.Profile -> AppsRoute.Program(r.programId)
+              is AppsRoute.Program -> AppsRoute.List
+              AppsRoute.List -> AppsRoute.List
+            }
+          },
+          isHome = tab == Tab.HOME,
+          onTitleClick = { if (tab == Tab.HOME) showWorldMapPrompt = true },
+          programLogTarget = currentProgramLogTarget,
+          onOpenLogs = { target ->
+            if (target == null) showLogs = true else programLogsTarget = target
+          },
+          onOpenBackup = { showBackup = true },
+          onOpenProgramUpdates = {
+            showProgramUpdates = true
+            actions.resetProgramUpdatesUi()
+          },
+          onOpenSettings = {
+            settingsCloseRequested = false
+            showSettings = true
+          },
+        )
+
+        FloatingBottomNavigationCard(
+          modifier = Modifier.align(Alignment.BottomCenter),
+          compact = compactBottomBar,
+          tab = tab,
+          onTabChange = { tab = it },
+          homeTabLabel = homeTabLabel,
+          statsTabLabel = statsTabLabel,
+          appsTabLabel = appsTabLabel,
+          supportTabLabel = supportTabLabel,
+        )
       }
+
+      FloatingSnackbarHost(
+        hostState = snackHost,
+        modifier = Modifier
+          .align(Alignment.BottomCenter)
+          .zIndex(5f),
+        bottomPadding = if (landscapeControl) {
+          WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 18.dp
+        } else {
+          floatingBottomBarReserve + 10.dp
+        },
+      )
     }
 
     if (startupHostVisible) {
@@ -1510,17 +1524,301 @@ private fun LandscapeContentHeader(
       letterSpacing = 1.6.sp,
       style = MaterialTheme.typography.titleLarge,
       fontWeight = FontWeight.SemiBold,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
       modifier = if (isHome) {
-        Modifier.clickable(
-          interactionSource = remember { MutableInteractionSource() },
-          indication = null,
-        ) { onTitleClick() }
-      } else {
         Modifier
+          .weight(1f)
+          .clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+          ) { onTitleClick() }
+      } else {
+        Modifier.weight(1f)
       },
     )
   }
 }
+
+@Composable
+private fun FloatingSnackbarHost(
+  hostState: SnackbarHostState,
+  modifier: Modifier = Modifier,
+  bottomPadding: Dp,
+) {
+  SnackbarHost(
+    hostState = hostState,
+    modifier = modifier
+      .fillMaxWidth()
+      .padding(horizontal = 18.dp)
+      .padding(bottom = bottomPadding),
+  ) { data ->
+    val shape = RoundedCornerShape(24.dp)
+    Surface(
+      modifier = Modifier
+        .fillMaxWidth()
+        .clip(shape),
+      shape = shape,
+      color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+      tonalElevation = 0.dp,
+      shadowElevation = 6.dp,
+      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)),
+    ) {
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        Surface(
+          shape = CircleShape,
+          color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)),
+        ) {
+          Icon(
+            imageVector = Icons.Filled.CheckCircle,
+            contentDescription = null,
+            modifier = Modifier
+              .padding(7.dp)
+              .size(18.dp),
+            tint = MaterialTheme.colorScheme.primary,
+          )
+        }
+
+        Text(
+          text = data.visuals.message,
+          modifier = Modifier.weight(1f),
+          style = MaterialTheme.typography.bodyMedium,
+          fontWeight = FontWeight.SemiBold,
+          color = MaterialTheme.colorScheme.onSurface,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
+        )
+
+        data.visuals.actionLabel?.let { label ->
+          TextButton(
+            onClick = { data.performAction() },
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+          ) {
+            Text(label, fontWeight = FontWeight.Bold)
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun FloatingTopBarCard(
+  modifier: Modifier = Modifier,
+  title: String,
+  canGoBack: Boolean,
+  onBack: () -> Unit,
+  isHome: Boolean,
+  onTitleClick: () -> Unit,
+  programLogTarget: ProgramLogTarget?,
+  onOpenLogs: (ProgramLogTarget?) -> Unit,
+  onOpenBackup: () -> Unit,
+  onOpenProgramUpdates: () -> Unit,
+  onOpenSettings: () -> Unit,
+) {
+  val shape = RoundedCornerShape(24.dp)
+  Box(
+    modifier = modifier
+      .fillMaxWidth()
+      .statusBarsPadding()
+      .padding(horizontal = 12.dp)
+      .padding(top = 8.dp),
+  ) {
+    Surface(
+      modifier = Modifier
+        .fillMaxWidth()
+        .height(58.dp)
+        .clip(shape),
+      shape = shape,
+      color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+      tonalElevation = 0.dp,
+      shadowElevation = 0.dp,
+      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
+    ) {
+      Row(
+        modifier = Modifier
+          .fillMaxSize()
+          .padding(start = if (canGoBack) 2.dp else 16.dp, end = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        if (canGoBack) {
+          IconButton(
+            onClick = onBack,
+            modifier = Modifier.size(46.dp),
+          ) {
+            Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
+          }
+        }
+        Text(
+          text = title,
+          letterSpacing = 1.5.sp,
+          style = MaterialTheme.typography.titleMedium,
+          fontWeight = FontWeight.SemiBold,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+          modifier = if (isHome) {
+            Modifier
+              .weight(1f)
+              .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+              ) { onTitleClick() }
+          } else {
+            Modifier.weight(1f)
+          },
+        )
+        TopBarActionCluster(
+          programLogTarget = programLogTarget,
+          onOpenLogs = onOpenLogs,
+          onOpenBackup = onOpenBackup,
+          onOpenProgramUpdates = onOpenProgramUpdates,
+          onOpenSettings = onOpenSettings,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun FloatingBottomNavigationCard(
+  modifier: Modifier = Modifier,
+  compact: Boolean,
+  tab: Tab,
+  onTabChange: (Tab) -> Unit,
+  homeTabLabel: String,
+  statsTabLabel: String,
+  appsTabLabel: String,
+  supportTabLabel: String,
+) {
+  val shape = RoundedCornerShape(24.dp)
+  Box(
+    modifier = modifier
+      .fillMaxWidth()
+      .navigationBarsPadding()
+      .padding(horizontal = 12.dp)
+      .padding(bottom = 8.dp),
+  ) {
+    Surface(
+      modifier = Modifier
+        .fillMaxWidth()
+        .height(if (compact) 58.dp else 68.dp)
+        .clip(shape),
+      shape = shape,
+      color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+      tonalElevation = 0.dp,
+      shadowElevation = 0.dp,
+      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
+    ) {
+      Row(
+        modifier = Modifier
+          .fillMaxSize()
+          .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        FloatingBottomNavItem(
+          selected = tab == Tab.HOME,
+          onClick = { onTabChange(Tab.HOME) },
+          compact = compact,
+          label = homeTabLabel,
+          icon = { Icon(Icons.Filled.Power, contentDescription = homeTabLabel, modifier = Modifier.size(22.dp)) },
+        )
+        FloatingBottomNavItem(
+          selected = tab == Tab.STATS,
+          onClick = { onTabChange(Tab.STATS) },
+          compact = compact,
+          label = statsTabLabel,
+          icon = { Icon(Icons.Filled.Equalizer, contentDescription = statsTabLabel, modifier = Modifier.size(22.dp)) },
+        )
+        FloatingBottomNavItem(
+          selected = tab == Tab.APPS,
+          onClick = { onTabChange(Tab.APPS) },
+          compact = compact,
+          label = appsTabLabel,
+          icon = { Icon(Icons.Filled.Apps, contentDescription = appsTabLabel, modifier = Modifier.size(22.dp)) },
+        )
+        FloatingBottomNavItem(
+          selected = tab == Tab.SUPPORT,
+          onClick = { onTabChange(Tab.SUPPORT) },
+          compact = compact,
+          label = supportTabLabel,
+          icon = { Icon(Icons.Filled.Info, contentDescription = supportTabLabel, modifier = Modifier.size(22.dp)) },
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun RowScope.FloatingBottomNavItem(
+  selected: Boolean,
+  onClick: () -> Unit,
+  compact: Boolean,
+  label: String,
+  icon: @Composable () -> Unit,
+) {
+  val itemColor = if (selected) {
+    MaterialTheme.colorScheme.primary
+  } else {
+    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f)
+  }
+  val indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+  val itemShape = RoundedCornerShape(20.dp)
+
+  Column(
+    modifier = Modifier
+      .weight(1f)
+      .fillMaxHeight()
+      .clip(itemShape)
+      .clickable(
+        interactionSource = remember { MutableInteractionSource() },
+        indication = null,
+      ) { onClick() }
+      .padding(horizontal = 2.dp),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.Center,
+  ) {
+    Box(
+      modifier = Modifier
+        .clip(RoundedCornerShape(18.dp))
+        .background(if (selected) indicatorColor else Color.Transparent)
+        .padding(
+          horizontal = if (selected) 16.dp else 6.dp,
+          vertical = if (selected) 5.dp else 3.dp,
+        ),
+      contentAlignment = Alignment.Center,
+    ) {
+      CompositionLocalProvider(LocalContentColor provides itemColor) {
+        icon()
+      }
+    }
+    if (!compact) {
+      Spacer(Modifier.height(3.dp))
+      Text(
+        text = label,
+        color = itemColor,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+        maxLines = 1,
+      )
+    }
+  }
+}
+
+@Composable
+private fun glassBottomBarItemColors() = NavigationBarItemDefaults.colors(
+  selectedIconColor = MaterialTheme.colorScheme.primary,
+  selectedTextColor = MaterialTheme.colorScheme.primary,
+  indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f),
+  unselectedIconColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+  unselectedTextColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+)
 
 @Composable
 private fun LandscapeQuickActions(
@@ -1798,103 +2096,120 @@ private fun TopBarActionCluster(
   onOpenProgramUpdates: () -> Unit,
   onOpenSettings: () -> Unit,
 ) {
-  AnimatedContent(
-    targetState = programLogTarget,
-    transitionSpec = {
-      ((fadeIn(tween(150)) + slideInHorizontally(tween(180)) { it / 8 }) togetherWith
-        (fadeOut(tween(120)) + slideOutHorizontally(tween(160)) { -it / 8 }))
-        .using(SizeTransform(clip = false))
-    },
-    label = "topBarActionCluster",
-  ) { target ->
+  val target = programLogTarget
+  var collapsed by remember { mutableStateOf(false) }
+  val glow = remember { Animatable(0f) }
+  val inProgramMode = target != null
+  val showFullActions = !inProgramMode || !collapsed
+
+  LaunchedEffect(target?.key) {
     if (target == null) {
-      TopBarFullActions(
-        onOpenLogs = { onOpenLogs(null) },
-        onOpenBackup = onOpenBackup,
-        onOpenProgramUpdates = onOpenProgramUpdates,
-        onOpenSettings = onOpenSettings,
-      )
+      collapsed = false
+      glow.animateTo(0f, animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing))
     } else {
-      CollapsingProgramLogActions(
-        target = target,
-        onOpenProgramLogs = { onOpenLogs(target) },
-        onOpenBackup = onOpenBackup,
-        onOpenProgramUpdates = onOpenProgramUpdates,
-        onOpenSettings = onOpenSettings,
-      )
+      collapsed = false
+      glow.snapTo(0f)
+      glow.animateTo(0.16f, animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing))
+      delay(360)
+      glow.animateTo(0.58f, animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing))
+      collapsed = true
+      glow.animateTo(0.20f, animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing))
     }
   }
-}
 
-@Composable
-private fun TopBarFullActions(
-  onOpenLogs: () -> Unit,
-  onOpenBackup: () -> Unit,
-  onOpenProgramUpdates: () -> Unit,
-  onOpenSettings: () -> Unit,
-) {
-  Row(verticalAlignment = Alignment.CenterVertically) {
-    IconButton(onClick = onOpenLogs) { Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs)) }
-    IconButton(onClick = onOpenBackup) { Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup)) }
-    IconButton(onClick = onOpenProgramUpdates) {
-      Icon(
-        Icons.Filled.SystemUpdateAlt,
-        contentDescription = stringResource(R.string.cd_program_updates),
-      )
-    }
-    IconButton(onClick = onOpenSettings) { Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings)) }
-  }
-}
-
-@Composable
-private fun CollapsingProgramLogActions(
-  target: ProgramLogTarget,
-  onOpenProgramLogs: () -> Unit,
-  onOpenBackup: () -> Unit,
-  onOpenProgramUpdates: () -> Unit,
-  onOpenSettings: () -> Unit,
-) {
-  var collapsed by remember(target.key) { mutableStateOf(false) }
-  val glow = remember(target.key) { Animatable(0.16f) }
-
-  LaunchedEffect(target.key) {
-    collapsed = false
-    glow.snapTo(0.14f)
-    delay(460)
-    glow.animateTo(0.72f, animationSpec = tween(durationMillis = 110, easing = FastOutSlowInEasing))
-    collapsed = true
-    glow.animateTo(0.18f, animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing))
-  }
+  val outerEndPadding by animateDpAsState(
+    targetValue = if (inProgramMode) 2.dp else 0.dp,
+    animationSpec = spring(
+      dampingRatio = Spring.DampingRatioNoBouncy,
+      stiffness = Spring.StiffnessMediumLow,
+    ),
+    label = "topBarActionEndPadding",
+  )
+  val innerHorizontalPadding by animateDpAsState(
+    targetValue = when {
+      !inProgramMode -> 0.dp
+      collapsed -> 2.dp
+      else -> 4.dp
+    },
+    animationSpec = spring(
+      dampingRatio = Spring.DampingRatioNoBouncy,
+      stiffness = Spring.StiffnessMediumLow,
+    ),
+    label = "topBarActionInnerPadding",
+  )
 
   Box(
     modifier = Modifier
-      .padding(end = 2.dp)
-      .shadow(0.dp, CircleShape)
+      .animateContentSize(
+        animationSpec = spring(
+          dampingRatio = Spring.DampingRatioNoBouncy,
+          stiffness = Spring.StiffnessMediumLow,
+        ),
+        alignment = Alignment.CenterEnd,
+      )
+      .padding(end = outerEndPadding)
       .background(MaterialTheme.colorScheme.error.copy(alpha = glow.value), CircleShape)
-      .padding(horizontal = if (collapsed) 2.dp else 4.dp),
+      .padding(horizontal = innerHorizontalPadding),
     contentAlignment = Alignment.CenterEnd,
   ) {
-    AnimatedContent(
-      targetState = collapsed,
-      transitionSpec = {
-        val enter = fadeIn(tween(130)) + scaleIn(tween(180, easing = FastOutSlowInEasing), initialScale = 0.84f)
-        val exit = fadeOut(tween(120)) + scaleOut(tween(160, easing = FastOutSlowInEasing), targetScale = 0.72f)
-        (enter togetherWith exit).using(SizeTransform(clip = false))
-      },
-      label = "programActionCollapse",
-    ) { isCollapsed ->
-      if (isCollapsed) {
-        IconButton(onClick = onOpenProgramLogs) {
-          Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs))
-        }
-      } else {
-        TopBarFullActions(
-          onOpenLogs = onOpenProgramLogs,
-          onOpenBackup = onOpenBackup,
-          onOpenProgramUpdates = onOpenProgramUpdates,
-          onOpenSettings = onOpenSettings,
-        )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      IconButton(onClick = { onOpenLogs(target) }) {
+        Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs))
       }
+      CollapsingTopBarAction(visible = showFullActions) {
+        IconButton(onClick = onOpenBackup) {
+          Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup))
+        }
+      }
+      CollapsingTopBarAction(visible = showFullActions) {
+        IconButton(onClick = onOpenProgramUpdates) {
+          Icon(
+            Icons.Filled.SystemUpdateAlt,
+            contentDescription = stringResource(R.string.cd_program_updates),
+          )
+        }
+      }
+      CollapsingTopBarAction(visible = showFullActions) {
+        IconButton(onClick = onOpenSettings) {
+          Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings))
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun CollapsingTopBarAction(
+  visible: Boolean,
+  content: @Composable () -> Unit,
+) {
+  val width by animateDpAsState(
+    targetValue = if (visible) 48.dp else 0.dp,
+    animationSpec = spring(
+      dampingRatio = Spring.DampingRatioNoBouncy,
+      stiffness = Spring.StiffnessMediumLow,
+    ),
+    label = "topBarActionWidth",
+  )
+  val alpha by animateFloatAsState(
+    targetValue = if (visible) 1f else 0f,
+    animationSpec = tween(durationMillis = if (visible) 220 else 170, easing = FastOutSlowInEasing),
+    label = "topBarActionAlpha",
+  )
+
+  Box(
+    modifier = Modifier
+      .width(width)
+      .clipToBounds(),
+    contentAlignment = Alignment.Center,
+  ) {
+    Box(
+      modifier = Modifier
+        .width(48.dp)
+        .alpha(alpha),
+      contentAlignment = Alignment.Center,
+    ) {
+      content()
     }
   }
 }
@@ -1909,6 +2224,8 @@ private fun TabBody(
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   landscapeControl: Boolean = false,
+  topContentPadding: Dp = 0.dp,
+  bottomContentPadding: Dp = 0.dp,
 ) {
   val stateHolder = rememberSaveableStateHolder()
   val focusManager = LocalFocusManager.current
@@ -1927,9 +2244,14 @@ private fun TabBody(
     stateHolder.SaveableStateProvider(currentTab.name) {
       Box(Modifier.fillMaxSize()) {
         when (currentTab) {
-          Tab.HOME -> HomeScreen(uiStateFlow = uiStateFlow, actions = actions)
-          Tab.STATS -> StatsScreen(uiStateFlow = uiStateFlow, actions = actions)
-          Tab.SUPPORT -> SupportScreen()
+          Tab.HOME -> HomeScreen(
+            uiStateFlow = uiStateFlow,
+            actions = actions,
+            topContentPadding = topContentPadding,
+            bottomContentPadding = bottomContentPadding,
+          )
+          Tab.STATS -> StatsScreen(uiStateFlow = uiStateFlow, actions = actions, topContentPadding = topContentPadding, bottomContentPadding = bottomContentPadding)
+          Tab.SUPPORT -> SupportScreen(topContentPadding = topContentPadding)
           Tab.APPS -> AppsHost(
             uiStateFlow = uiStateFlow,
             route = appsRoute,
@@ -1937,6 +2259,8 @@ private fun TabBody(
             onOpenProfile = onOpenProfile,
             actions = actions,
             snackHost = snackHost,
+            topContentPadding = topContentPadding,
+            bottomContentPadding = bottomContentPadding,
           )
         }
       }

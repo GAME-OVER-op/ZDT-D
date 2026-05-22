@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,6 +43,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -59,6 +61,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.LocalWebPanelActivity
 import com.android.zdtd.service.ZdtdActions
@@ -234,6 +237,68 @@ private fun MyProgramWebPanelCard(
   }
 }
 
+@Composable
+private fun MyProgramProfileEnabledCard(
+  checked: Boolean,
+  onCheckedChange: (Boolean) -> Unit,
+) {
+  val accent = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+  Surface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = MaterialTheme.shapes.extraLarge,
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
+  ) {
+    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Surface(
+          modifier = Modifier.width(42.dp).height(42.dp),
+          shape = MaterialTheme.shapes.large,
+          color = accent.copy(alpha = 0.15f),
+          contentColor = accent,
+          border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
+        ) {
+          Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.PlayArrow, contentDescription = null)
+          }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+          Text(
+            stringResource(R.string.enabled_card_profile_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+          )
+          Text(
+            stringResource(R.string.enabled_card_apply_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
+          )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+      }
+      Surface(
+        shape = MaterialTheme.shapes.large,
+        color = accent.copy(alpha = 0.14f),
+        contentColor = accent,
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
+      ) {
+        Text(
+          stringResource(if (checked) R.string.enabled_state_on else R.string.enabled_state_off),
+          modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp),
+          style = MaterialTheme.typography.labelMedium,
+          fontWeight = FontWeight.Bold,
+        )
+      }
+    }
+  }
+}
+
 private fun uriDisplayName(context: Context, uri: Uri): String? = runCatching {
   context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
     if (c.moveToFirst()) c.getString(0) else null
@@ -246,8 +311,11 @@ fun MyProgramProfileScreen(
   profile: String,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  topContentPadding: Dp = 0.dp,
+  bottomContentPadding: Dp = 0.dp,
 ) {
   val compact = rememberIsCompactWidth()
+  val effectiveTopContentPadding = topContentPadding + 6.dp
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val scroll = rememberScrollState()
@@ -456,16 +524,15 @@ fun MyProgramProfileScreen(
   Column(
     Modifier
       .fillMaxSize()
-      .padding(if (compact) 12.dp else 16.dp)
-      .verticalScroll(scroll)
-      .navigationBarsPadding(),
+      .padding(horizontal = if (compact) 12.dp else 16.dp)
+      .verticalScroll(scroll),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    Text("${program?.name ?: "myprogram"} / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-    Text(
-      toolDescription("myprogram"),
-      style = MaterialTheme.typography.bodySmall,
-      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+    Spacer(Modifier.height(effectiveTopContentPadding))
+
+    MyProgramProfileEnabledCard(
+      checked = prof?.enabled ?: false,
+      onCheckedChange = { v -> actions.setProfileEnabled("myprogram", profile, v) },
     )
 
     if (loading) {
@@ -480,12 +547,6 @@ fun MyProgramProfileScreen(
         }
       }
     }
-
-    EnabledCard(
-      title = stringResource(R.string.enabled_card_profile_title),
-      checked = prof?.enabled ?: false,
-      onCheckedChange = { v -> actions.setProfileEnabled("myprogram", profile, v) },
-    )
 
     AnimatedVisibility(
       visible = myProgramWebPanelVisible,
@@ -881,6 +942,6 @@ fun MyProgramProfileScreen(
       }
     }
 
-    Spacer(Modifier.height(6.dp))
+    Spacer(Modifier.height(bottomContentPadding + 12.dp))
   }
 }

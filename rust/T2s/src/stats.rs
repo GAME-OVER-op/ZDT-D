@@ -591,13 +591,27 @@ impl SocksBackends {
             .collect()
     }
 
-    fn priority_select_index(&mut self, respect_cooldown: bool) -> Option<usize> {
+    fn first_priority_green_group_index(&self) -> Option<usize> {
+        let now = now_ts();
+        self.priority_groups
+            .iter()
+            .position(|group| !self.healthy_indices_by_ports(group, now, false).is_empty())
+    }
+
+    fn priority_select_index(&mut self) -> Option<usize> {
         let now = now_ts();
         for group_idx in 0..self.priority_groups.len() {
-            let candidates = self.healthy_indices_by_ports(&self.priority_groups[group_idx], now, respect_cooldown);
-            if candidates.is_empty() {
+            let all_green = self.healthy_indices_by_ports(&self.priority_groups[group_idx], now, false);
+            if all_green.is_empty() {
                 continue;
             }
+
+            // Priority must be strict by group: a GREEN backend in a higher group
+            // prevents falling through to lower groups. Runtime cooldown may change
+            // which backend is selected inside the current group, but must not make
+            // traffic jump to a lower priority level while this group is still GREEN.
+            let ready = self.healthy_indices_by_ports(&self.priority_groups[group_idx], now, true);
+            let candidates = if ready.is_empty() { all_green } else { ready };
             let cursor = self.priority_rr.get_mut(group_idx)?;
             return Self::pick_from_bucket(&candidates, cursor);
         }
@@ -607,10 +621,15 @@ impl SocksBackends {
     fn priority_capacity_backend_count(&self, respect_cooldown: bool) -> usize {
         let now = now_ts();
         for group in &self.priority_groups {
-            let count = self.healthy_indices_by_ports(group, now, respect_cooldown).len();
-            if count > 0 {
-                return count;
+            let all_green = self.healthy_indices_by_ports(group, now, false);
+            if all_green.is_empty() {
+                continue;
             }
+            if respect_cooldown {
+                let ready = self.healthy_indices_by_ports(group, now, true);
+                return if ready.is_empty() { all_green.len() } else { ready.len() };
+            }
+            return all_green.len();
         }
         0
     }
@@ -634,6 +653,10 @@ impl SocksBackends {
             return Vec::new();
         };
 
+        self.lower_priority_backend_addrs_after_group(group_idx)
+    }
+
+    fn lower_priority_backend_addrs_after_group(&self, group_idx: usize) -> Vec<SocketAddr> {
         let lower_ports: Vec<u16> = self.priority_groups
             .iter()
             .skip(group_idx + 1)
@@ -649,6 +672,22 @@ impl SocksBackends {
             .copied()
             .filter(|addr| lower_ports.contains(&addr.port()))
             .collect()
+    }
+
+    /// In strict priority mode, returns every backend from groups below the first
+    /// currently GREEN priority group. Established SOCKS connections pinned to
+    /// these lower groups should be cancelled so clients reconnect through the
+    /// preferred live group.
+    pub fn lower_priority_backend_addrs_below_current_green_group(&self) -> Vec<SocketAddr> {
+        if self.backend_mode != BackendMode::Priority {
+            return Vec::new();
+        }
+
+        let Some(group_idx) = self.first_priority_green_group_index() else {
+            return Vec::new();
+        };
+
+        self.lower_priority_backend_addrs_after_group(group_idx)
     }
 
     /// Returns all configured backends that are currently not effectively GREEN.
@@ -685,11 +724,7 @@ impl SocksBackends {
         }
 
         if self.backend_mode == BackendMode::Priority {
-            let selectable = self.priority_capacity_backend_count(true);
-            if selectable > 0 {
-                return selectable;
-            }
-            return self.priority_capacity_backend_count(false);
+            return self.priority_capacity_backend_count(true);
         }
 
         let now = now_ts();
@@ -1040,7 +1075,7 @@ impl SocksBackends {
     }
     pub fn select_rr_with_auth(&mut self, global_auth: Option<&(String, String)>) -> Result<(usize, SocketAddr, Option<(String, String)>)> {
         if self.backend_mode == BackendMode::Priority {
-            if let Some(idx) = self.priority_select_index(true).or_else(|| self.priority_select_index(false)) {
+            if let Some(idx) = self.priority_select_index() {
                 return Ok((idx, self.addrs[idx], self.effective_auth_at(idx, global_auth)));
             }
             return Err(anyhow!("no GREEN backends"));
@@ -1529,19 +1564,35 @@ impl ConnRegistry {
         n
     }
 
-    /// Cancels established SOCKS connections pinned to a backend that just became unhealthy.
-    /// Pending/connecting attempts are intentionally left alone so they can retry another backend.
-    pub fn kill_backend(&self, backend: SocketAddr) -> usize {
+    fn kill_backend_by_modes(&self, backend: SocketAddr, modes: &[&str]) -> usize {
         let backend = backend.to_string();
         let mut n = 0usize;
         let g = self.inner.lock();
         for (info, token) in g.values() {
-            if info.mode.as_deref() == Some("socks") && info.backend.as_deref() == Some(backend.as_str()) {
+            let mode_matches = info
+                .mode
+                .as_deref()
+                .map(|mode| modes.iter().any(|want| *want == mode))
+                .unwrap_or(false);
+            if mode_matches && info.backend.as_deref() == Some(backend.as_str()) {
                 token.cancel();
                 n += 1;
             }
         }
         n
+    }
+
+    /// Cancels established SOCKS connections pinned to a backend that just became unhealthy.
+    /// Pending/connecting attempts are intentionally left alone so they can retry another backend.
+    pub fn kill_backend(&self, backend: SocketAddr) -> usize {
+        self.kill_backend_by_modes(backend, &["socks"])
+    }
+
+    /// Cancels established and in-flight SOCKS connections pinned to a lower-priority backend.
+    /// This closes the race where a fallback backend is still connecting while a higher-priority
+    /// GREEN group has already recovered.
+    pub fn kill_backend_socks_and_connecting(&self, backend: SocketAddr) -> usize {
+        self.kill_backend_by_modes(backend, &["socks", "socks_connecting"])
     }
 
     /// Cancels connections that are stuck in SOCKS mode and have not transferred any bytes.
@@ -1825,11 +1876,12 @@ async fn refresh_backend_index_once(
     let kill_unhealthy_backend = changed
         && before_state == Some(BackendState::Green)
         && after_state != Some(BackendState::Green);
-    let lower_priority_backends_to_kill = if changed
-        && before_state != Some(BackendState::Green)
-        && after_state == Some(BackendState::Green)
-    {
-        b.lower_priority_backend_addrs_after(backend)
+    let lower_priority_backends_to_kill = if changed {
+        // Strict priority safety net: after any backend state change, if there is
+        // a higher-priority GREEN group, established connections pinned to lower
+        // groups must be cancelled. This also covers races where a lower backend
+        // was selected while the preferred group recovered.
+        b.lower_priority_backend_addrs_below_current_green_group()
     } else {
         Vec::new()
     };
@@ -1862,10 +1914,10 @@ async fn refresh_backend_index_once(
         }
     }
     for lower_backend in lower_priority_backends_to_kill {
-        let killed = state.conns.kill_backend(lower_backend);
+        let killed = state.conns.kill_backend_socks_and_connecting(lower_backend);
         if killed > 0 {
             tracing::info!(
-                "priority backend {} recovered ({:?} -> {:?}); cancelled {} lower-priority SOCKS connections on {}",
+                "priority backend {} recovered ({:?} -> {:?}); cancelled {} lower-priority SOCKS/connecting connections on {}",
                 backend,
                 before_state,
                 after_state,
@@ -2291,18 +2343,24 @@ pub async fn proxy_enforce_loop(state: crate::AppState) {
             && connecting_now == 0
             && quiet_for >= Duration::from_secs(60);
         let deep_idle = ui == 0 && active == 0 && quiet_for >= Duration::from_secs(3 * 60);
-        let (green, non_green_backends) = if deep_idle {
-            (false, Vec::new())
+        let (green, non_green_backends, lower_priority_backends) = if deep_idle {
+            (false, Vec::new(), Vec::new())
         } else {
             let b = state.backends.lock();
             let green = b.any_green();
             let non_green_backends = if active > 0 { b.non_green_backend_addrs() } else { Vec::new() };
-            (green, non_green_backends)
+            let lower_priority_backends = if active > 0 {
+                b.lower_priority_backend_addrs_below_current_green_group()
+            } else {
+                Vec::new()
+            };
+            (green, non_green_backends, lower_priority_backends)
         };
         let has_non_green_backends = !non_green_backends.is_empty();
+        let has_lower_priority_backends = !lower_priority_backends.is_empty();
         let recovery_edge = !had_green && green;
         let needs_enforce = !deep_idle
-            && (has_direct || connecting_now > 0 || recovery_edge || has_non_green_backends);
+            && (has_direct || connecting_now > 0 || recovery_edge || has_non_green_backends || has_lower_priority_backends);
 
         if needs_enforce {
             // Safety net: if any DIRECT connections exist while GREEN backends are available,
@@ -2335,6 +2393,19 @@ pub async fn proxy_enforce_loop(state: crate::AppState) {
                 }
             }
 
+            if has_lower_priority_backends {
+                for backend in &lower_priority_backends {
+                    let killed_backend = state.conns.kill_backend_socks_and_connecting(*backend);
+                    if killed_backend > 0 {
+                        tracing::info!(
+                            "proxy enforce: cancelled {} lower-priority SOCKS/connecting connections on {} while a higher priority group is GREEN",
+                            killed_backend,
+                            backend
+                        );
+                    }
+                }
+            }
+
             if connecting_now > 0 {
                 let killed_connecting = state.conns.kill_stuck_connecting(12);
                 if killed_connecting > 0 {
@@ -2358,7 +2429,11 @@ pub async fn proxy_enforce_loop(state: crate::AppState) {
             }
         } else if needs_enforce {
             idle_since = None;
-            Duration::from_secs(40)
+            if has_lower_priority_backends {
+                Duration::from_secs(15)
+            } else {
+                Duration::from_secs(40)
+            }
         } else if quiet_lingering_only {
             if quiet_for >= Duration::from_secs(45 * 60) {
                 Duration::from_secs(45 * 60)

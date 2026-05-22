@@ -5,6 +5,11 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -15,9 +20,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material3.*
 import androidx.compose.material3.ScrollableTabRow
@@ -31,11 +38,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import android.content.Intent
@@ -62,6 +72,7 @@ fun ProgramScreen(
   onOpenProfile: (String, String) -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  topContentPadding: Dp = 0.dp,
 ) {
   val compact = rememberIsCompactWidth()
   val useScrollableTabs = rememberUseScrollableTabs()
@@ -123,6 +134,8 @@ fun ProgramScreen(
     scope.launch { snackHost.showSnackbar(msg) }
   }
 
+  val isProfileProgram = isProfileProgramType(program.type)
+  val effectiveTopContentPadding = if (isProfileProgram && topContentPadding > 10.dp) topContentPadding - 10.dp else topContentPadding
   val sortedProfiles = remember(program.profiles) { sortProfilesDesc(program.profiles) }
   // Delete is allowed only in decreasing order: if there are profile1 and profile2,
   // the UI should only allow deleting profile2 first.
@@ -151,17 +164,12 @@ fun ProgramScreen(
   }
 
   LazyColumn(
-    modifier = Modifier.fillMaxSize().padding(if (compact) 12.dp else 16.dp),
-    verticalArrangement = Arrangement.spacedBy(12.dp),
+    modifier = Modifier.fillMaxSize().padding(if (compact) 8.dp else 10.dp),
+    contentPadding = PaddingValues(top = effectiveTopContentPadding),
+    verticalArrangement = Arrangement.spacedBy(if (isProfileProgram) 10.dp else 8.dp),
   ) {
     item {
-      Text(program.name ?: program.id, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 2)
-      Spacer(Modifier.height(4.dp))
-      Text(
-        toolDescription(program.id),
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-        style = MaterialTheme.typography.bodySmall,
-      )
+      ProgramHeroHeader(program = program)
     }
 
     // Global enabled toggle:
@@ -178,9 +186,8 @@ fun ProgramScreen(
       }
     } else if (program.id == "operaproxy") {
       item(key = "operaproxy_global_controls", contentType = "operaproxy_global_controls") {
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-          EnabledCard(
-            title = stringResource(R.string.enabled_card_program_title),
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          OperaProxyStatusCard(
             checked = program.enabled,
             onCheckedChange = { v -> actions.setProgramEnabled(program.id, v) },
           )
@@ -218,8 +225,8 @@ fun ProgramScreen(
     when {
 
 isProfileProgramType(program.type) -> {
-        item {
-          if (hasStrategicFiles) {
+        if (hasStrategicFiles) {
+          item {
             if (useScrollableTabs) {
               ScrollableTabRow(selectedTabIndex = programTab, edgePadding = 12.dp) {
                 Tab(selected = programTab == 0, onClick = { programTab = 0 }, text = { Text(stringResource(R.string.tab_profiles), maxLines = 2) })
@@ -231,15 +238,16 @@ isProfileProgramType(program.type) -> {
                 Tab(selected = programTab == 1, onClick = { programTab = 1 }, text = { Text(stringResource(R.string.tab_files), maxLines = 2) })
               }
             }
-            Spacer(Modifier.height(10.dp))
-          }
-
-          if (!hasStrategicFiles || programTab == 0) {
-            ProfilesHeader(onAdd = { showCreateProfile = true })
           }
         }
 
         if (!hasStrategicFiles || programTab == 0) {
+          item {
+            CreateProfileCard(onAdd = { showCreateProfile = true })
+          }
+          item {
+            ProfilesSectionTitle()
+          }
           items(sortedProfiles, key = { it.name }, contentType = { "profile_card" }) { prof ->
             ProfileRow(
               programId = program.id,
@@ -315,7 +323,66 @@ isProfileProgramType(program.type) -> {
       }
     }
 
-    item { Spacer(Modifier.height(80.dp)) }
+    item { Spacer(Modifier.height(64.dp)) }
+  }
+}
+
+@Composable
+private fun ProgramHeroHeader(program: ApiModels.Program) {
+  ProgramDescriptionHeader(
+    programId = program.id,
+    description = toolDescription(program.id),
+    isProfiles = isProfileProgramType(program.type),
+    enabled = program.enabled,
+  )
+}
+
+@Composable
+internal fun ProgramDescriptionHeader(
+  programId: String,
+  description: String,
+  isProfiles: Boolean = true,
+  enabled: Boolean = false,
+) {
+  val accentColor = when {
+    isProfiles -> MaterialTheme.colorScheme.primary
+    enabled -> Color(0xFF22C55E)
+    else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.72f)
+  }
+
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(top = 0.dp, bottom = 6.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(10.dp),
+  ) {
+    Surface(
+      modifier = Modifier.size(38.dp),
+      color = accentColor.copy(alpha = 0.14f),
+      contentColor = accentColor,
+      shape = CircleShape,
+      border = BorderStroke(1.dp, accentColor.copy(alpha = 0.32f)),
+      tonalElevation = 0.dp,
+      shadowElevation = 0.dp,
+    ) {
+      Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Icon(
+          imageVector = programIcon(programId),
+          contentDescription = null,
+          modifier = Modifier.size(20.dp),
+        )
+      }
+    }
+
+    Text(
+      text = description,
+      modifier = Modifier.weight(1f),
+      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+      style = MaterialTheme.typography.bodySmall,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+    )
   }
 }
 
@@ -323,36 +390,163 @@ isProfileProgramType(program.type) -> {
 private const val OPERAPROXY_WEB_PANEL_URL = "http://127.0.0.1:8000/"
 
 @Composable
+private fun OperaProxyStatusCard(
+  checked: Boolean,
+  onCheckedChange: (Boolean) -> Unit,
+) {
+  val accent = Color(0xFFFACC15)
+  val shape = RoundedCornerShape(24.dp)
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .background(
+        brush = Brush.horizontalGradient(
+          listOf(
+            accent.copy(alpha = if (checked) 0.20f else 0.08f),
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.74f),
+          )
+        ),
+        shape = shape,
+      )
+      .border(
+        BorderStroke(1.dp, accent.copy(alpha = if (checked) 0.46f else 0.22f)),
+        shape,
+      )
+      .padding(horizontal = 14.dp, vertical = 12.dp),
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Surface(
+        modifier = Modifier.size(46.dp),
+        shape = CircleShape,
+        color = accent.copy(alpha = if (checked) 0.18f else 0.10f),
+        contentColor = accent,
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.32f)),
+      ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+          Icon(
+            imageVector = programIcon("operaproxy"),
+            contentDescription = null,
+            modifier = Modifier.size(22.dp),
+          )
+        }
+      }
+
+      Column(
+        modifier = Modifier.weight(1f),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+      ) {
+        Text(
+          text = stringResource(R.string.opera_proxy_title),
+          style = MaterialTheme.typography.titleMedium,
+          fontWeight = FontWeight.Bold,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          text = stringResource(R.string.enabled_card_program_title),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Surface(
+          shape = RoundedCornerShape(100.dp),
+          color = if (checked) Color(0xFF22C55E).copy(alpha = 0.15f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
+          border = BorderStroke(1.dp, if (checked) Color(0xFF22C55E).copy(alpha = 0.35f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
+        ) {
+          Text(
+            text = if (checked) stringResource(R.string.enabled_state_on) else stringResource(R.string.enabled_state_off),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelMedium,
+            color = if (checked) Color(0xFF4ADE80) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+            fontWeight = FontWeight.SemiBold,
+          )
+        }
+      }
+
+      Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
+  }
+}
+
+@Composable
 private fun OperaWebPanelCard(
   checking: Boolean,
   onOpen: () -> Unit,
 ) {
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))) {
+  val accent = Color(0xFF60A5FA)
+  val shape = RoundedCornerShape(22.dp)
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .background(
+        brush = Brush.horizontalGradient(
+          listOf(
+            accent.copy(alpha = 0.14f),
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.68f),
+          )
+        ),
+        shape = shape,
+      )
+      .border(BorderStroke(1.dp, accent.copy(alpha = 0.30f)), shape)
+      .clickable(enabled = !checking, onClick = onOpen)
+      .padding(horizontal = 14.dp, vertical = 11.dp),
+  ) {
     Row(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+      modifier = Modifier.fillMaxWidth(),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-      Text(
-        text = stringResource(R.string.web_panel_open),
-        modifier = Modifier.weight(1f),
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.SemiBold,
-      )
-      FilledTonalIconButton(
-        onClick = onOpen,
-        enabled = !checking,
+      Surface(
+        modifier = Modifier.size(42.dp),
+        shape = CircleShape,
+        color = accent.copy(alpha = 0.16f),
+        contentColor = accent,
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
       ) {
-        if (checking) {
-          CircularProgressIndicator(
-            modifier = Modifier.size(20.dp),
-            strokeWidth = 2.dp,
-          )
-        } else {
-          Icon(
-            imageVector = Icons.Filled.Public,
-            contentDescription = stringResource(R.string.web_panel_open),
-          )
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+          Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp))
+        }
+      }
+
+      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+          text = stringResource(R.string.web_panel_open),
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.Bold,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          text = OPERAPROXY_WEB_PANEL_URL,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
+
+      Surface(
+        shape = RoundedCornerShape(100.dp),
+        color = accent.copy(alpha = 0.18f),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+      ) {
+        Box(
+          modifier = Modifier
+            .height(38.dp)
+            .widthIn(min = 48.dp)
+            .padding(horizontal = 13.dp),
+          contentAlignment = Alignment.Center,
+        ) {
+          if (checking) {
+            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+          } else {
+            Icon(Icons.Filled.Public, contentDescription = stringResource(R.string.web_panel_open), modifier = Modifier.size(20.dp))
+          }
         }
       }
     }
@@ -600,6 +794,7 @@ private fun SingBoxSection(
   programs: List<ApiModels.Program>,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  topContentPadding: Dp = 0.dp,
 ) {
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
@@ -1460,24 +1655,141 @@ private fun SingBoxImportServerDialog(
 }
 
 @Composable
-private fun ProfilesHeader(onAdd: () -> Unit) {
+internal fun ProfilesSectionTitle() {
+  val accentSoft = Color(0xFFFF4D7D)
+
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(top = 5.dp, bottom = 4.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    Box(
+      modifier = Modifier
+        .width(4.dp)
+        .height(24.dp)
+        .background(accentSoft.copy(alpha = 0.90f), RoundedCornerShape(100.dp))
+    )
+    Text(
+      stringResource(R.string.tab_profiles),
+      modifier = Modifier.weight(1f),
+      style = MaterialTheme.typography.titleSmall,
+      fontWeight = FontWeight.Bold,
+      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.90f),
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+    )
+  }
+}
+
+@Composable
+internal fun CreateProfileCard(onAdd: () -> Unit) {
   val compact = rememberIsCompactWidth()
-  if (compact) {
-    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Text(stringResource(R.string.tab_profiles), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-      FilledTonalButton(onClick = onAdd, modifier = Modifier.fillMaxWidth()) {
-        Icon(Icons.Filled.Add, contentDescription = null)
-        Spacer(Modifier.width(6.dp))
-        Text(stringResource(R.string.action_add))
-      }
-    }
-  } else {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-      Text(stringResource(R.string.tab_profiles), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-      FilledTonalButton(onClick = onAdd) {
-        Icon(Icons.Filled.Add, contentDescription = null)
-        Spacer(Modifier.width(6.dp))
-        Text(stringResource(R.string.action_add))
+  val accent = Color(0xFFA78BFA)
+  val accentSoft = Color(0xFFFF4D7D)
+  val shape = RoundedCornerShape(if (compact) 20.dp else 24.dp)
+
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .clickable { onAdd() },
+    shape = shape,
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.66f),
+    contentColor = MaterialTheme.colorScheme.onSurface,
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.42f)),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .background(
+          brush = Brush.linearGradient(
+            listOf(
+              accent.copy(alpha = 0.18f),
+              accentSoft.copy(alpha = 0.08f),
+              MaterialTheme.colorScheme.surface.copy(alpha = 0.08f),
+            )
+          ),
+          shape = shape,
+        )
+        .padding(horizontal = if (compact) 12.dp else 14.dp, vertical = if (compact) 10.dp else 12.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp),
+      ) {
+        Surface(
+          modifier = Modifier.size(if (compact) 40.dp else 44.dp),
+          color = Color.Transparent,
+          contentColor = Color.White,
+          shape = CircleShape,
+          border = BorderStroke(1.dp, accent.copy(alpha = 0.58f)),
+          tonalElevation = 0.dp,
+          shadowElevation = 0.dp,
+        ) {
+          Box(
+            modifier = Modifier
+              .fillMaxSize()
+              .background(
+                brush = Brush.linearGradient(
+                  listOf(accent.copy(alpha = 0.34f), accentSoft.copy(alpha = 0.16f))
+                ),
+                shape = CircleShape,
+              ),
+            contentAlignment = Alignment.Center,
+          ) {
+            Icon(
+              imageVector = Icons.Filled.Add,
+              contentDescription = null,
+              modifier = Modifier.size(if (compact) 21.dp else 23.dp),
+            )
+          }
+        }
+
+        Column(
+          modifier = Modifier.weight(1f),
+          verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+          Text(
+            text = stringResource(R.string.create_profile_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Text(
+            text = stringResource(R.string.create_profile_rules),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+            maxLines = if (compact) 2 else 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+
+        Surface(
+          shape = RoundedCornerShape(100.dp),
+          color = accent.copy(alpha = 0.20f),
+          contentColor = Color.White,
+          border = BorderStroke(1.dp, accent.copy(alpha = 0.36f)),
+        ) {
+          Row(
+            modifier = Modifier.padding(horizontal = if (compact) 10.dp else 12.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+          ) {
+            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+            Text(
+              stringResource(R.string.action_create),
+              style = MaterialTheme.typography.labelLarge,
+              fontWeight = FontWeight.Bold,
+              maxLines = 1,
+            )
+          }
+        }
       }
     }
   }
@@ -1546,66 +1858,162 @@ private fun CreateProfileDialog(
   val enterNameErr = stringResource(R.string.enter_a_name)
   val invalidNameSnack = stringResource(invalidNameRes)
   val profileExistsErr = stringResource(existsErrorRes)
+  val accent = Color(0xFFA78BFA)
+  val accentSoft = Color(0xFFFF4D7D)
+  val dialogShape = RoundedCornerShape(28.dp)
 
-  AlertDialog(
+  Dialog(
     onDismissRequest = onDismiss,
-    title = { Text(stringResource(titleRes)) },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-          stringResource(rulesRes),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-        )
-
-        OutlinedTextField(
-          value = name,
-          onValueChange = { v ->
-            // Keep 'raw' so we can normalize consistently; but show normalized in the field.
-            raw = v
-            error = null
-          },
-          label = { Text(stringResource(nameLabelRes)) },
-          singleLine = false,
-          maxLines = 2,
-          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-          supportingText = {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-              Text(stringResource(R.string.allowed_chars_hint))
-              Text(stringResource(R.string.profile_name_len_fmt, name.length))
+    properties = DialogProperties(usePlatformDefaultWidth = false),
+  ) {
+    Surface(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 24.dp),
+      shape = dialogShape,
+      color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+      contentColor = MaterialTheme.colorScheme.onSurface,
+      border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
+      tonalElevation = 0.dp,
+      shadowElevation = 12.dp,
+    ) {
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .background(
+            brush = Brush.linearGradient(
+              listOf(
+                accent.copy(alpha = 0.16f),
+                accentSoft.copy(alpha = 0.06f),
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.04f),
+              )
+            ),
+            shape = dialogShape,
+          )
+      ) {
+        Column(
+          modifier = Modifier.padding(20.dp),
+          verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            Surface(
+              modifier = Modifier.size(46.dp),
+              shape = CircleShape,
+              color = accent.copy(alpha = 0.20f),
+              contentColor = Color.White,
+              border = BorderStroke(1.dp, accent.copy(alpha = 0.42f)),
+            ) {
+              Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(24.dp))
+              }
             }
-          },
-          isError = error != null,
-        )
+            Column(
+              modifier = Modifier.weight(1f),
+              verticalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+              Text(
+                text = stringResource(titleRes),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+              Text(
+                text = stringResource(R.string.tab_profiles),
+                style = MaterialTheme.typography.labelMedium,
+                color = accent.copy(alpha = 0.92f),
+                fontWeight = FontWeight.SemiBold,
+              )
+            }
+          }
 
-        if (error != null) {
-          Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+          Surface(
+            shape = RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.045f),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+          ) {
+            Text(
+              text = stringResource(rulesRes),
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+            )
+          }
+
+          OutlinedTextField(
+            value = name,
+            onValueChange = { v ->
+              raw = v
+              error = null
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(stringResource(nameLabelRes)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+            supportingText = {
+              Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(stringResource(R.string.allowed_chars_hint))
+                Text(stringResource(R.string.profile_name_len_fmt, name.length))
+              }
+            },
+            isError = error != null,
+            shape = RoundedCornerShape(16.dp),
+          )
+
+          if (error != null) {
+            Text(
+              error!!,
+              color = MaterialTheme.colorScheme.error,
+              style = MaterialTheme.typography.bodySmall,
+              fontWeight = FontWeight.SemiBold,
+            )
+          }
+
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            OutlinedButton(
+              onClick = onDismiss,
+              shape = RoundedCornerShape(100.dp),
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.34f)),
+              contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+            ) { Text(stringResource(R.string.action_cancel), fontWeight = FontWeight.SemiBold) }
+
+            Button(
+              onClick = {
+                val n = name.trim()
+                when {
+                  n.isEmpty() -> {
+                    error = enterNameErr
+                    snack(invalidNameSnack)
+                  }
+                  existingNorm.contains(n) -> {
+                    error = profileExistsErr
+                    snack(profileExistsErr)
+                  }
+                  else -> onCreate(n)
+                }
+              },
+              enabled = name.isNotBlank(),
+              shape = RoundedCornerShape(100.dp),
+              colors = ButtonDefaults.buttonColors(
+                containerColor = accent,
+                contentColor = Color.White,
+                disabledContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f),
+                disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.36f),
+              ),
+              contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+            ) { Text(stringResource(R.string.action_create), fontWeight = FontWeight.Bold) }
+          }
         }
       }
-    },
-    confirmButton = {
-      Button(
-        onClick = {
-          val n = name.trim()
-          when {
-            n.isEmpty() -> {
-              error = enterNameErr
-              snack(invalidNameSnack)
-            }
-            existingNorm.contains(n) -> {
-              error = profileExistsErr
-              snack(profileExistsErr)
-            }
-            else -> onCreate(n)
-          }
-        },
-        enabled = name.isNotBlank(),
-      ) { Text(stringResource(R.string.action_create)) }
-    },
-    dismissButton = {
-      OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
-    },
-  )
+    }
+  }
 }
 
 private fun normalizeProfileName(input: String): String {
@@ -1636,34 +2044,32 @@ private fun OperaProxySection(
   onAppsSelectionSaved: ((String, Set<String>) -> Unit)? = null,
 ) {
   var tab by remember { mutableStateOf(0) }
-  val useScrollableTabs = rememberUseScrollableTabs()
 
   val scope = rememberCoroutineScope()
   fun snack(msg: String) { scope.launch { snackHost.showSnackbar(msg) } }
 
-  Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-    Text(stringResource(R.string.opera_proxy_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-    if (useScrollableTabs) {
-      ScrollableTabRow(selectedTabIndex = tab, edgePadding = 12.dp) {
-        Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(stringResource(R.string.tab_apps), maxLines = 2) })
-        Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.tab_byedpi), maxLines = 2) })
-        Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(stringResource(R.string.tab_sni), maxLines = 2) })
-        Tab(selected = tab == 3, onClick = { tab = 3 }, text = { Text(stringResource(R.string.tab_servers), maxLines = 2) })
-        Tab(selected = tab == 4, onClick = { tab = 4 }, text = { Text(stringResource(R.string.tab_opera_args), maxLines = 2) })
-      }
-    } else {
-      TabRow(selectedTabIndex = tab) {
-        Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(stringResource(R.string.tab_apps), maxLines = 2) })
-        Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.tab_byedpi), maxLines = 2) })
-        Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text(stringResource(R.string.tab_sni), maxLines = 2) })
-        Tab(selected = tab == 3, onClick = { tab = 3 }, text = { Text(stringResource(R.string.tab_servers), maxLines = 2) })
-        Tab(selected = tab == 4, onClick = { tab = 4 }, text = { Text(stringResource(R.string.tab_opera_args), maxLines = 2) })
-      }
-    }
+  val labels = listOf(
+    stringResource(R.string.tab_apps),
+    stringResource(R.string.tab_byedpi),
+    stringResource(R.string.tab_sni),
+    stringResource(R.string.tab_servers),
+    stringResource(R.string.tab_opera_args),
+  )
+
+  Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    OperaProxyTabSelector(
+      labels = labels,
+      selected = tab,
+      onSelected = { tab = it },
+    )
 
     when (tab) {
       0 -> {
-        // Apps lists: common + mobile + Wi‑Fi (like nfqws).
+        OperaSectionIntroCard(
+          title = stringResource(R.string.tab_apps),
+          description = stringResource(R.string.app_picker_apps_common_desc),
+          accent = Color(0xFFFACC15),
+        )
         NfqwsAppListsSection(
           pfx = "/api/programs/operaproxy",
           actions = actions,
@@ -1673,6 +2079,11 @@ private fun OperaProxySection(
         )
       }
       1 -> {
+        OperaSectionIntroCard(
+          title = stringResource(R.string.tab_byedpi),
+          description = stringResource(R.string.byedpi_start_args_desc),
+          accent = Color(0xFF22C55E),
+        )
         TextEditorCard(
           title = stringResource(R.string.byedpi_start_args_title),
           desc = stringResource(R.string.byedpi_start_args_desc),
@@ -1680,7 +2091,6 @@ private fun OperaProxySection(
           actions = actions,
           snackHost = snackHost,
         )
-        Spacer(Modifier.height(10.dp))
         TextEditorCard(
           title = stringResource(R.string.byedpi_restart_args_title),
           desc = stringResource(R.string.byedpi_restart_args_desc),
@@ -1688,7 +2098,6 @@ private fun OperaProxySection(
           actions = actions,
           snackHost = snackHost,
         )
-        Spacer(Modifier.height(10.dp))
         JsonEditorCard(
           title = stringResource(R.string.opera_ports_title),
           desc = stringResource(R.string.opera_ports_desc),
@@ -1710,6 +2119,128 @@ private fun OperaProxySection(
   }
 }
 
+@Composable
+private fun OperaProxyTabSelector(
+  labels: List<String>,
+  selected: Int,
+  onSelected: (Int) -> Unit,
+) {
+  val accent = Color(0xFFFACC15)
+  val shape = RoundedCornerShape(24.dp)
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.62f), shape)
+      .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)), shape)
+      .padding(horizontal = 8.dp, vertical = 8.dp),
+  ) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .horizontalScroll(rememberScrollState()),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      labels.forEachIndexed { index, label ->
+        val isSelected = selected == index
+        Surface(
+          modifier = Modifier.clickable { onSelected(index) },
+          shape = RoundedCornerShape(100.dp),
+          color = if (isSelected) accent.copy(alpha = 0.18f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.045f),
+          contentColor = if (isSelected) accent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
+          border = BorderStroke(1.dp, if (isSelected) accent.copy(alpha = 0.38f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
+        ) {
+          Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+            maxLines = 1,
+          )
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun OperaSectionIntroCard(
+  title: String,
+  description: String,
+  accent: Color,
+) {
+  val shape = RoundedCornerShape(22.dp)
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .background(
+        brush = Brush.horizontalGradient(
+          listOf(
+            accent.copy(alpha = 0.13f),
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.56f),
+          )
+        ),
+        shape = shape,
+      )
+      .border(BorderStroke(1.dp, accent.copy(alpha = 0.24f)), shape)
+      .padding(horizontal = 14.dp, vertical = 12.dp),
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Surface(
+        modifier = Modifier.size(38.dp),
+        shape = CircleShape,
+        color = accent.copy(alpha = 0.15f),
+        contentColor = accent,
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
+      ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+          Icon(programIcon("operaproxy"), contentDescription = null, modifier = Modifier.size(19.dp))
+        }
+      }
+      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+          text = title,
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.Bold,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          text = description,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun OperaMiniBadge(
+  text: String,
+  accent: Color,
+) {
+  Surface(
+    shape = RoundedCornerShape(100.dp),
+    color = accent.copy(alpha = 0.13f),
+    contentColor = accent,
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.26f)),
+  ) {
+    Text(
+      text = text,
+      modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+      style = MaterialTheme.typography.labelSmall,
+      fontWeight = FontWeight.Bold,
+      maxLines = 1,
+    )
+  }
+}
 
 private data class OperaSniItemUi(
   val sni: String = "",
@@ -1825,100 +2356,179 @@ private fun OperaSniJsonSection(
     )
   }
 
-  Card(modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.large) {
-    Column(
-      modifier = Modifier.padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Text(stringResource(R.string.tab_sni), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-      Text(
-        stringResource(R.string.operaproxy_sni_section_desc),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-      )
-
-      Button(
-        onClick = {
+  val accent = MaterialTheme.colorScheme.primary
+  val shape = RoundedCornerShape(24.dp)
+  Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .background(
+          brush = Brush.horizontalGradient(
+            listOf(
+              accent.copy(alpha = 0.16f),
+              MaterialTheme.colorScheme.surface.copy(alpha = 0.62f),
+            )
+          ),
+          shape = shape,
+        )
+        .border(BorderStroke(1.dp, accent.copy(alpha = 0.30f)), shape)
+        .clickable {
           editingIndex = null
           dialogItem = OperaSniItemUi()
-        },
-        modifier = if (compact) Modifier.fillMaxWidth() else Modifier,
+        }
+        .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
       ) {
-        Icon(Icons.Default.Add, contentDescription = null)
-        Spacer(Modifier.width(8.dp))
-        Text(stringResource(R.string.operaproxy_sni_create_new))
-      }
+        Surface(
+          modifier = Modifier.size(46.dp),
+          shape = CircleShape,
+          color = accent.copy(alpha = 0.16f),
+          contentColor = accent,
+          border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
+        ) {
+          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(24.dp))
+          }
+        }
 
-      if (!loaded) {
-        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-      }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+          Text(
+            text = stringResource(R.string.operaproxy_sni_create_new),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Text(
+            text = stringResource(R.string.operaproxy_sni_section_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
 
-      if (loaded && items.isEmpty()) {
+        Surface(
+          shape = RoundedCornerShape(100.dp),
+          color = accent.copy(alpha = 0.18f),
+          contentColor = accent,
+          border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+        ) {
+          Row(
+            modifier = Modifier.padding(horizontal = 13.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Text(
+              text = stringResource(R.string.action_create),
+              style = MaterialTheme.typography.labelLarge,
+              fontWeight = FontWeight.Bold,
+              maxLines = 1,
+            )
+          }
+        }
+      }
+    }
+
+    if (!loaded) {
+      LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+    }
+
+    if (loaded && items.isEmpty()) {
+      Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.58f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+      ) {
         Text(
           stringResource(R.string.operaproxy_sni_empty),
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+          modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
         )
       }
+    }
 
-      items.forEachIndexed { index, item ->
-        OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-          Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+    items.forEachIndexed { index, item ->
+      val itemShape = RoundedCornerShape(22.dp)
+      Box(
+        modifier = Modifier
+          .fillMaxWidth()
+          .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.62f), itemShape)
+          .border(BorderStroke(1.dp, accent.copy(alpha = 0.22f)), itemShape)
+          .padding(horizontal = 13.dp, vertical = 12.dp),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          Surface(
+            modifier = Modifier.size(42.dp),
+            shape = CircleShape,
+            color = accent.copy(alpha = 0.13f),
+            contentColor = accent,
+            border = BorderStroke(1.dp, accent.copy(alpha = 0.26f)),
           ) {
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              verticalAlignment = Alignment.Top,
-              horizontalArrangement = Arrangement.spacedBy(12.dp),
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+              Text(
+                text = (index + 1).toString(),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+              )
+            }
+          }
+
+          Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+              text = item.sni,
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.Bold,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+              OperaMiniBadge(
+                text = if (item.useByedpi) stringResource(R.string.tab_byedpi) else stringResource(R.string.opera_proxy_title),
+                accent = if (item.useByedpi) Color(0xFF22C55E) else accent,
+              )
+              Text(
+                text = item.overrideProxyAddress.ifBlank { stringResource(R.string.operaproxy_sni_address_not_set) },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+          }
+
+          Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            IconButton(
+              onClick = {
+                editingIndex = index
+                dialogItem = item
+              }
             ) {
-              Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                  text = stringResource(R.string.operaproxy_sni_entry_title_fmt, index + 1),
-                  style = MaterialTheme.typography.titleSmall,
-                  fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                  text = stringResource(R.string.operaproxy_sni_detail_sni_fmt, item.sni),
-                  style = MaterialTheme.typography.bodyMedium,
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                  text = stringResource(
-                    R.string.operaproxy_sni_detail_address_fmt,
-                    item.overrideProxyAddress.ifBlank { stringResource(R.string.operaproxy_sni_address_not_set) },
-                  ),
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-                  maxLines = 1,
-                  overflow = TextOverflow.Ellipsis,
-                )
+              Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.operaproxy_sni_edit_server))
+            }
+            IconButton(
+              onClick = {
+                val previous = items
+                val updated = items.toMutableList().also { it.removeAt(index) }
+                persistItems(previous = previous, updated = updated)
               }
-              Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                IconButton(
-                  onClick = {
-                    editingIndex = index
-                    dialogItem = item
-                  }
-                ) {
-                  Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.operaproxy_sni_edit_server))
-                }
-                IconButton(
-                  onClick = {
-                    val previous = items
-                    val updated = items.toMutableList().also { it.removeAt(index) }
-                    persistItems(previous = previous, updated = updated)
-                  }
-                ) {
-                  Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.common_delete_cd))
-                }
-              }
+            ) {
+              Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.common_delete_cd))
             }
           }
         }
       }
-
     }
   }
 }
@@ -2021,7 +2631,7 @@ private fun OperaSniServerDialog(
             }
           }
         } else {
-          Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+          Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(
               text = stringResource(if (isEditing) R.string.operaproxy_sni_edit_server_title else R.string.operaproxy_sni_new_server_title),
               style = MaterialTheme.typography.titleMedium,
@@ -2127,96 +2737,86 @@ private fun OperaServerSection(
     }
   }
 
-  Card(
-    modifier = Modifier.fillMaxWidth(),
-    shape = MaterialTheme.shapes.large,
-  ) {
-    Column(
-      modifier = Modifier.padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Text(stringResource(R.string.tab_servers), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-      Text(
-        stringResource(R.string.opera_server_region_desc),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+  fun saveRegion(code: String) {
+    actions.saveText(apiPath, "$code\n") { ok ->
+      if (ok) {
+        value = code
+        snack(savedMsg)
+      } else {
+        snack(saveFailedMsg)
+      }
+    }
+  }
+
+  val accent = Color(0xFFFACC15)
+  val shape = RoundedCornerShape(24.dp)
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .background(
+        brush = Brush.horizontalGradient(
+          listOf(
+            accent.copy(alpha = 0.15f),
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.64f),
+          )
+        ),
+        shape = shape,
       )
+      .border(BorderStroke(1.dp, accent.copy(alpha = 0.28f)), shape)
+      .padding(horizontal = 14.dp, vertical = 13.dp),
+  ) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Surface(
+          modifier = Modifier.size(42.dp),
+          shape = CircleShape,
+          color = accent.copy(alpha = 0.16f),
+          contentColor = accent,
+          border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+        ) {
+          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp))
+          }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+          Text(
+            text = stringResource(R.string.tab_servers),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+          )
+          Text(
+            stringResource(R.string.opera_server_region_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+        if (loaded) {
+          OperaMiniBadge(text = value, accent = accent)
+        }
+      }
+
+      if (!loaded) {
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+      }
 
       if (compact) {
         Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          RegionButton(label = stringResource(R.string.region_europe), code = "EU", selected = value == "EU", modifier = Modifier.fillMaxWidth()) {
-            actions.saveText(apiPath, "EU\n") { ok ->
-              if (ok) {
-                value = "EU"
-                snack(savedMsg)
-              } else {
-                snack(saveFailedMsg)
-              }
-            }
-          }
-          RegionButton(label = stringResource(R.string.region_asia), code = "AS", selected = value == "AS", modifier = Modifier.fillMaxWidth()) {
-            actions.saveText(apiPath, "AS\n") { ok ->
-              if (ok) {
-                value = "AS"
-                snack(savedMsg)
-              } else {
-                snack(saveFailedMsg)
-              }
-            }
-          }
-          RegionButton(label = stringResource(R.string.region_america), code = "AM", selected = value == "AM", modifier = Modifier.fillMaxWidth()) {
-            actions.saveText(apiPath, "AM\n") { ok ->
-              if (ok) {
-                value = "AM"
-                snack(savedMsg)
-              } else {
-                snack(saveFailedMsg)
-              }
-            }
-          }
+          RegionButton(label = stringResource(R.string.region_europe), code = "EU", selected = value == "EU", modifier = Modifier.fillMaxWidth()) { saveRegion("EU") }
+          RegionButton(label = stringResource(R.string.region_asia), code = "AS", selected = value == "AS", modifier = Modifier.fillMaxWidth()) { saveRegion("AS") }
+          RegionButton(label = stringResource(R.string.region_america), code = "AM", selected = value == "AM", modifier = Modifier.fillMaxWidth()) { saveRegion("AM") }
         }
       } else {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          RegionButton(label = stringResource(R.string.region_europe), code = "EU", selected = value == "EU") {
-            actions.saveText(apiPath, "EU\n") { ok ->
-              if (ok) {
-                value = "EU"
-                snack(savedMsg)
-              } else {
-                snack(saveFailedMsg)
-              }
-            }
-          }
-          RegionButton(label = stringResource(R.string.region_asia), code = "AS", selected = value == "AS") {
-            actions.saveText(apiPath, "AS\n") { ok ->
-              if (ok) {
-                value = "AS"
-                snack(savedMsg)
-              } else {
-                snack(saveFailedMsg)
-              }
-            }
-          }
-          RegionButton(label = stringResource(R.string.region_america), code = "AM", selected = value == "AM") {
-            actions.saveText(apiPath, "AM\n") { ok ->
-              if (ok) {
-                value = "AM"
-                snack(savedMsg)
-              } else {
-                snack(saveFailedMsg)
-              }
-            }
-          }
+          RegionButton(label = stringResource(R.string.region_europe), code = "EU", selected = value == "EU") { saveRegion("EU") }
+          RegionButton(label = stringResource(R.string.region_asia), code = "AS", selected = value == "AS") { saveRegion("AS") }
+          RegionButton(label = stringResource(R.string.region_america), code = "AM", selected = value == "AM") { saveRegion("AM") }
         }
-      }
-      if (!loaded) {
-        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-      } else {
-        Text(
-          stringResource(R.string.current_value_fmt, value),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-        )
       }
     }
   }
@@ -2351,9 +2951,12 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
     // ── Card: -api-proxy ── (highlighted as most important)
     val apiProxyInvalid = apiProxyHasInvalidEntries(apiProxy)
     Card(
+      modifier = Modifier.fillMaxWidth(),
+      shape = RoundedCornerShape(22.dp),
       colors = CardDefaults.cardColors(
-        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.40f)
-      )
+        containerColor = Color(0xFFFACC15).copy(alpha = 0.12f)
+      ),
+      border = BorderStroke(1.dp, Color(0xFFFACC15).copy(alpha = 0.26f)),
     ) {
       Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
@@ -2389,7 +2992,12 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
     }
 
     // ── Card: server selection ──
-    Card {
+    Card(
+      modifier = Modifier.fillMaxWidth(),
+      shape = RoundedCornerShape(22.dp),
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)),
+      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+    ) {
       Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
           stringResource(R.string.opera_args_server_selection_title),
@@ -2444,7 +3052,12 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
     }
 
     // ── Card: timing & verbosity ──
-    Card {
+    Card(
+      modifier = Modifier.fillMaxWidth(),
+      shape = RoundedCornerShape(22.dp),
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)),
+      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+    ) {
       Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
           stringResource(R.string.opera_args_misc_title),
@@ -2480,7 +3093,12 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
     }
 
     // ── Card: User-Agent (advanced, collapsed visually at bottom) ──
-    Card {
+    Card(
+      modifier = Modifier.fillMaxWidth(),
+      shape = RoundedCornerShape(22.dp),
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)),
+      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+    ) {
       Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
           stringResource(R.string.opera_args_ua_title),
@@ -2504,7 +3122,12 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
     }
 
     // ── Card: Bootstrap DNS ──
-    Card {
+    Card(
+      modifier = Modifier.fillMaxWidth(),
+      shape = RoundedCornerShape(22.dp),
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)),
+      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+    ) {
       Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
           stringResource(R.string.opera_args_bootstrap_dns_title),
@@ -2579,6 +3202,9 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
             onClick = { saveDns() },
             enabled = !dnsSaving && dnsLoaded && dnsDirty,
             modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(100.dp),
+            border = BorderStroke(1.dp, Color(0xFFFACC15).copy(alpha = 0.36f)),
+            contentPadding = PaddingValues(vertical = 11.dp),
           ) {
             if (dnsSaving) {
               CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
@@ -2596,6 +3222,12 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
       onClick = { save() },
       enabled = !saving && loaded && argsDirty,
       modifier = Modifier.fillMaxWidth(),
+      shape = RoundedCornerShape(100.dp),
+      colors = ButtonDefaults.buttonColors(
+        containerColor = Color(0xFFFACC15),
+        contentColor = Color.Black,
+      ),
+      contentPadding = PaddingValues(vertical = 12.dp),
     ) {
       if (saving) {
         CircularProgressIndicator(
@@ -2623,9 +3255,31 @@ private fun RegionButton(
   modifier: Modifier = Modifier,
   onClick: () -> Unit,
 ) {
-  if (selected) {
-    Button(onClick = onClick, modifier = modifier) { Text(label) }
-  } else {
-    OutlinedButton(onClick = onClick, modifier = modifier) { Text(label) }
+  val accent = Color(0xFFFACC15)
+  Surface(
+    modifier = modifier.clickable(onClick = onClick),
+    shape = RoundedCornerShape(100.dp),
+    color = if (selected) accent.copy(alpha = 0.18f) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.045f),
+    contentColor = if (selected) accent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+    border = BorderStroke(1.dp, if (selected) accent.copy(alpha = 0.38f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 13.dp, vertical = 9.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      Text(
+        text = code,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.Bold,
+      )
+      Text(
+        text = label,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+    }
   }
 }

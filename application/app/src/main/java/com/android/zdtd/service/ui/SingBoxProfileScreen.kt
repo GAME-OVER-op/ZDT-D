@@ -1,5 +1,17 @@
 package com.android.zdtd.service.ui
 
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -59,6 +71,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.LocalWebPanelActivity
 import com.android.zdtd.service.ZdtdActions
@@ -154,41 +167,166 @@ private suspend fun isSingBoxWebPanelPortOpen(port: Int): Boolean = withContext(
 }
 
 @Composable
-private fun SingBoxWebPanelCard(
-  checking: Boolean,
-  onOpen: () -> Unit,
+private fun SingBoxSectionCard(
+  title: String,
+  desc: String? = null,
+  accent: Color = Color(0xFFEF4444),
+  icon: @Composable (() -> Unit)? = null,
+  trailing: @Composable (() -> Unit)? = null,
+  modifier: Modifier = Modifier,
+  content: @Composable (() -> Unit)? = null,
 ) {
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))) {
-    Row(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(12.dp),
+  val compact = rememberIsCompactWidth()
+  val shape = RoundedCornerShape(if (compact) 20.dp else 24.dp)
+  Surface(
+    modifier = modifier.fillMaxWidth(),
+    shape = shape,
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.64f),
+    contentColor = MaterialTheme.colorScheme.onSurface,
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .background(
+          Brush.linearGradient(
+            listOf(
+              accent.copy(alpha = 0.13f),
+              MaterialTheme.colorScheme.surface.copy(alpha = 0.05f),
+              Color.Transparent,
+            )
+          ),
+          shape = shape,
+        )
+        .padding(if (compact) 12.dp else 14.dp),
     ) {
-      Text(
-        text = stringResource(R.string.web_panel_open),
-        modifier = Modifier.weight(1f),
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.SemiBold,
-      )
-      FilledTonalIconButton(
-        onClick = onOpen,
-        enabled = !checking,
-      ) {
-        if (checking) {
-          CircularProgressIndicator(
-            modifier = Modifier.width(20.dp).height(20.dp),
-            strokeWidth = 2.dp,
-          )
-        } else {
-          Icon(
-            imageVector = Icons.Filled.Public,
-            contentDescription = stringResource(R.string.web_panel_open),
-          )
+      Column(verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp)) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp),
+        ) {
+          if (icon != null) {
+            Surface(
+              modifier = Modifier.size(if (compact) 42.dp else 46.dp),
+              shape = CircleShape,
+              color = accent.copy(alpha = 0.16f),
+              contentColor = accent,
+              border = BorderStroke(1.dp, accent.copy(alpha = 0.38f)),
+            ) {
+              Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { icon() }
+            }
+          }
+          Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+              title,
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.93f),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+            if (desc != null) {
+              Text(
+                desc,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+          }
+          if (trailing != null) trailing()
         }
+        if (content != null) content()
       }
     }
   }
 }
+
+@Composable
+private fun SingBoxProfileEnabledCard(
+  checked: Boolean,
+  onCheckedChange: (Boolean) -> Unit,
+) {
+  val accent = if (checked) Color(0xFF22C55E) else Color(0xFFEF4444)
+  SingBoxSectionCard(
+    title = stringResource(R.string.enabled_card_profile_title),
+    desc = stringResource(R.string.enabled_card_apply_hint),
+    accent = accent,
+    icon = {
+      Icon(
+        imageVector = Icons.Filled.Public,
+        contentDescription = null,
+        modifier = Modifier.size(22.dp),
+      )
+    },
+    trailing = {
+      Switch(checked = checked, onCheckedChange = onCheckedChange)
+    },
+  ) {
+    Surface(
+      shape = RoundedCornerShape(100.dp),
+      color = accent.copy(alpha = 0.16f),
+      contentColor = accent,
+      border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+    ) {
+      Text(
+        text = stringResource(if (checked) R.string.enabled_state_on else R.string.enabled_state_off),
+        modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp),
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+      )
+    }
+  }
+}
+
+@Composable
+private fun SingBoxWebPanelCard(
+  checking: Boolean,
+  onOpen: () -> Unit,
+) {
+  SingBoxSectionCard(
+    title = stringResource(R.string.web_panel_open),
+    desc = "127.0.0.1 web UI",
+    accent = Color(0xFF38BDF8),
+    icon = {
+      if (checking) {
+        CircularProgressIndicator(
+          modifier = Modifier.size(20.dp),
+          strokeWidth = 2.dp,
+        )
+      } else {
+        Icon(
+          imageVector = Icons.Filled.Public,
+          contentDescription = null,
+          modifier = Modifier.size(22.dp),
+        )
+      }
+    },
+    trailing = {
+      Surface(
+        modifier = Modifier.clickable(enabled = !checking) { onOpen() },
+        shape = RoundedCornerShape(100.dp),
+        color = Color(0xFF38BDF8).copy(alpha = 0.16f),
+        contentColor = Color(0xFF7DD3FC),
+        border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.34f)),
+      ) {
+        Text(
+          stringResource(R.string.support_open),
+          modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+          style = MaterialTheme.typography.labelLarge,
+          fontWeight = FontWeight.Bold,
+          maxLines = 1,
+        )
+      }
+    },
+  )
+}
+
 
 private fun parseDnsText(text: String): List<String> = text
   .split(',', '\n', ';', ' ')
@@ -554,8 +692,12 @@ fun SingBoxProfileScreen(
   profile: String,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  topContentPadding: Dp = 0.dp,
+  bottomContentPadding: Dp = 0.dp,
 ) {
   val compact = rememberIsCompactWidth()
+  val effectiveTopContentPadding = topContentPadding + 12.dp
+  val effectiveBottomContentPadding = bottomContentPadding + if (compact) 12.dp else 16.dp
   val program = programs.firstOrNull { it.id == "sing-box" }
   val prof = program?.profiles?.firstOrNull { it.name == profile }
   val encodedProfile = remember(profile) { URLEncoder.encode(profile, "UTF-8") }
@@ -1077,21 +1219,14 @@ fun SingBoxProfileScreen(
   Column(
     Modifier
       .fillMaxSize()
-      .padding(if (compact) 12.dp else 16.dp)
       .verticalScroll(scroll)
-      .navigationBarsPadding()
+      .padding(horizontal = if (compact) 12.dp else 16.dp)
       .animateContentSize(),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    Text("sing-box / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 2)
-    Text(
-      toolDescription("sing-box"),
-      style = MaterialTheme.typography.bodySmall,
-      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-    )
+    Spacer(Modifier.height(effectiveTopContentPadding))
 
-    EnabledCard(
-      title = stringResource(R.string.enabled_card_profile_title),
+    SingBoxProfileEnabledCard(
       checked = prof?.enabled ?: false,
       onCheckedChange = { v -> actions.setProfileEnabled("sing-box", profile, v) },
     )
@@ -1228,7 +1363,7 @@ fun SingBoxProfileScreen(
       onEditConfig = ::openEditor,
     )
 
-    Spacer(Modifier.height(80.dp))
+    Spacer(Modifier.height(effectiveBottomContentPadding))
   }
 }
 
@@ -1257,23 +1392,23 @@ private fun SingBoxProfileSettingCard(
     }
   }
 
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f))) {
-    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Text(stringResource(R.string.singbox_profile_settings_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-      Text(
-        stringResource(R.string.singbox_profile_settings_desc),
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-        style = MaterialTheme.typography.bodySmall,
-      )
+  SingBoxSectionCard(
+    title = stringResource(R.string.singbox_profile_settings_title),
+    desc = stringResource(R.string.singbox_profile_settings_desc),
+    accent = Color(0xFF38BDF8),
+    icon = {
+      Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(21.dp))
+    },
+  ) {
+    if (loading || saving) {
+      LinearProgressIndicator(Modifier.fillMaxWidth())
+    }
 
-      if (loading || saving) {
-        LinearProgressIndicator(Modifier.fillMaxWidth())
-      }
-
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
       OutlinedTextField(
         value = t2sPortText,
         onValueChange = { t2sPortText = it.filter(Char::isDigit) },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.weight(1f),
         enabled = !loading,
         label = { Text(stringResource(R.string.singbox_t2s_port_label)) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -1282,24 +1417,31 @@ private fun SingBoxProfileSettingCard(
       OutlinedTextField(
         value = t2sWebPortText,
         onValueChange = { t2sWebPortText = it.filter(Char::isDigit) },
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.weight(1f),
         enabled = !loading,
         label = { Text(stringResource(R.string.singbox_t2s_web_port_label)) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         singleLine = true,
       )
+    }
 
-      val footerText = when {
-        parsedT2sPort == null || parsedT2sWebPort == null -> stringResource(R.string.singbox_profile_autosave_hint)
-        parsedT2sPort == parsedT2sWebPort -> stringResource(R.string.singbox_profile_ports_must_differ)
-        parsedT2sPort !in 1..65535 || parsedT2sWebPort !in 1..65535 -> stringResource(R.string.singbox_profile_autosave_hint)
-        saving -> stringResource(R.string.common_loading)
-        else -> stringResource(R.string.singbox_profile_autosave_hint)
-      }
+    val footerText = when {
+      parsedT2sPort == null || parsedT2sWebPort == null -> stringResource(R.string.singbox_profile_autosave_hint)
+      parsedT2sPort == parsedT2sWebPort -> stringResource(R.string.singbox_profile_ports_must_differ)
+      parsedT2sPort !in 1..65535 || parsedT2sWebPort !in 1..65535 -> stringResource(R.string.singbox_profile_autosave_hint)
+      saving -> stringResource(R.string.common_loading)
+      else -> stringResource(R.string.singbox_profile_autosave_hint)
+    }
+    Surface(
+      shape = RoundedCornerShape(14.dp),
+      color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f),
+      border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.12f)),
+    ) {
       Text(
         footerText,
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
         style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
       )
     }
   }
@@ -1454,51 +1596,100 @@ private fun SingBoxServersSection(
 ) {
   if (setting.isVpn && servers.size == 1) return
   val createEnabled = setting.isT2s || servers.isEmpty()
-  ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f))) {
-    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(stringResource(R.string.singbox_servers_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+
+  SingBoxSectionCard(
+    title = stringResource(R.string.singbox_servers_title),
+    desc = stringResource(if (setting.isVpn) R.string.singbox_vpn_servers_desc else R.string.singbox_servers_desc),
+    accent = Color(0xFFA78BFA),
+    icon = {
+      Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp))
+    },
+    trailing = {
+      Surface(
+        shape = RoundedCornerShape(100.dp),
+        color = Color(0xFFA78BFA).copy(alpha = 0.16f),
+        contentColor = Color(0xFFC4B5FD),
+        border = BorderStroke(1.dp, Color(0xFFA78BFA).copy(alpha = 0.32f)),
+      ) {
         Text(
-          stringResource(if (setting.isVpn) R.string.singbox_vpn_servers_desc else R.string.singbox_servers_desc),
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-          style = MaterialTheme.typography.bodySmall,
+          text = servers.size.toString(),
+          modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+          style = MaterialTheme.typography.labelMedium,
+          fontWeight = FontWeight.Bold,
         )
+      }
+    },
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      Surface(
+        modifier = Modifier
+          .weight(1f)
+          .clickable(enabled = createEnabled) { onCreateServer() },
+        shape = RoundedCornerShape(100.dp),
+        color = Color(0xFFA78BFA).copy(alpha = if (createEnabled) 0.18f else 0.08f),
+        contentColor = Color.White.copy(alpha = if (createEnabled) 0.92f else 0.45f),
+        border = BorderStroke(1.dp, Color(0xFFA78BFA).copy(alpha = if (createEnabled) 0.38f else 0.14f)),
+      ) {
         Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.Center,
         ) {
-          FilledTonalButton(onClick = onCreateServer, enabled = createEnabled, modifier = Modifier.weight(1f)) {
-            Icon(Icons.Filled.Add, contentDescription = null)
-            Spacer(Modifier.width(6.dp))
-            Text(stringResource(R.string.singbox_profile_add_server))
-          }
-          OutlinedButton(onClick = onGenerateServer, enabled = createEnabled, modifier = Modifier.weight(1f)) {
-            Text(stringResource(R.string.singbox_import_action))
-          }
+          Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(17.dp))
+          Spacer(Modifier.width(6.dp))
+          Text(stringResource(R.string.singbox_profile_add_server), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
       }
+      Surface(
+        modifier = Modifier
+          .weight(1f)
+          .clickable(enabled = createEnabled) { onGenerateServer() },
+        shape = RoundedCornerShape(100.dp),
+        color = Color(0xFFEF4444).copy(alpha = if (createEnabled) 0.16f else 0.07f),
+        contentColor = Color.White.copy(alpha = if (createEnabled) 0.92f else 0.45f),
+        border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = if (createEnabled) 0.34f else 0.13f)),
+      ) {
+        Row(
+          modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.Center,
+        ) {
+          Text(stringResource(R.string.singbox_import_action), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+      }
+    }
 
-      if (loading) {
-        LinearProgressIndicator(Modifier.fillMaxWidth())
-      } else if (servers.isEmpty()) {
+    if (loading) {
+      LinearProgressIndicator(Modifier.fillMaxWidth())
+    } else if (servers.isEmpty()) {
+      Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+        border = BorderStroke(1.dp, Color(0xFFA78BFA).copy(alpha = 0.16f)),
+      ) {
         Text(
           stringResource(R.string.singbox_profile_no_servers),
+          modifier = Modifier.fillMaxWidth().padding(12.dp),
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+          style = MaterialTheme.typography.bodyMedium,
         )
-      } else {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          servers.forEach { server ->
-            SingBoxServerCard(
-              profile = profile,
-              basePath = basePath,
-              server = server,
-              actions = actions,
-              snackHost = snackHost,
-              onRefresh = onRefresh,
-              onEditConfig = { onEditConfig(server.name) },
-              showPort = setting.isT2s,
-            )
-          }
+      }
+    } else {
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        servers.forEach { server ->
+          SingBoxServerCard(
+            profile = profile,
+            basePath = basePath,
+            server = server,
+            actions = actions,
+            snackHost = snackHost,
+            onRefresh = onRefresh,
+            onEditConfig = { onEditConfig(server.name) },
+            showPort = setting.isT2s,
+          )
         }
       }
     }
@@ -1579,46 +1770,102 @@ private fun SingBoxServerCard(
     }
   }
 
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f))) {
-    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-          Text(server.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-          Text(
-            if (saving) stringResource(R.string.common_loading) else stringResource(R.string.singbox_server_autosave_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+  val accent = if (enabled) Color(0xFF22C55E) else Color(0xFFA78BFA)
+  Surface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(20.dp),
+    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.50f),
+    contentColor = MaterialTheme.colorScheme.onSurface,
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .background(
+          Brush.linearGradient(
+            listOf(accent.copy(alpha = 0.10f), Color.Transparent)
+          ),
+          RoundedCornerShape(20.dp),
+        )
+        .padding(12.dp),
+    ) {
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+          Surface(
+            modifier = Modifier.size(38.dp),
+            shape = CircleShape,
+            color = accent.copy(alpha = 0.15f),
+            contentColor = accent,
+            border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
+          ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+              Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(19.dp))
+            }
+          }
+          Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(server.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+              if (saving) stringResource(R.string.common_loading) else stringResource(R.string.singbox_server_autosave_hint),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+          Switch(checked = enabled, onCheckedChange = { enabled = it })
+        }
+
+        AnimatedVisibility(
+          visible = showPort,
+          enter = fadeIn() + expandVertically(),
+          exit = fadeOut() + shrinkVertically(),
+        ) {
+          OutlinedTextField(
+            value = portText,
+            onValueChange = { portText = it.filter(Char::isDigit) },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !saving,
+            singleLine = true,
+            label = { Text(stringResource(R.string.singbox_server_port_label)) },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
           )
         }
-        Switch(checked = enabled, onCheckedChange = { enabled = it })
-      }
 
-      AnimatedVisibility(
-        visible = showPort,
-        enter = fadeIn() + expandVertically(),
-        exit = fadeOut() + shrinkVertically(),
-      ) {
-        OutlinedTextField(
-          value = portText,
-          onValueChange = { portText = it.filter(Char::isDigit) },
-          modifier = Modifier.fillMaxWidth(),
-          enabled = !saving,
-          singleLine = true,
-          label = { Text(stringResource(R.string.singbox_server_port_label)) },
-          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        )
-      }
-
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onEditConfig, modifier = Modifier.weight(1f)) {
-          Icon(Icons.Filled.Edit, contentDescription = null)
-          Spacer(Modifier.width(6.dp))
-          Text(stringResource(R.string.action_edit))
-        }
-        OutlinedButton(onClick = { askDelete = true }, modifier = Modifier.weight(1f)) {
-          Icon(Icons.Filled.Delete, contentDescription = null)
-          Spacer(Modifier.width(6.dp))
-          Text(stringResource(R.string.action_delete))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          Surface(
+            modifier = Modifier.weight(1f).clickable { onEditConfig() },
+            shape = RoundedCornerShape(100.dp),
+            color = Color(0xFF38BDF8).copy(alpha = 0.13f),
+            contentColor = Color(0xFF7DD3FC),
+            border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.28f)),
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.Center,
+            ) {
+              Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+              Spacer(Modifier.width(6.dp))
+              Text(stringResource(R.string.action_edit), fontWeight = FontWeight.Bold, maxLines = 1)
+            }
+          }
+          Surface(
+            modifier = Modifier.weight(1f).clickable { askDelete = true },
+            shape = RoundedCornerShape(100.dp),
+            color = Color(0xFFEF4444).copy(alpha = 0.13f),
+            contentColor = Color(0xFFFCA5A5),
+            border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.30f)),
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.Center,
+            ) {
+              Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+              Spacer(Modifier.width(6.dp))
+              Text(stringResource(R.string.action_delete), fontWeight = FontWeight.Bold, maxLines = 1)
+            }
+          }
         }
       }
     }
@@ -1643,63 +1890,112 @@ private fun SingBoxCreateServerDialog(
     scope.launch { snackHost.showSnackbar(msg) }
   }
 
-  AlertDialog(
+  Dialog(
     onDismissRequest = onDismiss,
-    title = { Text(stringResource(R.string.singbox_create_server_title)) },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(
-          stringResource(R.string.singbox_create_server_rules),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-        )
-        OutlinedTextField(
-          value = name,
-          onValueChange = {
-            raw = it
-            error = null
-          },
-          label = { Text(stringResource(R.string.singbox_server_name_label)) },
-          singleLine = false,
-          maxLines = 2,
-          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-          supportingText = {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-              Text(stringResource(R.string.allowed_chars_hint))
-              Text(stringResource(R.string.profile_name_len_fmt, name.length))
+    properties = DialogProperties(usePlatformDefaultWidth = false),
+  ) {
+    Surface(
+      modifier = Modifier.fillMaxWidth(0.92f),
+      shape = RoundedCornerShape(28.dp),
+      color = Color(0xFF17131E).copy(alpha = 0.98f),
+      contentColor = MaterialTheme.colorScheme.onSurface,
+      border = BorderStroke(1.dp, Color(0xFFA78BFA).copy(alpha = 0.34f)),
+    ) {
+      Box(
+        modifier = Modifier
+          .background(
+            Brush.linearGradient(
+              listOf(Color(0xFFA78BFA).copy(alpha = 0.18f), Color(0xFFEF4444).copy(alpha = 0.08f), Color.Transparent)
+            ),
+            RoundedCornerShape(28.dp),
+          )
+          .padding(18.dp),
+      ) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Surface(
+              modifier = Modifier.size(44.dp),
+              shape = CircleShape,
+              color = Color(0xFFA78BFA).copy(alpha = 0.18f),
+              contentColor = Color(0xFFC4B5FD),
+              border = BorderStroke(1.dp, Color(0xFFA78BFA).copy(alpha = 0.36f)),
+            ) {
+              Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(23.dp))
+              }
             }
-          },
-          isError = error != null,
-        )
-        if (error != null) {
-          Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+              Text(
+                stringResource(R.string.singbox_create_server_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+              Text(
+                stringResource(R.string.singbox_create_server_rules),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+          }
+
+          OutlinedTextField(
+            value = name,
+            onValueChange = {
+              raw = it
+              error = null
+            },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(stringResource(R.string.singbox_server_name_label)) },
+            singleLine = false,
+            maxLines = 2,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+            supportingText = {
+              Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(stringResource(R.string.allowed_chars_hint))
+                Text(stringResource(R.string.profile_name_len_fmt, name.length))
+              }
+            },
+            isError = error != null,
+          )
+          error?.let {
+            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+          }
+
+          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+              Text(stringResource(R.string.action_cancel))
+            }
+            Button(
+              modifier = Modifier.weight(1f),
+              enabled = name.isNotBlank(),
+              onClick = {
+                val n = name.trim()
+                when {
+                  n.isEmpty() -> {
+                    val msg = context.getString(R.string.enter_a_name)
+                    error = msg
+                    snack(msg)
+                  }
+                  existingNorm.contains(n) -> {
+                    val msg = context.getString(R.string.singbox_server_already_exists)
+                    error = msg
+                    snack(msg)
+                  }
+                  else -> onCreate(n)
+                }
+              },
+            ) {
+              Text(stringResource(R.string.action_create))
+            }
+          }
         }
       }
-    },
-    confirmButton = {
-      Button(onClick = {
-        val n = name.trim()
-        when {
-          n.isEmpty() -> {
-            val msg = context.getString(R.string.enter_a_name)
-            error = msg
-            snack(msg)
-          }
-          existingNorm.contains(n) -> {
-            val msg = context.getString(R.string.singbox_server_already_exists)
-            error = msg
-            snack(msg)
-          }
-          else -> onCreate(n)
-        }
-      }, enabled = name.isNotBlank()) {
-        Text(stringResource(R.string.action_create))
-      }
-    },
-    dismissButton = {
-      OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
     }
-  )
+  }
 }
 
 @Composable
@@ -1723,79 +2019,134 @@ private fun SingBoxImportToProfileDialog(
     scope.launch { snackHost.showSnackbar(msg) }
   }
 
-  AlertDialog(
+  Dialog(
     onDismissRequest = onDismiss,
-    title = { Text(stringResource(R.string.singbox_import_dialog_title)) },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-          stringResource(R.string.singbox_import_dialog_beta_warning),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-        )
-        Text(
-          stringResource(R.string.singbox_import_dialog_desc),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-        )
-        OutlinedTextField(
-          value = name,
-          onValueChange = {
-            if (lockedServerName == null) {
-              raw = it
-              error = null
+    properties = DialogProperties(usePlatformDefaultWidth = false),
+  ) {
+    Surface(
+      modifier = Modifier.fillMaxWidth(0.94f),
+      shape = RoundedCornerShape(28.dp),
+      color = Color(0xFF17131E).copy(alpha = 0.98f),
+      contentColor = MaterialTheme.colorScheme.onSurface,
+      border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.34f)),
+    ) {
+      Box(
+        modifier = Modifier
+          .background(
+            Brush.linearGradient(
+              listOf(Color(0xFFEF4444).copy(alpha = 0.16f), Color(0xFFA78BFA).copy(alpha = 0.08f), Color.Transparent)
+            ),
+            RoundedCornerShape(28.dp),
+          )
+          .padding(18.dp),
+      ) {
+        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Surface(
+              modifier = Modifier.size(44.dp),
+              shape = CircleShape,
+              color = Color(0xFFEF4444).copy(alpha = 0.18f),
+              contentColor = Color(0xFFFCA5A5),
+              border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.36f)),
+            ) {
+              Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(23.dp))
+              }
             }
-          },
-          enabled = lockedServerName == null,
-          label = { Text(stringResource(R.string.singbox_server_name_label)) },
-          singleLine = false,
-          maxLines = 2,
-          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-          supportingText = {
-            Column {
-              Text(stringResource(if (lockedServerName == null) R.string.singbox_create_server_rules else R.string.singbox_import_replace_current_hint))
-              if (lockedServerName == null) Text(stringResource(R.string.singbox_import_auto_port_hint, suggestedPort))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+              Text(
+                stringResource(R.string.singbox_import_dialog_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+              Text(
+                stringResource(R.string.singbox_import_dialog_beta_warning),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+              )
             }
-          },
-          isError = error != null,
-        )
-        if (error != null) {
-          Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-        }
-        OutlinedTextField(
-          value = source,
-          onValueChange = { source = it },
-          label = { Text(stringResource(R.string.singbox_import_source_label)) },
-          modifier = Modifier.fillMaxWidth().heightIn(min = 160.dp),
-          singleLine = false,
-          supportingText = { Text(stringResource(R.string.singbox_import_source_support_hint)) },
-        )
-      }
-    },
-    confirmButton = {
-      Button(onClick = {
-        val n = name.trim()
-        when {
-          n.isEmpty() -> {
-            val msg = context.getString(R.string.enter_a_name)
-            error = msg
-            snack(msg)
           }
-          lockedServerName == null && existingNorm.contains(n) -> {
-            val msg = context.getString(R.string.singbox_server_already_exists)
-            error = msg
-            snack(msg)
-          }
-          source.trim().isEmpty() -> snack(context.getString(R.string.singbox_import_source_required))
-          else -> onGenerate(n, source.trim())
-        }
-      }) {
-        Text(stringResource(R.string.singbox_import_action))
-      }
-    },
-    dismissButton = {
-      OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
-    }
-  )
-}
 
+          Surface(
+            shape = RoundedCornerShape(18.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+            border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.14f)),
+          ) {
+            Text(
+              stringResource(R.string.singbox_import_dialog_desc),
+              modifier = Modifier.fillMaxWidth().padding(12.dp),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+            )
+          }
+
+          OutlinedTextField(
+            value = name,
+            onValueChange = {
+              if (lockedServerName == null) {
+                raw = it
+                error = null
+              }
+            },
+            enabled = lockedServerName == null,
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(stringResource(R.string.singbox_server_name_label)) },
+            singleLine = false,
+            maxLines = 2,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+            supportingText = {
+              Column {
+                Text(stringResource(if (lockedServerName == null) R.string.singbox_create_server_rules else R.string.singbox_import_replace_current_hint))
+                if (lockedServerName == null) Text(stringResource(R.string.singbox_import_auto_port_hint, suggestedPort))
+              }
+            },
+            isError = error != null,
+          )
+          if (error != null) {
+            Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+          }
+          OutlinedTextField(
+            value = source,
+            onValueChange = { source = it },
+            label = { Text(stringResource(R.string.singbox_import_source_label)) },
+            modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp),
+            singleLine = false,
+            supportingText = { Text(stringResource(R.string.singbox_import_source_support_hint)) },
+          )
+
+          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+              Text(stringResource(R.string.action_cancel))
+            }
+            Button(
+              modifier = Modifier.weight(1f),
+              onClick = {
+                val n = name.trim()
+                when {
+                  n.isEmpty() -> {
+                    val msg = context.getString(R.string.enter_a_name)
+                    error = msg
+                    snack(msg)
+                  }
+                  lockedServerName == null && existingNorm.contains(n) -> {
+                    val msg = context.getString(R.string.singbox_server_already_exists)
+                    error = msg
+                    snack(msg)
+                  }
+                  source.trim().isEmpty() -> snack(context.getString(R.string.singbox_import_source_required))
+                  else -> onGenerate(n, source.trim())
+                }
+              },
+            ) {
+              Text(stringResource(R.string.singbox_import_action))
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -248,11 +248,11 @@
     <string name="stats_processes_title">Процессы</string>
     <string name="stats_running_count">Работает: %1$d</string>
     <string name="stats_offline">офлайн</string>
-    <string name="stats_daemon_title">Демон</string>
-    <string name="stats_online_upper">ОНЛАЙН</string>
-    <string name="stats_offline_upper">ОФЛАЙН</string>
-    <string name="stats_running_services">Запущено служб: %1$d</string>
-    <string name="stats_no_connection">Нет подключения к API</string>
+    <string name="stats_daemon_title">Служба</string>
+    <string name="stats_online_upper">ЗАПУЩЕНА</string>
+    <string name="stats_offline_upper">ОСТАНОВЛЕНА</string>
+    <string name="stats_running_services">Активных компонентов: %1$d</string>
+    <string name="stats_no_connection">Нет подключения к службе</string>
     <string name="stats_running_lower">работает</string>
     <string name="stats_stopped_lower">остановлено</string>
     <string name="stats_cpu_label">ЦП</string>
@@ -481,17 +481,17 @@
     <string name="app_speed_mbps_fmt">%1$.1f МБ/с</string>
 
     <!-- Home -->
-    <string name="home_online">онлайн</string>
-    <string name="home_offline">офлайн</string>
-    <string name="home_daemon_status_fmt">статус демона: %1$s</string>
-    <string name="home_power_running">ВКЛ • работает</string>
-    <string name="home_power_stopped">ВЫКЛ • ожидание</string>
-    <string name="home_power_starting">ЗАПУСК…</string>
-    <string name="home_power_stopping">ОСТАНОВКА…</string>
-    <string name="home_service_active_hint">Служба активна. Изменения настроек применяются после stop/start.</string>
-    <string name="home_service_stopped_hint">Служба выключена. Нажми кнопку для запуска.</string>
+    <string name="home_online">Служба запущена</string>
+    <string name="home_offline">Служба недоступна</string>
+    <string name="home_daemon_status_fmt">%1$s</string>
+    <string name="home_power_running">Запущено</string>
+    <string name="home_power_stopped">Остановлено</string>
+    <string name="home_power_starting">Запуск…</string>
+    <string name="home_power_stopping">Остановка…</string>
+    <string name="home_service_active_hint">Служба работает. Нажмите кнопку, чтобы остановить.</string>
+    <string name="home_service_stopped_hint">Служба остановлена. Нажмите кнопку, чтобы запустить.</string>
     <string name="home_no_log_data">(нет данных лога)</string>
-    <string name="home_daemon_logs_title">Логи демона</string>
+    <string name="home_daemon_logs_title">Логи службы</string>
     <string name="home_logs_main">Логи основные</string>
     <string name="home_logs_detailed">Логи подробные</string>
     <string name="home_logs_source_menu">Выбрать источник логов</string>
@@ -983,6 +983,7 @@ APatch: 10700+</string>
     <string name="myproxy_user_label">Логин</string>
     <string name="myproxy_pass_label">Пароль</string>
     <string name="myproxy_proxy_ports_invalid">Укажите порты от 1 до 65535 через запятую.</string>
+    <string name="myproxy_credentials_title">Данные доступа SOCKS5</string>
     <string name="myproxy_credentials_pair_required">Если указан логин или пароль, заполните оба поля.</string>
     <string name="myproxy_backend_mode_title">Режим backend</string>
     <string name="myproxy_backend_mode_balance">Балансировка</string>

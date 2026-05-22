@@ -182,7 +182,8 @@ async fn api_backend_remove(State(state): State<AppState>, Json(req): Json<Backe
     match resolve_backend_addr(&req.host, req.port) {
         Ok(sa) => {
             state.backends.lock().remove(sa);
-            (StatusCode::OK, Json(serde_json::json!({"result":"ok"})))
+            let killed = state.conns.kill_backend_socks_and_connecting(sa);
+            (StatusCode::OK, Json(serde_json::json!({"result":"ok","killed_connections":killed})))
         }
         Err(e) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))),
     }

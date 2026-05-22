@@ -6,6 +6,14 @@ import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -58,6 +66,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.android.zdtd.service.R
@@ -254,18 +263,133 @@ private fun amneziaWgProfileIndex(name: String): Int {
   return Int.MIN_VALUE
 }
 
+
+@Composable
+private fun AmneziaWgSectionCard(
+  title: String,
+  desc: String? = null,
+  accent: Color = Color(0xFF22C55E),
+  icon: @Composable (() -> Unit)? = null,
+  trailing: @Composable (() -> Unit)? = null,
+  modifier: Modifier = Modifier,
+  content: @Composable (() -> Unit)? = null,
+) {
+  val compact = rememberIsCompactWidth()
+  val shape = RoundedCornerShape(if (compact) 20.dp else 24.dp)
+  Surface(
+    modifier = modifier.fillMaxWidth(),
+    shape = shape,
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.64f),
+    contentColor = MaterialTheme.colorScheme.onSurface,
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .background(
+          Brush.linearGradient(
+            listOf(
+              accent.copy(alpha = 0.13f),
+              MaterialTheme.colorScheme.surface.copy(alpha = 0.05f),
+              Color.Transparent,
+            )
+          ),
+          shape = shape,
+        )
+        .padding(if (compact) 12.dp else 14.dp),
+    ) {
+      Column(verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp)) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp),
+        ) {
+          if (icon != null) {
+            Surface(
+              modifier = Modifier.size(if (compact) 42.dp else 46.dp),
+              shape = CircleShape,
+              color = accent.copy(alpha = 0.16f),
+              contentColor = accent,
+              border = BorderStroke(1.dp, accent.copy(alpha = 0.38f)),
+            ) {
+              Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { icon() }
+            }
+          }
+          Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+              title,
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.93f),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+            if (desc != null) {
+              Text(
+                desc,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+          }
+          if (trailing != null) trailing()
+        }
+        if (content != null) content()
+      }
+    }
+  }
+}
+
+@Composable
+private fun AmneziaWgProfileEnabledCard(
+  checked: Boolean,
+  onCheckedChange: (Boolean) -> Unit,
+) {
+  val accent = if (checked) Color(0xFF22C55E) else Color(0xFFEF4444)
+  AmneziaWgSectionCard(
+    title = stringResource(R.string.enabled_card_profile_title),
+    desc = stringResource(R.string.enabled_card_apply_hint),
+    accent = accent,
+    icon = { Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(22.dp)) },
+    trailing = { Switch(checked = checked, onCheckedChange = onCheckedChange) },
+  ) {
+    Surface(
+      shape = RoundedCornerShape(100.dp),
+      color = accent.copy(alpha = 0.16f),
+      contentColor = accent,
+      border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+    ) {
+      Text(
+        text = stringResource(if (checked) R.string.enabled_state_on else R.string.enabled_state_off),
+        modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp),
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+      )
+    }
+  }
+}
+
 @Composable
 fun AmneziaWgProgramScreen(
   programs: List<ApiModels.Program>,
   onOpenProfile: (String, String) -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  topContentPadding: Dp = 0.dp,
+  bottomContentPadding: Dp = 0.dp,
 ) {
   val compact = rememberIsCompactWidth()
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val scroll = rememberScrollState()
   val program = programs.firstOrNull { it.id == "amneziawg" }
+  val effectiveTopContentPadding = topContentPadding + 6.dp
+  val effectiveBottomContentPadding = bottomContentPadding + 80.dp
   var showCreate by remember { mutableStateOf(false) }
 
   fun showSnack(msg: String) {
@@ -314,30 +438,21 @@ fun AmneziaWgProgramScreen(
   Column(
     Modifier
       .fillMaxSize()
-      .padding(if (compact) 12.dp else 16.dp)
+      .padding(top = effectiveTopContentPadding)
+      .padding(horizontal = if (compact) 12.dp else 16.dp)
       .verticalScroll(scroll)
       .navigationBarsPadding(),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
-      Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("AmneziaWG", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        Text(
-          stringResource(R.string.amneziawg_program_hint),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-        )
-      }
-    }
+    ProgramDescriptionHeader(
+      programId = "amneziawg",
+      description = stringResource(R.string.amneziawg_program_hint),
+      isProfiles = true,
+    )
 
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-      Text(stringResource(R.string.tab_profiles), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-      FilledTonalButton(onClick = { showCreate = true }) {
-        Icon(Icons.Filled.Add, contentDescription = null)
-        Spacer(Modifier.width(6.dp))
-        Text(stringResource(R.string.action_add))
-      }
-    }
+    CreateProfileCard(onAdd = { showCreate = true })
+
+    ProfilesSectionTitle()
 
     if (details.isEmpty()) {
       Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f))) {
@@ -369,7 +484,7 @@ fun AmneziaWgProgramScreen(
       )
     }
 
-    Spacer(Modifier.height(80.dp))
+    Spacer(Modifier.height(effectiveBottomContentPadding))
   }
 }
 
@@ -379,51 +494,14 @@ private fun AmneziaWgCreateProfileDialog(
   onDismiss: () -> Unit,
   onCreate: (String) -> Unit,
 ) {
-  var name by remember { mutableStateOf("") }
-  var error by remember { mutableStateOf<String?>(null) }
-  val existingSet = remember(existing) { existing.toSet() }
-  val invalidText = stringResource(R.string.amneziawg_profile_name_invalid)
-  val existsText = stringResource(R.string.profile_already_exists)
-
-  AlertDialog(
-    onDismissRequest = onDismiss,
-    title = { Text(stringResource(R.string.amneziawg_create_profile_title)) },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-          stringResource(R.string.amneziawg_profile_name_rules),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-        )
-        OutlinedTextField(
-          value = name,
-          onValueChange = { value ->
-            name = value.take(10)
-            error = null
-          },
-          label = { Text(stringResource(R.string.profile_name_label)) },
-          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-          singleLine = true,
-          supportingText = { Text(stringResource(R.string.profile_name_len_fmt, name.length)) },
-          isError = error != null,
-        )
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-      }
-    },
-    confirmButton = {
-      Button(
-        onClick = {
-          val n = name.trim()
-          when {
-            !amneziaWgProfileNameRegex.matches(n) -> error = invalidText
-            n in existingSet -> error = existsText
-            else -> onCreate(n)
-          }
-        },
-        enabled = name.isNotBlank(),
-      ) { Text(stringResource(R.string.action_create)) }
-    },
-    dismissButton = { OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+  StyledCreateProfileDialog(
+    existing = existing,
+    onDismiss = onDismiss,
+    onCreate = onCreate,
+    titleRes = R.string.amneziawg_create_profile_title,
+    rulesRes = R.string.amneziawg_profile_name_rules,
+    invalidNameRes = R.string.amneziawg_profile_name_invalid,
+    validator = { name -> amneziaWgProfileNameRegex.matches(name) },
   )
 }
 
@@ -433,8 +511,12 @@ fun AmneziaWgProfileScreen(
   profile: String,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  topContentPadding: Dp = 0.dp,
+  bottomContentPadding: Dp = 0.dp,
 ) {
   val compact = rememberIsCompactWidth()
+  val effectiveTopContentPadding = topContentPadding + 12.dp
+  val effectiveBottomContentPadding = bottomContentPadding + if (compact) 12.dp else 16.dp
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val scroll = rememberScrollState()
@@ -606,20 +688,14 @@ fun AmneziaWgProfileScreen(
   Column(
     Modifier
       .fillMaxSize()
-      .padding(if (compact) 12.dp else 16.dp)
       .verticalScroll(scroll)
-      .navigationBarsPadding(),
+      .padding(horizontal = if (compact) 12.dp else 16.dp)
+      .animateContentSize(),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    Text("AmneziaWG / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 2)
-    Text(
-      stringResource(R.string.amneziawg_program_hint),
-      style = MaterialTheme.typography.bodySmall,
-      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-    )
+    Spacer(Modifier.height(effectiveTopContentPadding))
 
-    EnabledCard(
-      title = stringResource(R.string.enabled_card_profile_title),
+    AmneziaWgProfileEnabledCard(
       checked = prof?.enabled ?: false,
       onCheckedChange = { checked ->
         val canEnable = !checked || (!configBlank && configWarnings.isEmpty() && addressValid && dnsParsed != null && mtuParsed != null && appCount > 0)
@@ -647,14 +723,13 @@ fun AmneziaWgProfileScreen(
       }
     }
 
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
-      Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(stringResource(R.string.amneziawg_settings_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text(
-          stringResource(R.string.amneziawg_autosave_hint),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-        )
+    AmneziaWgSectionCard(
+      title = stringResource(R.string.amneziawg_settings_title),
+      desc = stringResource(R.string.amneziawg_autosave_hint),
+      accent = Color(0xFF22C55E),
+      icon = { Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(22.dp)) },
+    ) {
+      Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(
           value = profile,
           onValueChange = {},
@@ -788,7 +863,7 @@ fun AmneziaWgProfileScreen(
       }
     }
 
-    Spacer(Modifier.height(80.dp))
+    Spacer(Modifier.height(effectiveBottomContentPadding))
   }
 }
 
@@ -801,26 +876,27 @@ private fun AmneziaWgConfigSummaryCard(
   onEdit: () -> Unit,
   onUpload: () -> Unit,
 ) {
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
-    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-          Text(stringResource(R.string.amneziawg_config_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-          Text(
-            stringResource(R.string.amneziawg_config_summary_desc),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-          )
+  AmneziaWgSectionCard(
+    title = stringResource(R.string.amneziawg_config_title),
+    desc = stringResource(R.string.amneziawg_config_summary_desc),
+    accent = Color(0xFF38BDF8),
+    icon = { Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(22.dp)) },
+    trailing = {
+      Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        FilledTonalButton(enabled = !saving, onClick = onUpload) {
+          Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(Modifier.width(6.dp))
+          Text(stringResource(R.string.common_upload_cd))
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-          IconButton(enabled = !saving, onClick = onUpload) {
-            Icon(Icons.Default.CloudUpload, contentDescription = stringResource(R.string.common_upload_cd))
-          }
-          IconButton(onClick = onEdit) {
-            Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.action_edit))
-          }
+        FilledTonalButton(onClick = onEdit) {
+          Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(Modifier.width(6.dp))
+          Text(stringResource(R.string.action_edit))
         }
       }
+    },
+  ) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       Text(
         if (hasConfig) stringResource(R.string.amneziawg_config_summary_present_fmt, lineCount) else stringResource(R.string.amneziawg_config_missing_warning),
         style = MaterialTheme.typography.bodySmall,

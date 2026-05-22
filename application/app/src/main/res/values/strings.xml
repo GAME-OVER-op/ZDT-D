@@ -189,17 +189,17 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="app_speed_mbps_fmt">%1$.1f MB/s</string>
 
     <!-- Home -->
-    <string name="home_online">online</string>
-    <string name="home_offline">offline</string>
-    <string name="home_daemon_status_fmt">daemon status: %1$s</string>
-    <string name="home_power_running">ON • running</string>
-    <string name="home_power_stopped">OFF • idle</string>
-    <string name="home_power_starting">STARTING…</string>
-    <string name="home_power_stopping">STOPPING…</string>
-    <string name="home_service_active_hint">Service is active. Settings changes apply after stop/start.</string>
-    <string name="home_service_stopped_hint">Service is stopped. Tap the button to start.</string>
+    <string name="home_online">Service running</string>
+    <string name="home_offline">Service unavailable</string>
+    <string name="home_daemon_status_fmt">%1$s</string>
+    <string name="home_power_running">Running</string>
+    <string name="home_power_stopped">Stopped</string>
+    <string name="home_power_starting">Starting…</string>
+    <string name="home_power_stopping">Stopping…</string>
+    <string name="home_service_active_hint">Service is running. Tap the button to stop it.</string>
+    <string name="home_service_stopped_hint">Service is stopped. Tap the button to start it.</string>
     <string name="home_no_log_data">(no log data)</string>
-    <string name="home_daemon_logs_title">Daemon logs</string>
+    <string name="home_daemon_logs_title">Service logs</string>
     <string name="home_logs_main">Main logs</string>
     <string name="home_logs_detailed">Detailed logs</string>
     <string name="home_logs_source_menu">Choose log source</string>
@@ -393,11 +393,11 @@ APatch: 10700+</string>
     <string name="stats_processes_title">Processes</string>
     <string name="stats_running_count">%1$d running</string>
     <string name="stats_offline">offline</string>
-    <string name="stats_daemon_title">Daemon</string>
-    <string name="stats_online_upper">ONLINE</string>
-    <string name="stats_offline_upper">OFFLINE</string>
-    <string name="stats_running_services">%1$d running service(s)</string>
-    <string name="stats_no_connection">No connection to API</string>
+    <string name="stats_daemon_title">Service</string>
+    <string name="stats_online_upper">RUNNING</string>
+    <string name="stats_offline_upper">STOPPED</string>
+    <string name="stats_running_services">%1$d active component(s)</string>
+    <string name="stats_no_connection">No connection to service</string>
     <string name="stats_running_lower">running</string>
     <string name="stats_stopped_lower">stopped</string>
     <string name="stats_cpu_label">CPU</string>
@@ -985,6 +985,7 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="myproxy_user_label">Username</string>
     <string name="myproxy_pass_label">Password</string>
     <string name="myproxy_proxy_ports_invalid">Enter ports from 1 to 65535, separated by commas.</string>
+    <string name="myproxy_credentials_title">SOCKS5 credentials</string>
     <string name="myproxy_credentials_pair_required">If username or password is used, fill in both fields.</string>
     <string name="myproxy_backend_mode_title">Backend mode</string>
     <string name="myproxy_backend_mode_balance">Balance</string>

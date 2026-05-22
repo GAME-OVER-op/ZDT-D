@@ -46,6 +46,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
@@ -160,12 +161,15 @@ fun Tun2SocksProgramScreen(
   onOpenProfile: (String, String) -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  topContentPadding: Dp = 0.dp,
+  bottomContentPadding: Dp = 0.dp,
 ) {
   val compact = rememberIsCompactWidth()
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val scroll = rememberScrollState()
   val program = programs.firstOrNull { it.id == "tun2socks" }
+  val effectiveTopContentPadding = topContentPadding + 6.dp
   var showCreate by remember { mutableStateOf(false) }
 
   fun showSnack(msg: String) {
@@ -211,30 +215,21 @@ fun Tun2SocksProgramScreen(
   Column(
     Modifier
       .fillMaxSize()
-      .padding(if (compact) 12.dp else 16.dp)
-      .verticalScroll(scroll)
-      .navigationBarsPadding(),
+      .padding(horizontal = if (compact) 12.dp else 16.dp)
+      .verticalScroll(scroll),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
-      Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("tun2socks", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        Text(
-          stringResource(R.string.tun2socks_program_hint),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-        )
-      }
-    }
+    Spacer(Modifier.height(effectiveTopContentPadding))
 
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-      Text(stringResource(R.string.tab_profiles), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-      FilledTonalButton(onClick = { showCreate = true }) {
-        Icon(Icons.Filled.Add, contentDescription = null)
-        Spacer(Modifier.width(6.dp))
-        Text(stringResource(R.string.action_add))
-      }
-    }
+    ProgramDescriptionHeader(
+      programId = "tun2socks",
+      description = stringResource(R.string.tun2socks_program_hint),
+      isProfiles = true,
+    )
+
+    CreateProfileCard(onAdd = { showCreate = true })
+
+    ProfilesSectionTitle()
 
     if (profiles.isEmpty()) {
       Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f))) {
@@ -264,7 +259,7 @@ fun Tun2SocksProgramScreen(
       )
     }
 
-    Spacer(Modifier.height(80.dp))
+    Spacer(Modifier.height(bottomContentPadding + 12.dp))
   }
 }
 
@@ -291,52 +286,77 @@ private fun Tun2SocksCreateProfileDialog(
   onDismiss: () -> Unit,
   onCreate: (String) -> Unit,
 ) {
-  var name by remember { mutableStateOf("") }
-  var error by remember { mutableStateOf<String?>(null) }
-  val existingSet = remember(existing) { existing.toSet() }
-  val invalidText = stringResource(R.string.tun2socks_profile_name_invalid)
-  val existsText = stringResource(R.string.profile_already_exists)
-
-  AlertDialog(
-    onDismissRequest = onDismiss,
-    title = { Text(stringResource(R.string.tun2socks_create_profile_title)) },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-          stringResource(R.string.tun2socks_profile_name_rules),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-        )
-        OutlinedTextField(
-          value = name,
-          onValueChange = { value ->
-            name = value.take(10)
-            error = null
-          },
-          label = { Text(stringResource(R.string.profile_name_label)) },
-          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-          singleLine = true,
-          supportingText = { Text(stringResource(R.string.profile_name_len_fmt, name.length)) },
-          isError = error != null,
-        )
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-      }
-    },
-    confirmButton = {
-      Button(
-        onClick = {
-          val n = name.trim()
-          when {
-            !tun2SocksProfileNameRegex.matches(n) -> error = invalidText
-            n in existingSet -> error = existsText
-            else -> onCreate(n)
-          }
-        },
-        enabled = name.isNotBlank(),
-      ) { Text(stringResource(R.string.action_create)) }
-    },
-    dismissButton = { OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+  StyledCreateProfileDialog(
+    existing = existing,
+    onDismiss = onDismiss,
+    onCreate = onCreate,
+    titleRes = R.string.tun2socks_create_profile_title,
+    rulesRes = R.string.tun2socks_profile_name_rules,
+    invalidNameRes = R.string.tun2socks_profile_name_invalid,
+    validator = { name -> tun2SocksProfileNameRegex.matches(name) },
   )
+}
+
+@Composable
+private fun Tun2SocksProfileEnabledCard(
+  checked: Boolean,
+  onCheckedChange: (Boolean) -> Unit,
+) {
+  val accent = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+  Surface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = MaterialTheme.shapes.extraLarge,
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
+  ) {
+    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Surface(
+          modifier = Modifier.width(42.dp).height(42.dp),
+          shape = MaterialTheme.shapes.large,
+          color = accent.copy(alpha = 0.15f),
+          contentColor = accent,
+          border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
+        ) {
+          Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Add, contentDescription = null)
+          }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+          Text(
+            stringResource(R.string.enabled_card_profile_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+          )
+          Text(
+            stringResource(R.string.enabled_card_apply_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
+          )
+        }
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
+      }
+      Surface(
+        shape = MaterialTheme.shapes.large,
+        color = accent.copy(alpha = 0.14f),
+        contentColor = accent,
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
+      ) {
+        Text(
+          stringResource(if (checked) R.string.enabled_state_on else R.string.enabled_state_off),
+          modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp),
+          style = MaterialTheme.typography.labelMedium,
+          fontWeight = FontWeight.Bold,
+        )
+      }
+    }
+  }
 }
 
 @Composable
@@ -345,8 +365,11 @@ fun Tun2SocksProfileScreen(
   profile: String,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  topContentPadding: Dp = 0.dp,
+  bottomContentPadding: Dp = 0.dp,
 ) {
   val compact = rememberIsCompactWidth()
+  val effectiveTopContentPadding = topContentPadding + 6.dp
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val scroll = rememberScrollState()
@@ -421,20 +444,13 @@ fun Tun2SocksProfileScreen(
   Column(
     Modifier
       .fillMaxSize()
-      .padding(if (compact) 12.dp else 16.dp)
-      .verticalScroll(scroll)
-      .navigationBarsPadding(),
+      .padding(horizontal = if (compact) 12.dp else 16.dp)
+      .verticalScroll(scroll),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    Text("tun2socks / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 2)
-    Text(
-      stringResource(R.string.tun2socks_program_hint),
-      style = MaterialTheme.typography.bodySmall,
-      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-    )
+    Spacer(Modifier.height(effectiveTopContentPadding))
 
-    EnabledCard(
-      title = stringResource(R.string.enabled_card_profile_title),
+    Tun2SocksProfileEnabledCard(
       checked = prof?.enabled ?: false,
       onCheckedChange = { checked ->
         actions.setProfileEnabled("tun2socks", profile, checked) { ok ->
@@ -543,6 +559,6 @@ fun Tun2SocksProfileScreen(
         )
       }
     }
-    Spacer(Modifier.height(80.dp))
+    Spacer(Modifier.height(bottomContentPadding + 12.dp))
   }
 }

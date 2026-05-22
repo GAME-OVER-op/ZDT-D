@@ -18,7 +18,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -43,16 +42,13 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -71,6 +67,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.LocalWebPanelActivity
 import com.android.zdtd.service.ZdtdActions
@@ -242,40 +239,124 @@ private suspend fun isLocalWebPanelPortOpen(port: Int): Boolean = withContext(Di
 }
 
 @Composable
+private fun MihomoSectionCard(
+  title: String,
+  desc: String? = null,
+  accent: androidx.compose.ui.graphics.Color = MaterialTheme.colorScheme.primary,
+  icon: (@Composable () -> Unit)? = null,
+  trailing: (@Composable () -> Unit)? = null,
+  content: (@Composable () -> Unit)? = null,
+) {
+  Surface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = MaterialTheme.shapes.extraLarge,
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f),
+    tonalElevation = 2.dp,
+    shadowElevation = 1.dp,
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.18f)),
+  ) {
+    Column(
+      modifier = Modifier.fillMaxWidth().padding(if (rememberIsCompactWidth()) 12.dp else 14.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        if (icon != null) {
+          Surface(
+            modifier = Modifier.width(42.dp).height(42.dp),
+            shape = CircleShape,
+            color = accent.copy(alpha = 0.15f),
+            contentColor = accent,
+            border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
+          ) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { icon() }
+          }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+          Text(
+            title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.93f),
+            maxLines = 2,
+          )
+          if (desc != null) {
+            Text(
+              desc,
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
+              maxLines = 3,
+            )
+          }
+        }
+        if (trailing != null) trailing()
+      }
+      if (content != null) content()
+    }
+  }
+}
+
+@Composable
+private fun MihomoProfileEnabledCard(
+  checked: Boolean,
+  onCheckedChange: (Boolean) -> Unit,
+) {
+  val accent = if (checked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+  MihomoSectionCard(
+    title = stringResource(R.string.enabled_card_profile_title),
+    desc = stringResource(R.string.enabled_card_apply_hint),
+    accent = accent,
+    icon = { Icon(Icons.Filled.Public, contentDescription = null) },
+    trailing = { Switch(checked = checked, onCheckedChange = onCheckedChange) },
+  ) {
+    Surface(
+      shape = CircleShape,
+      color = accent.copy(alpha = 0.15f),
+      contentColor = accent,
+      border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+    ) {
+      Text(
+        text = stringResource(if (checked) R.string.enabled_state_on else R.string.enabled_state_off),
+        modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp),
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+      )
+    }
+  }
+}
+
+@Composable
 private fun MihomoWebPanelCard(
   checking: Boolean,
   onOpen: () -> Unit,
 ) {
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))) {
-    Row(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Text(
-        text = stringResource(R.string.web_panel_open),
-        modifier = Modifier.weight(1f),
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.SemiBold,
-      )
-      FilledTonalIconButton(
-        onClick = onOpen,
-        enabled = !checking,
-      ) {
-        if (checking) {
-          CircularProgressIndicator(
-            modifier = Modifier.width(20.dp).height(20.dp),
-            strokeWidth = 2.dp,
-          )
-        } else {
-          Icon(
-            imageVector = Icons.Filled.Public,
-            contentDescription = stringResource(R.string.web_panel_open),
-          )
-        }
+  MihomoSectionCard(
+    title = stringResource(R.string.web_panel_open),
+    desc = "127.0.0.1 web UI",
+    accent = MaterialTheme.colorScheme.tertiary,
+    icon = {
+      if (checking) {
+        CircularProgressIndicator(
+          modifier = Modifier.width(20.dp).height(20.dp),
+          strokeWidth = 2.dp,
+        )
+      } else {
+        Icon(
+          imageVector = Icons.Filled.Public,
+          contentDescription = null,
+        )
       }
-    }
-  }
+    },
+    trailing = {
+      FilledTonalButton(onClick = onOpen, enabled = !checking) {
+        Text(stringResource(R.string.support_open), maxLines = 1)
+      }
+    },
+  )
 }
 
 private fun mihomoDefaultController(port: Int = 19090): String = "127.0.0.1:$port"
@@ -2091,12 +2172,16 @@ fun MihomoProgramScreen(
   onOpenProfile: (String, String) -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  topContentPadding: Dp = 0.dp,
+  bottomContentPadding: Dp = 0.dp,
 ) {
   val compact = rememberIsCompactWidth()
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val scroll = rememberScrollState()
   val program = programs.firstOrNull { it.id == "mihomo" }
+  val effectiveTopContentPadding = topContentPadding + 12.dp
+  val effectiveBottomContentPadding = bottomContentPadding + if (compact) 12.dp else 16.dp
   var showCreate by remember { mutableStateOf(false) }
 
   fun showSnack(msg: String) {
@@ -2153,33 +2238,27 @@ fun MihomoProgramScreen(
   Column(
     Modifier
       .fillMaxSize()
-      .padding(if (compact) 12.dp else 16.dp)
       .verticalScroll(scroll)
-      .navigationBarsPadding(),
+      .padding(horizontal = if (compact) 12.dp else 16.dp),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
-      Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Mihomo", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-        Text(
-          stringResource(R.string.mihomo_program_hint),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-        )
-      }
-    }
+    Spacer(Modifier.height(effectiveTopContentPadding))
 
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-      Text(stringResource(R.string.tab_profiles), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-      FilledTonalButton(onClick = { showCreate = true }) {
-        Icon(Icons.Filled.Add, contentDescription = null)
-        Spacer(Modifier.width(6.dp))
-        Text(stringResource(R.string.action_add))
-      }
-    }
+    ProgramDescriptionHeader(
+      programId = "mihomo",
+      description = stringResource(R.string.mihomo_program_hint),
+      isProfiles = true,
+    )
+
+    CreateProfileCard(onAdd = { showCreate = true })
+
+    ProfilesSectionTitle()
 
     if (profiles.isEmpty()) {
-      Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f))) {
+      Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
+      ) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
           Text(stringResource(R.string.mihomo_no_profiles_title), fontWeight = FontWeight.SemiBold)
           Text(stringResource(R.string.mihomo_no_profiles_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
@@ -2208,7 +2287,7 @@ fun MihomoProgramScreen(
       )
     }
 
-    Spacer(Modifier.height(80.dp))
+    Spacer(Modifier.height(effectiveBottomContentPadding))
   }
 }
 
@@ -2218,51 +2297,14 @@ private fun MihomoCreateProfileDialog(
   onDismiss: () -> Unit,
   onCreate: (String) -> Unit,
 ) {
-  var name by remember { mutableStateOf("") }
-  var error by remember { mutableStateOf<String?>(null) }
-  val existingSet = remember(existing) { existing.toSet() }
-  val invalidText = stringResource(R.string.mihomo_profile_name_invalid)
-  val existsText = stringResource(R.string.profile_already_exists)
-
-  AlertDialog(
-    onDismissRequest = onDismiss,
-    title = { Text(stringResource(R.string.mihomo_create_profile_title)) },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(
-          stringResource(R.string.mihomo_profile_name_rules),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-        )
-        OutlinedTextField(
-          value = name,
-          onValueChange = { value ->
-            name = value.take(10)
-            error = null
-          },
-          label = { Text(stringResource(R.string.profile_name_label)) },
-          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-          singleLine = true,
-          supportingText = { Text(stringResource(R.string.profile_name_len_fmt, name.length)) },
-          isError = error != null,
-        )
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-      }
-    },
-    confirmButton = {
-      Button(
-        onClick = {
-          val n = name.trim()
-          when {
-            !mihomoProfileNameRegex.matches(n) -> error = invalidText
-            n in existingSet -> error = existsText
-            else -> onCreate(n)
-          }
-        },
-        enabled = name.isNotBlank(),
-      ) { Text(stringResource(R.string.action_create)) }
-    },
-    dismissButton = { OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
+  StyledCreateProfileDialog(
+    existing = existing,
+    onDismiss = onDismiss,
+    onCreate = onCreate,
+    titleRes = R.string.mihomo_create_profile_title,
+    rulesRes = R.string.mihomo_profile_name_rules,
+    invalidNameRes = R.string.mihomo_profile_name_invalid,
+    validator = { name -> mihomoProfileNameRegex.matches(name) },
   )
 }
 
@@ -2273,8 +2315,12 @@ fun MihomoProfileScreen(
   profile: String,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  topContentPadding: Dp = 0.dp,
+  bottomContentPadding: Dp = 0.dp,
 ) {
   val compact = rememberIsCompactWidth()
+  val effectiveTopContentPadding = topContentPadding + 12.dp
+  val effectiveBottomContentPadding = bottomContentPadding + if (compact) 12.dp else 16.dp
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val scroll = rememberScrollState()
@@ -2469,20 +2515,13 @@ fun MihomoProfileScreen(
   Column(
     Modifier
       .fillMaxSize()
-      .padding(if (compact) 12.dp else 16.dp)
       .verticalScroll(scroll)
-      .navigationBarsPadding(),
+      .padding(horizontal = if (compact) 12.dp else 16.dp),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    Text("Mihomo / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold, maxLines = 2)
-    Text(
-      stringResource(R.string.mihomo_program_hint),
-      style = MaterialTheme.typography.bodySmall,
-      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-    )
+    Spacer(Modifier.height(effectiveTopContentPadding))
 
-    EnabledCard(
-      title = stringResource(R.string.enabled_card_profile_title),
+    MihomoProfileEnabledCard(
       checked = prof?.enabled ?: false,
       onCheckedChange = { checked ->
         when {
@@ -2562,7 +2601,10 @@ fun MihomoProfileScreen(
     )
 
     if (loading || yamlLoading) {
-      Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
+      Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+  ) {
         Row(
           Modifier.fillMaxWidth().padding(16.dp),
           horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -2702,15 +2744,14 @@ fun MihomoProfileScreen(
       )
     }
 
-    Spacer(Modifier.height(80.dp))
+    Spacer(Modifier.height(effectiveBottomContentPadding))
   }
 
   AnimatedVisibility(
     visible = pendingChanges.isNotEmpty(),
     modifier = Modifier
       .align(Alignment.BottomEnd)
-      .padding(end = 16.dp, bottom = 64.dp)
-      .navigationBarsPadding(),
+      .padding(end = 16.dp, bottom = bottomContentPadding + 12.dp),
   ) {
     MihomoPendingChangesPanel(
       pendingChanges = pendingChanges,
@@ -2851,7 +2892,10 @@ private fun MihomoProfileTabSelector(
       .take(labels.size)
   }
 
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
+  Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+  ) {
     Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
       BoxWithConstraints(Modifier.fillMaxWidth()) {
         val reservedForMenu = 70f
@@ -3053,7 +3097,10 @@ private fun MihomoGeneralTab(
   portValid: Boolean,
   portConflict: Boolean,
 ) {
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
+  Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+  ) {
     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       Text(stringResource(R.string.mihomo_general_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
       Text(
@@ -3160,7 +3207,10 @@ private fun MihomoYamlTab(
   } else {
     stringResource(R.string.mihomo_save_failed_unknown_reason)
   }
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
+  Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+  ) {
     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       Text(stringResource(R.string.mihomo_yaml_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
       Text(
@@ -3259,7 +3309,10 @@ private fun MihomoSectionTab(
   val initialSectionText = remember(yamlText, section) { extractTopLevelYamlSection(yamlText, section) }
   var sectionText by remember(initialSectionText, section) { mutableStateOf(initialSectionText) }
   val hasChanges = sectionText != initialSectionText
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
+  Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+  ) {
     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
       Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
@@ -3345,7 +3398,10 @@ private fun MihomoDashboardTab(
       normalizedFinalDashboardUrl != currentUrl ||
       currentExternalUiPath != desiredExternalUiPath
 
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
+  Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+  ) {
     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       Text(stringResource(R.string.mihomo_dashboard_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
       Text(
@@ -3507,7 +3563,10 @@ private fun MihomoProxiesBuilderTab(
   }
 
   Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
+    Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+  ) {
       Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
           Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
@@ -3528,7 +3587,10 @@ private fun MihomoProxiesBuilderTab(
       }
     }
     if (parsed.isEmpty()) {
-      Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.60f))) {
+      Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.60f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.10f)),
+      ) {
         Text(stringResource(R.string.mihomo_no_proxy_blocks), modifier = Modifier.fillMaxWidth().padding(14.dp), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
       }
     }
@@ -3648,7 +3710,23 @@ private fun MihomoAddProxyDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit)
 
   AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text(stringResource(R.string.mihomo_add_proxy_title)) },
+    shape = MaterialTheme.shapes.extraLarge,
+    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+    tonalElevation = 8.dp,
+    title = {
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Surface(
+          modifier = Modifier.width(36.dp).height(36.dp),
+          shape = CircleShape,
+          color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+          contentColor = MaterialTheme.colorScheme.primary,
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)),
+        ) {
+          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.Filled.Add, contentDescription = null) }
+        }
+        Text(stringResource(R.string.mihomo_add_proxy_title))
+      }
+    },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
         MihomoDropdownSelectorCard(
@@ -3787,7 +3865,10 @@ private fun MihomoGroupsBuilderTab(yamlText: String, onSaveYaml: (String) -> Uni
   }
 
   Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
+    Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+  ) {
       Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
           Text(stringResource(R.string.mihomo_groups_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -3880,7 +3961,23 @@ private fun MihomoAddGroupDialog(policyNames: List<String>, providerNames: List<
   }
   AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text(stringResource(R.string.mihomo_add_group_title)) },
+    shape = MaterialTheme.shapes.extraLarge,
+    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+    tonalElevation = 8.dp,
+    title = {
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Surface(
+          modifier = Modifier.width(36.dp).height(36.dp),
+          shape = CircleShape,
+          color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f),
+          contentColor = MaterialTheme.colorScheme.secondary,
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.28f)),
+        ) {
+          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.Filled.Add, contentDescription = null) }
+        }
+        Text(stringResource(R.string.mihomo_add_group_title))
+      }
+    },
     text = {
       Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
         OutlinedTextField(value = name, onValueChange = { name = it.take(48) }, label = { Text(stringResource(R.string.mihomo_field_name)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -4174,7 +4271,10 @@ private fun MihomoRulesBuilderTab(yamlText: String, onSaveYaml: (String) -> Unit
     )
   }
   Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
+    Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+  ) {
       Row(Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
           Text(stringResource(R.string.mihomo_rules_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -4321,7 +4421,10 @@ private fun MihomoProviderListCard(
   onEdit: (Int) -> Unit,
   onDelete: (Int) -> Unit,
 ) {
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
+  Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+  ) {
     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -5187,7 +5290,10 @@ private fun MihomoProviderCard(
   onTextChange: (String) -> Unit,
   onAddTemplate: () -> Unit,
 ) {
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
+  Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+  ) {
     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -5289,7 +5395,10 @@ private fun MihomoRawSectionEditorTab(
     onSaveYaml(updated)
     lastSaved = cleaned
   }
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
+  Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+  ) {
     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
       Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
@@ -5311,7 +5420,10 @@ private fun MihomoRawSectionEditorTab(
 @Composable
 private fun MihomoAdvancedCompatibilityTab(yamlText: String, onSaveYaml: (String) -> Unit) {
   Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
+    Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+  ) {
       Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(stringResource(R.string.mihomo_advanced_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text(stringResource(R.string.mihomo_advanced_compat_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
@@ -5364,7 +5476,10 @@ external-ui-url: "https://github.com/MetaCubeX/metacubexd/archive/refs/heads/gh-
   }
   val advancedYaml = (external.trimEnd() + "\n\n" + cleanedYaml + "\n")
   val hasChanges = advancedYaml.trimEnd() != yamlText.trimEnd()
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
+  Card(
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+  ) {
     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       Text(stringResource(R.string.mihomo_advanced_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
       Text(

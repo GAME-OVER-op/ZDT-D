@@ -2,6 +2,7 @@ package com.android.zdtd.service.ui
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,10 +14,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Memory
@@ -36,8 +39,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.zdtd.service.R
@@ -57,7 +63,12 @@ private data class ProcRow(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
+fun StatsScreen(
+  uiStateFlow: StateFlow<UiState>,
+  actions: ZdtdActions,
+  topContentPadding: Dp = 0.dp,
+  bottomContentPadding: Dp = 0.dp,
+) {
   val listState = rememberLazyListState()
 
   // Collect ONLY what Stats needs, and only while Stats is visible.
@@ -140,7 +151,12 @@ fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
     LazyColumn(
       modifier = Modifier.fillMaxSize(),
       state = listState,
-      contentPadding = PaddingValues(horizontal = listPadding, vertical = 12.dp),
+      contentPadding = PaddingValues(
+        start = listPadding,
+        top = topContentPadding + 12.dp,
+        end = listPadding,
+        bottom = bottomContentPadding + 12.dp,
+      ),
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       item(key = "dashboard") {
@@ -229,7 +245,12 @@ fun StatsScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
     LazyColumn(
       modifier = Modifier.fillMaxSize(),
       state = listState,
-      contentPadding = PaddingValues(horizontal = listPadding, vertical = if (compactScreen) 12.dp else 16.dp),
+      contentPadding = PaddingValues(
+        start = listPadding,
+        top = topContentPadding + if (compactScreen) 12.dp else 16.dp,
+        end = listPadding,
+        bottom = bottomContentPadding + if (compactScreen) 12.dp else 16.dp,
+      ),
       verticalArrangement = Arrangement.spacedBy(sectionGap),
     ) {
       item {
@@ -352,54 +373,67 @@ private fun StatusCard(
   runningServices: Int,
   compact: Boolean,
 ) {
-  Surface(
-    modifier = modifier,
-    shape = RoundedCornerShape(24.dp),
-    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-    tonalElevation = 0.dp,
-    shadowElevation = 0.dp,
-  ) {
-    Column(Modifier.padding(if (compact) 12.dp else 14.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp)) {
-      if (compact) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-          Text(
-            stringResource(R.string.stats_daemon_title),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-          )
-          StatusPill(
-            text = if (daemonOnline) stringResource(R.string.stats_online_upper) else stringResource(R.string.stats_offline_upper),
-            good = daemonOnline,
-          )
-        }
-      } else {
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.SpaceBetween,
-          modifier = Modifier.fillMaxWidth(),
-        ) {
-          Text(
-            stringResource(R.string.stats_daemon_title),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-          )
-          StatusPill(
-            text = if (daemonOnline) stringResource(R.string.stats_online_upper) else stringResource(R.string.stats_offline_upper),
-            good = daemonOnline,
-          )
-        }
-      }
+  val shape = RoundedCornerShape(if (compact) 24.dp else 28.dp)
+  val accent = if (daemonOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+  val title = stringResource(R.string.stats_daemon_title)
+  val status = if (daemonOnline) stringResource(R.string.stats_online_upper) else stringResource(R.string.stats_offline_upper)
+  val details = if (daemonOnline) {
+    stringResource(R.string.stats_running_services, runningServices)
+  } else {
+    stringResource(R.string.stats_no_connection)
+  }
 
-      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        Icon(Icons.Outlined.Storage, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f))
-        Text(
-          text = if (daemonOnline) {
-            stringResource(R.string.stats_running_services, runningServices)
-          } else {
-            stringResource(R.string.stats_no_connection)
-          },
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+  Box(
+    modifier = modifier
+      .clip(shape)
+      .background(
+        Brush.linearGradient(
+          listOf(
+            accent.copy(alpha = if (daemonOnline) 0.24f else 0.18f),
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.55f),
+          )
         )
+      )
+      .border(1.dp, accent.copy(alpha = if (daemonOnline) 0.46f else 0.34f), shape)
+      .padding(if (compact) 14.dp else 16.dp),
+  ) {
+    Column(verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 14.dp)) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Box(
+          modifier = Modifier
+            .size(if (compact) 44.dp else 48.dp)
+            .clip(CircleShape)
+            .background(accent.copy(alpha = 0.18f)),
+          contentAlignment = Alignment.Center,
+        ) {
+          Icon(
+            Icons.Outlined.Storage,
+            contentDescription = null,
+            tint = accent,
+          )
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+          Text(
+            title,
+            style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Text(
+            details,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+            style = MaterialTheme.typography.bodyMedium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+        StatusPill(text = status, good = daemonOnline)
       }
     }
   }
@@ -407,22 +441,49 @@ private fun StatusCard(
 
 @Composable
 private fun SectionHeader(title: String, trailing: String? = null, compact: Boolean = false) {
-  if (compact) {
-    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-      Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-      if (!trailing.isNullOrBlank()) {
-        Text(trailing, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
-      }
-    }
-  } else {
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(top = if (compact) 2.dp else 4.dp),
+    horizontalArrangement = Arrangement.SpaceBetween,
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
     Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.SpaceBetween,
+      modifier = Modifier.weight(1f),
       verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-      Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-      if (!trailing.isNullOrBlank()) {
-        Text(trailing, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+      Box(
+        modifier = Modifier
+          .height(if (compact) 26.dp else 30.dp)
+          .width(4.dp)
+          .clip(RoundedCornerShape(999.dp))
+          .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.95f))
+      )
+      Text(
+        title,
+        style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+    }
+
+    if (!trailing.isNullOrBlank()) {
+      Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+      ) {
+        Text(
+          trailing,
+          modifier = Modifier.padding(horizontal = if (compact) 10.dp else 12.dp, vertical = if (compact) 5.dp else 6.dp),
+          color = MaterialTheme.colorScheme.primary,
+          style = MaterialTheme.typography.labelLarge,
+          fontWeight = FontWeight.SemiBold,
+          maxLines = 1,
+        )
       }
     }
   }
@@ -439,28 +500,69 @@ private fun MetricCard(
   footnote: String? = null,
   compact: Boolean = false,
 ) {
-  Surface(
-    modifier = modifier,
-    shape = RoundedCornerShape(24.dp),
-    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f),
-    tonalElevation = 0.dp,
-    shadowElevation = 0.dp,
+  val shape = RoundedCornerShape(if (compact) 22.dp else 26.dp)
+  Box(
+    modifier = modifier
+      .clip(shape)
+      .background(
+        Brush.linearGradient(
+          listOf(
+            MaterialTheme.colorScheme.secondary.copy(alpha = 0.16f),
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.48f),
+          )
+        )
+      )
+      .border(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.32f), shape)
+      .padding(if (compact) 12.dp else 14.dp),
   ) {
-    Column(Modifier.padding(if (compact) 10.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 8.dp)) {
-      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        icon()
-        Column(Modifier.weight(1f)) {
-          Text(title, fontWeight = FontWeight.SemiBold)
-          Text(subtitle, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f), maxLines = 2)
+    Column(verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp)) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        Box(
+          modifier = Modifier
+            .size(if (compact) 38.dp else 42.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f)),
+          contentAlignment = Alignment.Center,
+        ) {
+          icon()
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+          Text(
+            title,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Text(
+            subtitle,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.bodyMedium,
+          )
         }
       }
 
-      Text(value, style = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+      Text(
+        value,
+        style = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
+        fontWeight = FontWeight.Bold,
+      )
 
-      SimpleBar(progress = progress)
+      SimpleBar(progress = progress, modifier = Modifier.height(if (compact) 5.dp else 6.dp))
 
       if (!footnote.isNullOrBlank()) {
-        Text(footnote, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+        Text(
+          footnote,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+          style = MaterialTheme.typography.bodySmall,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
       }
     }
   }
@@ -477,25 +579,40 @@ private fun MetricChip(
   muted: Boolean,
   compact: Boolean = false,
 ) {
-  Surface(
-    modifier = modifier,
-    shape = RoundedCornerShape(16.dp),
-    color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (muted) 0.06f else 0.08f),
+  val shape = RoundedCornerShape(if (compact) 16.dp else 18.dp)
+  val tint = MaterialTheme.colorScheme.primary.copy(alpha = if (muted) 0.38f else 0.84f)
+  Box(
+    modifier = modifier
+      .clip(shape)
+      .background(MaterialTheme.colorScheme.onSurface.copy(alpha = if (muted) 0.045f else 0.07f))
+      .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = if (muted) 0.06f else 0.09f), shape)
+      .padding(horizontal = if (compact) 9.dp else 10.dp, vertical = if (compact) 8.dp else 9.dp),
   ) {
-    Column(Modifier.padding(horizontal = if (compact) 8.dp else 10.dp, vertical = if (compact) 8.dp else 9.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 6.dp)) {
-      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        icon()
+    Column(verticalArrangement = Arrangement.spacedBy(if (compact) 5.dp else 6.dp)) {
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        Box(
+          modifier = Modifier
+            .size(if (compact) 22.dp else 24.dp)
+            .clip(CircleShape)
+            .background(tint.copy(alpha = 0.10f)),
+          contentAlignment = Alignment.Center,
+        ) {
+          icon()
+        }
         Text(
           label,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (muted) 0.55f else 0.78f),
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (muted) 0.52f else 0.74f),
           style = MaterialTheme.typography.labelLarge,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
         )
       }
       Text(
         value,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (muted) 0.65f else 0.92f),
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (muted) 0.62f else 0.92f),
         fontWeight = FontWeight.SemiBold,
         style = MaterialTheme.typography.bodyLarge,
+        maxLines = 1,
       )
       if (progress != null) {
         SimpleBar(progress = progress, modifier = Modifier.height(if (compact) 4.dp else 5.dp))
@@ -520,97 +637,86 @@ private fun ProcCard(
   val running = agg.count > 0
   val cpuP = (agg.cpuPercent / 100.0).toFloat().coerceIn(0f, 1f)
   val ramP = if (totalRamMb != null) (agg.rssMb / totalRamMb).toFloat().coerceIn(0f, 1f) else null
+  val accent = if (running) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+  val shape = RoundedCornerShape(if (compact) 22.dp else 26.dp)
 
-  Surface(
-    modifier = modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(24.dp),
-    color = MaterialTheme.colorScheme.surface.copy(alpha = if (running) 0.78f else 0.46f),
-    tonalElevation = 0.dp,
-    shadowElevation = 0.dp,
+  Box(
+    modifier = modifier
+      .fillMaxWidth()
+      .clip(shape)
+      .background(
+        Brush.linearGradient(
+          listOf(
+            accent.copy(alpha = if (running) 0.17f else 0.08f),
+            MaterialTheme.colorScheme.surface.copy(alpha = if (running) 0.68f else 0.48f),
+            MaterialTheme.colorScheme.surface.copy(alpha = if (running) 0.42f else 0.34f),
+          )
+        )
+      )
+      .border(1.dp, accent.copy(alpha = if (running) 0.34f else 0.13f), shape)
+      .padding(if (compact) 11.dp else 13.dp),
   ) {
-    Column(Modifier.padding(if (compact) 10.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 10.dp)) {
-      if (compact) {
-        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            Box(
-              modifier = Modifier
-                .height(24.dp)
-                .width(4.dp)
-                .clip(RoundedCornerShape(999.dp))
-                .background(
-                  if (running) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.95f)
-                  else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
-                )
-            )
-            Text(name, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-          }
+    Column(verticalArrangement = Arrangement.spacedBy(if (compact) 9.dp else 11.dp)) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Box(
+          modifier = Modifier
+            .size(if (compact) 38.dp else 42.dp)
+            .clip(CircleShape)
+            .background(accent.copy(alpha = if (running) 0.17f else 0.08f)),
+          contentAlignment = Alignment.Center,
+        ) {
+          Box(
+            modifier = Modifier
+              .size(if (running) 12.dp else 10.dp)
+              .clip(CircleShape)
+              .background(accent.copy(alpha = if (running) 0.98f else 0.35f))
+          )
+        }
 
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+          Text(
+            name,
+            fontWeight = FontWeight.SemiBold,
+            style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Row(horizontalArrangement = Arrangement.spacedBy(7.dp), verticalAlignment = Alignment.CenterVertically) {
             TinyPill(
               text = if (running) runningLower else stoppedLower,
               good = running,
             )
             TinyPill(text = "x${agg.count}", good = running, strong = false)
           }
+        }
+      }
 
-          Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            MetricChip(
-              modifier = Modifier.fillMaxWidth(),
-              icon = { Icon(Icons.Outlined.Speed, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = if (running) 0.85f else 0.55f)) },
-              label = cpuLabel,
-              value = "${fmtPct(agg.cpuPercent)}%",
-              progress = if (running) cpuP else null,
-              muted = !running,
-              compact = true,
-            )
-            MetricChip(
-              modifier = Modifier.fillMaxWidth(),
-              icon = { Icon(Icons.Outlined.Memory, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = if (running) 0.85f else 0.55f)) },
-              label = ramLabel,
-              value = mbToHuman(agg.rssMb),
-              progress = if (running) ramP else null,
-              muted = !running,
-              compact = true,
-            )
-          }
+      if (compact) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+          MetricChip(
+            modifier = Modifier.fillMaxWidth(),
+            icon = { Icon(Icons.Outlined.Speed, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = if (running) 0.85f else 0.55f)) },
+            label = cpuLabel,
+            value = "${fmtPct(agg.cpuPercent)}%",
+            progress = if (running) cpuP else null,
+            muted = !running,
+            compact = true,
+          )
+          MetricChip(
+            modifier = Modifier.fillMaxWidth(),
+            icon = { Icon(Icons.Outlined.Memory, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = if (running) 0.85f else 0.55f)) },
+            label = ramLabel,
+            value = mbToHuman(agg.rssMb),
+            progress = if (running) ramP else null,
+            muted = !running,
+            compact = true,
+          )
         }
       } else {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Row(
-            modifier = Modifier.weight(1f),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-          ) {
-            Box(
-              modifier = Modifier
-                .height(28.dp)
-                .width(4.dp)
-                .clip(RoundedCornerShape(999.dp))
-                .background(
-                  if (running) MaterialTheme.colorScheme.tertiary.copy(alpha = 0.95f)
-                  else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
-                )
-            )
-            Text(name, fontWeight = FontWeight.SemiBold)
-          }
-
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            TinyPill(
-              text = if (running) runningLower else stoppedLower,
-              good = running,
-            )
-            TinyPill(text = "x${agg.count}", good = running, strong = false)
-          }
-        }
-
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
           MetricChip(
             modifier = Modifier.weight(1f),
@@ -636,40 +742,67 @@ private fun ProcCard(
 
 @Composable
 private fun StatusPill(text: String, good: Boolean) {
+  val base = if (good) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
   Surface(
     shape = RoundedCornerShape(999.dp),
-    color = (if (good) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.surface)
-      .copy(alpha = if (good) 0.22f else 0.92f),
+    color = base.copy(alpha = if (good) 0.18f else 0.14f),
     tonalElevation = 0.dp,
     shadowElevation = 0.dp,
   ) {
-    Text(
-      text = text,
-      modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-      style = MaterialTheme.typography.labelLarge,
-      fontWeight = FontWeight.SemiBold,
-    )
+    Row(
+      modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+      Box(
+        modifier = Modifier
+          .size(7.dp)
+          .clip(CircleShape)
+          .background(base)
+      )
+      Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = base,
+        maxLines = 1,
+      )
+    }
   }
 }
 
 @Composable
 private fun TinyPill(text: String, good: Boolean, strong: Boolean = true) {
   val base = when {
-    good && strong -> MaterialTheme.colorScheme.tertiary
-    good -> MaterialTheme.colorScheme.primary
-    else -> MaterialTheme.colorScheme.surface
+    good && strong -> MaterialTheme.colorScheme.primary
+    good -> MaterialTheme.colorScheme.secondary
+    else -> MaterialTheme.colorScheme.onSurface
   }
   Surface(
     shape = RoundedCornerShape(999.dp),
-    color = base.copy(alpha = if (good) 0.18f else 0.92f),
+    color = base.copy(alpha = if (good) 0.15f else 0.08f),
     tonalElevation = 0.dp,
     shadowElevation = 0.dp,
   ) {
-    Text(
-      text = text,
-      modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-      style = MaterialTheme.typography.labelMedium,
-    )
+    Row(
+      modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+      Box(
+        modifier = Modifier
+          .size(6.dp)
+          .clip(CircleShape)
+          .background(base.copy(alpha = if (good) 1f else 0.38f))
+      )
+      Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = base.copy(alpha = if (good) 1f else 0.72f),
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+      )
+    }
   }
 }
 

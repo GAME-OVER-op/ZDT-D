@@ -1,18 +1,31 @@
 package com.android.zdtd.service.ui
 
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
@@ -135,9 +148,12 @@ fun MieruProfileScreen(
   profile: String,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  topContentPadding: Dp = 0.dp,
+  bottomContentPadding: Dp = 0.dp,
 ) {
   val compact = rememberIsCompactWidth()
-  val useScrollableTabs = rememberUseScrollableTabs()
+  val effectiveTopContentPadding = topContentPadding + 12.dp
+  val effectiveBottomContentPadding = bottomContentPadding + if (compact) 12.dp else 16.dp
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val program = programs.firstOrNull { it.id == "mieru" }
@@ -309,33 +325,21 @@ fun MieruProfileScreen(
   Column(
     Modifier
       .fillMaxSize()
-      .padding(if (compact) 12.dp else 16.dp)
       .verticalScroll(scroll)
-      .navigationBarsPadding(),
+      .padding(horizontal = if (compact) 12.dp else 16.dp),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    Text("${program?.name ?: "mieru"} / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-    Text(toolDescription("mieru"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+    Spacer(Modifier.height(effectiveTopContentPadding))
 
-    EnabledCard(
-      title = stringResource(R.string.enabled_card_profile_title),
+    MieruProfileEnabledCard(
       checked = prof?.enabled ?: false,
       onCheckedChange = { v -> actions.setProfileEnabled("mieru", profile, v) },
     )
 
-    if (useScrollableTabs) {
-      ScrollableTabRow(selectedTabIndex = tab, edgePadding = 12.dp) {
-        Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Приложения") })
-        Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("tun2proxy") })
-        Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("mieru") })
-      }
-    } else {
-      TabRow(selectedTabIndex = tab) {
-        Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Приложения") })
-        Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("tun2proxy") })
-        Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("mieru") })
-      }
-    }
+    MieruProfileTabs(
+      selected = tab,
+      onSelect = { tab = it },
+    )
 
     when (tab) {
       0 -> AppListPickerCard(
@@ -346,14 +350,12 @@ fun MieruProfileScreen(
         snackHost = snackHost,
       programs = programs,
       )
-      1 -> Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
-        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          Text("Настройки tun2proxy", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-          Text(
-            "SOCKS5 port — общий локальный порт между mieru и tun2proxy. CIDR не задаётся вручную: ZDT-D назначает его автоматически, как у OpenVPN/Mihomo. MTU можно оставить пустым.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-          )
+      1 -> MieruSectionCard(
+        title = "Настройки tun2proxy",
+        desc = "SOCKS5 port — общий локальный порт между mieru и tun2proxy. CIDR назначается автоматически. MTU можно оставить пустым.",
+        accent = Color(0xFF38BDF8),
+        icon = { Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(21.dp)) },
+      ) {
           OutlinedTextField(value = tunText, onValueChange = { tunText = it }, label = { Text("TUN interface") }, singleLine = true, modifier = Modifier.fillMaxWidth())
           OutlinedTextField(value = socksText, onValueChange = { socksText = it.filter { ch -> ch.isDigit() }.take(5) }, label = { Text("SOCKS5 backend port") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
           OutlinedTextField(value = rpcText, onValueChange = { rpcText = it.filter { ch -> ch.isDigit() }.take(5) }, label = { Text("RPC port") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
@@ -366,7 +368,6 @@ fun MieruProfileScreen(
             saving = settingSaving,
             onClick = { saveSettings() },
           )
-        }
       }
       2 -> MieruConfigFieldsCard(
         loaded = configLoaded,
@@ -394,6 +395,167 @@ fun MieruProfileScreen(
         dirty = configDirty,
         onSave = { saveMieruConfig() },
       )
+    }
+
+    Spacer(Modifier.height(effectiveBottomContentPadding))
+  }
+}
+
+@Composable
+private fun MieruSectionCard(
+  title: String,
+  desc: String? = null,
+  accent: Color = Color(0xFF38BDF8),
+  icon: (@Composable () -> Unit)? = null,
+  trailing: (@Composable () -> Unit)? = null,
+  content: (@Composable ColumnScope.() -> Unit)? = null,
+) {
+  val compact = rememberIsCompactWidth()
+  val shape = RoundedCornerShape(if (compact) 20.dp else 24.dp)
+  Surface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = shape,
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.64f),
+    contentColor = MaterialTheme.colorScheme.onSurface,
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .background(
+          Brush.linearGradient(
+            listOf(
+              accent.copy(alpha = 0.13f),
+              MaterialTheme.colorScheme.surface.copy(alpha = 0.05f),
+              Color.Transparent,
+            )
+          ),
+          shape = shape,
+        )
+        .padding(if (compact) 12.dp else 14.dp),
+    ) {
+      Column(verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp)) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp),
+        ) {
+          if (icon != null) {
+            Surface(
+              modifier = Modifier.size(if (compact) 42.dp else 46.dp),
+              shape = CircleShape,
+              color = accent.copy(alpha = 0.16f),
+              contentColor = accent,
+              border = BorderStroke(1.dp, accent.copy(alpha = 0.38f)),
+            ) {
+              Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { icon() }
+            }
+          }
+          Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+              title,
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.93f),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+            if (desc != null) {
+              Text(
+                desc,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+          }
+          if (trailing != null) trailing()
+        }
+        if (content != null) content()
+      }
+    }
+  }
+}
+
+@Composable
+private fun MieruProfileEnabledCard(
+  checked: Boolean,
+  onCheckedChange: (Boolean) -> Unit,
+) {
+  val accent = if (checked) Color(0xFF22C55E) else Color(0xFFEF4444)
+  MieruSectionCard(
+    title = stringResource(R.string.enabled_card_profile_title),
+    desc = stringResource(R.string.enabled_card_apply_hint),
+    accent = accent,
+    icon = { Icon(Icons.Filled.Extension, contentDescription = null, modifier = Modifier.size(22.dp)) },
+    trailing = { Switch(checked = checked, onCheckedChange = onCheckedChange) },
+  ) {
+    Surface(
+      shape = RoundedCornerShape(100.dp),
+      color = accent.copy(alpha = 0.16f),
+      contentColor = accent,
+      border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+    ) {
+      Text(
+        text = stringResource(if (checked) R.string.enabled_state_on else R.string.enabled_state_off),
+        modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp),
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+      )
+    }
+  }
+}
+
+@Composable
+private fun MieruProfileTabs(
+  selected: Int,
+  onSelect: (Int) -> Unit,
+) {
+  val compact = rememberIsCompactWidth()
+  val tabs = listOf(
+    0 to "Приложения",
+    1 to "tun2proxy",
+    2 to "mieru",
+  )
+  Surface(
+    shape = RoundedCornerShape(20.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.62f),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth().padding(5.dp),
+      horizontalArrangement = Arrangement.spacedBy(5.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      tabs.forEach { (index, label) ->
+        val active = selected == index
+        Surface(
+          modifier = Modifier
+            .weight(1f)
+            .clickable { onSelect(index) },
+          shape = RoundedCornerShape(16.dp),
+          color = if (active) Color(0xFF38BDF8).copy(alpha = 0.18f) else Color.Transparent,
+          contentColor = if (active) Color(0xFF7DD3FC) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+          border = if (active) BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.28f)) else null,
+        ) {
+          Box(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = if (compact) 8.dp else 9.dp),
+            contentAlignment = Alignment.Center,
+          ) {
+            Text(
+              label,
+              style = MaterialTheme.typography.labelMedium,
+              fontWeight = if (active) FontWeight.Bold else FontWeight.SemiBold,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
+      }
     }
   }
 }
@@ -425,14 +587,12 @@ private fun MieruConfigFieldsCard(
   dirty: Boolean,
   onSave: () -> Unit,
 ) {
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
-    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Text("Настройки mieru proxy", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-      Text(
-        "Заполните параметры профиля, пользователя и сервера. Если название профиля пустое, будет использовано имя профиля ZDT-D. socks5Port/rpcPort синхронизируются из блока tun2proxy.",
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-      )
+  MieruSectionCard(
+    title = "Настройки mieru proxy",
+    desc = "Профиль, пользователь и сервер. Если название профиля пустое, будет использовано имя профиля ZDT-D. socks5Port/rpcPort синхронизируются из блока tun2proxy.",
+    accent = Color(0xFFA78BFA),
+    icon = { Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(21.dp)) },
+  ) {
       OutlinedTextField(value = profileName, onValueChange = onProfileName, label = { Text("Profile name, optional") }, singleLine = true, enabled = loaded && !saving, modifier = Modifier.fillMaxWidth())
       OutlinedTextField(value = username, onValueChange = onUsername, label = { Text("Username") }, singleLine = true, enabled = loaded && !saving, modifier = Modifier.fillMaxWidth())
       OutlinedTextField(value = password, onValueChange = onPassword, label = { Text("Password") }, singleLine = true, enabled = loaded && !saving, modifier = Modifier.fillMaxWidth())
@@ -468,7 +628,6 @@ private fun MieruConfigFieldsCard(
         saving = saving,
         onClick = onSave,
       )
-    }
   }
 }
 

@@ -38,6 +38,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.zdtd.service.R
@@ -49,7 +50,12 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
 @Composable
-fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
+fun HomeScreen(
+  uiStateFlow: StateFlow<UiState>,
+  actions: ZdtdActions,
+  topContentPadding: Dp = 0.dp,
+  bottomContentPadding: Dp = 0.dp,
+) {
   // Collect ONLY what Home needs, and only while Home is visible.
   val online by remember(uiStateFlow) {
     uiStateFlow.map { it.daemonOnline }.distinctUntilChanged()
@@ -98,65 +104,117 @@ fun HomeScreen(uiStateFlow: StateFlow<UiState>, actions: ZdtdActions) {
     Modifier
       .fillMaxSize()
       .verticalScroll(rememberScrollState())
-      .padding(horizontal = 16.dp, vertical = 12.dp),
+      .padding(horizontal = 16.dp)
+      .padding(top = topContentPadding + 12.dp, bottom = bottomContentPadding + 16.dp),
     horizontalAlignment = Alignment.CenterHorizontally,
   ) {
     Spacer(Modifier.height(if (isShortHeight) 4.dp else 12.dp))
 
-    // Status pill
-    AssistChip(
-      onClick = { actions.refreshStatus() },
-      label = {
-        val st = if (online) stringResource(R.string.home_online) else stringResource(R.string.home_offline)
-        Text(stringResource(R.string.home_daemon_status_fmt, st))
-      },
-      leadingIcon = {
-        val c = if (online) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.35f)
-        Box(Modifier.size(10.dp).clip(CircleShape).background(c))
-      },
-    )
-
-    Spacer(Modifier.height(contentSpacing))
-
-    // Power button (image-based) — same as stage16
-    val powerPainter = remember(on) {
-      if (on) R.drawable.power_on else R.drawable.power_off
+    val serviceStatusText = if (online) stringResource(R.string.home_online) else stringResource(R.string.home_offline)
+    val powerStateText = if (on) stringResource(R.string.home_power_running) else stringResource(R.string.home_power_stopped)
+    val powerHintText = if (on) {
+      stringResource(R.string.home_service_active_hint)
+    } else {
+      stringResource(R.string.home_service_stopped_hint)
+    }
+    val statusAccent = when {
+      on -> Color(0xFF22C55E)
+      online -> MaterialTheme.colorScheme.primary
+      else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
     }
 
-    Box(
-      contentAlignment = Alignment.Center,
-      modifier = Modifier
-        .size(powerButtonSize)
-        .scale(scale)
-        .clip(CircleShape)
-        .clickable(enabled = !busy) { actions.toggleService() },
+    Card(
+      modifier = Modifier.fillMaxWidth(),
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)),
+      shape = RoundedCornerShape(30.dp),
+      border = BorderStroke(1.dp, statusAccent.copy(alpha = if (online) 0.34f else 0.14f)),
     ) {
-      // The images already include the full button styling (glow/ring).
-      Image(
-        painter = painterResource(powerPainter),
-        contentDescription = null,
+      Column(
         modifier = Modifier
-          .fillMaxSize()
-          .clip(CircleShape),
-      )
+          .fillMaxWidth()
+          .background(
+            Brush.radialGradient(
+              colors = listOf(
+                statusAccent.copy(alpha = 0.16f),
+                Color.Transparent,
+              ),
+              radius = 560f,
+            ),
+          )
+          .padding(horizontal = 16.dp, vertical = if (isShortHeight) 14.dp else 18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+      ) {
+        Surface(
+          modifier = Modifier.clickable { actions.refreshStatus() },
+          shape = RoundedCornerShape(999.dp),
+          color = statusAccent.copy(alpha = if (online) 0.14f else 0.08f),
+          border = BorderStroke(1.dp, statusAccent.copy(alpha = if (online) 0.42f else 0.18f)),
+        ) {
+          Row(
+            modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            Box(Modifier.size(9.dp).clip(CircleShape).background(statusAccent))
+            Text(
+              text = stringResource(R.string.home_daemon_status_fmt, serviceStatusText),
+              style = MaterialTheme.typography.labelLarge,
+              fontWeight = FontWeight.SemiBold,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.92f),
+            )
+          }
+        }
+
+        Spacer(Modifier.height(if (isShortHeight) 10.dp else 16.dp))
+
+        val powerPainter = remember(on) {
+          if (on) R.drawable.power_on else R.drawable.power_off
+        }
+
+        Box(
+          contentAlignment = Alignment.Center,
+          modifier = Modifier
+            .size(powerButtonSize)
+            .scale(scale)
+            .clip(CircleShape)
+            .clickable(enabled = !busy) { actions.toggleService() },
+        ) {
+          Image(
+            painter = painterResource(powerPainter),
+            contentDescription = null,
+            modifier = Modifier
+              .fillMaxSize()
+              .clip(CircleShape),
+          )
+        }
+
+        Spacer(Modifier.height(if (isShortHeight) 10.dp else 14.dp))
+
+        Surface(
+          shape = RoundedCornerShape(999.dp),
+          color = statusAccent.copy(alpha = if (on) 0.18f else 0.10f),
+          border = BorderStroke(1.dp, statusAccent.copy(alpha = if (on) 0.42f else 0.18f)),
+        ) {
+          Text(
+            text = powerStateText,
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 7.dp),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+            color = if (on) statusAccent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+          )
+        }
+
+        Spacer(Modifier.height(8.dp))
+
+        Text(
+          text = powerHintText,
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+          textAlign = TextAlign.Center,
+        )
+      }
     }
-
-    Spacer(Modifier.height(contentSpacing))
-
-    Text(
-      if (on) stringResource(R.string.home_power_running) else stringResource(R.string.home_power_stopped),
-      style = MaterialTheme.typography.titleLarge,
-      fontWeight = FontWeight.SemiBold,
-      textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-    )
-    Spacer(Modifier.height(6.dp))
-    Text(
-      if (on) stringResource(R.string.home_service_active_hint)
-      else stringResource(R.string.home_service_stopped_hint),
-      style = MaterialTheme.typography.bodyMedium,
-      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
-      textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-    )
 
     Spacer(Modifier.height(contentSpacing))
 

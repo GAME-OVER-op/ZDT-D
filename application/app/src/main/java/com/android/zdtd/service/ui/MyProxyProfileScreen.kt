@@ -1,5 +1,19 @@
 package com.android.zdtd.service.ui
 
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Surface
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.animateContentSize
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -46,6 +60,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.LocalWebPanelActivity
 import com.android.zdtd.service.ZdtdActions
@@ -210,40 +225,156 @@ private suspend fun isMyProxyWebPanelPortOpen(port: Int): Boolean = withContext(
 }
 
 @Composable
+private fun MyProxySectionCard(
+  title: String,
+  desc: String? = null,
+  accent: Color = Color(0xFFFACC15),
+  icon: @Composable (() -> Unit)? = null,
+  trailing: @Composable (() -> Unit)? = null,
+  modifier: Modifier = Modifier,
+  content: @Composable (() -> Unit)? = null,
+) {
+  val compact = rememberIsCompactWidth()
+  val shape = RoundedCornerShape(if (compact) 20.dp else 24.dp)
+  Surface(
+    modifier = modifier.fillMaxWidth(),
+    shape = shape,
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.64f),
+    contentColor = MaterialTheme.colorScheme.onSurface,
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .background(
+          Brush.linearGradient(
+            listOf(
+              accent.copy(alpha = 0.13f),
+              MaterialTheme.colorScheme.surface.copy(alpha = 0.05f),
+              Color.Transparent,
+            )
+          ),
+          shape = shape,
+        )
+        .padding(if (compact) 12.dp else 14.dp),
+    ) {
+      Column(verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp)) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp),
+        ) {
+          if (icon != null) {
+            Surface(
+              modifier = Modifier.size(if (compact) 42.dp else 46.dp),
+              shape = CircleShape,
+              color = accent.copy(alpha = 0.16f),
+              contentColor = accent,
+              border = BorderStroke(1.dp, accent.copy(alpha = 0.38f)),
+            ) {
+              Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { icon() }
+            }
+          }
+          Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+              title,
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.93f),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+            if (desc != null) {
+              Text(
+                desc,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+          }
+          if (trailing != null) trailing()
+        }
+        if (content != null) content()
+      }
+    }
+  }
+}
+
+@Composable
+private fun MyProxyProfileEnabledCard(
+  checked: Boolean,
+  onCheckedChange: (Boolean) -> Unit,
+) {
+  val accent = if (checked) Color(0xFF22C55E) else Color(0xFFEF4444)
+  MyProxySectionCard(
+    title = stringResource(R.string.enabled_card_profile_title),
+    desc = stringResource(R.string.enabled_card_apply_hint),
+    accent = accent,
+    icon = {
+      Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(22.dp))
+    },
+    trailing = {
+      Switch(checked = checked, onCheckedChange = onCheckedChange)
+    },
+  ) {
+    Surface(
+      shape = RoundedCornerShape(100.dp),
+      color = accent.copy(alpha = 0.16f),
+      contentColor = accent,
+      border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+    ) {
+      Text(
+        text = stringResource(if (checked) R.string.enabled_state_on else R.string.enabled_state_off),
+        modifier = Modifier.padding(horizontal = 11.dp, vertical = 5.dp),
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+      )
+    }
+  }
+}
+
+@Composable
 private fun MyProxyWebPanelCard(
   checking: Boolean,
   onOpen: () -> Unit,
 ) {
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f))) {
-    Row(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Text(
-        text = stringResource(R.string.web_panel_open),
-        modifier = Modifier.weight(1f),
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.SemiBold,
-      )
-      FilledTonalIconButton(
-        onClick = onOpen,
-        enabled = !checking,
-      ) {
-        if (checking) {
-          CircularProgressIndicator(
-            modifier = Modifier.width(20.dp).height(20.dp),
-            strokeWidth = 2.dp,
-          )
-        } else {
-          Icon(
-            imageVector = Icons.Filled.Public,
-            contentDescription = stringResource(R.string.web_panel_open),
-          )
-        }
+  MyProxySectionCard(
+    title = stringResource(R.string.web_panel_open),
+    desc = "127.0.0.1 web UI",
+    accent = Color(0xFF38BDF8),
+    icon = {
+      if (checking) {
+        CircularProgressIndicator(
+          modifier = Modifier.size(20.dp),
+          strokeWidth = 2.dp,
+        )
+      } else {
+        Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(22.dp))
       }
-    }
-  }
+    },
+    trailing = {
+      Surface(
+        modifier = Modifier.clickable(enabled = !checking) { onOpen() },
+        shape = RoundedCornerShape(100.dp),
+        color = Color(0xFF38BDF8).copy(alpha = 0.16f),
+        contentColor = Color(0xFF7DD3FC),
+        border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.34f)),
+      ) {
+        Text(
+          stringResource(R.string.support_open),
+          modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+          style = MaterialTheme.typography.labelLarge,
+          fontWeight = FontWeight.Bold,
+          maxLines = 1,
+        )
+      }
+    },
+  )
 }
 
 @Composable
@@ -261,8 +392,12 @@ fun MyProxyProfileScreen(
   profile: String,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  topContentPadding: Dp = 0.dp,
+  bottomContentPadding: Dp = 0.dp,
 ) {
   val compact = rememberIsCompactWidth()
+  val effectiveTopContentPadding = topContentPadding + 12.dp
+  val effectiveBottomContentPadding = bottomContentPadding + if (compact) 12.dp else 16.dp
   val context = LocalContext.current
   val scope = rememberCoroutineScope()
   val scroll = rememberScrollState()
@@ -390,20 +525,14 @@ fun MyProxyProfileScreen(
   Column(
     Modifier
       .fillMaxSize()
-      .padding(if (compact) 12.dp else 16.dp)
       .verticalScroll(scroll)
-      .navigationBarsPadding(),
+      .padding(horizontal = if (compact) 12.dp else 16.dp)
+      .animateContentSize(),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    Text("${program?.name ?: "myproxy"} / $profile", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-    Text(
-      toolDescription("myproxy"),
-      style = MaterialTheme.typography.bodySmall,
-      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-    )
+    Spacer(Modifier.height(effectiveTopContentPadding))
 
-    EnabledCard(
-      title = stringResource(R.string.enabled_card_profile_title),
+    MyProxyProfileEnabledCard(
       checked = prof?.enabled ?: false,
       onCheckedChange = { v -> actions.setProfileEnabled("myproxy", profile, v) },
     )
@@ -450,170 +579,204 @@ fun MyProxyProfileScreen(
       onSavedSelection = { selectedApps = it },
     )
 
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
-      Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(stringResource(R.string.myproxy_ports_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text(
-          stringResource(R.string.myproxy_ports_desc),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-        )
-        FieldHint(stringResource(R.string.myproxy_t2s_port_hint))
+    MyProxySectionCard(
+      title = stringResource(R.string.myproxy_ports_title),
+      desc = stringResource(R.string.myproxy_ports_desc),
+      accent = Color(0xFF38BDF8),
+      icon = { Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(21.dp)) },
+    ) {
+      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(
           value = t2sPortText,
           onValueChange = { t2sPortText = it.filter(Char::isDigit).take(5) },
           label = { Text(stringResource(R.string.myproxy_t2s_port_label)) },
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.weight(1f),
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
           singleLine = true,
           isError = t2sPortText.isNotBlank() && t2sPortText.toIntOrNull()?.let { it !in 1..65535 } != false,
         )
-        FieldHint(stringResource(R.string.myproxy_t2s_web_port_hint))
         OutlinedTextField(
           value = t2sWebPortText,
           onValueChange = { t2sWebPortText = it.filter(Char::isDigit).take(5) },
           label = { Text(stringResource(R.string.myproxy_t2s_web_port_label)) },
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier.weight(1f),
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
           singleLine = true,
           isError = t2sWebPortText.isNotBlank() && t2sWebPortText.toIntOrNull()?.let { it !in 1..65535 } != false,
         )
-        val samePorts = t2sPortText.isNotBlank() && t2sPortText == t2sWebPortText
-        if (samePorts) {
-          Text(
-            stringResource(R.string.myproxy_ports_must_differ),
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodySmall,
-          )
-        }
+      }
+      val samePorts = t2sPortText.isNotBlank() && t2sPortText == t2sWebPortText
+      if (samePorts) {
+        Text(
+          stringResource(R.string.myproxy_ports_must_differ),
+          color = MaterialTheme.colorScheme.error,
+          style = MaterialTheme.typography.bodySmall,
+        )
+      }
+      Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f),
+        border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.12f)),
+      ) {
         Text(
           if (settingSaving) stringResource(R.string.myproxy_ports_saving) else stringResource(R.string.myproxy_ports_autosave_hint),
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
         )
       }
     }
 
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f))) {
-      Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text(stringResource(R.string.myproxy_upstream_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    MyProxySectionCard(
+      title = stringResource(R.string.myproxy_upstream_title),
+      desc = stringResource(R.string.myproxy_upstream_desc),
+      accent = Color(0xFFFACC15),
+      icon = { Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp)) },
+    ) {
+      OutlinedTextField(
+        value = hostText,
+        onValueChange = { hostText = it },
+        label = { Text(stringResource(R.string.myproxy_host_label)) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        isError = hostText.isBlank(),
+      )
+      FieldHint(stringResource(R.string.myproxy_host_hint))
+
+      val proxyPortsValid = proxyPortText.isNotBlank() && normalizeMyProxyPortList(proxyPortText) != null
+      OutlinedTextField(
+        value = proxyPortText,
+        onValueChange = { proxyPortText = it.filter { ch -> ch.isDigit() || ch == ',' || ch.isWhitespace() }.take(128) },
+        label = { Text(stringResource(R.string.myproxy_proxy_port_label)) },
+        modifier = Modifier.fillMaxWidth(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+        singleLine = true,
+        isError = proxyPortText.isNotBlank() && !proxyPortsValid,
+      )
+      FieldHint(stringResource(R.string.myproxy_proxy_port_hint))
+      if (proxyPortText.isNotBlank() && !proxyPortsValid) {
         Text(
-          stringResource(R.string.myproxy_upstream_desc),
+          stringResource(R.string.myproxy_proxy_ports_invalid),
+          color = MaterialTheme.colorScheme.error,
           style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
         )
-        FieldHint(stringResource(R.string.myproxy_host_hint))
-        OutlinedTextField(
-          value = hostText,
-          onValueChange = { hostText = it },
-          label = { Text(stringResource(R.string.myproxy_host_label)) },
-          modifier = Modifier.fillMaxWidth(),
-          singleLine = true,
-          isError = hostText.isBlank(),
-        )
-        FieldHint(stringResource(R.string.myproxy_proxy_port_hint))
-        val proxyPortsValid = proxyPortText.isNotBlank() && normalizeMyProxyPortList(proxyPortText) != null
-        OutlinedTextField(
-          value = proxyPortText,
-          onValueChange = { proxyPortText = it.filter { ch -> ch.isDigit() || ch == ',' || ch.isWhitespace() }.take(128) },
-          label = { Text(stringResource(R.string.myproxy_proxy_port_label)) },
-          modifier = Modifier.fillMaxWidth(),
-          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-          singleLine = true,
-          isError = proxyPortText.isNotBlank() && !proxyPortsValid,
-        )
-        if (proxyPortText.isNotBlank() && !proxyPortsValid) {
+      }
+
+      Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+        border = BorderStroke(1.dp, Color(0xFFFACC15).copy(alpha = 0.18f)),
+      ) {
+        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
           Text(
-            stringResource(R.string.myproxy_proxy_ports_invalid),
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodySmall,
+            stringResource(R.string.myproxy_backend_mode_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
           )
-        }
-        Text(
-          stringResource(R.string.myproxy_backend_mode_title),
-          style = MaterialTheme.typography.titleSmall,
-          fontWeight = FontWeight.SemiBold,
-        )
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          FilterChip(
-            selected = backendMode == "balance",
-            onClick = { backendMode = "balance" },
-            label = { Text(stringResource(R.string.myproxy_backend_mode_balance)) },
-          )
-          FilterChip(
-            selected = backendMode == "priority",
-            onClick = { backendMode = "priority" },
-            label = { Text(stringResource(R.string.myproxy_backend_mode_priority)) },
-          )
-        }
-        Text(
-          if (backendMode == "priority") {
-            stringResource(R.string.myproxy_backend_mode_priority_desc)
-          } else {
-            stringResource(R.string.myproxy_backend_mode_balance_desc)
-          },
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-        )
-        AnimatedVisibility(
-          visible = backendMode == "priority",
-          enter = fadeIn(tween(160)) + expandVertically(animationSpec = tween(180)),
-          exit = fadeOut(tween(120)) + shrinkVertically(animationSpec = tween(150)),
-        ) {
-          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            FieldHint(stringResource(R.string.myproxy_backend_priority_hint))
-            val priorityAllowedPorts = normalizeMyProxyPortList(proxyPortText).orEmpty()
-            val backendPriorityValid = backendPriorityText.isBlank() ||
-              normalizeMyProxyBackendPriority(backendPriorityText, priorityAllowedPorts) != null
-            OutlinedTextField(
-              value = backendPriorityText,
-              onValueChange = {
-                backendPriorityText = sanitizeMyProxyBackendPriorityInput(it)
-              },
-              label = { Text(stringResource(R.string.myproxy_backend_priority_label)) },
-              modifier = Modifier.fillMaxWidth(),
-              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-              singleLine = true,
-              isError = backendPriorityText.isNotBlank() && !backendPriorityValid,
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            FilterChip(
+              selected = backendMode == "balance",
+              onClick = { backendMode = "balance" },
+              label = { Text(stringResource(R.string.myproxy_backend_mode_balance)) },
             )
-            if (backendPriorityText.isNotBlank() && !backendPriorityValid) {
-              Text(
-                stringResource(R.string.myproxy_backend_priority_invalid),
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall,
-              )
-            }
+            FilterChip(
+              selected = backendMode == "priority",
+              onClick = { backendMode = "priority" },
+              label = { Text(stringResource(R.string.myproxy_backend_mode_priority)) },
+            )
+          }
+          Text(
+            if (backendMode == "priority") {
+              stringResource(R.string.myproxy_backend_mode_priority_desc)
+            } else {
+              stringResource(R.string.myproxy_backend_mode_balance_desc)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+          )
+        }
+      }
+
+      AnimatedVisibility(
+        visible = backendMode == "priority",
+        enter = fadeIn(tween(160)) + expandVertically(animationSpec = tween(180)),
+        exit = fadeOut(tween(120)) + shrinkVertically(animationSpec = tween(150)),
+      ) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          val priorityAllowedPorts = normalizeMyProxyPortList(proxyPortText).orEmpty()
+          val backendPriorityValid = backendPriorityText.isBlank() ||
+            normalizeMyProxyBackendPriority(backendPriorityText, priorityAllowedPorts) != null
+          OutlinedTextField(
+            value = backendPriorityText,
+            onValueChange = {
+              backendPriorityText = sanitizeMyProxyBackendPriorityInput(it)
+            },
+            label = { Text(stringResource(R.string.myproxy_backend_priority_label)) },
+            modifier = Modifier.fillMaxWidth(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+            singleLine = true,
+            isError = backendPriorityText.isNotBlank() && !backendPriorityValid,
+          )
+          FieldHint(stringResource(R.string.myproxy_backend_priority_hint))
+          if (backendPriorityText.isNotBlank() && !backendPriorityValid) {
+            Text(
+              stringResource(R.string.myproxy_backend_priority_invalid),
+              color = MaterialTheme.colorScheme.error,
+              style = MaterialTheme.typography.bodySmall,
+            )
           }
         }
-        FieldHint(stringResource(R.string.myproxy_user_hint))
-        OutlinedTextField(
-          value = userText,
-          onValueChange = { userText = it },
-          label = { Text(stringResource(R.string.myproxy_user_label)) },
-          modifier = Modifier.fillMaxWidth(),
-          singleLine = true,
-        )
-        FieldHint(stringResource(R.string.myproxy_pass_hint))
-        OutlinedTextField(
-          value = passText,
-          onValueChange = { passText = it },
-          label = { Text(stringResource(R.string.myproxy_pass_label)) },
-          modifier = Modifier.fillMaxWidth(),
-          singleLine = true,
-        )
-        if ((userText.isBlank()) xor passText.isBlank()) {
+      }
+
+      Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+        border = BorderStroke(1.dp, Color(0xFFFACC15).copy(alpha = 0.14f)),
+      ) {
+        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
           Text(
-            stringResource(R.string.myproxy_credentials_pair_required),
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodySmall,
+            stringResource(R.string.myproxy_credentials_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
           )
+          OutlinedTextField(
+            value = userText,
+            onValueChange = { userText = it },
+            label = { Text(stringResource(R.string.myproxy_user_label)) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+          )
+          FieldHint(stringResource(R.string.myproxy_user_hint))
+          OutlinedTextField(
+            value = passText,
+            onValueChange = { passText = it },
+            label = { Text(stringResource(R.string.myproxy_pass_label)) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+          )
+          FieldHint(stringResource(R.string.myproxy_pass_hint))
+          if ((userText.isBlank()) xor passText.isBlank()) {
+            Text(
+              stringResource(R.string.myproxy_credentials_pair_required),
+              color = MaterialTheme.colorScheme.error,
+              style = MaterialTheme.typography.bodySmall,
+            )
+          }
         }
+      }
+
+      Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f),
+        border = BorderStroke(1.dp, Color(0xFFFACC15).copy(alpha = 0.12f)),
+      ) {
         Text(
           if (proxySaving) stringResource(R.string.myproxy_ports_saving) else stringResource(R.string.myproxy_ports_autosave_hint),
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
         )
@@ -624,5 +787,7 @@ fun MyProxyProfileScreen(
       Spacer(Modifier.height(4.dp))
       CircularProgressIndicator()
     }
+
+    Spacer(Modifier.height(effectiveBottomContentPadding))
   }
 }

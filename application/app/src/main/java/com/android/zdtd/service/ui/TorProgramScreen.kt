@@ -2,7 +2,10 @@ package com.android.zdtd.service.ui
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -28,7 +32,6 @@ import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
@@ -49,6 +52,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
@@ -240,31 +244,89 @@ private fun chooseTorGeneratedPorts(existingSocksPort: Int?): Pair<Int, Int> {
   return t2s to web
 }
 
+private val TorAccent = Color(0xFFA855F7)
+private val TorGreen = Color(0xFF22C55E)
+private val TorBlue = Color(0xFF38BDF8)
+
 @Composable
 private fun TorSectionCard(
   title: String,
   desc: String,
   modifier: Modifier = Modifier,
+  accent: Color = TorAccent,
+  icon: @Composable (() -> Unit)? = null,
   content: @Composable () -> Unit,
 ) {
-  ElevatedCard(
+  Card(
     modifier = modifier.fillMaxWidth(),
-    colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.78f)),
+    shape = RoundedCornerShape(22.dp),
+    colors = CardDefaults.cardColors(
+      containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.60f),
+    ),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.24f)),
   ) {
     Column(
-      modifier = Modifier.fillMaxWidth().padding(14.dp),
-      verticalArrangement = Arrangement.spacedBy(10.dp),
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(14.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-      Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Text(
-          desc,
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-        )
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Surface(
+          modifier = Modifier.size(42.dp),
+          shape = CircleShape,
+          color = accent.copy(alpha = 0.14f),
+          border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
+        ) {
+          Box(contentAlignment = Alignment.Center) {
+            if (icon != null) {
+              icon()
+            } else {
+              Icon(Icons.Filled.Check, contentDescription = null, tint = accent, modifier = Modifier.size(20.dp))
+            }
+          }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+          Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+          Text(
+            desc,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
       }
       content()
     }
+  }
+}
+
+@Composable
+private fun TorInfoPill(
+  text: String,
+  accent: Color,
+  modifier: Modifier = Modifier,
+) {
+  Surface(
+    modifier = modifier,
+    shape = CircleShape,
+    color = accent.copy(alpha = 0.13f),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.24f)),
+  ) {
+    Text(
+      text = text,
+      modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+      style = MaterialTheme.typography.labelMedium,
+      fontWeight = FontWeight.SemiBold,
+      color = accent,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+    )
   }
 }
 
@@ -416,27 +478,50 @@ fun TorSection(
     }
   }
 
+  val stateAccent = if (enabled) TorGreen else TorAccent
+
   Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
     TorSectionCard(
       title = stringResource(R.string.tor_enabled_title),
       desc = if (active) stringResource(R.string.tor_enabled_active) else stringResource(R.string.tor_enabled_desc),
+      accent = stateAccent,
+      icon = {
+        Icon(
+          if (enabled) Icons.Filled.Check else Icons.Filled.Close,
+          contentDescription = null,
+          tint = stateAccent,
+          modifier = Modifier.size(20.dp),
+        )
+      },
     ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-          Text(
-            text = stringResource(R.string.tor_bridges_title) + ": " + bridges.size,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-          )
-          Text(
-            text = stringResource(R.string.tor_port_label) + ": 127.0.0.1:${parsedSocksPort ?: "—"}",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
-          )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TorInfoPill(
+              text = stringResource(if (enabled) R.string.apps_list_chip_enabled else R.string.apps_list_chip_disabled),
+              accent = stateAccent,
+            )
+            if (active) {
+              TorInfoPill(
+                text = stringResource(R.string.stats_online_upper),
+                accent = TorGreen,
+              )
+            }
+          }
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TorInfoPill(
+              text = stringResource(R.string.tor_bridges_title) + ": " + bridges.size,
+              accent = TorAccent,
+            )
+            TorInfoPill(
+              text = "SOCKS5: ${parsedSocksPort ?: "—"}",
+              accent = TorBlue,
+            )
+          }
         }
         Switch(
           checked = enabled,
@@ -458,13 +543,21 @@ fun TorSection(
         LinearProgressIndicator(Modifier.fillMaxWidth())
       }
       if (validationIssues.isNotEmpty()) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
           validationIssues.forEach { msgRes ->
-            Text(
-              text = stringResource(msgRes),
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.error,
-            )
+            Surface(
+              modifier = Modifier.fillMaxWidth(),
+              shape = RoundedCornerShape(16.dp),
+              color = MaterialTheme.colorScheme.error.copy(alpha = 0.10f),
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.22f)),
+            ) {
+              Text(
+                text = stringResource(msgRes),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+              )
+            }
           }
         }
       }
@@ -483,24 +576,33 @@ fun TorSection(
     TorSectionCard(
       title = stringResource(R.string.tor_ports_title),
       desc = stringResource(R.string.tor_ports_desc),
+      accent = TorBlue,
+      icon = {
+        Icon(Icons.Filled.Edit, contentDescription = null, tint = TorBlue, modifier = Modifier.size(20.dp))
+      },
     ) {
       Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        OutlinedTextField(
-          value = t2sPortText,
-          onValueChange = { t2sPortText = it.filter(Char::isDigit); t2sDirty = true },
+        Row(
           modifier = Modifier.fillMaxWidth(),
-          singleLine = true,
-          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-          label = { Text(stringResource(R.string.tor_t2s_port_label)) },
-        )
-        OutlinedTextField(
-          value = t2sWebPortText,
-          onValueChange = { t2sWebPortText = it.filter(Char::isDigit); t2sDirty = true },
-          modifier = Modifier.fillMaxWidth(),
-          singleLine = true,
-          keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-          label = { Text(stringResource(R.string.tor_t2s_web_port_label)) },
-        )
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          OutlinedTextField(
+            value = t2sPortText,
+            onValueChange = { t2sPortText = it.filter(Char::isDigit); t2sDirty = true },
+            modifier = Modifier.weight(1f),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            label = { Text(stringResource(R.string.tor_t2s_port_label)) },
+          )
+          OutlinedTextField(
+            value = t2sWebPortText,
+            onValueChange = { t2sWebPortText = it.filter(Char::isDigit); t2sDirty = true },
+            modifier = Modifier.weight(1f),
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            label = { Text(stringResource(R.string.tor_t2s_web_port_label)) },
+          )
+        }
         OutlinedTextField(
           value = portText,
           onValueChange = { portText = it.filter(Char::isDigit); portDirty = true },
@@ -508,32 +610,30 @@ fun TorSection(
           singleLine = true,
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
           label = { Text(stringResource(R.string.tor_port_label)) },
+          supportingText = { Text(stringResource(R.string.tor_port_hint)) },
         )
-        when {
-          !t2sPortsValid -> Text(
-            stringResource(R.string.tor_t2s_fill_ports),
+        val portsMessageColor = when {
+          !t2sPortsValid || parsedSocksPort !in 1..65535 || internalPortConflict -> MaterialTheme.colorScheme.error
+          settingsSaving || portSaving || torrcSaving -> TorBlue
+          else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f)
+        }
+        Surface(
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(16.dp),
+          color = portsMessageColor.copy(alpha = 0.10f),
+          border = BorderStroke(1.dp, portsMessageColor.copy(alpha = 0.18f)),
+        ) {
+          Text(
+            text = when {
+              !t2sPortsValid -> stringResource(R.string.tor_t2s_fill_ports)
+              parsedSocksPort !in 1..65535 -> stringResource(R.string.tor_port_invalid)
+              internalPortConflict -> stringResource(R.string.tor_ports_must_differ)
+              settingsSaving || portSaving || torrcSaving -> stringResource(R.string.tor_ports_saving)
+              else -> stringResource(R.string.tor_ports_autosave_hint)
+            },
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
-          )
-          parsedSocksPort !in 1..65535 -> Text(
-            stringResource(R.string.tor_port_invalid),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
-          )
-          internalPortConflict -> Text(
-            stringResource(R.string.tor_ports_must_differ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
-          )
-          settingsSaving || portSaving || torrcSaving -> Text(
-            stringResource(R.string.tor_ports_saving),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
-          )
-          else -> Text(
-            stringResource(R.string.tor_ports_autosave_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+            color = portsMessageColor,
           )
         }
       }
@@ -542,59 +642,149 @@ fun TorSection(
     TorSectionCard(
       title = stringResource(R.string.tor_bridges_title),
       desc = stringResource(R.string.tor_bridges_desc),
+      accent = TorAccent,
+      icon = {
+        Icon(Icons.Filled.Add, contentDescription = null, tint = TorAccent, modifier = Modifier.size(20.dp))
+      },
     ) {
-      FilledTonalButton(
-        onClick = {
-          editingBridgeIndex = null
-          bridgeDialogInitialText = ""
-          showBridgeDialog = true
-        },
-        modifier = Modifier.fillMaxWidth(),
+      Surface(
+        modifier = Modifier
+          .fillMaxWidth()
+          .clickable {
+            editingBridgeIndex = null
+            bridgeDialogInitialText = ""
+            showBridgeDialog = true
+          },
+        shape = RoundedCornerShape(20.dp),
+        color = TorAccent.copy(alpha = 0.11f),
+        border = BorderStroke(1.dp, TorAccent.copy(alpha = 0.34f)),
       ) {
-        Icon(Icons.Filled.Add, contentDescription = null)
-        Spacer(Modifier.width(6.dp))
-        Text(stringResource(R.string.tor_bridge_create))
+        Row(
+          modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          Surface(
+            modifier = Modifier.size(42.dp),
+            shape = CircleShape,
+            color = TorAccent.copy(alpha = 0.18f),
+            border = BorderStroke(1.dp, TorAccent.copy(alpha = 0.38f)),
+          ) {
+            Box(contentAlignment = Alignment.Center) {
+              Icon(Icons.Filled.Add, contentDescription = null, tint = TorAccent, modifier = Modifier.size(22.dp))
+            }
+          }
+          Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(
+              stringResource(R.string.tor_bridge_create),
+              style = MaterialTheme.typography.titleSmall,
+              fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+              stringResource(R.string.tor_bridge_info_hint),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+          Surface(
+            shape = CircleShape,
+            color = TorAccent.copy(alpha = 0.18f),
+            border = BorderStroke(1.dp, TorAccent.copy(alpha = 0.34f)),
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+              Icon(Icons.Filled.Add, contentDescription = null, tint = TorAccent, modifier = Modifier.size(16.dp))
+              Text(
+                stringResource(R.string.action_add),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = TorAccent,
+              )
+            }
+          }
+        }
       }
+
       if (bridges.isEmpty()) {
-        Text(
-          stringResource(R.string.tor_bridges_empty),
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
-        )
+        Surface(
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(16.dp),
+          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f),
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
+        ) {
+          Text(
+            stringResource(R.string.tor_bridges_empty),
+            modifier = Modifier.padding(12.dp),
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+          )
+        }
       } else {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
           bridges.forEachIndexed { index, bridge ->
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f))) {
-              Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                  stringResource(R.string.tor_bridge_title_fmt, index + 1),
-                  style = MaterialTheme.typography.titleSmall,
-                  fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                  bridge,
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
-                  maxLines = 3,
-                  overflow = TextOverflow.Ellipsis,
-                )
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                  OutlinedButton(
-                    onClick = {
-                      editingBridgeIndex = index
-                      bridgeDialogInitialText = bridge
-                      showBridgeDialog = true
-                    },
-                    modifier = Modifier.weight(1f),
+            Card(
+              modifier = Modifier.fillMaxWidth(),
+              shape = RoundedCornerShape(18.dp),
+              colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.50f)),
+              border = BorderStroke(1.dp, TorAccent.copy(alpha = 0.18f)),
+            ) {
+              Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                  TorInfoPill(
+                    text = stringResource(R.string.tor_bridge_title_fmt, index + 1),
+                    accent = TorAccent,
+                  )
+                  Spacer(Modifier.weight(1f))
+                  Surface(
+                    shape = CircleShape,
+                    color = TorBlue.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, TorBlue.copy(alpha = 0.24f)),
                   ) {
-                    Icon(Icons.Filled.Edit, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.action_edit))
+                    IconButton(
+                      modifier = Modifier.size(36.dp),
+                      onClick = {
+                        editingBridgeIndex = index
+                        bridgeDialogInitialText = bridge
+                        showBridgeDialog = true
+                      },
+                    ) {
+                      Icon(Icons.Filled.Edit, contentDescription = null, tint = TorBlue, modifier = Modifier.size(18.dp))
+                    }
                   }
-                  OutlinedButton(onClick = { askDeleteBridgeIndex = index }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.Delete, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text(stringResource(R.string.action_delete))
+                  Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.22f)),
+                  ) {
+                    IconButton(
+                      modifier = Modifier.size(36.dp),
+                      onClick = { askDeleteBridgeIndex = index },
+                    ) {
+                      Icon(Icons.Filled.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                    }
                   }
+                }
+                Surface(
+                  modifier = Modifier.fillMaxWidth(),
+                  shape = RoundedCornerShape(14.dp),
+                  color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.22f),
+                ) {
+                  Text(
+                    bridge,
+                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 9.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                  )
                 }
               }
             }
@@ -603,7 +793,6 @@ fun TorSection(
       }
     }
   }
-
   if (showBridgeDialog) {
     TorBridgeDialog(
       initialText = bridgeDialogInitialText,
@@ -737,10 +926,11 @@ private fun TorBridgeDialog(
       modifier = Modifier
         .fillMaxWidth()
         .padding(horizontal = dialogHorizontalPadding, vertical = dialogVerticalPadding),
-      shape = MaterialTheme.shapes.extraLarge,
+      shape = RoundedCornerShape(28.dp),
       tonalElevation = 6.dp,
-      shadowElevation = 12.dp,
-      color = MaterialTheme.colorScheme.surface,
+      shadowElevation = 14.dp,
+      color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+      border = BorderStroke(1.dp, TorAccent.copy(alpha = 0.22f)),
     ) {
       Column(
         modifier = Modifier
@@ -751,50 +941,88 @@ private fun TorBridgeDialog(
           .verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(12.dp),
       ) {
-        if (compactMode) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+          Surface(
+            modifier = Modifier.size(if (compactMode) 40.dp else 44.dp),
+            shape = CircleShape,
+            color = TorAccent.copy(alpha = 0.15f),
+            border = BorderStroke(1.dp, TorAccent.copy(alpha = 0.28f)),
           ) {
-            Column(Modifier.weight(1f)) {
-              Text(
-                text = stringResource(if (isEditing) R.string.tor_bridge_edit_title else R.string.tor_bridge_new_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+            Box(contentAlignment = Alignment.Center) {
+              Icon(
+                if (isEditing) Icons.Filled.Edit else Icons.Filled.Add,
+                contentDescription = null,
+                tint = TorAccent,
+                modifier = Modifier.size(if (compactMode) 19.dp else 21.dp),
               )
             }
+          }
+          Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+              text = stringResource(if (isEditing) R.string.tor_bridge_edit_title else R.string.tor_bridge_new_title),
+              style = if (compactMode) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+              fontWeight = FontWeight.SemiBold,
+              maxLines = 2,
+              overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+              text = stringResource(R.string.tor_bridge_info_hint),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+          if (compactMode) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-              Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)) {
+              Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f)) {
                 IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
                   Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_cancel))
                 }
               }
-              Surface(shape = CircleShape, color = if (canSave) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.38f)) {
+              Surface(shape = CircleShape, color = if (canSave) TorAccent.copy(alpha = 0.92f) else TorAccent.copy(alpha = 0.26f)) {
                 IconButton(onClick = { attemptSave() }, enabled = canSave, modifier = Modifier.size(40.dp)) {
-                  Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.common_save), tint = MaterialTheme.colorScheme.onPrimary)
+                  Icon(Icons.Filled.Check, contentDescription = stringResource(R.string.common_save), tint = Color.White)
                 }
               }
             }
           }
-        } else {
-          Text(
-            text = stringResource(if (isEditing) R.string.tor_bridge_edit_title else R.string.tor_bridge_new_title),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-          )
         }
 
-        ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))) {
-          Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.tor_bridge_info_title), fontWeight = FontWeight.SemiBold)
-            Text(
-              stringResource(R.string.tor_bridge_info_body),
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-            )
+        Surface(
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(22.dp),
+          color = TorAccent.copy(alpha = 0.10f),
+          border = BorderStroke(1.dp, TorAccent.copy(alpha = 0.18f)),
+        ) {
+          Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              Surface(
+                modifier = Modifier.size(34.dp),
+                shape = CircleShape,
+                color = TorAccent.copy(alpha = 0.16f),
+              ) {
+                Box(contentAlignment = Alignment.Center) {
+                  Icon(Icons.Filled.OpenInNew, contentDescription = null, tint = TorAccent, modifier = Modifier.size(18.dp))
+                }
+              }
+              Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(stringResource(R.string.tor_bridge_info_title), fontWeight = FontWeight.SemiBold)
+                Text(
+                  stringResource(R.string.tor_bridge_info_body),
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+                )
+              }
+            }
             FilledTonalButton(onClick = onOpenBot, modifier = Modifier.fillMaxWidth()) {
               Icon(Icons.Filled.OpenInNew, contentDescription = null)
               Spacer(Modifier.width(6.dp))
@@ -808,11 +1036,6 @@ private fun TorBridgeDialog(
             ) {
               Text(stringResource(R.string.tor_bridge_paste))
             }
-            Text(
-              stringResource(R.string.tor_bridge_info_hint),
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-            )
           }
         }
 

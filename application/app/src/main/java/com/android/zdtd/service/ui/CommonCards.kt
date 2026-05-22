@@ -8,10 +8,15 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.R
 import kotlin.math.max
@@ -71,9 +77,15 @@ fun EnabledCard(title: String, checked: Boolean, onCheckedChange: (Boolean) -> U
 
   val onColor = Color(0xFF22C55E)
   val offColor = MaterialTheme.colorScheme.error
-  val baseColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.78f)
+  val baseColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+  val activeBorder = if (checked) onColor else MaterialTheme.colorScheme.outline
+  val shape = RoundedCornerShape(18.dp)
 
-  Card(colors = CardDefaults.cardColors(containerColor = baseColor)) {
+  Card(
+    shape = shape,
+    colors = CardDefaults.cardColors(containerColor = baseColor),
+    border = BorderStroke(1.dp, activeBorder.copy(alpha = if (checked) 0.42f else 0.22f)),
+  ) {
     Box(Modifier.fillMaxWidth()) {
       Canvas(Modifier.matchParentSize()) {
         val p = progress.value.coerceIn(0f, 1f)
@@ -81,30 +93,30 @@ fun EnabledCard(title: String, checked: Boolean, onCheckedChange: (Boolean) -> U
         val targetColor = if (checked) onColor else offColor
         val towardTarget = if (checked) p else 1f - p
         val maxDim = max(size.width, size.height)
-        val origin = Offset(size.width - 34.dp.toPx(), size.height / 2f)
-        val pulse = if (animating) wave * maxDim * 0.12f else 0f
-        val radius = maxDim * (0.18f + 0.92f * towardTarget) + pulse
+        val origin = Offset(size.width - 56.dp.toPx(), size.height / 2f)
+        val pulse = if (animating) wave * maxDim * 0.10f else 0f
+        val radius = maxDim * (0.12f + 0.78f * towardTarget) + pulse
 
         drawRoundRect(
-          color = currentColor.copy(alpha = 0.055f + 0.065f * towardTarget),
+          color = currentColor.copy(alpha = 0.040f + 0.060f * towardTarget),
           size = size,
         )
         drawCircle(
-          color = targetColor.copy(alpha = if (animating) 0.20f else 0.13f),
+          color = targetColor.copy(alpha = if (animating) 0.17f else 0.10f),
           radius = radius,
           center = origin,
         )
         if (animating) {
           drawCircle(
-            color = targetColor.copy(alpha = 0.12f * (1f - wave.coerceIn(0f, 1f))),
-            radius = maxDim * (0.28f + wave * 0.88f),
+            color = targetColor.copy(alpha = 0.09f * (1f - wave.coerceIn(0f, 1f))),
+            radius = maxDim * (0.22f + wave * 0.78f),
             center = origin,
           )
         }
       }
 
       if (compactWidth) {
-        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
           EnabledCardText(title = title, stateText = stateText, stateColor = stateColor)
           Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
             Switch(checked = checked, onCheckedChange = onCheckedChange)
@@ -112,7 +124,7 @@ fun EnabledCard(title: String, checked: Boolean, onCheckedChange: (Boolean) -> U
         }
       } else {
         Row(
-          Modifier.fillMaxWidth().padding(12.dp),
+          Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
           horizontalArrangement = Arrangement.SpaceBetween,
           verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -122,14 +134,13 @@ fun EnabledCard(title: String, checked: Boolean, onCheckedChange: (Boolean) -> U
             stateColor = stateColor,
             modifier = Modifier.weight(1f),
           )
-          Spacer(Modifier.width(12.dp))
+          Spacer(Modifier.width(10.dp))
           Switch(checked = checked, onCheckedChange = onCheckedChange)
         }
       }
     }
   }
 }
-
 
 @Composable
 fun ProfileStatusCard(
@@ -197,11 +208,15 @@ fun ProfileStatusCard(
 
   val onColor = Color(0xFF22C55E)
   val offColor = MaterialTheme.colorScheme.error
-  val baseColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)
+  val baseColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)
+  val accentColor = if (checked) onColor else MaterialTheme.colorScheme.outline.copy(alpha = 0.72f)
+  val shape = RoundedCornerShape(18.dp)
 
   Card(
     onClick = onOpen,
+    shape = shape,
     colors = CardDefaults.cardColors(containerColor = baseColor),
+    border = BorderStroke(1.dp, accentColor.copy(alpha = if (checked) 0.42f else 0.24f)),
   ) {
     Box(Modifier.fillMaxWidth()) {
       Canvas(Modifier.matchParentSize()) {
@@ -210,16 +225,16 @@ fun ProfileStatusCard(
         val targetColor = if (checked) onColor else offColor
         val towardTarget = if (checked) p else 1f - p
         val maxDim = max(size.width, size.height)
-        val origin = Offset(size.width - 72.dp.toPx(), size.height / 2f)
+        val origin = Offset(size.width - 112.dp.toPx(), size.height / 2f)
         val pulse = if (animating) wave * maxDim * 0.10f else 0f
-        val radius = maxDim * (0.10f + 0.74f * towardTarget) + pulse
+        val radius = maxDim * (0.10f + 0.76f * towardTarget) + pulse
 
         drawRoundRect(
-          color = currentColor.copy(alpha = 0.030f + 0.050f * towardTarget),
+          color = currentColor.copy(alpha = 0.030f + 0.055f * towardTarget),
           size = size,
         )
         drawCircle(
-          color = targetColor.copy(alpha = if (animating) 0.155f else 0.095f),
+          color = targetColor.copy(alpha = if (animating) 0.16f else 0.10f),
           radius = radius,
           center = origin,
         )
@@ -233,15 +248,23 @@ fun ProfileStatusCard(
       }
 
       if (compactWidth) {
-        Column(
-          Modifier.fillMaxWidth().padding(12.dp),
-          verticalArrangement = Arrangement.spacedBy(8.dp),
+        Row(
+          Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 9.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-          ProfileStatusCardText(profileName = profileName)
-          Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+          ProfileIconBadge(checked = checked)
+          Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            ProfileStatusCardText(profileName = profileName)
+            ProfileEnabledPill(checked = checked)
+          }
+          Column(
+            modifier = Modifier.widthIn(min = 54.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
           ) {
             Switch(checked = checked, onCheckedChange = onCheckedChange)
             if (deletable) {
@@ -249,26 +272,85 @@ fun ProfileStatusCard(
                 Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.cd_delete))
               }
             } else {
-              Spacer(Modifier.width(48.dp))
+              Spacer(Modifier.height(40.dp))
             }
           }
         }
       } else {
         Row(
-          Modifier.fillMaxWidth().padding(12.dp),
-          horizontalArrangement = Arrangement.SpaceBetween,
+          Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+          horizontalArrangement = Arrangement.spacedBy(12.dp),
           verticalAlignment = Alignment.CenterVertically,
         ) {
-          ProfileStatusCardText(profileName = profileName, modifier = Modifier.weight(1f))
-          Spacer(Modifier.width(12.dp))
-          Switch(checked = checked, onCheckedChange = onCheckedChange)
-          if (deletable) {
-            IconButton(onClick = { askDelete = true }) {
-              Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.cd_delete))
+          ProfileIconBadge(checked = checked)
+          Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+          ) {
+            ProfileStatusCardText(profileName = profileName)
+            ProfileEnabledPill(checked = checked)
+          }
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            Switch(checked = checked, onCheckedChange = onCheckedChange)
+            if (deletable) {
+              IconButton(onClick = { askDelete = true }) {
+                Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.cd_delete))
+              }
             }
           }
         }
       }
+    }
+  }
+}
+
+
+@Composable
+private fun ProfileIconBadge(checked: Boolean) {
+  val accentColor = if (checked) Color(0xFF22C55E) else MaterialTheme.colorScheme.outline.copy(alpha = 0.72f)
+  Surface(
+    modifier = Modifier.size(52.dp),
+    color = accentColor.copy(alpha = if (checked) 0.15f else 0.10f),
+    contentColor = accentColor,
+    shape = CircleShape,
+    border = BorderStroke(1.dp, accentColor.copy(alpha = if (checked) 0.42f else 0.24f)),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
+  ) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+      Icon(
+        imageVector = Icons.Filled.Extension,
+        contentDescription = null,
+        modifier = Modifier.size(23.dp),
+      )
+    }
+  }
+}
+
+@Composable
+private fun ProfileEnabledPill(checked: Boolean) {
+  val accentColor = if (checked) Color(0xFF22C55E) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f)
+  val text = stringResource(if (checked) R.string.enabled_state_on else R.string.enabled_state_off)
+  Surface(
+    color = accentColor.copy(alpha = if (checked) 0.15f else 0.10f),
+    contentColor = accentColor,
+    shape = RoundedCornerShape(100.dp),
+    border = BorderStroke(1.dp, accentColor.copy(alpha = 0.24f)),
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+      horizontalArrangement = Arrangement.spacedBy(5.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Box(
+        Modifier
+          .size(6.dp)
+          .background(accentColor, CircleShape),
+      )
+      Text(text, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
     }
   }
 }
@@ -278,13 +360,22 @@ private fun ProfileStatusCardText(
   profileName: String,
   modifier: Modifier = Modifier,
 ) {
-  Column(modifier) {
-    Text(profileName, fontWeight = FontWeight.SemiBold, maxLines = 2)
-    Spacer(Modifier.height(2.dp))
+  Column(
+    modifier = modifier,
+    verticalArrangement = Arrangement.spacedBy(3.dp),
+  ) {
+    Text(
+      profileName,
+      fontWeight = FontWeight.SemiBold,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+    )
     Text(
       stringResource(R.string.apply_after_restart_short),
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
     )
   }
 }
@@ -298,7 +389,7 @@ private fun EnabledCardText(
 ) {
   Column(modifier) {
     Text(title, fontWeight = FontWeight.SemiBold, maxLines = 2)
-    Spacer(Modifier.height(3.dp))
+    Spacer(Modifier.height(2.dp))
     Text(
       stateText,
       style = MaterialTheme.typography.bodyMedium,

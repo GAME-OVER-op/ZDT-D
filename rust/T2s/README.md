@@ -43,8 +43,9 @@ This build is **TCP-only**. It does not proxy UDP and does not implement DNS han
   - creates up to 4 backend endpoints.
 - Direct connections are not treated as a permanent bypass. When GREEN backends recover, the runtime enforcement loop can terminate direct connections.
 - Backend selection defaults to `balance`, which distributes traffic across all GREEN SOCKS5 backends.
-- In `priority` mode, t2s uses the first priority group that has a GREEN backend. If `--backend-priority` is omitted, the order from `--socks-port` becomes the priority order, for example `1145,1146,1147` means `1145 -> 1146 -> 1147 -> direct`.
+- In `priority` mode, t2s strictly uses the first priority group that has a GREEN backend. A temporary runtime cooldown inside that group does not allow traffic to jump to a lower group. If `--backend-priority` is omitted, the order from `--socks-port` becomes the priority order, for example `1145,1146,1147` means `1145 -> 1146 -> 1147 -> direct`.
 - In `priority` mode, the ZDT-D `protector_mode` forced-GREEN setting is ignored and treated as off, so failed priority backends do not stay artificially selectable.
+- Removing a backend through the web/API also cancels active or in-flight SOCKS connections pinned to that backend.
 - Initial Host / CONNECT / TLS SNI sniffing is adaptive: under normal load it uses a staged budget up to 200 ms (80 -> 120 -> 160 -> 200 ms total budget), under heavier load it falls back to a single fast 80 ms attempt, and under overload it may skip sniffing entirely when no host-based rules depend on that metadata.
 - The `reset` action in `TRAFFIC_RULES` is accepted by the parser, but in the current implementation it behaves as an early connection termination rather than a low-level crafted TCP RST.
 
@@ -135,9 +136,9 @@ Startup backends built from `--socks-host` and `--socks-port` share the same CLI
 Backend mode behavior:
 
 - `balance`: current/default behavior; all GREEN backends participate in round-robin balancing. ZDT-D `protector_mode` keeps its previous behavior.
-- `priority`: ports are selected by priority group. Ports separated by `,` are balanced within the same group; groups separated by `;` are fallback levels. If all backends are dead, direct fallback is used. ZDT-D `protector_mode` is ignored in this mode.
+- `priority`: ports are selected by strict priority group. Ports separated by `,` are balanced within the same group; groups separated by `;` are fallback levels. Lower groups are used only when all higher groups have no GREEN backend. If all backends are dead, direct fallback is used. ZDT-D `protector_mode` is ignored in this mode.
 - If any backend becomes unhealthy, active SOCKS connections pinned to it are cancelled so clients can reconnect through another live backend or direct fallback. This applies to both `balance` and `priority` modes.
-- In `priority` mode, if a higher-priority backend recovers, active connections pinned to lower-priority fallback groups are cancelled so clients can reconnect through the preferred group.
+- In `priority` mode, if any higher-priority group is GREEN, active or in-flight SOCKS connections pinned to lower-priority fallback groups are cancelled so clients reconnect through the preferred group. This is enforced both after health-check changes and by the runtime enforce loop.
 - In `priority` mode, while there are active connections, backend health is checked more frequently with full sweeps every 15-60 seconds so recovery/fallback changes are applied faster.
 - If `--backend-mode priority` is enabled and `--backend-priority` is not specified, the `--socks-port` order is used as separate priority groups. Example: `--socks-port 1145,1146,1147` behaves like `--backend-priority "1145;1146;1147"`.
 

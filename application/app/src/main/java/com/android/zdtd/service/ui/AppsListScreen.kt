@@ -732,7 +732,7 @@ private fun programDescription(id: String): String {
   return toolDescription(id)
 }
 
-private fun programIconRes(id: String): Int? {
+internal fun programIconRes(id: String): Int? {
   return when (id) {
     "operaproxy" -> R.drawable.ic_tool_operaproxy
     "nfqws" -> R.drawable.ic_tool_zapret

@@ -32,6 +32,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -367,11 +368,20 @@ internal fun ProgramDescriptionHeader(
       shadowElevation = 0.dp,
     ) {
       Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Icon(
-          imageVector = programIcon(programId),
-          contentDescription = null,
-          modifier = Modifier.size(20.dp),
-        )
+        val iconRes = programIconRes(programId)
+        if (iconRes != null) {
+          Icon(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            modifier = Modifier.size(23.dp),
+          )
+        } else {
+          Icon(
+            imageVector = programIcon(programId),
+            contentDescription = null,
+            modifier = Modifier.size(20.dp),
+          )
+        }
       }
     }
 
@@ -427,11 +437,20 @@ private fun OperaProxyStatusCard(
         border = BorderStroke(1.dp, accent.copy(alpha = 0.32f)),
       ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-          Icon(
-            imageVector = programIcon("operaproxy"),
-            contentDescription = null,
-            modifier = Modifier.size(22.dp),
-          )
+          val iconRes = programIconRes("operaproxy")
+          if (iconRes != null) {
+            Icon(
+              painter = painterResource(iconRes),
+              contentDescription = null,
+              modifier = Modifier.size(25.dp),
+            )
+          } else {
+            Icon(
+              imageVector = programIcon("operaproxy"),
+              contentDescription = null,
+              modifier = Modifier.size(22.dp),
+            )
+          }
         }
       }
 
@@ -2198,7 +2217,20 @@ private fun OperaSectionIntroCard(
         border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
       ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-          Icon(programIcon("operaproxy"), contentDescription = null, modifier = Modifier.size(19.dp))
+          val iconRes = programIconRes("operaproxy")
+          if (iconRes != null) {
+            Icon(
+              painter = painterResource(iconRes),
+              contentDescription = null,
+              modifier = Modifier.size(22.dp),
+            )
+          } else {
+            Icon(
+              imageVector = programIcon("operaproxy"),
+              contentDescription = null,
+              modifier = Modifier.size(19.dp),
+            )
+          }
         }
       }
       Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {

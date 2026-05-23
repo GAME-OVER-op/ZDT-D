@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.animation.animateContentSize
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -526,8 +525,7 @@ fun MyProxyProfileScreen(
     Modifier
       .fillMaxSize()
       .verticalScroll(scroll)
-      .padding(horizontal = if (compact) 12.dp else 16.dp)
-      .animateContentSize(),
+      .padding(horizontal = if (compact) 12.dp else 16.dp),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     Spacer(Modifier.height(effectiveTopContentPadding))

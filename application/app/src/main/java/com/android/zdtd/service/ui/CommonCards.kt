@@ -37,6 +37,22 @@ import com.android.zdtd.service.R
 import kotlin.math.max
 
 @Composable
+fun StableLinearProgressIndicator(
+  visible: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  Box(
+    modifier = modifier
+      .fillMaxWidth()
+      .height(4.dp),
+  ) {
+    if (visible) {
+      LinearProgressIndicator(Modifier.fillMaxSize())
+    }
+  }
+}
+
+@Composable
 fun EnabledCard(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
   val compactWidth = rememberIsCompactWidth()
   val stateText = stringResource(if (checked) R.string.enabled_state_on else R.string.enabled_state_off)

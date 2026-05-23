@@ -14,7 +14,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -50,7 +49,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -896,7 +894,6 @@ fun SingBoxProfileScreen(
       if (ok) {
         setting = normalized
         refreshGlobalPortRegistry()
-        refreshServers()
       } else {
         showSnack(context.getString(R.string.singbox_auto_save_failed))
       }
@@ -1134,7 +1131,7 @@ fun SingBoxProfileScreen(
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
           if (editLoading) {
-            LinearProgressIndicator(Modifier.fillMaxWidth())
+            StableLinearProgressIndicator(visible = true)
           }
           OutlinedTextField(
             value = editText,
@@ -1260,8 +1257,7 @@ fun SingBoxProfileScreen(
     Modifier
       .fillMaxSize()
       .verticalScroll(scroll)
-      .padding(horizontal = if (compact) 12.dp else 16.dp)
-      .animateContentSize(),
+      .padding(horizontal = if (compact) 12.dp else 16.dp),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     Spacer(Modifier.height(effectiveTopContentPadding))
@@ -1379,6 +1375,10 @@ fun SingBoxProfileScreen(
         }
       },
       onRefresh = { refreshServers() },
+      onServerSaved = { updated ->
+        servers = servers.map { if (it.name == updated.name) updated else it }
+        refreshGlobalPortRegistry()
+      },
       onEditConfig = ::openEditor,
     )
 
@@ -1419,9 +1419,7 @@ private fun SingBoxProfileSettingCard(
       Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(21.dp))
     },
   ) {
-    if (loading || saving) {
-      LinearProgressIndicator(Modifier.fillMaxWidth())
-    }
+    StableLinearProgressIndicator(visible = loading || saving)
 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
       OutlinedTextField(
@@ -1481,7 +1479,7 @@ private fun SingBoxModeSwitchCard(
     accent = accent,
     icon = { Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp)) },
   ) {
-    if (loading || saving) LinearProgressIndicator(Modifier.fillMaxWidth())
+    StableLinearProgressIndicator(visible = loading || saving)
 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
       SingBoxModeOption(
@@ -1603,7 +1601,7 @@ private fun SingBoxVpnProfileCard(
     accent = Color(0xFF22C55E),
     icon = { Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp)) },
   ) {
-    if (loading || saving) LinearProgressIndicator(Modifier.fillMaxWidth())
+    StableLinearProgressIndicator(visible = loading || saving)
 
     Surface(
       shape = RoundedCornerShape(16.dp),
@@ -1689,6 +1687,7 @@ private fun SingBoxServersSection(
   onCreateServer: () -> Unit,
   onGenerateServer: () -> Unit,
   onRefresh: () -> Unit,
+  onServerSaved: (SingBoxServerUi) -> Unit,
   onEditConfig: (String) -> Unit,
 ) {
   val createEnabled = setting.isT2s || servers.isEmpty()
@@ -1758,9 +1757,8 @@ private fun SingBoxServersSection(
       }
     }
 
-    if (loading) {
-      LinearProgressIndicator(Modifier.fillMaxWidth())
-    } else if (servers.isEmpty()) {
+    StableLinearProgressIndicator(visible = loading)
+    if (!loading && servers.isEmpty()) {
       Surface(
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
@@ -1783,6 +1781,7 @@ private fun SingBoxServersSection(
             actions = actions,
             snackHost = snackHost,
             onRefresh = onRefresh,
+            onServerSaved = onServerSaved,
             onEditConfig = { onEditConfig(server.name) },
             showPort = true,
           )
@@ -1800,6 +1799,7 @@ private fun SingBoxServerCard(
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   onRefresh: () -> Unit,
+  onServerSaved: (SingBoxServerUi) -> Unit,
   onEditConfig: () -> Unit,
   showPort: Boolean = true,
 ) {
@@ -1823,7 +1823,7 @@ private fun SingBoxServerCard(
     actions.saveJsonData("$basePath/servers/$encodedServer/setting", payload) { ok ->
       saving = false
       if (ok) {
-        onRefresh()
+        onServerSaved(server.copy(enabled = enabled, port = port))
       } else {
         showSnack(context.getString(R.string.singbox_auto_save_failed))
       }

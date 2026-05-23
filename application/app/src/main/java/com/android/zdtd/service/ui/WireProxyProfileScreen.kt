@@ -1,6 +1,5 @@
 package com.android.zdtd.service.ui
 
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -50,7 +49,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -686,8 +684,7 @@ fun WireProxyProfileScreen(
     Modifier
       .fillMaxSize()
       .verticalScroll(scroll)
-      .padding(horizontal = if (compact) 12.dp else 16.dp)
-      .animateContentSize(),
+      .padding(horizontal = if (compact) 12.dp else 16.dp),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     Spacer(Modifier.height(effectiveTopContentPadding))
@@ -784,9 +781,8 @@ fun WireProxyProfileScreen(
       },
     ) {
       Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        if (serversLoading) {
-          LinearProgressIndicator(Modifier.fillMaxWidth())
-        } else if (servers.isEmpty()) {
+        StableLinearProgressIndicator(visible = serversLoading)
+        if (!serversLoading && servers.isEmpty()) {
           Text(
             stringResource(R.string.wireproxy_no_servers),
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
@@ -819,7 +815,10 @@ fun WireProxyProfileScreen(
                   }
                 },
                 onDelete = { askDeleteServer = server },
-                onRefresh = { refreshServers() },
+                onServerSaved = { updated ->
+                  servers = servers.map { if (it.name == updated.name) updated else it }
+                  globalPortRefreshSeq += 1
+                },
                 actions = actions,
                 snackHost = snackHost,
               )
@@ -879,9 +878,7 @@ private fun WireProxyProfileSettingsCard(
     icon = { Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(22.dp)) },
   ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      if (loading || saving) {
-        LinearProgressIndicator(Modifier.fillMaxWidth())
-      }
+      StableLinearProgressIndicator(visible = loading || saving)
 
       OutlinedTextField(
         value = t2sPortText,
@@ -941,7 +938,7 @@ private fun WireProxyServerCard(
   server: WireProxyServerUi,
   onEdit: () -> Unit,
   onDelete: () -> Unit,
-  onRefresh: () -> Unit,
+  onServerSaved: (WireProxyServerUi) -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
@@ -964,7 +961,7 @@ private fun WireProxyServerCard(
     actions.saveJsonData("$basePath/servers/$encodedServer/setting", payload) { ok ->
       saving = false
       if (ok) {
-        onRefresh()
+        onServerSaved(server.copy(enabled = enabled))
       } else {
         enabled = server.enabled
         showSnack(context.getString(R.string.wireproxy_auto_save_failed))
@@ -1192,9 +1189,7 @@ private fun WireProxyConfigDialog(
           }
         }
 
-        if (loading || saving) {
-          LinearProgressIndicator(Modifier.fillMaxWidth())
-        }
+        StableLinearProgressIndicator(visible = loading || saving)
 
         Text(
           stringResource(R.string.wireproxy_config_editor_desc),

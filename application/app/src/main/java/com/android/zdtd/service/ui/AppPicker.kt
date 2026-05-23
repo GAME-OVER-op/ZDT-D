@@ -4,7 +4,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -38,7 +37,6 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -186,7 +184,7 @@ fun AppListPickerCard(
       }
 
       if (loading) {
-        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        StableLinearProgressIndicator(visible = true)
       }
       if (!loading || selected.isNotEmpty()) {
         val preview = selected.sorted().take(6).joinToString("\n").ifBlank { stringResource(R.string.app_picker_empty) }
@@ -530,7 +528,7 @@ private fun AppPickerSheet(
     onDismissRequest = onDismiss,
     dragHandle = { BottomSheetDefaults.DragHandle() },
   ) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).animateContentSize()) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
       if (useCompactHeader) {
         Row(
           modifier = Modifier.fillMaxWidth(),
@@ -615,7 +613,7 @@ private fun AppPickerSheet(
               verticalArrangement = Arrangement.spacedBy(10.dp),
               horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-              LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+              StableLinearProgressIndicator(visible = true)
               Text(
                 stringResource(R.string.app_picker_loading_apps),
                 style = MaterialTheme.typography.bodySmall,
@@ -628,8 +626,7 @@ private fun AppPickerSheet(
             state = listState,
             modifier = Modifier
               .fillMaxWidth()
-              .heightIn(min = if (isShortHeight) 220.dp else 280.dp, max = if (isShortHeight) 420.dp else 620.dp)
-              .animateContentSize(),
+              .heightIn(min = if (isShortHeight) 220.dp else 280.dp, max = if (isShortHeight) 420.dp else 620.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp),
           ) {
             item(key = "selected_section") {
@@ -669,7 +666,7 @@ private fun AppPickerSheet(
             }
 
             item(key = "all_apps_header") {
-              Column(Modifier.fillMaxWidth().animateContentSize()) {
+              Column(Modifier.fillMaxWidth()) {
                 if (showSelectedSection || selectedApps.isNotEmpty()) {
                   Spacer(Modifier.height(10.dp))
                   Divider(color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f))
@@ -744,7 +741,6 @@ private fun AppPickerRow(
 ) {
   val isOwnApp = app.packageName == ZDTD_APP_PACKAGE_NAME
   Surface(
-    modifier = Modifier.animateContentSize(),
     shape = MaterialTheme.shapes.medium,
     color = when {
       isOwnApp -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = if (selected) 0.56f else 0.44f)

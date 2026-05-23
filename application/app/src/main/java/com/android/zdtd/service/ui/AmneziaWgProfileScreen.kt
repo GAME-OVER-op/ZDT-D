@@ -13,7 +13,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -42,7 +41,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -664,8 +662,7 @@ fun AmneziaWgProfileScreen(
     if (configText.trim().isBlank()) return@LaunchedEffect
     val ok = awaitSaveTextAmneziaWg(actions, "$basePath/config", configText)
     if (ok) {
-      showSnack(context.getString(R.string.amneziawg_config_normalized))
-      reload()
+      syncedConfig = configText
     } else {
       showSnack(context.getString(R.string.save_failed))
     }
@@ -689,8 +686,7 @@ fun AmneziaWgProfileScreen(
     Modifier
       .fillMaxSize()
       .verticalScroll(scroll)
-      .padding(horizontal = if (compact) 12.dp else 16.dp)
-      .animateContentSize(),
+      .padding(horizontal = if (compact) 12.dp else 16.dp),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     Spacer(Modifier.height(effectiveTopContentPadding))
@@ -1013,7 +1009,7 @@ private fun AmneziaWgConfigEditorDialog(
           }
         }
 
-        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+        StableLinearProgressIndicator(visible = loading)
 
         Text(
           stringResource(R.string.amneziawg_config_desc),

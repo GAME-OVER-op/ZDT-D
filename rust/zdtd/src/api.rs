@@ -4993,14 +4993,51 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
         // --- tor enabled/apps/config
         ("GET", ["api", "programs", "tor"]) => {
             let res = (|| -> Result<serde_json::Value> {
-                let enabled = crate::programs::tor::load_enabled_json()?.is_enabled();
-                let apps = crate::programs::tor::read_uid_program_text()?;
-                let setting = crate::programs::tor::load_setting()?;
-                let torrc = crate::programs::tor::read_torrc_text()?;
+                fn tor_loading_json(stage: &str, err: &anyhow::Error) -> serde_json::Value {
+                    json!({
+                        "ok": true,
+                        "ready": false,
+                        "state": "loading",
+                        "retry_after_ms": 300,
+                        "message": format!("Tor state is preparing ({stage}): {err}"),
+                    })
+                }
+
+                if let Err(e) = crate::programs::tor::ensure_layout() {
+                    return Ok(tor_loading_json("layout", &e));
+                }
+
+                let enabled = match crate::programs::tor::load_enabled_json() {
+                    Ok(v) => v.is_enabled(),
+                    Err(e) => return Ok(tor_loading_json("enabled", &e)),
+                };
+                let apps = match crate::programs::tor::read_uid_program_text() {
+                    Ok(v) => v,
+                    Err(e) => return Ok(tor_loading_json("apps", &e)),
+                };
+                let setting = match crate::programs::tor::load_setting() {
+                    Ok(v) => v,
+                    Err(e) => return Ok(tor_loading_json("setting", &e)),
+                };
+                let torrc = match crate::programs::tor::read_torrc_text() {
+                    Ok(v) => v,
+                    Err(e) => return Ok(tor_loading_json("torrc", &e)),
+                };
                 let socks_port = crate::programs::tor::parse_socks_port_from_str(&torrc).ok();
                 let bridges = crate::programs::tor::bridge_count_from_str(&torrc);
                 let active = stats::collect_status().map(|r| r.tor.count > 0).unwrap_or(false);
-                Ok(json!({"ok": true, "enabled": enabled, "apps": apps, "setting": setting, "torrc": torrc, "socks_port": socks_port, "bridge_count": bridges, "active": active}))
+                Ok(json!({
+                    "ok": true,
+                    "ready": true,
+                    "state": "ready",
+                    "enabled": enabled,
+                    "apps": apps,
+                    "setting": setting,
+                    "torrc": torrc,
+                    "socks_port": socks_port,
+                    "bridge_count": bridges,
+                    "active": active,
+                }))
             })();
             match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
         }

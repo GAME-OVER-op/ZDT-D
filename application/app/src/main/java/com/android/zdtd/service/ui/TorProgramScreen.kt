@@ -106,6 +106,9 @@ private const val TOR_BRIDGE_PLUGIN_LINE =
   "ClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules/ZDT-D/bin/lyrebird"
 private const val TOR_BRIDGE_PLUGIN_OLD_LINE =
   "ClientTransportPlugin obfs4 exec /data/adb/modules/ZDT-D/bin/obfs4proxy"
+private const val TOR_STATE_LOAD_MAX_ATTEMPTS = 16
+private const val TOR_STATE_LOAD_DEFAULT_RETRY_MS = 350L
+private const val TOR_STATE_LOAD_MAX_RETRY_MS = 1200L
 
 
 private fun parseTorSocksPort(torrc: String): TorSocksPort? {
@@ -377,7 +380,7 @@ fun TorSection(
   fun syncFromState(state: TorProgramStateUi) {
     enabled = state.enabled
     active = state.active
-    appsInitialContent = state.apps.ifBlank { appsInitialContent }
+    appsInitialContent = state.apps
     torrcText = state.torrc
     torrcSaved = state.torrc
     t2sDirty = false
@@ -401,14 +404,46 @@ fun TorSection(
 
   fun refresh() {
     loading = true
-    actions.loadJsonData("/api/programs/tor") { obj ->
-      if (obj != null) {
-        syncFromState(parseTorProgramStateUi(obj))
-      } else {
-        showSnack(context.getString(R.string.load_failed))
+
+    fun retryDelayMs(obj: JSONObject?, attempt: Int): Long {
+      val apiDelay = obj?.optLong("retry_after_ms", 0L)?.takeIf { it in 1L..TOR_STATE_LOAD_MAX_RETRY_MS }
+      if (apiDelay != null) return apiDelay
+      return when (attempt) {
+        1 -> 0L
+        2 -> 250L
+        3 -> 450L
+        4 -> 700L
+        else -> TOR_STATE_LOAD_DEFAULT_RETRY_MS.coerceAtMost(TOR_STATE_LOAD_MAX_RETRY_MS)
       }
-      loading = false
     }
+
+    fun isTorStateReady(obj: JSONObject): Boolean {
+      if (obj.optBoolean("ready", true) == false) return false
+      val state = obj.optString("state", "ready").trim().lowercase()
+      return state.isEmpty() || state == "ready" || state == "ok"
+    }
+
+    fun requestTorState(attempt: Int) {
+      actions.loadJsonData("/api/programs/tor") { obj ->
+        if (obj != null && isTorStateReady(obj)) {
+          syncFromState(parseTorProgramStateUi(obj))
+          loading = false
+          return@loadJsonData
+        }
+
+        if (attempt < TOR_STATE_LOAD_MAX_ATTEMPTS) {
+          scope.launch {
+            delay(retryDelayMs(obj, attempt))
+            requestTorState(attempt + 1)
+          }
+        } else {
+          loading = false
+          showSnack(context.getString(R.string.load_failed))
+        }
+      }
+    }
+
+    requestTorState(attempt = 1)
   }
 
   LaunchedEffect(Unit) { refresh() }

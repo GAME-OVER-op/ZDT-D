@@ -1302,32 +1302,38 @@ private fun MainShell(
           contentColor = MaterialTheme.colorScheme.onBackground,
           contentWindowInsets = WindowInsets(0, 0, 0, 0),
         ) { padding ->
-          Column(
+          Box(
             Modifier
               .fillMaxSize()
               .padding(padding),
           ) {
-            AppUpdateBanner(
-              state = appUpdate,
-              onDismiss = actions::dismissAppUpdateBanner,
-              onUpdate = {
-                if (appUpdate.downloading) actions.cancelAppUpdateDownload() else actions.startAppUpdateDownload()
-              },
+            TabBody(
+              tab = tab,
+              uiStateFlow = uiStateFlow,
+              appsRoute = appsRoute,
+              onOpenProgram = { appsRoute = AppsRoute.Program(it) },
+              onOpenProfile = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) },
+              onOpenAnalysisTools = { appsRoute = AppsRoute.AnalysisTools },
+              onOpenDpiDetector = { appsRoute = AppsRoute.DpiDetector },
+              actions = actions,
+              snackHost = snackHost,
+              landscapeControl = false,
+              topContentPadding = floatingTopBarReserve,
+              bottomContentPadding = floatingBottomBarReserve + 18.dp,
             )
-            Box(Modifier.fillMaxSize()) {
-              TabBody(
-                tab = tab,
-                uiStateFlow = uiStateFlow,
-                appsRoute = appsRoute,
-                onOpenProgram = { appsRoute = AppsRoute.Program(it) },
-                onOpenProfile = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) },
-                onOpenAnalysisTools = { appsRoute = AppsRoute.AnalysisTools },
-                onOpenDpiDetector = { appsRoute = AppsRoute.DpiDetector },
-                actions = actions,
-                snackHost = snackHost,
-                landscapeControl = false,
-                topContentPadding = floatingTopBarReserve,
-                bottomContentPadding = floatingBottomBarReserve + 18.dp,
+
+            Box(
+              modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = floatingTopBarReserve)
+                .zIndex(1.5f),
+            ) {
+              AppUpdateBanner(
+                state = appUpdate,
+                onDismiss = actions::dismissAppUpdateBanner,
+                onUpdate = {
+                  if (appUpdate.downloading) actions.cancelAppUpdateDownload() else actions.startAppUpdateDownload()
+                },
               )
             }
           }

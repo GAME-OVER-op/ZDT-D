@@ -64,6 +64,7 @@ fun AppsListScreen(
   programs: List<ApiModels.Program>,
   daemonOnline: Boolean,
   onOpenProgram: (String) -> Unit,
+  onOpenAnalysisTools: () -> Unit,
   listState: LazyListState,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
@@ -133,6 +134,7 @@ fun AppsListScreen(
         query = query,
         onQueryChange = { query = it },
         onClearQuery = { query = "" },
+        onOpenAnalysisTools = onOpenAnalysisTools,
       )
     }
 
@@ -257,6 +259,7 @@ private fun ProgramsHeaderCard(
   query: String,
   onQueryChange: (String) -> Unit,
   onClearQuery: () -> Unit,
+  onOpenAnalysisTools: () -> Unit,
 ) {
   Column(
     modifier = Modifier
@@ -276,6 +279,7 @@ private fun ProgramsHeaderCard(
       query = query,
       onQueryChange = onQueryChange,
       onClearQuery = onClearQuery,
+      onOpenAnalysisTools = onOpenAnalysisTools,
     )
   }
 }
@@ -285,6 +289,7 @@ private fun SearchGlassCard(
   query: String,
   onQueryChange: (String) -> Unit,
   onClearQuery: () -> Unit,
+  onOpenAnalysisTools: () -> Unit,
 ) {
   val shape = RoundedCornerShape(16.dp)
   OutlinedTextField(
@@ -316,10 +321,10 @@ private fun SearchGlassCard(
             .width(1.dp)
             .background(MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)),
         )
-        IconButton(onClick = {}) {
+        IconButton(onClick = onOpenAnalysisTools) {
           Icon(
             Icons.Outlined.Tune,
-            contentDescription = null,
+            contentDescription = stringResource(R.string.analysis_tools_title),
             modifier = Modifier.size(19.dp),
             tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
           )

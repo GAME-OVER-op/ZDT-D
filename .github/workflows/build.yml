@@ -231,8 +231,8 @@ jobs:
           echo "should_build=$should_build"
           echo "reason=$reason"
 
-  build_zdtd:
-    name: Compile zdtd daemon
+  build_rust_binaries:
+    name: Build Rust binaries
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -292,16 +292,16 @@ jobs:
           ar = "$ANDROID_AR"
           EOF2
 
-      - name: Cache Cargo registry & zdtd build
+      - name: Cache Cargo registry and Rust target
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: cargo-zdtd-aarch64-linux-android-${{ hashFiles('rust/**/Cargo.lock') }}
+          key: cargo-rust-binaries-aarch64-linux-android-${{ hashFiles('rust/**/Cargo.lock') }}
           restore-keys: |
-            cargo-zdtd-aarch64-linux-android-
+            cargo-rust-binaries-aarch64-linux-android-
             cargo-aarch64-linux-android-
 
       - name: Verify Android Rust cross toolchain
@@ -314,8 +314,7 @@ jobs:
           cargo -V
           rustc -V
 
-      - name: Build zdtd
-        working-directory: rust/zdtd
+      - name: Build all Rust binaries
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
           RUSTUP_HOME: ""
@@ -323,114 +322,29 @@ jobs:
           RUSTFLAGS: ""
           CARGO_ENCODED_RUSTFLAGS: ""
           RUSTC_WRAPPER: ""
-        run: cargo build --profile ${{ env.CARGO_PROFILE }} --target ${{ env.CARGO_BUILD_TARGET }}
-
-      - name: Upload zdtd binary
-        uses: actions/upload-artifact@v7
-        with:
-          name: zdtd-daemon
-          path: rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}/zdtd
-          retention-days: 1
-
-  build_t2s:
-    name: Compile t2s proxy
-    runs-on: ubuntu-latest
-    needs: build_gate
-    if: needs.build_gate.outputs.should_build == 'true'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-linux-android
-
-      - name: Install Android NDK cross-linker
         run: |
           set -euo pipefail
-          NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
-          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
-          if [[ ! -d "$NDK_ROOT" ]]; then
-            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
-            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
-          fi
-          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          ANDROID_CC="$NDK_BIN/aarch64-linux-android21-clang"
-          ANDROID_CXX="$NDK_BIN/aarch64-linux-android21-clang++"
-          ANDROID_AR="$NDK_BIN/llvm-ar"
-          ANDROID_RANLIB="$NDK_BIN/llvm-ranlib"
+          cargo build --manifest-path rust/zdtd/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
+          cargo build --manifest-path rust/T2s/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
+          cargo build --manifest-path rust/dpi-detector/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
 
-          test -x "$ANDROID_CC" || { echo "::error::Android C compiler not found: $ANDROID_CC"; exit 1; }
-          test -x "$ANDROID_CXX" || { echo "::error::Android C++ compiler not found: $ANDROID_CXX"; exit 1; }
-          test -x "$ANDROID_AR" || { echo "::error::Android archiver not found: $ANDROID_AR"; exit 1; }
-          test -x "$ANDROID_RANLIB" || { echo "::error::Android ranlib not found: $ANDROID_RANLIB"; exit 1; }
-
-          {
-            echo "NDK_ROOT=$NDK_ROOT"
-            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
-            echo "ANDROID_NDK_HOME=$NDK_ROOT"
-            echo "PATH=$NDK_BIN:$PATH"
-            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_CC"
-            echo "CC_aarch64_linux_android=$ANDROID_CC"
-            echo "CXX_aarch64_linux_android=$ANDROID_CXX"
-            echo "AR_aarch64_linux_android=$ANDROID_AR"
-            echo "RANLIB_aarch64_linux_android=$ANDROID_RANLIB"
-          } >> "$GITHUB_ENV"
-
-          mkdir -p ~/.cargo
-          cat >> ~/.cargo/config.toml <<EOF2
-          [target.aarch64-linux-android]
-          linker = "$ANDROID_CC"
-          ar = "$ANDROID_AR"
-          EOF2
-
-      - name: Cache Cargo registry & t2s build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            rust/target
-          key: cargo-t2s-aarch64-linux-android-${{ hashFiles('rust/**/Cargo.lock') }}
-          restore-keys: |
-            cargo-t2s-aarch64-linux-android-
-            cargo-aarch64-linux-android-
-
-      - name: Verify Android Rust cross toolchain
+      - name: Collect Rust binaries
         run: |
           set -euo pipefail
-          echo "NDK_ROOT=$NDK_ROOT"
-          "$CC_aarch64_linux_android" --version | head -1
-          "$AR_aarch64_linux_android" --version | head -1
-          rustc --print target-list | grep -qx '${{ env.CARGO_BUILD_TARGET }}'
-          cargo -V
-          rustc -V
+          SRC="rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}"
+          DST="out/artifacts/rust"
+          mkdir -p "$DST"
+          cp -f "$SRC/zdtd" "$DST/zdtd"
+          cp -f "$SRC/t2s" "$DST/t2s"
+          cp -f "$SRC/dpi-detector" "$DST/dpi-detector"
+          chmod 755 "$DST/zdtd" "$DST/t2s" "$DST/dpi-detector"
+          ls -lh "$DST"
 
-      - name: Build t2s
-        working-directory: rust/T2s
-        env:
-          CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
-          RUSTUP_HOME: ""
-          RUSTUP_TOOLCHAIN: ""
-          RUSTFLAGS: ""
-          CARGO_ENCODED_RUSTFLAGS: ""
-          RUSTC_WRAPPER: ""
-        run: cargo build --profile ${{ env.CARGO_PROFILE }} --target ${{ env.CARGO_BUILD_TARGET }}
-
-      - name: Upload t2s binary
+      - name: Upload Rust binaries
         uses: actions/upload-artifact@v7
         with:
-          name: t2s-proxy
-          path: rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}/t2s
+          name: zdt-rust-binaries
+          path: out/artifacts/rust/
           retention-days: 1
 
   build_zygisk:
@@ -493,10 +407,9 @@ jobs:
     name: Pack ZDT-D module
     runs-on: ubuntu-latest
     needs:
-      - build_zdtd
-      - build_t2s
+      - build_rust_binaries
       - build_zygisk
-    if: needs.build_zdtd.result == 'success' && needs.build_t2s.result == 'success' && needs.build_zygisk.result == 'success'
+    if: needs.build_rust_binaries.result == 'success' && needs.build_zygisk.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -504,17 +417,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download zdtd binary
+      - name: Download Rust binaries
         uses: actions/download-artifact@v7
         with:
-          name: zdtd-daemon
-          path: out/artifacts/zdtd
-
-      - name: Download t2s binary
-        uses: actions/download-artifact@v7
-        with:
-          name: t2s-proxy
-          path: out/artifacts/t2s
+          name: zdt-rust-binaries
+          path: out/artifacts/rust
 
       - name: Download Zygisk binary
         uses: actions/download-artifact@v7
@@ -542,8 +449,8 @@ jobs:
           MODULE_BUILD_DIR="out/module_build/module_root"
           MODULE_ZIP="out/module/zdt_module.zip"
           PREBUILT="prebuilt/bin/arm64-v8a"
-          ZDTD_BIN="out/artifacts/zdtd/zdtd"
-          T2S_BIN="out/artifacts/t2s/t2s"
+          ZDTD_BIN="out/artifacts/rust/zdtd"
+          T2S_BIN="out/artifacts/rust/t2s"
           ZYGISK_SO="out/zygisk/arm64-v8a.so"
 
           test -s "$ZDTD_BIN" || { echo "::error::zdtd artifact missing: $ZDTD_BIN"; exit 1; }
@@ -565,7 +472,6 @@ jobs:
 
           cp -f "$ZDTD_BIN" "$MODULE_BUILD_DIR/bin/zdtd" && chmod 755 "$MODULE_BUILD_DIR/bin/zdtd"
           cp -f "$T2S_BIN"  "$MODULE_BUILD_DIR/bin/t2s"  && chmod 755 "$MODULE_BUILD_DIR/bin/t2s"
-
           for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg; do
             cp -f "$PREBUILT/$bin" "$MODULE_BUILD_DIR/bin/$bin" && chmod 755 "$MODULE_BUILD_DIR/bin/$bin"
           done
@@ -576,6 +482,10 @@ jobs:
 
           ZIP_ENTRIES="$(unzip -Z1 "$MODULE_ZIP" 2>/dev/null)" || { echo "::error::Unable to read module zip"; exit 1; }
           printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'zygisk/arm64-v8a.so' >/dev/null || { echo "::error::Zygisk binary missing in module zip"; exit 1; }
+          if printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'bin/dpi-detector' >/dev/null; then
+            echo "::error::dpi-detector must not be packed into module zip; it belongs to APK assets"
+            exit 1
+          fi
           if printf '%s\n' "$ZIP_ENTRIES" | grep -E '(^|/)(unloaded|\.gitkeep)$' >/dev/null; then
             echo "::error::unloaded or .gitkeep leaked into module zip"
             exit 1
@@ -593,8 +503,10 @@ jobs:
   build_apk:
     name: Build Android application
     runs-on: ubuntu-latest
-    needs: pack_module
-    if: needs.pack_module.result == 'success'
+    needs:
+      - pack_module
+      - build_rust_binaries
+    if: needs.pack_module.result == 'success' && needs.build_rust_binaries.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -630,6 +542,12 @@ jobs:
         with:
           name: zdt-module-zip
           path: out/module
+
+      - name: Download Rust binaries
+        uses: actions/download-artifact@v7
+        with:
+          name: zdt-rust-binaries
+          path: out/artifacts/rust
 
       - name: Locate Android project root
         run: |
@@ -682,6 +600,17 @@ jobs:
             echo "keyPassword=$ZDT_KEY_PASSWORD"
           } > "$GRADLE_PROJECT_DIR/keystore.properties"
 
+      - name: Prepare dpi-detector APK asset
+        run: |
+          set -euo pipefail
+          SRC="out/artifacts/rust/dpi-detector"
+          DST="application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector"
+          test -s "$SRC" || { echo "::error::dpi-detector artifact missing: $SRC"; exit 1; }
+          mkdir -p "$(dirname "$DST")"
+          cp -f "$SRC" "$DST"
+          chmod 755 "$DST"
+          ls -lh "$DST"
+
       - name: Build APK assemble${{ env.BUILD_TYPE }}
         working-directory: ${{ env.GRADLE_PROJECT_DIR }}
         env:
@@ -708,6 +637,7 @@ jobs:
             printf '%s\n' "$APK_ENTRIES" | head -80 || true
             exit 1
           fi
+          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/dpi-detector/arm64-v8a/dpi-detector' >/dev/null || { echo "::error::dpi-detector APK asset missing"; exit 1; }
 
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${{ env.ANDROID_BUILD_TOOLS_VERSION }}/apksigner"
           [[ -x "$APKSIGNER" ]] || { echo "::error::apksigner not found: $APKSIGNER"; exit 1; }

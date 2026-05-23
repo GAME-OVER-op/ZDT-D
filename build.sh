@@ -12,6 +12,8 @@ OUT_DIR="$ROOT_DIR/out"
 MODULE_BUILD_DIR="$OUT_DIR/module_build"
 MODULE_ROOT_DIR="$MODULE_BUILD_DIR/module_root"
 MODULE_ZIP="$OUT_DIR/module/zdt_module.zip"
+DPI_DETECTOR_APK_ASSET_DIR="$APP_MODULE_DIR/build/generated/zdt-assets/main/dpi-detector/arm64-v8a"
+DPI_DETECTOR_APK_ASSET="$DPI_DETECTOR_APK_ASSET_DIR/dpi-detector"
 APK_OUT_DIR="$OUT_DIR/apk"
 DIST_DIR="$OUT_DIR/dist"
 TOOLS_DIR="$ROOT_DIR/.tools"
@@ -70,13 +72,14 @@ DASHBOARD_REFRESH_INTERVAL="${DASHBOARD_REFRESH_INTERVAL:-0.25}"
 declare -a DASHBOARD_LAST_LINES=()
 DASHBOARD_REFRESH_INTERVAL="${DASHBOARD_REFRESH_INTERVAL:-0.25}"
 declare -a DASHBOARD_LAST_LINES=()
-STAGE_KEYS=(env keystore rustcheck zdtd t2s extbin zygisk modulezip assets android apk final)
+STAGE_KEYS=(env keystore rustcheck zdtd t2s dpidetector extbin zygisk modulezip assets android apk final)
 STAGE_NAMES=(
   "Environment checks"
   "Keystore check"
   "Rust toolchain check"
   "Build zdtd"
   "Build t2s"
+  "Build dpi-detector"
   "External binaries"
   "Build Zygisk"
   "Package module zip"
@@ -1160,6 +1163,15 @@ run_cargo_stage() {
   chmod 755 "$MODULE_ROOT_DIR/bin/$bin_name"
 }
 
+run_cargo_app_asset_stage() {
+  local key="$1" title="$2" crate_dir="$3" bin_name="$4" triple="$5" dest_bin="$6"
+  run_cargo_stage "$key" "$title" "$crate_dir" "$bin_name" "$triple"
+  rm -f "$MODULE_ROOT_DIR/bin/$bin_name"
+  mkdir -p "$(dirname "$dest_bin")"
+  cp -f "$(cargo_out_dir "$triple" "$CARGO_PROFILE")/$bin_name" "$dest_bin"
+  chmod 755 "$dest_bin"
+}
+
 run_gradle_stage() {
   local key="$1" title="$2" gradle_cmd="$3" java_home="$4" workers="$5" aapt2_override="$6"
   local total progress tasks_done log_file fifo cmd_status=0 parser_pid=0 runner_pid=0
@@ -1304,21 +1316,33 @@ package_module_zip() {
 validate_module_zip() {
   [[ -f "$MODULE_ZIP" ]] || fail "Не найден модульный zip: $MODULE_ZIP"
   unzip -l "$MODULE_ZIP" | grep -q 'zygisk/arm64-v8a.so' || fail 'В module zip отсутствует zygisk/arm64-v8a.so'
+  if unzip -l "$MODULE_ZIP" | grep -q 'bin/dpi-detector'; then
+    fail 'dpi-detector не должен попадать в module zip: он упаковывается в APK assets'
+  fi
   if unzip -l "$MODULE_ZIP" | grep -qE '(^|/)(unloaded|\.gitkeep)$'; then
     fail 'В module zip попал служебный файл unloaded или .gitkeep'
   fi
 }
 
-prepare_module_root() {
+build_rust_outputs() {
   local triple
   triple="$(resolve_target)"
+
+  # Build every Rust component first. Only zdtd/t2s are copied into the
+  # Magisk module; dpi-detector is copied into generated APK assets.
+  run_cargo_stage zdtd 'Build Rust: zdtd daemon' "$RUST_DIR/zdtd" 'zdtd' "$triple"
+  run_cargo_stage t2s 'Build Rust: t2s proxy' "$RUST_DIR/T2s" 't2s' "$triple"
+  run_cargo_app_asset_stage dpidetector 'Build Rust: dpi-detector APK asset' "$RUST_DIR/dpi-detector" 'dpi-detector' "$triple" "$DPI_DETECTOR_APK_ASSET"
+  [[ -s "$DPI_DETECTOR_APK_ASSET" ]] || fail "Не создан APK asset dpi-detector: $DPI_DETECTOR_APK_ASSET"
+}
+
+prepare_module_root() {
   dashboard_init
   run_simple_stage env 'Environment checks' ensure_termux_build_prereqs
   run_simple_stage keystore 'Keystore check' ensure_debug_keystore
   run_simple_stage rustcheck 'Rust toolchain check' ensure_rust_stdlib_ready
   prepare_module_tree_base
-  run_cargo_stage zdtd 'Build zdtd' "$RUST_DIR/zdtd" 'zdtd' "$triple"
-  run_cargo_stage t2s 'Build t2s' "$RUST_DIR/T2s" 't2s' "$triple"
+  build_rust_outputs
   run_simple_stage extbin 'External binaries' check_and_copy_external_bins
   run_simple_stage zygisk 'Build Zygisk' build_zygisk_module
   run_simple_stage modulezip 'Package module zip' package_module_zip
@@ -1338,6 +1362,7 @@ validate_apk_artifacts() {
   local apk_path dist_apk
   apk_path="$(find "$APP_DIR/app/build/outputs/apk" -type f -name '*.apk' | sort | tail -n 1 || true)"
   [[ -n "$apk_path" ]] || fail 'APK не найден после сборки'
+  unzip -Z1 "$apk_path" | grep -Fx 'assets/dpi-detector/arm64-v8a/dpi-detector' >/dev/null || fail 'В APK отсутствует assets/dpi-detector/arm64-v8a/dpi-detector'
   mkdir -p "$APK_OUT_DIR" "$DIST_DIR"
   dist_apk="$APK_OUT_DIR/app-release.apk"
   cp -f "$apk_path" "$dist_apk"
@@ -1371,6 +1396,7 @@ build_apk() {
 clean_all() {
   rm -rf "$OUT_DIR" "$APP_DIR/app/build" "$APP_DIR/build" "$RUST_DIR/target"
   rm -rf "$APP_DIR/app/build/generated/zdt-assets" "$TOOLS_DIR/cargo-home"
+  rm -rf "$DPI_DETECTOR_APK_ASSET_DIR"
   rm -rf "$ZYGISK_DIR/out" "$ZYGISK_DIR/build" "$ZYGISK_DIR/.cxx"
   rm -f "$MODULE_TEMPLATE_DIR/zygisk/arm64-v8a.so" "$MODULE_TEMPLATE_DIR/zygisk/unloaded"
   rm -f "$MODULE_TEMPLATE_DIR"/working_folder/zygisk_status_*.json

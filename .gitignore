@@ -53,3 +53,8 @@
 /module_template/zygisk/unloaded
 /module_template/working_folder/proxyInfo/enabled.json
 /module_template/working_folder/vpn_netd/applied.json
+
+# Generated DPI detector helper binaries bundled into the APK
+/application/app/src/main/assets/dpi-detector/
+/application/app/src/main/jniLibs/arm64-v8a/dpi-detector
+/application/app/src/main/jniLibs/arm64-v8a/libdpi_detector.so

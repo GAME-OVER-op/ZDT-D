@@ -36,6 +36,8 @@ fun AppsHost(
   route: AppsRoute,
   onOpenProgram: (String) -> Unit,
   onOpenProfile: (String, String) -> Unit,
+  onOpenAnalysisTools: () -> Unit,
+  onOpenDpiDetector: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   topContentPadding: Dp = 0.dp,
@@ -53,6 +55,8 @@ fun AppsHost(
 
   fun AppsRoute.depth(): Int = when (this) {
     AppsRoute.List -> 0
+    AppsRoute.AnalysisTools -> 1
+    AppsRoute.DpiDetector -> 2
     is AppsRoute.Program -> 1
     is AppsRoute.Profile -> 2
   }
@@ -78,7 +82,17 @@ fun AppsHost(
         programs = programs,
         daemonOnline = daemonOnline,
         onOpenProgram = onOpenProgram,
+        onOpenAnalysisTools = onOpenAnalysisTools,
         listState = listState,
+        topContentPadding = topContentPadding,
+        bottomContentPadding = bottomContentPadding,
+      )
+      AppsRoute.AnalysisTools -> AnalysisToolsScreen(
+        onOpenDpiDetector = onOpenDpiDetector,
+        topContentPadding = topContentPadding,
+        bottomContentPadding = bottomContentPadding,
+      )
+      AppsRoute.DpiDetector -> DpiDetectorScreen(
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
       )

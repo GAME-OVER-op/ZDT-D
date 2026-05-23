@@ -708,6 +708,14 @@ private fun UpdatePromptDialog(setup: SetupUiState, onUpdate: () -> Unit, onSkip
 
 
 
+private fun parentAppsRoute(route: AppsRoute): AppsRoute = when (route) {
+  AppsRoute.List -> AppsRoute.List
+  AppsRoute.AnalysisTools -> AppsRoute.List
+  AppsRoute.DpiDetector -> AppsRoute.AnalysisTools
+  is AppsRoute.Program -> AppsRoute.List
+  is AppsRoute.Profile -> AppsRoute.Program(route.programId)
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainShell(
@@ -778,11 +786,7 @@ private fun MainShell(
     when (tab) {
       Tab.APPS -> {
         if (appsRoute != AppsRoute.List) {
-          appsRoute = when (val r = appsRoute) {
-            is AppsRoute.Profile -> AppsRoute.Program(r.programId)
-            is AppsRoute.Program -> AppsRoute.List
-            AppsRoute.List -> AppsRoute.List
-          }
+          appsRoute = parentAppsRoute(appsRoute)
         } else {
           tab = Tab.HOME
         }
@@ -1192,6 +1196,8 @@ private fun MainShell(
     tab == Tab.STATS -> stringResource(R.string.nav_stats)
     tab == Tab.SUPPORT -> stringResource(R.string.nav_support)
     tab == Tab.APPS && appsRoute == AppsRoute.List -> stringResource(R.string.nav_programs)
+    tab == Tab.APPS && appsRoute == AppsRoute.AnalysisTools -> stringResource(R.string.analysis_tools_title)
+    tab == Tab.APPS && appsRoute == AppsRoute.DpiDetector -> stringResource(R.string.dpi_detector_title)
     tab == Tab.APPS && appsRoute is AppsRoute.Program -> {
       val route = appsRoute as AppsRoute.Program
       uiState.programs.firstOrNull { it.id == route.programId }?.name ?: route.programId
@@ -1210,6 +1216,8 @@ private fun MainShell(
     } else {
       when (val route = appsRoute) {
         AppsRoute.List -> null
+        AppsRoute.AnalysisTools -> null
+        AppsRoute.DpiDetector -> null
         is AppsRoute.Program -> {
           val program = uiState.programs.firstOrNull { it.id == route.programId }
           if (program != null && !isProfileProgramType(program.type) && supportsProgramLogs(route.programId, profile = null)) {
@@ -1281,11 +1289,7 @@ private fun MainShell(
           title = title,
           canGoBack = canGoBack,
           onBack = {
-            appsRoute = when (val r = appsRoute) {
-              is AppsRoute.Profile -> AppsRoute.Program(r.programId)
-              is AppsRoute.Program -> AppsRoute.List
-              AppsRoute.List -> AppsRoute.List
-            }
+            appsRoute = parentAppsRoute(appsRoute)
           },
           onTitleClick = { if (tab == Tab.HOME) showWorldMapPrompt = true },
           homeTabLabel = homeTabLabel,
@@ -1310,6 +1314,8 @@ private fun MainShell(
           appsRoute = appsRoute,
           onOpenProgram = { appsRoute = AppsRoute.Program(it) },
           onOpenProfile = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) },
+          onOpenAnalysisTools = { appsRoute = AppsRoute.AnalysisTools },
+          onOpenDpiDetector = { appsRoute = AppsRoute.DpiDetector },
           actions = actions,
           snackHost = snackHost,
         )
@@ -1339,6 +1345,8 @@ private fun MainShell(
                 appsRoute = appsRoute,
                 onOpenProgram = { appsRoute = AppsRoute.Program(it) },
                 onOpenProfile = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) },
+                onOpenAnalysisTools = { appsRoute = AppsRoute.AnalysisTools },
+                onOpenDpiDetector = { appsRoute = AppsRoute.DpiDetector },
                 actions = actions,
                 snackHost = snackHost,
                 landscapeControl = false,
@@ -1356,11 +1364,7 @@ private fun MainShell(
           title = title,
           canGoBack = canGoBack,
           onBack = {
-            appsRoute = when (val r = appsRoute) {
-              is AppsRoute.Profile -> AppsRoute.Program(r.programId)
-              is AppsRoute.Program -> AppsRoute.List
-              AppsRoute.List -> AppsRoute.List
-            }
+            appsRoute = parentAppsRoute(appsRoute)
           },
           isHome = tab == Tab.HOME,
           onTitleClick = { if (tab == Tab.HOME) showWorldMapPrompt = true },
@@ -1438,6 +1442,8 @@ private fun LandscapeShellContent(
   appsRoute: AppsRoute,
   onOpenProgram: (String) -> Unit,
   onOpenProfile: (String, String) -> Unit,
+  onOpenAnalysisTools: () -> Unit,
+  onOpenDpiDetector: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
@@ -1472,6 +1478,8 @@ private fun LandscapeShellContent(
           appsRoute = appsRoute,
           onOpenProgram = onOpenProgram,
           onOpenProfile = onOpenProfile,
+          onOpenAnalysisTools = onOpenAnalysisTools,
+          onOpenDpiDetector = onOpenDpiDetector,
           actions = actions,
           snackHost = snackHost,
           landscapeControl = true,
@@ -2227,6 +2235,8 @@ private fun TabBody(
   appsRoute: AppsRoute,
   onOpenProgram: (String) -> Unit,
   onOpenProfile: (String, String) -> Unit,
+  onOpenAnalysisTools: () -> Unit,
+  onOpenDpiDetector: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   landscapeControl: Boolean = false,
@@ -2263,6 +2273,8 @@ private fun TabBody(
             route = appsRoute,
             onOpenProgram = onOpenProgram,
             onOpenProfile = onOpenProfile,
+            onOpenAnalysisTools = onOpenAnalysisTools,
+            onOpenDpiDetector = onOpenDpiDetector,
             actions = actions,
             snackHost = snackHost,
             topContentPadding = topContentPadding,

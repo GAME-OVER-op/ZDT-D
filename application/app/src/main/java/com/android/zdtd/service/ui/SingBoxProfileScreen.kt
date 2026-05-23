@@ -88,7 +88,47 @@ import java.net.URLEncoder
 
 private const val SINGBOX_MODE_T2S = "t2s"
 private const val SINGBOX_MODE_VPN = "vpn"
-private const val SINGBOX_VPN_DEFAULT_TUN_ADDRESS = "172.31.240.1/30"
+
+private val SINGBOX_TUN2SOCKS_LOG_LEVELS = listOf("trace", "debug", "info", "warn", "error", "silent")
+
+private fun normalizeSingBoxMode(raw: String?): String {
+  return when (raw?.trim()?.lowercase()) {
+    SINGBOX_MODE_VPN, "tun2socks", "t2s-vpn", "t2s_vpn" -> SINGBOX_MODE_VPN
+    else -> SINGBOX_MODE_T2S
+  }
+}
+
+private fun isSingBoxIpv4(value: String): Boolean {
+  val parts = value.trim().split('.')
+  return parts.size == 4 && parts.all { part ->
+    part.isNotBlank() && part.length <= 3 && part.all(Char::isDigit) && (part.toIntOrNull() ?: -1) in 0..255
+  }
+}
+
+private fun normalizeSingBoxDns(values: List<String>): List<String> = values
+  .map { it.trim() }
+  .filter { it.isNotBlank() && isSingBoxIpv4(it) }
+  .distinct()
+  .ifEmpty { listOf("8.8.8.8") }
+
+private fun normalizeSingBoxTunName(value: String?): String {
+  val cleaned = value
+    ?.trim()
+    ?.filter { it.isLetterOrDigit() || it == '_' }
+    ?.take(15)
+    .orEmpty()
+  if (cleaned.isBlank()) return "sbtun0"
+  val lower = cleaned.lowercase()
+  return when (lower) {
+    "wlan0", "rmnet0", "eth0", "lo", "tunl0" -> "sbtun0"
+    else -> cleaned
+  }
+}
+
+private fun normalizeSingBoxTun2socksLogLevel(value: String?): String {
+  val normalized = value?.trim()?.lowercase().orEmpty()
+  return if (normalized in SINGBOX_TUN2SOCKS_LOG_LEVELS) normalized else "info"
+}
 
 private data class SingBoxProfileSettingUi(
   val mode: String = SINGBOX_MODE_T2S,
@@ -96,9 +136,10 @@ private data class SingBoxProfileSettingUi(
   val t2sWebPort: Int? = 8001,
   val tun: String = "sbtun0",
   val dns: List<String> = listOf("8.8.8.8"),
+  val tun2socksLogLevel: String = "info",
 ) {
-  val isVpn: Boolean get() = false
-  val isT2s: Boolean get() = true
+  val isVpn: Boolean get() = mode == SINGBOX_MODE_VPN
+  val isT2s: Boolean get() = mode != SINGBOX_MODE_VPN
 }
 
 private fun defaultSingBoxProfileSettingUi(): SingBoxProfileSettingUi = SingBoxProfileSettingUi()
@@ -123,7 +164,7 @@ private data class SingBoxPortRegistry(
 )
 
 private fun parseSingBoxProfileSettingUi(obj: JSONObject?): SingBoxProfileSettingUi {
-  val dns = buildList<String> {
+  val rawDns = buildList<String> {
     val arr = obj?.optJSONArray("dns")
     if (arr != null) {
       for (i in 0 until arr.length()) {
@@ -137,20 +178,26 @@ private fun parseSingBoxProfileSettingUi(obj: JSONObject?): SingBoxProfileSettin
         ?.filter { it.isNotBlank() }
         ?.let { addAll(it) }
     }
-  }.ifEmpty { listOf("8.8.8.8") }
+  }
 
   return SingBoxProfileSettingUi(
+    mode = normalizeSingBoxMode(obj?.optString("mode", SINGBOX_MODE_T2S)),
     t2sPort = obj?.optInt("t2s_port", 0)?.takeIf { it in 1..65535 } ?: 12345,
     t2sWebPort = obj?.optInt("t2s_web_port", 0)?.takeIf { it in 1..65535 } ?: 8001,
-    tun = obj?.optString("tun", "sbtun0")?.trim()?.ifBlank { "sbtun0" } ?: "sbtun0",
-    dns = dns,
+    tun = normalizeSingBoxTunName(obj?.optString("tun", "sbtun0")),
+    dns = normalizeSingBoxDns(rawDns),
+    tun2socksLogLevel = normalizeSingBoxTun2socksLogLevel(obj?.optString("tun2socks_loglevel", "info")),
   )
 }
 
 private fun SingBoxProfileSettingUi.toJson(): JSONObject {
   return JSONObject()
+    .put("mode", normalizeSingBoxMode(mode))
     .put("t2s_port", t2sPort ?: 12345)
     .put("t2s_web_port", t2sWebPort ?: 8001)
+    .put("tun", normalizeSingBoxTunName(tun))
+    .put("dns", JSONArray().also { arr -> normalizeSingBoxDns(dns).forEach { arr.put(it) } })
+    .put("tun2socks_loglevel", normalizeSingBoxTun2socksLogLevel(tun2socksLogLevel))
 }
 
 private fun singBoxWebPanelUrl(port: Int): String = "http://127.0.0.1:$port/"
@@ -328,12 +375,9 @@ private fun SingBoxWebPanelCard(
 }
 
 
-private fun parseDnsText(text: String): List<String> = text
-  .split(',', '\n', ';', ' ')
-  .map { it.trim() }
-  .filter { it.isNotBlank() }
-  .distinct()
-  .ifEmpty { listOf("8.8.8.8") }
+private fun parseDnsText(text: String): List<String> = normalizeSingBoxDns(
+  text.split(',', '\n', ';', ' ').map { it.trim() }
+)
 
 private fun parseSingBoxServersUi(obj: JSONObject?): List<SingBoxServerUi> {
   val arr = obj?.optJSONArray("servers") ?: JSONArray()
@@ -407,33 +451,10 @@ private fun rewriteSingBoxConfigInboundsForT2s(configText: String, port: Int, se
   return root.toString(2)
 }
 
-private fun extractSingBoxTunFromConfig(configText: String, fallback: String): String {
-  val root = runCatching { JSONObject(configText) }.getOrNull() ?: return fallback.trim().ifBlank { "sbtun0" }
-  val inbounds = root.optJSONArray("inbounds") ?: return fallback.trim().ifBlank { "sbtun0" }
-  for (i in 0 until inbounds.length()) {
-    val inbound = inbounds.optJSONObject(i) ?: continue
-    if (!inbound.optString("type", "").equals("tun", ignoreCase = true)) continue
-    val name = inbound.optString("interface_name", "").trim()
-    if (name.isNotBlank()) return name.take(15)
-  }
-  return fallback.trim().ifBlank { "sbtun0" }
-}
-
-private fun rewriteSingBoxConfigInboundsForVpn(configText: String, setting: SingBoxProfileSettingUi): String? {
-  val root = runCatching { JSONObject(configText) }.getOrNull() ?: return null
-  val effectiveTun = extractSingBoxTunFromConfig(configText, setting.tun)
-  val inbound = JSONObject()
-    .put("type", "tun")
-    .put("tag", "tun-in")
-    .put("interface_name", effectiveTun.ifBlank { "sbtun0" })
-    .put("address", JSONArray().put(SINGBOX_VPN_DEFAULT_TUN_ADDRESS))
-    .put("auto_route", false)
-    .put("auto_redirect", false)
-    .put("strict_route", false)
-    .put("stack", "mixed")
-  root.put("inbounds", JSONArray().put(inbound))
-  normalizeSingBoxModernDnsRouteAndDial(root, setting.dns)
-  return root.toString(2)
+private fun rewriteSingBoxConfigInboundsForVpn(configText: String, setting: SingBoxProfileSettingUi, port: Int): String? {
+  // VPN mode is implemented by ZDT-D with a tun2socks helper. sing-box still receives
+  // traffic through the same local mixed inbound; do not create native sing-box TUN inbound.
+  return rewriteSingBoxConfigInboundsForT2s(configText, port, setting)
 }
 
 private fun normalizeSingBoxModernDnsRouteAndDial(root: JSONObject, dns: List<String>) {
@@ -617,8 +638,12 @@ private fun rewriteSingBoxConfigInboundsForMode(
   setting: SingBoxProfileSettingUi,
   serverPort: Int?,
 ): String? {
-  val port = serverPort ?: return null
-  return rewriteSingBoxConfigInboundsForT2s(configText, port, setting)
+  val port = serverPort?.takeIf { it in 1..65535 } ?: return null
+  return if (setting.isVpn) {
+    rewriteSingBoxConfigInboundsForVpn(configText, setting, port)
+  } else {
+    rewriteSingBoxConfigInboundsForT2s(configText, port, setting)
+  }
 }
 
 
@@ -641,12 +666,12 @@ private fun buildSingBoxPortRegistry(
   }
 
   settingsByProfile.forEach { (profile, setting) ->
-    if (setting?.isVpn == true) return@forEach
-    add(setting?.t2sPort, singBoxT2sPortLabel(profile))
-    add(setting?.t2sWebPort, singBoxT2sWebPortLabel(profile))
+    if (setting?.isVpn != true) {
+      add(setting?.t2sPort, singBoxT2sPortLabel(profile))
+      add(setting?.t2sWebPort, singBoxT2sWebPortLabel(profile))
+    }
   }
   serversByProfile.forEach { (profile, profileServers) ->
-    if (settingsByProfile[profile]?.isVpn == true) return@forEach
     profileServers.forEach { server ->
       add(server.port, singBoxServerPortLabel(profile, server.name))
     }
@@ -830,10 +855,12 @@ fun SingBoxProfileScreen(
 
   fun saveProfileSetting(next: SingBoxProfileSettingUi, onDone: ((Boolean) -> Unit)? = null) {
     val normalized = next.copy(
-      mode = SINGBOX_MODE_T2S,
+      mode = normalizeSingBoxMode(next.mode),
       t2sPort = next.t2sPort ?: 12345,
       t2sWebPort = next.t2sWebPort ?: 8001,
-      dns = next.dns.map { it.trim() }.filter { it.isNotBlank() }.distinct().ifEmpty { listOf("8.8.8.8") },
+      tun = normalizeSingBoxTunName(next.tun),
+      dns = normalizeSingBoxDns(next.dns),
+      tun2socksLogLevel = normalizeSingBoxTun2socksLogLevel(next.tun2socksLogLevel),
     )
     when {
       normalized.t2sPort !in 1..65535 -> {
@@ -848,6 +875,16 @@ fun SingBoxProfileScreen(
       }
       normalized.t2sPort == normalized.t2sWebPort -> {
         showSnack(context.getString(R.string.singbox_profile_ports_must_differ))
+        onDone?.invoke(false)
+        return
+      }
+      normalized.isVpn && normalized.tun.isBlank() -> {
+        showSnack(context.getString(R.string.singbox_vpn_tun_required))
+        onDone?.invoke(false)
+        return
+      }
+      normalized.isVpn && normalized.dns.isEmpty() -> {
+        showSnack(context.getString(R.string.singbox_vpn_dns_required))
         onDone?.invoke(false)
         return
       }
@@ -916,11 +953,14 @@ fun SingBoxProfileScreen(
     val encodedServer = URLEncoder.encode(plan.serverName, "UTF-8")
     val activeSetting = currentProfileSetting()
     val updatedConfig = if (activeSetting.isVpn) {
-      rewriteSingBoxConfigInboundsForVpn(plan.originalConfig, activeSetting)
+      val serverPort = servers.firstOrNull { it.name == plan.serverName }?.port
+        ?: plan.detectedPort.takeIf { it in 1..65535 }
+        ?: 1080
+      rewriteSingBoxConfigInboundsForMode(plan.originalConfig, activeSetting, serverPort)
     } else {
       when {
-        plan.replacementPort != null -> rewriteSingBoxConfigInboundsForT2s(plan.originalConfig, plan.replacementPort, activeSetting)
-        plan.applyPortToServer -> rewriteSingBoxConfigInboundsForT2s(plan.originalConfig, plan.detectedPort, activeSetting)
+        plan.replacementPort != null -> rewriteSingBoxConfigInboundsForMode(plan.originalConfig, activeSetting, plan.replacementPort)
+        plan.applyPortToServer -> rewriteSingBoxConfigInboundsForMode(plan.originalConfig, activeSetting, plan.detectedPort)
         else -> plan.originalConfig
       }
     }
@@ -1065,7 +1105,7 @@ fun SingBoxProfileScreen(
         if (targetServer != null) {
           val current = servers.firstOrNull { it.name == targetServer }
           val (configToSave, resolvedPort) = prepareConfig(current?.port)
-          saveGeneratedToServer(targetServer, resolvedPort, configToSave, updateSetting = activeSetting.isT2s)
+          saveGeneratedToServer(targetServer, resolvedPort, configToSave, updateSetting = true)
           return@generate
         }
 
@@ -1263,6 +1303,14 @@ fun SingBoxProfileScreen(
       )
     }
 
+    SingBoxModeSwitchCard(
+      setting = activeSetting,
+      loading = settingLoading || serversLoading,
+      saving = settingSaving,
+      serverCount = servers.size,
+      onSwitchMode = ::switchSingBoxMode,
+    )
+
     AnimatedVisibility(
       visible = activeSetting.isT2s,
       enter = fadeIn() + expandVertically(),
@@ -1275,51 +1323,22 @@ fun SingBoxProfileScreen(
         onSave = ::saveProfileSetting,
       )
     }
-    AnimatedVisibility(
-      visible = false,
-      enter = fadeIn() + expandVertically(),
-      exit = fadeOut() + shrinkVertically(),
-    ) {
-      SingBoxModeSwitchCard(
-        saving = settingSaving,
-        onSwitchToVpn = { switchSingBoxMode(SINGBOX_MODE_VPN) },
-      )
-    }
 
     AnimatedVisibility(
-      visible = false,
+      visible = activeSetting.isVpn,
       enter = fadeIn() + expandVertically(),
       exit = fadeOut() + shrinkVertically(),
     ) {
       SingBoxVpnProfileCard(
         setting = activeSetting,
-        server = servers.singleOrNull(),
         loading = settingLoading || serversLoading,
         saving = settingSaving,
         onSave = { next -> saveProfileSetting(next) },
-        onSwitchToT2s = { switchSingBoxMode(SINGBOX_MODE_T2S) },
-        onServerEnabledChange = { enabled ->
-          val server = servers.singleOrNull()
-          if (server != null) {
-            val encodedServer = URLEncoder.encode(server.name, "UTF-8")
-            val payload = JSONObject().put("enabled", enabled).put("port", server.port ?: 1080)
-            actions.saveJsonData("$basePath/servers/$encodedServer/setting", payload) { ok ->
-              if (ok) refreshServers() else showSnack(context.getString(R.string.singbox_auto_save_failed))
-            }
-          }
-        },
-        onEditConfig = { servers.singleOrNull()?.name?.let(::openEditor) },
-        onGenerateConfig = {
-          servers.singleOrNull()?.name?.let { target ->
-            importTargetServer = target
-            showImportServer = true
-          }
-        },
       )
     }
 
     AnimatedVisibility(
-      visible = false,
+      visible = activeSetting.isVpn && servers.size > 1,
       enter = fadeIn() + expandVertically(),
       exit = fadeOut() + shrinkVertically(),
     ) {
@@ -1449,20 +1468,84 @@ private fun SingBoxProfileSettingCard(
 
 @Composable
 private fun SingBoxModeSwitchCard(
+  setting: SingBoxProfileSettingUi,
+  loading: Boolean,
   saving: Boolean,
-  onSwitchToVpn: () -> Unit,
+  serverCount: Int,
+  onSwitchMode: (String) -> Unit,
 ) {
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.55f))) {
-    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Text(stringResource(R.string.singbox_mode_switch_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-      Text(
-        stringResource(R.string.singbox_mode_switch_desc),
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
-        style = MaterialTheme.typography.bodySmall,
+  val accent = if (setting.isVpn) Color(0xFF22C55E) else Color(0xFF38BDF8)
+  SingBoxSectionCard(
+    title = stringResource(R.string.singbox_mode_switch_title),
+    desc = stringResource(R.string.singbox_mode_switch_desc),
+    accent = accent,
+    icon = { Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp)) },
+  ) {
+    if (loading || saving) LinearProgressIndicator(Modifier.fillMaxWidth())
+
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+      SingBoxModeOption(
+        modifier = Modifier.weight(1f),
+        selected = setting.isT2s,
+        enabled = !loading && !saving,
+        accent = Color(0xFF38BDF8),
+        title = stringResource(R.string.singbox_mode_proxy_t2s),
+        desc = stringResource(R.string.singbox_mode_proxy_t2s_desc),
+        onClick = { onSwitchMode(SINGBOX_MODE_T2S) },
       )
-      Button(enabled = !saving, onClick = onSwitchToVpn, modifier = Modifier.fillMaxWidth()) {
-        Text(stringResource(R.string.singbox_switch_to_vpn))
-      }
+      SingBoxModeOption(
+        modifier = Modifier.weight(1f),
+        selected = setting.isVpn,
+        enabled = !loading && !saving,
+        accent = Color(0xFF22C55E),
+        title = stringResource(R.string.singbox_mode_vpn_t2socks),
+        desc = stringResource(R.string.singbox_mode_vpn_t2socks_desc),
+        onClick = { onSwitchMode(SINGBOX_MODE_VPN) },
+      )
+    }
+
+    Surface(
+      shape = RoundedCornerShape(14.dp),
+      color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+      border = BorderStroke(1.dp, accent.copy(alpha = 0.14f)),
+    ) {
+      Text(
+        text = if (setting.isVpn && serverCount != 1) {
+          stringResource(R.string.singbox_vpn_single_server_required)
+        } else if (setting.isVpn) {
+          stringResource(R.string.singbox_vpn_pipeline)
+        } else {
+          stringResource(R.string.singbox_profile_autosave_hint)
+        },
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+      )
+    }
+  }
+}
+
+@Composable
+private fun SingBoxModeOption(
+  modifier: Modifier = Modifier,
+  selected: Boolean,
+  enabled: Boolean,
+  accent: Color,
+  title: String,
+  desc: String,
+  onClick: () -> Unit,
+) {
+  val alpha = if (enabled) 1f else 0.46f
+  Surface(
+    modifier = modifier.clickable(enabled = enabled && !selected) { onClick() },
+    shape = RoundedCornerShape(18.dp),
+    color = accent.copy(alpha = if (selected) 0.20f else 0.08f),
+    contentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha),
+    border = BorderStroke(1.dp, accent.copy(alpha = if (selected) 0.48f else 0.18f)),
+  ) {
+    Column(Modifier.fillMaxWidth().padding(11.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+      Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+      Text(desc, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), maxLines = 3, overflow = TextOverflow.Ellipsis)
     }
   }
 }
@@ -1487,96 +1570,110 @@ private fun SingBoxVpnStructureWarningCard(onSwitchToT2s: () -> Unit) {
 @Composable
 private fun SingBoxVpnProfileCard(
   setting: SingBoxProfileSettingUi,
-  server: SingBoxServerUi?,
   loading: Boolean,
   saving: Boolean,
   onSave: (SingBoxProfileSettingUi) -> Unit,
-  onSwitchToT2s: () -> Unit,
-  onServerEnabledChange: (Boolean) -> Unit,
-  onEditConfig: () -> Unit,
-  onGenerateConfig: () -> Unit,
 ) {
   var tunText by remember(setting.tun) { mutableStateOf(setting.tun) }
   var dnsText by remember(setting.dns) { mutableStateOf(setting.dns.joinToString("\n")) }
+  var logLevel by remember(setting.tun2socksLogLevel) { mutableStateOf(setting.tun2socksLogLevel) }
 
+  val normalizedTun = remember(tunText) { normalizeSingBoxTunName(tunText) }
   val normalizedDns = remember(dnsText) { parseDnsText(dnsText) }
-  val changed = tunText.trim() != setting.tun || normalizedDns != setting.dns
-  val valid = tunText.trim().isNotBlank() && normalizedDns.isNotEmpty()
+  val normalizedLogLevel = remember(logLevel) { normalizeSingBoxTun2socksLogLevel(logLevel) }
+  val changed = normalizedTun != setting.tun || normalizedDns != setting.dns || normalizedLogLevel != setting.tun2socksLogLevel
+  val valid = normalizedTun.isNotBlank() && normalizedDns.isNotEmpty()
 
-  LaunchedEffect(tunText, dnsText, loading, saving, changed, valid) {
+  LaunchedEffect(normalizedTun, normalizedDns, normalizedLogLevel, loading, saving, changed, valid) {
     if (loading || saving || !changed || !valid) return@LaunchedEffect
     delay(700)
     onSave(
       setting.copy(
         mode = SINGBOX_MODE_VPN,
-        tun = tunText.trim(),
+        tun = normalizedTun,
         dns = normalizedDns,
+        tun2socksLogLevel = normalizedLogLevel,
       )
     )
   }
 
-  Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f))) {
-    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
-          Text(stringResource(R.string.singbox_vpn_card_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-          Text(
-            server?.name ?: stringResource(R.string.singbox_profile_no_servers),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
-          )
-        }
-        FilledTonalButton(enabled = !saving, onClick = onSwitchToT2s) {
-          Text(stringResource(R.string.singbox_switch_to_t2s_short))
-        }
-      }
+  SingBoxSectionCard(
+    title = stringResource(R.string.singbox_vpn_card_title),
+    desc = stringResource(R.string.singbox_vpn_card_desc),
+    accent = Color(0xFF22C55E),
+    icon = { Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp)) },
+  ) {
+    if (loading || saving) LinearProgressIndicator(Modifier.fillMaxWidth())
 
+    Surface(
+      shape = RoundedCornerShape(16.dp),
+      color = Color(0xFF22C55E).copy(alpha = 0.11f),
+      border = BorderStroke(1.dp, Color(0xFF22C55E).copy(alpha = 0.22f)),
+    ) {
       Text(
-        stringResource(R.string.singbox_vpn_card_desc),
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+        stringResource(R.string.singbox_vpn_pipeline),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 11.dp, vertical = 9.dp),
         style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
       )
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Text(stringResource(R.string.enabled_card_profile_title), style = MaterialTheme.typography.bodyMedium)
-        Switch(checked = server?.enabled ?: false, enabled = server != null && !loading, onCheckedChange = onServerEnabledChange)
-      }
-      if (loading || saving) LinearProgressIndicator(Modifier.fillMaxWidth())
+    }
 
-      OutlinedTextField(
-        value = tunText,
-        onValueChange = { tunText = it.trim().take(15) },
-        modifier = Modifier.fillMaxWidth(),
-        enabled = !loading,
-        singleLine = true,
-        label = { Text(stringResource(R.string.singbox_vpn_tun_label)) },
-      )
-      OutlinedTextField(
-        value = dnsText,
-        onValueChange = { dnsText = it },
-        modifier = Modifier.fillMaxWidth().heightIn(min = 84.dp),
-        enabled = !loading,
-        singleLine = false,
-        label = { Text(stringResource(R.string.singbox_vpn_dns_label)) },
-        supportingText = { Text(stringResource(R.string.singbox_vpn_dns_hint)) },
-      )
+    OutlinedTextField(
+      value = tunText,
+      onValueChange = { tunText = normalizeSingBoxTunName(it) },
+      modifier = Modifier.fillMaxWidth(),
+      enabled = !loading,
+      singleLine = true,
+      label = { Text(stringResource(R.string.singbox_vpn_tun_label)) },
+      supportingText = { Text(stringResource(R.string.singbox_vpn_tun_hint)) },
+    )
+    OutlinedTextField(
+      value = dnsText,
+      onValueChange = { dnsText = it },
+      modifier = Modifier.fillMaxWidth().heightIn(min = 84.dp),
+      enabled = !loading,
+      singleLine = false,
+      label = { Text(stringResource(R.string.singbox_vpn_dns_label)) },
+      supportingText = { Text(stringResource(R.string.singbox_vpn_dns_hint)) },
+    )
 
-      Text(
-        if (saving) stringResource(R.string.common_loading) else stringResource(R.string.singbox_vpn_autosave_hint),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
-      )
-
-      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onEditConfig, enabled = server != null, modifier = Modifier.weight(1f)) {
-          Icon(Icons.Filled.Edit, contentDescription = null)
-          Spacer(Modifier.width(6.dp))
-          Text(stringResource(R.string.action_edit))
-        }
-        OutlinedButton(onClick = onGenerateConfig, enabled = server != null, modifier = Modifier.weight(1f)) {
-          Text(stringResource(R.string.singbox_import_action))
+    Text(
+      stringResource(R.string.singbox_vpn_log_level_label),
+      style = MaterialTheme.typography.labelLarge,
+      fontWeight = FontWeight.Bold,
+      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      SINGBOX_TUN2SOCKS_LOG_LEVELS.chunked(3).forEach { rowLevels ->
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          rowLevels.forEach { level ->
+            val selected = normalizedLogLevel == level
+            Surface(
+              modifier = Modifier.weight(1f).clickable(enabled = !loading && !saving) { logLevel = level },
+              shape = RoundedCornerShape(100.dp),
+              color = Color(0xFF22C55E).copy(alpha = if (selected) 0.20f else 0.07f),
+              contentColor = Color.White.copy(alpha = if (selected) 0.94f else 0.68f),
+              border = BorderStroke(1.dp, Color(0xFF22C55E).copy(alpha = if (selected) 0.44f else 0.16f)),
+            ) {
+              Text(
+                level,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+              )
+            }
+          }
         }
       }
     }
+
+    Text(
+      if (saving) stringResource(R.string.common_loading) else stringResource(R.string.singbox_vpn_autosave_hint),
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+    )
   }
 }
 
@@ -1594,7 +1691,6 @@ private fun SingBoxServersSection(
   onRefresh: () -> Unit,
   onEditConfig: (String) -> Unit,
 ) {
-  if (setting.isVpn && servers.size == 1) return
   val createEnabled = setting.isT2s || servers.isEmpty()
 
   SingBoxSectionCard(
@@ -1688,7 +1784,7 @@ private fun SingBoxServersSection(
             snackHost = snackHost,
             onRefresh = onRefresh,
             onEditConfig = { onEditConfig(server.name) },
-            showPort = setting.isT2s,
+            showPort = true,
           )
         }
       }

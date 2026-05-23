@@ -24,13 +24,13 @@ The daemon is responsible for:
 
 ## Important runtime warning
 
-### sing-box VPN mode is intentionally disabled
+### sing-box VPN mode uses tun2socks
 
-The source tree still contains references to sing-box modes, but the current implementation forces sing-box to **T2S mode only**.
+Native sing-box `tun` inbound mode is intentionally not used. The daemon keeps sing-box as a local mixed proxy backend and starts the shared `tun2socks` helper for VPN/netd routing.
 
-VPN mode for sing-box is disabled because it currently has problems in VPN mode. The daemon normalizes sing-box profiles to `t2s`, reports VPN support as unavailable in the active code path, and does not start sing-box as a VPN/netd profile.
+The supported VPN chain is: app UID routing via Android netd -> external `tun2socks` TUN -> `socks5://127.0.0.1:<sing-box server port>` -> sing-box outbounds/rules.
 
-Do not expose sing-box VPN mode as a working option in the app UI until the daemon-side implementation is fixed and tested.
+UI can expose sing-box VPN only as the managed tun2socks mode, not as native sing-box TUN mode.
 
 ## Supported components
 
@@ -47,7 +47,7 @@ The daemon contains integration code for the following ZDT-D components.
 
 ### Profile-based proxy/tunnel/VPN tools
 
-- `sing-box` — T2S mode only; VPN mode is disabled
+- `sing-box` — T2S proxy mode and VPN mode via external `tun2socks`
 - `wireproxy`
 - `mihomo`
 - `mieru`
@@ -406,11 +406,11 @@ working_folder/singbox/profile
 Current daemon behavior:
 
 ```text
-Supported: T2S mode
-Disabled:  VPN mode
+Supported: T2S proxy mode
+Supported: VPN mode via external tun2socks
 ```
 
-VPN mode is not available because it currently has problems in VPN mode. Keep UI and documentation aligned with this limitation.
+Native sing-box TUN mode is not used. VPN mode is implemented as `sing-box mixed inbound + tun2socks + vpn_netd`, similar to the managed Mihomo path.
 
 ### wireproxy
 
@@ -622,7 +622,7 @@ The daemon is expected to run inside the installed ZDT-D module environment, not
 - API route matching is path-based and app-facing.
 - Many operations are best-effort because Android firmware and root environments differ between devices.
 - Be careful when adding new programs: update runtime start/stop, stats, port collection, app assignment conflict checks, API exposure and minimal layout creation together.
-- Keep sing-box VPN hidden/disabled until the actual daemon implementation is fixed.
+- Expose sing-box VPN only as managed tun2socks mode; do not route it through native sing-box TUN inbound.
 - Keep module paths consistent with `/data/adb/modules/ZDT-D` unless the daemon is intentionally refactored for configurable roots.
 
 ## Safety notes for contributors
@@ -630,6 +630,6 @@ The daemon is expected to run inside the installed ZDT-D module environment, not
 - Do not expose the API token through `info.json`; only the token file path should be written there.
 - Do not replace the empty unauthenticated `404` behavior unless the local API exposure model is redesigned.
 - Do not create independent SHA flag files for modules that share app assignment state.
-- Do not enable sing-box VPN mode from UI-only changes. It must be fixed daemon-side first.
+- Do not enable native sing-box TUN mode from UI-only changes. The supported sing-box VPN path is daemon-managed tun2socks mode.
 - When adding profile-based VPN/TUN tools, validate TUN name conflicts across existing profile systems.
 - When adding iptables rules, make sure stop/restore paths are also updated.

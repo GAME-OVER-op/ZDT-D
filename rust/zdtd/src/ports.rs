@@ -212,6 +212,14 @@ fn collect_adjustable_ports() -> Result<Vec<PortEntry>> {
 }
 
 
+
+fn singbox_mode_is_vpn(mode: &str) -> bool {
+    matches!(
+        mode.trim().to_ascii_lowercase().as_str(),
+        "vpn" | "tun2socks" | "t2s-vpn" | "t2s_vpn"
+    )
+}
+
 fn collect_defined_singbox_ports() -> BTreeSet<u16> {
     let mut used = BTreeSet::new();
     let root = working_program_dir("singbox").join("profile");
@@ -226,10 +234,13 @@ fn collect_defined_singbox_ports() -> BTreeSet<u16> {
             }
             let setting_path = profile_dir.join("setting.json");
             if let Ok(v) = read_json_value(&setting_path) {
-                for key in ["t2s_port", "t2s_web_port"] {
-                    if let Some(port) = v.get(key).and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
-                        if port != 0 {
-                            used.insert(port);
+                let mode = v.get("mode").and_then(|x| x.as_str()).unwrap_or("t2s").trim().to_ascii_lowercase();
+                if !singbox_mode_is_vpn(&mode) {
+                    for key in ["t2s_port", "t2s_web_port"] {
+                        if let Some(port) = v.get(key).and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
+                            if port != 0 {
+                                used.insert(port);
+                            }
                         }
                     }
                 }

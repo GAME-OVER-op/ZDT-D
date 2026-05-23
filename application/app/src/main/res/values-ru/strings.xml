@@ -639,22 +639,22 @@ APatch: 10700+</string>
     <string name="common_retry">Повторить</string>
     <string name="startup_dialog_title">Подключение к модулю</string>
     <string name="startup_dialog_subtitle">Пожалуйста, подождите</string>
-    <string name="startup_dialog_error_title">Демон недоступен</string>
-    <string name="startup_stage_connecting">1-й этап: подключение к демону</string>
-    <string name="startup_stage_loading">2-й этап: загрузка информации от демона</string>
+    <string name="startup_dialog_error_title">Служба недоступна</string>
+    <string name="startup_stage_connecting">1-й этап: подключение к службе</string>
+    <string name="startup_stage_loading">2-й этап: загрузка информации от службы</string>
     <string name="startup_reinstall_module">Переустановить модуль</string>
     <string name="startup_loading_title">Загрузка приложения</string>
     <string name="startup_loading_subtitle">Подготавливаем интерфейс и проверяем подключение к модулю.</string>
     <string name="startup_stage_connecting_short">Подключение...</string>
     <string name="startup_stage_initializing">Инициализация...</string>
     <string name="startup_stage_opening">Открытие интерфейса...</string>
-    <string name="startup_daemon_failed_module_found">Не удалось подключиться к демону.
+    <string name="startup_daemon_failed_module_found">Не удалось подключиться к службе.
 Модуль найден, но, возможно, работает некорректно.
 Рекомендуется переустановить модуль.</string>
-    <string name="startup_daemon_failed_module_broken">Не удалось подключиться к демону.
+    <string name="startup_daemon_failed_module_broken">Не удалось подключиться к службе.
 Модуль найден, но его структура выглядит некорректной.
 Рекомендуется переустановить модуль.</string>
-    <string name="startup_daemon_failed_module_missing">Не удалось подключиться к демону.
+    <string name="startup_daemon_failed_module_missing">Не удалось подключиться к службе.
 Каталог модуля не найден.
 Установите модуль повторно.</string>
 
@@ -744,26 +744,32 @@ APatch: 10700+</string>
     <string name="singbox_port_sync_skip_profile">Не менять сервер</string>
     <string name="singbox_port_sync_save_config_only">Сохранить только config</string>
 
-    <string name="singbox_mode_switch_title">VPN-режим</string>
-    <string name="singbox_mode_switch_desc">В профиле один сервер, поэтому его можно переключить из proxy/t2s в прямой VPN-режим. В VPN-режиме sing-box создаёт TUN-интерфейс, а маршрутизацией управляет ZDT-D.</string>
+    <string name="singbox_mode_switch_title">Режим работы</string>
+    <string name="singbox_mode_switch_desc">Выберите, как профиль sing-box принимает трафик. В обоих режимах config.json остаётся с локальным mixed inbound.</string>
+    <string name="singbox_mode_proxy_t2s">Proxy / T2S</string>
+    <string name="singbox_mode_proxy_t2s_desc">TCP выбранных приложений идёт через t2s в локальный mixed inbound sing-box.</string>
+    <string name="singbox_mode_vpn_t2socks">VPN через tun2socks</string>
+    <string name="singbox_mode_vpn_t2socks_desc">ZDT-D запускает tun2socks и подключает его к локальному mixed inbound sing-box.</string>
     <string name="singbox_switch_to_vpn">Переключить в VPN-режим</string>
-    <string name="singbox_switch_to_t2s">Вернуть proxy/t2s режим</string>
+    <string name="singbox_switch_to_t2s">Вернуться в Proxy / T2S</string>
     <string name="singbox_switch_to_t2s_short">Proxy</string>
-    <string name="singbox_vpn_card_title">sing-box VPN</string>
-    <string name="singbox_vpn_card_desc">Порты в этом режиме не используются. sing-box создаёт интерфейс, а ZDT-D строит UID-маршрутизацию через vpn_netd.</string>
-    <string name="singbox_vpn_tun_label">Имя интерфейса</string>
-    <string name="singbox_vpn_dns_label">DNS</string>
-    <string name="singbox_vpn_dns_hint">Один адрес на строку или через запятую.</string>
-    <string name="singbox_vpn_autosave_hint">Интерфейс и DNS сохраняются автоматически. Daemon сам управляет адресом TUN и поддерживает inbound в безопасном TUN-режиме.</string>
-    <string name="singbox_vpn_single_server_required">VPN-режим поддерживает только один сервер sing-box. Удалите лишние серверы или оставьте proxy-режим.</string>
+    <string name="singbox_vpn_card_title">VPN через tun2socks</string>
+    <string name="singbox_vpn_card_desc">sing-box не создаёт native TUN inbound. ZDT-D маршрутизирует выбранные приложения через tun2socks в локальный mixed inbound.</string>
+    <string name="singbox_vpn_pipeline">App → Android netd → tun2socks → sing-box mixed inbound → proxy rules</string>
+    <string name="singbox_vpn_tun_label">Имя TUN-интерфейса</string>
+    <string name="singbox_vpn_tun_hint">Рекомендуется: sbtun0 или tun0. До 15 символов: латиница, цифры, underscore.</string>
+    <string name="singbox_vpn_dns_label">DNS-серверы</string>
+    <string name="singbox_vpn_dns_hint">Только IPv4. Один адрес на строку или через запятую.</string>
+    <string name="singbox_vpn_log_level_label">Уровень логов tun2socks</string>
+    <string name="singbox_vpn_autosave_hint">Интерфейс, DNS и уровень логов tun2socks сохраняются автоматически. config.json остаётся на локальном mixed inbound.</string>
+    <string name="singbox_vpn_single_server_required">VPN через tun2socks поддерживает ровно один сервер sing-box. Удалите лишние серверы или оставьте Proxy / T2S.</string>
     <string name="singbox_vpn_add_server_blocked">В VPN-режиме разрешён только один сервер.</string>
     <string name="singbox_vpn_tun_required">Заполните имя интерфейса</string>
     <string name="singbox_vpn_dns_required">Заполните DNS</string>
     <string name="singbox_vpn_structure_error_title">Ошибка структуры VPN-профиля</string>
-    <string name="singbox_vpn_structure_error_body">VPN-режим поддерживает ровно один сервер. В профиле найдено несколько папок серверов, поэтому ZDT-D не запустит этот профиль, пока лишние серверы не будут удалены или не будет возвращён proxy-режим.</string>
-    <string name="singbox_vpn_servers_desc">VPN-режим поддерживает только один сервер. Если сервера нет — создайте или сгенерируйте его; если их несколько — удалите лишние.</string>
-    <string name="singbox_import_replace_current_hint">Сгенерированный config заменит config текущего сервера. Меняется только inbound под выбранный режим.</string>
-
+    <string name="singbox_vpn_structure_error_body">VPN через tun2socks поддерживает ровно один сервер. В профиле найдено несколько папок серверов, поэтому ZDT-D не сможет запустить его в VPN-режиме, пока лишние серверы не будут удалены или не будет возвращён Proxy / T2S.</string>
+    <string name="singbox_vpn_servers_desc">VPN через tun2socks поддерживает только один сервер. Его порт — локальный mixed inbound, к которому подключается tun2socks.</string>
+    <string name="singbox_import_replace_current_hint">Сгенерированный config заменит текущий config сервера. Меняется только inbound-блок под выбранный режим.</string>
 
     <string name="settings_hotspot_title">Включить точку доступа</string>
     <string name="settings_hotspot_body">Позволяет направлять трафик точки доступа через выбранный инструмент.</string>

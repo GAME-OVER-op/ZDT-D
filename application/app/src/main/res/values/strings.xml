@@ -641,22 +641,22 @@ By continuing, you agree to restore the backup while ignoring the versionCode ch
     <string name="common_retry">Retry</string>
     <string name="startup_dialog_title">Connecting to module</string>
     <string name="startup_dialog_subtitle">Please wait</string>
-    <string name="startup_dialog_error_title">Daemon unavailable</string>
-    <string name="startup_stage_connecting">Stage 1: Connecting to daemon</string>
-    <string name="startup_stage_loading">Stage 2: Loading information from daemon</string>
+    <string name="startup_dialog_error_title">Service unavailable</string>
+    <string name="startup_stage_connecting">Stage 1: Connecting to service</string>
+    <string name="startup_stage_loading">Stage 2: Loading information from service</string>
     <string name="startup_reinstall_module">Reinstall module</string>
     <string name="startup_loading_title">Loading application</string>
     <string name="startup_loading_subtitle">Preparing the interface and checking the connection to the module.</string>
     <string name="startup_stage_connecting_short">Connecting...</string>
     <string name="startup_stage_initializing">Initializing...</string>
     <string name="startup_stage_opening">Opening interface...</string>
-    <string name="startup_daemon_failed_module_found">Failed to connect to the daemon.
+    <string name="startup_daemon_failed_module_found">Failed to connect to the service.
 Module found, but it may be working incorrectly.
 It is recommended to reinstall the module.</string>
-    <string name="startup_daemon_failed_module_broken">Failed to connect to the daemon.
+    <string name="startup_daemon_failed_module_broken">Failed to connect to the service.
 Module found, but its structure looks incorrect.
 It is recommended to reinstall the module.</string>
-    <string name="startup_daemon_failed_module_missing">Failed to connect to the daemon.
+    <string name="startup_daemon_failed_module_missing">Failed to connect to the service.
 The module directory was not found.
 Install the module again.</string>
 
@@ -746,26 +746,32 @@ Install the module again.</string>
     <string name="singbox_port_sync_skip_profile">Don’t change server</string>
     <string name="singbox_port_sync_save_config_only">Save config only</string>
 
-    <string name="singbox_mode_switch_title">VPN mode</string>
-    <string name="singbox_mode_switch_desc">This profile has one server, so it can be switched from proxy/t2s to direct VPN mode. In VPN mode sing-box creates a TUN interface and ZDT-D handles routing.</string>
+    <string name="singbox_mode_switch_title">Work mode</string>
+    <string name="singbox_mode_switch_desc">Choose how this sing-box profile receives traffic. The config keeps a local mixed inbound in both modes.</string>
+    <string name="singbox_mode_proxy_t2s">Proxy / T2S</string>
+    <string name="singbox_mode_proxy_t2s_desc">Selected apps send TCP through t2s to the local sing-box mixed inbound.</string>
+    <string name="singbox_mode_vpn_t2socks">VPN via tun2socks</string>
+    <string name="singbox_mode_vpn_t2socks_desc">ZDT-D starts tun2socks and connects it to the local sing-box mixed inbound.</string>
     <string name="singbox_switch_to_vpn">Switch to VPN mode</string>
     <string name="singbox_switch_to_t2s">Return to proxy/t2s mode</string>
     <string name="singbox_switch_to_t2s_short">Proxy</string>
-    <string name="singbox_vpn_card_title">sing-box VPN</string>
-    <string name="singbox_vpn_card_desc">Ports are not used in this mode. sing-box creates the interface, while ZDT-D builds UID routing through vpn_netd.</string>
-    <string name="singbox_vpn_tun_label">Interface name</string>
-    <string name="singbox_vpn_dns_label">DNS</string>
-    <string name="singbox_vpn_dns_hint">One address per line or separated by commas.</string>
-    <string name="singbox_vpn_autosave_hint">Interface and DNS are saved automatically. The daemon manages the TUN address and keeps config inbound in safe TUN mode.</string>
-    <string name="singbox_vpn_single_server_required">VPN mode supports only one sing-box server. Delete extra servers or keep proxy mode.</string>
+    <string name="singbox_vpn_card_title">VPN via tun2socks</string>
+    <string name="singbox_vpn_card_desc">sing-box does not create a native TUN inbound. ZDT-D routes selected apps through tun2socks into the local mixed inbound.</string>
+    <string name="singbox_vpn_pipeline">App → Android netd → tun2socks → sing-box mixed inbound → proxy rules</string>
+    <string name="singbox_vpn_tun_label">TUN interface name</string>
+    <string name="singbox_vpn_tun_hint">Recommended: sbtun0 or tun0. Up to 15 characters: letters, digits, underscore.</string>
+    <string name="singbox_vpn_dns_label">DNS servers</string>
+    <string name="singbox_vpn_dns_hint">IPv4 only. One address per line or separated by commas.</string>
+    <string name="singbox_vpn_log_level_label">tun2socks log level</string>
+    <string name="singbox_vpn_autosave_hint">Interface, DNS, and tun2socks log level are saved automatically. config.json stays on local mixed inbound.</string>
+    <string name="singbox_vpn_single_server_required">VPN via tun2socks supports exactly one sing-box server. Delete extra servers or keep Proxy / T2S mode.</string>
     <string name="singbox_vpn_add_server_blocked">VPN mode allows only one server.</string>
     <string name="singbox_vpn_tun_required">Fill the interface name</string>
     <string name="singbox_vpn_dns_required">Fill DNS</string>
     <string name="singbox_vpn_structure_error_title">VPN profile structure error</string>
-    <string name="singbox_vpn_structure_error_body">VPN mode supports exactly one server. This profile has multiple server folders, so it will not be started by ZDT-D until extra servers are removed or proxy mode is restored.</string>
-    <string name="singbox_vpn_servers_desc">VPN mode supports one server only. If the profile has no server, create or generate one; if there are several, remove the extra ones.</string>
+    <string name="singbox_vpn_structure_error_body">VPN via tun2socks supports exactly one server. This profile has multiple server folders, so ZDT-D cannot start it in VPN mode until extra servers are removed or Proxy / T2S mode is restored.</string>
+    <string name="singbox_vpn_servers_desc">VPN via tun2socks supports only one server. Its port is the local mixed inbound used by tun2socks.</string>
     <string name="singbox_import_replace_current_hint">The generated config will replace the current server config. Only the inbound block is changed for the selected mode.</string>
-
 
     <string name="settings_hotspot_title">Enable hotspot</string>
     <string name="settings_hotspot_body">Allows routing hotspot traffic through the selected tool.</string>

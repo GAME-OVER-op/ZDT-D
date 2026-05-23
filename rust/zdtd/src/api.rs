@@ -945,8 +945,12 @@ fn singbox_server_root(profile: &str, server: &str) -> PathBuf {
 
 fn default_singbox_profile_setting_value(t2s_port: u16, t2s_web_port: u16) -> serde_json::Value {
     json!({
+        "mode": "t2s",
         "t2s_port": t2s_port,
-        "t2s_web_port": t2s_web_port
+        "t2s_web_port": t2s_web_port,
+        "tun": "sbtun0",
+        "dns": ["8.8.8.8"],
+        "tun2socks_loglevel": "info"
     })
 }
 
@@ -976,7 +980,19 @@ fn ensure_singbox_profile_layout(profile: &str) -> Result<()> {
     if !t2s_log.exists() {
         write_text_atomic(&t2s_log, "")?;
     }
+    let tun2socks_log = root.join("log/tun2socks.log");
+    if !tun2socks_log.exists() {
+        write_text_atomic(&tun2socks_log, "")?;
+    }
     Ok(())
+}
+
+
+fn singbox_raw_mode_is_vpn(mode: &str) -> bool {
+    matches!(
+        mode.trim().to_ascii_lowercase().as_str(),
+        "vpn" | "tun2socks" | "t2s-vpn" | "t2s_vpn"
+    )
 }
 
 fn collect_existing_singbox_ports() -> BTreeSet<u16> {
@@ -993,14 +1009,17 @@ fn collect_existing_singbox_ports() -> BTreeSet<u16> {
             }
             let setting_path = profile_dir.join("setting.json");
             if let Ok(v) = read_json::<serde_json::Value>(&setting_path) {
-                if let Some(port) = v.get("t2s_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
-                    if port > 0 {
-                        used.insert(port);
+                let mode = v.get("mode").and_then(|x| x.as_str()).unwrap_or("t2s").trim().to_ascii_lowercase();
+                if !singbox_raw_mode_is_vpn(&mode) {
+                    if let Some(port) = v.get("t2s_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
+                        if port > 0 {
+                            used.insert(port);
+                        }
                     }
-                }
-                if let Some(port) = v.get("t2s_web_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
-                    if port > 0 {
-                        used.insert(port);
+                    if let Some(port) = v.get("t2s_web_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
+                        if port > 0 {
+                            used.insert(port);
+                        }
                     }
                 }
             }
@@ -1108,7 +1127,7 @@ fn create_singbox_server_named(profile: &str, requested: &str) -> Result<String>
     let name = requested.trim();
     ensure_valid_singbox_profile_name(name)?;
     ensure_singbox_profile_layout(profile)?;
-    if singbox_profile_mode_is_vpn(profile) {
+    if singbox_profile_mode_is_vpn(profile) && !singbox_server_names(profile)?.is_empty() {
         anyhow::bail!("singbox_vpn_requires_single_server: VPN-режим sing-box поддерживает только один сервер. Переключите профиль в proxy или используйте существующий сервер.");
     }
 
@@ -1163,7 +1182,12 @@ fn singbox_profile_setting_or_default(profile: &str) -> serde_json::Value {
     read_json::<serde_json::Value>(&p).unwrap_or_else(|_| default_singbox_profile_setting_value(12345, 8001))
 }
 
-fn singbox_profile_mode_is_vpn(_profile: &str) -> bool { false }
+fn singbox_profile_mode_is_vpn(profile: &str) -> bool {
+    let v = singbox_profile_setting_or_default(profile);
+    crate::programs::singbox::normalize_setting_value(v)
+        .map(|setting| setting.mode.is_vpn())
+        .unwrap_or(false)
+}
 
 fn singbox_server_names(profile: &str) -> Result<Vec<String>> {
     let root = singbox_profile_root(profile).join("server");
@@ -1193,6 +1217,9 @@ fn ensure_singbox_vpn_single_server(profile: &str) -> Result<String> {
 
 fn normalize_and_write_singbox_profile_setting(profile: &str, v: serde_json::Value) -> Result<serde_json::Value> {
     let setting = crate::programs::singbox::normalize_setting_value(v)?;
+    if setting.mode.is_vpn() && singbox_server_names(profile)?.len() > 1 {
+        anyhow::bail!("singbox_vpn_requires_single_server: VPN-режим sing-box поддерживает только один сервер. Удалите лишние серверы или оставьте режим proxy.");
+    }
     let normalized = serde_json::to_value(&setting)?;
     let p = singbox_profile_root(profile).join("setting.json");
     write_json_pretty(&p, &normalized)?;
@@ -1994,8 +2021,8 @@ fn app_domain(program_id: &str) -> Option<&'static str> {
         // Intentional exceptions are the ZDT-D launch marker and blockedquic: the
         // marker is ignored by package conflict parsing, and blockedquic has no app
         // routing domain so QUIC blocking may coexist with VPN/netd routing.
-        "vpn-netd" | "openvpn" | "amneziawg" | "tun2socks" | "myvpn" | "mihomo" | "mieru" | "wireguard" => Some("exclusive_network"),
-        "operaproxy" | "sing-box" | "wireproxy" | "myproxy" | "myprogram" | "tor" | "dpitunnel" | "byedpi" => Some("tunnel"),
+        "vpn-netd" | "openvpn" | "amneziawg" | "tun2socks" | "myvpn" | "mihomo" | "mieru" | "sing-box" | "wireguard" => Some("exclusive_network"),
+        "operaproxy" | "wireproxy" | "myproxy" | "myprogram" | "tor" | "dpitunnel" | "byedpi" => Some("tunnel"),
         "nfqws" | "nfqws2" => Some("zapret"),
         // blockedquic only conflicts with proxyInfo protection; it must not block VPN/tunnel app lists.
         _ => None,

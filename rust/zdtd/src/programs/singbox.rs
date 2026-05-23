@@ -6,6 +6,7 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
     io::Write,
+    net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
     os::unix::process::CommandExt,
     path::{Path, PathBuf},
     process::{Command, Stdio},
@@ -26,6 +27,7 @@ const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
 const WORKING_DIR: &str = "/data/adb/modules/ZDT-D/working_folder";
 
 const SINGBOX_BIN: &str = "/data/adb/modules/ZDT-D/bin/sing-box";
+const TUN2SOCKS_BIN: &str = "/data/adb/modules/ZDT-D/bin/tun2socks";
 const SINGBOX_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/singbox";
 const SINGBOX_PROFILE_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/singbox/profile";
 const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/singbox/active.json";
@@ -37,6 +39,7 @@ const NETID_BASE: u32 = 22200;
 const NETID_MAX: u32 = 22999;
 const SINGBOX_NET_BASE: u32 = 0xAC1F_F000; // 172.31.240.0 (outside sing-box fakeip 198.18.0.0/15)
 const TUN_WAIT: Duration = Duration::from_secs(25);
+const PORT_WAIT: Duration = Duration::from_secs(20);
 const IP_TIMEOUT: Duration = Duration::from_secs(3);
 const SINGBOX_CHECK_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -63,10 +66,15 @@ impl Default for SingboxMode {
 }
 
 impl SingboxMode {
-    pub fn as_str(&self) -> &'static str { "t2s" }
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::T2s => "t2s",
+            Self::Vpn => "vpn",
+        }
+    }
 
-    pub fn is_t2s(&self) -> bool { true }
-    pub fn is_vpn(&self) -> bool { false }
+    pub fn is_t2s(&self) -> bool { matches!(self, Self::T2s) }
+    pub fn is_vpn(&self) -> bool { matches!(self, Self::Vpn) }
 }
 
 impl Serialize for SingboxMode {
@@ -84,23 +92,28 @@ impl<'de> Deserialize<'de> for SingboxMode {
         D: Deserializer<'de>,
     {
         let s = Option::<String>::deserialize(deserializer)?.unwrap_or_else(|| "t2s".to_string());
-        let _ = s;
-        Ok(Self::T2s)
+        match s.trim().to_ascii_lowercase().as_str() {
+            "" | "t2s" | "proxy" => Ok(Self::T2s),
+            "vpn" | "tun2socks" | "t2s-vpn" | "t2s_vpn" => Ok(Self::Vpn),
+            other => Err(de::Error::custom(format!("unknown sing-box mode: {other}"))),
+        }
     }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProfileSetting {
-    #[serde(default, skip_serializing)]
+    #[serde(default)]
     pub mode: SingboxMode,
     #[serde(default)]
     pub t2s_port: u16,
     #[serde(default = "default_t2s_web_port")]
     pub t2s_web_port: u16,
-    #[serde(default = "default_tun_name", skip_serializing)]
+    #[serde(default = "default_tun_name")]
     pub tun: String,
-    #[serde(default = "default_dns", deserialize_with = "deserialize_dns", skip_serializing)]
+    #[serde(default = "default_dns", deserialize_with = "deserialize_dns")]
     pub dns: Vec<String>,
+    #[serde(default = "default_tun2socks_loglevel")]
+    pub tun2socks_loglevel: String,
 }
 
 impl Default for ProfileSetting {
@@ -111,6 +124,7 @@ impl Default for ProfileSetting {
             t2s_web_port: default_t2s_web_port(),
             tun: default_tun_name(),
             dns: default_dns(),
+            tun2socks_loglevel: default_tun2socks_loglevel(),
         }
     }
 }
@@ -155,13 +169,17 @@ struct T2sProfilePlan {
 struct VpnProfilePlan {
     name: String,
     setting: ProfileSetting,
+    server_name: String,
+    server_port: u16,
     config_path: PathBuf,
     app_in: PathBuf,
     app_out: PathBuf,
     log_path: PathBuf,
+    tun2socks_log_path: PathBuf,
     netid: u32,
     tun: String,
     tun_address: String,
+    cidr: String,
 }
 
 #[derive(Debug, Clone)]
@@ -173,6 +191,7 @@ struct TunInfo {
 fn default_t2s_web_port() -> u16 { 8001 }
 fn default_tun_name() -> String { "sbtun0".to_string() }
 fn default_dns() -> Vec<String> { vec!["8.8.8.8".to_string()] }
+fn default_tun2socks_loglevel() -> String { "info".to_string() }
 
 fn deserialize_dns<'de, D>(deserializer: D) -> std::result::Result<Vec<String>, D::Error>
 where
@@ -217,7 +236,6 @@ pub fn normalize_setting_value(value: Value) -> Result<ProfileSetting> {
 }
 
 fn normalize_setting_defaults(setting: &mut ProfileSetting) -> Result<()> {
-    setting.mode = SingboxMode::T2s;
     if setting.t2s_port == 0 {
         setting.t2s_port = 12345;
     }
@@ -233,6 +251,10 @@ fn normalize_setting_defaults(setting: &mut ProfileSetting) -> Result<()> {
     }
     setting.dns.sort();
     setting.dns.dedup();
+    setting.tun2socks_loglevel = setting.tun2socks_loglevel.trim().to_ascii_lowercase();
+    if setting.tun2socks_loglevel.is_empty() {
+        setting.tun2socks_loglevel = default_tun2socks_loglevel();
+    }
     Ok(())
 }
 
@@ -248,7 +270,23 @@ pub fn validate_setting(setting: &ProfileSetting) -> Result<()> {
     if setting.t2s_port == setting.t2s_web_port {
         bail!("duplicate t2s ports");
     }
+    if !is_valid_ifname(&setting.tun) || is_forbidden_tun_name(&setting.tun) {
+        bail!("tun must be 1..15 chars, must be a TUN name, and must not be a physical/system interface");
+    }
+    validate_loglevel(&setting.tun2socks_loglevel, "tun2socks_loglevel")?;
+    for dns in &setting.dns {
+        if !is_ipv4(dns) {
+            bail!("dns must contain IPv4 addresses only");
+        }
+    }
     Ok(())
+}
+
+fn validate_loglevel(v: &str, field: &str) -> Result<()> {
+    match v {
+        "debug" | "info" | "warn" | "error" | "silent" => Ok(()),
+        _ => bail!("{field} must be debug/info/warn/error/silent"),
+    }
 }
 
 pub fn read_setting(profile: &str) -> Result<ProfileSetting> {
@@ -331,7 +369,7 @@ pub fn start_t2s_if_enabled() -> Result<()> {
         if had_error {
             crate::logging::user_warn("sing-box: ошибка запуска, запуск продолжен");
         }
-        warn!("sing-box: no runnable t2s profiles after validation");
+        info!("sing-box: no runnable t2s profiles after validation");
         return Ok(());
     }
 
@@ -434,7 +472,170 @@ pub fn start_t2s_if_enabled() -> Result<()> {
 }
 
 pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
-    Ok(Vec::new())
+    ensure_base_layout()?;
+    ensure_file(SINGBOX_BIN)?;
+
+    let active = match read_active_profiles() {
+        Ok(v) => v,
+        Err(e) => {
+            warn!("sing-box vpn: failed to read active.json (skip): {e:#}");
+            return Ok(Vec::new());
+        }
+    };
+
+    let enabled_names: Vec<String> = active
+        .profiles
+        .iter()
+        .filter(|(_, st)| st.enabled)
+        .map(|(name, _)| name.clone())
+        .collect();
+
+    if enabled_names.is_empty() {
+        info!("sing-box vpn: no enabled profiles in active.json");
+        return Ok(Vec::new());
+    }
+
+    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding(true, false)
+        .unwrap_or_else(|_| BTreeSet::new());
+    let mut used_netids = BTreeSet::<u32>::new();
+    let mut own_used_ports = collect_enabled_t2s_local_ports(&enabled_names);
+    let mut plans = Vec::<VpnProfilePlan>::new();
+    let mut had_error = false;
+
+    for name in enabled_names {
+        match build_vpn_profile_plan(&name, &used_netids, &external_used, &own_used_ports) {
+            Ok(Some(plan)) => {
+                used_netids.insert(plan.netid);
+                own_used_ports.insert(plan.server_port);
+                plans.push(plan);
+            }
+            Ok(None) => {}
+            Err(e) => {
+                had_error = true;
+                warn!("sing-box vpn: profile '{}' skip: {e:#}", name);
+            }
+        }
+    }
+
+    if plans.is_empty() {
+        if had_error {
+            crate::logging::user_warn("sing-box: ошибка запуска VPN, запуск продолжен");
+        }
+        return Ok(Vec::new());
+    }
+
+    if let Err(e) = validate_vpn_plan_conflicts(&plans) {
+        warn!("sing-box vpn: profile conflict: {e:#}");
+        crate::logging::user_warn("sing-box: конфликт VPN-профилей, запуск продолжен");
+        return Ok(Vec::new());
+    }
+
+    let tun2socks_bin = find_bin("tun2socks")?;
+    crate::logging::user_info("sing-box VPN: запуск");
+
+    let mut profiles = Vec::<VpnNetdProfile>::new();
+    for plan in &plans {
+        let res: Result<VpnNetdProfile> = (|| {
+            info!(
+                "sing-box vpn: starting profile={} server={} tun={} port={} config={}",
+                plan.name,
+                plan.server_name,
+                plan.tun,
+                plan.server_port,
+                plan.config_path.display()
+            );
+
+            ensure_parent_dir(&plan.log_path)?;
+            truncate_file(&plan.log_path)?;
+            spawn_singbox(&plan.config_path, &plan.log_path)
+                .with_context(|| format!("spawn sing-box vpn profile={} server={}", plan.name, plan.server_name))?;
+            wait_tcp_port("127.0.0.1", plan.server_port)
+                .with_context(|| format!("sing-box vpn profile={} wait server port={}", plan.name, plan.server_port))?;
+
+            truncate_file(&plan.tun2socks_log_path)?;
+            spawn_tun2socks_for_vpn(&tun2socks_bin, plan)
+                .with_context(|| format!("spawn tun2socks for sing-box profile={}", plan.name))?;
+            wait_tun_link(&plan.tun)
+                .with_context(|| format!("sing-box vpn profile={} wait tun={}", plan.name, plan.tun))?;
+            configure_tun_addr(&plan.tun, &plan.tun_address)
+                .with_context(|| format!("sing-box vpn profile={} configure tun={}", plan.name, plan.tun))?;
+            wait_tun_ready(&plan.tun)
+                .with_context(|| format!("sing-box vpn profile={} wait IPv4 tun={}", plan.name, plan.tun))?;
+
+            info!(
+                "sing-box vpn: tun ready profile={} tun={} cidr={} gateway=none",
+                plan.name,
+                plan.tun,
+                plan.cidr
+            );
+
+            Ok(VpnNetdProfile {
+                owner_program: "singbox".to_string(),
+                profile: plan.name.clone(),
+                netid: plan.netid,
+                tun: plan.tun.clone(),
+                cidr: plan.cidr.clone(),
+                gateway: None,
+                dns: plan.setting.dns.clone(),
+                app_list_path: plan.app_in.clone(),
+                app_out_path: plan.app_out.clone(),
+            })
+        })();
+
+        match res {
+            Ok(profile) => profiles.push(profile),
+            Err(e) => {
+                had_error = true;
+                warn!("sing-box vpn: profile '{}' failed, startup continues: {e:#}", plan.name);
+            }
+        }
+    }
+
+    if had_error {
+        crate::logging::user_warn("sing-box: часть VPN-профилей не запущена, запуск продолжен");
+    }
+    info!("sing-box vpn: prepared vpn_netd profiles count={}", profiles.len());
+    Ok(profiles)
+}
+
+fn collect_enabled_t2s_local_ports(enabled_names: &[String]) -> BTreeSet<u16> {
+    let api_settings = settings::load_api_settings().unwrap_or_default();
+    let hotspot_profile = api_settings.hotspot_t2s_singbox_profile().map(|s| s.to_string());
+    let mut ports = BTreeSet::new();
+
+    for name in enabled_names {
+        let Ok(setting) = read_setting(name) else { continue };
+        if !setting.mode.is_t2s() {
+            continue;
+        }
+
+        let app_in = profile_root(name).join("app/uid/user_program");
+        let has_real_apps = app_list_has_real_apps(&app_in).unwrap_or(false);
+        let has_launch_marker = pkg_uid::file_has_launch_marker(&app_in).unwrap_or(false);
+        let profile_can_start = has_real_apps || has_launch_marker;
+        if !profile_can_start {
+            continue;
+        }
+
+        if has_real_apps || hotspot_profile.as_deref() == Some(name.as_str()) {
+            if setting.t2s_port != 0 {
+                ports.insert(setting.t2s_port);
+            }
+            if setting.t2s_web_port != 0 {
+                ports.insert(setting.t2s_web_port);
+            }
+        }
+
+        if let Ok(servers) = list_enabled_server_settings(name) {
+            for (_, server_setting) in servers {
+                if server_setting.port != 0 {
+                    ports.insert(server_setting.port);
+                }
+            }
+        }
+    }
+
+    ports
 }
 
 fn build_t2s_profile_plan(
@@ -499,30 +700,48 @@ fn build_t2s_profile_plan(
     }))
 }
 
-fn build_vpn_profile_plan(profile: &str, used_netids: &BTreeSet<u32>) -> Result<VpnProfilePlan> {
+fn build_vpn_profile_plan(
+    profile: &str,
+    used_netids: &BTreeSet<u32>,
+    external_used: &BTreeSet<u16>,
+    own_used_ports: &BTreeSet<u16>,
+) -> Result<Option<VpnProfilePlan>> {
     ensure_valid_profile_name(profile)?;
     let profile_dir = profile_root(profile);
     if !profile_dir.is_dir() {
         bail!("profile directory missing: {}", profile_dir.display());
     }
-    let mut setting = read_setting(profile)?;
+    let setting = read_setting(profile)?;
     if !setting.mode.is_vpn() {
-        bail!("profile mode is not vpn");
+        return Ok(None);
+    }
+    validate_setting(&setting).with_context(|| format!("profile '{profile}' setting"))?;
+
+    let app_in = profile_dir.join("app/uid/user_program");
+    let app_out = profile_dir.join("app/out/user_program");
+    ensure_file_empty(&app_in)?;
+    ensure_parent_dir(&app_out)?;
+    if !app_list_has_real_apps(&app_in)? {
+        warn!("sing-box vpn: profile '{}' has no real routed apps", profile);
+        return Ok(None);
     }
 
-    let server_dirs = list_server_dirs(profile)?;
-    if server_dirs.len() != 1 {
+    let enabled_servers = list_enabled_server_settings(profile)?;
+    if enabled_servers.len() != 1 {
         bail!(
-            "vpn mode supports exactly one server, found {}",
-            server_dirs.len()
+            "vpn mode supports exactly one enabled server, found {}",
+            enabled_servers.len()
         );
     }
-    let server_name = &server_dirs[0];
-    let server_dir = singbox_server_root(profile, server_name);
-    let server_setting: ServerSetting = read_json(&server_dir.join("setting.json")).unwrap_or_default();
-    if !server_setting.enabled {
-        bail!("vpn mode server '{}' is disabled", server_name);
+    let (server_name, server_setting) = &enabled_servers[0];
+    if server_setting.port == 0 {
+        bail!("vpn server '{}' has invalid port", server_name);
     }
+    if external_used.contains(&server_setting.port) || own_used_ports.contains(&server_setting.port) {
+        bail!("port conflict detected: {}", server_setting.port);
+    }
+
+    let server_dir = singbox_server_root(profile, server_name);
     let config_path = server_dir.join("config.json");
     let log_path = server_dir.join("log/sing-box.log");
     if !config_path.is_file() {
@@ -531,36 +750,47 @@ fn build_vpn_profile_plan(profile: &str, used_netids: &BTreeSet<u32>) -> Result<
     if !is_nonempty_file(&config_path).unwrap_or(false) {
         bail!("config.json is empty: {}", config_path.display());
     }
-    let netid = generate_netid(used_netids)?;
-    let (tun_address, _planned_cidr, _planned_dns) = generated_tun_address_for_index(netid - NETID_BASE)?;
-    let effective_tun = normalize_singbox_config_for_vpn(&config_path, &setting, &tun_address)
-        .with_context(|| format!("normalize vpn config {}", config_path.display()))?;
-    if setting.tun != effective_tun {
-        setting.tun = effective_tun.clone();
-        write_setting(profile, &setting).with_context(|| format!("sync sing-box vpn tun profile={profile}"))?;
-    }
-    singbox_check_config_with_vpn_retry(&config_path, &log_path)
+
+    normalize_singbox_config_for_t2s(&config_path, server_setting.port, &setting.dns)
+        .with_context(|| format!("normalize vpn/tun2socks backend config {}", config_path.display()))?;
+    singbox_check_config_with_log(&config_path, &log_path)
         .with_context(|| format!("sing-box check {}", config_path.display()))?;
 
-    let app_in = profile_dir.join("app/uid/user_program");
-    let app_out = profile_dir.join("app/out/user_program");
-    ensure_file_empty(&app_in)?;
-    let apps_raw = fs::read_to_string(&app_in).unwrap_or_default();
-    if apps_raw.lines().map(str::trim).all(|l| l.is_empty() || l.starts_with('#')) {
-        bail!("app list is empty: {}", app_in.display());
-    }
+    let netid = generate_netid(used_netids)?;
+    let (tun_address, cidr, _generated_dns) = generated_tun_address_for_index(netid - NETID_BASE)?;
 
-    Ok(VpnProfilePlan {
+    Ok(Some(VpnProfilePlan {
         name: profile.to_string(),
-        setting,
+        setting: setting.clone(),
+        server_name: server_name.clone(),
+        server_port: server_setting.port,
         config_path,
         app_in,
         app_out,
         log_path,
+        tun2socks_log_path: profile_tun2socks_log_path(profile),
         netid,
-        tun: effective_tun,
+        tun: setting.tun.clone(),
         tun_address,
-    })
+        cidr,
+    }))
+}
+
+fn app_list_has_real_apps(path: &Path) -> Result<bool> {
+    let raw = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    for line in raw.lines() {
+        let mut s = line.trim();
+        if let Some((left, _)) = s.split_once('#') {
+            s = left.trim();
+        }
+        if s.is_empty() {
+            continue;
+        }
+        if !pkg_uid::is_launch_marker_package(s) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn validate_t2s_profile_ports(
@@ -652,6 +882,14 @@ fn collect_t2s_profile_servers(
             );
             continue;
         }
+        if let Err(e) = normalize_singbox_config_for_t2s(&cfg, setting.port, &profile_setting.dns) {
+            warn!(
+                "sing-box: skip profile='{}' server='{}' (normalize t2s config failed): {e:#}",
+                profile,
+                name
+            );
+            continue;
+        }
         if let Err(e) = singbox_check_config_with_log(&cfg, &dir.join("log/sing-box.log"))
         {
             warn!(
@@ -696,7 +934,8 @@ pub fn validate_start_plan() -> Result<()> {
     let hotspot_profile = api_settings
         .hotspot_t2s_singbox_profile()
         .map(|s| s.to_string());
-    let mut seen_t2s_ports = BTreeMap::<u16, String>::new();
+    let mut seen_ports = BTreeMap::<u16, String>::new();
+    let mut seen_tuns = BTreeMap::<String, String>::new();
     let used_ports = crate::ports::collect_used_ports_for_conflict_check_excluding(true, false).unwrap_or_default();
 
     for name in enabled_names {
@@ -704,11 +943,10 @@ pub fn validate_start_plan() -> Result<()> {
             ensure_valid_profile_name(&name)?;
             let profile_dir = profile_root(&name);
             let setting = read_setting(&name)?;
+            validate_setting(&setting)?;
             let servers = list_enabled_server_settings(&name)?;
-            if servers.is_empty() {
-                bail!("no enabled t2s servers");
-            }
             let app_in = profile_dir.join("app/uid/user_program");
+
             let apps_raw = fs::read_to_string(&app_in).with_context(|| format!("read {}", app_in.display()))?;
             let mut has_marker = false;
             let mut has_real_app = false;
@@ -726,18 +964,65 @@ pub fn validate_start_plan() -> Result<()> {
                     has_real_app = true;
                 }
             }
-            if !has_marker && !has_real_app {
-                bail!("app list is empty: {}", app_in.display());
-            }
-            let needs_t2s = has_real_app || hotspot_profile.as_deref() == Some(name.as_str());
-            if needs_t2s {
-                validate_t2s_profile_ports(&name, &setting, &used_ports, &BTreeSet::new())?;
-                for (port, label) in [
-                    (setting.t2s_port, "t2s_port"),
-                    (setting.t2s_web_port, "t2s_web_port"),
-                ] {
-                    if let Some(other) = seen_t2s_ports.insert(port, format!("{name}/{label}")) {
-                        bail!("port {} is used by {} and {}", port, other, name);
+
+            if setting.mode.is_vpn() {
+                if !Path::new(TUN2SOCKS_BIN).is_file() {
+                    bail!("binary missing: {TUN2SOCKS_BIN}");
+                }
+                if !has_real_app {
+                    bail!("vpn mode requires real app list: {}", app_in.display());
+                }
+                if servers.len() != 1 {
+                    bail!("vpn mode supports exactly one enabled server, found {}", servers.len());
+                }
+                if let Some(other) = seen_tuns.insert(setting.tun.clone(), name.clone()) {
+                    bail!("tun {} is used by enabled profiles {} and {}", setting.tun, other, name);
+                }
+                let (server_name, server_setting) = &servers[0];
+                if server_setting.port == 0 {
+                    bail!("server {} port is required", server_name);
+                }
+                if let Some(other) = seen_ports.insert(server_setting.port, format!("{name}/{server_name}/port")) {
+                    bail!("port {} is used by {} and {}", server_setting.port, other, name);
+                }
+                if used_ports.contains(&server_setting.port) {
+                    bail!("server port {} conflicts with another ZDT-D local port", server_setting.port);
+                }
+                let config_path = singbox_server_root(&name, server_name).join("config.json");
+                if !config_path.is_file() {
+                    bail!("config.json is missing: {}", config_path.display());
+                }
+                if !is_nonempty_file(&config_path).unwrap_or(false) {
+                    bail!("config.json is empty: {}", config_path.display());
+                }
+            } else {
+                if servers.is_empty() {
+                    bail!("no enabled t2s servers");
+                }
+                if !has_marker && !has_real_app {
+                    bail!("app list is empty: {}", app_in.display());
+                }
+                let needs_t2s = has_real_app || hotspot_profile.as_deref() == Some(name.as_str());
+                if needs_t2s {
+                    validate_t2s_profile_ports(&name, &setting, &used_ports, &BTreeSet::new())?;
+                    for (port, label) in [
+                        (setting.t2s_port, "t2s_port"),
+                        (setting.t2s_web_port, "t2s_web_port"),
+                    ] {
+                        if let Some(other) = seen_ports.insert(port, format!("{name}/{label}")) {
+                            bail!("port {} is used by {} and {}", port, other, name);
+                        }
+                    }
+                }
+                for (server_name, server_setting) in servers {
+                    if server_setting.port == 0 {
+                        bail!("server {} port is required", server_name);
+                    }
+                    if let Some(other) = seen_ports.insert(server_setting.port, format!("{name}/{server_name}/port")) {
+                        bail!("port {} is used by {} and {}", server_setting.port, other, name);
+                    }
+                    if used_ports.contains(&server_setting.port) {
+                        bail!("server port {} conflicts with another ZDT-D local port", server_setting.port);
                     }
                 }
             }
@@ -761,11 +1046,48 @@ pub fn has_enabled_profiles() -> bool {
         .unwrap_or(false)
 }
 
-pub fn has_enabled_vpn_profiles() -> bool { false }
+pub fn has_enabled_vpn_profiles() -> bool {
+    read_active_profiles()
+        .map(|active| {
+            active.profiles.into_iter().any(|(name, st)| {
+                if !st.enabled { return false; }
+                let Ok(setting) = read_setting(&name) else { return false; };
+                setting.mode.is_vpn() && app_list_has_real_apps(&profile_root(&name).join("app/uid/user_program")).unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
 
-pub fn enabled_tun_claims() -> Vec<(String, String)> { Vec::new() }
+pub fn enabled_tun_claims() -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let Ok(active) = read_active_profiles() else { return out; };
+    for (name, st) in active.profiles {
+        if !st.enabled { continue; }
+        let Ok(setting) = read_setting(&name) else { continue; };
+        if !setting.mode.is_vpn() { continue; }
+        if !app_list_has_real_apps(&profile_root(&name).join("app/uid/user_program")).unwrap_or(false) { continue; }
+        out.push((format!("singbox/{name}"), setting.tun));
+    }
+    out
+}
 
-pub fn enabled_cidr_claims() -> Vec<(String, String)> { Vec::new() }
+pub fn enabled_cidr_claims() -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let Ok(active) = read_active_profiles() else { return out; };
+    let mut used_netids = BTreeSet::<u32>::new();
+    for (name, st) in active.profiles {
+        if !st.enabled { continue; }
+        let Ok(setting) = read_setting(&name) else { continue; };
+        if !setting.mode.is_vpn() || validate_setting(&setting).is_err() { continue; }
+        if !app_list_has_real_apps(&profile_root(&name).join("app/uid/user_program")).unwrap_or(false) { continue; }
+        let Ok(netid) = generate_netid(&used_netids) else { break; };
+        used_netids.insert(netid);
+        if let Ok((_, cidr, _)) = generated_tun_address_for_index(netid - NETID_BASE) {
+            out.push((format!("singbox/{name}"), cidr));
+        }
+    }
+    out
+}
 
 
 pub fn is_running() -> bool {
@@ -775,7 +1097,17 @@ pub fn is_running() -> bool {
 pub fn normalize_config_for_profile_server(profile: &str, server: &str) -> Result<()> {
     ensure_valid_profile_name(profile)?;
     ensure_valid_profile_name(server)?;
-    Ok(())
+    let setting = read_setting(profile)?;
+    let server_dir = singbox_server_root(profile, server);
+    let server_setting: ServerSetting = read_json(&server_dir.join("setting.json")).unwrap_or_default();
+    if server_setting.port == 0 {
+        bail!("server port is required");
+    }
+    let config_path = server_dir.join("config.json");
+    if !config_path.is_file() || !is_nonempty_file(&config_path).unwrap_or(false) {
+        return Ok(());
+    }
+    normalize_singbox_config_for_t2s(&config_path, server_setting.port, &setting.dns)
 }
 
 fn validate_vpn_plan_conflicts(plans: &[VpnProfilePlan]) -> Result<()> {
@@ -1519,6 +1851,115 @@ fn spawn_t2s(
     Ok(())
 }
 
+fn spawn_tun2socks_for_vpn(bin: &Path, plan: &VpnProfilePlan) -> Result<()> {
+    let proxy = format!("socks5://127.0.0.1:{}", plan.server_port);
+    if tun2socks_profile_process_running(&plan.tun, &proxy) {
+        info!(
+            "sing-box vpn: tun2socks profile={} already running for tun={} proxy={}, skip spawn",
+            plan.name,
+            plan.tun,
+            proxy
+        );
+        return Ok(());
+    }
+
+    let logf = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&plan.tun2socks_log_path)
+        .with_context(|| format!("open log {}", plan.tun2socks_log_path.display()))?;
+    let logf_err = logf.try_clone().with_context(|| "clone sing-box tun2socks log")?;
+
+    let mut cmd = Command::new(bin);
+    cmd.arg("-device")
+        .arg(format!("tun://{}", plan.tun))
+        .arg("-proxy")
+        .arg(&proxy)
+        .arg("-loglevel")
+        .arg(&plan.setting.tun2socks_loglevel)
+        .current_dir(profile_root(&plan.name))
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(logf))
+        .stderr(Stdio::from(logf_err));
+
+    unsafe {
+        cmd.pre_exec(|| {
+            let _ = libc::setsid();
+            Ok(())
+        });
+    }
+
+    let child = cmd.spawn().with_context(|| format!("spawn {} for sing-box", bin.display()))?;
+    info!(
+        "sing-box vpn: spawned tun2socks profile={} pid={} tun={} proxy={} log={}",
+        plan.name,
+        child.id(),
+        plan.tun,
+        proxy,
+        plan.tun2socks_log_path.display()
+    );
+    Ok(())
+}
+
+fn tun2socks_profile_process_running(tun: &str, proxy: &str) -> bool {
+    let pattern = format!(
+        "{} -device tun://{} -proxy {}",
+        TUN2SOCKS_BIN,
+        tun,
+        proxy
+    );
+    let cmd = format!(
+        "ps -ef 2>/dev/null | grep -F {} | grep -v grep >/dev/null 2>&1",
+        shell_quote_for_sh(&pattern)
+    );
+    shell::ok_sh(&cmd).is_ok()
+}
+
+fn wait_tcp_port(host: &str, port: u16) -> Result<()> {
+    let ip: IpAddr = host.parse().unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+    let addr = SocketAddr::new(ip, port);
+    let start = Instant::now();
+    loop {
+        if start.elapsed() >= PORT_WAIT {
+            bail!("127.0.0.1:{port} is not listening after {:?}", PORT_WAIT);
+        }
+        if TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok() {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(300));
+    }
+}
+
+fn wait_tun_link(tun: &str) -> Result<()> {
+    let start = Instant::now();
+    loop {
+        if start.elapsed() >= TUN_WAIT {
+            bail!("tun {tun} was not created after {:?}", TUN_WAIT);
+        }
+        let (code, _) = shell::run_timeout("ip", &["link", "show", tun], Capture::Both, IP_TIMEOUT)
+            .unwrap_or((1, String::new()));
+        if code == 0 {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(300));
+    }
+}
+
+fn configure_tun_addr(tun: &str, tun_addr: &str) -> Result<()> {
+    let (code, out) = shell::run_timeout("ip", &["addr", "replace", tun_addr, "dev", tun], Capture::Both, IP_TIMEOUT)
+        .with_context(|| format!("ip addr replace {tun_addr} dev {tun}"))?;
+    if code != 0 {
+        bail!("ip addr replace {tun_addr} dev {tun} failed: {}", out.trim());
+    }
+    let (code, out) = shell::run_timeout("ip", &["link", "set", tun, "up"], Capture::Both, IP_TIMEOUT)
+        .with_context(|| format!("ip link set {tun} up"))?;
+    if code != 0 {
+        bail!("ip link set {tun} up failed: {}", out.trim());
+    }
+    Ok(())
+}
+
 fn singbox_profile_process_running(config_path: &Path) -> bool {
     let pattern = format!("{} run -c {}", SINGBOX_BIN, config_path.display());
     let cmd = format!(
@@ -1733,6 +2174,10 @@ fn singbox_server_root(profile: &str, server: &str) -> PathBuf {
 
 fn profile_t2s_log_path(profile: &str) -> PathBuf {
     profile_root(profile).join("log/t2s.log")
+}
+
+fn profile_tun2socks_log_path(profile: &str) -> PathBuf {
+    profile_root(profile).join("log/tun2socks.log")
 }
 
 pub fn is_valid_profile_name(name: &str) -> bool {

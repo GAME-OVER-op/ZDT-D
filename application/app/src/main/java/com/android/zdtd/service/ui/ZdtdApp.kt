@@ -30,6 +30,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -98,8 +99,6 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import com.android.zdtd.service.ui.AppUpdateBanner
 import com.android.zdtd.service.ui.AppUpdateSettings
 import com.android.zdtd.service.ui.UnknownSourcesPermissionDialog
@@ -900,7 +899,6 @@ private fun MainShell(
   val appUpdate by appUpdateFlow.collectAsStateWithLifecycle()
 
   if (showSettings) {
-    val settingsScope = rememberCoroutineScope()
     var settingsContentReady by remember { mutableStateOf(false) }
 
     fun resetInvalidHotspotT2sIfNeeded() {
@@ -920,22 +918,8 @@ private fun MainShell(
       afterClose?.invoke()
     }
 
-    val sheetState = rememberModalBottomSheetState(
-      skipPartiallyExpanded = true,
-      confirmValueChange = { target ->
-        if (target == SheetValue.Hidden) {
-          resetInvalidHotspotT2sIfNeeded()
-        }
-        true
-      },
-    )
-
     fun closeSettings(afterClose: (() -> Unit)? = null) {
-      resetInvalidHotspotT2sIfNeeded()
-      settingsScope.launch {
-        runCatching { sheetState.hide() }
-        dismissSettings(afterClose)
-      }
+      dismissSettings(afterClose)
     }
 
     LaunchedEffect(Unit) {
@@ -1025,88 +1009,80 @@ private fun MainShell(
         }
       }
     } else {
-      ModalBottomSheet(
-        onDismissRequest = { dismissSettings() },
-        sheetState = sheetState,
-        contentWindowInsets = { WindowInsets.safeDrawing },
+      PortraitSettingsShelf(
+        onDismiss = { dismissSettings() },
       ) {
-        BoxWithConstraints(
-          modifier = Modifier.fillMaxWidth(),
+        Box(
+          modifier = Modifier
+            .fillMaxSize()
+            .animateContentSize(animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)),
         ) {
-          val settingsSheetMaxHeight = maxHeight * 0.90f
-          Box(
-            modifier = Modifier
-              .fillMaxWidth()
-              .heightIn(max = settingsSheetMaxHeight),
-          ) {
-            Crossfade(
-          targetState = settingsContentReady,
-          animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
-          label = "settingsContentReady",
-        ) { ready ->
-          if (!ready) {
-            Box(
-              modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 220.dp)
-                .padding(horizontal = 24.dp, vertical = 28.dp),
-              contentAlignment = Alignment.Center,
-            ) {
-              Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+          Crossfade(
+            targetState = settingsContentReady,
+            animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+            label = "settingsContentReady",
+          ) { ready ->
+            if (!ready) {
+              Box(
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .heightIn(min = 220.dp)
+                  .padding(horizontal = 24.dp, vertical = 28.dp),
+                contentAlignment = Alignment.Center,
               ) {
-                CircularProgressIndicator()
-                Text(
-                  text = stringResource(R.string.common_loading),
-                  style = MaterialTheme.typography.bodyMedium,
-                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-                )
+                Column(
+                  horizontalAlignment = Alignment.CenterHorizontally,
+                  verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                  CircularProgressIndicator()
+                  Text(
+                    text = stringResource(R.string.common_loading),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+                  )
+                }
               }
-            }
-          } else {
-            AppUpdateSettings(
-              enabled = appUpdate.enabled,
-              onToggle = actions::setAppUpdateChecksEnabled,
-              onCheckNow = actions::checkAppUpdateNow,
-              daemonNotificationEnabled = appUpdate.daemonStatusNotificationEnabled,
-              onToggleDaemonNotification = actions::setDaemonStatusNotificationsEnabled,
-              languageMode = appUpdate.languageMode,
-              onLanguageModeChange = actions::setAppLanguageMode,
-              protectorMode = appUpdate.protectorMode,
-              onProtectorModeChange = actions::setProtectorMode,
-              hotspotT2sEnabled = appUpdate.hotspotT2sEnabled,
-              hotspotT2sTarget = appUpdate.hotspotT2sTarget,
-              hotspotT2sSingboxProfile = appUpdate.hotspotT2sSingboxProfile,
-              hotspotT2sWireproxyProfile = appUpdate.hotspotT2sWireproxyProfile,
-              hotspotSingboxProfiles = appUpdate.hotspotSingboxProfiles,
-              hotspotWireproxyProfiles = appUpdate.hotspotWireproxyProfiles,
-              onHotspotT2sEnabledChange = actions::setHotspotT2sEnabled,
-              onHotspotT2sTargetChange = actions::setHotspotT2sTarget,
-              onHotspotT2sSingboxProfileChange = actions::setHotspotT2sSingboxProfile,
-              onHotspotT2sWireproxyProfileChange = actions::setHotspotT2sWireproxyProfile,
-              proxyInfoEnabled = appUpdate.proxyInfoEnabled,
-              proxyInfoBusy = appUpdate.proxyInfoBusy,
-              proxyInfoAppsContent = appUpdate.proxyInfoAppsContent,
-              onProxyInfoEnabledChange = actions::setProxyInfoEnabled,
-              onLoadAppAssignments = actions::loadAppAssignments,
-              onProxyInfoAppsSave = actions::saveProxyInfoApps,
-              onProxyInfoAppsSaveRemovingConflicts = actions::saveProxyInfoAppsRemovingConflicts,
-              blockedQuicEnabled = appUpdate.blockedQuicEnabled,
-              blockedQuicBusy = appUpdate.blockedQuicBusy,
-              blockedQuicAppsContent = appUpdate.blockedQuicAppsContent,
-              onBlockedQuicEnabledChange = actions::setBlockedQuicEnabled,
-              onBlockedQuicAppsSave = actions::saveBlockedQuicApps,
-              resettingModuleIdentifier = appUpdate.resettingModuleIdentifier,
-              onResetModuleIdentifier = actions::resetModuleIdentifier,
-              onDeleteModule = { closeSettings { showDeleteModule = true } },
-              landscapeColumns = landscapeControl,
-            )
+            } else {
+              AppUpdateSettings(
+                enabled = appUpdate.enabled,
+                onToggle = actions::setAppUpdateChecksEnabled,
+                onCheckNow = actions::checkAppUpdateNow,
+                daemonNotificationEnabled = appUpdate.daemonStatusNotificationEnabled,
+                onToggleDaemonNotification = actions::setDaemonStatusNotificationsEnabled,
+                languageMode = appUpdate.languageMode,
+                onLanguageModeChange = actions::setAppLanguageMode,
+                protectorMode = appUpdate.protectorMode,
+                onProtectorModeChange = actions::setProtectorMode,
+                hotspotT2sEnabled = appUpdate.hotspotT2sEnabled,
+                hotspotT2sTarget = appUpdate.hotspotT2sTarget,
+                hotspotT2sSingboxProfile = appUpdate.hotspotT2sSingboxProfile,
+                hotspotT2sWireproxyProfile = appUpdate.hotspotT2sWireproxyProfile,
+                hotspotSingboxProfiles = appUpdate.hotspotSingboxProfiles,
+                hotspotWireproxyProfiles = appUpdate.hotspotWireproxyProfiles,
+                onHotspotT2sEnabledChange = actions::setHotspotT2sEnabled,
+                onHotspotT2sTargetChange = actions::setHotspotT2sTarget,
+                onHotspotT2sSingboxProfileChange = actions::setHotspotT2sSingboxProfile,
+                onHotspotT2sWireproxyProfileChange = actions::setHotspotT2sWireproxyProfile,
+                proxyInfoEnabled = appUpdate.proxyInfoEnabled,
+                proxyInfoBusy = appUpdate.proxyInfoBusy,
+                proxyInfoAppsContent = appUpdate.proxyInfoAppsContent,
+                onProxyInfoEnabledChange = actions::setProxyInfoEnabled,
+                onLoadAppAssignments = actions::loadAppAssignments,
+                onProxyInfoAppsSave = actions::saveProxyInfoApps,
+                onProxyInfoAppsSaveRemovingConflicts = actions::saveProxyInfoAppsRemovingConflicts,
+                blockedQuicEnabled = appUpdate.blockedQuicEnabled,
+                blockedQuicBusy = appUpdate.blockedQuicBusy,
+                blockedQuicAppsContent = appUpdate.blockedQuicAppsContent,
+                onBlockedQuicEnabledChange = actions::setBlockedQuicEnabled,
+                onBlockedQuicAppsSave = actions::saveBlockedQuicApps,
+                resettingModuleIdentifier = appUpdate.resettingModuleIdentifier,
+                onResetModuleIdentifier = actions::resetModuleIdentifier,
+                onDeleteModule = { closeSettings { showDeleteModule = true } },
+                landscapeColumns = false,
+              )
             }
           }
         }
-        }
-        Spacer(Modifier.height(16.dp))
       }
     }
   }
@@ -1952,6 +1928,140 @@ private fun LandscapeNavIcon(
   }
 }
 
+
+
+@Composable
+private fun PortraitSettingsShelf(
+  onDismiss: () -> Unit,
+  content: @Composable () -> Unit,
+) {
+  val scope = rememberCoroutineScope()
+  val density = LocalDensity.current
+  val dragOffsetY = remember { Animatable(0f) }
+  var visible by remember { mutableStateOf(false) }
+  var dismissing by remember { mutableStateOf(false) }
+  val dismissThresholdPx = with(density) { 92.dp.toPx() }
+  val dismissTargetPx = with(density) { 220.dp.toPx() }
+
+  fun dismissWithAnimation() {
+    if (dismissing) return
+    dismissing = true
+    scope.launch {
+      visible = false
+      runCatching {
+        dragOffsetY.animateTo(
+          targetValue = dismissTargetPx,
+          animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
+        )
+      }
+      onDismiss()
+    }
+  }
+
+  LaunchedEffect(Unit) {
+    visible = true
+  }
+
+  Dialog(
+    onDismissRequest = { dismissWithAnimation() },
+    properties = DialogProperties(usePlatformDefaultWidth = false),
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
+        .windowInsetsPadding(WindowInsets.safeDrawing),
+      contentAlignment = Alignment.BottomCenter,
+    ) {
+      AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(durationMillis = 150, easing = FastOutSlowInEasing)) +
+          slideInVertically(
+            animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+            initialOffsetY = { it / 4 },
+          ) +
+          scaleIn(
+            animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+            initialScale = 0.98f,
+          ),
+        exit = fadeOut(tween(durationMillis = 110)) +
+          slideOutVertically(
+            animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
+            targetOffsetY = { it / 5 },
+          ),
+      ) {
+        Surface(
+          modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(0.88f)
+            .graphicsLayer { translationY = dragOffsetY.value },
+          shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+          color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+          tonalElevation = 4.dp,
+          shadowElevation = 10.dp,
+        ) {
+          Column(Modifier.fillMaxSize()) {
+            Box(
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(34.dp)
+                .pointerInput(Unit) {
+                  detectVerticalDragGestures(
+                    onVerticalDrag = { _, dragAmount ->
+                      val next = (dragOffsetY.value + dragAmount).coerceAtLeast(0f)
+                      scope.launch { dragOffsetY.snapTo(next) }
+                    },
+                    onDragEnd = {
+                      scope.launch {
+                        if (dragOffsetY.value >= dismissThresholdPx) {
+                          dismissWithAnimation()
+                        } else {
+                          dragOffsetY.animateTo(
+                            targetValue = 0f,
+                            animationSpec = spring(
+                              dampingRatio = Spring.DampingRatioNoBouncy,
+                              stiffness = Spring.StiffnessMediumLow,
+                            ),
+                          )
+                        }
+                      }
+                    },
+                    onDragCancel = {
+                      scope.launch {
+                        dragOffsetY.animateTo(
+                          targetValue = 0f,
+                          animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMediumLow,
+                          ),
+                        )
+                      }
+                    },
+                  )
+                },
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier = Modifier
+                  .width(52.dp)
+                  .height(5.dp)
+                  .clip(RoundedCornerShape(100.dp))
+                  .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f)),
+              )
+            }
+            Box(
+              modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .clipToBounds(),
+            ) {
+              content()
+            }
+          }
+        }
+      }
+    }
+  }
+}
 
 @Composable
 private fun LandscapeSettingsShelf(

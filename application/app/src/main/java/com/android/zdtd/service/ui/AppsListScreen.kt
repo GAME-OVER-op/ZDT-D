@@ -49,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -620,11 +621,21 @@ private fun ProgramCard(
           border = BorderStroke(1.dp, accentColor.copy(alpha = if (isActive) 0.42f else 0.24f)),
         ) {
           Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Icon(
-              imageVector = programIcon(program.id),
-              contentDescription = null,
-              modifier = Modifier.size(if (compact) 23.dp else 25.dp),
-            )
+            val iconSize = if (compact) 28.dp else 31.dp
+            val iconRes = programIconRes(program.id)
+            if (iconRes != null) {
+              Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                modifier = Modifier.size(iconSize),
+              )
+            } else {
+              Icon(
+                imageVector = programIcon(program.id),
+                contentDescription = null,
+                modifier = Modifier.size(if (compact) 23.dp else 25.dp),
+              )
+            }
           }
         }
 
@@ -719,6 +730,28 @@ private fun isProgramVisuallyActive(program: ApiModels.Program): Boolean {
 @Composable
 private fun programDescription(id: String): String {
   return toolDescription(id)
+}
+
+private fun programIconRes(id: String): Int? {
+  return when (id) {
+    "operaproxy" -> R.drawable.ic_tool_operaproxy
+    "nfqws" -> R.drawable.ic_tool_zapret
+    "nfqws2" -> R.drawable.ic_tool_zapret2
+    "byedpi" -> R.drawable.ic_tool_byedpi
+    "dpitunnel" -> R.drawable.ic_tool_dpitunnel
+    "wireproxy" -> R.drawable.ic_tool_wireproxy
+    "tor" -> R.drawable.ic_tool_tor
+    "myproxy" -> R.drawable.ic_tool_myproxy
+    "myprogram" -> R.drawable.ic_tool_myprogram
+    "openvpn" -> R.drawable.ic_tool_openvpn
+    "amneziawg" -> R.drawable.ic_tool_amneziawg
+    "tun2socks" -> R.drawable.ic_tool_tun2socks
+    "myvpn" -> R.drawable.ic_tool_myvpn
+    "mihomo" -> R.drawable.ic_tool_mihomo
+    "mieru" -> R.drawable.ic_tool_mieru
+    "sing-box" -> R.drawable.ic_tool_sing_box
+    else -> null
+  }
 }
 
 internal fun programIcon(id: String): ImageVector {

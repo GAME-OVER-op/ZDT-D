@@ -26,7 +26,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -47,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -368,7 +368,7 @@ private fun ProgramUpdatesHeader(onRefresh: () -> Unit) {
       border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.34f)),
     ) {
       Box(contentAlignment = Alignment.Center) {
-        Icon(Icons.Filled.SystemUpdateAlt, contentDescription = null, tint = Color(0xFF7DD3FC))
+        Icon(painter = painterResource(R.drawable.ic_program_updates_custom), contentDescription = null, tint = Color(0xFF7DD3FC))
       }
     }
     Spacer(Modifier.width(12.dp))
@@ -463,7 +463,7 @@ private fun ProgramUpdateCard(
             if (item.checking || item.updating) {
               CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
             } else {
-              Icon(Icons.Filled.SystemUpdateAlt, contentDescription = null, tint = accent, modifier = Modifier.size(19.dp))
+              Icon(painter = painterResource(R.drawable.ic_program_updates_custom), contentDescription = null, tint = accent, modifier = Modifier.size(19.dp))
             }
           }
         }

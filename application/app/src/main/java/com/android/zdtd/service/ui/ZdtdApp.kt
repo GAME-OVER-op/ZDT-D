@@ -46,7 +46,6 @@ import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -70,6 +69,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -1852,7 +1852,7 @@ private fun LandscapeQuickActions(
       }
       IconButton(onClick = { onOpenProgramUpdates() }, modifier = Modifier.size(44.dp)) {
         Icon(
-          Icons.Filled.SystemUpdateAlt,
+          painter = painterResource(R.drawable.ic_program_updates_custom),
           contentDescription = stringResource(R.string.cd_program_updates),
           modifier = Modifier.size(26.dp),
         )
@@ -2170,7 +2170,7 @@ private fun TopBarActionCluster(
       CollapsingTopBarAction(visible = showFullActions) {
         IconButton(onClick = onOpenProgramUpdates) {
           Icon(
-            Icons.Filled.SystemUpdateAlt,
+            painter = painterResource(R.drawable.ic_program_updates_custom),
             contentDescription = stringResource(R.string.cd_program_updates),
           )
         }

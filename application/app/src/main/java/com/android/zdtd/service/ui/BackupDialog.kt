@@ -26,7 +26,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Share
@@ -269,6 +271,7 @@ private fun BackupLandscapeContent(
           .weight(0.42f)
           .fillMaxHeight(),
         state = state,
+        compact = false,
         enabled = enabled,
         requireReopenAfterRestore = requireReopenAfterRestore,
         onCreate = onCreate,
@@ -317,6 +320,7 @@ private fun BackupPortraitContent(
     BackupActionPanel(
       modifier = Modifier.fillMaxWidth(),
       state = state,
+      compact = compact,
       enabled = enabled,
       requireReopenAfterRestore = requireReopenAfterRestore,
       onCreate = onCreate,
@@ -383,6 +387,7 @@ private fun BackupDialogHeader(onRefresh: () -> Unit) {
 private fun BackupActionPanel(
   modifier: Modifier,
   state: BackupUiState,
+  compact: Boolean,
   enabled: Boolean,
   requireReopenAfterRestore: Boolean,
   onCreate: () -> Unit,
@@ -395,34 +400,69 @@ private fun BackupActionPanel(
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .verticalScroll(rememberScrollState()),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
+        .then(if (compact) Modifier else Modifier.verticalScroll(rememberScrollState())),
+      verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 12.dp),
     ) {
-      Text(
-        stringResource(R.string.backup_create),
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.SemiBold,
-      )
-      Text(
-        stringResource(R.string.backup_desc),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
-      )
-      Button(
-        onClick = onCreate,
-        enabled = enabled,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-      ) {
-        Text(stringResource(R.string.backup_create))
-      }
-      OutlinedButton(
-        onClick = onImport,
-        enabled = enabled,
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-      ) {
-        Text(stringResource(R.string.backup_import))
+      if (compact) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          Text(
+            stringResource(R.string.backup_create),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          IconButton(
+            onClick = onCreate,
+            enabled = enabled,
+          ) {
+            Icon(
+              Icons.Filled.Add,
+              contentDescription = stringResource(R.string.backup_create),
+            )
+          }
+          IconButton(
+            onClick = onImport,
+            enabled = enabled,
+          ) {
+            Icon(
+              Icons.Filled.FileUpload,
+              contentDescription = stringResource(R.string.backup_import),
+            )
+          }
+        }
+      } else {
+        Text(
+          stringResource(R.string.backup_create),
+          style = MaterialTheme.typography.titleMedium,
+          fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+          stringResource(R.string.backup_desc),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+        )
+        Button(
+          onClick = onCreate,
+          enabled = enabled,
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(18.dp),
+        ) {
+          Text(stringResource(R.string.backup_create))
+        }
+        OutlinedButton(
+          onClick = onImport,
+          enabled = enabled,
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(18.dp),
+        ) {
+          Text(stringResource(R.string.backup_import))
+        }
       }
       if (state.error != null) {
         StyledMessageCard(

@@ -379,6 +379,7 @@ fun AppUpdateSettings(
       title = stringResource(R.string.app_update_check_now),
       body = stringResource(R.string.app_update_check_body),
       actionText = stringResource(R.string.app_update_check_now),
+      showActionChip = false,
       onClick = onCheckNow,
     )
 
@@ -442,6 +443,7 @@ fun AppUpdateSettings(
       title = stringResource(R.string.settings_reset_identifier_title),
       body = stringResource(R.string.settings_reset_identifier_body),
       actionText = stringResource(R.string.settings_reset_identifier_action),
+      showActionChip = false,
       enabled = !resettingModuleIdentifier,
       onClick = { showResetIdentifierConfirm = true },
     )
@@ -450,6 +452,7 @@ fun AppUpdateSettings(
       title = stringResource(R.string.settings_delete_module_title),
       body = stringResource(R.string.settings_delete_module_body),
       actionText = stringResource(R.string.settings_delete_module_action),
+      showActionChip = false,
       danger = true,
       onClick = onDeleteModule,
     )
@@ -566,6 +569,7 @@ private fun SettingsActionCard(
   onClick: () -> Unit,
   enabled: Boolean = true,
   danger: Boolean = false,
+  showActionChip: Boolean = true,
 ) {
   val shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp)
   val accent = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
@@ -596,18 +600,20 @@ private fun SettingsActionCard(
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
         )
       }
-      Surface(
-        shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
-        color = accent.copy(alpha = if (enabled) 0.18f else 0.08f),
-      ) {
-        Text(
-          text = actionText,
-          modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
-          style = MaterialTheme.typography.labelMedium,
-          fontWeight = FontWeight.SemiBold,
-          color = accent.copy(alpha = if (enabled) 1f else 0.45f),
-          textAlign = TextAlign.Center,
-        )
+      if (showActionChip) {
+        Surface(
+          shape = androidx.compose.foundation.shape.RoundedCornerShape(50),
+          color = accent.copy(alpha = if (enabled) 0.18f else 0.08f),
+        ) {
+          Text(
+            text = actionText,
+            modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = accent.copy(alpha = if (enabled) 1f else 0.45f),
+            textAlign = TextAlign.Center,
+          )
+        }
       }
     }
   }

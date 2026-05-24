@@ -1509,6 +1509,7 @@ APatch: 10700+</string>
     <string name="web_panel_action_back">Назад</string>
     <string name="web_panel_action_refresh">Обновить</string>
     <string name="web_panel_action_reset">Сбросить страницу</string>
+    <string name="web_panel_loading_title">Пожалуйста, подождите</string>
     <string name="web_panel_loading_page">Открываем веб-панель…</string>
     <string name="web_panel_open">Веб-панель</string>
     <string name="web_panel_unavailable">Кажется, служба не запущена или веб-панель настроена неверно</string>

@@ -803,3 +803,42 @@ jobs:
           fi
 
           gh release upload "$SERVICE_TAG" "$APK_RELEASE" --clobber
+
+      - name: Sync app-release.apk into existing version release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          APK_SOURCE="out/dist/app-release.apk"
+          test -s "$APK_SOURCE" || { echo "::error::APK does not exist: $APK_SOURCE"; exit 1; }
+
+          VERSION_NAME=$(grep -m1 '^version=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')
+          if [[ -z "$VERSION_NAME" ]]; then
+            echo "::warning::version dont found in module.prop; stable release asset sync skipped"
+            exit 0
+          fi
+
+          TARGET_TAG=""
+          for tag in "v${VERSION_NAME}" "V${VERSION_NAME}"; do
+            if gh release view "$tag" >/dev/null 2>&1; then
+              TARGET_TAG="$tag"
+              break
+            fi
+          done
+
+          if [[ -z "$TARGET_TAG" ]]; then
+            echo "Stable release v${VERSION_NAME}/V${VERSION_NAME} does not exist. app-release.apk sync skipped."
+            exit 0
+          fi
+
+          echo "Stable release $TARGET_TAG exists. Updating only app-release.apk asset."
+          gh release upload "$TARGET_TAG" "$APK_SOURCE#app-release.apk" --clobber
+
+          {
+            echo "### Stable release APK sync"
+            echo
+            echo "Stable release: \`$TARGET_TAG\`"
+            echo "Asset updated: \`app-release.apk\`"
+            echo "Release notes/body: not changed"
+          } >> "$GITHUB_STEP_SUMMARY"

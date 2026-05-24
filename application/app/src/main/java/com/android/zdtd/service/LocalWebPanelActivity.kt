@@ -278,16 +278,23 @@ class LocalWebPanelActivity : Activity() {
   }
 
   private fun createLoadingOverlay(): View {
-    val titleText = getString(R.string.delete_module_prepare_title)
+    val compact = useCompactToolbar()
+    val titleText = getString(R.string.web_panel_loading_title)
     val bodyText = getString(R.string.web_panel_loading_page)
 
     val card = LinearLayout(this).apply {
       orientation = LinearLayout.VERTICAL
       gravity = Gravity.CENTER_HORIZONTAL
-      setPadding(dp(22), dp(20), dp(22), dp(20))
+      minimumWidth = dp(if (compact) 240 else 280)
+      setPadding(
+        dp(if (compact) 18 else 22),
+        dp(if (compact) 16 else 20),
+        dp(if (compact) 18 else 22),
+        dp(if (compact) 16 else 20),
+      )
       background = roundedBackground(
         color = Color.rgb(14, 14, 19),
-        radiusDp = 24,
+        radiusDp = if (compact) 22 else 24,
         strokeColor = Color.rgb(72, 72, 86),
         strokeWidthDp = 1,
       )
@@ -296,27 +303,38 @@ class LocalWebPanelActivity : Activity() {
       val progress = ProgressBar(this@LocalWebPanelActivity).apply {
         isIndeterminate = true
         indeterminateTintList = ColorStateList.valueOf(Color.WHITE)
-        layoutParams = LinearLayout.LayoutParams(dp(38), dp(38)).apply {
-          bottomMargin = dp(14)
+        val progressSize = if (compact) 34 else 38
+        layoutParams = LinearLayout.LayoutParams(dp(progressSize), dp(progressSize)).apply {
+          bottomMargin = dp(if (compact) 12 else 14)
         }
       }
 
       loadingTitle = TextView(this@LocalWebPanelActivity).apply {
         text = titleText
         setTextColor(Color.WHITE)
-        textSize = 17f
+        textSize = if (compact) 16f else 17f
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         gravity = Gravity.CENTER
         includeFontPadding = false
+        maxLines = 2
+        layoutParams = LinearLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
       }
 
       loadingBody = TextView(this@LocalWebPanelActivity).apply {
         text = bodyText
         setTextColor(Color.rgb(210, 210, 220))
-        textSize = 13f
+        textSize = if (compact) 12.5f else 13f
         gravity = Gravity.CENTER
         includeFontPadding = true
-        setPadding(0, dp(8), 0, 0)
+        maxLines = 3
+        setPadding(0, dp(if (compact) 7 else 8), 0, 0)
+        layoutParams = LinearLayout.LayoutParams(
+          ViewGroup.LayoutParams.MATCH_PARENT,
+          ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
       }
 
       addView(progress)
@@ -331,12 +349,12 @@ class LocalWebPanelActivity : Activity() {
       addView(
         card,
         FrameLayout.LayoutParams(
-          ViewGroup.LayoutParams.WRAP_CONTENT,
+          ViewGroup.LayoutParams.MATCH_PARENT,
           ViewGroup.LayoutParams.WRAP_CONTENT,
           Gravity.CENTER,
         ).apply {
-          marginStart = dp(24)
-          marginEnd = dp(24)
+          marginStart = dp(if (compact) 44 else 56)
+          marginEnd = dp(if (compact) 44 else 56)
         },
       )
     }
@@ -408,7 +426,7 @@ class LocalWebPanelActivity : Activity() {
 
   private fun showLoadingOverlay(animate: Boolean) {
     if (!::loadingOverlay.isInitialized) return
-    loadingTitle.text = getString(R.string.delete_module_prepare_title)
+    loadingTitle.text = getString(R.string.web_panel_loading_title)
     loadingBody.text = getString(R.string.web_panel_loading_page)
     loadingOverlay.visibility = View.VISIBLE
     loadingOverlay.animate().cancel()

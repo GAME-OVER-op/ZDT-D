@@ -28,12 +28,10 @@ fn stop_requested() -> bool {
     DNSCRYPT_STOP_REQUESTED.load(Ordering::SeqCst)
 }
 
-fn set_ipv6_disabled_resetprops() {
+fn set_ipv6_redirect_resetprops() {
     let pairs = [
         ("net.ipv6.conf.all.accept_redirects", "0"),
-        ("net.ipv6.conf.all.disable_ipv6", "1"),
         ("net.ipv6.conf.default.accept_redirects", "0"),
-        ("net.ipv6.conf.default.disable_ipv6", "1"),
     ];
     for (k, v) in pairs {
         match shell::run("resetprop", &[k, v], Capture::Stdout) {
@@ -63,11 +61,9 @@ const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/dnscrypt/activ
 const DNSCRYPT_TOML: &str =
     "/data/adb/modules/ZDT-D/working_folder/dnscrypt/setting/dnscrypt-proxy.toml";
 
-const IPV6_RESETPROP_KEYS: [&str; 4] = [
+const IPV6_RESETPROP_KEYS: [&str; 2] = [
     "net.ipv6.conf.all.accept_redirects",
-    "net.ipv6.conf.all.disable_ipv6",
     "net.ipv6.conf.default.accept_redirects",
-    "net.ipv6.conf.default.disable_ipv6",
 ];
 
 #[derive(Debug, Deserialize)]
@@ -743,7 +739,7 @@ fn apply_dns_ip6tables(listen_port: u16) -> Result<()> {
     } else {
         warn!("dns: ip6tables nat table unsupported; disabling IPv6 DNS (53)");
         crate::logging::user_warn("DNSCrypt: IPv6 NAT не поддерживается — IPv6 DNS (53) отключён");
-        set_ipv6_disabled_resetprops();
+        set_ipv6_redirect_resetprops();
 
         // Remove RETURN exceptions for 53 (otherwise they would bypass the block).
         for proto in prots {

@@ -1624,7 +1624,5 @@ APatch: 10700+</string>
     <string name="settings_advanced_selinux_body">Временно переводит SELinux в Permissive во время запуска и остановки службы. После операции режим возвращается обратно.</string>
     <string name="settings_advanced_ip_forward_title">Форвард трафика</string>
     <string name="settings_advanced_ip_forward_body">Включает net.ipv4.ip_forward=1 в системе. Параметр применяется сразу и остаётся активным, пока вы не выключите эту настройку.</string>
-    <string name="settings_advanced_ipv6_title">Отключать IPv6 во время работы</string>
-    <string name="settings_advanced_ipv6_body">На время работы службы устанавливает net.ipv6.conf.all.disable_ipv6=1, чтобы VPN/TUN-программы не обходились IPv6-маршрутами. При остановке возвращает значение 0.</string>
 
 </resources>

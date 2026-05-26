@@ -122,11 +122,7 @@ pub struct ApiSettings {
     pub selinux_permissive_enabled: bool,
     #[serde(default)]
     pub ip_forward_enabled: bool,
-    #[serde(default = "default_disable_ipv6_during_runtime")]
-    pub disable_ipv6_during_runtime: bool,
 }
-
-fn default_disable_ipv6_during_runtime() -> bool { true }
 
 impl Default for ApiSettings {
     fn default() -> Self {
@@ -139,7 +135,6 @@ impl Default for ApiSettings {
             allow_loopback_redirect: false,
             selinux_permissive_enabled: false,
             ip_forward_enabled: false,
-            disable_ipv6_during_runtime: true,
         }
     }
 }

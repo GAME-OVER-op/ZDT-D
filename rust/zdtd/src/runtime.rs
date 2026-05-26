@@ -78,8 +78,7 @@ pub fn start_full() -> Result<()> {
     // Controlled by setting/setting.json: selinux_permissive_enabled (default: false).
     let _selinux = SelinuxGuard::enter_permissive_if_enforcing()?;
 
-    // Apply system network switches before VPN/TUN and routing programs start.
-    // ip_forward follows the persistent setting, IPv6 disable is runtime-only.
+    // Apply persistent IPv4 forwarding state before VPN/TUN and routing programs start.
     crate::android::sysctl::apply_start_settings_best_effort();
 
     validate_start_plan_best_effort();
@@ -239,7 +238,6 @@ if !any_main_service_running() {
     // Stop services and restore baseline iptables; always restore captive portal settings.
     crate::runtime_state::clear();
     let stop_res = stop::stop_services();
-    crate::android::sysctl::restore_stop_settings_best_effort();
     crate::runtime_state::clear();
     let _ = shell::ok_sh(
         "settings delete global captive_portal_detection_enabled; \
@@ -328,7 +326,6 @@ pub fn stop_full() -> Result<()> {
     // Stop services first, but always try to restore captive portal settings even
     // if the stop sequence partially fails.
     let stop_res = stop::stop_services();
-    crate::android::sysctl::restore_stop_settings_best_effort();
     crate::runtime_state::clear();
     let _ = shell::ok_sh(
         "settings delete global captive_portal_detection_enabled; \

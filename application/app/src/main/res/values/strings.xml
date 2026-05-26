@@ -1624,7 +1624,5 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="settings_advanced_selinux_body">Temporarily switches SELinux to Permissive while starting and stopping the service. The previous mode is restored afterwards.</string>
     <string name="settings_advanced_ip_forward_title">Traffic forwarding</string>
     <string name="settings_advanced_ip_forward_body">Enables net.ipv4.ip_forward=1 system-wide. The setting is applied immediately and stays active until you turn it off.</string>
-    <string name="settings_advanced_ipv6_title">Disable IPv6 while running</string>
-    <string name="settings_advanced_ipv6_body">Sets net.ipv6.conf.all.disable_ipv6=1 while the service is running so VPN/TUN programs are not bypassed through IPv6 routes. Restores it to 0 when the service stops.</string>
 
 </resources>

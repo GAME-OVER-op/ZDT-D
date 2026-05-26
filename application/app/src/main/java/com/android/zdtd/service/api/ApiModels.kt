@@ -76,7 +76,6 @@ object ApiModels {
     val hotspotT2sWireproxyProfile: String = "",
     val selinuxPermissiveEnabled: Boolean = false,
     val ipForwardEnabled: Boolean = false,
-    val disableIpv6DuringRuntime: Boolean = true,
   )
 
   data class SingBoxProfileChoice(
@@ -300,7 +299,6 @@ object ApiModels {
       hotspotT2sWireproxyProfile = hotspotWireproxyProfile,
       selinuxPermissiveEnabled = setting?.optBoolean("selinux_permissive_enabled", false) ?: false,
       ipForwardEnabled = setting?.optBoolean("ip_forward_enabled", false) ?: false,
-      disableIpv6DuringRuntime = setting?.optBoolean("disable_ipv6_during_runtime", true) ?: true,
     )
   }
 

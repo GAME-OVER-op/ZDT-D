@@ -317,7 +317,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       hotspotT2sWireproxyProfile = "",
       selinuxPermissiveEnabled = false,
       ipForwardEnabled = false,
-      disableIpv6DuringRuntime = true,
       daemonStatusNotificationEnabled = root.isDaemonStatusNotificationEnabled(),
     )
   )
@@ -5056,7 +5055,6 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         hotspotT2sWireproxyProfile = settings.hotspotT2sWireproxyProfile,
         selinuxPermissiveEnabled = settings.selinuxPermissiveEnabled,
         ipForwardEnabled = settings.ipForwardEnabled,
-        disableIpv6DuringRuntime = settings.disableIpv6DuringRuntime,
         hotspotSingboxProfiles = singboxProfiles,
         hotspotWireproxyProfiles = wireproxyProfiles,
       )
@@ -5075,7 +5073,6 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       when (safeKey) {
         "selinux_permissive_enabled" -> current.copy(selinuxPermissiveEnabled = enabled)
         "ip_forward_enabled" -> current.copy(ipForwardEnabled = enabled)
-        "disable_ipv6_during_runtime" -> current.copy(disableIpv6DuringRuntime = enabled)
         else -> current
       }
     }
@@ -5085,7 +5082,6 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         when (safeKey) {
           "selinux_permissive_enabled" -> api.setAdvancedSettings(selinuxPermissiveEnabled = enabled)
           "ip_forward_enabled" -> api.setAdvancedSettings(ipForwardEnabled = enabled)
-          "disable_ipv6_during_runtime" -> api.setAdvancedSettings(disableIpv6DuringRuntime = enabled)
           else -> api.getDaemonSettings()
         }
       }.getOrElse {
@@ -5105,7 +5101,6 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           selinuxPermissiveEnabled = applied.selinuxPermissiveEnabled,
           ipForwardEnabled = applied.ipForwardEnabled,
-          disableIpv6DuringRuntime = applied.disableIpv6DuringRuntime,
         )
       }
       withContext(Dispatchers.Main.immediate) {

@@ -181,7 +181,6 @@ fun AppUpdateSettings(
   onProtectorModeChange: (String) -> Unit,
   selinuxPermissiveEnabled: Boolean,
   ipForwardEnabled: Boolean,
-  disableIpv6DuringRuntime: Boolean,
   onAdvancedSettingChange: (String, Boolean) -> Unit,
   hotspotT2sEnabled: Boolean,
   hotspotT2sTarget: String,
@@ -365,7 +364,6 @@ fun AppUpdateSettings(
       showAdvancedSettings = showAdvancedSettings,
       selinuxPermissiveEnabled = selinuxPermissiveEnabled,
       ipForwardEnabled = ipForwardEnabled,
-      disableIpv6DuringRuntime = disableIpv6DuringRuntime,
       onDismissAdvancedSettings = { showAdvancedSettings = false },
       onAdvancedSettingChange = onAdvancedSettingChange,
     )
@@ -508,7 +506,6 @@ fun AppUpdateSettings(
     showAdvancedSettings = showAdvancedSettings,
     selinuxPermissiveEnabled = selinuxPermissiveEnabled,
     ipForwardEnabled = ipForwardEnabled,
-    disableIpv6DuringRuntime = disableIpv6DuringRuntime,
     onDismissAdvancedSettings = { showAdvancedSettings = false },
     onAdvancedSettingChange = onAdvancedSettingChange,
   )
@@ -758,7 +755,6 @@ private fun SettingsDialogsHost(
   showAdvancedSettings: Boolean,
   selinuxPermissiveEnabled: Boolean,
   ipForwardEnabled: Boolean,
-  disableIpv6DuringRuntime: Boolean,
   onDismissAdvancedSettings: () -> Unit,
   onAdvancedSettingChange: (String, Boolean) -> Unit,
 ) {
@@ -810,7 +806,6 @@ private fun SettingsDialogsHost(
     visible = showAdvancedSettings,
     selinuxPermissiveEnabled = selinuxPermissiveEnabled,
     ipForwardEnabled = ipForwardEnabled,
-    disableIpv6DuringRuntime = disableIpv6DuringRuntime,
     onDismiss = onDismissAdvancedSettings,
     onAdvancedSettingChange = onAdvancedSettingChange,
   )
@@ -821,7 +816,6 @@ private fun AdvancedSettingsDialog(
   visible: Boolean,
   selinuxPermissiveEnabled: Boolean,
   ipForwardEnabled: Boolean,
-  disableIpv6DuringRuntime: Boolean,
   onDismiss: () -> Unit,
   onAdvancedSettingChange: (String, Boolean) -> Unit,
 ) {
@@ -881,12 +875,6 @@ private fun AdvancedSettingsDialog(
           body = stringResource(R.string.settings_advanced_ip_forward_body),
           checked = ipForwardEnabled,
           onCheckedChange = { onAdvancedSettingChange("ip_forward_enabled", it) },
-        )
-        AdvancedSwitchRow(
-          title = stringResource(R.string.settings_advanced_ipv6_title),
-          body = stringResource(R.string.settings_advanced_ipv6_body),
-          checked = disableIpv6DuringRuntime,
-          onCheckedChange = { onAdvancedSettingChange("disable_ipv6_during_runtime", it) },
         )
       }
     }

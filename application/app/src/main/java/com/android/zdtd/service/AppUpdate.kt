@@ -21,7 +21,6 @@ data class AppUpdateUiState(
   /** Advanced daemon/system settings. */
   val selinuxPermissiveEnabled: Boolean = false,
   val ipForwardEnabled: Boolean = false,
-  val disableIpv6DuringRuntime: Boolean = true,
   /** Port scan protection (proxyInfo). */
   val proxyInfoEnabled: Boolean = false,
   val proxyInfoAppsContent: String = "",

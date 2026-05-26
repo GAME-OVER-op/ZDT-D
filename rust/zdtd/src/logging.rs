@@ -184,8 +184,8 @@ fn user_localize_en(msg: &str) -> String {
         "Применение BlockedQUIC" => return "BlockedQUIC: applying rules".to_string(),
         "DNSCrypt: запуск" => return "DNSCrypt: start".to_string(),
         "DNSCrypt: правила iptables" => return "DNSCrypt: iptables rules".to_string(),
-        "DNSCrypt: IPv6 NAT не поддерживается — IPv6 DNS (53) отключён" => {
-            return "DNSCrypt: IPv6 NAT is not supported — IPv6 DNS (53) disabled".to_string();
+        "DNSCrypt: IPv6 NAT не поддерживается — IPv6 DNS-порты 53/853/5353 отключены" => {
+            return "DNSCrypt: IPv6 NAT is not supported — IPv6 DNS ports 53/853/5353 disabled".to_string();
         }
         "Tor: запуск" => return "Tor: start".to_string(),
         "OpenVPN: запуск" => return "OpenVPN: start".to_string(),

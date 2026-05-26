@@ -28,10 +28,12 @@ fn stop_requested() -> bool {
     DNSCRYPT_STOP_REQUESTED.load(Ordering::SeqCst)
 }
 
-fn set_ipv6_redirect_resetprops() {
+fn set_ipv6_disabled_resetprops() {
     let pairs = [
         ("net.ipv6.conf.all.accept_redirects", "0"),
+        ("net.ipv6.conf.all.disable_ipv6", "1"),
         ("net.ipv6.conf.default.accept_redirects", "0"),
+        ("net.ipv6.conf.default.disable_ipv6", "1"),
     ];
     for (k, v) in pairs {
         match shell::run("resetprop", &[k, v], Capture::Stdout) {
@@ -61,9 +63,11 @@ const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/dnscrypt/activ
 const DNSCRYPT_TOML: &str =
     "/data/adb/modules/ZDT-D/working_folder/dnscrypt/setting/dnscrypt-proxy.toml";
 
-const IPV6_RESETPROP_KEYS: [&str; 2] = [
+const IPV6_RESETPROP_KEYS: [&str; 4] = [
     "net.ipv6.conf.all.accept_redirects",
+    "net.ipv6.conf.all.disable_ipv6",
     "net.ipv6.conf.default.accept_redirects",
+    "net.ipv6.conf.default.disable_ipv6",
 ];
 
 #[derive(Debug, Deserialize)]
@@ -428,8 +432,8 @@ fn add_per_port_rules(iptables: &str, table: &str, chain: &str, insert_first: bo
 
 fn apply_dns_iptables(listen_port: u16) -> Result<()> {
     let _xtables_guard = xtables_lock::lock();
-    let dns_ports = [53u16];
-    let dports_multi = "53";
+    let dns_ports = [53u16, 853u16, 5353u16];
+    let dports_multi = "53,853,5353";
     let prots = ["udp", "tcp", "sctp"];
     let use_multiport = caps::multiport_v4();
 
@@ -597,8 +601,8 @@ fn ip6_nat_supported(ip6t: &str) -> bool {
 }
 
 fn apply_dns_ip6tables(listen_port: u16) -> Result<()> {
-    let dns_ports = [53u16];
-    let dports_multi = "53";
+    let dns_ports = [53u16, 853u16, 5353u16];
+    let dports_multi = "53,853,5353";
     let prots = ["udp", "tcp", "sctp"];
     let use_multiport = caps::multiport_v6();
 
@@ -737,9 +741,9 @@ fn apply_dns_ip6tables(listen_port: u16) -> Result<()> {
             }
         }
     } else {
-        warn!("dns: ip6tables nat table unsupported; disabling IPv6 DNS (53)");
-        crate::logging::user_warn("DNSCrypt: IPv6 NAT не поддерживается — IPv6 DNS (53) отключён");
-        set_ipv6_redirect_resetprops();
+        warn!("dns: ip6tables nat table unsupported; disabling IPv6 DNS ports (53/853/5353)");
+        crate::logging::user_warn("DNSCrypt: IPv6 NAT не поддерживается — IPv6 DNS-порты 53/853/5353 отключены");
+        set_ipv6_disabled_resetprops();
 
         // Remove RETURN exceptions for 53 (otherwise they would bypass the block).
         for proto in prots {

@@ -3,11 +3,43 @@
 ##############################################
 
 server_names = [
+  # Cloudflare
   'cloudflare',
+  'cloudflare-security',
+  'cloudflare-family',
+
+  # Quad9
   'quad9-dnscrypt-ip4-filter-pri',
-  'mullvad',
+  'quad9-doh-ip4-port443-filter-pri',
+
+  # Google
+  'google',
+
+  # AdGuard
   'adguard-dns',
-  'google'
+  'adguard-dns-doh',
+  'adguard-dns-family-doh',
+  'adguard-dns-unfiltered-doh',
+
+  # Mullvad
+  'mullvad-doh',
+  'mullvad-adblock-doh',
+  'mullvad-base-doh',
+
+  # Other public resolvers
+  'dns.sb',
+  'wikimedia',
+  'dns4eu-protective',
+  'alidns-doh',
+  'comss.one',
+
+  # Custom static DoH
+  'xbox-dns-ru',
+  'ru-mow-doh-sb',
+  'router-comss-one',
+  'doh-kel-pe',
+  'dns-adnull',
+  'adfreedns-top'
 ]
 
 listen_addresses = ['127.0.0.1:863', '[::1]:863']
@@ -35,13 +67,15 @@ disabled_server_names = []
 #        Сеть / протоколы                    #
 ##############################################
 
-force_tcp = false
+force_tcp = true
 
 http3 = false
 http3_probe = false
 
-timeout = 4000
-keepalive = 20
+#proxy = 'socks5://127.0.0.1:2080'
+
+timeout = 7000
+keepalive = 30
 
 ##############################################
 #        Безопасность / нагрузка             #
@@ -50,7 +84,7 @@ keepalive = 20
 dnscrypt_ephemeral_keys = false
 
 ##############################################
-#        Bootstrap DNS                      #
+#        Bootstrap DNS                       #
 ##############################################
 
 bootstrap_resolvers = [
@@ -61,11 +95,11 @@ bootstrap_resolvers = [
 
 ignore_system_dns = true
 
-netprobe_timeout = 60
+netprobe_timeout = 120
 netprobe_address = '1.1.1.1:53'
 
 ##############################################
-#        Логи                               #
+#        Логи                                #
 ##############################################
 
 log_file = '/data/adb/modules/ZDT-D/working_folder/dnscrypt/log/dnscrypt-proxy.log'
@@ -75,16 +109,16 @@ log_files_max_age = 3
 log_files_max_backups = 0
 
 ##############################################
-#        Фильтрация                         #
+#        Фильтрация                          #
 ##############################################
 
-block_ipv6 = true
+block_ipv6 = false
 block_unqualified = true
 block_undelegated = true
-reject_ttl = 60
+reject_ttl = 44
 
 ##############################################
-#        DNS cache                          #
+#        DNS cache                           #
 ##############################################
 
 cache = true
@@ -99,7 +133,7 @@ cache_neg_max_ttl = 600
 lb_estimator = true
 
 ##############################################
-#        Cloaking / Forwarding              #
+#        Cloaking / Forwarding               #
 ##############################################
 
 cloaking_rules = 'cloaking-rules.txt'
@@ -107,7 +141,7 @@ cloak_ptr = false
 forwarding_rules = 'forwarding-rules.txt'
 
 ##############################################
-#        Blocklists (TXT файлы)             #
+#        Blocklists TXT файлы                #
 ##############################################
 
 [blocked_names]
@@ -123,21 +157,21 @@ allowed_names_file = 'allowed-names.txt'
 allowed_ips_file = 'allowed-ips.txt'
 
 ##############################################
-#        Captive portals                    #
+#        Captive portals                     #
 ##############################################
 
 [captive_portals]
 # map_file = 'captive-portals.txt'
 
 ##############################################
-#        Отключён anonymized DNS            #
+#        Отключён anonymized DNS             #
 ##############################################
 
 [anonymized_dns]
 routes = []
 
 ##############################################
-#        Monitoring UI                      #
+#        Monitoring UI                       #
 ##############################################
 
 [monitoring_ui]
@@ -147,7 +181,7 @@ username = "admin"
 password = "changeme"
 
 ##############################################
-#        Sources                            #
+#        Sources                             #
 ##############################################
 
 [sources]
@@ -155,7 +189,8 @@ password = "changeme"
   [sources.public-resolvers]
   urls = [
     'https://download.dnscrypt.info/resolvers-list/v3/public-resolvers.md',
-    'https://raw.githubusercontent.com/DNSCrypt/dnscrypt-resolvers/master/v3/public-resolvers.md'
+    'https://raw.githubusercontent.com/DNSCrypt/dnscrypt-resolvers/master/v3/public-resolvers.md',
+    'https://cdn.jsdelivr.net/gh/DNSCrypt/dnscrypt-resolvers@master/v3/public-resolvers.md'
   ]
   cache_file = 'public-resolvers.md'
   minisign_key = 'RWQf6LRCGA9i53mlYecO4IzT51TGPpvWucNSCh1CBM0QTaLn73Y7GFO3'
@@ -163,10 +198,31 @@ password = "changeme"
   prefix = ''
 
 ##############################################
-#        Static (оставил как было)          #
+#        Static custom DoH                   #
 ##############################################
 
 [static]
 
-[static.'comss.one']
-stamp = 'sdns://AgMAAAAAAAAADjgzLjIyMC4xNjkuMTU1IOVh_sR8Wh3NwumyfOVEFrzdxzIG9bZ6Vl2nNfJprop5DWRucy5jb21zcy5vbmUKL2Rucy1xdWVyeQ'
+# https://xbox-dns.ru/dns-query
+[static.'xbox-dns-ru']
+stamp = 'sdns://AgAAAAAAAAAAAAALeGJveC1kbnMucnUKL2Rucy1xdWVyeQ'
+
+# https://ru-mow.doh.sb/dns-query
+[static.'ru-mow-doh-sb']
+stamp = 'sdns://AgAAAAAAAAAAAAANcnUtbW93LmRvaC5zYgovZG5zLXF1ZXJ5'
+
+# https://router.comss.one/dns-query
+[static.'router-comss-one']
+stamp = 'sdns://AgAAAAAAAAAAAAAQcm91dGVyLmNvbXNzLm9uZQovZG5zLXF1ZXJ5'
+
+# https://doh.kel.pe
+[static.'doh-kel-pe']
+stamp = 'sdns://AgAAAAAAAAAAAAAKZG9oLmtlbC5wZQEv'
+
+# https://dns.adnull.com/dns-query
+[static.'dns-adnull']
+stamp = 'sdns://AgAAAAAAAAAAAAAOZG5zLmFkbnVsbC5jb20KL2Rucy1xdWVyeQ'
+
+# https://adfreedns.top/dns-query
+[static.'adfreedns-top']
+stamp = 'sdns://AgAAAAAAAAAAAAANYWRmcmVlZG5zLnRvcAovZG5zLXF1ZXJ5'

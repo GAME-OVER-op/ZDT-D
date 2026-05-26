@@ -164,6 +164,20 @@ class ApiClient(
     return ApiModels.parseDaemonSettings(obj)
   }
 
+
+  fun setAdvancedSettings(
+    selinuxPermissiveEnabled: Boolean? = null,
+    ipForwardEnabled: Boolean? = null,
+    disableIpv6DuringRuntime: Boolean? = null,
+  ): ApiModels.DaemonSettings {
+    val body = JSONObject()
+    selinuxPermissiveEnabled?.let { body.put("selinux_permissive_enabled", it) }
+    ipForwardEnabled?.let { body.put("ip_forward_enabled", it) }
+    disableIpv6DuringRuntime?.let { body.put("disable_ipv6_during_runtime", it) }
+    val obj = requestJson("POST", "/api/setting", body)
+    return ApiModels.parseDaemonSettings(obj)
+  }
+
   fun getSingBoxProfiles(): List<ApiModels.SingBoxProfileChoice> {
     val obj = requestJson("GET", "/api/programs/sing-box/profiles", null)
     return ApiModels.parseSingBoxProfiles(obj)

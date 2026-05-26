@@ -18,6 +18,10 @@ data class AppUpdateUiState(
   val hotspotT2sWireproxyProfile: String = "",
   val hotspotSingboxProfiles: List<ApiModels.SingBoxProfileChoice> = emptyList(),
   val hotspotWireproxyProfiles: List<ApiModels.SingBoxProfileChoice> = emptyList(),
+  /** Advanced daemon/system settings. */
+  val selinuxPermissiveEnabled: Boolean = false,
+  val ipForwardEnabled: Boolean = false,
+  val disableIpv6DuringRuntime: Boolean = true,
   /** Port scan protection (proxyInfo). */
   val proxyInfoEnabled: Boolean = false,
   val proxyInfoAppsContent: String = "",

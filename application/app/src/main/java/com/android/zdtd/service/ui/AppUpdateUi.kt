@@ -179,6 +179,10 @@ fun AppUpdateSettings(
   onLanguageModeChange: (String) -> Unit,
   protectorMode: String,
   onProtectorModeChange: (String) -> Unit,
+  selinuxPermissiveEnabled: Boolean,
+  ipForwardEnabled: Boolean,
+  disableIpv6DuringRuntime: Boolean,
+  onAdvancedSettingChange: (String, Boolean) -> Unit,
   hotspotT2sEnabled: Boolean,
   hotspotT2sTarget: String,
   hotspotT2sSingboxProfile: String,
@@ -211,6 +215,7 @@ fun AppUpdateSettings(
   var showResetIdentifierConfirm by remember { mutableStateOf(false) }
   var showProxyInfoConfigure by remember { mutableStateOf(false) }
   var showBlockedQuicConfigure by remember { mutableStateOf(false) }
+  var showAdvancedSettings by remember { mutableStateOf(false) }
   if (landscapeColumns) {
     Column(
       modifier = Modifier
@@ -251,6 +256,9 @@ fun AppUpdateSettings(
             selectedMode = protectorMode,
             onModeSelected = onProtectorModeChange,
           )
+          OutlinedButton(onClick = { showAdvancedSettings = true }, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.settings_advanced_title))
+          }
           HotspotT2sSection(
             enabled = hotspotT2sEnabled,
             target = hotspotT2sTarget,
@@ -354,6 +362,12 @@ fun AppUpdateSettings(
       blockedQuicBusy = blockedQuicBusy,
       onDismissBlockedQuicConfigure = { if (!blockedQuicBusy) showBlockedQuicConfigure = false },
       onBlockedQuicAppsSave = onBlockedQuicAppsSave,
+      showAdvancedSettings = showAdvancedSettings,
+      selinuxPermissiveEnabled = selinuxPermissiveEnabled,
+      ipForwardEnabled = ipForwardEnabled,
+      disableIpv6DuringRuntime = disableIpv6DuringRuntime,
+      onDismissAdvancedSettings = { showAdvancedSettings = false },
+      onAdvancedSettingChange = onAdvancedSettingChange,
     )
     return
   }
@@ -396,6 +410,13 @@ fun AppUpdateSettings(
         onModeSelected = onProtectorModeChange,
       )
     }
+
+    SettingsActionCard(
+      title = stringResource(R.string.settings_advanced_title),
+      body = stringResource(R.string.settings_advanced_body),
+      actionText = stringResource(R.string.settings_advanced_open),
+      onClick = { showAdvancedSettings = true },
+    )
 
     SettingsSectionCard {
       HotspotT2sSection(
@@ -484,6 +505,12 @@ fun AppUpdateSettings(
     blockedQuicBusy = blockedQuicBusy,
     onDismissBlockedQuicConfigure = { if (!blockedQuicBusy) showBlockedQuicConfigure = false },
     onBlockedQuicAppsSave = onBlockedQuicAppsSave,
+    showAdvancedSettings = showAdvancedSettings,
+    selinuxPermissiveEnabled = selinuxPermissiveEnabled,
+    ipForwardEnabled = ipForwardEnabled,
+    disableIpv6DuringRuntime = disableIpv6DuringRuntime,
+    onDismissAdvancedSettings = { showAdvancedSettings = false },
+    onAdvancedSettingChange = onAdvancedSettingChange,
   )
 }
 
@@ -728,6 +755,12 @@ private fun SettingsDialogsHost(
   blockedQuicBusy: Boolean,
   onDismissBlockedQuicConfigure: () -> Unit,
   onBlockedQuicAppsSave: (String, (Boolean) -> Unit) -> Unit,
+  showAdvancedSettings: Boolean,
+  selinuxPermissiveEnabled: Boolean,
+  ipForwardEnabled: Boolean,
+  disableIpv6DuringRuntime: Boolean,
+  onDismissAdvancedSettings: () -> Unit,
+  onAdvancedSettingChange: (String, Boolean) -> Unit,
 ) {
   SettingsConfirmDialog(
     visible = showHotspotWarning,
@@ -771,6 +804,125 @@ private fun SettingsDialogsHost(
       onLoadAssignments = onLoadAppAssignments,
       onSave = onBlockedQuicAppsSave,
     )
+  }
+
+  AdvancedSettingsDialog(
+    visible = showAdvancedSettings,
+    selinuxPermissiveEnabled = selinuxPermissiveEnabled,
+    ipForwardEnabled = ipForwardEnabled,
+    disableIpv6DuringRuntime = disableIpv6DuringRuntime,
+    onDismiss = onDismissAdvancedSettings,
+    onAdvancedSettingChange = onAdvancedSettingChange,
+  )
+}
+
+@Composable
+private fun AdvancedSettingsDialog(
+  visible: Boolean,
+  selinuxPermissiveEnabled: Boolean,
+  ipForwardEnabled: Boolean,
+  disableIpv6DuringRuntime: Boolean,
+  onDismiss: () -> Unit,
+  onAdvancedSettingChange: (String, Boolean) -> Unit,
+) {
+  if (!visible) return
+  Dialog(onDismissRequest = onDismiss) {
+    Surface(
+      modifier = Modifier.fillMaxWidth(),
+      shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+      color = MaterialTheme.colorScheme.surface,
+      tonalElevation = 8.dp,
+    ) {
+      Column(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 18.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+      ) {
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          Box(
+            modifier = Modifier
+              .size(42.dp)
+              .clip(androidx.compose.foundation.shape.CircleShape)
+              .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center,
+          ) {
+            Icon(Icons.Filled.AddCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+          }
+          Column(Modifier.weight(1f)) {
+            Text(
+              text = stringResource(R.string.settings_advanced_title),
+              style = MaterialTheme.typography.titleMedium,
+              fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+              text = stringResource(R.string.settings_advanced_body),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+            )
+          }
+          IconButton(onClick = onDismiss) {
+            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_close))
+          }
+        }
+
+        AdvancedSwitchRow(
+          title = stringResource(R.string.settings_advanced_selinux_title),
+          body = stringResource(R.string.settings_advanced_selinux_body),
+          checked = selinuxPermissiveEnabled,
+          onCheckedChange = { onAdvancedSettingChange("selinux_permissive_enabled", it) },
+        )
+        AdvancedSwitchRow(
+          title = stringResource(R.string.settings_advanced_ip_forward_title),
+          body = stringResource(R.string.settings_advanced_ip_forward_body),
+          checked = ipForwardEnabled,
+          onCheckedChange = { onAdvancedSettingChange("ip_forward_enabled", it) },
+        )
+        AdvancedSwitchRow(
+          title = stringResource(R.string.settings_advanced_ipv6_title),
+          body = stringResource(R.string.settings_advanced_ipv6_body),
+          checked = disableIpv6DuringRuntime,
+          onCheckedChange = { onAdvancedSettingChange("disable_ipv6_during_runtime", it) },
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun AdvancedSwitchRow(
+  title: String,
+  body: String,
+  checked: Boolean,
+  onCheckedChange: (Boolean) -> Unit,
+) {
+  Surface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
+    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.36f),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+      Column(Modifier.weight(1f).padding(end = 12.dp)) {
+        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Spacer(Modifier.height(4.dp))
+        Text(
+          body,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
+        )
+      }
+      Switch(checked = checked, onCheckedChange = onCheckedChange)
+    }
   }
 }
 

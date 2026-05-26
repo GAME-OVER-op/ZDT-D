@@ -5617,6 +5617,10 @@ match (method.as_str(), path.as_str()) {
                 allow_loopback_redirect: Option<bool>,
                 #[serde(default)]
                 selinux_permissive_enabled: Option<bool>,
+                #[serde(default)]
+                ip_forward_enabled: Option<bool>,
+                #[serde(default)]
+                disable_ipv6_during_runtime: Option<bool>,
             }
 
             let patch: SettingPatch = serde_json::from_slice(&body)
@@ -5643,7 +5647,18 @@ match (method.as_str(), path.as_str()) {
             if let Some(enabled) = patch.selinux_permissive_enabled {
                 setting.selinux_permissive_enabled = enabled;
             }
+            let mut apply_ip_forward: Option<bool> = None;
+            if let Some(enabled) = patch.ip_forward_enabled {
+                setting.ip_forward_enabled = enabled;
+                apply_ip_forward = Some(enabled);
+            }
+            if let Some(enabled) = patch.disable_ipv6_during_runtime {
+                setting.disable_ipv6_during_runtime = enabled;
+            }
             settings::save_api_settings(&setting)?;
+            if let Some(enabled) = apply_ip_forward {
+                crate::android::sysctl::set_ipv4_forward(enabled)?;
+            }
             let saved = settings::load_api_settings().unwrap_or(setting);
             protector::refresh(services_running);
             write_json(stream, 200, json!({"ok": true, "setting": saved}))

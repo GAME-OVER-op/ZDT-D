@@ -1615,4 +1615,16 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="dpi_detector_diagnosis_partial_unavailable">some checks are unavailable; exact blocking type was not determined</string>
     <string name="dpi_detector_diagnosis_blocked_unknown">blocking is likely, but the exact layer was not determined</string>
     <string name="dpi_detector_diagnosis_unknown">could not determine the result</string>
+    <string name="settings_advanced_title">Advanced settings</string>
+    <string name="settings_advanced_body">System-level options for daemon startup, routing and VPN/TUN behavior.</string>
+    <string name="settings_advanced_open">Open</string>
+    <string name="settings_advanced_saved">Advanced setting saved</string>
+    <string name="settings_advanced_save_failed">Failed to save advanced setting</string>
+    <string name="settings_advanced_selinux_title">Privileged startup</string>
+    <string name="settings_advanced_selinux_body">Temporarily switches SELinux to Permissive while starting and stopping the service. The previous mode is restored afterwards.</string>
+    <string name="settings_advanced_ip_forward_title">Traffic forwarding</string>
+    <string name="settings_advanced_ip_forward_body">Enables net.ipv4.ip_forward=1 system-wide. The setting is applied immediately and stays active until you turn it off.</string>
+    <string name="settings_advanced_ipv6_title">Disable IPv6 while running</string>
+    <string name="settings_advanced_ipv6_body">Sets net.ipv6.conf.all.disable_ipv6=1 while the service is running so VPN/TUN programs are not bypassed through IPv6 routes. Restores it to 0 when the service stops.</string>
+
 </resources>

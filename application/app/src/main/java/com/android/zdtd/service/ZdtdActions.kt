@@ -277,6 +277,9 @@ interface ZdtdActions {
   /** Set module protector mode: off | on | auto. */
   fun setProtectorMode(mode: String)
 
+  /** Toggle advanced daemon/system setting by API field name. */
+  fun setAdvancedDaemonSetting(key: String, enabled: Boolean)
+
   /** Enable/disable hotspot routing through t2s. */
   fun setHotspotT2sEnabled(enabled: Boolean)
 

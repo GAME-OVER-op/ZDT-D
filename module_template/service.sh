@@ -43,9 +43,6 @@ set_cc() {
   return 0
 }
 
-# host mode
-apply net.ipv4.ip_forward 0
-
 # qdisc / congestion control
 try_set_qdisc
 set_cc

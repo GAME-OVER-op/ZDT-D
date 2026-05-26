@@ -315,6 +315,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       hotspotT2sTarget = "",
       hotspotT2sSingboxProfile = "",
       hotspotT2sWireproxyProfile = "",
+      selinuxPermissiveEnabled = false,
+      ipForwardEnabled = false,
+      disableIpv6DuringRuntime = true,
       daemonStatusNotificationEnabled = root.isDaemonStatusNotificationEnabled(),
     )
   )
@@ -5051,6 +5054,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         hotspotT2sTarget = settings.hotspotT2sTarget,
         hotspotT2sSingboxProfile = settings.hotspotT2sSingboxProfile,
         hotspotT2sWireproxyProfile = settings.hotspotT2sWireproxyProfile,
+        selinuxPermissiveEnabled = settings.selinuxPermissiveEnabled,
+        ipForwardEnabled = settings.ipForwardEnabled,
+        disableIpv6DuringRuntime = settings.disableIpv6DuringRuntime,
         hotspotSingboxProfiles = singboxProfiles,
         hotspotWireproxyProfiles = wireproxyProfiles,
       )
@@ -5060,6 +5066,51 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
   override fun refreshDaemonSettings() {
     launchIO {
       refreshDaemonSettingsNow()
+    }
+  }
+
+  override fun setAdvancedDaemonSetting(key: String, enabled: Boolean) {
+    val safeKey = key.trim()
+    _appUpdate.update { current ->
+      when (safeKey) {
+        "selinux_permissive_enabled" -> current.copy(selinuxPermissiveEnabled = enabled)
+        "ip_forward_enabled" -> current.copy(ipForwardEnabled = enabled)
+        "disable_ipv6_during_runtime" -> current.copy(disableIpv6DuringRuntime = enabled)
+        else -> current
+      }
+    }
+
+    launchIO {
+      val applied = runCatching {
+        when (safeKey) {
+          "selinux_permissive_enabled" -> api.setAdvancedSettings(selinuxPermissiveEnabled = enabled)
+          "ip_forward_enabled" -> api.setAdvancedSettings(ipForwardEnabled = enabled)
+          "disable_ipv6_during_runtime" -> api.setAdvancedSettings(disableIpv6DuringRuntime = enabled)
+          else -> api.getDaemonSettings()
+        }
+      }.getOrElse {
+        log("ERR", "advanced setting failed: ${it.message ?: it}")
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_advanced_save_failed))
+        }
+        refreshDaemonSettings()
+        return@launchIO
+      }
+      _appUpdate.update { current ->
+        current.copy(
+          protectorMode = applied.protectorMode,
+          hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotT2sTarget = applied.hotspotT2sTarget,
+          hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
+          selinuxPermissiveEnabled = applied.selinuxPermissiveEnabled,
+          ipForwardEnabled = applied.ipForwardEnabled,
+          disableIpv6DuringRuntime = applied.disableIpv6DuringRuntime,
+        )
+      }
+      withContext(Dispatchers.Main.immediate) {
+        toast(str(R.string.settings_advanced_saved))
+      }
     }
   }
 

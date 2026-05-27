@@ -2,16 +2,24 @@ package com.android.zdtd.service.ui
 
 import android.content.Context
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +33,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -41,30 +53,38 @@ import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.android.zdtd.service.R
 import com.android.zdtd.service.RootConfigManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import kotlin.math.max
 
 internal data class ProgramLogTarget(
@@ -88,7 +108,6 @@ internal fun ProgramLogsBrowserSheet(
   onDismiss: () -> Unit,
 ) {
   val context = LocalContext.current
-  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   var files by remember(target.key) { mutableStateOf<List<ProgramLogFileUi>>(emptyList()) }
   var loading by remember(target.key) { mutableStateOf(true) }
   var selected by remember(target.key) { mutableStateOf<ProgramLogFileUi?>(null) }
@@ -103,14 +122,11 @@ internal fun ProgramLogsBrowserSheet(
     refreshFiles()
   }
 
-  ModalBottomSheet(
-    sheetState = sheetState,
-    onDismissRequest = onDismiss,
-  ) {
+  PortraitProgramLogsShelf(onDismiss = onDismiss) {
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .fillMaxHeight(if (rememberIsShortHeight()) 0.94f else 0.88f)
+        .fillMaxSize()
         .padding(horizontal = 16.dp)
         .animateContentSize(animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)),
       verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -127,6 +143,7 @@ internal fun ProgramLogsBrowserSheet(
 
       AnimatedContent(
         targetState = selected,
+        modifier = Modifier.weight(1f),
         transitionSpec = {
           val forward = targetState != null
           val enter = fadeIn(tween(150)) + slideInHorizontally(tween(210)) { if (forward) it / 8 else -it / 8 }
@@ -147,6 +164,139 @@ internal fun ProgramLogsBrowserSheet(
       }
 
       Spacer(Modifier.height(12.dp))
+    }
+  }
+}
+
+@Composable
+private fun PortraitProgramLogsShelf(
+  onDismiss: () -> Unit,
+  content: @Composable () -> Unit,
+) {
+  val scope = rememberCoroutineScope()
+  val density = LocalDensity.current
+  val dragOffsetY = remember { Animatable(0f) }
+  var visible by remember { mutableStateOf(false) }
+  var dismissing by remember { mutableStateOf(false) }
+  val dismissThresholdPx = with(density) { 92.dp.toPx() }
+  val dismissTargetPx = with(density) { 220.dp.toPx() }
+
+  fun dismissWithAnimation() {
+    if (dismissing) return
+    dismissing = true
+    scope.launch {
+      visible = false
+      runCatching {
+        dragOffsetY.animateTo(
+          targetValue = dismissTargetPx,
+          animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
+        )
+      }
+      onDismiss()
+    }
+  }
+
+  LaunchedEffect(Unit) {
+    visible = true
+  }
+
+  Dialog(
+    onDismissRequest = { dismissWithAnimation() },
+    properties = DialogProperties(usePlatformDefaultWidth = false),
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
+        .windowInsetsPadding(WindowInsets.safeDrawing),
+      contentAlignment = Alignment.BottomCenter,
+    ) {
+      AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(durationMillis = 150, easing = FastOutSlowInEasing)) +
+          slideInVertically(
+            animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+            initialOffsetY = { it / 4 },
+          ) +
+          scaleIn(
+            animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+            initialScale = 0.98f,
+          ),
+        exit = fadeOut(tween(durationMillis = 110)) +
+          slideOutVertically(
+            animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
+            targetOffsetY = { it / 5 },
+          ),
+      ) {
+        Surface(
+          modifier = Modifier
+            .fillMaxWidth()
+            .fillMaxHeight(0.88f)
+            .graphicsLayer { translationY = dragOffsetY.value },
+          shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
+          color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+          tonalElevation = 4.dp,
+          shadowElevation = 10.dp,
+        ) {
+          Column(Modifier.fillMaxSize()) {
+            Box(
+              modifier = Modifier
+                .fillMaxWidth()
+                .height(34.dp)
+                .pointerInput(Unit) {
+                  detectVerticalDragGestures(
+                    onVerticalDrag = { _, dragAmount ->
+                      val next = (dragOffsetY.value + dragAmount).coerceAtLeast(0f)
+                      scope.launch { dragOffsetY.snapTo(next) }
+                    },
+                    onDragEnd = {
+                      scope.launch {
+                        if (dragOffsetY.value >= dismissThresholdPx) {
+                          dismissWithAnimation()
+                        } else {
+                          dragOffsetY.animateTo(
+                            targetValue = 0f,
+                            animationSpec = spring(
+                              dampingRatio = Spring.DampingRatioNoBouncy,
+                              stiffness = Spring.StiffnessMediumLow,
+                            ),
+                          )
+                        }
+                      }
+                    },
+                    onDragCancel = {
+                      scope.launch {
+                        dragOffsetY.animateTo(
+                          targetValue = 0f,
+                          animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMediumLow,
+                          ),
+                        )
+                      }
+                    },
+                  )
+                },
+              contentAlignment = Alignment.Center,
+            ) {
+              Box(
+                modifier = Modifier
+                  .width(52.dp)
+                  .height(5.dp)
+                  .clip(RoundedCornerShape(100.dp))
+                  .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f)),
+              )
+            }
+            Box(
+              modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .clipToBounds(),
+            ) {
+              content()
+            }
+          }
+        }
+      }
     }
   }
 }

@@ -74,6 +74,12 @@ pub struct ProxyConfig {
     /// If empty in priority mode, t2s builds priorities from --socks-port order.
     #[serde(default)]
     pub backend_priority: String,
+    /// Enable t2s priority speed-aware soft fallback.
+    ///
+    /// When true and backend_mode=priority, myproxy passes --priority-speed-aware to t2s.
+    /// Missing/false keeps the old strict priority behaviour.
+    #[serde(default)]
+    pub priority_speed_aware: bool,
     #[serde(default)]
     pub user: String,
     #[serde(default)]
@@ -88,6 +94,7 @@ impl Default for ProxyConfig {
             ports: Vec::new(),
             backend_mode: default_backend_mode(),
             backend_priority: String::new(),
+            priority_speed_aware: false,
             user: String::new(),
             pass: String::new(),
         }
@@ -331,6 +338,9 @@ pub fn validate_proxy_config(proxy: &ProxyConfig) -> Result<()> {
     let ports = proxy.effective_ports()?;
     let backend_mode = proxy.effective_backend_mode()?;
     validate_backend_priority(proxy.backend_priority_trimmed(), backend_mode, &ports)?;
+    if proxy.priority_speed_aware && backend_mode != "priority" {
+        anyhow::bail!("priority_speed_aware can be used only when backend_mode is priority");
+    }
     let user_empty = proxy.user.trim().is_empty();
     let pass_empty = proxy.pass.trim().is_empty();
     if user_empty ^ pass_empty {
@@ -471,8 +481,13 @@ fn spawn_t2s(bin: &Path, setting: &ProfileSetting, proxy: &ProxyConfig, log_path
         .stdout(Stdio::from(logf))
         .stderr(Stdio::from(logf_err));
 
-    if proxy.effective_backend_mode()? == "priority" && !proxy.backend_priority_trimmed().is_empty() {
+    let backend_mode = proxy.effective_backend_mode()?;
+    if backend_mode == "priority" && !proxy.backend_priority_trimmed().is_empty() {
         cmd.arg("--backend-priority").arg(proxy.backend_priority_trimmed());
+    }
+
+    if backend_mode == "priority" && proxy.priority_speed_aware {
+        cmd.arg("--priority-speed-aware");
     }
 
     if !proxy.user.trim().is_empty() || !proxy.pass.trim().is_empty() {
@@ -489,13 +504,14 @@ fn spawn_t2s(bin: &Path, setting: &ProfileSetting, proxy: &ProxyConfig, log_path
 
     let child = cmd.spawn().with_context(|| format!("spawn {}", bin.display()))?;
     info!(
-        "spawned t2s pid={} listen_addr=127.0.0.1 listen_port={} socks_host={} socks_port={} backend_mode={} backend_priority={} web_port={} log={}",
+        "spawned t2s pid={} listen_addr=127.0.0.1 listen_port={} socks_host={} socks_port={} backend_mode={} backend_priority={} priority_speed_aware={} web_port={} log={}",
         child.id(),
         setting.t2s_port,
         proxy.host,
         proxy.effective_ports_csv().unwrap_or_else(|_| "?".to_string()),
         proxy.effective_backend_mode().unwrap_or("balance"),
         proxy.backend_priority_trimmed(),
+        proxy.priority_speed_aware,
         setting.t2s_web_port,
         log_path.display()
     );

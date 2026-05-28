@@ -13,6 +13,15 @@ use once_cell::sync::Lazy;
 use tokio::net::TcpStream;
 use tokio_util::sync::CancellationToken;
 
+const PRIORITY_SPEED_MIN_BPS: f64 = 128.0 * 1024.0;
+const PRIORITY_SPEED_SWITCH_RATIO: f64 = 2.0;
+const PRIORITY_SPEED_SWITCH_DELTA_BPS: f64 = 256.0 * 1024.0;
+const PRIORITY_SPEED_WINDOW_SECS: u64 = 10;
+const PRIORITY_SPEED_PRIMARY_MIN_BYTES: u64 = 512 * 1024;
+const PRIORITY_SPEED_PROBE_MIN_BYTES: u64 = 256 * 1024;
+const PRIORITY_SPEED_PROBE_INTERVAL_SECS: u64 = 45;
+const PRIORITY_SPEED_HOLD_SECS: u64 = 30;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ingress {
     Internal,
@@ -384,6 +393,12 @@ pub struct BackendStatus {
 
     /// Total bytes proxied through this backend (TCP, both directions).
     pub total_bytes: u64,
+    /// Recent throughput estimate for this backend, bytes/sec over a short rolling window.
+    pub recent_bps: Option<f64>,
+    /// True when priority speed-aware mode is temporarily avoiding this GREEN backend.
+    pub speed_degraded: bool,
+    /// True when this backend is the current temporary target selected by priority speed-aware mode.
+    pub speed_shift_target: bool,
 }
 
 #[derive(Clone)]
@@ -402,6 +417,13 @@ pub struct SocksBackends {
     backend_cooldown_until_ts: Vec<u64>,
     internet_probe_fail_streak: Vec<u8>,
     next_internet_probe_after_ts: Vec<u64>,
+    recent_speed: Vec<VecDeque<(u64, u64)>>,
+    priority_speed_aware: bool,
+    priority_speed_shift_from: Option<SocketAddr>,
+    priority_speed_shift_to: Option<SocketAddr>,
+    priority_speed_hold_until_ts: u64,
+    priority_speed_last_probe_ts: u64,
+    priority_speed_probe_rr: usize,
     backend_mode: BackendMode,
     /// Priority groups by SOCKS5 port. In priority mode each inner Vec is one priority level.
     /// Multiple ports in one level are balanced with round-robin; the next level is used only
@@ -468,6 +490,9 @@ impl SocksBackends {
             ttl_min: None,
             ttl_max: None,
             total_bytes: 0,
+            recent_bps: None,
+            speed_degraded: false,
+            speed_shift_target: false,
         }).collect();
 
         let ttl_hist = vec![VecDeque::new(); addrs.len()];
@@ -481,6 +506,7 @@ impl SocksBackends {
         let backend_cooldown_until_ts = vec![0; addrs.len()];
         let internet_probe_fail_streak = vec![0; addrs.len()];
         let next_internet_probe_after_ts = vec![0; addrs.len()];
+        let recent_speed = vec![VecDeque::new(); addrs.len()];
 
         Ok(Self{
             addrs,
@@ -497,6 +523,13 @@ impl SocksBackends {
             backend_cooldown_until_ts,
             internet_probe_fail_streak,
             next_internet_probe_after_ts,
+            recent_speed,
+            priority_speed_aware: args.priority_speed_aware && args.backend_mode == BackendMode::Priority,
+            priority_speed_shift_from: None,
+            priority_speed_shift_to: None,
+            priority_speed_hold_until_ts: 0,
+            priority_speed_last_probe_ts: 0,
+            priority_speed_probe_rr: 0,
             backend_mode: args.backend_mode,
             priority_groups,
             priority_rr,
@@ -618,6 +651,178 @@ impl SocksBackends {
         None
     }
 
+    fn clear_priority_speed_shift(&mut self) {
+        self.priority_speed_shift_from = None;
+        self.priority_speed_shift_to = None;
+        self.priority_speed_hold_until_ts = 0;
+        for s in &mut self.status {
+            s.speed_degraded = false;
+            s.speed_shift_target = false;
+        }
+    }
+
+    fn recent_speed_stats_idx(&self, idx: usize, now: u64) -> (u64, f64) {
+        let Some(samples) = self.recent_speed.get(idx) else {
+            return (0, 0.0);
+        };
+        let cutoff = now.saturating_sub(PRIORITY_SPEED_WINDOW_SECS);
+        let bytes: u64 = samples
+            .iter()
+            .filter(|(ts, _)| *ts >= cutoff)
+            .map(|(_, n)| *n)
+            .sum();
+        let bps = bytes as f64 / (PRIORITY_SPEED_WINDOW_SECS.max(1) as f64);
+        (bytes, bps)
+    }
+
+    fn priority_next_lower_green_candidate(&mut self, primary_idx: usize, now: u64) -> Option<usize> {
+        let primary_port = self.addrs.get(primary_idx)?.port();
+        let primary_group_idx = self.priority_groups
+            .iter()
+            .position(|group| group.contains(&primary_port))?;
+
+        let mut candidates: Vec<usize> = Vec::new();
+        for group in self.priority_groups.iter().skip(primary_group_idx + 1) {
+            let ready = self.healthy_indices_by_ports(group, now, true);
+            let all_green = self.healthy_indices_by_ports(group, now, false);
+            let bucket = if ready.is_empty() { all_green } else { ready };
+            if !bucket.is_empty() {
+                candidates.extend(bucket);
+                break;
+            }
+        }
+
+        if candidates.is_empty() {
+            return None;
+        }
+        Self::pick_from_bucket(&candidates, &mut self.priority_speed_probe_rr)
+    }
+
+    fn priority_speed_candidate_is_better(&self, primary_idx: usize, candidate_idx: usize, now: u64) -> bool {
+        let (primary_bytes, primary_bps) = self.recent_speed_stats_idx(primary_idx, now);
+        let (candidate_bytes, candidate_bps) = self.recent_speed_stats_idx(candidate_idx, now);
+        primary_bytes >= PRIORITY_SPEED_PRIMARY_MIN_BYTES
+            && candidate_bytes >= PRIORITY_SPEED_PROBE_MIN_BYTES
+            && primary_bps < PRIORITY_SPEED_MIN_BPS
+            && candidate_bps >= primary_bps * PRIORITY_SPEED_SWITCH_RATIO
+            && candidate_bps >= primary_bps + PRIORITY_SPEED_SWITCH_DELTA_BPS
+    }
+
+    fn priority_primary_recovered(&self, primary_idx: usize, shifted_idx: usize, now: u64) -> bool {
+        let (primary_bytes, primary_bps) = self.recent_speed_stats_idx(primary_idx, now);
+        let (_, shifted_bps) = self.recent_speed_stats_idx(shifted_idx, now);
+        primary_bytes >= PRIORITY_SPEED_PROBE_MIN_BYTES
+            && primary_bps >= PRIORITY_SPEED_MIN_BPS
+            && primary_bps + PRIORITY_SPEED_SWITCH_DELTA_BPS >= shifted_bps
+    }
+
+    fn priority_speed_aware_select_index(&mut self) -> Option<usize> {
+        let now = now_ts();
+        let primary_idx = self.priority_select_index()?;
+        let primary_addr = self.addrs.get(primary_idx).copied()?;
+        let primary_is_green = self.status.get(primary_idx).map(|s| s.healthy).unwrap_or(false);
+        if !primary_is_green {
+            self.clear_priority_speed_shift();
+            return Some(primary_idx);
+        }
+
+        let shifted_idx = self.priority_speed_shift_to
+            .and_then(|addr| self.addrs.iter().position(|a| *a == addr));
+
+        if let Some(shifted_idx) = shifted_idx {
+            let shifted_addr = self.addrs[shifted_idx];
+            let shifted_green = self.status.get(shifted_idx).map(|s| s.healthy).unwrap_or(false);
+            if !shifted_green {
+                self.clear_priority_speed_shift();
+                return Some(primary_idx);
+            }
+
+            if now >= self.priority_speed_hold_until_ts
+                && self.priority_primary_recovered(primary_idx, shifted_idx, now)
+            {
+                tracing::info!(
+                    "priority speed-aware: primary backend {} recovered; returning new connections from {}",
+                    primary_addr,
+                    shifted_addr
+                );
+                self.clear_priority_speed_shift();
+                return Some(primary_idx);
+            }
+
+            if now.saturating_sub(self.priority_speed_last_probe_ts) >= PRIORITY_SPEED_PROBE_INTERVAL_SECS {
+                self.priority_speed_last_probe_ts = now;
+                if let Some(s) = self.status.get_mut(primary_idx) {
+                    s.speed_degraded = false;
+                }
+                tracing::debug!(
+                    "priority speed-aware: probing primary backend {} while shifted to {}",
+                    primary_addr,
+                    shifted_addr
+                );
+                return Some(primary_idx);
+            }
+
+            if let Some(s) = self.status.get_mut(primary_idx) {
+                s.speed_degraded = true;
+            }
+            if let Some(s) = self.status.get_mut(shifted_idx) {
+                s.speed_shift_target = true;
+            }
+            return Some(shifted_idx);
+        }
+
+        let (primary_bytes, primary_bps) = self.recent_speed_stats_idx(primary_idx, now);
+        let primary_suspect = primary_bytes >= PRIORITY_SPEED_PRIMARY_MIN_BYTES
+            && primary_bps < PRIORITY_SPEED_MIN_BPS;
+        if !primary_suspect {
+            self.clear_priority_speed_shift();
+            return Some(primary_idx);
+        }
+
+        let Some(candidate_idx) = self.priority_next_lower_green_candidate(primary_idx, now) else {
+            return Some(primary_idx);
+        };
+        let candidate_addr = self.addrs[candidate_idx];
+
+        if self.priority_speed_candidate_is_better(primary_idx, candidate_idx, now) {
+            self.priority_speed_shift_from = Some(primary_addr);
+            self.priority_speed_shift_to = Some(candidate_addr);
+            self.priority_speed_hold_until_ts = now.saturating_add(PRIORITY_SPEED_HOLD_SECS);
+            self.priority_speed_last_probe_ts = now;
+            for s in &mut self.status {
+                s.speed_degraded = false;
+                s.speed_shift_target = false;
+            }
+            if let Some(s) = self.status.get_mut(primary_idx) {
+                s.speed_degraded = true;
+            }
+            if let Some(s) = self.status.get_mut(candidate_idx) {
+                s.speed_shift_target = true;
+            }
+            tracing::info!(
+                "priority speed-aware: shifting new connections from {} to {} (primary {:.0} B/s, candidate {:.0} B/s)",
+                primary_addr,
+                candidate_addr,
+                primary_bps,
+                self.recent_speed_stats_idx(candidate_idx, now).1
+            );
+            return Some(candidate_idx);
+        }
+
+        if now.saturating_sub(self.priority_speed_last_probe_ts) >= PRIORITY_SPEED_PROBE_INTERVAL_SECS {
+            self.priority_speed_last_probe_ts = now;
+            tracing::debug!(
+                "priority speed-aware: probing lower backend {} because primary {} is slow ({:.0} B/s)",
+                candidate_addr,
+                primary_addr,
+                primary_bps
+            );
+            return Some(candidate_idx);
+        }
+
+        Some(primary_idx)
+    }
+
     fn priority_capacity_backend_count(&self, respect_cooldown: bool) -> usize {
         let now = now_ts();
         for group in &self.priority_groups {
@@ -641,7 +846,7 @@ impl SocksBackends {
     /// pinned to lower-priority fallback backends must be cancelled so clients
     /// reconnect through the preferred group.
     pub fn lower_priority_backend_addrs_after(&self, restored_backend: SocketAddr) -> Vec<SocketAddr> {
-        if self.backend_mode != BackendMode::Priority {
+        if self.backend_mode != BackendMode::Priority || self.priority_speed_aware {
             return Vec::new();
         }
 
@@ -679,7 +884,7 @@ impl SocksBackends {
     /// these lower groups should be cancelled so clients reconnect through the
     /// preferred live group.
     pub fn lower_priority_backend_addrs_below_current_green_group(&self) -> Vec<SocketAddr> {
-        if self.backend_mode != BackendMode::Priority {
+        if self.backend_mode != BackendMode::Priority || self.priority_speed_aware {
             return Vec::new();
         }
 
@@ -1030,6 +1235,9 @@ impl SocksBackends {
             ttl_min: None,
             ttl_max: None,
             total_bytes: 0,
+            recent_bps: None,
+            speed_degraded: false,
+            speed_shift_target: false,
         });
         self.ttl_hist.push(VecDeque::new());
         self.rtt_hist.push(VecDeque::new());
@@ -1042,6 +1250,7 @@ impl SocksBackends {
         self.backend_cooldown_until_ts.push(0);
         self.internet_probe_fail_streak.push(0);
         self.next_internet_probe_after_ts.push(0);
+        self.recent_speed.push(VecDeque::new());
         if self.backend_mode == BackendMode::Priority
             && !self.priority_groups.iter().any(|group| group.contains(&addr.port()))
         {
@@ -1066,6 +1275,10 @@ impl SocksBackends {
             if pos < self.backend_cooldown_until_ts.len() { self.backend_cooldown_until_ts.remove(pos); }
             if pos < self.internet_probe_fail_streak.len() { self.internet_probe_fail_streak.remove(pos); }
             if pos < self.next_internet_probe_after_ts.len() { self.next_internet_probe_after_ts.remove(pos); }
+            if pos < self.recent_speed.len() { self.recent_speed.remove(pos); }
+            if self.priority_speed_shift_from == Some(addr) || self.priority_speed_shift_to == Some(addr) {
+                self.clear_priority_speed_shift();
+            }
             if self.rr >= self.addrs.len() { self.rr = 0; }
             if self.check_rr >= self.addrs.len() { self.check_rr = 0; }
             if self.active_check_rr >= self.addrs.len() { self.active_check_rr = 0; }
@@ -1075,7 +1288,12 @@ impl SocksBackends {
     }
     pub fn select_rr_with_auth(&mut self, global_auth: Option<&(String, String)>) -> Result<(usize, SocketAddr, Option<(String, String)>)> {
         if self.backend_mode == BackendMode::Priority {
-            if let Some(idx) = self.priority_select_index() {
+            let selected = if self.priority_speed_aware {
+                self.priority_speed_aware_select_index()
+            } else {
+                self.priority_select_index()
+            };
+            if let Some(idx) = selected {
                 return Ok((idx, self.addrs[idx], self.effective_auth_at(idx, global_auth)));
             }
             return Err(anyhow!("no GREEN backends"));
@@ -1283,10 +1501,35 @@ impl SocksBackends {
     /// Adds proxied bytes for a backend (TCP, both directions).
     pub fn add_bytes(&mut self, addr: SocketAddr, n: u64) {
         if let Some(pos) = self.addrs.iter().position(|a| *a == addr) {
+            let now = now_ts();
             if pos < self.status.len() {
                 self.status[pos].total_bytes = self.status[pos].total_bytes.saturating_add(n);
             }
-            self.touch_backend_activity_idx(pos, now_ts(), false);
+            if pos < self.recent_speed.len() {
+                let q = &mut self.recent_speed[pos];
+                if let Some((ts, bytes)) = q.back_mut() {
+                    if *ts == now {
+                        *bytes = bytes.saturating_add(n);
+                    } else {
+                        q.push_back((now, n));
+                    }
+                } else {
+                    q.push_back((now, n));
+                }
+                let cutoff = now.saturating_sub(PRIORITY_SPEED_WINDOW_SECS.saturating_mul(2));
+                while q.front().map(|(ts, _)| *ts < cutoff).unwrap_or(false) {
+                    q.pop_front();
+                }
+                let recent_bytes: u64 = q
+                    .iter()
+                    .filter(|(ts, _)| *ts >= now.saturating_sub(PRIORITY_SPEED_WINDOW_SECS))
+                    .map(|(_, bytes)| *bytes)
+                    .sum();
+                if let Some(status) = self.status.get_mut(pos) {
+                    status.recent_bps = Some(recent_bytes as f64 / PRIORITY_SPEED_WINDOW_SECS.max(1) as f64);
+                }
+            }
+            self.touch_backend_activity_idx(pos, now, false);
         }
     }
 }

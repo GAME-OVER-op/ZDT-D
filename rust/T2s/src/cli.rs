@@ -64,6 +64,8 @@ pub struct Args {
     pub backend_mode: BackendMode,
     #[arg(long, help="Priority groups for --backend-mode priority. Example: 1145,1146;1147. If omitted, --socks-port order is used as 1145;1146;1147")]
     pub backend_priority: Option<String>,
+    #[arg(long, default_value_t=false, help="Enable speed-aware soft fallback in priority mode. Keeps normal priority unchanged unless a higher-priority GREEN backend is throughput-limited, then probes lower GREEN backends with real new connections and temporarily shifts new connections without killing existing ones.")]
+    pub priority_speed_aware: bool,
 
     #[arg(long)]
     pub target_host: Option<String>,

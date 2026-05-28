@@ -1463,6 +1463,7 @@ fn default_myproxy_proxy_value() -> serde_json::Value {
         "ports": [1080],
         "backend_mode": "balance",
         "backend_priority": "",
+        "priority_speed_aware": false,
         "user": "",
         "pass": ""
     })

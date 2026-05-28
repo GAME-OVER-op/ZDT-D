@@ -999,6 +999,8 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="myproxy_backend_mode_priority">Priority</string>
     <string name="myproxy_backend_mode_balance_desc">Traffic is distributed between all alive SOCKS5 backend servers.</string>
     <string name="myproxy_backend_mode_priority_desc">The first backend group is used first. If it is unavailable, the next group is used.</string>
+    <string name="myproxy_priority_speed_aware_title">Speed-aware priority</string>
+    <string name="myproxy_priority_speed_aware_desc">If the primary backend is alive but too slow, t2s probes the next backend and temporarily sends new connections through the faster one.</string>
     <string name="myproxy_backend_priority_label">Backend priority</string>
     <string name="myproxy_backend_priority_hint">Example: 1145,1146;1147. Leave empty to use the SOCKS5 port order.</string>
     <string name="myproxy_backend_priority_invalid">Use only ports from the SOCKS5 ports list. Separate groups with ; and ports with commas. Duplicates are not allowed.</string>

@@ -997,6 +997,8 @@ APatch: 10700+</string>
     <string name="myproxy_backend_mode_priority">Приоритет</string>
     <string name="myproxy_backend_mode_balance_desc">Трафик распределяется между всеми живыми SOCKS5 backend-серверами.</string>
     <string name="myproxy_backend_mode_priority_desc">Сначала используется первая группа backend-серверов. Если она недоступна, используется следующая.</string>
+    <string name="myproxy_priority_speed_aware_title">Приоритет с учётом скорости</string>
+    <string name="myproxy_priority_speed_aware_desc">Если основной backend живой, но слишком медленный, t2s проверяет следующий backend и временно отправляет новые подключения через более быстрый.</string>
     <string name="myproxy_backend_priority_label">Приоритет backend</string>
     <string name="myproxy_backend_priority_hint">Пример: 1145,1146;1147. Оставьте пустым, чтобы использовать порядок SOCKS5 портов.</string>
     <string name="myproxy_backend_priority_invalid">Используйте только порты из списка SOCKS5. Группы разделяются через ;, порты — через запятую. Дубли не допускаются.</string>

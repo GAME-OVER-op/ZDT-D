@@ -507,6 +507,22 @@ working_folder/mieru/profile/<profile>
 
 Custom/user-defined integration layers. They are profile-based and store user configuration under their own `working_folder/<program>` roots.
 
+`myproxy` uses `working_folder/myproxy/profile/<profile>/proxy.json` to configure the upstream SOCKS5 backend used by `t2s`. Example priority configuration:
+
+```json
+{
+  "host": "127.0.0.1",
+  "ports": [1145, 1146, 1147],
+  "backend_mode": "priority",
+  "backend_priority": "1145;1146;1147",
+  "priority_speed_aware": true,
+  "user": "",
+  "pass": ""
+}
+```
+
+When `priority_speed_aware` is `true` and `backend_mode` is `priority`, ZDT-D starts `t2s` with `--priority-speed-aware`. When the field is missing or `false`, strict priority mode remains unchanged.
+
 ## App assignment files
 
 Several components use package/UID assignment lists.

@@ -86,6 +86,7 @@ private data class MyProxyUpstreamUi(
   val ports: List<Int>,
   val backendMode: String,
   val backendPriority: String,
+  val prioritySpeedAware: Boolean,
   val user: String,
   val pass: String,
 )
@@ -180,6 +181,7 @@ private fun buildMyProxyUpstreamJson(
   ports: List<Int>,
   backendMode: String,
   backendPriority: String,
+  prioritySpeedAware: Boolean,
   user: String,
   pass: String,
 ): JSONObject =
@@ -187,6 +189,7 @@ private fun buildMyProxyUpstreamJson(
     .put("host", host)
     .put("backend_mode", normalizeMyProxyBackendMode(backendMode))
     .put("backend_priority", if (normalizeMyProxyBackendMode(backendMode) == "priority") backendPriority else "")
+    .put("priority_speed_aware", normalizeMyProxyBackendMode(backendMode) == "priority" && prioritySpeedAware)
     .put("user", user)
     .put("pass", pass)
     .also { obj ->
@@ -205,6 +208,7 @@ private fun parseMyProxyUpstreamUi(obj: JSONObject?): MyProxyUpstreamUi {
     ports = portsFromArray.takeIf { it.isNotEmpty() } ?: parseMyProxyPortValue(data?.opt("port")),
     backendMode = normalizeMyProxyBackendMode(data?.optString("backend_mode", "balance")),
     backendPriority = sanitizeMyProxyBackendPriorityInput(data?.optString("backend_priority", "").orEmpty()).trim(),
+    prioritySpeedAware = data?.optBoolean("priority_speed_aware", false) == true,
     user = data?.optString("user", "")?.trim().orEmpty(),
     pass = data?.optString("pass", "") ?: "",
   )
@@ -414,7 +418,7 @@ fun MyProxyProfileScreen(
   var proxySaving by remember(profile) { mutableStateOf(false) }
 
   var syncedSetting by remember(profile) { mutableStateOf(MyProxySettingUi(null, null)) }
-  var syncedProxy by remember(profile) { mutableStateOf(MyProxyUpstreamUi("", emptyList(), "balance", "", "", "")) }
+  var syncedProxy by remember(profile) { mutableStateOf(MyProxyUpstreamUi("", emptyList(), "balance", "", false, "", "")) }
 
   var t2sPortText by remember(profile) { mutableStateOf("") }
   var t2sWebPortText by remember(profile) { mutableStateOf("") }
@@ -422,6 +426,7 @@ fun MyProxyProfileScreen(
   var proxyPortText by remember(profile) { mutableStateOf("") }
   var backendMode by remember(profile) { mutableStateOf("balance") }
   var backendPriorityText by remember(profile) { mutableStateOf("") }
+  var prioritySpeedAware by remember(profile) { mutableStateOf(false) }
   var userText by remember(profile) { mutableStateOf("") }
   var passText by remember(profile) { mutableStateOf("") }
 
@@ -447,6 +452,7 @@ fun MyProxyProfileScreen(
       proxyPortText = parsedProxy.ports.joinToString(",")
       backendMode = parsedProxy.backendMode
       backendPriorityText = parsedProxy.backendPriority
+      prioritySpeedAware = parsedProxy.prioritySpeedAware
       userText = parsedProxy.user
       passText = parsedProxy.pass
       settingInitialized = true
@@ -476,7 +482,7 @@ fun MyProxyProfileScreen(
     if (ok) syncedSetting = current else showSnack(context.getString(R.string.myproxy_auto_save_failed))
   }
 
-  LaunchedEffect(hostText, proxyPortText, backendMode, backendPriorityText, userText, passText, proxyInitialized) {
+  LaunchedEffect(hostText, proxyPortText, backendMode, backendPriorityText, prioritySpeedAware, userText, passText, proxyInitialized) {
     if (!proxyInitialized) return@LaunchedEffect
     delay(700)
     val host = hostText.trim()
@@ -487,6 +493,7 @@ fun MyProxyProfileScreen(
     } else {
       ""
     }
+    val effectivePrioritySpeedAware = mode == "priority" && prioritySpeedAware
     val user = userText.trim()
     val pass = passText
     if (host.isBlank()) return@LaunchedEffect
@@ -498,6 +505,7 @@ fun MyProxyProfileScreen(
       ports = portsForSave,
       backendMode = mode,
       backendPriority = priorityForSave,
+      prioritySpeedAware = effectivePrioritySpeedAware,
       user = user,
       pass = pass,
     )
@@ -506,7 +514,7 @@ fun MyProxyProfileScreen(
     val ok = awaitSaveJsonMyProxy(
       actions,
       "$basePath/proxy",
-      buildMyProxyUpstreamJson(host, portsForSave, mode, priorityForSave, user, pass)
+      buildMyProxyUpstreamJson(host, portsForSave, mode, priorityForSave, effectivePrioritySpeedAware, user, pass)
     )
     proxySaving = false
     if (ok) {
@@ -696,6 +704,41 @@ fun MyProxyProfileScreen(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
           )
+        }
+      }
+
+      AnimatedVisibility(
+        visible = backendMode == "priority",
+        enter = fadeIn(tween(160)) + expandVertically(animationSpec = tween(180)),
+        exit = fadeOut(tween(120)) + shrinkVertically(animationSpec = tween(150)),
+      ) {
+        Surface(
+          shape = RoundedCornerShape(18.dp),
+          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+          border = BorderStroke(1.dp, Color(0xFFFACC15).copy(alpha = 0.14f)),
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth().padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+              Text(
+                stringResource(R.string.myproxy_priority_speed_aware_title),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+              )
+              Text(
+                stringResource(R.string.myproxy_priority_speed_aware_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+              )
+            }
+            Switch(
+              checked = prioritySpeedAware,
+              onCheckedChange = { prioritySpeedAware = it },
+            )
+          }
         }
       }
 

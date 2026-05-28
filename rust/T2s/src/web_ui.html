@@ -201,6 +201,8 @@ body.dense .container{padding:12px}
 }
 .tag.int{border-color: rgba(60,120,255,.35); color:#a9c7ff;}
 .tag.ext{border-color: rgba(255,208,70,.35); color:#ffe4a6;}
+.tag.warn{border-color: rgba(255,208,70,.35); color:#ffe4a6;}
+.tag.ok{border-color: rgba(42,213,118,.35); color:#b7f8cb;}
 .dot{width:8px;height:8px;border-radius:50%}
 .dot.ok{background:var(--blue); box-shadow: var(--shadow-blue)}
 .dot.bad{background:var(--red); box-shadow: var(--shadow-red)}
@@ -301,7 +303,7 @@ hr.sep{border:0;border-top:1px solid rgba(255,255,255,.06); margin:12px 0}
       </div>
       <div class="tablewrap">
       <table class="table wide">
-        <thead><tr><th>Backend</th><th>Status</th><th>SOCKS RTT</th><th>Internet RTT</th><th>RTT integrity</th><th>Internet TTL</th><th>Traffic</th></tr></thead>
+        <thead><tr><th>Backend</th><th>Status</th><th>SOCKS RTT</th><th>Internet RTT</th><th>RTT integrity</th><th>Internet TTL</th><th>Recent speed</th><th>Traffic</th></tr></thead>
         <tbody id="backend_list"></tbody>
       </table>
       </div>
@@ -454,8 +456,11 @@ hr.sep{border:0;border-top:1px solid rgba(255,255,255,.06); margin:12px 0}
         if(b.ttl_max!=null && Number(b.ttl_max) !== Number(b.ttl_min)) ttl = `${b.ttl_min}–${b.ttl_max}`;
         else ttl = String(b.ttl_min);
       }
+      if(b.speed_degraded) st += ' <span class="tag warn">SLOW</span>';
+      if(b.speed_shift_target) st += ' <span class="tag ok">SHIFT</span>';
+      const recent = (b.recent_bps==null) ? '' : fmtSpeed(Number(b.recent_bps||0));
       const trf = (b.total_bytes==null) ? '' : fmtBytes(b.total_bytes);
-      tr.innerHTML = `<td>${b.addr}</td><td>${st}</td><td>${socks}</td><td>${inet}</td><td>${rtti}</td><td>${ttl}</td><td>${trf}</td>`;
+      tr.innerHTML = `<td>${b.addr}</td><td>${st}</td><td>${socks}</td><td>${inet}</td><td>${rtti}</td><td>${ttl}</td><td>${recent}</td><td>${trf}</td>`;
       tbody.appendChild(tr);
     }
     const totalEl = $('be_total');

@@ -2362,6 +2362,10 @@ fn find_program_conflicts(
     for item in lists {
         if item.path == current_api_path { continue; }
         if item.slot != slot { continue; }
+        // Allow same apps across different profiles of the same program
+        // (e.g. two mihomo profiles, or nfqws + nfqws2).
+        // Also allow overlap between mihomo and zapret domains.
+        if same_program_or_compatible(program_id, &item.program_id) { continue; }
         let Some(item_domain) = app_domain(&item.program_id) else { continue; };
         if !app_domains_conflict(domain, item_domain) { continue; }
         for pkg in candidate.intersection(&item.packages) {
@@ -2376,6 +2380,20 @@ fn find_program_conflicts(
         }
     }
     out
+}
+
+/// Returns true when two program ids are allowed to share applications
+/// without triggering a conflict. This covers:
+/// - the same program (different profiles of mihomo, nfqws, etc.)
+/// - mihomo ↔ zapret cross-domain overlap
+fn same_program_or_compatible(a: &str, b: &str) -> bool {
+    if a == b { return true; }
+    let compatible_pairs = [
+        ("mihomo", "nfqws"),
+        ("mihomo", "nfqws2"),
+        ("nfqws", "nfqws2"),
+    ];
+    compatible_pairs.iter().any(|(x, y)| (a == *x && b == *y) || (a == *y && b == *x))
 }
 
 fn find_proxyinfo_conflicts(candidate: &BTreeSet<String>) -> BTreeMap<String, Vec<AppConflictView>> {

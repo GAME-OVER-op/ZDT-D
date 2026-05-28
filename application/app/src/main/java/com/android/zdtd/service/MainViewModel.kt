@@ -4407,10 +4407,10 @@ private fun shQuote(s: String): String {
     // For mihomo: collect apps per profile and check for overlap
     val mihomoProfiles = enabledProfilesByProgram["mihomo"] ?: emptySet()
     if (mihomoProfiles.size > 1) {
-      val appsByProfile = linkedMapOf<String, Set<String>>()
+      val appsByProfile = linkedMapOf<String, MutableSet<String>>()
       for (entry in assignments.lists) {
         if (entry.programId == "mihomo" && entry.profile != null && entry.profile in mihomoProfiles) {
-          appsByProfile.getOrPut(entry.profile) { linkedSetOf() }.addAll(entry.packages)
+          appsByProfile.getOrPut(entry.profile) { mutableSetOf() }.addAll(entry.packages)
         }
       }
       val profileList = appsByProfile.keys.toList()
@@ -4428,13 +4428,13 @@ private fun shQuote(s: String): String {
 
     // For zapret (nfqws + nfqws2): collect apps per profile and check for overlap
     val zapretProgramIds = listOf("nfqws", "nfqws2")
-    val zapretAppsByProfile = linkedMapOf<String, Set<String>>()
+    val zapretAppsByProfile = linkedMapOf<String, MutableSet<String>>()
     for (progId in zapretProgramIds) {
       val profiles = enabledProfilesByProgram[progId] ?: continue
       for (entry in assignments.lists) {
         if (entry.programId == progId && entry.profile != null && entry.profile in profiles) {
           val key = "$progId/${entry.profile}"
-          zapretAppsByProfile.getOrPut(key) { linkedSetOf() }.addAll(entry.packages)
+          zapretAppsByProfile.getOrPut(key) { mutableSetOf() }.addAll(entry.packages)
         }
       }
     }

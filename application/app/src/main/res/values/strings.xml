@@ -607,6 +607,7 @@ Use another editor to modify it.</string>
     <string name="log_logs_cleared">Logs cleared</string>
     <string name="log_service_started">Service started</string>
     <string name="log_service_stopped">Service stopped</string>
+    <string name="start_blocked_profile_overlap">Start blocked: disable overlapping profiles</string>
 
     <string name="mv_backup_restore_reopen_hint">Select the backup again (or reopen this window) before restoring again.</string>
     <string name="settings_delete_module_title">Module removal</string>

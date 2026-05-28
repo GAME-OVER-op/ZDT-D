@@ -605,6 +605,7 @@ APatch: 10700+</string>
     <string name="log_logs_cleared">Логи очищены</string>
     <string name="log_service_started">Служба запущена</string>
     <string name="log_service_stopped">Служба остановлена</string>
+    <string name="start_blocked_profile_overlap">Запуск невозможен: отключите конфликтующие профили</string>
 
     <string name="mv_backup_restore_reopen_hint">Перед повторным восстановлением заново выберите бэкап (или переоткройте это окно).</string>
     <string name="settings_delete_module_title">Удаление</string>

@@ -4363,6 +4363,16 @@ private fun shQuote(s: String): String {
       _uiState.update { it.copy(busy = true) }
       try {
         val on = ApiModels.isServiceOn(_uiState.value.status)
+        if (!on) {
+          val overlapError = checkProfileAppOverlap()
+          if (overlapError != null) {
+            log("ERR", "toggle start blocked: $overlapError")
+            withContext(Dispatchers.Main.immediate) {
+              toast(str(R.string.start_blocked_profile_overlap) + ": " + overlapError)
+            }
+            return@launchIO
+          }
+        }
         val ok = if (on) api.stopService() else api.startService()
         if (ok) root.setCachedServiceOn(!on)
         if (ok) {
@@ -4376,6 +4386,71 @@ private fun shQuote(s: String): String {
         refreshStatus()
       }
     }
+  }
+
+  /**
+   * Check whether any two enabled profiles of mihomo or zapret (nfqws/nfqws2)
+   * share common applications. Returns an error message if overlap is found,
+   * or null if everything is fine.
+   */
+  private suspend fun checkProfileAppOverlap(): String? {
+    val assignments = runCatching { api.getAppAssignments() }.getOrNull() ?: return null
+    val programs = runCatching { api.getPrograms() }.getOrDefault(emptyList())
+
+    // Build a map: programId -> set of enabled profile names
+    val enabledProfilesByProgram = linkedMapOf<String, Set<String>>()
+    for (p in programs) {
+      val enabled = p.profiles.filter { it.enabled }.map { it.name }.toSet()
+      if (enabled.isNotEmpty()) enabledProfilesByProgram[p.id] = enabled
+    }
+
+    // For mihomo: collect apps per profile and check for overlap
+    val mihomoProfiles = enabledProfilesByProgram["mihomo"] ?: emptySet()
+    if (mihomoProfiles.size > 1) {
+      val appsByProfile = linkedMapOf<String, Set<String>>()
+      for (entry in assignments.lists) {
+        if (entry.programId == "mihomo" && entry.profile != null && entry.profile in mihomoProfiles) {
+          appsByProfile.getOrPut(entry.profile) { linkedSetOf() }.addAll(entry.packages)
+        }
+      }
+      val profileList = appsByProfile.keys.toList()
+      for (i in profileList.indices) {
+        for (j in i + 1 until profileList.size) {
+          val a = appsByProfile[profileList[i]] ?: emptySet()
+          val b = appsByProfile[profileList[j]] ?: emptySet()
+          val common = a.intersect(b)
+          if (common.isNotEmpty()) {
+            return "mihomo: ${profileList[i]} и ${profileList[j]} имеют общие приложения (${common.size})"
+          }
+        }
+      }
+    }
+
+    // For zapret (nfqws + nfqws2): collect apps per profile and check for overlap
+    val zapretProgramIds = listOf("nfqws", "nfqws2")
+    val zapretAppsByProfile = linkedMapOf<String, Set<String>>()
+    for (progId in zapretProgramIds) {
+      val profiles = enabledProfilesByProgram[progId] ?: continue
+      for (entry in assignments.lists) {
+        if (entry.programId == progId && entry.profile != null && entry.profile in profiles) {
+          val key = "$progId/${entry.profile}"
+          zapretAppsByProfile.getOrPut(key) { linkedSetOf() }.addAll(entry.packages)
+        }
+      }
+    }
+    val zapretProfileList = zapretAppsByProfile.keys.toList()
+    for (i in zapretProfileList.indices) {
+      for (j in i + 1 until zapretProfileList.size) {
+        val a = zapretAppsByProfile[zapretProfileList[i]] ?: emptySet()
+        val b = zapretAppsByProfile[zapretProfileList[j]] ?: emptySet()
+        val common = a.intersect(b)
+        if (common.isNotEmpty()) {
+          return "zapret: ${zapretProfileList[i]} и ${zapretProfileList[j]} имеют общие приложения (${common.size})"
+        }
+      }
+    }
+
+    return null
   }
 
   private suspend fun refreshProgramsNow(force: Boolean = false) {

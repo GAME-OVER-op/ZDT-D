@@ -23,6 +23,9 @@ const NFQWS_BIN: &str = "/data/adb/modules/ZDT-D/bin/nfqws";
 // Never introduce module-specific *.flag.sha256 files here.
 const SHA_FLAG_FILE: &str = settings::SHARED_SHA_FLAG_FILE;
 
+pub fn active_path() -> PathBuf { PathBuf::from(NFQWS_ROOT).join("active.json") }
+pub fn profile_root(profile: &str) -> PathBuf { PathBuf::from(NFQWS_ROOT).join(profile) }
+
 #[derive(Debug, Deserialize)]
 struct ActiveJson {
     profiles: BTreeMap<String, ProfileState>,

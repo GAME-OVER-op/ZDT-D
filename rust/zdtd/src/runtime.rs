@@ -1,7 +1,7 @@
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     panic::{self, AssertUnwindSafe},
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
@@ -82,6 +82,7 @@ pub fn start_full() -> Result<()> {
     crate::android::sysctl::apply_start_settings_best_effort();
 
     validate_start_plan_best_effort();
+    validate_no_profile_app_overlap()?;
 
     crate::logging::user_info("Подготовка: восстановление базовых iptables");
     // Restore baseline iptables before applying rules (prevents leftovers between starts).
@@ -308,6 +309,122 @@ if !any_main_service_running() {
     }
 
     Ok(())
+}
+
+/// Validate that enabled profiles of mihomo and zapret (nfqws/nfqws2) do not
+/// share common applications. Overlap is allowed at assignment time but must
+/// be resolved before starting the service.
+fn validate_no_profile_app_overlap() -> Result<()> {
+    // Read enabled profiles for each program
+    let mihomo_enabled = read_enabled_profile_names(mihomo::active_path());
+    let nfqws_enabled = read_enabled_profile_names(nfqws::active_path());
+    let nfqws2_enabled = read_enabled_profile_names(nfqws2::active_path());
+
+    // Check mihomo profile overlap
+    if mihomo_enabled.len() > 1 {
+        let mut apps_by_profile: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for name in &mihomo_enabled {
+            let profile_dir = mihomo::profile_root(name);
+            let pkgs = read_app_packages(&profile_dir.join("app/uid/user_program"))?;
+            apps_by_profile.insert(name.clone(), pkgs);
+        }
+        let names: Vec<&String> = apps_by_profile.keys().collect();
+        for i in 0..names.len() {
+            for j in (i + 1)..names.len() {
+                let a = apps_by_profile.get(names[i]).unwrap();
+                let b = apps_by_profile.get(names[j]).unwrap();
+                let common: BTreeSet<_> = a.intersection(b).collect();
+                if !common.is_empty() {
+                    bail!(
+                        "mihomo profiles '{}' and '{}' share {} app(s): disable one or remove overlap",
+                        names[i], names[j], common.len()
+                    );
+                }
+            }
+        }
+    }
+
+    // Check zapret (nfqws + nfqws2) profile overlap
+    let mut zapret_apps_by_profile: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    for name in &nfqws_enabled {
+        let profile_dir = nfqws::profile_root(name);
+        let mut pkgs = BTreeSet::new();
+        for slot in &["user_program", "mobile_program", "wifi_program"] {
+            pkgs.extend(read_app_packages(&profile_dir.join(format!("app/uid/{slot}")))?);
+        }
+        zapret_apps_by_profile.insert(format!("nfqws/{name}"), pkgs);
+    }
+    for name in &nfqws2_enabled {
+        let profile_dir = nfqws2::profile_root(name);
+        let mut pkgs = BTreeSet::new();
+        for slot in &["user_program", "mobile_program", "wifi_program"] {
+            pkgs.extend(read_app_packages(&profile_dir.join(format!("app/uid/{slot}")))?);
+        }
+        zapret_apps_by_profile.insert(format!("nfqws2/{name}"), pkgs);
+    }
+    let zapret_names: Vec<&String> = zapret_apps_by_profile.keys().collect();
+    for i in 0..zapret_names.len() {
+        for j in (i + 1)..zapret_names.len() {
+            let a = zapret_apps_by_profile.get(zapret_names[i]).unwrap();
+            let b = zapret_apps_by_profile.get(zapret_names[j]).unwrap();
+            let common: BTreeSet<_> = a.intersection(b).collect();
+            if !common.is_empty() {
+                bail!(
+                    "zapret profiles '{}' and '{}' share {} app(s): disable one or remove overlap",
+                    zapret_names[i], zapret_names[j], common.len()
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Read enabled profile names from a program's active.json.
+fn read_enabled_profile_names(active_path: std::path::PathBuf) -> Vec<String> {
+    let Ok(raw) = std::fs::read_to_string(&active_path) else {
+        return Vec::new();
+    };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return Vec::new();
+    };
+    v.get("profiles")
+        .and_then(|p| p.as_object())
+        .map(|m| {
+            m.iter()
+                .filter(|(_, st)| {
+                    st.get("enabled")
+                        .and_then(|x| x.as_bool())
+                        .unwrap_or(false)
+                })
+                .map(|(name, _)| name.clone())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Read package names from an app list file (one package per line).
+fn read_app_packages(path: &Path) -> Result<BTreeSet<String>> {
+    let mut out = BTreeSet::new();
+    let raw = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return Ok(out),
+    };
+    for line in raw.lines() {
+        let s = line.trim();
+        if s.is_empty() || s.starts_with('#') {
+            continue;
+        }
+        if let Some((left, _)) = s.split_once('#') {
+            let s = left.trim();
+            if !s.is_empty() {
+                out.insert(s.to_string());
+            }
+        } else {
+            out.insert(s.to_string());
+        }
+    }
+    Ok(out)
 }
 
 /// Stop all services and restore baseline iptables.

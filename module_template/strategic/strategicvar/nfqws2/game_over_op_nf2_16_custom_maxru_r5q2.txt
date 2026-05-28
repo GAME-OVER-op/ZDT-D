@@ -1,0 +1,13 @@
+--lua-init=@/data/adb/modules/ZDT-D/strategic/lua/zapret-lib.lua \
+--lua-init=@/data/adb/modules/ZDT-D/strategic/lua/zapret-antidpi.lua \
+--blob=tls_max:@/data/adb/modules/ZDT-D/strategic/bin/tls_clienthello_max_ru.bin \
+--blob=quic_google:@/data/adb/modules/ZDT-D/strategic/bin/quic_initial_www_google_com.bin \
+--filter-tcp=443 \
+--hostlist=/data/adb/modules/ZDT-D/strategic/list/custom.txt \
+--hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt \
+--lua-desync=hostfakesplit:blob=tls_max:repeats=5 \
+--new \
+--filter-udp=443 \
+--hostlist=/data/adb/modules/ZDT-D/strategic/list/google.txt \
+--hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt \
+--lua-desync=fake:blob=quic_google:repeats=2

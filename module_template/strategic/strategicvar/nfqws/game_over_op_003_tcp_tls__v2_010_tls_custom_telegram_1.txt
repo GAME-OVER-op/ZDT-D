@@ -1,0 +1,22 @@
+--filter-tcp=443,8443,2053,2083,2087,2096 \
+--hostlist=/data/adb/modules/ZDT-D/strategic/list/custom.txt \
+--hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt \
+--dpi-desync=fake,multidisorder \
+--dpi-desync-split-pos=1,sld+1 \
+--dpi-desync-split-seqovl=2 \
+--dpi-desync-split-seqovl-pattern=/data/adb/modules/ZDT-D/strategic/bin/tls_clienthello_18.bin \
+--dpi-desync-fakedsplit-pattern=/data/adb/modules/ZDT-D/strategic/bin/tls_clienthello_max_ru.bin \
+--dpi-desync-fake-tls=/data/adb/modules/ZDT-D/strategic/bin/tls_http_telegram_ru.bin \
+--dpi-desync-fake-tls-mod=none \
+--dpi-desync-fooling=datanoack \
+--dpi-desync-repeats=8 \
+--dpi-desync-cutoff=n5 \
+--new \
+--filter-udp=443 \
+--hostlist=/data/adb/modules/ZDT-D/strategic/list/custom.txt \
+--hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt \
+--filter-l7=quic \
+--dpi-desync=fake \
+--dpi-desync-repeats=7 \
+--dpi-desync-fake-quic=/data/adb/modules/ZDT-D/strategic/bin/quic_1.bin \
+--dpi-desync-cutoff=n4

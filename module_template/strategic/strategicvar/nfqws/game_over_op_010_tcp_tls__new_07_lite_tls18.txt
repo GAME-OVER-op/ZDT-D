@@ -1,0 +1,17 @@
+--filter-tcp=443 \
+--hostlist=/data/adb/modules/ZDT-D/strategic/list/sni_list.txt \
+--hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt \
+--dpi-desync=fake,multisplit \
+--dpi-desync-split-pos=2,sniext+1 \
+--dpi-desync-split-seqovl=226 \
+--dpi-desync-split-seqovl-pattern=/data/adb/modules/ZDT-D/strategic/bin/tls_clienthello_18.bin \
+--dpi-desync-fake-tls=/data/adb/modules/ZDT-D/strategic/bin/tls_clienthello_18.bin \
+--dpi-desync-fooling=badseq \
+--dpi-desync-repeats=6 \
+--new \
+--filter-udp=443 \
+--hostlist=/data/adb/modules/ZDT-D/strategic/list/sni_list.txt \
+--hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt \
+--dpi-desync=fake \
+--dpi-desync-repeats=6 \
+--dpi-desync-fake-quic=/data/adb/modules/ZDT-D/strategic/bin/quic_for_tls_clienthello_18.bin

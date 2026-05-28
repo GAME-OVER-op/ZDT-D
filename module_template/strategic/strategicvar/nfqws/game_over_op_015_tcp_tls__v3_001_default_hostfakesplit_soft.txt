@@ -1,0 +1,18 @@
+--filter-tcp=80,443,2053,2083,2087,2096,8443 \
+--hostlist=/data/adb/modules/ZDT-D/strategic/list/default.txt \
+--hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt \
+--dpi-desync=hostfakesplit \
+--dpi-desync-split-pos=host+1 \
+--dpi-desync-hostfakesplit-midhost=midsld \
+--dpi-desync-hostfakesplit-mod=host=www.google.com,altorder=1 \
+--dpi-desync-fooling=badseq \
+--dpi-desync-repeats=4 \
+--new \
+--filter-udp=443 \
+--hostlist=/data/adb/modules/ZDT-D/strategic/list/default.txt \
+--hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt \
+--filter-l7=quic \
+--dpi-desync=fake \
+--dpi-desync-repeats=4 \
+--dpi-desync-fake-quic=/data/adb/modules/ZDT-D/strategic/bin/quic_for_tls_clienthello_18.bin \
+--dpi-desync-cutoff=n5

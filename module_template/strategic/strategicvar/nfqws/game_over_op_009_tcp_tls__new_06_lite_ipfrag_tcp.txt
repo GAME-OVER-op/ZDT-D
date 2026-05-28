@@ -1,0 +1,18 @@
+--filter-l3=ipv4 \
+--filter-tcp=443 \
+--hostlist=/data/adb/modules/ZDT-D/strategic/list/general.txt \
+--hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt \
+--dpi-desync=ipfrag1,multisplit \
+--dpi-desync-ipfrag-pos-tcp=24 \
+--dpi-desync-split-pos=1,midsld \
+--dpi-desync-fooling=md5sig \
+--dpi-desync-repeats=4 \
+--new \
+--filter-udp=443 \
+--hostlist=/data/adb/modules/ZDT-D/strategic/list/general.txt \
+--hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt \
+--dpi-desync=ipfrag1 \
+--filter-l3=ipv4 \
+--dpi-desync-ipfrag-pos-udp=16 \
+--dpi-desync-repeats=5 \
+--dpi-desync-fake-quic=/data/adb/modules/ZDT-D/strategic/bin/quic_initial_vk_com.bin

@@ -1,0 +1,24 @@
+--filter-tcp=443 \
+--hostlist=/data/adb/modules/ZDT-D/strategic/list/default.txt \
+--hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt \
+--dpi-desync=fake,hostfakesplit \
+--dpi-desync-split-pos=1,midsld \
+--dpi-desync-split-seqovl=64 \
+--dpi-desync-split-seqovl-pattern=/data/adb/modules/ZDT-D/strategic/bin/tls_clienthello_sberbank_ru.bin \
+--dpi-desync-fakedsplit-pattern=/data/adb/modules/ZDT-D/strategic/bin/tls_clienthello_sberbank_ru.bin \
+--dpi-desync-fake-tls=/data/adb/modules/ZDT-D/strategic/bin/tls_clienthello_sberbank_ru.bin \
+--dpi-desync-fake-tls-mod=rnd,dupsid,sni=sberbank.ru \
+--dpi-desync-fooling=badseq \
+--dpi-desync-repeats=5 \
+--dpi-desync-cutoff=n6 \
+--dpi-desync-hostfakesplit-midhost=midsld \
+--dpi-desync-hostfakesplit-mod=host=www.google.com,altorder=1 \
+--new \
+--filter-udp=443 \
+--hostlist=/data/adb/modules/ZDT-D/strategic/list/default.txt \
+--hostlist-exclude=/data/adb/modules/ZDT-D/strategic/list/exclude.txt \
+--filter-l7=quic \
+--dpi-desync=fake \
+--dpi-desync-repeats=4 \
+--dpi-desync-fake-quic=/data/adb/modules/ZDT-D/strategic/bin/quic_initial_www_google_com.bin \
+--dpi-desync-cutoff=n4

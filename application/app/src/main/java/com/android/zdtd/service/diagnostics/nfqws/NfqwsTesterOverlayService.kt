@@ -1,6 +1,7 @@
 package com.android.zdtd.service.diagnostics.nfqws
 
 import android.animation.LayoutTransition
+import android.animation.ValueAnimator
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -50,6 +51,7 @@ class NfqwsTesterOverlayService : Service() {
     private var windowManager: WindowManager? = null
 
     private var overlayView: View? = null
+    private var overlayRoot: LinearLayout? = null
     private var overlayParams: WindowManager.LayoutParams? = null
     private var bodyContainer: LinearLayout? = null
     private var metaView: TextView? = null
@@ -63,6 +65,8 @@ class NfqwsTesterOverlayService : Service() {
     private var skipButton: Button? = null
     private var stopButton: Button? = null
     private var toggleButton: TextView? = null
+    private var expandedWidthPx: Int = 0
+    private var compactWidthPx: Int = 0
 
     private var currentProgram: String = "nfqws"
     private var strategies: List<String> = emptyList()
@@ -322,7 +326,8 @@ class NfqwsTesterOverlayService : Service() {
             return
         }
         val density = resources.displayMetrics.density
-        val overlayWidth = min((resources.displayMetrics.widthPixels * 0.88f).toInt(), dp(360))
+        expandedWidthPx = min((resources.displayMetrics.widthPixels * 0.86f).toInt(), dp(372))
+        compactWidthPx = min((resources.displayMetrics.widthPixels * 0.58f).toInt(), dp(252))
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -330,11 +335,11 @@ class NfqwsTesterOverlayService : Service() {
                 enableTransitionType(LayoutTransition.CHANGING)
                 setDuration(180)
             }
-            background = roundedDrawable(0xEE0F172A.toInt(), 0x335E748F.toInt(), 24f * density)
-            elevation = 20f * density
+            background = roundedDrawable(0xEE18060A.toInt(), 0x66F43F5E.toInt(), 26f * density)
+            elevation = 24f * density
             setPadding(dp(16), dp(14), dp(16), dp(14))
             clipToPadding = false
-            minimumWidth = overlayWidth
+            minimumWidth = compactWidthPx
             alpha = 0f
             scaleX = 0.96f
             scaleY = 0.96f
@@ -352,7 +357,7 @@ class NfqwsTesterOverlayService : Service() {
         }
         val gripView = TextView(this).apply {
             text = "⋮⋮"
-            setTextColor(0x88E2E8F0.toInt())
+            setTextColor(0x99FFE4EA.toInt())
             textSize = 15f
             setPadding(0, 0, dp(10), 0)
             typeface = Typeface.DEFAULT_BOLD
@@ -362,7 +367,7 @@ class NfqwsTesterOverlayService : Service() {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         }
         metaView = TextView(this).apply {
-            setTextColor(0xFFE2E8F0.toInt())
+            setTextColor(0xFFFFEEF2.toInt())
             setTextSize(2, 12f)
             typeface = Typeface.DEFAULT_BOLD
             alpha = 0.94f
@@ -380,13 +385,13 @@ class NfqwsTesterOverlayService : Service() {
         dragArea.addView(headerTextColumn)
 
         toggleButton = TextView(this).apply {
-            text = if (overlayExpanded) "−" else "+"
-            setTextColor(0xFFE2E8F0.toInt())
-            textSize = 20f
+            text = if (overlayExpanded) "▾" else "▸"
+            setTextColor(0xFFFFE4EA.toInt())
+            textSize = 18f
             gravity = Gravity.CENTER
             minWidth = dp(36)
             minHeight = dp(36)
-            background = roundedDrawable(0x223B82F6.toInt(), 0x335E748F.toInt(), 18f * density)
+            background = roundedDrawable(0x33A11D35.toInt(), 0x66F43F5E.toInt(), 18f * density)
             setOnClickListener {
                 overlayExpanded = !overlayExpanded
                 overlayPrefs.edit().putBoolean(KEY_EXPANDED, overlayExpanded).apply()
@@ -419,11 +424,14 @@ class NfqwsTesterOverlayService : Service() {
         }
 
         val statsRow = LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(8)
+            }
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        cpuChipView = chipView(0x1F10B981, "CPU")
-        ramChipView = chipView(0x1F8B5CF6, "RAM")
+        cpuChipView = chipView(0x33A11D35, "CPU")
+        ramChipView = chipView(0x33A11D35, "RAM")
         statsRow.addView(cpuChipView)
         statsRow.addView(Space(this).apply { layoutParams = LinearLayout.LayoutParams(dp(8), 1) })
         statsRow.addView(ramChipView)
@@ -435,20 +443,20 @@ class NfqwsTesterOverlayService : Service() {
                 topMargin = dp(10)
             }
         }
-        worksButton = actionButton(getString(R.string.nfqws_tester_decision_yes), 0xFF10B981.toInt()).apply {
+        worksButton = actionButton(getString(R.string.nfqws_tester_decision_yes), 0xFFE11D48.toInt()).apply {
             setOnClickListener { decide("works") }
         }
-        failedButton = actionButton(getString(R.string.nfqws_tester_decision_no), 0xFFEF4444.toInt()).apply {
+        failedButton = actionButton(getString(R.string.nfqws_tester_decision_no), 0xFF3A1118.toInt()).apply {
             setOnClickListener { decide("failed") }
         }
-        skipButton = actionButton(getString(R.string.nfqws_tester_decision_skip), 0xFF64748B.toInt()).apply {
+        skipButton = actionButton(getString(R.string.nfqws_tester_decision_skip), 0xFF2B1117.toInt()).apply {
             setOnClickListener { decide("skip") }
         }
         actionsRow.addView(worksButton, weightedActionParams())
         actionsRow.addView(failedButton, weightedActionParams(dp(8)))
         actionsRow.addView(skipButton, weightedActionParams(dp(8)))
 
-        stopButton = actionButton(getString(R.string.nfqws_tester_stop), 0xFF334155.toInt()).apply {
+        stopButton = actionButton(getString(R.string.nfqws_tester_stop), 0xFF4A0F19.toInt()).apply {
             setOnClickListener {
                 serviceScope.launch {
                     stopTesterSession(getString(R.string.nfqws_tester_status_stopped))
@@ -476,7 +484,7 @@ class NfqwsTesterOverlayService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
         }
         val params = WindowManager.LayoutParams(
-            overlayWidth,
+            if (overlayExpanded) expandedWidthPx else compactWidthPx,
             WindowManager.LayoutParams.WRAP_CONTENT,
             type,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
@@ -488,9 +496,10 @@ class NfqwsTesterOverlayService : Service() {
         }
         overlayParams = params
         overlayView = root
+        overlayRoot = root
         windowManager?.addView(root, params)
         root.post {
-            clampAndApplyOverlayPosition(snapToEdge = false)
+            clampAndApplyOverlayPosition()
             updateExpandedState(animated = false)
             refreshOverlay(animated = false)
             root.animate()
@@ -531,7 +540,7 @@ class NfqwsTesterOverlayService : Service() {
             else -> safeIndex.coerceAtMost(max(state.strategies.size, 1))
         }
 
-        toggleButton?.text = if (overlayExpanded) "−" else "+"
+        toggleButton?.text = if (overlayExpanded) "▾" else "▸"
         updateStateChipStyle(state)
         updateActionState(state)
     }
@@ -551,44 +560,71 @@ class NfqwsTesterOverlayService : Service() {
     private fun updateExpandedState(animated: Boolean) {
         val body = bodyContainer ?: return
         val root = overlayView ?: return
+        val targetWidth = if (overlayExpanded) expandedWidthPx else compactWidthPx
+        strategyView?.maxLines = if (overlayExpanded) 2 else 1
+        strategyView?.ellipsize = TextUtils.TruncateAt.END
+        stateChipView?.maxLines = if (overlayExpanded) 2 else 1
+        stateChipView?.textSize = if (overlayExpanded) 13f else 12f
         if (overlayExpanded) {
             body.visibility = View.VISIBLE
             if (animated) {
                 body.alpha = 0f
                 body.translationY = -dp(6).toFloat()
-                body.animate().alpha(1f).translationY(0f).setDuration(170).start()
+                body.animate().alpha(1f).translationY(0f).setDuration(180).start()
             }
         } else if (animated) {
             body.animate()
                 .alpha(0f)
                 .translationY(-dp(6).toFloat())
-                .setDuration(140)
+                .setDuration(130)
                 .withEndAction {
                     body.visibility = View.GONE
                     body.alpha = 1f
                     body.translationY = 0f
-                    clampAndApplyOverlayPosition(snapToEdge = false)
+                    clampAndApplyOverlayPosition()
                 }
                 .start()
         } else {
             body.visibility = View.GONE
-        }
-        if (!animated) {
             body.alpha = 1f
             body.translationY = 0f
         }
-        root.requestLayout()
-        toggleButton?.text = if (overlayExpanded) "−" else "+"
+        animateOverlayWidth(targetWidth, animated)
+        if (!animated) {
+            root.requestLayout()
+            clampAndApplyOverlayPosition()
+        }
+        toggleButton?.text = if (overlayExpanded) "▾" else "▸"
+    }
+
+    private fun animateOverlayWidth(targetWidth: Int, animated: Boolean) {
+        val params = overlayParams ?: return
+        val view = overlayView ?: return
+        val startWidth = params.width.takeIf { it > 0 } ?: targetWidth
+        if (!animated || startWidth == targetWidth || !view.isAttachedToWindow) {
+            params.width = targetWidth
+            runCatching { windowManager?.updateViewLayout(view, params) }
+            return
+        }
+        ValueAnimator.ofInt(startWidth, targetWidth).apply {
+            duration = 180L
+            interpolator = AccelerateDecelerateInterpolator()
+            addUpdateListener { animator ->
+                params.width = animator.animatedValue as Int
+                runCatching { windowManager?.updateViewLayout(view, params) }
+            }
+            start()
+        }
     }
 
     private fun updateStateChipStyle(state: NfqwsTesterSessionState) {
         val (fill, stroke, text) = when {
-            state.errorText != null || state.phase == NfqwsTesterPhase.ERROR -> Triple(0x33EF4444.toInt(), 0x55EF4444.toInt(), 0xFFFFE4E6.toInt())
-            state.phase == NfqwsTesterPhase.WAITING_DECISION -> Triple(0x333B82F6.toInt(), 0x553B82F6.toInt(), 0xFFE0F2FE.toInt())
-            state.phase == NfqwsTesterPhase.RUNNING -> Triple(0x3310B981.toInt(), 0x5510B981.toInt(), 0xFFE7FFF6.toInt())
-            state.phase == NfqwsTesterPhase.PREPARING -> Triple(0x33F59E0B.toInt(), 0x55F59E0B.toInt(), 0xFFFFF7E8.toInt())
-            state.phase == NfqwsTesterPhase.FINISHED -> Triple(0x3322C55E.toInt(), 0x5522C55E.toInt(), 0xFFF0FFF4.toInt())
-            else -> Triple(0x335E748F.toInt(), 0x335E748F.toInt(), 0xFFE2E8F0.toInt())
+            state.errorText != null || state.phase == NfqwsTesterPhase.ERROR -> Triple(0x33B91C1C.toInt(), 0x66F87171.toInt(), 0xFFFFE4E6.toInt())
+            state.phase == NfqwsTesterPhase.WAITING_DECISION -> Triple(0x33A11D35.toInt(), 0x66FB7185.toInt(), 0xFFFFE4EA.toInt())
+            state.phase == NfqwsTesterPhase.RUNNING -> Triple(0x33881337.toInt(), 0x66F43F5E.toInt(), 0xFFFFEEF2.toInt())
+            state.phase == NfqwsTesterPhase.PREPARING -> Triple(0x3363121C.toInt(), 0x66F43F5E.toInt(), 0xFFFFEEF2.toInt())
+            state.phase == NfqwsTesterPhase.FINISHED -> Triple(0x33461A22.toInt(), 0x66FB7185.toInt(), 0xFFFFEEF2.toInt())
+            else -> Triple(0x3325141A.toInt(), 0x664B1D27.toInt(), 0xFFFFE4EA.toInt())
         }
         stateChipView?.setTextColor(text)
         stateChipView?.background = roundedDrawable(fill, stroke, 16f * resources.displayMetrics.density)
@@ -599,6 +635,7 @@ class NfqwsTesterOverlayService : Service() {
             runCatching { windowManager?.removeView(view) }
         }
         overlayView = null
+        overlayRoot = null
         overlayParams = null
         bodyContainer = null
         metaView = null
@@ -637,10 +674,10 @@ class NfqwsTesterOverlayService : Service() {
     private fun chipView(fillColor: Int, label: String): TextView {
         return TextView(this).apply {
             text = label
-            setTextColor(0xFFE5EDF7.toInt())
+            setTextColor(0xFFFFEEF2.toInt())
             setTextSize(2, 12f)
             setPadding(dp(10), dp(6), dp(10), dp(6))
-            background = roundedDrawable(fillColor, 0x335E748F.toInt(), 14f * resources.displayMetrics.density)
+            background = roundedDrawable(fillColor, 0x66F43F5E.toInt(), 14f * resources.displayMetrics.density)
         }
     }
 
@@ -651,7 +688,7 @@ class NfqwsTesterOverlayService : Service() {
             setTextColor(0xFFFFFFFF.toInt())
             setTextSize(2, 15f)
             minHeight = dp(44)
-            background = roundedDrawable(fillColor, 0x22000000, 18f * resources.displayMetrics.density)
+            background = roundedDrawable(fillColor, 0x66F43F5E.toInt(), 18f * resources.displayMetrics.density)
         }
     }
 
@@ -715,14 +752,14 @@ class NfqwsTesterOverlayService : Service() {
                     if (dragging) {
                         params.x = startX + dx
                         params.y = startY + dy
-                        clampAndApplyOverlayPosition(snapToEdge = false)
+                        clampAndApplyOverlayPosition()
                     }
                     true
                 }
 
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     if (dragging) {
-                        clampAndApplyOverlayPosition(snapToEdge = true)
+                        clampAndApplyOverlayPosition()
                         overlayPrefs.edit().putInt(KEY_POS_X, params.x).putInt(KEY_POS_Y, params.y).apply()
                     }
                     dragging
@@ -733,11 +770,11 @@ class NfqwsTesterOverlayService : Service() {
         }
     }
 
-    private fun clampAndApplyOverlayPosition(snapToEdge: Boolean) {
+    private fun clampAndApplyOverlayPosition() {
         val params = overlayParams ?: return
         val view = overlayView ?: return
         val width = if (view.width > 0) view.width else params.width.coerceAtLeast(dp(280))
-        val height = if (view.height > 0) view.height else dp(if (overlayExpanded) 240 else 112)
+        val height = if (view.height > 0) view.height else dp(if (overlayExpanded) 252 else 116)
         val screenWidth = resources.displayMetrics.widthPixels
         val screenHeight = resources.displayMetrics.heightPixels
         val sideMargin = dp(8)
@@ -746,10 +783,6 @@ class NfqwsTesterOverlayService : Service() {
         val maxY = max(topMargin, screenHeight - height - sideMargin)
         params.x = params.x.coerceIn(sideMargin, maxX)
         params.y = params.y.coerceIn(topMargin, maxY)
-        if (snapToEdge) {
-            val center = params.x + width / 2
-            params.x = if (center >= screenWidth / 2) maxX else sideMargin
-        }
         runCatching { windowManager?.updateViewLayout(view, params) }
     }
 

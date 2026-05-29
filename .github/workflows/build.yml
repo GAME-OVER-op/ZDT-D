@@ -327,6 +327,7 @@ jobs:
           cargo build --manifest-path rust/zdtd/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
           cargo build --manifest-path rust/T2s/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
           cargo build --manifest-path rust/dpi-detector/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
+          cargo build --manifest-path rust/nfqws-tester/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
 
       - name: Collect Rust binaries
         run: |
@@ -337,7 +338,8 @@ jobs:
           cp -f "$SRC/zdtd" "$DST/zdtd"
           cp -f "$SRC/t2s" "$DST/t2s"
           cp -f "$SRC/dpi-detector" "$DST/dpi-detector"
-          chmod 755 "$DST/zdtd" "$DST/t2s" "$DST/dpi-detector"
+          cp -f "$SRC/nfqws-tester" "$DST/nfqws-tester"
+          chmod 755 "$DST/zdtd" "$DST/t2s" "$DST/dpi-detector" "$DST/nfqws-tester"
           ls -lh "$DST"
 
       - name: Upload Rust binaries
@@ -611,6 +613,17 @@ jobs:
           chmod 755 "$DST"
           ls -lh "$DST"
 
+      - name: Prepare nfqws_tester APK asset
+        run: |
+          set -euo pipefail
+          SRC="out/artifacts/rust/nfqws-tester"
+          DST="application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester"
+          test -s "$SRC" || { echo "::error::nfqws_tester artifact missing: $SRC"; exit 1; }
+          mkdir -p "$(dirname "$DST")"
+          cp -f "$SRC" "$DST"
+          chmod 755 "$DST"
+          ls -lh "$DST"
+
       - name: Build APK assemble${{ env.BUILD_TYPE }}
         working-directory: ${{ env.GRADLE_PROJECT_DIR }}
         env:
@@ -638,6 +651,7 @@ jobs:
             exit 1
           fi
           printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/dpi-detector/arm64-v8a/dpi-detector' >/dev/null || { echo "::error::dpi-detector APK asset missing"; exit 1; }
+          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/nfqws-tester/arm64-v8a/nfqws_tester' >/dev/null || { echo "::error::nfqws_tester APK asset missing"; exit 1; }
 
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${{ env.ANDROID_BUILD_TOOLS_VERSION }}/apksigner"
           [[ -x "$APKSIGNER" ]] || { echo "::error::apksigner not found: $APKSIGNER"; exit 1; }

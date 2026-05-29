@@ -711,6 +711,7 @@ private fun parentAppsRoute(route: AppsRoute): AppsRoute = when (route) {
   AppsRoute.List -> AppsRoute.List
   AppsRoute.AnalysisTools -> AppsRoute.List
   AppsRoute.DpiDetector -> AppsRoute.AnalysisTools
+  AppsRoute.NfqwsTester -> AppsRoute.AnalysisTools
   is AppsRoute.Program -> AppsRoute.List
   is AppsRoute.Profile -> AppsRoute.Program(route.programId)
 }
@@ -1180,6 +1181,7 @@ private fun MainShell(
     tab == Tab.APPS && appsRoute == AppsRoute.List -> stringResource(R.string.nav_programs)
     tab == Tab.APPS && appsRoute == AppsRoute.AnalysisTools -> stringResource(R.string.analysis_tools_title)
     tab == Tab.APPS && appsRoute == AppsRoute.DpiDetector -> stringResource(R.string.dpi_detector_title)
+    tab == Tab.APPS && appsRoute == AppsRoute.NfqwsTester -> stringResource(R.string.nfqws_tester_title)
     tab == Tab.APPS && appsRoute is AppsRoute.Program -> {
       val route = appsRoute as AppsRoute.Program
       uiState.programs.firstOrNull { it.id == route.programId }?.name ?: route.programId
@@ -1200,6 +1202,7 @@ private fun MainShell(
         AppsRoute.List -> null
         AppsRoute.AnalysisTools -> null
         AppsRoute.DpiDetector -> null
+        AppsRoute.NfqwsTester -> null
         is AppsRoute.Program -> {
           val program = uiState.programs.firstOrNull { it.id == route.programId }
           if (program != null && !isProfileProgramType(program.type) && supportsProgramLogs(route.programId, profile = null)) {
@@ -1298,6 +1301,7 @@ private fun MainShell(
           onOpenProfile = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) },
           onOpenAnalysisTools = { appsRoute = AppsRoute.AnalysisTools },
           onOpenDpiDetector = { appsRoute = AppsRoute.DpiDetector },
+          onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
           actions = actions,
           snackHost = snackHost,
         )
@@ -1321,6 +1325,7 @@ private fun MainShell(
               onOpenProfile = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) },
               onOpenAnalysisTools = { appsRoute = AppsRoute.AnalysisTools },
               onOpenDpiDetector = { appsRoute = AppsRoute.DpiDetector },
+              onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
               actions = actions,
               snackHost = snackHost,
               landscapeControl = false,
@@ -1432,6 +1437,7 @@ private fun LandscapeShellContent(
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
   onOpenDpiDetector: () -> Unit,
+  onOpenNfqwsTester: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
@@ -2359,6 +2365,7 @@ private fun TabBody(
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
   onOpenDpiDetector: () -> Unit,
+  onOpenNfqwsTester: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   landscapeControl: Boolean = false,
@@ -2397,6 +2404,7 @@ private fun TabBody(
             onOpenProfile = onOpenProfile,
             onOpenAnalysisTools = onOpenAnalysisTools,
             onOpenDpiDetector = onOpenDpiDetector,
+            onOpenNfqwsTester = onOpenNfqwsTester,
             actions = actions,
             snackHost = snackHost,
             topContentPadding = topContentPadding,

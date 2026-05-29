@@ -1627,4 +1627,50 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="settings_advanced_ip_forward_title">Traffic forwarding</string>
     <string name="settings_advanced_ip_forward_body">Enables net.ipv4.ip_forward=1 system-wide. The setting is applied immediately and stays active until you turn it off.</string>
 
+
+    <string name="analysis_tools_badge_advanced">ADV</string>
+    <string name="nfqws_tester_title">NFQWS Strategy Tester</string>
+    <string name="nfqws_tester_short_desc">Manually test nfqws and nfqws2 strategies with an overlay and quick apply flow.</string>
+    <string name="nfqws_tester_intro">Runs strategies from the strategicvar folders one by one, rebuilds NFQUEUE rules for each config, and lets you mark the result in a floating overlay.</string>
+    <string name="nfqws_tester_choose_program">Choose tester target</string>
+    <string name="nfqws_tester_overlay_permission_title">Floating overlay permission</string>
+    <string name="nfqws_tester_overlay_granted">Overlay permission is granted. The tester can open a floating control panel.</string>
+    <string name="nfqws_tester_overlay_missing">Grant the floating overlay permission before starting the tester.</string>
+    <string name="nfqws_tester_overlay_required">Floating overlay permission is required to run the tester.</string>
+    <string name="nfqws_tester_grant_overlay">Grant permission</string>
+    <string name="nfqws_tester_service_state_title">ZDT-D service state</string>
+    <string name="nfqws_tester_service_stopped">The service is stopped. You can start the tester safely.</string>
+    <string name="nfqws_tester_service_must_be_stopped">Stop the ZDT-D service before testing strategies. Running both at the same time can mix iptables rules.</string>
+    <string name="nfqws_tester_refresh_status">Refresh status</string>
+    <string name="nfqws_tester_start">Start tester</string>
+    <string name="nfqws_tester_stop">Stop tester</string>
+    <string name="nfqws_tester_session_title">Current session</string>
+    <string name="nfqws_tester_status_preparing">Preparing tester session…</string>
+    <string name="nfqws_tester_status_starting">Starting selected strategy…</string>
+    <string name="nfqws_tester_status_running">Strategy is running.</string>
+    <string name="nfqws_tester_status_waiting_decision">Strategy is active. Mark whether it works in the floating overlay.</string>
+    <string name="nfqws_tester_status_process_exited">The process exited. You can mark the strategy as failed or skip it.</string>
+    <string name="nfqws_tester_status_finished">Testing finished. Review the results below.</string>
+    <string name="nfqws_tester_status_stopped">Tester stopped. Its temporary rules were removed.</string>
+    <string name="nfqws_tester_status_error">Tester error.</string>
+    <string name="nfqws_tester_status_idle">The tester is idle.</string>
+    <string name="nfqws_tester_overlay_title_fmt">%1$s • %2$s • %3$d/%4$d</string>
+    <string name="nfqws_tester_overlay_stats_fmt">CPU: %1$.1f%% • RAM: %2$.1f MB</string>
+    <string name="nfqws_tester_decision_yes">Works</string>
+    <string name="nfqws_tester_decision_no">Fails</string>
+    <string name="nfqws_tester_decision_skip">Skip</string>
+    <string name="nfqws_tester_working_title">Working strategies</string>
+    <string name="nfqws_tester_failed_title">Failed strategies</string>
+    <string name="nfqws_tester_skipped_title">Skipped strategies</string>
+    <string name="nfqws_tester_apply_title">Apply strategy</string>
+    <string name="nfqws_tester_apply_message_fmt">Apply “%1$s” to a %2$s profile?</string>
+    <string name="nfqws_tester_no_profiles_available">There are no available profiles for this program yet.</string>
+    <string name="nfqws_tester_no_strategies">No strategy files were found for the selected program.</string>
+    <string name="nfqws_tester_start_failed">Failed to start the selected strategy.</string>
+    <string name="nfqws_tester_notification_channel">NFQWS tester</string>
+    <string name="nfqws_tester_notification_running">Floating tester is running</string>
+    <string name="nfqws_tester_none">-</string>
+    <string name="nfqws_tester_runtime_fmt">%1$s • %2$d/%3$d • CPU %4$.1f%% • RAM %5$.1f MB</string>
+    <string name="nfqws_tester_service_blocked_start">Stop the strategy tester first. Its temporary iptables rules must be cleaned before starting the service.</string>
+
 </resources>

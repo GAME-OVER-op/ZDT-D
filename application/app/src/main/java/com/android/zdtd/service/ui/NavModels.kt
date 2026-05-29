@@ -11,6 +11,7 @@ sealed class AppsRoute {
   data object List : AppsRoute()
   data object AnalysisTools : AppsRoute()
   data object DpiDetector : AppsRoute()
+  data object NfqwsTester : AppsRoute()
   data class Program(val programId: String) : AppsRoute()
   data class Profile(val programId: String, val profile: String) : AppsRoute()
 }

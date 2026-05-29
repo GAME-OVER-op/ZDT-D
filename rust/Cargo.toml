@@ -3,6 +3,7 @@ members = [
   "zdtd",
   "T2s",
   "dpi-detector",
+  "nfqws-tester",
 ]
 resolver = "2"
 

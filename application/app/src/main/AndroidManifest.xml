@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Android 13+ runtime permission (requested only when user enables notifications). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Needed to list all installed apps (incl. system) for the app picker on Android 11+. -->
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
@@ -74,6 +77,11 @@
                 <action android:name="com.android.zdtd.service.ACTION_PROXYINFO_PROBE_DETECTED" />
             </intent-filter>
         </receiver>
+
+        <service
+            android:name=".diagnostics.nfqws.NfqwsTesterOverlayService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

@@ -33,6 +33,11 @@ pub fn lock_state<'a>(state: &'a SharedState) -> std::sync::MutexGuard<'a, State
     }
 }
 
+fn nfqws_tester_active() -> bool {
+    let lock_path = std::path::Path::new("/data/adb/modules/ZDT-D/working_folder/nfqws_tester/session.json");
+    lock_path.is_file()
+}
+
 pub fn runtime_state_label(st: &State) -> &'static str {
     if st.start_in_progress {
         "starting"
@@ -123,6 +128,12 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
             api_status::write_on(st.services_partial);
             logging::info("start ignored: services already running");
             return Ok(false);
+        }
+        if nfqws_tester_active() {
+            let msg = "nfqws tester is active; stop tester and clean its iptables rules before starting the service";
+            api_status::write_error_off(msg);
+            logging::warn(msg);
+            return Err(anyhow::anyhow!(msg));
         }
         // Mark busy first so concurrent requests are ignored.
         st.services_partial = false;

@@ -1627,4 +1627,50 @@ APatch: 10700+</string>
     <string name="settings_advanced_ip_forward_title">Форвард трафика</string>
     <string name="settings_advanced_ip_forward_body">Включает net.ipv4.ip_forward=1 в системе. Параметр применяется сразу и остаётся активным, пока вы не выключите эту настройку.</string>
 
+
+    <string name="analysis_tools_badge_advanced">ADV</string>
+    <string name="nfqws_tester_title">Тестер стратегий NFQWS</string>
+    <string name="nfqws_tester_short_desc">Ручная проверка стратегий nfqws и nfqws2 с плавающим окном и быстрым применением.</string>
+    <string name="nfqws_tester_intro">По очереди запускает стратегии из strategicvar, каждый раз заново перестраивает NFQUEUE-правила и позволяет отметить результат через плавающее окно.</string>
+    <string name="nfqws_tester_choose_program">Выбор инструмента</string>
+    <string name="nfqws_tester_overlay_permission_title">Разрешение на плавающее окно</string>
+    <string name="nfqws_tester_overlay_granted">Разрешение выдано. Тестер сможет открыть плавающую панель управления.</string>
+    <string name="nfqws_tester_overlay_missing">Перед запуском тестера нужно выдать разрешение на плавающее окно.</string>
+    <string name="nfqws_tester_overlay_required">Для запуска тестера нужно разрешение на плавающее окно.</string>
+    <string name="nfqws_tester_grant_overlay">Выдать разрешение</string>
+    <string name="nfqws_tester_service_state_title">Состояние службы ZDT-D</string>
+    <string name="nfqws_tester_service_stopped">Служба остановлена. Тестер можно запускать безопасно.</string>
+    <string name="nfqws_tester_service_must_be_stopped">Перед тестированием остановите службу ZDT-D. Одновременная работа может перемешать правила iptables.</string>
+    <string name="nfqws_tester_refresh_status">Обновить статус</string>
+    <string name="nfqws_tester_start">Запустить тестер</string>
+    <string name="nfqws_tester_stop">Остановить тестер</string>
+    <string name="nfqws_tester_session_title">Текущая сессия</string>
+    <string name="nfqws_tester_status_preparing">Подготовка сессии тестера…</string>
+    <string name="nfqws_tester_status_starting">Запуск выбранной стратегии…</string>
+    <string name="nfqws_tester_status_running">Стратегия запущена.</string>
+    <string name="nfqws_tester_status_waiting_decision">Стратегия активна. Отметьте результат в плавающем окне.</string>
+    <string name="nfqws_tester_status_process_exited">Процесс завершился. Можно отметить стратегию как нерабочую или пропустить.</string>
+    <string name="nfqws_tester_status_finished">Тестирование завершено. Ниже показаны результаты.</string>
+    <string name="nfqws_tester_status_stopped">Тестер остановлен. Его временные правила удалены.</string>
+    <string name="nfqws_tester_status_error">Ошибка тестера.</string>
+    <string name="nfqws_tester_status_idle">Тестер не запущен.</string>
+    <string name="nfqws_tester_overlay_title_fmt">%1$s • %2$s • %3$d/%4$d</string>
+    <string name="nfqws_tester_overlay_stats_fmt">CPU: %1$.1f%% • RAM: %2$.1f МБ</string>
+    <string name="nfqws_tester_decision_yes">Работает</string>
+    <string name="nfqws_tester_decision_no">Нет</string>
+    <string name="nfqws_tester_decision_skip">Пропустить</string>
+    <string name="nfqws_tester_working_title">Рабочие стратегии</string>
+    <string name="nfqws_tester_failed_title">Не рабочие стратегии</string>
+    <string name="nfqws_tester_skipped_title">Пропущенные стратегии</string>
+    <string name="nfqws_tester_apply_title">Применить стратегию</string>
+    <string name="nfqws_tester_apply_message_fmt">Применить «%1$s» в профиль %2$s?</string>
+    <string name="nfqws_tester_no_profiles_available">Для этой программы пока нет доступных профилей.</string>
+    <string name="nfqws_tester_no_strategies">Для выбранной программы не найдено файлов стратегий.</string>
+    <string name="nfqws_tester_start_failed">Не удалось запустить выбранную стратегию.</string>
+    <string name="nfqws_tester_notification_channel">Тестер NFQWS</string>
+    <string name="nfqws_tester_notification_running">Плавающий тестер запущен</string>
+    <string name="nfqws_tester_none">-</string>
+    <string name="nfqws_tester_runtime_fmt">%1$s • %2$d/%3$d • CPU %4$.1f%% • RAM %5$.1f МБ</string>
+    <string name="nfqws_tester_service_blocked_start">Сначала остановите тестер стратегий. Перед запуском службы его временные правила iptables должны быть очищены.</string>
+
 </resources>

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Tune
+import androidx.compose.material.icons.outlined.PlaylistPlay
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -44,6 +45,7 @@ import com.android.zdtd.service.R
 @Composable
 fun AnalysisToolsScreen(
   onOpenDpiDetector: () -> Unit,
+  onOpenNfqwsTester: () -> Unit,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
 ) {
@@ -71,6 +73,16 @@ fun AnalysisToolsScreen(
         icon = Icons.Outlined.Tune,
         accent = MaterialTheme.colorScheme.primary,
         onClick = onOpenDpiDetector,
+      )
+    }
+    item {
+      AnalysisToolCard(
+        title = stringResource(R.string.nfqws_tester_title),
+        subtitle = stringResource(R.string.nfqws_tester_short_desc),
+        badge = stringResource(R.string.analysis_tools_badge_advanced),
+        icon = Icons.Outlined.PlaylistPlay,
+        accent = MaterialTheme.colorScheme.tertiary,
+        onClick = onOpenNfqwsTester,
       )
     }
   }

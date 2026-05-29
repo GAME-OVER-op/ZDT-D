@@ -4363,6 +4363,13 @@ private fun shQuote(s: String): String {
       _uiState.update { it.copy(busy = true) }
       try {
         val on = ApiModels.isServiceOn(_uiState.value.status)
+        if (!on && isNfqwsTesterLockActive()) {
+          withContext(Dispatchers.Main.immediate) {
+            toast(str(R.string.nfqws_tester_service_blocked_start))
+          }
+          log("ERR", "start blocked: nfqws tester session is active")
+          return@launchIO
+        }
         val ok = if (on) api.stopService() else api.startService()
         if (ok) root.setCachedServiceOn(!on)
         if (ok) {
@@ -4376,6 +4383,12 @@ private fun shQuote(s: String): String {
         refreshStatus()
       }
     }
+  }
+
+  private fun isNfqwsTesterLockActive(): Boolean {
+    return runCatching {
+      root.execRootSh("test -f /data/adb/modules/ZDT-D/working_folder/nfqws_tester/session.json").isSuccess
+    }.getOrDefault(false)
   }
 
   private suspend fun refreshProgramsNow(force: Boolean = false) {

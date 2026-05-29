@@ -29,6 +29,8 @@ def zdtCompileSdk = (findProperty('zdtCompileSdk') ?: System.getenv('ZDT_COMPILE
 def generatedModuleZip = file('../../out/module/zdt_module.zip')
 def zdtModuleZip = file("$generatedAssetsDir/zdt_module.zip")
 def bundledModuleProp = file("$generatedAssetsDir/module.prop")
+def bundledDpiDetectorAsset = file("$generatedAssetsDir/dpi-detector/arm64-v8a/dpi-detector")
+def bundledNfqwsTesterAsset = file("$generatedAssetsDir/nfqws-tester/arm64-v8a/nfqws_tester")
 
 android {
   namespace 'com.android.zdtd.service'
@@ -154,6 +156,22 @@ tasks.register('ensureZdtModuleZip') {
 // Run before building so generated assets are always present.
 tasks.named('preBuild') {
   dependsOn('prepareZdtGeneratedAssets')
+  dependsOn('verifyBundledHelperAssets')
+}
+
+
+tasks.register('verifyBundledHelperAssets') {
+  inputs.file(bundledDpiDetectorAsset).withPathSensitivity(PathSensitivity.RELATIVE)
+  inputs.file(bundledNfqwsTesterAsset).withPathSensitivity(PathSensitivity.RELATIVE)
+
+  doLast {
+    if (!bundledDpiDetectorAsset.exists()) {
+      throw new GradleException("Bundled dpi-detector asset is missing: ${bundledDpiDetectorAsset}")
+    }
+    if (!bundledNfqwsTesterAsset.exists()) {
+      throw new GradleException("Bundled nfqws_tester asset is missing: ${bundledNfqwsTesterAsset}")
+    }
+  }
 }
 
 dependencies {

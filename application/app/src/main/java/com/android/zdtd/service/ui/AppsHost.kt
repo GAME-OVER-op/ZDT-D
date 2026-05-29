@@ -38,6 +38,7 @@ fun AppsHost(
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
   onOpenDpiDetector: () -> Unit,
+  onOpenNfqwsTester: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   topContentPadding: Dp = 0.dp,
@@ -57,6 +58,7 @@ fun AppsHost(
     AppsRoute.List -> 0
     AppsRoute.AnalysisTools -> 1
     AppsRoute.DpiDetector -> 2
+    AppsRoute.NfqwsTester -> 2
     is AppsRoute.Program -> 1
     is AppsRoute.Profile -> 2
   }
@@ -89,10 +91,17 @@ fun AppsHost(
       )
       AppsRoute.AnalysisTools -> AnalysisToolsScreen(
         onOpenDpiDetector = onOpenDpiDetector,
+        onOpenNfqwsTester = onOpenNfqwsTester,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
       )
       AppsRoute.DpiDetector -> DpiDetectorScreen(
+        topContentPadding = topContentPadding,
+        bottomContentPadding = bottomContentPadding,
+      )
+      AppsRoute.NfqwsTester -> NfqwsTesterScreen(
+        uiStateFlow = uiStateFlow,
+        actions = actions,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
       )

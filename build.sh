@@ -14,6 +14,8 @@ MODULE_ROOT_DIR="$MODULE_BUILD_DIR/module_root"
 MODULE_ZIP="$OUT_DIR/module/zdt_module.zip"
 DPI_DETECTOR_APK_ASSET_DIR="$APP_MODULE_DIR/build/generated/zdt-assets/main/dpi-detector/arm64-v8a"
 DPI_DETECTOR_APK_ASSET="$DPI_DETECTOR_APK_ASSET_DIR/dpi-detector"
+NFQWS_TESTER_APK_ASSET_DIR="$APP_MODULE_DIR/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a"
+NFQWS_TESTER_APK_ASSET="$NFQWS_TESTER_APK_ASSET_DIR/nfqws_tester"
 APK_OUT_DIR="$OUT_DIR/apk"
 DIST_DIR="$OUT_DIR/dist"
 TOOLS_DIR="$ROOT_DIR/.tools"
@@ -72,7 +74,7 @@ DASHBOARD_REFRESH_INTERVAL="${DASHBOARD_REFRESH_INTERVAL:-0.25}"
 declare -a DASHBOARD_LAST_LINES=()
 DASHBOARD_REFRESH_INTERVAL="${DASHBOARD_REFRESH_INTERVAL:-0.25}"
 declare -a DASHBOARD_LAST_LINES=()
-STAGE_KEYS=(env keystore rustcheck zdtd t2s dpidetector extbin zygisk modulezip assets android apk final)
+STAGE_KEYS=(env keystore rustcheck zdtd t2s dpidetector nfqwstester extbin zygisk modulezip assets android apk final)
 STAGE_NAMES=(
   "Environment checks"
   "Keystore check"
@@ -80,6 +82,7 @@ STAGE_NAMES=(
   "Build zdtd"
   "Build t2s"
   "Build dpi-detector"
+  "Build nfqws_tester"
   "External binaries"
   "Build Zygisk"
   "Package module zip"
@@ -1334,6 +1337,8 @@ build_rust_outputs() {
   run_cargo_stage t2s 'Build Rust: t2s proxy' "$RUST_DIR/T2s" 't2s' "$triple"
   run_cargo_app_asset_stage dpidetector 'Build Rust: dpi-detector APK asset' "$RUST_DIR/dpi-detector" 'dpi-detector' "$triple" "$DPI_DETECTOR_APK_ASSET"
   [[ -s "$DPI_DETECTOR_APK_ASSET" ]] || fail "Не создан APK asset dpi-detector: $DPI_DETECTOR_APK_ASSET"
+  run_cargo_app_asset_stage nfqwstester 'Build Rust: nfqws_tester APK asset' "$RUST_DIR/nfqws-tester" 'nfqws-tester' "$triple" "$NFQWS_TESTER_APK_ASSET"
+  [[ -s "$NFQWS_TESTER_APK_ASSET" ]] || fail "Не создан APK asset nfqws_tester: $NFQWS_TESTER_APK_ASSET"
 }
 
 prepare_module_root() {
@@ -1363,6 +1368,7 @@ validate_apk_artifacts() {
   apk_path="$(find "$APP_DIR/app/build/outputs/apk" -type f -name '*.apk' | sort | tail -n 1 || true)"
   [[ -n "$apk_path" ]] || fail 'APK не найден после сборки'
   unzip -Z1 "$apk_path" | grep -Fx 'assets/dpi-detector/arm64-v8a/dpi-detector' >/dev/null || fail 'В APK отсутствует assets/dpi-detector/arm64-v8a/dpi-detector'
+  unzip -Z1 "$apk_path" | grep -Fx 'assets/nfqws-tester/arm64-v8a/nfqws_tester' >/dev/null || fail 'В APK отсутствует assets/nfqws-tester/arm64-v8a/nfqws_tester'
   mkdir -p "$APK_OUT_DIR" "$DIST_DIR"
   dist_apk="$APK_OUT_DIR/app-release.apk"
   cp -f "$apk_path" "$dist_apk"
@@ -1396,7 +1402,7 @@ build_apk() {
 clean_all() {
   rm -rf "$OUT_DIR" "$APP_DIR/app/build" "$APP_DIR/build" "$RUST_DIR/target"
   rm -rf "$APP_DIR/app/build/generated/zdt-assets" "$TOOLS_DIR/cargo-home"
-  rm -rf "$DPI_DETECTOR_APK_ASSET_DIR"
+  rm -rf "$DPI_DETECTOR_APK_ASSET_DIR" "$NFQWS_TESTER_APK_ASSET_DIR"
   rm -rf "$ZYGISK_DIR/out" "$ZYGISK_DIR/build" "$ZYGISK_DIR/.cxx"
   rm -f "$MODULE_TEMPLATE_DIR/zygisk/arm64-v8a.so" "$MODULE_TEMPLATE_DIR/zygisk/unloaded"
   rm -f "$MODULE_TEMPLATE_DIR"/working_folder/zygisk_status_*.json

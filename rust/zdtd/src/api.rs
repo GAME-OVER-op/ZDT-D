@@ -2346,40 +2346,14 @@ fn flatten_conflicts(map: &BTreeMap<String, Vec<AppConflictView>>) -> Vec<AppCon
 }
 
 fn find_program_conflicts(
-    candidate: &BTreeSet<String>,
-    current_api_path: &str,
-    program_id: &str,
-    slot: &str,
+    _candidate: &BTreeSet<String>,
+    _current_api_path: &str,
+    _program_id: &str,
+    _slot: &str,
 ) -> BTreeMap<String, Vec<AppConflictView>> {
-    let mut out: BTreeMap<String, Vec<AppConflictView>> = BTreeMap::new();
-    let Some(domain) = app_domain(program_id) else { return out; };
-    let lists = collect_assignment_files();
-    let current_existing = lists
-        .iter()
-        .find(|v| v.path == current_api_path)
-        .map(|v| v.packages.clone())
-        .unwrap_or_default();
-    for item in lists {
-        if item.path == current_api_path { continue; }
-        if item.slot != slot { continue; }
-        // Allow same apps across different profiles of the same program
-        // (e.g. two mihomo profiles, or nfqws + nfqws2).
-        // Also allow overlap between mihomo and zapret domains.
-        if same_program_or_compatible(program_id, &item.program_id) { continue; }
-        let Some(item_domain) = app_domain(&item.program_id) else { continue; };
-        if !app_domains_conflict(domain, item_domain) { continue; }
-        for pkg in candidate.intersection(&item.packages) {
-            if current_existing.contains(pkg) { continue; }
-            out.entry(pkg.clone()).or_default().push(AppConflictView {
-                package: pkg.clone(),
-                program_id: item.program_id.clone(),
-                profile: item.profile.clone(),
-                slot: item.slot.clone(),
-                path: item.path.clone(),
-            });
-        }
-    }
-    out
+    // All programs and profiles are fully isolated — no cross-profile/cross-program conflicts.
+    // Users may freely assign the same app to multiple profiles and programs.
+    BTreeMap::new()
 }
 
 /// Returns true when two program ids are allowed to share applications

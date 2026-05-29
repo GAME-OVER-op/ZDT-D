@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use log::{info, warn};
 use std::{fs, path::Path, time::Duration};
 
-use crate::iptables::{caps, port_filter};
+use crate::iptables::{caps, mangle_app, port_filter};
 use crate::shell::Capture;
 use crate::xtables_lock;
 
@@ -17,13 +17,13 @@ fn run_timeout_retry(cmd: &str, args: &[&str], capture: Capture, timeout: Durati
     xtables_lock::run_timeout_retry(cmd, &a, capture, timeout)
 }
 
-/// iptables_v2: точечные правила NFQUEUE по UID без интерфейса (работает для всех).
+/// iptables_v2: точечные правила NFQUEUE по UID без интерфейса.
 ///
-/// Входной файл: `package=uid` (out/user_program)
-/// Правило (на каждый UID):
-/// `-t mangle -I OUTPUT -m owner --uid-owner <uid> -j NFQUEUE --queue-num <port> --queue-bypass`
+/// Входной файл: `package=uid` (out/user_program).
 ///
-/// Идемпотентно: сначала `-C`, потом `-I`.
+/// Важно: правила добавляются в MANGLE_APP, а не напрямую в mangle OUTPUT.
+/// OUTPUT должен только переходить в MANGLE_APP, чтобы RETURN-исключения
+/// отработали до NFQUEUE.
 pub fn apply(
     port: u16,
     uid_file: Option<&Path>,
@@ -40,7 +40,6 @@ pub fn apply(
     let s = fs::read_to_string(uid_file)
         .with_context(|| format!("read {}", uid_file.display()))?;
 
-    // Parse UIDs first to know total and to report progress.
     let mut uids: Vec<String> = Vec::new();
     for line in s.lines() {
         let line = line.trim();
@@ -72,115 +71,30 @@ pub fn apply(
     .map(|(c, _)| c == 0)
     .unwrap_or(false);
 
+    mangle_app::ensure("iptables")?;
+    if ipv6_avail {
+        if let Err(e) = mangle_app::ensure("ip6tables") {
+            warn!("ip6tables MANGLE_APP prepare failed: {e}");
+        }
+    }
+
     let filter_present = filter.map(|f| !f.is_empty()).unwrap_or(false);
     let use_filter_v4 = filter_present && caps::multiport_v4();
     let use_filter_v6 = filter_present && caps::multiport_v6();
 
-    fn add_multiport_rule_idempotent(
-        cmd: &str,
-        uid: &str,
-        q: &str,
-        proto: &str,
-        ranges: &[port_filter::PortRange],
-    ) -> Result<bool> {
-        let elems = port_filter::to_multiport_elements(ranges);
-        let mut any_added = false;
-        for chunk in port_filter::chunk_multiport(&elems, 15) {
-            let ports_csv = port_filter::join_elems_csv(&chunk);
-
-            let check = [
-                "-t",
-                "mangle",
-                "-C",
-                "OUTPUT",
-                "-p",
-                proto,
-                "-m",
-                "multiport",
-                "--dports",
-                ports_csv.as_str(),
-                "-m",
-                "owner",
-                "--uid-owner",
-                uid,
-                "-j",
-                "NFQUEUE",
-                "--queue-num",
-                q,
-                "--queue-bypass",
-            ];
-            let (c, _) = run_timeout_retry(cmd, &check, Capture::None, IPT_CMD_TIMEOUT)?;
-            if c == 0 {
-                continue;
-            }
-
-            let add_rule = [
-                "-t",
-                "mangle",
-                "-I",
-                "OUTPUT",
-                "-p",
-                proto,
-                "-m",
-                "multiport",
-                "--dports",
-                ports_csv.as_str(),
-                "-m",
-                "owner",
-                "--uid-owner",
-                uid,
-                "-j",
-                "NFQUEUE",
-                "--queue-num",
-                q,
-                "--queue-bypass",
-            ];
-            let (c2, out) = run_timeout_retry(cmd, &add_rule, Capture::Both, IPT_CMD_TIMEOUT)?;
-            if c2 == 0 {
-                any_added = true;
-            } else {
-                anyhow::bail!("{cmd} add NFQUEUE multiport rule failed for uid={uid}: {}", out.trim());
-            }
-        }
-        Ok(any_added)
-    }
-
     for uid in uids {
         let mut uid_added_v4 = false;
-
         if use_filter_v4 {
             if let Some(f) = filter {
-                if !f.tcp.is_empty()
-                    && add_multiport_rule_idempotent("iptables", uid.as_str(), &q, "tcp", &f.tcp)?
-                {
+                if !f.tcp.is_empty() && add_multiport_rule("iptables", uid.as_str(), &q, "tcp", &f.tcp)? {
                     uid_added_v4 = true;
                 }
-                if !f.udp.is_empty()
-                    && add_multiport_rule_idempotent("iptables", uid.as_str(), &q, "udp", &f.udp)?
-                {
+                if !f.udp.is_empty() && add_multiport_rule("iptables", uid.as_str(), &q, "udp", &f.udp)? {
                     uid_added_v4 = true;
                 }
             }
-        } else {
-            let check = [
-                "-t", "mangle", "-C", "OUTPUT",
-                "-m", "owner", "--uid-owner", uid.as_str(),
-                "-j", "NFQUEUE", "--queue-num", &q, "--queue-bypass",
-            ];
-            let (c, _) = run_timeout_retry("iptables", &check, Capture::None, IPT_CMD_TIMEOUT)?;
-            if c != 0 {
-                let add_rule = [
-                    "-t", "mangle", "-I", "OUTPUT",
-                    "-m", "owner", "--uid-owner", uid.as_str(),
-                    "-j", "NFQUEUE", "--queue-num", &q, "--queue-bypass",
-                ];
-                let (c2, out) = run_timeout_retry("iptables", &add_rule, Capture::Both, IPT_CMD_TIMEOUT)?;
-                if c2 == 0 {
-                    uid_added_v4 = true;
-                } else {
-                    anyhow::bail!("iptables add NFQUEUE rule failed for uid={}: {}", uid, out.trim());
-                }
-            }
+        } else if add_plain_rule("iptables", uid.as_str(), &q)? {
+            uid_added_v4 = true;
         }
 
         if uid_added_v4 {
@@ -189,18 +103,17 @@ pub fn apply(
 
         if ipv6_avail {
             let mut uid_added_v6 = false;
-
             if use_filter_v6 {
                 if let Some(f) = filter {
                     if !f.tcp.is_empty() {
-                        match add_multiport_rule_idempotent("ip6tables", uid.as_str(), &q, "tcp", &f.tcp) {
+                        match add_multiport_rule("ip6tables", uid.as_str(), &q, "tcp", &f.tcp) {
                             Ok(true) => uid_added_v6 = true,
                             Ok(false) => {}
                             Err(e) => warn!("ip6tables add NFQUEUE multiport rule failed for uid={}: {e}", uid),
                         }
                     }
                     if !f.udp.is_empty() {
-                        match add_multiport_rule_idempotent("ip6tables", uid.as_str(), &q, "udp", &f.udp) {
+                        match add_multiport_rule("ip6tables", uid.as_str(), &q, "udp", &f.udp) {
                             Ok(true) => uid_added_v6 = true,
                             Ok(false) => {}
                             Err(e) => warn!("ip6tables add NFQUEUE multiport rule failed for uid={}: {e}", uid),
@@ -208,29 +121,12 @@ pub fn apply(
                     }
                 }
             } else {
-                let check6 = [
-                    "-t", "mangle", "-C", "OUTPUT",
-                    "-m", "owner", "--uid-owner", uid.as_str(),
-                    "-j", "NFQUEUE", "--queue-num", &q, "--queue-bypass",
-                ];
-                let (c6, _) = run_timeout_retry("ip6tables", &check6, Capture::None, IPT_CMD_TIMEOUT)
-                    .unwrap_or((1, String::new()));
-                if c6 != 0 {
-                    let add6 = [
-                        "-t", "mangle", "-I", "OUTPUT",
-                        "-m", "owner", "--uid-owner", uid.as_str(),
-                        "-j", "NFQUEUE", "--queue-num", &q, "--queue-bypass",
-                    ];
-                    let (c62, out) = run_timeout_retry("ip6tables", &add6, Capture::Both, IPT_CMD_TIMEOUT)
-                        .unwrap_or((1, String::new()));
-                    if c62 == 0 {
-                        uid_added_v6 = true;
-                    } else {
-                        warn!("ip6tables add NFQUEUE rule failed for uid={}: {}", uid, out.trim());
-                    }
+                match add_plain_rule("ip6tables", uid.as_str(), &q) {
+                    Ok(true) => uid_added_v6 = true,
+                    Ok(false) => {}
+                    Err(e) => warn!("ip6tables add NFQUEUE rule failed for uid={}: {e}", uid),
                 }
             }
-
             if uid_added_v6 {
                 added6 += 1;
             }
@@ -243,4 +139,54 @@ pub fn apply(
         info!("iptables_v2 applied: port={} added={}/{}", port, added, total);
     }
     Ok(())
+}
+
+fn add_multiport_rule(
+    cmd: &str,
+    uid: &str,
+    q: &str,
+    proto: &str,
+    ranges: &[port_filter::PortRange],
+) -> Result<bool> {
+    let elems = port_filter::to_multiport_elements(ranges);
+    let mut any_added = false;
+    for chunk in port_filter::chunk_multiport(&elems, 15) {
+        let ports_csv = port_filter::join_elems_csv(&chunk);
+        let tail: Vec<String> = vec![
+            "-p".into(),
+            proto.into(),
+            "-m".into(),
+            "multiport".into(),
+            "--dports".into(),
+            ports_csv,
+            "-m".into(),
+            "owner".into(),
+            "--uid-owner".into(),
+            uid.into(),
+            "-j".into(),
+            "NFQUEUE".into(),
+            "--queue-num".into(),
+            q.into(),
+            "--queue-bypass".into(),
+        ];
+        if mangle_app::add_rule_idempotent(cmd, &tail)? {
+            any_added = true;
+        }
+    }
+    Ok(any_added)
+}
+
+fn add_plain_rule(cmd: &str, uid: &str, q: &str) -> Result<bool> {
+    let tail: Vec<String> = vec![
+        "-m".into(),
+        "owner".into(),
+        "--uid-owner".into(),
+        uid.into(),
+        "-j".into(),
+        "NFQUEUE".into(),
+        "--queue-num".into(),
+        q.into(),
+        "--queue-bypass".into(),
+    ];
+    mangle_app::add_rule_idempotent(cmd, &tail)
 }

@@ -32,39 +32,52 @@ class DpiDetectorRunner(
         quick: Boolean = false,
         timeoutMs: Int = 5000,
     ): Flow<DpiDetectorEvent> = flow {
-        val binary = withContext(Dispatchers.IO) { DpiDetectorBinary(context).ensureInstalled() }
-        val args = buildList {
-            add("run")
-            add("--format")
-            add("ndjson")
-            add("--timeout")
-            add(timeoutMs.toString())
-            if (quick) add("--quick")
-            if (tests.isNotEmpty()) {
-                add("--tests")
-                add(tests.joinToString(","))
-            }
-        }
-        val command = buildRootCommand(binary, args)
-        val process = withContext(Dispatchers.IO) {
-            ProcessBuilder("su", "-c", command)
-                .redirectErrorStream(true)
-                .start()
-        }
-
+        var process: Process? = null
         try {
+            val binary = withContext(Dispatchers.IO) { DpiDetectorBinary(context).ensureInstalled() }
+            val args = buildList {
+                add("run")
+                add("--format")
+                add("ndjson")
+                add("--timeout")
+                add(timeoutMs.toString())
+                if (quick) add("--quick")
+                if (tests.isNotEmpty()) {
+                    add("--tests")
+                    add(tests.joinToString(","))
+                }
+            }
+            val command = buildRootCommand(binary, args)
+            process = withContext(Dispatchers.IO) {
+                ProcessBuilder("su", "-c", command)
+                    .redirectErrorStream(true)
+                    .start()
+            }
+
             val reader = BufferedReader(InputStreamReader(process.inputStream))
+            var sawAnyOutput = false
             while (true) {
                 val line = withContext(Dispatchers.IO) { reader.readLine() } ?: break
+                sawAnyOutput = true
                 emit(parseEventLine(line))
             }
             val code = withContext(Dispatchers.IO) { process.waitFor() }
             if (code != 0) {
                 emit(DpiDetectorEvent.Error("dpi-detector exited with code $code"))
+            } else if (!sawAnyOutput) {
+                emit(
+                    DpiDetectorEvent.Error(
+                        "dpi-detector produced no events. Rebuild the APK with the bundled detector asset and verify the helper starts under root."
+                    )
+                )
             }
+        } catch (t: Throwable) {
+            emit(DpiDetectorEvent.Error(t.message ?: "Failed to start dpi-detector"))
         } finally {
-            if (process.isAlive) {
-                process.destroy()
+            process?.let { runningProcess ->
+                if (runningProcess.isAlive) {
+                    runningProcess.destroy()
+                }
             }
         }
     }

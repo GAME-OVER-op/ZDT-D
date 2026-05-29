@@ -195,53 +195,64 @@ fun DpiDetectorScreen(
       screenListState.animateScrollToItem(3)
     }
     runnerJob = scope.launch {
-      DpiDetectorRunner(context)
-        .runNdjsonStream()
-        .collect { event ->
-          when (event) {
-            is DpiDetectorEvent.Meta -> Unit
-            is DpiDetectorEvent.Started -> {
-              currentStageId = event.test
-              currentProbe = event.title
-              stages.updateStage(event.test) { it.copy(status = "checking", detail = event.title, plannedTotal = event.totalProbes) }
-            }
-            is DpiDetectorEvent.Probe -> {
-              currentStageId = event.test
-              currentProbe = buildString {
-                append(event.name.ifBlank { event.key })
-                if (event.target.isNotBlank()) append(" • ").append(event.target)
+      try {
+        DpiDetectorRunner(context)
+          .runNdjsonStream()
+          .collect { event ->
+            when (event) {
+              is DpiDetectorEvent.Meta -> Unit
+              is DpiDetectorEvent.Started -> {
+                currentStageId = event.test
+                currentProbe = event.title
+                stages.updateStage(event.test) { it.copy(status = "checking", detail = event.title, plannedTotal = event.totalProbes) }
               }
-              stages.updateProbe(event)
-            }
-            is DpiDetectorEvent.Progress -> {
-              currentStageId = event.test
-              currentProbe = event.detail
-              stages.updateStage(event.test) {
-                it.copy(status = if (event.status == "running") "checking" else it.status, detail = event.detail)
+              is DpiDetectorEvent.Probe -> {
+                currentStageId = event.test
+                currentProbe = buildString {
+                  append(event.name.ifBlank { event.key })
+                  if (event.target.isNotBlank()) append(" • ").append(event.target)
+                }
+                stages.updateProbe(event)
               }
-            }
-            is DpiDetectorEvent.Result -> {
-              stages.updateStage(event.test) { it.copy(status = event.status, detail = event.detail, diagnosis = event.diagnosis) }
-            }
-            is DpiDetectorEvent.Finished -> {
-              if (event.test == "summary") {
-                summaryStatus = event.status
-                summaryDetail = event.data
-                summaryUiState = parseSummaryUiState(event.data, event.status)
-                currentStageId = null
-                currentProbe = ""
+              is DpiDetectorEvent.Progress -> {
+                currentStageId = event.test
+                currentProbe = event.detail
+                stages.updateStage(event.test) {
+                  it.copy(status = if (event.status == "running") "checking" else it.status, detail = event.detail)
+                }
+              }
+              is DpiDetectorEvent.Result -> {
+                stages.updateStage(event.test) { it.copy(status = event.status, detail = event.detail, diagnosis = event.diagnosis) }
+              }
+              is DpiDetectorEvent.Finished -> {
+                if (event.test == "summary") {
+                  summaryStatus = event.status
+                  summaryDetail = event.data
+                  summaryUiState = parseSummaryUiState(event.data, event.status)
+                  currentStageId = null
+                  currentProbe = ""
+                  running = false
+                }
+              }
+              is DpiDetectorEvent.Error -> {
+                summaryStatus = "error"
+                summaryDetail = event.message
                 running = false
+                stages.replaceAllStages { stage -> stage.stopCheckingProbes("Stopped after error") }
               }
-            }
-            is DpiDetectorEvent.Error -> {
-              summaryStatus = "error"
-              summaryDetail = event.message
-              running = false
-              stages.replaceAllStages { stage -> stage.stopCheckingProbes("Stopped after error") }
             }
           }
-        }
-      running = false
+      } catch (t: Throwable) {
+        summaryStatus = "error"
+        summaryDetail = t.message ?: "Failed to start dpi-detector"
+        summaryUiState = null
+        stages.replaceAllStages { stage -> stage.stopCheckingProbes("Failed to start") }
+      } finally {
+        currentStageId = null
+        currentProbe = ""
+        running = false
+        runnerJob = null
+      }
     }
   }
 

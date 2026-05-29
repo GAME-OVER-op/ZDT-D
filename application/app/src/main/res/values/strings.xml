@@ -1675,19 +1675,45 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="nfqws_tester_runtime_fmt">%1$s • %2$d/%3$d • CPU %4$.1f%% • RAM %5$.1f MB</string>
     <string name="nfqws_tester_service_blocked_start">Stop the strategy tester first. Its temporary iptables rules must be cleaned before starting the service.</string>
 
-    <string name="nfqws_tester_overlay_family">NFQWS / NFQWS2</string>
-    <string name="nfqws_tester_overlay_strategy">Strategy</string>
-    <string name="nfqws_tester_overlay_progress">Progress</string>
-    <string name="nfqws_tester_overlay_resources">Resources</string>
-    <string name="nfqws_tester_overlay_actions">Actions</string>
-    <string name="nfqws_tester_overlay_cpu">CPU</string>
-    <string name="nfqws_tester_overlay_ram">RAM</string>
-    <string name="nfqws_tester_overlay_cpu_value">%1$.1f%%</string>
-    <string name="nfqws_tester_overlay_ram_value">%1$.1f MB</string>
+    <string name="nfqws_tester_overlay_section_strategy">Strategy</string>
+    <string name="nfqws_tester_overlay_section_progress">Progress</string>
+    <string name="nfqws_tester_overlay_section_resources">Resources</string>
+    <string name="nfqws_tester_overlay_section_actions">Actions</string>
+    <string name="nfqws_tester_overlay_progress_running">Active</string>
+    <string name="nfqws_tester_overlay_metric_cpu">CPU</string>
+    <string name="nfqws_tester_overlay_metric_ram">RAM</string>
+    <string name="nfqws_tester_overlay_metric_value_cpu">CPU
+%1$.1f%%</string>
+    <string name="nfqws_tester_overlay_metric_value_ram">RAM
+%1$.1f MB</string>
     <string name="nfqws_tester_overlay_state_preparing">Preparing</string>
     <string name="nfqws_tester_overlay_state_running">Running</string>
-    <string name="nfqws_tester_overlay_state_check">Check result</string>
+    <string name="nfqws_tester_overlay_state_waiting">Waiting</string>
     <string name="nfqws_tester_overlay_state_finished">Finished</string>
     <string name="nfqws_tester_overlay_state_error">Error</string>
     <string name="nfqws_tester_overlay_state_idle">Idle</string>
+    <string name="widget_mini_dashboard_name">ZDT-D Mini Dashboard</string>
+    <string name="widget_status_label">STATUS</string>
+    <string name="widget_state_label">STATE</string>
+    <string name="widget_processes_label">PROCESSES</string>
+    <string name="widget_status_running">Running</string>
+    <string name="widget_status_stopped">Stopped</string>
+    <string name="widget_status_unknown">Unknown</string>
+    <string name="widget_status_tester_active">Tester active</string>
+    <string name="widget_status_tester_active_upper">TESTER ACTIVE</string>
+    <string name="widget_status_working_upper">WORKING</string>
+    <string name="widget_status_stopped_upper">STOPPED</string>
+    <string name="widget_status_unknown_upper">UNKNOWN</string>
+    <string name="widget_status_running_subtitle">System is running normally</string>
+    <string name="widget_status_stopped_subtitle">Waiting mode</string>
+    <string name="widget_status_unknown_subtitle">Status unavailable</string>
+    <string name="widget_status_tester_active_subtitle">Stop tester first</string>
+    <string name="widget_status_running_subtitle_short">System active</string>
+    <string name="widget_status_stopped_subtitle_short">Waiting mode</string>
+    <string name="widget_action_start">Start</string>
+    <string name="widget_action_stop">Stop</string>
+    <string name="widget_action_start_hint">Tap to start</string>
+    <string name="widget_action_stop_hint">Tap to stop</string>
+    <string name="widget_cpu_value_fmt">%1$.1f%%</string>
+    <string name="widget_ram_value_fmt">%1$.1f MB</string>
 </resources>

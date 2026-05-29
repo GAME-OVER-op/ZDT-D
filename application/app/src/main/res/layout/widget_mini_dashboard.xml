@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_mini_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/transparent">
+
+    <ImageView
+        android:id="@+id/widget_mini_render"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:adjustViewBounds="false"
+        android:scaleType="fitXY"
+        android:contentDescription="@string/widget_mini_dashboard_name" />
+
+    <TextView
+        android:id="@+id/widget_mini_action_area"
+        android:layout_width="128dp"
+        android:layout_height="96dp"
+        android:layout_gravity="bottom|start"
+        android:layout_marginStart="18dp"
+        android:layout_marginBottom="14dp"
+        android:background="@android:color/transparent"
+        android:text="" />
+</FrameLayout>

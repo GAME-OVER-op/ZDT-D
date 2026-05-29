@@ -78,6 +78,20 @@
             </intent-filter>
         </receiver>
 
+
+
+        <receiver
+            android:name=".widgets.ZdtdMiniDashboardWidgetProvider"
+            android:label="@string/widget_mini_dashboard_name"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_mini_dashboard_info" />
+        </receiver>
+
         <service
             android:name=".diagnostics.nfqws.NfqwsTesterOverlayService"
             android:exported="false"

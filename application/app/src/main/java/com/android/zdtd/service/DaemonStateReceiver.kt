@@ -3,6 +3,10 @@ package com.android.zdtd.service
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import com.android.zdtd.service.widgets.ZdtdWidgetUpdater
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * Receives daemon state broadcasts from the Rust service.
@@ -15,6 +19,15 @@ class DaemonStateReceiver : BroadcastReceiver() {
 
   override fun onReceive(context: Context, intent: Intent) {
     if (intent.action != ACTION_DAEMON_STATE) return
+
+    val pendingResult = goAsync()
+    CoroutineScope(Dispatchers.IO).launch {
+      try {
+        ZdtdWidgetUpdater.updateAll(context.applicationContext)
+      } finally {
+        pendingResult.finish()
+      }
+    }
 
     val cfg = RootConfigManager(context)
     val enabled = cfg.isDaemonStatusNotificationEnabled()

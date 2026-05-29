@@ -845,58 +845,7 @@ jobs:
             echo "Release post update skipped: $RELEASE_POST_REASON"
           fi
 
-          upload_release_asset_with_retry() {
-            local tag="$1"
-            local file_path="$2"
-            local asset_name="$3"
-            local release_label="$4"
-            local upload_mode="clobber"
-            local max_attempts=5
-            local attempt=1
-
-            while [ "$attempt" -le "$max_attempts" ]; do
-              echo "$release_label upload attempt $attempt/$max_attempts via --clobber..."
-              if gh release upload "$tag" "$file_path#$asset_name" --clobber; then
-                RELEASE_ASSET_UPLOAD_MODE="$upload_mode"
-                RELEASE_ASSET_UPLOAD_ATTEMPTS="$attempt"
-                return 0
-              fi
-              if [ "$attempt" -lt "$max_attempts" ]; then
-                sleep $((attempt * 5))
-              fi
-              attempt=$((attempt + 1))
-            done
-
-            echo "::warning::$release_label upload via --clobber failed; trying delete+upload fallback"
-            upload_mode="delete+upload"
-            local asset_id=""
-            asset_id="$(gh release view "$tag" --json assets --jq '.assets[] | select(.name=="'"$asset_name"'") | .id' | head -n1 || true)"
-            if [[ -n "$asset_id" ]]; then
-              gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$asset_id"
-              sleep 3
-            fi
-
-            attempt=1
-            while [ "$attempt" -le "$max_attempts" ]; do
-              echo "$release_label fallback upload attempt $attempt/$max_attempts..."
-              if gh release upload "$tag" "$file_path#$asset_name"; then
-                RELEASE_ASSET_UPLOAD_MODE="$upload_mode"
-                RELEASE_ASSET_UPLOAD_ATTEMPTS="$attempt"
-                return 0
-              fi
-              if [ "$attempt" -lt "$max_attempts" ]; then
-                sleep $((attempt * 5))
-              fi
-              attempt=$((attempt + 1))
-            done
-
-            echo "::error::Failed to upload $asset_name to $tag after retry and fallback"
-            return 1
-          }
-
-          RELEASE_ASSET_UPLOAD_MODE="failed"
-          RELEASE_ASSET_UPLOAD_ATTEMPTS="0"
-          upload_release_asset_with_retry "$SERVICE_TAG" "$APK_RELEASE" "ZDT-D-service-build.apk" "Service build asset"
+          gh release upload "$SERVICE_TAG" "$APK_RELEASE" --clobber
 
           {
             echo "### Service build publish"
@@ -911,8 +860,6 @@ jobs:
             echo "Release post updated: \`$SHOULD_UPDATE_RELEASE_POST\`"
             echo "Reason: $RELEASE_POST_REASON"
             echo "Service APK asset updated: \`ZDT-D-service-build.apk\`"
-            echo "Service APK upload mode: \`$RELEASE_ASSET_UPLOAD_MODE\`"
-            echo "Service APK upload attempts: \`$RELEASE_ASSET_UPLOAD_ATTEMPTS\`"
             if [[ "$SHOULD_UPDATE_RELEASE_POST" != "true" ]]; then
               echo "Release notes/body: not changed"
               echo "Release tag move: not changed"
@@ -948,66 +895,12 @@ jobs:
           fi
 
           echo "Stable release $TARGET_TAG exists. Updating only app-release.apk asset."
-
-          upload_release_asset_with_retry() {
-            local tag="$1"
-            local file_path="$2"
-            local asset_name="$3"
-            local release_label="$4"
-            local upload_mode="clobber"
-            local max_attempts=5
-            local attempt=1
-
-            while [ "$attempt" -le "$max_attempts" ]; do
-              echo "$release_label upload attempt $attempt/$max_attempts via --clobber..."
-              if gh release upload "$tag" "$file_path#$asset_name" --clobber; then
-                RELEASE_ASSET_UPLOAD_MODE="$upload_mode"
-                RELEASE_ASSET_UPLOAD_ATTEMPTS="$attempt"
-                return 0
-              fi
-              if [ "$attempt" -lt "$max_attempts" ]; then
-                sleep $((attempt * 5))
-              fi
-              attempt=$((attempt + 1))
-            done
-
-            echo "::warning::$release_label upload via --clobber failed; trying delete+upload fallback"
-            upload_mode="delete+upload"
-            local asset_id=""
-            asset_id="$(gh release view "$tag" --json assets --jq '.assets[] | select(.name=="'"$asset_name"'") | .id' | head -n1 || true)"
-            if [[ -n "$asset_id" ]]; then
-              gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$asset_id"
-              sleep 3
-            fi
-
-            attempt=1
-            while [ "$attempt" -le "$max_attempts" ]; do
-              echo "$release_label fallback upload attempt $attempt/$max_attempts..."
-              if gh release upload "$tag" "$file_path#$asset_name"; then
-                RELEASE_ASSET_UPLOAD_MODE="$upload_mode"
-                RELEASE_ASSET_UPLOAD_ATTEMPTS="$attempt"
-                return 0
-              fi
-              if [ "$attempt" -lt "$max_attempts" ]; then
-                sleep $((attempt * 5))
-              fi
-              attempt=$((attempt + 1))
-            done
-
-            echo "::error::Failed to upload $asset_name to $tag after retry and fallback"
-            return 1
-          }
-
-          RELEASE_ASSET_UPLOAD_MODE="failed"
-          RELEASE_ASSET_UPLOAD_ATTEMPTS="0"
-          upload_release_asset_with_retry "$TARGET_TAG" "$APK_SOURCE" "app-release.apk" "Stable release APK"
+          gh release upload "$TARGET_TAG" "$APK_SOURCE#app-release.apk" --clobber
 
           {
             echo "### Stable release APK sync"
             echo
             echo "Stable release: \`$TARGET_TAG\`"
             echo "Asset updated: \`app-release.apk\`"
-            echo "Asset upload mode: \`$RELEASE_ASSET_UPLOAD_MODE\`"
-            echo "Asset upload attempts: \`$RELEASE_ASSET_UPLOAD_ATTEMPTS\`"
             echo "Release notes/body: not changed"
           } >> "$GITHUB_STEP_SUMMARY"

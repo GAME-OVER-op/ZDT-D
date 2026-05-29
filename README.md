@@ -58,10 +58,6 @@
 
 [**Watch on YouTube**](https://youtu.be/jKYHZ9H53pM)
 
-[**Watch on Dzen**](https://dzen.ru/video/watch/6a134818efbee20e598174f5)
-
-[**Watch on VK Video**](https://vkvideo.ru/video-234234162_456239086)
-
 [**Watch on Telegram**](https://t.me/avencoreschat/536213)
 
 </div>

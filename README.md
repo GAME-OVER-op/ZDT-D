@@ -50,6 +50,22 @@
   <b>ZDT-D</b> is an Android root module for traffic routing, DPI bypass, proxy chaining, DNS control, and per-app network management.
 </p>
 
+# 🎦 Video guide for installation and troubleshooting
+
+![maxresdefault](https://i.ibb.co/WmJX05C/1.png)
+
+<div align="center">
+
+[**Watch on YouTube**](https://youtu.be/jKYHZ9H53pM)
+
+[**Watch on Dzen**](https://dzen.ru/video/watch/6a134818efbee20e598174f5)
+
+[**Watch on VK Video**](https://vkvideo.ru/video-234234162_456239086)
+
+[**Watch on Telegram**](https://t.me/avencoreschat/536213)
+
+</div>
+
 ## Description
 
 **ZDT-D** is a root-based Android network orchestration project for advanced traffic routing, DPI circumvention, DNS handling, local proxy pipelines, and selective VPN/TUN binding.

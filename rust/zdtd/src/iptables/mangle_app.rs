@@ -88,15 +88,36 @@ fn ensure_base_returns(cmd: &str) {
     if cmd == "iptables" {
         ensure_return_rule(cmd, 1, &["-o", "lo", "-j", "RETURN"]);
         ensure_return_rule(cmd, 2, &["-d", "127.0.0.0/8", "-j", "RETURN"]);
-        ensure_return_rule(cmd, 3, &["-p", "sctp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"]);
-        ensure_return_rule(cmd, 4, &["-p", "tcp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"]);
-        ensure_return_rule(cmd, 5, &["-p", "udp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"]);
+        ensure_dns_return_rule(cmd, 3, &["-p", "sctp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"]);
+        ensure_dns_return_rule(cmd, 4, &["-p", "tcp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"]);
+        ensure_dns_return_rule(cmd, 5, &["-p", "udp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"]);
     } else if cmd == "ip6tables" {
         ensure_return_rule(cmd, 1, &["-o", "lo", "-j", "RETURN"]);
         ensure_return_rule(cmd, 2, &["-d", "::1/128", "-j", "RETURN"]);
-        ensure_return_rule(cmd, 3, &["-p", "sctp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"]);
-        ensure_return_rule(cmd, 4, &["-p", "tcp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"]);
-        ensure_return_rule(cmd, 5, &["-p", "udp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"]);
+        ensure_dns_return_rule(cmd, 3, &["-p", "sctp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"]);
+        ensure_dns_return_rule(cmd, 4, &["-p", "tcp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"]);
+        ensure_dns_return_rule(cmd, 5, &["-p", "udp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"]);
+    }
+}
+
+
+fn ensure_dns_return_rule(cmd: &str, pos: u32, tail: &[&str]) {
+    remove_return_rule(cmd, tail);
+    ensure_return_rule(cmd, pos, tail);
+}
+
+fn remove_return_rule(cmd: &str, tail: &[&str]) {
+    loop {
+        let mut del = vec!["-t", "mangle", "-D", CHAIN];
+        del.extend_from_slice(tail);
+        match run_timeout_retry(cmd, &del, Capture::Both, IPT_CMD_TIMEOUT) {
+            Ok((0, _)) => continue,
+            Ok((_rc, _out)) => break,
+            Err(e) => {
+                warn!("{cmd}: remove {CHAIN} RETURN before reorder failed: {e}");
+                break;
+            }
+        }
     }
 }
 

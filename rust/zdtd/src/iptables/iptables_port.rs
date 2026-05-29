@@ -473,10 +473,12 @@ fn ensure_rule_mangle_return(uid: &str) -> Result<()> {
     let check = ["-t","mangle","-C","MANGLE_APP","-m","owner","--uid-owner",uid,"-j","RETURN"];
     let (c, _) = ipt_run_timeout(&check, Capture::None, IPT_CMD_TIMEOUT)?;
     if c != 0 {
-        // Keep the loopback / localhost RETURN rules at position #1/#2.
-        // Insert UID RETURN right after them.
-        let add3 = ["-t","mangle","-I","MANGLE_APP","3","-m","owner","--uid-owner",uid,"-j","RETURN"];
-        let (c2, _) = ipt_run_timeout(&add3, Capture::Both, IPT_CMD_TIMEOUT)?;
+        // Keep UID exclusions after loopback/DNS RETURN rules, but before
+        // NFQUEUE and the final RETURN. This prevents later DPI/NAT exclusions
+        // from pushing DNS below service UID returns again.
+        let pos_s = mangle_uid_return_insert_pos().unwrap_or(3).to_string();
+        let add_pos = ["-t","mangle","-I","MANGLE_APP",pos_s.as_str(),"-m","owner","--uid-owner",uid,"-j","RETURN"];
+        let (c2, _) = ipt_run_timeout(&add_pos, Capture::Both, IPT_CMD_TIMEOUT)?;
         if c2 != 0 {
             // Some builds may not support positional "-I <chain> <num>".
             // Fall back to "-I <chain>" and then re-assert loopback rules on top.
@@ -488,6 +490,43 @@ fn ensure_rule_mangle_return(uid: &str) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn mangle_uid_return_insert_pos() -> Result<usize> {
+    let (code, out) = ipt_run_timeout(&["-t","mangle","-S","MANGLE_APP"], Capture::Stdout, IPT_CMD_TIMEOUT)?;
+    if code != 0 {
+        return Ok(3);
+    }
+
+    let mut idx = 0usize;
+    let mut insert_after = 2usize;
+    for raw in out.lines() {
+        let line = raw.trim();
+        if !line.starts_with("-A MANGLE_APP ") {
+            continue;
+        }
+        idx += 1;
+        if line == "-A MANGLE_APP -j RETURN" || line.contains(" -j NFQUEUE") {
+            return Ok(idx.max(1));
+        }
+        if is_mangle_return_prefix(line) {
+            insert_after = idx + 1;
+        }
+    }
+    Ok(insert_after.max(3))
+}
+
+fn is_mangle_return_prefix(line: &str) -> bool {
+    if !line.ends_with(" -j RETURN") {
+        return false;
+    }
+    line == "-A MANGLE_APP -o lo -j RETURN"
+        || line == "-A MANGLE_APP -d 127.0.0.0/8 -j RETURN"
+        || line.contains("--dports 53,853,5353")
+        || line.contains("--dport 53")
+        || line.contains("--dport 853")
+        || line.contains("--dport 5353")
+        || line.contains("-m owner --uid-owner")
 }
 
 

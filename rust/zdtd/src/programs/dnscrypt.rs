@@ -447,23 +447,9 @@ fn apply_dns_iptables(listen_port: u16) -> Result<()> {
     ensure_chain(&ipt, "nat", "NAT_DPI")?;
     ensure_jump(&ipt, "nat", "OUTPUT", "NAT_DPI", true)?;
 
-    // 1) MANGLE exceptions: RETURN for DNS ports
-    for proto in prots {
-        if use_multiport {
-            let mp = ["-p", proto, "-m", "multiport", "--dports", dports_multi, "-j", "RETURN"];
-            if !rule_exists(&ipt, "mangle", "MANGLE_APP", &mp)? {
-                if add_rule(&ipt, "mangle", "MANGLE_APP", true, &mp).is_ok() {
-                    info!("dns: mangle added multiport RETURN ({}) for {}", dports_multi, proto);
-                } else {
-                    add_per_port_rules(&ipt, "mangle", "MANGLE_APP", true, proto, &dns_ports, &["-j", "RETURN"])?;
-                    info!("dns: mangle multiport failed -> added per-port RETURN for {}", proto);
-                }
-            }
-        } else {
-            add_per_port_rules(&ipt, "mangle", "MANGLE_APP", true, proto, &dns_ports, &["-j", "RETURN"])?;
-            info!("dns: mangle multiport unsupported -> added per-port RETURN for {}", proto);
-        }
-    }
+    // MANGLE DNS RETURN order is asserted after all NAT insertions below.
+    // NAT rules are inserted at the beginning of NAT_DPI, so loopback/DNS
+    // ordering is repaired once at the end instead of doing it twice.
 
     // 2) remove possible global DNAT in nat OUTPUT for our listen port
     for p in dns_ports {
@@ -536,8 +522,11 @@ fn apply_dns_iptables(listen_port: u16) -> Result<()> {
         }
     }
 
-    // Keep these at the very beginning of NAT_DPI / MANGLE_APP.
+    // Keep loopback first and DNS immediately after it in MANGLE_APP.
+    // This is the primary owner of DNS ordering; nfqws mangle code only
+    // keeps a safety guard before inserting NFQUEUE rules.
     ensure_loopback_returns(&ipt)?;
+    ensure_dns_mangle_returns_ordered(&ipt, use_multiport, &dns_ports, dports_multi, &prots)?;
 
     // IPv6 (ip6tables) is best-effort: not all Android builds have ip6tables nat.
     if let Err(e) = apply_dns_ip6tables(listen_port) {
@@ -646,23 +635,7 @@ fn apply_dns_ip6tables(listen_port: u16) -> Result<()> {
             }
         }
 
-        // 1) MANGLE exceptions: RETURN for DNS ports
-        for proto in prots {
-            if use_multiport {
-                let mp = ["-p", proto, "-m", "multiport", "--dports", dports_multi, "-j", "RETURN"];
-                if !rule_exists(&ip6t, "mangle", "MANGLE_APP", &mp)? {
-                    if add_rule(&ip6t, "mangle", "MANGLE_APP", true, &mp).is_ok() {
-                        info!("dns6: mangle added multiport RETURN ({}) for {}", dports_multi, proto);
-                    } else {
-                        add_per_port_rules(&ip6t, "mangle", "MANGLE_APP", true, proto, &dns_ports, &["-j", "RETURN"])?;
-                        info!("dns6: mangle multiport failed -> added per-port RETURN for {}", proto);
-                    }
-                }
-            } else {
-                add_per_port_rules(&ip6t, "mangle", "MANGLE_APP", true, proto, &dns_ports, &["-j", "RETURN"])?;
-                info!("dns6: mangle multiport unsupported -> added per-port RETURN for {}", proto);
-            }
-        }
+        // MANGLE DNS RETURN order is asserted after all NAT insertions below.
 
         let to = format!("[::1]:{}", listen_port);
 
@@ -801,10 +774,77 @@ fn apply_dns_ip6tables(listen_port: u16) -> Result<()> {
     }
 
     ensure_loopback_returns_v6(&ip6t, nat_ok)?;
+    if nat_ok {
+        ensure_dns_mangle_returns_ordered(&ip6t, use_multiport, &dns_ports, dports_multi, &prots)?;
+    }
     Ok(())
 }
 
 
+
+
+fn ensure_dns_mangle_returns_ordered(
+    iptables: &str,
+    use_multiport: bool,
+    dns_ports: &[u16],
+    dports_multi: &str,
+    prots: &[&str],
+) -> Result<()> {
+    // Keep DNS/DoT/mDNS before service/proxy UID exclusions and before NFQUEUE.
+    // Remove old DNS RETURN forms first so their order cannot drift after other
+    // modules insert UID RETURN rules into MANGLE_APP.
+    for proto in prots {
+        let mp = ["-p", proto, "-m", "multiport", "--dports", dports_multi, "-j", "RETURN"];
+        del_rule_all(iptables, "mangle", "MANGLE_APP", &mp)?;
+        for p in dns_ports {
+            let ps = p.to_string();
+            let per_port = ["-p", proto, "--dport", ps.as_str(), "-j", "RETURN"];
+            del_rule_all(iptables, "mangle", "MANGLE_APP", &per_port)?;
+        }
+    }
+
+    let mut pos = 3usize;
+    // Match the visible table order used by the diagnostics notes.
+    for proto in ["sctp", "tcp", "udp"] {
+        if !prots.iter().any(|p| *p == proto) {
+            continue;
+        }
+        if use_multiport {
+            let mp = ["-p", proto, "-m", "multiport", "--dports", dports_multi, "-j", "RETURN"];
+            match add_rule_pos(iptables, "mangle", "MANGLE_APP", pos, &mp) {
+                Ok(()) => {
+                    pos += 1;
+                    continue;
+                }
+                Err(e) => {
+                    warn!("dns: ordered mangle multiport RETURN failed for {proto}: {e:#}; falling back to per-port");
+                }
+            }
+        }
+
+        for p in dns_ports {
+            let ps = p.to_string();
+            let per_port = ["-p", proto, "--dport", ps.as_str(), "-j", "RETURN"];
+            if add_rule_pos(iptables, "mangle", "MANGLE_APP", pos, &per_port).is_ok() {
+                pos += 1;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn del_rule_all(iptables: &str, table: &str, chain: &str, rule: &[&str]) -> Result<()> {
+    loop {
+        let mut args = vec!["-t", table, "-D", chain];
+        args.extend_from_slice(rule);
+        let (code, _) = ipt_run(iptables, &args, Capture::Stdout)
+            .with_context(|| format!("iptables del repeated rule {} {}", table, chain))?;
+        if code != 0 {
+            break;
+        }
+    }
+    Ok(())
+}
 
 fn ensure_chain(iptables: &str, table: &str, chain: &str) -> Result<()> {
     let (code, _) = ipt_run(iptables, &["-t", table, "-nL", chain], Capture::Stdout)

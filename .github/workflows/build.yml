@@ -776,47 +776,44 @@ jobs:
               CHANGELOG="- Initial service build for this technical release."
             fi
 
-            cat > release_notes.md <<EOF2
-            # ZDT-D Service Build
-
-            This is an automatically generated technical build produced by GitHub Actions.
-
-            The release post is updated only when `versionCode` increases. Service APK assets may still be refreshed for patch builds that keep the same or a lower `versionCode`.
-
-            ## Build information
-
-            | Field | Value |
-            | --- | --- |
-            | Version | ${VERSION_NAME} |
-            | Version code | ${VERSION_CODE} |
-            | Build type | ${BUILD_TYPE} |
-            | Commit | [\`${SHORT_SHA}\`](${REPO_URL}/commit/${FULL_SHA}) |
-            | Last build time | ${BUILD_TIME_UTC} |
-            | Build duration | ${BUILD_DURATION} |
-            | APK size | ${APK_SIZE_HUMAN} |
-            | Workflow run | [#${{ github.run_number }}](${RUN_URL}) |
-
-            ## Changes
-
-            [Compare changes](${COMPARE_URL})
-
-            ### Commit list
-
-            ${CHANGELOG}
-
-            ## Installation notice
-
-            This APK is signed with the project service signing key restored from GitHub Actions secrets.
-
-            It can update an already installed ZDT-D build only when the installed APK was signed with the same key.
-
-            If Android reports a signature conflict during installation, remove the previously installed ZDT-D application first, then install the APK attached to this service build.
-
-            The module itself is installed and updated from inside the application by the universal installer for Magisk, KernelSU, APatch, and compatible managers.
-            EOF2
-
-            sed -i 's/^            //' release_notes.md
-
+            {
+              printf '%s\n' '# ZDT-D Service Build'
+              printf '\n'
+              printf '%s\n' 'This is an automatically generated technical build produced by GitHub Actions.'
+              printf '\n'
+              printf '%s\n' 'The release post is updated only when `versionCode` increases. Service APK assets may still be refreshed for patch builds that keep the same or a lower `versionCode`.'
+              printf '\n'
+              printf '%s\n' '## Build information'
+              printf '\n'
+              printf '%s\n' '| Field | Value |'
+              printf '%s\n' '| --- | --- |'
+              printf '| Version | %s |\n' "$VERSION_NAME"
+              printf '| Version code | %s |\n' "$VERSION_CODE"
+              printf '| Build type | %s |\n' "$BUILD_TYPE"
+              printf '| Commit | [`%s`](%s/commit/%s) |\n' "$SHORT_SHA" "$REPO_URL" "$FULL_SHA"
+              printf '| Last build time | %s |\n' "$BUILD_TIME_UTC"
+              printf '| Build duration | %s |\n' "$BUILD_DURATION"
+              printf '| APK size | %s |\n' "$APK_SIZE_HUMAN"
+              printf '| Workflow run | [#${{ github.run_number }}](%s) |\n' "$RUN_URL"
+              printf '\n'
+              printf '%s\n' '## Changes'
+              printf '\n'
+              printf '[Compare changes](%s)\n' "$COMPARE_URL"
+              printf '\n'
+              printf '%s\n' '### Commit list'
+              printf '\n'
+              printf '%s\n' "$CHANGELOG"
+              printf '\n'
+              printf '%s\n' '## Installation notice'
+              printf '\n'
+              printf '%s\n' 'This APK is signed with the project service signing key restored from GitHub Actions secrets.'
+              printf '\n'
+              printf '%s\n' 'It can update an already installed ZDT-D build only when the installed APK was signed with the same key.'
+              printf '\n'
+              printf '%s\n' 'If Android reports a signature conflict during installation, remove the previously installed ZDT-D application first, then install the APK attached to this service build.'
+              printf '\n'
+              printf '%s\n' 'The module itself is installed and updated from inside the application by the universal installer for Magisk, KernelSU, APatch, and compatible managers.'
+            } > release_notes.md
             echo "===== Service release notes ====="
             cat release_notes.md
 

@@ -8,6 +8,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.PixelFormat
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -51,20 +52,24 @@ class NfqwsTesterOverlayService : Service() {
     private var windowManager: WindowManager? = null
 
     private var overlayView: View? = null
-    private var overlayRoot: LinearLayout? = null
     private var overlayParams: WindowManager.LayoutParams? = null
-    private var bodyContainer: LinearLayout? = null
-    private var metaView: TextView? = null
-    private var strategyView: TextView? = null
+    private var compactOnlyViews = mutableListOf<View>()
+    private var fullOnlyViews = mutableListOf<View>()
+
+    private var handleView: View? = null
+    private var titleView: TextView? = null
+    private var statusValueView: TextView? = null
+    private var strategyValueView: TextView? = null
+    private var progressCountView: TextView? = null
     private var progressView: ProgressBar? = null
-    private var cpuChipView: TextView? = null
-    private var ramChipView: TextView? = null
-    private var stateChipView: TextView? = null
+    private var cpuValueView: TextView? = null
+    private var ramValueView: TextView? = null
     private var worksButton: Button? = null
     private var failedButton: Button? = null
     private var skipButton: Button? = null
     private var stopButton: Button? = null
     private var toggleButton: TextView? = null
+
     private var expandedWidthPx: Int = 0
     private var compactWidthPx: Int = 0
 
@@ -81,7 +86,17 @@ class NfqwsTesterOverlayService : Service() {
         runner = NfqwsTesterRunner(applicationContext)
         rootConfig = RootConfigManager(applicationContext)
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        overlayExpanded = overlayPrefs.getBoolean(KEY_EXPANDED, true)
+        val prefs = overlayPrefs
+        val layoutVersion = prefs.getInt(KEY_LAYOUT_VERSION, 0)
+        if (layoutVersion < OVERLAY_LAYOUT_VERSION) {
+            prefs.edit()
+                .putBoolean(KEY_EXPANDED, true)
+                .putInt(KEY_LAYOUT_VERSION, OVERLAY_LAYOUT_VERSION)
+                .remove(KEY_POS_X)
+                .remove(KEY_POS_Y)
+                .apply()
+        }
+        overlayExpanded = prefs.getBoolean(KEY_EXPANDED, true)
         ensureNotificationChannel()
     }
 
@@ -129,8 +144,7 @@ class NfqwsTesterOverlayService : Service() {
             stopSelfSafely()
             return
         }
-        val serviceRunning = isZdtdServiceRunning()
-        if (serviceRunning) {
+        if (isZdtdServiceRunning()) {
             NfqwsTesterStore.update {
                 it.copy(
                     phase = NfqwsTesterPhase.ERROR,
@@ -154,7 +168,11 @@ class NfqwsTesterOverlayService : Service() {
         showOverlayIfNeeded()
         strategies = runCatching { runner.listStrategies(currentProgram) }.getOrElse { err ->
             NfqwsTesterStore.update {
-                it.copy(phase = NfqwsTesterPhase.ERROR, errorText = err.message ?: "list failed", statusText = getString(R.string.nfqws_tester_status_error))
+                it.copy(
+                    phase = NfqwsTesterPhase.ERROR,
+                    errorText = err.message ?: "list failed",
+                    statusText = getString(R.string.nfqws_tester_status_error),
+                )
             }
             stopSelfSafely()
             return
@@ -219,6 +237,7 @@ class NfqwsTesterOverlayService : Service() {
                 overlayPermissionGranted = true,
             )
         }
+        refreshOverlay(animated = true)
         val configPath = "/data/adb/modules/ZDT-D/strategic/strategicvar/${currentProgram}/${strategy}"
         val result = runCatching { runner.startStrategy(currentProgram, configPath) }.getOrElse { err ->
             NfqwsTesterStore.update {
@@ -326,8 +345,10 @@ class NfqwsTesterOverlayService : Service() {
             return
         }
         val density = resources.displayMetrics.density
-        expandedWidthPx = min((resources.displayMetrics.widthPixels * 0.86f).toInt(), dp(372))
-        compactWidthPx = min((resources.displayMetrics.widthPixels * 0.58f).toInt(), dp(252))
+        expandedWidthPx = min((resources.displayMetrics.widthPixels * 0.74f).toInt(), dp(328))
+        compactWidthPx = min((resources.displayMetrics.widthPixels * 0.50f).toInt(), dp(202))
+        compactOnlyViews = mutableListOf()
+        fullOnlyViews = mutableListOf()
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -335,16 +356,26 @@ class NfqwsTesterOverlayService : Service() {
                 enableTransitionType(LayoutTransition.CHANGING)
                 setDuration(180)
             }
-            background = roundedDrawable(0xEE18060A.toInt(), 0x66F43F5E.toInt(), 26f * density)
-            elevation = 24f * density
-            setPadding(dp(16), dp(14), dp(16), dp(14))
+            background = roundedDrawable(0xF012070B.toInt(), 0x88E33A60.toInt(), 22f * density)
+            elevation = 26f * density
+            setPadding(dp(12), dp(10), dp(12), dp(12))
             clipToPadding = false
             minimumWidth = compactWidthPx
             alpha = 0f
-            scaleX = 0.96f
-            scaleY = 0.96f
+            scaleX = 0.965f
+            scaleY = 0.965f
         }
 
+        handleView = View(this).apply {
+            background = roundedDrawable(0xFFBF3253.toInt(), 0x00FFFFFF, 100f * density)
+            alpha = 0.88f
+        }
+        root.addView(handleView, LinearLayout.LayoutParams(dp(46), dp(4)).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            bottomMargin = dp(8)
+        })
+
+        val headerCard = sectionCard(paddingHorizontal = dp(12), paddingVertical = dp(12), radiusDp = 18f)
         val headerRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -355,43 +386,43 @@ class NfqwsTesterOverlayService : Service() {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             setOnTouchListener(createDragTouchListener())
         }
-        val gripView = TextView(this).apply {
-            text = "⋮⋮"
-            setTextColor(0x99FFE4EA.toInt())
-            textSize = 15f
-            setPadding(0, 0, dp(10), 0)
+        val logoBadge = TextView(this).apply {
+            text = "N"
+            gravity = Gravity.CENTER
             typeface = Typeface.DEFAULT_BOLD
+            setTextColor(0xFFFFEDF1.toInt())
+            setTextSize(2, 22f)
+            background = roundedDrawable(0xFF2B0911.toInt(), 0x88E33A60.toInt(), 20f * density)
         }
-        val headerTextColumn = LinearLayout(this).apply {
+        dragArea.addView(logoBadge, LinearLayout.LayoutParams(dp(54), dp(54)))
+        val titleColumn = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = dp(12)
+            }
         }
-        metaView = TextView(this).apply {
-            setTextColor(0xFFFFEEF2.toInt())
-            setTextSize(2, 12f)
-            typeface = Typeface.DEFAULT_BOLD
-            alpha = 0.94f
-        }
-        strategyView = TextView(this).apply {
+        titleView = TextView(this).apply {
             setTextColor(0xFFFFFFFF.toInt())
-            setTextSize(2, 18f)
+            setTextSize(2, 20f)
             typeface = Typeface.DEFAULT_BOLD
-            maxLines = 2
-            ellipsize = TextUtils.TruncateAt.END
+            text = getString(R.string.nfqws_tester_overlay_family)
         }
-        headerTextColumn.addView(metaView)
-        headerTextColumn.addView(strategyView)
-        dragArea.addView(gripView)
-        dragArea.addView(headerTextColumn)
+        val subtitleView = TextView(this).apply {
+            setTextColor(0xCCFF6C8B.toInt())
+            setTextSize(2, 11f)
+            text = if (currentProgram == "nfqws2") "NFQWS2" else "NFQWS"
+            setAllCaps(true)
+        }
+        titleColumn.addView(titleView)
+        titleColumn.addView(subtitleView)
+        dragArea.addView(titleColumn)
 
         toggleButton = TextView(this).apply {
-            text = if (overlayExpanded) "▾" else "▸"
-            setTextColor(0xFFFFE4EA.toInt())
-            textSize = 18f
+            text = if (overlayExpanded) "⌃" else "⌄"
+            setTextColor(0xFFFFEDF1.toInt())
+            setTextSize(2, 18f)
             gravity = Gravity.CENTER
-            minWidth = dp(36)
-            minHeight = dp(36)
-            background = roundedDrawable(0x33A11D35.toInt(), 0x66F43F5E.toInt(), 18f * density)
+            background = roundedDrawable(0x44250B11.toInt(), 0x88E33A60.toInt(), 18f * density)
             setOnClickListener {
                 overlayExpanded = !overlayExpanded
                 overlayPrefs.edit().putBoolean(KEY_EXPANDED, overlayExpanded).apply()
@@ -399,90 +430,128 @@ class NfqwsTesterOverlayService : Service() {
             }
         }
         headerRow.addView(dragArea)
-        headerRow.addView(toggleButton)
+        headerRow.addView(toggleButton, LinearLayout.LayoutParams(dp(40), dp(40)).apply {
+            marginStart = dp(8)
+        })
 
-        stateChipView = TextView(this).apply {
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+        statusValueView = TextView(this).apply {
+            setPadding(dp(12), dp(7), dp(12), dp(7))
+            setTextColor(0xFFFFEEF2.toInt())
             setTextSize(2, 13f)
-            setTextColor(0xFFE5F3FF.toInt())
+            typeface = Typeface.DEFAULT_BOLD
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+        }
+        headerCard.addView(headerRow)
+        headerCard.addView(spaceView(dp(10)))
+        headerCard.addView(statusValueView)
+        root.addView(headerCard)
+
+        val strategySection = sectionCard(radiusDp = 18f)
+        strategySection.addView(sectionLabel(getString(R.string.nfqws_tester_overlay_strategy)))
+        strategyValueView = TextView(this).apply {
+            setTextColor(0xFFFFFFFF.toInt())
+            setTextSize(2, 16f)
+            typeface = Typeface.DEFAULT_BOLD
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.END
         }
+        strategySection.addView(spaceView(dp(6)))
+        strategySection.addView(strategyValueView)
+        root.addView(strategySection, topMarginParams(dp(10)))
 
+        val progressSection = sectionCard(radiusDp = 18f)
+        val progressHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val progressLabel = sectionLabel(getString(R.string.nfqws_tester_overlay_progress)).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        progressCountView = TextView(this).apply {
+            setTextColor(0xFFFF6D8A.toInt())
+            setTextSize(2, 15f)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        progressHeaderRow.addView(progressLabel)
+        progressHeaderRow.addView(progressCountView)
         progressView = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
             progress = 0
-            alpha = 0.92f
+            progressTintList = ColorStateList.valueOf(0xFFE6325F.toInt())
+            progressBackgroundTintList = ColorStateList.valueOf(0xFF311218.toInt())
+            indeterminateTintList = ColorStateList.valueOf(0xFFE6325F.toInt())
+            progressDrawable?.mutate()
         }
+        progressSection.addView(progressHeaderRow)
+        progressSection.addView(spaceView(dp(10)))
+        progressSection.addView(progressView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(8)))
+        root.addView(progressSection, topMarginParams(dp(10)))
+        compactOnlyViews += progressSection
 
-        bodyContainer = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutTransition = LayoutTransition().apply {
-                enableTransitionType(LayoutTransition.CHANGING)
-                setDuration(180)
-            }
-        }
-
-        val statsRow = LinearLayout(this).apply {
-            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                topMargin = dp(8)
-            }
+        val metricsSection = sectionCard(radiusDp = 18f)
+        metricsSection.addView(sectionLabel(getString(R.string.nfqws_tester_overlay_resources)))
+        val metricsRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        cpuChipView = chipView(0x33A11D35, "CPU")
-        ramChipView = chipView(0x33A11D35, "RAM")
-        statsRow.addView(cpuChipView)
-        statsRow.addView(Space(this).apply { layoutParams = LinearLayout.LayoutParams(dp(8), 1) })
-        statsRow.addView(ramChipView)
-
-        val actionsRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
             layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                 topMargin = dp(10)
             }
         }
-        worksButton = actionButton(getString(R.string.nfqws_tester_decision_yes), 0xFFE11D48.toInt()).apply {
+        val cpuCard = metricCard(getString(R.string.nfqws_tester_overlay_cpu)).also { card ->
+            cpuValueView = card.second
+            metricsRow.addView(card.first, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        metricsRow.addView(Space(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(8), 1)
+        })
+        val ramCard = metricCard(getString(R.string.nfqws_tester_overlay_ram)).also { card ->
+            ramValueView = card.second
+            metricsRow.addView(card.first, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
+        metricsSection.addView(metricsRow)
+        root.addView(metricsSection, topMarginParams(dp(10)))
+        fullOnlyViews += metricsSection
+
+        val actionsSection = sectionCard(radiusDp = 18f)
+        actionsSection.addView(sectionLabel(getString(R.string.nfqws_tester_overlay_actions)))
+        val actionsRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                topMargin = dp(10)
+            }
+        }
+        worksButton = actionButton(getString(R.string.nfqws_tester_decision_yes), 0xFF57111F.toInt(), 0xFFFFE7EC.toInt()).apply {
             setOnClickListener { decide("works") }
         }
-        failedButton = actionButton(getString(R.string.nfqws_tester_decision_no), 0xFF3A1118.toInt()).apply {
+        failedButton = actionButton(getString(R.string.nfqws_tester_decision_no), 0xFF220C11.toInt(), 0xFFFFE7EC.toInt()).apply {
             setOnClickListener { decide("failed") }
         }
-        skipButton = actionButton(getString(R.string.nfqws_tester_decision_skip), 0xFF2B1117.toInt()).apply {
+        skipButton = actionButton(getString(R.string.nfqws_tester_decision_skip), 0xFF220C11.toInt(), 0xFFFFE7EC.toInt()).apply {
             setOnClickListener { decide("skip") }
         }
         actionsRow.addView(worksButton, weightedActionParams())
         actionsRow.addView(failedButton, weightedActionParams(dp(8)))
         actionsRow.addView(skipButton, weightedActionParams(dp(8)))
+        actionsSection.addView(actionsRow)
+        root.addView(actionsSection, topMarginParams(dp(10)))
+        fullOnlyViews += actionsSection
 
-        stopButton = actionButton(getString(R.string.nfqws_tester_stop), 0xFF4A0F19.toInt()).apply {
+        stopButton = actionButton(getString(R.string.nfqws_tester_stop), 0xFF8E1631.toInt(), 0xFFFFFFFF.toInt()).apply {
             setOnClickListener {
                 serviceScope.launch {
                     stopTesterSession(getString(R.string.nfqws_tester_status_stopped))
                 }
             }
         }
-        val stopParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-            topMargin = dp(10)
-        }
-
-        bodyContainer?.addView(statsRow)
-        bodyContainer?.addView(actionsRow)
-        bodyContainer?.addView(stopButton, stopParams)
-
-        root.addView(headerRow)
-        root.addView(spaceView(dp(10)))
-        root.addView(stateChipView)
-        root.addView(spaceView(dp(8)))
-        root.addView(progressView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(6)))
-        root.addView(bodyContainer)
+        root.addView(stopButton, topMarginParams(dp(10)))
+        fullOnlyViews += stopButton!!
 
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         } else {
             WindowManager.LayoutParams.TYPE_PHONE
         }
+        val defaultX = resources.displayMetrics.widthPixels - (if (overlayExpanded) expandedWidthPx else compactWidthPx) - dp(10)
         val params = WindowManager.LayoutParams(
             if (overlayExpanded) expandedWidthPx else compactWidthPx,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -491,12 +560,11 @@ class NfqwsTesterOverlayService : Service() {
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = overlayPrefs.getInt(KEY_POS_X, dp(8))
-            y = overlayPrefs.getInt(KEY_POS_Y, dp(56))
+            x = overlayPrefs.getInt(KEY_POS_X, defaultX)
+            y = overlayPrefs.getInt(KEY_POS_Y, dp(84))
         }
         overlayParams = params
         overlayView = root
-        overlayRoot = root
         windowManager?.addView(root, params)
         root.post {
             clampAndApplyOverlayPosition()
@@ -522,27 +590,39 @@ class NfqwsTesterOverlayService : Service() {
 
     private fun refreshOverlay(animated: Boolean) {
         val state = NfqwsTesterStore.state.value
-        val safeIndex = if (state.currentIndex < 0) 0 else min(state.currentIndex + 1, max(state.strategies.size, 1))
-        val meta = "${state.program.uppercase()}  •  ${safeIndex}/${max(state.strategies.size, 1)}"
+        val total = max(state.strategies.size, 1)
+        val safeIndex = when (state.phase) {
+            NfqwsTesterPhase.FINISHED -> total
+            else -> if (state.currentIndex < 0) 1 else min(state.currentIndex + 1, total)
+        }
         val strategy = if (state.currentStrategy.isBlank()) getString(R.string.nfqws_tester_none) else state.currentStrategy
-        val status = state.errorText ?: state.statusText
+        titleView?.text = getString(R.string.nfqws_tester_overlay_family)
+        setAnimatedText(strategyValueView, strategy, animated)
+        setAnimatedText(progressCountView, "$safeIndex / $total", animated)
+        setAnimatedText(statusValueView, shortStatus(state), animated)
+        setAnimatedText(cpuValueView, getString(R.string.nfqws_tester_overlay_cpu_value, state.cpuPercent), animated)
+        setAnimatedText(ramValueView, getString(R.string.nfqws_tester_overlay_ram_value, state.rssMb), animated)
 
-        setAnimatedText(metaView, meta, animated)
-        setAnimatedText(strategyView, strategy, animated)
-        setAnimatedText(stateChipView, status, animated)
-
-        cpuChipView?.text = getString(R.string.nfqws_tester_chip_cpu_fmt, state.cpuPercent)
-        ramChipView?.text = getString(R.string.nfqws_tester_chip_ram_fmt, state.rssMb)
-
-        progressView?.max = max(state.strategies.size, 1)
+        progressView?.max = total * 100
         progressView?.progress = when (state.phase) {
-            NfqwsTesterPhase.FINISHED -> max(state.strategies.size, 1)
-            else -> safeIndex.coerceAtMost(max(state.strategies.size, 1))
+            NfqwsTesterPhase.FINISHED -> total * 100
+            else -> ((safeIndex.toFloat() / total.toFloat()) * (total * 100)).toInt().coerceAtLeast(5)
         }
 
-        toggleButton?.text = if (overlayExpanded) "▾" else "▸"
+        toggleButton?.text = if (overlayExpanded) "⌃" else "⌄"
         updateStateChipStyle(state)
         updateActionState(state)
+    }
+
+    private fun shortStatus(state: NfqwsTesterSessionState): String {
+        return when {
+            state.errorText != null || state.phase == NfqwsTesterPhase.ERROR -> getString(R.string.nfqws_tester_overlay_state_error)
+            state.phase == NfqwsTesterPhase.WAITING_DECISION -> getString(R.string.nfqws_tester_overlay_state_check)
+            state.phase == NfqwsTesterPhase.RUNNING -> getString(R.string.nfqws_tester_overlay_state_running)
+            state.phase == NfqwsTesterPhase.PREPARING -> getString(R.string.nfqws_tester_overlay_state_preparing)
+            state.phase == NfqwsTesterPhase.FINISHED -> getString(R.string.nfqws_tester_overlay_state_finished)
+            else -> getString(R.string.nfqws_tester_overlay_state_idle)
+        }
     }
 
     private fun updateActionState(state: NfqwsTesterSessionState) {
@@ -550,51 +630,44 @@ class NfqwsTesterOverlayService : Service() {
         worksButton?.isEnabled = decisionsEnabled
         failedButton?.isEnabled = decisionsEnabled
         skipButton?.isEnabled = decisionsEnabled
-        val alpha = if (decisionsEnabled) 1f else 0.55f
-        worksButton?.alpha = alpha
-        failedButton?.alpha = alpha
-        skipButton?.alpha = alpha
+        val activeAlpha = if (decisionsEnabled) 1f else 0.52f
+        worksButton?.alpha = activeAlpha
+        failedButton?.alpha = activeAlpha
+        skipButton?.alpha = activeAlpha
         stopButton?.alpha = 1f
     }
 
     private fun updateExpandedState(animated: Boolean) {
-        val body = bodyContainer ?: return
-        val root = overlayView ?: return
         val targetWidth = if (overlayExpanded) expandedWidthPx else compactWidthPx
-        strategyView?.maxLines = if (overlayExpanded) 2 else 1
-        strategyView?.ellipsize = TextUtils.TruncateAt.END
-        stateChipView?.maxLines = if (overlayExpanded) 2 else 1
-        stateChipView?.textSize = if (overlayExpanded) 13f else 12f
-        if (overlayExpanded) {
-            body.visibility = View.VISIBLE
-            if (animated) {
-                body.alpha = 0f
-                body.translationY = -dp(6).toFloat()
-                body.animate().alpha(1f).translationY(0f).setDuration(180).start()
-            }
-        } else if (animated) {
-            body.animate()
-                .alpha(0f)
-                .translationY(-dp(6).toFloat())
-                .setDuration(130)
-                .withEndAction {
-                    body.visibility = View.GONE
-                    body.alpha = 1f
-                    body.translationY = 0f
-                    clampAndApplyOverlayPosition()
+        strategyValueView?.maxLines = if (overlayExpanded) 2 else 1
+        fullOnlyViews.forEach { view ->
+            if (overlayExpanded) {
+                view.visibility = View.VISIBLE
+                if (animated) {
+                    view.alpha = 0f
+                    view.translationY = -dp(6).toFloat()
+                    view.animate().alpha(1f).translationY(0f).setDuration(180).start()
                 }
-                .start()
-        } else {
-            body.visibility = View.GONE
-            body.alpha = 1f
-            body.translationY = 0f
+            } else if (animated) {
+                view.animate()
+                    .alpha(0f)
+                    .translationY(-dp(6).toFloat())
+                    .setDuration(120)
+                    .withEndAction {
+                        view.visibility = View.GONE
+                        view.alpha = 1f
+                        view.translationY = 0f
+                        clampAndApplyOverlayPosition()
+                    }
+                    .start()
+            } else {
+                view.visibility = View.GONE
+                view.alpha = 1f
+                view.translationY = 0f
+            }
         }
         animateOverlayWidth(targetWidth, animated)
-        if (!animated) {
-            root.requestLayout()
-            clampAndApplyOverlayPosition()
-        }
-        toggleButton?.text = if (overlayExpanded) "▾" else "▸"
+        if (!animated) clampAndApplyOverlayPosition()
     }
 
     private fun animateOverlayWidth(targetWidth: Int, animated: Boolean) {
@@ -607,7 +680,7 @@ class NfqwsTesterOverlayService : Service() {
             return
         }
         ValueAnimator.ofInt(startWidth, targetWidth).apply {
-            duration = 180L
+            duration = 190L
             interpolator = AccelerateDecelerateInterpolator()
             addUpdateListener { animator ->
                 params.width = animator.animatedValue as Int
@@ -619,15 +692,15 @@ class NfqwsTesterOverlayService : Service() {
 
     private fun updateStateChipStyle(state: NfqwsTesterSessionState) {
         val (fill, stroke, text) = when {
-            state.errorText != null || state.phase == NfqwsTesterPhase.ERROR -> Triple(0x33B91C1C.toInt(), 0x66F87171.toInt(), 0xFFFFE4E6.toInt())
-            state.phase == NfqwsTesterPhase.WAITING_DECISION -> Triple(0x33A11D35.toInt(), 0x66FB7185.toInt(), 0xFFFFE4EA.toInt())
-            state.phase == NfqwsTesterPhase.RUNNING -> Triple(0x33881337.toInt(), 0x66F43F5E.toInt(), 0xFFFFEEF2.toInt())
-            state.phase == NfqwsTesterPhase.PREPARING -> Triple(0x3363121C.toInt(), 0x66F43F5E.toInt(), 0xFFFFEEF2.toInt())
-            state.phase == NfqwsTesterPhase.FINISHED -> Triple(0x33461A22.toInt(), 0x66FB7185.toInt(), 0xFFFFEEF2.toInt())
-            else -> Triple(0x3325141A.toInt(), 0x664B1D27.toInt(), 0xFFFFE4EA.toInt())
+            state.errorText != null || state.phase == NfqwsTesterPhase.ERROR -> Triple(0x66391A21.toInt(), 0x88FF7A92.toInt(), 0xFFFFE7EC.toInt())
+            state.phase == NfqwsTesterPhase.WAITING_DECISION -> Triple(0x664A101E.toInt(), 0x88FF5B7D.toInt(), 0xFFFFE7EC.toInt())
+            state.phase == NfqwsTesterPhase.RUNNING -> Triple(0x66411119.toInt(), 0x88F1456A.toInt(), 0xFFFFEEF2.toInt())
+            state.phase == NfqwsTesterPhase.PREPARING -> Triple(0x66331218.toInt(), 0x88D13958.toInt(), 0xFFFFEEF2.toInt())
+            state.phase == NfqwsTesterPhase.FINISHED -> Triple(0x66301218.toInt(), 0x88F67B93.toInt(), 0xFFFFEEF2.toInt())
+            else -> Triple(0x66201014.toInt(), 0x88421A24.toInt(), 0xFFFFE7EC.toInt())
         }
-        stateChipView?.setTextColor(text)
-        stateChipView?.background = roundedDrawable(fill, stroke, 16f * resources.displayMetrics.density)
+        statusValueView?.setTextColor(text)
+        statusValueView?.background = roundedDrawable(fill, stroke, 16f * resources.displayMetrics.density)
     }
 
     private fun removeOverlay() {
@@ -635,15 +708,17 @@ class NfqwsTesterOverlayService : Service() {
             runCatching { windowManager?.removeView(view) }
         }
         overlayView = null
-        overlayRoot = null
         overlayParams = null
-        bodyContainer = null
-        metaView = null
-        strategyView = null
+        compactOnlyViews = mutableListOf()
+        fullOnlyViews = mutableListOf()
+        handleView = null
+        titleView = null
+        statusValueView = null
+        strategyValueView = null
+        progressCountView = null
         progressView = null
-        cpuChipView = null
-        ramChipView = null
-        stateChipView = null
+        cpuValueView = null
+        ramValueView = null
         worksButton = null
         failedButton = null
         skipButton = null
@@ -671,30 +746,75 @@ class NfqwsTesterOverlayService : Service() {
         stopSelf()
     }
 
-    private fun chipView(fillColor: Int, label: String): TextView {
-        return TextView(this).apply {
-            text = label
-            setTextColor(0xFFFFEEF2.toInt())
-            setTextSize(2, 12f)
-            setPadding(dp(10), dp(6), dp(10), dp(6))
-            background = roundedDrawable(fillColor, 0x66F43F5E.toInt(), 14f * resources.displayMetrics.density)
+    private fun sectionCard(
+        fillColor: Int = 0xCC18060A.toInt(),
+        strokeColor: Int = 0x66E33A60.toInt(),
+        paddingHorizontal: Int = dp(12),
+        paddingVertical: Int = dp(11),
+        radiusDp: Float = 18f,
+    ): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = roundedDrawable(fillColor, strokeColor, radiusDp * resources.displayMetrics.density)
+            setPadding(paddingHorizontal, paddingVertical, paddingHorizontal, paddingVertical)
         }
     }
 
-    private fun actionButton(text: String, fillColor: Int): Button {
+    private fun sectionLabel(text: String): TextView {
+        return TextView(this).apply {
+            this.text = text
+            setTextColor(0xCCFF5D7E.toInt())
+            setTextSize(2, 11f)
+            typeface = Typeface.DEFAULT_BOLD
+            setAllCaps(true)
+        }
+    }
+
+    private fun metricCard(label: String): Pair<LinearLayout, TextView> {
+        val valueView = TextView(this).apply {
+            setTextColor(0xFFFFFFFF.toInt())
+            setTextSize(2, 17f)
+            typeface = Typeface.DEFAULT_BOLD
+            text = label
+            maxLines = 1
+            ellipsize = TextUtils.TruncateAt.END
+        }
+        val card = sectionCard(
+            fillColor = 0xDD14070B.toInt(),
+            strokeColor = 0x55D23A58.toInt(),
+            paddingHorizontal = dp(10),
+            paddingVertical = dp(10),
+            radiusDp = 15f,
+        ).apply {
+            addView(sectionLabel(label))
+            addView(spaceView(dp(6)))
+            addView(valueView)
+        }
+        return card to valueView
+    }
+
+    private fun actionButton(text: String, fillColor: Int, textColor: Int): Button {
         return Button(this).apply {
             this.text = text
             isAllCaps = false
-            setTextColor(0xFFFFFFFF.toInt())
-            setTextSize(2, 15f)
-            minHeight = dp(44)
-            background = roundedDrawable(fillColor, 0x66F43F5E.toInt(), 18f * resources.displayMetrics.density)
+            setTextColor(textColor)
+            setTextSize(2, 16f)
+            typeface = Typeface.DEFAULT_BOLD
+            minHeight = dp(64)
+            gravity = Gravity.CENTER
+            background = roundedDrawable(fillColor, 0x77E33A60.toInt(), 16f * resources.displayMetrics.density)
         }
     }
 
     private fun weightedActionParams(startMargin: Int = 0): LinearLayout.LayoutParams {
         return LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
             if (startMargin > 0) marginStart = startMargin
+        }
+    }
+
+    private fun topMarginParams(topMargin: Int): LinearLayout.LayoutParams {
+        return LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            this.topMargin = topMargin
         }
     }
 
@@ -707,7 +827,9 @@ class NfqwsTesterOverlayService : Service() {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = radius
             setColor(fillColor)
-            setStroke(dp(1), strokeColor)
+            if (strokeColor != 0) {
+                setStroke(dp(1), strokeColor)
+            }
         }
     }
 
@@ -719,7 +841,7 @@ class NfqwsTesterOverlayService : Service() {
             return
         }
         view.animate().cancel()
-        view.animate().alpha(0.2f).setDuration(90).withEndAction {
+        view.animate().alpha(0.18f).setDuration(90).withEndAction {
             view.text = next
             view.animate().alpha(1f).setDuration(140).start()
         }.start()
@@ -773,8 +895,8 @@ class NfqwsTesterOverlayService : Service() {
     private fun clampAndApplyOverlayPosition() {
         val params = overlayParams ?: return
         val view = overlayView ?: return
-        val width = if (view.width > 0) view.width else params.width.coerceAtLeast(dp(280))
-        val height = if (view.height > 0) view.height else dp(if (overlayExpanded) 252 else 116)
+        val width = if (view.width > 0) view.width else params.width.coerceAtLeast(dp(180))
+        val height = if (view.height > 0) view.height else dp(if (overlayExpanded) 360 else 190)
         val screenWidth = resources.displayMetrics.widthPixels
         val screenHeight = resources.displayMetrics.heightPixels
         val sideMargin = dp(8)
@@ -800,6 +922,8 @@ class NfqwsTesterOverlayService : Service() {
         private const val KEY_POS_X = "pos_x"
         private const val KEY_POS_Y = "pos_y"
         private const val KEY_EXPANDED = "expanded"
+        private const val KEY_LAYOUT_VERSION = "layout_version"
+        private const val OVERLAY_LAYOUT_VERSION = 2
 
         const val ACTION_START = "com.android.zdtd.service.action.NFQWS_TESTER_START"
         const val ACTION_STOP = "com.android.zdtd.service.action.NFQWS_TESTER_STOP"

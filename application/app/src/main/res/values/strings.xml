@@ -1675,4 +1675,19 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="nfqws_tester_runtime_fmt">%1$s • %2$d/%3$d • CPU %4$.1f%% • RAM %5$.1f MB</string>
     <string name="nfqws_tester_service_blocked_start">Stop the strategy tester first. Its temporary iptables rules must be cleaned before starting the service.</string>
 
+    <string name="nfqws_tester_overlay_family">NFQWS / NFQWS2</string>
+    <string name="nfqws_tester_overlay_strategy">Strategy</string>
+    <string name="nfqws_tester_overlay_progress">Progress</string>
+    <string name="nfqws_tester_overlay_resources">Resources</string>
+    <string name="nfqws_tester_overlay_actions">Actions</string>
+    <string name="nfqws_tester_overlay_cpu">CPU</string>
+    <string name="nfqws_tester_overlay_ram">RAM</string>
+    <string name="nfqws_tester_overlay_cpu_value">%1$.1f%%</string>
+    <string name="nfqws_tester_overlay_ram_value">%1$.1f MB</string>
+    <string name="nfqws_tester_overlay_state_preparing">Preparing</string>
+    <string name="nfqws_tester_overlay_state_running">Running</string>
+    <string name="nfqws_tester_overlay_state_check">Check result</string>
+    <string name="nfqws_tester_overlay_state_finished">Finished</string>
+    <string name="nfqws_tester_overlay_state_error">Error</string>
+    <string name="nfqws_tester_overlay_state_idle">Idle</string>
 </resources>

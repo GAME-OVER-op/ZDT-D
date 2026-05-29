@@ -1675,4 +1675,19 @@ APatch: 10700+</string>
     <string name="nfqws_tester_runtime_fmt">%1$s • %2$d/%3$d • CPU %4$.1f%% • RAM %5$.1f МБ</string>
     <string name="nfqws_tester_service_blocked_start">Сначала остановите тестер стратегий. Перед запуском службы его временные правила iptables должны быть очищены.</string>
 
+    <string name="nfqws_tester_overlay_family">NFQWS / NFQWS2</string>
+    <string name="nfqws_tester_overlay_strategy">Стратегия</string>
+    <string name="nfqws_tester_overlay_progress">Прогресс</string>
+    <string name="nfqws_tester_overlay_resources">Ресурсы</string>
+    <string name="nfqws_tester_overlay_actions">Действия</string>
+    <string name="nfqws_tester_overlay_cpu">CPU</string>
+    <string name="nfqws_tester_overlay_ram">RAM</string>
+    <string name="nfqws_tester_overlay_cpu_value">%1$.1f%%</string>
+    <string name="nfqws_tester_overlay_ram_value">%1$.1f МБ</string>
+    <string name="nfqws_tester_overlay_state_preparing">Подготовка</string>
+    <string name="nfqws_tester_overlay_state_running">Тест идёт</string>
+    <string name="nfqws_tester_overlay_state_check">Проверить</string>
+    <string name="nfqws_tester_overlay_state_finished">Завершено</string>
+    <string name="nfqws_tester_overlay_state_error">Ошибка</string>
+    <string name="nfqws_tester_overlay_state_idle">Ожидание</string>
 </resources>

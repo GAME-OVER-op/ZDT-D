@@ -453,7 +453,7 @@ private fun StatusBanner(
 }
 
 @Composable
-private fun SessionCard(testerState: com.android.zdtd.service.diagnostics.nfqws.NfqwsTesterUiState) {
+private fun SessionCard(testerState: com.android.zdtd.service.diagnostics.nfqws.NfqwsTesterSessionState) {
   val statusAccent = when {
     testerState.errorText != null -> MaterialTheme.colorScheme.error
     testerState.phase == NfqwsTesterPhase.WAITING_DECISION -> MaterialTheme.colorScheme.tertiary
@@ -497,7 +497,6 @@ private fun SessionCard(testerState: com.android.zdtd.service.diagnostics.nfqws.
               NfqwsTesterPhase.RUNNING -> Icons.Outlined.PlayArrow
               NfqwsTesterPhase.WAITING_DECISION -> Icons.Outlined.CheckCircle
               NfqwsTesterPhase.FINISHED -> Icons.Outlined.CheckCircle
-              NfqwsTesterPhase.STOPPED -> Icons.Outlined.StopCircle
               NfqwsTesterPhase.ERROR -> Icons.Outlined.ReportProblem
               else -> Icons.Outlined.Refresh
             }

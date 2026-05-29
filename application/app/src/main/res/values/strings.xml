@@ -1655,6 +1655,8 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="nfqws_tester_status_error">Tester error.</string>
     <string name="nfqws_tester_status_idle">The tester is idle.</string>
     <string name="nfqws_tester_overlay_title_fmt">%1$s • %2$s • %3$d/%4$d</string>
+    <string name="nfqws_tester_chip_cpu_fmt">CPU %1$.1f%%</string>
+    <string name="nfqws_tester_chip_ram_fmt">RAM %1$.1f MB</string>
     <string name="nfqws_tester_overlay_stats_fmt">CPU: %1$.1f%% • RAM: %2$.1f MB</string>
     <string name="nfqws_tester_decision_yes">Works</string>
     <string name="nfqws_tester_decision_no">Fails</string>

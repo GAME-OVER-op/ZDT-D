@@ -1474,7 +1474,6 @@ private fun LandscapeShellContent(
           onOpenProfile = onOpenProfile,
           onOpenAnalysisTools = onOpenAnalysisTools,
           onOpenDpiDetector = onOpenDpiDetector,
-          onOpenNfqwsTester = onOpenNfqwsTester,
           actions = actions,
           snackHost = snackHost,
           landscapeControl = true,

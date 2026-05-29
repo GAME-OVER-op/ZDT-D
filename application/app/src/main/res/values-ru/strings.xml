@@ -1655,6 +1655,8 @@ APatch: 10700+</string>
     <string name="nfqws_tester_status_error">Ошибка тестера.</string>
     <string name="nfqws_tester_status_idle">Тестер не запущен.</string>
     <string name="nfqws_tester_overlay_title_fmt">%1$s • %2$s • %3$d/%4$d</string>
+    <string name="nfqws_tester_chip_cpu_fmt">CPU %1$.1f%%</string>
+    <string name="nfqws_tester_chip_ram_fmt">RAM %1$.1f МБ</string>
     <string name="nfqws_tester_overlay_stats_fmt">CPU: %1$.1f%% • RAM: %2$.1f МБ</string>
     <string name="nfqws_tester_decision_yes">Работает</string>
     <string name="nfqws_tester_decision_no">Нет</string>

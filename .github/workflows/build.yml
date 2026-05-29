@@ -31,6 +31,7 @@ env:
 
 permissions:
   contents: write
+  models: read
 
 jobs:
   check_paths:
@@ -696,7 +697,7 @@ jobs:
           name: zdt-apk
           path: out/dist
 
-      - name: Publish service release
+      - name: Publish service and stable releases
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD_START_TS: ${{ needs.build_gate.outputs.build_start_ts }}
@@ -706,29 +707,30 @@ jobs:
           SERVICE_TAG="service-build"
           SERVICE_TITLE="ZDT-D Service Build"
           APK_SOURCE="out/dist/app-release.apk"
-          APK_RELEASE="out/dist/ZDT-D-service-build.apk"
+          SERVICE_APK="out/dist/ZDT-D-service-build.apk"
+          STABLE_ASSET_SPEC="${APK_SOURCE}#app-release.apk"
 
           test -s "$APK_SOURCE" || { echo "::error::APK does not exist: $APK_SOURCE"; exit 1; }
-          cp -f "$APK_SOURCE" "$APK_RELEASE"
+          cp -f "$APK_SOURCE" "$SERVICE_APK"
 
-          VERSION_CODE=$(grep -m1 '^versionCode=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')
-          VERSION_NAME=$(grep -m1 '^version=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')
+          VERSION_CODE="$(grep -m1 '^versionCode=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')"
+          VERSION_NAME="$(grep -m1 '^version=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')"
 
           if [[ -z "$VERSION_CODE" || ! "$VERSION_CODE" =~ ^[0-9]+$ ]]; then
             echo "::error::Numeric versionCode not found in module.prop"
             exit 1
           fi
           if [[ -z "$VERSION_NAME" ]]; then
-            VERSION_NAME="unknown"
+            echo "::error::version not found in module.prop"
+            exit 1
           fi
 
           BUILD_END_TS="$(date +%s)"
           BUILD_START_TS="${BUILD_START_TS:-$BUILD_END_TS}"
           BUILD_DURATION_SEC=$((BUILD_END_TS - BUILD_START_TS))
           BUILD_DURATION="$(printf '%02d:%02d:%02d' $((BUILD_DURATION_SEC / 3600)) $(((BUILD_DURATION_SEC % 3600) / 60)) $((BUILD_DURATION_SEC % 60)))"
-
           BUILD_TIME_UTC="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          APK_SIZE_BYTES="$(stat -c%s "$APK_RELEASE")"
+          APK_SIZE_BYTES="$(stat -c%s "$APK_SOURCE")"
           APK_SIZE_HUMAN="$(numfmt --to=iec --suffix=B --format='%.2f' "$APK_SIZE_BYTES")"
 
           FULL_SHA="$(git rev-parse HEAD)"
@@ -736,171 +738,400 @@ jobs:
           REPO_URL="https://github.com/${{ github.repository }}"
           RUN_URL="${REPO_URL}/actions/runs/${{ github.run_id }}"
           BUILD_TYPE="${{ env.BUILD_TYPE }}"
+          BRANCH_NAME="${GITHUB_REF_NAME:-main}"
 
-          RELEASE_EXISTS=false
-          PUBLISHED_VERSION_CODE=""
-          PREV_SHA=""
-          SHOULD_UPDATE_RELEASE_POST=false
-          RELEASE_POST_REASON=""
+          git fetch --tags --force >/dev/null 2>&1 || true
 
+          parse_version_code_from_body() {
+            sed -nE 's/^\|[[:space:]]*(Version code|Код версии)[[:space:]]*\|[[:space:]]*`?([0-9]+)`?[[:space:]]*\|[[:space:]]*$/\2/p' | head -1
+          }
+
+          make_commit_list() {
+            local from_sha="$1"
+            local to_sha="$2"
+            local max_items="${3:-50}"
+            local total="0"
+            local list=""
+
+            if [[ -n "$from_sha" && "$from_sha" != "$to_sha" ]]; then
+              local range="${from_sha}..${to_sha}"
+              total="$(git rev-list --count "$range" 2>/dev/null || echo 0)"
+              if [[ "$max_items" =~ ^[0-9]+$ && "$max_items" -gt 0 ]]; then
+                list="$(git log --no-merges --pretty=format:'- %s (`%h`)' -n "$max_items" "$range" 2>/dev/null || true)"
+              else
+                list="$(git log --no-merges --pretty=format:'- %s (`%h`)' "$range" 2>/dev/null || true)"
+              fi
+            else
+              total="0"
+              list="- No changes after the latest stable release."
+            fi
+
+            if [[ -z "$list" ]]; then
+              list="- No commit messages found."
+            fi
+            if [[ "$max_items" =~ ^[0-9]+$ && "$max_items" -gt 0 && "$total" =~ ^[0-9]+$ && "$total" -gt "$max_items" ]]; then
+              list="${list}"$'\n'"- ...and $((total - max_items)) more commits."
+            fi
+            printf '%s\n' "$list"
+          }
+
+          compare_url_for_range() {
+            local from_sha="$1"
+            local to_sha="$2"
+            if [[ -n "$from_sha" && "$from_sha" != "$to_sha" ]]; then
+              printf '%s/compare/%s...%s\n' "$REPO_URL" "$from_sha" "$to_sha"
+            else
+              printf '%s/commit/%s\n' "$REPO_URL" "$to_sha"
+            fi
+          }
+
+          latest_stable_tag() {
+            git tag -l 'V[0-9]*.[0-9]*.0' | sed 's/^V//' | sort -V | tail -n1 | sed 's/^/V/' || true
+          }
+
+          generate_service_ai_summary() {
+            local commit_file="$1"
+            local output_file="$2"
+            local latest_tag="$3"
+
+            if [[ ! -s "$commit_file" ]]; then
+              printf '%s\n' "AI summary is unavailable: commit list is empty." > "$output_file"
+              return 0
+            fi
+
+            cat > service_ai_prompt.txt <<EOF_AI_PROMPT
+          You are preparing a short service-build comment for the ZDT-D Android project.
+          Write in Russian.
+          Be concise: 3-6 bullet points maximum.
+          Summarize the practical changes since the latest stable release.
+          Do not invent features. Use only the commit list below.
+          Mention the latest stable baseline: ${latest_tag:-none}.
+          
+          Version: ${VERSION_NAME}
+          Version code: ${VERSION_CODE}
+          Commit: ${SHORT_SHA}
+          
+          Commit list:
+          $(cat "$commit_file")
+          EOF_AI_PROMPT
+
+            python3 - <<'PY_AI_PAYLOAD' > service_ai_payload.json
+          import json
+          import os
+          from pathlib import Path
+          prompt = Path('service_ai_prompt.txt').read_text(encoding='utf-8')
+          payload = {
+              "model": os.environ.get("GITHUB_MODELS_MODEL", "openai/gpt-4o"),
+              "messages": [
+                  {"role": "system", "content": "You write concise release summaries for Android/Rust networking tools."},
+                  {"role": "user", "content": prompt},
+              ],
+              "temperature": 0.2,
+              "max_tokens": 450,
+          }
+          print(json.dumps(payload, ensure_ascii=False))
+          PY_AI_PAYLOAD
+
+            if curl -fsS \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d @service_ai_payload.json \
+              https://models.github.ai/inference/chat/completions > service_ai_response.json; then
+              python3 - <<'PY_AI_RESPONSE' > "$output_file" || true
+          import json
+          from pathlib import Path
+          try:
+              data = json.loads(Path('service_ai_response.json').read_text(encoding='utf-8'))
+              text = data.get('choices', [{}])[0].get('message', {}).get('content', '').strip()
+              print(text or 'AI summary is unavailable: empty response.')
+          except Exception as exc:
+              print(f'AI summary is unavailable: {exc}')
+          PY_AI_RESPONSE
+            else
+              printf '%s\n' "AI summary is unavailable for this run. See the commit list below." > "$output_file"
+            fi
+          }
+
+          upload_asset_with_retry() {
+            local tag="$1"
+            local file_spec="$2"
+            local asset_name="$3"
+            local attempt=1
+            local max_attempts=5
+            UPLOAD_MODE="clobber"
+            UPLOAD_ATTEMPTS="0"
+
+            while [[ "$attempt" -le "$max_attempts" ]]; do
+              echo "Upload $asset_name to $tag with --clobber: attempt $attempt/$max_attempts"
+              if gh release upload "$tag" "$file_spec" --clobber; then
+                UPLOAD_MODE="clobber"
+                UPLOAD_ATTEMPTS="$attempt"
+                return 0
+              fi
+              if [[ "$attempt" -lt "$max_attempts" ]]; then
+                sleep $((attempt * 5))
+              fi
+              attempt=$((attempt + 1))
+            done
+
+            echo "::warning::Upload with --clobber failed for $asset_name on $tag. Trying delete+upload fallback."
+            local asset_id=""
+            asset_id="$(gh release view "$tag" --json assets --jq ".assets[] | select(.name==\"${asset_name}\") | .id" | head -n1 || true)"
+            if [[ -n "$asset_id" ]]; then
+              gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$asset_id"
+              sleep 3
+            fi
+
+            attempt=1
+            while [[ "$attempt" -le "$max_attempts" ]]; do
+              echo "Fallback upload $asset_name to $tag: attempt $attempt/$max_attempts"
+              if gh release upload "$tag" "$file_spec"; then
+                UPLOAD_MODE="delete+upload"
+                UPLOAD_ATTEMPTS="$attempt"
+                return 0
+              fi
+              if [[ "$attempt" -lt "$max_attempts" ]]; then
+                sleep $((attempt * 5))
+              fi
+              attempt=$((attempt + 1))
+            done
+
+            echo "::error::Failed to upload $asset_name to $tag after retries and fallback"
+            return 1
+          }
+
+          version_code_matches_version=false
+          stable_version_shape=false
+          code_min=""
+          code_max=""
+          if [[ "$VERSION_NAME" =~ ^([0-9]+)\.([0-9]+)\.0$ ]]; then
+            stable_version_shape=true
+            major="${BASH_REMATCH[1]}"
+            minor="${BASH_REMATCH[2]}"
+            code_prefix="${major}${minor}"
+            code_min=$((code_prefix * 1000))
+            code_max=$((code_min + 999))
+            if (( VERSION_CODE >= code_min && VERSION_CODE <= code_max )); then
+              version_code_matches_version=true
+            fi
+          fi
+
+          SERVICE_RELEASE_EXISTS=false
           if gh release view "$SERVICE_TAG" >/dev/null 2>&1; then
-            RELEASE_EXISTS=true
-            RELEASE_BODY="$(gh release view "$SERVICE_TAG" --json body --jq '.body // ""')"
-            PUBLISHED_VERSION_CODE="$(printf '%s\n' "$RELEASE_BODY" | sed -nE 's/^\| Version code \| ([0-9]+) \|$/\1/p' | head -1)"
-
-            if git ls-remote --exit-code --tags origin "refs/tags/${SERVICE_TAG}" >/dev/null 2>&1; then
-              git fetch --force origin "refs/tags/${SERVICE_TAG}:refs/tags/${SERVICE_TAG}"
-              PREV_SHA="$(git rev-list -n 1 "$SERVICE_TAG" 2>/dev/null || true)"
-            fi
+            SERVICE_RELEASE_EXISTS=true
           fi
 
-          if [[ "$RELEASE_EXISTS" != "true" ]]; then
-            SHOULD_UPDATE_RELEASE_POST=true
-            RELEASE_POST_REASON="service-build release does not exist yet"
-          elif [[ -n "$PUBLISHED_VERSION_CODE" && "$PUBLISHED_VERSION_CODE" =~ ^[0-9]+$ ]]; then
-            if (( VERSION_CODE > PUBLISHED_VERSION_CODE )); then
-              SHOULD_UPDATE_RELEASE_POST=true
-              RELEASE_POST_REASON="versionCode increased: ${PUBLISHED_VERSION_CODE} -> ${VERSION_CODE}"
+          LATEST_STABLE_TAG="$(latest_stable_tag)"
+          LATEST_STABLE_SHA=""
+          if [[ -n "$LATEST_STABLE_TAG" ]] && git rev-parse -q --verify "refs/tags/${LATEST_STABLE_TAG}" >/dev/null 2>&1; then
+            LATEST_STABLE_SHA="$(git rev-list -n 1 "$LATEST_STABLE_TAG" 2>/dev/null || true)"
+          fi
+
+          SERVICE_COMPARE_URL="$(compare_url_for_range "$LATEST_STABLE_SHA" "$FULL_SHA")"
+          SERVICE_COMMIT_LIST="$(make_commit_list "$LATEST_STABLE_SHA" "$FULL_SHA" 0)"
+          printf '%s\n' "$SERVICE_COMMIT_LIST" > service_commit_list.txt
+          generate_service_ai_summary service_commit_list.txt service_ai_summary.md "$LATEST_STABLE_TAG"
+          SERVICE_AI_SUMMARY="$(cat service_ai_summary.md)"
+
+          cat > service_release_notes.md <<EOF_SERVICE_NOTES
+          # ZDT-D Service Build
+
+          Это автоматическая сервисная сборка ZDT-D.
+
+          Сервисная сборка обновляется после каждого успешного запуска workflow и всегда содержит актуальный APK из последнего успешного билда.
+
+          > Этот релиз является техническим prerelease и не считается стабильным релизом версии.
+
+          ## AI-комментарий
+
+          ${SERVICE_AI_SUMMARY}
+
+          ## Информация о сборке
+
+          | Поле | Значение |
+          |---|---|
+          | Версия | \`${VERSION_NAME}\` |
+          | Код версии | \`${VERSION_CODE}\` |
+          | Последний стабильный релиз | \`${LATEST_STABLE_TAG:-none}\` |
+          | Коммит | [\`${SHORT_SHA}\`](${REPO_URL}/commit/${FULL_SHA}) |
+          | Ветка | \`${BRANCH_NAME}\` |
+          | Workflow run | [#${{ github.run_number }}](${RUN_URL}) |
+          | Дата сборки | \`${BUILD_TIME_UTC}\` |
+          | Тип сборки | \`${BUILD_TYPE}\` |
+          | Размер APK | \`${APK_SIZE_HUMAN}\` |
+          | Длительность сборки | \`${BUILD_DURATION}\` |
+
+          ## Изменения после последнего стабильного релиза
+
+          ${SERVICE_COMMIT_LIST}
+
+          ## Полный список изменений
+
+          [Список изменений на GitHub](${SERVICE_COMPARE_URL})
+
+          ## Файл сборки
+
+          - \`ZDT-D-service-build.apk\`
+
+          ---
+
+          Эта сборка предназначена для проверки последних изменений, тестирования исправлений и промежуточных обновлений проекта.
+          EOF_SERVICE_NOTES
+
+          echo "===== Service release notes ====="
+          cat service_release_notes.md
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "$SERVICE_TAG" "$FULL_SHA"
+          git push -f origin "refs/tags/${SERVICE_TAG}"
+
+          if [[ "$SERVICE_RELEASE_EXISTS" == "true" ]]; then
+            gh release edit "$SERVICE_TAG" --title "$SERVICE_TITLE" --notes-file service_release_notes.md --prerelease
+          else
+            gh release create "$SERVICE_TAG" --target "$FULL_SHA" --title "$SERVICE_TITLE" --notes-file service_release_notes.md --prerelease --latest=false
+          fi
+          upload_asset_with_retry "$SERVICE_TAG" "$SERVICE_APK" "ZDT-D-service-build.apk"
+          SERVICE_UPLOAD_MODE="$UPLOAD_MODE"
+          SERVICE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
+
+          STABLE_ACTION="skipped"
+          STABLE_REASON=""
+          STABLE_TAG="V${VERSION_NAME}"
+          STABLE_TITLE="V ${VERSION_NAME}"
+          STABLE_UPLOAD_MODE=""
+          STABLE_UPLOAD_ATTEMPTS=""
+          STABLE_RELEASE_EXISTS=false
+          STABLE_PUBLISHED_VERSION_CODE=""
+
+          if [[ "$stable_version_shape" != "true" ]]; then
+            STABLE_REASON="version '${VERSION_NAME}' is not a stable X.Y.0 version"
+          elif [[ "$version_code_matches_version" != "true" ]]; then
+            STABLE_REASON="versionCode ${VERSION_CODE} is outside expected range ${code_min}..${code_max} for version ${VERSION_NAME}"
+            echo "::warning::$STABLE_REASON. Stable release will not be created or updated."
+          elif gh release view "$STABLE_TAG" >/dev/null 2>&1; then
+            STABLE_RELEASE_EXISTS=true
+            STABLE_BODY="$(gh release view "$STABLE_TAG" --json body --jq '.body // ""')"
+            STABLE_PUBLISHED_VERSION_CODE="$(printf '%s\n' "$STABLE_BODY" | parse_version_code_from_body)"
+            STABLE_ASSET_EXISTS=false
+            if gh release view "$STABLE_TAG" --json assets --jq '.assets[].name' | grep -Fx 'app-release.apk' >/dev/null 2>&1; then
+              STABLE_ASSET_EXISTS=true
+            fi
+
+            if [[ -n "$STABLE_PUBLISHED_VERSION_CODE" && "$STABLE_PUBLISHED_VERSION_CODE" =~ ^[0-9]+$ ]]; then
+              if (( VERSION_CODE > STABLE_PUBLISHED_VERSION_CODE )); then
+                upload_asset_with_retry "$STABLE_TAG" "$STABLE_ASSET_SPEC" "app-release.apk"
+                STABLE_UPLOAD_MODE="$UPLOAD_MODE"
+                STABLE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
+                STABLE_ACTION="asset-updated"
+                STABLE_REASON="versionCode increased for existing ${STABLE_TAG}: ${STABLE_PUBLISHED_VERSION_CODE} -> ${VERSION_CODE}"
+              elif (( VERSION_CODE == STABLE_PUBLISHED_VERSION_CODE )) && [[ "$STABLE_ASSET_EXISTS" != "true" ]]; then
+                upload_asset_with_retry "$STABLE_TAG" "$STABLE_ASSET_SPEC" "app-release.apk"
+                STABLE_UPLOAD_MODE="$UPLOAD_MODE"
+                STABLE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
+                STABLE_ACTION="asset-restored"
+                STABLE_REASON="app-release.apk was missing in existing ${STABLE_TAG}; restored asset for versionCode ${VERSION_CODE}"
+              else
+                STABLE_ACTION="skipped"
+                STABLE_REASON="stable release preserved because current versionCode ${VERSION_CODE} is not greater than published ${STABLE_PUBLISHED_VERSION_CODE}"
+              fi
             else
-              SHOULD_UPDATE_RELEASE_POST=false
-              RELEASE_POST_REASON="release post preserved because current versionCode ${VERSION_CODE} is not greater than published ${PUBLISHED_VERSION_CODE}"
+              STABLE_ACTION="skipped"
+              STABLE_REASON="existing ${STABLE_TAG} release body does not contain a parseable version code"
+              echo "::warning::$STABLE_REASON. Stable asset sync skipped to avoid unsafe overwrite."
             fi
           else
-            SHOULD_UPDATE_RELEASE_POST=false
-            RELEASE_POST_REASON="release post preserved because published versionCode could not be parsed safely"
-            echo "::warning::Existing service-build release body does not contain a parseable Version code row; release post will not be modified."
-          fi
+            PREVIOUS_STABLE_TAG=""
+            while IFS= read -r version; do
+              [[ -z "$version" ]] && continue
+              if [[ "$(printf '%s\n%s\n' "$version" "$VERSION_NAME" | sort -V | head -n1)" == "$version" && "$version" != "$VERSION_NAME" ]]; then
+                PREVIOUS_STABLE_TAG="V${version}"
+              fi
+            done < <(git tag -l 'V[0-9]*.[0-9]*.0' | sed 's/^V//' | sort -V)
 
-          if [[ "$SHOULD_UPDATE_RELEASE_POST" == "true" ]]; then
-            if [[ -n "$PREV_SHA" && "$PREV_SHA" != "$FULL_SHA" ]]; then
-              COMPARE_URL="${REPO_URL}/compare/${PREV_SHA}...${FULL_SHA}"
-              TOTAL_COMMITS="$(git rev-list --count "${PREV_SHA}..${FULL_SHA}" 2>/dev/null || echo 0)"
-              CHANGELOG="$(git log --no-merges --pretty=format:'- %s (`%h`)' -n 30 "${PREV_SHA}..${FULL_SHA}" || true)"
-              if [[ -z "$CHANGELOG" ]]; then
-                CHANGELOG="- No commit messages found for this range."
-              fi
-              if [[ "$TOTAL_COMMITS" =~ ^[0-9]+$ && "$TOTAL_COMMITS" -gt 30 ]]; then
-                CHANGELOG="${CHANGELOG}"$'\n'"- ...and $((TOTAL_COMMITS - 30)) more commits."
-              fi
-            elif [[ -n "$PREV_SHA" && "$PREV_SHA" == "$FULL_SHA" ]]; then
-              COMPARE_URL="${REPO_URL}/commit/${FULL_SHA}"
-              CHANGELOG="- No source changes since the previous published service version."
-            else
-              COMPARE_URL="${REPO_URL}/commit/${FULL_SHA}"
-              CHANGELOG="- Initial service build for this technical release."
+            PREVIOUS_STABLE_SHA=""
+            if [[ -n "$PREVIOUS_STABLE_TAG" ]] && git rev-parse -q --verify "refs/tags/${PREVIOUS_STABLE_TAG}" >/dev/null 2>&1; then
+              PREVIOUS_STABLE_SHA="$(git rev-list -n 1 "$PREVIOUS_STABLE_TAG" 2>/dev/null || true)"
             fi
 
-            {
-              printf '%s\n' '# ZDT-D Service Build'
-              printf '\n'
-              printf '%s\n' 'This is an automatically generated technical build produced by GitHub Actions.'
-              printf '\n'
-              printf '%s\n' 'The release post is updated only when `versionCode` increases. Service APK assets may still be refreshed for patch builds that keep the same or a lower `versionCode`.'
-              printf '\n'
-              printf '%s\n' '## Build information'
-              printf '\n'
-              printf '%s\n' '| Field | Value |'
-              printf '%s\n' '| --- | --- |'
-              printf '| Version | %s |\n' "$VERSION_NAME"
-              printf '| Version code | %s |\n' "$VERSION_CODE"
-              printf '| Build type | %s |\n' "$BUILD_TYPE"
-              printf '| Commit | [`%s`](%s/commit/%s) |\n' "$SHORT_SHA" "$REPO_URL" "$FULL_SHA"
-              printf '| Last build time | %s |\n' "$BUILD_TIME_UTC"
-              printf '| Build duration | %s |\n' "$BUILD_DURATION"
-              printf '| APK size | %s |\n' "$APK_SIZE_HUMAN"
-              printf '| Workflow run | [#${{ github.run_number }}](%s) |\n' "$RUN_URL"
-              printf '\n'
-              printf '%s\n' '## Changes'
-              printf '\n'
-              printf '[Compare changes](%s)\n' "$COMPARE_URL"
-              printf '\n'
-              printf '%s\n' '### Commit list'
-              printf '\n'
-              printf '%s\n' "$CHANGELOG"
-              printf '\n'
-              printf '%s\n' '## Installation notice'
-              printf '\n'
-              printf '%s\n' 'This APK is signed with the project service signing key restored from GitHub Actions secrets.'
-              printf '\n'
-              printf '%s\n' 'It can update an already installed ZDT-D build only when the installed APK was signed with the same key.'
-              printf '\n'
-              printf '%s\n' 'If Android reports a signature conflict during installation, remove the previously installed ZDT-D application first, then install the APK attached to this service build.'
-              printf '\n'
-              printf '%s\n' 'The module itself is installed and updated from inside the application by the universal installer for Magisk, KernelSU, APatch, and compatible managers.'
-            } > release_notes.md
-            echo "===== Service release notes ====="
-            cat release_notes.md
+            STABLE_COMPARE_URL="$(compare_url_for_range "$PREVIOUS_STABLE_SHA" "$FULL_SHA")"
+            STABLE_COMMIT_LIST="$(make_commit_list "$PREVIOUS_STABLE_SHA" "$FULL_SHA" 80)"
+            STABLE_SUMMARY="$(make_commit_list "$PREVIOUS_STABLE_SHA" "$FULL_SHA" 8)"
 
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git tag -f "$SERVICE_TAG" "$FULL_SHA"
-            git push -f origin "refs/tags/${SERVICE_TAG}"
+            cat > stable_release_notes.md <<EOF_STABLE_NOTES
+          # ZDT-D V${VERSION_NAME}
 
-            if [[ "$RELEASE_EXISTS" == "true" ]]; then
-              gh release edit "$SERVICE_TAG" --title "$SERVICE_TITLE" --notes-file release_notes.md --prerelease
-            else
-              gh release create "$SERVICE_TAG" --target "$FULL_SHA" --title "$SERVICE_TITLE" --notes-file release_notes.md --prerelease --latest=false
-            fi
-          else
-            echo "Release post update skipped: $RELEASE_POST_REASON"
+          ## Главное
+
+          ${STABLE_SUMMARY}
+
+          ## Список изменений
+
+          ${STABLE_COMMIT_LIST}
+
+          ## Полный список изменений
+
+          [Список изменений на GitHub](${STABLE_COMPARE_URL})
+
+          ## Информация о релизе
+
+          | Поле | Значение |
+          |---|---|
+          | Версия | \`${VERSION_NAME}\` |
+          | Код версии | \`${VERSION_CODE}\` |
+          | Тег | \`${STABLE_TAG}\` |
+          | Коммит | [\`${SHORT_SHA}\`](${REPO_URL}/commit/${FULL_SHA}) |
+          | Workflow run | [#${{ github.run_number }}](${RUN_URL}) |
+          | Дата сборки | \`${BUILD_TIME_UTC}\` |
+          EOF_STABLE_NOTES
+
+            echo "===== Stable release notes ====="
+            cat stable_release_notes.md
+
+            gh release create "$STABLE_TAG" \
+              --target "$FULL_SHA" \
+              --title "$STABLE_TITLE" \
+              --notes-file stable_release_notes.md \
+              --latest
+
+            upload_asset_with_retry "$STABLE_TAG" "$STABLE_ASSET_SPEC" "app-release.apk"
+            STABLE_UPLOAD_MODE="$UPLOAD_MODE"
+            STABLE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
+            STABLE_ACTION="created"
+            STABLE_REASON="created new stable release ${STABLE_TAG}"
           fi
-
-          gh release upload "$SERVICE_TAG" "$APK_RELEASE" --clobber
 
           {
             echo "### Service build publish"
             echo
-            echo "Current versionCode: \`$VERSION_CODE\`"
-            if [[ -n "$PUBLISHED_VERSION_CODE" ]]; then
-              echo "Published versionCode: \`$PUBLISHED_VERSION_CODE\`"
-            else
-              echo "Published versionCode: \`unknown\`"
-            fi
-            echo "Release exists: \`$RELEASE_EXISTS\`"
-            echo "Release post updated: \`$SHOULD_UPDATE_RELEASE_POST\`"
-            echo "Reason: $RELEASE_POST_REASON"
+            echo "Service release: \`$SERVICE_TAG\`"
+            echo "Service post updated: \`true\`"
             echo "Service APK asset updated: \`ZDT-D-service-build.apk\`"
-            if [[ "$SHOULD_UPDATE_RELEASE_POST" != "true" ]]; then
-              echo "Release notes/body: not changed"
-              echo "Release tag move: not changed"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Sync app-release.apk into existing version release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-
-          APK_SOURCE="out/dist/app-release.apk"
-          test -s "$APK_SOURCE" || { echo "::error::APK does not exist: $APK_SOURCE"; exit 1; }
-
-          VERSION_NAME=$(grep -m1 '^version=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')
-          if [[ -z "$VERSION_NAME" ]]; then
-            echo "::warning::version dont found in module.prop; stable release asset sync skipped"
-            exit 0
-          fi
-
-          TARGET_TAG=""
-          for tag in "v${VERSION_NAME}" "V${VERSION_NAME}"; do
-            if gh release view "$tag" >/dev/null 2>&1; then
-              TARGET_TAG="$tag"
-              break
-            fi
-          done
-
-          if [[ -z "$TARGET_TAG" ]]; then
-            echo "Stable release v${VERSION_NAME}/V${VERSION_NAME} does not exist. app-release.apk sync skipped."
-            exit 0
-          fi
-
-          echo "Stable release $TARGET_TAG exists. Updating only app-release.apk asset."
-          gh release upload "$TARGET_TAG" "$APK_SOURCE#app-release.apk" --clobber
-
-          {
-            echo "### Stable release APK sync"
+            echo "Service upload mode: \`${SERVICE_UPLOAD_MODE}\`"
+            echo "Service upload attempts: \`${SERVICE_UPLOAD_ATTEMPTS}\`"
+            echo "Service changelog baseline: \`${LATEST_STABLE_TAG:-none}\`"
+            echo "Service compare: ${SERVICE_COMPARE_URL}"
+            echo "GitHub Models AI summary: \`attempted\`"
             echo
-            echo "Stable release: \`$TARGET_TAG\`"
-            echo "Asset updated: \`app-release.apk\`"
-            echo "Release notes/body: not changed"
+            echo "### Stable release decision"
+            echo
+            echo "Version: \`${VERSION_NAME}\`"
+            echo "Version code: \`${VERSION_CODE}\`"
+            if [[ -n "$code_min" && -n "$code_max" ]]; then
+              echo "Expected versionCode range: \`${code_min}..${code_max}\`"
+            else
+              echo "Expected versionCode range: \`not applicable\`"
+            fi
+            echo "Version shape X.Y.0: \`${stable_version_shape}\`"
+            echo "versionCode matches version: \`${version_code_matches_version}\`"
+            echo "Stable tag: \`${STABLE_TAG}\`"
+            echo "Stable release action: \`${STABLE_ACTION}\`"
+            echo "Reason: $STABLE_REASON"
+            if [[ -n "$STABLE_PUBLISHED_VERSION_CODE" ]]; then
+              echo "Published stable versionCode: \`${STABLE_PUBLISHED_VERSION_CODE}\`"
+            fi
+            if [[ -n "$STABLE_UPLOAD_MODE" ]]; then
+              echo "Stable upload mode: \`${STABLE_UPLOAD_MODE}\`"
+              echo "Stable upload attempts: \`${STABLE_UPLOAD_ATTEMPTS}\`"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"

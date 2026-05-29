@@ -1568,9 +1568,6 @@ APatch: 10700+</string>
     <string name="dpi_detector_waiting">Ожидание данных теста</string>
     <string name="dpi_detector_overall_result">Общий результат: %1$s</string>
     <string name="dpi_detector_result_keep_desc">Окно результата остаётся на экране. Завершённые этапы можно раскрыть и изучить.</string>
-    <string name="dpi_detector_summary_duration">Время проверки: %1$s</string>
-    <string name="dpi_detector_summary_version">Версия detector: %1$s</string>
-    <string name="dpi_detector_summary_tests">Завершено этапов: %1$d, с находками: %2$d</string>
     <string name="dpi_detector_stage_probe_count">%1$d / %2$d проверок</string>
     <string name="dpi_detector_show_all_probes">Показать все проверки: %1$d</string>
     <string name="dpi_detector_hide_extra">Свернуть список</string>
@@ -1611,9 +1608,6 @@ APatch: 10700+</string>
     <string name="dpi_detector_scroll_probe_list">Доступно проверок: %1$d — список прокручивается внутри блока</string>
     <string name="dpi_detector_diagnosis_clean">явных признаков блокировки не обнаружено</string>
     <string name="dpi_detector_diagnosis_dns_block">возможна блокировка или подмена на уровне DNS</string>
-    <string name="dpi_detector_diagnosis_dns_intercept">возможен DNS interception или вмешательство в работу резолвера</string>
-    <string name="dpi_detector_diagnosis_dns_injection">возможна инъекция DNS-ответов</string>
-    <string name="dpi_detector_diagnosis_doh_block">возможна блокировка DNS-over-HTTPS</string>
     <string name="dpi_detector_diagnosis_tls_sni_block">возможна фильтрация на уровне TLS/SNI</string>
     <string name="dpi_detector_diagnosis_http_filtering">возможна HTTP-фильтрация, редирект или ответ 451</string>
     <string name="dpi_detector_diagnosis_tcp_block">возможна блокировка TCP-передачи по размеру payload</string>

@@ -2,7 +2,6 @@ package com.android.zdtd.service.diagnostics.dpi
 
 import android.content.Context
 import java.io.File
-import java.io.FileNotFoundException
 import java.security.MessageDigest
 
 /**
@@ -27,15 +26,7 @@ class DpiDetectorBinary(private val context: Context) {
             error("Unable to create dpi-detector directory: $parent")
         }
 
-        val assetBytes = try {
-            context.assets.open(ASSET_PATH).use { input -> input.readBytes() }
-        } catch (missing: FileNotFoundException) {
-            error(
-                "Bundled dpi-detector asset is missing from the APK: $ASSET_PATH. " +
-                    "Rebuild the application via the project build.sh apk flow or make sure " +
-                    "generated assets contain dpi-detector/arm64-v8a/dpi-detector before assembling the APK."
-            )
-        }
+        val assetBytes = context.assets.open(ASSET_PATH).use { input -> input.readBytes() }
         val assetSha256 = sha256(assetBytes)
         val shouldRewrite = !target.exists() || sha256OrNull(target) != assetSha256
 

@@ -3,14 +3,19 @@ package com.android.zdtd.service.diagnostics.dpi
 import android.content.Context
 import com.android.zdtd.service.RootConfigManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Root launcher for the app-bundled dpi-detector helper.
@@ -31,53 +36,113 @@ class DpiDetectorRunner(
         tests: List<String> = emptyList(),
         quick: Boolean = false,
         timeoutMs: Int = 5000,
-    ): Flow<DpiDetectorEvent> = flow {
-        var process: Process? = null
-        try {
-            val binary = withContext(Dispatchers.IO) { DpiDetectorBinary(context).ensureInstalled() }
-            val args = buildList {
-                add("run")
-                add("--format")
-                add("ndjson")
-                add("--timeout")
-                add(timeoutMs.toString())
-                if (quick) add("--quick")
-                if (tests.isNotEmpty()) {
-                    add("--tests")
-                    add(tests.joinToString(","))
-                }
+    ): Flow<DpiDetectorEvent> = channelFlow {
+        val plannedTests = resolveRequestedTests(tests)
+        val firstTest = plannedTests.firstOrNull() ?: "dns_integrity"
+        val binary = withContext(Dispatchers.IO) { DpiDetectorBinary(context).ensureInstalled() }
+        val args = buildList {
+            add("run")
+            add("--format")
+            add("ndjson")
+            add("--timeout")
+            add(timeoutMs.toString())
+            if (quick) add("--quick")
+            if (tests.isNotEmpty()) {
+                add("--tests")
+                add(tests.joinToString(","))
             }
-            val command = buildRootCommand(binary, args)
-            process = withContext(Dispatchers.IO) {
-                ProcessBuilder("su", "-c", command)
-                    .redirectErrorStream(true)
-                    .start()
-            }
+        }
+        trySend(
+            DpiDetectorEvent.Started(
+                test = firstTest,
+                title = "Launching dpi-detector",
+                totalProbes = 0,
+                data = """{"synthetic":true,"phase":"launch"}""",
+                sequence = 0L,
+                timestampMs = System.currentTimeMillis(),
+            )
+        )
+        val command = buildRootCommand(binary, args)
+        val process = withContext(Dispatchers.IO) {
+            ProcessBuilder("su", "-c", command)
+                .redirectErrorStream(true)
+                .start()
+        }
 
-            val reader = BufferedReader(InputStreamReader(process.inputStream))
-            var sawAnyOutput = false
-            while (true) {
-                val line = withContext(Dispatchers.IO) { reader.readLine() } ?: break
-                sawAnyOutput = true
-                emit(parseEventLine(line))
-            }
-            val code = withContext(Dispatchers.IO) { process.waitFor() }
-            if (code != 0) {
-                emit(DpiDetectorEvent.Error("dpi-detector exited with code $code"))
-            } else if (!sawAnyOutput) {
-                emit(
-                    DpiDetectorEvent.Error(
-                        "dpi-detector produced no events. Rebuild the APK with the bundled detector asset and verify the helper starts under root."
+        val sawSubstantiveEvent = AtomicBoolean(false)
+        val currentStage = AtomicReference(firstTest)
+
+        val heartbeatJob = launch {
+            var tick = 0
+            while (isActive && !sawSubstantiveEvent.get()) {
+                kotlinx.coroutines.delay(1200)
+                if (!isActive || sawSubstantiveEvent.get()) break
+                tick += 1
+                trySend(
+                    DpiDetectorEvent.Progress(
+                        test = currentStage.get(),
+                        status = "running",
+                        detail = startupMessage(tick, currentStage.get()),
+                        data = """{"synthetic":true,"phase":"startup"}""",
+                        sequence = 0L,
+                        timestampMs = System.currentTimeMillis(),
                     )
                 )
             }
-        } catch (t: Throwable) {
-            emit(DpiDetectorEvent.Error(t.message ?: "Failed to start dpi-detector"))
-        } finally {
-            process?.let { runningProcess ->
-                if (runningProcess.isAlive) {
-                    runningProcess.destroy()
+        }
+
+        val readerJob = launch(Dispatchers.IO) {
+            try {
+                BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
+                    while (isActive) {
+                        val line = reader.readLine() ?: break
+                        val event = parseEventLine(line)
+                        when (event) {
+                            is DpiDetectorEvent.Started -> {
+                                currentStage.set(event.test.ifBlank { currentStage.get() })
+                                sawSubstantiveEvent.set(true)
+                            }
+                            is DpiDetectorEvent.Probe -> {
+                                currentStage.set(event.test.ifBlank { currentStage.get() })
+                                sawSubstantiveEvent.set(true)
+                            }
+                            is DpiDetectorEvent.Progress -> {
+                                currentStage.set(event.test.ifBlank { currentStage.get() })
+                                sawSubstantiveEvent.set(true)
+                            }
+                            is DpiDetectorEvent.Result -> currentStage.set(event.test.ifBlank { currentStage.get() })
+                            is DpiDetectorEvent.Finished -> sawSubstantiveEvent.set(true)
+                            is DpiDetectorEvent.Meta -> {
+                                trySend(
+                                    DpiDetectorEvent.Progress(
+                                        test = currentStage.get(),
+                                        status = "running",
+                                        detail = "dpi-detector process started, waiting for first probe",
+                                        data = """{"synthetic":true,"phase":"meta"}""",
+                                        sequence = 0L,
+                                        timestampMs = System.currentTimeMillis(),
+                                    )
+                                )
+                            }
+                            is DpiDetectorEvent.Error -> Unit
+                        }
+                        trySend(event)
+                    }
                 }
+                val code = process.waitFor()
+                if (code != 0) {
+                    trySend(DpiDetectorEvent.Error("dpi-detector exited with code $code"))
+                }
+            } catch (t: Throwable) {
+                trySend(DpiDetectorEvent.Error(t.message ?: "Failed to stream dpi-detector output"))
+            }
+        }
+
+        awaitClose {
+            heartbeatJob.cancel()
+            readerJob.cancel()
+            if (process.isAlive) {
+                process.destroy()
             }
         }
     }
@@ -98,6 +163,21 @@ class DpiDetectorRunner(
             stderr = result.err.joinToString("\n"),
             binaryPath = binary.absolutePath,
         )
+    }
+
+    private fun resolveRequestedTests(tests: List<String>): List<String> {
+        if (tests.isEmpty()) {
+            return listOf("dns_integrity", "dns_availability", "domains", "tcp16", "whitelist_sni", "telegram")
+        }
+        return tests.map { it.trim() }.filter { it.isNotEmpty() }
+    }
+
+    private fun startupMessage(tick: Int, currentTest: String): String {
+        return when {
+            tick <= 1 -> "dpi-detector started, waiting for first event"
+            tick == 2 -> "preparing ${currentTest.replace('_', ' ')}"
+            else -> "still preparing ${currentTest.replace('_', ' ')}… network checks may take a while"
+        }
     }
 
     private fun parseEventLine(line: String): DpiDetectorEvent {

@@ -29,7 +29,6 @@ def zdtCompileSdk = (findProperty('zdtCompileSdk') ?: System.getenv('ZDT_COMPILE
 def generatedModuleZip = file('../../out/module/zdt_module.zip')
 def zdtModuleZip = file("$generatedAssetsDir/zdt_module.zip")
 def bundledModuleProp = file("$generatedAssetsDir/module.prop")
-def bundledDpiDetectorAsset = file("$generatedAssetsDir/dpi-detector/arm64-v8a/dpi-detector")
 
 android {
   namespace 'com.android.zdtd.service'
@@ -152,24 +151,9 @@ tasks.register('ensureZdtModuleZip') {
   dependsOn('prepareZdtGeneratedAssets')
 }
 
-// Fail fast when the app is assembled without the generated dpi-detector helper.
-tasks.register('validateBundledDpiDetectorAsset') {
-  inputs.file(bundledDpiDetectorAsset).optional().withPathSensitivity(PathSensitivity.RELATIVE)
-
-  doLast {
-    if (!bundledDpiDetectorAsset.exists() || bundledDpiDetectorAsset.length() <= 0) {
-      throw new GradleException(
-          "Bundled dpi-detector asset is missing: ${bundledDpiDetectorAsset}. " +
-          "Build the project through ./build.sh apk (or generate app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector) before assembling the APK."
-      )
-    }
-  }
-}
-
 // Run before building so generated assets are always present.
 tasks.named('preBuild') {
   dependsOn('prepareZdtGeneratedAssets')
-  dependsOn('validateBundledDpiDetectorAsset')
 }
 
 dependencies {

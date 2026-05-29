@@ -369,19 +369,9 @@ private fun AppPickerSheet(
   }
 
   fun appListsConflict(leftProgramId: String, rightProgramId: String): Boolean {
-    // mihomo and zapret (nfqws/nfqws2) are allowed to share apps across profiles.
-    // Overlap is checked at start time, not at assignment time.
-    if (leftProgramId == "mihomo" || rightProgramId == "mihomo") return false
-    if (leftProgramId == "nfqws" || rightProgramId == "nfqws") return false
-    if (leftProgramId == "nfqws2" || rightProgramId == "nfqws2") return false
-    val left = programGroup(leftProgramId) ?: return false
-    val right = programGroup(rightProgramId) ?: return false
-    if (leftProgramId == "openvpn" || rightProgramId == "openvpn") return true
-    if (leftProgramId == "tun2socks" || rightProgramId == "tun2socks") return true
-    if (leftProgramId == "myvpn" || rightProgramId == "myvpn") return true
-    if (leftProgramId == "mieru" || rightProgramId == "mieru") return true
-    if (leftProgramId == "amneziawg" || rightProgramId == "amneziawg") return true
-    return left == right
+    // All programs and profiles are isolated — no cross-profile/cross-program conflicts.
+    // Users may freely assign the same app to multiple profiles and programs.
+    return false
   }
 
   fun entryLabel(entry: ApiModels.AppAssignmentEntry): String {

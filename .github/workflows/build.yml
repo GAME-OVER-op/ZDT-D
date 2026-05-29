@@ -700,8 +700,8 @@ jobs:
           VERSION_CODE=$(grep -m1 '^versionCode=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')
           VERSION_NAME=$(grep -m1 '^version=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')
 
-          if [[ -z "$VERSION_CODE" ]]; then
-            echo "::error::versionCode dont found in module.prop"
+          if [[ -z "$VERSION_CODE" || ! "$VERSION_CODE" =~ ^[0-9]+$ ]]; then
+            echo "::error::Numeric versionCode not found in module.prop"
             exit 1
           fi
           if [[ -z "$VERSION_NAME" ]]; then
@@ -723,86 +723,137 @@ jobs:
           RUN_URL="${REPO_URL}/actions/runs/${{ github.run_id }}"
           BUILD_TYPE="${{ env.BUILD_TYPE }}"
 
+          RELEASE_EXISTS=false
+          PUBLISHED_VERSION_CODE=""
           PREV_SHA=""
-          if git ls-remote --exit-code --tags origin "refs/tags/${SERVICE_TAG}" >/dev/null 2>&1; then
-            git fetch --force origin "refs/tags/${SERVICE_TAG}:refs/tags/${SERVICE_TAG}"
-            PREV_SHA="$(git rev-list -n 1 "$SERVICE_TAG" 2>/dev/null || true)"
-          fi
-
-          if [[ -n "$PREV_SHA" && "$PREV_SHA" != "$FULL_SHA" ]]; then
-            COMPARE_URL="${REPO_URL}/compare/${PREV_SHA}...${FULL_SHA}"
-            TOTAL_COMMITS="$(git rev-list --count "${PREV_SHA}..${FULL_SHA}" 2>/dev/null || echo 0)"
-            CHANGELOG="$(git log --no-merges --pretty=format:'- %s (`%h`)' -n 30 "${PREV_SHA}..${FULL_SHA}" || true)"
-            if [[ -z "$CHANGELOG" ]]; then
-              CHANGELOG="- No commit messages found for this range."
-            fi
-            if [[ "$TOTAL_COMMITS" =~ ^[0-9]+$ && "$TOTAL_COMMITS" -gt 30 ]]; then
-              CHANGELOG="${CHANGELOG}"$'\n'"- ...and $((TOTAL_COMMITS - 30)) more commits."
-            fi
-          elif [[ -n "$PREV_SHA" && "$PREV_SHA" == "$FULL_SHA" ]]; then
-            COMPARE_URL="${REPO_URL}/commit/${FULL_SHA}"
-            CHANGELOG="- No source changes since the previous service build."
-          else
-            COMPARE_URL="${REPO_URL}/commit/${FULL_SHA}"
-            CHANGELOG="- Initial service build for this technical release."
-          fi
-
-          cat > release_notes.md <<EOF2
-          # ZDT-D Service Build
-
-          This is an automatically generated technical build produced by GitHub Actions.
-
-          The post is updated after every successful workflow run and always reflects the latest service build from the repository.
-
-          ## Build information
-
-          | Field | Value |
-          | --- | --- |
-          | Version | ${VERSION_NAME} |
-          | Version code | ${VERSION_CODE} |
-          | Build type | ${BUILD_TYPE} |
-          | Commit | [\`${SHORT_SHA}\`](${REPO_URL}/commit/${FULL_SHA}) |
-          | Last build time | ${BUILD_TIME_UTC} |
-          | Build duration | ${BUILD_DURATION} |
-          | APK size | ${APK_SIZE_HUMAN} |
-          | Workflow run | [#${{ github.run_number }}](${RUN_URL}) |
-
-          ## Changes
-
-          [Compare changes](${COMPARE_URL})
-
-          ### Commit list
-
-          ${CHANGELOG}
-
-          ## Installation notice
-
-          This APK is signed with the project service signing key restored from GitHub Actions secrets.
-
-          It can update an already installed ZDT-D build only when the installed APK was signed with the same key.
-
-          If Android reports a signature conflict during installation, remove the previously installed ZDT-D application first, then install the APK attached to this service build.
-
-          The module itself is installed and updated from inside the application by the universal installer for Magisk, KernelSU, APatch, and compatible managers.
-          EOF2
-
-          sed -i 's/^          //' release_notes.md
-
-          echo "===== Service release notes ====="
-          cat release_notes.md
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f "$SERVICE_TAG" "$FULL_SHA"
-          git push -f origin "refs/tags/${SERVICE_TAG}"
+          SHOULD_UPDATE_RELEASE_POST=false
+          RELEASE_POST_REASON=""
 
           if gh release view "$SERVICE_TAG" >/dev/null 2>&1; then
-            gh release edit "$SERVICE_TAG" --title "$SERVICE_TITLE" --notes-file release_notes.md --prerelease
+            RELEASE_EXISTS=true
+            RELEASE_BODY="$(gh release view "$SERVICE_TAG" --json body --jq '.body // ""')"
+            PUBLISHED_VERSION_CODE="$(printf '%s\n' "$RELEASE_BODY" | sed -nE 's/^\| Version code \| ([0-9]+) \|$/\1/p' | head -1)"
+
+            if git ls-remote --exit-code --tags origin "refs/tags/${SERVICE_TAG}" >/dev/null 2>&1; then
+              git fetch --force origin "refs/tags/${SERVICE_TAG}:refs/tags/${SERVICE_TAG}"
+              PREV_SHA="$(git rev-list -n 1 "$SERVICE_TAG" 2>/dev/null || true)"
+            fi
+          fi
+
+          if [[ "$RELEASE_EXISTS" != "true" ]]; then
+            SHOULD_UPDATE_RELEASE_POST=true
+            RELEASE_POST_REASON="service-build release does not exist yet"
+          elif [[ -n "$PUBLISHED_VERSION_CODE" && "$PUBLISHED_VERSION_CODE" =~ ^[0-9]+$ ]]; then
+            if (( VERSION_CODE > PUBLISHED_VERSION_CODE )); then
+              SHOULD_UPDATE_RELEASE_POST=true
+              RELEASE_POST_REASON="versionCode increased: ${PUBLISHED_VERSION_CODE} -> ${VERSION_CODE}"
+            else
+              SHOULD_UPDATE_RELEASE_POST=false
+              RELEASE_POST_REASON="release post preserved because current versionCode ${VERSION_CODE} is not greater than published ${PUBLISHED_VERSION_CODE}"
+            fi
           else
-            gh release create "$SERVICE_TAG" --target "$FULL_SHA" --title "$SERVICE_TITLE" --notes-file release_notes.md --prerelease --latest=false
+            SHOULD_UPDATE_RELEASE_POST=false
+            RELEASE_POST_REASON="release post preserved because published versionCode could not be parsed safely"
+            echo "::warning::Existing service-build release body does not contain a parseable Version code row; release post will not be modified."
+          fi
+
+          if [[ "$SHOULD_UPDATE_RELEASE_POST" == "true" ]]; then
+            if [[ -n "$PREV_SHA" && "$PREV_SHA" != "$FULL_SHA" ]]; then
+              COMPARE_URL="${REPO_URL}/compare/${PREV_SHA}...${FULL_SHA}"
+              TOTAL_COMMITS="$(git rev-list --count "${PREV_SHA}..${FULL_SHA}" 2>/dev/null || echo 0)"
+              CHANGELOG="$(git log --no-merges --pretty=format:'- %s (`%h`)' -n 30 "${PREV_SHA}..${FULL_SHA}" || true)"
+              if [[ -z "$CHANGELOG" ]]; then
+                CHANGELOG="- No commit messages found for this range."
+              fi
+              if [[ "$TOTAL_COMMITS" =~ ^[0-9]+$ && "$TOTAL_COMMITS" -gt 30 ]]; then
+                CHANGELOG="${CHANGELOG}"$'\n'"- ...and $((TOTAL_COMMITS - 30)) more commits."
+              fi
+            elif [[ -n "$PREV_SHA" && "$PREV_SHA" == "$FULL_SHA" ]]; then
+              COMPARE_URL="${REPO_URL}/commit/${FULL_SHA}"
+              CHANGELOG="- No source changes since the previous published service version."
+            else
+              COMPARE_URL="${REPO_URL}/commit/${FULL_SHA}"
+              CHANGELOG="- Initial service build for this technical release."
+            fi
+
+            cat > release_notes.md <<EOF2
+            # ZDT-D Service Build
+
+            This is an automatically generated technical build produced by GitHub Actions.
+
+            The release post is updated only when `versionCode` increases. Service APK assets may still be refreshed for patch builds that keep the same or a lower `versionCode`.
+
+            ## Build information
+
+            | Field | Value |
+            | --- | --- |
+            | Version | ${VERSION_NAME} |
+            | Version code | ${VERSION_CODE} |
+            | Build type | ${BUILD_TYPE} |
+            | Commit | [\`${SHORT_SHA}\`](${REPO_URL}/commit/${FULL_SHA}) |
+            | Last build time | ${BUILD_TIME_UTC} |
+            | Build duration | ${BUILD_DURATION} |
+            | APK size | ${APK_SIZE_HUMAN} |
+            | Workflow run | [#${{ github.run_number }}](${RUN_URL}) |
+
+            ## Changes
+
+            [Compare changes](${COMPARE_URL})
+
+            ### Commit list
+
+            ${CHANGELOG}
+
+            ## Installation notice
+
+            This APK is signed with the project service signing key restored from GitHub Actions secrets.
+
+            It can update an already installed ZDT-D build only when the installed APK was signed with the same key.
+
+            If Android reports a signature conflict during installation, remove the previously installed ZDT-D application first, then install the APK attached to this service build.
+
+            The module itself is installed and updated from inside the application by the universal installer for Magisk, KernelSU, APatch, and compatible managers.
+            EOF2
+
+            sed -i 's/^            //' release_notes.md
+
+            echo "===== Service release notes ====="
+            cat release_notes.md
+
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -f "$SERVICE_TAG" "$FULL_SHA"
+            git push -f origin "refs/tags/${SERVICE_TAG}"
+
+            if [[ "$RELEASE_EXISTS" == "true" ]]; then
+              gh release edit "$SERVICE_TAG" --title "$SERVICE_TITLE" --notes-file release_notes.md --prerelease
+            else
+              gh release create "$SERVICE_TAG" --target "$FULL_SHA" --title "$SERVICE_TITLE" --notes-file release_notes.md --prerelease --latest=false
+            fi
+          else
+            echo "Release post update skipped: $RELEASE_POST_REASON"
           fi
 
           gh release upload "$SERVICE_TAG" "$APK_RELEASE" --clobber
+
+          {
+            echo "### Service build publish"
+            echo
+            echo "Current versionCode: \`$VERSION_CODE\`"
+            if [[ -n "$PUBLISHED_VERSION_CODE" ]]; then
+              echo "Published versionCode: \`$PUBLISHED_VERSION_CODE\`"
+            else
+              echo "Published versionCode: \`unknown\`"
+            fi
+            echo "Release exists: \`$RELEASE_EXISTS\`"
+            echo "Release post updated: \`$SHOULD_UPDATE_RELEASE_POST\`"
+            echo "Reason: $RELEASE_POST_REASON"
+            echo "Service APK asset updated: \`ZDT-D-service-build.apk\`"
+            if [[ "$SHOULD_UPDATE_RELEASE_POST" != "true" ]]; then
+              echo "Release notes/body: not changed"
+              echo "Release tag move: not changed"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Sync app-release.apk into existing version release
         env:

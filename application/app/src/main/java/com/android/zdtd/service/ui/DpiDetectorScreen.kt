@@ -75,6 +75,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import org.json.JSONArray
+import org.json.JSONObject
 import com.android.zdtd.service.R
 import com.android.zdtd.service.diagnostics.dpi.DpiDetectorEvent
 import com.android.zdtd.service.diagnostics.dpi.DpiDetectorRunner
@@ -122,6 +124,21 @@ private data class DpiStageUiState(
   val probes: List<DpiProbeUiState> = emptyList(),
 )
 
+private data class DpiSummaryTestUiState(
+  val id: String,
+  val title: String,
+  val status: String,
+  val detail: String,
+  val risk: String,
+)
+
+private data class DpiSummaryUiState(
+  val version: String = "",
+  val durationMs: Long = 0L,
+  val risk: String = "",
+  val tests: List<DpiSummaryTestUiState> = emptyList(),
+)
+
 @Composable
 fun DpiDetectorScreen(
   topContentPadding: Dp = 0.dp,
@@ -141,6 +158,7 @@ fun DpiDetectorScreen(
   var showAllStageIds by remember { mutableStateOf(setOf<String>()) }
   var summaryStatus by remember { mutableStateOf<String?>(null) }
   var summaryDetail by remember { mutableStateOf("") }
+  var summaryUiState by remember { mutableStateOf<DpiSummaryUiState?>(null) }
   var runnerJob by remember { mutableStateOf<Job?>(null) }
   var runningTick by remember { mutableStateOf(0) }
 
@@ -164,6 +182,7 @@ fun DpiDetectorScreen(
     showAllStageIds = emptySet()
     summaryStatus = null
     summaryDetail = ""
+    summaryUiState = null
   }
 
   fun startScan() {
@@ -208,6 +227,7 @@ fun DpiDetectorScreen(
               if (event.test == "summary") {
                 summaryStatus = event.status
                 summaryDetail = event.data
+                summaryUiState = parseSummaryUiState(event.data, event.status)
                 currentStageId = null
                 currentProbe = ""
                 running = false
@@ -232,6 +252,7 @@ fun DpiDetectorScreen(
     running = false
     summaryStatus = "stopped"
     summaryDetail = "Stopped by user"
+    summaryUiState = null
     stages.replaceAllStages { stage ->
       stage.stopCheckingProbes("Stopped by user")
     }
@@ -290,6 +311,7 @@ fun DpiDetectorScreen(
           stages = stages,
           summaryStatus = summaryStatus,
           summaryDetail = summaryDetail,
+          summary = summaryUiState,
           expandedStageIds = manuallyExpandedStageIds,
           showAllStageIds = showAllStageIds,
           onToggleStage = { stageId ->
@@ -457,6 +479,7 @@ private fun DpiProcessCard(
   stages: List<DpiStageUiState>,
   summaryStatus: String?,
   summaryDetail: String,
+  summary: DpiSummaryUiState?,
   expandedStageIds: Set<String>,
   showAllStageIds: Set<String>,
   onToggleStage: (String) -> Unit,
@@ -505,7 +528,7 @@ private fun DpiProcessCard(
       }
 
       if (!running && summaryStatus != null) {
-        DpiSummaryBox(status = summaryStatus, detail = summaryDetail)
+        DpiSummaryBox(status = summaryStatus, detail = summaryDetail, summary = summary)
       }
 
       Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -525,7 +548,7 @@ private fun DpiProcessCard(
 }
 
 @Composable
-private fun DpiSummaryBox(status: String, detail: String) {
+private fun DpiSummaryBox(status: String, detail: String, summary: DpiSummaryUiState?) {
   Surface(
     modifier = Modifier.fillMaxWidth(),
     shape = RoundedCornerShape(16.dp),
@@ -544,11 +567,38 @@ private fun DpiSummaryBox(status: String, detail: String) {
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
       )
-      if (detail.isNotBlank() && status == "error") {
+      summary?.let { info ->
+        val issueCount = info.tests.count { summaryTest ->
+          val normalized = normalizeProbeStatus(summaryTest.status)
+          normalized == "blocked" || normalized == "suspicious" || summaryTest.risk == "medium" || summaryTest.risk == "high"
+        }
+        if (info.durationMs > 0L) {
+          Text(
+            text = stringResource(R.string.dpi_detector_summary_duration, formatDurationMs(info.durationMs)),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+          )
+        }
+        if (info.version.isNotBlank()) {
+          Text(
+            text = stringResource(R.string.dpi_detector_summary_version, info.version),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+          )
+        }
+        if (info.tests.isNotEmpty()) {
+          Text(
+            text = stringResource(R.string.dpi_detector_summary_tests, info.tests.size, issueCount),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+          )
+        }
+      }
+      if (detail.isNotBlank() && (status == "error" || summary == null)) {
         Text(
           text = detail,
           style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.error,
+          color = if (status == "error") MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
         )
       }
     }
@@ -676,6 +726,7 @@ private fun DpiAnimatedProbeRow(
 
 @Composable
 private fun DpiProbeRow(probe: DpiProbeUiState) {
+  val compact = rememberIsCompactWidth()
   var expanded by remember(probe.key) { mutableStateOf(false) }
   Surface(
     modifier = Modifier
@@ -688,36 +739,48 @@ private fun DpiProbeRow(probe: DpiProbeUiState) {
   ) {
     Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
       Row(
-        verticalAlignment = Alignment.CenterVertically,
+        verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
       ) {
         DpiWorkflowStatusIcon(status = probe.status)
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-          Text(
-            text = probe.title.ifBlank { probe.key },
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
-          Text(
-            text = listOf(probe.target, probe.detail).filter { it.isNotBlank() }.joinToString(" • "),
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
-            maxLines = if (expanded) 3 else 1,
-            overflow = TextOverflow.Ellipsis,
+        Column(
+          modifier = Modifier.weight(1f),
+          verticalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 4.dp),
+        ) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.Top,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+              Text(
+                text = probe.title.ifBlank { probe.key },
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = if (expanded) 2 else 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+              Text(
+                text = listOf(probe.target, probe.detail).filter { it.isNotBlank() }.joinToString(" • "),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                maxLines = if (expanded) 4 else if (compact) 2 else 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+            }
+            Icon(
+              imageVector = if (expanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
+              contentDescription = null,
+              tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.50f),
+              modifier = Modifier.size(18.dp),
+            )
+          }
+          DpiProbeMetaRow(
+            status = probe.status,
+            sizeLabel = probe.sizeLabel,
+            compact = compact,
           )
         }
-        if (probe.sizeLabel.isNotBlank()) {
-          DpiSizePill(sizeLabel = probe.sizeLabel)
-        }
-        DpiStatusPill(status = probe.status)
-        Icon(
-          imageVector = if (expanded) Icons.Outlined.KeyboardArrowUp else Icons.Outlined.KeyboardArrowDown,
-          contentDescription = null,
-          tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.50f),
-          modifier = Modifier.size(18.dp),
-        )
       }
 
       AnimatedVisibility(
@@ -805,6 +868,7 @@ private fun DpiWorkflowRunningIcon(modifier: Modifier = Modifier) {
 
 @Composable
 private fun DpiProbeChecksTable(checks: List<DpiProbeCheckUiState>) {
+  val compact = rememberIsCompactWidth()
   Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
     Text(
       text = stringResource(R.string.dpi_detector_probe_address_checks),
@@ -825,7 +889,10 @@ private fun DpiProbeChecksTable(checks: List<DpiProbeCheckUiState>) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
           ) {
             DpiWorkflowStatusIcon(status = check.status)
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+            Column(
+              modifier = Modifier.weight(1f),
+              verticalArrangement = Arrangement.spacedBy(if (compact) 6.dp else 4.dp),
+            ) {
               Text(
                 text = check.name.ifBlank { stringResource(R.string.dpi_detector_probe_check_unknown) },
                 style = MaterialTheme.typography.labelMedium,
@@ -835,12 +902,15 @@ private fun DpiProbeChecksTable(checks: List<DpiProbeCheckUiState>) {
                 text = listOf(check.value, check.detail).filter { it.isNotBlank() }.joinToString(" • ").ifBlank { "—" },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+                maxLines = if (compact) 3 else Int.MAX_VALUE,
+                overflow = TextOverflow.Ellipsis,
+              )
+              DpiProbeMetaRow(
+                status = check.status,
+                sizeLabel = check.sizeLabel,
+                compact = compact,
               )
             }
-            if (check.sizeLabel.isNotBlank()) {
-              DpiSizePill(sizeLabel = check.sizeLabel)
-            }
-            DpiStatusPill(status = check.status)
           }
         }
       }
@@ -864,41 +934,122 @@ private fun DpiTechnicalInfoTable(technical: Map<String, String>) {
     ) {
       Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
         technical.entries.sortedBy { it.key }.forEach { (key, value) ->
-          DpiProbeDetailLine(label = technicalLabel(key), value = value.ifBlank { "—" })
+          DpiProbeDetailLine(label = technicalLabel(key), value = formatTechnicalValue(key, value).ifBlank { "—" })
         }
       }
     }
   }
 }
 
-private fun technicalLabel(key: String): String = key
-  .replace('_', ' ')
-  .replace('-', ' ')
-  .split(' ')
-  .filter { it.isNotBlank() }
-  .joinToString(" ") { part -> part.replaceFirstChar { ch -> ch.uppercase() } }
+private fun technicalLabel(key: String): String = when (key) {
+  "asn" -> "ASN"
+  "avg_bps" -> "Average speed"
+  "break_kb" -> "Break threshold"
+  "bytes" -> "Transferred"
+  "doh_json" -> "DoH JSON"
+  "doh_wire" -> "DoH wire"
+  "drop_at_sec" -> "Drop after"
+  "duration" -> "Duration"
+  "elapsed_ms" -> "Elapsed"
+  "ip" -> "IP"
+  "kind" -> "Resolver type"
+  "ok_domains" -> "Answered domains"
+  "peak_bps" -> "Peak speed"
+  "provider" -> "Provider"
+  "rtt_ms" -> "RTT"
+  "sni" -> "SNI"
+  "stub_ips" -> "Stub IPs"
+  "target" -> "Target"
+  "udp" -> "UDP DNS"
+  else -> key
+    .replace('_', ' ')
+    .replace('-', ' ')
+    .split(' ')
+    .filter { it.isNotBlank() }
+    .joinToString(" ") { part -> part.replaceFirstChar { ch -> ch.uppercase() } }
+}
+
+private fun formatTechnicalValue(key: String, value: String): String {
+  if (value.isBlank()) return value
+  return when (key) {
+    "avg_bps", "peak_bps" -> value.toLongOrNull()?.let(::formatBytesPerSecond) ?: value
+    "bytes" -> value.toLongOrNull()?.let(::formatBytesCount) ?: value
+    "break_kb" -> value.toLongOrNull()?.let { "$it KB" } ?: value
+    "drop_at_sec" -> value.toDoubleOrNull()?.let { String.format(java.util.Locale.US, "%.1f s", it) } ?: value
+    "duration" -> value.toDoubleOrNull()?.let { String.format(java.util.Locale.US, "%.2f s", it) } ?: value
+    "elapsed_ms", "rtt_ms" -> value.toLongOrNull()?.let { "$it ms" } ?: value
+    else -> value
+  }
+}
+
+
+@Composable
+private fun DpiProbeMetaRow(
+  status: String,
+  sizeLabel: String,
+  compact: Boolean,
+) {
+  if (compact) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+      DpiStatusPill(status = status)
+      if (sizeLabel.isNotBlank()) {
+        DpiSizePill(sizeLabel = sizeLabel)
+      }
+    }
+  } else {
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+      if (sizeLabel.isNotBlank()) {
+        DpiSizePill(sizeLabel = sizeLabel)
+      }
+      DpiStatusPill(status = status)
+    }
+  }
+}
 
 
 @Composable
 private fun DpiProbeDetailLine(label: String, value: String) {
-  Row(
-    modifier = Modifier.fillMaxWidth(),
-    horizontalArrangement = Arrangement.spacedBy(8.dp),
-    verticalAlignment = Alignment.Top,
-  ) {
-    Text(
-      text = label,
-      style = MaterialTheme.typography.labelSmall,
-      fontWeight = FontWeight.SemiBold,
-      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-      modifier = Modifier.width(92.dp),
-    )
-    Text(
-      text = value,
-      style = MaterialTheme.typography.labelSmall,
-      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.76f),
-      modifier = Modifier.weight(1f),
-    )
+  val compact = rememberIsCompactWidth()
+  if (compact) {
+    Column(
+      modifier = Modifier.fillMaxWidth(),
+      verticalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+      Text(
+        text = label,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+      )
+      Text(
+        text = value,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.76f),
+      )
+    }
+  } else {
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+      verticalAlignment = Alignment.Top,
+    ) {
+      Text(
+        text = label,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+        modifier = Modifier.width(92.dp),
+      )
+      Text(
+        text = value,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.76f),
+        modifier = Modifier.weight(1f),
+      )
+    }
   }
 }
 
@@ -1057,19 +1208,31 @@ private fun DpiStageUiState.stopCheckingProbes(detailText: String): DpiStageUiSt
   return copy(status = updatedStatus, detail = updatedDetail, probes = updatedProbes)
 }
 
-private fun normalizeProbeStatus(status: String): String = when (status) {
-  "ok" -> "available"
-  "running" -> "checking"
-  "timeout", "refused", "unreachable", "failed", "http_451_blocked" -> "blocked"
-  "reset", "tcp_rst", "tls_rst", "tls_alert", "tls_spoof", "tls_mitm", "tcp16", "pool_timeout",
-  "partial", "not_found", "stalled", "slow", "download", "skipped", "redirect_suspicious" -> "suspicious"
-  else -> status.ifBlank { "pending" }
+private fun normalizeProbeStatus(status: String): String {
+  if (status.isBlank()) return "pending"
+  return when {
+    status == "ok" -> "available"
+    status == "running" || status == "checking" -> "checking"
+    status == "available" -> "available"
+    status == "blocked" || status == "error" || status == "stopped" || status == "low" || status == "medium" || status == "high" -> status
+    status == "timeout" || status == "refused" || status == "unreachable" || status == "failed" || status == "http_451_blocked" || status == "dns_fail" -> "blocked"
+    status == "reset" || status == "tcp_rst" || status == "tls_rst" || status == "tls_alert" || status == "tls_spoof" || status == "tls_mitm" ||
+      status == "tcp16" || status == "pool_timeout" || status == "partial" || status == "not_found" || status == "stalled" ||
+      status == "slow" || status == "download" || status == "skipped" || status == "read_timeout" || status == "blocked" ||
+      status == "tls_eof" || status == "protocol_version" || status == "redirect_suspicious" || status.startsWith("redirect_suspicious") ||
+      status.startsWith("http_5") -> "suspicious"
+    status.startsWith("redirect_ok") || status.startsWith("http_2") || status.startsWith("http_3") || status.startsWith("http_4") -> "available"
+    else -> status
+  }
 }
 
 @Composable
 private fun diagnosisLabel(code: String): String = when (code) {
   "clean" -> stringResource(R.string.dpi_detector_diagnosis_clean)
   "possible_dns_block" -> stringResource(R.string.dpi_detector_diagnosis_dns_block)
+  "possible_dns_intercept" -> stringResource(R.string.dpi_detector_diagnosis_dns_intercept)
+  "possible_dns_injection" -> stringResource(R.string.dpi_detector_diagnosis_dns_injection)
+  "possible_doh_block" -> stringResource(R.string.dpi_detector_diagnosis_doh_block)
   "possible_tls_sni_block" -> stringResource(R.string.dpi_detector_diagnosis_tls_sni_block)
   "possible_http_filtering" -> stringResource(R.string.dpi_detector_diagnosis_http_filtering)
   "possible_tcp_block" -> stringResource(R.string.dpi_detector_diagnosis_tcp_block)
@@ -1115,3 +1278,57 @@ private fun statusColor(status: String): Color = when (normalizeProbeStatus(stat
   "stopped" -> MaterialTheme.colorScheme.tertiary
   else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f)
 }
+
+private fun parseSummaryUiState(rawData: String, fallbackRisk: String): DpiSummaryUiState? = runCatching {
+  val json = JSONObject(rawData)
+  val testsArray = json.optJSONArray("tests") ?: JSONArray()
+  val tests = buildList {
+    for (index in 0 until testsArray.length()) {
+      val item = testsArray.optJSONObject(index) ?: continue
+      add(
+        DpiSummaryTestUiState(
+          id = item.optString("id", ""),
+          title = item.optString("title", ""),
+          status = item.optString("status", ""),
+          detail = item.optString("detail", ""),
+          risk = item.optString("risk", ""),
+        ),
+      )
+    }
+  }
+  DpiSummaryUiState(
+    version = json.optString("version", ""),
+    durationMs = json.optLong("duration_ms", 0L),
+    risk = json.optString("risk", fallbackRisk),
+    tests = tests,
+  )
+}.getOrNull()
+
+private fun formatDurationMs(durationMs: Long): String {
+  if (durationMs <= 0L) return "0 s"
+  val seconds = durationMs / 1000
+  val millisRemainder = durationMs % 1000
+  return if (seconds >= 60) {
+    val minutes = seconds / 60
+    val secs = seconds % 60
+    if (secs == 0L) "${minutes}m" else "${minutes}m ${secs}s"
+  } else if (seconds > 0) {
+    if (millisRemainder == 0L) "${seconds}s" else String.format(java.util.Locale.US, "%.1fs", durationMs / 1000.0)
+  } else {
+    "${durationMs} ms"
+  }
+}
+
+private fun formatBytesCount(bytes: Long): String {
+  val units = listOf("B", "KB", "MB", "GB")
+  var value = bytes.toDouble()
+  var unitIndex = 0
+  while (value >= 1024 && unitIndex < units.lastIndex) {
+    value /= 1024.0
+    unitIndex += 1
+  }
+  val formatted = if (value >= 100 || unitIndex == 0) String.format(java.util.Locale.US, "%.0f", value) else String.format(java.util.Locale.US, "%.1f", value)
+  return "$formatted ${units[unitIndex]}"
+}
+
+private fun formatBytesPerSecond(bytesPerSecond: Long): String = formatBytesCount(bytesPerSecond) + "/s"

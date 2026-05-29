@@ -75,3 +75,7 @@ const TELEGRAM_DC_IPS: &[(&str, &str)] = &[
 static DOMAINS_TXT: &str = include_str!("../resources/domains.txt");
 static WHITELIST_SNI_TXT: &str = include_str!("../resources/whitelist_sni.txt");
 static TCP16_JSON: &str = include_str!("../resources/tcp16.json");
+
+const SNI_BATCH_SIZE: usize = 5;
+const SNI_TOP_N: usize = 3;
+const STUB_IP_REPEAT_THRESHOLD: usize = 2;

@@ -1568,6 +1568,9 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="dpi_detector_waiting">Waiting for test data</string>
     <string name="dpi_detector_overall_result">Overall result: %1$s</string>
     <string name="dpi_detector_result_keep_desc">The result window stays on screen. You can expand completed stages to inspect their checks.</string>
+    <string name="dpi_detector_summary_duration">Scan time: %1$s</string>
+    <string name="dpi_detector_summary_version">Detector version: %1$s</string>
+    <string name="dpi_detector_summary_tests">Completed stages: %1$d, with findings: %2$d</string>
     <string name="dpi_detector_stage_probe_count">%1$d / %2$d checks</string>
     <string name="dpi_detector_show_all_probes">Show all %1$d checks</string>
     <string name="dpi_detector_hide_extra">Show less</string>
@@ -1608,6 +1611,9 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="dpi_detector_scroll_probe_list">%1$d checks available — scroll inside this block</string>
     <string name="dpi_detector_diagnosis_clean">no obvious blocking detected</string>
     <string name="dpi_detector_diagnosis_dns_block">possible DNS-level blocking or DNS substitution</string>
+    <string name="dpi_detector_diagnosis_dns_intercept">possible DNS interception or resolver tampering</string>
+    <string name="dpi_detector_diagnosis_dns_injection">possible DNS answer injection</string>
+    <string name="dpi_detector_diagnosis_doh_block">possible DNS-over-HTTPS blocking</string>
     <string name="dpi_detector_diagnosis_tls_sni_block">possible TLS/SNI-level filtering</string>
     <string name="dpi_detector_diagnosis_http_filtering">possible HTTP filtering, redirect, or 451 response</string>
     <string name="dpi_detector_diagnosis_tcp_block">possible TCP payload/threshold blocking</string>

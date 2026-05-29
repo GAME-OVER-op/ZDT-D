@@ -800,12 +800,12 @@ jobs:
             fi
 
             cat > service_ai_prompt.txt <<EOF_AI_PROMPT
-          You are preparing a short service-build comment for the ZDT-D Android project.
-          Write in Russian.
+          You are preparing a short release comment for the ZDT-D Android project.
+          Write in English.
           Be concise: 3-6 bullet points maximum.
-          Summarize the practical changes since the latest stable release.
+          Summarize the practical changes since the baseline release.
           Do not invent features. Use only the commit list below.
-          Mention the latest stable baseline: ${latest_tag:-none}.
+          Mention the baseline release: ${latest_tag:-none}.
           
           Version: ${VERSION_NAME}
           Version code: ${VERSION_CODE}
@@ -848,7 +848,7 @@ jobs:
               print(f'AI summary is unavailable: {exc}')
           PY_AI_RESPONSE
             else
-              printf '%s\n' "AI summary is unavailable for this run. See the commit list below." > "$output_file"
+              printf '%s\n' "AI summary is unavailable for this run. See the workflow summary for technical details." > "$output_file"
             fi
           }
 
@@ -936,46 +936,30 @@ jobs:
           cat > service_release_notes.md <<EOF_SERVICE_NOTES
           # ZDT-D Service Build
 
-          Это автоматическая сервисная сборка ZDT-D.
+          This is an automatic service build of ZDT-D.
 
-          Сервисная сборка обновляется после каждого успешного запуска workflow и всегда содержит актуальный APK из последнего успешного билда.
+          The service build is updated after every successful workflow run and always contains the APK from the latest successful build.
 
-          > Этот релиз является техническим prerelease и не считается стабильным релизом версии.
+          > This release is a technical prerelease and is not considered a stable version release.
 
-          ## AI-комментарий
+          ## AI summary
 
           ${SERVICE_AI_SUMMARY}
 
-          ## Информация о сборке
+          ## Build information
 
-          | Поле | Значение |
+          | Field | Value |
           |---|---|
-          | Версия | \`${VERSION_NAME}\` |
-          | Код версии | \`${VERSION_CODE}\` |
-          | Последний стабильный релиз | \`${LATEST_STABLE_TAG:-none}\` |
-          | Коммит | [\`${SHORT_SHA}\`](${REPO_URL}/commit/${FULL_SHA}) |
-          | Ветка | \`${BRANCH_NAME}\` |
+          | Version | \`${VERSION_NAME}\` |
+          | Version code | \`${VERSION_CODE}\` |
+          | Latest stable release | \`${LATEST_STABLE_TAG:-none}\` |
+          | Commit | [\`${SHORT_SHA}\`](${REPO_URL}/commit/${FULL_SHA}) |
+          | Branch | \`${BRANCH_NAME}\` |
           | Workflow run | [#${{ github.run_number }}](${RUN_URL}) |
-          | Дата сборки | \`${BUILD_TIME_UTC}\` |
-          | Тип сборки | \`${BUILD_TYPE}\` |
-          | Размер APK | \`${APK_SIZE_HUMAN}\` |
-          | Длительность сборки | \`${BUILD_DURATION}\` |
-
-          ## Изменения после последнего стабильного релиза
-
-          ${SERVICE_COMMIT_LIST}
-
-          ## Полный список изменений
-
-          [Список изменений на GitHub](${SERVICE_COMPARE_URL})
-
-          ## Файл сборки
-
-          - \`ZDT-D-service-build.apk\`
-
-          ---
-
-          Эта сборка предназначена для проверки последних изменений, тестирования исправлений и промежуточных обновлений проекта.
+          | Build date | \`${BUILD_TIME_UTC}\` |
+          | Build type | \`${BUILD_TYPE}\` |
+          | APK size | \`${APK_SIZE_HUMAN}\` |
+          | Build duration | \`${BUILD_DURATION}\` |
           EOF_SERVICE_NOTES
 
           echo "===== Service release notes ====="
@@ -1055,34 +1039,28 @@ jobs:
             fi
 
             STABLE_COMPARE_URL="$(compare_url_for_range "$PREVIOUS_STABLE_SHA" "$FULL_SHA")"
-            STABLE_COMMIT_LIST="$(make_commit_list "$PREVIOUS_STABLE_SHA" "$FULL_SHA" 80)"
-            STABLE_SUMMARY="$(make_commit_list "$PREVIOUS_STABLE_SHA" "$FULL_SHA" 8)"
+            STABLE_COMMIT_LIST="$(make_commit_list "$PREVIOUS_STABLE_SHA" "$FULL_SHA" 0)"
+            printf '%s\n' "$STABLE_COMMIT_LIST" > stable_commit_list.txt
+            generate_service_ai_summary stable_commit_list.txt stable_ai_summary.md "$PREVIOUS_STABLE_TAG"
+            STABLE_SUMMARY="$(cat stable_ai_summary.md)"
 
             cat > stable_release_notes.md <<EOF_STABLE_NOTES
           # ZDT-D V${VERSION_NAME}
 
-          ## Главное
+          ## Highlights
 
           ${STABLE_SUMMARY}
 
-          ## Список изменений
+          ## Release information
 
-          ${STABLE_COMMIT_LIST}
-
-          ## Полный список изменений
-
-          [Список изменений на GitHub](${STABLE_COMPARE_URL})
-
-          ## Информация о релизе
-
-          | Поле | Значение |
+          | Field | Value |
           |---|---|
-          | Версия | \`${VERSION_NAME}\` |
-          | Код версии | \`${VERSION_CODE}\` |
-          | Тег | \`${STABLE_TAG}\` |
-          | Коммит | [\`${SHORT_SHA}\`](${REPO_URL}/commit/${FULL_SHA}) |
+          | Version | \`${VERSION_NAME}\` |
+          | Version code | \`${VERSION_CODE}\` |
+          | Tag | \`${STABLE_TAG}\` |
+          | Commit | [\`${SHORT_SHA}\`](${REPO_URL}/commit/${FULL_SHA}) |
           | Workflow run | [#${{ github.run_number }}](${RUN_URL}) |
-          | Дата сборки | \`${BUILD_TIME_UTC}\` |
+          | Build date | \`${BUILD_TIME_UTC}\` |
           EOF_STABLE_NOTES
 
             echo "===== Stable release notes ====="

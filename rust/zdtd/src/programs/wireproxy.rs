@@ -10,11 +10,10 @@ use std::{
 };
 
 use crate::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
-use crate::iptables::iptables_port::{self, DpiTunnelOptions, ProtoChoice};
+use crate::iptables::{hotspot, iptables_port::{self, DpiTunnelOptions, ProtoChoice}};
 use crate::{
     settings,
     shell::{self, Capture},
-    xtables_lock,
 };
 
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
@@ -27,7 +26,6 @@ const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/wireproxy/acti
 // IMPORTANT: use only the shared working_folder/flag.sha256 file for sha tracking.
 // Never introduce module-specific *.flag.sha256 files here.
 const SHA_FLAG_FILE: &str = settings::SHARED_SHA_FLAG_FILE;
-const IPT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct ProfileState {
@@ -204,7 +202,12 @@ pub fn start_if_enabled() -> Result<()> {
             .with_context(|| format!("spawn t2s profile={}", plan.name))?;
 
             if hotspot_for_plan {
-                apply_hotspot_prerouting_redirect(plan.setting.t2s_port)?;
+                hotspot::ensure_prerouting_redirect(hotspot::HotspotRedirectConfig {
+                    owner: "wireproxy",
+                    listen_port: plan.setting.t2s_port,
+                    capture_all: api_settings.hotspot_t2s_capture_all,
+                    bypass_ports: hotspot::DEFAULT_HOTSPOT_BYPASS_PORTS,
+                })?;
             }
 
             if plan.uid_count > 0 {
@@ -458,51 +461,6 @@ fn collect_profile_servers(
     }
 
     Ok(out)
-}
-
-fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
-    let _xt_guard = xtables_lock::lock();
-    let listen_port_s = listen_port.to_string();
-    let check_args = [
-        "-t",
-        "nat",
-        "-C",
-        "PREROUTING",
-        "-p",
-        "tcp",
-        "-j",
-        "REDIRECT",
-        "--to-ports",
-        listen_port_s.as_str(),
-    ];
-    let mut check_cmd_args = vec!["-w", "5"];
-    check_cmd_args.extend_from_slice(&check_args);
-    let rc = match xtables_lock::run_timeout_retry("iptables", &check_cmd_args, Capture::Both, IPT_TIMEOUT) {
-        Ok((rc, _)) => rc,
-        Err(_) => 1,
-    };
-    if rc != 0 {
-        let add_args = [
-            "-t",
-            "nat",
-            "-I",
-            "PREROUTING",
-            "-p",
-            "tcp",
-            "-j",
-            "REDIRECT",
-            "--to-ports",
-            listen_port_s.as_str(),
-        ];
-        let mut add_cmd_args = vec!["-w", "5"];
-        add_cmd_args.extend_from_slice(&add_args);
-        let (add_rc, out) = xtables_lock::run_timeout_retry("iptables", &add_cmd_args, Capture::Both, IPT_TIMEOUT)
-            .with_context(|| format!("wireproxy hotspot PREROUTING redirect to :{}", listen_port))?;
-        if add_rc != 0 {
-            anyhow::bail!("wireproxy hotspot PREROUTING redirect to :{} failed rc={} out={}", listen_port, add_rc, out.trim());
-        }
-    }
-    Ok(())
 }
 
 fn is_nonempty_file(p: &Path) -> Result<bool> {

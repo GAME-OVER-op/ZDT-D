@@ -74,6 +74,7 @@ object ApiModels {
     val hotspotT2sTarget: String = "",
     val hotspotT2sSingboxProfile: String = "",
     val hotspotT2sWireproxyProfile: String = "",
+    val hotspotT2sCaptureAll: Boolean = false,
     val selinuxPermissiveEnabled: Boolean = false,
     val ipForwardEnabled: Boolean = false,
   )
@@ -291,12 +292,14 @@ object ApiModels {
     val hotspotWireproxyProfile = setting?.optString("hotspot_t2s_wireproxy_profile", "")
       ?.trim()
       .orEmpty()
+    val hotspotCaptureAll = setting?.optBoolean("hotspot_t2s_capture_all", false) ?: false
     return DaemonSettings(
       protectorMode = safeMode,
       hotspotT2sEnabled = hotspotEnabled,
       hotspotT2sTarget = safeTarget,
       hotspotT2sSingboxProfile = hotspotProfile,
       hotspotT2sWireproxyProfile = hotspotWireproxyProfile,
+      hotspotT2sCaptureAll = hotspotCaptureAll,
       selinuxPermissiveEnabled = setting?.optBoolean("selinux_permissive_enabled", false) ?: false,
       ipForwardEnabled = setting?.optBoolean("ip_forward_enabled", false) ?: false,
     )

@@ -773,6 +773,8 @@ APatch: 10700+</string>
 
     <string name="settings_hotspot_title">Включить точку доступа</string>
     <string name="settings_hotspot_body">Позволяет направлять трафик точки доступа через выбранный инструмент.</string>
+    <string name="settings_hotspot_capture_all_title">Захват всего трафика hotspot режима</string>
+    <string name="settings_hotspot_capture_all_body">Если включено, весь входящий TCP-трафик режима точки доступа направляется в выбранный инструмент. Если выключено, служебные reverse-proxy порты исключаются перед редиректом остального трафика.</string>
     <string name="settings_hotspot_program_title">Инструмент для точки доступа</string>
     <string name="settings_hotspot_program_operaproxy">opera-proxy</string>
     <string name="settings_hotspot_program_singbox">sing-box</string>

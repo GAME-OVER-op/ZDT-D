@@ -146,6 +146,7 @@ class ApiClient(
     target: String,
     singboxProfile: String = "",
     wireproxyProfile: String = "",
+    captureAll: Boolean? = null,
   ): ApiModels.DaemonSettings {
     val safeTarget = when (target.trim().lowercase()) {
       "operaproxy", "opera-proxy", "opera_proxy" -> "operaproxy"
@@ -160,7 +161,17 @@ class ApiClient(
       .put("hotspot_t2s_target", safeTarget)
       .put("hotspot_t2s_singbox_profile", safeProfile)
       .put("hotspot_t2s_wireproxy_profile", safeWireproxyProfile)
+    captureAll?.let { body.put("hotspot_t2s_capture_all", it) }
     val obj = requestJson("POST", "/api/setting", body)
+    return ApiModels.parseDaemonSettings(obj)
+  }
+
+  fun setHotspotT2sCaptureAll(enabled: Boolean): ApiModels.DaemonSettings {
+    val obj = requestJson(
+      "POST",
+      "/api/setting",
+      JSONObject().put("hotspot_t2s_capture_all", enabled),
+    )
     return ApiModels.parseDaemonSettings(obj)
   }
 

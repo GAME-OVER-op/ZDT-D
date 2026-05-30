@@ -905,7 +905,8 @@ private fun MainShell(
     fun resetInvalidHotspotT2sIfNeeded() {
       val hotspotInvalid = appUpdate.hotspotT2sEnabled && (
         appUpdate.hotspotT2sTarget.isBlank() ||
-          (appUpdate.hotspotT2sTarget == "singbox" && appUpdate.hotspotT2sSingboxProfile.isBlank())
+          (appUpdate.hotspotT2sTarget == "singbox" && appUpdate.hotspotT2sSingboxProfile.isBlank()) ||
+          (appUpdate.hotspotT2sTarget == "wireproxy" && appUpdate.hotspotT2sWireproxyProfile.isBlank())
         )
       if (hotspotInvalid) {
         actions.setHotspotT2sEnabled(false)
@@ -985,12 +986,14 @@ private fun MainShell(
                 hotspotT2sTarget = appUpdate.hotspotT2sTarget,
                 hotspotT2sSingboxProfile = appUpdate.hotspotT2sSingboxProfile,
                 hotspotT2sWireproxyProfile = appUpdate.hotspotT2sWireproxyProfile,
+                hotspotT2sCaptureAll = appUpdate.hotspotT2sCaptureAll,
                 hotspotSingboxProfiles = appUpdate.hotspotSingboxProfiles,
                 hotspotWireproxyProfiles = appUpdate.hotspotWireproxyProfiles,
                 onHotspotT2sEnabledChange = actions::setHotspotT2sEnabled,
                 onHotspotT2sTargetChange = actions::setHotspotT2sTarget,
                 onHotspotT2sSingboxProfileChange = actions::setHotspotT2sSingboxProfile,
                 onHotspotT2sWireproxyProfileChange = actions::setHotspotT2sWireproxyProfile,
+                onHotspotT2sCaptureAllChange = actions::setHotspotT2sCaptureAll,
                 proxyInfoEnabled = appUpdate.proxyInfoEnabled,
                 proxyInfoBusy = appUpdate.proxyInfoBusy,
                 proxyInfoAppsContent = appUpdate.proxyInfoAppsContent,
@@ -1064,12 +1067,14 @@ private fun MainShell(
                 hotspotT2sTarget = appUpdate.hotspotT2sTarget,
                 hotspotT2sSingboxProfile = appUpdate.hotspotT2sSingboxProfile,
                 hotspotT2sWireproxyProfile = appUpdate.hotspotT2sWireproxyProfile,
+                hotspotT2sCaptureAll = appUpdate.hotspotT2sCaptureAll,
                 hotspotSingboxProfiles = appUpdate.hotspotSingboxProfiles,
                 hotspotWireproxyProfiles = appUpdate.hotspotWireproxyProfiles,
                 onHotspotT2sEnabledChange = actions::setHotspotT2sEnabled,
                 onHotspotT2sTargetChange = actions::setHotspotT2sTarget,
                 onHotspotT2sSingboxProfileChange = actions::setHotspotT2sSingboxProfile,
                 onHotspotT2sWireproxyProfileChange = actions::setHotspotT2sWireproxyProfile,
+                onHotspotT2sCaptureAllChange = actions::setHotspotT2sCaptureAll,
                 proxyInfoEnabled = appUpdate.proxyInfoEnabled,
                 proxyInfoBusy = appUpdate.proxyInfoBusy,
                 proxyInfoAppsContent = appUpdate.proxyInfoAppsContent,

@@ -5615,6 +5615,8 @@ match (method.as_str(), path.as_str()) {
                 #[serde(default)]
                 hotspot_t2s_wireproxy_profile: Option<String>,
                 #[serde(default)]
+                hotspot_t2s_capture_all: Option<bool>,
+                #[serde(default)]
                 allow_loopback_redirect: Option<bool>,
                 #[serde(default)]
                 selinux_permissive_enabled: Option<bool>,
@@ -5639,6 +5641,9 @@ match (method.as_str(), path.as_str()) {
             }
             if let Some(profile) = patch.hotspot_t2s_wireproxy_profile {
                 setting.hotspot_t2s_wireproxy_profile = profile;
+            }
+            if let Some(capture_all) = patch.hotspot_t2s_capture_all {
+                setting.hotspot_t2s_capture_all = capture_all;
             }
             if let Some(enabled) = patch.allow_loopback_redirect {
                 setting.allow_loopback_redirect = enabled;

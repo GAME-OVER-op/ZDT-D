@@ -292,6 +292,9 @@ interface ZdtdActions {
   /** Choose which wireproxy profile receives hotspot traffic when wireproxy is selected. */
   fun setHotspotT2sWireproxyProfile(profile: String)
 
+  /** Capture all hotspot TCP traffic instead of bypassing known reverse-proxy service ports. */
+  fun setHotspotT2sCaptureAll(enabled: Boolean)
+
   /** Remove working_folder/flag.sha256 and restart the daemon when needed. */
   fun resetModuleIdentifier()
 

@@ -315,6 +315,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       hotspotT2sTarget = "",
       hotspotT2sSingboxProfile = "",
       hotspotT2sWireproxyProfile = "",
+      hotspotT2sCaptureAll = false,
       selinuxPermissiveEnabled = false,
       ipForwardEnabled = false,
       daemonStatusNotificationEnabled = root.isDaemonStatusNotificationEnabled(),
@@ -5066,6 +5067,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         hotspotT2sTarget = settings.hotspotT2sTarget,
         hotspotT2sSingboxProfile = settings.hotspotT2sSingboxProfile,
         hotspotT2sWireproxyProfile = settings.hotspotT2sWireproxyProfile,
+        hotspotT2sCaptureAll = settings.hotspotT2sCaptureAll,
         selinuxPermissiveEnabled = settings.selinuxPermissiveEnabled,
         ipForwardEnabled = settings.ipForwardEnabled,
         hotspotSingboxProfiles = singboxProfiles,
@@ -5112,6 +5114,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
+          hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           selinuxPermissiveEnabled = applied.selinuxPermissiveEnabled,
           ipForwardEnabled = applied.ipForwardEnabled,
         )
@@ -5361,6 +5364,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
+          hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -5413,6 +5417,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
+          hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -5462,6 +5467,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
+          hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -5501,6 +5507,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
+          hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -5540,6 +5547,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
+          hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -5547,6 +5555,43 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       }
     }
   }
+
+  override fun setHotspotT2sCaptureAll(enabled: Boolean) {
+    val previous = _appUpdate.value.hotspotT2sCaptureAll
+    if (previous == enabled) return
+
+    _appUpdate.update { it.copy(hotspotT2sCaptureAll = enabled) }
+
+    launchIO {
+      val applied = runCatching {
+        api.setHotspotT2sCaptureAll(enabled)
+      }.getOrElse {
+        log("ERR", "hotspot capture-all failed: ${it.message ?: it}")
+        _appUpdate.update { it.copy(hotspotT2sCaptureAll = previous) }
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_hotspot_save_failed))
+        }
+        return@launchIO
+      }
+
+      _appUpdate.update {
+        it.copy(
+          protectorMode = applied.protectorMode,
+          hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotT2sTarget = applied.hotspotT2sTarget,
+          hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
+          hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          selinuxPermissiveEnabled = applied.selinuxPermissiveEnabled,
+          ipForwardEnabled = applied.ipForwardEnabled,
+        )
+      }
+      withContext(Dispatchers.Main.immediate) {
+        toast(str(R.string.settings_hotspot_saved))
+      }
+    }
+  }
+
 
   override fun resetModuleIdentifier() {
     if (_rootState.value != RootState.GRANTED) return

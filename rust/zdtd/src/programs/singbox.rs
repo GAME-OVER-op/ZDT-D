@@ -15,12 +15,11 @@ use std::{
 };
 
 use crate::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
-use crate::iptables::iptables_port::{self, DpiTunnelOptions, ProtoChoice};
+use crate::iptables::{hotspot, iptables_port::{self, DpiTunnelOptions, ProtoChoice}};
 use crate::{
     settings,
     shell::{self, Capture},
     vpn_netd::VpnNetdProfile,
-    xtables_lock,
 };
 
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
@@ -424,7 +423,12 @@ pub fn start_t2s_if_enabled() -> Result<()> {
             .with_context(|| format!("spawn t2s profile={}", plan.name))?;
 
             if hotspot_for_plan {
-                apply_hotspot_prerouting_redirect(plan.setting.t2s_port)?;
+                hotspot::ensure_prerouting_redirect(hotspot::HotspotRedirectConfig {
+                    owner: "sing-box",
+                    listen_port: plan.setting.t2s_port,
+                    capture_all: api_settings.hotspot_t2s_capture_all,
+                    bypass_ports: hotspot::DEFAULT_HOTSPOT_BYPASS_PORTS,
+                })?;
             }
 
             if plan.uid_count > 0 {
@@ -1694,52 +1698,6 @@ fn version_supports_tun_dns_mode(version: &str) -> bool {
             }
         }
     }
-}
-
-fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
-    const IPT_TIMEOUT: Duration = Duration::from_secs(5);
-    let _guard = xtables_lock::lock();
-    let listen_port_s = listen_port.to_string();
-    let check_args = [
-        "-w",
-        "5",
-        "-t",
-        "nat",
-        "-C",
-        "PREROUTING",
-        "-p",
-        "tcp",
-        "-j",
-        "REDIRECT",
-        "--to-ports",
-        listen_port_s.as_str(),
-    ];
-    let rc = match xtables_lock::run_timeout_retry("iptables", &check_args, Capture::None, IPT_TIMEOUT) {
-        Ok((rc, _)) => rc,
-        Err(_) => 1,
-    };
-    if rc != 0 {
-        let add_args = [
-            "-w",
-            "5",
-            "-t",
-            "nat",
-            "-I",
-            "PREROUTING",
-            "-p",
-            "tcp",
-            "-j",
-            "REDIRECT",
-            "--to-ports",
-            listen_port_s.as_str(),
-        ];
-        let (add_rc, out) = xtables_lock::run_timeout_retry("iptables", &add_args, Capture::Both, IPT_TIMEOUT)
-            .with_context(|| format!("sing-box hotspot PREROUTING redirect to :{}", listen_port))?;
-        if add_rc != 0 {
-            bail!("sing-box hotspot PREROUTING redirect to :{} failed: {}", listen_port, out.trim());
-        }
-    }
-    Ok(())
 }
 
 fn spawn_singbox(config_path: &Path, log_path: &Path) -> Result<()> {

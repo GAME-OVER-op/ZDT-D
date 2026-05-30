@@ -16,6 +16,7 @@ data class AppUpdateUiState(
   val hotspotT2sTarget: String = "",
   val hotspotT2sSingboxProfile: String = "",
   val hotspotT2sWireproxyProfile: String = "",
+  val hotspotT2sCaptureAll: Boolean = false,
   val hotspotSingboxProfiles: List<ApiModels.SingBoxProfileChoice> = emptyList(),
   val hotspotWireproxyProfiles: List<ApiModels.SingBoxProfileChoice> = emptyList(),
   /** Advanced daemon/system settings. */

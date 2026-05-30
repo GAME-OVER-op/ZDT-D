@@ -775,6 +775,8 @@ Install the module again.</string>
 
     <string name="settings_hotspot_title">Enable hotspot</string>
     <string name="settings_hotspot_body">Allows routing hotspot traffic through the selected tool.</string>
+    <string name="settings_hotspot_capture_all_title">Capture all hotspot traffic</string>
+    <string name="settings_hotspot_capture_all_body">When enabled, all incoming TCP traffic in hotspot mode is redirected to the selected tool. When disabled, known reverse-proxy service ports are bypassed before redirecting the rest.</string>
     <string name="settings_hotspot_program_title">Hotspot tool</string>
     <string name="settings_hotspot_program_operaproxy">opera-proxy</string>
     <string name="settings_hotspot_program_singbox">sing-box</string>

@@ -186,12 +186,14 @@ fun AppUpdateSettings(
   hotspotT2sTarget: String,
   hotspotT2sSingboxProfile: String,
   hotspotT2sWireproxyProfile: String,
+  hotspotT2sCaptureAll: Boolean,
   hotspotSingboxProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
   hotspotWireproxyProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
   onHotspotT2sEnabledChange: (Boolean) -> Unit,
   onHotspotT2sTargetChange: (String) -> Unit,
   onHotspotT2sSingboxProfileChange: (String) -> Unit,
   onHotspotT2sWireproxyProfileChange: (String) -> Unit,
+  onHotspotT2sCaptureAllChange: (Boolean) -> Unit,
   proxyInfoEnabled: Boolean,
   proxyInfoBusy: Boolean,
   proxyInfoAppsContent: String,
@@ -263,6 +265,7 @@ fun AppUpdateSettings(
             target = hotspotT2sTarget,
             singboxProfile = hotspotT2sSingboxProfile,
             wireproxyProfile = hotspotT2sWireproxyProfile,
+            captureAll = hotspotT2sCaptureAll,
             singboxProfiles = hotspotSingboxProfiles,
             wireproxyProfiles = hotspotWireproxyProfiles,
             compactWidth = false,
@@ -276,6 +279,7 @@ fun AppUpdateSettings(
             onTargetChange = onHotspotT2sTargetChange,
             onSingboxProfileChange = onHotspotT2sSingboxProfileChange,
             onWireproxyProfileChange = onHotspotT2sWireproxyProfileChange,
+            onCaptureAllChange = onHotspotT2sCaptureAllChange,
           )
         }
 
@@ -422,6 +426,7 @@ fun AppUpdateSettings(
         target = hotspotT2sTarget,
         singboxProfile = hotspotT2sSingboxProfile,
         wireproxyProfile = hotspotT2sWireproxyProfile,
+        captureAll = hotspotT2sCaptureAll,
         singboxProfiles = hotspotSingboxProfiles,
         wireproxyProfiles = hotspotWireproxyProfiles,
         compactWidth = compactWidth,
@@ -435,6 +440,7 @@ fun AppUpdateSettings(
         onTargetChange = onHotspotT2sTargetChange,
         onSingboxProfileChange = onHotspotT2sSingboxProfileChange,
         onWireproxyProfileChange = onHotspotT2sWireproxyProfileChange,
+        onCaptureAllChange = onHotspotT2sCaptureAllChange,
       )
     }
 
@@ -1011,6 +1017,7 @@ private fun HotspotT2sSection(
   target: String,
   singboxProfile: String,
   wireproxyProfile: String,
+  captureAll: Boolean,
   singboxProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
   wireproxyProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
   compactWidth: Boolean,
@@ -1018,6 +1025,7 @@ private fun HotspotT2sSection(
   onTargetChange: (String) -> Unit,
   onSingboxProfileChange: (String) -> Unit,
   onWireproxyProfileChange: (String) -> Unit,
+  onCaptureAllChange: (Boolean) -> Unit,
 ) {
   val safeTarget = when (target.trim().lowercase()) {
     "operaproxy" -> "operaproxy"
@@ -1060,6 +1068,26 @@ private fun HotspotT2sSection(
 
   AnimatedVisibility(visible = enabled) {
     Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+      Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+      ) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+          Text(
+            stringResource(R.string.settings_hotspot_capture_all_title),
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.Medium,
+          )
+          Text(
+            stringResource(R.string.settings_hotspot_capture_all_body),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+          )
+        }
+        Switch(checked = captureAll, onCheckedChange = onCaptureAllChange)
+      }
+      Spacer(Modifier.height(12.dp))
       Text(stringResource(R.string.settings_hotspot_program_title), style = MaterialTheme.typography.bodyMedium)
       Spacer(Modifier.height(10.dp))
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {

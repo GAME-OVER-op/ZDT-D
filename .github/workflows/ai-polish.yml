@@ -182,6 +182,12 @@ jobs:
           set -euo pipefail
           scripts/copilot-polish/dispatch-build.sh "$COPILOT_POLISH_BRANCH" "$COPILOT_POLISH_BUILD_TYPE"
 
+      - name: Open or update Copilot PR
+        if: steps.build_idle.outputs.idle == 'true' && steps.commit.outputs.changed == 'true' && (steps.validate.outcome == 'success' || steps.revalidate.outcome == 'success')
+        run: |
+          set -euo pipefail
+          scripts/copilot-polish/open-polish-pr.sh
+
       - name: Final result
         run: |
           set -euo pipefail

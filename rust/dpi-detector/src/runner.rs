@@ -30,25 +30,29 @@ async fn run_scan_ndjson(options: RunOptions) -> Result<()> {
     Ok(())
 }
 
+fn should_run_test(tests: &HashSet<String>, names: &[&str]) -> bool {
+    tests.contains("all") || names.iter().any(|name| tests.contains(*name))
+}
+
 async fn execute_scan<W: EventWriter + Send>(options: &RunOptions, writer: &mut W) -> Result<Vec<TestSummary>> {
     let mut summaries = Vec::new();
 
-    if options.tests.contains("dns_integrity") || options.tests.contains("dns") || options.tests.contains("all") {
+    if should_run_test(&options.tests, &["dns_integrity", "dns"]) {
         summaries.push(check_dns_integrity(options, writer).await);
     }
-    if options.tests.contains("dns_availability") || options.tests.contains("dns") || options.tests.contains("all") {
+    if should_run_test(&options.tests, &["dns_availability", "dns"]) {
         summaries.push(check_dns_availability(options, writer).await);
     }
-    if options.tests.contains("domains") || options.tests.contains("all") {
+    if should_run_test(&options.tests, &["domains"]) {
         summaries.push(check_domains(options, writer).await);
     }
-    if options.tests.contains("tcp16") || options.tests.contains("tcp") || options.tests.contains("all") {
+    if should_run_test(&options.tests, &["tcp16", "tcp"]) {
         summaries.push(check_tcp16(options, writer).await);
     }
-    if options.tests.contains("whitelist_sni") || options.tests.contains("sni") || options.tests.contains("all") {
+    if should_run_test(&options.tests, &["whitelist_sni", "sni"]) {
         summaries.push(check_whitelist_sni(options, writer).await);
     }
-    if options.tests.contains("telegram") || options.tests.contains("all") {
+    if should_run_test(&options.tests, &["telegram"]) {
         summaries.push(check_telegram(options, writer).await);
     }
 

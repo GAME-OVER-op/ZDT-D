@@ -1,0 +1,205 @@
+name: Copilot Polish
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: 'Branch used for AI changes'
+        required: false
+        default: 'copilot-polish'
+        type: string
+      target_file:
+        description: 'Optional exact file to polish. Leave empty for random safe target.'
+        required: false
+        default: ''
+        type: string
+      max_repair_attempts:
+        description: 'Build-failure repair attempts'
+        required: false
+        default: '1'
+        type: choice
+        options:
+          - '0'
+          - '1'
+          - '2'
+  schedule:
+    # Avoid minute 0 because scheduled workflows can be delayed or dropped during high load.
+    - cron: '17 * * * *'
+
+concurrency:
+  group: copilot-polish
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: write
+  pull-requests: write
+
+jobs:
+  polish:
+    name: Conservative AI polish
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    env:
+      COPILOT_POLISH_BRANCH: ${{ github.event.inputs.target_branch || 'copilot-polish' }}
+      COPILOT_POLISH_TARGET: ${{ github.event.inputs.target_file || '' }}
+      COPILOT_POLISH_MAX_REPAIR_ATTEMPTS: ${{ github.event.inputs.max_repair_attempts || '1' }}
+      COPILOT_POLISH_BUILD_TYPE: Release
+      COPILOT_POLISH_MAX_FILES: 8
+      COPILOT_POLISH_MAX_LINES: 600
+      COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+      GH_TOKEN: ${{ secrets.AI_WORKFLOW_TOKEN }}
+
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.AI_WORKFLOW_TOKEN || github.token }}
+
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          if [[ -z "${COPILOT_GITHUB_TOKEN:-}" ]]; then
+            echo "Missing secret: COPILOT_GITHUB_TOKEN"
+            echo "Create a fine-grained PAT with Copilot Requests permission and save it as COPILOT_GITHUB_TOKEN."
+            exit 1
+          fi
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "Missing secret: AI_WORKFLOW_TOKEN"
+            echo "Create a PAT/GitHub App token that can push branches and dispatch Actions workflows."
+            exit 1
+          fi
+
+      - name: Prepare Node.js for Copilot CLI
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install GitHub Copilot CLI
+        run: npm install -g @github/copilot
+
+      - name: Prepare target branch
+        run: |
+          set -euo pipefail
+          git config user.name "zdt-copilot-polish"
+          git config user.email "actions@github.com"
+          git fetch origin main --prune
+          if git ls-remote --exit-code --heads origin "$COPILOT_POLISH_BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$COPILOT_POLISH_BRANCH"
+            git checkout -B "$COPILOT_POLISH_BRANCH" "origin/$COPILOT_POLISH_BRANCH"
+          else
+            git checkout -B "$COPILOT_POLISH_BRANCH" origin/main
+            git push -u origin "$COPILOT_POLISH_BRANCH"
+          fi
+
+      - name: Check build.yml availability
+        id: build_idle
+        run: |
+          set -euo pipefail
+          active_main_runs="$(gh run list --workflow build.yml --branch main --status in_progress --limit 5 --json databaseId --jq 'length' 2>/dev/null || echo 0)"
+          queued_main_runs="$(gh run list --workflow build.yml --branch main --status queued --limit 5 --json databaseId --jq 'length' 2>/dev/null || echo 0)"
+          if [[ "${active_main_runs:-0}" != "0" || "${queued_main_runs:-0}" != "0" ]]; then
+            echo "idle=false" >> "$GITHUB_OUTPUT"
+            echo "build.yml has an active or queued main run. Skipping AI polish to avoid interfering with release/service builds." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "idle=true" >> "$GITHUB_OUTPUT"
+            echo "build.yml is idle on main. AI polish may proceed." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Select safe target
+        if: steps.build_idle.outputs.idle == 'true'
+        id: target
+        run: |
+          set -euo pipefail
+          target="$(scripts/copilot-polish/select-target.sh)"
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+          echo "Selected target: $target" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run Copilot polish
+        if: steps.build_idle.outputs.idle == 'true'
+        run: |
+          set -euo pipefail
+          scripts/copilot-polish/run-copilot-polish.sh "${{ steps.target.outputs.target }}"
+
+      - name: Guard AI diff
+        if: steps.build_idle.outputs.idle == 'true'
+        run: scripts/copilot-polish/guard-diff.sh
+
+      - name: Commit and push AI diff
+        if: steps.build_idle.outputs.idle == 'true'
+        id: commit
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Copilot made no changes." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          git diff --stat >> "$GITHUB_STEP_SUMMARY"
+          scripts/copilot-polish/commit-if-changed.sh "AI polish: safe improvement in ${{ steps.target.outputs.target }}"
+
+      - name: Validate with build.yml
+        if: steps.build_idle.outputs.idle == 'true' && steps.commit.outputs.changed == 'true'
+        id: validate
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          scripts/copilot-polish/dispatch-build.sh "$COPILOT_POLISH_BRANCH" "$COPILOT_POLISH_BUILD_TYPE"
+
+      - name: Capture failed build log
+        if: steps.build_idle.outputs.idle == 'true' && steps.commit.outputs.changed == 'true' && steps.validate.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          RUN_ID="$(cat .copilot-polish-build-run-id 2>/dev/null || true)"
+          if [[ -n "$RUN_ID" ]]; then
+            gh run view "$RUN_ID" --log > build.log || true
+            tail -n 300 build.log > build-tail.log || true
+          fi
+
+      - name: Repair build failure with Copilot
+        if: steps.build_idle.outputs.idle == 'true' && steps.commit.outputs.changed == 'true' && steps.validate.outcome == 'failure' && env.COPILOT_POLISH_MAX_REPAIR_ATTEMPTS != '0'
+        id: repair
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          scripts/copilot-polish/repair-from-build-log.sh build.log
+          scripts/copilot-polish/guard-diff.sh
+          if git diff --quiet; then
+            echo "repaired=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          echo "repaired=true" >> "$GITHUB_OUTPUT"
+          scripts/copilot-polish/commit-if-changed.sh "AI polish: repair build validation failure"
+
+      - name: Re-validate repaired diff
+        if: steps.repair.outputs.repaired == 'true'
+        id: revalidate
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          scripts/copilot-polish/dispatch-build.sh "$COPILOT_POLISH_BRANCH" "$COPILOT_POLISH_BUILD_TYPE"
+
+      - name: Final result
+        run: |
+          set -euo pipefail
+          if [[ "${{ steps.build_idle.outputs.idle }}" != "true" ]]; then
+            echo "Skipped because build.yml is active on main."
+            exit 0
+          fi
+          if [[ "${{ steps.commit.outputs.changed }}" != "true" ]]; then
+            echo "No AI changes were committed."
+            exit 0
+          fi
+          if [[ "${{ steps.validate.outcome }}" == "success" ]]; then
+            echo "AI polish committed and build.yml validation passed."
+            exit 0
+          fi
+          if [[ "${{ steps.revalidate.outcome }}" == "success" ]]; then
+            echo "AI repair committed and build.yml validation passed."
+            exit 0
+          fi
+          echo "AI polish did not pass build.yml validation. Manual review is required."
+          exit 1

@@ -714,12 +714,13 @@ private fun BackupProgressDialog(
         if (state.progressText.isNotBlank()) {
           Text(state.progressText, style = MaterialTheme.typography.bodyMedium)
         }
+        val displayProgress = state.progressPercent.coerceIn(0, 100)
         LinearProgressIndicator(
-          progress = state.progressPercent.coerceIn(0, 100) / 100f,
+          progress = displayProgress / 100f,
           modifier = Modifier.fillMaxWidth(),
         )
         Text(
-          "${state.progressPercent.coerceIn(0, 100)}%",
+          "$displayProgress%",
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
         )

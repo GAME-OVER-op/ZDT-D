@@ -1369,45 +1369,111 @@ fn spawn_t2s(bin: &Path, listen_addr: &str, listen_port: u16, socks_ports_csv: &
 fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
     let _xt_guard = xtables_lock::lock();
     let listen_port_s = listen_port.to_string();
-    let check_args = [
-        "-w",
-        "5",
-        "-t",
-        "nat",
-        "-C",
-        "PREROUTING",
-        "-p",
-        "tcp",
-        "-j",
-        "REDIRECT",
-        "--to-ports",
-        listen_port_s.as_str(),
+
+    let exclude_port_groups = [
+        "0,1,7,9,11,13,15,17,19,20,21,22,23,25",
+        "37,42,43,53,69,77,79,87,95,101,102,103,104,109",
+        "110,111,113,115,117,119,123,135,137,139,143,161,179,389",
+        "427,465,512,513,514,515,526,530,531,532,540,548,554,556",
+        "563,587,601,636,989,990,993,995,1719,1720,1723,2049,3659",
+        "4045,4190,5060,5061,6000,6566,6665,6666,6667,6668,6669,6679,6697,10080",
     ];
-    let rc = match xtables_lock::run_timeout_retry("iptables", &check_args, Capture::Both, IPT_TIMEOUT) {
+
+    // Create chain if not exists
+    let chain_check = [
+        "-w", "5", "-t", "nat", "-L", "HOTSPOT_REDIRECT",
+    ];
+    let rc = match xtables_lock::run_timeout_retry("iptables", &chain_check, Capture::Both, IPT_TIMEOUT) {
         Ok((rc, _)) => rc,
         Err(_) => 1,
     };
     if rc != 0 {
-        let add_args = [
-            "-w",
-            "5",
-            "-t",
-            "nat",
-            "-I",
-            "PREROUTING",
-            "-p",
-            "tcp",
-            "-j",
-            "REDIRECT",
-            "--to-ports",
-            listen_port_s.as_str(),
+        let chain_create = [
+            "-w", "5", "-t", "nat", "-N", "HOTSPOT_REDIRECT",
         ];
-        let (add_rc, out) = xtables_lock::run_timeout_retry("iptables", &add_args, Capture::Both, IPT_TIMEOUT)
-            .with_context(|| format!("operaproxy hotspot PREROUTING redirect to :{}", listen_port))?;
-        if add_rc != 0 {
-            anyhow::bail!("operaproxy hotspot PREROUTING redirect to :{} failed rc={} out={}", listen_port, add_rc, out.trim());
+        let (create_rc, out) = xtables_lock::run_timeout_retry("iptables", &chain_create, Capture::Both, IPT_TIMEOUT)
+            .with_context(|| "operaproxy hotspot create HOTSPOT_REDIRECT chain")?;
+        if create_rc != 0 {
+            anyhow::bail!("operaproxy hotspot create HOTSPOT_REDIRECT chain failed rc={} out={}", create_rc, out.trim());
         }
     }
+
+    // Flush chain
+    let flush_args = [
+        "-w", "5", "-t", "nat", "-F", "HOTSPOT_REDIRECT",
+    ];
+    let (flush_rc, flush_out) = xtables_lock::run_timeout_retry("iptables", &flush_args, Capture::Both, IPT_TIMEOUT)
+        .with_context(|| "operaproxy hotspot flush HOTSPOT_REDIRECT")?;
+    if flush_rc != 0 {
+        anyhow::bail!("operaproxy hotspot flush HOTSPOT_REDIRECT failed rc={} out={}", flush_rc, flush_out.trim());
+    }
+
+    // Add RETURN rules for each port group
+    for ports in &exclude_port_groups {
+        let exclude_args = [
+            "-w", "5", "-t", "nat", "-A", "HOTSPOT_REDIRECT",
+            "-p", "tcp",
+            "-m", "multiport", "--dports", ports,
+            "-j", "RETURN",
+        ];
+        let (exclude_rc, exclude_out) = xtables_lock::run_timeout_retry("iptables", &exclude_args, Capture::Both, IPT_TIMEOUT)
+            .with_context(|| format!("operaproxy hotspot HOTSPOT_REDIRECT exclude ports: {}", ports))?;
+        if exclude_rc != 0 {
+            anyhow::bail!("operaproxy hotspot HOTSPOT_REDIRECT exclude ports: {} failed rc={} out={}", ports, exclude_rc, exclude_out.trim());
+        }
+    }
+
+    // Add REDIRECT rule
+    let redirect_args = [
+        "-w", "5", "-t", "nat", "-A", "HOTSPOT_REDIRECT",
+        "-p", "tcp",
+        "-j", "REDIRECT", "--to-ports", listen_port_s.as_str(),
+    ];
+    let (redirect_rc, redirect_out) = xtables_lock::run_timeout_retry("iptables", &redirect_args, Capture::Both, IPT_TIMEOUT)
+        .with_context(|| format!("operaproxy hotspot HOTSPOT_REDIRECT redirect to :{}", listen_port))?;
+    if redirect_rc != 0 {
+        anyhow::bail!("operaproxy hotspot HOTSPOT_REDIRECT redirect to :{} failed rc={} out={}", listen_port, redirect_rc, redirect_out.trim());
+    }
+
+    // Check and remove old direct REDIRECT rule if exists
+    let old_check_args = [
+        "-w", "5", "-t", "nat", "-C", "PREROUTING", "-p", "tcp", "-j", "REDIRECT", "--to-ports", listen_port_s.as_str(),
+    ];
+    let rc = match xtables_lock::run_timeout_retry("iptables", &old_check_args, Capture::Both, IPT_TIMEOUT) {
+        Ok((rc, _)) => rc,
+        Err(_) => 1,
+    };
+    if rc == 0 {
+        let old_delete_args = [
+            "-w", "5", "-t", "nat", "-D", "PREROUTING", "-p", "tcp", "-j", "REDIRECT", "--to-ports", listen_port_s.as_str(),
+        ];
+        let (del_rc, del_out) = xtables_lock::run_timeout_retry("iptables", &old_delete_args, Capture::Both, IPT_TIMEOUT)
+            .with_context(|| "operaproxy hotspot remove old PREROUTING redirect")?;
+        if del_rc != 0 {
+            anyhow::bail!("operaproxy hotspot remove old PREROUTING redirect failed rc={} out={}", del_rc, del_out.trim());
+        }
+    }
+
+    // Add jump to HOTSPOT_REDIRECT from PREROUTING
+    let jump_check_args = [
+        "-w", "5", "-t", "nat", "-C", "PREROUTING", "-j", "HOTSPOT_REDIRECT",
+    ];
+    let rc = match xtables_lock::run_timeout_retry("iptables", &jump_check_args, Capture::Both, IPT_TIMEOUT) {
+        Ok((rc, _)) => rc,
+        Err(_) => 1,
+    };
+    if rc != 0 {
+        let jump_add_args = [
+            "-w", "5", "-t", "nat", "-I", "PREROUTING", "1",
+            "-j", "HOTSPOT_REDIRECT",
+        ];
+        let (jump_rc, jump_out) = xtables_lock::run_timeout_retry("iptables", &jump_add_args, Capture::Both, IPT_TIMEOUT)
+            .with_context(|| "operaproxy hotspot PREROUTING jump to HOTSPOT_REDIRECT")?;
+        if jump_rc != 0 {
+            anyhow::bail!("operaproxy hotspot PREROUTING jump to HOTSPOT_REDIRECT failed rc={} out={}", jump_rc, jump_out.trim());
+        }
+    }
+
     Ok(())
 }
 

@@ -6,39 +6,46 @@ cd "$ROOT"
 
 BUILD_LOG="${1:-build.log}"
 
-if [[ ! -s "$BUILD_LOG" ]]; then
-  echo "Build log does not exist or is empty: $BUILD_LOG" >&2
+if [[ ! -f "$BUILD_LOG" ]]; then
+  echo "Build log not found: $BUILD_LOG" >&2
   exit 1
 fi
 
 if ! command -v copilot >/dev/null 2>&1; then
   echo "GitHub Copilot CLI is not installed or not available in PATH." >&2
+  echo "Install with: npm install -g @github/copilot" >&2
   exit 127
 fi
+
+LOG_TAIL="$(tail -n 250 "$BUILD_LOG")"
 
 PROMPT_FILE="$(mktemp)"
 trap 'rm -f "$PROMPT_FILE"' EXIT
 
 cat > "$PROMPT_FILE" <<EOF_PROMPT
-The ZDT-D GitHub build workflow failed.
+You are maintaining ZDT-D as a conservative repair agent.
 
-Build log file:
-$BUILD_LOG
+The GitHub build workflow failed.
 
 Task:
-Read the build log and fix only the compilation, lint, or packaging error caused by the current AI diff.
+Fix only the compilation/build error shown in the build log.
 
-Rules:
-- make the minimum fix only
+Forbidden:
 - do not add new features
 - do not refactor unrelated code
-- do not touch .github/workflows/build.yml
+- do not rewrite architecture
 - do not touch build.sh
-- do not touch release/service-build logic
-- do not touch routing, iptables, NFQUEUE, VPN/netd, Zygisk, or module boot logic
-- do not use build.sh
+- do not touch release workflow logic
+- do not touch service-build logic
+- do not touch routing, iptables, NFQUEUE, VPN/netd logic
+- do not touch zygisk, prebuilt, keystores
+- do not create .copilot-polish-summary.md
+- do not create repository report files
 
-After editing, update .copilot-polish-summary.md with a short repair note.
+Build log tail:
+\`\`\`text
+$LOG_TAIL
+\`\`\`
 EOF_PROMPT
 
 copilot -p "$(cat "$PROMPT_FILE")" \

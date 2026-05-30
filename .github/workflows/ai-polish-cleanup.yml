@@ -1,0 +1,45 @@
+name: Copilot Polish Cleanup
+
+on:
+  pull_request:
+    types:
+      - closed
+
+permissions:
+  contents: write
+  pull-requests: read
+  issues: write
+
+jobs:
+  cleanup:
+    name: Delete closed Copilot polish branch
+    runs-on: ubuntu-latest
+
+    if: startsWith(github.event.pull_request.head.ref, 'copilot-polish/') && github.event.pull_request.head.repo.full_name == github.repository
+
+    env:
+      GH_TOKEN: ${{ secrets.AI_WORKFLOW_TOKEN }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      MERGED: ${{ github.event.pull_request.merged }}
+
+    steps:
+      - name: Delete AI branch
+        run: |
+          set -euo pipefail
+
+          echo "Closed PR branch: $HEAD_REF"
+          echo "Merged: $MERGED"
+
+          gh api \
+            -X DELETE \
+            "repos/${GITHUB_REPOSITORY}/git/refs/heads/${HEAD_REF}" \
+            >/dev/null 2>&1 || true
+
+          if [ "$MERGED" = "true" ]; then
+            MESSAGE="Copilot polish branch \`$HEAD_REF\` was merged and deleted."
+          else
+            MESSAGE="Copilot polish branch \`$HEAD_REF\` was rejected/closed without merge and deleted. The AI change was discarded."
+          fi
+
+          gh pr comment "$PR_NUMBER" --body "$MESSAGE" >/dev/null 2>&1 || true

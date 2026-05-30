@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT"
 
-BRANCH="${COPILOT_POLISH_BRANCH:-copilot-polish}"
+BRANCH="${COPILOT_POLISH_BRANCH:-$(git branch --show-current)}"
 MESSAGE="${1:-AI polish: safe incremental improvement}"
 
 # Never commit Copilot runtime/report files.
@@ -17,12 +17,15 @@ rm -f \
 
 if git diff --quiet && git diff --cached --quiet; then
   echo "No changes to commit."
+  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    echo "changed=false" >> "$GITHUB_OUTPUT"
+  fi
   exit 0
 fi
 
 git add -A
 
-# Safety cleanup after git add, in case a tool recreated a runtime file.
+# Safety cleanup after git add.
 git reset -- \
   .copilot-polish-summary.md \
   .copilot-polish-build-run-id \
@@ -33,8 +36,21 @@ git rm -f --ignore-unmatch .copilot-polish-summary.md >/dev/null 2>&1 || true
 
 if git diff --cached --quiet; then
   echo "No commit-worthy changes after excluding runtime files."
+  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+    echo "changed=false" >> "$GITHUB_OUTPUT"
+  fi
   exit 0
 fi
 
-git commit -m "$MESSAGE" -m "Automated conservative polish for ZDT-D. Behavior-preserving change intended for validation through .github/workflows/build.yml on $BRANCH."
-git push origin "$BRANCH"
+git commit \
+  -m "$MESSAGE" \
+  -m "Automated conservative polish for ZDT-D. Behavior-preserving change intended for validation through .github/workflows/build.yml."
+
+git push -u origin "$BRANCH"
+
+COMMIT_SHA="$(git rev-parse HEAD)"
+
+if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
+  echo "changed=true" >> "$GITHUB_OUTPUT"
+  echo "commit_sha=$COMMIT_SHA" >> "$GITHUB_OUTPUT"
+fi

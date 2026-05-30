@@ -4,9 +4,8 @@ set -euo pipefail
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$ROOT"
 
-BRANCH="${COPILOT_POLISH_BRANCH:-copilot-polish}"
+BRANCH="${COPILOT_POLISH_BRANCH:-$(git branch --show-current)}"
 BASE_BRANCH="${COPILOT_POLISH_BASE_BRANCH:-main}"
-TITLE="${COPILOT_POLISH_PR_TITLE:-Copilot polish: review AI improvements}"
 
 if ! command -v gh >/dev/null 2>&1; then
   echo "GitHub CLI is not available." >&2
@@ -22,6 +21,7 @@ fi
 
 HEAD_SHA="$(git rev-parse --short HEAD)"
 FULL_SHA="$(git rev-parse HEAD)"
+TITLE="Copilot polish: $HEAD_SHA"
 CHANGED_FILES="$(git diff --name-only "origin/$BASE_BRANCH...HEAD" | sed 's/^/- /')"
 COMMITS="$(git log --oneline --no-merges "origin/$BASE_BRANCH..HEAD" | sed 's/^/- /' | head -n 30)"
 
@@ -31,18 +31,24 @@ trap 'rm -f "$BODY_FILE"' EXIT
 cat > "$BODY_FILE" <<EOF_BODY
 ## Copilot Polish
 
-This PR contains conservative AI-assisted improvements from the \`$BRANCH\` branch.
+This is an isolated AI-assisted improvement.
+
+### Branch
+
+\`\`\`text
+$BRANCH
+\`\`\`
 
 ### Validation
 
-The latest accepted change was validated by:
+Validated through:
 
 \`\`\`text
 .github/workflows/build.yml
 build_type=Release
 \`\`\`
 
-### Latest head
+### Head commit
 
 \`\`\`text
 $FULL_SHA
@@ -52,13 +58,16 @@ $FULL_SHA
 
 $CHANGED_FILES
 
-### Recent commits
+### Commits
 
 $COMMITS
 
-### Review notes
+### Review policy
 
-Please review manually before merging.
+Merge this PR only if the change is correct and behavior-preserving.
+
+Close this PR without merge if the change is not acceptable.  
+The cleanup workflow will delete this AI branch, so the rejected change will be discarded.
 
 Expected change type:
 - small behavior-preserving refactor
@@ -86,22 +95,13 @@ EXISTING_PR_URL="$(
 )"
 
 if [[ -n "$EXISTING_PR_URL" ]]; then
-  echo "Updating existing PR: $EXISTING_PR_URL"
+  echo "PR already exists for this branch: $EXISTING_PR_URL"
   gh pr edit "$EXISTING_PR_URL" \
     --title "$TITLE" \
     --body-file "$BODY_FILE"
-
-  gh pr comment "$EXISTING_PR_URL" \
-    --body "Copilot polish branch updated after successful build.yml validation. Latest head: \`$HEAD_SHA\`." >/dev/null 2>&1 || true
-
-  echo "PR_URL=$EXISTING_PR_URL"
-  {
-    echo "### Copilot Polish PR"
-    echo ""
-    echo "Updated existing PR: $EXISTING_PR_URL"
-  } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+  PR_URL="$EXISTING_PR_URL"
 else
-  echo "Creating new PR: $BRANCH -> $BASE_BRANCH"
+  echo "Creating PR: $BRANCH -> $BASE_BRANCH"
   PR_URL="$(
     gh pr create \
       --base "$BASE_BRANCH" \
@@ -109,11 +109,12 @@ else
       --title "$TITLE" \
       --body-file "$BODY_FILE"
   )"
-
-  echo "PR_URL=$PR_URL"
-  {
-    echo "### Copilot Polish PR"
-    echo ""
-    echo "Created PR: $PR_URL"
-  } >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
 fi
+
+echo "PR_URL=$PR_URL"
+
+{
+  echo "### Copilot Polish PR"
+  echo ""
+  echo "$PR_URL"
+} >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true

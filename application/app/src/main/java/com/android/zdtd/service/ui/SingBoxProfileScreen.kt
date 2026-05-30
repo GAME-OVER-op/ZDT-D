@@ -211,6 +211,13 @@ private suspend fun isSingBoxWebPanelPortOpen(port: Int): Boolean = withContext(
   }.getOrDefault(false)
 }
 
+private fun createSnackFunction(
+  scope: kotlinx.coroutines.CoroutineScope,
+  snackHost: SnackbarHostState,
+): (String) -> Unit = { msg ->
+  scope.launch { snackHost.showSnackbar(msg) }
+}
+
 @Composable
 private fun SingBoxSectionCard(
   title: String,
@@ -1982,9 +1989,7 @@ private fun SingBoxCreateServerDialog(
   var error by remember { mutableStateOf<String?>(null) }
   val name = remember(raw) { normalizeSingBoxServerName(raw) }
 
-  fun snack(msg: String) {
-    scope.launch { snackHost.showSnackbar(msg) }
-  }
+  val snack = createSnackFunction(scope, snackHost)
 
   Dialog(
     onDismissRequest = onDismiss,
@@ -2111,9 +2116,7 @@ private fun SingBoxImportToProfileDialog(
   var error by remember { mutableStateOf<String?>(null) }
   val name = remember(raw) { normalizeSingBoxServerName(raw) }
 
-  fun snack(msg: String) {
-    scope.launch { snackHost.showSnackbar(msg) }
-  }
+  val snack = createSnackFunction(scope, snackHost)
 
   Dialog(
     onDismissRequest = onDismiss,

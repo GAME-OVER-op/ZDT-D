@@ -1492,50 +1492,6 @@ fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
     Ok(())
 }
 
-pub fn remove_hotspot_prerouting_redirect() -> Result<()> {
-    let _xt_guard = xtables_lock::lock();
-    let chain_name = "HOTSPOT_REDIRECT";
-
-    let jump_check_args = [
-        "-w", "5", "-t", "nat", "-C", "PREROUTING",
-        "-j", chain_name,
-    ];
-    let (rc, _) = xtables_lock::run_timeout_retry("iptables", &jump_check_args, Capture::None, IPT_TIMEOUT)?;
-    if rc == 0 {
-        let jump_del_args = [
-            "-w", "5", "-t", "nat", "-D", "PREROUTING",
-            "-j", chain_name,
-        ];
-        let (rc, out) = xtables_lock::run_timeout_retry("iptables", &jump_del_args, Capture::Both, IPT_TIMEOUT)
-            .with_context(|| format!("remove PREROUTING jump to {}", chain_name))?;
-        if rc != 0 {
-            warn!("operaproxy: failed to remove PREROUTING jump: {}", out.trim());
-        }
-    }
-
-    let (rc, out) = xtables_lock::run_timeout_retry(
-        "iptables",
-        &["-t", "nat", "-F", chain_name],
-        Capture::Both,
-        IPT_TIMEOUT,
-    )?;
-    if rc != 0 {
-        warn!("operaproxy: failed to flush chain {}: {}", chain_name, out.trim());
-    }
-
-    let (rc, out) = xtables_lock::run_timeout_retry(
-        "iptables",
-        &["-t", "nat", "-X", chain_name],
-        Capture::Both,
-        IPT_TIMEOUT,
-    )?;
-    if rc != 0 {
-        warn!("operaproxy: failed to delete chain {}: {}", chain_name, out.trim());
-    }
-
-    Ok(())
-}
-
 fn wait_for_socks(
     min_ok: usize,
     ports: &[u16],

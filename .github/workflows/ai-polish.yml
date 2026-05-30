@@ -68,7 +68,7 @@ jobs:
           fi
 
           if [ -z "$BRANCH_PREFIX" ]; then
-            BRANCH_PREFIX="copilot-polish"
+            BRANCH_PREFIX="ai-polish"
           fi
 
           if [ -z "$MAX_REPAIRS" ]; then
@@ -102,7 +102,7 @@ jobs:
           TARGET_FILE="${{ github.event.inputs.target_file }}"
 
           if [ -z "$TARGET_FILE" ]; then
-            TARGET_FILE="$(scripts/copilot-polish/select-target.sh)"
+            TARGET_FILE="$(scripts/ai-polish/select-target.sh)"
           fi
 
           if [ ! -f "$TARGET_FILE" ]; then
@@ -122,7 +122,7 @@ jobs:
       - name: Run conservative Copilot polish
         run: |
           set -euo pipefail
-          scripts/copilot-polish/run-copilot-polish.sh "${{ steps.target.outputs.target_file }}"
+          scripts/ai-polish/run-copilot-polish.sh "${{ steps.target.outputs.target_file }}"
 
       - name: Normalize unexpected Copilot commits
         run: |
@@ -142,13 +142,13 @@ jobs:
       - name: Guard diff
         run: |
           set -euo pipefail
-          scripts/copilot-polish/guard-diff.sh
+          scripts/ai-polish/guard-diff.sh
 
       - name: Commit and push AI attempt
         id: commit
         run: |
           set -euo pipefail
-          scripts/copilot-polish/commit-if-changed.sh "AI polish: isolated safe improvement"
+          scripts/ai-polish/commit-if-changed.sh "AI polish: isolated safe improvement"
 
       - name: Validate with build.yml
         id: validate
@@ -156,7 +156,7 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          scripts/copilot-polish/dispatch-build.sh "${{ steps.branch.outputs.branch }}" Release
+          scripts/ai-polish/dispatch-build.sh "${{ steps.branch.outputs.branch }}" Release
 
       - name: Repair failed build once
         id: repair
@@ -164,9 +164,9 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          scripts/copilot-polish/repair-from-build-log.sh build.log
-          scripts/copilot-polish/guard-diff.sh
-          scripts/copilot-polish/commit-if-changed.sh "AI polish: repair build failure"
+          scripts/ai-polish/repair-from-build-log.sh build.log
+          scripts/ai-polish/guard-diff.sh
+          scripts/ai-polish/commit-if-changed.sh "AI polish: repair build failure"
 
       - name: Revalidate after repair
         id: revalidate
@@ -174,13 +174,13 @@ jobs:
         continue-on-error: true
         run: |
           set -euo pipefail
-          scripts/copilot-polish/dispatch-build.sh "${{ steps.branch.outputs.branch }}" Release
+          scripts/ai-polish/dispatch-build.sh "${{ steps.branch.outputs.branch }}" Release
 
       - name: Open isolated Pull Request
         if: steps.commit.outputs.changed == 'true' && (steps.validate.outcome == 'success' || steps.revalidate.outcome == 'success')
         run: |
           set -euo pipefail
-          scripts/copilot-polish/open-polish-pr.sh
+          scripts/ai-polish/open-polish-pr.sh
 
       - name: Delete AI branch if nothing changed
         if: steps.commit.outputs.changed != 'true'

@@ -89,6 +89,20 @@ fun AnalysisToolsScreen(
 }
 
 @Composable
+private fun TrailingNavIcon(enabled: Boolean, accent: Color) {
+  if (enabled) {
+    Icon(
+      imageVector = Icons.Outlined.ChevronRight,
+      contentDescription = null,
+      tint = accent.copy(alpha = 0.90f),
+      modifier = Modifier.size(24.dp),
+    )
+  } else {
+    Spacer(Modifier.size(24.dp))
+  }
+}
+
+@Composable
 private fun AnalysisIntroCard(compact: Boolean) {
   Card(
     modifier = Modifier.fillMaxWidth(),
@@ -220,16 +234,7 @@ private fun AnalysisToolCard(
           overflow = TextOverflow.Ellipsis,
         )
       }
-      if (enabled) {
-        Icon(
-          imageVector = Icons.Outlined.ChevronRight,
-          contentDescription = null,
-          tint = accent.copy(alpha = 0.90f),
-          modifier = Modifier.size(24.dp),
-        )
-      } else {
-        Spacer(Modifier.size(24.dp))
-      }
+      TrailingNavIcon(enabled = enabled, accent = accent)
     }
   }
 }

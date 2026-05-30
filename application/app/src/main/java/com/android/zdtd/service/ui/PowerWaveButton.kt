@@ -33,6 +33,11 @@ internal enum class PowerUiState {
   Stopping,
 }
 
+private val WAVE_PHASES = floatArrayOf(0f, 0.33f, 0.66f)
+private val COLOR_ACTIVE = Color(0xFFE53935) // red
+private val COLOR_INACTIVE = Color(0xFF8E8E8E) // grey
+private val COLOR_STOPPING_WAVE = Color(0xFFFF5252) // light red
+
 @Composable
 internal fun PowerWaveButton(
   state: PowerUiState,
@@ -44,13 +49,13 @@ internal fun PowerWaveButton(
   val isRunning = state == PowerUiState.Running || state == PowerUiState.Stopping
   val isAnimating = state == PowerUiState.Starting || state == PowerUiState.Stopping
 
-  val fillColor = if (isRunning) Color(0xFFE53935) else Color(0xFF8E8E8E) // red / grey
+  val fillColor = if (isRunning) COLOR_ACTIVE else COLOR_INACTIVE
 
   // Waves should match the current "active" feel:
   // - Starting: grey waves (service not yet running)
   // - Stopping: red waves (service still running while stopping)
   val waveColor = remember(state) {
-    if (state == PowerUiState.Stopping) Color(0xFFFF5252) else Color.White
+    if (state == PowerUiState.Stopping) COLOR_STOPPING_WAVE else Color.White
   }
 
   val progress = if (isAnimating) {
@@ -86,8 +91,7 @@ internal fun PowerWaveButton(
           val stroke = Stroke(width = 5.dp.toPx())
 
           // 3 rings, phase-shifted
-          val phases = floatArrayOf(0f, 0.33f, 0.66f)
-          for (phase in phases) {
+          for (phase in WAVE_PHASES) {
             val p = (progress + phase) % 1f
             val radiusFrac = if (state == PowerUiState.Starting) p else (1f - p)
             val radius = rMax * radiusFrac.coerceIn(0f, 1f)

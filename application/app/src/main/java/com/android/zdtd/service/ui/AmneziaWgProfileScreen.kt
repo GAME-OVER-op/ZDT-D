@@ -104,9 +104,6 @@ private suspend fun awaitLoadJsonAmneziaWg(actions: ZdtdActions, path: String): 
 private suspend fun awaitLoadTextAmneziaWg(actions: ZdtdActions, path: String): String? =
   suspendCancellableCoroutine { cont -> actions.loadText(path) { cont.resume(it) } }
 
-private suspend fun awaitSaveJsonAmneziaWg(actions: ZdtdActions, path: String, obj: JSONObject): Boolean =
-  suspendCancellableCoroutine { cont -> actions.saveJsonData(path, obj) { cont.resume(it) } }
-
 private suspend fun awaitSaveTextAmneziaWg(actions: ZdtdActions, path: String, content: String): Boolean =
   suspendCancellableCoroutine { cont -> actions.saveText(path, content) { cont.resume(it) } }
 
@@ -647,7 +644,7 @@ fun AmneziaWgProfileScreen(
       stripFwmark = stripFwmark,
     )
     if (current == syncedSetting) return@LaunchedEffect
-    val ok = awaitSaveJsonAmneziaWg(actions, "$basePath/setting", buildAmneziaWgSettingJson(current))
+    val ok = awaitSaveJsonVpnTunGuard(actions, "$basePath/setting", buildAmneziaWgSettingJson(current))
     if (ok) {
       syncedSetting = current
     } else {

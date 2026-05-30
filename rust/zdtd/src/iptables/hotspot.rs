@@ -170,32 +170,48 @@ fn add_bypass_returns(spec: &str) -> Result<()> {
     }
 
     if caps::multiport_v4() {
-        let elems = port_filter::to_multiport_elements(&ranges);
-        for chunk in port_filter::chunk_multiport(&elems, 15) {
-            let ports_csv = port_filter::join_elems_csv(&chunk);
-            let args = vec![
-                "-t".into(),
-                "nat".into(),
-                "-A".into(),
-                CHAIN.into(),
-                "-p".into(),
-                "tcp".into(),
-                "-m".into(),
-                "multiport".into(),
-                "--dports".into(),
-                ports_csv,
-                "-j".into(),
-                "RETURN".into(),
-            ];
-            let (rc, out) = ipt_runv_timeout(&args, Capture::Both)
-                .context("add hotspot multiport bypass RETURN")?;
-            if rc != 0 {
-                anyhow::bail!("add {CHAIN} multiport RETURN failed rc={} out={}", rc, out.trim());
+        match add_multiport_bypass_returns(&ranges) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                warn!(
+                    "hotspot multiport bypass setup failed, falling back to plain --dport rules: {e:#}"
+                );
+                flush_chain()?;
             }
         }
-        return Ok(());
     }
 
+    add_plain_bypass_returns(&ranges)
+}
+
+fn add_multiport_bypass_returns(ranges: &[port_filter::PortRange]) -> Result<()> {
+    let elems = port_filter::to_multiport_elements(ranges);
+    for chunk in port_filter::chunk_multiport(&elems, 15) {
+        let ports_csv = port_filter::join_elems_csv(&chunk);
+        let args = vec![
+            "-t".into(),
+            "nat".into(),
+            "-A".into(),
+            CHAIN.into(),
+            "-p".into(),
+            "tcp".into(),
+            "-m".into(),
+            "multiport".into(),
+            "--dports".into(),
+            ports_csv,
+            "-j".into(),
+            "RETURN".into(),
+        ];
+        let (rc, out) = ipt_runv_timeout(&args, Capture::Both)
+            .context("add hotspot multiport bypass RETURN")?;
+        if rc != 0 {
+            anyhow::bail!("add {CHAIN} multiport RETURN failed rc={} out={}", rc, out.trim());
+        }
+    }
+    Ok(())
+}
+
+fn add_plain_bypass_returns(ranges: &[port_filter::PortRange]) -> Result<()> {
     for range in ranges {
         let dport = if range.start == range.end {
             range.start.to_string()

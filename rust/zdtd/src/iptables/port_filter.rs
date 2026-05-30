@@ -96,21 +96,86 @@ pub fn to_multiport_elements(ranges: &[PortRange]) -> Vec<String> {
     out
 }
 
-/// Split multiport elements into chunks of at most `max_elems` (iptables multiport limit is 15).
+/// Return how many multiport slots an element consumes.
+///
+/// iptables multiport accepts up to 15 ports. A range like `1000:2000`
+/// counts as two ports, not one textual element, so chunking must be based
+/// on this weight instead of a simple element count.
+pub fn multiport_element_weight(element: &str) -> usize {
+    if element.contains(':') {
+        2
+    } else {
+        1
+    }
+}
+
+/// Split multiport elements into chunks that fit the iptables multiport limit.
+///
+/// `max_elems` is the maximum multiport slot count, normally 15. Single ports
+/// consume one slot, while ranges (`start:end`) consume two slots.
 pub fn chunk_multiport(elements: &[String], max_elems: usize) -> Vec<Vec<String>> {
     if elements.is_empty() {
         return Vec::new();
     }
-    let mut out = Vec::new();
-    let mut i = 0usize;
-    while i < elements.len() {
-        let end = (i + max_elems).min(elements.len());
-        out.push(elements[i..end].to_vec());
-        i = end;
+
+    let max_slots = max_elems.max(1);
+    let mut out: Vec<Vec<String>> = Vec::new();
+    let mut current: Vec<String> = Vec::new();
+    let mut current_weight = 0usize;
+
+    for element in elements {
+        let weight = multiport_element_weight(element).min(max_slots);
+
+        if !current.is_empty() && current_weight + weight > max_slots {
+            out.push(current);
+            current = Vec::new();
+            current_weight = 0;
+        }
+
+        current.push(element.clone());
+        current_weight += weight;
     }
+
+    if !current.is_empty() {
+        out.push(current);
+    }
+
     out
 }
 
 pub fn join_elems_csv(elems: &[String]) -> String {
     elems.join(",")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chunk_multiport_counts_ranges_as_two_slots() {
+        let elems = vec![
+            "1".to_string(),
+            "7".to_string(),
+            "9".to_string(),
+            "11".to_string(),
+            "13".to_string(),
+            "15".to_string(),
+            "17".to_string(),
+            "19:23".to_string(),
+            "25".to_string(),
+            "37".to_string(),
+            "42:43".to_string(),
+            "53".to_string(),
+            "69".to_string(),
+            "77".to_string(),
+            "79".to_string(),
+        ];
+
+        let chunks = chunk_multiport(&elems, 15);
+        assert_eq!(chunks.len(), 2);
+        for chunk in chunks {
+            let weight: usize = chunk.iter().map(|e| multiport_element_weight(e)).sum();
+            assert!(weight <= 15);
+        }
+    }
 }

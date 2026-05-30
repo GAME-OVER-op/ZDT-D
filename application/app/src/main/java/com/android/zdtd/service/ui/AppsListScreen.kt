@@ -365,60 +365,31 @@ private fun SummaryMetricsRow(
   } else {
     stringResource(R.string.apps_list_showing_fmt, shown, total)
   }
-  if (compact) {
-    Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth()) {
-      SummaryMetricCard(
-        title = totalTitle,
-        value = shown.toString(),
-        hint = stringResource(R.string.apps_list_chip_enabled_count, active),
-        icon = Icons.Outlined.Extension,
-        accentColor = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.weight(1.12f),
-      )
-      SummaryMetricCard(
-        title = stringResource(R.string.apps_list_section_core),
-        value = coreCount.toString(),
-        hint = stringResource(R.string.apps_list_items_count, coreCount),
-        icon = Icons.Outlined.Tune,
-        accentColor = MaterialTheme.colorScheme.tertiary,
-        modifier = Modifier.weight(1f),
-      )
-      SummaryMetricCard(
-        title = stringResource(R.string.apps_list_section_profiles),
-        value = profilePrograms.toString(),
-        hint = stringResource(R.string.apps_list_items_count, profilePrograms),
-        icon = Icons.Outlined.Public,
-        accentColor = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.weight(1f),
-      )
-    }
-  } else {
-    Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth()) {
-      SummaryMetricCard(
-        title = totalTitle,
-        value = shown.toString(),
-        hint = stringResource(R.string.apps_list_chip_enabled_count, active),
-        icon = Icons.Outlined.Extension,
-        accentColor = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.weight(1.12f),
-      )
-      SummaryMetricCard(
-        title = stringResource(R.string.apps_list_section_core),
-        value = coreCount.toString(),
-        hint = stringResource(R.string.apps_list_items_count, coreCount),
-        icon = Icons.Outlined.Tune,
-        accentColor = MaterialTheme.colorScheme.tertiary,
-        modifier = Modifier.weight(1f),
-      )
-      SummaryMetricCard(
-        title = stringResource(R.string.apps_list_section_profiles),
-        value = profilePrograms.toString(),
-        hint = stringResource(R.string.apps_list_items_count, profilePrograms),
-        icon = Icons.Outlined.Public,
-        accentColor = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.weight(1f),
-      )
-    }
+  Row(horizontalArrangement = Arrangement.spacedBy(5.dp), modifier = Modifier.fillMaxWidth()) {
+    SummaryMetricCard(
+      title = totalTitle,
+      value = shown.toString(),
+      hint = stringResource(R.string.apps_list_chip_enabled_count, active),
+      icon = Icons.Outlined.Extension,
+      accentColor = MaterialTheme.colorScheme.primary,
+      modifier = Modifier.weight(1.12f),
+    )
+    SummaryMetricCard(
+      title = stringResource(R.string.apps_list_section_core),
+      value = coreCount.toString(),
+      hint = stringResource(R.string.apps_list_items_count, coreCount),
+      icon = Icons.Outlined.Tune,
+      accentColor = MaterialTheme.colorScheme.tertiary,
+      modifier = Modifier.weight(1f),
+    )
+    SummaryMetricCard(
+      title = stringResource(R.string.apps_list_section_profiles),
+      value = profilePrograms.toString(),
+      hint = stringResource(R.string.apps_list_items_count, profilePrograms),
+      icon = Icons.Outlined.Public,
+      accentColor = MaterialTheme.colorScheme.primary,
+      modifier = Modifier.weight(1f),
+    )
   }
 }
 

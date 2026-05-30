@@ -16,8 +16,8 @@ use std::{
 };
 
 use crate::{
-    android::pkg_uid::{self, Sha256Tracker, Mode as UidMode},
-    iptables::iptables_port::{self, DpiTunnelOptions, ProtoChoice},
+    android::pkg_uid::{self, Mode as UidMode, Sha256Tracker},
+    iptables::{caps, port_filter, iptables_port::{self, DpiTunnelOptions, ProtoChoice}},
     programs::dnscrypt,
     settings,
     shell::{self, Capture},
@@ -1365,49 +1365,130 @@ fn spawn_t2s(bin: &Path, listen_addr: &str, listen_port: u16, socks_ports_csv: &
     Ok(())
 }
 
-
 fn apply_hotspot_prerouting_redirect(listen_port: u16) -> Result<()> {
     let _xt_guard = xtables_lock::lock();
     let listen_port_s = listen_port.to_string();
-    let check_args = [
-        "-w",
-        "5",
-        "-t",
-        "nat",
-        "-C",
-        "PREROUTING",
-        "-p",
-        "tcp",
-        "-j",
-        "REDIRECT",
-        "--to-ports",
-        listen_port_s.as_str(),
-    ];
-    let rc = match xtables_lock::run_timeout_retry("iptables", &check_args, Capture::Both, IPT_TIMEOUT) {
-        Ok((rc, _)) => rc,
-        Err(_) => 1,
-    };
-    if rc != 0 {
-        let add_args = [
-            "-w",
-            "5",
-            "-t",
-            "nat",
-            "-I",
-            "PREROUTING",
-            "-p",
-            "tcp",
-            "-j",
-            "REDIRECT",
-            "--to-ports",
-            listen_port_s.as_str(),
-        ];
-        let (add_rc, out) = xtables_lock::run_timeout_retry("iptables", &add_args, Capture::Both, IPT_TIMEOUT)
-            .with_context(|| format!("operaproxy hotspot PREROUTING redirect to :{}", listen_port))?;
-        if add_rc != 0 {
-            anyhow::bail!("operaproxy hotspot PREROUTING redirect to :{} failed rc={} out={}", listen_port, add_rc, out.trim());
+
+    let bypass_ports = "0,1,7,9,11,13,15,17,19,20,21,22,23,25,37,42,43,53,69,77,79,87,95,101,102,103,104,109,110,111,113,115,117,119,123,135,137,139,143,161,179,389,427,465,512,513,514,515,526,530,531,532,540,548,554,556,563,587,601,636,989,990,993,995,1719,1720,1723,2049,3659,4045,4190,5060,5061,6000,6566,6665,6666,6667,6668,6669,6679,6697,10080";
+
+    let ranges = port_filter::parse_ranges(bypass_ports);
+    let mut all_ports: Vec<String> = Vec::new();
+    for range in &ranges {
+        if range.start == range.end {
+            all_ports.push(range.start.to_string());
+        } else {
+            for port in range.start..=range.end {
+                all_ports.push(port.to_string());
+            }
         }
     }
+
+    let chain_name = "HOTSPOT_REDIRECT";
+    let (c, _) = xtables_lock::run_timeout_retry(
+        "iptables",
+        &["-t", "nat", "-nL", chain_name],
+        Capture::None,
+        IPT_TIMEOUT,
+    )?;
+    if c != 0 {
+        let (rc, out) = xtables_lock::run_timeout_retry(
+            "iptables",
+            &["-t", "nat", "-N", chain_name],
+            Capture::Both,
+            IPT_TIMEOUT,
+        )?;
+        if rc != 0 {
+            anyhow::bail!("operaproxy: create chain {} failed: {}", chain_name, out.trim());
+        }
+    }
+
+    let (rc, out) = xtables_lock::run_timeout_retry(
+        "iptables",
+        &["-t", "nat", "-F", chain_name],
+        Capture::Both,
+        IPT_TIMEOUT,
+    )?;
+    if rc != 0 {
+        anyhow::bail!("operaproxy: flush chain {} failed: {}", chain_name, out.trim());
+    }
+
+    if caps::multiport_v4() {
+        for chunk in all_ports.chunks(15) {
+            let ports_csv = chunk.join(",");
+            let add_args = [
+                "-w", "5", "-t", "nat", "-A", chain_name,
+                "-p", "tcp",
+                "-m", "multiport", "--dports", &ports_csv,
+                "-j", "RETURN",
+            ];
+            let (rc, out) = xtables_lock::run_timeout_retry("iptables", &add_args, Capture::Both, IPT_TIMEOUT)
+                .with_context(|| format!("add multiport bypass rule for ports: {}", ports_csv))?;
+            if rc != 0 {
+                anyhow::bail!("operaproxy: add multiport RETURN rule failed: {}", out.trim());
+            }
+        }
+    } else {
+        warn!("operaproxy: multiport not supported, using per-port RETURN rules");
+        for port in &all_ports {
+            let add_args = [
+                "-w", "5", "-t", "nat", "-A", chain_name,
+                "-p", "tcp",
+                "--dport", port,
+                "-j", "RETURN",
+            ];
+            let (rc, out) = xtables_lock::run_timeout_retry("iptables", &add_args, Capture::Both, IPT_TIMEOUT)
+                .with_context(|| format!("add RETURN rule for port {}", port))?;
+            if rc != 0 {
+                anyhow::bail!("operaproxy: add RETURN rule failed: {}", out.trim());
+            }
+        }
+    }
+
+    let redirect_args = [
+        "-w", "5", "-t", "nat", "-A", chain_name,
+        "-p", "tcp",
+        "-j", "REDIRECT", "--to-ports", &listen_port_s,
+    ];
+    let (rc, out) = xtables_lock::run_timeout_retry("iptables", &redirect_args, Capture::Both, IPT_TIMEOUT)
+        .with_context(|| format!("add REDIRECT rule to :{}", listen_port))?;
+    if rc != 0 {
+        anyhow::bail!("operaproxy: add REDIRECT rule failed: {}", out.trim());
+    }
+
+    let old_check_args = [
+        "-w", "5", "-t", "nat", "-C", "PREROUTING",
+        "-p", "tcp", "-j", "REDIRECT", "--to-ports", &listen_port_s,
+    ];
+    let (rc, _) = xtables_lock::run_timeout_retry("iptables", &old_check_args, Capture::None, IPT_TIMEOUT)?;
+    if rc == 0 {
+        let old_del_args = [
+            "-w", "5", "-t", "nat", "-D", "PREROUTING",
+            "-p", "tcp", "-j", "REDIRECT", "--to-ports", &listen_port_s,
+        ];
+        let (rc, out) = xtables_lock::run_timeout_retry("iptables", &old_del_args, Capture::Both, IPT_TIMEOUT)
+            .with_context(|| "remove old direct REDIRECT rule")?;
+        if rc != 0 {
+            warn!("operaproxy: failed to remove old REDIRECT rule: {}", out.trim());
+        }
+    }
+
+    let jump_check_args = [
+        "-w", "5", "-t", "nat", "-C", "PREROUTING",
+        "-j", chain_name,
+    ];
+    let (rc, _) = xtables_lock::run_timeout_retry("iptables", &jump_check_args, Capture::None, IPT_TIMEOUT)?;
+    if rc != 0 {
+        let jump_args = [
+            "-w", "5", "-t", "nat", "-I", "PREROUTING", "1",
+            "-j", chain_name,
+        ];
+        let (rc, out) = xtables_lock::run_timeout_retry("iptables", &jump_args, Capture::Both, IPT_TIMEOUT)
+            .with_context(|| format!("add PREROUTING jump to {}", chain_name))?;
+        if rc != 0 {
+            anyhow::bail!("operaproxy: add PREROUTING jump failed: {}", out.trim());
+        }
+    }
+
     Ok(())
 }
 

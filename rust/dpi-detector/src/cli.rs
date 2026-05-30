@@ -17,17 +17,13 @@ async fn run(args: Vec<String>) -> Result<()> {
 }
 
 fn parse_run_options(args: &[String]) -> Result<RunOptions> {
-    let all = [
-        "dns_integrity",
-        "dns_availability",
-        "domains",
-        "tcp16",
-        "whitelist_sni",
-        "telegram",
-    ];
+    let default_tests = test_catalog()
+        .iter()
+        .map(|(id, _)| id.to_string())
+        .collect();
     let mut options = RunOptions {
         format: OutputFormat::Text,
-        tests: all.iter().map(|s| s.to_string()).collect(),
+        tests: default_tests,
         timeout_ms: DNS_TIMEOUT_MS,
         quick: false,
         max_domains: 40,

@@ -15,7 +15,7 @@ jobs:
     name: Delete closed Copilot polish branch
     runs-on: ubuntu-latest
 
-    if: startsWith(github.event.pull_request.head.ref, 'copilot-polish/') && github.event.pull_request.head.repo.full_name == github.repository
+    if: startsWith(github.event.pull_request.head.ref, 'ai-polish/') && github.event.pull_request.head.repo.full_name == github.repository
 
     env:
       GH_TOKEN: ${{ secrets.AI_WORKFLOW_TOKEN }}

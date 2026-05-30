@@ -55,15 +55,20 @@ Forbidden changes:
 - do not change routing, iptables, NFQUEUE, VPN/netd logic
 - do not change app assignment conflict rules
 - do not run build.sh
+- do not create .copilot-polish-summary.md
+- do not create repository summary/report files
 
-Before editing, inspect nearby code and imports.
-After editing, leave a short summary in .copilot-polish-summary.md with:
-- selected file
-- what changed
-- why behavior is preserved
-- what must be validated by GitHub build.yml
+Before editing:
+- inspect nearby code and imports
+- keep the diff small
+- preserve behavior
 
-Keep the diff small.
+After editing:
+- summarize your change only in the Copilot CLI response
+- do not write that summary into the repository
+- validation must be done by GitHub workflow .github/workflows/build.yml
+- if you mention manual validation, use:
+  gh workflow run build.yml --ref copilot-polish -f build_type=Release
 EOF_PROMPT
 
 copilot -p "$(cat "$PROMPT_FILE")" \

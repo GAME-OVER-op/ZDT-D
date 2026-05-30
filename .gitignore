@@ -63,3 +63,7 @@
 build.log
 build-tail.log
 .copilot-polish-build-run-id
+
+# Copilot polish runtime/report files
+.copilot-polish-summary.md
+.copilot-polish-summary*.md

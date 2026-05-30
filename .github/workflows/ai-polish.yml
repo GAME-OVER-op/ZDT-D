@@ -113,10 +113,31 @@ jobs:
           echo "target_file=$TARGET_FILE" >> "$GITHUB_OUTPUT"
           echo "Selected target file: $TARGET_FILE"
 
+      - name: Record branch HEAD before Copilot
+        id: pre_ai
+        run: |
+          set -euo pipefail
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Run conservative Copilot polish
         run: |
           set -euo pipefail
           scripts/copilot-polish/run-copilot-polish.sh "${{ steps.target.outputs.target_file }}"
+
+      - name: Normalize unexpected Copilot commits
+        run: |
+          set -euo pipefail
+
+          BEFORE="${{ steps.pre_ai.outputs.sha }}"
+          AFTER="$(git rev-parse HEAD)"
+
+          if [ "$AFTER" != "$BEFORE" ]; then
+            echo "Copilot created commit(s) unexpectedly. Resetting them back to working-tree changes."
+            git reset --soft "$BEFORE"
+          fi
+
+          git status --short
+
 
       - name: Guard diff
         run: |

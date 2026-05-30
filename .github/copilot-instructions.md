@@ -84,3 +84,9 @@ Commit body should explain:
 - what changed
 - why it is safe
 - what validation was run
+
+## Copilot Polish automation safety
+
+Do not run git commit, git push, gh workflow run, or gh pr create from Copilot polish tasks.
+Only modify files in the working tree.
+The controller workflow is responsible for committing, pushing, validating with build.yml, and creating Pull Requests.

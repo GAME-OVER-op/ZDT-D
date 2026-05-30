@@ -58,6 +58,18 @@ Forbidden changes:
 - do not create .copilot-polish-summary.md
 - do not create repository summary/report files
 
+Strict automation rules:
+- do not run git commit
+- do not run git push
+- do not run git checkout
+- do not run git reset
+- do not run gh workflow run
+- do not run gh pr create
+- do not run gh commands
+- do not validate by dispatching workflows yourself
+- only modify files in the working tree
+- the controller workflow will commit, push, validate, and create the PR after you finish
+
 Before editing:
 - inspect nearby code and imports
 - keep the diff small
@@ -66,13 +78,12 @@ Before editing:
 After editing:
 - summarize your change only in the Copilot CLI response
 - do not write that summary into the repository
-- validation must be done by GitHub workflow .github/workflows/build.yml
-- if you mention manual validation, use:
-  gh workflow run build.yml --ref copilot-polish -f build_type=Release
+- do not commit anything
+- do not push anything
+- validation must be done later by GitHub workflow .github/workflows/build.yml
 EOF_PROMPT
 
 copilot -p "$(cat "$PROMPT_FILE")" \
-  --allow-tool='shell(git:*)' \
   --allow-tool='shell(grep:*)' \
   --allow-tool='shell(sed:*)' \
   --allow-tool='shell(find:*)' \

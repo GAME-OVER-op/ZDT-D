@@ -298,6 +298,15 @@ private fun Tun2SocksCreateProfileDialog(
 }
 
 @Composable
+private fun ErrorFieldHint(messageRes: Int) {
+  Text(
+    stringResource(messageRes),
+    color = MaterialTheme.colorScheme.error,
+    style = MaterialTheme.typography.bodySmall,
+  )
+}
+
+@Composable
 private fun Tun2SocksProfileEnabledCard(
   checked: Boolean,
   onCheckedChange: (Boolean) -> Unit,
@@ -500,10 +509,10 @@ fun Tun2SocksProfileScreen(
           supportingText = { Text(stringResource(R.string.tun2socks_tun_hint)) },
         )
         if (tunText.isNotBlank() && !isValidTun2SocksTun(tunText)) {
-          Text(stringResource(R.string.tun2socks_tun_invalid), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+          ErrorFieldHint(R.string.tun2socks_tun_invalid)
         }
         if (tunNameConflict) {
-          Text(stringResource(R.string.vpn_tun_name_in_use), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+          ErrorFieldHint(R.string.vpn_tun_name_in_use)
         }
         OutlinedTextField(
           value = proxyText,
@@ -516,7 +525,7 @@ fun Tun2SocksProfileScreen(
           supportingText = { Text(stringResource(R.string.tun2socks_proxy_hint)) },
         )
         if (proxyText.isBlank() || !proxyValid) {
-          Text(stringResource(R.string.tun2socks_proxy_invalid), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+          ErrorFieldHint(R.string.tun2socks_proxy_invalid)
         }
         OutlinedTextField(
           value = loglevelText,
@@ -529,7 +538,7 @@ fun Tun2SocksProfileScreen(
           supportingText = { Text(stringResource(R.string.tun2socks_loglevel_hint)) },
         )
         if (loglevelText.isNotBlank() && !loglevelValid) {
-          Text(stringResource(R.string.tun2socks_loglevel_invalid), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+          ErrorFieldHint(R.string.tun2socks_loglevel_invalid)
         }
       }
     }

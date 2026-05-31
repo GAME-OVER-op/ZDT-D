@@ -349,7 +349,6 @@ fun InstallModuleScreen(
     )
   }
 
-
   if (showUnofficialAndroidWarning) {
     SetupAlertDialog(
       onDismissRequest = { showUnofficialAndroidWarning = false },
@@ -365,7 +364,6 @@ fun InstallModuleScreen(
     )
   }
 
-
   if (setup.showZygiskInstallConfirm) {
     SetupAlertDialog(
       onDismissRequest = onDismissZygiskInstallConfirm,
@@ -379,7 +377,6 @@ fun InstallModuleScreen(
   }
 
 
-
   if (setup.showZygiskInstallRecoveryDialog) {
     SetupAlertDialog(
       onDismissRequest = onDismissZygiskInstallRecovery,
@@ -391,7 +388,6 @@ fun InstallModuleScreen(
       onDismiss = onDismissZygiskInstallRecovery,
     )
   }
-
 
   SetupScaffold { padding ->
     SetupScreenBackground(padding = padding) {

@@ -180,7 +180,12 @@ private fun SupportLinkCard(compact: Boolean, narrow: Boolean, link: SupportLink
     shape = RoundedCornerShape(18.dp),
   ) {
     if (compact || narrow) {
-      SupportLinkVerticalLayout(title = title, link = link, onOpen = onOpen, spacing = if (compact) 12.dp else 10.dp)
+      SupportLinkVerticalLayout(
+        title = title,
+        link = link,
+        onOpen = onOpen,
+        spacing = if (compact) 12.dp else 10.dp,
+      )
     } else {
       SupportLinkHorizontalLayout(title = title, link = link, onOpen = onOpen)
     }

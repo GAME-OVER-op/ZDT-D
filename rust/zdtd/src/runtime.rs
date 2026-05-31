@@ -52,6 +52,7 @@ pub fn start_full() -> Result<()> {
     settings::ensure_minimal_program_layouts()?;
 
     if can_adopt_existing_runtime() {
+        final_sync_runtime_settings_best_effort("adopted runtime");
         crate::runtime_state::write_running(false, true).ok();
         crate::logging::user_info("Инициализация завершена");
         return Ok(());
@@ -339,12 +340,20 @@ if !any_main_service_running() {
         crate::scan_detector::start();
     }
 
+    final_sync_runtime_settings_best_effort("startup finalization");
+
     crate::logging::user_info("Запуск завершён");
     if let Err(e) = crate::runtime_state::write_running(last_start_partial(), false) {
         log::warn!("failed to write runtime state marker: {e:#}");
     }
 
     Ok(())
+}
+
+
+fn final_sync_runtime_settings_best_effort(context: &str) {
+    log::info!("runtime: final settings sync ({})", context);
+    crate::android::sysctl::sync_ipv4_forward_from_settings_best_effort();
 }
 
 /// Stop all services and restore baseline iptables.

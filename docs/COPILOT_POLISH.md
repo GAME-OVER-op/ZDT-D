@@ -18,12 +18,12 @@ The `main` branch must remain the release/source-of-truth branch.
 .github/copilot-instructions.md
 .github/workflows/ai-polish.yml
 AGENTS.md
-scripts/ai-polish/select-target.sh
-scripts/ai-polish/run-copilot-polish.sh
-scripts/ai-polish/repair-from-build-log.sh
-scripts/ai-polish/dispatch-build.sh
-scripts/ai-polish/guard-diff.sh
-scripts/ai-polish/commit-if-changed.sh
+scripts/copilot-polish/select-target.sh
+scripts/copilot-polish/run-copilot-polish.sh
+scripts/copilot-polish/repair-from-build-log.sh
+scripts/copilot-polish/dispatch-build.sh
+scripts/copilot-polish/guard-diff.sh
+scripts/copilot-polish/commit-if-changed.sh
 docs/COPILOT_POLISH.md
 ```
 
@@ -173,9 +173,9 @@ cd ~/ZDT-D
 npm install -g @github/copilot
 export COPILOT_GITHUB_TOKEN='YOUR_TOKEN'
 
-scripts/ai-polish/select-target.sh
-scripts/ai-polish/run-copilot-polish.sh
-scripts/ai-polish/guard-diff.sh
+scripts/copilot-polish/select-target.sh
+scripts/copilot-polish/run-copilot-polish.sh
+scripts/copilot-polish/guard-diff.sh
 ```
 
 Do not use `build.sh` as the final AI validation step.

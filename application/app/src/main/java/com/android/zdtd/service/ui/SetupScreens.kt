@@ -95,6 +95,29 @@ private fun SetupScaffold(content: @Composable (PaddingValues) -> Unit) {
 }
 
 @Composable
+private fun SetupAlertDialog(
+  onDismissRequest: () -> Unit,
+  titleText: String,
+  bodyText: String,
+  confirmButtonText: String,
+  onConfirm: () -> Unit,
+  dismissButtonText: String,
+  onDismiss: () -> Unit,
+) {
+  AlertDialog(
+    onDismissRequest = onDismissRequest,
+    title = { Text(titleText) },
+    text = { Text(bodyText) },
+    confirmButton = {
+      TextButton(onClick = onConfirm) { Text(confirmButtonText) }
+    },
+    dismissButton = {
+      TextButton(onClick = onDismiss) { Text(dismissButtonText) }
+    },
+  )
+}
+
+@Composable
 fun WelcomeScreen(onAccept: () -> Unit) {
   val arm64Ok = remember { isArm64OnlySupported() }
   val screenPadding = rememberAdaptiveScreenPadding()
@@ -315,76 +338,60 @@ fun InstallModuleScreen(
     } else {
       ""
     }
-    AlertDialog(
+    SetupAlertDialog(
       onDismissRequest = onManualDismiss,
-      title = { Text(stringResource(R.string.common_attention)) },
-      text = { Text(setup.manualDialogText + extra) },
-      confirmButton = {
-        TextButton(onClick = onManualConfirm) { Text(stringResource(R.string.setup_save_zip)) }
-      },
-      dismissButton = {
-        TextButton(onClick = onManualDismiss) { Text(stringResource(R.string.common_cancel)) }
-      },
+      titleText = stringResource(R.string.common_attention),
+      bodyText = setup.manualDialogText + extra,
+      confirmButtonText = stringResource(R.string.setup_save_zip),
+      onConfirm = onManualConfirm,
+      dismissButtonText = stringResource(R.string.common_cancel),
+      onDismiss = onManualDismiss,
     )
   }
+
 
   if (showUnofficialAndroidWarning) {
-    AlertDialog(
+    SetupAlertDialog(
       onDismissRequest = { showUnofficialAndroidWarning = false },
-      title = { Text(stringResource(R.string.setup_android_unofficial_title)) },
-      text = { Text(stringResource(R.string.setup_android_unofficial_body)) },
-      confirmButton = {
-        TextButton(
-          onClick = {
-            showUnofficialAndroidWarning = false
-            onInstall()
-          },
-        ) { Text(stringResource(R.string.setup_android_unofficial_accept)) }
+      titleText = stringResource(R.string.setup_android_unofficial_title),
+      bodyText = stringResource(R.string.setup_android_unofficial_body),
+      confirmButtonText = stringResource(R.string.setup_android_unofficial_accept),
+      onConfirm = {
+        showUnofficialAndroidWarning = false
+        onInstall()
       },
-      dismissButton = {
-        TextButton(onClick = { showUnofficialAndroidWarning = false }) {
-          Text(stringResource(R.string.setup_android_unofficial_decline))
-        }
-      },
+      dismissButtonText = stringResource(R.string.setup_android_unofficial_decline),
+      onDismiss = { showUnofficialAndroidWarning = false },
     )
   }
 
+
   if (setup.showZygiskInstallConfirm) {
-    AlertDialog(
+    SetupAlertDialog(
       onDismissRequest = onDismissZygiskInstallConfirm,
-      title = { Text(stringResource(R.string.setup_zygisk_confirm_title)) },
-      text = { Text(stringResource(R.string.setup_zygisk_confirm_body)) },
-      confirmButton = {
-        TextButton(onClick = onConfirmZygiskInstall) {
-          Text(stringResource(R.string.setup_zygisk_confirm_yes))
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = onDismissZygiskInstallConfirm) {
-          Text(stringResource(R.string.setup_zygisk_confirm_no))
-        }
-      },
+      titleText = stringResource(R.string.setup_zygisk_confirm_title),
+      bodyText = stringResource(R.string.setup_zygisk_confirm_body),
+      confirmButtonText = stringResource(R.string.setup_zygisk_confirm_yes),
+      onConfirm = onConfirmZygiskInstall,
+      dismissButtonText = stringResource(R.string.setup_zygisk_confirm_no),
+      onDismiss = onDismissZygiskInstallConfirm,
     )
   }
+
 
 
   if (setup.showZygiskInstallRecoveryDialog) {
-    AlertDialog(
+    SetupAlertDialog(
       onDismissRequest = onDismissZygiskInstallRecovery,
-      title = { Text(stringResource(R.string.setup_zygisk_recovery_title)) },
-      text = { Text(stringResource(R.string.setup_zygisk_recovery_body)) },
-      confirmButton = {
-        TextButton(onClick = onRetryInstallWithoutZygisk) {
-          Text(stringResource(R.string.setup_zygisk_recovery_retry_without))
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = onDismissZygiskInstallRecovery) {
-          Text(stringResource(R.string.setup_zygisk_recovery_no))
-        }
-      },
+      titleText = stringResource(R.string.setup_zygisk_recovery_title),
+      bodyText = stringResource(R.string.setup_zygisk_recovery_body),
+      confirmButtonText = stringResource(R.string.setup_zygisk_recovery_retry_without),
+      onConfirm = onRetryInstallWithoutZygisk,
+      dismissButtonText = stringResource(R.string.setup_zygisk_recovery_no),
+      onDismiss = onDismissZygiskInstallRecovery,
     )
   }
+
 
   SetupScaffold { padding ->
     SetupScreenBackground(padding = padding) {

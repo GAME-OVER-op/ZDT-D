@@ -80,7 +80,6 @@ fn allow_loopback_redirect_enabled() -> bool {
 ///
 /// - Creates NAT_DPI chain and hooks OUTPUT -> NAT_DPI (nat table).
 /// - Creates MANGLE_APP chain once and hooks OUTPUT -> MANGLE_APP (mangle table).
-/// - Adds mangle exclusions RETURN for each UID.
 /// - Adds DNAT rules into NAT_DPI to 127.0.0.1:<dest_port> for selected ports/protocols,
 ///   optionally per-interface `-o iface`.
 pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: DpiTunnelOptions) -> Result<()> {
@@ -102,10 +101,9 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
         return Ok(());
     }
 
-    // mangle exclusions
-    for uid in &uids {
-        ensure_rule_mangle_return(uid)?;
-    }
+    // MANGLE_APP is UID-specific on the NFQUEUE side, so separate owner RETURN
+    // exclusions are intentionally not added here. Non-targeted UIDs naturally
+    // pass through to the final RETURN in MANGLE_APP.
 
     let protos = proto_choice.protos();
 
@@ -380,6 +378,9 @@ fn ensure_mangle_chain_app_once() -> Result<()> {
     // Prevent our own local connections from being re-processed by NAT_DPI/MANGLE_APP rules.
     // Must be at the very top to avoid feedback loops.
     ensure_loopback_return_mangle()?;
+    if let Err(e) = crate::iptables::mangle_app::cleanup_owner_returns("iptables") {
+        warn!("DPI: cleanup legacy MANGLE_APP owner RETURN rules failed: {e:#}");
+    }
 
     info!("DPI: MANGLE_APP ready");
     Ok(())
@@ -467,66 +468,6 @@ fn read_uids(uid_file: &Path) -> Result<Vec<String>> {
         }
     }
     Ok(set.into_iter().collect())
-}
-
-fn ensure_rule_mangle_return(uid: &str) -> Result<()> {
-    let check = ["-t","mangle","-C","MANGLE_APP","-m","owner","--uid-owner",uid,"-j","RETURN"];
-    let (c, _) = ipt_run_timeout(&check, Capture::None, IPT_CMD_TIMEOUT)?;
-    if c != 0 {
-        // Keep UID exclusions after loopback/DNS RETURN rules, but before
-        // NFQUEUE and the final RETURN. This prevents later DPI/NAT exclusions
-        // from pushing DNS below service UID returns again.
-        let pos_s = mangle_uid_return_insert_pos().unwrap_or(3).to_string();
-        let add_pos = ["-t","mangle","-I","MANGLE_APP",pos_s.as_str(),"-m","owner","--uid-owner",uid,"-j","RETURN"];
-        let (c2, _) = ipt_run_timeout(&add_pos, Capture::Both, IPT_CMD_TIMEOUT)?;
-        if c2 != 0 {
-            // Some builds may not support positional "-I <chain> <num>".
-            // Fall back to "-I <chain>" and then re-assert loopback rules on top.
-            let add1 = ["-t","mangle","-I","MANGLE_APP","-m","owner","--uid-owner",uid,"-j","RETURN"];
-            let (c3, _) = ipt_run_timeout(&add1, Capture::Both, IPT_CMD_TIMEOUT)?;
-            if c3 == 0 {
-                let _ = ensure_loopback_return_mangle();
-            }
-        }
-    }
-    Ok(())
-}
-
-fn mangle_uid_return_insert_pos() -> Result<usize> {
-    let (code, out) = ipt_run_timeout(&["-t","mangle","-S","MANGLE_APP"], Capture::Stdout, IPT_CMD_TIMEOUT)?;
-    if code != 0 {
-        return Ok(3);
-    }
-
-    let mut idx = 0usize;
-    let mut insert_after = 2usize;
-    for raw in out.lines() {
-        let line = raw.trim();
-        if !line.starts_with("-A MANGLE_APP ") {
-            continue;
-        }
-        idx += 1;
-        if line == "-A MANGLE_APP -j RETURN" || line.contains(" -j NFQUEUE") {
-            return Ok(idx.max(1));
-        }
-        if is_mangle_return_prefix(line) {
-            insert_after = idx + 1;
-        }
-    }
-    Ok(insert_after.max(3))
-}
-
-fn is_mangle_return_prefix(line: &str) -> bool {
-    if !line.ends_with(" -j RETURN") {
-        return false;
-    }
-    line == "-A MANGLE_APP -o lo -j RETURN"
-        || line == "-A MANGLE_APP -d 127.0.0.0/8 -j RETURN"
-        || line.contains("--dports 53,853,5353")
-        || line.contains("--dport 53")
-        || line.contains("--dport 853")
-        || line.contains("--dport 5353")
-        || line.contains("-m owner --uid-owner")
 }
 
 

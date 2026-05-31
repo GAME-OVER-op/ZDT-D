@@ -1,5 +1,5 @@
 use anyhow::Result;
-use log::warn;
+use log::{info, warn};
 use std::time::Duration;
 
 use crate::shell::Capture;
@@ -28,8 +28,9 @@ fn runv_timeout_retry(cmd: &str, args: &[String], capture: Capture, timeout: Dur
 /// Ensure the shared mangle app chain exists and OUTPUT jumps into it.
 ///
 /// nfqws/nfqws2 must never place NFQUEUE rules directly in mangle OUTPUT:
-/// the chain-level RETURN exclusions must run before NFQUEUE. This helper keeps
-/// the existing shared MANGLE_APP structure and only prepares the anchor point.
+/// the shared base RETURN guards must run before UID-specific NFQUEUE rules.
+/// This helper keeps the existing shared MANGLE_APP structure and prepares
+/// the anchor point without adding per-UID RETURN exclusions.
 pub fn ensure(cmd: &str) -> Result<()> {
     let (c, _) = run_timeout_retry(cmd, &["-t", "mangle", "-nL", CHAIN], Capture::None, IPT_CMD_TIMEOUT)?;
     if c != 0 {
@@ -48,6 +49,9 @@ pub fn ensure(cmd: &str) -> Result<()> {
     }
 
     ensure_base_returns(cmd);
+    if let Err(e) = cleanup_owner_returns(cmd) {
+        warn!("{cmd}: cleanup legacy {CHAIN} owner RETURN rules failed: {e:#}");
+    }
     ensure_final_return(cmd)?;
     Ok(())
 }
@@ -82,6 +86,75 @@ pub fn add_rule_idempotent(cmd: &str, rule_tail: &[String]) -> Result<bool> {
     }
     ensure_final_return(cmd)?;
     Ok(true)
+}
+
+
+/// Remove legacy per-UID RETURN exclusions from MANGLE_APP.
+///
+/// MANGLE_APP now uses UID-specific NFQUEUE rules, so non-targeted apps naturally
+/// fall through to the final RETURN. Keeping separate `-m owner --uid-owner ... -j RETURN`
+/// rules only bloats the chain and can hide selection conflicts.
+pub fn cleanup_owner_returns(cmd: &str) -> Result<usize> {
+    let (rc, out) = run_timeout_retry(
+        cmd,
+        &["-t", "mangle", "-S", CHAIN],
+        Capture::Stdout,
+        IPT_CMD_TIMEOUT,
+    )?;
+    if rc != 0 {
+        return Ok(0);
+    }
+
+    let mut removed = 0usize;
+    for raw in out.lines() {
+        let line = raw.trim();
+        if !is_owner_return_rule(line) {
+            continue;
+        }
+
+        let tail: Vec<String> = line
+            .split_whitespace()
+            .skip(2) // skip `-A MANGLE_APP`
+            .map(|s| s.to_string())
+            .collect();
+        if tail.is_empty() {
+            continue;
+        }
+
+        loop {
+            let mut del: Vec<String> = vec![
+                "-t".into(),
+                "mangle".into(),
+                "-D".into(),
+                CHAIN.into(),
+            ];
+            del.extend_from_slice(&tail);
+
+            match runv_timeout_retry(cmd, &del, Capture::Both, IPT_CMD_TIMEOUT) {
+                Ok((0, _)) => {
+                    removed += 1;
+                    continue;
+                }
+                Ok((_rc, _out)) => break,
+                Err(e) => {
+                    warn!("{cmd}: remove legacy {CHAIN} owner RETURN failed: {e:#}");
+                    break;
+                }
+            }
+        }
+    }
+
+    if removed > 0 {
+        info!("{cmd}: removed {removed} legacy {CHAIN} owner RETURN rule(s)");
+    }
+    Ok(removed)
+}
+
+fn is_owner_return_rule(line: &str) -> bool {
+    line.starts_with("-A MANGLE_APP ")
+        && line.ends_with(" -j RETURN")
+        && line.contains(" -m owner ")
+        && line.contains(" --uid-owner ")
 }
 
 fn ensure_base_returns(cmd: &str) {

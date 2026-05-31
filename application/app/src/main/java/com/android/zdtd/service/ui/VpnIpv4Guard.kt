@@ -7,6 +7,7 @@ import org.json.JSONObject
 import kotlin.coroutines.resume
 
 private val vpnIpv4ProgramIds = listOf("amneziawg", "myvpn", "mihomo")
+private const val MIHOMO_IPV4_PATTERN = """[0-9]{1,3}(?:\.[0-9]{1,3}){3}(?:/[0-9]{1,2})?"""
 
 internal data class VpnIpv4Cidr(
   val value: String,
@@ -98,7 +99,7 @@ private fun myVpnIpv4Uses(programId: String, profile: String, raw: JSONObject?):
 }
 
 internal fun extractMihomoExplicitIpv4Cidrs(yaml: String): List<VpnIpv4Cidr> {
-  val regex = Regex("""(?m)^\s*ip\s*:\s*[\"']?([0-9]{1,3}(?:\.[0-9]{1,3}){3}(?:/[0-9]{1,2})?)[\"']?\s*(?:#.*)?$""")
+  val regex = Regex("""(?m)^\s*ip\s*:\s*[\"']?($MIHOMO_IPV4_PATTERN)[\"']?\s*(?:#.*)?$""")
   return regex.findAll(yaml).mapNotNull { parseVpnIpv4CidrLiteral(it.groupValues[1]) }.toList()
 }
 
@@ -157,7 +158,7 @@ internal fun nextFreeVpnIpv4Cidr(used: List<VpnIpv4Use>): String = nextFreeVpnIp
 
 internal fun rewriteMihomoExplicitIpv4Conflicts(yaml: String, used: List<VpnIpv4Use>): String {
   if (yaml.isBlank()) return yaml
-  val regex = Regex("""(?m)^(\s*ip\s*:\s*[\"']?)([0-9]{1,3}(?:\.[0-9]{1,3}){3}(?:/[0-9]{1,2})?)([\"']?\s*(?:#.*)?$)""")
+  val regex = Regex("""(?m)^(\s*ip\s*:\s*[\"']?)($MIHOMO_IPV4_PATTERN)([\"']?\s*(?:#.*)?$)""")
   val localUsed = used.toMutableList()
   return regex.replace(yaml) { match ->
     val currentText = match.groupValues[2]

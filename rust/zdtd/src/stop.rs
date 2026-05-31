@@ -184,6 +184,14 @@ fn stop_process_groups_parallel() -> Result<()> {
 pub fn stop_services_and_restore_iptables() -> Result<()> {
     crate::programs::dnscrypt::request_stop();
     crate::programs::dnscrypt::clear_ipv6_resetprops();
+    // Clean routing/iptables hooks before killing services. This prevents clients from
+    // being routed to already-stopped t2s/VPN interfaces during shutdown.
+    if let Err(e) = crate::vpn_tether::cleanup() {
+        log::warn!("vpn_tether cleanup failed during stop: {e:#}");
+    }
+    if let Err(e) = crate::iptables::hotspot::cleanup() {
+        log::warn!("hotspot redirect cleanup failed during stop: {e:#}");
+    }
     if let Err(e) = crate::vpn_netd::stop_applied() {
         log::warn!("vpn_netd cleanup failed during stop: {e:#}");
     }

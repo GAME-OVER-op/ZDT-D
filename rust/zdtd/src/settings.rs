@@ -111,6 +111,12 @@ pub struct ApiSettings {
     #[serde(default)]
     pub hotspot_t2s_enabled: bool,
     #[serde(default)]
+    pub hotspot_mode: String,
+    #[serde(default)]
+    pub hotspot_program: String,
+    #[serde(default)]
+    pub hotspot_profile: String,
+    #[serde(default)]
     pub hotspot_t2s_target: String,
     #[serde(default)]
     pub hotspot_t2s_singbox_profile: String,
@@ -131,6 +137,9 @@ impl Default for ApiSettings {
         Self {
             protector_mode: ProtectorMode::Off,
             hotspot_t2s_enabled: false,
+            hotspot_mode: "proxy".to_string(),
+            hotspot_program: String::new(),
+            hotspot_profile: String::new(),
             hotspot_t2s_target: String::new(),
             hotspot_t2s_singbox_profile: String::new(),
             hotspot_t2s_wireproxy_profile: String::new(),
@@ -144,57 +153,142 @@ impl Default for ApiSettings {
 
 impl ApiSettings {
     pub fn normalize(&mut self) {
+        self.hotspot_mode = normalize_hotspot_mode(&self.hotspot_mode);
+        self.hotspot_program = self.hotspot_program.trim().to_ascii_lowercase();
+        self.hotspot_profile = self.hotspot_profile.trim().to_string();
         self.hotspot_t2s_target = normalize_hotspot_t2s_target(&self.hotspot_t2s_target);
         self.hotspot_t2s_singbox_profile = self.hotspot_t2s_singbox_profile.trim().to_string();
         self.hotspot_t2s_wireproxy_profile = self.hotspot_t2s_wireproxy_profile.trim().to_string();
+
+        // Backward migration from the old proxy-only hotspot fields.
+        if self.hotspot_program.is_empty() && !self.hotspot_t2s_target.is_empty() {
+            self.hotspot_mode = "proxy".to_string();
+            self.hotspot_program = self.hotspot_t2s_target.clone();
+            self.hotspot_profile = match self.hotspot_program.as_str() {
+                "singbox" => self.hotspot_t2s_singbox_profile.clone(),
+                "wireproxy" => self.hotspot_t2s_wireproxy_profile.clone(),
+                _ => String::new(),
+            };
+        }
+
         if !self.hotspot_t2s_enabled {
+            self.hotspot_program.clear();
+            self.hotspot_profile.clear();
             self.hotspot_t2s_target.clear();
             self.hotspot_t2s_singbox_profile.clear();
             self.hotspot_t2s_wireproxy_profile.clear();
             return;
         }
-        if self.hotspot_t2s_target != "singbox" {
+
+        if self.hotspot_mode == "vpn" {
+            self.hotspot_program = normalize_hotspot_vpn_program(&self.hotspot_program);
+            if self.hotspot_program.is_empty() {
+                self.hotspot_profile.clear();
+            }
+            // Proxy compatibility fields must stay empty in VPN mode so old proxy launch paths
+            // cannot accidentally build t2s hotspot REDIRECT rules.
+            self.hotspot_t2s_target.clear();
             self.hotspot_t2s_singbox_profile.clear();
-        }
-        if self.hotspot_t2s_target != "wireproxy" {
             self.hotspot_t2s_wireproxy_profile.clear();
+            return;
         }
+
+        self.hotspot_mode = "proxy".to_string();
+        self.hotspot_program = normalize_hotspot_t2s_target(&self.hotspot_program);
+        if self.hotspot_program.is_empty() {
+            self.hotspot_profile.clear();
+            self.hotspot_t2s_target.clear();
+            self.hotspot_t2s_singbox_profile.clear();
+            self.hotspot_t2s_wireproxy_profile.clear();
+            return;
+        }
+
+        if self.hotspot_program == "operaproxy" {
+            self.hotspot_profile.clear();
+        }
+        self.hotspot_t2s_target = self.hotspot_program.clone();
+        self.hotspot_t2s_singbox_profile = if self.hotspot_program == "singbox" {
+            self.hotspot_profile.clone()
+        } else {
+            String::new()
+        };
+        self.hotspot_t2s_wireproxy_profile = if self.hotspot_program == "wireproxy" {
+            self.hotspot_profile.clone()
+        } else {
+            String::new()
+        };
+    }
+
+    pub fn hotspot_enabled(&self) -> bool {
+        self.hotspot_t2s_enabled
+    }
+
+    pub fn hotspot_mode_proxy(&self) -> bool {
+        self.hotspot_t2s_enabled && self.hotspot_mode == "proxy"
+    }
+
+    pub fn hotspot_mode_vpn(&self) -> bool {
+        self.hotspot_t2s_enabled && self.hotspot_mode == "vpn"
+    }
+
+    pub fn hotspot_proxy_for(&self, program: &str) -> bool {
+        self.hotspot_mode_proxy() && self.hotspot_program == normalize_hotspot_t2s_target(program)
+    }
+
+    pub fn hotspot_proxy_profile_for(&self, program: &str) -> Option<&str> {
+        if !self.hotspot_proxy_for(program) {
+            return None;
+        }
+        let profile = self.hotspot_profile.trim();
+        if profile.is_empty() { None } else { Some(profile) }
+    }
+
+    pub fn hotspot_vpn_for(&self, program: &str) -> bool {
+        self.hotspot_mode_vpn() && self.hotspot_program == normalize_hotspot_vpn_program(program)
+    }
+
+    pub fn hotspot_vpn_profile_for(&self, program: &str) -> Option<&str> {
+        if !self.hotspot_vpn_for(program) {
+            return None;
+        }
+        let profile = self.hotspot_profile.trim();
+        if profile.is_empty() { None } else { Some(profile) }
+    }
+
+    pub fn hotspot_vpn_selection(&self) -> Option<(&str, &str)> {
+        if !self.hotspot_mode_vpn() {
+            return None;
+        }
+        let program = self.hotspot_program.trim();
+        let profile = self.hotspot_profile.trim();
+        if program.is_empty() || profile.is_empty() { None } else { Some((program, profile)) }
     }
 
     pub fn hotspot_t2s_for_operaproxy(&self) -> bool {
-        self.hotspot_t2s_enabled && self.hotspot_t2s_target == "operaproxy"
+        self.hotspot_proxy_for("operaproxy")
     }
 
     pub fn hotspot_t2s_for_singbox(&self) -> bool {
-        self.hotspot_t2s_enabled && self.hotspot_t2s_target == "singbox"
+        self.hotspot_proxy_for("singbox")
     }
 
     pub fn hotspot_t2s_singbox_profile(&self) -> Option<&str> {
-        if !self.hotspot_t2s_for_singbox() {
-            return None;
-        }
-        let profile = self.hotspot_t2s_singbox_profile.trim();
-        if profile.is_empty() {
-            None
-        } else {
-            Some(profile)
-        }
+        self.hotspot_proxy_profile_for("singbox")
     }
 
     pub fn hotspot_t2s_for_wireproxy(&self) -> bool {
-        self.hotspot_t2s_enabled && self.hotspot_t2s_target == "wireproxy"
+        self.hotspot_proxy_for("wireproxy")
     }
 
     pub fn hotspot_t2s_wireproxy_profile(&self) -> Option<&str> {
-        if !self.hotspot_t2s_for_wireproxy() {
-            return None;
-        }
-        let profile = self.hotspot_t2s_wireproxy_profile.trim();
-        if profile.is_empty() {
-            None
-        } else {
-            Some(profile)
-        }
+        self.hotspot_proxy_profile_for("wireproxy")
+    }
+}
+
+fn normalize_hotspot_mode(raw: &str) -> String {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "vpn" => "vpn".to_string(),
+        _ => "proxy".to_string(),
     }
 }
 
@@ -203,6 +297,16 @@ fn normalize_hotspot_t2s_target(raw: &str) -> String {
         "operaproxy" | "opera-proxy" | "opera_proxy" => "operaproxy".to_string(),
         "singbox" | "sing-box" | "sing_box" => "singbox".to_string(),
         "wireproxy" | "wire-proxy" | "wire_proxy" => "wireproxy".to_string(),
+        _ => String::new(),
+    }
+}
+
+fn normalize_hotspot_vpn_program(raw: &str) -> String {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "openvpn" | "open-vpn" | "open_vpn" => "openvpn".to_string(),
+        "amneziawg" | "amnezia-wg" | "amnezia_wg" | "awg" => "amneziawg".to_string(),
+        "mihomo" => "mihomo".to_string(),
+        "mieru" => "mieru".to_string(),
         _ => String::new(),
     }
 }

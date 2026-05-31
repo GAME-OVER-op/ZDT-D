@@ -5609,6 +5609,12 @@ match (method.as_str(), path.as_str()) {
                 #[serde(default)]
                 hotspot_t2s_enabled: Option<bool>,
                 #[serde(default)]
+                hotspot_mode: Option<String>,
+                #[serde(default)]
+                hotspot_program: Option<String>,
+                #[serde(default)]
+                hotspot_profile: Option<String>,
+                #[serde(default)]
                 hotspot_t2s_target: Option<String>,
                 #[serde(default)]
                 hotspot_t2s_singbox_profile: Option<String>,
@@ -5632,14 +5638,51 @@ match (method.as_str(), path.as_str()) {
             }
             if let Some(enabled) = patch.hotspot_t2s_enabled {
                 setting.hotspot_t2s_enabled = enabled;
+                // Enabling/disabling hotspot starts from a clean selection. The UI then sets
+                // exactly one mode/program/profile explicitly.
+                setting.hotspot_program.clear();
+                setting.hotspot_profile.clear();
+                setting.hotspot_t2s_target.clear();
+                setting.hotspot_t2s_singbox_profile.clear();
+                setting.hotspot_t2s_wireproxy_profile.clear();
+            }
+            if let Some(mode) = patch.hotspot_mode {
+                setting.hotspot_mode = mode;
+                setting.hotspot_program.clear();
+                setting.hotspot_profile.clear();
+                setting.hotspot_t2s_target.clear();
+                setting.hotspot_t2s_singbox_profile.clear();
+                setting.hotspot_t2s_wireproxy_profile.clear();
+            }
+            if let Some(program) = patch.hotspot_program {
+                setting.hotspot_program = program;
+                setting.hotspot_t2s_target.clear();
+                setting.hotspot_t2s_singbox_profile.clear();
+                setting.hotspot_t2s_wireproxy_profile.clear();
+            }
+            if let Some(profile) = patch.hotspot_profile {
+                setting.hotspot_profile = profile;
             }
             if let Some(target) = patch.hotspot_t2s_target {
+                setting.hotspot_mode = "proxy".to_string();
+                setting.hotspot_program = target.clone();
+                setting.hotspot_profile.clear();
                 setting.hotspot_t2s_target = target;
             }
             if let Some(profile) = patch.hotspot_t2s_singbox_profile {
+                if !profile.trim().is_empty() {
+                    setting.hotspot_mode = "proxy".to_string();
+                    setting.hotspot_program = "singbox".to_string();
+                    setting.hotspot_profile = profile.clone();
+                }
                 setting.hotspot_t2s_singbox_profile = profile;
             }
             if let Some(profile) = patch.hotspot_t2s_wireproxy_profile {
+                if !profile.trim().is_empty() {
+                    setting.hotspot_mode = "proxy".to_string();
+                    setting.hotspot_program = "wireproxy".to_string();
+                    setting.hotspot_profile = profile.clone();
+                }
                 setting.hotspot_t2s_wireproxy_profile = profile;
             }
             if let Some(capture_all) = patch.hotspot_t2s_capture_all {

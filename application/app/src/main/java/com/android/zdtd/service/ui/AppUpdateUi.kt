@@ -183,13 +183,20 @@ fun AppUpdateSettings(
   ipForwardEnabled: Boolean,
   onAdvancedSettingChange: (String, Boolean) -> Unit,
   hotspotT2sEnabled: Boolean,
+  hotspotMode: String,
+  hotspotProgram: String,
+  hotspotProfile: String,
   hotspotT2sTarget: String,
   hotspotT2sSingboxProfile: String,
   hotspotT2sWireproxyProfile: String,
   hotspotT2sCaptureAll: Boolean,
   hotspotSingboxProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
   hotspotWireproxyProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
+  hotspotProxyPrograms: List<com.android.zdtd.service.api.ApiModels.Program>,
+  hotspotVpnPrograms: List<com.android.zdtd.service.api.ApiModels.Program>,
   onHotspotT2sEnabledChange: (Boolean) -> Unit,
+  onHotspotModeChange: (String) -> Unit,
+  onHotspotSelectionChange: (String, String, String) -> Unit,
   onHotspotT2sTargetChange: (String) -> Unit,
   onHotspotT2sSingboxProfileChange: (String) -> Unit,
   onHotspotT2sWireproxyProfileChange: (String) -> Unit,
@@ -262,12 +269,17 @@ fun AppUpdateSettings(
           }
           HotspotT2sSection(
             enabled = hotspotT2sEnabled,
+            mode = hotspotMode,
+            program = hotspotProgram,
+            profile = hotspotProfile,
             target = hotspotT2sTarget,
             singboxProfile = hotspotT2sSingboxProfile,
             wireproxyProfile = hotspotT2sWireproxyProfile,
             captureAll = hotspotT2sCaptureAll,
             singboxProfiles = hotspotSingboxProfiles,
             wireproxyProfiles = hotspotWireproxyProfiles,
+            proxyPrograms = hotspotProxyPrograms,
+            vpnPrograms = hotspotVpnPrograms,
             compactWidth = false,
             onEnabledChange = { checked ->
               if (checked && !hotspotT2sEnabled) {
@@ -276,6 +288,8 @@ fun AppUpdateSettings(
                 onHotspotT2sEnabledChange(checked)
               }
             },
+            onModeChange = onHotspotModeChange,
+            onSelectionChange = onHotspotSelectionChange,
             onTargetChange = onHotspotT2sTargetChange,
             onSingboxProfileChange = onHotspotT2sSingboxProfileChange,
             onWireproxyProfileChange = onHotspotT2sWireproxyProfileChange,
@@ -423,12 +437,17 @@ fun AppUpdateSettings(
     SettingsSectionCard {
       HotspotT2sSection(
         enabled = hotspotT2sEnabled,
+        mode = hotspotMode,
+        program = hotspotProgram,
+        profile = hotspotProfile,
         target = hotspotT2sTarget,
         singboxProfile = hotspotT2sSingboxProfile,
         wireproxyProfile = hotspotT2sWireproxyProfile,
         captureAll = hotspotT2sCaptureAll,
         singboxProfiles = hotspotSingboxProfiles,
         wireproxyProfiles = hotspotWireproxyProfiles,
+        proxyPrograms = hotspotProxyPrograms,
+        vpnPrograms = hotspotVpnPrograms,
         compactWidth = compactWidth,
         onEnabledChange = { checked ->
           if (checked && !hotspotT2sEnabled) {
@@ -437,6 +456,8 @@ fun AppUpdateSettings(
             onHotspotT2sEnabledChange(checked)
           }
         },
+        onModeChange = onHotspotModeChange,
+        onSelectionChange = onHotspotSelectionChange,
         onTargetChange = onHotspotT2sTargetChange,
         onSingboxProfileChange = onHotspotT2sSingboxProfileChange,
         onWireproxyProfileChange = onHotspotT2sWireproxyProfileChange,
@@ -1014,26 +1035,41 @@ private fun SettingsSectionCard(
 @Composable
 private fun HotspotT2sSection(
   enabled: Boolean,
+  mode: String,
+  program: String,
+  profile: String,
   target: String,
   singboxProfile: String,
   wireproxyProfile: String,
   captureAll: Boolean,
   singboxProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
   wireproxyProfiles: List<com.android.zdtd.service.api.ApiModels.SingBoxProfileChoice>,
+  proxyPrograms: List<com.android.zdtd.service.api.ApiModels.Program>,
+  vpnPrograms: List<com.android.zdtd.service.api.ApiModels.Program>,
   compactWidth: Boolean,
   onEnabledChange: (Boolean) -> Unit,
+  onModeChange: (String) -> Unit,
+  onSelectionChange: (String, String, String) -> Unit,
   onTargetChange: (String) -> Unit,
   onSingboxProfileChange: (String) -> Unit,
   onWireproxyProfileChange: (String) -> Unit,
   onCaptureAllChange: (Boolean) -> Unit,
 ) {
-  val safeTarget = when (target.trim().lowercase()) {
-    "operaproxy" -> "operaproxy"
-    "singbox" -> "singbox"
-    "wireproxy" -> "wireproxy"
-    else -> ""
+  val safeMode = if (mode.trim().lowercase() == "vpn") "vpn" else "proxy"
+  val selectedProgram = program.ifBlank { target }.trim().lowercase().let {
+    when (it) {
+      "sing-box" -> "singbox"
+      else -> it
+    }
   }
-  val enabledProfiles = remember(singboxProfiles) { singboxProfiles.filter { it.enabled } }
+  val selectedProfile = profile.ifBlank {
+    when (selectedProgram) {
+      "singbox" -> singboxProfile
+      "wireproxy" -> wireproxyProfile
+      else -> ""
+    }
+  }
+  val enabledSingboxProfiles = remember(singboxProfiles) { singboxProfiles.filter { it.enabled } }
   val enabledWireproxyProfiles = remember(wireproxyProfiles) { wireproxyProfiles.filter { it.enabled } }
 
   if (compactWidth) {
@@ -1067,92 +1103,93 @@ private fun HotspotT2sSection(
   }
 
   AnimatedVisibility(visible = enabled) {
-    Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
-      Row(
-        Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-      ) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-          Text(
-            stringResource(R.string.settings_hotspot_capture_all_title),
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium,
-          )
-          Text(
-            stringResource(R.string.settings_hotspot_capture_all_body),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-          )
-        }
-        Switch(checked = captureAll, onCheckedChange = onCaptureAllChange)
-      }
-      Spacer(Modifier.height(12.dp))
-      Text(stringResource(R.string.settings_hotspot_program_title), style = MaterialTheme.typography.bodyMedium)
-      Spacer(Modifier.height(10.dp))
+    Column(Modifier.fillMaxWidth().padding(top = 10.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+      Text(stringResource(R.string.settings_hotspot_mode_title), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         FilterChip(
-          selected = safeTarget == "operaproxy",
-          onClick = {
-            if (safeTarget != "operaproxy") onTargetChange("operaproxy")
-          },
-          label = {
-            Text(
-              stringResource(R.string.settings_hotspot_program_operaproxy),
-              modifier = Modifier.fillMaxWidth(),
-              textAlign = TextAlign.Center,
-            )
-          },
-          modifier = Modifier.weight(1f).heightIn(min = 46.dp),
-          colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-          ),
+          selected = safeMode == "proxy",
+          onClick = { if (safeMode != "proxy") onModeChange("proxy") },
+          label = { Text(stringResource(R.string.settings_hotspot_mode_proxy), modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
+          modifier = Modifier.weight(1f).heightIn(min = 44.dp),
         )
         FilterChip(
-          selected = safeTarget == "singbox",
-          onClick = {
-            if (safeTarget != "singbox") onTargetChange("singbox")
-          },
-          label = {
-            Text(
-              stringResource(R.string.settings_hotspot_program_singbox),
-              modifier = Modifier.fillMaxWidth(),
-              textAlign = TextAlign.Center,
-            )
-          },
-          modifier = Modifier.weight(1f).heightIn(min = 46.dp),
-          colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-          ),
-        )
-        FilterChip(
-          selected = safeTarget == "wireproxy",
-          onClick = {
-            if (safeTarget != "wireproxy") onTargetChange("wireproxy")
-          },
-          label = {
-            Text(
-              stringResource(R.string.settings_hotspot_program_wireproxy),
-              modifier = Modifier.fillMaxWidth(),
-              textAlign = TextAlign.Center,
-            )
-          },
-          modifier = Modifier.weight(1f).heightIn(min = 46.dp),
-          colors = FilterChipDefaults.filterChipColors(
-            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-          ),
+          selected = safeMode == "vpn",
+          onClick = { if (safeMode != "vpn") onModeChange("vpn") },
+          label = { Text(stringResource(R.string.settings_hotspot_mode_vpn), modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
+          modifier = Modifier.weight(1f).heightIn(min = 44.dp),
         )
       }
 
-      AnimatedVisibility(
-        visible = safeTarget == "singbox" || safeTarget == "wireproxy",
-        enter = fadeIn(animationSpec = tween(180)) + expandVertically(animationSpec = tween(180)),
-        exit = fadeOut(animationSpec = tween(140)) + shrinkVertically(animationSpec = tween(140)),
-      ) {
-        val useWireproxy = safeTarget == "wireproxy"
-        val profiles = if (useWireproxy) enabledWireproxyProfiles else enabledProfiles
-        val selectedProfile = if (useWireproxy) wireproxyProfile else singboxProfile
-        Column(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+      if (safeMode == "proxy") {
+        Row(
+          Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(stringResource(R.string.settings_hotspot_capture_all_title), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text(
+              stringResource(R.string.settings_hotspot_capture_all_body),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+            )
+          }
+          Switch(checked = captureAll, onCheckedChange = onCaptureAllChange)
+        }
+      }
+
+      val proxyOptions = listOf("operaproxy", "singbox", "wireproxy")
+      val vpnOptions = listOf("openvpn", "amneziawg", "mihomo", "mieru")
+      val options = if (safeMode == "vpn") vpnOptions else proxyOptions
+      Text(
+        stringResource(if (safeMode == "vpn") R.string.settings_hotspot_program_vpn_title else R.string.settings_hotspot_program_proxy_title),
+        style = MaterialTheme.typography.bodyMedium,
+      )
+      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.chunked(3).forEach { row ->
+          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            row.forEach { id ->
+              val title = when (id) {
+                "operaproxy" -> stringResource(R.string.settings_hotspot_program_operaproxy)
+                "singbox" -> stringResource(R.string.settings_hotspot_program_singbox)
+                "wireproxy" -> stringResource(R.string.settings_hotspot_program_wireproxy)
+                "openvpn" -> "OpenVPN"
+                "amneziawg" -> "AmneziaWG"
+                "mihomo" -> "Mihomo"
+                "mieru" -> "mieru"
+                else -> id
+              }
+              FilterChip(
+                selected = selectedProgram == id,
+                onClick = {
+                  if (safeMode == "proxy" && id == "operaproxy") {
+                    onSelectionChange("proxy", "operaproxy", "")
+                  } else {
+                    onSelectionChange(safeMode, id, "")
+                  }
+                },
+                label = { Text(title, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center) },
+                modifier = Modifier.weight(1f).heightIn(min = 44.dp),
+              )
+            }
+            repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
+          }
+        }
+      }
+
+      val needsProfile = safeMode == "vpn" || selectedProgram == "singbox" || selectedProgram == "wireproxy"
+      AnimatedVisibility(visible = needsProfile && selectedProgram.isNotBlank()) {
+        val programProfiles = if (safeMode == "vpn") {
+          vpnPrograms.firstOrNull { it.id == selectedProgram }?.profiles?.filter { it.enabled }.orEmpty()
+        } else {
+          proxyPrograms.firstOrNull { it.id == selectedProgram || (selectedProgram == "singbox" && it.id == "sing-box") }?.profiles?.filter { it.enabled }.orEmpty()
+        }
+        val profileNames = when {
+          selectedProgram == "singbox" && programProfiles.isEmpty() -> enabledSingboxProfiles.map { it.name }
+          selectedProgram == "wireproxy" && programProfiles.isEmpty() -> enabledWireproxyProfiles.map { it.name }
+          else -> programProfiles.map { it.name }
+        }.distinct().sortedBy { it.lowercase() }
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
           Surface(
             modifier = Modifier.fillMaxWidth(),
             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
@@ -1160,80 +1197,25 @@ private fun HotspotT2sSection(
             tonalElevation = 0.dp,
             shadowElevation = 0.dp,
           ) {
-            Column(
-              modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
-              verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-              Text(
-                stringResource(if (useWireproxy) R.string.settings_hotspot_wireproxy_hint_title else R.string.settings_hotspot_singbox_hint_title),
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.primary,
-              )
-              Text(
-                stringResource(if (useWireproxy) R.string.settings_hotspot_wireproxy_hint_body else R.string.settings_hotspot_singbox_hint_body),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
-              )
-
-              if (profiles.isEmpty()) {
-                Text(
-                  stringResource(if (useWireproxy) R.string.settings_hotspot_wireproxy_profiles_empty else R.string.settings_hotspot_singbox_profiles_empty),
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
-                )
+            Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+              Text(stringResource(R.string.settings_hotspot_profile_title), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+              if (profileNames.isEmpty()) {
+                Text(stringResource(R.string.settings_hotspot_profiles_empty), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
               } else {
-                Text(
-                  stringResource(if (useWireproxy) R.string.settings_hotspot_wireproxy_profiles_title else R.string.settings_hotspot_singbox_profiles_title),
-                  style = MaterialTheme.typography.bodySmall,
-                  fontWeight = FontWeight.Medium,
-                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-                )
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                  profiles.forEach { profile ->
-                    val selected = profile.name == selectedProfile
-                    if (selected) {
-                      Button(
-                        onClick = {
-                          if (useWireproxy) onWireproxyProfileChange(profile.name) else onSingboxProfileChange(profile.name)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                      ) {
-                        Text(profile.name)
-                      }
-                    } else {
-                      OutlinedButton(
-                        onClick = {
-                          if (useWireproxy) onWireproxyProfileChange(profile.name) else onSingboxProfileChange(profile.name)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                      ) {
-                        Text(profile.name)
-                      }
-                    }
+                profileNames.forEach { item ->
+                  if (item == selectedProfile) {
+                    Button(onClick = { onSelectionChange(safeMode, selectedProgram, item) }, modifier = Modifier.fillMaxWidth()) { Text(item) }
+                  } else {
+                    OutlinedButton(onClick = { onSelectionChange(safeMode, selectedProgram, item) }, modifier = Modifier.fillMaxWidth()) { Text(item) }
                   }
                 }
               }
             }
           }
-
-          Spacer(Modifier.height(10.dp))
           if (selectedProfile.isBlank()) {
-            Text(
-              stringResource(if (useWireproxy) R.string.settings_hotspot_wireproxy_profile_missing else R.string.settings_hotspot_singbox_profile_missing),
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.primary,
-              fontWeight = FontWeight.Medium,
-            )
+            Text(stringResource(R.string.settings_hotspot_profile_missing), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
           } else {
-            Text(
-              stringResource(
-                if (useWireproxy) R.string.settings_hotspot_wireproxy_profile_selected_fmt else R.string.settings_hotspot_singbox_profile_selected_fmt,
-                selectedProfile,
-              ),
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f),
-            )
+            Text(stringResource(R.string.settings_hotspot_profile_selected_fmt, selectedProfile), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f))
           }
         }
       }

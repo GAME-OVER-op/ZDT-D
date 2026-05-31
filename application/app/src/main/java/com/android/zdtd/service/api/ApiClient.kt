@@ -166,6 +166,39 @@ class ApiClient(
     return ApiModels.parseDaemonSettings(obj)
   }
 
+
+  fun setHotspotMode(mode: String): ApiModels.DaemonSettings {
+    val safeMode = if (mode.trim().lowercase() == "vpn") "vpn" else "proxy"
+    val obj = requestJson(
+      "POST",
+      "/api/setting",
+      JSONObject()
+        .put("hotspot_t2s_enabled", true)
+        .put("hotspot_mode", safeMode)
+        .put("hotspot_program", "")
+        .put("hotspot_profile", ""),
+    )
+    return ApiModels.parseDaemonSettings(obj)
+  }
+
+  fun setHotspotSelection(
+    mode: String,
+    program: String,
+    profile: String = "",
+  ): ApiModels.DaemonSettings {
+    val safeMode = if (mode.trim().lowercase() == "vpn") "vpn" else "proxy"
+    val obj = requestJson(
+      "POST",
+      "/api/setting",
+      JSONObject()
+        .put("hotspot_t2s_enabled", true)
+        .put("hotspot_mode", safeMode)
+        .put("hotspot_program", program.trim())
+        .put("hotspot_profile", profile.trim()),
+    )
+    return ApiModels.parseDaemonSettings(obj)
+  }
+
   fun setHotspotT2sCaptureAll(enabled: Boolean): ApiModels.DaemonSettings {
     val obj = requestJson(
       "POST",

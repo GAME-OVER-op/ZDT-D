@@ -21,6 +21,7 @@ mod shell;
 mod stats;
 mod stop;
 mod vpn_netd;
+mod vpn_tether;
 mod xtables_lock;
 
 use anyhow::Result;

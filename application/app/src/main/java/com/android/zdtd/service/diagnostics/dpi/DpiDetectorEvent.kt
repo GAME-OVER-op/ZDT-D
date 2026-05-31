@@ -8,7 +8,6 @@ package com.android.zdtd.service.diagnostics.dpi
  * scan to finish.
  */
 sealed interface DpiDetectorEvent {
-    /** Event type discriminator used for JSON serialization and when routing events to handlers. */
     val type: String
 
     data class ProbeCheck(
@@ -94,7 +93,6 @@ sealed interface DpiDetectorEvent {
 
     data class Error(
         val message: String,
-        /** Original unparsed line from the dpi-detector process, included to aid debugging of parse failures. */
         val rawLine: String? = null,
     ) : DpiDetectorEvent {
         override val type: String = "error"

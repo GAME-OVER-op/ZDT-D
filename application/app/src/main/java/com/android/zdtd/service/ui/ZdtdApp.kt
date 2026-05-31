@@ -903,10 +903,18 @@ private fun MainShell(
     var settingsContentReady by remember { mutableStateOf(false) }
 
     fun resetInvalidHotspotT2sIfNeeded() {
+      val mode = if (appUpdate.hotspotMode == "vpn") "vpn" else "proxy"
+      val program = appUpdate.hotspotProgram.ifBlank { appUpdate.hotspotT2sTarget }
+      val profile = appUpdate.hotspotProfile.ifBlank {
+        when (program) {
+          "singbox" -> appUpdate.hotspotT2sSingboxProfile
+          "wireproxy" -> appUpdate.hotspotT2sWireproxyProfile
+          else -> ""
+        }
+      }
+      val needsProfile = mode == "vpn" || program == "singbox" || program == "wireproxy"
       val hotspotInvalid = appUpdate.hotspotT2sEnabled && (
-        appUpdate.hotspotT2sTarget.isBlank() ||
-          (appUpdate.hotspotT2sTarget == "singbox" && appUpdate.hotspotT2sSingboxProfile.isBlank()) ||
-          (appUpdate.hotspotT2sTarget == "wireproxy" && appUpdate.hotspotT2sWireproxyProfile.isBlank())
+        program.isBlank() || (needsProfile && profile.isBlank())
         )
       if (hotspotInvalid) {
         actions.setHotspotT2sEnabled(false)
@@ -983,13 +991,20 @@ private fun MainShell(
                 ipForwardEnabled = appUpdate.ipForwardEnabled,
                 onAdvancedSettingChange = actions::setAdvancedDaemonSetting,
                 hotspotT2sEnabled = appUpdate.hotspotT2sEnabled,
+                hotspotMode = appUpdate.hotspotMode,
+                hotspotProgram = appUpdate.hotspotProgram,
+                hotspotProfile = appUpdate.hotspotProfile,
                 hotspotT2sTarget = appUpdate.hotspotT2sTarget,
                 hotspotT2sSingboxProfile = appUpdate.hotspotT2sSingboxProfile,
                 hotspotT2sWireproxyProfile = appUpdate.hotspotT2sWireproxyProfile,
                 hotspotT2sCaptureAll = appUpdate.hotspotT2sCaptureAll,
                 hotspotSingboxProfiles = appUpdate.hotspotSingboxProfiles,
                 hotspotWireproxyProfiles = appUpdate.hotspotWireproxyProfiles,
+                hotspotProxyPrograms = appUpdate.hotspotProxyPrograms,
+                hotspotVpnPrograms = appUpdate.hotspotVpnPrograms,
                 onHotspotT2sEnabledChange = actions::setHotspotT2sEnabled,
+                onHotspotModeChange = actions::setHotspotMode,
+                onHotspotSelectionChange = actions::setHotspotSelection,
                 onHotspotT2sTargetChange = actions::setHotspotT2sTarget,
                 onHotspotT2sSingboxProfileChange = actions::setHotspotT2sSingboxProfile,
                 onHotspotT2sWireproxyProfileChange = actions::setHotspotT2sWireproxyProfile,
@@ -1064,13 +1079,20 @@ private fun MainShell(
                 ipForwardEnabled = appUpdate.ipForwardEnabled,
                 onAdvancedSettingChange = actions::setAdvancedDaemonSetting,
                 hotspotT2sEnabled = appUpdate.hotspotT2sEnabled,
+                hotspotMode = appUpdate.hotspotMode,
+                hotspotProgram = appUpdate.hotspotProgram,
+                hotspotProfile = appUpdate.hotspotProfile,
                 hotspotT2sTarget = appUpdate.hotspotT2sTarget,
                 hotspotT2sSingboxProfile = appUpdate.hotspotT2sSingboxProfile,
                 hotspotT2sWireproxyProfile = appUpdate.hotspotT2sWireproxyProfile,
                 hotspotT2sCaptureAll = appUpdate.hotspotT2sCaptureAll,
                 hotspotSingboxProfiles = appUpdate.hotspotSingboxProfiles,
                 hotspotWireproxyProfiles = appUpdate.hotspotWireproxyProfiles,
+                hotspotProxyPrograms = appUpdate.hotspotProxyPrograms,
+                hotspotVpnPrograms = appUpdate.hotspotVpnPrograms,
                 onHotspotT2sEnabledChange = actions::setHotspotT2sEnabled,
+                onHotspotModeChange = actions::setHotspotMode,
+                onHotspotSelectionChange = actions::setHotspotSelection,
                 onHotspotT2sTargetChange = actions::setHotspotT2sTarget,
                 onHotspotT2sSingboxProfileChange = actions::setHotspotT2sSingboxProfile,
                 onHotspotT2sWireproxyProfileChange = actions::setHotspotT2sWireproxyProfile,

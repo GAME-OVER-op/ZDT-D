@@ -130,13 +130,18 @@ pub fn start_full() -> Result<()> {
 
     // VPN/netd profile programs: launch VPN engines, wait for TUN, then apply Android netd routing once.
     // VPN profile failures are best-effort: log to console/profile logs and continue the rest of startup.
-    let vpn_expected = openvpn::has_enabled_profiles()
-        || amneziawg::has_enabled_profiles()
+    let api_settings = settings::load_api_settings().unwrap_or_default();
+    let hotspot_vpn_selection = api_settings
+        .hotspot_vpn_selection()
+        .map(|(program, profile)| (program.to_string(), profile.to_string()));
+    let vpn_expected = openvpn::has_profiles_requiring_netd()
+        || amneziawg::has_profiles_requiring_netd()
         || tun2socks::has_enabled_profiles()
         || myvpn::has_enabled_profiles()
         || mihomo::has_profiles_requiring_netd()
         || mieru::has_profiles_requiring_netd()
-        || singbox::has_enabled_vpn_profiles();
+        || singbox::has_enabled_vpn_profiles()
+        || hotspot_vpn_selection.is_some();
     let mut vpn_profiles = Vec::new();
     match validate_vpn_claims_unique() {
         Ok(()) => {
@@ -203,6 +208,37 @@ pub fn start_full() -> Result<()> {
                     crate::logging::user_warn("VPN/netd: ошибка применения, запуск продолжен");
                 }
             }
+
+            let vpn_tether_profile = match hotspot_vpn_selection.as_ref().map(|(p, n)| (p.as_str(), n.as_str())) {
+                Some(("openvpn", profile)) => match openvpn::start_profile_for_hotspot_vpn(profile) {
+                    Ok(item) => item,
+                    Err(e) => { log::warn!("vpn_tether openvpn startup failed, continuing: {e:#}"); mark_start_partial(); None }
+                },
+                Some(("amneziawg", profile)) => match amneziawg::start_profile_for_hotspot_vpn(profile) {
+                    Ok(item) => item,
+                    Err(e) => { log::warn!("vpn_tether amneziawg startup failed, continuing: {e:#}"); mark_start_partial(); None }
+                },
+                Some(("mihomo", profile)) => match mihomo::start_profile_for_hotspot_vpn(profile) {
+                    Ok(item) => item,
+                    Err(e) => { log::warn!("vpn_tether mihomo startup failed, continuing: {e:#}"); mark_start_partial(); None }
+                },
+                Some(("mieru", profile)) => match mieru::start_profile_for_hotspot_vpn(profile) {
+                    Ok(item) => item,
+                    Err(e) => { log::warn!("vpn_tether mieru startup failed, continuing: {e:#}"); mark_start_partial(); None }
+                },
+                Some((program, profile)) => {
+                    log::warn!("vpn_tether unsupported selection program={} profile={}", program, profile);
+                    None
+                }
+                None => None,
+            };
+            if let Err(e) = crate::vpn_tether::sync(vpn_tether_profile) {
+                log::warn!("vpn_tether apply failed, continuing: {e:#}");
+                mark_start_partial();
+                if hotspot_vpn_selection.is_some() {
+                    crate::logging::user_warn("VPN-раздача: ошибка применения, запуск продолжен");
+                }
+            }
         }
         Err(e) => {
             log::warn!("vpn profile claim conflict, skipping VPN/netd profiles and continuing: {e:#}");
@@ -210,6 +246,7 @@ pub fn start_full() -> Result<()> {
             if vpn_expected {
                 crate::logging::user_warn("VPN/netd: конфликт профилей, запуск продолжен");
             }
+            let _ = crate::vpn_tether::sync(None);
         }
     }
 
@@ -370,8 +407,8 @@ fn can_adopt_existing_runtime() -> bool {
         return false;
     }
 
-    let vpn_expected = openvpn::has_enabled_profiles()
-        || amneziawg::has_enabled_profiles()
+    let vpn_expected = openvpn::has_profiles_requiring_netd()
+        || amneziawg::has_profiles_requiring_netd()
         || tun2socks::has_enabled_profiles()
         || myvpn::has_enabled_profiles()
         || mihomo::has_profiles_requiring_netd()
@@ -379,6 +416,12 @@ fn can_adopt_existing_runtime() -> bool {
         || singbox::has_enabled_vpn_profiles();
     if vpn_expected && !crate::vpn_netd::applied_snapshot_path().is_file() {
         log::info!("runtime adoption: VPN profiles are expected but vpn_netd/applied.json is missing");
+        return false;
+    }
+
+    let api_settings = settings::load_api_settings().unwrap_or_default();
+    if api_settings.hotspot_vpn_selection().is_some() && !crate::vpn_tether::applied_state_path().is_file() {
+        log::info!("runtime adoption: hotspot VPN tether is expected but vpn_tether/applied.json is missing");
         return false;
     }
 

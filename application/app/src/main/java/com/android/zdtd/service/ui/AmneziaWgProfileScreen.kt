@@ -98,20 +98,17 @@ private val amneziaWgProfileNameRegex = Regex("^[A-Za-z0-9_-]{1,10}$")
 private val amneziaWgTunRegex = Regex("^[A-Za-z0-9_.-]{1,15}$")
 private const val AMNEZIAWG_AUTOSAVE_DELAY_MS = 1500L
 
-private suspend inline fun <T> awaitAmneziaWgAction(crossinline block: (continuation: (T) -> Unit) -> Unit): T =
-  suspendCancellableCoroutine { cont -> block { cont.resume(it) } }
-
 private suspend fun awaitLoadJsonAmneziaWg(actions: ZdtdActions, path: String): JSONObject? =
-  awaitAmneziaWgAction { actions.loadJsonData(path, it) }
+  suspendCancellableCoroutine { cont -> actions.loadJsonData(path) { cont.resume(it) } }
 
 private suspend fun awaitLoadTextAmneziaWg(actions: ZdtdActions, path: String): String? =
-  awaitAmneziaWgAction { actions.loadText(path, it) }
+  suspendCancellableCoroutine { cont -> actions.loadText(path) { cont.resume(it) } }
 
 private suspend fun awaitSaveTextAmneziaWg(actions: ZdtdActions, path: String, content: String): Boolean =
-  awaitAmneziaWgAction { actions.saveText(path, content, it) }
+  suspendCancellableCoroutine { cont -> actions.saveText(path, content) { cont.resume(it) } }
 
 private suspend fun awaitUploadAmneziaWgConfig(actions: ZdtdActions, profile: String, filename: String, file: File): Boolean =
-  awaitAmneziaWgAction { actions.uploadAmneziaWgConfig(profile, filename, file, it) }
+  suspendCancellableCoroutine { cont -> actions.uploadAmneziaWgConfig(profile, filename, file) { cont.resume(it) } }
 
 private fun amneziaWgProfilePath(profile: String): String =
   "/api/programs/amneziawg/profiles/${URLEncoder.encode(profile, "UTF-8")}"

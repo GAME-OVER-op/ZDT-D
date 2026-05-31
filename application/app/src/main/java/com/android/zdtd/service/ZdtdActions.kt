@@ -280,8 +280,14 @@ interface ZdtdActions {
   /** Toggle advanced daemon/system setting by API field name. */
   fun setAdvancedDaemonSetting(key: String, enabled: Boolean)
 
-  /** Enable/disable hotspot routing through t2s. */
+  /** Enable/disable hotspot routing. Enabling starts with an empty program/profile selection. */
   fun setHotspotT2sEnabled(enabled: Boolean)
+
+  /** Choose hotspot mode: proxy | vpn. */
+  fun setHotspotMode(mode: String)
+
+  /** Choose the single hotspot backend program/profile for the selected mode. */
+  fun setHotspotSelection(mode: String, program: String, profile: String = "")
 
   /** Choose which program receives hotspot traffic: operaproxy | singbox | wireproxy. */
   fun setHotspotT2sTarget(target: String)

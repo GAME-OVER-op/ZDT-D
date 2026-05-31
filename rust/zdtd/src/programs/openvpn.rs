@@ -12,8 +12,10 @@ use std::{
 };
 
 use crate::{
+    android::pkg_uid,
     shell::{self, Capture},
     vpn_netd::VpnNetdProfile,
+    vpn_tether::VpnTetherProfile,
 };
 
 const OPENVPN_BIN: &str = "/data/adb/modules/ZDT-D/bin/openvpn";
@@ -253,6 +255,12 @@ pub fn validate_enabled_tun_uniqueness_with_override(
     Ok(())
 }
 
+fn app_list_has_real_apps(raw: &str) -> bool {
+    raw.lines().map(str::trim).any(|s| {
+        !s.is_empty() && !s.starts_with('#') && !pkg_uid::is_launch_marker_package(s)
+    })
+}
+
 fn validate_plan_tuns_unique(plans: &[ProfilePlan]) -> Result<()> {
     let mut seen: BTreeMap<String, String> = BTreeMap::new();
     for plan in plans {
@@ -311,8 +319,11 @@ pub fn validate_start_plan() -> Result<()> {
             let app_in = profile_dir.join("app/uid/user_program");
             let apps_raw = fs::read_to_string(&app_in)
                 .with_context(|| format!("read {}", app_in.display()))?;
-            if apps_raw.lines().map(str::trim).all(|l| l.is_empty() || l.starts_with('#')) {
-                bail!("app list is empty: {}", app_in.display());
+            let selected_for_hotspot = crate::settings::load_api_settings()
+                .map(|st| st.hotspot_vpn_profile_for("openvpn") == Some(name.as_str()))
+                .unwrap_or(false);
+            if !selected_for_hotspot && !app_list_has_real_apps(&apps_raw) {
+                bail!("app list has no real apps: {}", app_in.display());
             }
             Ok(())
         })();
@@ -333,6 +344,17 @@ pub fn has_enabled_profiles() -> bool {
     read_active()
         .map(|a| a.profiles.values().any(|st| st.enabled))
         .unwrap_or(false)
+}
+
+pub fn has_profiles_requiring_netd() -> bool {
+    let Ok(active) = read_active() else { return false; };
+    active.profiles.iter().any(|(name, st)| {
+        if !st.enabled { return false; }
+        let app_in = profile_root(name).join("app/uid/user_program");
+        fs::read_to_string(&app_in)
+            .map(|raw| app_list_has_real_apps(&raw))
+            .unwrap_or(false)
+    })
 }
 
 pub fn is_running() -> bool {
@@ -386,14 +408,29 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
         enabled_names.join(",")
     );
 
+    let hotspot_vpn_profile = crate::settings::load_api_settings()
+        .ok()
+        .and_then(|st| st.hotspot_vpn_profile_for("openvpn").map(|name| name.to_string()));
     let mut plans = Vec::new();
     let mut had_error = false;
     for name in enabled_names {
-        match build_profile_plan(&name) {
-            Ok(plan) => plans.push(plan),
+        let selected_for_hotspot = hotspot_vpn_profile.as_deref() == Some(name.as_str());
+        match build_profile_plan(&name, selected_for_hotspot) {
+            Ok(plan) => {
+                let apps_raw = fs::read_to_string(&plan.app_in).unwrap_or_default();
+                if selected_for_hotspot && !app_list_has_real_apps(&apps_raw) {
+                    info!("openvpn: profile '{}' is selected for hotspot VPN only; skipping vpn_netd", plan.name);
+                    continue;
+                }
+                plans.push(plan);
+            }
             Err(e) => {
-                had_error = true;
-                warn!("openvpn: profile '{name}' skip: {e:#}");
+                if selected_for_hotspot {
+                    info!("openvpn: profile '{name}' skipped in vpn_netd phase; hotspot VPN will handle it separately: {e:#}");
+                } else {
+                    had_error = true;
+                    warn!("openvpn: profile '{name}' skip: {e:#}");
+                }
             }
         }
     }
@@ -483,7 +520,41 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
     Ok(profiles)
 }
 
-fn build_profile_plan(profile: &str) -> Result<ProfilePlan> {
+pub fn start_profile_for_hotspot_vpn(profile: &str) -> Result<Option<VpnTetherProfile>> {
+    ensure_root_layout()?;
+    let active = read_active().unwrap_or_default();
+    if !active.profiles.get(profile).map(|st| st.enabled).unwrap_or(false) {
+        warn!("openvpn: hotspot VPN profile '{}' is not enabled", profile);
+        return Ok(None);
+    }
+    if !Path::new(OPENVPN_BIN).is_file() {
+        warn!("openvpn: binary not found: {OPENVPN_BIN} -> skip hotspot VPN");
+        return Ok(None);
+    }
+    let plan = build_profile_plan(profile, true)?;
+    info!("openvpn: hotspot VPN start profile={} tun={}", plan.name, plan.setting.tun);
+    let tun = if wait_tun_ready(&plan.setting.tun).is_ok() {
+        info!("openvpn: hotspot VPN reusing ready tun={}", plan.setting.tun);
+        inspect_tun(&plan.setting.tun)
+            .with_context(|| format!("openvpn hotspot profile={} inspect existing tun={}", plan.name, plan.setting.tun))?
+    } else {
+        spawn_openvpn(&plan)?;
+        wait_tun_ready(&plan.setting.tun)
+            .with_context(|| format!("openvpn hotspot profile={} wait tun={}", plan.name, plan.setting.tun))?;
+        inspect_tun(&plan.setting.tun)
+            .with_context(|| format!("openvpn hotspot profile={} inspect tun={}", plan.name, plan.setting.tun))?
+    };
+    Ok(Some(VpnTetherProfile {
+        owner_program: "openvpn".to_string(),
+        profile: plan.name.clone(),
+        tun: plan.setting.tun.clone(),
+        cidr: tun.cidr,
+        gateway: tun.gateway,
+        dns: plan.setting.dns.clone(),
+    }))
+}
+
+fn build_profile_plan(profile: &str, allow_empty_apps: bool) -> Result<ProfilePlan> {
     ensure_valid_profile_name(profile)?;
     ensure_profile_layout(profile)?;
     let profile_dir = profile_root(profile);
@@ -508,8 +579,8 @@ fn build_profile_plan(profile: &str) -> Result<ProfilePlan> {
     let app_out = profile_dir.join("app/out/user_program");
     ensure_file_empty(&app_in)?;
     let apps_raw = fs::read_to_string(&app_in).unwrap_or_default();
-    if apps_raw.lines().map(str::trim).all(|l| l.is_empty() || l.starts_with('#')) {
-        bail!("app list is empty: {}", app_in.display());
+    if !allow_empty_apps && !app_list_has_real_apps(&apps_raw) {
+        bail!("app list has no real apps: {}", app_in.display());
     }
 
     Ok(ProfilePlan {

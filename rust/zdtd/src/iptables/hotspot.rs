@@ -261,3 +261,34 @@ fn add_final_redirect(listen_port: u16) -> Result<()> {
     }
     Ok(())
 }
+
+pub fn cleanup() -> Result<()> {
+    let _guard = xtables_lock::lock();
+
+    loop {
+        let delete_jump = vec![
+            "-t".into(),
+            "nat".into(),
+            "-D".into(),
+            "PREROUTING".into(),
+            "-p".into(),
+            "tcp".into(),
+            "-j".into(),
+            CHAIN.into(),
+        ];
+        match ipt_runv_timeout(&delete_jump, Capture::Both) {
+            Ok((0, _)) => continue,
+            Ok(_) => break,
+            Err(e) => {
+                warn!("hotspot cleanup: delete PREROUTING jump failed: {e:#}");
+                break;
+            }
+        }
+    }
+
+    let _ = ipt_runv_timeout(&["-t".into(), "nat".into(), "-F".into(), CHAIN.into()], Capture::Both);
+    let _ = ipt_runv_timeout(&["-t".into(), "nat".into(), "-X".into(), CHAIN.into()], Capture::Both);
+
+    info!("hotspot redirect cleanup completed");
+    Ok(())
+}

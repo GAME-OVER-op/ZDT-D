@@ -1569,6 +1569,8 @@ private fun clearDownloadedUpdateApk() {
           kind="dnscrypt"
         elif [ "${'$'}lower" = "portguard" ]; then
           kind="portguard"
+        elif [ "${'$'}lower" = "vpn-to-hotspot-usb" ]; then
+          kind="vpn_tether"
         fi
         [ -n "${'$'}kind" ] || continue
         if [ -f "${'$'}d/remove" ]; then marked=1; else marked=0; fi
@@ -1589,6 +1591,7 @@ private fun clearDownloadedUpdateApk() {
         "zapret" -> str(R.string.setup_install_conflict_zapret_message)
         "dnscrypt" -> str(R.string.setup_install_conflict_dnscrypt_message)
         "portguard" -> str(R.string.setup_install_conflict_portguard_message)
+        "vpn_tether" -> str(R.string.setup_install_conflict_vpn_tether_message)
         else -> return@mapNotNull null
       }
       InstallConflictUi(
@@ -5060,10 +5063,18 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       .getOrDefault(com.android.zdtd.service.api.ApiModels.DaemonSettings())
     val singboxProfiles = fetchHotspotSingBoxProfiles()
     val wireproxyProfiles = fetchHotspotWireproxyProfiles()
+    val programs = runCatching { api.getPrograms() }.getOrDefault(emptyList())
+    val proxyIds = setOf("operaproxy", "singbox", "sing-box", "wireproxy")
+    val vpnIds = setOf("openvpn", "amneziawg", "mihomo", "mieru")
+    val proxyPrograms = programs.filter { it.id in proxyIds || (it.id == "sing-box") }
+    val vpnPrograms = programs.filter { it.id in vpnIds }
     _appUpdate.update {
       it.copy(
         protectorMode = settings.protectorMode,
         hotspotT2sEnabled = settings.hotspotT2sEnabled,
+        hotspotMode = settings.hotspotMode,
+        hotspotProgram = settings.hotspotProgram,
+        hotspotProfile = settings.hotspotProfile,
         hotspotT2sTarget = settings.hotspotT2sTarget,
         hotspotT2sSingboxProfile = settings.hotspotT2sSingboxProfile,
         hotspotT2sWireproxyProfile = settings.hotspotT2sWireproxyProfile,
@@ -5072,6 +5083,8 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         ipForwardEnabled = settings.ipForwardEnabled,
         hotspotSingboxProfiles = singboxProfiles,
         hotspotWireproxyProfiles = wireproxyProfiles,
+        hotspotProxyPrograms = proxyPrograms,
+        hotspotVpnPrograms = vpnPrograms,
       )
     }
   }
@@ -5111,6 +5124,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         current.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
@@ -5361,6 +5377,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         it.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
@@ -5374,36 +5393,28 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
   }
 
   override fun setHotspotT2sEnabled(enabled: Boolean) {
-    if (enabled) {
-      _appUpdate.update {
-        it.copy(
-          hotspotT2sEnabled = true,
-          hotspotT2sTarget = "",
-          hotspotT2sSingboxProfile = "",
-          hotspotT2sWireproxyProfile = "",
-        )
-      }
-      return
-    }
-
     _appUpdate.update {
       it.copy(
-        hotspotT2sEnabled = false,
+        hotspotT2sEnabled = enabled,
+        hotspotMode = "proxy",
+        hotspotProgram = "",
+        hotspotProfile = "",
         hotspotT2sTarget = "",
         hotspotT2sSingboxProfile = "",
         hotspotT2sWireproxyProfile = "",
       )
     }
+
     launchIO {
       val applied = runCatching {
-        api.setHotspotT2s(
+        if (enabled) api.setHotspotMode("proxy") else api.setHotspotT2s(
           enabled = false,
           target = "",
           singboxProfile = "",
           wireproxyProfile = "",
         )
       }.getOrElse {
-        log("ERR", "hotspot t2s toggle failed: ${it.message ?: it}")
+        log("ERR", "hotspot toggle failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
           toast(str(R.string.settings_hotspot_save_failed))
         }
@@ -5414,6 +5425,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         it.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
@@ -5423,6 +5437,85 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       withContext(Dispatchers.Main.immediate) {
         toast(str(R.string.settings_hotspot_saved))
       }
+    }
+  }
+
+  override fun setHotspotMode(mode: String) {
+    val safeMode = if (mode.trim().lowercase() == "vpn") "vpn" else "proxy"
+    _appUpdate.update {
+      it.copy(
+        hotspotT2sEnabled = true,
+        hotspotMode = safeMode,
+        hotspotProgram = "",
+        hotspotProfile = "",
+        hotspotT2sTarget = "",
+        hotspotT2sSingboxProfile = "",
+        hotspotT2sWireproxyProfile = "",
+      )
+    }
+    launchIO {
+      val applied = runCatching { api.setHotspotMode(safeMode) }.getOrElse {
+        log("ERR", "hotspot mode failed: ${it.message ?: it}")
+        withContext(Dispatchers.Main.immediate) { toast(str(R.string.settings_hotspot_save_failed)) }
+        refreshDaemonSettings()
+        return@launchIO
+      }
+      _appUpdate.update {
+        it.copy(
+          protectorMode = applied.protectorMode,
+          hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
+          hotspotT2sTarget = applied.hotspotT2sTarget,
+          hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
+          hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+        )
+      }
+    }
+  }
+
+  override fun setHotspotSelection(mode: String, program: String, profile: String) {
+    val safeMode = if (mode.trim().lowercase() == "vpn") "vpn" else "proxy"
+    val safeProgram = program.trim().lowercase()
+    val safeProfile = profile.trim()
+    val proxyTarget = if (safeMode == "proxy") safeProgram else ""
+    _appUpdate.update {
+      it.copy(
+        hotspotT2sEnabled = true,
+        hotspotMode = safeMode,
+        hotspotProgram = safeProgram,
+        hotspotProfile = safeProfile,
+        hotspotT2sTarget = proxyTarget,
+        hotspotT2sSingboxProfile = if (proxyTarget == "singbox") safeProfile else "",
+        hotspotT2sWireproxyProfile = if (proxyTarget == "wireproxy") safeProfile else "",
+      )
+    }
+    val needsProfile = safeMode == "vpn" || safeProgram == "singbox" || safeProgram == "wireproxy"
+    if (needsProfile && safeProfile.isBlank()) return
+    if (safeProgram.isBlank()) return
+    launchIO {
+      val applied = runCatching { api.setHotspotSelection(safeMode, safeProgram, safeProfile) }.getOrElse {
+        log("ERR", "hotspot selection failed: ${it.message ?: it}")
+        withContext(Dispatchers.Main.immediate) { toast(str(R.string.settings_hotspot_save_failed)) }
+        refreshDaemonSettings()
+        return@launchIO
+      }
+      _appUpdate.update {
+        it.copy(
+          protectorMode = applied.protectorMode,
+          hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
+          hotspotT2sTarget = applied.hotspotT2sTarget,
+          hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
+          hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
+          hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+        )
+      }
+      withContext(Dispatchers.Main.immediate) { toast(str(R.string.settings_hotspot_saved)) }
     }
   }
 
@@ -5451,7 +5544,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
 
     launchIO {
       val applied = runCatching {
-        api.setHotspotT2s(enabled = true, target = safeTarget, singboxProfile = "", wireproxyProfile = "")
+        api.setHotspotSelection("proxy", safeTarget, "")
       }.getOrElse {
         log("ERR", "hotspot t2s target failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
@@ -5464,6 +5557,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         it.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
@@ -5491,7 +5587,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     }
     launchIO {
       val applied = runCatching {
-        api.setHotspotT2s(enabled = true, target = "singbox", singboxProfile = safeProfile, wireproxyProfile = "")
+        api.setHotspotSelection("proxy", "singbox", safeProfile)
       }.getOrElse {
         log("ERR", "hotspot sing-box profile failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
@@ -5504,6 +5600,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         it.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
@@ -5531,7 +5630,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     }
     launchIO {
       val applied = runCatching {
-        api.setHotspotT2s(enabled = true, target = "wireproxy", singboxProfile = "", wireproxyProfile = safeProfile)
+        api.setHotspotSelection("proxy", "wireproxy", safeProfile)
       }.getOrElse {
         log("ERR", "hotspot wireproxy profile failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
@@ -5544,6 +5643,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         it.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
@@ -5578,6 +5680,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         it.copy(
           protectorMode = applied.protectorMode,
           hotspotT2sEnabled = applied.hotspotT2sEnabled,
+          hotspotMode = applied.hotspotMode,
+          hotspotProgram = applied.hotspotProgram,
+          hotspotProfile = applied.hotspotProfile,
           hotspotT2sTarget = applied.hotspotT2sTarget,
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,

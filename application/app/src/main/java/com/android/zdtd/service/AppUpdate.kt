@@ -13,12 +13,17 @@ data class AppUpdateUiState(
   val protectorMode: String = "off",
   /** Hotspot redirect via t2s: enabled flag, target program id and optional sing-box / wireproxy profile. */
   val hotspotT2sEnabled: Boolean = false,
+  val hotspotMode: String = "proxy",
+  val hotspotProgram: String = "",
+  val hotspotProfile: String = "",
   val hotspotT2sTarget: String = "",
   val hotspotT2sSingboxProfile: String = "",
   val hotspotT2sWireproxyProfile: String = "",
   val hotspotT2sCaptureAll: Boolean = false,
   val hotspotSingboxProfiles: List<ApiModels.SingBoxProfileChoice> = emptyList(),
   val hotspotWireproxyProfiles: List<ApiModels.SingBoxProfileChoice> = emptyList(),
+  val hotspotProxyPrograms: List<ApiModels.Program> = emptyList(),
+  val hotspotVpnPrograms: List<ApiModels.Program> = emptyList(),
   /** Advanced daemon/system settings. */
   val selinuxPermissiveEnabled: Boolean = false,
   val ipForwardEnabled: Boolean = false,

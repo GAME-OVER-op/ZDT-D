@@ -71,6 +71,9 @@ object ApiModels {
   data class DaemonSettings(
     val protectorMode: String = "off",
     val hotspotT2sEnabled: Boolean = false,
+    val hotspotMode: String = "proxy",
+    val hotspotProgram: String = "",
+    val hotspotProfile: String = "",
     val hotspotT2sTarget: String = "",
     val hotspotT2sSingboxProfile: String = "",
     val hotspotT2sWireproxyProfile: String = "",
@@ -276,6 +279,28 @@ object ApiModels {
       else -> "off"
     }
     val hotspotEnabled = setting?.optBoolean("hotspot_t2s_enabled", false) ?: false
+    val rawMode = setting?.optString("hotspot_mode", "proxy")
+      ?.trim()
+      ?.lowercase(Locale.ROOT)
+      .orEmpty()
+    val hotspotMode = if (rawMode == "vpn") "vpn" else "proxy"
+    val rawProgram = setting?.optString("hotspot_program", "")
+      ?.trim()
+      ?.lowercase(Locale.ROOT)
+      .orEmpty()
+    val hotspotProgram = when (rawProgram) {
+      "operaproxy", "opera-proxy", "opera_proxy" -> "operaproxy"
+      "singbox", "sing-box", "sing_box" -> "singbox"
+      "wireproxy", "wire-proxy", "wire_proxy" -> "wireproxy"
+      "openvpn", "open-vpn", "open_vpn" -> "openvpn"
+      "amneziawg", "amnezia-wg", "amnezia_wg", "awg" -> "amneziawg"
+      "mihomo" -> "mihomo"
+      "mieru" -> "mieru"
+      else -> ""
+    }
+    val hotspotProfile = setting?.optString("hotspot_profile", "")
+      ?.trim()
+      .orEmpty()
     val rawTarget = setting?.optString("hotspot_t2s_target", "")
       ?.trim()
       ?.lowercase(Locale.ROOT)
@@ -286,7 +311,7 @@ object ApiModels {
       "wireproxy", "wire-proxy", "wire_proxy" -> "wireproxy"
       else -> ""
     }
-    val hotspotProfile = setting?.optString("hotspot_t2s_singbox_profile", "")
+    val hotspotSingboxProfile = setting?.optString("hotspot_t2s_singbox_profile", "")
       ?.trim()
       .orEmpty()
     val hotspotWireproxyProfile = setting?.optString("hotspot_t2s_wireproxy_profile", "")
@@ -296,8 +321,11 @@ object ApiModels {
     return DaemonSettings(
       protectorMode = safeMode,
       hotspotT2sEnabled = hotspotEnabled,
+      hotspotMode = hotspotMode,
+      hotspotProgram = hotspotProgram,
+      hotspotProfile = hotspotProfile,
       hotspotT2sTarget = safeTarget,
-      hotspotT2sSingboxProfile = hotspotProfile,
+      hotspotT2sSingboxProfile = hotspotSingboxProfile,
       hotspotT2sWireproxyProfile = hotspotWireproxyProfile,
       hotspotT2sCaptureAll = hotspotCaptureAll,
       selinuxPermissiveEnabled = setting?.optBoolean("selinux_permissive_enabled", false) ?: false,

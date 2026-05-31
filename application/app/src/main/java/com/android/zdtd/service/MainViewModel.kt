@@ -38,6 +38,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -261,6 +263,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     baseUrlProvider = { _uiState.value.baseUrl },
     tokenProvider = { _uiState.value.token },
   )
+
+  private val hotspotSettingsMutex = Mutex()
 
   private val githubHttp = OkHttpClient.Builder()
     .retryOnConnectionFailure(true)
@@ -5409,12 +5413,14 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
 
     launchIO {
       val applied = runCatching {
-        if (enabled) api.setHotspotMode("proxy") else api.setHotspotT2s(
-          enabled = false,
-          target = "",
-          singboxProfile = "",
-          wireproxyProfile = "",
-        )
+        hotspotSettingsMutex.withLock {
+          if (enabled) api.setHotspotMode("proxy") else api.setHotspotT2s(
+            enabled = false,
+            target = "",
+            singboxProfile = "",
+            wireproxyProfile = "",
+          )
+        }
       }.getOrElse {
         log("ERR", "hotspot toggle failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
@@ -5458,7 +5464,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       )
     }
     launchIO {
-      val applied = runCatching { api.setHotspotMode(safeMode) }.getOrElse {
+      val applied = runCatching {
+        hotspotSettingsMutex.withLock { api.setHotspotMode(safeMode) }
+      }.getOrElse {
         log("ERR", "hotspot mode failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) { toast(str(R.string.settings_hotspot_save_failed)) }
         refreshDaemonSettings()
@@ -5502,7 +5510,9 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     if (needsProfile && safeProfile.isBlank()) return
     if (safeProgram.isBlank()) return
     launchIO {
-      val applied = runCatching { api.setHotspotSelection(safeMode, safeProgram, safeProfile) }.getOrElse {
+      val applied = runCatching {
+        hotspotSettingsMutex.withLock { api.setHotspotSelection(safeMode, safeProgram, safeProfile) }
+      }.getOrElse {
         log("ERR", "hotspot selection failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) { toast(str(R.string.settings_hotspot_save_failed)) }
         refreshDaemonSettings()
@@ -5551,7 +5561,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
 
     launchIO {
       val applied = runCatching {
-        api.setHotspotSelection("proxy", safeTarget, "")
+        hotspotSettingsMutex.withLock { api.setHotspotSelection("proxy", safeTarget, "") }
       }.getOrElse {
         log("ERR", "hotspot t2s target failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
@@ -5595,7 +5605,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     }
     launchIO {
       val applied = runCatching {
-        api.setHotspotSelection("proxy", "singbox", safeProfile)
+        hotspotSettingsMutex.withLock { api.setHotspotSelection("proxy", "singbox", safeProfile) }
       }.getOrElse {
         log("ERR", "hotspot sing-box profile failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
@@ -5639,7 +5649,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     }
     launchIO {
       val applied = runCatching {
-        api.setHotspotSelection("proxy", "wireproxy", safeProfile)
+        hotspotSettingsMutex.withLock { api.setHotspotSelection("proxy", "wireproxy", safeProfile) }
       }.getOrElse {
         log("ERR", "hotspot wireproxy profile failed: ${it.message ?: it}")
         withContext(Dispatchers.Main.immediate) {
@@ -5676,7 +5686,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
 
     launchIO {
       val applied = runCatching {
-        api.setHotspotT2sCaptureAll(enabled)
+        hotspotSettingsMutex.withLock { api.setHotspotT2sCaptureAll(enabled) }
       }.getOrElse {
         log("ERR", "hotspot capture-all failed: ${it.message ?: it}")
         _appUpdate.update { it.copy(hotspotT2sCaptureAll = previous) }

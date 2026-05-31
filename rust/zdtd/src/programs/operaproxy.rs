@@ -284,12 +284,25 @@ pub fn start_if_enabled() -> Result<()> {
     let has_launch_marker = pkg_uid::file_has_launch_marker(Path::new(APP_UID_USER)).unwrap_or(false)
         || pkg_uid::file_has_launch_marker(Path::new(APP_UID_MOBILE)).unwrap_or(false)
         || pkg_uid::file_has_launch_marker(Path::new(APP_UID_WIFI)).unwrap_or(false);
-    if resolved_total == 0 && !has_launch_marker {
-        warn!("operaproxy: no apps resolved -> skip start/iptables");
+
+    let api_settings = settings::load_api_settings().unwrap_or_default();
+    let hotspot_t2s = api_settings.hotspot_t2s_for_operaproxy();
+    info!(
+        "operaproxy: hotspot settings enabled={} mode='{}' program='{}' profile='{}' legacy_target='{}' hotspot_t2s={}",
+        api_settings.hotspot_t2s_enabled,
+        api_settings.hotspot_mode,
+        api_settings.hotspot_program,
+        api_settings.hotspot_profile,
+        api_settings.hotspot_t2s_target,
+        hotspot_t2s,
+    );
+
+    if resolved_total == 0 && !has_launch_marker && !hotspot_t2s {
+        warn!("operaproxy: no apps resolved and hotspot disabled -> skip start/iptables");
         return Ok(());
     }
-    if resolved_total == 0 && has_launch_marker {
-        info!("operaproxy: launch marker present, starting without routing app UIDs");
+    if resolved_total == 0 && (has_launch_marker || hotspot_t2s) {
+        info!("operaproxy: starting without routing app UIDs (launch_marker={} hotspot_t2s={})", has_launch_marker, hotspot_t2s);
     }
 
     // sni list required
@@ -307,8 +320,6 @@ pub fn start_if_enabled() -> Result<()> {
     let port_cfg: PortJson = read_json(Path::new(PORT_JSON))
         .with_context(|| format!("read {}", PORT_JSON))?;
 
-    let api_settings = settings::load_api_settings().unwrap_or_default();
-    let hotspot_t2s = api_settings.hotspot_t2s_for_operaproxy();
     let needs_t2s = resolved_total > 0 || hotspot_t2s;
 
     // opera-proxy region (EU/AS/AM) from config/server.txt, validated against whitelist

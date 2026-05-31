@@ -397,7 +397,7 @@ This is not the same as WireGuard tools or wireguard-go. ZDT-D currently documen
 
 #### Upstream
 
-Bundled/internal ZDT-D component.
+Internal ZDT-D component.
 
 ---
 

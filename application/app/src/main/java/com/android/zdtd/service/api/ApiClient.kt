@@ -161,6 +161,7 @@ class ApiClient(
       .put("hotspot_t2s_target", safeTarget)
       .put("hotspot_t2s_singbox_profile", safeProfile)
       .put("hotspot_t2s_wireproxy_profile", safeWireproxyProfile)
+    if (enabled) body.put("ip_forward_enabled", true)
     captureAll?.let { body.put("hotspot_t2s_capture_all", it) }
     val obj = requestJson("POST", "/api/setting", body)
     return ApiModels.parseDaemonSettings(obj)
@@ -174,6 +175,7 @@ class ApiClient(
       "/api/setting",
       JSONObject()
         .put("hotspot_t2s_enabled", true)
+        .put("ip_forward_enabled", true)
         .put("hotspot_mode", safeMode)
         .put("hotspot_program", "")
         .put("hotspot_profile", ""),
@@ -192,6 +194,7 @@ class ApiClient(
       "/api/setting",
       JSONObject()
         .put("hotspot_t2s_enabled", true)
+        .put("ip_forward_enabled", true)
         .put("hotspot_mode", safeMode)
         .put("hotspot_program", program.trim())
         .put("hotspot_profile", profile.trim()),

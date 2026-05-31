@@ -5384,6 +5384,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -5396,6 +5397,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     _appUpdate.update {
       it.copy(
         hotspotT2sEnabled = enabled,
+        ipForwardEnabled = if (enabled) true else it.ipForwardEnabled,
         hotspotMode = "proxy",
         hotspotProgram = "",
         hotspotProfile = "",
@@ -5432,6 +5434,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -5445,6 +5448,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     _appUpdate.update {
       it.copy(
         hotspotT2sEnabled = true,
+        ipForwardEnabled = true,
         hotspotMode = safeMode,
         hotspotProgram = "",
         hotspotProfile = "",
@@ -5471,6 +5475,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
         )
       }
     }
@@ -5484,6 +5489,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     _appUpdate.update {
       it.copy(
         hotspotT2sEnabled = true,
+        ipForwardEnabled = true,
         hotspotMode = safeMode,
         hotspotProgram = safeProgram,
         hotspotProfile = safeProfile,
@@ -5513,6 +5519,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) { toast(str(R.string.settings_hotspot_saved)) }
@@ -5564,6 +5571,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -5607,6 +5615,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -5650,6 +5659,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sSingboxProfile = applied.hotspotT2sSingboxProfile,
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
+          ipForwardEnabled = applied.ipForwardEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {

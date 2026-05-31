@@ -218,12 +218,42 @@ fn cleanup_ip_rules() {
 
 fn apply_route_table(profile: &VpnTetherProfile) -> Result<()> {
     let table = TABLE_ID.to_string();
-    let (rc, out) = if let Some(gw) = profile.gateway.as_deref().filter(|v| !v.trim().is_empty()) {
-        ip(&["-4", "route", "replace", "default", "via", gw, "dev", &profile.tun, "table", &table], Capture::Both)?
-    } else {
-        ip(&["-4", "route", "replace", "default", "dev", &profile.tun, "table", &table], Capture::Both)?
-    };
-    if rc != 0 { bail!("vpn_tether: route table setup failed: {}", out.trim()); }
+
+    let cidr = profile.cidr.trim();
+    if !cidr.is_empty() {
+        let (rc, out) = ip(&["-4", "route", "replace", cidr, "dev", &profile.tun, "table", &table], Capture::Both)?;
+        if rc != 0 {
+            warn!(
+                "vpn_tether: connected route setup failed cidr={} dev={} table={}: {}",
+                cidr,
+                profile.tun,
+                table,
+                out.trim()
+            );
+        }
+    }
+
+    if let Some(gw) = profile.gateway.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        let (rc, out) = ip(&["-4", "route", "replace", "default", "via", gw, "dev", &profile.tun, "table", &table], Capture::Both)?;
+        if rc == 0 {
+            let _ = ip(&["route", "flush", "cache"], Capture::Both);
+            return Ok(());
+        }
+
+        warn!(
+            "vpn_tether: default route via gateway failed gw={} dev={} table={}: {}; fallback to default dev",
+            gw,
+            profile.tun,
+            table,
+            out.trim()
+        );
+    }
+
+    let (rc, out) = ip(&["-4", "route", "replace", "default", "dev", &profile.tun, "table", &table], Capture::Both)?;
+    if rc != 0 {
+        bail!("vpn_tether: route table setup failed: {}", out.trim());
+    }
+
     let _ = ip(&["route", "flush", "cache"], Capture::Both);
     Ok(())
 }

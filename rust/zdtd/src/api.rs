@@ -5636,6 +5636,7 @@ match (method.as_str(), path.as_str()) {
             if let Some(mode) = patch.protector_mode {
                 setting.protector_mode = mode;
             }
+            let mut apply_ip_forward: Option<bool> = None;
             if let Some(enabled) = patch.hotspot_t2s_enabled {
                 setting.hotspot_t2s_enabled = enabled;
                 // Enabling/disabling hotspot starts from a clean selection. The UI then sets
@@ -5645,6 +5646,13 @@ match (method.as_str(), path.as_str()) {
                 setting.hotspot_t2s_target.clear();
                 setting.hotspot_t2s_singbox_profile.clear();
                 setting.hotspot_t2s_wireproxy_profile.clear();
+                // Hotspot/tethering requires IPv4 forwarding. Persist the existing
+                // advanced setting when hotspot is enabled, but do not disable it
+                // automatically when hotspot is turned off.
+                if enabled {
+                    setting.ip_forward_enabled = true;
+                    apply_ip_forward = Some(true);
+                }
             }
             if let Some(mode) = patch.hotspot_mode {
                 setting.hotspot_mode = mode;
@@ -5694,10 +5702,13 @@ match (method.as_str(), path.as_str()) {
             if let Some(enabled) = patch.selinux_permissive_enabled {
                 setting.selinux_permissive_enabled = enabled;
             }
-            let mut apply_ip_forward: Option<bool> = None;
             if let Some(enabled) = patch.ip_forward_enabled {
                 setting.ip_forward_enabled = enabled;
                 apply_ip_forward = Some(enabled);
+            }
+            if setting.hotspot_t2s_enabled && !setting.ip_forward_enabled {
+                setting.ip_forward_enabled = true;
+                apply_ip_forward = Some(true);
             }
             settings::save_api_settings(&setting)?;
             if let Some(enabled) = apply_ip_forward {

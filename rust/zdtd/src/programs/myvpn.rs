@@ -379,6 +379,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                 dns: plan.setting.dns.clone(),
                 app_list_path: plan.app_in.clone(),
                 app_out_path: plan.app_out.clone(),
+                endpoint_escape_ips: Vec::new(),
             })
         })();
         match res {

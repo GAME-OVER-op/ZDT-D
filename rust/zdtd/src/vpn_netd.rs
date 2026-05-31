@@ -30,6 +30,7 @@ pub struct VpnNetdProfile {
     pub dns: Vec<String>,
     pub app_list_path: PathBuf,
     pub app_out_path: PathBuf,
+    pub endpoint_escape_ips: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -46,6 +47,8 @@ pub struct AppliedProfile {
     pub tun: String,
     #[serde(default)]
     pub uid_ranges: Vec<String>,
+    #[serde(default)]
+    pub endpoint_escape_ips: Vec<String>,
 }
 
 fn runtime_file(name: &str) -> PathBuf {
@@ -350,6 +353,9 @@ fn validate_profile(p: &VpnNetdProfile) -> Result<()> {
     if !p.app_list_path.is_file() {
         bail!("vpn netd profile {} app list is missing: {}", p.profile, p.app_list_path.display());
     }
+    if p.endpoint_escape_ips.iter().any(|ip| !is_ipv4(ip)) {
+        bail!("vpn netd profile {} endpoint escape IP list is invalid", p.profile);
+    }
     Ok(())
 }
 
@@ -511,6 +517,87 @@ fn set_dns_universal(netid: u32, tun: &str, dns: &[String]) -> Result<()> {
     bail!("vpn_netd: resolver DNS setup failed; setnetdns rc={code1} out={out1}; setifdns rc={code2} out={out2}");
 }
 
+fn unique_endpoint_escape_ips(profile: &VpnNetdProfile) -> Vec<String> {
+    let mut ips = profile
+        .endpoint_escape_ips
+        .iter()
+        .map(|ip| ip.trim())
+        .filter(|ip| is_ipv4(ip))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    ips.sort();
+    ips.dedup();
+    ips
+}
+
+fn ensure_endpoint_escape_routes(profile: &VpnNetdProfile) {
+    for ip in unique_endpoint_escape_ips(profile) {
+        let dest = format!("{ip}/32");
+        // Android/netd may mark backend packets with the VPN netId.  The table
+        // created for the VPN interface contains a default route through that
+        // same interface, so endpoint packets can self-capture into the tunnel.
+        // A throw route only says "not through this table"; Android will then
+        // continue to the following rules and pick the current physical network
+        // such as wlan0/rmnet_data*/ccmni*/wwan*.
+        let attempts: Vec<Vec<&str>> = vec![
+            vec!["-4", "route", "replace", "throw", &dest, "table", &profile.tun],
+            vec!["-4", "route", "replace", &dest, "type", "throw", "table", &profile.tun],
+        ];
+        let mut applied = false;
+        let mut errors = Vec::new();
+        for args in attempts {
+            match shell::run_timeout("ip", &args, Capture::Both, IP_TIMEOUT) {
+                Ok((0, out)) => {
+                    log::info!(
+                        "vpn_netd: endpoint escape route applied {}/{} tun={} ip={} out={}",
+                        profile.owner_program,
+                        profile.profile,
+                        profile.tun,
+                        ip,
+                        trim_ndc_output(&out)
+                    );
+                    applied = true;
+                    break;
+                }
+                Ok((code, out)) => errors.push(format!("rc={code} out={}", trim_ndc_output(&out))),
+                Err(e) => errors.push(format!("{e:#}")),
+            }
+        }
+        if !applied {
+            log::warn!(
+                "vpn_netd: endpoint escape route failed {}/{} tun={} ip={}: {}",
+                profile.owner_program,
+                profile.profile,
+                profile.tun,
+                ip,
+                errors.join("; ")
+            );
+        }
+    }
+}
+
+fn remove_endpoint_escape_routes(applied: &AppliedProfile) {
+    let mut ips = applied
+        .endpoint_escape_ips
+        .iter()
+        .map(|ip| ip.trim())
+        .filter(|ip| is_ipv4(ip))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    ips.sort();
+    ips.dedup();
+    for ip in ips {
+        let dest = format!("{ip}/32");
+        let attempts: Vec<Vec<&str>> = vec![
+            vec!["-4", "route", "del", "throw", &dest, "table", &applied.tun],
+            vec!["-4", "route", "del", &dest, "type", "throw", "table", &applied.tun],
+        ];
+        for args in attempts {
+            let _ = shell::run_timeout("ip", &args, Capture::None, IP_TIMEOUT);
+        }
+    }
+}
+
 fn verify_post_apply(profile: &VpnNetdProfile, uid_ranges: &[String]) {
     match shell::run_timeout("ip", &["rule", "show"], Capture::Stdout, IP_TIMEOUT) {
         Ok((code, out)) if code == 0 => {
@@ -560,9 +647,27 @@ fn verify_post_apply(profile: &VpnNetdProfile, uid_ranges: &[String]) {
         Ok((code, out)) => log::warn!("vpn_netd: post-check ip route failed rc={code} out={}", trim_ndc_output(&out)),
         Err(e) => log::warn!("vpn_netd: post-check ip route failed: {e:#}"),
     }
+
+    for ip in unique_endpoint_escape_ips(profile) {
+        let dest_cidr = format!("throw {ip}/32");
+        let dest_host = format!("throw {ip}");
+        match shell::run_timeout("ip", &["-4", "route", "show", "table", &profile.tun], Capture::Stdout, IP_TIMEOUT) {
+            Ok((code, out)) if code == 0 && !out.contains(&dest_cidr) && !out.contains(&dest_host) => {
+                log::warn!(
+                    "vpn_netd: post-check did not see endpoint escape route {} in table {} for {}/{}",
+                    dest_cidr,
+                    profile.tun,
+                    profile.owner_program,
+                    profile.profile
+                );
+            }
+            _ => {}
+        }
+    }
 }
 
 fn remove_netd_profile(applied: &AppliedProfile) {
+    remove_endpoint_escape_routes(applied);
     let netid_s = applied.netid.to_string();
     for r in &applied.uid_ranges {
         if is_number_range(r) {
@@ -590,6 +695,7 @@ fn apply_one_profile(profile: &VpnNetdProfile, uid_ranges: &[String]) -> Result<
     }
 
     add_route_universal(profile.netid, &profile.tun, "0.0.0.0/0", profile.gateway.as_deref())?;
+    ensure_endpoint_escape_routes(profile);
 
     if let Err(e) = set_dns_universal(profile.netid, &profile.tun, &profile.dns) {
         log::warn!("vpn_netd: profile {}/{} DNS was not applied: {e:#}", profile.owner_program, profile.profile);
@@ -619,6 +725,7 @@ fn apply_one_profile(profile: &VpnNetdProfile, uid_ranges: &[String]) -> Result<
         netid: profile.netid,
         tun: profile.tun.clone(),
         uid_ranges: uid_ranges.to_vec(),
+        endpoint_escape_ips: unique_endpoint_escape_ips(profile),
     })
 }
 
@@ -756,6 +863,7 @@ pub fn start_profiles(profiles: Vec<VpnNetdProfile>) -> Result<()> {
                     netid: profile.netid,
                     tun: profile.tun.clone(),
                     uid_ranges: ranges.clone(),
+                    endpoint_escape_ips: unique_endpoint_escape_ips(profile),
                 });
             }
         }

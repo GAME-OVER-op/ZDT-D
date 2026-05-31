@@ -496,6 +496,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                 dns: plan.setting.dns.clone(),
                 app_list_path: plan.app_in.clone(),
                 app_out_path: plan.app_out.clone(),
+                endpoint_escape_ips: collect_remote_escape_ips(plan),
             })
         })();
 
@@ -947,6 +948,34 @@ fn is_valid_ifname(s: &str) -> bool {
         && s.len() <= 15
         && s.chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-')
+}
+
+fn collect_remote_escape_ips(plan: &ProfilePlan) -> Vec<String> {
+    let raw = fs::read_to_string(&plan.config_path).unwrap_or_default();
+    let mut ips = Vec::new();
+    for line in raw.lines() {
+        let trimmed = line
+            .split(|c| c == '#' || c == ';')
+            .next()
+            .unwrap_or("")
+            .trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let parts = trimmed.split_whitespace().collect::<Vec<_>>();
+        if parts.first().map(|s| s.eq_ignore_ascii_case("remote")).unwrap_or(false) && parts.len() >= 2 {
+            let host = parts[1].trim().trim_matches('"').trim_matches('\'').trim_end_matches('.');
+            if is_ipv4(host) {
+                ips.push(host.to_string());
+            }
+        }
+    }
+    ips.sort();
+    ips.dedup();
+    if !ips.is_empty() {
+        info!("openvpn: profile={} endpoint escape ips={}", plan.name, ips.join(","));
+    }
+    ips
 }
 
 fn is_forbidden_tun_name(s: &str) -> bool {

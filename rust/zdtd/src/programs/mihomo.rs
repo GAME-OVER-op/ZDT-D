@@ -629,6 +629,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                 dns: vec!["8.8.8.8".to_string()],
                 app_list_path: plan.app_in.clone(),
                 app_out_path: plan.app_out.clone(),
+                endpoint_escape_ips: Vec::new(),
             }))
         })();
 

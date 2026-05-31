@@ -417,6 +417,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                 dns: vec!["8.8.8.8".to_string()],
                 app_list_path: plan.app_in.clone(),
                 app_out_path: plan.app_out.clone(),
+                endpoint_escape_ips: collect_proxy_escape_ips(&plan.setting.proxy),
             })
         })();
 
@@ -616,6 +617,41 @@ fn generated_tun_addr_and_cidr(netid: u32) -> Result<(String, String)> {
         .ok_or_else(|| anyhow::anyhow!("tun2socks cidr overflow"))?;
     let addr = network + 1;
     Ok((format!("{}/30", u32_to_ipv4(addr)), format!("{}/30", u32_to_ipv4(network))))
+}
+
+fn collect_proxy_escape_ips(proxy: &str) -> Vec<String> {
+    let mut value = proxy.trim();
+    if let Some((_, rest)) = value.split_once("://") {
+        value = rest;
+    }
+    if let Some((_, rest)) = value.rsplit_once('@') {
+        value = rest;
+    }
+    value = value
+        .split(|c| c == '/' || c == '?' || c == '#')
+        .next()
+        .unwrap_or(value)
+        .trim();
+    if value.starts_with('[') {
+        return Vec::new();
+    }
+    let host = value
+        .rsplit_once(':')
+        .map(|(host, _)| host)
+        .unwrap_or(value)
+        .trim()
+        .trim_end_matches('.');
+    if is_ipv4(host) && !host.starts_with("127.") && host != "0.0.0.0" {
+        vec![host.to_string()]
+    } else {
+        Vec::new()
+    }
+}
+
+fn is_ipv4(s: &str) -> bool {
+    let parts = s.split('.').collect::<Vec<_>>();
+    if parts.len() != 4 { return false; }
+    parts.iter().all(|p| !p.is_empty() && p.parse::<u8>().is_ok())
 }
 
 fn is_valid_ifname(s: &str) -> bool {

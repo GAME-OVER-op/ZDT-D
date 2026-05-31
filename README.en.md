@@ -14,7 +14,7 @@
 > Download ZDT-D only from the official GitHub repository.
 
 <p align="center">
-  <a href="README.md"><b>English</b></a> ·
+  <a href="README.en.md"><b>English</b></a> ·
   <a href="README.ru.md"><b>Русский</b></a>
 </p>
 

@@ -8,8 +8,9 @@ use std::{
     os::unix::process::CommandExt,
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::atomic::{AtomicBool, Ordering},
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use crate::{
@@ -32,6 +33,13 @@ const TUN_WAIT: Duration = Duration::from_secs(25);
 const IP_TIMEOUT: Duration = Duration::from_secs(3);
 const AWG_TIMEOUT: Duration = Duration::from_secs(10);
 const DNS_TIMEOUT: Duration = Duration::from_secs(4);
+const HEALTH_IDLE_SLEEP: Duration = Duration::from_secs(2);
+const HEALTH_INTERVAL_SEC: u64 = 30;
+const HEALTH_LIFETIME_SEC: u64 = 180;
+const HEALTH_GRACE_SEC: u64 = 120;
+const HEALTH_REAPPLY_COOLDOWN_SEC: u64 = 60;
+
+static HEALTH_SUPERVISOR_RUNNING: AtomicBool = AtomicBool::new(false);
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct ProfileState {
@@ -62,7 +70,6 @@ pub struct ProfileSetting {
 
 fn default_mtu() -> u32 { 1280 }
 fn default_endpoint_resolve() -> bool { true }
-
 impl Default for ProfileSetting {
     fn default() -> Self {
         Self {
@@ -87,6 +94,8 @@ struct ProfilePlan {
     go_log_path: PathBuf,
     awg_log_path: PathBuf,
     start_log_path: PathBuf,
+    health_log_path: PathBuf,
+    health_state_path: PathBuf,
 }
 
 #[derive(Debug, Clone)]
@@ -743,6 +752,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
     }
 
     info!("amneziawg: prepared vpn_netd profiles count={}", profiles.len());
+    start_health_supervisor_once();
     Ok(profiles)
 }
 
@@ -774,6 +784,7 @@ pub fn start_profile_for_hotspot_vpn(profile: &str) -> Result<Option<VpnTetherPr
         inspect_tun(&plan.setting.tun)
             .with_context(|| format!("amneziawg hotspot profile={} inspect tun={}", plan.name, plan.setting.tun))?
     };
+    start_health_supervisor_once();
     Ok(Some(VpnTetherProfile {
         owner_program: "amneziawg".to_string(),
         profile: plan.name.clone(),
@@ -821,6 +832,8 @@ fn build_profile_plan(profile: &str, allow_empty_apps: bool) -> Result<ProfilePl
         go_log_path: profile_dir.join("log/amneziawg-go.log"),
         awg_log_path: profile_dir.join("log/awg.log"),
         start_log_path: profile_dir.join("log/start.log"),
+        health_log_path: profile_dir.join("log/health.log"),
+        health_state_path: profile_dir.join("log/health_state.txt"),
     })
 }
 
@@ -1008,11 +1021,21 @@ fn amneziawg_process_running(tun: &str) -> bool {
 }
 
 fn apply_awg_config(plan: &ProfilePlan) -> Result<()> {
+    apply_awg_config_inner(plan, true)
+}
+
+fn reapply_awg_config_from_health(plan: &ProfilePlan) -> Result<()> {
+    apply_awg_config_inner(plan, false)
+}
+
+fn apply_awg_config_inner(plan: &ProfilePlan, cleanup_on_fail: bool) -> Result<()> {
     let setconf_path = match prepare_setconf_config(plan) {
         Ok(path) => path,
         Err(e) => {
             append_start_log(plan, &format!("prepare awg setconf failed: {e:#}"));
-            cleanup_interface(&plan.setting.tun);
+            if cleanup_on_fail {
+                cleanup_interface(&plan.setting.tun);
+            }
             return Err(e);
         }
     };
@@ -1031,14 +1054,18 @@ fn apply_awg_config(plan: &ProfilePlan) -> Result<()> {
         Ok(v) => v,
         Err(e) => {
             append_awg_log(plan, &format!("$ WG_ENDPOINT_RESOLUTION_RETRIES=1 {} setconf {} {}\nERROR: {e:#}\n", AWG_BIN, plan.setting.tun, setconf_path.display()));
-            cleanup_interface(&plan.setting.tun);
+            if cleanup_on_fail {
+                cleanup_interface(&plan.setting.tun);
+            }
             bail!("awg setconf failed: {e:#}");
         }
     };
 
     append_awg_log(plan, &format!("$ WG_ENDPOINT_RESOLUTION_RETRIES=1 {} setconf {} {}\nrc={}\n{}\n", AWG_BIN, plan.setting.tun, setconf_path.display(), code, out));
     if code != 0 {
-        cleanup_interface(&plan.setting.tun);
+        if cleanup_on_fail {
+            cleanup_interface(&plan.setting.tun);
+        }
         bail!("awg setconf failed rc={code}: {}", out.trim());
     }
     let (show_code, show_out) = shell::run_timeout(AWG_BIN, &["show", &plan.setting.tun], Capture::Both, AWG_TIMEOUT)
@@ -1252,14 +1279,17 @@ fn wait_link_ready(tun: &str) -> Result<()> {
         if start.elapsed() >= LINK_WAIT {
             bail!("tun link {tun} was not created after {:?}", LINK_WAIT);
         }
-        if shell::run_timeout("ip", &["link", "show", "dev", tun], Capture::None, IP_TIMEOUT)
-            .map(|(code, _)| code == 0)
-            .unwrap_or(false)
-        {
+        if link_exists(tun) {
             return Ok(());
         }
         thread::sleep(Duration::from_millis(250));
     }
+}
+
+fn link_exists(tun: &str) -> bool {
+    shell::run_timeout("ip", &["link", "show", "dev", tun], Capture::None, IP_TIMEOUT)
+        .map(|(code, _)| code == 0)
+        .unwrap_or(false)
 }
 
 fn wait_tun_ready(tun: &str) -> Result<()> {
@@ -1478,6 +1508,223 @@ fn write_text_atomic(path: &Path, content: &str) -> Result<()> {
     fs::write(&tmp, content)?;
     fs::rename(&tmp, path)?;
     Ok(())
+}
+
+
+#[derive(Debug, Clone, Default)]
+struct HealthRuntimeState {
+    first_seen: u64,
+    last_check: u64,
+    last_reapply: u64,
+    reapply_count: u64,
+}
+
+fn start_health_supervisor_once() {
+    if HEALTH_SUPERVISOR_RUNNING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    thread::spawn(|| {
+        info!("amneziawg health: supervisor started");
+        let res = std::panic::catch_unwind(health_supervisor_loop);
+        if res.is_err() {
+            warn!("amneziawg health: supervisor panicked");
+        }
+        HEALTH_SUPERVISOR_RUNNING.store(false, Ordering::SeqCst);
+        info!("amneziawg health: supervisor stopped");
+    });
+}
+
+fn health_supervisor_loop() {
+    let mut states = BTreeMap::<String, HealthRuntimeState>::new();
+    loop {
+        let plans = health_enabled_plans();
+        if plans.is_empty() {
+            info!("amneziawg health: no enabled health profiles -> exit supervisor");
+            return;
+        }
+
+        let mut known = BTreeSet::<String>::new();
+        let mut checked_any = false;
+        for plan in plans {
+            let key = health_key(&plan);
+            known.insert(key.clone());
+            let now = now_epoch_secs();
+            let state = states.entry(key.clone()).or_insert_with(|| HealthRuntimeState {
+                first_seen: now,
+                ..HealthRuntimeState::default()
+            });
+            let interval = HEALTH_INTERVAL_SEC.max(5);
+            if state.last_check != 0 && now.saturating_sub(state.last_check) < interval {
+                continue;
+            }
+            state.last_check = now;
+            checked_any = true;
+            if let Err(e) = check_health_profile(&plan, state) {
+                warn!("amneziawg health: profile={} check failed: {e:#}", plan.name);
+                append_health_log(&plan, &format!("check_error error={}", one_line(&format!("{e:#}"))));
+                write_health_state(
+                    &plan,
+                    "check_error",
+                    None,
+                    state.reapply_count,
+                    Some(&format!("{e:#}")),
+                );
+            }
+            thread::sleep(Duration::from_millis(250));
+        }
+        states.retain(|key, _| known.contains(key));
+        if !checked_any {
+            thread::sleep(HEALTH_IDLE_SLEEP);
+        }
+    }
+}
+
+fn health_enabled_plans() -> Vec<ProfilePlan> {
+    let mut out = Vec::new();
+    let Ok(active) = read_active() else { return out; };
+    for (name, st) in active.profiles {
+        if !st.enabled { continue; }
+        let Ok(setting) = read_setting(&name) else { continue; };
+        if !link_exists(&setting.tun) { continue; }
+        match build_profile_plan(&name, true) {
+            Ok(plan) => out.push(plan),
+            Err(e) => warn!("amneziawg health: profile={name} plan failed: {e:#}"),
+        }
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
+fn check_health_profile(plan: &ProfilePlan, state: &mut HealthRuntimeState) -> Result<()> {
+    let latest = latest_handshake_ts(&plan.setting.tun)?;
+    let now = now_epoch_secs();
+    let age = latest.map(|ts| now.saturating_sub(ts));
+    let lifetime = HEALTH_LIFETIME_SEC.max(30);
+    let grace = HEALTH_GRACE_SEC.max(10);
+    let cooldown = HEALTH_REAPPLY_COOLDOWN_SEC.max(10);
+
+    if latest.is_none() && now.saturating_sub(state.first_seen) < grace {
+        append_health_log(
+            plan,
+            &format!(
+                "warming_up tun={} grace_left={}s",
+                plan.setting.tun,
+                grace.saturating_sub(now.saturating_sub(state.first_seen))
+            ),
+        );
+        write_health_state(plan, "warming_up", age, state.reapply_count, None);
+        return Ok(());
+    }
+
+    if let Some(age) = age {
+        if age <= lifetime {
+            write_health_state(plan, "healthy", Some(age), state.reapply_count, None);
+            return Ok(());
+        }
+    }
+
+    let stale_reason = if let Some(age) = age {
+        format!("stale_handshake age={}s lifetime={}s", age, lifetime)
+    } else {
+        format!("no_handshake lifetime={}s grace={}s", lifetime, grace)
+    };
+
+    if state.last_reapply != 0 && now.saturating_sub(state.last_reapply) < cooldown {
+        append_health_log(
+            plan,
+            &format!(
+                "stale cooldown tun={} reason={} cooldown_left={}s",
+                plan.setting.tun,
+                stale_reason,
+                cooldown.saturating_sub(now.saturating_sub(state.last_reapply))
+            ),
+        );
+        write_health_state(plan, "stale_cooldown", age, state.reapply_count, None);
+        return Ok(());
+    }
+
+    append_health_log(plan, &format!("reapply_begin tun={} reason={}", plan.setting.tun, stale_reason));
+    match reapply_awg_config_from_health(plan) {
+        Ok(()) => {
+            state.last_reapply = now;
+            state.reapply_count = state.reapply_count.saturating_add(1);
+            append_health_log(plan, &format!("reapply_ok tun={}", plan.setting.tun));
+            write_health_state(plan, "reapplied", age, state.reapply_count, None);
+            Ok(())
+        }
+        Err(e) => {
+            state.last_reapply = now;
+            state.reapply_count = state.reapply_count.saturating_add(1);
+            append_health_log(plan, &format!("reapply_failed tun={} error={}", plan.setting.tun, one_line(&format!("{e:#}"))));
+            write_health_state(plan, "reapply_failed", age, state.reapply_count, Some(&format!("{e:#}")));
+            Err(e)
+        }
+    }
+}
+
+fn latest_handshake_ts(tun: &str) -> Result<Option<u64>> {
+    let (code, out) = shell::run_timeout(AWG_BIN, &["show", tun, "latest-handshakes"], Capture::Both, AWG_TIMEOUT)
+        .with_context(|| format!("awg show {tun} latest-handshakes"))?;
+    if code != 0 {
+        bail!("awg show {tun} latest-handshakes failed rc={code}: {}", out.trim());
+    }
+    let latest = out
+        .lines()
+        .filter_map(|line| line.split_whitespace().nth(1))
+        .filter_map(|ts| ts.parse::<u64>().ok())
+        .filter(|ts| *ts > 0)
+        .max();
+    Ok(latest)
+}
+
+fn health_key(plan: &ProfilePlan) -> String {
+    format!("{}|{}", plan.name, plan.setting.tun)
+}
+
+fn now_epoch_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::from_secs(0))
+        .as_secs()
+}
+
+fn append_health_log(plan: &ProfilePlan, line: &str) {
+    if let Some(parent) = plan.health_log_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&plan.health_log_path) {
+        let _ = writeln!(f, "epoch={} profile={} {}", now_epoch_secs(), plan.name, line);
+    }
+}
+
+fn write_health_state(
+    plan: &ProfilePlan,
+    status: &str,
+    handshake_age: Option<u64>,
+    reapply_count: u64,
+    last_error: Option<&str>,
+) {
+    if let Some(parent) = plan.health_state_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let latest = handshake_age
+        .map(|age| age.to_string())
+        .unwrap_or_else(|| "none".to_string());
+    let content = format!(
+        "status={}\nprofile={}\ntun={}\nlast_check_epoch={}\nlast_handshake_age={}\nreapply_count={}\nlast_error={}\n",
+        status,
+        plan.name,
+        plan.setting.tun,
+        now_epoch_secs(),
+        latest,
+        reapply_count,
+        last_error.map(one_line).unwrap_or_default(),
+    );
+    let _ = write_text_atomic(&plan.health_state_path, &content);
+}
+
+fn one_line(s: &str) -> String {
+    s.replace('\n', " ").replace('\r', " ").trim().to_string()
 }
 
 fn append_start_log(plan: &ProfilePlan, line: &str) {

@@ -253,7 +253,7 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="setup_install_conflict_zapret_message">Warning: conflicting modules were detected. Please remove these modules, as incorrect operation of ZDT-D is possible.</string>
     <string name="setup_install_conflict_dnscrypt_message">A DNSCrypt module was detected. It is recommended to remove this module. If you need DNSCrypt, it is already included in ZDT-D.</string>
     <string name="setup_install_conflict_portguard_message">This module has a high level of conflict. The functionality of this module is already available in ZDT-D.</string>
-    <string name="setup_install_conflict_vpn_tether_message">This module conflicts with ZDT-D. This module's functionality is already available in ZDT-D. Please remove the conflicting module.</string>
+    <string name="setup_install_conflict_vpn_tether_message">This module conflicts with ZDT-D. This module functionality is already available in ZDT-D. Please remove the conflicting module.</string>
     <string name="setup_zygisk_install_title">Install Zygisk?</string>
     <string name="setup_zygisk_install_short">Optional interface-hiding component</string>
     <string name="setup_zygisk_install_details_cd">Zygisk details</string>

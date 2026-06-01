@@ -11,6 +11,7 @@ warn() { ui_print "! $1"; }
 
 ZDTD_PROGRESS_DIR="${ZDTD_INSTALL_STATUS_DIR:-/data/user/0/com.android.zdtd.service/install_status}"
 ZDTD_PROGRESS_FILE="${ZDTD_INSTALL_PROGRESS_FILE:-$ZDTD_PROGRESS_DIR/progress.properties}"
+ZDTD_PROGRESS_LOG="${ZDTD_INSTALL_PROGRESS_LOG:-$ZDTD_PROGRESS_DIR/progress.log}"
 
 zdt_progress() {
   percent="$1"
@@ -20,16 +21,20 @@ zdt_progress() {
   if [ -n "${ZDTD_PROGRESS_FILE:-}" ]; then
     progress_dir="$(dirname "$ZDTD_PROGRESS_FILE" 2>/dev/null)"
     [ -n "$progress_dir" ] && mkdir -p "$progress_dir" 2>/dev/null || true
-    tmp="${ZDTD_PROGRESS_FILE}.tmp.$$"
     {
       echo "percent=$percent"
       echo "message=$message"
       echo "time=$(date +%s 2>/dev/null || echo 0)"
-    } > "$tmp" 2>/dev/null && {
-      chmod 0644 "$tmp" 2>/dev/null || true
-      mv -f "$tmp" "$ZDTD_PROGRESS_FILE" 2>/dev/null || true
-      chmod 0644 "$ZDTD_PROGRESS_FILE" 2>/dev/null || true
-    }
+    } > "$ZDTD_PROGRESS_FILE" 2>/dev/null || true
+    chmod 0644 "$ZDTD_PROGRESS_FILE" 2>/dev/null || true
+  fi
+
+  if [ -n "${ZDTD_PROGRESS_LOG:-}" ]; then
+    progress_log_dir="$(dirname "$ZDTD_PROGRESS_LOG" 2>/dev/null)"
+    [ -n "$progress_log_dir" ] && mkdir -p "$progress_log_dir" 2>/dev/null || true
+    printf '%s
+' "ZDTD_PROGRESS:$percent:$message" >> "$ZDTD_PROGRESS_LOG" 2>/dev/null || true
+    chmod 0644 "$ZDTD_PROGRESS_LOG" 2>/dev/null || true
   fi
 
   ui_print "ZDTD_PROGRESS:$percent:$message"

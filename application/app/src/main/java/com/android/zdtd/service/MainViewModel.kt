@@ -3751,33 +3751,63 @@ if (mf.isNotBlank()) {
     val progressDir = File(ctx.applicationInfo.dataDir, "install_status")
     runCatching { progressDir.mkdirs() }
     val progressFile = File(progressDir, "progress.properties").absolutePath
+    val progressLog = File(progressDir, "progress.log").absolutePath
+    val installLog = File(progressDir, "install.log").absolutePath
+    val resultFile = File(progressDir, "result.properties").absolutePath
+    val runnerPath = "/data/local/tmp/zdt_module_install_runner.sh"
     val installLabel = str(R.string.setup_install_progress_installing_fmt, installerLabel)
     updateInstallProgress(62, installLabel)
 
-    runCatching { File(progressFile).delete() }
-    root.execRootSh("rm -f ${shQuote(progressFile)} ${shQuote(progressFile + ".tmp")}.* 2>/dev/null || true; mkdir -p ${shQuote(progressDir.absolutePath)} 2>/dev/null || true")
+    val cleanupScript = """
+      mkdir -p ${shQuote(progressDir.absolutePath)} 2>/dev/null || true
+      rm -f ${shQuote(progressFile)} ${shQuote(progressLog)} ${shQuote(installLog)} ${shQuote(resultFile)} ${shQuote(runnerPath)} ${shQuote(progressFile + ".tmp")}.* 2>/dev/null || true
+      chmod 0771 ${shQuote(progressDir.absolutePath)} 2>/dev/null || true
+    """.trimIndent()
+    root.execRootSh(cleanupScript)
 
-    return coroutineScope {
-      val monitor = launch(Dispatchers.IO) {
-        pollModuleInstallProgress(progressFile, installLabel)
-      }
-      try {
-        val commandWithProgress = "ZDTD_INSTALL_STATUS_DIR=${shQuote(progressDir.absolutePath)} ZDTD_INSTALL_PROGRESS_FILE=${shQuote(progressFile)} ${installCommand}"
-        val r = root.execRoot("sh -c ${shQuote(commandWithProgress)}")
-        val out2 = (r.out + r.err).joinToString("\n")
-        r.isSuccess to (stageLog + "\n" + out2).trim()
-      } finally {
-        monitor.cancel()
-        runCatching { monitor.join() }
-        root.execRootSh("rm -f ${shQuote(progressFile + ".tmp")}.* 2>/dev/null || true")
-      }
+    val runnerScript = """
+      #!/system/bin/sh
+      export ZDTD_INSTALL_STATUS_DIR=${shQuote(progressDir.absolutePath)}
+      export ZDTD_INSTALL_PROGRESS_FILE=${shQuote(progressFile)}
+      export ZDTD_INSTALL_PROGRESS_LOG=${shQuote(progressLog)}
+      mkdir -p ${shQuote(progressDir.absolutePath)} 2>/dev/null || true
+      rm -f ${shQuote(resultFile)} 2>/dev/null || true
+      {
+        echo "runner_start=$(date +%s 2>/dev/null || echo 0)"
+        echo "installer=${installerLabel}"
+      } > ${shQuote(installLog)} 2>/dev/null || true
+      chmod 0644 ${shQuote(installLog)} 2>/dev/null || true
+      (${installCommand}) >> ${shQuote(installLog)} 2>&1
+      rc=$?
+      {
+        echo "rc=$rc"
+        echo "time=$(date +%s 2>/dev/null || echo 0)"
+      } > ${shQuote(resultFile)} 2>/dev/null || true
+      chmod 0644 ${shQuote(resultFile)} 2>/dev/null || true
+      exit 0
+    """.trimIndent()
+
+    val runnerB64 = Base64.encodeToString(runnerScript.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+    val startScript = """
+      set -e
+      mkdir -p /data/local/tmp 2>/dev/null || true
+      echo ${shQuote(runnerB64)} | (base64 -d 2>/dev/null || /system/bin/toybox base64 -d 2>/dev/null) > ${shQuote(runnerPath)}
+      chmod 0700 ${shQuote(runnerPath)}
+      sh ${shQuote(runnerPath)} >/dev/null 2>&1 &
+      echo "started"
+    """.trimIndent()
+
+    val start = root.execRootSh(startScript)
+    val startOut = (start.out + start.err).joinToString("\n").trim()
+    if (!start.isSuccess) {
+      return false to listOf(stageLog, startOut.ifBlank { "failed to start module installer runner" }).filter { it.isNotBlank() }.joinToString("\n")
     }
-  }
 
-  private suspend fun pollModuleInstallProgress(progressFile: String, installLabel: String) {
     var lastPercent = 62
-    while (currentCoroutineContext().isActive) {
-      val text = readInstallProgressFile(progressFile)
+    var rc: Int? = null
+    val deadline = System.currentTimeMillis() + 10L * 60L * 1000L
+    while (currentCoroutineContext().isActive && rc == null) {
+      val text = readInstallProgressText(progressLog, progressFile)
       val percent = parseInstallProgressPercent(text)
       if (percent != null && percent > lastPercent) {
         val next = percent.coerceIn(63, 98)
@@ -3786,29 +3816,61 @@ if (mf.isNotBlank()) {
           updateInstallProgress(next, installLabel)
         }
       }
+
+      val resultText = readInstallStatusFile(resultFile)
+      rc = parseInstallResultCode(resultText)
+      if (rc != null) break
+
+      if (System.currentTimeMillis() > deadline) {
+        val logText = root.readLogTail(installLog, 400)
+        return false to listOf(stageLog, "installer timeout", startOut, logText).filter { it.isNotBlank() }.joinToString("\n")
+      }
       delay(450)
     }
+
+    val installOut = root.readLogTail(installLog, 1200)
+    root.execRootSh("rm -f ${shQuote(runnerPath)} ${shQuote(progressFile + ".tmp")}.* 2>/dev/null || true")
+    val ok = rc == 0
+    val finalLog = listOf(stageLog, startOut, installOut).filter { it.isNotBlank() }.joinToString("\n").trim()
+    return ok to finalLog
   }
 
-  private fun readInstallProgressFile(progressFile: String): String {
-    val direct = runCatching {
+  private fun readInstallProgressText(progressLog: String, progressFile: String): String {
+    val logText = runCatching { root.readLogTail(progressLog, 80) }.getOrDefault("")
+    if (logText.isNotBlank()) return logText
+
+    val propsText = runCatching { root.readLogTail(progressFile, 20) }.getOrDefault("")
+    if (propsText.isNotBlank()) return propsText
+
+    return runCatching {
       val f = File(progressFile)
       if (f.isFile && f.canRead()) f.readText() else ""
     }.getOrDefault("")
-    if (direct.isNotBlank()) return direct
+  }
 
-    return runCatching {
-      val r = root.execRootSh("cat ${shQuote(progressFile)} 2>/dev/null || true")
-      if (r.isSuccess) r.out.joinToString("\n") else ""
-    }.getOrDefault("")
+  private fun readInstallStatusFile(resultFile: String): String {
+    return runCatching { root.readLogTail(resultFile, 20) }.getOrDefault("")
+  }
+
+  private fun parseInstallResultCode(text: String): Int? {
+    return text.lineSequence()
+      .mapNotNull { line ->
+        val trimmed = line.trim()
+        if (!trimmed.startsWith("rc=")) return@mapNotNull null
+        trimmed.removePrefix("rc=").trim().toIntOrNull()
+      }
+      .lastOrNull()
   }
 
   private fun parseInstallProgressPercent(text: String): Int? {
     return text.lineSequence()
       .mapNotNull { line ->
         val trimmed = line.trim()
-        if (!trimmed.startsWith("percent=")) return@mapNotNull null
-        trimmed.removePrefix("percent=").trim().toIntOrNull()
+        when {
+          trimmed.startsWith("percent=") -> trimmed.removePrefix("percent=").trim().toIntOrNull()
+          trimmed.startsWith("ZDTD_PROGRESS:") -> trimmed.removePrefix("ZDTD_PROGRESS:").substringBefore(':').trim().toIntOrNull()
+          else -> null
+        }
       }
       .lastOrNull()
   }

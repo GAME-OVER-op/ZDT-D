@@ -608,8 +608,12 @@ fn apply_dns_ip6tables(listen_port: u16) -> Result<()> {
         ensure_jump(&ip6t, "nat", "OUTPUT", "NAT_DPI", true)?;
     }
 
-    // Keep loopback / localhost traffic at the very beginning to avoid feedback loops.
-    ensure_loopback_returns_v6(&ip6t, nat_ok)?;
+    // Keep loopback before position-3 IPv6 block rules only when the NAT table is
+    // unavailable. For the NAT path loopback ordering is repaired once after all
+    // NAT_DPI insertions, so we do not do the same work twice.
+    if !nat_ok {
+        ensure_loopback_returns_v6(&ip6t, false)?;
+    }
 
     if nat_ok {
         // If we previously had a non-NAT build (blocked IPv6 DNS), remove those block rules now.
@@ -790,9 +794,14 @@ fn ensure_dns_mangle_returns_ordered(
     dports_multi: &str,
     prots: &[&str],
 ) -> Result<()> {
-    // Keep DNS/DoT/mDNS before service/proxy UID exclusions and before NFQUEUE.
-    // Remove old DNS RETURN forms first so their order cannot drift after other
-    // modules insert UID RETURN rules into MANGLE_APP.
+    // Keep DNS/DoT/mDNS before service/proxy UID exclusions and before NFQUEUE,
+    // but avoid delete/reinsert work when the chain is already in the desired
+    // shape. This path is called by DNSCrypt and can also run after nfqws has
+    // prepared MANGLE_APP, so the check-first path keeps restarts cheap.
+    if dns_mangle_returns_already_ordered(iptables, use_multiport, dns_ports, dports_multi, prots)? {
+        return Ok(());
+    }
+
     for proto in prots {
         let mp = ["-p", proto, "-m", "multiport", "--dports", dports_multi, "-j", "RETURN"];
         del_rule_all(iptables, "mangle", "MANGLE_APP", &mp)?;
@@ -831,6 +840,72 @@ fn ensure_dns_mangle_returns_ordered(
         }
     }
     Ok(())
+}
+
+fn dns_mangle_returns_already_ordered(
+    iptables: &str,
+    use_multiport: bool,
+    dns_ports: &[u16],
+    dports_multi: &str,
+    prots: &[&str],
+) -> Result<bool> {
+    let (rc, out) = ipt_run(iptables, &["-t", "mangle", "-S", "MANGLE_APP"], Capture::Stdout)?;
+    if rc != 0 {
+        return Ok(false);
+    }
+
+    let expected = dns_return_lines(true, use_multiport, dns_ports, dports_multi, prots);
+    let known = dns_return_lines(false, true, dns_ports, dports_multi, prots)
+        .into_iter()
+        .chain(dns_return_lines(false, false, dns_ports, dports_multi, prots))
+        .collect::<Vec<_>>();
+    let chain_lines: Vec<&str> = out
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("-A MANGLE_APP "))
+        .collect();
+
+    if chain_lines.len() < 2 + expected.len() {
+        return Ok(false);
+    }
+    for (idx, expected_line) in expected.iter().enumerate() {
+        if chain_lines.get(idx + 2).copied() != Some(expected_line.as_str()) {
+            return Ok(false);
+        }
+    }
+    for line in chain_lines.iter().skip(2 + expected.len()) {
+        if known.iter().any(|known_line| *line == known_line.as_str()) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn dns_return_lines(
+    expected_only: bool,
+    use_multiport: bool,
+    dns_ports: &[u16],
+    dports_multi: &str,
+    prots: &[&str],
+) -> Vec<String> {
+    let mut lines = Vec::new();
+    for proto in ["sctp", "tcp", "udp"] {
+        if !prots.iter().any(|p| *p == proto) {
+            continue;
+        }
+        if use_multiport {
+            lines.push(format!(
+                "-A MANGLE_APP -p {proto} -m multiport --dports {dports_multi} -j RETURN"
+            ));
+            if expected_only {
+                continue;
+            }
+        }
+        for p in dns_ports {
+            lines.push(format!("-A MANGLE_APP -p {proto} --dport {p} -j RETURN"));
+        }
+    }
+    lines
 }
 
 fn del_rule_all(iptables: &str, table: &str, chain: &str, rule: &[&str]) -> Result<()> {
@@ -924,92 +999,126 @@ fn del_rule(iptables: &str, table: &str, chain: &str, rule: &[&str]) -> Result<(
 }
 
 fn ensure_loopback_returns(iptables: &str) -> Result<()> {
-    // Keep loopback / localhost traffic at the very beginning to avoid feedback loops.
-    let mut del_all = |args: &[&str]| {
-        loop {
-            let (c, _) = ipt_run(iptables, args, Capture::Stdout)
-                .unwrap_or((1, String::new()));
-            if c != 0 { break; }
-        }
-    };
-
-    // nat: NAT_DPI
-    del_all(&["-t", "nat", "-D", "NAT_DPI", "-d", "127.0.0.1", "-j", "RETURN"]); // legacy
-    del_all(&["-t", "nat", "-D", "NAT_DPI", "-o", "lo", "-j", "RETURN"]);
-    del_all(&["-t", "nat", "-D", "NAT_DPI", "-d", "127.0.0.0/8", "-j", "RETURN"]);
-    let _ = ipt_run(
+    ensure_ordered_return_prefix(
         iptables,
-        &["-t", "nat", "-I", "NAT_DPI", "1", "-o", "lo", "-j", "RETURN"],
-        Capture::Stdout,
-    );
-    let _ = ipt_run(
+        "nat",
+        "NAT_DPI",
+        &[
+            &["-o", "lo", "-j", "RETURN"],
+            &["-d", "127.0.0.0/8", "-j", "RETURN"],
+        ],
+        &[
+            &["-d", "127.0.0.1", "-j", "RETURN"],
+        ],
+    )?;
+    ensure_ordered_return_prefix(
         iptables,
-        &["-t", "nat", "-I", "NAT_DPI", "2", "-d", "127.0.0.0/8", "-j", "RETURN"],
-        Capture::Stdout,
-    );
-
-    // mangle: MANGLE_APP
-    del_all(&["-t", "mangle", "-D", "MANGLE_APP", "-d", "127.0.0.1", "-j", "RETURN"]); // legacy
-    del_all(&["-t", "mangle", "-D", "MANGLE_APP", "-o", "lo", "-j", "RETURN"]);
-    del_all(&["-t", "mangle", "-D", "MANGLE_APP", "-d", "127.0.0.0/8", "-j", "RETURN"]);
-    let _ = ipt_run(
-        iptables,
-        &["-t", "mangle", "-I", "MANGLE_APP", "1", "-o", "lo", "-j", "RETURN"],
-        Capture::Stdout,
-    );
-    let _ = ipt_run(
-        iptables,
-        &["-t", "mangle", "-I", "MANGLE_APP", "2", "-d", "127.0.0.0/8", "-j", "RETURN"],
-        Capture::Stdout,
-    );
-
-    Ok(())
+        "mangle",
+        "MANGLE_APP",
+        &[
+            &["-o", "lo", "-j", "RETURN"],
+            &["-d", "127.0.0.0/8", "-j", "RETURN"],
+        ],
+        &[
+            &["-d", "127.0.0.1", "-j", "RETURN"],
+        ],
+    )
 }
 
 fn ensure_loopback_returns_v6(ip6tables: &str, nat_ok: bool) -> Result<()> {
-    // Keep loopback / localhost traffic at the very beginning to avoid feedback loops.
-    let mut del_all = |args: &[&str]| {
-        loop {
-            let (c, _) = ipt_run(ip6tables, args, Capture::Stdout).unwrap_or((1, String::new()));
-            if c != 0 {
-                break;
-            }
-        }
-    };
-
     if nat_ok {
-        // nat: NAT_DPI
-        del_all(&["-t", "nat", "-D", "NAT_DPI", "-d", "::1", "-j", "RETURN"]); // legacy
-        del_all(&["-t", "nat", "-D", "NAT_DPI", "-o", "lo", "-j", "RETURN"]);
-        del_all(&["-t", "nat", "-D", "NAT_DPI", "-d", "::1/128", "-j", "RETURN"]);
-        let _ = ipt_run(
+        ensure_ordered_return_prefix(
             ip6tables,
-            &["-t", "nat", "-I", "NAT_DPI", "1", "-o", "lo", "-j", "RETURN"],
-            Capture::Stdout,
-        );
-        let _ = ipt_run(
-            ip6tables,
-            &["-t", "nat", "-I", "NAT_DPI", "2", "-d", "::1/128", "-j", "RETURN"],
-            Capture::Stdout,
-        );
+            "nat",
+            "NAT_DPI",
+            &[
+                &["-o", "lo", "-j", "RETURN"],
+                &["-d", "::1/128", "-j", "RETURN"],
+            ],
+            &[
+                &["-d", "::1", "-j", "RETURN"],
+            ],
+        )?;
+    }
+    ensure_ordered_return_prefix(
+        ip6tables,
+        "mangle",
+        "MANGLE_APP",
+        &[
+            &["-o", "lo", "-j", "RETURN"],
+            &["-d", "::1/128", "-j", "RETURN"],
+        ],
+        &[
+            &["-d", "::1", "-j", "RETURN"],
+        ],
+    )
+}
+
+fn ensure_ordered_return_prefix(
+    iptables: &str,
+    table: &str,
+    chain: &str,
+    expected: &[&[&str]],
+    legacy: &[&[&str]],
+) -> Result<()> {
+    if return_prefix_already_ordered(iptables, table, chain, expected, legacy)? {
+        return Ok(());
     }
 
-    // mangle: MANGLE_APP
-    del_all(&["-t", "mangle", "-D", "MANGLE_APP", "-d", "::1", "-j", "RETURN"]); // legacy
-    del_all(&["-t", "mangle", "-D", "MANGLE_APP", "-o", "lo", "-j", "RETURN"]);
-    del_all(&["-t", "mangle", "-D", "MANGLE_APP", "-d", "::1/128", "-j", "RETURN"]);
-    let _ = ipt_run(
-        ip6tables,
-        &["-t", "mangle", "-I", "MANGLE_APP", "1", "-o", "lo", "-j", "RETURN"],
-        Capture::Stdout,
-    );
-    let _ = ipt_run(
-        ip6tables,
-        &["-t", "mangle", "-I", "MANGLE_APP", "2", "-d", "::1/128", "-j", "RETURN"],
-        Capture::Stdout,
-    );
-
+    for rule in legacy {
+        del_rule_all(iptables, table, chain, rule)?;
+    }
+    for rule in expected {
+        del_rule_all(iptables, table, chain, rule)?;
+    }
+    for (idx, rule) in expected.iter().enumerate() {
+        add_rule_pos(iptables, table, chain, idx + 1, rule)?;
+    }
     Ok(())
+}
+
+fn return_prefix_already_ordered(
+    iptables: &str,
+    table: &str,
+    chain: &str,
+    expected: &[&[&str]],
+    legacy: &[&[&str]],
+) -> Result<bool> {
+    let (rc, out) = ipt_run(iptables, &["-t", table, "-S", chain], Capture::Stdout)?;
+    if rc != 0 {
+        return Ok(false);
+    }
+
+    let expected_lines: Vec<String> = expected
+        .iter()
+        .map(|tail| format!("-A {chain} {}", tail.join(" ")))
+        .collect();
+    let legacy_lines: Vec<String> = legacy
+        .iter()
+        .map(|tail| format!("-A {chain} {}", tail.join(" ")))
+        .collect();
+    let chain_lines: Vec<&str> = out
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("-A "))
+        .collect();
+
+    if chain_lines.len() < expected_lines.len() {
+        return Ok(false);
+    }
+    for (idx, expected_line) in expected_lines.iter().enumerate() {
+        if chain_lines.get(idx).copied() != Some(expected_line.as_str()) {
+            return Ok(false);
+        }
+    }
+    for line in chain_lines.iter().skip(expected_lines.len()) {
+        if expected_lines.iter().any(|expected_line| *line == expected_line.as_str())
+            || legacy_lines.iter().any(|legacy_line| *line == legacy_line.as_str())
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
 }
 
 

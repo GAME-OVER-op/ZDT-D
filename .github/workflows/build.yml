@@ -433,6 +433,30 @@ jobs:
           name: zygisk-arm64
           path: out/zygisk
 
+      - name: Set up Android SDK for BusyBox
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for BusyBox
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          echo "NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
+
+      - name: Build BusyBox arm64 from source
+        run: |
+          set -euo pipefail
+          bash scripts/module/build-busybox-arm64.sh prebuilt/bin/arm64-v8a/busybox
+          ls -lh prebuilt/bin/arm64-v8a/busybox
+
       - name: Check prebuilt binaries
         run: |
           REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg busybox)
@@ -479,6 +503,9 @@ jobs:
           for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg busybox; do
             cp -f "$PREBUILT/$bin" "$MODULE_BUILD_DIR/bin/$bin" && chmod 755 "$MODULE_BUILD_DIR/bin/$bin"
           done
+          if [[ -f "$PREBUILT/busybox.source" ]]; then
+            cp -f "$PREBUILT/busybox.source" "$MODULE_BUILD_DIR/bin/busybox.source" && chmod 644 "$MODULE_BUILD_DIR/bin/busybox.source"
+          fi
 
           pushd "$MODULE_BUILD_DIR" > /dev/null
           zip -qr "../../../$MODULE_ZIP" .
@@ -540,7 +567,16 @@ jobs:
           sdkmanager \
             "platform-tools" \
             "platforms;android-${{ env.ANDROID_API_LEVEL }}" \
-            "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}"
+            "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}" \
+            "ndk;27.2.12479018"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/27.2.12479018"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          echo "NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
 
       - name: Setup Gradle ${{ env.GRADLE_VERSION }}
         uses: gradle/actions/setup-gradle@v5
@@ -559,6 +595,12 @@ jobs:
         with:
           name: zdt-rust-binaries
           path: out/artifacts/rust
+
+      - name: Build BusyBox arm64 from source
+        run: |
+          set -euo pipefail
+          bash scripts/module/build-busybox-arm64.sh prebuilt/bin/arm64-v8a/busybox
+          ls -lh prebuilt/bin/arm64-v8a/busybox
 
       - name: Locate Android project root
         run: |
@@ -663,6 +705,7 @@ jobs:
           printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/nfqws-tester/arm64-v8a/nfqws_tester' >/dev/null || { echo "::error::nfqws_tester APK asset missing"; exit 1; }
           printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/dexopt/busybox-arm64' >/dev/null || { echo "::error::bundled BusyBox APK asset missing"; exit 1; }
           printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/dexopt/busybox-arm64.sha256' >/dev/null || { echo "::error::bundled BusyBox SHA-256 APK asset missing"; exit 1; }
+          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/dexopt/busybox-arm64.source' >/dev/null || { echo "::error::bundled BusyBox source APK asset missing"; exit 1; }
           printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/dexopt/zdt_module.sha256' >/dev/null || { echo "::error::module SHA-256 APK asset missing"; exit 1; }
           printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/dexopt/zdt_module.cache' >/dev/null || { echo "::error::module cache APK asset missing"; exit 1; }
 

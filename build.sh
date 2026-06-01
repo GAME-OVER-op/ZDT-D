@@ -17,6 +17,7 @@ DPI_DETECTOR_APK_ASSET="$DPI_DETECTOR_APK_ASSET_DIR/dpi-detector"
 NFQWS_TESTER_APK_ASSET_DIR="$APP_MODULE_DIR/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a"
 NFQWS_TESTER_APK_ASSET="$NFQWS_TESTER_APK_ASSET_DIR/nfqws_tester"
 MODULE_ZIP_FAKE_ENCRYPT_SCRIPT="$ROOT_DIR/scripts/module/fake-encrypt-central-directory.py"
+BUSYBOX_ARM64_BUILD_SCRIPT="$ROOT_DIR/scripts/module/build-busybox-arm64.sh"
 ZDT_MODULE_FAKE_ENCRYPT="${ZDT_MODULE_FAKE_ENCRYPT:-1}"
 APK_OUT_DIR="$OUT_DIR/apk"
 DIST_DIR="$OUT_DIR/dist"
@@ -456,7 +457,7 @@ ensure_gradle_ready() {
 ensure_termux_build_prereqs() {
   is_termux_runtime || return 0
   local missing=()
-  local required=(javac keytool zip unzip make git find curl aria2c rustc cargo aapt2 pkg-config file clang++)
+  local required=(javac keytool zip unzip make git find curl aria2c rustc cargo aapt2 pkg-config file clang++ bzip2)
   local cmd
   for cmd in "${required[@]}"; do
     cmd_exists "$cmd" || missing+=("$cmd")
@@ -704,8 +705,8 @@ doctor() {
 
 install_termux_packages() {
   cmd_exists pkg || fail 'Этот режим рассчитан на Termux: команда pkg не найдена.'
-  msg 'Устанавливаю/дополняю пакеты Termux: openjdk-17, rust, clang, unzip, zip, curl, wget, aria2, make, git, aapt2, binutils, pkg-config, file'
-  pkg install -y openjdk-17 rust clang unzip zip curl wget aria2 make git aapt2 binutils pkg-config file
+  msg 'Устанавливаю/дополняю пакеты Termux: openjdk-17, rust, clang, unzip, zip, curl, wget, aria2, make, git, aapt2, binutils, pkg-config, file, bzip2'
+  pkg install -y openjdk-17 rust clang unzip zip curl wget aria2 make git aapt2 binutils pkg-config file bzip2
   hash -r || true
   ensure_java_home
 }
@@ -1249,8 +1250,23 @@ run_gradle_stage() {
   rm -f "$fifo" "$log_file"
 }
 
+ensure_busybox_arm64_prebuilt() {
+  local busybox_path="$PREBUILT_BIN_DIR/busybox"
+  if [[ -s "$busybox_path" ]]; then
+    chmod 755 "$busybox_path" 2>/dev/null || true
+    return 0
+  fi
+
+  [[ -x "$BUSYBOX_ARM64_BUILD_SCRIPT" ]] || fail "Не найден скрипт сборки BusyBox: $BUSYBOX_ARM64_BUILD_SCRIPT"
+  ensure_android_sdk_ready
+  mkdir -p "$PREBUILT_BIN_DIR"
+  bash "$BUSYBOX_ARM64_BUILD_SCRIPT" "$busybox_path"
+}
+
 require_external_bins() {
   mkdir -p "$PREBUILT_BIN_DIR"
+  ensure_busybox_arm64_prebuilt
+
   local missing=() bin
   for bin in "${REQUIRED_EXTERNAL_BINS[@]}"; do
     [[ -f "$PREBUILT_BIN_DIR/$bin" ]] || missing+=("$bin")
@@ -1258,7 +1274,7 @@ require_external_bins() {
   if [[ ${#missing[@]} -gt 0 ]]; then
     printf '[ZDT-D][ERR] Не найдены внешние бинарники в %s:\n' "$PREBUILT_BIN_DIR" >&2
     printf '  - %s\n' "${missing[@]}" >&2
-    fail 'Доложи их в prebuilt/bin/arm64-v8a/ и повтори сборку.'
+    fail 'Доложи отсутствующие prebuilt-бинарники в prebuilt/bin/arm64-v8a/ и повтори сборку. BusyBox собирается автоматически из исходников.'
   fi
 }
 
@@ -1269,6 +1285,10 @@ copy_external_bins() {
     cp -f "$PREBUILT_BIN_DIR/$bin" "$MODULE_ROOT_DIR/bin/$bin"
     chmod 755 "$MODULE_ROOT_DIR/bin/$bin"
   done
+  if [[ -f "$PREBUILT_BIN_DIR/busybox.source" ]]; then
+    cp -f "$PREBUILT_BIN_DIR/busybox.source" "$MODULE_ROOT_DIR/bin/busybox.source"
+    chmod 644 "$MODULE_ROOT_DIR/bin/busybox.source"
+  fi
 }
 
 prepare_module_tree_base() {
@@ -1411,6 +1431,7 @@ validate_apk_artifacts() {
   unzip -Z1 "$apk_path" | grep -Fx 'assets/nfqws-tester/arm64-v8a/nfqws_tester' >/dev/null || fail 'В APK отсутствует assets/nfqws-tester/arm64-v8a/nfqws_tester'
   unzip -Z1 "$apk_path" | grep -Fx 'assets/dexopt/busybox-arm64' >/dev/null || fail 'В APK отсутствует assets/dexopt/busybox-arm64'
   unzip -Z1 "$apk_path" | grep -Fx 'assets/dexopt/busybox-arm64.sha256' >/dev/null || fail 'В APK отсутствует assets/dexopt/busybox-arm64.sha256'
+  unzip -Z1 "$apk_path" | grep -Fx 'assets/dexopt/busybox-arm64.source' >/dev/null || fail 'В APK отсутствует assets/dexopt/busybox-arm64.source'
   unzip -Z1 "$apk_path" | grep -Fx 'assets/dexopt/zdt_module.sha256' >/dev/null || fail 'В APK отсутствует assets/dexopt/zdt_module.sha256'
   unzip -Z1 "$apk_path" | grep -Fx 'assets/dexopt/zdt_module.cache' >/dev/null || fail 'В APK отсутствует assets/dexopt/zdt_module.cache'
   mkdir -p "$APK_OUT_DIR" "$DIST_DIR"

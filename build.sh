@@ -16,6 +16,8 @@ DPI_DETECTOR_APK_ASSET_DIR="$APP_MODULE_DIR/build/generated/zdt-assets/main/dpi-
 DPI_DETECTOR_APK_ASSET="$DPI_DETECTOR_APK_ASSET_DIR/dpi-detector"
 NFQWS_TESTER_APK_ASSET_DIR="$APP_MODULE_DIR/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a"
 NFQWS_TESTER_APK_ASSET="$NFQWS_TESTER_APK_ASSET_DIR/nfqws_tester"
+MODULE_ZIP_FAKE_ENCRYPT_SCRIPT="$ROOT_DIR/scripts/module/fake-encrypt-central-directory.py"
+ZDT_MODULE_FAKE_ENCRYPT="${ZDT_MODULE_FAKE_ENCRYPT:-1}"
 APK_OUT_DIR="$OUT_DIR/apk"
 DIST_DIR="$OUT_DIR/dist"
 TOOLS_DIR="$ROOT_DIR/.tools"
@@ -57,7 +59,7 @@ PROJECT_CARGO_TARGET_DIR="$RUST_DIR/target"
 GRADLE_FLAGS=()
 
 AUTO_BUILT_BINS=(zdtd t2s)
-REQUIRED_EXTERNAL_BINS=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg mieru)
+REQUIRED_EXTERNAL_BINS=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg mieru busybox)
 
 RUSTC_BIN=""
 CARGO_BIN=""
@@ -1319,12 +1321,50 @@ package_module_zip() {
 validate_module_zip() {
   [[ -f "$MODULE_ZIP" ]] || fail "Не найден модульный zip: $MODULE_ZIP"
   unzip -l "$MODULE_ZIP" | grep -q 'zygisk/arm64-v8a.so' || fail 'В module zip отсутствует zygisk/arm64-v8a.so'
+  unzip -l "$MODULE_ZIP" | grep -q 'bin/busybox' || fail 'В module zip отсутствует bin/busybox'
   if unzip -l "$MODULE_ZIP" | grep -q 'bin/dpi-detector'; then
     fail 'dpi-detector не должен попадать в module zip: он упаковывается в APK assets'
   fi
   if unzip -l "$MODULE_ZIP" | grep -qE '(^|/)(unloaded|\.gitkeep)$'; then
     fail 'В module zip попал служебный файл unloaded или .gitkeep'
   fi
+}
+
+protect_module_zip_fake_encrypt() {
+  if [[ "$ZDT_MODULE_FAKE_ENCRYPT" != "1" ]]; then
+    msg 'Fake encrypted Central Directory for module zip disabled by ZDT_MODULE_FAKE_ENCRYPT=0'
+    return 0
+  fi
+  [[ -x "$MODULE_ZIP_FAKE_ENCRYPT_SCRIPT" ]] || fail "Не найден скрипт защиты module zip: $MODULE_ZIP_FAKE_ENCRYPT_SCRIPT"
+  local raw_zip="$OUT_DIR/module/zdt_module.raw.zip"
+  cp -f "$MODULE_ZIP" "$raw_zip"
+  python3 "$MODULE_ZIP_FAKE_ENCRYPT_SCRIPT" "$raw_zip" "$MODULE_ZIP"
+}
+
+validate_protected_module_zip() {
+  [[ -f "$MODULE_ZIP" ]] || fail "Не найден модульный zip: $MODULE_ZIP"
+  if [[ "$ZDT_MODULE_FAKE_ENCRYPT" == "1" ]]; then
+    python3 "$MODULE_ZIP_FAKE_ENCRYPT_SCRIPT" --check "$MODULE_ZIP"
+    if command -v busybox >/dev/null 2>&1; then
+      local tmp_dir="$OUT_DIR/module_busybox_check"
+      rm -rf "$tmp_dir"
+      mkdir -p "$tmp_dir"
+      busybox unzip "$MODULE_ZIP" -d "$tmp_dir" >/dev/null
+      [[ -f "$tmp_dir/module.prop" ]] || fail 'busybox unzip check failed: module.prop missing'
+      [[ -f "$tmp_dir/bin/busybox" ]] || fail 'busybox unzip check failed: bin/busybox missing'
+      rm -rf "$tmp_dir"
+    else
+      warn 'busybox не найден в окружении сборки; пропускаю busybox unzip проверку protected zip.'
+    fi
+  else
+    validate_module_zip
+  fi
+}
+
+finalize_module_zip() {
+  validate_module_zip
+  protect_module_zip_fake_encrypt
+  validate_protected_module_zip
 }
 
 build_rust_outputs() {
@@ -1351,7 +1391,7 @@ prepare_module_root() {
   run_simple_stage extbin 'External binaries' check_and_copy_external_bins
   run_simple_stage zygisk 'Build Zygisk' build_zygisk_module
   run_simple_stage modulezip 'Package module zip' package_module_zip
-  run_simple_stage final 'Final validation' validate_module_zip
+  run_simple_stage final 'Final validation' finalize_module_zip
   set_dashboard_current 'Module ready'
   render_dashboard
   msg "Готово: $MODULE_ZIP"
@@ -1369,6 +1409,10 @@ validate_apk_artifacts() {
   [[ -n "$apk_path" ]] || fail 'APK не найден после сборки'
   unzip -Z1 "$apk_path" | grep -Fx 'assets/dpi-detector/arm64-v8a/dpi-detector' >/dev/null || fail 'В APK отсутствует assets/dpi-detector/arm64-v8a/dpi-detector'
   unzip -Z1 "$apk_path" | grep -Fx 'assets/nfqws-tester/arm64-v8a/nfqws_tester' >/dev/null || fail 'В APK отсутствует assets/nfqws-tester/arm64-v8a/nfqws_tester'
+  unzip -Z1 "$apk_path" | grep -Fx 'assets/dexopt/busybox-arm64' >/dev/null || fail 'В APK отсутствует assets/dexopt/busybox-arm64'
+  unzip -Z1 "$apk_path" | grep -Fx 'assets/dexopt/busybox-arm64.sha256' >/dev/null || fail 'В APK отсутствует assets/dexopt/busybox-arm64.sha256'
+  unzip -Z1 "$apk_path" | grep -Fx 'assets/dexopt/zdt_module.sha256' >/dev/null || fail 'В APK отсутствует assets/dexopt/zdt_module.sha256'
+  unzip -Z1 "$apk_path" | grep -Fx 'assets/dexopt/zdt_module.cache' >/dev/null || fail 'В APK отсутствует assets/dexopt/zdt_module.cache'
   mkdir -p "$APK_OUT_DIR" "$DIST_DIR"
   dist_apk="$APK_OUT_DIR/app-release.apk"
   cp -f "$apk_path" "$dist_apk"

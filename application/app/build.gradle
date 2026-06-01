@@ -31,6 +31,23 @@ def zdtModuleZip = file("$generatedAssetsDir/zdt_module.zip")
 def bundledModuleProp = file("$generatedAssetsDir/module.prop")
 def bundledDpiDetectorAsset = file("$generatedAssetsDir/dpi-detector/arm64-v8a/dpi-detector")
 def bundledNfqwsTesterAsset = file("$generatedAssetsDir/nfqws-tester/arm64-v8a/nfqws_tester")
+def prebuiltBusyBox = file('../../prebuilt/bin/arm64-v8a/busybox')
+def bundledBusyBoxAsset = file("$generatedAssetsDir/dexopt/busybox-arm64")
+def bundledBusyBoxSha = file("$generatedAssetsDir/dexopt/busybox-arm64.sha256")
+def bundledModuleSha = file("$generatedAssetsDir/dexopt/zdt_module.sha256")
+def bundledModuleCache = file("$generatedAssetsDir/dexopt/zdt_module.cache")
+
+def sha256Hex = { File source ->
+  def digest = java.security.MessageDigest.getInstance('SHA-256')
+  source.withInputStream { input ->
+    byte[] buffer = new byte[8192]
+    int read
+    while ((read = input.read(buffer)) != -1) {
+      digest.update(buffer, 0, read)
+    }
+  }
+  return digest.digest().collect { String.format('%02x', it & 0xff) }.join()
+}
 
 android {
   namespace 'com.android.zdtd.service'
@@ -104,8 +121,13 @@ android {
 tasks.register('prepareZdtGeneratedAssets') {
   inputs.file(rootModuleProp).withPathSensitivity(PathSensitivity.RELATIVE)
   inputs.file(generatedModuleZip).optional().withPathSensitivity(PathSensitivity.RELATIVE)
+  inputs.file(prebuiltBusyBox).withPathSensitivity(PathSensitivity.RELATIVE)
   outputs.file(zdtModuleZip)
   outputs.file(bundledModuleProp)
+  outputs.file(bundledBusyBoxAsset)
+  outputs.file(bundledBusyBoxSha)
+  outputs.file(bundledModuleSha)
+  outputs.file(bundledModuleCache)
 
   doLast {
     generatedAssetsDir.mkdirs()
@@ -140,6 +162,35 @@ tasks.register('prepareZdtGeneratedAssets') {
         java.nio.file.StandardCopyOption.REPLACE_EXISTING
     )
     println("[ZDT-D] synced module.prop from root: ${rootModuleProp}")
+
+    if (!prebuiltBusyBox.exists()) {
+      throw new GradleException("Prebuilt BusyBox is missing: ${prebuiltBusyBox}")
+    }
+    bundledBusyBoxAsset.parentFile.mkdirs()
+    java.nio.file.Files.copy(
+        prebuiltBusyBox.toPath(),
+        bundledBusyBoxAsset.toPath(),
+        java.nio.file.StandardCopyOption.REPLACE_EXISTING
+    )
+    bundledBusyBoxAsset.setExecutable(true, false)
+    bundledBusyBoxAsset.setReadable(true, false)
+    bundledBusyBoxAsset.setWritable(true, true)
+
+    def moduleSha = sha256Hex(zdtModuleZip)
+    def busyBoxSha = sha256Hex(bundledBusyBoxAsset)
+    bundledModuleSha.text = "${moduleSha}  zdt_module.zip\n"
+    bundledBusyBoxSha.text = "${busyBoxSha}  busybox-arm64\n"
+    bundledModuleCache.text = """name=zdt_module.zip
+sha256=${moduleSha}
+size=${zdtModuleZip.length()}
+moduleVersion=${moduleVersionName}
+moduleVersionCode=${moduleVersionCode}
+protection=fake-central-directory-encrypt
+busyboxAsset=dexopt/busybox-arm64
+busyboxSha256=${busyBoxSha}
+"""
+    println("[ZDT-D] wrote module cache metadata: ${bundledModuleCache}")
+    println("[ZDT-D] bundled BusyBox asset: ${bundledBusyBoxAsset}")
   }
 }
 
@@ -163,6 +214,10 @@ tasks.named('preBuild') {
 tasks.register('verifyBundledHelperAssets') {
   inputs.file(bundledDpiDetectorAsset).withPathSensitivity(PathSensitivity.RELATIVE)
   inputs.file(bundledNfqwsTesterAsset).withPathSensitivity(PathSensitivity.RELATIVE)
+  inputs.file(bundledBusyBoxAsset).withPathSensitivity(PathSensitivity.RELATIVE)
+  inputs.file(bundledBusyBoxSha).withPathSensitivity(PathSensitivity.RELATIVE)
+  inputs.file(bundledModuleSha).withPathSensitivity(PathSensitivity.RELATIVE)
+  inputs.file(bundledModuleCache).withPathSensitivity(PathSensitivity.RELATIVE)
 
   doLast {
     if (!bundledDpiDetectorAsset.exists()) {
@@ -170,6 +225,18 @@ tasks.register('verifyBundledHelperAssets') {
     }
     if (!bundledNfqwsTesterAsset.exists()) {
       throw new GradleException("Bundled nfqws_tester asset is missing: ${bundledNfqwsTesterAsset}")
+    }
+    if (!bundledBusyBoxAsset.exists()) {
+      throw new GradleException("Bundled BusyBox asset is missing: ${bundledBusyBoxAsset}")
+    }
+    if (!bundledBusyBoxSha.exists()) {
+      throw new GradleException("Bundled BusyBox SHA-256 asset is missing: ${bundledBusyBoxSha}")
+    }
+    if (!bundledModuleSha.exists()) {
+      throw new GradleException("Bundled module SHA-256 asset is missing: ${bundledModuleSha}")
+    }
+    if (!bundledModuleCache.exists()) {
+      throw new GradleException("Bundled module cache asset is missing: ${bundledModuleCache}")
     }
   }
 }

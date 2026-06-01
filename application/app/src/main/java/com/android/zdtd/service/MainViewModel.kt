@@ -48,6 +48,7 @@ import java.util.zip.GZIPInputStream
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 import java.net.URLEncoder
+import java.security.MessageDigest
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.max
@@ -3735,14 +3736,12 @@ if (mf.isNotBlank()) {
   }
 
   private suspend fun exportModuleZipToSdcard(): Triple<Boolean, String, String> {
-    val cacheZip = File(ctx.cacheDir, "zdt_module.zip")
-    runCatching {
-      ctx.assets.open("zdt_module.zip").use { input ->
-        cacheZip.outputStream().use { out -> input.copyTo(out) }
-      }
-    }.getOrElse {
-      return Triple(false, "asset zdt_module.zip missing: ${it.message ?: it}", "")
+    val (cacheZip, copyError) = copyBundledModuleZipToCache()
+    if (copyError != null || cacheZip == null) {
+      return Triple(false, copyError ?: "asset zdt_module.zip missing", "")
     }
+    val verify = verifyBundledModuleZip(cacheZip)
+    if (!verify.ok) return Triple(false, verify.message, "")
 
     val src = cacheZip.absolutePath
     val dst = "/sdcard/ZDT-D.zip"
@@ -3754,26 +3753,28 @@ if (mf.isNotBlank()) {
       append(str(R.string.mv_auto_068)).append(dst).append("\n\n")
       append(str(R.string.mv_auto_069))
     }
-    return Triple(true, (out + "\n" + msg).trim(), dst)
+    return Triple(true, listOf(verify.message, out, msg).filter { it.isNotBlank() }.joinToString("\n"), dst)
   }
 
   private suspend fun stageModuleZipToTmp(): Pair<Boolean, String> {
     updateInstallProgress(22, str(R.string.setup_install_progress_copying))
-    // Copy assets/zdt_module.zip to cache and then to /data/local/tmp
-    val cacheZip = File(ctx.cacheDir, "zdt_module.zip")
-    runCatching {
-      ctx.assets.open("zdt_module.zip").use { input ->
-        cacheZip.outputStream().use { out -> input.copyTo(out) }
-      }
-    }.getOrElse {
-      return false to "asset zdt_module.zip missing: ${it.message ?: it}"
-    }
+    // Copy assets/zdt_module.zip to cache, verify it against assets/dexopt,
+    // then stage the verified archive for the selected root manager.
+    val (cacheZip, copyError) = copyBundledModuleZipToCache()
+    if (copyError != null || cacheZip == null) return false to (copyError ?: "asset zdt_module.zip missing")
+
+    val verify = verifyBundledModuleZip(cacheZip)
+    if (!verify.ok) return false to verify.message
+
+    val (busyBoxOk, busyBoxLog) = stageBundledBusyBoxToTmp()
+    if (!busyBoxOk) return false to busyBoxLog
 
     val src = cacheZip.absolutePath
     updateInstallProgress(42, str(R.string.setup_install_progress_copying))
-    val copyRes = root.execRoot("sh -c 'cp ${shQuote(src)} /data/local/tmp/zdt_module.zip'")
+    val copyRes = root.execRoot("sh -c 'cp ${shQuote(src)} /data/local/tmp/zdt_module.zip && chmod 644 /data/local/tmp/zdt_module.zip'")
     val out1 = (copyRes.out + copyRes.err).joinToString("\n")
-    return copyRes.isSuccess to out1.trim()
+    val log = listOf(verify.message, busyBoxLog, out1.trim()).filter { it.isNotBlank() }.joinToString("\n")
+    return copyRes.isSuccess to log
   }
 
   private suspend fun installManually(): Pair<Boolean, String> {
@@ -3781,9 +3782,15 @@ if (mf.isNotBlank()) {
     runCatching { unpackDir.deleteRecursively() }
     unpackDir.mkdirs()
 
+    val (cacheZip, copyError) = copyBundledModuleZipToCache()
+    if (copyError != null || cacheZip == null) return false to (copyError ?: "asset zdt_module.zip missing")
+    val verify = verifyBundledModuleZip(cacheZip)
+    if (!verify.ok) return false to verify.message
+
     val extractLog = StringBuilder()
+    extractLog.append(verify.message).append("\n")
     val extractedOk = runCatching {
-      extractAssetZip("zdt_module.zip", unpackDir, extractLog)
+      extractZipFile(cacheZip, unpackDir, extractLog)
     }.getOrElse {
       return false to "extract failed: ${it.message ?: it}"
     }
@@ -4236,30 +4243,112 @@ private fun shQuote(s: String): String {
     return "'" + s.replace("'", "'\\''") + "'"
   }
 
+  private data class ModuleZipVerification(val ok: Boolean, val message: String)
+
+  private fun copyBundledModuleZipToCache(): Pair<File?, String?> {
+    val cacheZip = File(ctx.cacheDir, "zdt_module.zip")
+    runCatching {
+      ctx.assets.open("zdt_module.zip").use { input ->
+        cacheZip.outputStream().use { out -> input.copyTo(out) }
+      }
+    }.getOrElse {
+      return null to "asset zdt_module.zip missing: ${it.message ?: it}"
+    }
+    return cacheZip to null
+  }
+
+  private fun verifyBundledModuleZip(zipFile: File): ModuleZipVerification {
+    val expected = readSha256Asset("dexopt/zdt_module.sha256")
+      ?: return ModuleZipVerification(false, "asset dexopt/zdt_module.sha256 missing or invalid")
+    val actual = runCatching { sha256Hex(zipFile) }.getOrElse {
+      return ModuleZipVerification(false, "module zip SHA-256 failed: ${it.message ?: it}")
+    }
+    if (!actual.equals(expected, ignoreCase = true)) {
+      return ModuleZipVerification(false, "module zip SHA-256 mismatch: expected=$expected actual=$actual")
+    }
+    return ModuleZipVerification(true, "module zip SHA-256 verified: $actual")
+  }
+
+  private suspend fun stageBundledBusyBoxToTmp(): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+    val expected = readSha256Asset("dexopt/busybox-arm64.sha256")
+      ?: return@withContext (false to "asset dexopt/busybox-arm64.sha256 missing or invalid")
+    val cacheBusyBox = File(ctx.cacheDir, "busybox-arm64")
+    runCatching {
+      ctx.assets.open("dexopt/busybox-arm64").use { input ->
+        cacheBusyBox.outputStream().use { out -> input.copyTo(out) }
+      }
+    }.getOrElse {
+      return@withContext (false to "asset dexopt/busybox-arm64 missing: ${it.message ?: it}")
+    }
+    val actual = runCatching { sha256Hex(cacheBusyBox) }.getOrElse {
+      return@withContext (false to "busybox SHA-256 failed: ${it.message ?: it}")
+    }
+    if (!actual.equals(expected, ignoreCase = true)) {
+      return@withContext (false to "busybox SHA-256 mismatch: expected=$expected actual=$actual")
+    }
+    val src = cacheBusyBox.absolutePath
+    val r = root.execRoot("sh -c 'cp ${shQuote(src)} /data/local/tmp/zdt_busybox && chmod 755 /data/local/tmp/zdt_busybox'")
+    val out = (r.out + r.err).joinToString("\n").trim()
+    if (!r.isSuccess) return@withContext (false to out)
+    true to listOf("busybox SHA-256 verified: $actual", out).filter { it.isNotBlank() }.joinToString("\n")
+  }
+
+  private fun readSha256Asset(assetName: String): String? = runCatching {
+    ctx.assets.open(assetName).bufferedReader().use { it.readText() }
+      .trim()
+      .split(Regex("\\s+"))
+      .firstOrNull()
+      ?.lowercase(Locale.US)
+      ?.takeIf { it.matches(Regex("[0-9a-f]{64}")) }
+  }.getOrNull()
+
+  private fun sha256Hex(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+      val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+      while (true) {
+        val read = input.read(buffer)
+        if (read <= 0) break
+        digest.update(buffer, 0, read)
+      }
+    }
+    return digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+  }
+
+  private fun extractZipFile(zipFile: File, destDir: File, log: StringBuilder): Boolean {
+    zipFile.inputStream().use { input ->
+      return extractZipStream(input, destDir, log)
+    }
+  }
+
   private fun extractAssetZip(assetName: String, destDir: File, log: StringBuilder): Boolean {
-    val base = destDir.canonicalFile
     ctx.assets.open(assetName).use { input ->
-      java.util.zip.ZipInputStream(input).use { zis ->
-        while (true) {
-          val e = zis.nextEntry ?: break
-          val name = e.name
-          if (name.startsWith("META-INF/")) continue
-          if (name.isBlank()) continue
+      return extractZipStream(input, destDir, log)
+    }
+  }
 
-          val outFile = File(destDir, name)
-          val canon = outFile.canonicalFile
-          if (!canon.path.startsWith(base.path)) {
-            log.append("skip suspicious entry: ").append(name).append("\n")
-            continue
-          }
+  private fun extractZipStream(input: InputStream, destDir: File, log: StringBuilder): Boolean {
+    val base = destDir.canonicalFile
+    java.util.zip.ZipInputStream(input).use { zis ->
+      while (true) {
+        val e = zis.nextEntry ?: break
+        val name = e.name
+        if (name.startsWith("META-INF/")) continue
+        if (name.isBlank()) continue
 
-          if (e.isDirectory) {
-            canon.mkdirs()
-          } else {
-            canon.parentFile?.mkdirs()
-            canon.outputStream().use { os ->
-              zis.copyTo(os)
-            }
+        val outFile = File(destDir, name)
+        val canon = outFile.canonicalFile
+        if (!canon.path.startsWith(base.path)) {
+          log.append("skip suspicious entry: ").append(name).append("\n")
+          continue
+        }
+
+        if (e.isDirectory) {
+          canon.mkdirs()
+        } else {
+          canon.parentFile?.mkdirs()
+          canon.outputStream().use { os ->
+            zis.copyTo(os)
           }
         }
       }
@@ -4274,6 +4363,7 @@ private fun shQuote(s: String): String {
     log.append("extracted to: ").append(destDir.absolutePath).append("\n")
     return true
   }
+
 
   private fun startStatusPolling() {
     statusJob?.cancel()

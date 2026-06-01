@@ -198,6 +198,7 @@ fi
 
 . "$VERIFY_SH"
 zdt_verify_module_files "$MODDIR" || fail "Module file verification failed"
+rm -f "$VERIFY_SH" 2>/dev/null || fail "Unable to remove installer verification script: $VERIFY_SH"
 ok "Module file verification completed"
 hr
 

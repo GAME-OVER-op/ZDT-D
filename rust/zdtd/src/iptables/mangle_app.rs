@@ -9,6 +9,12 @@ const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(5);
 const XT_WAIT_SECS: &str = "5";
 const CHAIN: &str = "MANGLE_APP";
 
+#[derive(Debug)]
+pub struct PreparedMangleApp {
+    cmd: String,
+    next_insert_line: u32,
+}
+
 fn run_timeout_retry(cmd: &str, args: &[&str], capture: Capture, timeout: Duration) -> Result<(i32, String)> {
     let mut a: Vec<&str> = Vec::with_capacity(args.len() + 2);
     a.push("-w");
@@ -31,7 +37,7 @@ fn runv_timeout_retry(cmd: &str, args: &[String], capture: Capture, timeout: Dur
 /// the shared base RETURN guards must run before UID-specific NFQUEUE rules.
 /// This helper keeps the existing shared MANGLE_APP structure and prepares
 /// the anchor point without adding per-UID RETURN exclusions.
-pub fn ensure(cmd: &str) -> Result<()> {
+pub fn prepare(cmd: &str) -> Result<PreparedMangleApp> {
     let (c, _) = run_timeout_retry(cmd, &["-t", "mangle", "-nL", CHAIN], Capture::None, IPT_CMD_TIMEOUT)?;
     if c != 0 {
         let (rc, out) = run_timeout_retry(cmd, &["-t", "mangle", "-N", CHAIN], Capture::Both, IPT_CMD_TIMEOUT)?;
@@ -52,40 +58,55 @@ pub fn ensure(cmd: &str) -> Result<()> {
     if let Err(e) = cleanup_owner_returns(cmd) {
         warn!("{cmd}: cleanup legacy {CHAIN} owner RETURN rules failed: {e:#}");
     }
-    ensure_final_return(cmd)?;
-    Ok(())
+
+    let next_insert_line = ensure_final_return(cmd)?;
+    Ok(PreparedMangleApp {
+        cmd: cmd.to_string(),
+        next_insert_line,
+    })
 }
 
-/// Add a rule into MANGLE_APP before the final unconditional RETURN.
-/// The passed tail is everything after the chain name, for example:
-/// `-p tcp -m owner --uid-owner 10218 -j NFQUEUE ...`.
-pub fn add_rule_idempotent(cmd: &str, rule_tail: &[String]) -> Result<bool> {
-    ensure(cmd)?;
+#[allow(dead_code)]
+pub fn ensure(cmd: &str) -> Result<()> {
+    prepare(cmd).map(|_| ())
+}
+
+/// Add a rule into an already prepared MANGLE_APP chain before the final
+/// unconditional RETURN. Preparation is intentionally not repeated here:
+/// nfqws/nfqws2 may add many UID/proto/port rules, and re-running prepare()
+/// for every rule turns compact final chains into very slow builds.
+pub fn add_rule_prepared_idempotent(prepared: &mut PreparedMangleApp, rule_tail: &[String]) -> Result<bool> {
+    let cmd = prepared.cmd.clone();
+    let cmd_s = cmd.as_str();
 
     let mut check: Vec<String> = vec!["-t".into(), "mangle".into(), "-C".into(), CHAIN.into()];
     check.extend_from_slice(rule_tail);
-    let (exists, _) = runv_timeout_retry(cmd, &check, Capture::None, IPT_CMD_TIMEOUT)?;
+    let (exists, _) = runv_timeout_retry(cmd_s, &check, Capture::None, IPT_CMD_TIMEOUT)?;
     if exists == 0 {
         return Ok(false);
     }
 
-    let mut add: Vec<String> = vec!["-t".into(), "mangle".into()];
-    if let Some(line) = final_return_line(cmd)? {
-        add.push("-I".into());
-        add.push(CHAIN.into());
-        add.push(line.to_string());
-    } else {
-        add.push("-A".into());
-        add.push(CHAIN.into());
-    }
+    let mut add: Vec<String> = vec![
+        "-t".into(),
+        "mangle".into(),
+        "-I".into(),
+        CHAIN.into(),
+        prepared.next_insert_line.to_string(),
+    ];
     add.extend_from_slice(rule_tail);
 
-    let (rc, out) = runv_timeout_retry(cmd, &add, Capture::Both, IPT_CMD_TIMEOUT)?;
+    let (rc, out) = runv_timeout_retry(cmd_s, &add, Capture::Both, IPT_CMD_TIMEOUT)?;
     if rc != 0 {
-        anyhow::bail!("{cmd}: add {CHAIN} rule failed: {}", out.trim());
+        anyhow::bail!("{cmd_s}: add {CHAIN} rule failed: {}", out.trim());
     }
-    ensure_final_return(cmd)?;
+    prepared.next_insert_line = prepared.next_insert_line.saturating_add(1);
     Ok(true)
+}
+
+#[allow(dead_code)]
+pub fn add_rule_idempotent(cmd: &str, rule_tail: &[String]) -> Result<bool> {
+    let mut prepared = prepare(cmd)?;
+    add_rule_prepared_idempotent(&mut prepared, rule_tail)
 }
 
 
@@ -158,25 +179,84 @@ fn is_owner_return_rule(line: &str) -> bool {
 }
 
 fn ensure_base_returns(cmd: &str) {
-    if cmd == "iptables" {
-        ensure_return_rule(cmd, 1, &["-o", "lo", "-j", "RETURN"]);
-        ensure_return_rule(cmd, 2, &["-d", "127.0.0.0/8", "-j", "RETURN"]);
-        ensure_dns_return_rule(cmd, 3, &["-p", "sctp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"]);
-        ensure_dns_return_rule(cmd, 4, &["-p", "tcp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"]);
-        ensure_dns_return_rule(cmd, 5, &["-p", "udp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"]);
-    } else if cmd == "ip6tables" {
-        ensure_return_rule(cmd, 1, &["-o", "lo", "-j", "RETURN"]);
-        ensure_return_rule(cmd, 2, &["-d", "::1/128", "-j", "RETURN"]);
-        ensure_dns_return_rule(cmd, 3, &["-p", "sctp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"]);
-        ensure_dns_return_rule(cmd, 4, &["-p", "tcp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"]);
-        ensure_dns_return_rule(cmd, 5, &["-p", "udp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"]);
+    let Some(expected) = expected_base_returns(cmd) else {
+        return;
+    };
+
+    match base_returns_already_ordered(cmd, &expected) {
+        Ok(true) => return,
+        Ok(false) => {}
+        Err(e) => {
+            warn!("{cmd}: inspect {CHAIN} base RETURN order failed: {e}");
+        }
+    }
+
+    // Reorder only when needed. The old path removed/reinserted DNS RETURN rules
+    // on every prepare() call, which was cheap compared with the per-rule ensure()
+    // bug but still added avoidable xtables work for nfqws/nfqws2 restarts.
+    for tail in &expected {
+        remove_return_rule(cmd, tail.as_slice());
+    }
+    for (idx, tail) in expected.iter().enumerate() {
+        ensure_return_rule(cmd, (idx + 1) as u32, tail.as_slice());
     }
 }
 
+fn expected_base_returns(cmd: &str) -> Option<Vec<Vec<&'static str>>> {
+    match cmd {
+        "iptables" => Some(vec![
+            vec!["-o", "lo", "-j", "RETURN"],
+            vec!["-d", "127.0.0.0/8", "-j", "RETURN"],
+            vec!["-p", "sctp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"],
+            vec!["-p", "tcp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"],
+            vec!["-p", "udp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"],
+        ]),
+        "ip6tables" => Some(vec![
+            vec!["-o", "lo", "-j", "RETURN"],
+            vec!["-d", "::1/128", "-j", "RETURN"],
+            vec!["-p", "sctp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"],
+            vec!["-p", "tcp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"],
+            vec!["-p", "udp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"],
+        ]),
+        _ => None,
+    }
+}
 
-fn ensure_dns_return_rule(cmd: &str, pos: u32, tail: &[&str]) {
-    remove_return_rule(cmd, tail);
-    ensure_return_rule(cmd, pos, tail);
+fn base_returns_already_ordered(cmd: &str, expected: &[Vec<&'static str>]) -> Result<bool> {
+    let (rc, out) = run_timeout_retry(cmd, &["-t", "mangle", "-S", CHAIN], Capture::Stdout, IPT_CMD_TIMEOUT)?;
+    if rc != 0 {
+        return Ok(false);
+    }
+
+    let expected_lines: Vec<String> = expected
+        .iter()
+        .map(|tail| format!("-A {CHAIN} {}", tail.join(" ")))
+        .collect();
+    let app_lines: Vec<&str> = out
+        .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("-A "))
+        .collect();
+
+    if app_lines.len() < expected_lines.len() {
+        return Ok(false);
+    }
+
+    for (idx, expected_line) in expected_lines.iter().enumerate() {
+        if app_lines.get(idx).copied() != Some(expected_line.as_str()) {
+            return Ok(false);
+        }
+    }
+
+    // Treat duplicates later in the chain as not clean; one reorder pass removes
+    // them and keeps only the strict prefix guards.
+    for line in app_lines.iter().skip(expected_lines.len()) {
+        if expected_lines.iter().any(|expected_line| *line == expected_line.as_str()) {
+            return Ok(false);
+        }
+    }
+
+    Ok(true)
 }
 
 fn remove_return_rule(cmd: &str, tail: &[&str]) {
@@ -216,15 +296,15 @@ fn ensure_return_rule(cmd: &str, pos: u32, tail: &[&str]) {
     }
 }
 
-fn ensure_final_return(cmd: &str) -> Result<()> {
-    if final_return_line(cmd)?.is_some() {
-        return Ok(());
+fn ensure_final_return(cmd: &str) -> Result<u32> {
+    if let Some(line) = final_return_line(cmd)? {
+        return Ok(line);
     }
     let (rc, out) = run_timeout_retry(cmd, &["-t", "mangle", "-A", CHAIN, "-j", "RETURN"], Capture::Both, IPT_CMD_TIMEOUT)?;
     if rc != 0 {
         anyhow::bail!("{cmd}: add final {CHAIN} RETURN failed: {}", out.trim());
     }
-    Ok(())
+    final_return_line(cmd)?.ok_or_else(|| anyhow::anyhow!("{cmd}: final {CHAIN} RETURN is still missing after append"))
 }
 
 fn final_return_line(cmd: &str) -> Result<Option<u32>> {

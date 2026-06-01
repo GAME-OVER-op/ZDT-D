@@ -57,12 +57,18 @@ pub fn apply(
     .map(|(c, _)| c == 0)
     .unwrap_or(false);
 
-    mangle_app::ensure("iptables")?;
-    if ipv6_avail {
-        if let Err(e) = mangle_app::ensure("ip6tables") {
-            warn!("ip6tables MANGLE_APP prepare failed: {e}");
+    let mut mangle_v4 = mangle_app::prepare("iptables")?;
+    let mut mangle_v6 = if ipv6_avail {
+        match mangle_app::prepare("ip6tables") {
+            Ok(prepared) => Some(prepared),
+            Err(e) => {
+                warn!("ip6tables MANGLE_APP prepare failed: {e}");
+                None
+            }
         }
-    }
+    } else {
+        None
+    };
 
     let filter_present = filter.map(|f| !f.is_empty()).unwrap_or(false);
     let use_filter_v4 = filter_present && caps::multiport_v4();
@@ -75,9 +81,9 @@ pub fn apply(
             let label = p.file_name().and_then(|s| s.to_str()).unwrap_or("uids");
 
             for uid in &uids {
-                apply_uid_or_global("iptables", &iopt, Some(uid.as_str()), queue, mode, filter, use_filter_v4)?;
-                if ipv6_avail {
-                    if let Err(e) = apply_uid_or_global("ip6tables", &iopt, Some(uid.as_str()), queue, mode, filter, use_filter_v6) {
+                apply_uid_or_global(&mut mangle_v4, &iopt, Some(uid.as_str()), queue, mode, filter, use_filter_v4)?;
+                if let Some(mangle_v6) = mangle_v6.as_mut() {
+                    if let Err(e) = apply_uid_or_global(mangle_v6, &iopt, Some(uid.as_str()), queue, mode, filter, use_filter_v6) {
                         warn!("ip6tables NFQUEUE rule failed (uid={}): {e}", uid);
                     }
                 }
@@ -88,9 +94,9 @@ pub fn apply(
         }
     }
 
-    apply_uid_or_global("iptables", &iopt, None, queue, mode, filter, use_filter_v4)?;
-    if ipv6_avail {
-        if let Err(e) = apply_uid_or_global("ip6tables", &iopt, None, queue, mode, filter, use_filter_v6) {
+    apply_uid_or_global(&mut mangle_v4, &iopt, None, queue, mode, filter, use_filter_v4)?;
+    if let Some(mangle_v6) = mangle_v6.as_mut() {
+        if let Err(e) = apply_uid_or_global(mangle_v6, &iopt, None, queue, mode, filter, use_filter_v6) {
             warn!("ip6tables NFQUEUE rule failed (global): {e}");
         }
     }
@@ -118,7 +124,7 @@ fn read_uid_file(path: &Path) -> Result<Vec<String>> {
 }
 
 fn apply_uid_or_global(
-    cmd: &str,
+    mangle: &mut mangle_app::PreparedMangleApp,
     iopt: &[String],
     uid: Option<&str>,
     queue: u16,
@@ -131,26 +137,26 @@ fn apply_uid_or_global(
             if use_multiport_filter {
                 if let Some(f) = filter {
                     if !f.tcp.is_empty() {
-                        add_multiport_rules(cmd, iopt, uid, queue, "tcp", &f.tcp)?;
+                        add_multiport_rules(mangle, iopt, uid, queue, "tcp", &f.tcp)?;
                     }
                     if !f.udp.is_empty() {
-                        add_multiport_rules(cmd, iopt, uid, queue, "udp", &f.udp)?;
+                        add_multiport_rules(mangle, iopt, uid, queue, "udp", &f.udp)?;
                     }
                     return Ok(());
                 }
             }
-            add_nfqueue_rule(cmd, iopt, uid, queue, None, None, None)
+            add_nfqueue_rule(mangle, iopt, uid, queue, None, None, None)
         }
         "no_full" => {
-            add_nfqueue_rule(cmd, iopt, uid, queue, Some("tcp"), Some("80"), None)?;
-            add_nfqueue_rule(cmd, iopt, uid, queue, Some("tcp"), Some("443"), None)
+            add_nfqueue_rule(mangle, iopt, uid, queue, Some("tcp"), Some("80"), None)?;
+            add_nfqueue_rule(mangle, iopt, uid, queue, Some("tcp"), Some("443"), None)
         }
         _ => unreachable!(),
     }
 }
 
 fn add_multiport_rules(
-    cmd: &str,
+    mangle: &mut mangle_app::PreparedMangleApp,
     iopt: &[String],
     uid: Option<&str>,
     queue: u16,
@@ -160,13 +166,13 @@ fn add_multiport_rules(
     let elems = port_filter::to_multiport_elements(ranges);
     for chunk in port_filter::chunk_multiport(&elems, 15) {
         let ports_csv = port_filter::join_elems_csv(&chunk);
-        add_nfqueue_rule(cmd, iopt, uid, queue, Some(proto), None, Some(ports_csv.as_str()))?;
+        add_nfqueue_rule(mangle, iopt, uid, queue, Some(proto), None, Some(ports_csv.as_str()))?;
     }
     Ok(())
 }
 
 fn add_nfqueue_rule(
-    cmd: &str,
+    mangle: &mut mangle_app::PreparedMangleApp,
     iopt: &[String],
     uid: Option<&str>,
     queue: u16,
@@ -206,6 +212,6 @@ fn add_nfqueue_rule(
         queue.to_string(),
         "--queue-bypass".into(),
     ]);
-    mangle_app::add_rule_idempotent(cmd, &tail)?;
+    mangle_app::add_rule_prepared_idempotent(mangle, &tail)?;
     Ok(())
 }

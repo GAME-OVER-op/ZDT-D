@@ -71,12 +71,18 @@ pub fn apply(
     .map(|(c, _)| c == 0)
     .unwrap_or(false);
 
-    mangle_app::ensure("iptables")?;
-    if ipv6_avail {
-        if let Err(e) = mangle_app::ensure("ip6tables") {
-            warn!("ip6tables MANGLE_APP prepare failed: {e}");
+    let mut mangle_v4 = mangle_app::prepare("iptables")?;
+    let mut mangle_v6 = if ipv6_avail {
+        match mangle_app::prepare("ip6tables") {
+            Ok(prepared) => Some(prepared),
+            Err(e) => {
+                warn!("ip6tables MANGLE_APP prepare failed: {e}");
+                None
+            }
         }
-    }
+    } else {
+        None
+    };
 
     let filter_present = filter.map(|f| !f.is_empty()).unwrap_or(false);
     let use_filter_v4 = filter_present && caps::multiport_v4();
@@ -86,14 +92,14 @@ pub fn apply(
         let mut uid_added_v4 = false;
         if use_filter_v4 {
             if let Some(f) = filter {
-                if !f.tcp.is_empty() && add_multiport_rule("iptables", uid.as_str(), &q, "tcp", &f.tcp)? {
+                if !f.tcp.is_empty() && add_multiport_rule(&mut mangle_v4, uid.as_str(), &q, "tcp", &f.tcp)? {
                     uid_added_v4 = true;
                 }
-                if !f.udp.is_empty() && add_multiport_rule("iptables", uid.as_str(), &q, "udp", &f.udp)? {
+                if !f.udp.is_empty() && add_multiport_rule(&mut mangle_v4, uid.as_str(), &q, "udp", &f.udp)? {
                     uid_added_v4 = true;
                 }
             }
-        } else if add_plain_rule("iptables", uid.as_str(), &q)? {
+        } else if add_plain_rule(&mut mangle_v4, uid.as_str(), &q)? {
             uid_added_v4 = true;
         }
 
@@ -101,19 +107,19 @@ pub fn apply(
             added += 1;
         }
 
-        if ipv6_avail {
+        if let Some(mangle_v6) = mangle_v6.as_mut() {
             let mut uid_added_v6 = false;
             if use_filter_v6 {
                 if let Some(f) = filter {
                     if !f.tcp.is_empty() {
-                        match add_multiport_rule("ip6tables", uid.as_str(), &q, "tcp", &f.tcp) {
+                        match add_multiport_rule(mangle_v6, uid.as_str(), &q, "tcp", &f.tcp) {
                             Ok(true) => uid_added_v6 = true,
                             Ok(false) => {}
                             Err(e) => warn!("ip6tables add NFQUEUE multiport rule failed for uid={}: {e}", uid),
                         }
                     }
                     if !f.udp.is_empty() {
-                        match add_multiport_rule("ip6tables", uid.as_str(), &q, "udp", &f.udp) {
+                        match add_multiport_rule(mangle_v6, uid.as_str(), &q, "udp", &f.udp) {
                             Ok(true) => uid_added_v6 = true,
                             Ok(false) => {}
                             Err(e) => warn!("ip6tables add NFQUEUE multiport rule failed for uid={}: {e}", uid),
@@ -121,7 +127,7 @@ pub fn apply(
                     }
                 }
             } else {
-                match add_plain_rule("ip6tables", uid.as_str(), &q) {
+                match add_plain_rule(mangle_v6, uid.as_str(), &q) {
                     Ok(true) => uid_added_v6 = true,
                     Ok(false) => {}
                     Err(e) => warn!("ip6tables add NFQUEUE rule failed for uid={}: {e}", uid),
@@ -133,7 +139,7 @@ pub fn apply(
         }
     }
 
-    if ipv6_avail {
+    if mangle_v6.is_some() {
         info!("iptables_v2 applied: port={} added_v4={}/{} added_v6={}/{}", port, added, total, added6, total);
     } else {
         info!("iptables_v2 applied: port={} added={}/{}", port, added, total);
@@ -142,7 +148,7 @@ pub fn apply(
 }
 
 fn add_multiport_rule(
-    cmd: &str,
+    mangle: &mut mangle_app::PreparedMangleApp,
     uid: &str,
     q: &str,
     proto: &str,
@@ -169,14 +175,14 @@ fn add_multiport_rule(
             q.into(),
             "--queue-bypass".into(),
         ];
-        if mangle_app::add_rule_idempotent(cmd, &tail)? {
+        if mangle_app::add_rule_prepared_idempotent(mangle, &tail)? {
             any_added = true;
         }
     }
     Ok(any_added)
 }
 
-fn add_plain_rule(cmd: &str, uid: &str, q: &str) -> Result<bool> {
+fn add_plain_rule(mangle: &mut mangle_app::PreparedMangleApp, uid: &str, q: &str) -> Result<bool> {
     let tail: Vec<String> = vec![
         "-m".into(),
         "owner".into(),
@@ -188,5 +194,5 @@ fn add_plain_rule(cmd: &str, uid: &str, q: &str) -> Result<bool> {
         q.into(),
         "--queue-bypass".into(),
     ];
-    mangle_app::add_rule_idempotent(cmd, &tail)
+    mangle_app::add_rule_prepared_idempotent(mangle, &tail)
 }

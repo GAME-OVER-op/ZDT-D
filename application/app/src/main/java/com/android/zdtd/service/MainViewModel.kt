@@ -29,6 +29,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -54,6 +55,10 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.max
 import androidx.annotation.StringRes
 import kotlin.random.Random
+
+private const val ZIP_GENERAL_PURPOSE_ENCRYPTED_FLAG = 0x0001
+private const val ZIP_EOCD_MIN_SIZE = 22
+private const val ZIP_EOCD_MAX_SEARCH = 65557
 
 enum class RootState {
   CHECKING,
@@ -3704,35 +3709,105 @@ if (mf.isNotBlank()) {
   }
 
   private suspend fun installViaMagisk(): Pair<Boolean, String> {
-    val (stagedOk, stageLog) = stageModuleZipToTmp()
+    val (stagedOk, stageLog) = stageModuleZipToTmp(normalizeForStrictZipInstaller = false)
     if (!stagedOk) return false to stageLog
 
-    updateInstallProgress(62, str(R.string.setup_install_progress_installing_fmt, "Magisk"))
-    val r = root.execRoot("sh -c 'magisk --install-module /data/local/tmp/zdt_module.zip'")
-    val out2 = (r.out + r.err).joinToString("\n")
-    return r.isSuccess to (stageLog + "\n" + out2).trim()
+    return runRootManagerInstallWithModuleProgress(
+      installerLabel = "Magisk",
+      installCommand = "magisk --install-module /data/local/tmp/zdt_module.zip",
+      stageLog = stageLog,
+    )
   }
 
   private suspend fun installViaKsu(): Pair<Boolean, String> {
-    val (stagedOk, stageLog) = stageModuleZipToTmp()
+    val (stagedOk, stageLog) = stageModuleZipToTmp(normalizeForStrictZipInstaller = true)
     if (!stagedOk) return false to stageLog
 
-    updateInstallProgress(62, str(R.string.setup_install_progress_installing_fmt, str(R.string.mv_auto_013)))
     val ksu = runCatching { root.ksuPath() }.getOrNull() ?: "ksud"
-    val r = root.execRoot("sh -c ${shQuote("${ksu} module install /data/local/tmp/zdt_module.zip")}")
-    val out2 = (r.out + r.err).joinToString("\n")
-    return r.isSuccess to (stageLog + "\n" + out2).trim()
+    return runRootManagerInstallWithModuleProgress(
+      installerLabel = str(R.string.mv_auto_013),
+      installCommand = "${shQuote(ksu)} module install /data/local/tmp/zdt_module.zip",
+      stageLog = stageLog,
+    )
   }
 
   private suspend fun installViaApatch(): Pair<Boolean, String> {
-    val (stagedOk, stageLog) = stageModuleZipToTmp()
+    val (stagedOk, stageLog) = stageModuleZipToTmp(normalizeForStrictZipInstaller = true)
     if (!stagedOk) return false to stageLog
 
-    updateInstallProgress(62, str(R.string.setup_install_progress_installing_fmt, "APatch"))
     val apd = runCatching { root.apatchPath() }.getOrNull() ?: "apd"
-    val r = root.execRoot("sh -c ${shQuote("${apd} module install /data/local/tmp/zdt_module.zip")}")
-    val out2 = (r.out + r.err).joinToString("\n")
-    return r.isSuccess to (stageLog + "\n" + out2).trim()
+    return runRootManagerInstallWithModuleProgress(
+      installerLabel = "APatch",
+      installCommand = "${shQuote(apd)} module install /data/local/tmp/zdt_module.zip",
+      stageLog = stageLog,
+    )
+  }
+
+  private suspend fun runRootManagerInstallWithModuleProgress(
+    installerLabel: String,
+    installCommand: String,
+    stageLog: String,
+  ): Pair<Boolean, String> {
+    val progressFile = "/data/local/tmp/zdt_install_progress"
+    val installLabel = str(R.string.setup_install_progress_installing_fmt, installerLabel)
+    updateInstallProgress(62, installLabel)
+
+    root.execRootSh("rm -f ${shQuote(progressFile)} ${shQuote(progressFile + ".tmp")}.* 2>/dev/null || true")
+
+    return coroutineScope {
+      val monitor = launch(Dispatchers.IO) {
+        pollModuleInstallProgress(progressFile, installLabel)
+      }
+      try {
+        val commandWithProgress = "ZDTD_INSTALL_PROGRESS_FILE=${shQuote(progressFile)} ${installCommand}"
+        val r = root.execRoot("sh -c ${shQuote(commandWithProgress)}")
+        val out2 = (r.out + r.err).joinToString("\n")
+        r.isSuccess to (stageLog + "\n" + out2).trim()
+      } finally {
+        monitor.cancel()
+        runCatching { monitor.join() }
+        root.execRootSh("rm -f ${shQuote(progressFile)} ${shQuote(progressFile + ".tmp")}.* 2>/dev/null || true")
+      }
+    }
+  }
+
+  private suspend fun pollModuleInstallProgress(progressFile: String, installLabel: String) {
+    var lastPercent = 62
+    while (currentCoroutineContext().isActive) {
+      val text = readInstallProgressFile(progressFile)
+      val percent = parseInstallProgressPercent(text)
+      if (percent != null && percent > lastPercent) {
+        val next = percent.coerceIn(63, 98)
+        if (next > lastPercent) {
+          lastPercent = next
+          updateInstallProgress(next, installLabel)
+        }
+      }
+      delay(450)
+    }
+  }
+
+  private fun readInstallProgressFile(progressFile: String): String {
+    val direct = runCatching {
+      val f = File(progressFile)
+      if (f.isFile && f.canRead()) f.readText() else ""
+    }.getOrDefault("")
+    if (direct.isNotBlank()) return direct
+
+    return runCatching {
+      val r = root.execRootSh("cat ${shQuote(progressFile)} 2>/dev/null || true")
+      if (r.isSuccess) r.out.joinToString("\n") else ""
+    }.getOrDefault("")
+  }
+
+  private fun parseInstallProgressPercent(text: String): Int? {
+    return text.lineSequence()
+      .mapNotNull { line ->
+        val trimmed = line.trim()
+        if (!trimmed.startsWith("percent=")) return@mapNotNull null
+        trimmed.removePrefix("percent=").trim().toIntOrNull()
+      }
+      .lastOrNull()
   }
 
   private suspend fun exportModuleZipToSdcard(): Triple<Boolean, String, String> {
@@ -3756,15 +3831,26 @@ if (mf.isNotBlank()) {
     return Triple(true, listOf(verify.message, out, msg).filter { it.isNotBlank() }.joinToString("\n"), dst)
   }
 
-  private suspend fun stageModuleZipToTmp(): Pair<Boolean, String> {
+  private suspend fun stageModuleZipToTmp(
+    normalizeForStrictZipInstaller: Boolean = false,
+  ): Pair<Boolean, String> {
     updateInstallProgress(22, str(R.string.setup_install_progress_copying))
-    // Copy assets/zdt_module.zip to cache, verify it against assets/busybox,
-    // then stage the verified archive for the selected root manager.
+    // Copy assets/zdt_module.zip to cache, verify the protected archive,
+    // optionally normalize the same temporary copy for strict ZIP parsers,
+    // then stage it for the selected root manager.
     val (cacheZip, copyError) = copyBundledModuleZipToCache()
     if (copyError != null || cacheZip == null) return false to (copyError ?: "asset zdt_module.zip missing")
 
     val verify = verifyBundledModuleZip(cacheZip)
     if (!verify.ok) return false to verify.message
+
+    val normalizeLog = if (normalizeForStrictZipInstaller) {
+      runCatching { clearFakeEncryptedCentralDirectoryFlagsInPlace(cacheZip) }.getOrElse {
+        return false to "module zip compatibility patch failed: ${it.message ?: it}"
+      }
+    } else {
+      "module zip protection kept for Magisk installer"
+    }
 
     val (busyBoxOk, busyBoxLog) = stageBundledBusyBoxToTmp()
     if (!busyBoxOk) return false to busyBoxLog
@@ -3773,7 +3859,7 @@ if (mf.isNotBlank()) {
     updateInstallProgress(42, str(R.string.setup_install_progress_copying))
     val copyRes = root.execRoot("sh -c 'cp ${shQuote(src)} /data/local/tmp/zdt_module.zip && chmod 644 /data/local/tmp/zdt_module.zip'")
     val out1 = (copyRes.out + copyRes.err).joinToString("\n")
-    val log = listOf(verify.message, busyBoxLog, out1.trim()).filter { it.isNotBlank() }.joinToString("\n")
+    val log = listOf(verify.message, normalizeLog, busyBoxLog, out1.trim()).filter { it.isNotBlank() }.joinToString("\n")
     return copyRes.isSuccess to log
   }
 
@@ -4267,6 +4353,99 @@ private fun shQuote(s: String): String {
       return ModuleZipVerification(false, "module zip SHA-256 mismatch: expected=$expected actual=$actual")
     }
     return ModuleZipVerification(true, "module zip SHA-256 verified: $actual")
+  }
+
+  private fun clearFakeEncryptedCentralDirectoryFlagsInPlace(zipFile: File): String {
+    val data = zipFile.readBytes()
+    val eocd = findZipEocdOffset(data)
+    val diskNo = readLe16(data, eocd + 4)
+    val cdDisk = readLe16(data, eocd + 6)
+    val entriesOnDisk = readLe16(data, eocd + 8)
+    val entriesTotal = readLe16(data, eocd + 10)
+    val cdSize = readLe32(data, eocd + 12)
+    val cdOffset = readLe32(data, eocd + 16)
+
+    require(diskNo == 0 && cdDisk == 0) { "multi-disk ZIP is not supported" }
+    require(entriesOnDisk == entriesTotal) { "split Central Directory is not supported" }
+    require(entriesTotal != 0xFFFF && cdSize != 0xFFFFFFFFL && cdOffset != 0xFFFFFFFFL) {
+      "ZIP64 Central Directory is not supported"
+    }
+    require(cdOffset >= 0 && cdSize >= 0 && cdOffset + cdSize <= data.size.toLong()) {
+      "invalid Central Directory bounds"
+    }
+
+    var pos = cdOffset.toInt()
+    val end = (cdOffset + cdSize).toInt()
+    var entries = 0
+    var patched = 0
+
+    while (pos < end) {
+      require(hasZipSignature(data, pos, 0x02014b50)) {
+        "Central Directory entry signature not found at offset $pos"
+      }
+      val flagsOffset = pos + 8
+      val flags = readLe16(data, flagsOffset)
+      if ((flags and ZIP_GENERAL_PURPOSE_ENCRYPTED_FLAG) != 0) {
+        writeLe16(data, flagsOffset, flags and ZIP_GENERAL_PURPOSE_ENCRYPTED_FLAG.inv())
+        patched++
+      }
+      val nameLen = readLe16(data, pos + 28)
+      val extraLen = readLe16(data, pos + 30)
+      val commentLen = readLe16(data, pos + 32)
+      pos += 46 + nameLen + extraLen + commentLen
+      entries++
+    }
+
+    require(pos == end) { "Central Directory walk ended at unexpected offset" }
+    require(entries == entriesTotal) { "Central Directory entry count mismatch: expected=$entriesTotal actual=$entries" }
+
+    if (patched > 0) {
+      zipFile.writeBytes(data)
+    }
+
+    return if (patched > 0) {
+      "module zip normalized for strict installer: cleared encrypted flag in $patched Central Directory entries"
+    } else {
+      "module zip already compatible with strict installer"
+    }
+  }
+
+  private fun findZipEocdOffset(data: ByteArray): Int {
+    val minOffset = max(0, data.size - ZIP_EOCD_MAX_SEARCH)
+    var pos = data.size - ZIP_EOCD_MIN_SIZE
+    while (pos >= minOffset) {
+      if (hasZipSignature(data, pos, 0x06054b50)) return pos
+      pos--
+    }
+    error("ZIP EOCD signature not found")
+  }
+
+  private fun hasZipSignature(data: ByteArray, offset: Int, signature: Int): Boolean {
+    if (offset < 0 || offset + 4 > data.size) return false
+    return (data[offset].toInt() and 0xff) == (signature and 0xff) &&
+      (data[offset + 1].toInt() and 0xff) == ((signature shr 8) and 0xff) &&
+      (data[offset + 2].toInt() and 0xff) == ((signature shr 16) and 0xff) &&
+      (data[offset + 3].toInt() and 0xff) == ((signature shr 24) and 0xff)
+  }
+
+  private fun readLe16(data: ByteArray, offset: Int): Int {
+    require(offset >= 0 && offset + 2 <= data.size) { "ZIP read out of bounds at offset $offset" }
+    return (data[offset].toInt() and 0xff) or
+      ((data[offset + 1].toInt() and 0xff) shl 8)
+  }
+
+  private fun readLe32(data: ByteArray, offset: Int): Long {
+    require(offset >= 0 && offset + 4 <= data.size) { "ZIP read out of bounds at offset $offset" }
+    return ((data[offset].toLong() and 0xffL) or
+      ((data[offset + 1].toLong() and 0xffL) shl 8) or
+      ((data[offset + 2].toLong() and 0xffL) shl 16) or
+      ((data[offset + 3].toLong() and 0xffL) shl 24))
+  }
+
+  private fun writeLe16(data: ByteArray, offset: Int, value: Int) {
+    require(offset >= 0 && offset + 2 <= data.size) { "ZIP write out of bounds at offset $offset" }
+    data[offset] = (value and 0xff).toByte()
+    data[offset + 1] = ((value shr 8) and 0xff).toByte()
   }
 
   private suspend fun stageBundledBusyBoxToTmp(): Pair<Boolean, String> = withContext(Dispatchers.IO) {

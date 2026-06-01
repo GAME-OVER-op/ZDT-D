@@ -123,6 +123,8 @@ CONFIG_FEATURE_UNZIP_CDF=n
 CONFIG_FEATURE_UNZIP_BZIP2=n
 CONFIG_FEATURE_UNZIP_LZMA=n
 CONFIG_FEATURE_UNZIP_XZ=n
+CONFIG_FEATURE_SEAMLESS_Z=y
+CONFIG_FEATURE_SEAMLESS_GZ=y
 CONFIG_GUNZIP=y
 CONFIG_CAT=y
 CONFIG_CP=y
@@ -151,7 +153,87 @@ CONFIG_EXTRA_LDFLAGS=""
 CONFIG_EXTRA_LDLIBS=""
 CONFIG_PREFIX="./_install"
 CONFIG
+
+  # BusyBox does not provide the Linux-kernel-style olddefconfig target.
+  # KCONFIG_ALLCONFIG with allnoconfig is also not enough on all BusyBox
+  # versions: some requested applets may remain disabled silently. Generate a
+  # baseline config first, then force the small set of symbols ZDT-D needs and
+  # let BusyBox oldconfig resolve dependencies.
   make -C "$SRC_DIR" O="$BUILD_DIR" KCONFIG_ALLCONFIG="$mini" allnoconfig >/dev/null
+
+  python3 - "$BUILD_DIR/.config" <<'PY'
+from pathlib import Path
+import sys
+
+cfg_path = Path(sys.argv[1])
+text = cfg_path.read_text(encoding="utf-8", errors="replace").splitlines()
+values = {
+    "CONFIG_STATIC": "y",
+    "CONFIG_LFS": "y",
+    "CONFIG_LONG_OPTS": "y",
+    "CONFIG_SHOW_USAGE": "y",
+    "CONFIG_FEATURE_VERBOSE_USAGE": "y",
+    "CONFIG_UNZIP": "y",
+    "CONFIG_FEATURE_UNZIP_CDF": "n",
+    "CONFIG_FEATURE_UNZIP_BZIP2": "n",
+    "CONFIG_FEATURE_UNZIP_LZMA": "n",
+    "CONFIG_FEATURE_UNZIP_XZ": "n",
+    "CONFIG_FEATURE_SEAMLESS_Z": "y",
+    "CONFIG_FEATURE_SEAMLESS_GZ": "y",
+    "CONFIG_GUNZIP": "y",
+    "CONFIG_CAT": "y",
+    "CONFIG_CP": "y",
+    "CONFIG_CHMOD": "y",
+    "CONFIG_MKDIR": "y",
+    "CONFIG_RM": "y",
+    "CONFIG_ECHO": "y",
+    "CONFIG_LS": "y",
+    "CONFIG_TRUE": "y",
+    "CONFIG_FALSE": "y",
+    "CONFIG_TEST": "y",
+    "CONFIG_SHA256SUM": "y",
+    "CONFIG_FEATURE_MD5_SHA1_SUM_CHECK": "y",
+    "CONFIG_FEATURE_BUFFERS_USE_MALLOC": "y",
+    "CONFIG_STATIC_LIBGCC": "y",
+    "CONFIG_WERROR": "n",
+    "CONFIG_FEATURE_SUID": "n",
+    "CONFIG_SELINUX": "n",
+    "CONFIG_PAM": "n",
+    "CONFIG_FEATURE_COMPRESS_USAGE": "n",
+    "CONFIG_FEATURE_COPYBUF_KB": "4",
+    "CONFIG_CROSS_COMPILER_PREFIX": '""',
+    "CONFIG_SYSROOT": '""',
+    "CONFIG_EXTRA_CFLAGS": '""',
+    "CONFIG_EXTRA_LDFLAGS": '""',
+    "CONFIG_EXTRA_LDLIBS": '""',
+    "CONFIG_PREFIX": '"./_install"',
+}
+keys = set(values)
+out = []
+for line in text:
+    key = None
+    if line.startswith("CONFIG_") and "=" in line:
+        key = line.split("=", 1)[0]
+    elif line.startswith("# CONFIG_") and line.endswith(" is not set"):
+        key = line[len("# "):].split(" ", 1)[0]
+    if key in keys:
+        continue
+    out.append(line)
+for key, value in values.items():
+    if value == "n":
+        out.append(f"# {key} is not set")
+    else:
+        out.append(f"{key}={value}")
+cfg_path.write_text("\n".join(out) + "\n", encoding="utf-8")
+PY
+
+  set +o pipefail
+  yes "" | make -C "$SRC_DIR" O="$BUILD_DIR" oldconfig >/dev/null
+  local oldconfig_rc=${PIPESTATUS[1]}
+  set -o pipefail
+  [[ "$oldconfig_rc" -eq 0 ]] || fail "BusyBox oldconfig failed"
+
+  grep -q '^CONFIG_UNZIP=y$' "$BUILD_DIR/.config" || fail "BusyBox config did not enable CONFIG_UNZIP"
 }
 
 build_busybox() {

@@ -525,12 +525,27 @@ jobs:
           for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg; do
             cp -f "$PREBUILT/$bin" "$MODULE_BUILD_DIR/bin/$bin" && chmod 755 "$MODULE_BUILD_DIR/bin/$bin"
           done
+
+          rm -rf "$MODULE_BUILD_DIR/verify_sum"
+          mkdir -p "$MODULE_BUILD_DIR/verify_sum/bin" "$MODULE_BUILD_DIR/verify_sum/zygisk"
+          while IFS= read -r file; do
+            rel="${file#$MODULE_BUILD_DIR/}"
+            mkdir -p "$MODULE_BUILD_DIR/verify_sum/$(dirname "$rel")"
+            (cd "$MODULE_BUILD_DIR" && sha256sum "$rel" > "verify_sum/$rel.sha256")
+          done < <(find "$MODULE_BUILD_DIR/bin" -maxdepth 1 -type f | sort)
+          (cd "$MODULE_BUILD_DIR" && sha256sum 'zygisk/arm64-v8a.so' > 'verify_sum/zygisk/arm64-v8a.so.sha256')
+          test -s "$MODULE_BUILD_DIR/verify_sum/bin/zdtd.sha256" || { echo "::error::verify_sum/bin/zdtd.sha256 missing"; exit 1; }
+          test -s "$MODULE_BUILD_DIR/verify_sum/zygisk/arm64-v8a.so.sha256" || { echo "::error::verify_sum/zygisk/arm64-v8a.so.sha256 missing"; exit 1; }
+
           pushd "$MODULE_BUILD_DIR" > /dev/null
           zip -qr "../../../$MODULE_ZIP" .
           popd > /dev/null
 
           ZIP_ENTRIES="$(unzip -Z1 "$MODULE_ZIP" 2>/dev/null)" || { echo "::error::Unable to read raw module zip"; exit 1; }
           printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'zygisk/arm64-v8a.so' >/dev/null || { echo "::error::Zygisk binary missing in module zip"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'verify.sh' >/dev/null || { echo "::error::verify.sh missing in module zip"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'verify_sum/zygisk/arm64-v8a.so.sha256' >/dev/null || { echo "::error::zygisk verify_sum missing in module zip"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'verify_sum/bin/zdtd.sha256' >/dev/null || { echo "::error::zdtd verify_sum missing in module zip"; exit 1; }
           if printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'bin/dpi-detector' >/dev/null; then
             echo "::error::dpi-detector must not be packed into module zip; it belongs to APK assets"
             exit 1

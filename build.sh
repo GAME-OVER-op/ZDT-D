@@ -1327,7 +1327,32 @@ build_zygisk_module() {
   chmod 644 "$out_so"
 }
 
+
+generate_module_verify_sums() {
+  local verify_dir="$MODULE_ROOT_DIR/verify_sum"
+  rm -rf "$verify_dir"
+  mkdir -p "$verify_dir/bin" "$verify_dir/zygisk"
+
+  local rel file sum_file
+  shopt -s nullglob
+  for file in "$MODULE_ROOT_DIR"/bin/*; do
+    [[ -f "$file" ]] || continue
+    rel="bin/$(basename "$file")"
+    sum_file="$verify_dir/bin/$(basename "$file").sha256"
+    (cd "$MODULE_ROOT_DIR" && sha256sum "$rel" > "$sum_file")
+  done
+  shopt -u nullglob
+
+  if [[ -f "$MODULE_ROOT_DIR/zygisk/arm64-v8a.so" ]]; then
+    (cd "$MODULE_ROOT_DIR" && sha256sum 'zygisk/arm64-v8a.so' > "$verify_dir/zygisk/arm64-v8a.so.sha256")
+  fi
+
+  [[ -s "$verify_dir/zygisk/arm64-v8a.so.sha256" ]] || fail 'Не создана checksum для zygisk/arm64-v8a.so'
+  [[ -n "$(find "$verify_dir/bin" -type f -name '*.sha256' -print -quit 2>/dev/null)" ]] || fail 'Не созданы checksum для bin/*'
+}
+
 package_module_zip() {
+  generate_module_verify_sums
   rm -f "$MODULE_ZIP"
   pushd "$MODULE_ROOT_DIR" >/dev/null
   zip -qr "$MODULE_ZIP" .
@@ -1337,6 +1362,9 @@ package_module_zip() {
 validate_module_zip() {
   [[ -f "$MODULE_ZIP" ]] || fail "Не найден модульный zip: $MODULE_ZIP"
   unzip -l "$MODULE_ZIP" | grep -q 'zygisk/arm64-v8a.so' || fail 'В module zip отсутствует zygisk/arm64-v8a.so'
+  unzip -l "$MODULE_ZIP" | grep -q 'verify.sh' || fail 'В module zip отсутствует verify.sh'
+  unzip -l "$MODULE_ZIP" | grep -q 'verify_sum/zygisk/arm64-v8a.so.sha256' || fail 'В module zip отсутствует verify_sum/zygisk/arm64-v8a.so.sha256'
+  unzip -l "$MODULE_ZIP" | grep -q 'verify_sum/bin/zdtd.sha256' || fail 'В module zip отсутствует verify_sum/bin/zdtd.sha256'
   if unzip -l "$MODULE_ZIP" | grep -q 'bin/dpi-detector'; then
     fail 'dpi-detector не должен попадать в module zip: он упаковывается в APK assets'
   fi

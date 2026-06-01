@@ -3748,25 +3748,28 @@ if (mf.isNotBlank()) {
     installCommand: String,
     stageLog: String,
   ): Pair<Boolean, String> {
-    val progressFile = "/data/local/tmp/zdt_install_progress"
+    val progressDir = File(ctx.applicationInfo.dataDir, "install_status")
+    runCatching { progressDir.mkdirs() }
+    val progressFile = File(progressDir, "progress.properties").absolutePath
     val installLabel = str(R.string.setup_install_progress_installing_fmt, installerLabel)
     updateInstallProgress(62, installLabel)
 
-    root.execRootSh("rm -f ${shQuote(progressFile)} ${shQuote(progressFile + ".tmp")}.* 2>/dev/null || true")
+    runCatching { File(progressFile).delete() }
+    root.execRootSh("rm -f ${shQuote(progressFile)} ${shQuote(progressFile + ".tmp")}.* 2>/dev/null || true; mkdir -p ${shQuote(progressDir.absolutePath)} 2>/dev/null || true")
 
     return coroutineScope {
       val monitor = launch(Dispatchers.IO) {
         pollModuleInstallProgress(progressFile, installLabel)
       }
       try {
-        val commandWithProgress = "ZDTD_INSTALL_PROGRESS_FILE=${shQuote(progressFile)} ${installCommand}"
+        val commandWithProgress = "ZDTD_INSTALL_STATUS_DIR=${shQuote(progressDir.absolutePath)} ZDTD_INSTALL_PROGRESS_FILE=${shQuote(progressFile)} ${installCommand}"
         val r = root.execRoot("sh -c ${shQuote(commandWithProgress)}")
         val out2 = (r.out + r.err).joinToString("\n")
         r.isSuccess to (stageLog + "\n" + out2).trim()
       } finally {
         monitor.cancel()
         runCatching { monitor.join() }
-        root.execRootSh("rm -f ${shQuote(progressFile)} ${shQuote(progressFile + ".tmp")}.* 2>/dev/null || true")
+        root.execRootSh("rm -f ${shQuote(progressFile + ".tmp")}.* 2>/dev/null || true")
       }
     }
   }

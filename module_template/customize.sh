@@ -9,7 +9,8 @@ sec() { ui_print "## $1"; }
 ok() { ui_print "- OK: $1"; }
 warn() { ui_print "! $1"; }
 
-ZDTD_PROGRESS_FILE="${ZDTD_INSTALL_PROGRESS_FILE:-/data/local/tmp/zdt_install_progress}"
+ZDTD_PROGRESS_DIR="${ZDTD_INSTALL_STATUS_DIR:-/data/user/0/com.android.zdtd.service/install_status}"
+ZDTD_PROGRESS_FILE="${ZDTD_INSTALL_PROGRESS_FILE:-$ZDTD_PROGRESS_DIR/progress.properties}"
 
 zdt_progress() {
   percent="$1"
@@ -17,6 +18,8 @@ zdt_progress() {
   message="$*"
 
   if [ -n "${ZDTD_PROGRESS_FILE:-}" ]; then
+    progress_dir="$(dirname "$ZDTD_PROGRESS_FILE" 2>/dev/null)"
+    [ -n "$progress_dir" ] && mkdir -p "$progress_dir" 2>/dev/null || true
     tmp="${ZDTD_PROGRESS_FILE}.tmp.$$"
     {
       echo "percent=$percent"
@@ -25,6 +28,7 @@ zdt_progress() {
     } > "$tmp" 2>/dev/null && {
       chmod 0644 "$tmp" 2>/dev/null || true
       mv -f "$tmp" "$ZDTD_PROGRESS_FILE" 2>/dev/null || true
+      chmod 0644 "$ZDTD_PROGRESS_FILE" 2>/dev/null || true
     }
   fi
 
@@ -173,6 +177,25 @@ sec "Checks passed"
 ui_print "## * Proceeding with installation..."
 hr
 
+MODDIR="${MODPATH:-$PWD}"
+
+################################################################################
+# Verify extracted module files before applying permissions
+################################################################################
+zdt_progress 84 "Verifying module files"
+hr
+sec "Module file verification"
+
+VERIFY_SH="$MODDIR/verify.sh"
+if [ ! -f "$VERIFY_SH" ]; then
+  fail "File not found: $VERIFY_SH"
+fi
+
+. "$VERIFY_SH"
+zdt_verify_module_files "$MODDIR" || fail "Module file verification failed"
+ok "Module file verification completed"
+hr
+
 ################################################################################
 # Permissions: chmod 755 for bin/* and service.sh
 ################################################################################
@@ -180,8 +203,6 @@ zdt_progress 86 "Applying module permissions"
 hr
 sec "Permissions"
 ui_print "## Setting executable permissions (755)..."
-
-MODDIR="${MODPATH:-$PWD}"
 
 # bin directory inside module
 BINDIR="$MODDIR/bin"

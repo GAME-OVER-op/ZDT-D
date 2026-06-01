@@ -7,6 +7,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
+import android.util.Base64
 import android.content.pm.PackageManager
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
@@ -3780,7 +3781,7 @@ if (mf.isNotBlank()) {
       (${installCommand}) >> ${shQuote(installLog)} 2>&1
       rc=$?
       {
-        echo "rc=$rc"
+        echo "rc=${'$'}rc"
         echo "time=$(date +%s 2>/dev/null || echo 0)"
       } > ${shQuote(resultFile)} 2>/dev/null || true
       chmod 0644 ${shQuote(resultFile)} 2>/dev/null || true

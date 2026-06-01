@@ -110,9 +110,10 @@ configure_busybox() {
   local mini="$BUILD_DIR/zdt-busybox-miniconfig"
   msg "creating minimal BusyBox config"
   cat > "$mini" <<'CONFIG'
-CONFIG_STATIC=y
+# CONFIG_STATIC is not set
 CONFIG_LFS=y
 CONFIG_LONG_OPTS=y
+CONFIG_PIE=y
 CONFIG_SHOW_USAGE=y
 CONFIG_FEATURE_VERBOSE_USAGE=y
 # Keep the applet set intentionally small. ZDT-D needs BusyBox primarily for
@@ -139,7 +140,7 @@ CONFIG_TEST=y
 CONFIG_SHA256SUM=y
 CONFIG_FEATURE_MD5_SHA1_SUM_CHECK=y
 CONFIG_FEATURE_BUFFERS_USE_MALLOC=y
-CONFIG_STATIC_LIBGCC=y
+# CONFIG_STATIC_LIBGCC is not set
 CONFIG_WERROR=n
 CONFIG_FEATURE_SUID=n
 CONFIG_SELINUX=n
@@ -168,9 +169,10 @@ import sys
 cfg_path = Path(sys.argv[1])
 text = cfg_path.read_text(encoding="utf-8", errors="replace").splitlines()
 values = {
-    "CONFIG_STATIC": "y",
+    "CONFIG_STATIC": "n",
     "CONFIG_LFS": "y",
     "CONFIG_LONG_OPTS": "y",
+    "CONFIG_PIE": "y",
     "CONFIG_SHOW_USAGE": "y",
     "CONFIG_FEATURE_VERBOSE_USAGE": "y",
     "CONFIG_UNZIP": "y",
@@ -194,7 +196,7 @@ values = {
     "CONFIG_SHA256SUM": "y",
     "CONFIG_FEATURE_MD5_SHA1_SUM_CHECK": "y",
     "CONFIG_FEATURE_BUFFERS_USE_MALLOC": "y",
-    "CONFIG_STATIC_LIBGCC": "y",
+    "CONFIG_STATIC_LIBGCC": "n",
     "CONFIG_WERROR": "n",
     "CONFIG_FEATURE_SUID": "n",
     "CONFIG_SELINUX": "n",
@@ -228,12 +230,13 @@ cfg_path.write_text("\n".join(out) + "\n", encoding="utf-8")
 PY
 
   set +o pipefail
-  yes "" | make -C "$SRC_DIR" O="$BUILD_DIR" oldconfig >/dev/null
+  yes "" 2>/dev/null | make -C "$SRC_DIR" O="$BUILD_DIR" oldconfig >/dev/null
   local oldconfig_rc=${PIPESTATUS[1]}
   set -o pipefail
   [[ "$oldconfig_rc" -eq 0 ]] || fail "BusyBox oldconfig failed"
 
   grep -q '^CONFIG_UNZIP=y$' "$BUILD_DIR/.config" || fail "BusyBox config did not enable CONFIG_UNZIP"
+  grep -q '^# CONFIG_STATIC is not set$' "$BUILD_DIR/.config" || fail "BusyBox config still enables static linking"
 }
 
 build_busybox() {

@@ -407,6 +407,52 @@ jobs:
           path: out/zygisk/arm64-v8a.so
           retention-days: 1
 
+  build_busybox:
+    name: Build BusyBox arm64
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          echo "NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
+
+      - name: Build BusyBox arm64 from source
+        run: |
+          set -euo pipefail
+          bash scripts/module/build-busybox-arm64.sh prebuilt/bin/arm64-v8a/busybox
+          ls -lh prebuilt/bin/arm64-v8a/busybox
+          test -s prebuilt/bin/arm64-v8a/busybox
+
+      - name: Upload BusyBox binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: busybox-arm64
+          path: |
+            prebuilt/bin/arm64-v8a/busybox
+            prebuilt/bin/arm64-v8a/busybox.source
+          retention-days: 1
+
   pack_module:
     name: Pack ZDT-D module
     runs-on: ubuntu-latest
@@ -433,33 +479,9 @@ jobs:
           name: zygisk-arm64
           path: out/zygisk
 
-      - name: Set up Android SDK for BusyBox
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android NDK for BusyBox
-        run: |
-          set -euo pipefail
-          NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
-          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
-          if [[ ! -d "$NDK_ROOT" ]]; then
-            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
-            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
-          fi
-          echo "NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
-
-      - name: Build BusyBox arm64 from source
-        run: |
-          set -euo pipefail
-          bash scripts/module/build-busybox-arm64.sh prebuilt/bin/arm64-v8a/busybox
-          ls -lh prebuilt/bin/arm64-v8a/busybox
-
       - name: Check prebuilt binaries
         run: |
-          REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg busybox)
+          REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg)
           MISSING=()
           for bin in "${REQUIRED[@]}"; do
             [[ -f "prebuilt/bin/arm64-v8a/$bin" ]] || MISSING+=("$bin")
@@ -500,20 +522,15 @@ jobs:
 
           cp -f "$ZDTD_BIN" "$MODULE_BUILD_DIR/bin/zdtd" && chmod 755 "$MODULE_BUILD_DIR/bin/zdtd"
           cp -f "$T2S_BIN"  "$MODULE_BUILD_DIR/bin/t2s"  && chmod 755 "$MODULE_BUILD_DIR/bin/t2s"
-          for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg busybox; do
+          for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg; do
             cp -f "$PREBUILT/$bin" "$MODULE_BUILD_DIR/bin/$bin" && chmod 755 "$MODULE_BUILD_DIR/bin/$bin"
           done
-          if [[ -f "$PREBUILT/busybox.source" ]]; then
-            cp -f "$PREBUILT/busybox.source" "$MODULE_BUILD_DIR/bin/busybox.source" && chmod 644 "$MODULE_BUILD_DIR/bin/busybox.source"
-          fi
-
           pushd "$MODULE_BUILD_DIR" > /dev/null
           zip -qr "../../../$MODULE_ZIP" .
           popd > /dev/null
 
           ZIP_ENTRIES="$(unzip -Z1 "$MODULE_ZIP" 2>/dev/null)" || { echo "::error::Unable to read raw module zip"; exit 1; }
           printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'zygisk/arm64-v8a.so' >/dev/null || { echo "::error::Zygisk binary missing in module zip"; exit 1; }
-          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'bin/busybox' >/dev/null || { echo "::error::BusyBox binary missing in module zip"; exit 1; }
           if printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'bin/dpi-detector' >/dev/null; then
             echo "::error::dpi-detector must not be packed into module zip; it belongs to APK assets"
             exit 1
@@ -544,7 +561,8 @@ jobs:
     needs:
       - pack_module
       - build_rust_binaries
-    if: needs.pack_module.result == 'success' && needs.build_rust_binaries.result == 'success'
+      - build_busybox
+    if: needs.pack_module.result == 'success' && needs.build_rust_binaries.result == 'success' && needs.build_busybox.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -596,10 +614,17 @@ jobs:
           name: zdt-rust-binaries
           path: out/artifacts/rust
 
-      - name: Build BusyBox arm64 from source
+      - name: Download BusyBox binary
+        uses: actions/download-artifact@v7
+        with:
+          name: busybox-arm64
+          path: prebuilt/bin/arm64-v8a
+
+      - name: Verify BusyBox artifact
         run: |
           set -euo pipefail
-          bash scripts/module/build-busybox-arm64.sh prebuilt/bin/arm64-v8a/busybox
+          test -s prebuilt/bin/arm64-v8a/busybox
+          chmod 755 prebuilt/bin/arm64-v8a/busybox
           ls -lh prebuilt/bin/arm64-v8a/busybox
 
       - name: Locate Android project root

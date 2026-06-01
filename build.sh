@@ -60,7 +60,7 @@ PROJECT_CARGO_TARGET_DIR="$RUST_DIR/target"
 GRADLE_FLAGS=()
 
 AUTO_BUILT_BINS=(zdtd t2s)
-REQUIRED_EXTERNAL_BINS=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg mieru busybox)
+REQUIRED_EXTERNAL_BINS=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg mieru)
 
 RUSTC_BIN=""
 CARGO_BIN=""
@@ -77,7 +77,7 @@ DASHBOARD_REFRESH_INTERVAL="${DASHBOARD_REFRESH_INTERVAL:-0.25}"
 declare -a DASHBOARD_LAST_LINES=()
 DASHBOARD_REFRESH_INTERVAL="${DASHBOARD_REFRESH_INTERVAL:-0.25}"
 declare -a DASHBOARD_LAST_LINES=()
-STAGE_KEYS=(env keystore rustcheck zdtd t2s dpidetector nfqwstester extbin zygisk modulezip assets android apk final)
+STAGE_KEYS=(env keystore rustcheck zdtd t2s dpidetector nfqwstester extbin zygisk modulezip busybox assets android apk final)
 STAGE_NAMES=(
   "Environment checks"
   "Keystore check"
@@ -89,6 +89,7 @@ STAGE_NAMES=(
   "External binaries"
   "Build Zygisk"
   "Package module zip"
+  "Build BusyBox"
   "Prepare APK inputs"
   "Android prereqs"
   "Build APK"
@@ -1265,7 +1266,6 @@ ensure_busybox_arm64_prebuilt() {
 
 require_external_bins() {
   mkdir -p "$PREBUILT_BIN_DIR"
-  ensure_busybox_arm64_prebuilt
 
   local missing=() bin
   for bin in "${REQUIRED_EXTERNAL_BINS[@]}"; do
@@ -1274,7 +1274,7 @@ require_external_bins() {
   if [[ ${#missing[@]} -gt 0 ]]; then
     printf '[ZDT-D][ERR] Не найдены внешние бинарники в %s:\n' "$PREBUILT_BIN_DIR" >&2
     printf '  - %s\n' "${missing[@]}" >&2
-    fail 'Доложи отсутствующие prebuilt-бинарники в prebuilt/bin/arm64-v8a/ и повтори сборку. BusyBox собирается автоматически из исходников.'
+    fail 'Доложи отсутствующие prebuilt-бинарники в prebuilt/bin/arm64-v8a/ и повтори сборку.'
   fi
 }
 
@@ -1285,10 +1285,6 @@ copy_external_bins() {
     cp -f "$PREBUILT_BIN_DIR/$bin" "$MODULE_ROOT_DIR/bin/$bin"
     chmod 755 "$MODULE_ROOT_DIR/bin/$bin"
   done
-  if [[ -f "$PREBUILT_BIN_DIR/busybox.source" ]]; then
-    cp -f "$PREBUILT_BIN_DIR/busybox.source" "$MODULE_ROOT_DIR/bin/busybox.source"
-    chmod 644 "$MODULE_ROOT_DIR/bin/busybox.source"
-  fi
 }
 
 prepare_module_tree_base() {
@@ -1341,7 +1337,6 @@ package_module_zip() {
 validate_module_zip() {
   [[ -f "$MODULE_ZIP" ]] || fail "Не найден модульный zip: $MODULE_ZIP"
   unzip -l "$MODULE_ZIP" | grep -q 'zygisk/arm64-v8a.so' || fail 'В module zip отсутствует zygisk/arm64-v8a.so'
-  unzip -l "$MODULE_ZIP" | grep -q 'bin/busybox' || fail 'В module zip отсутствует bin/busybox'
   if unzip -l "$MODULE_ZIP" | grep -q 'bin/dpi-detector'; then
     fail 'dpi-detector не должен попадать в module zip: он упаковывается в APK assets'
   fi
@@ -1371,7 +1366,6 @@ validate_protected_module_zip() {
       mkdir -p "$tmp_dir"
       busybox unzip "$MODULE_ZIP" -d "$tmp_dir" >/dev/null
       [[ -f "$tmp_dir/module.prop" ]] || fail 'busybox unzip check failed: module.prop missing'
-      [[ -f "$tmp_dir/bin/busybox" ]] || fail 'busybox unzip check failed: bin/busybox missing'
       rm -rf "$tmp_dir"
     else
       warn 'busybox не найден в окружении сборки; пропускаю busybox unzip проверку protected zip.'
@@ -1443,6 +1437,7 @@ validate_apk_artifacts() {
 
 build_apk() {
   prepare_module_root
+  run_simple_stage busybox 'Build BusyBox' ensure_busybox_arm64_prebuilt
   run_simple_stage assets 'Prepare APK inputs' prepare_android_inputs
   run_simple_stage android 'Android prereqs' ensure_android_sdk_ready
   local gradle_cmd java_home aapt2_override gradle_workers

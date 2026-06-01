@@ -33,11 +33,11 @@ def bundledDpiDetectorAsset = file("$generatedAssetsDir/dpi-detector/arm64-v8a/d
 def bundledNfqwsTesterAsset = file("$generatedAssetsDir/nfqws-tester/arm64-v8a/nfqws_tester")
 def prebuiltBusyBox = file('../../prebuilt/bin/arm64-v8a/busybox')
 def busyBoxBuildScript = file('../../scripts/module/build-busybox-arm64.sh')
-def bundledBusyBoxAsset = file("$generatedAssetsDir/dexopt/busybox-arm64")
-def bundledBusyBoxSha = file("$generatedAssetsDir/dexopt/busybox-arm64.sha256")
-def bundledBusyBoxSource = file("$generatedAssetsDir/dexopt/busybox-arm64.source")
-def bundledModuleSha = file("$generatedAssetsDir/dexopt/zdt_module.sha256")
-def bundledModuleCache = file("$generatedAssetsDir/dexopt/zdt_module.cache")
+def bundledBusyBoxAsset = file("$generatedAssetsDir/busybox/busybox-arm64")
+def bundledBusyBoxSha = file("$generatedAssetsDir/busybox/busybox-arm64.sha256")
+def bundledBusyBoxSource = file("$generatedAssetsDir/busybox/busybox-arm64.source")
+def bundledModuleSha = file("$generatedAssetsDir/busybox/zdt_module.sha256")
+def bundledModuleCache = file("$generatedAssetsDir/busybox/zdt_module.cache")
 
 def sha256Hex = { File source ->
   def digest = java.security.MessageDigest.getInstance('SHA-256')
@@ -240,9 +240,9 @@ size=${zdtModuleZip.length()}
 moduleVersion=${moduleVersionName}
 moduleVersionCode=${moduleVersionCode}
 protection=fake-central-directory-encrypt
-busyboxAsset=dexopt/busybox-arm64
+busyboxAsset=busybox/busybox-arm64
 busyboxSha256=${busyBoxSha}
-busyboxSource=dexopt/busybox-arm64.source
+busyboxSource=busybox/busybox-arm64.source
 """
     println("[ZDT-D] wrote module cache metadata: ${bundledModuleCache}")
     println("[ZDT-D] bundled BusyBox asset: ${bundledBusyBoxAsset}")
@@ -267,6 +267,8 @@ tasks.named('preBuild') {
 
 
 tasks.register('verifyBundledHelperAssets') {
+  dependsOn('prepareZdtGeneratedAssets')
+
   inputs.file(bundledDpiDetectorAsset).withPathSensitivity(PathSensitivity.RELATIVE)
   inputs.file(bundledNfqwsTesterAsset).withPathSensitivity(PathSensitivity.RELATIVE)
   inputs.file(bundledBusyBoxAsset).withPathSensitivity(PathSensitivity.RELATIVE)

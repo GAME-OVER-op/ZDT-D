@@ -3758,7 +3758,7 @@ if (mf.isNotBlank()) {
 
   private suspend fun stageModuleZipToTmp(): Pair<Boolean, String> {
     updateInstallProgress(22, str(R.string.setup_install_progress_copying))
-    // Copy assets/zdt_module.zip to cache, verify it against assets/dexopt,
+    // Copy assets/zdt_module.zip to cache, verify it against assets/busybox,
     // then stage the verified archive for the selected root manager.
     val (cacheZip, copyError) = copyBundledModuleZipToCache()
     if (copyError != null || cacheZip == null) return false to (copyError ?: "asset zdt_module.zip missing")
@@ -4258,8 +4258,8 @@ private fun shQuote(s: String): String {
   }
 
   private fun verifyBundledModuleZip(zipFile: File): ModuleZipVerification {
-    val expected = readSha256Asset("dexopt/zdt_module.sha256")
-      ?: return ModuleZipVerification(false, "asset dexopt/zdt_module.sha256 missing or invalid")
+    val expected = readSha256Asset("busybox/zdt_module.sha256")
+      ?: return ModuleZipVerification(false, "asset busybox/zdt_module.sha256 missing or invalid")
     val actual = runCatching { sha256Hex(zipFile) }.getOrElse {
       return ModuleZipVerification(false, "module zip SHA-256 failed: ${it.message ?: it}")
     }
@@ -4270,15 +4270,15 @@ private fun shQuote(s: String): String {
   }
 
   private suspend fun stageBundledBusyBoxToTmp(): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-    val expected = readSha256Asset("dexopt/busybox-arm64.sha256")
-      ?: return@withContext (false to "asset dexopt/busybox-arm64.sha256 missing or invalid")
+    val expected = readSha256Asset("busybox/busybox-arm64.sha256")
+      ?: return@withContext (false to "asset busybox/busybox-arm64.sha256 missing or invalid")
     val cacheBusyBox = File(ctx.cacheDir, "busybox-arm64")
     runCatching {
-      ctx.assets.open("dexopt/busybox-arm64").use { input ->
+      ctx.assets.open("busybox/busybox-arm64").use { input ->
         cacheBusyBox.outputStream().use { out -> input.copyTo(out) }
       }
     }.getOrElse {
-      return@withContext (false to "asset dexopt/busybox-arm64 missing: ${it.message ?: it}")
+      return@withContext (false to "asset busybox/busybox-arm64 missing: ${it.message ?: it}")
     }
     val actual = runCatching { sha256Hex(cacheBusyBox) }.getOrElse {
       return@withContext (false to "busybox SHA-256 failed: ${it.message ?: it}")

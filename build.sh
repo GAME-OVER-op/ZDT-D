@@ -1423,11 +1423,11 @@ validate_apk_artifacts() {
   [[ -n "$apk_path" ]] || fail 'APK не найден после сборки'
   unzip -Z1 "$apk_path" | grep -Fx 'assets/dpi-detector/arm64-v8a/dpi-detector' >/dev/null || fail 'В APK отсутствует assets/dpi-detector/arm64-v8a/dpi-detector'
   unzip -Z1 "$apk_path" | grep -Fx 'assets/nfqws-tester/arm64-v8a/nfqws_tester' >/dev/null || fail 'В APK отсутствует assets/nfqws-tester/arm64-v8a/nfqws_tester'
-  unzip -Z1 "$apk_path" | grep -Fx 'assets/dexopt/busybox-arm64' >/dev/null || fail 'В APK отсутствует assets/dexopt/busybox-arm64'
-  unzip -Z1 "$apk_path" | grep -Fx 'assets/dexopt/busybox-arm64.sha256' >/dev/null || fail 'В APK отсутствует assets/dexopt/busybox-arm64.sha256'
-  unzip -Z1 "$apk_path" | grep -Fx 'assets/dexopt/busybox-arm64.source' >/dev/null || fail 'В APK отсутствует assets/dexopt/busybox-arm64.source'
-  unzip -Z1 "$apk_path" | grep -Fx 'assets/dexopt/zdt_module.sha256' >/dev/null || fail 'В APK отсутствует assets/dexopt/zdt_module.sha256'
-  unzip -Z1 "$apk_path" | grep -Fx 'assets/dexopt/zdt_module.cache' >/dev/null || fail 'В APK отсутствует assets/dexopt/zdt_module.cache'
+  unzip -Z1 "$apk_path" | grep -Fx 'assets/busybox/busybox-arm64' >/dev/null || fail 'В APK отсутствует assets/busybox/busybox-arm64'
+  unzip -Z1 "$apk_path" | grep -Fx 'assets/busybox/busybox-arm64.sha256' >/dev/null || fail 'В APK отсутствует assets/busybox/busybox-arm64.sha256'
+  unzip -Z1 "$apk_path" | grep -Fx 'assets/busybox/busybox-arm64.source' >/dev/null || fail 'В APK отсутствует assets/busybox/busybox-arm64.source'
+  unzip -Z1 "$apk_path" | grep -Fx 'assets/busybox/zdt_module.sha256' >/dev/null || fail 'В APK отсутствует assets/busybox/zdt_module.sha256'
+  unzip -Z1 "$apk_path" | grep -Fx 'assets/busybox/zdt_module.cache' >/dev/null || fail 'В APK отсутствует assets/busybox/zdt_module.cache'
   mkdir -p "$APK_OUT_DIR" "$DIST_DIR"
   dist_apk="$APK_OUT_DIR/app-release.apk"
   cp -f "$apk_path" "$dist_apk"

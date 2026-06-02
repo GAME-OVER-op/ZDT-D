@@ -192,6 +192,25 @@ private fun PortraitLogsShelf(
 }
 
 @Composable
+private fun LogsHeaderButtons(
+  compact: Boolean,
+  onClear: () -> Unit,
+  onDismiss: () -> Unit,
+) {
+  if (compact) {
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_clear)) }
+      Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_close)) }
+    }
+  } else {
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+      OutlinedButton(onClick = onClear) { Text(stringResource(R.string.action_clear)) }
+      Button(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
+    }
+  }
+}
+
+@Composable
 private fun LogsSheetContent(
   logs: List<LogLine>,
   compact: Boolean,
@@ -202,18 +221,12 @@ private fun LogsSheetContent(
     if (compact) {
       Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(stringResource(R.string.logs_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          OutlinedButton(onClick = onClear, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_clear)) }
-          Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.action_close)) }
-        }
+        LogsHeaderButtons(compact = true, onClear = onClear, onDismiss = onDismiss)
       }
     } else {
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(stringResource(R.string.logs_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-          OutlinedButton(onClick = onClear) { Text(stringResource(R.string.action_clear)) }
-          Button(onClick = onDismiss) { Text(stringResource(R.string.action_close)) }
-        }
+        LogsHeaderButtons(compact = false, onClear = onClear, onDismiss = onDismiss)
       }
     }
     Spacer(Modifier.height(12.dp))

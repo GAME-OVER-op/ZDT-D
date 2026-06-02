@@ -1,7 +1,7 @@
 #!/system/bin/sh
 
 while [ "$(getprop sys.boot_completed)" != "1" ]; do
-  sleep 5
+  sleep 1
 done
 
 MODDIR="${0%/*}"

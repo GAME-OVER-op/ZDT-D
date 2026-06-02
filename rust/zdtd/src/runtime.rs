@@ -120,14 +120,19 @@ pub fn start_full() -> Result<()> {
         ],
     );
 
-    // wireproxy (may start multiple profiles + optional t2s)
-    start_best_effort("wireproxy", wireproxy::start_if_enabled);
-
-    // myproxy (profile-based upstream socks5 via t2s)
-    start_best_effort("myproxy", myproxy::start_if_enabled);
-
-    // myprogram (custom launched program profiles)
-    start_best_effort("myprogram", myprogram::start_if_enabled);
+    // Independent proxy helpers can start together after the DPI stack is ready.
+    // VPN/netd and operaproxy still remain ordered after this group.
+    let wireproxy_handle = thread::spawn(wireproxy::start_if_enabled);
+    let myproxy_handle = thread::spawn(myproxy::start_if_enabled);
+    let myprogram_handle = thread::spawn(myprogram::start_if_enabled);
+    wait_start_group(
+        "proxy-programs",
+        vec![
+            ("wireproxy", wireproxy_handle),
+            ("myproxy", myproxy_handle),
+            ("myprogram", myprogram_handle),
+        ],
+    );
 
     // VPN/netd profile programs: launch VPN engines, wait for TUN, then apply Android netd routing once.
     // VPN profile failures are best-effort: log to console/profile logs and continue the rest of startup.
@@ -699,34 +704,48 @@ fn iptables_runtime_anchors_present() -> bool {
 
 fn wait_android_runtime_ready_best_effort() {
     // Android can report sys.boot_completed before package manager/netd are fully
-    // responsive, especially on cold boot. Keep this guard soft: it improves
-    // startup stability, but a temporary PM/netd issue must not block unrelated
-    // programs forever.
-    const STABILIZE_SECS: u64 = 3;
-    log::info!("boot guard: stabilization sleep {STABILIZE_SECS}s after sys.boot_completed");
-    std::thread::sleep(Duration::from_secs(STABILIZE_SECS));
+    // responsive, especially on cold boot. Keep this guard soft: probe both
+    // services immediately and only wait when they are not ready yet.
+    log::info!("boot guard: probing package-manager and netd after sys.boot_completed");
 
-    if !wait_shell_probe_ready(
-        "package-manager",
-        &[
-            "cmd package list packages >/dev/null 2>&1",
-            "pm list packages >/dev/null 2>&1",
-        ],
-        Duration::from_secs(20),
-        Duration::from_secs(1),
-        Duration::from_secs(5),
-    ) {
+    let package_manager = thread::spawn(|| {
+        wait_shell_probe_ready(
+            "package-manager",
+            &[
+                "cmd package list packages >/dev/null 2>&1",
+                "pm list packages >/dev/null 2>&1",
+            ],
+            Duration::from_secs(20),
+            Duration::from_millis(500),
+            Duration::from_secs(5),
+        )
+    });
+
+    let netd = thread::spawn(|| {
+        wait_shell_probe_ready(
+            "netd",
+            &["ndc network list >/dev/null 2>&1"],
+            Duration::from_secs(20),
+            Duration::from_millis(500),
+            Duration::from_secs(5),
+        )
+    });
+
+    if !join_boot_probe("package-manager", package_manager) {
         mark_start_partial();
     }
-
-    if !wait_shell_probe_ready(
-        "netd",
-        &["ndc network list >/dev/null 2>&1"],
-        Duration::from_secs(20),
-        Duration::from_secs(1),
-        Duration::from_secs(5),
-    ) {
+    if !join_boot_probe("netd", netd) {
         mark_start_partial();
+    }
+}
+
+fn join_boot_probe(name: &str, handle: thread::JoinHandle<bool>) -> bool {
+    match handle.join() {
+        Ok(ready) => ready,
+        Err(_) => {
+            log::warn!("boot guard: {name} probe thread panicked; startup will continue");
+            false
+        }
     }
 }
 

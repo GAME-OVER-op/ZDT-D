@@ -84,6 +84,8 @@ pub fn run_timeout(cmd: &str, args: &[&str], capture: Capture, timeout: Duration
 
     let mut child = c.spawn().map_err(|e| anyhow!("failed to spawn {cmd}: {e}"))?;
     let start = Instant::now();
+    let mut poll_delay = Duration::from_millis(2);
+    const MAX_POLL_DELAY: Duration = Duration::from_millis(25);
 
     loop {
         if let Some(st) = child.try_wait().map_err(|e| anyhow!("failed to wait {cmd}: {e}"))? {
@@ -139,7 +141,21 @@ pub fn run_timeout(cmd: &str, args: &[&str], capture: Capture, timeout: Duration
             ));
         }
 
-        thread::sleep(Duration::from_millis(50));
+        let elapsed = start.elapsed();
+        let remaining = timeout.saturating_sub(elapsed);
+        if remaining.is_zero() {
+            continue;
+        }
+
+        let sleep_for = if poll_delay < remaining { poll_delay } else { remaining };
+        thread::sleep(sleep_for);
+
+        poll_delay = if poll_delay >= MAX_POLL_DELAY {
+            MAX_POLL_DELAY
+        } else {
+            let next = poll_delay + poll_delay;
+            if next > MAX_POLL_DELAY { MAX_POLL_DELAY } else { next }
+        };
     }
 }
 

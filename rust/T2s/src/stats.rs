@@ -20,7 +20,15 @@ const PRIORITY_SPEED_WINDOW_SECS: u64 = 10;
 const PRIORITY_SPEED_PRIMARY_MIN_BYTES: u64 = 512 * 1024;
 const PRIORITY_SPEED_PROBE_MIN_BYTES: u64 = 256 * 1024;
 const PRIORITY_SPEED_PROBE_INTERVAL_SECS: u64 = 45;
-const PRIORITY_SPEED_HOLD_SECS: u64 = 30;
+const PRIORITY_SPEED_HOLD_SECS: u64 = 60;
+const PRIORITY_STREAM_DEGRADED_WINDOW_SECS: u64 = 10;
+const PRIORITY_STREAM_DEGRADED_JITTER_RATIO: f64 = 0.15;
+const PRIORITY_STREAM_DEGRADED_MAX_BPS: f64 = 96.0 * 1024.0;
+const PRIORITY_STREAM_DEGRADED_MIN_AGE_SECS: u64 = 15;
+const PRIORITY_STREAM_DEGRADED_MIN_BYTES: u64 = 128 * 1024;
+const PRIORITY_STREAM_DEGRADED_MIN_WINDOW_BYTES: u64 = 16 * 1024;
+const PRIORITY_STREAM_RECYCLE_COOLDOWN_SECS: u64 = 20;
+const PRIORITY_STREAM_RECYCLE_MAX_PER_PASS: usize = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ingress {
@@ -111,6 +119,10 @@ pub struct RuntimeConfig {
     pub burst_recheck_active: AtomicU64,
     /// Only one accelerated recovery ladder may run at a time.
     pub burst_recovery_ladder_active: AtomicU64,
+
+    /// Throttle priority speed-aware stream recycling so a flaky backend cannot
+    /// cause repeated reconnect loops.
+    pub next_priority_stream_recycle_after_ts: AtomicU64,
 }
 
 impl Default for RuntimeConfig {
@@ -131,6 +143,7 @@ impl Default for RuntimeConfig {
             next_burst_recheck_after_ms: AtomicU64::new(0),
             burst_recheck_active: AtomicU64::new(0),
             burst_recovery_ladder_active: AtomicU64::new(0),
+            next_priority_stream_recycle_after_ts: AtomicU64::new(0),
         }
     }
 }
@@ -268,6 +281,30 @@ impl RuntimeConfig {
 
     pub fn leave_burst_recovery_ladder(&self) {
         self.burst_recovery_ladder_active.store(0, Ordering::Relaxed);
+    }
+
+    pub fn priority_stream_recycle_allowed(&self) -> bool {
+        now_ts() >= self.next_priority_stream_recycle_after_ts.load(Ordering::Relaxed)
+    }
+
+    pub fn try_begin_priority_stream_recycle(&self, cooldown_secs: u64) -> bool {
+        let now = now_ts();
+        loop {
+            let next_allowed = self.next_priority_stream_recycle_after_ts.load(Ordering::Relaxed);
+            if next_allowed > now {
+                return false;
+            }
+            let new_next = now.saturating_add(cooldown_secs.max(1));
+            match self.next_priority_stream_recycle_after_ts.compare_exchange(
+                next_allowed,
+                new_next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return true,
+                Err(_) => continue,
+            }
+        }
     }
 }
 
@@ -666,12 +703,19 @@ impl SocksBackends {
             return (0, 0.0);
         };
         let cutoff = now.saturating_sub(PRIORITY_SPEED_WINDOW_SECS);
-        let bytes: u64 = samples
-            .iter()
-            .filter(|(ts, _)| *ts >= cutoff)
-            .map(|(_, n)| *n)
-            .sum();
-        let bps = bytes as f64 / (PRIORITY_SPEED_WINDOW_SECS.max(1) as f64);
+        let mut bytes: u64 = 0;
+        let mut first_ts: Option<u64> = None;
+        let mut last_ts: Option<u64> = None;
+        for (ts, n) in samples.iter().filter(|(ts, _)| *ts >= cutoff) {
+            bytes = bytes.saturating_add(*n);
+            first_ts = Some(first_ts.map(|v| v.min(*ts)).unwrap_or(*ts));
+            last_ts = Some(last_ts.map(|v| v.max(*ts)).unwrap_or(*ts));
+        }
+        let span_secs = match (first_ts, last_ts) {
+            (Some(first), Some(last)) => last.saturating_sub(first).saturating_add(1).min(PRIORITY_SPEED_WINDOW_SECS),
+            _ => PRIORITY_SPEED_WINDOW_SECS,
+        }.max(1);
+        let bps = bytes as f64 / (span_secs as f64);
         (bytes, bps)
     }
 
@@ -696,6 +740,102 @@ impl SocksBackends {
             return None;
         }
         Self::pick_from_bucket(&candidates, &mut self.priority_speed_probe_rr)
+    }
+
+    fn priority_first_green_index_by_ports(&self, ports: &[u16], now: u64) -> Option<usize> {
+        let ready = self.healthy_indices_by_ports(ports, now, true);
+        if let Some(idx) = ready.first().copied() {
+            return Some(idx);
+        }
+        self.healthy_indices_by_ports(ports, now, false).first().copied()
+    }
+
+    fn priority_current_primary_index_for_speed(&self, now: u64) -> Option<usize> {
+        for group in &self.priority_groups {
+            if let Some(idx) = self.priority_first_green_index_by_ports(group, now) {
+                return Some(idx);
+            }
+        }
+        None
+    }
+
+    fn priority_first_lower_green_candidate(&self, primary_idx: usize, now: u64) -> Option<usize> {
+        let primary_port = self.addrs.get(primary_idx)?.port();
+        let primary_group_idx = self.priority_groups
+            .iter()
+            .position(|group| group.contains(&primary_port))?;
+
+        for group in self.priority_groups.iter().skip(primary_group_idx + 1) {
+            if let Some(idx) = self.priority_first_green_index_by_ports(group, now) {
+                return Some(idx);
+            }
+        }
+        None
+    }
+
+    pub fn priority_speed_stream_recycle_pair(&self) -> Option<(SocketAddr, SocketAddr)> {
+        if self.backend_mode != BackendMode::Priority || !self.priority_speed_aware {
+            return None;
+        }
+
+        let now = now_ts();
+        if let (Some(from), Some(to)) = (self.priority_speed_shift_from, self.priority_speed_shift_to) {
+            let _from_idx = self.addrs.iter().position(|addr| *addr == from)?;
+            let to_idx = self.addrs.iter().position(|addr| *addr == to)?;
+            if self.status.get(to_idx).map(|s| s.healthy).unwrap_or(false) {
+                return Some((from, to));
+            }
+        }
+
+        let primary_idx = self.priority_current_primary_index_for_speed(now)?;
+        let candidate_idx = self.priority_first_lower_green_candidate(primary_idx, now)?;
+        Some((self.addrs[primary_idx], self.addrs[candidate_idx]))
+    }
+
+    pub fn activate_priority_stream_speed_shift(
+        &mut self,
+        from: SocketAddr,
+        to: SocketAddr,
+        avg_bps: f64,
+    ) -> bool {
+        if self.backend_mode != BackendMode::Priority || !self.priority_speed_aware {
+            return false;
+        }
+        let Some(from_idx) = self.addrs.iter().position(|addr| *addr == from) else {
+            return false;
+        };
+        let Some(to_idx) = self.addrs.iter().position(|addr| *addr == to) else {
+            return false;
+        };
+        if !self.status.get(to_idx).map(|s| s.healthy).unwrap_or(false) {
+            return false;
+        }
+
+        let now = now_ts();
+        let changed = self.priority_speed_shift_from != Some(from) || self.priority_speed_shift_to != Some(to);
+        self.priority_speed_shift_from = Some(from);
+        self.priority_speed_shift_to = Some(to);
+        self.priority_speed_hold_until_ts = now.saturating_add(PRIORITY_SPEED_HOLD_SECS);
+        self.priority_speed_last_probe_ts = now;
+        for s in &mut self.status {
+            s.speed_degraded = false;
+            s.speed_shift_target = false;
+        }
+        if let Some(s) = self.status.get_mut(from_idx) {
+            s.speed_degraded = true;
+        }
+        if let Some(s) = self.status.get_mut(to_idx) {
+            s.speed_shift_target = true;
+        }
+        if changed {
+            tracing::info!(
+                "priority speed-aware: stream recycle shifting new connections from {} to {} (stable low stream {:.0} B/s)",
+                from,
+                to,
+                avg_bps
+            );
+        }
+        true
     }
 
     fn priority_speed_candidate_is_better(&self, primary_idx: usize, candidate_idx: usize, now: u64) -> bool {
@@ -1555,6 +1695,8 @@ pub struct ConnInfo {
     pub last_progress_ts: u64,
     pub bytes_up: u64,
     pub bytes_down: u64,
+    #[serde(skip_serializing)]
+    recent_down: VecDeque<(u64, u64)>,
 }
 
 #[derive(Default)]
@@ -1567,6 +1709,60 @@ pub struct ConnRegistry {
     mode_pending: AtomicU64,
     mode_wait_backend: AtomicU64,
     mode_socks_connecting: AtomicU64,
+}
+
+#[derive(Clone, Debug)]
+pub struct StableLowStream {
+    pub cid: u64,
+    pub avg_bps: f64,
+    pub min_bps: f64,
+    pub max_bps: f64,
+    pub age_secs: u64,
+    pub bytes_down: u64,
+    pub domain: Option<String>,
+    pub target: Option<String>,
+}
+
+fn stable_low_downstream_window(samples: &VecDeque<(u64, u64)>, now: u64) -> Option<(u64, f64, f64, f64)> {
+    let window = PRIORITY_STREAM_DEGRADED_WINDOW_SECS.max(2);
+    let end = now.saturating_sub(1);
+    let start = end.saturating_sub(window.saturating_sub(1));
+    let mut buckets = vec![0u64; window as usize];
+
+    for (ts, bytes) in samples {
+        if *ts < start || *ts > end {
+            continue;
+        }
+        let pos = ts.saturating_sub(start) as usize;
+        if let Some(bucket) = buckets.get_mut(pos) {
+            *bucket = bucket.saturating_add(*bytes);
+        }
+    }
+
+    let total: u64 = buckets.iter().copied().sum();
+    if total < PRIORITY_STREAM_DEGRADED_MIN_WINDOW_BYTES {
+        return None;
+    }
+
+    let nonzero = buckets.iter().filter(|bytes| **bytes > 0).count();
+    if nonzero + 2 < buckets.len() {
+        return None;
+    }
+
+    let avg_bps = total as f64 / (window as f64);
+    if avg_bps <= 0.0 || avg_bps > PRIORITY_STREAM_DEGRADED_MAX_BPS {
+        return None;
+    }
+
+    let min_bps = buckets.iter().copied().min().unwrap_or(0) as f64;
+    let max_bps = buckets.iter().copied().max().unwrap_or(0) as f64;
+    let low = avg_bps * (1.0 - PRIORITY_STREAM_DEGRADED_JITTER_RATIO);
+    let high = avg_bps * (1.0 + PRIORITY_STREAM_DEGRADED_JITTER_RATIO);
+    if min_bps < low || max_bps > high {
+        return None;
+    }
+
+    Some((total, avg_bps, min_bps, max_bps))
 }
 
 impl ConnRegistry {
@@ -1636,6 +1832,7 @@ impl ConnRegistry {
             last_progress_ts: now,
             bytes_up: 0,
             bytes_down: 0,
+            recent_down: VecDeque::new(),
         };
         let mut inner = self.inner.lock();
         let mut source_counts = self.source_counts.lock();
@@ -1786,8 +1983,22 @@ impl ConnRegistry {
     }
     pub fn add_bytes_down(&self, cid: u64, n: u64) {
         if let Some((info, _)) = self.inner.lock().get_mut(&cid) {
-            info.bytes_down += n;
-            info.last_progress_ts = now_ts();
+            let now = now_ts();
+            info.bytes_down = info.bytes_down.saturating_add(n);
+            info.last_progress_ts = now;
+            if let Some((ts, bytes)) = info.recent_down.back_mut() {
+                if *ts == now {
+                    *bytes = bytes.saturating_add(n);
+                } else {
+                    info.recent_down.push_back((now, n));
+                }
+            } else {
+                info.recent_down.push_back((now, n));
+            }
+            let cutoff = now.saturating_sub(PRIORITY_STREAM_DEGRADED_WINDOW_SECS.saturating_mul(3));
+            while info.recent_down.front().map(|(ts, _)| *ts < cutoff).unwrap_or(false) {
+                info.recent_down.pop_front();
+            }
         }
     }
 
@@ -1836,6 +2047,57 @@ impl ConnRegistry {
     /// GREEN group has already recovered.
     pub fn kill_backend_socks_and_connecting(&self, backend: SocketAddr) -> usize {
         self.kill_backend_by_modes(backend, &["socks", "socks_connecting"])
+    }
+
+    pub fn stable_low_socks_streams_on_backend(
+        &self,
+        backend: SocketAddr,
+        max_count: usize,
+    ) -> Vec<StableLowStream> {
+        let backend = backend.to_string();
+        let now = now_ts();
+        let mut candidates = Vec::new();
+        let g = self.inner.lock();
+        for (info, _token) in g.values() {
+            if info.mode.as_deref() != Some("socks") || info.backend.as_deref() != Some(backend.as_str()) {
+                continue;
+            }
+            let age_secs = now.saturating_sub(info.started_ts);
+            if age_secs < PRIORITY_STREAM_DEGRADED_MIN_AGE_SECS {
+                continue;
+            }
+            if info.bytes_down < PRIORITY_STREAM_DEGRADED_MIN_BYTES {
+                continue;
+            }
+            let Some((_window_bytes, avg_bps, min_bps, max_bps)) = stable_low_downstream_window(&info.recent_down, now) else {
+                continue;
+            };
+            candidates.push(StableLowStream {
+                cid: info.cid,
+                avg_bps,
+                min_bps,
+                max_bps,
+                age_secs,
+                bytes_down: info.bytes_down,
+                domain: info.domain.clone(),
+                target: info.target.clone(),
+            });
+        }
+        candidates.sort_by(|a, b| a.avg_bps.partial_cmp(&b.avg_bps).unwrap_or(std::cmp::Ordering::Equal));
+        candidates.truncate(max_count.max(1));
+        candidates
+    }
+
+    pub fn cancel_streams(&self, cids: &[u64]) -> usize {
+        let mut n = 0usize;
+        let g = self.inner.lock();
+        for cid in cids {
+            if let Some((_info, token)) = g.get(cid) {
+                token.cancel();
+                n += 1;
+            }
+        }
+        n
     }
 
     /// Cancels connections that are stuck in SOCKS mode and have not transferred any bytes.
@@ -2586,8 +2848,8 @@ pub async fn proxy_enforce_loop(state: crate::AppState) {
             && connecting_now == 0
             && quiet_for >= Duration::from_secs(60);
         let deep_idle = ui == 0 && active == 0 && quiet_for >= Duration::from_secs(3 * 60);
-        let (green, non_green_backends, lower_priority_backends) = if deep_idle {
-            (false, Vec::new(), Vec::new())
+        let (green, non_green_backends, lower_priority_backends, speed_recycle_pair) = if deep_idle {
+            (false, Vec::new(), Vec::new(), None)
         } else {
             let b = state.backends.lock();
             let green = b.any_green();
@@ -2597,10 +2859,16 @@ pub async fn proxy_enforce_loop(state: crate::AppState) {
             } else {
                 Vec::new()
             };
-            (green, non_green_backends, lower_priority_backends)
+            let speed_recycle_pair = if active > 0 {
+                b.priority_speed_stream_recycle_pair()
+            } else {
+                None
+            };
+            (green, non_green_backends, lower_priority_backends, speed_recycle_pair)
         };
         let has_non_green_backends = !non_green_backends.is_empty();
         let has_lower_priority_backends = !lower_priority_backends.is_empty();
+        let has_speed_recycle_pair = speed_recycle_pair.is_some();
         let recovery_edge = !had_green && green;
         let needs_enforce = !deep_idle
             && (has_direct || connecting_now > 0 || recovery_edge || has_non_green_backends || has_lower_priority_backends);
@@ -2657,6 +2925,49 @@ pub async fn proxy_enforce_loop(state: crate::AppState) {
             }
         }
 
+        if let Some((slow_backend, shift_backend)) = speed_recycle_pair {
+            if state.runtime.priority_stream_recycle_allowed() {
+                let candidates = state
+                    .conns
+                    .stable_low_socks_streams_on_backend(slow_backend, PRIORITY_STREAM_RECYCLE_MAX_PER_PASS);
+                if let Some(first) = candidates.first() {
+                    if state
+                        .runtime
+                        .try_begin_priority_stream_recycle(PRIORITY_STREAM_RECYCLE_COOLDOWN_SECS)
+                    {
+                        let activated = {
+                            let mut b = state.backends.lock();
+                            b.activate_priority_stream_speed_shift(slow_backend, shift_backend, first.avg_bps)
+                        };
+                        if activated {
+                            let cids: Vec<u64> = candidates.iter().map(|c| c.cid).collect();
+                            let killed = state.conns.cancel_streams(&cids);
+                            if killed > 0 {
+                                let target = first
+                                    .domain
+                                    .as_deref()
+                                    .or(first.target.as_deref())
+                                    .unwrap_or("unknown");
+                                tracing::info!(
+                                    "priority speed-aware: recycled {} stable-low stream(s) on {} -> {} (first cid={}, target={}, avg={:.0} B/s, min={:.0}, max={:.0}, age={}s, down={} bytes)",
+                                    killed,
+                                    slow_backend,
+                                    shift_backend,
+                                    first.cid,
+                                    target,
+                                    first.avg_bps,
+                                    first.min_bps,
+                                    first.max_bps,
+                                    first.age_secs,
+                                    first.bytes_down
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         had_green = green;
         last_total_bytes = total_bytes;
 
@@ -2677,6 +2988,9 @@ pub async fn proxy_enforce_loop(state: crate::AppState) {
             } else {
                 Duration::from_secs(40)
             }
+        } else if has_speed_recycle_pair {
+            idle_since = None;
+            Duration::from_secs(2)
         } else if quiet_lingering_only {
             if quiet_for >= Duration::from_secs(45 * 60) {
                 Duration::from_secs(45 * 60)

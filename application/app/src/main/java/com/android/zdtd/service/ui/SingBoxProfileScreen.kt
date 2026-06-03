@@ -64,6 +64,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -2109,7 +2110,10 @@ private fun SingBoxImportToProfileDialog(
   snackHost: SnackbarHostState,
 ) {
   val context = LocalContext.current
+  val configuration = LocalConfiguration.current
   val scope = rememberCoroutineScope()
+  val dialogScrollState = rememberScrollState()
+  val maxDialogHeight = configuration.screenHeightDp.dp * 0.92f
   val existingNorm = remember(existing) { existing.map { normalizeSingBoxServerName(it) }.toSet() }
   var raw by remember { mutableStateOf(lockedServerName.orEmpty()) }
   var source by remember { mutableStateOf("") }
@@ -2123,7 +2127,10 @@ private fun SingBoxImportToProfileDialog(
     properties = DialogProperties(usePlatformDefaultWidth = false),
   ) {
     Surface(
-      modifier = Modifier.fillMaxWidth(0.94f),
+      modifier = Modifier
+        .fillMaxWidth(0.94f)
+        .heightIn(max = maxDialogHeight)
+        .navigationBarsPadding(),
       shape = RoundedCornerShape(28.dp),
       color = Color(0xFF17131E).copy(alpha = 0.98f),
       contentColor = MaterialTheme.colorScheme.onSurface,
@@ -2139,7 +2146,10 @@ private fun SingBoxImportToProfileDialog(
           )
           .padding(18.dp),
       ) {
-        Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(
+          modifier = Modifier.verticalScroll(dialogScrollState),
+          verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
           Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Surface(
               modifier = Modifier.size(44.dp),
@@ -2212,8 +2222,9 @@ private fun SingBoxImportToProfileDialog(
             value = source,
             onValueChange = { source = it },
             label = { Text(stringResource(R.string.singbox_import_source_label)) },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp, max = 260.dp),
             singleLine = false,
+            maxLines = 10,
             supportingText = { Text(stringResource(R.string.singbox_import_source_support_hint)) },
           )
 

@@ -53,23 +53,17 @@ read workflow runs/logs
 
 Using a PAT or GitHub App token is preferred when one workflow needs to dispatch another workflow.
 
-## Why build.sh is not used
+## Workflow validation
 
-`build.sh` is for local Termux builds.
+### Why build.sh is not used
 
-The AI workflow must validate changes with the real GitHub workflow:
+`build.sh` is for local Termux builds. The AI workflow must validate changes with the real GitHub workflow:
 
 ```text
 .github/workflows/build.yml
 ```
 
-The dispatch command used by the scripts is equivalent to:
-
-```bash
-gh workflow run build.yml --ref copilot-polish -f build_type=Release
-```
-
-## How the workflow works
+### How the workflow works
 
 ```text
 1. ai-polish.yml starts from main.
@@ -84,6 +78,12 @@ gh workflow run build.yml --ref copilot-polish -f build_type=Release
 10. If build.yml fails, Copilot gets build.log and can make a minimal repair.
 11. If the repaired build passes, the repair commit stays.
 12. If validation still fails, the workflow fails and manual review is required.
+```
+
+The dispatch command used by the scripts is equivalent to:
+
+```bash
+gh workflow run build.yml --ref copilot-polish -f build_type=Release
 ```
 
 ## Safe random target selection

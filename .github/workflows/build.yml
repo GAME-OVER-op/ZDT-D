@@ -783,17 +783,22 @@ jobs:
           popd > /dev/null
 
           echo "=== Build awg (${AMNEZIAWG_TOOLS_REF}) ==="
-          make -C "$SRC/amneziawg-tools/src" \
+          pushd "$SRC/amneziawg-tools/src" > /dev/null
+          test -f uapi/linux/linux/wireguard.h || { echo "::error::AmneziaWG Linux UAPI header missing"; exit 1; }
+          grep -q 'WGDEVICE_A_JC' uapi/linux/linux/wireguard.h || { echo "::error::AmneziaWG UAPI header does not contain AWG attributes"; exit 1; }
+          export CFLAGS="-O3 -fPIE"
+          export LDFLAGS="-pie"
+          make \
             V=1 \
-            PLATFORM=android \
+            PLATFORM=linux \
             CC="$AMNEZIAWG_CC" \
-            CFLAGS="-O3 -fPIE -D__ANDROID_API__=$ANDROID_API" \
-            LDFLAGS="-pie" \
+            RUNSTATEDIR="/var/run" \
             WITH_WGQUICK=no \
             WITH_BASHCOMPLETION=no \
             WITH_SYSTEMDUNITS=no \
             wg
-          cp -f "$SRC/amneziawg-tools/src/wg" "$ARTIFACT_DIR/awg"
+          cp -f wg "$ARTIFACT_DIR/awg"
+          popd > /dev/null
 
           "$AMNEZIAWG_STRIP" --strip-unneeded "$ARTIFACT_DIR/awg" || true
           chmod 755 "$ARTIFACT_DIR/amneziawg-go" "$ARTIFACT_DIR/awg"

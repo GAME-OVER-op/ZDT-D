@@ -34,6 +34,9 @@ env:
   LZO_VERSION: "2.10"
   LZ4_VERSION: "1.10.0"
   OPENVPN_ANDROID_API_LEVEL: 24
+  AMNEZIAWG_GO_REF: "master"
+  AMNEZIAWG_TOOLS_REF: "v1.0.20260223"
+  AMNEZIAWG_ANDROID_API_LEVEL: 24
 
 permissions:
   contents: write
@@ -695,6 +698,127 @@ jobs:
           path: out/artifacts/openvpn/openvpn
           retention-days: 1
 
+
+  build_amneziawg:
+    name: Build AmneziaWG arm64
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+          cache: false
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK and build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            file \
+            git \
+            make
+
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "AMNEZIAWG_CC=$NDK_BIN/aarch64-linux-android${{ env.AMNEZIAWG_ANDROID_API_LEVEL }}-clang"
+            echo "AMNEZIAWG_STRIP=$NDK_BIN/llvm-strip"
+          } >> "$GITHUB_ENV"
+
+      - name: Build AmneziaWG from official sources
+        env:
+          ANDROID_API: ${{ env.AMNEZIAWG_ANDROID_API_LEVEL }}
+        run: |
+          set -euo pipefail
+
+          test -x "$AMNEZIAWG_CC" || { echo "::error::Android C compiler not found: $AMNEZIAWG_CC"; exit 1; }
+          test -x "$AMNEZIAWG_STRIP" || { echo "::error::Android strip not found: $AMNEZIAWG_STRIP"; exit 1; }
+          go version
+          "$AMNEZIAWG_CC" --version | head -1
+
+          WORK="$PWD/out/build/amneziawg-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/amneziawg"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official AmneziaWG sources ==="
+          git clone --depth 1 --branch "$AMNEZIAWG_GO_REF" https://github.com/amnezia-vpn/amneziawg-go "$SRC/amneziawg-go"
+          git clone --depth 1 --branch "$AMNEZIAWG_TOOLS_REF" https://github.com/amnezia-vpn/amneziawg-tools "$SRC/amneziawg-tools"
+          git -C "$SRC/amneziawg-go" rev-parse HEAD | tee "$ARTIFACT_DIR/amneziawg-go.commit"
+          git -C "$SRC/amneziawg-tools" rev-parse HEAD | tee "$ARTIFACT_DIR/amneziawg-tools.commit"
+
+          echo "=== Build amneziawg-go (${AMNEZIAWG_GO_REF}) ==="
+          pushd "$SRC/amneziawg-go" > /dev/null
+          GOOS=android \
+          GOARCH=arm64 \
+          CGO_ENABLED=0 \
+            go build \
+              -trimpath \
+              -ldflags="-s -w -buildid=" \
+              -o "$ARTIFACT_DIR/amneziawg-go" \
+              .
+          popd > /dev/null
+
+          echo "=== Build awg (${AMNEZIAWG_TOOLS_REF}) ==="
+          make -C "$SRC/amneziawg-tools/src" \
+            V=1 \
+            PLATFORM=android \
+            CC="$AMNEZIAWG_CC" \
+            CFLAGS="-O3 -fPIE -D__ANDROID_API__=$ANDROID_API" \
+            LDFLAGS="-pie" \
+            WITH_WGQUICK=no \
+            WITH_BASHCOMPLETION=no \
+            WITH_SYSTEMDUNITS=no \
+            wg
+          cp -f "$SRC/amneziawg-tools/src/wg" "$ARTIFACT_DIR/awg"
+
+          "$AMNEZIAWG_STRIP" --strip-unneeded "$ARTIFACT_DIR/awg" || true
+          chmod 755 "$ARTIFACT_DIR/amneziawg-go" "$ARTIFACT_DIR/awg"
+
+          echo "=== Verify AmneziaWG artifacts ==="
+          file "$ARTIFACT_DIR/amneziawg-go" "$ARTIFACT_DIR/awg"
+          readelf -h "$ARTIFACT_DIR/amneziawg-go" | grep -E 'Class:|Machine:'
+          readelf -h "$ARTIFACT_DIR/awg" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/amneziawg-go" | tee "$ARTIFACT_DIR/amneziawg-go.dynamic.txt" || true
+          readelf -d "$ARTIFACT_DIR/awg" | tee "$ARTIFACT_DIR/awg.dynamic.txt" || true
+          "$ARTIFACT_DIR/amneziawg-go" --version || true
+          "$ARTIFACT_DIR/awg" --version || true
+          ls -lh "$ARTIFACT_DIR"
+
+      - name: Upload AmneziaWG binaries
+        uses: actions/upload-artifact@v7
+        with:
+          name: amneziawg-arm64
+          path: |
+            out/artifacts/amneziawg/amneziawg-go
+            out/artifacts/amneziawg/awg
+            out/artifacts/amneziawg/*.commit
+            out/artifacts/amneziawg/*.dynamic.txt
+          retention-days: 1
+
   pack_module:
     name: Pack ZDT-D module
     runs-on: ubuntu-latest
@@ -702,7 +826,8 @@ jobs:
       - build_rust_binaries
       - build_zygisk
       - build_openvpn
-    if: needs.build_rust_binaries.result == 'success' && needs.build_zygisk.result == 'success' && needs.build_openvpn.result == 'success'
+      - build_amneziawg
+    if: needs.build_rust_binaries.result == 'success' && needs.build_zygisk.result == 'success' && needs.build_openvpn.result == 'success' && needs.build_amneziawg.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -728,9 +853,15 @@ jobs:
           name: openvpn-arm64
           path: out/artifacts/openvpn
 
+      - name: Download AmneziaWG binaries
+        uses: actions/download-artifact@v7
+        with:
+          name: amneziawg-arm64
+          path: out/artifacts/amneziawg
+
       - name: Check prebuilt binaries
         run: |
-          REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks mihomo amneziawg-go awg)
+          REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks mihomo)
           MISSING=()
           for bin in "${REQUIRED[@]}"; do
             [[ -f "prebuilt/bin/arm64-v8a/$bin" ]] || MISSING+=("$bin")
@@ -752,11 +883,15 @@ jobs:
           T2S_BIN="out/artifacts/rust/t2s"
           ZYGISK_SO="out/zygisk/arm64-v8a.so"
           OPENVPN_BIN="out/artifacts/openvpn/openvpn"
+          AMNEZIAWG_GO_BIN="out/artifacts/amneziawg/amneziawg-go"
+          AWG_BIN="out/artifacts/amneziawg/awg"
 
           test -s "$ZDTD_BIN" || { echo "::error::zdtd artifact missing: $ZDTD_BIN"; exit 1; }
           test -s "$T2S_BIN" || { echo "::error::t2s artifact missing: $T2S_BIN"; exit 1; }
           test -s "$ZYGISK_SO" || { echo "::error::Zygisk artifact missing: $ZYGISK_SO"; exit 1; }
           test -s "$OPENVPN_BIN" || { echo "::error::OpenVPN artifact missing: $OPENVPN_BIN"; exit 1; }
+          test -s "$AMNEZIAWG_GO_BIN" || { echo "::error::amneziawg-go artifact missing: $AMNEZIAWG_GO_BIN"; exit 1; }
+          test -s "$AWG_BIN" || { echo "::error::awg artifact missing: $AWG_BIN"; exit 1; }
 
           rm -rf out/module_build
           mkdir -p "$MODULE_BUILD_DIR" out/module
@@ -774,7 +909,9 @@ jobs:
           cp -f "$ZDTD_BIN" "$MODULE_BUILD_DIR/bin/zdtd" && chmod 755 "$MODULE_BUILD_DIR/bin/zdtd"
           cp -f "$T2S_BIN"  "$MODULE_BUILD_DIR/bin/t2s"  && chmod 755 "$MODULE_BUILD_DIR/bin/t2s"
           cp -f "$OPENVPN_BIN" "$MODULE_BUILD_DIR/bin/openvpn" && chmod 755 "$MODULE_BUILD_DIR/bin/openvpn"
-          for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks mihomo amneziawg-go awg; do
+          cp -f "$AMNEZIAWG_GO_BIN" "$MODULE_BUILD_DIR/bin/amneziawg-go" && chmod 755 "$MODULE_BUILD_DIR/bin/amneziawg-go"
+          cp -f "$AWG_BIN" "$MODULE_BUILD_DIR/bin/awg" && chmod 755 "$MODULE_BUILD_DIR/bin/awg"
+          for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks mihomo; do
             cp -f "$PREBUILT/$bin" "$MODULE_BUILD_DIR/bin/$bin" && chmod 755 "$MODULE_BUILD_DIR/bin/$bin"
           done
 

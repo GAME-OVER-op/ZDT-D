@@ -601,12 +601,12 @@ jobs:
           tar -xzf "$SRC/openvpn.tar.gz" -C "$BUILD"
           pushd "$BUILD/openvpn-${OPENVPN_VERSION}" > /dev/null
 
-          echo "=== Patch OpenVPN configure for Android libcap-ng ==="
-          python3 - <<'PY_OPENVPN_CONFIGURE_PATCH'
+          echo "=== Patch OpenVPN configure/build layout for Android ==="
+          python3 - <<'PY_OPENVPN_ANDROID_PATCH'
           from pathlib import Path
           
-          path = Path("configure.ac")
-          text = path.read_text()
+          configure_path = Path("configure.ac")
+          text = configure_path.read_text()
           marker = "Depend on libcap-ng on Linux"
           start_marker = text.find(marker)
           if start_marker < 0:
@@ -640,8 +640,20 @@ jobs:
           esac
           
           '''
-          path.write_text(text[:start] + replacement + text[end:])
-          PY_OPENVPN_CONFIGURE_PATCH
+          configure_path.write_text(text[:start] + replacement + text[end:])
+          
+          # Android module packaging needs only the standalone openvpn binary.
+          # The upstream src/Makefile.am still recurses into plugin and Windows helper
+          # subdirectories. The bundled plugin build tries to create .so files via
+          # libtool, which is not needed for this Android binary artifact.
+          src_makefile = Path("src/Makefile.am")
+          src_text = src_makefile.read_text()
+          old_subdirs = "SUBDIRS = compat openvpn openvpnmsica openvpnserv plugins tapctl"
+          new_subdirs = "SUBDIRS = compat openvpn"
+          if old_subdirs not in src_text:
+              raise SystemExit("OpenVPN src/Makefile.am SUBDIRS layout changed")
+          src_makefile.write_text(src_text.replace(old_subdirs, new_subdirs, 1))
+          PY_OPENVPN_ANDROID_PATCH
           autoreconf -fi
           
           PKG_CONFIG="pkg-config --static" ./configure \
@@ -651,7 +663,9 @@ jobs:
             --enable-management \
             --disable-shared \
             --enable-static \
+            --disable-plugins \
             --disable-plugin-auth-pam \
+            --disable-plugin-down-root \
             --disable-dco \
             --disable-pkcs11 \
             --disable-systemd \

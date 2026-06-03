@@ -28,6 +28,11 @@ env:
   CARGO_BUILD_TARGET: aarch64-linux-android
   BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
   NO_DASHBOARD: "1"
+  OPENVPN_VERSION: "2.7.4"
+  MBEDTLS_VERSION: "3.6.6"
+  LZO_VERSION: "2.10"
+  LZ4_VERSION: "1.10.0"
+  OPENVPN_ANDROID_API_LEVEL: 24
 
 permissions:
   contents: write
@@ -80,7 +85,7 @@ jobs:
               changed_files="$(git diff-tree --no-commit-id --name-only -r "$head" || true)"
             fi
 
-            if printf '%s\n' "$changed_files" | grep -Eq '^(application/|zygisk/|rust/|module_template/|prebuilt/|scripts/module/|module\.prop$)'; then
+            if printf '%s\n' "$changed_files" | grep -Eq '^(application/|zygisk/|rust/|module_template/|prebuilt/|scripts/module/|\.github/workflows/build\.yml$|module\.prop$)'; then
               paths_changed=true
               reason="Tracked build paths changed"
             fi
@@ -99,6 +104,7 @@ jobs:
             echo "- module_template/**"
             echo "- prebuilt/**"
             echo "- scripts/module/**"
+            echo "- .github/workflows/build.yml"
             echo "- module.prop"
             if [[ -n "$changed_files" ]]; then
               echo
@@ -453,13 +459,196 @@ jobs:
             prebuilt/bin/arm64-v8a/busybox.source
           retention-days: 1
 
+  build_openvpn:
+    name: Build OpenVPN arm64
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK and build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            bzip2 \
+            cmake \
+            file \
+            libtool \
+            make \
+            pkg-config \
+            xz-utils
+
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "OPENVPN_CC=$NDK_BIN/aarch64-linux-android${{ env.OPENVPN_ANDROID_API_LEVEL }}-clang"
+            echo "OPENVPN_CXX=$NDK_BIN/aarch64-linux-android${{ env.OPENVPN_ANDROID_API_LEVEL }}-clang++"
+            echo "OPENVPN_AR=$NDK_BIN/llvm-ar"
+            echo "OPENVPN_RANLIB=$NDK_BIN/llvm-ranlib"
+            echo "OPENVPN_STRIP=$NDK_BIN/llvm-strip"
+          } >> "$GITHUB_ENV"
+
+      - name: Build OpenVPN from official sources
+        env:
+          ANDROID_API: ${{ env.OPENVPN_ANDROID_API_LEVEL }}
+        run: |
+          set -euo pipefail
+
+          for tool in "$OPENVPN_CC" "$OPENVPN_CXX" "$OPENVPN_AR" "$OPENVPN_RANLIB" "$OPENVPN_STRIP"; do
+            test -x "$tool" || { echo "::error::Tool not found: $tool"; exit 1; }
+          done
+
+          WORK="$PWD/out/build/openvpn-android"
+          SRC="$WORK/src"
+          BUILD="$WORK/build"
+          PREFIX="$WORK/prefix"
+          ARTIFACT_DIR="$PWD/out/artifacts/openvpn"
+          mkdir -p "$SRC" "$BUILD" "$PREFIX" "$ARTIFACT_DIR"
+
+          export CC="$OPENVPN_CC"
+          export CXX="$OPENVPN_CXX"
+          export AR="$OPENVPN_AR"
+          export RANLIB="$OPENVPN_RANLIB"
+          export STRIP="$OPENVPN_STRIP"
+          export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
+          export CPPFLAGS="-I$PREFIX/include"
+          export CFLAGS="-Os -fPIC -fPIE -D__ANDROID_API__=$ANDROID_API"
+          export CXXFLAGS="$CFLAGS"
+          export LDFLAGS="-L$PREFIX/lib -pie"
+
+          download() {
+            local url="$1"
+            local out="$2"
+            curl -fL --retry 5 --retry-delay 3 "$url" -o "$out"
+            test -s "$out" || { echo "::error::Download failed: $url"; exit 1; }
+          }
+
+          echo "=== Download official source archives ==="
+          download "https://build.openvpn.net/downloads/releases/openvpn-${OPENVPN_VERSION}.tar.gz" "$SRC/openvpn.tar.gz"
+          download "https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-${MBEDTLS_VERSION}/mbedtls-${MBEDTLS_VERSION}.tar.bz2" "$SRC/mbedtls.tar.bz2"
+          download "https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-${MBEDTLS_VERSION}/mbedtls-${MBEDTLS_VERSION}.tar.bz2-sha256sum.txt" "$SRC/mbedtls.tar.bz2.sha256sum"
+          download "https://www.oberhumer.com/opensource/lzo/download/lzo-${LZO_VERSION}.tar.gz" "$SRC/lzo.tar.gz"
+          download "https://github.com/lz4/lz4/releases/download/v${LZ4_VERSION}/lz4-${LZ4_VERSION}.tar.gz" "$SRC/lz4.tar.gz"
+
+          (
+            cd "$SRC"
+            sed -E "s#  mbedtls-${MBEDTLS_VERSION}\.tar\.bz2#  mbedtls.tar.bz2#" mbedtls.tar.bz2.sha256sum > mbedtls.local.sha256sum
+            sha256sum -c mbedtls.local.sha256sum
+          )
+
+          echo "=== Build LZO ${LZO_VERSION} ==="
+          tar -xzf "$SRC/lzo.tar.gz" -C "$BUILD"
+          pushd "$BUILD/lzo-${LZO_VERSION}" > /dev/null
+          ./configure \
+            --host=aarch64-linux-android \
+            --prefix="$PREFIX" \
+            --enable-static \
+            --disable-shared
+          make -j"$(nproc)"
+          make install
+          popd > /dev/null
+
+          echo "=== Build LZ4 ${LZ4_VERSION} ==="
+          tar -xzf "$SRC/lz4.tar.gz" -C "$BUILD"
+          pushd "$BUILD/lz4-${LZ4_VERSION}" > /dev/null
+          make -j"$(nproc)" -C lib \
+            CC="$CC" \
+            AR="$AR" \
+            RANLIB="$RANLIB" \
+            CFLAGS="$CFLAGS" \
+            BUILD_SHARED=no \
+            liblz4.a
+          make -C lib \
+            PREFIX="$PREFIX" \
+            BUILD_SHARED=no \
+            install
+          popd > /dev/null
+
+          echo "=== Build Mbed TLS ${MBEDTLS_VERSION} ==="
+          tar -xjf "$SRC/mbedtls.tar.bz2" -C "$BUILD"
+          cmake -S "$BUILD/mbedtls-${MBEDTLS_VERSION}" -B "$BUILD/mbedtls-build" \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK_ROOT/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM="android-${ANDROID_API}" \
+            -DCMAKE_BUILD_TYPE=MinSizeRel \
+            -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+            -DENABLE_PROGRAMS=OFF \
+            -DENABLE_TESTING=OFF \
+            -DUSE_SHARED_MBEDTLS_LIBRARY=OFF \
+            -DUSE_STATIC_MBEDTLS_LIBRARY=ON
+          cmake --build "$BUILD/mbedtls-build" --target install --parallel "$(nproc)"
+
+          echo "=== Build OpenVPN ${OPENVPN_VERSION} ==="
+          tar -xzf "$SRC/openvpn.tar.gz" -C "$BUILD"
+          pushd "$BUILD/openvpn-${OPENVPN_VERSION}" > /dev/null
+          PKG_CONFIG="pkg-config --static" ./configure \
+            --host=aarch64-linux-android \
+            --prefix="$PREFIX/openvpn" \
+            --with-crypto-library=mbedtls \
+            --enable-management \
+            --disable-shared \
+            --enable-static \
+            --disable-plugin-auth-pam \
+            --disable-dco \
+            --disable-pkcs11 \
+            --disable-systemd \
+            --disable-debug
+          make -j"$(nproc)" V=1
+          cp -f src/openvpn/openvpn "$ARTIFACT_DIR/openvpn"
+          popd > /dev/null
+
+          "$STRIP" --strip-unneeded "$ARTIFACT_DIR/openvpn" || true
+          chmod 755 "$ARTIFACT_DIR/openvpn"
+
+          echo "=== Verify OpenVPN artifact ==="
+          file "$ARTIFACT_DIR/openvpn"
+          readelf -h "$ARTIFACT_DIR/openvpn" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/openvpn" | tee "$ARTIFACT_DIR/openvpn.dynamic.txt" || true
+          if readelf -d "$ARTIFACT_DIR/openvpn" 2>/dev/null | grep -E 'NEEDED.*(libmbedtls|libmbedx509|libmbedcrypto|liblzo|liblz4|libssl|libcrypto)' >/dev/null; then
+            echo "::error::OpenVPN must not depend on external crypto/compression shared libraries"
+            exit 1
+          fi
+          strings "$ARTIFACT_DIR/openvpn" | grep -E 'OpenVPN|mbed TLS|LZO|LZ4' | head -40 || true
+          ls -lh "$ARTIFACT_DIR/openvpn"
+
+      - name: Upload OpenVPN binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: openvpn-arm64
+          path: out/artifacts/openvpn/openvpn
+          retention-days: 1
+
   pack_module:
     name: Pack ZDT-D module
     runs-on: ubuntu-latest
     needs:
       - build_rust_binaries
       - build_zygisk
-    if: needs.build_rust_binaries.result == 'success' && needs.build_zygisk.result == 'success'
+      - build_openvpn
+    if: needs.build_rust_binaries.result == 'success' && needs.build_zygisk.result == 'success' && needs.build_openvpn.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -479,9 +668,15 @@ jobs:
           name: zygisk-arm64
           path: out/zygisk
 
+      - name: Download OpenVPN binary
+        uses: actions/download-artifact@v7
+        with:
+          name: openvpn-arm64
+          path: out/artifacts/openvpn
+
       - name: Check prebuilt binaries
         run: |
-          REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg)
+          REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks mihomo amneziawg-go awg)
           MISSING=()
           for bin in "${REQUIRED[@]}"; do
             [[ -f "prebuilt/bin/arm64-v8a/$bin" ]] || MISSING+=("$bin")
@@ -502,10 +697,12 @@ jobs:
           ZDTD_BIN="out/artifacts/rust/zdtd"
           T2S_BIN="out/artifacts/rust/t2s"
           ZYGISK_SO="out/zygisk/arm64-v8a.so"
+          OPENVPN_BIN="out/artifacts/openvpn/openvpn"
 
           test -s "$ZDTD_BIN" || { echo "::error::zdtd artifact missing: $ZDTD_BIN"; exit 1; }
           test -s "$T2S_BIN" || { echo "::error::t2s artifact missing: $T2S_BIN"; exit 1; }
           test -s "$ZYGISK_SO" || { echo "::error::Zygisk artifact missing: $ZYGISK_SO"; exit 1; }
+          test -s "$OPENVPN_BIN" || { echo "::error::OpenVPN artifact missing: $OPENVPN_BIN"; exit 1; }
 
           rm -rf out/module_build
           mkdir -p "$MODULE_BUILD_DIR" out/module
@@ -522,7 +719,8 @@ jobs:
 
           cp -f "$ZDTD_BIN" "$MODULE_BUILD_DIR/bin/zdtd" && chmod 755 "$MODULE_BUILD_DIR/bin/zdtd"
           cp -f "$T2S_BIN"  "$MODULE_BUILD_DIR/bin/t2s"  && chmod 755 "$MODULE_BUILD_DIR/bin/t2s"
-          for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg; do
+          cp -f "$OPENVPN_BIN" "$MODULE_BUILD_DIR/bin/openvpn" && chmod 755 "$MODULE_BUILD_DIR/bin/openvpn"
+          for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks mihomo amneziawg-go awg; do
             cp -f "$PREBUILT/$bin" "$MODULE_BUILD_DIR/bin/$bin" && chmod 755 "$MODULE_BUILD_DIR/bin/$bin"
           done
 

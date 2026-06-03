@@ -37,6 +37,7 @@ env:
   AMNEZIAWG_GO_REF: "master"
   AMNEZIAWG_TOOLS_REF: "v1.0.20260223"
   AMNEZIAWG_ANDROID_API_LEVEL: 24
+  WIREPROXY_REF: "v1.1.2"
 
 permissions:
   contents: write
@@ -824,6 +825,72 @@ jobs:
             out/artifacts/amneziawg/*.dynamic.txt
           retention-days: 1
 
+
+  build_wireproxy:
+    name: Build wireproxy arm64
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+          cache: false
+
+      - name: Build wireproxy from official source
+        run: |
+          set -euo pipefail
+
+          go version
+
+          WORK="$PWD/out/build/wireproxy-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/wireproxy"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official wireproxy source ==="
+          git clone --depth 1 --branch "$WIREPROXY_REF" https://github.com/windtf/wireproxy "$SRC/wireproxy"
+          git -C "$SRC/wireproxy" rev-parse HEAD | tee "$ARTIFACT_DIR/wireproxy.commit"
+
+          echo "=== Build wireproxy (${WIREPROXY_REF}) ==="
+          pushd "$SRC/wireproxy" > /dev/null
+          GOOS=android \
+          GOARCH=arm64 \
+          CGO_ENABLED=0 \
+            go build \
+              -trimpath \
+              -ldflags="-s -w -buildid=" \
+              -o "$ARTIFACT_DIR/wireproxy" \
+              ./cmd/wireproxy
+          popd > /dev/null
+
+          chmod 755 "$ARTIFACT_DIR/wireproxy"
+
+          echo "=== Verify wireproxy artifact ==="
+          file "$ARTIFACT_DIR/wireproxy"
+          readelf -h "$ARTIFACT_DIR/wireproxy" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/wireproxy" | tee "$ARTIFACT_DIR/wireproxy.dynamic.txt" || true
+          "$ARTIFACT_DIR/wireproxy" --version || true
+          "$ARTIFACT_DIR/wireproxy" -h || true
+          ls -lh "$ARTIFACT_DIR"
+
+      - name: Upload wireproxy binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: wireproxy-arm64
+          path: |
+            out/artifacts/wireproxy/wireproxy
+            out/artifacts/wireproxy/wireproxy.commit
+            out/artifacts/wireproxy/wireproxy.dynamic.txt
+          retention-days: 1
+
   pack_module:
     name: Pack ZDT-D module
     runs-on: ubuntu-latest
@@ -832,7 +899,8 @@ jobs:
       - build_zygisk
       - build_openvpn
       - build_amneziawg
-    if: needs.build_rust_binaries.result == 'success' && needs.build_zygisk.result == 'success' && needs.build_openvpn.result == 'success' && needs.build_amneziawg.result == 'success'
+      - build_wireproxy
+    if: needs.build_rust_binaries.result == 'success' && needs.build_zygisk.result == 'success' && needs.build_openvpn.result == 'success' && needs.build_amneziawg.result == 'success' && needs.build_wireproxy.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -864,9 +932,15 @@ jobs:
           name: amneziawg-arm64
           path: out/artifacts/amneziawg
 
+      - name: Download wireproxy binary
+        uses: actions/download-artifact@v7
+        with:
+          name: wireproxy-arm64
+          path: out/artifacts/wireproxy
+
       - name: Check prebuilt binaries
         run: |
-          REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks mihomo)
+          REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru torproxy lyrebird tun2socks mihomo)
           MISSING=()
           for bin in "${REQUIRED[@]}"; do
             [[ -f "prebuilt/bin/arm64-v8a/$bin" ]] || MISSING+=("$bin")
@@ -890,6 +964,7 @@ jobs:
           OPENVPN_BIN="out/artifacts/openvpn/openvpn"
           AMNEZIAWG_GO_BIN="out/artifacts/amneziawg/amneziawg-go"
           AWG_BIN="out/artifacts/amneziawg/awg"
+          WIREPROXY_BIN="out/artifacts/wireproxy/wireproxy"
 
           test -s "$ZDTD_BIN" || { echo "::error::zdtd artifact missing: $ZDTD_BIN"; exit 1; }
           test -s "$T2S_BIN" || { echo "::error::t2s artifact missing: $T2S_BIN"; exit 1; }
@@ -897,6 +972,7 @@ jobs:
           test -s "$OPENVPN_BIN" || { echo "::error::OpenVPN artifact missing: $OPENVPN_BIN"; exit 1; }
           test -s "$AMNEZIAWG_GO_BIN" || { echo "::error::amneziawg-go artifact missing: $AMNEZIAWG_GO_BIN"; exit 1; }
           test -s "$AWG_BIN" || { echo "::error::awg artifact missing: $AWG_BIN"; exit 1; }
+          test -s "$WIREPROXY_BIN" || { echo "::error::wireproxy artifact missing: $WIREPROXY_BIN"; exit 1; }
 
           rm -rf out/module_build
           mkdir -p "$MODULE_BUILD_DIR" out/module
@@ -916,7 +992,8 @@ jobs:
           cp -f "$OPENVPN_BIN" "$MODULE_BUILD_DIR/bin/openvpn" && chmod 755 "$MODULE_BUILD_DIR/bin/openvpn"
           cp -f "$AMNEZIAWG_GO_BIN" "$MODULE_BUILD_DIR/bin/amneziawg-go" && chmod 755 "$MODULE_BUILD_DIR/bin/amneziawg-go"
           cp -f "$AWG_BIN" "$MODULE_BUILD_DIR/bin/awg" && chmod 755 "$MODULE_BUILD_DIR/bin/awg"
-          for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru wireproxy torproxy lyrebird tun2socks mihomo; do
+          cp -f "$WIREPROXY_BIN" "$MODULE_BUILD_DIR/bin/wireproxy" && chmod 755 "$MODULE_BUILD_DIR/bin/wireproxy"
+          for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru torproxy lyrebird tun2socks mihomo; do
             cp -f "$PREBUILT/$bin" "$MODULE_BUILD_DIR/bin/$bin" && chmod 755 "$MODULE_BUILD_DIR/bin/$bin"
           done
 

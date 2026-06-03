@@ -30,6 +30,7 @@ env:
   NO_DASHBOARD: "1"
   OPENVPN_VERSION: "2.7.4"
   MBEDTLS_VERSION: "3.6.6"
+  MBEDTLS_SHA256: "8fb65fae8dcae5840f793c0a334860a411f884cc537ea290ce1c52bb64ca007a"
   LZO_VERSION: "2.10"
   LZ4_VERSION: "1.10.0"
   OPENVPN_ANDROID_API_LEVEL: 24
@@ -549,15 +550,10 @@ jobs:
           echo "=== Download official source archives ==="
           download "https://build.openvpn.net/downloads/releases/openvpn-${OPENVPN_VERSION}.tar.gz" "$SRC/openvpn.tar.gz"
           download "https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-${MBEDTLS_VERSION}/mbedtls-${MBEDTLS_VERSION}.tar.bz2" "$SRC/mbedtls.tar.bz2"
-          download "https://github.com/Mbed-TLS/mbedtls/releases/download/mbedtls-${MBEDTLS_VERSION}/mbedtls-${MBEDTLS_VERSION}.tar.bz2-sha256sum.txt" "$SRC/mbedtls.tar.bz2.sha256sum"
           download "https://www.oberhumer.com/opensource/lzo/download/lzo-${LZO_VERSION}.tar.gz" "$SRC/lzo.tar.gz"
           download "https://github.com/lz4/lz4/releases/download/v${LZ4_VERSION}/lz4-${LZ4_VERSION}.tar.gz" "$SRC/lz4.tar.gz"
 
-          (
-            cd "$SRC"
-            sed -E "s#  mbedtls-${MBEDTLS_VERSION}\.tar\.bz2#  mbedtls.tar.bz2#" mbedtls.tar.bz2.sha256sum > mbedtls.local.sha256sum
-            sha256sum -c mbedtls.local.sha256sum
-          )
+          echo "${MBEDTLS_SHA256}  $SRC/mbedtls.tar.bz2" | sha256sum -c -
 
           echo "=== Build LZO ${LZO_VERSION} ==="
           tar -xzf "$SRC/lzo.tar.gz" -C "$BUILD"

@@ -600,6 +600,50 @@ jobs:
           echo "=== Build OpenVPN ${OPENVPN_VERSION} ==="
           tar -xzf "$SRC/openvpn.tar.gz" -C "$BUILD"
           pushd "$BUILD/openvpn-${OPENVPN_VERSION}" > /dev/null
+
+          echo "=== Patch OpenVPN configure for Android libcap-ng ==="
+          python3 - <<'PY_OPENVPN_CONFIGURE_PATCH'
+          from pathlib import Path
+          
+          path = Path("configure.ac")
+          text = path.read_text()
+          marker = "Depend on libcap-ng on Linux"
+          start_marker = text.find(marker)
+          if start_marker < 0:
+              raise SystemExit("libcap-ng block marker not found in configure.ac")
+          start = text.rfind("dnl\n", 0, start_marker)
+          end_marker = 'if test "${with_crypto_library}" = "openssl"; then'
+          end = text.find(end_marker, start_marker)
+          if start < 0 or end < 0:
+              raise SystemExit("unable to locate libcap-ng block bounds in configure.ac")
+          
+          replacement = '''dnl
+          dnl Depend on libcap-ng on Linux, except Android cross builds.  Android root
+          dnl modules run as root and the NDK sysroot does not provide libcap-ng.
+          dnl
+          case "$host" in
+          	*-*-linux*android*)
+          		AC_MSG_NOTICE([Skipping libcap-ng for Android cross build])
+          		;;
+          	*-*-linux*)
+          		PKG_CHECK_MODULES([LIBCAPNG],
+          				  [libcap-ng],
+          				  [],
+          				  [AC_MSG_ERROR([libcap-ng package not found.
+          Is the development package and pkg-config ${pkg_config_found} installed?])]
+          		)
+          		AC_CHECK_HEADER([sys/prctl.h],,[AC_MSG_ERROR([sys/prctl.h not found!])])
+          		OPTIONAL_LIBCAPNG_CFLAGS="${LIBCAPNG_CFLAGS}"
+          		OPTIONAL_LIBCAPNG_LIBS="${LIBCAPNG_LIBS}"
+          		AC_DEFINE(HAVE_LIBCAPNG, 1, [Enable libcap-ng support])
+          		;;
+          esac
+          
+          '''
+          path.write_text(text[:start] + replacement + text[end:])
+          PY_OPENVPN_CONFIGURE_PATCH
+          autoreconf -fi
+          
           PKG_CONFIG="pkg-config --static" ./configure \
             --host=aarch64-linux-android \
             --prefix="$PREFIX/openvpn" \

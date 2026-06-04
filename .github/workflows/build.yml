@@ -247,8 +247,8 @@ jobs:
           echo "should_build=$should_build"
           echo "reason=$reason"
 
-  build_rust_binaries:
-    name: Build Rust binaries
+  build_zdtd:
+    name: Build zdtd
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -308,16 +308,16 @@ jobs:
           ar = "$ANDROID_AR"
           EOF2
 
-      - name: Cache Cargo registry and Rust target
+      - name: Cache Cargo registry and zdtd target
         uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: cargo-rust-binaries-aarch64-linux-android-${{ hashFiles('rust/**/Cargo.lock') }}
+          key: cargo-zdtd-aarch64-linux-android-${{ hashFiles('rust/Cargo.lock', 'rust/zdtd/Cargo.toml') }}
           restore-keys: |
-            cargo-rust-binaries-aarch64-linux-android-
+            cargo-zdtd-aarch64-linux-android-
             cargo-aarch64-linux-android-
 
       - name: Verify Android Rust cross toolchain
@@ -330,7 +330,7 @@ jobs:
           cargo -V
           rustc -V
 
-      - name: Build all Rust binaries
+      - name: Build zdtd
         env:
           CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
           RUSTUP_HOME: ""
@@ -341,28 +341,362 @@ jobs:
         run: |
           set -euo pipefail
           cargo build --manifest-path rust/zdtd/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
-          cargo build --manifest-path rust/T2s/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
-          cargo build --manifest-path rust/dpi-detector/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
-          cargo build --manifest-path rust/nfqws-tester/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
 
-      - name: Collect Rust binaries
+      - name: Collect zdtd
         run: |
           set -euo pipefail
-          SRC="rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}"
-          DST="out/artifacts/rust"
+          SRC="rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}/zdtd"
+          DST="out/artifacts/zdtd"
+          test -s "$SRC" || { echo "::error::zdtd artifact missing after build: $SRC"; exit 1; }
           mkdir -p "$DST"
-          cp -f "$SRC/zdtd" "$DST/zdtd"
-          cp -f "$SRC/t2s" "$DST/t2s"
-          cp -f "$SRC/dpi-detector" "$DST/dpi-detector"
-          cp -f "$SRC/nfqws-tester" "$DST/nfqws-tester"
-          chmod 755 "$DST/zdtd" "$DST/t2s" "$DST/dpi-detector" "$DST/nfqws-tester"
-          ls -lh "$DST"
+          cp -f "$SRC" "$DST/zdtd"
+          chmod 755 "$DST/zdtd"
+          ls -lh "$DST/zdtd"
 
-      - name: Upload Rust binaries
+      - name: Upload zdtd binary
         uses: actions/upload-artifact@v7
         with:
-          name: zdt-rust-binaries
-          path: out/artifacts/rust/
+          name: zdtd-arm64
+          path: out/artifacts/zdtd/zdtd
+          retention-days: 1
+
+  build_t2s:
+    name: Build T2S
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install Android NDK cross-linker
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          ANDROID_CC="$NDK_BIN/aarch64-linux-android21-clang"
+          ANDROID_CXX="$NDK_BIN/aarch64-linux-android21-clang++"
+          ANDROID_AR="$NDK_BIN/llvm-ar"
+          ANDROID_RANLIB="$NDK_BIN/llvm-ranlib"
+
+          test -x "$ANDROID_CC" || { echo "::error::Android C compiler not found: $ANDROID_CC"; exit 1; }
+          test -x "$ANDROID_CXX" || { echo "::error::Android C++ compiler not found: $ANDROID_CXX"; exit 1; }
+          test -x "$ANDROID_AR" || { echo "::error::Android archiver not found: $ANDROID_AR"; exit 1; }
+          test -x "$ANDROID_RANLIB" || { echo "::error::Android ranlib not found: $ANDROID_RANLIB"; exit 1; }
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_CC"
+            echo "CC_aarch64_linux_android=$ANDROID_CC"
+            echo "CXX_aarch64_linux_android=$ANDROID_CXX"
+            echo "AR_aarch64_linux_android=$ANDROID_AR"
+            echo "RANLIB_aarch64_linux_android=$ANDROID_RANLIB"
+          } >> "$GITHUB_ENV"
+
+          mkdir -p ~/.cargo
+          cat >> ~/.cargo/config.toml <<EOF2
+          [target.aarch64-linux-android]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
+          EOF2
+
+      - name: Cache Cargo registry and t2s target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-t2s-aarch64-linux-android-${{ hashFiles('rust/Cargo.lock', 'rust/T2s/Cargo.toml') }}
+          restore-keys: |
+            cargo-t2s-aarch64-linux-android-
+            cargo-aarch64-linux-android-
+
+      - name: Verify Android Rust cross toolchain
+        run: |
+          set -euo pipefail
+          echo "NDK_ROOT=$NDK_ROOT"
+          "$CC_aarch64_linux_android" --version | head -1
+          "$AR_aarch64_linux_android" --version | head -1
+          rustc --print target-list | grep -qx '${{ env.CARGO_BUILD_TARGET }}'
+          cargo -V
+          rustc -V
+
+      - name: Build t2s
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
+          RUSTUP_HOME: ""
+          RUSTUP_TOOLCHAIN: ""
+          RUSTFLAGS: ""
+          CARGO_ENCODED_RUSTFLAGS: ""
+          RUSTC_WRAPPER: ""
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path rust/T2s/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
+
+      - name: Collect t2s
+        run: |
+          set -euo pipefail
+          SRC="rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}/t2s"
+          DST="out/artifacts/t2s"
+          test -s "$SRC" || { echo "::error::t2s artifact missing after build: $SRC"; exit 1; }
+          mkdir -p "$DST"
+          cp -f "$SRC" "$DST/t2s"
+          chmod 755 "$DST/t2s"
+          ls -lh "$DST/t2s"
+
+      - name: Upload t2s binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: t2s-arm64
+          path: out/artifacts/t2s/t2s
+          retention-days: 1
+
+  build_dpi_detector:
+    name: Build dpi-detector
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install Android NDK cross-linker
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          ANDROID_CC="$NDK_BIN/aarch64-linux-android21-clang"
+          ANDROID_CXX="$NDK_BIN/aarch64-linux-android21-clang++"
+          ANDROID_AR="$NDK_BIN/llvm-ar"
+          ANDROID_RANLIB="$NDK_BIN/llvm-ranlib"
+
+          test -x "$ANDROID_CC" || { echo "::error::Android C compiler not found: $ANDROID_CC"; exit 1; }
+          test -x "$ANDROID_CXX" || { echo "::error::Android C++ compiler not found: $ANDROID_CXX"; exit 1; }
+          test -x "$ANDROID_AR" || { echo "::error::Android archiver not found: $ANDROID_AR"; exit 1; }
+          test -x "$ANDROID_RANLIB" || { echo "::error::Android ranlib not found: $ANDROID_RANLIB"; exit 1; }
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_CC"
+            echo "CC_aarch64_linux_android=$ANDROID_CC"
+            echo "CXX_aarch64_linux_android=$ANDROID_CXX"
+            echo "AR_aarch64_linux_android=$ANDROID_AR"
+            echo "RANLIB_aarch64_linux_android=$ANDROID_RANLIB"
+          } >> "$GITHUB_ENV"
+
+          mkdir -p ~/.cargo
+          cat >> ~/.cargo/config.toml <<EOF2
+          [target.aarch64-linux-android]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
+          EOF2
+
+      - name: Cache Cargo registry and dpi-detector target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-dpi-detector-aarch64-linux-android-${{ hashFiles('rust/Cargo.lock', 'rust/dpi-detector/Cargo.toml') }}
+          restore-keys: |
+            cargo-dpi-detector-aarch64-linux-android-
+            cargo-aarch64-linux-android-
+
+      - name: Verify Android Rust cross toolchain
+        run: |
+          set -euo pipefail
+          echo "NDK_ROOT=$NDK_ROOT"
+          "$CC_aarch64_linux_android" --version | head -1
+          "$AR_aarch64_linux_android" --version | head -1
+          rustc --print target-list | grep -qx '${{ env.CARGO_BUILD_TARGET }}'
+          cargo -V
+          rustc -V
+
+      - name: Build dpi-detector
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
+          RUSTUP_HOME: ""
+          RUSTUP_TOOLCHAIN: ""
+          RUSTFLAGS: ""
+          CARGO_ENCODED_RUSTFLAGS: ""
+          RUSTC_WRAPPER: ""
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path rust/dpi-detector/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
+
+      - name: Collect dpi-detector
+        run: |
+          set -euo pipefail
+          SRC="rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}/dpi-detector"
+          DST="out/artifacts/dpi-detector"
+          test -s "$SRC" || { echo "::error::dpi-detector artifact missing after build: $SRC"; exit 1; }
+          mkdir -p "$DST"
+          cp -f "$SRC" "$DST/dpi-detector"
+          chmod 755 "$DST/dpi-detector"
+          ls -lh "$DST/dpi-detector"
+
+      - name: Upload dpi-detector binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: dpi-detector-arm64
+          path: out/artifacts/dpi-detector/dpi-detector
+          retention-days: 1
+
+  build_nfqws_tester:
+    name: Build nfqws-tester
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Install Android NDK cross-linker
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          ANDROID_CC="$NDK_BIN/aarch64-linux-android21-clang"
+          ANDROID_CXX="$NDK_BIN/aarch64-linux-android21-clang++"
+          ANDROID_AR="$NDK_BIN/llvm-ar"
+          ANDROID_RANLIB="$NDK_BIN/llvm-ranlib"
+
+          test -x "$ANDROID_CC" || { echo "::error::Android C compiler not found: $ANDROID_CC"; exit 1; }
+          test -x "$ANDROID_CXX" || { echo "::error::Android C++ compiler not found: $ANDROID_CXX"; exit 1; }
+          test -x "$ANDROID_AR" || { echo "::error::Android archiver not found: $ANDROID_AR"; exit 1; }
+          test -x "$ANDROID_RANLIB" || { echo "::error::Android ranlib not found: $ANDROID_RANLIB"; exit 1; }
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_CC"
+            echo "CC_aarch64_linux_android=$ANDROID_CC"
+            echo "CXX_aarch64_linux_android=$ANDROID_CXX"
+            echo "AR_aarch64_linux_android=$ANDROID_AR"
+            echo "RANLIB_aarch64_linux_android=$ANDROID_RANLIB"
+          } >> "$GITHUB_ENV"
+
+          mkdir -p ~/.cargo
+          cat >> ~/.cargo/config.toml <<EOF2
+          [target.aarch64-linux-android]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
+          EOF2
+
+      - name: Cache Cargo registry and nfqws-tester target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-nfqws-tester-aarch64-linux-android-${{ hashFiles('rust/Cargo.lock', 'rust/nfqws-tester/Cargo.toml') }}
+          restore-keys: |
+            cargo-nfqws-tester-aarch64-linux-android-
+            cargo-aarch64-linux-android-
+
+      - name: Verify Android Rust cross toolchain
+        run: |
+          set -euo pipefail
+          echo "NDK_ROOT=$NDK_ROOT"
+          "$CC_aarch64_linux_android" --version | head -1
+          "$AR_aarch64_linux_android" --version | head -1
+          rustc --print target-list | grep -qx '${{ env.CARGO_BUILD_TARGET }}'
+          cargo -V
+          rustc -V
+
+      - name: Build nfqws-tester
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
+          RUSTUP_HOME: ""
+          RUSTUP_TOOLCHAIN: ""
+          RUSTFLAGS: ""
+          CARGO_ENCODED_RUSTFLAGS: ""
+          RUSTC_WRAPPER: ""
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path rust/nfqws-tester/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
+
+      - name: Collect nfqws-tester
+        run: |
+          set -euo pipefail
+          SRC="rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}/nfqws-tester"
+          DST="out/artifacts/nfqws-tester"
+          test -s "$SRC" || { echo "::error::nfqws-tester artifact missing after build: $SRC"; exit 1; }
+          mkdir -p "$DST"
+          cp -f "$SRC" "$DST/nfqws-tester"
+          chmod 755 "$DST/nfqws-tester"
+          ls -lh "$DST/nfqws-tester"
+
+      - name: Upload nfqws-tester binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: nfqws-tester-arm64
+          path: out/artifacts/nfqws-tester/nfqws-tester
           retention-days: 1
 
   build_zygisk:
@@ -1379,14 +1713,15 @@ jobs:
     name: Pack ZDT-D module
     runs-on: ubuntu-latest
     needs:
-      - build_rust_binaries
+      - build_zdtd
+      - build_t2s
       - build_zygisk
       - build_openvpn
       - build_amneziawg
       - build_wireproxy
       - build_nfqws
       - build_nfqws2
-    if: needs.build_rust_binaries.result == 'success' && needs.build_zygisk.result == 'success' && needs.build_openvpn.result == 'success' && needs.build_amneziawg.result == 'success' && needs.build_wireproxy.result == 'success' && needs.build_nfqws.result == 'success' && needs.build_nfqws2.result == 'success'
+    if: needs.build_zdtd.result == 'success' && needs.build_t2s.result == 'success' && needs.build_zygisk.result == 'success' && needs.build_openvpn.result == 'success' && needs.build_amneziawg.result == 'success' && needs.build_wireproxy.result == 'success' && needs.build_nfqws.result == 'success' && needs.build_nfqws2.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -1394,11 +1729,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download Rust binaries
+      - name: Download zdtd binary
         uses: actions/download-artifact@v7
         with:
-          name: zdt-rust-binaries
-          path: out/artifacts/rust
+          name: zdtd-arm64
+          path: out/artifacts/zdtd
+
+      - name: Download T2S binary
+        uses: actions/download-artifact@v7
+        with:
+          name: t2s-arm64
+          path: out/artifacts/t2s
 
       - name: Download Zygisk binary
         uses: actions/download-artifact@v7
@@ -1456,8 +1797,8 @@ jobs:
           MODULE_BUILD_DIR="out/module_build/module_root"
           MODULE_ZIP="out/module/zdt_module.zip"
           PREBUILT="prebuilt/bin/arm64-v8a"
-          ZDTD_BIN="out/artifacts/rust/zdtd"
-          T2S_BIN="out/artifacts/rust/t2s"
+          ZDTD_BIN="out/artifacts/zdtd/zdtd"
+          T2S_BIN="out/artifacts/t2s/t2s"
           ZYGISK_SO="out/zygisk/arm64-v8a.so"
           OPENVPN_BIN="out/artifacts/openvpn/openvpn"
           AMNEZIAWG_GO_BIN="out/artifacts/amneziawg/amneziawg-go"
@@ -1550,9 +1891,10 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - pack_module
-      - build_rust_binaries
+      - build_dpi_detector
+      - build_nfqws_tester
       - build_busybox
-    if: needs.pack_module.result == 'success' && needs.build_rust_binaries.result == 'success' && needs.build_busybox.result == 'success'
+    if: needs.pack_module.result == 'success' && needs.build_dpi_detector.result == 'success' && needs.build_nfqws_tester.result == 'success' && needs.build_busybox.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -1598,11 +1940,17 @@ jobs:
           name: zdt-module-zip
           path: out/module
 
-      - name: Download Rust binaries
+      - name: Download dpi-detector binary
         uses: actions/download-artifact@v7
         with:
-          name: zdt-rust-binaries
-          path: out/artifacts/rust
+          name: dpi-detector-arm64
+          path: out/artifacts/dpi-detector
+
+      - name: Download nfqws-tester binary
+        uses: actions/download-artifact@v7
+        with:
+          name: nfqws-tester-arm64
+          path: out/artifacts/nfqws-tester
 
       - name: Download BusyBox binary
         uses: actions/download-artifact@v7
@@ -1671,7 +2019,7 @@ jobs:
       - name: Prepare dpi-detector APK asset
         run: |
           set -euo pipefail
-          SRC="out/artifacts/rust/dpi-detector"
+          SRC="out/artifacts/dpi-detector/dpi-detector"
           DST="application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector"
           test -s "$SRC" || { echo "::error::dpi-detector artifact missing: $SRC"; exit 1; }
           mkdir -p "$(dirname "$DST")"
@@ -1682,7 +2030,7 @@ jobs:
       - name: Prepare nfqws_tester APK asset
         run: |
           set -euo pipefail
-          SRC="out/artifacts/rust/nfqws-tester"
+          SRC="out/artifacts/nfqws-tester/nfqws-tester"
           DST="application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester"
           test -s "$SRC" || { echo "::error::nfqws_tester artifact missing: $SRC"; exit 1; }
           mkdir -p "$(dirname "$DST")"

@@ -986,7 +986,7 @@ fn spawn_amneziawg(plan: &ProfilePlan) -> Result<()> {
     let mut cmd = Command::new(AWG_GO_BIN);
     cmd.arg("-f")
         .arg(&plan.setting.tun)
-        .current_dir(&plan.profile_dir)
+        .current_dir(AMNEZIAWG_ROOT)
         .env("WG_PROCESS_FOREGROUND", "1")
         .env("LOG_LEVEL", "error")
         .stdin(Stdio::null())

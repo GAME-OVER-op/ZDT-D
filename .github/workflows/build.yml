@@ -39,6 +39,7 @@ env:
   AMNEZIAWG_ANDROID_API_LEVEL: 24
   AMNEZIAWG_UAPI_RUN_DIR: "/data/adb/modules/ZDT-D/working_folder/amneziawg/run"
   AMNEZIAWG_UAPI_SOCKET_DIR: "/data/adb/modules/ZDT-D/working_folder/amneziawg/run/amneziawg"
+  AMNEZIAWG_GO_UAPI_SOCKET_DIR: "run/amneziawg"
   WIREPROXY_REF: "v1.1.2"
 
 permissions:
@@ -780,15 +781,17 @@ jobs:
           from pathlib import Path
           import os
           
-          socket_dir = os.environ["AMNEZIAWG_UAPI_SOCKET_DIR"]
+          go_socket_dir = os.environ["AMNEZIAWG_GO_UAPI_SOCKET_DIR"]
           replacements = {
-              "/var/run/amneziawg": socket_dir,
-              "/run/amneziawg": socket_dir,
-              "/var/run/wireguard": socket_dir,
-              "/run/wireguard": socket_dir,
+              "/var/run/amneziawg": go_socket_dir,
+              "/run/amneziawg": go_socket_dir,
+              "/var/run/wireguard": go_socket_dir,
+              "/run/wireguard": go_socket_dir,
           }
           # amneziawg-tools keeps its UAPI path build-time controlled through RUNSTATEDIR.
-          # Patch amneziawg-go source constants so the daemon creates sockets in writable module storage.
+          # Patch amneziawg-go to use a path relative to AMNEZIAWG_ROOT. The Android
+          # runtime opens the socket below cwd, so an absolute path would be doubled
+          # into .../amneziawg/data/adb/modules/... on device.
           base = Path(os.environ["SRC"]) / "amneziawg-go"
           changed = 0
           for path in base.rglob("*"):
@@ -806,7 +809,7 @@ jobs:
                   changed += 1
           print(f"patched amneziawg-go files: {changed}")
           PYAMNEZIA
-          grep -RInE "$AMNEZIAWG_UAPI_SOCKET_DIR|$AMNEZIAWG_UAPI_RUN_DIR|/var/run/(amneziawg|wireguard)|/run/(amneziawg|wireguard)" "$SRC/amneziawg-go" "$SRC/amneziawg-tools/src" || true
+          grep -RInE "$AMNEZIAWG_GO_UAPI_SOCKET_DIR|$AMNEZIAWG_UAPI_SOCKET_DIR|$AMNEZIAWG_UAPI_RUN_DIR|/var/run/(amneziawg|wireguard)|/run/(amneziawg|wireguard)" "$SRC/amneziawg-go" "$SRC/amneziawg-tools/src" || true
 
           echo "=== Build amneziawg-go (${AMNEZIAWG_GO_REF}) ==="
           pushd "$SRC/amneziawg-go" > /dev/null
@@ -849,10 +852,14 @@ jobs:
           readelf -d "$ARTIFACT_DIR/awg" | tee "$ARTIFACT_DIR/awg.dynamic.txt" || true
           strings "$ARTIFACT_DIR/amneziawg-go" > "$ARTIFACT_DIR/amneziawg-go.strings.txt"
           strings "$ARTIFACT_DIR/awg" > "$ARTIFACT_DIR/awg.strings.txt"
-          grep -F "$AMNEZIAWG_UAPI_SOCKET_DIR" "$ARTIFACT_DIR/amneziawg-go.strings.txt" | head -5
+          grep -F "$AMNEZIAWG_GO_UAPI_SOCKET_DIR" "$ARTIFACT_DIR/amneziawg-go.strings.txt" | head -5
           grep -F "$AMNEZIAWG_UAPI_RUN_DIR" "$ARTIFACT_DIR/awg.strings.txt" | head -5
-          grep -Fq "$AMNEZIAWG_UAPI_SOCKET_DIR" "$ARTIFACT_DIR/amneziawg-go.strings.txt" || { echo "::error::amneziawg-go does not contain Android UAPI socket dir"; exit 1; }
+          grep -Fq "$AMNEZIAWG_GO_UAPI_SOCKET_DIR" "$ARTIFACT_DIR/amneziawg-go.strings.txt" || { echo "::error::amneziawg-go does not contain relative Android UAPI socket dir"; exit 1; }
           grep -Fq "$AMNEZIAWG_UAPI_RUN_DIR" "$ARTIFACT_DIR/awg.strings.txt" || { echo "::error::awg does not contain Android RUNSTATEDIR"; exit 1; }
+          if grep -Fq "$AMNEZIAWG_UAPI_SOCKET_DIR" "$ARTIFACT_DIR/amneziawg-go.strings.txt"; then
+            echo "::error::amneziawg-go still contains absolute UAPI socket dir, this breaks Android runtime path resolution"
+            exit 1
+          fi
           "$ARTIFACT_DIR/amneziawg-go" --version || true
           "$ARTIFACT_DIR/awg" --version || true
           ls -lh "$ARTIFACT_DIR"

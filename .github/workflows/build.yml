@@ -474,23 +474,18 @@ jobs:
           retention-days: 1
 
   module_core_ready:
-    name: 1 Module core ready (zdtd + T2S)
+    name: 1 Core ready (zdtd + T2S)
     runs-on: ubuntu-latest
     needs:
       - build_zdtd
       - build_t2s
-    if: needs.build_zdtd.result == 'success' && needs.build_t2s.result == 'success'
+    if: >-
+      needs.build_zdtd.result == 'success' &&
+      needs.build_t2s.result == 'success'
 
     steps:
-      - name: Summarize module core artifacts
-        run: |
-          {
-            echo "### Module core artifacts"
-            echo
-            echo "Ready for module ZIP:"
-            echo "- zdtd"
-            echo "- t2s"
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Mark core binaries ready
+        run: echo "zdtd and T2S artifacts are ready for module packaging"
 
   build_openvpn:
     name: 2 Module binary / build OpenVPN arm64
@@ -1396,8 +1391,8 @@ jobs:
             out/artifacts/nfqws2/nfqws2.dynamic.txt
           retention-days: 1
 
-  module_external_ready:
-    name: 2 Module binaries ready (OpenVPN, AmneziaWG, wireproxy, nfqws, nfqws2)
+  module_binaries_ready:
+    name: 2 Module binaries ready (OpenVPN + AmneziaWG + wireproxy + nfqws + nfqws2)
     runs-on: ubuntu-latest
     needs:
       - build_openvpn
@@ -1405,22 +1400,16 @@ jobs:
       - build_wireproxy
       - build_nfqws
       - build_nfqws2
-    if: needs.build_openvpn.result == 'success' && needs.build_amneziawg.result == 'success' && needs.build_wireproxy.result == 'success' && needs.build_nfqws.result == 'success' && needs.build_nfqws2.result == 'success'
+    if: >-
+      needs.build_openvpn.result == 'success' &&
+      needs.build_amneziawg.result == 'success' &&
+      needs.build_wireproxy.result == 'success' &&
+      needs.build_nfqws.result == 'success' &&
+      needs.build_nfqws2.result == 'success'
 
     steps:
-      - name: Summarize module binary artifacts
-        run: |
-          {
-            echo "### Module binary artifacts"
-            echo
-            echo "Ready for module ZIP:"
-            echo "- openvpn"
-            echo "- amneziawg-go"
-            echo "- awg"
-            echo "- wireproxy"
-            echo "- nfqws"
-            echo "- nfqws2"
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Mark module binaries ready
+        run: echo "External module binary artifacts are ready for module packaging"
 
   build_zygisk:
     name: 3 Zygisk / compile module
@@ -1486,23 +1475,20 @@ jobs:
     if: needs.build_zygisk.result == 'success'
 
     steps:
-      - name: Summarize Zygisk artifact
-        run: |
-          {
-            echo "### Zygisk artifact"
-            echo
-            echo "Ready for module ZIP:"
-            echo "- zygisk/arm64-v8a.so"
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Mark Zygisk binary ready
+        run: echo "Zygisk artifact is ready for module packaging"
 
   pack_module:
-    name: 4 Pack module ZIP
+    name: 5 Pack module ZIP
     runs-on: ubuntu-latest
     needs:
       - module_core_ready
-      - module_external_ready
+      - module_binaries_ready
       - module_zygisk_ready
-    if: needs.module_core_ready.result == 'success' && needs.module_external_ready.result == 'success' && needs.module_zygisk_ready.result == 'success'
+    if: >-
+      needs.module_core_ready.result == 'success' &&
+      needs.module_binaries_ready.result == 'success' &&
+      needs.module_zygisk_ready.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -1668,7 +1654,7 @@ jobs:
           retention-days: 1
 
   build_dpi_detector:
-    name: 5 APK tool / build dpi-detector
+    name: 4 APK tool / build dpi-detector
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -1781,7 +1767,7 @@ jobs:
           retention-days: 1
 
   build_nfqws_tester:
-    name: 5 APK tool / build nfqws-tester
+    name: 4 APK tool / build nfqws-tester
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -1894,7 +1880,7 @@ jobs:
           retention-days: 1
 
   build_busybox:
-    name: 5 APK tool / build BusyBox arm64
+    name: 4 APK tool / build BusyBox arm64
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -1940,25 +1926,20 @@ jobs:
           retention-days: 1
 
   apk_tools_ready:
-    name: 5 APK tools ready (dpi-detector, nfqws-tester, BusyBox)
+    name: 4 APK tools ready (dpi-detector + nfqws-tester + BusyBox)
     runs-on: ubuntu-latest
     needs:
       - build_dpi_detector
       - build_nfqws_tester
       - build_busybox
-    if: needs.build_dpi_detector.result == 'success' && needs.build_nfqws_tester.result == 'success' && needs.build_busybox.result == 'success'
+    if: >-
+      needs.build_dpi_detector.result == 'success' &&
+      needs.build_nfqws_tester.result == 'success' &&
+      needs.build_busybox.result == 'success'
 
     steps:
-      - name: Summarize APK tool artifacts
-        run: |
-          {
-            echo "### APK tool artifacts"
-            echo
-            echo "Ready for APK assets:"
-            echo "- dpi-detector"
-            echo "- nfqws-tester"
-            echo "- busybox"
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Mark APK tools ready
+        run: echo "APK tool artifacts are ready for APK packaging"
 
   build_apk:
     name: 6 Build APK with module ZIP
@@ -1966,7 +1947,9 @@ jobs:
     needs:
       - pack_module
       - apk_tools_ready
-    if: needs.pack_module.result == 'success' && needs.apk_tools_ready.result == 'success'
+    if: >-
+      needs.pack_module.result == 'success' &&
+      needs.apk_tools_ready.result == 'success'
 
     steps:
       - name: Checkout repository

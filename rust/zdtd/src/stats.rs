@@ -1,6 +1,6 @@
 use anyhow::Result;
 use serde::Serialize;
-use std::{collections::HashMap, fs};
+use std::{collections::HashMap, fs, sync::{Mutex, OnceLock}};
 
 use crate::shell;
 
@@ -24,6 +24,9 @@ pub struct OperaAgg {
 /// - always includes zdtd and per-service aggregates
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct StatusReport {
+    /// Unique-process total usage. This avoids double-counting helper processes that
+    /// are intentionally exposed in more than one compatibility bucket.
+    pub total: UsageAgg,
     pub zdtd: UsageAgg,
     pub zapret: UsageAgg,   // nfqws
     pub zapret2: UsageAgg,  // nfqws2
@@ -87,18 +90,10 @@ pub(crate) fn protected_pids() -> Vec<u32> {
 /// Collect current process usage.
 pub fn collect_status() -> Result<StatusReport> {
     let self_pid = std::process::id();
-    let self_map = ps_stats(&[self_pid]);
-    let (self_cpu, self_rss_kb) = self_map.get(&self_pid).cloned().unwrap_or((0.0, 0));
-    let zdtd = UsageAgg {
-        count: 1,
-        cpu_percent: self_cpu,
-        rss_mb: (self_rss_kb as f32) / 1024.0,
-    };
-
     let op_byedpi_port = operaproxy_byedpi_port();
 
-    // Gather pids (best-effort; empty on errors)
-    // Use `pidof` instead of `pgrep -f` to avoid matching similarly-named processes.
+    // Gather pids (best-effort; empty on errors).
+    // Use `pidof` instead of `pgrep -f` where possible to avoid matching similarly-named processes.
     // This matters on Android where some apps/binaries can have overlapping names.
     let dnscrypt_pids = pidof("dnscrypt");
     let nfqws_pids = pidof("nfqws");
@@ -157,29 +152,63 @@ pub fn collect_status() -> Result<StatusReport> {
         }
     }
 
+    // Sample all relevant processes once. This is important for realtime CPU:
+    // the value is calculated from /proc deltas between status refreshes, so
+    // sampling per bucket would update the cache multiple times and skew the result.
+    let mut all_pids = Vec::new();
+    all_pids.push(self_pid);
+    for group in [
+        &nfqws_pids,
+        &nfqws2_pids,
+        &byedpi_pids,
+        &dnscrypt_pids,
+        &dpitunnel_pids,
+        &singbox_pids,
+        &wireproxy_pids,
+        &myproxy_pids,
+        &myprogram_pids,
+        &openvpn_pids,
+        &amneziawg_pids,
+        &tun2socks_pids,
+        &mihomo_pids,
+        &mieru_pids,
+        &tun2proxy_pids,
+        &tor_pids,
+        &t2s_all_pids,
+        &opera_proxy_pids,
+        &t2s_pids,
+        &operaproxy_byedpi,
+    ] {
+        all_pids.extend(group.iter().copied());
+    }
+    all_pids.sort_unstable();
+    all_pids.dedup();
+    let usage = proc_stats_realtime(&all_pids);
+
     Ok(StatusReport {
-        zdtd,
-        zapret: agg(&nfqws_pids),
-        zapret2: agg(&nfqws2_pids),
-        byedpi: agg(&byedpi_pids),
-        dnscrypt: agg(&dnscrypt_pids),
-        dpitunnel: agg(&dpitunnel_pids),
-        sing_box: agg(&singbox_pids),
-        wireproxy: agg(&wireproxy_pids),
-        myproxy: agg(&myproxy_pids),
-        myprogram: agg(&myprogram_pids),
-        openvpn: agg(&openvpn_pids),
-        amneziawg: agg(&amneziawg_pids),
-        tun2socks: agg(&tun2socks_pids),
-        mihomo: agg(&mihomo_pids),
-        mieru: agg(&mieru_pids),
-        tun2proxy: agg(&tun2proxy_pids),
-        tor: agg(&tor_pids),
-        t2s: agg(&t2s_all_pids),
+        total: agg_from_map(&all_pids, &usage),
+        zdtd: agg_from_map(&[self_pid], &usage),
+        zapret: agg_from_map(&nfqws_pids, &usage),
+        zapret2: agg_from_map(&nfqws2_pids, &usage),
+        byedpi: agg_from_map(&byedpi_pids, &usage),
+        dnscrypt: agg_from_map(&dnscrypt_pids, &usage),
+        dpitunnel: agg_from_map(&dpitunnel_pids, &usage),
+        sing_box: agg_from_map(&singbox_pids, &usage),
+        wireproxy: agg_from_map(&wireproxy_pids, &usage),
+        myproxy: agg_from_map(&myproxy_pids, &usage),
+        myprogram: agg_from_map(&myprogram_pids, &usage),
+        openvpn: agg_from_map(&openvpn_pids, &usage),
+        amneziawg: agg_from_map(&amneziawg_pids, &usage),
+        tun2socks: agg_from_map(&tun2socks_pids, &usage),
+        mihomo: agg_from_map(&mihomo_pids, &usage),
+        mieru: agg_from_map(&mieru_pids, &usage),
+        tun2proxy: agg_from_map(&tun2proxy_pids, &usage),
+        tor: agg_from_map(&tor_pids, &usage),
+        t2s: agg_from_map(&t2s_all_pids, &usage),
         opera: OperaAgg {
-            opera: agg(&opera_proxy_pids),
-            t2s: agg(&t2s_pids),
-            byedpi: agg(&operaproxy_byedpi),
+            opera: agg_from_map(&opera_proxy_pids, &usage),
+            t2s: agg_from_map(&t2s_pids, &usage),
+            byedpi: agg_from_map(&operaproxy_byedpi, &usage),
         },
     })
 }
@@ -552,50 +581,142 @@ fn singbox_pids() -> Vec<u32> {
     pids
 }
 
-fn ps_stats(pids: &[u32]) -> HashMap<u32, (f32, u64)> {
+#[derive(Debug, Clone, Copy, Default)]
+struct ProcRawStat {
+    cpu_ticks: u64,
+    start_time: u64,
+    rss_kb: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct ProcUsageSample {
+    cpu_percent: f32,
+    rss_kb: u64,
+}
+
+#[derive(Debug, Default)]
+struct ProcUsageCache {
+    total_cpu_ticks: u64,
+    by_pid: HashMap<u32, ProcRawStat>,
+}
+
+static PROC_USAGE_CACHE: OnceLock<Mutex<ProcUsageCache>> = OnceLock::new();
+
+fn proc_usage_cache() -> &'static Mutex<ProcUsageCache> {
+    PROC_USAGE_CACHE.get_or_init(|| Mutex::new(ProcUsageCache::default()))
+}
+
+fn read_total_cpu_ticks() -> Option<u64> {
+    let raw = fs::read_to_string("/proc/stat").ok()?;
+    let line = raw.lines().find(|l| l.starts_with("cpu "))?;
+    let mut total = 0u64;
+    for tok in line.split_whitespace().skip(1) {
+        total = total.saturating_add(tok.parse::<u64>().ok()?);
+    }
+    Some(total)
+}
+
+fn page_size_kb() -> u64 {
+    let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) };
+    if page > 0 {
+        (page as u64 / 1024).max(1)
+    } else {
+        4
+    }
+}
+
+fn read_proc_raw_stat(pid: u32, page_kb: u64) -> Option<ProcRawStat> {
+    let stat_path = format!("/proc/{pid}/stat");
+    let stat = fs::read_to_string(stat_path).ok()?;
+    let rparen = stat.rfind(')')?;
+    let fields: Vec<&str> = stat.get(rparen + 2..)?.split_whitespace().collect();
+    // fields[0] is state (field 3). utime/stime are fields 14/15, starttime is field 22.
+    let utime = fields.get(11)?.parse::<u64>().ok()?;
+    let stime = fields.get(12)?.parse::<u64>().ok()?;
+    let start_time = fields.get(19)?.parse::<u64>().ok()?;
+
+    let statm_path = format!("/proc/{pid}/statm");
+    let rss_pages = fs::read_to_string(statm_path)
+        .ok()
+        .and_then(|s| s.split_whitespace().nth(1).and_then(|v| v.parse::<u64>().ok()))
+        .unwrap_or(0);
+
+    Some(ProcRawStat {
+        cpu_ticks: utime.saturating_add(stime),
+        start_time,
+        rss_kb: rss_pages.saturating_mul(page_kb),
+    })
+}
+
+/// Read process usage from /proc and calculate CPU from deltas between status refreshes.
+/// This avoids Android `ps %CPU`, which is often an averaged/lifetime value and can keep
+/// showing high CPU after a process is already idle. The reported percentage is normalized
+/// to total device CPU capacity: 100% means all cores are fully occupied by these processes.
+fn proc_stats_realtime(pids: &[u32]) -> HashMap<u32, ProcUsageSample> {
     if pids.is_empty() {
         return HashMap::new();
     }
-    let list = pids
-        .iter()
-        .map(|p| p.to_string())
-        .collect::<Vec<_>>()
-        .join(",");
-    let cmd = format!("ps -o pid,%cpu,rss -p {list}");
-    let out = match shell::capture_quiet(&cmd) {
-        Ok(s) => s,
-        Err(_) => return HashMap::new(),
-    };
-    let mut map = HashMap::new();
-    for line in out.lines().skip(1) {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 3 {
-            continue;
+
+    let total_now = read_total_cpu_ticks().unwrap_or(0);
+    let page_kb = page_size_kb();
+    let mut current = HashMap::new();
+    for &pid in pids {
+        if let Some(raw) = read_proc_raw_stat(pid, page_kb) {
+            current.insert(pid, raw);
         }
-        let pid: u32 = match parts[0].parse() {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        let cpu: f32 = parts[1].parse().unwrap_or(0.0);
-        let rss_kb: u64 = parts[2].parse().unwrap_or(0);
-        map.insert(pid, (cpu, rss_kb));
     }
-    map
+    if current.is_empty() {
+        return HashMap::new();
+    }
+
+    let mut out = HashMap::new();
+    let Ok(mut cache) = proc_usage_cache().lock() else {
+        for (&pid, raw) in &current {
+            out.insert(pid, ProcUsageSample { cpu_percent: 0.0, rss_kb: raw.rss_kb });
+        }
+        return out;
+    };
+
+    let total_delta = total_now.saturating_sub(cache.total_cpu_ticks);
+    for (&pid, raw) in &current {
+        let mut cpu_percent = 0.0f32;
+        if total_delta > 0 {
+            if let Some(prev) = cache.by_pid.get(&pid) {
+                // start_time protects against PID reuse between refreshes.
+                if prev.start_time == raw.start_time && raw.cpu_ticks >= prev.cpu_ticks {
+                    let proc_delta = raw.cpu_ticks - prev.cpu_ticks;
+                    cpu_percent = ((proc_delta as f64 * 100.0) / total_delta as f64) as f32;
+                }
+            }
+        }
+        out.insert(pid, ProcUsageSample { cpu_percent, rss_kb: raw.rss_kb });
+    }
+
+    cache.total_cpu_ticks = total_now;
+    cache.by_pid = current;
+    out
 }
 
-fn agg(pids: &[u32]) -> UsageAgg {
+fn agg_from_map(pids: &[u32], map: &HashMap<u32, ProcUsageSample>) -> UsageAgg {
     if pids.is_empty() {
         return UsageAgg::default();
     }
-    let map = ps_stats(pids);
+    let mut unique = pids.to_vec();
+    unique.sort_unstable();
+    unique.dedup();
+
     let mut total_cpu = 0.0f32;
     let mut total_rss_kb = 0u64;
-    for (_pid, (cpu, rss_kb)) in map.iter() {
-        total_cpu += *cpu;
-        total_rss_kb += *rss_kb;
+    let mut count = 0u32;
+    for pid in unique {
+        if let Some(sample) = map.get(&pid) {
+            total_cpu += sample.cpu_percent;
+            total_rss_kb = total_rss_kb.saturating_add(sample.rss_kb);
+            count = count.saturating_add(1);
+        }
     }
     UsageAgg {
-        count: map.len() as u32,
+        count,
         cpu_percent: total_cpu,
         rss_mb: (total_rss_kb as f32) / 1024.0,
     }

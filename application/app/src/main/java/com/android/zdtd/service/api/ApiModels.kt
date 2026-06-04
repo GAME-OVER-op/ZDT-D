@@ -21,6 +21,7 @@ object ApiModels {
   )
 
   data class StatusReport(
+    val total: ProcAgg = ProcAgg(),
     val zdtd: ProcAgg = ProcAgg(),
     val zapret: ProcAgg = ProcAgg(),
     val zapret2: ProcAgg = ProcAgg(),
@@ -148,6 +149,7 @@ object ApiModels {
     val apiRuntimeState = normalizeRuntimeState(o.optString("runtime_state", ""))
     val apiActualRuntimeState = normalizeRuntimeState(o.optString("actual_runtime_state", ""))
     return StatusReport(
+      total = parseProcAgg(o.optJSONObject("total")),
       zdtd = parseProcAgg(o.optJSONObject("zdtd")),
       zapret = parseProcAgg(o.optJSONObject("zapret")),
       zapret2 = parseProcAgg(o.optJSONObject("zapret2")),
@@ -237,6 +239,12 @@ object ApiModels {
 
   fun computeTotals(r: StatusReport?): ProcAgg {
     if (r == null) return ProcAgg()
+    // Newer daemon versions provide a unique-process total calculated in Rust.
+    // Prefer it to avoid double-counting helpers exposed in multiple buckets,
+    // e.g. t2s as both myproxy/t2s and the global t2s bucket.
+    if (r.total.count > 0 || r.total.cpuPercent > 0.0 || r.total.rssMb > 0.0) {
+      return r.total
+    }
     val parts = buildList {
       add(r.zdtd)
       add(r.zapret)

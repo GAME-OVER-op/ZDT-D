@@ -37,6 +37,8 @@ env:
   AMNEZIAWG_GO_REF: "master"
   AMNEZIAWG_TOOLS_REF: "v1.0.20260223"
   AMNEZIAWG_ANDROID_API_LEVEL: 24
+  AMNEZIAWG_UAPI_RUN_DIR: "/data/adb/modules/ZDT-D/working_folder/amneziawg/run"
+  AMNEZIAWG_UAPI_SOCKET_DIR: "/data/adb/modules/ZDT-D/working_folder/amneziawg/run/amneziawg"
   WIREPROXY_REF: "v1.1.2"
 
 permissions:
@@ -763,6 +765,7 @@ jobs:
           WORK="$PWD/out/build/amneziawg-android"
           SRC="$WORK/src"
           ARTIFACT_DIR="$PWD/out/artifacts/amneziawg"
+          export SRC ARTIFACT_DIR
           mkdir -p "$SRC" "$ARTIFACT_DIR"
 
           echo "=== Fetch official AmneziaWG sources ==="
@@ -770,6 +773,40 @@ jobs:
           git clone --depth 1 --branch "$AMNEZIAWG_TOOLS_REF" https://github.com/amnezia-vpn/amneziawg-tools "$SRC/amneziawg-tools"
           git -C "$SRC/amneziawg-go" rev-parse HEAD | tee "$ARTIFACT_DIR/amneziawg-go.commit"
           git -C "$SRC/amneziawg-tools" rev-parse HEAD | tee "$ARTIFACT_DIR/amneziawg-tools.commit"
+
+          echo "=== Patch AmneziaWG UAPI socket paths for Android module runtime ==="
+          grep -RInE '/var/run/(amneziawg|wireguard)|/run/(amneziawg|wireguard)' "$SRC/amneziawg-go" "$SRC/amneziawg-tools/src" || true
+          python3 - <<'PYAMNEZIA'
+          from pathlib import Path
+          import os
+          
+          socket_dir = os.environ["AMNEZIAWG_UAPI_SOCKET_DIR"]
+          replacements = {
+              "/var/run/amneziawg": socket_dir,
+              "/run/amneziawg": socket_dir,
+              "/var/run/wireguard": socket_dir,
+              "/run/wireguard": socket_dir,
+          }
+          # amneziawg-tools keeps its UAPI path build-time controlled through RUNSTATEDIR.
+          # Patch amneziawg-go source constants so the daemon creates sockets in writable module storage.
+          base = Path(os.environ["SRC"]) / "amneziawg-go"
+          changed = 0
+          for path in base.rglob("*"):
+              if not path.is_file():
+                  continue
+              try:
+                  text = path.read_text()
+              except UnicodeDecodeError:
+                  continue
+              updated = text
+              for old, new in replacements.items():
+                  updated = updated.replace(old, new)
+              if updated != text:
+                  path.write_text(updated)
+                  changed += 1
+          print(f"patched amneziawg-go files: {changed}")
+          PYAMNEZIA
+          grep -RInE "$AMNEZIAWG_UAPI_SOCKET_DIR|$AMNEZIAWG_UAPI_RUN_DIR|/var/run/(amneziawg|wireguard)|/run/(amneziawg|wireguard)" "$SRC/amneziawg-go" "$SRC/amneziawg-tools/src" || true
 
           echo "=== Build amneziawg-go (${AMNEZIAWG_GO_REF}) ==="
           pushd "$SRC/amneziawg-go" > /dev/null
@@ -793,7 +830,7 @@ jobs:
             V=1 \
             PLATFORM=linux \
             CC="$AMNEZIAWG_CC" \
-            RUNSTATEDIR="/var/run" \
+            RUNSTATEDIR="$AMNEZIAWG_UAPI_RUN_DIR" \
             WITH_WGQUICK=no \
             WITH_BASHCOMPLETION=no \
             WITH_SYSTEMDUNITS=no \
@@ -810,6 +847,12 @@ jobs:
           readelf -h "$ARTIFACT_DIR/awg" | grep -E 'Class:|Machine:'
           readelf -d "$ARTIFACT_DIR/amneziawg-go" | tee "$ARTIFACT_DIR/amneziawg-go.dynamic.txt" || true
           readelf -d "$ARTIFACT_DIR/awg" | tee "$ARTIFACT_DIR/awg.dynamic.txt" || true
+          strings "$ARTIFACT_DIR/amneziawg-go" > "$ARTIFACT_DIR/amneziawg-go.strings.txt"
+          strings "$ARTIFACT_DIR/awg" > "$ARTIFACT_DIR/awg.strings.txt"
+          grep -F "$AMNEZIAWG_UAPI_SOCKET_DIR" "$ARTIFACT_DIR/amneziawg-go.strings.txt" | head -5
+          grep -F "$AMNEZIAWG_UAPI_RUN_DIR" "$ARTIFACT_DIR/awg.strings.txt" | head -5
+          grep -Fq "$AMNEZIAWG_UAPI_SOCKET_DIR" "$ARTIFACT_DIR/amneziawg-go.strings.txt" || { echo "::error::amneziawg-go does not contain Android UAPI socket dir"; exit 1; }
+          grep -Fq "$AMNEZIAWG_UAPI_RUN_DIR" "$ARTIFACT_DIR/awg.strings.txt" || { echo "::error::awg does not contain Android RUNSTATEDIR"; exit 1; }
           "$ARTIFACT_DIR/amneziawg-go" --version || true
           "$ARTIFACT_DIR/awg" --version || true
           ls -lh "$ARTIFACT_DIR"

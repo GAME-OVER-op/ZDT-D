@@ -101,6 +101,10 @@ private fun parseTorProgramStateUi(obj: JSONObject?): TorProgramStateUi {
 
 private data class TorSocksPort(val host: String, val port: Int)
 
+// Extract config value that may be delimited by space or equals sign.
+private fun extractConfigValue(line: String): String =
+  line.substringAfter(' ', "").trim().ifEmpty { line.substringAfter('=', "").trim() }
+
 private val TOR_BRIDGE_PROTOCOLS = setOf("obfs4", "webtunnel", "snowflake", "meek_lite")
 private const val TOR_BRIDGE_PLUGIN_LINE =
   "ClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules/ZDT-D/bin/lyrebird"
@@ -115,7 +119,7 @@ private fun parseTorSocksPort(torrc: String): TorSocksPort? {
   for (raw in torrc.lines()) {
     val line = raw.trim()
     if (!line.startsWith("SocksPort", ignoreCase = true)) continue
-    val value = line.substringAfter(' ', "").trim().ifEmpty { line.substringAfter('=', "").trim() }
+    val value = extractConfigValue(line)
     val colon = value.lastIndexOf(':')
     if (colon <= 0 || colon >= value.lastIndex) continue
     val host = value.substring(0, colon).trim()
@@ -177,7 +181,7 @@ private fun extractTorBridgeLines(torrc: String): List<String> =
 
 private fun hasUseBridgesEnabled(torrc: String): Boolean = torrc.lines().any {
   val trimmed = it.trim()
-  trimmed.startsWith("UseBridges", ignoreCase = true) && trimmed.substringAfter(' ', "").trim().ifEmpty { trimmed.substringAfter('=', "").trim() } == "1"
+  trimmed.startsWith("UseBridges", ignoreCase = true) && extractConfigValue(trimmed) == "1"
 }
 
 private fun ensureTorBridgeSupport(content: String, fallbackPort: Int): String {

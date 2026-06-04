@@ -247,8 +247,8 @@ jobs:
           echo "should_build=$should_build"
           echo "reason=$reason"
 
-  build_core_binaries:
-    name: 1 Build core binaries (zdtd + T2S)
+  build_zdtd:
+    name: 1 Core / build zdtd
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -360,6 +360,13 @@ jobs:
           path: out/artifacts/zdtd/zdtd
           retention-days: 1
 
+  build_t2s:
+    name: 1 Core / build T2S
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
@@ -466,8 +473,22 @@ jobs:
           path: out/artifacts/t2s/t2s
           retention-days: 1
 
-  build_module_binaries:
-    name: 2 Build module binaries
+  module_core_ready:
+    name: 1 Core ready (zdtd + T2S)
+    runs-on: ubuntu-latest
+    needs:
+      - build_zdtd
+      - build_t2s
+    if: >-
+      needs.build_zdtd.result == 'success' &&
+      needs.build_t2s.result == 'success'
+
+    steps:
+      - name: Mark core binaries ready
+        run: echo "zdtd and T2S artifacts are ready for module packaging"
+
+  build_openvpn:
+    name: 2 Module binary / build OpenVPN arm64
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -700,6 +721,14 @@ jobs:
           name: openvpn-arm64
           path: out/artifacts/openvpn/openvpn
           retention-days: 1
+
+  build_amneziawg:
+    name: 2 Module binary / build AmneziaWG arm64
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
@@ -864,6 +893,14 @@ jobs:
             out/artifacts/amneziawg/*.commit
             out/artifacts/amneziawg/*.dynamic.txt
           retention-days: 1
+
+  build_wireproxy:
+    name: 2 Module binary / build wireproxy arm64
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
@@ -921,6 +958,14 @@ jobs:
             out/artifacts/wireproxy/wireproxy.commit
             out/artifacts/wireproxy/wireproxy.dynamic.txt
           retention-days: 1
+
+  build_nfqws:
+    name: 2 Module binary / build nfqws arm64
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
@@ -1109,6 +1154,14 @@ jobs:
             out/artifacts/nfqws/zapret.commit
             out/artifacts/nfqws/nfqws.dynamic.txt
           retention-days: 1
+
+  build_nfqws2:
+    name: 2 Module binary / build nfqws2 arm64
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
@@ -1338,8 +1391,28 @@ jobs:
             out/artifacts/nfqws2/nfqws2.dynamic.txt
           retention-days: 1
 
+  module_binaries_ready:
+    name: 2 Module binaries ready (OpenVPN + AmneziaWG + wireproxy + nfqws + nfqws2)
+    runs-on: ubuntu-latest
+    needs:
+      - build_openvpn
+      - build_amneziawg
+      - build_wireproxy
+      - build_nfqws
+      - build_nfqws2
+    if: >-
+      needs.build_openvpn.result == 'success' &&
+      needs.build_amneziawg.result == 'success' &&
+      needs.build_wireproxy.result == 'success' &&
+      needs.build_nfqws.result == 'success' &&
+      needs.build_nfqws2.result == 'success'
+
+    steps:
+      - name: Mark module binaries ready
+        run: echo "External module binary artifacts are ready for module packaging"
+
   build_zygisk:
-    name: 3 Build Zygisk module
+    name: 3 Zygisk / compile module
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -1394,17 +1467,28 @@ jobs:
           path: out/zygisk/arm64-v8a.so
           retention-days: 1
 
+  module_zygisk_ready:
+    name: 3 Module Zygisk ready
+    runs-on: ubuntu-latest
+    needs:
+      - build_zygisk
+    if: needs.build_zygisk.result == 'success'
+
+    steps:
+      - name: Mark Zygisk binary ready
+        run: echo "Zygisk artifact is ready for module packaging"
+
   pack_module:
     name: 5 Pack module ZIP
     runs-on: ubuntu-latest
     needs:
-      - build_core_binaries
-      - build_module_binaries
-      - build_zygisk
+      - module_core_ready
+      - module_binaries_ready
+      - module_zygisk_ready
     if: >-
-      needs.build_core_binaries.result == 'success' &&
-      needs.build_module_binaries.result == 'success' &&
-      needs.build_zygisk.result == 'success'
+      needs.module_core_ready.result == 'success' &&
+      needs.module_binaries_ready.result == 'success' &&
+      needs.module_zygisk_ready.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -1569,8 +1653,8 @@ jobs:
           path: out/module/zdt_module.zip
           retention-days: 1
 
-  build_apk_tools:
-    name: 4 Build APK tools
+  build_dpi_detector:
+    name: 4 APK tool / build dpi-detector
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -1681,6 +1765,14 @@ jobs:
           name: dpi-detector-arm64
           path: out/artifacts/dpi-detector/dpi-detector
           retention-days: 1
+
+  build_nfqws_tester:
+    name: 4 APK tool / build nfqws-tester
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
@@ -1786,6 +1878,14 @@ jobs:
           name: nfqws-tester-arm64
           path: out/artifacts/nfqws-tester/nfqws-tester
           retention-days: 1
+
+  build_busybox:
+    name: 4 APK tool / build BusyBox arm64
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
@@ -1825,15 +1925,31 @@ jobs:
             prebuilt/bin/arm64-v8a/busybox.source
           retention-days: 1
 
+  apk_tools_ready:
+    name: 4 APK tools ready (dpi-detector + nfqws-tester + BusyBox)
+    runs-on: ubuntu-latest
+    needs:
+      - build_dpi_detector
+      - build_nfqws_tester
+      - build_busybox
+    if: >-
+      needs.build_dpi_detector.result == 'success' &&
+      needs.build_nfqws_tester.result == 'success' &&
+      needs.build_busybox.result == 'success'
+
+    steps:
+      - name: Mark APK tools ready
+        run: echo "APK tool artifacts are ready for APK packaging"
+
   build_apk:
     name: 6 Build APK with module ZIP
     runs-on: ubuntu-latest
     needs:
       - pack_module
-      - build_apk_tools
+      - apk_tools_ready
     if: >-
       needs.pack_module.result == 'success' &&
-      needs.build_apk_tools.result == 'success'
+      needs.apk_tools_ready.result == 'success'
 
     steps:
       - name: Checkout repository

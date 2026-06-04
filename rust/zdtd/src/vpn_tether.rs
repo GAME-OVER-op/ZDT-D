@@ -7,7 +7,7 @@ use crate::{settings, shell::{self, Capture}, xtables_lock};
 
 const RUNTIME_DIR: &str = "/data/adb/modules/ZDT-D/working_folder/vpn_tether";
 const TABLE_ID: u32 = 28600;
-const RULE_PREF: u32 = 28600;
+const RULE_PREF: u32 = 18500;
 const IP_TIMEOUT: Duration = Duration::from_secs(3);
 const IPT_TIMEOUT: Duration = Duration::from_secs(5);
 const XT_WAIT_SECS: &str = "5";
@@ -286,22 +286,84 @@ fn first_ipv4_dns(profile: &VpnTetherProfile) -> Option<String> {
 }
 
 fn detect_tether_ifaces() -> Result<Vec<String>> {
+    let active_private = active_private_ipv4_ifaces()?;
+
+    let rule_ifaces = detect_tether_ifaces_from_policy_rules(&active_private)?;
+    if !rule_ifaces.is_empty() {
+        info!(
+            "vpn_tether: detected tether interface(s) from Android policy rules: {}",
+            rule_ifaces.join(",")
+        );
+        return Ok(rule_ifaces);
+    }
+
+    let mut out_ifaces = Vec::<String>::new();
+    for (iface, _) in active_private {
+        if !looks_like_tether_iface(&iface) { continue; }
+        if !out_ifaces.contains(&iface) { out_ifaces.push(iface); }
+    }
+    Ok(out_ifaces)
+}
+
+fn active_private_ipv4_ifaces() -> Result<Vec<(String, Ipv4Addr)>> {
     let (rc, out) = ip(&["-o", "-4", "addr", "show", "up", "scope", "global"], Capture::Stdout)?;
     if rc != 0 { return Ok(Vec::new()); }
-    let mut out_ifaces = Vec::<String>::new();
+
+    let mut out_ifaces = Vec::<(String, Ipv4Addr)>::new();
     for line in out.lines() {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 4 { continue; }
-        let iface = parts[1].trim_end_matches(':').split('@').next().unwrap_or(parts[1]).to_string();
-        if !looks_like_tether_iface(&iface) { continue; }
+        let iface = normalize_iface_name(parts[1]);
         let Some(pos) = parts.iter().position(|p| *p == "inet") else { continue; };
         let Some(cidr) = parts.get(pos + 1) else { continue; };
         let ip_s = cidr.split('/').next().unwrap_or("");
         let Ok(ip) = Ipv4Addr::from_str(ip_s) else { continue; };
         if !is_private_ipv4(ip) { continue; }
-        if !out_ifaces.contains(&iface) { out_ifaces.push(iface); }
+        if !out_ifaces.iter().any(|(known, _)| known == &iface) {
+            out_ifaces.push((iface, ip));
+        }
     }
     Ok(out_ifaces)
+}
+
+fn detect_tether_ifaces_from_policy_rules(active_private: &[(String, Ipv4Addr)]) -> Result<Vec<String>> {
+    let (rc, out) = ip(&["-4", "rule", "show"], Capture::Stdout)?;
+    if rc != 0 { return Ok(Vec::new()); }
+
+    let mut ifaces = Vec::<String>::new();
+    for line in out.lines() {
+        if line.contains(&format!("lookup {TABLE_ID}")) { continue; }
+        let tokens: Vec<&str> = line.split_whitespace().collect();
+        let Some(iif_pos) = tokens.iter().position(|t| *t == "iif") else { continue; };
+        let Some(raw_iface) = tokens.get(iif_pos + 1) else { continue; };
+        let iface = normalize_iface_name(raw_iface);
+        if !looks_like_tether_iface(&iface) { continue; }
+        if !active_private.iter().any(|(known, _)| known == &iface) { continue; }
+
+        let Some(lookup_pos) = tokens.iter().position(|t| *t == "lookup") else { continue; };
+        let Some(lookup) = tokens.get(lookup_pos + 1) else { continue; };
+        if !looks_like_android_upstream_lookup(lookup) { continue; }
+
+        if !ifaces.contains(&iface) { ifaces.push(iface); }
+    }
+    Ok(ifaces)
+}
+
+fn normalize_iface_name(raw: &str) -> String {
+    raw.trim_end_matches(':').split('@').next().unwrap_or(raw).to_string()
+}
+
+fn looks_like_android_upstream_lookup(lookup: &str) -> bool {
+    let lower = lookup.to_ascii_lowercase();
+    lower.starts_with("wlan")
+        || lower.starts_with("rmnet")
+        || lower.starts_with("ccmni")
+        || lower.starts_with("dummy")
+        || lower.starts_with("eth")
+        || lower.starts_with("usb")
+        || lower == "legacy_system"
+        || lower == "legacy_network"
+        || lower == "local_network"
 }
 
 fn is_private_ipv4(ip: Ipv4Addr) -> bool {

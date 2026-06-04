@@ -734,7 +734,10 @@ fun SingBoxProfileScreen(
   val encodedProfile = remember(profile) { URLEncoder.encode(profile, "UTF-8") }
   val basePath = remember(encodedProfile) { "/api/programs/sing-box/profiles/$encodedProfile" }
   val context = LocalContext.current
+  val configuration = LocalConfiguration.current
   val scope = rememberCoroutineScope()
+  val dialogScrollState = rememberScrollState()
+  val maxDialogHeight = configuration.screenHeightDp.dp * 0.92f
   val scroll = rememberScrollState()
 
   fun showSnack(msg: String) {
@@ -1812,7 +1815,10 @@ private fun SingBoxServerCard(
   showPort: Boolean = true,
 ) {
   val context = LocalContext.current
+  val configuration = LocalConfiguration.current
   val scope = rememberCoroutineScope()
+  val dialogScrollState = rememberScrollState()
+  val maxDialogHeight = configuration.screenHeightDp.dp * 0.92f
   var enabled by remember(server.name, server.enabled) { mutableStateOf(server.enabled) }
   var portText by remember(server.name, server.port) { mutableStateOf((server.port ?: 0).toString()) }
   var saving by remember(server.name) { mutableStateOf(false) }
@@ -1984,7 +1990,10 @@ private fun SingBoxCreateServerDialog(
   snackHost: SnackbarHostState,
 ) {
   val context = LocalContext.current
+  val configuration = LocalConfiguration.current
   val scope = rememberCoroutineScope()
+  val dialogScrollState = rememberScrollState()
+  val maxDialogHeight = configuration.screenHeightDp.dp * 0.92f
   val existingNorm = remember(existing) { existing.map { normalizeSingBoxServerName(it) }.toSet() }
   var raw by remember { mutableStateOf("") }
   var error by remember { mutableStateOf<String?>(null) }

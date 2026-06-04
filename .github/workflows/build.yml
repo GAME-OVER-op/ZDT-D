@@ -1654,10 +1654,10 @@ jobs:
           retention-days: 1
 
   build_dpi_detector:
-    name: 4 APK tool / build dpi-detector
+    name: 6 APK tool / build dpi-detector
     runs-on: ubuntu-latest
-    needs: build_gate
-    if: needs.build_gate.outputs.should_build == 'true'
+    needs: pack_module
+    if: needs.pack_module.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -1767,10 +1767,10 @@ jobs:
           retention-days: 1
 
   build_nfqws_tester:
-    name: 4 APK tool / build nfqws-tester
+    name: 6 APK tool / build nfqws-tester
     runs-on: ubuntu-latest
-    needs: build_gate
-    if: needs.build_gate.outputs.should_build == 'true'
+    needs: pack_module
+    if: needs.pack_module.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -1880,10 +1880,10 @@ jobs:
           retention-days: 1
 
   build_busybox:
-    name: 4 APK tool / build BusyBox arm64
+    name: 6 APK tool / build BusyBox arm64
     runs-on: ubuntu-latest
-    needs: build_gate
-    if: needs.build_gate.outputs.should_build == 'true'
+    needs: pack_module
+    if: needs.pack_module.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -1926,7 +1926,7 @@ jobs:
           retention-days: 1
 
   apk_tools_ready:
-    name: 4 APK tools ready (dpi-detector + nfqws-tester + BusyBox)
+    name: 6 APK tools ready (dpi-detector + nfqws-tester + BusyBox)
     runs-on: ubuntu-latest
     needs:
       - build_dpi_detector
@@ -1942,14 +1942,10 @@ jobs:
         run: echo "APK tool artifacts are ready for APK packaging"
 
   build_apk:
-    name: 6 Build APK with module ZIP
+    name: 7 Build APK with module ZIP
     runs-on: ubuntu-latest
-    needs:
-      - pack_module
-      - apk_tools_ready
-    if: >-
-      needs.pack_module.result == 'success' &&
-      needs.apk_tools_ready.result == 'success'
+    needs: apk_tools_ready
+    if: needs.apk_tools_ready.result == 'success'
 
     steps:
       - name: Checkout repository

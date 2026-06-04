@@ -941,6 +941,203 @@ jobs:
             out/artifacts/wireproxy/wireproxy.dynamic.txt
           retention-days: 1
 
+
+  build_nfqws:
+    name: Build nfqws arm64
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK and build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            bzip2 \
+            curl \
+            file \
+            libtool \
+            make \
+            pkg-config \
+            python3 \
+            xz-utils \
+            zlib1g-dev
+
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "NFQWS_ANDROID_API=21"
+            echo "NFQWS_TARGET=aarch64-linux-android"
+            echo "NFQWS_CC=$NDK_BIN/aarch64-linux-android21-clang"
+            echo "NFQWS_AR=$NDK_BIN/llvm-ar"
+            echo "NFQWS_RANLIB=$NDK_BIN/llvm-ranlib"
+            echo "NFQWS_STRIP=$NDK_BIN/llvm-strip"
+          } >> "$GITHUB_ENV"
+
+      - name: Build nfqws from latest zapret release tag
+        run: |
+          set -euo pipefail
+
+          for tool in "$NFQWS_CC" "$NFQWS_AR" "$NFQWS_RANLIB" "$NFQWS_STRIP"; do
+            test -x "$tool" || { echo "::error::Tool not found: $tool"; exit 1; }
+          done
+
+          WORK="$PWD/out/build/nfqws-android"
+          SRC="$WORK/src"
+          BUILD="$WORK/build"
+          DEPS_DIR="$WORK/deps"
+          ARTIFACT_DIR="$PWD/out/artifacts/nfqws"
+          mkdir -p "$SRC" "$BUILD" "$DEPS_DIR" "$ARTIFACT_DIR"
+
+          export CC="$NFQWS_CC"
+          export AR="$NFQWS_AR"
+          export RANLIB="$NFQWS_RANLIB"
+          export STRIP="$NFQWS_STRIP"
+          export PKG_CONFIG_PATH="$DEPS_DIR/lib/pkgconfig"
+
+          download() {
+            local url="$1"
+            local out="$2"
+            curl -fL --retry 5 --retry-delay 3 "$url" -o "$out"
+            test -s "$out" || { echo "::error::Download failed: $url"; exit 1; }
+          }
+
+          echo "=== Resolve latest zapret release tag ==="
+          ZAPRET_REF="$(git ls-remote --tags --refs https://github.com/bol-van/zapret.git 'v*' \
+            | awk -F/ '{print $NF}' \
+            | sort -V \
+            | tail -1)"
+          if [[ -z "$ZAPRET_REF" ]]; then
+            echo "::error::Unable to resolve latest zapret tag"
+            exit 1
+          fi
+          echo "ZAPRET_REF=$ZAPRET_REF"
+
+          echo "=== Fetch zapret $ZAPRET_REF ==="
+          git clone --depth 1 --branch "$ZAPRET_REF" https://github.com/bol-van/zapret.git "$SRC/zapret"
+          ZAPRET_COMMIT="$(git -C "$SRC/zapret" rev-parse HEAD)"
+          echo "$ZAPRET_REF" | tee "$ARTIFACT_DIR/zapret.ref"
+          echo "$ZAPRET_COMMIT" | tee "$ARTIFACT_DIR/zapret.commit"
+
+          echo "=== Download netfilter/zlib dependencies ==="
+          download "https://www.netfilter.org/pub/libnfnetlink/libnfnetlink-1.0.2.tar.bz2" "$SRC/libnfnetlink.tar.bz2"
+          download "https://www.netfilter.org/pub/libmnl/libmnl-1.0.5.tar.bz2" "$SRC/libmnl.tar.bz2"
+          download "https://www.netfilter.org/pub/libnetfilter_queue/libnetfilter_queue-1.0.5.tar.bz2" "$SRC/libnetfilter_queue.tar.bz2"
+
+          ZLIB_REF="$(curl -fsSL --retry 5 --retry-delay 3 https://api.github.com/repos/madler/zlib/releases/latest \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+          test -n "$ZLIB_REF" || { echo "::error::Unable to resolve zlib latest tag"; exit 1; }
+          download "https://github.com/madler/zlib/archive/refs/tags/${ZLIB_REF}.tar.gz" "$SRC/zlib.tar.gz"
+
+          tar -xjf "$SRC/libnfnetlink.tar.bz2" -C "$BUILD"
+          tar -xjf "$SRC/libmnl.tar.bz2" -C "$BUILD"
+          tar -xjf "$SRC/libnetfilter_queue.tar.bz2" -C "$BUILD"
+          tar -xzf "$SRC/zlib.tar.gz" -C "$BUILD"
+
+          echo "=== Patch libnetfilter_queue for Android ==="
+          patch -p1 -d "$BUILD"/libnetfilter_queue-* -i "$SRC/zapret/.github/workflows/libnetfilter_queue-android.patch"
+
+          echo "=== Build netfilter dependencies ==="
+          for lib in libmnl libnfnetlink libnetfilter_queue; do
+            libdir="$(find "$BUILD" -maxdepth 1 -type d -name "${lib}-*" | head -1)"
+            test -d "$libdir" || { echo "::error::Source directory not found for $lib"; exit 1; }
+            pushd "$libdir" > /dev/null
+            CFLAGS="-Os -flto=auto -Wno-implicit-function-declaration" \
+              ./configure \
+                --prefix= \
+                --host="$NFQWS_TARGET" \
+                --enable-static \
+                --disable-shared \
+                --disable-dependency-tracking
+            make -j"$(nproc)"
+            make install -j"$(nproc)" DESTDIR="$DEPS_DIR"
+            popd > /dev/null
+            sed -i "s|^prefix=.*|prefix=$DEPS_DIR|g" "$DEPS_DIR/lib/pkgconfig/$lib.pc"
+          done
+
+          echo "=== Build zlib $ZLIB_REF ==="
+          zlibdir="$(find "$BUILD" -maxdepth 1 -type d -name 'zlib-*' | head -1)"
+          test -d "$zlibdir" || { echo "::error::zlib source directory not found"; exit 1; }
+          pushd "$zlibdir" > /dev/null
+          CFLAGS="-Os -flto=auto" ./configure --prefix= --static
+          make -j"$(nproc)"
+          make install -j"$(nproc)" DESTDIR="$DEPS_DIR"
+          popd > /dev/null
+
+          echo "=== Build nfqws from zapret $ZAPRET_REF ==="
+          NFQWS_VERSION_CFLAGS="-DZAPRET_GH_VER=\\\"$ZAPRET_REF\\\" -DZAPRET_GH_HASH=\\\"$ZAPRET_COMMIT\\\""
+          CFLAGS="-Os -flto=auto -I$DEPS_DIR/include $NFQWS_VERSION_CFLAGS" \
+          LDFLAGS="-L$DEPS_DIR/lib -Wl,-z,max-page-size=16384" \
+            make -C "$SRC/zapret/nfq" android -j"$(nproc)"
+
+          cp -f "$SRC/zapret/nfq/nfqws" "$ARTIFACT_DIR/nfqws"
+          chmod 755 "$ARTIFACT_DIR/nfqws"
+
+          echo "=== Clean and verify nfqws ELF ==="
+          CLEANER_TAG="$(curl -fsSL --retry 5 --retry-delay 3 https://api.github.com/repos/termux/termux-elf-cleaner/releases/latest \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')"
+          if [[ -n "$CLEANER_TAG" ]]; then
+            download "https://github.com/termux/termux-elf-cleaner/releases/download/${CLEANER_TAG}/termux-elf-cleaner" "$WORK/termux-elf-cleaner"
+            chmod +x "$WORK/termux-elf-cleaner"
+            "$WORK/termux-elf-cleaner" --api-level "$NFQWS_ANDROID_API" "$ARTIFACT_DIR/nfqws"
+          fi
+          "$NFQWS_STRIP" --strip-unneeded "$ARTIFACT_DIR/nfqws" || true
+
+          cat > "$ARTIFACT_DIR/nfqws.version" <<EOF_NFQWS_VERSION
+          source=https://github.com/bol-van/zapret
+          zapret_ref=$ZAPRET_REF
+          zapret_commit=$ZAPRET_COMMIT
+          binary=nfqws
+          target=android-arm64
+          android_api=$NFQWS_ANDROID_API
+          zlib_ref=$ZLIB_REF
+          libmnl_version=1.0.5
+          libnfnetlink_version=1.0.2
+          libnetfilter_queue_version=1.0.5
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_NFQWS_VERSION
+
+          file "$ARTIFACT_DIR/nfqws"
+          readelf -h "$ARTIFACT_DIR/nfqws" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/nfqws" | tee "$ARTIFACT_DIR/nfqws.dynamic.txt" || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/nfqws.version"
+
+      - name: Upload nfqws binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: nfqws-arm64
+          path: |
+            out/artifacts/nfqws/nfqws
+            out/artifacts/nfqws/nfqws.version
+            out/artifacts/nfqws/zapret.ref
+            out/artifacts/nfqws/zapret.commit
+            out/artifacts/nfqws/nfqws.dynamic.txt
+          retention-days: 1
+
   pack_module:
     name: Pack ZDT-D module
     runs-on: ubuntu-latest
@@ -950,7 +1147,8 @@ jobs:
       - build_openvpn
       - build_amneziawg
       - build_wireproxy
-    if: needs.build_rust_binaries.result == 'success' && needs.build_zygisk.result == 'success' && needs.build_openvpn.result == 'success' && needs.build_amneziawg.result == 'success' && needs.build_wireproxy.result == 'success'
+      - build_nfqws
+    if: needs.build_rust_binaries.result == 'success' && needs.build_zygisk.result == 'success' && needs.build_openvpn.result == 'success' && needs.build_amneziawg.result == 'success' && needs.build_wireproxy.result == 'success' && needs.build_nfqws.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -988,9 +1186,15 @@ jobs:
           name: wireproxy-arm64
           path: out/artifacts/wireproxy
 
+      - name: Download nfqws binary
+        uses: actions/download-artifact@v7
+        with:
+          name: nfqws-arm64
+          path: out/artifacts/nfqws
+
       - name: Check prebuilt binaries
         run: |
-          REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru torproxy lyrebird tun2socks mihomo)
+          REQUIRED=(byedpi dnscrypt dpitunnel-cli nfqws2 opera-proxy sing-box mieru torproxy lyrebird tun2socks mihomo)
           MISSING=()
           for bin in "${REQUIRED[@]}"; do
             [[ -f "prebuilt/bin/arm64-v8a/$bin" ]] || MISSING+=("$bin")
@@ -1015,6 +1219,7 @@ jobs:
           AMNEZIAWG_GO_BIN="out/artifacts/amneziawg/amneziawg-go"
           AWG_BIN="out/artifacts/amneziawg/awg"
           WIREPROXY_BIN="out/artifacts/wireproxy/wireproxy"
+          NFQWS_BIN="out/artifacts/nfqws/nfqws"
 
           test -s "$ZDTD_BIN" || { echo "::error::zdtd artifact missing: $ZDTD_BIN"; exit 1; }
           test -s "$T2S_BIN" || { echo "::error::t2s artifact missing: $T2S_BIN"; exit 1; }
@@ -1023,6 +1228,7 @@ jobs:
           test -s "$AMNEZIAWG_GO_BIN" || { echo "::error::amneziawg-go artifact missing: $AMNEZIAWG_GO_BIN"; exit 1; }
           test -s "$AWG_BIN" || { echo "::error::awg artifact missing: $AWG_BIN"; exit 1; }
           test -s "$WIREPROXY_BIN" || { echo "::error::wireproxy artifact missing: $WIREPROXY_BIN"; exit 1; }
+          test -s "$NFQWS_BIN" || { echo "::error::nfqws artifact missing: $NFQWS_BIN"; exit 1; }
 
           rm -rf out/module_build
           mkdir -p "$MODULE_BUILD_DIR" out/module
@@ -1043,7 +1249,8 @@ jobs:
           cp -f "$AMNEZIAWG_GO_BIN" "$MODULE_BUILD_DIR/bin/amneziawg-go" && chmod 755 "$MODULE_BUILD_DIR/bin/amneziawg-go"
           cp -f "$AWG_BIN" "$MODULE_BUILD_DIR/bin/awg" && chmod 755 "$MODULE_BUILD_DIR/bin/awg"
           cp -f "$WIREPROXY_BIN" "$MODULE_BUILD_DIR/bin/wireproxy" && chmod 755 "$MODULE_BUILD_DIR/bin/wireproxy"
-          for bin in byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box mieru torproxy lyrebird tun2socks mihomo; do
+          cp -f "$NFQWS_BIN" "$MODULE_BUILD_DIR/bin/nfqws" && chmod 755 "$MODULE_BUILD_DIR/bin/nfqws"
+          for bin in byedpi dnscrypt dpitunnel-cli nfqws2 opera-proxy sing-box mieru torproxy lyrebird tun2socks mihomo; do
             cp -f "$PREBUILT/$bin" "$MODULE_BUILD_DIR/bin/$bin" && chmod 755 "$MODULE_BUILD_DIR/bin/$bin"
           done
 

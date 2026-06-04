@@ -604,7 +604,7 @@ private fun BackupItemCard(
   onShare: () -> Unit,
   onDelete: () -> Unit,
 ) {
-  val compact = rememberIsCompactWidth()
+  val iconOnlyActions = rememberIsCompactWidth() || rememberIsShortHeight()
   Surface(
     modifier = Modifier.fillMaxWidth(),
     shape = RoundedCornerShape(22.dp),
@@ -641,26 +641,20 @@ private fun BackupItemCard(
           }
         }
       }
-      if (compact) {
-        Column(
+      if (iconOnlyActions) {
+        Row(
           modifier = Modifier.fillMaxWidth(),
-          verticalArrangement = Arrangement.spacedBy(8.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.End,
         ) {
-          OutlinedButton(onClick = onRestore, enabled = enabled, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
-            Icon(Icons.Filled.Restore, contentDescription = null)
-            Spacer(Modifier.width(6.dp))
-            Text(stringResource(R.string.backup_item_restore))
+          IconButton(onClick = onRestore, enabled = enabled) {
+            Icon(Icons.Filled.Restore, contentDescription = stringResource(R.string.backup_item_restore))
           }
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
-          ) {
-            IconButton(onClick = onShare, enabled = enabled) {
-              Icon(Icons.Filled.Share, contentDescription = stringResource(R.string.backup_share_cd))
-            }
-            IconButton(onClick = onDelete, enabled = enabled) {
-              Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.backup_delete_cd), tint = MaterialTheme.colorScheme.error)
-            }
+          IconButton(onClick = onShare, enabled = enabled) {
+            Icon(Icons.Filled.Share, contentDescription = stringResource(R.string.backup_share_cd))
+          }
+          IconButton(onClick = onDelete, enabled = enabled) {
+            Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.backup_delete_cd), tint = MaterialTheme.colorScheme.error)
           }
         }
       } else {

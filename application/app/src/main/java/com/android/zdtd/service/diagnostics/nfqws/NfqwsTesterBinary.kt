@@ -49,13 +49,16 @@ class NfqwsTesterBinary(private val context: Context) {
                 digest.update(buffer, 0, read)
             }
         }
-        digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        toHexString(digest.digest())
     }.getOrNull()
 
     private fun sha256(bytes: ByteArray): String {
         val digest = MessageDigest.getInstance("SHA-256")
-        return digest.digest(bytes).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        return toHexString(digest.digest(bytes))
     }
+
+    private fun toHexString(bytes: ByteArray): String =
+        bytes.joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
     companion object {
         const val BINARY_NAME = "nfqws_tester"

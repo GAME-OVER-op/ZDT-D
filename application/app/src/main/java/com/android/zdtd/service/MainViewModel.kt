@@ -110,6 +110,7 @@ data class SetupUiState(
   val showZygiskInstallConfirm: Boolean = false,
   val showKsuApatchZygiskWarning: Boolean = false,
   val showZygiskInstallRecoveryDialog: Boolean = false,
+  val showMetamoduleInstallBlockedDialog: Boolean = false,
 
   // Reboot required screen text
   val rebootRequiredText: String = "",
@@ -1340,6 +1341,11 @@ private fun clearDownloadedUpdateApk() {
     return logText.contains("ZDTD_ZYGISK_")
   }
 
+  private fun hasMetamoduleInstallBlockedMarker(logText: String): Boolean {
+    return logText.contains("Metamodule installation blocked", ignoreCase = true) ||
+      logText.contains("A metamodule with custom installer is active", ignoreCase = true)
+  }
+
   override fun refreshZygiskInstallMarker() {
     if (_rootState.value != RootState.GRANTED) {
       _setup.update {
@@ -1439,6 +1445,7 @@ private fun clearDownloadedUpdateApk() {
           installerLabel = label,
           showKsuApatchZygiskWarning = showZygiskWarning,
           showZygiskInstallRecoveryDialog = false,
+          showMetamoduleInstallBlockedDialog = false,
           showManualDialog = false,
           manualZipSaved = false,
           manualZipPath = "",
@@ -1476,7 +1483,8 @@ private fun clearDownloadedUpdateApk() {
           )
         }
       } else {
-        val zygiskInstallError = zygiskRequestedAtStart && hasZygiskInstallErrorMarker(out)
+        val metamoduleInstallBlocked = hasMetamoduleInstallBlockedMarker(out)
+        val zygiskInstallError = !metamoduleInstallBlocked && zygiskRequestedAtStart && hasZygiskInstallErrorMarker(out)
         _setup.update {
           it.copy(
             installing = false,
@@ -1484,11 +1492,12 @@ private fun clearDownloadedUpdateApk() {
             installLog = out,
             installProgressPercent = 100,
             installProgressLabel = str(R.string.setup_install_progress_failed),
-            showManualDialog = !zygiskInstallError,
+            showManualDialog = !metamoduleInstallBlocked && !zygiskInstallError,
             showZygiskInstallRecoveryDialog = zygiskInstallError,
+            showMetamoduleInstallBlockedDialog = metamoduleInstallBlocked,
             manualZipSaved = false,
             manualZipPath = "",
-            manualDialogText = if (zygiskInstallError) "" else str(R.string.mv_auto_018) +
+            manualDialogText = if (metamoduleInstallBlocked || zygiskInstallError) "" else str(R.string.mv_auto_018) +
               str(R.string.mv_auto_019) +
               str(R.string.mv_auto_020),
           )
@@ -1505,6 +1514,10 @@ private fun clearDownloadedUpdateApk() {
     _setup.update { it.copy(showZygiskInstallRecoveryDialog = false) }
   }
 
+  override fun dismissMetamoduleInstallBlockedDialog() {
+    _setup.update { it.copy(showMetamoduleInstallBlockedDialog = false) }
+  }
+
   override fun retryInstallWithoutZygisk() {
     if (_rootState.value != RootState.GRANTED || _setup.value.installing) return
     launchIO {
@@ -1515,6 +1528,7 @@ private fun clearDownloadedUpdateApk() {
         it.copy(
           installZygiskRequested = false,
           showZygiskInstallRecoveryDialog = false,
+          showMetamoduleInstallBlockedDialog = false,
           showZygiskInstallConfirm = false,
         )
       }
@@ -3686,6 +3700,7 @@ if (mf.isNotBlank()) {
         installOk = false,
         installError = null,
         showZygiskInstallRecoveryDialog = false,
+        showMetamoduleInstallBlockedDialog = false,
         manualZipSaved = false,
         manualZipPath = "",
         showUpdatePrompt = false,
@@ -3884,6 +3899,10 @@ if (mf.isNotBlank()) {
     val verify = verifyBundledModuleZip(cacheZip)
     if (!verify.ok) return Triple(false, verify.message, "")
 
+    val normalizeLog = runCatching { clearFakeEncryptedCentralDirectoryFlagsInPlace(cacheZip) }.getOrElse {
+      return Triple(false, "module zip compatibility patch failed: ${it.message ?: it}", "")
+    }
+
     val src = cacheZip.absolutePath
     val dst = "/sdcard/ZDT-D.zip"
     val copyRes = root.execRoot("sh -c 'cp ${shQuote(src)} ${shQuote(dst)} && chmod 644 ${shQuote(dst)}'")
@@ -3894,7 +3913,7 @@ if (mf.isNotBlank()) {
       append(str(R.string.mv_auto_068)).append(dst).append("\n\n")
       append(str(R.string.mv_auto_069))
     }
-    return Triple(true, listOf(verify.message, out, msg).filter { it.isNotBlank() }.joinToString("\n"), dst)
+    return Triple(true, listOf(verify.message, normalizeLog, out, msg).filter { it.isNotBlank() }.joinToString("\n"), dst)
   }
 
   private suspend fun stageModuleZipToTmp(

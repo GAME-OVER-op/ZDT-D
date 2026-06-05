@@ -20,6 +20,7 @@ interface ZdtdActions {
   fun confirmInstallZygisk()
   fun dismissInstallZygiskConfirm()
   fun dismissZygiskInstallRecoveryDialog()
+  fun dismissMetamoduleInstallBlockedDialog()
   fun retryInstallWithoutZygisk()
 
   /** Remove module and uninstall the app (with reboot after uninstall). */

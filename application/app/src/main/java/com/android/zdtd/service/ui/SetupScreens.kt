@@ -101,8 +101,8 @@ private fun SetupAlertDialog(
   bodyText: String,
   confirmButtonText: String,
   onConfirm: () -> Unit,
-  dismissButtonText: String,
-  onDismiss: () -> Unit,
+  dismissButtonText: String? = null,
+  onDismiss: (() -> Unit)? = null,
 ) {
   AlertDialog(
     onDismissRequest = onDismissRequest,
@@ -112,7 +112,9 @@ private fun SetupAlertDialog(
       TextButton(onClick = onConfirm) { Text(confirmButtonText) }
     },
     dismissButton = {
-      TextButton(onClick = onDismiss) { Text(dismissButtonText) }
+      if (dismissButtonText != null && onDismiss != null) {
+        TextButton(onClick = onDismiss) { Text(dismissButtonText) }
+      }
     },
   )
 }
@@ -308,6 +310,7 @@ fun InstallModuleScreen(
   onConfirmZygiskInstall: () -> Unit,
   onDismissZygiskInstallConfirm: () -> Unit,
   onDismissZygiskInstallRecovery: () -> Unit,
+  onDismissMetamoduleInstallBlocked: () -> Unit,
   onRetryInstallWithoutZygisk: () -> Unit,
 ) {
   val arm64Ok = remember { isArm64OnlySupported() }
@@ -386,6 +389,16 @@ fun InstallModuleScreen(
       onConfirm = onRetryInstallWithoutZygisk,
       dismissButtonText = stringResource(R.string.setup_zygisk_recovery_no),
       onDismiss = onDismissZygiskInstallRecovery,
+    )
+  }
+
+  if (setup.showMetamoduleInstallBlockedDialog) {
+    SetupAlertDialog(
+      onDismissRequest = onDismissMetamoduleInstallBlocked,
+      titleText = stringResource(R.string.setup_metamodule_blocked_title),
+      bodyText = stringResource(R.string.setup_metamodule_blocked_body),
+      confirmButtonText = stringResource(R.string.common_ok),
+      onConfirm = onDismissMetamoduleInstallBlocked,
     )
   }
 

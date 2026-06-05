@@ -566,6 +566,12 @@
 Минимальные версии:
 KernelSU: 10940+
 APatch: 10700+</string>
+    <string name="setup_metamodule_blocked_title">Установка заблокирована мета-модулем</string>
+    <string name="setup_metamodule_blocked_body">Похоже, на устройстве установлен мета-модуль KernelSU/APatch, но он отключён, повреждён или работает некорректно.
+
+Из-за этого менеджер заблокировал установку ZDT-D.
+
+Для корректной установки требуется рабочий мета-модуль либо его полное отсутствие. Проверьте состояние мета-модуля в KernelSU/APatch: включите его обратно или удалите, затем перезагрузите устройство и повторите установку.</string>
     <string name="setup_zygisk_recovery_title">Zygisk-компонент не установлен</string>
     <string name="setup_zygisk_recovery_body">По логу установки Zygisk-компонент не удалось установить. Можно повторить установку ZDT-D без Zygisk-компонента.</string>
     <string name="setup_zygisk_recovery_no">Нет</string>

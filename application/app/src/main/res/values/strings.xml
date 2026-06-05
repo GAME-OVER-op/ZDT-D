@@ -274,6 +274,12 @@ Install the Zygisk component?</string>
 Minimum versions:
 KernelSU: 10940+
 APatch: 10700+</string>
+    <string name="setup_metamodule_blocked_title">Installation blocked by metamodule</string>
+    <string name="setup_metamodule_blocked_body">It looks like a KernelSU/APatch metamodule is installed on this device, but it is disabled, broken, or not working correctly.
+
+Because of this, the module manager blocked the ZDT-D installation.
+
+To install ZDT-D correctly, the metamodule must be working properly or be completely removed. Please check the metamodule state in KernelSU/APatch: re-enable it or uninstall it, then reboot the device and try again.</string>
     <string name="setup_zygisk_recovery_title">Zygisk component was not installed</string>
     <string name="setup_zygisk_recovery_body">The install log says the Zygisk component could not be installed. You can repeat ZDT-D installation without the Zygisk component.</string>
     <string name="setup_zygisk_recovery_no">No</string>

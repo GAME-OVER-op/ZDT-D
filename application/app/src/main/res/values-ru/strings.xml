@@ -1749,6 +1749,8 @@ APatch: 10700+</string>
     <string name="settings_energy_saver_freeze_body">Отправлять SIGSTOP после задержки и SIGCONT при включении экрана.</string>
     <string name="settings_energy_saver_affinity_title">Привязать к CPU-ядрам</string>
     <string name="settings_energy_saver_affinity_body">Ограничить эту программу выбранными ядрами во время работы службы.</string>
+    <string name="settings_energy_saver_cores_selected">Выбрано: %1$d из %2$d ядер</string>
+    <string name="settings_energy_saver_core_chip">CPU %1$d</string>
     <string name="settings_energy_saver_cores_title">CPU-ядра</string>
     <string name="settings_energy_saver_saved">Настройки энергосбережения сохранены</string>
     <string name="settings_energy_saver_save_failed">Не удалось сохранить настройки энергосбережения</string>

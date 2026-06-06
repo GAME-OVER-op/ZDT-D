@@ -1,5 +1,11 @@
 package com.android.zdtd.service.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -86,6 +93,7 @@ fun EnergySaverDialog(
       Column(
         modifier = Modifier
           .fillMaxWidth()
+          .animateContentSize()
           .padding(horizontal = 16.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
       ) {
@@ -123,6 +131,7 @@ fun EnergySaverDialog(
         Column(
           modifier = Modifier
             .weight(1f, fill = false)
+            .animateContentSize()
             .verticalScroll(scroll),
           verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -190,6 +199,7 @@ fun EnergySaverDialog(
                   programs = cleanPrograms,
                 )
               )
+              onDismiss()
             },
             enabled = !saving,
             modifier = Modifier.weight(1f),
@@ -270,12 +280,12 @@ private fun EnergySaverProgramCard(
   onSettingChange: (ApiModels.EnergySaverProgramSetting) -> Unit,
 ) {
   Surface(
-    modifier = Modifier.fillMaxWidth(),
+    modifier = Modifier.fillMaxWidth().animateContentSize(),
     shape = RoundedCornerShape(24.dp),
     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f),
   ) {
     Column(
-      modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+      modifier = Modifier.fillMaxWidth().animateContentSize().padding(horizontal = 14.dp, vertical = 12.dp),
       verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
       Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -310,28 +320,88 @@ private fun EnergySaverProgramCard(
         enabled = program.allowAffinity,
         onCheckedChange = { onSettingChange(setting.copy(cpuAffinityEnabled = it)) },
       )
-      if (setting.cpuAffinityEnabled) {
-        Text(stringResource(R.string.settings_energy_saver_cores_title), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-        (0 until cpuCount).chunked(4).forEach { row ->
-          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            row.forEach { core ->
-              val selected = setting.cpuCores.contains(core)
-              FilterChip(
-                selected = selected,
-                onClick = {
-                  val next = if (selected) {
-                    setting.cpuCores.filterNot { it == core }
-                  } else {
-                    (setting.cpuCores + core).distinct().sorted()
-                  }.ifEmpty { listOf(core) }
-                  onSettingChange(setting.copy(cpuCores = next))
-                },
-                label = { Text(core.toString()) },
-                modifier = Modifier.weight(1f),
-              )
-            }
-            repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+      AnimatedVisibility(
+        visible = setting.cpuAffinityEnabled,
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut(),
+      ) {
+        CpuCoreSelector(
+          selectedCores = setting.cpuCores,
+          cpuCount = cpuCount,
+          onSelectedCoresChange = { cores -> onSettingChange(setting.copy(cpuCores = cores)) },
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun CpuCoreSelector(
+  selectedCores: List<Int>,
+  cpuCount: Int,
+  onSelectedCoresChange: (List<Int>) -> Unit,
+) {
+  Surface(
+    modifier = Modifier.fillMaxWidth().animateContentSize(),
+    shape = RoundedCornerShape(20.dp),
+    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+  ) {
+    Column(
+      modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        Box(
+          modifier = Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
+          contentAlignment = Alignment.Center,
+        ) {
+          Icon(
+            Icons.Filled.Memory,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(22.dp),
+          )
+        }
+        Column(Modifier.weight(1f)) {
+          Text(
+            text = stringResource(R.string.settings_energy_saver_cores_title),
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+          )
+          Text(
+            text = stringResource(R.string.settings_energy_saver_cores_selected, selectedCores.size, cpuCount),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+          )
+        }
+      }
+
+      (0 until cpuCount).chunked(4).forEach { row ->
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          row.forEach { core ->
+            val selected = selectedCores.contains(core)
+            FilterChip(
+              selected = selected,
+              onClick = {
+                val next = if (selected) {
+                  selectedCores.filterNot { it == core }
+                } else {
+                  (selectedCores + core).distinct().sorted()
+                }.ifEmpty { listOf(core) }
+                onSelectedCoresChange(next)
+              },
+              label = { Text(stringResource(R.string.settings_energy_saver_core_chip, core)) },
+              modifier = Modifier.weight(1f),
+            )
           }
+          repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
         }
       }
     }

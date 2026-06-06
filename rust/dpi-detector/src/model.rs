@@ -47,6 +47,9 @@ impl TcpTarget {
     }
 
     fn host_sni(&self) -> String {
+        // Returns configured SNI name, filtering empty strings.
+        // Falls back to "example.com" which is a safe placeholder
+        // for TLS connections when no explicit SNI is provided.
         self.sni
             .as_ref()
             .filter(|s| !s.trim().is_empty())

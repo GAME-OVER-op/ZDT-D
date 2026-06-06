@@ -6,6 +6,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -43,7 +45,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -299,9 +300,11 @@ private fun EnergySaverProgramCard(
             overflow = TextOverflow.Ellipsis,
           )
           Text(
-            text = stringResource(R.string.settings_energy_saver_running_pids, program.runningPids.size),
+            text = toolDescription(program.id),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
           )
         }
       }
@@ -431,23 +434,31 @@ private fun EnergySaverOptionRow(
 
 @Composable
 private fun ProgramIconBox(programId: String) {
-  Box(
-    modifier = Modifier
-      .size(42.dp)
-      .clip(CircleShape)
-      .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
-    contentAlignment = Alignment.Center,
+  val accentColor = MaterialTheme.colorScheme.primary
+  Surface(
+    modifier = Modifier.size(42.dp),
+    color = accentColor.copy(alpha = 0.14f),
+    contentColor = accentColor,
+    shape = CircleShape,
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
+    border = BorderStroke(1.dp, accentColor.copy(alpha = 0.30f)),
   ) {
-    val iconRes = programIconRes(programId)
-    if (iconRes != null) {
-      Icon(
-        painter = painterResource(iconRes),
-        contentDescription = null,
-        tint = Color.Unspecified,
-        modifier = Modifier.size(26.dp),
-      )
-    } else {
-      Icon(programIcon(programId), contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+      val iconRes = programIconRes(programId)
+      if (iconRes != null) {
+        Icon(
+          painter = painterResource(iconRes),
+          contentDescription = null,
+          modifier = Modifier.size(26.dp),
+        )
+      } else {
+        Icon(
+          imageVector = programIcon(programId),
+          contentDescription = null,
+          modifier = Modifier.size(22.dp),
+        )
+      }
     }
   }
 }

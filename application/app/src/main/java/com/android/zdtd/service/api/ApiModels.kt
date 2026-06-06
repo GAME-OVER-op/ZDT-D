@@ -88,6 +88,38 @@ object ApiModels {
     val enabled: Boolean = false,
   )
 
+
+  data class EnergySaverProgramSetting(
+    val freezeOnScreenOff: Boolean = false,
+    val cpuAffinityEnabled: Boolean = false,
+    val cpuCores: List<Int> = listOf(0, 1, 2),
+  )
+
+  data class EnergySaverConfig(
+    val enabled: Boolean = false,
+    val freezeDelaySeconds: Long = 300L,
+    val programs: Map<String, EnergySaverProgramSetting> = emptyMap(),
+  )
+
+  data class EnergySaverProgram(
+    val id: String,
+    val displayName: String,
+    val binary: String,
+    val binaryPath: String,
+    val exists: Boolean = true,
+    val allowFreeze: Boolean = true,
+    val allowAffinity: Boolean = true,
+    val runningPids: List<Int> = emptyList(),
+  )
+
+  data class EnergySaverState(
+    val exists: Boolean = false,
+    val active: Boolean = false,
+    val onlineCpuCount: Int = 0,
+    val settings: EnergySaverConfig = EnergySaverConfig(),
+    val programs: List<EnergySaverProgram> = emptyList(),
+  )
+
   data class ProxyInfoState(
     val enabled: Boolean = false,
     val appsContent: String = "",
@@ -339,6 +371,88 @@ object ApiModels {
       selinuxPermissiveEnabled = setting?.optBoolean("selinux_permissive_enabled", false) ?: false,
       ipForwardEnabled = setting?.optBoolean("ip_forward_enabled", false) ?: false,
     )
+  }
+
+
+  fun parseEnergySaver(wrapper: JSONObject?): EnergySaverState {
+    if (wrapper == null) return EnergySaverState()
+    val settingsObj = wrapper.optJSONObject("settings") ?: JSONObject()
+    val programsObj = settingsObj.optJSONObject("programs") ?: JSONObject()
+    val programSettings = linkedMapOf<String, EnergySaverProgramSetting>()
+    val keys = programsObj.keys()
+    while (keys.hasNext()) {
+      val id = keys.next()
+      val o = programsObj.optJSONObject(id) ?: continue
+      val coresArr = o.optJSONArray("cpu_cores") ?: JSONArray()
+      val cores = buildList {
+        for (i in 0 until coresArr.length()) {
+          val core = coresArr.optInt(i, -1)
+          if (core >= 0 && !contains(core)) add(core)
+        }
+      }.ifEmpty { listOf(0, 1, 2) }
+      programSettings[id] = EnergySaverProgramSetting(
+        freezeOnScreenOff = jsonBool(o, "freeze_on_screen_off", false),
+        cpuAffinityEnabled = jsonBool(o, "cpu_affinity_enabled", false),
+        cpuCores = cores,
+      )
+    }
+    val programsArr = wrapper.optJSONArray("programs") ?: JSONArray()
+    val programs = buildList {
+      for (i in 0 until programsArr.length()) {
+        val o = programsArr.optJSONObject(i) ?: continue
+        val id = o.optString("id", "").trim()
+        if (id.isBlank()) continue
+        val pidsArr = o.optJSONArray("running_pids") ?: JSONArray()
+        val pids = buildList {
+          for (j in 0 until pidsArr.length()) {
+            val pid = pidsArr.optInt(j, 0)
+            if (pid > 0) add(pid)
+          }
+        }
+        add(
+          EnergySaverProgram(
+            id = id,
+            displayName = o.optString("display_name", id),
+            binary = o.optString("binary", id),
+            binaryPath = o.optString("binary_path", ""),
+            exists = jsonBool(o, "exists", true),
+            allowFreeze = jsonBool(o, "allow_freeze", true),
+            allowAffinity = jsonBool(o, "allow_affinity", true),
+            runningPids = pids,
+          )
+        )
+      }
+    }
+    return EnergySaverState(
+      exists = jsonBool(wrapper, "exists", false),
+      active = jsonBool(wrapper, "active", false),
+      onlineCpuCount = wrapper.optInt("online_cpu_count", 0),
+      settings = EnergySaverConfig(
+        enabled = jsonBool(settingsObj, "enabled", false),
+        freezeDelaySeconds = settingsObj.optLong("freeze_delay_seconds", 300L).coerceAtLeast(10L),
+        programs = programSettings,
+      ),
+      programs = programs,
+    )
+  }
+
+  fun energySaverConfigToJson(config: EnergySaverConfig): JSONObject {
+    val programs = JSONObject()
+    config.programs.forEach { (id, setting) ->
+      val cores = JSONArray()
+      setting.cpuCores.distinct().sorted().forEach { cores.put(it) }
+      programs.put(
+        id,
+        JSONObject()
+          .put("freeze_on_screen_off", setting.freezeOnScreenOff)
+          .put("cpu_affinity_enabled", setting.cpuAffinityEnabled)
+          .put("cpu_cores", cores),
+      )
+    }
+    return JSONObject()
+      .put("enabled", config.enabled)
+      .put("freeze_delay_seconds", config.freezeDelaySeconds)
+      .put("programs", programs)
   }
 
   fun parseSingBoxProfiles(wrapper: JSONObject?): List<SingBoxProfileChoice> {

@@ -11,6 +11,9 @@ data class AppUpdateUiState(
   val languageMode: String = "auto",
   /** Module protector mode: off | on | auto */
   val protectorMode: String = "off",
+  /** Advanced energy saver: screen-off freeze and CPU affinity. */
+  val energySaver: ApiModels.EnergySaverState = ApiModels.EnergySaverState(),
+  val energySaverBusy: Boolean = false,
   /** Hotspot redirect via t2s: enabled flag, target program id and optional sing-box / wireproxy profile. */
   val hotspotT2sEnabled: Boolean = false,
   val hotspotMode: String = "proxy",

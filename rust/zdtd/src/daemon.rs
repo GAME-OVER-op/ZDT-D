@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::panic::{self, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 
-use crate::{api, api_status, config::Config, logging, protector, runtime, settings, stats};
+use crate::{api, api_status, config::Config, energy_saver, logging, protector, runtime, settings, stats};
 
 #[derive(Debug, Clone)]
 pub struct State {
@@ -95,6 +95,7 @@ pub fn run(_cfg: &Config) -> Result<()> {
         start: start.clone(),
     }));
     api_status::write_off();
+    energy_saver::unfreeze_all_best_effort();
 
     // Start API server immediately, and perform autostart in background if enabled=true.
     if start.enabled {
@@ -176,6 +177,7 @@ pub fn handle_start_async(state: &SharedState) -> Result<bool> {
                     api_status::write_on(partial);
 
                     protector::activate();
+                    energy_saver::refresh(true);
 
                     // Notify the Android app (app-owned notification).
                     let _ = crate::android::notification::send_app_state(true);
@@ -257,6 +259,7 @@ pub fn handle_stop_async(state: &SharedState) -> Result<bool> {
     std::thread::spawn(move || {
         let outcome = panic::catch_unwind(AssertUnwindSafe(|| {
             crate::scan_detector::stop();
+            energy_saver::stop_monitor();
             runtime::stop_full().context("stop_full")
         }));
         match outcome {
@@ -269,6 +272,7 @@ pub fn handle_stop_async(state: &SharedState) -> Result<bool> {
                     }
                     api_status::write_off();
                     protector::deactivate();
+                    energy_saver::stop_monitor();
                     crate::scan_detector::stop();
 
                     // Notify the Android app (app-owned notification).

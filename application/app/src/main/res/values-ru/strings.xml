@@ -1734,4 +1734,23 @@ APatch: 10700+</string>
     <string name="widget_action_stop_hint">Нажмите для остановки</string>
     <string name="widget_cpu_value_fmt">%1$.1f%%</string>
     <string name="widget_ram_value_fmt">%1$.1f МБ</string>
+    <string name="settings_energy_saver_title">Расширенный режим энергосбережения</string>
+    <string name="settings_energy_saver_body">Заморозка выбранных программ после выключения экрана и привязка служб к выбранным CPU-ядрам.</string>
+    <string name="settings_energy_saver_open">Открыть</string>
+    <string name="settings_energy_saver_subtitle">Заморозка при выключенном экране и привязка программ модуля к ядрам CPU.</string>
+    <string name="settings_energy_saver_global_title">Включить расширенное энергосбережение</string>
+    <string name="settings_energy_saver_global_body">Если выключено, ZDT-D не будет замораживать программы и применять привязку к ядрам из этого окна.</string>
+    <string name="settings_energy_saver_delay_title">Задержка заморозки после выключения экрана</string>
+    <string name="settings_energy_saver_delay_body">Программы с включённой заморозкой будут остановлены после этой задержки и возобновлены при включении экрана.</string>
+    <string name="settings_energy_saver_warning">Заморозка программы может временно остановить интернет для профилей, которые её используют. Привязка к ядрам безопаснее; включайте заморозку только если понимаете последствия.</string>
+    <string name="settings_energy_saver_no_programs">Поддерживаемые бинарники в папке bin модуля не найдены.</string>
+    <string name="settings_energy_saver_running_pids">Запущено процессов: %1$d</string>
+    <string name="settings_energy_saver_freeze_title">Замораживать после выключения экрана</string>
+    <string name="settings_energy_saver_freeze_body">Отправлять SIGSTOP после задержки и SIGCONT при включении экрана.</string>
+    <string name="settings_energy_saver_affinity_title">Привязать к CPU-ядрам</string>
+    <string name="settings_energy_saver_affinity_body">Ограничить эту программу выбранными ядрами во время работы службы.</string>
+    <string name="settings_energy_saver_cores_title">CPU-ядра</string>
+    <string name="settings_energy_saver_saved">Настройки энергосбережения сохранены</string>
+    <string name="settings_energy_saver_save_failed">Не удалось сохранить настройки энергосбережения</string>
+
 </resources>

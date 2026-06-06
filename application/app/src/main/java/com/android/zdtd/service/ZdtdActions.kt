@@ -278,6 +278,12 @@ interface ZdtdActions {
   /** Set module protector mode: off | on | auto. */
   fun setProtectorMode(mode: String)
 
+  /** Reload advanced energy saver settings. */
+  fun refreshEnergySaver()
+
+  /** Save advanced energy saver settings and apply CPU affinity immediately. */
+  fun saveEnergySaver(config: com.android.zdtd.service.api.ApiModels.EnergySaverConfig)
+
   /** Toggle advanced daemon/system setting by API field name. */
   fun setAdvancedDaemonSetting(key: String, enabled: Boolean)
 

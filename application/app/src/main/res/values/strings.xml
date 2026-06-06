@@ -1734,4 +1734,23 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="widget_action_stop_hint">Tap to stop</string>
     <string name="widget_cpu_value_fmt">%1$.1f%%</string>
     <string name="widget_ram_value_fmt">%1$.1f MB</string>
+    <string name="settings_energy_saver_title">Advanced energy saver</string>
+    <string name="settings_energy_saver_body">Freeze selected programs after screen off and bind services to selected CPU cores.</string>
+    <string name="settings_energy_saver_open">Open</string>
+    <string name="settings_energy_saver_subtitle">Screen-off freeze and CPU affinity for module programs.</string>
+    <string name="settings_energy_saver_global_title">Enable advanced energy saver</string>
+    <string name="settings_energy_saver_global_body">When disabled, ZDT-D will not freeze programs or apply CPU affinity from this screen.</string>
+    <string name="settings_energy_saver_delay_title">Freeze delay after screen off</string>
+    <string name="settings_energy_saver_delay_body">Programs with freeze enabled will be stopped after this delay and resumed when the screen turns on.</string>
+    <string name="settings_energy_saver_warning">Freezing a program may temporarily stop internet access for profiles that use it. CPU affinity is safer; enable freeze only when you understand the consequences.</string>
+    <string name="settings_energy_saver_no_programs">No supported binaries were found in the module bin folder.</string>
+    <string name="settings_energy_saver_running_pids">Running processes: %1$d</string>
+    <string name="settings_energy_saver_freeze_title">Freeze after screen off</string>
+    <string name="settings_energy_saver_freeze_body">Send SIGSTOP after the delay and SIGCONT when the screen turns on.</string>
+    <string name="settings_energy_saver_affinity_title">Bind to CPU cores</string>
+    <string name="settings_energy_saver_affinity_body">Limit this program to selected cores while the service is running.</string>
+    <string name="settings_energy_saver_cores_title">CPU cores</string>
+    <string name="settings_energy_saver_saved">Energy saver settings saved</string>
+    <string name="settings_energy_saver_save_failed">Failed to save energy saver settings</string>
+
 </resources>

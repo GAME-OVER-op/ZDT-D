@@ -5416,12 +5416,21 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       }
   }
 
+  private suspend fun fetchEnergySaverState(): ApiModels.EnergySaverState {
+    return runCatching { api.getEnergySaver() }
+      .getOrElse {
+        log("ERR", "energy saver load failed: ${it.message ?: it}")
+        ApiModels.EnergySaverState()
+      }
+  }
+
   private suspend fun refreshDaemonSettingsNow() {
     val settings = runCatching { api.getDaemonSettings() }
       .getOrDefault(com.android.zdtd.service.api.ApiModels.DaemonSettings())
     val singboxProfiles = fetchHotspotSingBoxProfiles()
     val wireproxyProfiles = fetchHotspotWireproxyProfiles()
     val programs = runCatching { api.getPrograms() }.getOrDefault(emptyList())
+    val energySaver = fetchEnergySaverState()
     val proxyIds = setOf("operaproxy", "singbox", "sing-box", "wireproxy")
     val vpnIds = setOf("openvpn", "amneziawg", "mihomo", "mieru")
     val proxyPrograms = programs.filter { it.id in proxyIds || (it.id == "sing-box") }
@@ -5429,6 +5438,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     _appUpdate.update {
       it.copy(
         protectorMode = settings.protectorMode,
+        energySaver = energySaver,
         hotspotT2sEnabled = settings.hotspotT2sEnabled,
         hotspotMode = settings.hotspotMode,
         hotspotProgram = settings.hotspotProgram,
@@ -5450,6 +5460,39 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
   override fun refreshDaemonSettings() {
     launchIO {
       refreshDaemonSettingsNow()
+    }
+  }
+
+  override fun refreshEnergySaver() {
+    launchIO {
+      _appUpdate.update { it.copy(energySaverBusy = true) }
+      val state = fetchEnergySaverState()
+      _appUpdate.update { it.copy(energySaver = state, energySaverBusy = false) }
+    }
+  }
+
+  override fun saveEnergySaver(config: ApiModels.EnergySaverConfig) {
+    _appUpdate.update { it.copy(energySaverBusy = true, energySaver = it.energySaver.copy(settings = config)) }
+    launchIO {
+      var success = true
+      val state = runCatching {
+        val saved = api.saveEnergySaver(config)
+        runCatching { api.applyEnergySaver() }
+        saved
+      }.getOrElse {
+        success = false
+        log("ERR", "energy saver save failed: ${it.message ?: it}")
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_energy_saver_save_failed))
+        }
+        fetchEnergySaverState()
+      }
+      _appUpdate.update { it.copy(energySaver = state, energySaverBusy = false) }
+      if (success) {
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_energy_saver_saved))
+        }
+      }
     }
   }
 

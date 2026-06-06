@@ -131,6 +131,18 @@ class ApiClient(
     val obj = requestJson("GET", "/api/setting", null)
     return ApiModels.parseDaemonSettings(obj)
   }
+  fun getEnergySaver(): ApiModels.EnergySaverState {
+    val obj = requestJson("GET", "/api/energy-saver", null)
+    return ApiModels.parseEnergySaver(obj)
+  }
+
+  fun saveEnergySaver(config: ApiModels.EnergySaverConfig): ApiModels.EnergySaverState {
+    val obj = requestJson("POST", "/api/energy-saver", ApiModels.energySaverConfigToJson(config))
+    return ApiModels.parseEnergySaver(obj)
+  }
+
+  fun applyEnergySaver(): Boolean = requestOk("POST", "/api/energy-saver/apply", JSONObject())
+
 
   fun setProtectorMode(mode: String): ApiModels.DaemonSettings {
     val safe = when (mode.trim().lowercase()) {

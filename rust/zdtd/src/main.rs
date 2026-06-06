@@ -4,6 +4,7 @@ mod api;
 mod api_status;
 mod config;
 mod daemon;
+mod energy_saver;
 mod iptables;
 mod iptables_backup;
 mod internet_wait;

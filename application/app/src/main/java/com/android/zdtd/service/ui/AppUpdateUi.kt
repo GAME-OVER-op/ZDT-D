@@ -179,6 +179,10 @@ fun AppUpdateSettings(
   onLanguageModeChange: (String) -> Unit,
   protectorMode: String,
   onProtectorModeChange: (String) -> Unit,
+  energySaver: com.android.zdtd.service.api.ApiModels.EnergySaverState,
+  energySaverBusy: Boolean,
+  onRefreshEnergySaver: () -> Unit,
+  onSaveEnergySaver: (com.android.zdtd.service.api.ApiModels.EnergySaverConfig) -> Unit,
   selinuxPermissiveEnabled: Boolean,
   ipForwardEnabled: Boolean,
   onAdvancedSettingChange: (String, Boolean) -> Unit,
@@ -224,6 +228,7 @@ fun AppUpdateSettings(
   var showProxyInfoConfigure by remember { mutableStateOf(false) }
   var showBlockedQuicConfigure by remember { mutableStateOf(false) }
   var showAdvancedSettings by remember { mutableStateOf(false) }
+  var showEnergySaverConfigure by remember { mutableStateOf(false) }
   if (landscapeColumns) {
     Column(
       modifier = Modifier
@@ -263,6 +268,15 @@ fun AppUpdateSettings(
           ProtectorModeSection(
             selectedMode = protectorMode,
             onModeSelected = onProtectorModeChange,
+          )
+          SettingsActionCard(
+            title = stringResource(R.string.settings_energy_saver_title),
+            body = stringResource(R.string.settings_energy_saver_body),
+            actionText = stringResource(R.string.settings_energy_saver_open),
+            onClick = {
+              onRefreshEnergySaver()
+              showEnergySaverConfigure = true
+            },
           )
           OutlinedButton(onClick = { showAdvancedSettings = true }, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.settings_advanced_title))
@@ -379,6 +393,11 @@ fun AppUpdateSettings(
       blockedQuicBusy = blockedQuicBusy,
       onDismissBlockedQuicConfigure = { if (!blockedQuicBusy) showBlockedQuicConfigure = false },
       onBlockedQuicAppsSave = onBlockedQuicAppsSave,
+      showEnergySaverConfigure = showEnergySaverConfigure,
+      energySaver = energySaver,
+      energySaverBusy = energySaverBusy,
+      onDismissEnergySaverConfigure = { if (!energySaverBusy) showEnergySaverConfigure = false },
+      onSaveEnergySaver = onSaveEnergySaver,
       showAdvancedSettings = showAdvancedSettings,
       selinuxPermissiveEnabled = selinuxPermissiveEnabled,
       ipForwardEnabled = ipForwardEnabled,
@@ -426,6 +445,16 @@ fun AppUpdateSettings(
         onModeSelected = onProtectorModeChange,
       )
     }
+
+    SettingsActionCard(
+      title = stringResource(R.string.settings_energy_saver_title),
+      body = stringResource(R.string.settings_energy_saver_body),
+      actionText = stringResource(R.string.settings_energy_saver_open),
+      onClick = {
+        onRefreshEnergySaver()
+        showEnergySaverConfigure = true
+      },
+    )
 
     SettingsActionCard(
       title = stringResource(R.string.settings_advanced_title),
@@ -530,6 +559,11 @@ fun AppUpdateSettings(
     blockedQuicBusy = blockedQuicBusy,
     onDismissBlockedQuicConfigure = { if (!blockedQuicBusy) showBlockedQuicConfigure = false },
     onBlockedQuicAppsSave = onBlockedQuicAppsSave,
+    showEnergySaverConfigure = showEnergySaverConfigure,
+    energySaver = energySaver,
+    energySaverBusy = energySaverBusy,
+    onDismissEnergySaverConfigure = { if (!energySaverBusy) showEnergySaverConfigure = false },
+    onSaveEnergySaver = onSaveEnergySaver,
     showAdvancedSettings = showAdvancedSettings,
     selinuxPermissiveEnabled = selinuxPermissiveEnabled,
     ipForwardEnabled = ipForwardEnabled,
@@ -779,6 +813,11 @@ private fun SettingsDialogsHost(
   blockedQuicBusy: Boolean,
   onDismissBlockedQuicConfigure: () -> Unit,
   onBlockedQuicAppsSave: (String, (Boolean) -> Unit) -> Unit,
+  showEnergySaverConfigure: Boolean,
+  energySaver: com.android.zdtd.service.api.ApiModels.EnergySaverState,
+  energySaverBusy: Boolean,
+  onDismissEnergySaverConfigure: () -> Unit,
+  onSaveEnergySaver: (com.android.zdtd.service.api.ApiModels.EnergySaverConfig) -> Unit,
   showAdvancedSettings: Boolean,
   selinuxPermissiveEnabled: Boolean,
   ipForwardEnabled: Boolean,
@@ -828,6 +867,14 @@ private fun SettingsDialogsHost(
       onSave = onBlockedQuicAppsSave,
     )
   }
+
+  EnergySaverDialog(
+    visible = showEnergySaverConfigure,
+    state = energySaver,
+    saving = energySaverBusy,
+    onDismiss = onDismissEnergySaverConfigure,
+    onSave = onSaveEnergySaver,
+  )
 
   AdvancedSettingsDialog(
     visible = showAdvancedSettings,

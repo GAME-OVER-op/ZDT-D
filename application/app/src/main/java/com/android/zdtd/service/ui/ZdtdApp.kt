@@ -936,6 +936,7 @@ private fun MainShell(
     LaunchedEffect(Unit) {
       settingsContentReady = false
       actions.refreshDaemonSettings()
+      actions.refreshEnergySaver()
       actions.refreshProxyInfo()
       actions.refreshBlockedQuic()
       delay(260)
@@ -988,6 +989,10 @@ private fun MainShell(
                 onLanguageModeChange = actions::setAppLanguageMode,
                 protectorMode = appUpdate.protectorMode,
                 onProtectorModeChange = actions::setProtectorMode,
+                energySaver = appUpdate.energySaver,
+                energySaverBusy = appUpdate.energySaverBusy,
+                onRefreshEnergySaver = actions::refreshEnergySaver,
+                onSaveEnergySaver = actions::saveEnergySaver,
                 selinuxPermissiveEnabled = appUpdate.selinuxPermissiveEnabled,
                 ipForwardEnabled = appUpdate.ipForwardEnabled,
                 onAdvancedSettingChange = actions::setAdvancedDaemonSetting,
@@ -1076,6 +1081,10 @@ private fun MainShell(
                 onLanguageModeChange = actions::setAppLanguageMode,
                 protectorMode = appUpdate.protectorMode,
                 onProtectorModeChange = actions::setProtectorMode,
+                energySaver = appUpdate.energySaver,
+                energySaverBusy = appUpdate.energySaverBusy,
+                onRefreshEnergySaver = actions::refreshEnergySaver,
+                onSaveEnergySaver = actions::saveEnergySaver,
                 selinuxPermissiveEnabled = appUpdate.selinuxPermissiveEnabled,
                 ipForwardEnabled = appUpdate.ipForwardEnabled,
                 onAdvancedSettingChange = actions::setAdvancedDaemonSetting,

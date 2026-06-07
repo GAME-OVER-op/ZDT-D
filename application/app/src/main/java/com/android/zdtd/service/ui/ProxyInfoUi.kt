@@ -338,11 +338,15 @@ fun ProxyInfoAppsDialog(
     return out
   }
 
+  fun generatePayload(apps: Set<String>): String {
+    return (apps - ZDTD_APP_PACKAGE_NAME).sorted().joinToString("\n")
+  }
+
   val selectedConflicts = remember(selected, assignments) { computeConflicts(selected) }
 
   fun attemptSave() {
     if (!hasChanges) return
-    val payload = (selected - ZDTD_APP_PACKAGE_NAME).sorted().joinToString("\n")
+    val payload = generatePayload(selected)
     if (selectedConflicts.isEmpty()) {
       onSave(payload) { ok -> if (ok) onDismiss() }
     } else {
@@ -619,7 +623,7 @@ fun ProxyInfoAppsDialog(
       confirmButton = {
         Button(
           onClick = {
-            val payload = (selected - ZDTD_APP_PACKAGE_NAME).sorted().joinToString("\n")
+            val payload = generatePayload(selected)
             onSaveRemovingConflicts(payload) { ok ->
               if (ok) {
                 pendingConflicts = emptyMap()

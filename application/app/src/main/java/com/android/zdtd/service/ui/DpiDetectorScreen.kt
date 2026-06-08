@@ -299,11 +299,7 @@ fun DpiDetectorScreen(
           expandedStageIds = manuallyExpandedStageIds,
           showAllStageIds = showAllStageIds,
           onToggleStage = { stageId ->
-            manuallyExpandedStageIds = if (stageId in manuallyExpandedStageIds) {
-              manuallyExpandedStageIds - stageId
-            } else {
-              manuallyExpandedStageIds + stageId
-            }
+            manuallyExpandedStageIds = if (stageId in manuallyExpandedStageIds) manuallyExpandedStageIds - stageId else manuallyExpandedStageIds + stageId
           },
           onToggleShowAll = { stageId ->
             showAllStageIds = if (stageId in showAllStageIds) showAllStageIds - stageId else showAllStageIds + stageId

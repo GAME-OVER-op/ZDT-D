@@ -3,8 +3,8 @@ use anyhow::{Context, Result};
 use axum::{
     extract::{ws::{Message, WebSocket, WebSocketUpgrade}, State},
     http::{HeaderMap, StatusCode},
-    response::{Html, IntoResponse},
-    routing::{get, post},
+    response::{Html, IntoResponse, Response},
+    routing::{get, post, put},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -14,13 +14,13 @@ use tokio::time::Instant;
 const INDEX_HTML: &str = include_str!("web_ui.html");
 const BUILD_TAG: &str = "tcp-only-green-only-smart-energy-v3";
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct DownloadLimitReq {
     /// 0 = unlimited
     mbit: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct BackendReq {
     host: String,
     port: u16,
@@ -30,7 +30,7 @@ struct BackendReq {
     password: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct KillReq {
     cid: String,
 }
@@ -65,6 +65,10 @@ struct PortsView {
 
 #[derive(Clone, Debug, Serialize)]
 struct ApiState {
+    schema_version: u32,
+    api_name: String,
+    api_version: u32,
+    instance: crate::api_runtime::InstanceMeta,
     ts: u64,
     stats: stats::StatsSnapshot,
     active_connections: usize,
@@ -84,6 +88,17 @@ pub async fn serve(state: AppState) -> Result<()> {
         .route("/api/backends/add", post(api_backend_add))
         .route("/api/backends/remove", post(api_backend_remove))
         .route("/api/kill", post(api_kill_post).get(api_kill_get))
+        .route("/api/v1/meta", get(api_v1_meta))
+        .route("/api/v1/poll", get(api_v1_poll))
+        .route("/api/v1/state", get(api_v1_state))
+        .route("/api/v1/connections", get(api_v1_connections))
+        .route("/api/v1/backends", get(api_v1_backends))
+        .route("/api/v1/limits", get(api_v1_limits).put(api_v1_limits_put))
+        .route("/api/v1/download-limit", post(api_v1_download_limit))
+        .route("/api/v1/connections/kill", post(api_v1_kill_connection))
+        .route("/api/v1/backends/add", post(api_v1_backend_add))
+        .route("/api/v1/backends/remove", post(api_v1_backend_remove))
+        .route("/api/v1/backends/recheck", post(api_v1_backends_recheck))
         .with_state(state.clone());
 
     let addr: SocketAddr = format!("{}:{}", state.args.web_addr, state.args.web_port)
@@ -125,11 +140,9 @@ async fn api_state(State(state): State<AppState>) -> impl IntoResponse {
     Json(build_state(&state))
 }
 
-async fn api_download_limit(State(state): State<AppState>, Json(req): Json<DownloadLimitReq>) -> impl IntoResponse {
-    let mbit = if req.mbit.is_finite() && req.mbit > 0.0 { req.mbit } else { 0.0 };
-    let bps = if mbit > 0.0 { (mbit * 1024.0 * 1024.0 / 8.0) as u64 } else { 0u64 };
-    state.runtime.download_limit_bps.store(bps, std::sync::atomic::Ordering::Relaxed);
-    (StatusCode::OK, Json(serde_json::json!({"result":"ok","mbit":mbit})))
+async fn api_download_limit(State(state): State<AppState>, Json(req): Json<DownloadLimitReq>) -> Response {
+    let mbit = set_download_limit(&state, &req);
+    (StatusCode::OK, Json(serde_json::json!({"result":"ok","mbit":mbit}))).into_response()
 }
 
 
@@ -159,60 +172,245 @@ fn resolve_backend_addr(host: &str, port: u16) -> std::result::Result<SocketAddr
     first.ok_or_else(|| "invalid host:port".to_string())
 }
 
-async fn api_backend_add(State(state): State<AppState>, Json(req): Json<BackendReq>) -> impl IntoResponse {
-    let auth = match normalize_backend_auth(&req) {
+fn empty_404() -> Response {
+    (StatusCode::NOT_FOUND, [(axum::http::header::CONTENT_LENGTH, "0")], "").into_response()
+}
+
+fn json_response(status: StatusCode, body: serde_json::Value) -> Response {
+    (status, Json(body)).into_response()
+}
+
+fn set_download_limit(state: &AppState, req: &DownloadLimitReq) -> f64 {
+    let mbit = if req.mbit.is_finite() && req.mbit > 0.0 { req.mbit } else { 0.0 };
+    let bps = if mbit > 0.0 { (mbit * 1024.0 * 1024.0 / 8.0) as u64 } else { 0u64 };
+    state.runtime.download_limit_bps.store(bps, std::sync::atomic::Ordering::Relaxed);
+    mbit
+}
+
+fn backend_add_impl(state: &AppState, req: &BackendReq) -> Response {
+    let auth = match normalize_backend_auth(req) {
         Ok(v) => v,
-        Err(e) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))),
+        Err(e) => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({"error": e})),
     };
 
     match resolve_backend_addr(&req.host, req.port) {
         Ok(sa) => {
             let mut b = state.backends.lock();
             if b.snapshot().iter().any(|s| s.addr == sa.to_string()) {
-                return (StatusCode::OK, Json(serde_json::json!({"result":"ok","note":"already exists"})));
+                return json_response(StatusCode::OK, serde_json::json!({"result":"ok","note":"already exists"}));
             }
             b.add(sa, auth);
-            (StatusCode::OK, Json(serde_json::json!({"result":"ok"})))
+            json_response(StatusCode::OK, serde_json::json!({"result":"ok"}))
         }
-        Err(e) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))),
+        Err(e) => json_response(StatusCode::BAD_REQUEST, serde_json::json!({"error": e})),
     }
 }
 
-async fn api_backend_remove(State(state): State<AppState>, Json(req): Json<BackendReq>) -> impl IntoResponse {
+fn backend_remove_impl(state: &AppState, req: &BackendReq) -> Response {
     match resolve_backend_addr(&req.host, req.port) {
         Ok(sa) => {
             state.backends.lock().remove(sa);
             let killed = state.conns.kill_backend_socks_and_connecting(sa);
-            (StatusCode::OK, Json(serde_json::json!({"result":"ok","killed_connections":killed})))
+            json_response(StatusCode::OK, serde_json::json!({"result":"ok","killed_connections":killed}))
         }
-        Err(e) => (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": e}))),
+        Err(e) => json_response(StatusCode::BAD_REQUEST, serde_json::json!({"error": e})),
     }
 }
 
-async fn api_kill_get(State(state): State<AppState>, axum::extract::Query(q): axum::extract::Query<KillReq>) -> impl IntoResponse {
-    let cid = match parse_cid(&q.cid) {
+fn kill_connection_impl(state: &AppState, cid_raw: &str) -> Response {
+    let cid = match parse_cid(cid_raw) {
         Some(v) => v,
-        None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"invalid cid"}))),
+        None => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({"error":"invalid cid"})),
     };
     let ok = state.conns.kill(cid);
     if ok {
-        (StatusCode::OK, Json(serde_json::json!({"result":"ok"})))
+        json_response(StatusCode::OK, serde_json::json!({"result":"ok"}))
     } else {
-        (StatusCode::NOT_FOUND, Json(serde_json::json!({"error":"unknown cid"})))
+        json_response(StatusCode::NOT_FOUND, serde_json::json!({"error":"unknown cid"}))
     }
 }
 
-async fn api_kill_post(State(state): State<AppState>, Json(req): Json<KillReq>) -> impl IntoResponse {
-    let cid = match parse_cid(&req.cid) {
-        Some(v) => v,
-        None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error":"invalid cid"}))),
-    };
-    let ok = state.conns.kill(cid);
-    if ok {
-        (StatusCode::OK, Json(serde_json::json!({"result":"ok"})))
-    } else {
-        (StatusCode::NOT_FOUND, Json(serde_json::json!({"error":"unknown cid"})))
+async fn api_backend_add(State(state): State<AppState>, Json(req): Json<BackendReq>) -> Response {
+    backend_add_impl(&state, &req)
+}
+
+async fn api_backend_remove(State(state): State<AppState>, Json(req): Json<BackendReq>) -> Response {
+    backend_remove_impl(&state, &req)
+}
+
+async fn api_kill_get(State(state): State<AppState>, axum::extract::Query(q): axum::extract::Query<KillReq>) -> Response {
+    kill_connection_impl(&state, &q.cid)
+}
+
+async fn api_kill_post(State(state): State<AppState>, Json(req): Json<KillReq>) -> Response {
+    kill_connection_impl(&state, &req.cid)
+}
+
+async fn api_v1_meta(headers: HeaderMap, State(state): State<AppState>) -> Response {
+    if !state.api.is_authorized(&headers) { return empty_404(); }
+    json_response(StatusCode::OK, serde_json::json!({
+        "schema_version": 1,
+        "api_name": "t2s",
+        "api_version": 1,
+        "ok": true,
+        "instance": state.api.refreshed_instance(),
+    }))
+}
+
+async fn api_v1_poll(headers: HeaderMap, State(state): State<AppState>) -> Response {
+    if !state.api.is_authorized(&headers) { return empty_404(); }
+    let collecting = state.runtime.try_begin_forced_refresh(30_000);
+    if collecting {
+        let st = state.clone();
+        tokio::spawn(async move {
+            stats::refresh_backends_for_ui(st.clone(), stats::health_timeout(&st)).await;
+        });
     }
+    let st = build_state(&state);
+    json_response(StatusCode::OK, serde_json::json!({
+        "schema_version": 1,
+        "api_name": "t2s",
+        "api_version": 1,
+        "ok": true,
+        "poll": {
+            "collecting": collecting,
+            "state": if collecting { "collecting" } else { "ready" },
+            "too_frequent": !collecting,
+            "suggested_interval_ms": 1000,
+            "min_interval_ms": 750,
+            "backend_refresh_interval_ms": 30000,
+            "server_ts_ms": stats::now_ms()
+        },
+        "state": {
+            "schema_version": st.schema_version,
+            "api_name": st.api_name,
+            "api_version": st.api_version,
+            "instance": st.instance,
+            "ts": st.ts,
+            "stats": st.stats,
+            "active_connections": st.active_connections,
+            "ports": st.ports,
+            "connections": st.conns,
+            "backends": st.backends,
+            "limits": { "download_mbit": st.download_limit_mbit },
+            "runtime": {
+                "max_conns": state.args.max_conns,
+                "backend_mode": format!("{:?}", state.args.backend_mode).to_ascii_lowercase(),
+                "priority_speed_aware": state.args.priority_speed_aware,
+                "buffer_size": state.args.buffer_size,
+                "idle_timeout": state.args.idle_timeout,
+                "connect_timeout": state.args.connect_timeout
+            }
+        }
+    }))
+}
+
+async fn api_v1_state(headers: HeaderMap, State(state): State<AppState>) -> Response {
+    if !state.api.is_authorized(&headers) { return empty_404(); }
+    let st = build_state(&state);
+    json_response(StatusCode::OK, serde_json::json!({
+        "schema_version": 1,
+        "api_name": "t2s",
+        "api_version": 1,
+        "ok": true,
+        "instance": st.instance,
+        "ts": st.ts,
+        "stats": st.stats,
+        "active_connections": st.active_connections,
+        "ports": st.ports,
+        "connections": st.conns,
+        "backends": st.backends,
+        "limits": { "download_mbit": st.download_limit_mbit },
+        "runtime": {
+            "max_conns": state.args.max_conns,
+            "backend_mode": format!("{:?}", state.args.backend_mode).to_ascii_lowercase(),
+            "priority_speed_aware": state.args.priority_speed_aware,
+            "buffer_size": state.args.buffer_size,
+            "idle_timeout": state.args.idle_timeout,
+            "connect_timeout": state.args.connect_timeout,
+        }
+    }))
+}
+
+async fn api_v1_connections(headers: HeaderMap, State(state): State<AppState>) -> Response {
+    if !state.api.is_authorized(&headers) { return empty_404(); }
+    let st = build_state(&state);
+    json_response(StatusCode::OK, serde_json::json!({
+        "schema_version": 1,
+        "api_name": "t2s",
+        "api_version": 1,
+        "ok": true,
+        "instance": st.instance,
+        "connections": st.conns,
+        "active_connections": st.active_connections,
+    }))
+}
+
+async fn api_v1_backends(headers: HeaderMap, State(state): State<AppState>) -> Response {
+    if !state.api.is_authorized(&headers) { return empty_404(); }
+    let backends = state.backends.lock().snapshot();
+    json_response(StatusCode::OK, serde_json::json!({
+        "schema_version": 1,
+        "api_name": "t2s",
+        "api_version": 1,
+        "ok": true,
+        "instance": state.api.refreshed_instance(),
+        "backends": backends,
+    }))
+}
+
+async fn api_v1_limits(headers: HeaderMap, State(state): State<AppState>) -> Response {
+    if !state.api.is_authorized(&headers) { return empty_404(); }
+    let bps = state.runtime.download_limit_bps.load(std::sync::atomic::Ordering::Relaxed);
+    let download_mbit = if bps > 0 { (bps as f64) * 8.0 / (1024.0 * 1024.0) } else { 0.0 };
+    json_response(StatusCode::OK, serde_json::json!({
+        "schema_version": 1,
+        "api_name": "t2s",
+        "api_version": 1,
+        "ok": true,
+        "instance": state.api.refreshed_instance(),
+        "limits": { "download_mbit": download_mbit },
+    }))
+}
+
+async fn api_v1_limits_put(headers: HeaderMap, State(state): State<AppState>, Json(req): Json<DownloadLimitReq>) -> Response {
+    if !state.api.is_authorized(&headers) { return empty_404(); }
+    let mbit = set_download_limit(&state, &req);
+    json_response(StatusCode::OK, serde_json::json!({"schema_version":1,"api_name":"t2s","api_version":1,"ok":true,"limits":{"download_mbit":mbit}}))
+}
+
+async fn api_v1_download_limit(headers: HeaderMap, State(state): State<AppState>, Json(req): Json<DownloadLimitReq>) -> Response {
+    if !state.api.is_authorized(&headers) { return empty_404(); }
+    let mbit = set_download_limit(&state, &req);
+    json_response(StatusCode::OK, serde_json::json!({"schema_version":1,"api_name":"t2s","api_version":1,"ok":true,"limits":{"download_mbit":mbit}}))
+}
+
+async fn api_v1_kill_connection(headers: HeaderMap, State(state): State<AppState>, Json(req): Json<KillReq>) -> Response {
+    if !state.api.is_authorized(&headers) { return empty_404(); }
+    kill_connection_impl(&state, &req.cid)
+}
+
+async fn api_v1_backend_add(headers: HeaderMap, State(state): State<AppState>, Json(req): Json<BackendReq>) -> Response {
+    if !state.api.is_authorized(&headers) { return empty_404(); }
+    backend_add_impl(&state, &req)
+}
+
+async fn api_v1_backend_remove(headers: HeaderMap, State(state): State<AppState>, Json(req): Json<BackendReq>) -> Response {
+    if !state.api.is_authorized(&headers) { return empty_404(); }
+    backend_remove_impl(&state, &req)
+}
+
+async fn api_v1_backends_recheck(headers: HeaderMap, State(state): State<AppState>) -> Response {
+    if !state.api.is_authorized(&headers) { return empty_404(); }
+    stats::refresh_backends_for_ui(state.clone(), stats::health_timeout(&state)).await;
+    json_response(StatusCode::OK, serde_json::json!({
+        "schema_version": 1,
+        "api_name": "t2s",
+        "api_version": 1,
+        "ok": true,
+        "instance": state.api.refreshed_instance(),
+        "backends": state.backends.lock().snapshot(),
+    }))
 }
 
 fn parse_cid(s: &str) -> Option<u64> {
@@ -417,6 +615,10 @@ fn build_state(state: &AppState) -> ApiState {
     let download_limit_mbit = if bps > 0 { (bps as f64) * 8.0 / (1024.0 * 1024.0) } else { 0.0 };
 
     ApiState {
+        schema_version: 1,
+        api_name: "t2s".to_string(),
+        api_version: 1,
+        instance: state.api.refreshed_instance(),
         ts: stats::now_ts(),
         stats,
         active_connections: total_active,

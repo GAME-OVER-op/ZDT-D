@@ -174,7 +174,7 @@ pub fn start_if_enabled() -> Result<()> {
 
         if plan.setting.apps_mode {
             if route_mode_is_t2s(&plan.setting) {
-                spawn_t2s(t2s_bin.as_ref().expect("t2s checked"), &plan.setting, &plan.t2s_ports, &plan.t2s_log)
+                spawn_t2s(t2s_bin.as_ref().expect("t2s checked"), &plan.setting, &plan.t2s_ports, &plan.t2s_log, &plan.name)
                     .with_context(|| format!("spawn t2s profile={}", plan.name))?;
                 iptables_port::apply(
                     &plan.uid_out,
@@ -554,7 +554,7 @@ fn spawn_program(command: &str, bin_dir: &Path, log_path: &Path) -> Result<Runti
     Ok(runtime)
 }
 
-fn spawn_t2s(bin: &Path, setting: &ProfileSetting, t2s_ports: &[u16], log_path: &Path) -> Result<()> {
+fn spawn_t2s(bin: &Path, setting: &ProfileSetting, t2s_ports: &[u16], log_path: &Path, profile: &str) -> Result<()> {
     let logf = OpenOptions::new().create(true).write(true).truncate(true).open(log_path)
         .with_context(|| format!("open log {}", log_path.display()))?;
     let logf_err = logf.try_clone().with_context(|| "clone log file")?;
@@ -577,6 +577,12 @@ fn spawn_t2s(bin: &Path, setting: &ProfileSetting, t2s_ports: &[u16], log_path: 
         .arg("--web-socket")
         .arg("--web-port")
         .arg(setting.t2s_web_port.to_string())
+        .arg("--program")
+        .arg("myprogram")
+        .arg("--profile")
+        .arg(profile)
+        .arg("--scope")
+        .arg(format!("profile/myprogram/{}", profile))
         .stdin(Stdio::null())
         .stdout(Stdio::from(logf))
         .stderr(Stdio::from(logf_err));

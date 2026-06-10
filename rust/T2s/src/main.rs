@@ -5,6 +5,7 @@ mod rules;
 mod stats;
 mod web;
 mod sniff;
+mod api_runtime;
 
 use anyhow::{Context, Result};
 use cli::Args;
@@ -23,6 +24,7 @@ pub struct AppState {
     pub backends: Arc<Mutex<stats::SocksBackends>>,
     pub events: broadcast::Sender<stats::Event>,
     pub semaphore: Arc<Semaphore>,
+    pub api: Arc<api_runtime::ApiRuntime>,
 }
 
 
@@ -139,6 +141,8 @@ fn main() -> Result<()> {
 
 async fn async_main(workers: usize) -> Result<()> {
     let args = Args::parse_and_normalize().context("parse args")?;
+    let started_at = stats::now_ts();
+    let api = Arc::new(api_runtime::ApiRuntime::new(&args, started_at).context("init t2s api runtime")?);
 
     let rules = rules::Rules::load_from_env();
     let stats = Arc::new(stats::Stats::default());
@@ -163,6 +167,7 @@ async fn async_main(workers: usize) -> Result<()> {
         backends,
         events,
         semaphore,
+        api,
     };
 
     // Background: periodic backend checks + stats tick
@@ -182,6 +187,20 @@ async fn async_main(workers: usize) -> Result<()> {
     }
 
 
+
+    // Keep per-instance metadata fresh for Android-side discovery.
+    {
+        let api = state.api.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(Duration::from_secs(10));
+            loop {
+                tick.tick().await;
+                if let Err(e) = api.write_metadata() {
+                    tracing::warn!("failed to refresh t2s API metadata: {:#}", e);
+                }
+            }
+        });
+    }
 
     // Web server (optional)
     if args.web_socket {
@@ -223,6 +242,7 @@ async fn async_main(workers: usize) -> Result<()> {
     info!("Started with {} Tokio worker thread(s). Press Ctrl+C to stop.", workers);
     signal::ctrl_c().await?;
     info!("Shutting down.");
+    state.api.cleanup_metadata();
     Ok(())
 }
 

@@ -75,7 +75,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.android.zdtd.service.R
-import com.android.zdtd.service.LocalWebPanelActivity
+import com.android.zdtd.service.T2sPanelActivity
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.Dispatchers
@@ -453,8 +453,8 @@ private fun WireProxyWebPanelCard(
 ) {
   val accent = Color(0xFF38BDF8)
   WireProxySectionCard(
-    title = stringResource(R.string.web_panel_open),
-    desc = "127.0.0.1 web UI",
+    title = "t2s",
+    desc = "Нативная панель состояния t2s",
     accent = accent,
     icon = {
       if (checking) {
@@ -472,7 +472,7 @@ private fun WireProxyWebPanelCard(
         border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
       ) {
         Text(
-          stringResource(R.string.support_open),
+          "Панель",
           modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
           style = MaterialTheme.typography.labelLarge,
           fontWeight = FontWeight.Bold,
@@ -713,9 +713,10 @@ fun WireProxyProfileScreen(
               wireProxyWebPanelChecking = false
               if (available) {
                 context.startActivity(
-                  Intent(context, LocalWebPanelActivity::class.java)
-                    .putExtra(LocalWebPanelActivity.EXTRA_SCOPE_KEY, wireProxyWebPanelScope(profile))
-                    .putExtra(LocalWebPanelActivity.EXTRA_DEFAULT_URL, url)
+                  Intent(context, T2sPanelActivity::class.java)
+                    .putExtra(T2sPanelActivity.EXTRA_SCOPE, wireProxyWebPanelScope(profile))
+                    .putExtra(T2sPanelActivity.EXTRA_PORT, port)
+                    .putExtra(T2sPanelActivity.EXTRA_TITLE, "wireproxy / $profile")
                 )
               } else {
                 showSnack(context.getString(R.string.web_panel_unavailable))

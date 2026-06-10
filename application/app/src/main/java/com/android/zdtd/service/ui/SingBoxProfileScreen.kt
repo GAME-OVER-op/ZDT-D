@@ -72,7 +72,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import com.android.zdtd.service.R
-import com.android.zdtd.service.LocalWebPanelActivity
+import com.android.zdtd.service.T2sPanelActivity
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.Dispatchers
@@ -343,8 +343,8 @@ private fun SingBoxWebPanelCard(
   onOpen: () -> Unit,
 ) {
   SingBoxSectionCard(
-    title = stringResource(R.string.web_panel_open),
-    desc = "127.0.0.1 web UI",
+    title = "t2s",
+    desc = "Нативная панель состояния t2s",
     accent = Color(0xFF38BDF8),
     icon = {
       if (checking) {
@@ -369,7 +369,7 @@ private fun SingBoxWebPanelCard(
         border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.34f)),
       ) {
         Text(
-          stringResource(R.string.support_open),
+          "Панель",
           modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
           style = MaterialTheme.typography.labelLarge,
           fontWeight = FontWeight.Bold,
@@ -1297,9 +1297,10 @@ fun SingBoxProfileScreen(
               singBoxWebPanelChecking = false
               if (available) {
                 context.startActivity(
-                  Intent(context, LocalWebPanelActivity::class.java)
-                    .putExtra(LocalWebPanelActivity.EXTRA_SCOPE_KEY, singBoxWebPanelScope(profile))
-                    .putExtra(LocalWebPanelActivity.EXTRA_DEFAULT_URL, url)
+                  Intent(context, T2sPanelActivity::class.java)
+                    .putExtra(T2sPanelActivity.EXTRA_SCOPE, singBoxWebPanelScope(profile))
+                    .putExtra(T2sPanelActivity.EXTRA_PORT, port)
+                    .putExtra(T2sPanelActivity.EXTRA_TITLE, "sing-box / $profile")
                 )
               } else {
                 showSnack(context.getString(R.string.web_panel_unavailable))

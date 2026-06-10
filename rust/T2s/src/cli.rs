@@ -96,6 +96,17 @@ pub struct Args {
     #[arg(long, default_value_t=0.0, help="Download throttling in Mbit/s (0 disables)")]
     pub download_limit_mbit: f64,
 
+    #[arg(long, default_value="/data/adb/modules/ZDT-D/api", help="ZDT-D API root directory. t2s metadata is written under <api-dir>/t2s.")]
+    pub api_dir: String,
+    #[arg(long, default_value="", help="Stable t2s instance id for metadata/API responses. Auto-generated when omitted.")]
+    pub instance_id: String,
+    #[arg(long, default_value="", help="Owning ZDT-D program id, e.g. sing-box, wireproxy, myproxy.")]
+    pub program: String,
+    #[arg(long, default_value="", help="Owning ZDT-D profile name, if any.")]
+    pub profile: String,
+    #[arg(long, default_value="", help="Owning ZDT-D scope, e.g. profile/sing-box/main. Auto-derived when omitted.")]
+    pub scope: String,
+
 }
 
 impl Args {

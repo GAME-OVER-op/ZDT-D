@@ -573,6 +573,12 @@ fn spawn_t2s(
         .arg("--web-socket")
         .arg("--web-port")
         .arg(web_port.to_string())
+        .arg("--program")
+        .arg("tor")
+        .arg("--profile")
+        .arg("main")
+        .arg("--scope")
+        .arg("program/tor")
         .stdin(Stdio::null())
         .stdout(Stdio::from(logf))
         .stderr(Stdio::from(logf_err));

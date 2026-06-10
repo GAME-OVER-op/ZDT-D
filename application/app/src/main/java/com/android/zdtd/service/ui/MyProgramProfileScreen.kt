@@ -63,7 +63,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import com.android.zdtd.service.R
-import com.android.zdtd.service.LocalWebPanelActivity
+import com.android.zdtd.service.T2sPanelActivity
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.delay
@@ -212,7 +212,7 @@ private fun MyProgramWebPanelCard(
       horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       Text(
-        text = stringResource(R.string.web_panel_open),
+        text = "t2s",
         modifier = Modifier.weight(1f),
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.SemiBold,
@@ -229,7 +229,7 @@ private fun MyProgramWebPanelCard(
         } else {
           Icon(
             imageVector = Icons.Filled.Public,
-            contentDescription = stringResource(R.string.web_panel_open),
+            contentDescription = "t2s",
           )
         }
       }
@@ -567,9 +567,10 @@ fun MyProgramProfileScreen(
               myProgramWebPanelChecking = false
               if (available) {
                 context.startActivity(
-                  Intent(context, LocalWebPanelActivity::class.java)
-                    .putExtra(LocalWebPanelActivity.EXTRA_SCOPE_KEY, myProgramWebPanelScope(profile))
-                    .putExtra(LocalWebPanelActivity.EXTRA_DEFAULT_URL, url)
+                  Intent(context, T2sPanelActivity::class.java)
+                    .putExtra(T2sPanelActivity.EXTRA_SCOPE, myProgramWebPanelScope(profile))
+                    .putExtra(T2sPanelActivity.EXTRA_PORT, port)
+                    .putExtra(T2sPanelActivity.EXTRA_TITLE, "myprogram / $profile")
                 )
               } else {
                 showSnack(context.getString(R.string.web_panel_unavailable))

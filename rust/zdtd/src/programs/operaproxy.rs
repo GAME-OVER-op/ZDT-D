@@ -1359,6 +1359,12 @@ fn spawn_t2s(bin: &Path, listen_addr: &str, listen_port: u16, socks_ports_csv: &
         .arg("30")
         .arg("--enable-http2")
         .arg("--web-socket")
+        .arg("--program")
+        .arg("operaproxy")
+        .arg("--profile")
+        .arg("main")
+        .arg("--scope")
+        .arg("program/operaproxy")
         .stdin(Stdio::null())
         .stdout(Stdio::from(logf))
         .stderr(Stdio::from(logf_err));

@@ -238,7 +238,7 @@ pub fn start_if_enabled() -> Result<()> {
 
     for plan in &plans {
         truncate_file(&plan.t2s_log)?;
-        spawn_t2s(&t2s_bin, &plan.setting, &plan.proxy, &plan.t2s_log)
+        spawn_t2s(&t2s_bin, &plan.setting, &plan.proxy, &plan.t2s_log, &plan.name)
             .with_context(|| format!("spawn t2s profile={}", plan.name))?;
 
         iptables_port::apply(
@@ -451,7 +451,7 @@ pub fn ensure_valid_profile_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-fn spawn_t2s(bin: &Path, setting: &ProfileSetting, proxy: &ProxyConfig, log_path: &Path) -> Result<()> {
+fn spawn_t2s(bin: &Path, setting: &ProfileSetting, proxy: &ProxyConfig, log_path: &Path, profile: &str) -> Result<()> {
     let logf = OpenOptions::new().create(true).write(true).truncate(true).open(log_path)
         .with_context(|| format!("open log {}", log_path.display()))?;
     let logf_err = logf.try_clone().with_context(|| "clone log file")?;
@@ -477,6 +477,12 @@ fn spawn_t2s(bin: &Path, setting: &ProfileSetting, proxy: &ProxyConfig, log_path
         .arg("--web-socket")
         .arg("--web-port")
         .arg(setting.t2s_web_port.to_string())
+        .arg("--program")
+        .arg("myproxy")
+        .arg("--profile")
+        .arg(profile)
+        .arg("--scope")
+        .arg(format!("profile/myproxy/{}", profile))
         .stdin(Stdio::null())
         .stdout(Stdio::from(logf))
         .stderr(Stdio::from(logf_err));

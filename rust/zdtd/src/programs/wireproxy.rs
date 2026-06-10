@@ -198,6 +198,7 @@ pub fn start_if_enabled() -> Result<()> {
                 plan.setting.t2s_web_port,
                 &ports_csv,
                 &plan.t2s_log,
+                &plan.name,
             )
             .with_context(|| format!("spawn t2s profile={}", plan.name))?;
 
@@ -540,6 +541,7 @@ fn spawn_t2s(
     web_port: u16,
     socks_ports_csv: &str,
     log_path: &Path,
+    profile: &str,
 ) -> Result<()> {
     let logf = OpenOptions::new()
         .create(true)
@@ -568,6 +570,12 @@ fn spawn_t2s(
         .arg("--web-socket")
         .arg("--web-port")
         .arg(web_port.to_string())
+        .arg("--program")
+        .arg("wireproxy")
+        .arg("--profile")
+        .arg(profile)
+        .arg("--scope")
+        .arg(format!("profile/wireproxy/{}", profile))
         .stdin(Stdio::null())
         .stdout(Stdio::from(logf))
         .stderr(Stdio::from(logf_err));

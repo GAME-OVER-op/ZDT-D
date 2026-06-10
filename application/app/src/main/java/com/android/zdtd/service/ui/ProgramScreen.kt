@@ -50,7 +50,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import android.content.Intent
-import com.android.zdtd.service.LocalWebPanelActivity
+import com.android.zdtd.service.T2sPanelActivity
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.Dispatchers
@@ -207,9 +207,10 @@ fun ProgramScreen(
                     operaWebPanelChecking = false
                     if (available) {
                       context.startActivity(
-                        Intent(context, LocalWebPanelActivity::class.java)
-                          .putExtra(LocalWebPanelActivity.EXTRA_SCOPE_KEY, "program/operaproxy")
-                          .putExtra(LocalWebPanelActivity.EXTRA_DEFAULT_URL, OPERAPROXY_WEB_PANEL_URL)
+                        Intent(context, T2sPanelActivity::class.java)
+                          .putExtra(T2sPanelActivity.EXTRA_SCOPE, "program/operaproxy")
+                          .putExtra(T2sPanelActivity.EXTRA_PORT, 8000)
+                          .putExtra(T2sPanelActivity.EXTRA_TITLE, "operaproxy")
                       )
                     } else {
                       showSnack(context.getString(R.string.web_panel_unavailable))
@@ -534,14 +535,14 @@ private fun OperaWebPanelCard(
 
       Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(
-          text = stringResource(R.string.web_panel_open),
+          text = "t2s",
           style = MaterialTheme.typography.titleSmall,
           fontWeight = FontWeight.Bold,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
         Text(
-          text = OPERAPROXY_WEB_PANEL_URL,
+          text = "Нативная панель состояния t2s",
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
           maxLines = 1,
@@ -564,7 +565,7 @@ private fun OperaWebPanelCard(
           if (checking) {
             CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
           } else {
-            Icon(Icons.Filled.Public, contentDescription = stringResource(R.string.web_panel_open), modifier = Modifier.size(20.dp))
+            Icon(Icons.Filled.Public, contentDescription = "t2s", modifier = Modifier.size(20.dp))
           }
         }
       }

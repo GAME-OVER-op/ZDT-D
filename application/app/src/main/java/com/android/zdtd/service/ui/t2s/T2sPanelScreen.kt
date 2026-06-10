@@ -9,11 +9,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.calculateBottomPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -245,7 +246,7 @@ fun T2sPanelScreen(
 private fun OverviewTab(modifier: Modifier, state: T2sState, port: Int, downBps: Double, upBps: Double, samples: List<SpeedSample>, collecting: Boolean, errorText: String?) {
   LazyColumn(
     modifier = modifier,
-    contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 14.dp, bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp),
+    contentPadding = PaddingValues(top = 14.dp, bottom = 32.dp),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     item {
@@ -301,7 +302,7 @@ private fun ConnectionsTab(modifier: Modifier, connections: List<T2sConnection>,
   }
   LazyColumn(
     modifier = modifier,
-    contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 14.dp, bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp),
+    contentPadding = PaddingValues(top = 14.dp, bottom = 32.dp),
     verticalArrangement = Arrangement.spacedBy(10.dp),
   ) {
     item { OutlinedTextField(value = filter, onValueChange = { filter = it }, modifier = Modifier.fillMaxWidth(), singleLine = true, label = { Text("Фильтр по домену/IP") }) }
@@ -315,7 +316,7 @@ private fun BackendsTab(modifier: Modifier, backends: List<T2sBackend>, onAdd: (
   var showAdd by remember { mutableStateOf(false) }
   LazyColumn(
     modifier = modifier,
-    contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 14.dp, bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp),
+    contentPadding = PaddingValues(top = 14.dp, bottom = 32.dp),
     verticalArrangement = Arrangement.spacedBy(10.dp),
   ) {
     item {
@@ -343,7 +344,7 @@ private fun SettingsTab(modifier: Modifier, state: T2sState, poll: T2sPollResult
   var limitText by remember(state.downloadLimitMbit) { mutableStateOf(if (state.downloadLimitMbit > 0.0) "%.2f".format(state.downloadLimitMbit) else "0") }
   LazyColumn(
     modifier = modifier,
-    contentPadding = androidx.compose.foundation.layout.PaddingValues(top = 14.dp, bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp),
+    contentPadding = PaddingValues(top = 14.dp, bottom = 32.dp),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     item {
@@ -397,6 +398,7 @@ private fun SpeedChartCard(samples: List<SpeedSample>) = PanelCard {
   } else {
     val downColor = Color(0xFF38BDF8)
     val upColor = Color(0xFF8B5CF6)
+    val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
     Canvas(Modifier.fillMaxWidth().height(170.dp)) {
       val maxSpeed = max(1.0, samples.maxOf { max(it.downBps, it.upBps) })
       fun pathFor(selector: (SpeedSample) -> Double): Path {
@@ -478,7 +480,7 @@ private fun SpeedChartCard(samples: List<SpeedSample>) = PanelCard {
   }, dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } })
 }
 
-@Composable private fun PanelCard(content: @Composable Column.() -> Unit) = Card(
+@Composable private fun PanelCard(content: @Composable ColumnScope.() -> Unit) = Card(
   modifier = Modifier.fillMaxWidth(),
   shape = RoundedCornerShape(24.dp),
   colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.86f)),

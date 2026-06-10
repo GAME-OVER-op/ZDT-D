@@ -177,6 +177,8 @@ fun AppUpdateSettings(
   onToggleDaemonNotification: (Boolean) -> Unit,
   languageMode: String,
   onLanguageModeChange: (String) -> Unit,
+  themeMode: String,
+  onThemeModeChange: (String) -> Unit,
   protectorMode: String,
   onProtectorModeChange: (String) -> Unit,
   energySaver: com.android.zdtd.service.api.ApiModels.EnergySaverState,
@@ -334,6 +336,11 @@ fun AppUpdateSettings(
             languageMode = languageMode,
             compactWidth = false,
             onLanguageModeChange = onLanguageModeChange,
+          )
+          SettingsThemeSection(
+            themeMode = themeMode,
+            compactWidth = false,
+            onThemeModeChange = onThemeModeChange,
           )
           Column(Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.settings_reset_identifier_title), style = MaterialTheme.typography.bodyLarge)
@@ -512,6 +519,12 @@ fun AppUpdateSettings(
       languageMode = languageMode,
       compactWidth = compactWidth,
       onLanguageModeChange = onLanguageModeChange,
+    )
+
+    SettingsThemeSection(
+      themeMode = themeMode,
+      compactWidth = compactWidth,
+      onThemeModeChange = onThemeModeChange,
     )
 
     SettingsActionCard(
@@ -698,6 +711,67 @@ private fun SettingsActionCard(
             color = accent.copy(alpha = if (enabled) 1f else 0.45f),
             textAlign = TextAlign.Center,
           )
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun SettingsThemeSection(
+  themeMode: String,
+  compactWidth: Boolean,
+  onThemeModeChange: (String) -> Unit,
+) {
+  SettingsSectionCard {
+    Text(stringResource(R.string.settings_theme_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+    Text(
+      stringResource(R.string.settings_theme_body),
+      style = MaterialTheme.typography.bodySmall,
+      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
+    )
+
+    val selected = themeMode.lowercase().ifBlank { "system" }
+    val items = listOf(
+      "system" to stringResource(R.string.theme_system),
+      "light" to stringResource(R.string.theme_light),
+      "dark" to stringResource(R.string.theme_dark),
+    )
+
+    Surface(
+      modifier = Modifier.fillMaxWidth(),
+      shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
+      color = MaterialTheme.colorScheme.surface.copy(alpha = 0.52f),
+      tonalElevation = 0.dp,
+      shadowElevation = 0.dp,
+    ) {
+      if (compactWidth) {
+        Column(
+          modifier = Modifier.fillMaxWidth().padding(5.dp),
+          verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+          items.forEach { (value, label) ->
+            SettingsSegmentButton(
+              text = label,
+              selected = selected == value,
+              onClick = { onThemeModeChange(value) },
+              modifier = Modifier.fillMaxWidth(),
+            )
+          }
+        }
+      } else {
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(5.dp),
+          horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+          items.forEach { (value, label) ->
+            SettingsSegmentButton(
+              text = label,
+              selected = selected == value,
+              onClick = { onThemeModeChange(value) },
+              modifier = Modifier.weight(1f),
+            )
+          }
         }
       }
     }

@@ -60,6 +60,16 @@ class RootConfigManager(private val context: Context) {
         prefs.edit().putString("app_language_mode", safe).apply()
     }
 
+    // ----- App theme -----
+    /** "system" | "light" | "dark" */
+    fun getThemeMode(): String = prefs.getString("app_theme_mode", "system") ?: "system"
+
+    fun setThemeMode(mode: String) {
+        val v = mode.trim().lowercase()
+        val safe = if (v == "light" || v == "dark" || v == "system") v else "system"
+        prefs.edit().putString("app_theme_mode", safe).apply()
+    }
+
     fun getAppUpdateLastCheckTs(): Long = prefs.getLong("app_update_last_check_ts", 0L)
 
     fun setAppUpdateLastCheckTs(ts: Long) {

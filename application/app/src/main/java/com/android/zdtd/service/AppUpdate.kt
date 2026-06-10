@@ -9,6 +9,8 @@ data class AppUpdateUiState(
   val enabled: Boolean = true,
   /** App UI language mode: auto | ru | en */
   val languageMode: String = "auto",
+  /** App theme mode: system | light | dark */
+  val themeMode: String = "system",
   /** Module protector mode: off | on | auto */
   val protectorMode: String = "off",
   /** Advanced energy saver: screen-off freeze and CPU affinity. */

@@ -160,7 +160,7 @@
 
     <string name="nav_home">Главная</string>
     <string name="nav_stats">Статистика</string>
-    <string name="nav_programs">Инструменты</string>
+    <string name="nav_programs">Инстру����енты</string>
     <string name="nav_support">Поддержка</string>
 
     <string name="title_program">Инструмент</string>
@@ -363,7 +363,7 @@
     <string name="program_updates_update">Обновить</string>
     <string name="program_updates_updating">Обновляю…</string>
     <string name="program_updates_warning_title">Предупреждение</string>
-    <string name="program_updates_warning_text_fmt">Вы выбрали %1$s, что ниже %2$s. Возможны проблемы с запуском, и заготовленные стратегии могут не работать.</string>
+    <string name="program_updates_warning_text_fmt">Вы выбрали %1$s, что ниже %2$s. Возможны проблемы с з��пуском, и заготовленные стратегии могут не работать.</string>
     <string name="program_updates_continue">Продолжить</string>
     <string name="program_updates_choose_version_hint">Выберите версию для установки. Рекомендуется Latest (auto).</string>
     <string name="program_updates_latest_auto_title">Latest (auto)</string>
@@ -394,6 +394,8 @@
     <string name="common_create">Создать</string>
     <string name="common_choose">Выбрать</string>
     <string name="common_loading">Загрузка…</string>
+    <string name="common_back">Назад</string>
+    <string name="settings_screen_title">Настройки</string>
     <string name="common_ellipsis">…</string>
     <string name="common_error">Ошибка</string>
     <string name="common_refresh_cd">Обновить</string>
@@ -475,6 +477,11 @@
     <string name="language_auto">Авто</string>
     <string name="language_ru">RU</string>
     <string name="language_en">EN</string>
+    <string name="settings_theme_title">Тема</string>
+    <string name="settings_theme_body">Выберите оформление приложения. «Система» следует светлой/тёмной теме устройства.</string>
+    <string name="theme_system">Система</string>
+    <string name="theme_light">Светлая</string>
+    <string name="theme_dark">Тёмная</string>
     <string name="permission_required_title">Разрешение требуется</string>
     <string name="permission_required_body">Для онлайн-обновления приложения требуется разрешить установку обновлений из этого приложения. Это нужно только для установки APK после загрузки.</string>
     <string name="app_speed_zero">0 КБ/с</string>
@@ -690,7 +697,7 @@ APatch: 10700+</string>
     <string name="singbox_invalid_port_for_profile_fmt">Некорректный порт для профиля %1$s</string>
     <string name="singbox_invalid_capture_for_profile_fmt">Некорректный capture для профиля %1$s</string>
     <string name="singbox_profile_ports_must_be_unique">Порты профилей должны быть уникальны</string>
-    <string name="singbox_select_mode">Выберите режим</string>
+    <string name="singbox_select_mode">Выберите ��ежим</string>
     <string name="singbox_fill_t2s_port">Заполните t2s_port</string>
     <string name="singbox_fill_t2s_web_port">Заполните t2s_web_port</string>
     <string name="singbox_enable_at_least_one_profile">Включите хотя бы один профиль</string>
@@ -1049,7 +1056,7 @@ APatch: 10700+</string>
     <string name="myprogram_auto_save_failed">Не удалось выполнить автосохранение</string>
     <string name="myprogram_apps_mode_title">Режим приложений</string>
     <string name="myprogram_apps_mode_desc">Включите режим приложений, чтобы использовать список приложений вместе с t2s.</string>
-    <string name="myprogram_apps_mode_warning">Если после парсера список приложений окажется пустым, профиль не запустится.</string>
+    <string name="myprogram_apps_mode_warning">Если после парсера список приложений окажется пустым, профиль не запу��тится.</string>
     <string name="myprogram_launcher_mode_hint">При выключенном режиме приложений профиль работает как launcher пользовательской команды без списка приложений и t2s.</string>
     <string name="myprogram_apps_title">Приложения myprogram</string>
     <string name="myprogram_apps_desc">Выберите приложения, трафик которых должен идти через этот профиль myprogram.</string>
@@ -1315,7 +1322,7 @@ APatch: 10700+</string>
     <string name="mihomo_no_profiles_desc">Создайте профиль, отредактируйте config.yaml и выберите приложения.</string>
     <string name="mihomo_create_profile_title">Создать профиль Mihomo</string>
     <string name="mihomo_profile_created">Профиль %1$s создан</string>
-    <string name="mihomo_profile_name_rules">Разрешено: A-Z, a-z, 0-9, подчёркивание и дефис. Длина: 1..10 символов. Без пробелов, точек, слешей, кириллицы и спецсимволов.</string>
+    <string name="mihomo_profile_name_rules">Разрешено: A-Z, a-z, 0-9, под��ёркивание и дефис. Длина: 1..10 символов. Без пробелов, точек, слешей, кириллицы и спецсимволов.</string>
     <string name="mihomo_profile_name_invalid">Неверное имя профиля. Используйте только A-Z, a-z, 0-9, _ или -, длина 1..10.</string>
     <string name="mihomo_profile_name_readonly_hint">Имя профиля используется как имя папки и здесь не редактируется.</string>
     <string name="mihomo_tab_general">Общие</string>
@@ -1406,7 +1413,7 @@ APatch: 10700+</string>
     <string name="mihomo_section_transport">Транспорт</string>
     <string name="mihomo_section_reality_vision">Reality / Vision</string>
     <string name="mihomo_raw_block_title">Raw YAML / неизвестные поля</string>
-    <string name="mihomo_raw_live_hint">Этот блок обновляется сразу при изменении полей. Неизвестные поля Mihomo остаются здесь и сохраняются.</string>
+    <string name="mihomo_raw_live_hint">Этот блок обнов��яется сразу при изменении полей. Неизвестные поля Mihomo остаются здесь и сохраняются.</string>
     <string name="mihomo_live_yaml_preview_title">Live-предпросмотр YAML</string>
     <string name="mihomo_port_range_error">Порт должен быть в диапазоне 1..65535.</string>
     <string name="mihomo_field_name">Имя</string>
@@ -1489,7 +1496,7 @@ APatch: 10700+</string>
     <string name="mihomo_field_strategy">Стратегия</string>
     <string name="mihomo_field_icon">Иконка</string>
     <string name="mihomo_field_format">Формат</string>
-    <string name="mihomo_value_default">По умолчанию</string>
+    <string name="mihomo_value_default">П�� умолчанию</string>
     <string name="mihomo_provider_options_title">Параметры провайдера</string>
     <string name="mihomo_field_proxy">Прокси</string>
     <string name="mihomo_field_size_limit">Лимит размера</string>
@@ -1573,7 +1580,7 @@ APatch: 10700+</string>
     <string name="dpi_detector_test_http_title">HTTP / HTTPS проверки</string>
     <string name="dpi_detector_test_http_desc">Доступность сайтов и аномалии ответов на уровне протокола.</string>
     <string name="dpi_detector_test_telegram_title">Проверки Telegram DC</string>
-    <string name="dpi_detector_test_telegram_desc">Базовая связность и признаки замедления Telegram endpoints.</string>
+    <string name="dpi_detector_test_telegram_desc">Базовая связность и признаки ��амедления Telegram endpoints.</string>
 
 
     <!-- DPI Detector process UI -->
@@ -1613,7 +1620,7 @@ APatch: 10700+</string>
     <string name="dpi_detector_stage_dns_availability_desc">Проверяет UDP DNS и DoH-резолверы.</string>
     <string name="dpi_detector_stage_domains_title">Домены / TLS / HTTP</string>
     <string name="dpi_detector_stage_domains_desc">Проверяет DNS, TLS 1.2, TLS 1.3, HTTP и HTTPS для тестовых доменов.</string>
-    <string name="dpi_detector_stage_tcp16_title">TCP 12–64 КБ</string>
+    <string name="dpi_detector_stage_tcp16_title">TCP 12–64 ��Б</string>
     <string name="dpi_detector_stage_tcp16_desc">Ищет обрывы соединений на TCP payload 12–64 КБ.</string>
     <string name="dpi_detector_stage_sni_title">Проверка SNI</string>
     <string name="dpi_detector_stage_sni_desc">Проверяет whitelist SNI и отличия маршрутизации TLS.</string>

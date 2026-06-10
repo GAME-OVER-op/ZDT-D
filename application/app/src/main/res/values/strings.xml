@@ -183,6 +183,11 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="language_auto">Auto</string>
     <string name="language_ru">RU</string>
     <string name="language_en">EN</string>
+    <string name="settings_theme_title">Theme</string>
+    <string name="settings_theme_body">Choose the app appearance. System follows your device light/dark setting.</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
     <string name="permission_required_title">Permission required</string>
     <string name="permission_required_body">To update the app online, you need to allow installing updates from this app. This is only required to install the APK after download.</string>
     <string name="app_speed_zero">0 KB/s</string>
@@ -545,6 +550,8 @@ Use another editor to modify it.</string>
     <string name="common_saved">Saved</string><string name="common_create">Create</string>
     <string name="common_choose">Choose</string>
     <string name="common_loading">Loading…</string>
+    <string name="common_back">Back</string>
+    <string name="settings_screen_title">Settings</string>
     <string name="common_ellipsis">…</string><string name="common_refresh_cd">Refresh</string>
     <string name="common_upload_cd">Upload</string>
     <string name="common_new_cd">New</string>

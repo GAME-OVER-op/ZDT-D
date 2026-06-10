@@ -248,6 +248,9 @@ interface ZdtdActions {
   /** Set app UI language: auto | ru | en. */
   fun setAppLanguageMode(mode: String)
 
+  /** Set app theme mode: system | light | dark. */
+  fun setThemeMode(mode: String)
+
   /** Reload daemon settings used by the settings sheet. */
   fun refreshDaemonSettings()
 

@@ -322,6 +322,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     AppUpdateUiState(
       enabled = root.isAppUpdateCheckEnabled(),
       languageMode = root.getAppLanguageMode(),
+      themeMode = root.getThemeMode(),
       protectorMode = "off",
       hotspotT2sEnabled = false,
       hotspotT2sTarget = "",
@@ -334,6 +335,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     )
   )
   val appUpdate: StateFlow<AppUpdateUiState> = _appUpdate.asStateFlow()
+
+  // ----- App theme (system | light | dark) -----
+  private val _themeMode =
+    MutableStateFlow(com.android.zdtd.service.ui.theme.ZdtdThemeMode.fromStorage(root.getThemeMode()))
+  val themeMode: StateFlow<com.android.zdtd.service.ui.theme.ZdtdThemeMode> = _themeMode.asStateFlow()
 
   private val _appUpdateEvents = MutableSharedFlow<AppUpdateEvent>(extraBufferCapacity = 8)
   val appUpdateEvents: SharedFlow<AppUpdateEvent> = _appUpdateEvents.asSharedFlow()
@@ -5398,6 +5404,12 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     root.setAppLanguageMode(mode)
     applyAppLanguageMode(root.getAppLanguageMode())
     _appUpdate.update { it.copy(languageMode = root.getAppLanguageMode()) }
+  }
+
+  override fun setThemeMode(mode: String) {
+    root.setThemeMode(mode)
+    _themeMode.value = com.android.zdtd.service.ui.theme.ZdtdThemeMode.fromStorage(root.getThemeMode())
+    _appUpdate.update { it.copy(themeMode = root.getThemeMode()) }
   }
 
   private suspend fun fetchHotspotSingBoxProfiles(): List<ApiModels.SingBoxProfileChoice> {

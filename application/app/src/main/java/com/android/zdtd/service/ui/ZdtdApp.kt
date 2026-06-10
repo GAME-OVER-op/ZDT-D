@@ -987,6 +987,8 @@ private fun MainShell(
                 onToggleDaemonNotification = actions::setDaemonStatusNotificationsEnabled,
                 languageMode = appUpdate.languageMode,
                 onLanguageModeChange = actions::setAppLanguageMode,
+                themeMode = appUpdate.themeMode,
+                onThemeModeChange = actions::setThemeMode,
                 protectorMode = appUpdate.protectorMode,
                 onProtectorModeChange = actions::setProtectorMode,
                 energySaver = appUpdate.energySaver,
@@ -1079,6 +1081,8 @@ private fun MainShell(
                 onToggleDaemonNotification = actions::setDaemonStatusNotificationsEnabled,
                 languageMode = appUpdate.languageMode,
                 onLanguageModeChange = actions::setAppLanguageMode,
+                themeMode = appUpdate.themeMode,
+                onThemeModeChange = actions::setThemeMode,
                 protectorMode = appUpdate.protectorMode,
                 onProtectorModeChange = actions::setProtectorMode,
                 energySaver = appUpdate.energySaver,
@@ -1991,131 +1995,14 @@ private fun PortraitSettingsShelf(
   onDismiss: () -> Unit,
   content: @Composable () -> Unit,
 ) {
-  val scope = rememberCoroutineScope()
-  val density = LocalDensity.current
-  val dragOffsetY = remember { Animatable(0f) }
-  var visible by remember { mutableStateOf(false) }
-  var dismissing by remember { mutableStateOf(false) }
-  val dismissThresholdPx = with(density) { 92.dp.toPx() }
-  val dismissTargetPx = with(density) { 220.dp.toPx() }
-
-  fun dismissWithAnimation() {
-    if (dismissing) return
-    dismissing = true
-    scope.launch {
-      visible = false
-      runCatching {
-        dragOffsetY.animateTo(
-          targetValue = dismissTargetPx,
-          animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
-        )
-      }
-      onDismiss()
-    }
-  }
-
-  LaunchedEffect(Unit) {
-    visible = true
-  }
-
-  Dialog(
-    onDismissRequest = { dismissWithAnimation() },
-    properties = DialogProperties(usePlatformDefaultWidth = false),
+  // Settings are now shown as a dedicated full-screen window (Material 3),
+  // not a draggable bottom-sheet card. The loading state is handled by the
+  // provided content, so this frame does not show its own spinner.
+  SettingsScreen(
+    onDismiss = onDismiss,
+    loading = false,
   ) {
-    Box(
-      modifier = Modifier
-        .fillMaxSize()
-        .windowInsetsPadding(WindowInsets.safeDrawing),
-      contentAlignment = Alignment.BottomCenter,
-    ) {
-      AnimatedVisibility(
-        visible = visible,
-        enter = fadeIn(tween(durationMillis = 150, easing = FastOutSlowInEasing)) +
-          slideInVertically(
-            animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
-            initialOffsetY = { it / 4 },
-          ) +
-          scaleIn(
-            animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
-            initialScale = 0.98f,
-          ),
-        exit = fadeOut(tween(durationMillis = 110)) +
-          slideOutVertically(
-            animationSpec = tween(durationMillis = 170, easing = FastOutSlowInEasing),
-            targetOffsetY = { it / 5 },
-          ),
-      ) {
-        Surface(
-          modifier = Modifier
-            .fillMaxWidth()
-            .fillMaxHeight(0.88f)
-            .graphicsLayer { translationY = dragOffsetY.value },
-          shape = RoundedCornerShape(topStart = 30.dp, topEnd = 30.dp),
-          color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
-          tonalElevation = 4.dp,
-          shadowElevation = 10.dp,
-        ) {
-          Column(Modifier.fillMaxSize()) {
-            Box(
-              modifier = Modifier
-                .fillMaxWidth()
-                .height(34.dp)
-                .pointerInput(Unit) {
-                  detectVerticalDragGestures(
-                    onVerticalDrag = { _, dragAmount ->
-                      val next = (dragOffsetY.value + dragAmount).coerceAtLeast(0f)
-                      scope.launch { dragOffsetY.snapTo(next) }
-                    },
-                    onDragEnd = {
-                      scope.launch {
-                        if (dragOffsetY.value >= dismissThresholdPx) {
-                          dismissWithAnimation()
-                        } else {
-                          dragOffsetY.animateTo(
-                            targetValue = 0f,
-                            animationSpec = spring(
-                              dampingRatio = Spring.DampingRatioNoBouncy,
-                              stiffness = Spring.StiffnessMediumLow,
-                            ),
-                          )
-                        }
-                      }
-                    },
-                    onDragCancel = {
-                      scope.launch {
-                        dragOffsetY.animateTo(
-                          targetValue = 0f,
-                          animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessMediumLow,
-                          ),
-                        )
-                      }
-                    },
-                  )
-                },
-              contentAlignment = Alignment.Center,
-            ) {
-              Box(
-                modifier = Modifier
-                  .width(52.dp)
-                  .height(5.dp)
-                  .clip(RoundedCornerShape(100.dp))
-                  .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f)),
-              )
-            }
-            Box(
-              modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .clipToBounds(),
-            ) {
-              content()
-            }
-          }
-        }
-      }
-    }
+    content()
   }
 }
 
@@ -2124,39 +2011,12 @@ private fun LandscapeSettingsShelf(
   onDismiss: () -> Unit,
   content: @Composable () -> Unit,
 ) {
-  Dialog(
-    onDismissRequest = onDismiss,
-    properties = DialogProperties(usePlatformDefaultWidth = false),
+  // Unified with portrait: full-screen Material 3 settings window.
+  SettingsScreen(
+    onDismiss = onDismiss,
+    loading = false,
   ) {
-    Box(
-      modifier = Modifier
-        .fillMaxSize()
-        .windowInsetsPadding(WindowInsets.safeDrawing),
-      contentAlignment = Alignment.CenterStart,
-    ) {
-      Surface(
-        modifier = Modifier
-          .fillMaxHeight(0.94f)
-          .fillMaxWidth(0.78f)
-          .padding(start = 14.dp, top = 8.dp, bottom = 8.dp),
-        shape = RoundedCornerShape(28.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
-        tonalElevation = 4.dp,
-        shadowElevation = 10.dp,
-      ) {
-        Box(Modifier.fillMaxSize()) {
-          content()
-          IconButton(
-            onClick = onDismiss,
-            modifier = Modifier
-              .align(Alignment.TopEnd)
-              .padding(8.dp),
-          ) {
-            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_close))
-          }
-        }
-      }
-    }
+    content()
   }
 }
 

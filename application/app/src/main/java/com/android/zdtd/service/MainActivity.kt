@@ -106,7 +106,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     setContent {
-      ZdtdTheme {
+      val themeMode by vm.themeMode.collectAsStateWithLifecycle()
+      ZdtdTheme(themeMode = themeMode) {
         Surface {
           val rootState by vm.rootState.collectAsStateWithLifecycle()
 

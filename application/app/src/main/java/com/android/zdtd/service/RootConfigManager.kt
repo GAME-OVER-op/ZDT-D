@@ -51,13 +51,35 @@ class RootConfigManager(private val context: Context) {
     }
 
     // ----- App language -----
-    /** "auto" | "ru" | "en" */
+    /** App UI language mode: auto or one of the supported BCP-47 language tags. */
     fun getAppLanguageMode(): String = prefs.getString("app_language_mode", "auto") ?: "auto"
 
     fun setAppLanguageMode(mode: String) {
-        val v = mode.trim().lowercase()
-        val safe = if (v == "ru" || v == "en" || v == "auto") v else "auto"
+        val v = mode.trim().lowercase().replace("_", "-")
+        val safe = if (v in supportedAppLanguageModes) v else "auto"
         prefs.edit().putString("app_language_mode", safe).apply()
+    }
+
+    companion object {
+        val supportedAppLanguageModes: Set<String> = setOf(
+            "auto",
+            "en",
+            "ru",
+            "fa",
+            "tr",
+            "ar",
+            "zh-cn",
+            "es",
+            "pt-br",
+            "id",
+            "hi",
+            "uk",
+            "de",
+            "fr",
+            "vi",
+            "ko",
+            "ja",
+        )
     }
 
     // ----- App theme -----

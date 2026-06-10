@@ -10,24 +10,47 @@ import java.util.Locale
 
 object AppLanguageSupport {
 
+  private val languageTagsByMode: Map<String, String> = mapOf(
+    "en" to "en",
+    "ru" to "ru",
+    "fa" to "fa",
+    "tr" to "tr",
+    "ar" to "ar",
+    "zh-cn" to "zh-CN",
+    "es" to "es",
+    "pt-br" to "pt-BR",
+    "id" to "id",
+    "hi" to "hi",
+    "uk" to "uk",
+    "de" to "de",
+    "fr" to "fr",
+    "vi" to "vi",
+    "ko" to "ko",
+    "ja" to "ja",
+  )
+
+  fun normalizeLanguageMode(mode: String): String =
+    mode.trim().lowercase(Locale.ROOT).replace("_", "-")
+      .takeIf { it == "auto" || it in languageTagsByMode }
+      ?: "auto"
+
+  fun languageTagForMode(mode: String): String? = languageTagsByMode[normalizeLanguageMode(mode)]
+
   fun applyPersistedAppLocale(context: Context) {
-    val mode = RootConfigManager(context.applicationContext).getAppLanguageMode().trim().lowercase()
-    when (mode) {
-      "auto", "" -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
-      "ru" -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("ru"))
-      "en" -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("en"))
-      else -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
+    val mode = normalizeLanguageMode(RootConfigManager(context.applicationContext).getAppLanguageMode())
+    val tag = languageTagForMode(mode)
+    if (tag.isNullOrBlank()) {
+      AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
+    } else {
+      AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(tag))
     }
   }
 
   fun localizedAppContext(base: Context): Context = applyLocale(base, preferredLocale(base))
 
   fun preferredLocale(base: Context): Locale? {
-    return when (RootConfigManager(base.applicationContext).getAppLanguageMode().trim().lowercase()) {
-      "ru" -> Locale("ru")
-      "en" -> Locale("en")
-      else -> null
-    }
+    val tag = languageTagForMode(RootConfigManager(base.applicationContext).getAppLanguageMode())
+    return tag?.let { Locale.forLanguageTag(it) }
   }
 
   fun resolveAppLabel(base: Context, packageName: String): String {

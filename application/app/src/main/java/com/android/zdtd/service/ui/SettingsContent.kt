@@ -691,11 +691,25 @@ private fun SettingsLanguageSection(
       color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
     )
 
-    val selected = languageMode.lowercase().ifBlank { "auto" }
+    val selected = languageMode.trim().lowercase().replace("_", "-").ifBlank { "auto" }
     val items = listOf(
       "auto" to stringResource(R.string.language_auto),
-      "ru" to stringResource(R.string.language_ru),
       "en" to stringResource(R.string.language_en),
+      "ru" to stringResource(R.string.language_ru),
+      "fa" to stringResource(R.string.language_fa),
+      "tr" to stringResource(R.string.language_tr),
+      "ar" to stringResource(R.string.language_ar),
+      "zh-cn" to stringResource(R.string.language_zh_cn),
+      "es" to stringResource(R.string.language_es),
+      "pt-br" to stringResource(R.string.language_pt_br),
+      "id" to stringResource(R.string.language_id),
+      "hi" to stringResource(R.string.language_hi),
+      "uk" to stringResource(R.string.language_uk),
+      "de" to stringResource(R.string.language_de),
+      "fr" to stringResource(R.string.language_fr),
+      "vi" to stringResource(R.string.language_vi),
+      "ko" to stringResource(R.string.language_ko),
+      "ja" to stringResource(R.string.language_ja),
     )
 
     Surface(
@@ -720,17 +734,27 @@ private fun SettingsLanguageSection(
           }
         }
       } else {
-        Row(
+        Column(
           modifier = Modifier.fillMaxWidth().padding(5.dp),
-          horizontalArrangement = Arrangement.spacedBy(5.dp),
+          verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
-          items.forEach { (value, label) ->
-            SettingsSegmentButton(
-              text = label,
-              selected = selected == value,
-              onClick = { onLanguageModeChange(value) },
-              modifier = Modifier.weight(1f),
-            )
+          items.chunked(3).forEach { rowItems ->
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(5.dp),
+            ) {
+              rowItems.forEach { (value, label) ->
+                SettingsSegmentButton(
+                  text = label,
+                  selected = selected == value,
+                  onClick = { onLanguageModeChange(value) },
+                  modifier = Modifier.weight(1f),
+                )
+              }
+              repeat(3 - rowItems.size) {
+                Spacer(modifier = Modifier.weight(1f))
+              }
+            }
           }
         }
       }

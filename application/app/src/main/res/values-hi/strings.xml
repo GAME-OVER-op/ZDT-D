@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_language_title">भाषा</string>
+    <string name="settings_language_body">स्वचालित: समर्थित होने पर सिस्टम भाषा का उपयोग करता है, अन्यथा अंग्रेज़ी.</string>
+    <string name="language_auto">स्वचालित</string>
+    <string name="language_en">English</string>
+    <string name="language_ru">Русский</string>
+    <string name="language_fa">فارسی</string>
+    <string name="language_tr">Türkçe</string>
+    <string name="language_ar">العربية</string>
+    <string name="language_zh_cn">简体中文</string>
+    <string name="language_es">Español</string>
+    <string name="language_pt_br">Português BR</string>
+    <string name="language_id">Bahasa Indonesia</string>
+    <string name="language_hi">हिन्दी</string>
+    <string name="language_uk">Українська</string>
+    <string name="language_de">Deutsch</string>
+    <string name="language_fr">Français</string>
+    <string name="language_vi">Tiếng Việt</string>
+    <string name="language_ko">한국어</string>
+    <string name="language_ja">日本語</string>
+</resources>

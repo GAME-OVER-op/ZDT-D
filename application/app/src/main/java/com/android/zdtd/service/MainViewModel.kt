@@ -5346,17 +5346,13 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
   // ----- App update (GitHub) -----
 
   private fun applyAppLanguageMode(mode: String) {
-  val m = mode.trim().lowercase()
-  when (m) {
-    // Auto: clear overrides so the app follows the system locale.
-    // With only EN (default) + RU resources this matches the rule:
-    // system ru -> RU, any other -> EN (fallback).
-    "auto", "" -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
-    "ru" -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("ru"))
-    "en" -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags("en"))
-    else -> AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
+    val tag = AppLanguageSupport.languageTagForMode(mode)
+    if (tag.isNullOrBlank()) {
+      AppCompatDelegate.setApplicationLocales(LocaleListCompat.getEmptyLocaleList())
+    } else {
+      AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(tag))
+    }
   }
-}
 
   override fun setAppUpdateChecksEnabled(enabled: Boolean) {
     root.setAppUpdateCheckEnabled(enabled)

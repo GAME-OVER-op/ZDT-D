@@ -245,7 +245,7 @@ interface ZdtdActions {
   /** Show/hide the app-owned notification about daemon status (running/stopped). */
   fun setDaemonStatusNotificationsEnabled(enabled: Boolean)
 
-  /** Set app UI language: auto | ru | en. */
+  /** Set app UI language: auto or one of the supported BCP-47 language tags. */
   fun setAppLanguageMode(mode: String)
 
   /** Set app theme mode: system | light | dark. */

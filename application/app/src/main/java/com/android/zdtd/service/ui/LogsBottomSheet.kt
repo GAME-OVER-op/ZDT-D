@@ -29,7 +29,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -239,7 +241,7 @@ private fun LogsSheetContent(
         modifier = Modifier.fillMaxWidth().weight(1f),
       ) {
         items(logs, key = { it.ts + it.msg }, contentType = { "log_entry" }) { l ->
-          Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.65f))) {
+          Card(colors = CardDefaults.cardColors(containerColor = logsSheetCardContainerColor())) {
             Column(Modifier.padding(12.dp)) {
               Text("${l.ts} • ${l.level}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
               Spacer(Modifier.height(4.dp))
@@ -251,3 +253,14 @@ private fun LogsSheetContent(
     }
   }
 }
+
+@Composable
+private fun logsSheetCardContainerColor(): Color {
+  val scheme = MaterialTheme.colorScheme
+  return if (scheme.background.luminance() > 0.5f) {
+    scheme.surfaceVariant.copy(alpha = 0.46f)
+  } else {
+    scheme.surface.copy(alpha = 0.65f)
+  }
+}
+

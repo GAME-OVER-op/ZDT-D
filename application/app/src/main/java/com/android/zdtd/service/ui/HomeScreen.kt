@@ -33,6 +33,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -185,6 +188,7 @@ fun HomeScreen(
             modifier = Modifier
               .fillMaxSize()
               .clip(CircleShape),
+            colorFilter = lightThemePowerImageFilter(),
           )
         }
 
@@ -494,13 +498,7 @@ fun HomeScreen(
               ) { idx ->
                 val item: DaemonLogRenderLine = display[idx]
                 val line: DaemonLogUiLine = item.line
-                val backgroundColor = when (line.level) {
-                  DaemonLogLevel.WARN -> Color(0xFF2F3136)
-                  DaemonLogLevel.INFO -> Color(0xFF4A1F1F)
-                  DaemonLogLevel.ERROR -> Color(0xFF5A1B1B)
-                  DaemonLogLevel.NOTICE -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.70f)
-                  DaemonLogLevel.OTHER -> MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
-                }
+                val backgroundColor = daemonLogLineBackground(line.level)
                 val rowVisibleState = remember {
                   MutableTransitionState(false).apply { targetState = true }
                 }
@@ -554,6 +552,48 @@ fun HomeScreen(
     }
   }
 }
+
+@Composable
+private fun isLightColorScheme(): Boolean =
+  MaterialTheme.colorScheme.background.luminance() > 0.5f
+
+@Composable
+private fun lightThemePowerImageFilter(): ColorFilter? {
+  if (!isLightColorScheme()) return null
+  return ColorFilter.colorMatrix(
+    ColorMatrix(
+      floatArrayOf(
+        1.08f, 0f, 0f, 0f, 18f,
+        0f, 1.08f, 0f, 0f, 18f,
+        0f, 0f, 1.08f, 0f, 18f,
+        0f, 0f, 0f, 1f, 0f,
+      )
+    )
+  )
+}
+
+@Composable
+private fun daemonLogLineBackground(level: DaemonLogLevel): Color {
+  val scheme = MaterialTheme.colorScheme
+  return if (isLightColorScheme()) {
+    when (level) {
+      DaemonLogLevel.WARN -> Color(0xFFFFF4D6)
+      DaemonLogLevel.INFO -> Color(0xFFFFE8E8)
+      DaemonLogLevel.ERROR -> Color(0xFFFFDAD6)
+      DaemonLogLevel.NOTICE -> scheme.surfaceVariant.copy(alpha = 0.56f)
+      DaemonLogLevel.OTHER -> scheme.surface.copy(alpha = 0.78f)
+    }
+  } else {
+    when (level) {
+      DaemonLogLevel.WARN -> Color(0xFF2F3136)
+      DaemonLogLevel.INFO -> Color(0xFF4A1F1F)
+      DaemonLogLevel.ERROR -> Color(0xFF5A1B1B)
+      DaemonLogLevel.NOTICE -> scheme.surfaceVariant.copy(alpha = 0.70f)
+      DaemonLogLevel.OTHER -> scheme.surface.copy(alpha = 0.55f)
+    }
+  }
+}
+
 
 @Composable
 private fun LandscapeHomeContent(
@@ -632,6 +672,7 @@ private fun LandscapeHomeContent(
             painter = painterResource(powerPainter),
             contentDescription = null,
             modifier = Modifier.fillMaxSize().clip(CircleShape),
+            colorFilter = lightThemePowerImageFilter(),
           )
         }
         Spacer(Modifier.height(10.dp))
@@ -723,13 +764,7 @@ private fun LandscapeHomeContent(
             items(lines.size) { index ->
               val line = lines[index]
               Surface(
-                color = when (line.level) {
-                  DaemonLogLevel.WARN -> Color(0xFF2F3136)
-                  DaemonLogLevel.INFO -> Color(0xFF4A1F1F)
-                  DaemonLogLevel.ERROR -> Color(0xFF5A1B1B)
-                  DaemonLogLevel.NOTICE -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.70f)
-                  DaemonLogLevel.OTHER -> MaterialTheme.colorScheme.surface.copy(alpha = 0.55f)
-                },
+                color = daemonLogLineBackground(line.level),
                 shape = RoundedCornerShape(12.dp),
               ) {
                 Text(

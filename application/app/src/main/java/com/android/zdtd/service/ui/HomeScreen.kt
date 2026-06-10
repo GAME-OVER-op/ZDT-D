@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Power
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -33,8 +34,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -182,13 +181,9 @@ fun HomeScreen(
             .clip(CircleShape)
             .clickable(enabled = !busy) { actions.toggleService() },
         ) {
-          Image(
-            painter = painterResource(powerPainter),
-            contentDescription = null,
-            modifier = Modifier
-              .fillMaxSize()
-              .clip(CircleShape),
-            colorFilter = lightThemePowerImageFilter(),
+          ThemeAwarePowerButtonContent(
+            on = on,
+            painterRes = powerPainter,
           )
         }
 
@@ -558,18 +553,61 @@ private fun isLightColorScheme(): Boolean =
   MaterialTheme.colorScheme.background.luminance() > 0.5f
 
 @Composable
-private fun lightThemePowerImageFilter(): ColorFilter? {
-  if (!isLightColorScheme()) return null
-  return ColorFilter.colorMatrix(
-    ColorMatrix(
-      floatArrayOf(
-        1.08f, 0f, 0f, 0f, 18f,
-        0f, 1.08f, 0f, 0f, 18f,
-        0f, 0f, 1.08f, 0f, 18f,
-        0f, 0f, 0f, 1f, 0f,
-      )
+private fun ThemeAwarePowerButtonContent(
+  on: Boolean,
+  painterRes: Int,
+) {
+  if (isLightColorScheme()) {
+    LightThemePowerButtonContent(on = on)
+  } else {
+    Image(
+      painter = painterResource(painterRes),
+      contentDescription = null,
+      modifier = Modifier
+        .fillMaxSize()
+        .clip(CircleShape),
     )
-  )
+  }
+}
+
+@Composable
+private fun LightThemePowerButtonContent(on: Boolean) {
+  val scheme = MaterialTheme.colorScheme
+  val accent = if (on) Color(0xFF16A34A) else scheme.primary
+  val outerBorder = if (on) accent.copy(alpha = 0.42f) else scheme.outline.copy(alpha = 0.34f)
+  Box(
+    modifier = Modifier
+      .fillMaxSize()
+      .clip(CircleShape)
+      .background(
+        Brush.radialGradient(
+          colors = listOf(
+            Color.White,
+            scheme.surfaceContainerLowest,
+            scheme.surfaceContainerLow,
+          ),
+          radius = 720f,
+        )
+      )
+      .border(2.dp, outerBorder, CircleShape),
+    contentAlignment = Alignment.Center,
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxSize(0.72f)
+        .clip(CircleShape)
+        .background(accent.copy(alpha = if (on) 0.13f else 0.10f))
+        .border(1.dp, accent.copy(alpha = if (on) 0.34f else 0.24f), CircleShape),
+      contentAlignment = Alignment.Center,
+    ) {
+      Icon(
+        imageVector = Icons.Filled.Power,
+        contentDescription = null,
+        tint = accent,
+        modifier = Modifier.fillMaxSize(0.50f),
+      )
+    }
+  }
 }
 
 @Composable
@@ -668,11 +706,9 @@ private fun LandscapeHomeContent(
             .clip(CircleShape)
             .clickable(enabled = !busy) { actions.toggleService() },
         ) {
-          Image(
-            painter = painterResource(powerPainter),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize().clip(CircleShape),
-            colorFilter = lightThemePowerImageFilter(),
+          ThemeAwarePowerButtonContent(
+            on = on,
+            painterRes = powerPainter,
           )
         }
         Spacer(Modifier.height(10.dp))

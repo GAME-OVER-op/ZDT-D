@@ -1,801 +1,739 @@
 # ZDT-D Programs and Components
 
-This document describes the main programs and internal components used by ZDT-D.
+This document is the technical map of ZDT-D programs, helpers and routing
+components. It explains what each component is, how it is used, which routing
+model it belongs to and where its runtime data normally lives.
 
-The goal of this file is to explain what each component is, how ZDT-D uses it, what routing model it belongs to, and where to read the original upstream documentation when an external project is involved.
+The root README files describe the project at a high level. This document is for
+technical understanding and development.
 
-ZDT-D combines external networking tools with its own Android-specific daemon, routing builders, profile logic, and app-list management.
+## System overview
 
----
+ZDT-D is built from four major layers:
+
+```text
+Android app
+  -> local daemon API
+    -> zdtd root daemon
+      -> firewall/netd/runtime builders
+        -> external and internal network programs
+```
+
+The Android app stores settings and calls the daemon. The daemon runs as root,
+starts helper programs, resolves package names into Linux UIDs, applies firewall
+rules and creates Android `netd` UID bindings where required.
+
+ZDT-D routes selected applications by UID. The app list starts as Android package
+names in the UI, then the daemon resolves those packages into UID files used by
+routing rules.
+
+## Routing models
+
+### NFQUEUE packet processing
+
+```text
+selected UID -> iptables mangle -> NFQUEUE -> userspace DPI engine
+```
+
+Used by:
+
+- `nfqws`;
+- `nfqws2`.
+
+This model is used for packet-level DPI bypass strategies. The daemon owns the
+UID/NFQUEUE rules; the external engine owns packet processing behavior.
+
+### Transparent local redirect
+
+```text
+selected UID -> iptables nat REDIRECT -> local listener -> proxy/helper backend
+```
+
+Used by local proxy pipelines such as:
+
+- sing-box proxy mode;
+- wireproxy;
+- Tor;
+- opera-proxy;
+- myproxy;
+- some myprogram scenarios.
+
+`t2s` is commonly used to convert transparent TCP traffic into SOCKS5 upstream
+connections.
+
+### Android netd / TUN binding
+
+```text
+TUN interface -> zdtd VPN profile -> Android netd network -> selected UIDs
+```
+
+Used by:
+
+- OpenVPN;
+- tun2socks;
+- myvpn;
+- sing-box VPN mode through external tun2socks;
+- future TUN/VPN style integrations.
+
+This does not use Android `VpnService` as the main engine. ZDT-D uses root and
+Android `netd` to bind selected app UIDs to a TUN network.
+
+### DNS local resolver
+
+```text
+local DNS component -> optional routing/firewall integration -> selected scenarios
+```
+
+Used by dnscrypt-proxy and DNS-related settings. DNS behavior depends heavily on
+Android ROM behavior, Private DNS settings, IPv6 and firewall support.
+
+### Helper/protection model
+
+Some features do not own the main traffic route:
+
+- `blockedquic` blocks UDP/443 for selected apps;
+- `proxyInfo` protects local proxy ports and reports suspicious access;
+- energy saver manages idle profiles/processes;
+- diagnostics run temporary tests.
+
+These can often coexist with a main routing profile.
 
 ## Core components
 
+### Android application
+
+The Android app is the controller UI.
+
+It provides:
+
+- start/stop controls;
+- profile editors;
+- app picker and app-list management;
+- logs and status screens;
+- diagnostics screens;
+- module installation/update helpers;
+- settings, widgets and Quick Settings tile.
+
+It communicates with `zdtd` through `http://127.0.0.1:1006/api/...` using the API
+token stored in the module directory.
+
+Detailed documentation: `application/README.md`.
+
 ### `zdtd` daemon
 
-#### What it is
+`zdtd` is the central Rust daemon. It runs as root and owns runtime state,
+program orchestration, firewall rules, app UID resolution, Android `netd` binding
+and the local API.
 
-`zdtd` is the central Rust daemon of ZDT-D.
+Detailed documentation: `rust/zdtd/README.md`.
 
-It runs with root privileges and controls the runtime state of the module.
+### Module scripts
 
-#### How ZDT-D uses it
+The module template contains installation/service/uninstall scripts used by the
+root module environment. They install files, start services and provide module
+lifecycle integration for Magisk/KernelSU/APatch-style environments.
 
-The daemon is responsible for:
+Important files:
 
-- waiting for Android boot readiness
-- preparing runtime directories
-- checking Android package manager readiness
-- checking Android `netd` readiness
-- backing up and restoring baseline firewall state
-- starting and stopping enabled programs
-- resolving Android package names into Linux UIDs
-- applying `iptables` / `ip6tables` rules
-- applying Android `netd` VPN bindings
-- exposing a local API for the Android app
-- writing runtime logs and user-facing logs
+```text
+module_template/customize.sh
+module_template/service.sh
+module_template/uninstall.sh
+module_template/verify.sh
+```
 
-#### Component type
-
-Internal core component.
-
-#### Notes
-
-`zdtd` is not a VPN protocol implementation and not a proxy by itself. It orchestrates other engines and internal routing builders.
-
----
-
-### Android app
-
-#### What it is
-
-The Android app is the user interface for ZDT-D.
-
-#### How ZDT-D uses it
-
-The app is used to:
-
-- start and stop services
-- create and edit program profiles
-- select applications for routing
-- view runtime status
-- view logs
-- install or update the module
-- import and export settings
-
-#### Component type
-
-Configuration and control UI.
-
-#### Notes
-
-The app does not directly build firewall or `netd` rules. It talks to the local daemon API, and the daemon performs root operations.
-
----
+Do not change service/build/boot logic casually. It affects how the daemon is
+started on real devices.
 
 ### UID app parser
 
-#### What it is
+The app stores package names. The daemon resolves them into Linux UIDs and writes
+UID lists for routing components.
 
-The UID app parser is the internal layer that turns Android package names into Linux UIDs.
+UID lists are used by:
 
-#### How ZDT-D uses it
+- `iptables` owner rules;
+- NFQUEUE rules;
+- transparent redirects;
+- Android `netd` UID bindings;
+- conflict validation;
+- protection helpers.
 
-The user selects applications in the UI. ZDT-D stores package names and resolves them to Linux UIDs. Those UIDs are then used by different routing systems.
-
-#### Used by
-
-- `iptables` owner match rules
-- NFQUEUE routing
-- transparent redirect rules
-- Android `netd` VPN binding
-- app-list conflict validation
-
-#### Component type
-
-Internal app-list and UID resolver.
-
-#### Notes
-
-ZDT-D routes traffic by UID, not by package name directly. If apps are installed, removed, cloned, or moved between Android users, UID resolution may need to be refreshed.
-
----
+If packages are installed/removed, cloned, moved between Android users or hidden
+by the ROM, UID resolution can change.
 
 ### `vpn_netd_builder`
 
-#### What it is
+Internal daemon logic for creating Android `netd` VPN networks and assigning UID
+ranges to them.
 
-`vpn_netd_builder` is an internal ZDT-D builder for binding selected Android application UIDs to a TUN interface through Android `netd`.
+It receives profile data such as:
 
-#### How ZDT-D uses it
+- owner program;
+- profile name;
+- TUN interface name;
+- generated netId;
+- IPv4 CIDR/gateway;
+- DNS list;
+- UID ranges.
 
-It receives prepared VPN profile data from programs such as OpenVPN, tun2socks, or myvpn:
+It does not launch VPN clients. It only binds selected app UIDs to a TUN network
+created or exposed by another component.
 
-- owner program
-- profile name
-- generated netId
-- TUN interface name
-- IPv4 CIDR
-- optional gateway
-- DNS list
-- UID ranges
+## Rust binaries
 
-It then creates a `netd` VPN network and assigns selected UIDs to it.
+### `zdtd`
 
-#### Routing model
+Central daemon. See `rust/zdtd/README.md`.
 
-Android `netd` UID binding to a TUN interface.
+### `t2s`
 
-#### Used by
+Transparent TCP to SOCKS5 helper. It receives redirected TCP traffic and sends it
+to SOCKS5 backends. It supports multiple backends, backend health, balance and
+priority modes, optional web UI/API and runtime connection control.
 
-- OpenVPN
-- tun2socks
-- myvpn
-- future TUN/VPN-based integrations
+Used by:
 
-#### Notes
+- sing-box proxy mode;
+- wireproxy;
+- Tor;
+- opera-proxy;
+- myproxy;
+- selected myprogram scenarios.
 
-`vpn_netd_builder` does not launch VPN clients and does not keep user profiles. It only stores runtime state so that networks it created can be removed on service stop.
+Detailed documentation: `rust/T2s/README.md`.
 
----
+### `dpi-detector`
+
+Native diagnostic helper launched by the Android app. It checks DNS integrity,
+resolver availability, domain/TLS/HTTP symptoms, TCP payload thresholds,
+whitelist SNI behavior and Telegram connectivity.
+
+Detailed documentation: `rust/dpi-detector/README.md`.
+
+### `nfqws-tester`
+
+Native diagnostic helper for temporary `nfqws`/`nfqws2` strategy testing. It can
+list strategy files, start a selected strategy with temporary NFQUEUE rules,
+report status/usage and clean up.
+
+Detailed documentation: `rust/nfqws-tester/README.md`.
 
 ## DPI and NFQUEUE engines
 
 ### `nfqws`
 
-#### What it is
+`nfqws` is a userspace packet processor from the zapret project.
 
-`nfqws` is a userspace packet processor from the zapret project. zapret is a multi-platform DPI bypass toolkit that includes `nfqws` for NFQUEUE-based processing.
+How ZDT-D uses it:
 
-#### How ZDT-D uses it
+- reads enabled profiles from `working_folder/nfqws`;
+- resolves selected apps into UIDs;
+- applies `mangle` table NFQUEUE rules;
+- starts `nfqws` with the selected strategy/config;
+- tracks process/log state;
+- cleans rules and process state on stop.
 
-ZDT-D resolves selected applications into UIDs, creates `mangle` table rules, sends matching traffic to NFQUEUE, and runs `nfqws` as the userspace packet processor.
+Routing model:
 
-#### Routing model
+```text
+selected UID -> iptables mangle -> NFQUEUE -> nfqws
+```
 
-`iptables` `mangle` table -> NFQUEUE -> `nfqws`.
+Purpose:
 
-#### Purpose
+- DPI circumvention;
+- packet manipulation;
+- zapret strategy execution;
+- per-app NFQUEUE routing.
 
-- DPI circumvention
-- packet-level manipulation
-- compatibility with NFQUEUE-based strategies
-
-#### Upstream
+Upstream:
 
 - https://github.com/bol-van/zapret
 
----
-
 ### `nfqws2`
 
-#### What it is
+`nfqws2` is a zapret2-style NFQUEUE engine with Lua-based logic.
 
-`nfqws2` is part of zapret2. zapret2 moves part of the packet manipulation logic into Lua scripts while keeping NFQUEUE interception as the traffic entry point.
+Routing model:
 
-#### How ZDT-D uses it
+```text
+selected UID -> iptables mangle -> NFQUEUE -> nfqws2 + Lua/scripts
+```
 
-ZDT-D can route selected application traffic to `nfqws2` and load Lua-based logic for more flexible DPI-bypass strategies.
+Purpose:
 
-#### Routing model
+- extended DPI bypass logic;
+- Lua strategy support;
+- flexible packet processing.
 
-`iptables` `mangle` table -> NFQUEUE -> `nfqws2` + Lua.
-
-#### Purpose
-
-- extended DPI circumvention
-- Lua-based strategy logic
-- more flexible traffic processing than a fixed command line
-
-#### Upstream
+Upstream:
 
 - https://github.com/bol-van/zapret2
 
----
-
 ### byedpi
-
-#### What it is
 
 byedpi is a DPI circumvention utility.
 
-#### How ZDT-D uses it
+ZDT-D runs it as a local engine and routes selected application traffic into the
+configured processing path.
 
-ZDT-D starts byedpi as a local processing engine and attaches selected application traffic to it through the module routing layer.
+Routing model:
 
-#### Routing model
+```text
+selected UID -> local DPI/proxy pipeline -> byedpi
+```
 
-Local DPI-bypass pipeline, usually combined with `iptables` redirect or related local routing logic.
+Purpose:
 
-#### Purpose
+- alternative DPI bypass strategy;
+- profile-based bypass setups;
+- compatibility with networks where NFQUEUE strategies are not enough.
 
-- DPI circumvention
-- alternative strategies to NFQUEUE-based engines
-- profile-based bypass setups
-
-#### Upstream
+Upstream:
 
 - https://github.com/hufrea/byedpi
 
----
-
 ### DPITunnel-cli
 
-#### What it is
+DPITunnel-cli is a censorship/DPI bypass tool. It is not a VPN by itself.
 
-DPITunnel-cli is a DPI/censorship bypass tool. Its upstream project describes DPI Tunnel as a proxy server for bypassing censorship and explicitly notes that it is not a VPN.
+ZDT-D starts it as a local profile engine and routes selected apps through the
+configured proxy/transparent pipeline.
 
-#### How ZDT-D uses it
+Purpose:
 
-ZDT-D runs DPITunnel-cli as a local engine and routes selected application traffic into it depending on the selected profile.
+- desync-based DPI bypass;
+- HTTP or transparent proxy scenarios;
+- per-profile bypass tuning.
 
-#### Routing model
-
-Local proxy or transparent proxy pipeline.
-
-#### Purpose
-
-- desync-based DPI bypass
-- HTTP or transparent proxy scenarios
-- per-profile bypass tuning
-
-#### Upstream
+Upstream:
 
 - https://github.com/nomoresat/DPITunnel-cli
-
----
 
 ## DNS component
 
 ### dnscrypt-proxy
 
-#### What it is
+dnscrypt-proxy is a local DNS proxy with DNSCrypt, DNS-over-HTTPS and related
+encrypted DNS support.
 
-dnscrypt-proxy is a flexible DNS proxy with support for DNSCrypt v2, DNS-over-HTTPS, Anonymized DNSCrypt, and ODoH.
+ZDT-D can run it locally and use it for DNS control in supported scenarios.
 
-#### How ZDT-D uses it
+Purpose:
 
-ZDT-D can run dnscrypt-proxy locally and route DNS-related traffic to the local resolver in supported scenarios.
+- encrypted DNS;
+- local resolver control;
+- consistent DNS behavior for selected routing modes.
 
-#### Component type
+Notes:
 
-Local DNS resolver and encrypted DNS proxy.
+- Android Private DNS can affect behavior;
+- ROM DNS handling can vary;
+- IPv6 support and firewall capabilities matter;
+- DNS redirection must be reviewed carefully to avoid breaking connectivity.
 
-#### Purpose
-
-- encrypted DNS
-- local DNS control
-- consistent DNS behavior for selected routing scenarios
-
-#### Notes
-
-DNS behavior on Android depends on ROM implementation, Private DNS settings, IPv6 support, and firewall capabilities.
-
-#### Upstream
+Upstream:
 
 - https://github.com/DNSCrypt/dnscrypt-proxy
-
----
 
 ## Proxy and local pipeline engines
 
 ### opera-proxy
 
-#### What it is
+opera-proxy is a client for Opera proxy endpoints. It exposes local proxy
+services and forwards traffic through Opera infrastructure.
 
-opera-proxy is a standalone client for Opera VPN/proxy endpoints. It starts a local proxy server and forwards traffic through Opera proxy infrastructure.
+ZDT-D can combine opera-proxy with local helper routing and selected app lists.
 
-#### How ZDT-D uses it
+Routing model:
 
-ZDT-D uses opera-proxy as part of a local proxy pipeline. Depending on profile settings, ZDT-D can start opera-proxy, optionally combine it with helper engines, and route selected applications into the local pipeline.
+```text
+selected UID -> local redirect / t2s -> opera-proxy
+```
 
-#### Routing model
-
-Selected UID -> local redirect / t2s -> opera-proxy.
-
-#### Purpose
-
-- Opera proxy endpoint scenarios
-- local proxy pipeline routing
-- server/SNI-based profile control
-
-#### Upstream
+Upstream:
 
 - https://github.com/Snawoot/opera-proxy
-- https://pkg.go.dev/github.com/Snawoot/opera-proxy
-
----
 
 ### sing-box
 
-#### What it is
-
 sing-box is a universal proxy platform.
 
-#### How ZDT-D uses it
+ZDT-D supports sing-box as a profile-based proxy engine. In proxy mode, selected
+apps are routed to local sing-box inbounds or a helper pipeline.
 
-ZDT-D can run sing-box profiles and route selected application traffic to the relevant local inbound or helper pipeline.
+Routing model examples:
 
-#### Routing model
+```text
+selected UID -> transparent redirect -> sing-box local inbound
+selected UID -> redirect -> t2s -> sing-box mixed/SOCKS inbound
+```
 
-Transparent redirect, local proxy pipeline, or helper-based forwarding depending on the profile.
+Important VPN-mode note:
 
-#### Purpose
+Native sing-box TUN inbound is not the supported ZDT-D VPN model. ZDT-D keeps
+sing-box as a local proxy backend and uses external tun2socks for the TUN/netd
+chain:
 
-- multi-protocol proxy configurations
-- profile-based proxy routing
-- local inbound/outbound proxy scenarios
+```text
+selected UID -> Android netd -> tun2socks TUN -> socks5://127.0.0.1:<sing-box port> -> sing-box
+```
 
-#### Notes
-
-This document only describes sing-box as one supported engine. Detailed sing-box configuration should be read from the upstream documentation.
-
-#### Upstream
+Upstream:
 
 - https://github.com/SagerNet/sing-box
 - https://sing-box.sagernet.org
 
----
-
 ### wireproxy
 
-#### What it is
+wireproxy connects to a WireGuard peer and exposes local SOCKS5/HTTP proxy or
+tunnel endpoints.
 
-wireproxy is a userspace application that connects to a WireGuard peer and exposes SOCKS5, HTTP proxy, or tunnel endpoints.
+In ZDT-D, wireproxy is treated as a proxy backend, not as a system WireGuard
+interface manager.
 
-#### How ZDT-D uses it
+Routing model:
 
-ZDT-D uses wireproxy as a proxy backend, not as a system WireGuard interface manager. The daemon starts wireproxy profiles and can route selected applications through the local proxy pipeline.
+```text
+selected UID -> local redirect / t2s -> wireproxy endpoint
+```
 
-#### Routing model
-
-Selected UID -> local redirect / t2s -> wireproxy SOCKS5 or HTTP endpoint.
-
-#### Purpose
-
-- access a WireGuard peer through a local proxy interface
-- route selected applications through a WireGuard-like upstream without creating a system WireGuard interface
-- profile-based proxy backend
-
-#### Notes
-
-This is not the same as WireGuard tools or wireguard-go. ZDT-D currently documents wireproxy as a proxy engine only.
-
-#### Upstream
+Upstream:
 
 - https://github.com/windtf/wireproxy
 
----
-
-### t2s
-
-#### What it is
-
-`t2s` is a ZDT-D bundled transparent-to-SOCKS helper.
-
-#### How ZDT-D uses it
-
-`t2s` receives transparent redirected traffic and forwards it to one or more SOCKS5 upstreams.
-
-#### Used by
-
-- sing-box scenarios
-- wireproxy scenarios
-- Tor scenarios
-- opera-proxy scenarios
-- myproxy scenarios
-- selected myprogram scenarios
-
-#### Routing model
-
-`iptables` redirect -> t2s -> SOCKS5 upstream.
-
-#### Purpose
-
-- bridge transparent TCP redirection to SOCKS5 backends
-- support selected UID-based proxy pipelines
-- provide a common helper for multiple profile programs
-
-#### Upstream
-
-Internal ZDT-D component.
-
----
-
-## Tor components
-
 ### Tor
 
-#### What it is
+Tor is used as a local SOCKS pipeline for selected apps. ZDT-D reads Tor settings,
+validates bridge requirements and starts Tor with the configured `torrc`.
 
-Tor is software and a network for privacy, anonymity, and censorship circumvention.
+Routing model:
 
-#### How ZDT-D uses it
+```text
+selected UID -> t2s / local SOCKS pipeline -> Tor SOCKS port
+```
 
-ZDT-D can run Tor as a local SOCKS pipeline for selected applications. The daemon reads Tor settings, validates bridge requirements, and starts Tor with the configured `torrc`.
+Purpose:
 
-#### Routing model
+- selective app routing through Tor;
+- bridge-based bootstrap;
+- pluggable transport support through lyrebird.
 
-Selected UID -> t2s or local SOCKS pipeline -> Tor SOCKS port.
-
-#### Purpose
-
-- route selected applications through Tor
-- support bridge-based Tor bootstrap
-- support pluggable transports through lyrebird
-
-#### Upstream
+Upstream:
 
 - https://gitlab.com/torproject/tor
 - https://www.torproject.org
 
----
-
 ### lyrebird
 
-#### What it is
+lyrebird is a Tor pluggable transport helper for bridge transports such as obfs4,
+Snowflake/WebTunnel-style configurations where supported.
 
-lyrebird is a Tor pluggable transport binary used for bridge transports such as obfs4 and related circumvention transports.
+ZDT-D uses it as Tor's transport plugin, not as an independent routing program.
 
-#### How ZDT-D uses it
-
-ZDT-D uses lyrebird as the transport plugin for Tor bridge configurations.
-
-#### Component type
-
-Tor pluggable transport helper.
-
-#### Purpose
-
-- obfs4 bridge support
-- Snowflake/WebTunnel-style transport support where configured
-- Tor bridge circumvention scenarios
-
-#### Upstream
+Upstream:
 
 - https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird
 
----
+### mihomo
+
+mihomo is a proxy platform derived from the Clash ecosystem.
+
+ZDT-D treats mihomo as a profile-based local proxy engine. Profiles store config
+and selected app lists; daemon code starts mihomo and routes selected apps to the
+local pipeline.
+
+Routing model:
+
+```text
+selected UID -> transparent redirect / t2s -> mihomo local inbound
+```
+
+Purpose:
+
+- rule-based proxy profiles;
+- subscription/config based proxy setups;
+- selected app routing through local mihomo inbounds.
+
+Upstream:
+
+- https://github.com/MetaCubeX/mihomo
+
+### mieru
+
+mieru is a proxy/circumvention tool.
+
+ZDT-D uses mieru as a profile-based local proxy backend. The daemon starts the
+configured profile and routes selected applications into the local proxy path.
+
+Purpose:
+
+- profile-based proxy/circumvention scenarios;
+- selected app local proxy routing.
+
+Upstream:
+
+- https://github.com/enfein/mieru
 
 ## VPN / TUN integrations
 
 ### OpenVPN
 
-#### What it is
+OpenVPN is started in root CLI mode. OpenVPN creates a TUN interface; ZDT-D then
+binds selected app UIDs to that interface through Android `netd`.
 
-OpenVPN is an open-source VPN daemon.
+Routing model:
 
-#### How ZDT-D uses it
+```text
+OpenVPN creates TUN -> zdtd detects/prepares TUN -> vpn_netd_builder binds selected UIDs
+```
 
-ZDT-D runs OpenVPN in root CLI mode. OpenVPN creates a TUN interface, while ZDT-D binds selected application UIDs to that interface through Android `netd`.
+User provides:
 
-The daemon prepares `client.ovpn` for Android CLI usage by ensuring that OpenVPN only raises the TUN interface and does not apply global routes or DNS changes directly.
+- profile name;
+- TUN interface name;
+- DNS list;
+- `client.ovpn`;
+- selected apps.
 
-#### Routing model
+ZDT-D provides:
 
-OpenVPN creates TUN -> ZDT-D detects TUN -> `vpn_netd_builder` binds selected UIDs to that TUN.
+- generated netId;
+- UID ranges;
+- netd binding;
+- cleanup state.
 
-#### User provides
-
-- profile name
-- TUN interface name
-- DNS list
-- `client.ovpn`
-- application list
-
-#### User does not provide
-
-- netId
-- CIDR
-- gateway
-- UID ranges
-- routes
-- firewall rules
-
-#### Purpose
-
-- selective OpenVPN routing without Android `VpnService`
-- OpenVPN profile integration through root CLI
-- UID-based split tunneling through Android `netd`
-
-#### Upstream
+Upstream:
 
 - https://github.com/OpenVPN/openvpn
 - https://openvpn.net/community
 
----
+### AmneziaWG
+
+AmneziaWG is a WireGuard-derived VPN tool with additional anti-censorship
+features.
+
+ZDT-D treats it as an exclusive VPN/TUN backend. A package routed through an
+AmneziaWG profile should not be assigned to another incompatible main routing
+profile at the same time.
+
+Routing model:
+
+```text
+AmneziaWG creates/uses TUN -> zdtd prepares VPN profile -> Android netd binds selected UIDs
+```
+
+Upstream:
+
+- https://github.com/amnezia-vpn/amneziawg-go
+- https://github.com/amnezia-vpn/amnezia-client
 
 ### tun2socks
 
-#### What it is
+tun2socks creates a TUN interface and forwards TUN traffic to a proxy backend.
 
-tun2socks is a TUN-to-proxy engine powered by a userspace network stack. It can route traffic from a TUN interface through proxy protocols such as SOCKS or HTTP depending on build and configuration.
+Routing model:
 
-#### How ZDT-D uses it
+```text
+tun2socks creates TUN -> zdtd assigns IPv4/prepares profile -> netd binds selected UIDs
+```
 
-In ZDT-D, tun2socks creates the TUN interface. The daemon then assigns an IPv4 address to it, brings it up, and passes the profile to `vpn_netd_builder`.
+User provides:
 
-#### Routing model
+- profile name;
+- TUN interface name;
+- proxy URL;
+- log level;
+- selected apps.
 
-tun2socks creates TUN -> ZDT-D assigns IPv4 -> `vpn_netd_builder` binds selected UIDs to that TUN.
+ZDT-D provides netId, UID ranges, cleanup and runtime state.
 
-#### User provides
-
-- profile name
-- TUN interface name
-- proxy URL
-- log level
-- application list
-
-#### User does not provide
-
-- netId
-- CIDR
-- gateway
-- TUN address
-- UID ranges
-
-#### Purpose
-
-- TUN-based proxy routing
-- selective SOCKS/HTTP proxy routing through Android `netd`
-- an alternative to pure `iptables` transparent redirection
-
-#### Upstream
+Upstream:
 
 - https://github.com/xjasonlyu/tun2socks
 
----
-
 ### myvpn
 
-#### What it is
+myvpn is an internal ZDT-D profile type for binding selected apps to an already
+existing TUN interface.
 
-myvpn is a universal ZDT-D VPN/netd binding profile for an already existing TUN interface.
+It does not start a VPN client, create a TUN interface or run a proxy by itself.
+Another program must create the TUN interface first.
 
-It does not start a VPN client, does not start a proxy, and does not create the TUN interface by itself.
+Routing model:
 
-#### How ZDT-D uses it
+```text
+existing TUN -> myvpn profile -> Android netd UID binding
+```
 
-A different program creates a TUN interface. That program can be OpenVPN, tun2socks, myprogram, an external script, or a future engine. myvpn waits for that interface, obtains or receives the CIDR, parses the app list, and passes the profile to `vpn_netd_builder`.
+Use cases:
 
-#### Routing model
-
-Existing TUN -> myvpn profile -> Android `netd` UID binding.
-
-#### User provides
-
-- profile name
-- TUN interface name
-- DNS list
-- CIDR mode (`auto` or `manual`)
-- manual CIDR when needed
-- application list
-
-#### User does not provide
-
-- netId
-- gateway
-- UID ranges
-- binary path
-- proxy settings
-- routes
-- firewall rules
-
-#### Purpose
-
-- bind selected applications to a TUN created by another program
-- combine myprogram with custom VPN/TUN tools
-- support custom routing setups without adding a dedicated engine to ZDT-D
-
-#### Upstream
-
-Internal ZDT-D component.
-
----
+- bind apps to a TUN created by myprogram;
+- integrate a custom VPN/TUN tool;
+- experiment without adding a dedicated program integration.
 
 ## User-defined and helper programs
 
 ### myproxy
 
-#### What it is
+myproxy routes selected apps through a user-defined SOCKS5 proxy.
 
-myproxy is an internal ZDT-D profile program for routing selected applications through a user-defined SOCKS5 proxy.
+Routing model:
 
-#### How ZDT-D uses it
+```text
+selected UID -> iptables redirect -> t2s -> user SOCKS5 proxy
+```
 
-The user provides proxy host, port, and optional authentication. ZDT-D starts the required local helper and routes selected application traffic to that proxy pipeline.
+Purpose:
 
-#### Routing model
-
-Selected UID -> `iptables` redirect -> t2s -> user SOCKS5 proxy.
-
-#### Purpose
-
-- quickly connect selected apps to a custom SOCKS5 proxy
-- avoid writing a full sing-box configuration for simple proxy use
-- provide a simple profile-based proxy path
-
-#### Upstream
-
-Internal ZDT-D component.
-
----
+- simple SOCKS5 profile without writing full sing-box/mihomo config;
+- optional authentication;
+- app-based routing to a custom proxy.
 
 ### myprogram
 
-#### What it is
+myprogram is a universal launcher for a user-defined binary or script.
 
-myprogram is a universal ZDT-D launcher for a user-defined binary or script.
+It can be used to start:
 
-#### How ZDT-D uses it
+- a local proxy server;
+- a custom network tool;
+- a TUN creator;
+- an experimental helper.
 
-The user can define a profile that starts an external process. That process can be a proxy server, a custom network tool, a TUN creator, or an experimental binary.
+myprogram can be combined with other ZDT-D components. Example: myprogram starts
+a custom tool that creates a TUN interface, then myvpn binds selected apps to that
+interface.
 
-#### Component type
+myprogram itself is a launcher. Routing depends on what the launched program
+provides and which ZDT-D mode is configured around it.
 
-Custom process launcher.
-
-#### Purpose
-
-- extend ZDT-D without adding a new built-in engine
-- test external networking tools
-- combine user programs with other ZDT-D routing components
-
-#### Example
-
-A user can start a custom program through myprogram and then use myvpn to bind selected applications to the TUN interface created by that program.
-
-#### Upstream
-
-Internal ZDT-D component.
-
----
-
-## Protection and diagnostic components
+## Protection and diagnostics
 
 ### proxyInfo
 
-#### What it is
+proxyInfo protects local proxy/service ports and reports suspicious local access.
+It can block selected UIDs from protected local ports and help identify apps that
+probe local services.
 
-proxyInfo is an internal component for observing and protecting access to local proxy or service ports.
+Component type:
 
-#### How ZDT-D uses it
-
-proxyInfo can monitor access attempts, block selected UIDs from reaching protected local ports, and report suspicious activity to the Android app.
-
-#### Component type
-
-Port and local proxy protection helper.
-
-#### Purpose
-
-- protect local proxy endpoints
-- detect applications probing local ports
-- help identify suspicious access to local services
-
-#### Upstream
-
-Internal ZDT-D component.
-
----
+```text
+local port protection / access observation helper
+```
 
 ### blockedquic
 
-#### What it is
+blockedquic applies per-app UDP/443 blocking rules to force compatible apps away
+from QUIC and toward TCP/TLS.
 
-blockedquic is an internal component for blocking QUIC traffic for selected applications.
+Routing model:
 
-#### How ZDT-D uses it
+```text
+selected UID + UDP/443 -> iptables/ip6tables filter/drop rules
+```
 
-The daemon applies rules for selected UIDs and UDP/443 so that chosen applications are forced away from QUIC where needed.
+It is designed to coexist with many main routing profiles because it is a helper
+filter, not a full traffic path.
 
-#### Routing model
+### scan detector
 
-`iptables` / `ip6tables` filtering by UID and UDP port.
+Internal helper related to suspicious access or scan detection. It supports
+runtime warning/diagnostic workflows used by the app and daemon.
 
-#### Purpose
+### energy saver
 
-- disable QUIC for selected applications
-- force fallback to TCP/TLS in compatible applications
-- improve compatibility with DPI and proxy routing scenarios
+Energy saver settings allow ZDT-D to freeze/stop idle profile processes according
+to daemon/app policy. This is a runtime optimization helper and should not be
+confused with routing logic.
 
-#### Notes
+### dpi-detector
 
-blockedquic is designed to be used alongside other network programs and should not conflict with OpenVPN, tun2socks, myvpn, or other main routing engines by default.
+Native diagnostic binary for DNS/DPI/network symptom checks. See
+`rust/dpi-detector/README.md`.
 
-#### Upstream
+### nfqws-tester
 
-Internal ZDT-D component.
+Native diagnostic binary for temporary NFQUEUE strategy testing. See
+`rust/nfqws-tester/README.md`.
 
----
+## Runtime files and logs
 
-### scan_detector
+Common files:
 
-#### What it is
+```text
+working_folder/<program>/active.json
+working_folder/<program>/enabled.json
+working_folder/<program>/profile/<profile>/setting.json
+working_folder/<program>/profile/<profile>/config.json
+working_folder/<program>/profile/<profile>/config.yaml
+working_folder/<program>/profile/<profile>/app/uid/user_program
+working_folder/<program>/profile/<profile>/app/out/user_program
+working_folder/<program>/profile/<profile>/log
+working_folder/<program>/profile/<profile>/work
+```
 
-scan_detector is an internal detection helper related to suspicious network or port-scanning behavior.
+Not every program uses every file. Program modules define their own exact layout.
 
-#### How ZDT-D uses it
+Main daemon log:
 
-It supports runtime detection workflows and can help the Android app present warnings or diagnostic information.
+```text
+/data/adb/modules/ZDT-D/log/zdtd.log
+```
 
-#### Component type
+API/status files:
 
-Internal detection helper.
+```text
+/data/adb/modules/ZDT-D/api/token
+/data/adb/modules/ZDT-D/api/info.json
+/data/adb/modules/ZDT-D/api/status.json
+```
 
-#### Upstream
+## Conflict model
 
-Internal ZDT-D component.
+An application should not be assigned to multiple incompatible main traffic paths.
+Examples of incompatible combinations include two exclusive VPN/TUN profiles or
+two independent transparent proxy profiles that both try to own the same UID.
 
----
+Helper features may coexist when they do not own the main route. Examples:
 
-## Firewall and runtime layers
+- blockedquic with a proxy/VPN profile;
+- proxyInfo with local proxy profiles;
+- diagnostics outside the normal runtime path.
 
-### `iptables` / `ip6tables` layer
+The daemon validates known conflicts before applying runtime state. Conflict
+rules should be updated whenever a new program type or routing model is added.
 
-#### What it is
+## Developer guide: adding a program
 
-This is the internal firewall and routing layer used by ZDT-D.
+A new program usually needs changes in several places:
 
-#### How ZDT-D uses it
+1. daemon program module under `rust/zdtd/src/programs/`;
+2. program registration in daemon program/runtime logic;
+3. default minimal layout in `settings.rs`;
+4. port collection and conflict handling where needed;
+5. app-list validation path if the program routes apps;
+6. Android API models/actions;
+7. Compose UI screen under `application/app/src/main/java/.../ui`;
+8. string resources in default and Russian `strings.xml`;
+9. documentation in this file and, if native, a Rust README.
 
-It manages:
+Be especially careful with:
 
-- custom chains
-- UID owner matches
-- `nat` table redirection
-- `mangle` table rules
-- NFQUEUE rules
-- IPv6 best-effort rules
-- baseline backup and restore
+- firewall cleanup;
+- Android `netd` cleanup;
+- app UID ownership;
+- profile state migration;
+- binary paths and permissions;
+- logs and process detection;
+- coexistence with helper features.
 
-#### Component type
+## Documentation index
 
-Internal firewall/routing layer.
-
-#### Notes
-
-ZDT-D tries to apply rules idempotently and cumulatively so that different programs do not overwrite each other.
-
----
-
-### boot guard and runtime state
-
-#### What it is
-
-The boot guard is the internal startup preparation logic used by the daemon.
-
-#### How ZDT-D uses it
-
-On startup, the daemon can:
-
-- wait for `sys.boot_completed`
-- wait a short stabilization period
-- check that the Android package manager responds
-- check that Android `netd` responds
-- start enabled programs in best-effort mode
-- expose runtime state to the UI
-
-#### Runtime states
-
-- `starting`
-- `running`
-- `partial`
-- `stopping`
-- `stopped`
-
-#### Purpose
-
-- make boot-time startup more reliable
-- avoid failing the whole service because one profile failed
-- let the UI show a partial state when some components did not start
-
----
-
-## Documentation notes
-
-README should stay high-level and describe the project.
-
-This file should describe programs and components.
-
-Detailed profile examples, API endpoints, troubleshooting steps, and Android-specific commands should be placed in practical instruction files such as `INSTRUCTIONS.md` or additional files under `docs/`.
+- Android app: `application/README.md`
+- daemon: `rust/zdtd/README.md`
+- transparent TCP to SOCKS helper: `rust/T2s/README.md`
+- DPI diagnostics: `rust/dpi-detector/README.md`
+- NFQWS strategy tester: `rust/nfqws-tester/README.md`
+- Zygisk notes: `docs/ZYGISK.md`

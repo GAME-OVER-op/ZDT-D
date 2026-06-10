@@ -1,75 +1,66 @@
-# t2s (transparent -> SOCKS5)
+# t2s — transparent TCP to SOCKS5 helper
 
-Rust implementation of a transparent **TCP -> SOCKS5** proxy with an optional web panel, backend health checks, runtime statistics, and traffic routing rules.
+`t2s` is a Rust helper bundled with ZDT-D. It receives TCP connections from a
+local listener and forwards them through one or more upstream SOCKS5 backends, or
+optionally directly when policy allows it.
 
-## Overview
+In ZDT-D, `t2s` is the common bridge between UID-based `iptables` transparent
+redirection and proxy engines that expose SOCKS5-compatible local ports.
 
-`t2s` accepts incoming TCP connections and forwards them either:
+## What t2s does
 
-- through one or more upstream **SOCKS5** backends, or
-- **directly**, when policy allows it and no healthy SOCKS backend is available.
+`t2s` can:
 
-The program can work in two modes:
+- listen on an internal TCP port;
+- optionally expose an external listener;
+- recover the original destination with Linux `SO_ORIGINAL_DST` in transparent mode;
+- forward TCP streams to SOCKS5 upstreams;
+- use multiple SOCKS5 backends;
+- select backends by balance or priority policy;
+- monitor backend health;
+- fall back to direct connections when policy allows it;
+- expose a local web UI/API for status and runtime management;
+- keep a connection registry and kill active connections;
+- apply download throttling;
+- evaluate traffic rules from `TRAFFIC_RULES`;
+- sniff HTTP Host, HTTP CONNECT target and TLS SNI on a best-effort basis.
 
-- **Transparent mode**: the original destination is recovered with Linux `SO_ORIGINAL_DST`.
-- **Explicit target mode**: all incoming traffic is forwarded to a fixed `--target-host/--target-port`.
+This build is TCP-only. It does not proxy UDP and it does not implement DNS
+resolution/routing internally.
 
-This build is **TCP-only**. It does not proxy UDP and does not implement DNS handling inside `t2s`.
+## Where ZDT-D uses it
 
-## Implemented features
+`t2s` is used by several local proxy pipeline integrations, including:
 
-- Transparent TCP proxying via Linux `SO_ORIGINAL_DST`
-- Forwarding through SOCKS5 with optional username/password authentication
-- Multiple SOCKS5 backends
-- Backend selection modes: balance and priority
-- Backend health checks with runtime state tracking
-- Direct fallback when policy allows it and no GREEN backend is available
-- Optional web UI and JSON API
-- Connection registry with runtime kill support
-- Download rate limiting
-- Traffic policy rules through `TRAFFIC_RULES`
-- Best-effort domain detection from:
-  - HTTP `Host`
-  - HTTP `CONNECT`
-  - TLS SNI
+- sing-box proxy scenarios;
+- wireproxy profiles;
+- Tor SOCKS pipelines;
+- opera-proxy pipelines;
+- myproxy profiles;
+- selected myprogram scenarios that expose a SOCKS5 endpoint.
 
-## Important behavior notes
+Typical ZDT-D routing chain:
 
-- The web panel is started **only** when `--web-socket` is enabled.
-- Backends added through the web/API can carry their own username/password. These credentials override the global CLI `--socks-user/--socks-pass` only for that backend. Startup backends created from CLI still use the global fallback auth only.
-- `--enable-http2` is currently a **compatibility flag only** in this Rust port and does not enable a separate HTTP/2 implementation.
-- SOCKS backend lists are built from the combination of all values in `--socks-host` and `--socks-port`.
-  - Example: `--socks-host 10.0.0.1,10.0.0.2 --socks-port 1080,1081`
-  - creates up to 4 backend endpoints.
-- Direct connections are not treated as a permanent bypass. When GREEN backends recover, the runtime enforcement loop can terminate direct connections.
-- Backend selection defaults to `balance`, which distributes traffic across all GREEN SOCKS5 backends.
-- In `priority` mode, t2s strictly uses the first priority group that has a GREEN backend. A temporary runtime cooldown inside that group does not allow traffic to jump to a lower group. If `--backend-priority` is omitted, the order from `--socks-port` becomes the priority order, for example `1145,1146,1147` means `1145 -> 1146 -> 1147 -> direct`.
-- `--priority-speed-aware` is optional and changes priority behavior only when explicitly enabled: if the higher-priority GREEN backend is throughput-limited by real traffic, t2s probes the next lower GREEN backend with one real new connection and temporarily sends new connections there if it is clearly faster. Existing connections are not killed for this speed shift.
-- In `priority` mode, the ZDT-D `protector_mode` forced-GREEN setting is ignored and treated as off, so failed priority backends do not stay artificially selectable.
-- Removing a backend through the web/API also cancels active or in-flight SOCKS connections pinned to that backend.
-- Initial Host / CONNECT / TLS SNI sniffing is adaptive: under normal load it uses a staged budget up to 200 ms (80 -> 120 -> 160 -> 200 ms total budget), under heavier load it falls back to a single fast 80 ms attempt, and under overload it may skip sniffing entirely when no host-based rules depend on that metadata.
-- The `reset` action in `TRAFFIC_RULES` is accepted by the parser, but in the current implementation it behaves as an early connection termination rather than a low-level crafted TCP RST.
-
-## Build
-
-```bash
-cargo build --release
+```text
+selected app UID -> iptables REDIRECT -> t2s listener -> SOCKS5 backend -> upstream network
 ```
 
-## Run examples
+## Modes
 
-### 1) Transparent mode
+### Transparent mode
+
+When `--target-host` and `--target-port` are omitted, `t2s` expects traffic that
+was redirected by firewall rules. It calls `SO_ORIGINAL_DST` to recover the
+original destination address and port.
+
+Example:
 
 ```bash
-./target/release/t2s \
+t2s \
   --listen-addr 127.0.0.1 \
   --listen-port 11290 \
-  --external-port 11291 \
   --socks-host 127.0.0.1 \
-  --socks-port 1080 \
-  --web-socket \
-  --web-addr 0.0.0.0 \
-  --web-port 8000
+  --socks-port 1080
 ```
 
 Example redirect rule:
@@ -78,10 +69,13 @@ Example redirect rule:
 iptables -t nat -A OUTPUT -p tcp -j REDIRECT --to-ports 11290
 ```
 
-### 2) Explicit target mode
+### Explicit target mode
+
+When `--target-host` and `--target-port` are provided together, every incoming
+connection is forwarded to the fixed target.
 
 ```bash
-./target/release/t2s \
+t2s \
   --listen-addr 127.0.0.1 \
   --listen-port 11290 \
   --socks-host 127.0.0.1 \
@@ -90,263 +84,218 @@ iptables -t nat -A OUTPUT -p tcp -j REDIRECT --to-ports 11290
   --target-port 443
 ```
 
-### 3) Priority backend mode
-
-Use the first live port, then fall back to the next one. If all SOCKS5 backends are dead, traffic falls back to direct mode.
-
-```bash
-./target/release/t2s \
-  --listen-addr 127.0.0.1 \
-  --listen-port 11290 \
-  --socks-host 127.0.0.1 \
-  --socks-port 1145,1146,1147 \
-  --backend-mode priority
-```
-
-Use two ports as the first priority level, then fall back to the third:
-
-```bash
-./target/release/t2s \
-  --listen-addr 127.0.0.1 \
-  --listen-port 11290 \
-  --socks-host 127.0.0.1 \
-  --socks-port 1145,1146,1147 \
-  --backend-mode priority \
-  --backend-priority "1145,1146;1147"
-```
-
-Enable speed-aware soft fallback for strict priority. This keeps `1145` as the preferred backend, but if real traffic shows that `1145` is throughput-limited, t2s probes `1146` with a new connection. If `1146` is clearly faster, new connections temporarily shift to `1146`; existing connections on `1145` are left alive. t2s periodically probes `1145` again and returns new connections to it after its speed recovers.
-
-```bash
-./target/release/t2s \
-  --listen-addr 127.0.0.1 \
-  --listen-port 11290 \
-  --socks-host 127.0.0.1 \
-  --socks-port 1145,1146,1147 \
-  --backend-mode priority \
-  --backend-priority "1145;1146;1147" \
-  --priority-speed-aware
-```
+Both target options must be used together. Supplying only one is an error.
 
 ## Command-line arguments
 
 ### Listeners
 
-- `--listen-addr <ADDR>`: internal listener address. Default: `127.0.0.1`
-- `--listen-port <PORT>`: internal listener port. Default: `11290`
-- `--external-port <PORT>`: optional external listener on `0.0.0.0:<PORT>`. Default: `0` (disabled)
+- `--listen-addr <ADDR>` — internal listener address. Default: `127.0.0.1`.
+- `--listen-port <PORT>` — internal listener port. Default: `11290`.
+- `--external-port <PORT>` — optional external listener on `0.0.0.0:<PORT>`.
+  `0` disables it. Default: `0`.
 
-### SOCKS5 upstream
+### SOCKS5 upstreams
 
-- `--socks-host <HOST[,HOST...]>`: required, comma-separated SOCKS5 host list
-- `--socks-port <PORT[,PORT...]>`: required, comma-separated SOCKS5 port list
-- `--socks-user <USER>`: optional SOCKS5 username used as the global fallback for startup backends
-- `--socks-pass <PASS>`: optional SOCKS5 password used as the global fallback for startup backends
-- `--backend-mode <balance|priority>`: backend selection mode. Default: `balance`
-- `--backend-priority <GROUPS>`: priority groups for `--backend-mode priority`. Example: `1145,1146;1147`
-- `--priority-speed-aware`: optional speed-aware soft fallback for `--backend-mode priority`. Default: disabled
+- `--socks-host <HOST[,HOST...]>` — required comma-separated SOCKS5 host list.
+- `--socks-port <PORT[,PORT...]>` — required comma-separated SOCKS5 port list.
+- `--socks-user <USER>` — optional global SOCKS5 username.
+- `--socks-pass <PASS>` — optional global SOCKS5 password.
 
-Startup backends built from `--socks-host` and `--socks-port` share the same CLI auth fallback. Per-backend credentials are available only for backends added later through the web/API.
+Startup backends are built from all configured hosts and ports. For example:
 
-Backend mode behavior:
+```bash
+--socks-host 10.0.0.1,10.0.0.2 --socks-port 1080,1081
+```
 
-- `balance`: current/default behavior; all GREEN backends participate in round-robin balancing. ZDT-D `protector_mode` keeps its previous behavior.
-- `priority`: ports are selected by strict priority group. Ports separated by `,` are balanced within the same group; groups separated by `;` are fallback levels. Lower groups are used only when all higher groups have no GREEN backend. If all backends are dead, direct fallback is used. ZDT-D `protector_mode` is ignored in this mode.
-- If any backend becomes unhealthy, active SOCKS connections pinned to it are cancelled so clients can reconnect through another live backend or direct fallback. This applies to both `balance` and `priority` modes.
-- In `priority` mode, if any higher-priority group is GREEN, active or in-flight SOCKS connections pinned to lower-priority fallback groups are cancelled so clients reconnect through the preferred group. This is enforced both after health-check changes and by the runtime enforce loop.
-- When `--priority-speed-aware` is enabled, lower-priority connections created by a speed shift are not aggressively killed while the higher-priority backend remains GREEN. New connections return to the higher-priority backend after periodic real-traffic probes show that its throughput recovered.
-- In `priority` mode, while there are active connections, backend health is checked more frequently with full sweeps every 15-60 seconds so recovery/fallback changes are applied faster.
-- If `--backend-mode priority` is enabled and `--backend-priority` is not specified, the `--socks-port` order is used as separate priority groups. Example: `--socks-port 1145,1146,1147` behaves like `--backend-priority "1145;1146;1147"`.
+creates combinations for those hosts and ports. Runtime API-added backends can
+provide their own username/password override.
+
+### Backend mode
+
+- `--backend-mode balance|priority` — default: `balance`.
+- `--backend-priority <GROUPS>` — priority groups for priority mode.
+- `--priority-speed-aware` — optional soft fallback for throughput-limited
+  priority backends.
+
+#### Balance mode
+
+All GREEN backends participate in balancing. If a backend becomes unhealthy,
+connections pinned to it are cancelled so clients can reconnect through another
+healthy backend or direct fallback.
+
+#### Priority mode
+
+Backends are grouped by priority. Commas separate backends in the same group;
+semicolons separate fallback levels:
+
+```text
+1145,1146;1147
+```
+
+This means:
+
+1. use 1145 and 1146 as the first priority group;
+2. use 1147 only when the first group has no GREEN backend;
+3. fall back to direct only when no configured backend is available and policy
+   allows direct fallback.
+
+If `--backend-priority` is omitted, the order of `--socks-port` becomes the
+priority order. Example:
+
+```text
+--socks-port 1145,1146,1147
+```
+
+behaves like:
+
+```text
+--backend-priority "1145;1146;1147"
+```
+
+In priority mode, the ZDT-D `protector_mode` forced-GREEN behavior is ignored so
+failed priority backends do not remain artificially selectable.
+
+#### Priority speed-aware mode
+
+`--priority-speed-aware` keeps strict priority as the default but allows a soft
+fallback when real traffic shows that a higher-priority GREEN backend is
+throughput-limited. The helper probes a lower GREEN backend with a new real
+connection and temporarily sends new connections there if it is clearly faster.
+Existing connections are not killed for this speed shift. Later probes can return
+new traffic to the higher-priority backend after recovery.
 
 ### Target selection
 
-- `--target-host <HOST>`: fixed upstream destination host
-- `--target-port <PORT>`: fixed upstream destination port
+- `--target-host <HOST>` — fixed upstream target host.
+- `--target-port <PORT>` — fixed upstream target port.
 
-`--target-host` and `--target-port` must be used together.
-If they are omitted, `t2s` uses transparent destination recovery.
+Both must be used together. If both are omitted, transparent mode is used.
 
 ### Runtime and limits
 
-- `--buffer-size <BYTES>`: socket buffer size. Default: `131072`
-- `--idle-timeout <SECONDS>`: idle timeout, `0` disables timeout. Default: `600`
-- `--connect-timeout <SECONDS>`: backend connect timeout. Default: `8`
-- `--enable-http2`: compatibility flag, currently no-op
-- `--max-conns <COUNT>`: maximum concurrent connections. Default: `100`
-- `--download-limit-mbit <MBIT>`: download throttling in Mbit/s, `0` disables limit. Default: `0`
+- `--buffer-size <BYTES>` — socket buffer size. Default: `131072`.
+- `--idle-timeout <SECONDS>` — idle timeout. `0` disables it. Default: `600`.
+- `--connect-timeout <SECONDS>` — backend connect timeout. Default: `8`.
+- `--enable-http2` — compatibility flag retained for parity; currently no-op.
+- `--max-conns <COUNT>` — maximum concurrent connections. Default: `100`.
+- `--download-limit-mbit <MBIT>` — download throttling in Mbit/s. `0` disables
+  throttling. Default: `0`.
 
-### Web UI
+### Web UI/API
 
-- `--web-socket`: enable embedded web UI and API server
-- `--web-addr <ADDR>`: web bind address. Default: `127.0.0.1`
-- `--web-port <PORT>`: web bind port. Default: `8000`
+- `--web-socket` — enable web UI/API server.
+- `--web-addr <ADDR>` — web bind address. Default: `127.0.0.1`.
+- `--web-port <PORT>` — web bind port. Default: `8000`.
+
+The web server starts only when `--web-socket` is enabled.
 
 ## Web endpoints
 
-When `--web-socket` is enabled, the following endpoints are available:
+When enabled:
 
-- `GET /` - embedded single-page web UI
-- `GET /ws` - websocket state stream for the UI
-- `GET /api/version` - build/version information
-- `GET /api/state` - current runtime snapshot
-- `POST /api/download_limit` - update download throttling
-- `POST /api/backends/add` - add SOCKS backend at runtime (optional per-backend username/password override)
-- `POST /api/backends/remove` - remove SOCKS backend at runtime
-- `GET /api/kill?cid=<id>` - kill a connection by connection id
-- `POST /api/kill` - kill a connection by JSON payload
+- `GET /` — embedded single-page web UI;
+- `GET /ws` — websocket state stream;
+- `GET /api/version` — version/build information;
+- `GET /api/state` — current runtime snapshot;
+- `POST /api/download_limit` — update download throttling;
+- `POST /api/backends/add` — add SOCKS backend at runtime;
+- `POST /api/backends/remove` — remove SOCKS backend at runtime;
+- `GET /api/kill?cid=<id>` — kill a connection by ID;
+- `POST /api/kill` — kill a connection by JSON payload.
 
-### Example API payloads
-
-Set download limit:
+Example payloads:
 
 ```json
 {"mbit": 25}
 ```
 
-Add backend without auth:
-
 ```json
 {"host": "127.0.0.1", "port": 1080}
 ```
-
-Add backend with per-backend auth override:
 
 ```json
 {"host": "127.0.0.1", "port": 1080, "username": "user", "password": "pass"}
 ```
 
-Rules for backend auth payloads:
-
-- `username` and `password` must be provided together
-- empty strings are treated as missing values
-- duplicates are detected by resolved `host:port` only; to change credentials for an existing backend, remove it and add it again
-- when `username/password` are omitted for an API-added backend, that backend uses no per-backend override and falls back to the global CLI `--socks-user/--socks-pass` if present
-
-Remove backend:
-
-```json
-{"host": "127.0.0.1", "port": 1080}
-```
-
-Kill connection:
-
 ```json
 {"cid": "12345"}
 ```
 
-## API examples with `curl`
+Rules for API-added backend credentials:
 
-Read current state:
+- `username` and `password` must be provided together;
+- empty strings are treated as missing;
+- duplicate detection is by resolved `host:port`;
+- to change credentials for an existing backend, remove it and add it again;
+- when no per-backend credentials are provided, the global CLI SOCKS auth is used
+  if present.
 
-```bash
-curl http://127.0.0.1:8000/api/state
-```
+## Traffic rules
 
-Add backend without auth:
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/backends/add \
-  -H 'content-type: application/json' \
-  -d '{"host":"127.0.0.1","port":1080}'
-```
-
-Add backend with per-backend auth:
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/backends/add \
-  -H 'content-type: application/json' \
-  -d '{"host":"127.0.0.1","port":1080,"username":"user","password":"pass"}'
-```
-
-Remove backend:
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/backends/remove \
-  -H 'content-type: application/json' \
-  -d '{"host":"127.0.0.1","port":1080}'
-```
-
-Update download limit:
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/download_limit \
-  -H 'content-type: application/json' \
-  -d '{"mbit":25}'
-```
-
-Kill connection:
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/kill \
-  -H 'content-type: application/json' \
-  -d '{"cid":"12345"}'
-```
-
-## Web UI notes
-
-When the web panel is enabled, the **SOCKS backends** section exposes these fields for runtime backend creation:
-
-- `host / ip`
-- `port`
-- `username (optional)`
-- `password (optional)`
-
-UI add/remove operations use the same JSON API described above.
-
-## Traffic rules (`TRAFFIC_RULES`)
-
-`TRAFFIC_RULES` is read from the environment as JSON.
-The parser accepts either:
-
-- an object with a top-level `rules` array, or
-- a raw JSON array of rules.
+`t2s` can load rules from the `TRAFFIC_RULES` environment variable. The value can
+be either a JSON array or an object with a `rules` array.
 
 Supported actions:
 
-- `socks`
-- `direct`
-- `drop`
-- `reset`
-- `wait`
+- `socks` — force SOCKS backend forwarding;
+- `direct` — connect directly;
+- `drop` — terminate;
+- `reset` — accepted by the parser and implemented as early termination;
+- `wait` — wait for backend availability/policy conditions.
 
-Supported match fields inside `when`:
+Supported match fields:
 
-- `proto`
-- `port`
-- `port_range`
-- `host_regex`
-- `socks_available`
-- `is_udp`
+- `proto`;
+- `port`;
+- `port_range` such as `1000-2000`;
+- `host_regex`;
+- `socks_available`;
+- `is_udp`.
 
 Example:
 
 ```json
 {
   "rules": [
-    { "when": { "proto": "https", "port": 443 }, "action": "socks" },
-    { "when": { "host_regex": ".*\\.example\\.com$" }, "action": "direct" },
-    { "when": { "socks_available": false }, "action": "direct" },
-    { "when": { "port_range": "1-1024" }, "action": "wait" },
-    { "when": { "is_udp": true }, "action": "drop" }
+    {"when": {"host_regex": "(^|\\.)example\\.com$"}, "action": "direct"},
+    {"when": {"port": 443, "socks_available": true}, "action": "socks"}
   ]
 }
 ```
 
-### Protocol classification used by rules
+Host rules depend on best-effort metadata sniffing. `t2s` can inspect HTTP Host,
+HTTP CONNECT and TLS SNI. Under load, sniffing uses a smaller budget or can be
+skipped when no host-based rule requires it.
 
-Current built-in protocol classification is port-based:
+## Health checks and direct fallback
 
-- `80`, `8080`, `8000` -> `http`
-- `443`, `8443` -> `https`
-- `53` -> `dns`
-- everything else -> `tcp`
+Backends are monitored and classified by runtime health. GREEN backends are
+eligible for SOCKS forwarding. When no eligible SOCKS backend is available,
+`t2s` can use direct fallback if current rules and policy allow it.
 
-## Platform notes
+Direct fallback is not treated as a permanent bypass. When healthy backends
+recover, direct connections can be terminated so clients reconnect through the
+proxy path.
 
-- Transparent mode depends on Linux `SO_ORIGINAL_DST`
-- The system statistics collector reads from `/proc`, so Linux/Android environments are the intended target
+## Connection registry
 
-## Project status
+Each active connection is tracked with metadata such as connection ID, target,
+backend, state and traffic counters. The web UI/API uses this registry to display
+runtime state and kill selected connections.
 
-This repository already implements the core TCP proxying path, backend monitoring, runtime enforcement, and web management panel.
-The README should be treated as documentation for the current Rust implementation, not for the original Python project.
+## Limitations
+
+- TCP only;
+- no UDP proxying;
+- no internal DNS server;
+- `--enable-http2` is a compatibility flag, not a separate HTTP/2 engine;
+- host detection is best-effort and depends on early traffic bytes;
+- transparent mode depends on Linux/Android firewall behavior and
+  `SO_ORIGINAL_DST` availability.
+
+## Build
+
+```bash
+cargo build --release -p t2s
+```

@@ -1,98 +1,63 @@
-# ZDTD — ZDT-D daemon
+# zdtd — ZDT-D daemon
 
-`zdtd` is the Rust daemon used by the Android/Magisk module **ZDT-D**.
+`zdtd` is the central Rust daemon of ZDT-D. It is the component that turns the
+Android application settings and module files into a running root networking
+runtime.
 
-The daemon runs as **root**, prepares the module runtime layout, starts and stops network helper components, applies and restores iptables/ip6tables rules, exposes a local authenticated HTTP API for the Android application, and keeps runtime/status files in sync with the app UI.
+The daemon is designed for the ZDT-D Android root module layout. It is not a
+generic desktop Linux service and it should not be treated as a standalone VPN
+client. It expects Android, root access, the module filesystem, Android `netd`,
+`iptables` / `ip6tables`, and helper binaries installed by the module.
 
-This project is tightly coupled to the ZDT-D module layout on Android. It is **not** a generic Linux desktop/server daemon.
+## Responsibilities
 
-## Current scope
+`zdtd` is responsible for:
 
-The daemon is responsible for:
+- exposing the local authenticated API used by the Android app;
+- preparing the runtime directory layout under `/data/adb/modules/ZDT-D`;
+- reading global settings and per-program profile settings;
+- resolving Android package names into Linux UIDs;
+- validating app-list conflicts between incompatible programs;
+- starting and stopping supported helper programs;
+- applying and removing `iptables` / `ip6tables` rules;
+- applying NFQUEUE routing for zapret-style engines;
+- applying Android `netd` UID bindings for TUN/VPN-style profiles;
+- writing status files, runtime state and user-facing logs;
+- providing protection helpers such as `proxyInfo` and `blockedquic`;
+- coordinating boot-time startup and graceful shutdown.
 
-- local API server on `127.0.0.1:1006`;
-- token-based API protection;
-- start/stop orchestration for supported programs;
-- runtime state tracking for the Android app;
-- creation of the minimal `working_folder` structure on startup;
-- profile management for supported tools;
-- app/UID assignment files and conflict checks;
-- iptables/ip6tables baseline backup and restore;
-- port collection/normalization to reduce collisions;
-- proxy/app protection helpers such as `proxyInfo` and `blockedquic`;
-- Android-specific integration such as boot wait, notifications, SELinux guard logic and package UID helpers.
-
-## Important runtime warning
-
-### sing-box VPN mode uses tun2socks
-
-Native sing-box `tun` inbound mode is intentionally not used. The daemon keeps sing-box as a local mixed proxy backend and starts the shared `tun2socks` helper for VPN/netd routing.
-
-The supported VPN chain is: app UID routing via Android netd -> external `tun2socks` TUN -> `socks5://127.0.0.1:<sing-box server port>` -> sing-box outbounds/rules.
-
-UI can expose sing-box VPN only as the managed tun2socks mode, not as native sing-box TUN mode.
-
-## Supported components
-
-The daemon contains integration code for the following ZDT-D components.
-
-### DPI / proxy helpers
-
-- `dnscrypt`
-- `nfqws`
-- `nfqws2`
-- `byedpi`
-- `dpitunnel`
-- `opera-proxy`
-
-### Profile-based proxy/tunnel/VPN tools
-
-- `sing-box` — T2S proxy mode and VPN mode via external `tun2socks`
-- `wireproxy`
-- `mihomo`
-- `mieru`
-- `tor`
-- `openvpn`
-- `amneziawg`
-- `tun2socks`
-- `myvpn`
-- `myproxy`
-- `myprogram`
-
-### App-level protection / filtering helpers
-
-- `proxyInfo`
-- `blockedquic`
-
-## Runtime environment
+## Runtime assumptions
 
 Expected environment:
 
-- Android device;
-- root access;
-- Magisk/module-style filesystem layout;
-- ZDT-D module installed under `/data/adb/modules/ZDT-D`;
-- required helper binaries present under `/data/adb/modules/ZDT-D/bin`;
-- daemon started from a root context.
+```text
+Android device
+root access
+ZDT-D module installed under /data/adb/modules/ZDT-D
+helper binaries under /data/adb/modules/ZDT-D/bin
+settings and profile data under /data/adb/modules/ZDT-D/working_folder
+```
 
-The daemon expects Android tools and paths. Examples include:
+The daemon uses Android-specific tools and paths. Examples include:
 
-- `iptables` / `ip6tables`;
-- Android boot property checks;
-- Android notification commands;
-- package UID inspection;
-- SELinux mode handling;
-- fixed module paths under `/data/adb/modules/ZDT-D`.
+- `getprop sys.boot_completed`;
+- Android package/UID discovery;
+- Android `netd` commands;
+- `iptables` and `ip6tables`;
+- `/proc` process inspection;
+- module paths under `/data/adb/modules/ZDT-D`;
+- optional Android notification commands.
 
-## Fixed module paths
+## Important fixed paths
 
-Main paths used by the daemon:
+Main module paths:
 
 ```text
 /data/adb/modules/ZDT-D
 /data/adb/modules/ZDT-D/bin
 /data/adb/modules/ZDT-D/setting
 /data/adb/modules/ZDT-D/api
+/data/adb/modules/ZDT-D/log
 /data/adb/modules/ZDT-D/working_folder
 /data/adb/modules/ZDT-D/strategic
 ```
@@ -107,16 +72,124 @@ Important files:
 /data/adb/modules/ZDT-D/api/token
 /data/adb/modules/ZDT-D/api/info.json
 /data/adb/modules/ZDT-D/api/status.json
+/data/adb/modules/ZDT-D/log/zdtd.log
 /data/adb/modules/ZDT-D/working_folder/flag.sha256
 ```
 
-`flag.sha256` is intentionally shared between assignment-related modules. Do not create separate SHA tracker files for `blockedquic`, `proxyInfo`, or other app-list users unless the daemon logic is intentionally redesigned.
+`flag.sha256` is a shared assignment-change marker. It is intentionally shared
+between components that depend on app-list state. Do not split it into separate
+per-feature checksum files unless the daemon assignment model is redesigned.
+
+## Command line
+
+```bash
+zdtd
+zdtd --config /path/to/config.json
+zdtd --help
+```
+
+Without arguments the daemon uses built-in defaults for the ZDT-D module.
+`--config` currently provides optional JSON configuration mainly for logging and
+runtime-level settings.
+
+Example config shape:
+
+```json
+{
+  "base_dir": "/data/adb/modules/ZDT-D/working_folder",
+  "log": {
+    "level": "info",
+    "file": "/data/adb/modules/ZDT-D/log/zdtd.log"
+  },
+  "runtime": {
+    "mode": "daemon",
+    "tick_ms": 1000
+  },
+  "notifications": {
+    "enabled": false
+  }
+}
+```
+
+## Local API
+
+The Android app talks to `zdtd` through the local API server:
+
+```text
+http://127.0.0.1:1006/api/...
+```
+
+The API is intentionally local-only. Requests outside `/api/*` return an empty
+404. API requests require the token stored in:
+
+```text
+/data/adb/modules/ZDT-D/api/token
+```
+
+The app sends the token through one of these headers:
+
+```text
+Authorization: Bearer <token>
+X-Api-Key: <token>
+```
+
+Major API groups include:
+
+- `/api/status` — daemon/service status;
+- `/api/start` and `/api/stop` — runtime lifecycle;
+- `/api/setting` — global daemon/module settings;
+- `/api/programs` and `/api/programs/...` — program/profile management;
+- `/api/apps/assignments` — app-list ownership view;
+- `/api/blockedquic/...` — QUIC blocking helper;
+- `/api/proxyinfo/...` — local proxy protection helper;
+- `/api/strategic/...` — strategic files;
+- `/api/strategicvar/...` — strategy application helpers;
+- `/api/energy-saver/...` — profile/process energy saver settings;
+- `/api/fs/...` — restricted text file read/write helpers used by the app.
+
+## Startup lifecycle
+
+A typical startup flow is:
+
+1. Start as root from the module service script or app action.
+2. Initialize logging.
+3. Ensure module/API/settings directories exist.
+4. Create or normalize token, status and info files.
+5. Ensure the minimal `working_folder` layout exists.
+6. Wait for Android boot readiness when running from boot.
+7. Wait for package manager and Android `netd` readiness.
+8. Read global settings and enabled program/profile state.
+9. Resolve selected packages into UIDs.
+10. Validate app assignment conflicts.
+11. Backup baseline firewall state if needed.
+12. Start enabled programs and helper binaries.
+13. Apply routing rules: NFQUEUE, redirects, port filters and `netd` bindings.
+14. Write runtime state and expose status to the app.
+
+Startup is best-effort at the profile level. A failed profile should not
+necessarily hide every other successfully started profile. The app can display a
+partial state when some components fail.
+
+## Stop lifecycle
+
+A typical stop flow is:
+
+1. Mark runtime as stopping.
+2. Stop profile programs and helper processes.
+3. Remove Android `netd` VPN bindings created by ZDT-D.
+4. Remove or restore ZDT-D firewall rules.
+5. Restore baseline firewall state where supported.
+6. Clear runtime snapshots for stopped profiles.
+7. Mark status as stopped.
+
+Shutdown code is intentionally conservative: it should prefer cleanup and state
+consistency over aggressive process killing that could break unrelated system
+networking.
 
 ## Minimal working layout
 
-On startup the daemon creates the minimal runtime structure expected by the Android app.
-
-Main runtime roots:
+On startup, the daemon creates the directories and default state files expected
+by the Android UI. Main roots include:
 
 ```text
 working_folder/byedpi
@@ -140,512 +213,161 @@ working_folder/blockedquic
 working_folder/tor
 ```
 
-Profile-capable programs store profiles under:
+Profile-based programs use:
 
 ```text
-working_folder/<program>/profile/<profile_name>
+working_folder/<program>/active.json
+working_folder/<program>/profile/<profile_name>/setting.json
+working_folder/<program>/profile/<profile_name>/app/uid/user_program
+working_folder/<program>/profile/<profile_name>/app/out/user_program
+working_folder/<program>/profile/<profile_name>/log
+working_folder/<program>/profile/<profile_name>/work
 ```
 
-Common profile files/directories may include:
+The exact files vary by program. Some profiles also use `config.json`,
+`config.yaml`, `client.ovpn`, generated configs, runtime state files, local
+ports and external tool working directories.
+
+## Routing models managed by zdtd
+
+### NFQUEUE model
+
+Used by `nfqws` and `nfqws2`.
 
 ```text
-active.json
-profile/<name>/setting.json
-profile/<name>/config.json
-profile/<name>/config.yaml
-profile/<name>/client.ovpn
-profile/<name>/app/uid/user_program
-profile/<name>/app/out/user_program
-profile/<name>/log
-profile/<name>/work
+selected app UID -> iptables mangle rule -> NFQUEUE -> userspace engine
 ```
 
-The exact profile layout depends on the program.
+The daemon prepares UID rules, queue numbers, optional port filters and cleanup
+logic. The external engine performs packet-level DPI-bypass behavior.
 
-## High-level architecture
+### Transparent local redirect model
+
+Used by proxy pipelines such as `sing-box`, `wireproxy`, `myproxy`, `opera-proxy`
+and Tor-related scenarios.
 
 ```text
-src/main.rs
-  -> src/daemon.rs
-      -> src/api.rs
-      -> src/runtime.rs
-      -> src/runtime_state.rs
-      -> src/api_status.rs
-      -> src/settings.rs
-      -> src/stats.rs
-      -> src/stop.rs
-      -> src/proxyinfo.rs
-      -> src/blockedquic.rs
-      -> src/vpn_netd.rs
-      -> src/iptables/*
-      -> src/programs/*
-      -> src/android/*
+selected app UID -> iptables nat REDIRECT -> local helper port -> upstream proxy
 ```
+
+`t2s` is commonly used to bridge transparent TCP redirection to a SOCKS5 backend.
+
+### Android netd / TUN binding model
+
+Used by OpenVPN, tun2socks, myvpn and sing-box VPN mode.
+
+```text
+program creates or exposes TUN -> zdtd prepares profile -> Android netd binds selected UIDs
+```
+
+ZDT-D uses Android `netd` to bind selected application UIDs to a TUN network. It
+does not rely on Android `VpnService` as the primary routing engine.
+
+### Helper-only model
+
+Some components do not own the main traffic path but modify or observe behavior:
+
+- `blockedquic` blocks UDP/443 for selected apps;
+- `proxyInfo` protects local service ports and reports probes;
+- energy saver freezes/stops idle profiles according to settings;
+- diagnostic binaries are launched on demand by the app.
+
+## Program orchestration
+
+The daemon has integration modules for:
+
+- `dnscrypt`;
+- `nfqws`;
+- `nfqws2`;
+- `byedpi`;
+- `dpitunnel`;
+- `operaproxy`;
+- `singbox`;
+- `wireproxy`;
+- `tor`;
+- `openvpn`;
+- `amneziawg`;
+- `tun2socks`;
+- `myvpn`;
+- `myproxy`;
+- `myprogram`;
+- `mihomo`;
+- `mieru`.
+
+Each program module is responsible for normalizing settings, reading active
+profiles, preparing command lines, launching helper processes, collecting ports,
+parsing app lists and producing cleanup actions.
+
+## sing-box VPN mode warning
+
+Native sing-box `tun` inbound mode is intentionally not used as the ZDT-D VPN
+routing model. In ZDT-D, sing-box is kept as a local proxy backend, and the
+shared external `tun2socks` helper creates the TUN interface for VPN/netd mode.
+
+Supported chain:
+
+```text
+app UID -> Android netd VPN binding -> tun2socks TUN -> socks5://127.0.0.1:<sing-box port> -> sing-box outbounds/rules
+```
+
+UI should expose sing-box VPN as managed tun2socks mode, not as native sing-box
+TUN mode.
+
+## App-list and conflict model
+
+ZDT-D routes by Linux UID. The UI stores package names; the daemon resolves them
+into UID files. These files are used by firewall rules and Android `netd`.
+
+The same app should not be assigned to multiple incompatible main routing
+profiles at the same time. For example, an app should not be routed through two
+independent VPN/TUN profiles or two incompatible transparent proxy pipelines.
+
+Some helper features can coexist with a main routing profile. `blockedquic`, for
+example, can be used alongside other routing modes when it only blocks UDP/443
+for the selected app list.
 
 ## Source tree overview
 
 ```text
-src/
-  main.rs              Entry point. Checks root and starts daemon mode.
-  daemon.rs            Shared daemon state, async start/stop, API lifecycle.
-  api.rs               Local HTTP API server, request parsing and route handling.
-  api_status.rs        Status file used by the app while start/stop is in progress.
-  runtime.rs           Full service startup/shutdown orchestration.
-  runtime_state.rs     Runtime state persistence and adoption helpers.
-  settings.rs          Fixed paths, start settings, API token/info files, minimal layout.
-  stats.rs             Runtime process/status collection.
-  stop.rs              Best-effort service/process stop logic.
-  logging.rs           Log initialization and helpers.
-  shell.rs             Shell command wrappers.
-  ports.rs             Port collection and normalization helpers.
-  protector.rs         Runtime protection helper.
-  proxyinfo.rs         proxyInfo app routing/protection rules.
-  blockedquic.rs       Per-app QUIC blocking helper.
-  scan_detector.rs     Scan/protection related helper.
-  screen.rs            Screen/status helper.
-  vpn_netd.rs          Android netd/TUN routing helper for VPN-like profiles.
-  xtables_lock.rs      iptables lock retry handling.
-
-src/android/
-  boot.rs              Android boot completion wait.
-  notification.rs      Android notification integration.
-  pkg_uid.rs           Package-to-UID helpers.
-  selinux.rs           SELinux guard helpers.
-  wake_lock.rs         Wake lock helper.
-
-src/iptables/
-  caps.rs              iptables capability checks.
-  iptables_v1.rs       First-generation iptables rules.
-  iptables_v2.rs       Second-generation iptables rules.
-  iptables_iplist.rs   IP list rule helpers.
-  iptables_port.rs     Port rule helpers.
-  port_filter.rs       Port filter helpers.
-  mod.rs               iptables module exports.
-
-src/programs/
-  dnscrypt.rs
-  nfqws.rs
-  nfqws2.rs
-  nfqws_filters.rs
-  byedpi.rs
-  dpitunnel.rs
-  operaproxy.rs
-  singbox.rs
-  wireproxy.rs
-  tor.rs
-  openvpn.rs
-  amneziawg.rs
-  tun2socks.rs
-  myvpn.rs
-  myproxy.rs
-  myprogram.rs
-  mihomo.rs
-  mieru.rs
-  mod.rs
+src/main.rs                 Entry point and root check
+src/cli.rs                  Minimal CLI parsing
+src/config.rs               Optional daemon config
+src/daemon.rs               API/runtime daemon lifecycle
+src/api.rs                  Local HTTP API implementation
+src/api_status.rs           API status persistence
+src/runtime.rs              Main start/stop orchestration
+src/runtime_state.rs        Runtime state files and adoption helpers
+src/settings.rs             Fixed paths, tokens, start/global settings, layout creation
+src/stats.rs                Process/runtime status collection
+src/stop.rs                 Best-effort stop logic
+src/logging.rs              Log setup and user-facing log helpers
+src/shell.rs                Shell command wrappers
+src/ports.rs                Port normalization and collision helpers
+src/protector.rs            Runtime protection helper
+src/proxyinfo.rs            Local proxy protection rules
+src/blockedquic.rs          Per-app QUIC blocking
+src/energy_saver.rs         Profile/process energy saver
+src/vpn_netd.rs             Android netd VPN binding
+src/vpn_tether.rs           Tether/VPN profile state helper
+src/iptables/*              Firewall, redirect, NFQUEUE and port-filter logic
+src/android/*               Android boot, UID, SELinux, sysctl, notification helpers
+src/programs/*              Per-program integration modules
 ```
 
-## Startup flow
-
-When the app requests start or autostart is enabled, the daemon performs a guarded full startup.
-
-Simplified flow:
-
-1. Wait for Android boot completion when needed.
-2. Ensure required module/API/settings directories exist.
-3. Ensure minimal `working_folder` program layouts exist.
-4. Load `start.json` and API settings.
-5. Create or load API token.
-6. Write `/data/adb/modules/ZDT-D/api/info.json`.
-7. Prepare runtime status for the app.
-8. Create iptables/ip6tables baseline backups if missing.
-9. Restore baseline firewall rules before applying new rules.
-10. Normalize ports and collect configured ports from supported components.
-11. Start enabled programs/profiles.
-12. Apply routing, app assignment and protection rules.
-13. Refresh runtime status and expose the result through `/api/status`.
-
-`dnscrypt` is started early because other components may depend on DNS availability.
-
-## Stop flow
-
-Simplified stop flow:
-
-1. Mark stop as in progress.
-2. Stop known services and helper processes.
-3. Clear program-specific runtime rules.
-4. Restore iptables/ip6tables baseline rules.
-5. Restore Android/network settings where the daemon changed them.
-6. Clear runtime state/status flags.
-7. Mark services as stopped.
-
-Stop is best-effort. The daemon tries to restore firewall state even if a component stop command fails.
-
-## API
-
-The HTTP API is local-only and intended for the Android app.
-
-```text
-Bind: 127.0.0.1:1006
-Token file: /data/adb/modules/ZDT-D/api/token
-Info file:  /data/adb/modules/ZDT-D/api/info.json
-```
-
-Authentication is required for `/api/*` routes.
-
-Supported auth headers:
-
-```text
-x-api-key: <token>
-Authorization: Bearer <token>
-```
-
-Unauthenticated requests intentionally receive an empty `404` response so the API is not easily discoverable by local clients.
-
-### Main API groups
-
-Core daemon routes:
-
-```text
-GET  /api/status
-POST /api/start
-POST /api/stop
-GET  /api/setting
-POST /api/setting
-GET  /api/programs
-```
-
-Safe file helpers inside the module path:
-
-```text
-POST /api/fs/read_text
-POST /api/fs/write_text
-POST /api/fs/list_dir
-```
-
-Profile/program routes:
-
-```text
-/api/programs/<program>/...
-```
-
-Strategic file routes:
-
-```text
-/api/strategic/...
-/api/strategicvar/...
-```
-
-App assignment overview:
-
-```text
-GET /api/apps/assignments
-```
-
-proxyInfo routes:
-
-```text
-GET  /api/proxyinfo
-GET  /api/proxyinfo/enabled
-PUT  /api/proxyinfo/enabled
-GET  /api/proxyinfo/apps
-PUT  /api/proxyinfo/apps
-POST /api/proxyinfo/save
-POST /api/proxyinfo/apply
-```
-
-blockedquic routes:
-
-```text
-GET  /api/blockedquic
-GET  /api/blockedquic/enabled
-PUT  /api/blockedquic/enabled
-GET  /api/blockedquic/apps
-PUT  /api/blockedquic/apps
-POST /api/blockedquic/save
-POST /api/blockedquic/apply
-```
-
-The API is primarily app-facing. Treat routes and JSON payloads as internal ZDT-D contracts, not as a public stable API.
-
-## Program notes
-
-### dnscrypt
-
-Manages the DNSCrypt runtime configuration and starts DNS early in the runtime sequence. Its default config path is under:
-
-```text
-working_folder/dnscrypt/setting/dnscrypt-proxy.toml
-```
-
-### nfqws / nfqws2
-
-Profile-style DPI bypass components using ZDT-D strategic files and iptables rules. `nfqws2` has additional strategic/Lua-related support.
-
-### byedpi / dpitunnel
-
-DPI/helper components started from the module runtime with program-specific configs under `working_folder`.
-
-### opera-proxy
-
-Uses `opera-proxy` from the module `bin` directory and stores settings under:
-
-```text
-working_folder/operaproxy
-```
-
-It has support files for SNI, server selection, API proxy list, bootstrap DNS, app UID/out lists, and optional byedpi integration files.
-
-### sing-box
-
-Profile-based component stored under:
-
-```text
-working_folder/singbox/profile
-```
-
-Current daemon behavior:
-
-```text
-Supported: T2S proxy mode
-Supported: VPN mode via external tun2socks
-```
-
-Native sing-box TUN mode is not used. VPN mode is implemented as `sing-box mixed inbound + tun2socks + vpn_netd`, similar to the managed Mihomo path.
-
-### wireproxy
-
-Profile-based WireGuard proxy component stored under:
-
-```text
-working_folder/wireproxy/profile
-```
-
-### tor
-
-Uses `torproxy` and `lyrebird` binaries from the module `bin` directory. Default files are created under:
-
-```text
-working_folder/tor
-working_folder/tor/torrc
-working_folder/tor/setting.json
-```
-
-Default `torrc` includes a `DataDirectory`, `SocksPort`, logging to stdout, bridge usage and lyrebird transport plugin configuration.
-
-### openvpn
-
-Profile-based OpenVPN component. Profiles are stored under:
-
-```text
-working_folder/openvpn/profile/<profile>
-```
-
-Expected client config file:
-
-```text
-client.ovpn
-```
-
-The daemon validates TUN naming and cross-profile TUN conflicts before enabling profiles.
-
-### amneziawg
-
-Profile-based AmneziaWG component using:
-
-```text
-/data/adb/modules/ZDT-D/bin/amneziawg-go
-/data/adb/modules/ZDT-D/bin/awg
-```
-
-Profiles are stored under:
-
-```text
-working_folder/amneziawg/profile/<profile>
-```
-
-### tun2socks
-
-Profile-based `tun2socks` integration. Profiles are stored under:
-
-```text
-working_folder/tun2socks/profile/<profile>
-```
-
-### mihomo
-
-Profile-based Mihomo integration using:
-
-```text
-/data/adb/modules/ZDT-D/bin/mihomo
-/data/adb/modules/ZDT-D/bin/tun2socks
-```
-
-Profiles are stored under:
-
-```text
-working_folder/mihomo/profile/<profile>
-```
-
-Runtime configs are generated inside the profile runtime/work layout.
-
-### mieru
-
-Profile-based Mieru integration using:
-
-```text
-/data/adb/modules/ZDT-D/bin/mieru
-/data/adb/modules/ZDT-D/bin/tun2socks
-```
-
-Profiles are stored under:
-
-```text
-working_folder/mieru/profile/<profile>
-```
-
-### myproxy / myprogram / myvpn
-
-Custom/user-defined integration layers. They are profile-based and store user configuration under their own `working_folder/<program>` roots.
-
-`myproxy` uses `working_folder/myproxy/profile/<profile>/proxy.json` to configure the upstream SOCKS5 backend used by `t2s`. Example priority configuration:
-
-```json
-{
-  "host": "127.0.0.1",
-  "ports": [1145, 1146, 1147],
-  "backend_mode": "priority",
-  "backend_priority": "1145;1146;1147",
-  "priority_speed_aware": true,
-  "user": "",
-  "pass": ""
-}
-```
-
-When `priority_speed_aware` is `true` and `backend_mode` is `priority`, ZDT-D starts `t2s` with `--priority-speed-aware`. When the field is missing or `false`, strict priority mode remains unchanged.
-
-## App assignment files
-
-Several components use package/UID assignment lists.
-
-Common paths include:
-
-```text
-app/uid/user_program
-app/out/user_program
-app/uid/mobile_program
-app/uid/wifi_program
-app/out/mobile_program
-app/out/wifi_program
-```
-
-The daemon validates app assignment content and tries to prevent incompatible cross-program assignments. This is especially important for components that alter per-app routing or firewall behavior.
-
-## proxyInfo
-
-`proxyInfo` stores its state under:
-
-```text
-working_folder/proxyInfo
-```
-
-Important files:
-
-```text
-enabled.json
-uid_program
-out_program
-```
-
-When enabled, `proxyInfo` applies protection/routing rules for selected applications. It may also affect IPv6 behavior for selected UIDs, depending on the active rule set.
-
-## blockedquic
-
-`blockedquic` stores its state under:
-
-```text
-working_folder/blockedquic
-```
-
-Important files:
-
-```text
-enabled.json
-uid_program
-out_program
-```
-
-When enabled and applied, it rebuilds app lists and applies QUIC-blocking rules for selected applications.
-
-## iptables baseline handling
-
-The daemon keeps baseline firewall backups in:
-
-```text
-setting/iptables_backup.rules
-setting/ip6tables_backup.rules
-```
-
-Before starting runtime rules, the daemon tries to restore the baseline. On stop, it restores the baseline again.
-
-This design reduces rule accumulation after repeated starts/stops or failed runtime sessions.
-
-## Runtime status
-
-The Android app can read daemon state through `/api/status` and status files in the API directory.
-
-The daemon tracks:
-
-- full start in progress;
-- stop in progress;
-- services running;
-- partial runtime state;
-- degraded/cached status;
-- process-level status where available;
-- app-facing UI status.
-
-## Building
-
-Install a Rust toolchain suitable for the target platform, then build:
-
-```bash
-cargo build --release
-```
-
-Output:
-
-```text
-target/release/zdtd
-```
-
-For Android deployment, the binary must be built for the correct target/ABI and placed into the ZDT-D module environment expected by the rest of the project.
-
-## Running
-
-Run the daemon from a root context:
-
-```bash
-/path/to/zdtd
-```
-
-Running without root is rejected by the daemon.
-
-The daemon is expected to run inside the installed ZDT-D module environment, not from an arbitrary desktop directory.
-
-## Development notes
-
-- `api.rs` is intentionally central right now, but it is large and should be edited carefully.
-- The HTTP server is implemented manually on top of `TcpListener`/`TcpStream`.
-- API route matching is path-based and app-facing.
-- Many operations are best-effort because Android firmware and root environments differ between devices.
-- Be careful when adding new programs: update runtime start/stop, stats, port collection, app assignment conflict checks, API exposure and minimal layout creation together.
-- Expose sing-box VPN only as managed tun2socks mode; do not route it through native sing-box TUN inbound.
-- Keep module paths consistent with `/data/adb/modules/ZDT-D` unless the daemon is intentionally refactored for configurable roots.
-
-## Safety notes for contributors
-
-- Do not expose the API token through `info.json`; only the token file path should be written there.
-- Do not replace the empty unauthenticated `404` behavior unless the local API exposure model is redesigned.
-- Do not create independent SHA flag files for modules that share app assignment state.
-- Do not enable native sing-box TUN mode from UI-only changes. The supported sing-box VPN path is daemon-managed tun2socks mode.
-- When adding profile-based VPN/TUN tools, validate TUN name conflicts across existing profile systems.
-- When adding iptables rules, make sure stop/restore paths are also updated.
+## Developer notes
+
+Be careful when changing:
+
+- service boot logic;
+- firewall backup/restore logic;
+- NFQUEUE queue/rule generation;
+- Android `netd` binding and cleanup;
+- app-list conflict validation;
+- profile runtime state paths;
+- token/API authentication behavior;
+- module service scripts that start the daemon.
+
+Small UI or documentation changes should not change daemon routing behavior.
+Routing changes should be reviewed as compatibility-sensitive changes because
+wrong cleanup or wrong UID routing can break networking outside the selected
+profiles.

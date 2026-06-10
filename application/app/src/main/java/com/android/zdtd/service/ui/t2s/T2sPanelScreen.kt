@@ -92,7 +92,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.max
 
-private data class SpeedSample(val downBps: Double, val upBps: Double, val active: Int)
+private data class SpeedSample(val timeMs: Long, val downBps: Double, val upBps: Double, val active: Int)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -114,9 +114,45 @@ fun T2sPanelScreen(
   var upBps by remember { mutableStateOf(0.0) }
   var errorText by remember { mutableStateOf<String?>(null) }
   var firstLoad by remember { mutableStateOf(true) }
+  var frameTimeMs by remember { mutableStateOf(System.currentTimeMillis()) }
+  val chartDownBpsState = animateFloatAsState(
+    targetValue = downBps.toFloat().coerceAtLeast(0f),
+    animationSpec = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+    label = "t2s_chart_down_value",
+  )
+  val chartUpBpsState = animateFloatAsState(
+    targetValue = upBps.toFloat().coerceAtLeast(0f),
+    animationSpec = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+    label = "t2s_chart_up_value",
+  )
+  val chartActiveState = animateFloatAsState(
+    targetValue = (poll?.state?.activeConnections ?: 0).toFloat().coerceAtLeast(0f),
+    animationSpec = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+    label = "t2s_chart_active_value",
+  )
 
   fun showSnack(message: String) {
     coroutineScope.launch { snackHost.showSnackbar(message) }
+  }
+
+  LaunchedEffect(port) {
+    var lastSampleMs = 0L
+    while (isActive) {
+      val now = System.currentTimeMillis()
+      frameTimeMs = now
+      if (!firstLoad && now - lastSampleMs >= 100L) {
+        samples += SpeedSample(
+          timeMs = now,
+          downBps = chartDownBpsState.value.toDouble(),
+          upBps = chartUpBpsState.value.toDouble(),
+          active = chartActiveState.value.toInt(),
+        )
+        lastSampleMs = now
+        val cutoff = now - 65_000L
+        while (samples.size > 2 && samples.first().timeMs < cutoff) samples.removeAt(0)
+      }
+      delay(16L)
+    }
   }
 
   LaunchedEffect(port) {
@@ -135,12 +171,9 @@ fun T2sPanelScreen(
         lastWallMs = now
         errorText = null
         firstLoad = false
-        val prevSample = samples.lastOrNull()
-        val smoothDown = prevSample?.let { it.downBps * 0.65 + downBps * 0.35 } ?: downBps
-        val smoothUp = prevSample?.let { it.upBps * 0.65 + upBps * 0.35 } ?: upBps
-        val smoothActive = prevSample?.let { (it.active * 0.65 + next.state.activeConnections * 0.35).toInt() } ?: next.state.activeConnections
-        samples += SpeedSample(downBps = smoothDown, upBps = smoothUp, active = smoothActive)
-        while (samples.size > 72) samples.removeAt(0)
+        if (samples.isEmpty()) {
+          samples += SpeedSample(timeMs = now, downBps = downBps, upBps = upBps, active = next.state.activeConnections)
+        }
         delay(next.suggestedIntervalMs.coerceAtLeast(next.minIntervalMs))
       } catch (t: Throwable) {
         errorText = t.message ?: "t2s API недоступен"
@@ -217,7 +250,7 @@ fun T2sPanelScreen(
             .fillMaxSize()
             .padding(horizontal = 14.dp)
           when (tab) {
-            0 -> OverviewTab(commonModifier, state, port, downBps, upBps, samples, poll?.collecting == true, errorText)
+            0 -> OverviewTab(commonModifier, state, port, downBps, upBps, samples, frameTimeMs, poll?.collecting == true, errorText)
             1 -> ConnectionsTab(commonModifier, state.connections) { cid ->
               coroutineScope.launch {
                 val ok = withContext(Dispatchers.IO) { runCatching { client.killConnection(cid) }.getOrDefault(false) }
@@ -249,7 +282,7 @@ fun T2sPanelScreen(
 }
 
 @Composable
-private fun OverviewTab(modifier: Modifier, state: T2sState, port: Int, downBps: Double, upBps: Double, samples: List<SpeedSample>, collecting: Boolean, errorText: String?) {
+private fun OverviewTab(modifier: Modifier, state: T2sState, port: Int, downBps: Double, upBps: Double, samples: List<SpeedSample>, frameTimeMs: Long, collecting: Boolean, errorText: String?) {
   LazyColumn(
     modifier = modifier,
     contentPadding = PaddingValues(top = 14.dp, bottom = 32.dp),
@@ -281,7 +314,7 @@ private fun OverviewTab(modifier: Modifier, state: T2sState, port: Int, downBps:
         }
       }
     }
-    item { SpeedChartCard(samples) }
+    item { SpeedChartCard(samples, frameTimeMs) }
     item {
       PanelCard {
         Text("Состояние", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -397,7 +430,7 @@ private fun SettingsTab(modifier: Modifier, state: T2sState, poll: T2sPollResult
 }
 
 @Composable
-private fun SpeedChartCard(samples: List<SpeedSample>) = PanelCard {
+private fun SpeedChartCard(samples: List<SpeedSample>, frameTimeMs: Long) = PanelCard {
   Text("График скорости", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
   if (samples.size < 2) {
     Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
@@ -408,30 +441,28 @@ private fun SpeedChartCard(samples: List<SpeedSample>) = PanelCard {
     val upColor = Color(0xFF8B5CF6)
     val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.74f)
-    val maxSpeed = max(1.0, samples.maxOf { max(it.downBps, it.upBps) })
+    val windowMs = 45_000L
+    val visibleSamples = samples.filter { it.timeMs >= frameTimeMs - windowMs - 1_000L && it.timeMs <= frameTimeMs }
+    val maxSpeed = max(1.0, visibleSamples.maxOf { max(it.downBps, it.upBps) })
     val scale = speedScale(maxSpeed)
     val labels = listOf(1.0, 0.66, 0.33, 0.0).map { formatScaledSpeed(maxSpeed * it, scale) }
-    val animatedSampleCount by animateFloatAsState(
-      targetValue = samples.size.toFloat(),
-      animationSpec = tween(durationMillis = 620, easing = FastOutSlowInEasing),
-      label = "t2s_chart_sample_count",
-    )
 
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
       Box(Modifier.weight(1f).height(190.dp)) {
         Canvas(Modifier.fillMaxSize()) {
           val chartWidth = size.width
           val chartHeight = size.height
-          val revealProgress = if (samples.size <= 1) 1f else ((animatedSampleCount - 1f) / (samples.size - 1f)).coerceIn(0f, 1f)
-          val visibleWidth = chartWidth * revealProgress
+          val startTime = frameTimeMs - windowMs
 
           repeat(4) { i ->
             val y = chartHeight * i / 3f
             drawLine(gridColor, Offset(0f, y), Offset(chartWidth, y), strokeWidth = 1.dp.toPx())
           }
 
-          fun pointsFor(selector: (SpeedSample) -> Double): List<Offset> = samples.mapIndexed { i, sample ->
-            val x = if (samples.size == 1) 0f else chartWidth * i / (samples.size - 1).toFloat()
+          fun pointsFor(selector: (SpeedSample) -> Double): List<Offset> = visibleSamples.mapNotNull { sample ->
+            val progress = ((sample.timeMs - startTime).toDouble() / windowMs.toDouble()).toFloat()
+            if (progress < 0f || progress > 1f) return@mapNotNull null
+            val x = chartWidth * progress
             val y = (chartHeight - (selector(sample) / maxSpeed).toFloat() * chartHeight).coerceIn(0f, chartHeight)
             Offset(x, y)
           }
@@ -458,30 +489,6 @@ private fun SpeedChartCard(samples: List<SpeedSample>) = PanelCard {
             return path
           }
 
-          fun visiblePoints(points: List<Offset>): List<Offset> {
-            if (points.isEmpty()) return emptyList()
-            val out = ArrayList<Offset>()
-            for (i in points.indices) {
-              val point = points[i]
-              if (point.x <= visibleWidth) {
-                out += point
-              } else {
-                val previous = points.getOrNull(i - 1)
-                if (previous != null && previous.x < visibleWidth) {
-                  val span = (point.x - previous.x).coerceAtLeast(1f)
-                  val t = ((visibleWidth - previous.x) / span).coerceIn(0f, 1f)
-                  out += Offset(
-                    x = visibleWidth,
-                    y = previous.y + (point.y - previous.y) * t,
-                  )
-                }
-                break
-              }
-            }
-            if (out.isEmpty()) out += Offset(0f, points.first().y)
-            return out
-          }
-
           fun filledPath(points: List<Offset>): Path {
             val path = smoothPath(points)
             if (points.isNotEmpty()) {
@@ -492,8 +499,8 @@ private fun SpeedChartCard(samples: List<SpeedSample>) = PanelCard {
             return path
           }
 
-          val downPoints = visiblePoints(pointsFor { it.downBps })
-          val upPoints = visiblePoints(pointsFor { it.upBps })
+          val downPoints = pointsFor { it.downBps }
+          val upPoints = pointsFor { it.upBps }
           drawPath(filledPath(downPoints), color = downColor.copy(alpha = 0.12f))
           drawPath(filledPath(upPoints), color = upColor.copy(alpha = 0.10f))
           drawPath(smoothPath(downPoints), color = downColor, style = Stroke(width = 3.2.dp.toPx(), cap = StrokeCap.Round))

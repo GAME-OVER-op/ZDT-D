@@ -705,6 +705,40 @@ Helper features may coexist when they do not own the main route. Examples:
 The daemon validates known conflicts before applying runtime state. Conflict
 rules should be updated whenever a new program type or routing model is added.
 
+
+## Optional Zygisk interface layer
+
+ZDT-D can include an optional Zygisk native library when the setup marker
+`/data/adb/ZDT-D/zygisk` exists before module installation. The installer keeps
+`zygisk/arm64-v8a.so` only in that case; otherwise the installed module has no
+Zygisk directory.
+
+The Zygisk component is not a traffic router and is not required by the daemon.
+It is an interface-visibility guard for selected target UIDs. It reads existing
+runtime files from the installed module:
+
+```text
+working_folder/proxyInfo/out_program
+setting/start.json
+working_folder/proxyInfo/enabled.json
+working_folder/vpn_netd/applied.json
+```
+
+It hides ZDT-D VPN/tunnel interfaces from common app-side probes such as
+`getifaddrs`, interface `ioctl`, selected `/proc/net` reads, selected
+`/sys/class/net` metadata checks, and `NETLINK_ROUTE` replies. The component is
+read-only: it does not create Zygisk-specific config, status, debug, or counter
+files.
+
+Root-manager compatibility is handled during installation:
+
+- Magisk requires Magisk 26.0+ and enabled built-in Zygisk;
+- KernelSU requires KernelSU 10940+ and a compatible external Zygisk layer;
+- APatch requires APatch 10700+ and a compatible external Zygisk layer.
+
+Full technical details are documented in `docs/ZYGISK.md`; build/development
+notes live in `zygisk/README.md`.
+
 ## Developer guide: adding a program
 
 A new program usually needs changes in several places:
@@ -736,4 +770,4 @@ Be especially careful with:
 - transparent TCP to SOCKS helper: `rust/T2s/README.md`
 - DPI diagnostics: `rust/dpi-detector/README.md`
 - NFQWS strategy tester: `rust/nfqws-tester/README.md`
-- Zygisk notes: `docs/ZYGISK.md`
+- Zygisk layer: `docs/ZYGISK.md` and `zygisk/README.md`

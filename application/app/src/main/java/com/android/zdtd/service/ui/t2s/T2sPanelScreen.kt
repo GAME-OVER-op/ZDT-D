@@ -1,6 +1,8 @@
 package com.android.zdtd.service.ui.t2s
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
@@ -133,8 +135,12 @@ fun T2sPanelScreen(
         lastWallMs = now
         errorText = null
         firstLoad = false
-        samples += SpeedSample(downBps = downBps, upBps = upBps, active = next.state.activeConnections)
-        while (samples.size > 60) samples.removeAt(0)
+        val prevSample = samples.lastOrNull()
+        val smoothDown = prevSample?.let { it.downBps * 0.65 + downBps * 0.35 } ?: downBps
+        val smoothUp = prevSample?.let { it.upBps * 0.65 + upBps * 0.35 } ?: upBps
+        val smoothActive = prevSample?.let { (it.active * 0.65 + next.state.activeConnections * 0.35).toInt() } ?: next.state.activeConnections
+        samples += SpeedSample(downBps = smoothDown, upBps = smoothUp, active = smoothActive)
+        while (samples.size > 72) samples.removeAt(0)
         delay(next.suggestedIntervalMs.coerceAtLeast(next.minIntervalMs))
       } catch (t: Throwable) {
         errorText = t.message ?: "t2s API недоступен"
@@ -266,12 +272,12 @@ private fun OverviewTab(modifier: Modifier, state: T2sState, port: Int, downBps:
       PanelCard {
         Text("Скорость", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-          MetricBox("↓ Download", formatSpeed(downBps), Color(0xFF38BDF8), Modifier.weight(1f))
-          MetricBox("↑ Upload", formatSpeed(upBps), Color(0xFF8B5CF6), Modifier.weight(1f))
+          AnimatedMetricBox("↓ Download", downBps, ::formatSpeed, Color(0xFF38BDF8), Modifier.weight(1f))
+          AnimatedMetricBox("↑ Upload", upBps, ::formatSpeed, Color(0xFF8B5CF6), Modifier.weight(1f))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-          MetricBox("Всего ↓", formatBytes(state.bytesDown), Color(0xFF38BDF8), Modifier.weight(1f))
-          MetricBox("Всего ↑", formatBytes(state.bytesUp), Color(0xFF8B5CF6), Modifier.weight(1f))
+          AnimatedMetricBox("Всего ↓", state.bytesDown.toDouble(), { formatBytes(it.toLong()) }, Color(0xFF38BDF8), Modifier.weight(1f))
+          AnimatedMetricBox("Всего ↑", state.bytesUp.toDouble(), { formatBytes(it.toLong()) }, Color(0xFF8B5CF6), Modifier.weight(1f))
         }
       }
     }
@@ -280,12 +286,12 @@ private fun OverviewTab(modifier: Modifier, state: T2sState, port: Int, downBps:
       PanelCard {
         Text("Состояние", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-          MetricBox("Соединения", state.activeConnections.toString(), Color(0xFF22C55E), Modifier.weight(1f))
-          MetricBox("Ошибки", state.errors.toString(), MaterialTheme.colorScheme.error, Modifier.weight(1f))
+          AnimatedMetricBox("Соединения", state.activeConnections.toDouble(), { it.toInt().toString() }, Color(0xFF22C55E), Modifier.weight(1f))
+          AnimatedMetricBox("Ошибки", state.errors.toDouble(), { it.toLong().toString() }, MaterialTheme.colorScheme.error, Modifier.weight(1f))
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-          MetricBox("SOCKS OK", state.socksOk.toString(), Color(0xFF22C55E), Modifier.weight(1f))
-          MetricBox("SOCKS FAIL", state.socksFail.toString(), Color(0xFFF97316), Modifier.weight(1f))
+          AnimatedMetricBox("SOCKS OK", state.socksOk.toDouble(), { it.toLong().toString() }, Color(0xFF22C55E), Modifier.weight(1f))
+          AnimatedMetricBox("SOCKS FAIL", state.socksFail.toDouble(), { it.toLong().toString() }, Color(0xFFF97316), Modifier.weight(1f))
         }
       }
     }
@@ -392,27 +398,117 @@ private fun SettingsTab(modifier: Modifier, state: T2sState, poll: T2sPollResult
 
 @Composable
 private fun SpeedChartCard(samples: List<SpeedSample>) = PanelCard {
-  Text("График", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+  Text("График скорости", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
   if (samples.size < 2) {
-    Box(Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) { Text("Ожидание данных…", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
+      Text("Ожидание данных…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
   } else {
     val downColor = Color(0xFF38BDF8)
     val upColor = Color(0xFF8B5CF6)
-    val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)
-    Canvas(Modifier.fillMaxWidth().height(170.dp)) {
-      val maxSpeed = max(1.0, samples.maxOf { max(it.downBps, it.upBps) })
-      fun pathFor(selector: (SpeedSample) -> Double): Path {
-        val p = Path()
-        samples.forEachIndexed { i, s ->
-          val x = if (samples.size == 1) 0f else (size.width * i / (samples.size - 1).toFloat())
-          val y = (size.height - (selector(s) / maxSpeed).toFloat() * size.height).coerceIn(0f, size.height)
-          if (i == 0) p.moveTo(x, y) else p.lineTo(x, y)
+    val gridColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)
+    val labelColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.74f)
+    val maxSpeed = max(1.0, samples.maxOf { max(it.downBps, it.upBps) })
+    val scale = speedScale(maxSpeed)
+    val labels = listOf(1.0, 0.66, 0.33, 0.0).map { formatScaledSpeed(maxSpeed * it, scale) }
+    val animatedSampleCount by animateFloatAsState(
+      targetValue = samples.size.toFloat(),
+      animationSpec = tween(durationMillis = 620, easing = FastOutSlowInEasing),
+      label = "t2s_chart_sample_count",
+    )
+
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+      Box(Modifier.weight(1f).height(190.dp)) {
+        Canvas(Modifier.fillMaxSize()) {
+          val chartWidth = size.width
+          val chartHeight = size.height
+          val revealProgress = if (samples.size <= 1) 1f else ((animatedSampleCount - 1f) / (samples.size - 1f)).coerceIn(0f, 1f)
+          val visibleWidth = chartWidth * revealProgress
+
+          repeat(4) { i ->
+            val y = chartHeight * i / 3f
+            drawLine(gridColor, Offset(0f, y), Offset(chartWidth, y), strokeWidth = 1.dp.toPx())
+          }
+
+          fun pointsFor(selector: (SpeedSample) -> Double): List<Offset> = samples.mapIndexed { i, sample ->
+            val x = if (samples.size == 1) 0f else chartWidth * i / (samples.size - 1).toFloat()
+            val y = (chartHeight - (selector(sample) / maxSpeed).toFloat() * chartHeight).coerceIn(0f, chartHeight)
+            Offset(x, y)
+          }
+
+          fun smoothPath(points: List<Offset>): Path {
+            val path = Path()
+            if (points.isEmpty()) return path
+            path.moveTo(points.first().x, points.first().y)
+            for (i in 0 until points.lastIndex) {
+              val current = points[i]
+              val next = points[i + 1]
+              val previous = points.getOrNull(i - 1) ?: current
+              val afterNext = points.getOrNull(i + 2) ?: next
+              val cp1 = Offset(
+                current.x + (next.x - previous.x) * 0.16f,
+                current.y + (next.y - previous.y) * 0.16f,
+              )
+              val cp2 = Offset(
+                next.x - (afterNext.x - current.x) * 0.16f,
+                next.y - (afterNext.y - current.y) * 0.16f,
+              )
+              path.cubicTo(cp1.x, cp1.y, cp2.x, cp2.y, next.x, next.y)
+            }
+            return path
+          }
+
+          fun visiblePoints(points: List<Offset>): List<Offset> {
+            if (points.isEmpty()) return emptyList()
+            val out = ArrayList<Offset>()
+            for (i in points.indices) {
+              val point = points[i]
+              if (point.x <= visibleWidth) {
+                out += point
+              } else {
+                val previous = points.getOrNull(i - 1)
+                if (previous != null && previous.x < visibleWidth) {
+                  val span = (point.x - previous.x).coerceAtLeast(1f)
+                  val t = ((visibleWidth - previous.x) / span).coerceIn(0f, 1f)
+                  out += Offset(
+                    x = visibleWidth,
+                    y = previous.y + (point.y - previous.y) * t,
+                  )
+                }
+                break
+              }
+            }
+            if (out.isEmpty()) out += Offset(0f, points.first().y)
+            return out
+          }
+
+          fun filledPath(points: List<Offset>): Path {
+            val path = smoothPath(points)
+            if (points.isNotEmpty()) {
+              path.lineTo(points.last().x, chartHeight)
+              path.lineTo(points.first().x, chartHeight)
+              path.close()
+            }
+            return path
+          }
+
+          val downPoints = visiblePoints(pointsFor { it.downBps })
+          val upPoints = visiblePoints(pointsFor { it.upBps })
+          drawPath(filledPath(downPoints), color = downColor.copy(alpha = 0.12f))
+          drawPath(filledPath(upPoints), color = upColor.copy(alpha = 0.10f))
+          drawPath(smoothPath(downPoints), color = downColor, style = Stroke(width = 3.2.dp.toPx(), cap = StrokeCap.Round))
+          drawPath(smoothPath(upPoints), color = upColor, style = Stroke(width = 3.2.dp.toPx(), cap = StrokeCap.Round))
         }
-        return p
       }
-      drawLine(gridColor, Offset(0f, size.height), Offset(size.width, size.height), strokeWidth = 1.dp.toPx())
-      drawPath(pathFor { it.downBps }, color = downColor, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
-      drawPath(pathFor { it.upBps }, color = upColor, style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round))
+      Column(
+        modifier = Modifier.width(72.dp).height(190.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
+        horizontalAlignment = Alignment.End,
+      ) {
+        labels.forEach { label ->
+          Text(label, style = MaterialTheme.typography.labelSmall, color = labelColor, maxLines = 1)
+        }
+      }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
       StatusPill("↓ download", downColor)
@@ -491,8 +587,49 @@ private fun SpeedChartCard(samples: List<SpeedSample>) = PanelCard {
 @Composable private fun IconBubble(color: Color, content: @Composable () -> Unit) = Surface(Modifier.size(44.dp), shape = CircleShape, color = color.copy(alpha = 0.14f), border = BorderStroke(1.dp, color.copy(alpha = 0.30f))) { Box(contentAlignment = Alignment.Center) { content() } }
 @Composable private fun StatusPill(text: String, color: Color) = Surface(shape = CircleShape, color = color.copy(alpha = 0.13f), border = BorderStroke(1.dp, color.copy(alpha = 0.28f))) { Text(text, Modifier.padding(horizontal = 10.dp, vertical = 5.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, color = color) }
 @Composable private fun MetricBox(label: String, value: String, color: Color, modifier: Modifier = Modifier) = Surface(modifier, shape = RoundedCornerShape(18.dp), color = color.copy(alpha = 0.10f), border = BorderStroke(1.dp, color.copy(alpha = 0.20f))) { Column(Modifier.padding(12.dp)) { Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant); Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = color) } }
+
+@Composable
+private fun AnimatedMetricBox(
+  label: String,
+  targetValue: Double,
+  formatter: (Double) -> String,
+  color: Color,
+  modifier: Modifier = Modifier,
+) {
+  val safeTarget = targetValue.coerceAtLeast(0.0).toFloat()
+  val animated by animateFloatAsState(
+    targetValue = safeTarget,
+    animationSpec = tween(durationMillis = 680, easing = FastOutSlowInEasing),
+    label = "animated_metric_$label",
+  )
+  MetricBox(label, formatter(animated.toDouble()), color, modifier)
+}
+
 @Composable private fun InfoRow(label: String, value: String) = Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { Text(label, Modifier.weight(0.45f), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall); Text(value.ifBlank { "—" }, Modifier.weight(0.55f), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis) }
 @Composable private fun InfoText(text: String, color: Color) = Text(text, style = MaterialTheme.typography.bodySmall, color = color)
+
+private data class SpeedScale(val divisor: Double, val unit: String)
+
+private fun speedScale(maxValue: Double): SpeedScale {
+  val units = listOf("B/s", "KB/s", "MB/s", "GB/s", "TB/s")
+  var divisor = 1.0
+  var index = 0
+  while (maxValue / divisor >= 1024.0 && index < units.lastIndex) {
+    divisor *= 1024.0
+    index += 1
+  }
+  return SpeedScale(divisor, units[index])
+}
+
+private fun formatScaledSpeed(value: Double, scale: SpeedScale): String {
+  val scaled = value / scale.divisor
+  return when {
+    scaled <= 0.0 -> "0 ${scale.unit}"
+    scaled >= 100.0 -> "%.0f %s".format(scaled, scale.unit)
+    scaled >= 10.0 -> "%.1f %s".format(scaled, scale.unit)
+    else -> "%.2f %s".format(scaled, scale.unit)
+  }
+}
 
 private fun formatBytes(value: Long): String {
   val units = listOf("B", "KB", "MB", "GB", "TB")

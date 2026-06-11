@@ -224,8 +224,8 @@ or extracted `.so` mappings.
 
 ## Hook coverage
 
-The active profile is built into the native library. There is no separate Zygisk
-feature configuration file.
+The active profile is built into the native library as compile-time constants.
+There is no separate Zygisk feature configuration file.
 
 ### Interface enumeration and name/index checks
 

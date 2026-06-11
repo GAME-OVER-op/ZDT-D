@@ -692,10 +692,13 @@ private fun SettingsLanguageSection(
     )
 
     val selected = languageMode.trim().lowercase().replace("_", "-").ifBlank { "auto" }
-    val items = listOf(
+    var expanded by remember { mutableStateOf(false) }
+    val primaryItems = listOf(
       "auto" to stringResource(R.string.language_auto),
-      "en" to stringResource(R.string.language_en),
       "ru" to stringResource(R.string.language_ru),
+      "en" to stringResource(R.string.language_en),
+    )
+    val moreItems = listOf(
       "fa" to stringResource(R.string.language_fa),
       "tr" to stringResource(R.string.language_tr),
       "ar" to stringResource(R.string.language_ar),
@@ -711,52 +714,122 @@ private fun SettingsLanguageSection(
       "ko" to stringResource(R.string.language_ko),
       "ja" to stringResource(R.string.language_ja),
     )
+    val moreSelected = moreItems.any { it.first == selected }
 
-    Surface(
+    Column(
       modifier = Modifier.fillMaxWidth(),
-      shape = androidx.compose.foundation.shape.RoundedCornerShape(22.dp),
-      color = MaterialTheme.colorScheme.surface.copy(alpha = 0.52f),
-      tonalElevation = 0.dp,
-      shadowElevation = 0.dp,
+      verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      if (compactWidth) {
-        Column(
+      Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.52f),
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+      ) {
+        Row(
           modifier = Modifier.fillMaxWidth().padding(5.dp),
-          verticalArrangement = Arrangement.spacedBy(5.dp),
+          horizontalArrangement = Arrangement.spacedBy(5.dp),
+          verticalAlignment = Alignment.CenterVertically,
         ) {
-          items.forEach { (value, label) ->
+          primaryItems.forEach { (value, label) ->
             SettingsSegmentButton(
               text = label,
               selected = selected == value,
-              onClick = { onLanguageModeChange(value) },
-              modifier = Modifier.fillMaxWidth(),
+              onClick = {
+                expanded = false
+                onLanguageModeChange(value)
+              },
+              modifier = Modifier.weight(1f),
             )
           }
+          SettingsMoreLanguageButton(
+            selected = moreSelected || expanded,
+            onClick = { expanded = !expanded },
+          )
         }
-      } else {
-        Column(
-          modifier = Modifier.fillMaxWidth().padding(5.dp),
-          verticalArrangement = Arrangement.spacedBy(5.dp),
+      }
+
+      AnimatedVisibility(
+        visible = expanded,
+        enter = fadeIn(animationSpec = tween(140)) + expandVertically(animationSpec = tween(180)),
+        exit = fadeOut(animationSpec = tween(120)) + shrinkVertically(animationSpec = tween(160)),
+      ) {
+        Surface(
+          modifier = Modifier.fillMaxWidth(),
+          shape = androidx.compose.foundation.shape.RoundedCornerShape(28.dp),
+          color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+          tonalElevation = 0.dp,
+          shadowElevation = 0.dp,
         ) {
-          items.chunked(3).forEach { rowItems ->
-            Row(
-              modifier = Modifier.fillMaxWidth(),
-              horizontalArrangement = Arrangement.spacedBy(5.dp),
-            ) {
-              rowItems.forEach { (value, label) ->
-                SettingsSegmentButton(
-                  text = label,
-                  selected = selected == value,
-                  onClick = { onLanguageModeChange(value) },
-                  modifier = Modifier.weight(1f),
-                )
-              }
-              repeat(3 - rowItems.size) {
-                Spacer(modifier = Modifier.weight(1f))
+          Column(
+            modifier = Modifier.fillMaxWidth().padding(7.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            moreItems.chunked(if (compactWidth) 2 else 3).forEach { rowItems ->
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+              ) {
+                rowItems.forEach { (value, label) ->
+                  SettingsSegmentButton(
+                    text = label,
+                    selected = selected == value,
+                    onClick = {
+                      expanded = false
+                      onLanguageModeChange(value)
+                    },
+                    modifier = Modifier.weight(1f),
+                  )
+                }
+                repeat((if (compactWidth) 2 else 3) - rowItems.size) {
+                  Spacer(modifier = Modifier.weight(1f))
+                }
               }
             }
           }
         }
+      }
+    }
+  }
+}
+
+
+@Composable
+private fun SettingsMoreLanguageButton(
+  selected: Boolean,
+  onClick: () -> Unit,
+) {
+  val shape = androidx.compose.foundation.shape.RoundedCornerShape(999.dp)
+  val background = if (selected) {
+    MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
+  } else {
+    Color.Transparent
+  }
+  val dotColor = if (selected) {
+    MaterialTheme.colorScheme.primary
+  } else {
+    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f)
+  }
+  Box(
+    modifier = Modifier
+      .size(44.dp)
+      .clip(shape)
+      .background(background)
+      .clickable(onClick = onClick),
+    contentAlignment = Alignment.Center,
+  ) {
+    Row(
+      horizontalArrangement = Arrangement.spacedBy(3.dp),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      repeat(3) {
+        Box(
+          modifier = Modifier
+            .size(4.dp)
+            .clip(shape)
+            .background(dotColor),
+        )
       }
     }
   }

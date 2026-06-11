@@ -95,9 +95,30 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
     ensure_nat_chain_nat_dpi(allow_loopback_redirect)?;
     ensure_mangle_chain_app_once()?;
 
+    let scope = format!(
+        "nat:uid={}:dest={}:proto={:?}:ifaces={}:pref={}:ports={}",
+        uid_file.display(),
+        dest_port,
+        proto_choice,
+        ifaces_raw.unwrap_or(""),
+        opt.port_preference,
+        opt.dpi_ports,
+    );
+    let scoped_chain = prepare_nat_scoped_chain(&scope)?;
+    let scoped_local_chain = if allow_loopback_redirect {
+        Some(prepare_nat_local_scoped_chain(&scope)?)
+    } else {
+        None
+    };
+
     let uids = read_uids(uid_file)?;
     if uids.is_empty() {
-        log::warn!("DPI: no valid UIDs in file: {} (skip iptables_port)", uid_file.display());
+        log::warn!("DPI: no valid UIDs in file: {} (empty scoped NAT chain)", uid_file.display());
+        finish_nat_scoped_chain(&scoped_chain)?;
+        if let Some(chain) = scoped_local_chain.as_deref() {
+            finish_nat_scoped_chain(chain)?;
+        }
+        crate::runtime_refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
         return Ok(());
     }
 
@@ -113,12 +134,17 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
         for uid in &uids {
             for proto in protos {
                 if allow_loopback_redirect {
-                    ensure_nat_local_dest_port_return(uid, proto, dest_port)?;
-                    add_nat_local_rule_idempotent(uid, proto, None, dest_port)?;
+                    ensure_nat_local_dest_port_return(scoped_local_chain.as_deref().unwrap(), uid, proto, dest_port)?;
+                    add_nat_local_rule_idempotent(scoped_local_chain.as_deref().unwrap(), uid, proto, None, dest_port)?;
                 }
-                add_nat_rule_idempotent(uid, proto, None, &mode, &ifaces, dest_port)?;
+                add_nat_rule_idempotent(&scoped_chain, uid, proto, None, &mode, &ifaces, dest_port)?;
             }
         }
+        finish_nat_scoped_chain(&scoped_chain)?;
+        if let Some(chain) = scoped_local_chain.as_deref() {
+            finish_nat_scoped_chain(chain)?;
+        }
+        crate::runtime_refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
         return Ok(());
     }
 
@@ -135,11 +161,11 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
         for uid in &uids {
             for proto in protos {
                 if allow_loopback_redirect {
-                    ensure_nat_local_dest_port_return(uid, proto, dest_port)?;
+                    ensure_nat_local_dest_port_return(scoped_local_chain.as_deref().unwrap(), uid, proto, dest_port)?;
                     let extra = format!("-m multiport --dports {}", ports_for_multi);
-                    add_nat_local_rule_idempotent(uid, proto, Some(extra.as_str()), dest_port)?;
+                    add_nat_local_rule_idempotent(scoped_local_chain.as_deref().unwrap(), uid, proto, Some(extra.as_str()), dest_port)?;
                 }
-                ensure_nat_multiport(uid, proto, &ports_for_multi, &mode, &ifaces, dest_port)?;
+                ensure_nat_multiport(&scoped_chain, uid, proto, &ports_for_multi, &mode, &ifaces, dest_port)?;
             }
         }
     } else {
@@ -162,18 +188,23 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
         for uid in &uids {
             for proto in protos {
                 if allow_loopback_redirect {
-                    ensure_nat_local_dest_port_return(uid, proto, dest_port)?;
+                    ensure_nat_local_dest_port_return(scoped_local_chain.as_deref().unwrap(), uid, proto, dest_port)?;
                 }
                 for dp in &dport_args {
                     if allow_loopback_redirect {
-                        add_nat_local_rule_idempotent(uid, proto, Some(dp.as_str()), dest_port)?;
+                        add_nat_local_rule_idempotent(scoped_local_chain.as_deref().unwrap(), uid, proto, Some(dp.as_str()), dest_port)?;
                     }
-                    add_nat_rule_idempotent(uid, proto, Some(dp.as_str()), &mode, &ifaces, dest_port)?;
+                    add_nat_rule_idempotent(&scoped_chain, uid, proto, Some(dp.as_str()), &mode, &ifaces, dest_port)?;
                 }
             }
         }
     }
 
+    finish_nat_scoped_chain(&scoped_chain)?;
+    if let Some(chain) = scoped_local_chain.as_deref() {
+        finish_nat_scoped_chain(chain)?;
+    }
+    crate::runtime_refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
     Ok(())
 }
 
@@ -535,6 +566,70 @@ fn insert_rule_at(table: &str, chain: &str, pos: usize, rule: &[&str]) -> Result
 }
 
 
+
+fn scoped_nat_chain_name(label: &str) -> String {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for b in label.as_bytes() {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("ZDTN_{hash:016x}")
+}
+
+fn prepare_nat_scoped_chain(scope_label: &str) -> Result<String> {
+    let chain = scoped_nat_chain_name(scope_label);
+    let (exists, _) = ipt_run_timeout(&["-t", "nat", "-nL", chain.as_str()], Capture::None, IPT_CMD_TIMEOUT)?;
+    if exists != 0 {
+        let (rc, out) = ipt_run_timeout(&["-t", "nat", "-N", chain.as_str()], Capture::Both, IPT_CMD_TIMEOUT)?;
+        if rc != 0 {
+            anyhow::bail!("DPI: create scoped NAT chain {chain} failed: {}", out.trim());
+        }
+    }
+    let (rc, out) = ipt_run_timeout(&["-t", "nat", "-F", chain.as_str()], Capture::Both, IPT_CMD_TIMEOUT)?;
+    if rc != 0 {
+        anyhow::bail!("DPI: flush scoped NAT chain {chain} failed: {}", out.trim());
+    }
+    let (check, _) = ipt_run_timeout(&["-t", "nat", "-C", "NAT_DPI", "-j", chain.as_str()], Capture::None, IPT_CMD_TIMEOUT)?;
+    if check != 0 {
+        let (add, out) = ipt_run_timeout(&["-t", "nat", "-A", "NAT_DPI", "-j", chain.as_str()], Capture::Both, IPT_CMD_TIMEOUT)?;
+        if add != 0 {
+            anyhow::bail!("DPI: hook NAT_DPI -> {chain} failed: {}", out.trim());
+        }
+    }
+    Ok(chain)
+}
+
+fn finish_nat_scoped_chain(chain: &str) -> Result<()> {
+    let (rc, out) = ipt_run_timeout(&["-t", "nat", "-A", chain, "-j", "RETURN"], Capture::Both, IPT_CMD_TIMEOUT)?;
+    if rc != 0 {
+        anyhow::bail!("DPI: add scoped NAT final RETURN failed in {chain}: {}", out.trim());
+    }
+    Ok(())
+}
+
+fn prepare_nat_local_scoped_chain(scope_label: &str) -> Result<String> {
+    let chain = scoped_nat_chain_name(&format!("local:{scope_label}"));
+    let (exists, _) = ipt_run_timeout(&["-t", "nat", "-nL", chain.as_str()], Capture::None, IPT_CMD_TIMEOUT)?;
+    if exists != 0 {
+        let (rc, out) = ipt_run_timeout(&["-t", "nat", "-N", chain.as_str()], Capture::Both, IPT_CMD_TIMEOUT)?;
+        if rc != 0 {
+            anyhow::bail!("DPI: create scoped local NAT chain {chain} failed: {}", out.trim());
+        }
+    }
+    let (rc, out) = ipt_run_timeout(&["-t", "nat", "-F", chain.as_str()], Capture::Both, IPT_CMD_TIMEOUT)?;
+    if rc != 0 {
+        anyhow::bail!("DPI: flush scoped local NAT chain {chain} failed: {}", out.trim());
+    }
+    let (check, _) = ipt_run_timeout(&["-t", "nat", "-C", "NAT_DPI_LOCAL", "-j", chain.as_str()], Capture::None, IPT_CMD_TIMEOUT)?;
+    if check != 0 {
+        let (add, out) = ipt_run_timeout(&["-t", "nat", "-A", "NAT_DPI_LOCAL", "-j", chain.as_str()], Capture::Both, IPT_CMD_TIMEOUT)?;
+        if add != 0 {
+            anyhow::bail!("DPI: hook NAT_DPI_LOCAL -> {chain} failed: {}", out.trim());
+        }
+    }
+    Ok(chain)
+}
+
 fn read_uids(uid_file: &Path) -> Result<Vec<String>> {
     if !uid_file.is_file() {
         anyhow::bail!("DPI: uid_file not readable: {}", uid_file.display());
@@ -599,23 +694,23 @@ fn parse_range(token: &str) -> Option<(u16,u16)> {
     Some((a,b))
 }
 
-fn ensure_nat_multiport(uid: &str, proto: &str, ports: &str, mode: &str, ifaces: &[String], dest_port: u16) -> Result<()> {
+fn ensure_nat_multiport(chain: &str, uid: &str, proto: &str, ports: &str, mode: &str, ifaces: &[String], dest_port: u16) -> Result<()> {
     let to = format!("127.0.0.1:{dest_port}");
     if mode == "all" {
-        let check = ["-t","nat","-C","NAT_DPI","-p",proto,"-m","owner","--uid-owner",uid,"-m","multiport","--dports",ports,"-j","DNAT","--to-destination",&to];
+        let check = ["-t","nat","-C",chain,"-p",proto,"-m","owner","--uid-owner",uid,"-m","multiport","--dports",ports,"-j","DNAT","--to-destination",&to];
         let (c, _) = ipt_run_timeout(&check, Capture::None, IPT_CMD_TIMEOUT)?;
         if c != 0 {
-            let add = ["-t","nat","-A","NAT_DPI","-p",proto,"-m","owner","--uid-owner",uid,"-m","multiport","--dports",ports,"-j","DNAT","--to-destination",&to];
+            let add = ["-t","nat","-A",chain,"-p",proto,"-m","owner","--uid-owner",uid,"-m","multiport","--dports",ports,"-j","DNAT","--to-destination",&to];
             let _ = ipt_run_timeout(&add, Capture::Both, IPT_CMD_TIMEOUT)?;
         }
         return Ok(());
     }
 
     for iface in ifaces {
-        let check = ["-t","nat","-C","NAT_DPI","-o",iface,"-p",proto,"-m","owner","--uid-owner",uid,"-m","multiport","--dports",ports,"-j","DNAT","--to-destination",&to];
+        let check = ["-t","nat","-C",chain,"-o",iface,"-p",proto,"-m","owner","--uid-owner",uid,"-m","multiport","--dports",ports,"-j","DNAT","--to-destination",&to];
         let (c, _) = ipt_run_timeout(&check, Capture::None, IPT_CMD_TIMEOUT)?;
         if c != 0 {
-            let add = ["-t","nat","-A","NAT_DPI","-o",iface,"-p",proto,"-m","owner","--uid-owner",uid,"-m","multiport","--dports",ports,"-j","DNAT","--to-destination",&to];
+            let add = ["-t","nat","-A",chain,"-o",iface,"-p",proto,"-m","owner","--uid-owner",uid,"-m","multiport","--dports",ports,"-j","DNAT","--to-destination",&to];
             let _ = ipt_run_timeout(&add, Capture::Both, IPT_CMD_TIMEOUT)?;
         }
     }
@@ -623,10 +718,10 @@ fn ensure_nat_multiport(uid: &str, proto: &str, ports: &str, mode: &str, ifaces:
 }
 
 
-fn ensure_nat_local_dest_port_return(uid: &str, proto: &str, dest_port: u16) -> Result<()> {
+fn ensure_nat_local_dest_port_return(chain: &str, uid: &str, proto: &str, dest_port: u16) -> Result<()> {
     let dport = dest_port.to_string();
     let check = [
-        "-t","nat","-C","NAT_DPI_LOCAL",
+        "-t","nat","-C",chain,
         "-d","127.0.0.0/8",
         "-p",proto,
         "-m","owner","--uid-owner",uid,
@@ -636,7 +731,7 @@ fn ensure_nat_local_dest_port_return(uid: &str, proto: &str, dest_port: u16) -> 
     let (c, _) = ipt_run_timeout(&check, Capture::None, IPT_CMD_TIMEOUT)?;
     if c != 0 {
         let add = [
-            "-t","nat","-A","NAT_DPI_LOCAL",
+            "-t","nat","-A",chain,
             "-d","127.0.0.0/8",
             "-p",proto,
             "-m","owner","--uid-owner",uid,
@@ -648,7 +743,7 @@ fn ensure_nat_local_dest_port_return(uid: &str, proto: &str, dest_port: u16) -> 
     Ok(())
 }
 
-fn add_nat_local_rule_idempotent(uid: &str, proto: &str, extra: Option<&str>, dest_port: u16) -> Result<()> {
+fn add_nat_local_rule_idempotent(chain: &str, uid: &str, proto: &str, extra: Option<&str>, dest_port: u16) -> Result<()> {
     let extra_tokens = extra
         .map(|s| s.split_whitespace().map(|t| t.to_string()).collect::<Vec<_>>())
         .unwrap_or_default();
@@ -674,12 +769,12 @@ fn add_nat_local_rule_idempotent(uid: &str, proto: &str, extra: Option<&str>, de
         rule.extend(extra_tokens.clone());
         rule.extend(vec!["-j".into(), "DNAT".into(), "--to-destination".into(), to_dst.clone()]);
 
-        let mut check: Vec<String> = vec!["-t".into(),"nat".into(),"-C".into(),"NAT_DPI_LOCAL".into()];
+        let mut check: Vec<String> = vec!["-t".into(),"nat".into(),"-C".into(),chain.into()];
         check.extend(rule.clone());
         let (c, _) = ipt_runv_timeout(&check, Capture::None, IPT_CMD_TIMEOUT)?;
         if c == 0 { return Ok(()); }
 
-        let mut add: Vec<String> = vec!["-t".into(),"nat".into(),"-A".into(),"NAT_DPI_LOCAL".into()];
+        let mut add: Vec<String> = vec!["-t".into(),"nat".into(),"-A".into(),chain.into()];
         add.extend(rule);
         let (c2, _) = ipt_runv_timeout(&add, Capture::None, IPT_CMD_TIMEOUT)?;
         if c2 == 0 {
@@ -692,7 +787,7 @@ fn add_nat_local_rule_idempotent(uid: &str, proto: &str, extra: Option<&str>, de
 }
 
 /// Attempt to add a DNAT rule with several argument order variants (iptables quirks).
-fn add_nat_rule_idempotent(uid: &str, proto: &str, extra: Option<&str>, mode: &str, ifaces: &[String], dest_port: u16) -> Result<()> {
+fn add_nat_rule_idempotent(chain: &str, uid: &str, proto: &str, extra: Option<&str>, mode: &str, ifaces: &[String], dest_port: u16) -> Result<()> {
     let extra_tokens = extra.map(|s| s.split_whitespace().map(|t| t.to_string()).collect::<Vec<_>>()).unwrap_or_default();
     let variants: [&[&str]; 5] = [
         &["-p", "PROTO", "-m", "PROTO", "-m", "owner", "--uid-owner", "UID"],
@@ -727,12 +822,12 @@ fn add_nat_rule_idempotent(uid: &str, proto: &str, extra: Option<&str>, mode: &s
             rule.extend(extra_tokens.clone());
             rule.extend(vec!["-j".into(), "DNAT".into(), "--to-destination".into(), to_dst.clone()]);
 
-            let mut check: Vec<String> = vec!["-t".into(),"nat".into(),"-C".into(),"NAT_DPI".into()];
+            let mut check: Vec<String> = vec!["-t".into(),"nat".into(),"-C".into(),chain.into()];
             check.extend(rule.clone());
             let (c, _) = ipt_runv_timeout(&check, Capture::None, IPT_CMD_TIMEOUT)?;
             if c == 0 { return Ok(()); }
 
-            let mut add: Vec<String> = vec!["-t".into(),"nat".into(),"-A".into(),"NAT_DPI".into()];
+            let mut add: Vec<String> = vec!["-t".into(),"nat".into(),"-A".into(),chain.into()];
             add.extend(rule);
             let (c2, _) = ipt_runv_timeout(&add, Capture::None, IPT_CMD_TIMEOUT)?;
             if c2 == 0 {

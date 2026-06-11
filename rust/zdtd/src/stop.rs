@@ -220,6 +220,7 @@ pub fn stop_services_and_restore_iptables() -> Result<()> {
     let _ = crate::blockedquic::clear_rules();
 
     // 3) flush nat/mangle and restore baseline backups independently for IPv4 and IPv6
+    crate::runtime_refresh::clear_routing_cache();
     let restored_v4 = iptables_backup::reset_restore_v4_if_present()?;
     let _restored_v6 = iptables_backup::reset_restore_v6_if_present()?;
 

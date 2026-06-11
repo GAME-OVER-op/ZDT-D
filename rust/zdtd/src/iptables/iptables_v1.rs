@@ -57,9 +57,18 @@ pub fn apply(
     .map(|(c, _)| c == 0)
     .unwrap_or(false);
 
-    let mut mangle_v4 = mangle_app::prepare("iptables")?;
+    let scope = format!(
+        "nfqueue:v1:mode={}:queue={}:iface={}:uid={}",
+        mode,
+        queue,
+        iface.unwrap_or(""),
+        uid_file
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|| "global".to_string()),
+    );
+    let mut mangle_v4 = mangle_app::prepare_scoped("iptables", &scope)?;
     let mut mangle_v6 = if ipv6_avail {
-        match mangle_app::prepare("ip6tables") {
+        match mangle_app::prepare_scoped("ip6tables", &format!("{scope}:v6")) {
             Ok(prepared) => Some(prepared),
             Err(e) => {
                 warn!("ip6tables MANGLE_APP prepare failed: {e}");
@@ -89,6 +98,13 @@ pub fn apply(
                 }
             }
 
+            mangle_app::finish_scoped(&mangle_v4)?;
+            if let Some(mangle_v6) = mangle_v6.as_ref() {
+                if let Err(e) = mangle_app::finish_scoped(mangle_v6) {
+                    warn!("ip6tables scoped NFQUEUE final RETURN failed: {e}");
+                }
+            }
+            crate::runtime_refresh::register_nfqueue_v1(p, mode, queue, iface, filter);
             info!("full_id_iptables applied mode={} queue={} iface={:?} label={} uids={}", mode, queue, iface, label, total);
             return Ok(());
         }
@@ -99,6 +115,16 @@ pub fn apply(
         if let Err(e) = apply_uid_or_global(mangle_v6, &iopt, None, queue, mode, filter, use_filter_v6) {
             warn!("ip6tables NFQUEUE rule failed (global): {e}");
         }
+    }
+
+    mangle_app::finish_scoped(&mangle_v4)?;
+    if let Some(mangle_v6) = mangle_v6.as_ref() {
+        if let Err(e) = mangle_app::finish_scoped(mangle_v6) {
+            warn!("ip6tables scoped NFQUEUE final RETURN failed: {e}");
+        }
+    }
+    if let Some(p) = uid_file {
+        crate::runtime_refresh::register_nfqueue_v1(p, mode, queue, iface, filter);
     }
 
     info!("full_id_iptables applied mode={} queue={} iface={:?}", mode, queue, iface);
@@ -124,7 +150,7 @@ fn read_uid_file(path: &Path) -> Result<Vec<String>> {
 }
 
 fn apply_uid_or_global(
-    mangle: &mut mangle_app::PreparedMangleApp,
+    mangle: &mut mangle_app::PreparedScopedMangleApp,
     iopt: &[String],
     uid: Option<&str>,
     queue: u16,
@@ -156,7 +182,7 @@ fn apply_uid_or_global(
 }
 
 fn add_multiport_rules(
-    mangle: &mut mangle_app::PreparedMangleApp,
+    mangle: &mut mangle_app::PreparedScopedMangleApp,
     iopt: &[String],
     uid: Option<&str>,
     queue: u16,
@@ -172,7 +198,7 @@ fn add_multiport_rules(
 }
 
 fn add_nfqueue_rule(
-    mangle: &mut mangle_app::PreparedMangleApp,
+    mangle: &mut mangle_app::PreparedScopedMangleApp,
     iopt: &[String],
     uid: Option<&str>,
     queue: u16,
@@ -212,6 +238,6 @@ fn add_nfqueue_rule(
         queue.to_string(),
         "--queue-bypass".into(),
     ]);
-    mangle_app::add_rule_prepared_idempotent(mangle, &tail)?;
+    mangle_app::add_scoped_rule(mangle, &tail)?;
     Ok(())
 }

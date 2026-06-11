@@ -295,6 +295,14 @@ struct ContentReq {
     content: String,
 }
 
+fn refresh_apps_after_save_if_running(services_running: bool, program: &str, profile: Option<&str>, slot: &str) -> Result<()> {
+    if !services_running {
+        return Ok(());
+    }
+    crate::runtime_refresh::refresh_apps(program, profile, slot)
+        .map_err(|e| anyhow::anyhow!("hot-refresh app UID routing for {}/{} failed: {e:#}", program, profile.unwrap_or("common")))
+}
+
 #[derive(Debug, Deserialize, Serialize, Default)]
 struct ProfileState {
     enabled: bool,
@@ -2728,7 +2736,7 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
 }
 
 /// Handles subroutes under /api/programs/*
-fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, headers: &HashMap<String, String>, body: &[u8]) -> Result<()> {
+fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, headers: &HashMap<String, String>, body: &[u8], services_running: bool) -> Result<()> {
     let seg: Vec<&str> = path.trim_start_matches('/').split('/').collect();
 
     match (method, seg.as_slice()) {
@@ -2877,6 +2885,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = openvpn_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "openvpn", Some(profile), "common")?;
                 Ok(())
             })();
             match res {
@@ -3085,6 +3094,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = amneziawg_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "amneziawg", Some(profile), "common")?;
                 Ok(())
             })();
             match res {
@@ -3281,6 +3291,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = tun2socks_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "tun2socks", Some(profile), "common")?;
                 Ok(())
             })();
             match res {
@@ -3434,6 +3445,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = myvpn_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "myvpn", Some(profile), "common")?;
                 Ok(())
             })();
             match res {
@@ -3587,6 +3599,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = mihomo_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "mihomo", Some(profile), "common")?;
                 Ok(())
             })();
             match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
@@ -3735,6 +3748,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = mieru_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "mieru", Some(profile), "common")?;
                 Ok(())
             })();
             match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
@@ -3872,6 +3886,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = singbox_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "sing-box", Some(profile), "common")?;
                 Ok(())
             })();
             match res {
@@ -4181,6 +4196,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = wireproxy_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "wireproxy", Some(profile), "common")?;
                 Ok(())
             })();
             match res {
@@ -4491,10 +4507,12 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     _ => anyhow::bail!("invalid apps kind for program"),
                 };
                 let api_path = format!("/api/programs/{}/profiles/{}/apps/{}", id, profile, kind);
-                validate_program_apps_content(&req.content, &api_path, id, slot_from_kind(kind).ok_or_else(|| anyhow::anyhow!("invalid apps kind"))?)?;
+                let slot = slot_from_kind(kind).ok_or_else(|| anyhow::anyhow!("invalid apps kind"))?;
+                validate_program_apps_content(&req.content, &api_path, id, slot)?;
                 let p = profile_root(id, profile).join(format!("app/uid/{fname}"));
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, id, Some(profile), slot)?;
                 Ok(())
             })();
             match res {
@@ -4758,6 +4776,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = myproxy_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "myproxy", Some(profile), "common")?;
                 Ok(())
             })();
             match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
@@ -4896,6 +4915,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = myprogram_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "myprogram", Some(profile), "common")?;
                 Ok(())
             })();
             match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
@@ -5072,6 +5092,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 validate_program_apps_content(&req.content, "/api/programs/tor/apps", "tor", "common")?;
                 crate::programs::tor::write_uid_program_text(&req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "tor", None, "common")?;
                 Ok(())
             })();
             match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }
@@ -5164,6 +5185,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = program_root("operaproxy").join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "operaproxy", None, "common")?;
                 Ok(())
             })();
             match res {
@@ -5188,6 +5210,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = program_root("operaproxy").join("app/uid/mobile_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "operaproxy", None, "mobile")?;
                 Ok(())
             })();
             match res {
@@ -5212,6 +5235,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = program_root("operaproxy").join("app/uid/wifi_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "operaproxy", None, "wifi")?;
                 Ok(())
             })();
             match res {
@@ -5543,7 +5567,7 @@ fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
         return handle_get_programs(stream);
     }
     if path.starts_with("/api/programs/") {
-        return handle_programs_subroutes(stream, method.as_str(), path.as_str(), &headers, &body);
+        return handle_programs_subroutes(stream, method.as_str(), path.as_str(), &headers, &body, services_running);
     }
 
     // Strategic folders API (nfqws/nfqws2 shared lists/binaries and nfqws2 lua scripts)
@@ -5890,6 +5914,8 @@ match (method.as_str(), path.as_str()) {
                 validate_program_apps_content(&req.content, "/api/blockedquic/apps", "blockedquic", "common")?;
                 crate::blockedquic::write_uid_program_text(&req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "blockedquic", None, "common")?;
+                invalidate_assignment_cache();
                 Ok(())
             })();
             match res {
@@ -5978,6 +6004,8 @@ match (method.as_str(), path.as_str()) {
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
                 validate_proxyinfo_apps_content(&req.content)?;
                 crate::proxyinfo::write_uid_program_text(&req.content)?;
+                invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "proxyinfo", None, "common")?;
                 Ok(())
             })();
             match res {

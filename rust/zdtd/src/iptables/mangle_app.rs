@@ -110,6 +110,82 @@ pub fn add_rule_idempotent(cmd: &str, rule_tail: &[String]) -> Result<bool> {
 }
 
 
+fn scoped_chain_name(label: &str) -> String {
+    // iptables chain names are short on Android. Keep a deterministic compact name.
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for b in label.as_bytes() {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("ZDTM_{hash:016x}")
+}
+
+#[derive(Debug)]
+pub struct PreparedScopedMangleApp {
+    cmd: String,
+    chain: String,
+}
+
+/// Prepare a per-runtime-profile NFQUEUE subchain under MANGLE_APP.
+///
+/// This preserves the shared MANGLE_APP base RETURN guards while making UID
+/// routing refreshable: app-list hot updates can flush/rebuild only this
+/// profile chain instead of restoring all nat/mangle tables.
+pub fn prepare_scoped(cmd: &str, scope_label: &str) -> Result<PreparedScopedMangleApp> {
+    let mut parent = prepare(cmd)?;
+    let chain = scoped_chain_name(scope_label);
+
+    let (exists, _) = run_timeout_retry(cmd, &["-t", "mangle", "-nL", chain.as_str()], Capture::None, IPT_CMD_TIMEOUT)?;
+    if exists != 0 {
+        let (rc, out) = run_timeout_retry(cmd, &["-t", "mangle", "-N", chain.as_str()], Capture::Both, IPT_CMD_TIMEOUT)?;
+        if rc != 0 {
+            anyhow::bail!("{cmd}: create scoped mangle chain {chain} failed: {}", out.trim());
+        }
+    }
+
+    let (rc, out) = run_timeout_retry(cmd, &["-t", "mangle", "-F", chain.as_str()], Capture::Both, IPT_CMD_TIMEOUT)?;
+    if rc != 0 {
+        anyhow::bail!("{cmd}: flush scoped mangle chain {chain} failed: {}", out.trim());
+    }
+
+    let jump_tail = vec!["-j".to_string(), chain.clone()];
+    let _ = add_rule_prepared_idempotent(&mut parent, &jump_tail)?;
+
+    Ok(PreparedScopedMangleApp {
+        cmd: cmd.to_string(),
+        chain,
+    })
+}
+
+pub fn add_scoped_rule(prepared: &PreparedScopedMangleApp, rule_tail: &[String]) -> Result<()> {
+    let mut add: Vec<String> = vec![
+        "-t".into(),
+        "mangle".into(),
+        "-A".into(),
+        prepared.chain.clone(),
+    ];
+    add.extend_from_slice(rule_tail);
+    let (rc, out) = runv_timeout_retry(prepared.cmd.as_str(), &add, Capture::Both, IPT_CMD_TIMEOUT)?;
+    if rc != 0 {
+        anyhow::bail!("{}: add scoped mangle rule failed in {}: {}", prepared.cmd, prepared.chain, out.trim());
+    }
+    Ok(())
+}
+
+pub fn finish_scoped(prepared: &PreparedScopedMangleApp) -> Result<()> {
+    let (rc, out) = run_timeout_retry(
+        prepared.cmd.as_str(),
+        &["-t", "mangle", "-A", prepared.chain.as_str(), "-j", "RETURN"],
+        Capture::Both,
+        IPT_CMD_TIMEOUT,
+    )?;
+    if rc != 0 {
+        anyhow::bail!("{}: add scoped final RETURN failed in {}: {}", prepared.cmd, prepared.chain, out.trim());
+    }
+    Ok(())
+}
+
+
 /// Remove legacy per-UID RETURN exclusions from MANGLE_APP.
 ///
 /// MANGLE_APP now uses UID-specific NFQUEUE rules, so non-targeted apps naturally

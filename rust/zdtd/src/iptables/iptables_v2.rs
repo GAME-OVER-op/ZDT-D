@@ -71,9 +71,10 @@ pub fn apply(
     .map(|(c, _)| c == 0)
     .unwrap_or(false);
 
-    let mut mangle_v4 = mangle_app::prepare("iptables")?;
+    let scope = format!("nfqueue:v2:queue={}:uid={}", port, uid_file.display());
+    let mut mangle_v4 = mangle_app::prepare_scoped("iptables", &scope)?;
     let mut mangle_v6 = if ipv6_avail {
-        match mangle_app::prepare("ip6tables") {
+        match mangle_app::prepare_scoped("ip6tables", &format!("{scope}:v6")) {
             Ok(prepared) => Some(prepared),
             Err(e) => {
                 warn!("ip6tables MANGLE_APP prepare failed: {e}");
@@ -139,6 +140,15 @@ pub fn apply(
         }
     }
 
+    mangle_app::finish_scoped(&mangle_v4)?;
+    if let Some(mangle_v6) = mangle_v6.as_ref() {
+        if let Err(e) = mangle_app::finish_scoped(mangle_v6) {
+            warn!("ip6tables scoped NFQUEUE final RETURN failed: {e}");
+        }
+    }
+
+    crate::runtime_refresh::register_nfqueue_v2(uid_file, port, filter);
+
     if mangle_v6.is_some() {
         info!("iptables_v2 applied: port={} added_v4={}/{} added_v6={}/{}", port, added, total, added6, total);
     } else {
@@ -148,7 +158,7 @@ pub fn apply(
 }
 
 fn add_multiport_rule(
-    mangle: &mut mangle_app::PreparedMangleApp,
+    mangle: &mut mangle_app::PreparedScopedMangleApp,
     uid: &str,
     q: &str,
     proto: &str,
@@ -175,14 +185,13 @@ fn add_multiport_rule(
             q.into(),
             "--queue-bypass".into(),
         ];
-        if mangle_app::add_rule_prepared_idempotent(mangle, &tail)? {
-            any_added = true;
-        }
+        mangle_app::add_scoped_rule(mangle, &tail)?;
+        any_added = true;
     }
     Ok(any_added)
 }
 
-fn add_plain_rule(mangle: &mut mangle_app::PreparedMangleApp, uid: &str, q: &str) -> Result<bool> {
+fn add_plain_rule(mangle: &mut mangle_app::PreparedScopedMangleApp, uid: &str, q: &str) -> Result<bool> {
     let tail: Vec<String> = vec![
         "-m".into(),
         "owner".into(),
@@ -194,5 +203,6 @@ fn add_plain_rule(mangle: &mut mangle_app::PreparedMangleApp, uid: &str, q: &str
         q.into(),
         "--queue-bypass".into(),
     ];
-    mangle_app::add_rule_prepared_idempotent(mangle, &tail)
+    mangle_app::add_scoped_rule(mangle, &tail)?;
+    Ok(true)
 }

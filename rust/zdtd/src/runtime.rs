@@ -91,6 +91,7 @@ pub fn start_full() -> Result<()> {
     } else {
         log::warn!("iptables backup missing -> skipping restore baseline");
     }
+    crate::runtime_refresh::clear_routing_cache();
 
     // Start dnscrypt first (must be before other programs).
         std::thread::spawn(|| {
@@ -281,6 +282,7 @@ if !any_main_service_running() {
     // Stop services and restore baseline iptables; always restore captive portal settings.
     crate::runtime_state::clear();
     let stop_res = stop::stop_services();
+    crate::runtime_refresh::clear_routing_cache();
     crate::runtime_state::clear();
     let _ = shell::ok_sh(
         "settings delete global captive_portal_detection_enabled; \
@@ -377,6 +379,7 @@ pub fn stop_full() -> Result<()> {
     // Stop services first, but always try to restore captive portal settings even
     // if the stop sequence partially fails.
     let stop_res = stop::stop_services();
+    crate::runtime_refresh::clear_routing_cache();
     crate::runtime_state::clear();
     let _ = shell::ok_sh(
         "settings delete global captive_portal_detection_enabled; \

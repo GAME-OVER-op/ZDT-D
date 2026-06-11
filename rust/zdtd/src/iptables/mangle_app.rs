@@ -157,6 +157,39 @@ pub fn prepare_scoped(cmd: &str, scope_label: &str) -> Result<PreparedScopedMang
     })
 }
 
+
+pub fn remove_scoped(cmd: &str, scope_label: &str) -> Result<()> {
+    let chain = scoped_chain_name(scope_label);
+    let jump_tail = vec!["-j".to_string(), chain.clone()];
+    let mut removed = 0usize;
+    loop {
+        let mut del: Vec<String> = vec![
+            "-t".into(),
+            "mangle".into(),
+            "-D".into(),
+            CHAIN.into(),
+        ];
+        del.extend_from_slice(&jump_tail);
+        match runv_timeout_retry(cmd, &del, Capture::Both, IPT_CMD_TIMEOUT) {
+            Ok((0, _)) => {
+                removed += 1;
+                continue;
+            }
+            Ok((_rc, _out)) => break,
+            Err(e) => {
+                warn!("{cmd}: remove scoped jump to {chain} failed: {e:#}");
+                break;
+            }
+        }
+    }
+    if removed > 0 {
+        info!("{cmd}: removed {removed} scoped jump(s) to {chain}");
+    }
+    let _ = run_timeout_retry(cmd, &["-t", "mangle", "-F", chain.as_str()], Capture::None, IPT_CMD_TIMEOUT);
+    let _ = run_timeout_retry(cmd, &["-t", "mangle", "-X", chain.as_str()], Capture::None, IPT_CMD_TIMEOUT);
+    Ok(())
+}
+
 pub fn add_scoped_rule(prepared: &PreparedScopedMangleApp, rule_tail: &[String]) -> Result<()> {
     let mut add: Vec<String> = vec![
         "-t".into(),

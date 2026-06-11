@@ -59,6 +59,15 @@ pub fn apply(
     }
 
     let total = uids.len() as u64;
+    let scope = format!("nfqueue:v2:queue={}:uid={}", port, uid_file.display());
+    crate::runtime_refresh::register_nfqueue_v2(uid_file, port, filter);
+    if uids.is_empty() {
+        mangle_app::remove_scoped("iptables", &scope)?;
+        let _ = mangle_app::remove_scoped("ip6tables", &format!("{scope}:v6"));
+        info!("iptables_v2 applied: port={} empty uid list, removed scoped NFQUEUE chain", port);
+        return Ok(());
+    }
+
     let mut added = 0u64;
     let mut added6 = 0u64;
 
@@ -71,7 +80,6 @@ pub fn apply(
     .map(|(c, _)| c == 0)
     .unwrap_or(false);
 
-    let scope = format!("nfqueue:v2:queue={}:uid={}", port, uid_file.display());
     let mut mangle_v4 = mangle_app::prepare_scoped("iptables", &scope)?;
     let mut mangle_v6 = if ipv6_avail {
         match mangle_app::prepare_scoped("ip6tables", &format!("{scope}:v6")) {
@@ -146,8 +154,6 @@ pub fn apply(
             warn!("ip6tables scoped NFQUEUE final RETURN failed: {e}");
         }
     }
-
-    crate::runtime_refresh::register_nfqueue_v2(uid_file, port, filter);
 
     if mangle_v6.is_some() {
         info!("iptables_v2 applied: port={} added_v4={}/{} added_v6={}/{}", port, added, total, added6, total);

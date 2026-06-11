@@ -211,20 +211,19 @@ pub fn start_if_enabled() -> Result<()> {
                 })?;
             }
 
-            if plan.uid_count > 0 {
-                iptables_port::apply(
-                    &plan.uid_out,
-                    plan.setting.t2s_port,
-                    ProtoChoice::Tcp,
-                    None,
-                    DpiTunnelOptions {
-                        port_preference: 1,
-                        ..DpiTunnelOptions::default()
-                    },
-                )
-                .with_context(|| format!("iptables profile={}", plan.name))?;
-            } else {
-                info!("wireproxy: profile={} has no routed app UIDs; only hotspot routing uses t2s", plan.name);
+            iptables_port::apply(
+                &plan.uid_out,
+                plan.setting.t2s_port,
+                ProtoChoice::Tcp,
+                None,
+                DpiTunnelOptions {
+                    port_preference: 1,
+                    ..DpiTunnelOptions::default()
+                },
+            )
+            .with_context(|| format!("iptables profile={}", plan.name))?;
+            if plan.uid_count == 0 {
+                info!("wireproxy: profile={} has no routed app UIDs yet; registered runtime routing for hot app refresh", plan.name);
             }
 
             info!(

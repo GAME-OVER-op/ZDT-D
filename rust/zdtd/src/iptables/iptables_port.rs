@@ -104,23 +104,23 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
         opt.port_preference,
         opt.dpi_ports,
     );
+    let uids = read_uids(uid_file)?;
+    if uids.is_empty() {
+        log::warn!("DPI: no valid UIDs in file: {} (remove scoped NAT chain)", uid_file.display());
+        remove_nat_scoped_chain(&scoped_nat_chain_name(&scope), "NAT_DPI")?;
+        if allow_loopback_redirect {
+            remove_nat_scoped_chain(&scoped_nat_chain_name(&format!("local:{scope}")), "NAT_DPI_LOCAL")?;
+        }
+        crate::runtime_refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
+        return Ok(());
+    }
+
     let scoped_chain = prepare_nat_scoped_chain(&scope)?;
     let scoped_local_chain = if allow_loopback_redirect {
         Some(prepare_nat_local_scoped_chain(&scope)?)
     } else {
         None
     };
-
-    let uids = read_uids(uid_file)?;
-    if uids.is_empty() {
-        log::warn!("DPI: no valid UIDs in file: {} (empty scoped NAT chain)", uid_file.display());
-        finish_nat_scoped_chain(&scoped_chain)?;
-        if let Some(chain) = scoped_local_chain.as_deref() {
-            finish_nat_scoped_chain(chain)?;
-        }
-        crate::runtime_refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
-        return Ok(());
-    }
 
     // MANGLE_APP is UID-specific on the NFQUEUE side, so separate owner RETURN
     // exclusions are intentionally not added here. Non-targeted UIDs naturally
@@ -604,6 +604,14 @@ fn finish_nat_scoped_chain(chain: &str) -> Result<()> {
     if rc != 0 {
         anyhow::bail!("DPI: add scoped NAT final RETURN failed in {chain}: {}", out.trim());
     }
+    Ok(())
+}
+
+
+fn remove_nat_scoped_chain(chain: &str, parent: &str) -> Result<()> {
+    delete_rule_all("nat", parent, &["-j", chain])?;
+    let _ = ipt_run_timeout(&["-t", "nat", "-F", chain], Capture::None, IPT_CMD_TIMEOUT);
+    let _ = ipt_run_timeout(&["-t", "nat", "-X", chain], Capture::None, IPT_CMD_TIMEOUT);
     Ok(())
 }
 

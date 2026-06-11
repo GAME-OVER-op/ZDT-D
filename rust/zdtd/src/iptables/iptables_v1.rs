@@ -66,28 +66,36 @@ pub fn apply(
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| "global".to_string()),
     );
-    let mut mangle_v4 = mangle_app::prepare_scoped("iptables", &scope)?;
-    let mut mangle_v6 = if ipv6_avail {
-        match mangle_app::prepare_scoped("ip6tables", &format!("{scope}:v6")) {
-            Ok(prepared) => Some(prepared),
-            Err(e) => {
-                warn!("ip6tables MANGLE_APP prepare failed: {e}");
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    let filter_present = filter.map(|f| !f.is_empty()).unwrap_or(false);
-    let use_filter_v4 = filter_present && caps::multiport_v4();
-    let use_filter_v6 = filter_present && caps::multiport_v6();
 
     if let Some(p) = uid_file {
         if p.is_file() {
+            crate::runtime_refresh::register_nfqueue_v1(p, mode, queue, iface, filter);
             let uids = read_uid_file(p)?;
             let total = uids.len();
             let label = p.file_name().and_then(|s| s.to_str()).unwrap_or("uids");
+            if uids.is_empty() {
+                mangle_app::remove_scoped("iptables", &scope)?;
+                let _ = mangle_app::remove_scoped("ip6tables", &format!("{scope}:v6"));
+                info!("full_id_iptables applied mode={} queue={} iface={:?} label={} empty uid list, removed scoped NFQUEUE chain", mode, queue, iface, label);
+                return Ok(());
+            }
+
+            let mut mangle_v4 = mangle_app::prepare_scoped("iptables", &scope)?;
+            let mut mangle_v6 = if ipv6_avail {
+                match mangle_app::prepare_scoped("ip6tables", &format!("{scope}:v6")) {
+                    Ok(prepared) => Some(prepared),
+                    Err(e) => {
+                        warn!("ip6tables MANGLE_APP prepare failed: {e}");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
+            let filter_present = filter.map(|f| !f.is_empty()).unwrap_or(false);
+            let use_filter_v4 = filter_present && caps::multiport_v4();
+            let use_filter_v6 = filter_present && caps::multiport_v6();
 
             for uid in &uids {
                 apply_uid_or_global(&mut mangle_v4, &iopt, Some(uid.as_str()), queue, mode, filter, use_filter_v4)?;
@@ -104,11 +112,26 @@ pub fn apply(
                     warn!("ip6tables scoped NFQUEUE final RETURN failed: {e}");
                 }
             }
-            crate::runtime_refresh::register_nfqueue_v1(p, mode, queue, iface, filter);
             info!("full_id_iptables applied mode={} queue={} iface={:?} label={} uids={}", mode, queue, iface, label, total);
             return Ok(());
         }
     }
+
+    let mut mangle_v4 = mangle_app::prepare_scoped("iptables", &scope)?;
+    let mut mangle_v6 = if ipv6_avail {
+        match mangle_app::prepare_scoped("ip6tables", &format!("{scope}:v6")) {
+            Ok(prepared) => Some(prepared),
+            Err(e) => {
+                warn!("ip6tables MANGLE_APP prepare failed: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let filter_present = filter.map(|f| !f.is_empty()).unwrap_or(false);
+    let use_filter_v4 = filter_present && caps::multiport_v4();
+    let use_filter_v6 = filter_present && caps::multiport_v6();
 
     apply_uid_or_global(&mut mangle_v4, &iopt, None, queue, mode, filter, use_filter_v4)?;
     if let Some(mangle_v6) = mangle_v6.as_mut() {

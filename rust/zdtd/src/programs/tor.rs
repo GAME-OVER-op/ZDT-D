@@ -430,9 +430,9 @@ pub fn start_if_enabled() -> Result<()> {
         warn!("tor: no resolved apps -> skip start/iptables");
         return Ok(());
     }
-    let needs_t2s = resolved > 0;
+    let needs_t2s = resolved > 0 || has_launch_marker;
     if resolved == 0 && has_launch_marker {
-        info!("tor: launch marker present, starting only tor without t2s/app routing");
+        info!("tor: launch marker present, starting tor+t2s without routed app UIDs yet");
     }
 
     if needs_t2s {

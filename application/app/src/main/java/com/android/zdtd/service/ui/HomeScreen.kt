@@ -648,6 +648,12 @@ private fun LandscapeHomeContent(
   val detailedLogsText = stringResource(R.string.home_logs_detailed)
   var logSourceMenuExpanded by remember { mutableStateOf(false) }
   var selectedLogSource by remember { mutableStateOf(HomeLogSource.MAIN) }
+  fun selectLogSource(source: HomeLogSource) {
+    if (selectedLogSource != source) {
+      selectedLogSource = source
+    }
+    logSourceMenuExpanded = false
+  }
   val activeLogTail = when (selectedLogSource) {
     HomeLogSource.MAIN -> logTail
     HomeLogSource.DETAILED -> detailedLogTail
@@ -759,17 +765,11 @@ private fun LandscapeHomeContent(
               ) {
                 DropdownMenuItem(
                   text = { Text(mainLogsText) },
-                  onClick = {
-                    selectedLogSource = HomeLogSource.MAIN
-                    logSourceMenuExpanded = false
-                  },
+                  onClick = { selectLogSource(HomeLogSource.MAIN) },
                 )
                 DropdownMenuItem(
                   text = { Text(detailedLogsText) },
-                  onClick = {
-                    selectedLogSource = HomeLogSource.DETAILED
-                    logSourceMenuExpanded = false
-                  },
+                  onClick = { selectLogSource(HomeLogSource.DETAILED) },
                 )
               }
             }

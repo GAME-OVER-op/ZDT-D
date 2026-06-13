@@ -331,5 +331,8 @@ dependencies {
   // Root shell helper (Magisk author)
   implementation 'com.github.topjohnwu.libsu:core:6.0.0'
 
+  // LSPosed/Xposed API is provided by the framework at runtime.
+  compileOnly 'de.robv.android.xposed:api:82'
+
   debugImplementation 'androidx.compose.ui:ui-tooling'
 }

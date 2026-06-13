@@ -1,0 +1,6 @@
+<resources>
+    <!-- LSPosed recommended scope: System framework / Android system. -->
+    <string-array name="xposed_scope">
+        <item>android</item>
+    </string-array>
+</resources>

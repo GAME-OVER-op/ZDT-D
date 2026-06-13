@@ -12,3 +12,7 @@
 # Keep it stable under R8 because the reader uses typed decoding/reflection paths internally.
 -keep class com.maxmind.db.** { *; }
 -dontwarn com.maxmind.db.**
+
+# Keep LSPosed/Xposed entry point referenced from assets/xposed_init.
+-keep class com.android.zdtd.service.xposed.ZdtdHideHook { *; }
+-dontwarn de.robv.android.xposed.**

@@ -5622,10 +5622,16 @@ match (method.as_str(), path.as_str()) {
         }
 
         ("GET", "/api/traffic/rules") | ("GET", "/api/traffic/total") => {
-            let res = traffic_total::collect_rule_snapshot();
+            let res = traffic_total::try_collect_rule_snapshot();
             match res {
-                Ok(report) => write_json(stream, 200, json!({"ok": true, "traffic": report})),
-                Err(e) => write_json(stream, 200, json!({"ok": false, "error": format!("{e:#}")})),
+                Ok(Some(report)) => write_json(stream, 200, json!({"ok": true, "busy": false, "preparing": false, "traffic": report})),
+                Ok(None) => write_json(stream, 200, json!({
+                    "ok": false,
+                    "busy": true,
+                    "preparing": true,
+                    "message": "Traffic snapshot is still preparing. Please wait."
+                })),
+                Err(e) => write_json(stream, 200, json!({"ok": false, "busy": false, "preparing": false, "error": format!("{e:#}")})),
             }
         }
 

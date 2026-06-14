@@ -64,6 +64,11 @@ object ApiModels {
   )
 
   data class TrafficReport(
+    val ok: Boolean = true,
+    val busy: Boolean = false,
+    val preparing: Boolean = false,
+    val message: String = "",
+    val error: String = "",
     val updatedAtUnix: Long = 0L,
     val source: String = "",
     val rules: List<TrafficRuleCounter> = emptyList(),
@@ -90,11 +95,20 @@ object ApiModels {
     val destPorts: List<String> = emptyList(),
     val redirectPort: Int? = null,
     val queue: Int? = null,
+    val backendPorts: List<TrafficBackendPort> = emptyList(),
     val packets: Long = 0L,
     val bytes: Long = 0L,
     val active: Boolean = false,
     val actionCounter: Boolean = false,
     val raw: String = "",
+  )
+
+  data class TrafficBackendPort(
+    val port: Int = 0,
+    val label: String = "",
+    val programId: String? = null,
+    val profile: String? = null,
+    val server: String? = null,
   )
 
   data class TrafficChainSummary(
@@ -612,7 +626,16 @@ object ApiModels {
   }
 
   fun parseTrafficReport(wrapper: JSONObject?): TrafficReport {
-    val data = wrapper?.optJSONObject("traffic") ?: wrapper ?: return TrafficReport()
+    if (wrapper == null) return TrafficReport(ok = false, error = "empty response")
+    val wrapperOk = wrapper.optBoolean("ok", true)
+    val wrapperBusy = jsonBool(wrapper, "busy", false)
+    val wrapperPreparing = jsonBool(wrapper, "preparing", false)
+    val wrapperMessage = wrapper.optString("message", "")
+    val wrapperError = wrapper.optString("error", "")
+    if (wrapperBusy || wrapperPreparing) {
+      return TrafficReport(ok = wrapperOk, busy = true, preparing = true, message = wrapperMessage.ifBlank { "Traffic snapshot is still preparing. Please wait." }, error = wrapperError)
+    }
+    val data = wrapper.optJSONObject("traffic") ?: wrapper
 
     val rulesArr = data.optJSONArray("rules") ?: JSONArray()
     val rules = ArrayList<TrafficRuleCounter>(rulesArr.length())
@@ -635,11 +658,12 @@ object ApiModels {
         destPorts = jsonStringList(o, "dest_ports"),
         redirectPort = if (o.has("redirect_port") && !o.isNull("redirect_port")) o.optInt("redirect_port") else null,
         queue = if (o.has("queue") && !o.isNull("queue")) o.optInt("queue") else null,
+        backendPorts = parseTrafficBackendPorts(o.optJSONArray("backend_ports")),
         packets = o.optLong("packets", 0L),
         bytes = o.optLong("bytes", 0L),
         active = o.optBoolean("active", false),
         actionCounter = o.optBoolean("action_counter", false),
-        raw = o.optString("raw", ""),
+        raw = o.optString("raw_rule", o.optString("raw", "")),
       )
     }
 
@@ -706,6 +730,11 @@ object ApiModels {
     }
 
     return TrafficReport(
+      ok = wrapperOk,
+      busy = wrapperBusy,
+      preparing = wrapperPreparing,
+      message = wrapperMessage,
+      error = wrapperError,
       updatedAtUnix = data.optLong("updated_at_unix", 0L),
       source = data.optString("source", ""),
       rules = rules,
@@ -714,6 +743,23 @@ object ApiModels {
       interfaces = interfaces,
       warnings = jsonStringList(data, "warnings"),
     )
+  }
+
+
+  private fun parseTrafficBackendPorts(arr: JSONArray?): List<TrafficBackendPort> {
+    if (arr == null) return emptyList()
+    val out = ArrayList<TrafficBackendPort>(arr.length())
+    for (i in 0 until arr.length()) {
+      val o = arr.optJSONObject(i) ?: continue
+      out += TrafficBackendPort(
+        port = o.optInt("port", 0),
+        label = o.optString("label", ""),
+        programId = o.optString("program_id", "").trim().takeIf { it.isNotEmpty() },
+        profile = o.optString("profile", "").trim().takeIf { it.isNotEmpty() },
+        server = o.optString("server", "").trim().takeIf { it.isNotEmpty() },
+      )
+    }
+    return out
   }
 
   fun parsePrograms(wrapper: JSONObject?): List<Program> {

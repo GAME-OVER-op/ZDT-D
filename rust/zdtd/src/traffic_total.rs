@@ -3,17 +3,21 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap},
     fs,
-    path::Path,
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use crate::{settings, shell::{self, Capture}};
+use crate::{shell::{self, Capture}, xtables_lock};
 
-const IPT_SAVE_TIMEOUT: Duration = Duration::from_secs(4);
+const IPT_SAVE_TIMEOUT: Duration = Duration::from_secs(8);
 const PKG_LIST_TIMEOUT: Duration = Duration::from_secs(5);
 const PROC_NET_DEV: &str = "/proc/net/dev";
 const ROUTING_CACHE: &str = "/data/adb/modules/ZDT-D/working_folder/runtime_refresh/routing.json";
 const VPN_NETD_APPLIED: &str = "/data/adb/modules/ZDT-D/working_folder/vpn_netd/applied.json";
+const XT_WAIT_SECS: &str = "5";
+
+static TRAFFIC_COLLECTING: AtomicBool = AtomicBool::new(false);
 
 /// Read-only, on-demand ZDT-D rule traffic collector.
 ///
@@ -69,6 +73,8 @@ pub struct TrafficRuleCounter {
     pub redirect_port: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub queue: Option<u16>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub backend_ports: Vec<TrafficBackendPort>,
 
     pub packets: u64,
     pub bytes: u64,
@@ -78,6 +84,18 @@ pub struct TrafficRuleCounter {
     pub raw_rule: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct TrafficBackendPort {
+    pub port: u16,
+    pub label: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub program_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub server: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -193,6 +211,31 @@ struct ParsedSaveRule {
     raw_rule: String,
 }
 
+
+struct TrafficCollectGuard;
+
+impl Drop for TrafficCollectGuard {
+    fn drop(&mut self) {
+        TRAFFIC_COLLECTING.store(false, Ordering::Release);
+    }
+}
+
+/// Try to collect a traffic snapshot without allowing overlapping collectors.
+///
+/// The Android UI polls this endpoint while Construction Studio is open.  If a
+/// previous snapshot is still preparing, return `Ok(None)` so the API can tell
+/// the app to wait instead of stacking multiple iptables-save/cmd/pm calls.
+pub fn try_collect_rule_snapshot() -> Result<Option<TrafficRuleReport>> {
+    if TRAFFIC_COLLECTING
+        .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+        .is_err()
+    {
+        return Ok(None);
+    }
+    let _guard = TrafficCollectGuard;
+    collect_rule_snapshot().map(Some)
+}
+
 /// Collect a single on-demand traffic snapshot for ZDT-D rules.
 pub fn collect_rule_snapshot() -> Result<TrafficRuleReport> {
     let mut report = TrafficRuleReport {
@@ -265,11 +308,32 @@ fn now_unix() -> u64 {
 }
 
 fn run_iptables_save(cmd: &str, table: &str) -> Result<String> {
-    let (rc, out) = shell::run_timeout(cmd, &["-c", "-t", table], Capture::Both, IPT_SAVE_TIMEOUT)?;
+    // Keep the read-only collector in the same xtables critical section as the
+    // rule writers.  `iptables-save -c` does not mutate counters, but it still
+    // touches xtables state and may collide with apply/restore scripts.
+    let _xtables_guard = xtables_lock::lock();
+
+    let wait_args = ["-w", XT_WAIT_SECS, "-c", "-t", table];
+    let (mut rc, mut out) = xtables_lock::run_timeout_retry(cmd, &wait_args, Capture::Both, IPT_SAVE_TIMEOUT)?;
+
+    // Some old Android iptables-save builds do not support -w.  In that case we
+    // still keep the in-process lock and fall back to the classic arguments.
+    if rc != 0 && looks_like_wait_unsupported(&out) {
+        let fallback = xtables_lock::run_timeout_retry(cmd, &["-c", "-t", table], Capture::Both, IPT_SAVE_TIMEOUT)?;
+        rc = fallback.0;
+        out = fallback.1;
+    }
+
     if rc != 0 {
         anyhow::bail!("exit={rc}: {}", out.trim());
     }
     Ok(out)
+}
+
+fn looks_like_wait_unsupported(out: &str) -> bool {
+    let s = out.to_ascii_lowercase();
+    (s.contains("unknown option") || s.contains("unrecognized option") || s.contains("invalid option"))
+        && (s.contains("-w") || s.contains("wait"))
 }
 
 fn parse_iptables_save(family: &str, table: &str, out: &str) -> Vec<ParsedSaveRule> {
@@ -364,6 +428,7 @@ fn build_counter(
         dest_ports,
         redirect_port,
         queue: queue.or(meta.queue),
+        backend_ports: resolve_backend_ports(&meta),
         packets: parsed.packets,
         bytes: parsed.bytes,
         active: parsed.packets > 0 || parsed.bytes > 0,
@@ -371,6 +436,190 @@ fn build_counter(
         raw_rule: parsed.raw_rule,
         note,
     }
+}
+
+fn resolve_backend_ports(meta: &RouteMeta) -> Vec<TrafficBackendPort> {
+    if meta.program_id.as_deref() != Some("myproxy") {
+        return Vec::new();
+    }
+    let Some(profile) = meta.profile.as_deref() else { return Vec::new(); };
+    let root = Path::new("/data/adb/modules/ZDT-D/working_folder");
+    let proxy_path = root.join("myproxy/profile").join(profile).join("proxy.json");
+    let Ok(raw) = fs::read_to_string(&proxy_path) else { return Vec::new(); };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { return Vec::new(); };
+    let ports = parse_proxy_ports(&v);
+    if ports.is_empty() {
+        return Vec::new();
+    }
+    let registry = build_local_port_registry(root);
+    ports.into_iter().map(|port| {
+        registry.get(&port).cloned().unwrap_or_else(|| TrafficBackendPort {
+            port,
+            label: format!("127.0.0.1:{port}"),
+            program_id: None,
+            profile: None,
+            server: None,
+        })
+    }).collect()
+}
+
+fn parse_proxy_ports(v: &serde_json::Value) -> Vec<u16> {
+    let mut out = Vec::new();
+    if let Some(arr) = v.get("ports").and_then(|x| x.as_array()) {
+        for item in arr {
+            push_json_port(item, &mut out);
+        }
+    }
+    if out.is_empty() {
+        if let Some(port_value) = v.get("port") {
+            push_json_port(port_value, &mut out);
+        }
+    }
+    normalize_port_vec(out)
+}
+
+fn push_json_port(v: &serde_json::Value, out: &mut Vec<u16>) {
+    match v {
+        serde_json::Value::Number(n) => {
+            if let Some(raw) = n.as_u64().and_then(|x| u16::try_from(x).ok()).filter(|x| *x > 0) {
+                out.push(raw);
+            }
+        }
+        serde_json::Value::String(s) => {
+            for part in s.split(',') {
+                if let Ok(port) = part.trim().parse::<u16>() {
+                    if port > 0 { out.push(port); }
+                }
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items { push_json_port(item, out); }
+        }
+        _ => {}
+    }
+}
+
+fn normalize_port_vec(ports: Vec<u16>) -> Vec<u16> {
+    let mut out = Vec::new();
+    for port in ports {
+        if port > 0 && !out.contains(&port) {
+            out.push(port);
+        }
+    }
+    out
+}
+
+fn build_local_port_registry(root: &Path) -> HashMap<u16, TrafficBackendPort> {
+    let mut out = HashMap::new();
+    collect_singbox_ports(root, &mut out);
+    collect_wireproxy_ports(root, &mut out);
+    collect_operaproxy_ports(root, &mut out);
+    collect_simple_json_port(root.join("tor/setting.json"), "tor", None, None, &["socks_port", "port"], &mut out);
+    collect_simple_json_port(root.join("mihomo/setting.json"), "mihomo", None, None, &["mixed_port"], &mut out);
+    collect_simple_json_port(root.join("mieru/setting.json"), "mieru", None, None, &["socks5_port"], &mut out);
+    out
+}
+
+fn collect_singbox_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>) {
+    let profile_root = root.join("singbox/profile");
+    let Ok(profiles) = fs::read_dir(&profile_root) else { return; };
+    for ent in profiles.flatten() {
+        let profile_dir = ent.path();
+        if !profile_dir.is_dir() { continue; }
+        let Some(profile) = file_name_string(&profile_dir) else { continue; };
+        collect_simple_json_port(profile_dir.join("setting.json"), "singbox", Some(profile.clone()), None, &["t2s_port"], out);
+        let server_root = profile_dir.join("server");
+        let Ok(servers) = fs::read_dir(&server_root) else { continue; };
+        for server_ent in servers.flatten() {
+            let server_dir = server_ent.path();
+            if !server_dir.is_dir() { continue; }
+            let server = file_name_string(&server_dir);
+            collect_simple_json_port(server_dir.join("setting.json"), "singbox", Some(profile.clone()), server, &["port", "listen_port"], out);
+        }
+    }
+}
+
+fn collect_wireproxy_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>) {
+    let profile_root = root.join("wireproxy/profile");
+    let Ok(profiles) = fs::read_dir(&profile_root) else { return; };
+    for ent in profiles.flatten() {
+        let profile_dir = ent.path();
+        if !profile_dir.is_dir() { continue; }
+        let Some(profile) = file_name_string(&profile_dir) else { continue; };
+        collect_simple_json_port(profile_dir.join("setting.json"), "wireproxy", Some(profile.clone()), None, &["t2s_port"], out);
+        let server_root = profile_dir.join("server");
+        let Ok(servers) = fs::read_dir(&server_root) else { continue; };
+        for server_ent in servers.flatten() {
+            let server_dir = server_ent.path();
+            if !server_dir.is_dir() { continue; }
+            let server = file_name_string(&server_dir);
+            let config = server_dir.join("config.conf");
+            if let Ok(raw) = fs::read_to_string(&config) {
+                if let Some(port) = parse_bind_address_port(&raw) {
+                    put_registry_port(out, port, "wireproxy", Some(profile.clone()), server.clone());
+                }
+            }
+        }
+    }
+}
+
+fn collect_operaproxy_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>) {
+    let path = root.join("operaproxy/port.json");
+    collect_simple_json_port(path.clone(), "operaproxy", None, None, &["t2s_port", "byedpi_port"], out);
+    let Ok(raw) = fs::read_to_string(path) else { return; };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { return; };
+    if let Some(port) = v.get("opera_start_port").and_then(json_u16) {
+        put_registry_port(out, port, "operaproxy", None, Some("opera-proxy".to_string()));
+    }
+}
+
+fn collect_simple_json_port(path: PathBuf, program: &str, profile: Option<String>, server: Option<String>, keys: &[&str], out: &mut HashMap<u16, TrafficBackendPort>) {
+    let Ok(raw) = fs::read_to_string(path) else { return; };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { return; };
+    for key in keys {
+        if let Some(port) = v.get(*key).and_then(json_u16) {
+            put_registry_port(out, port, program, profile.clone(), server.clone());
+        }
+    }
+}
+
+fn json_u16(v: &serde_json::Value) -> Option<u16> {
+    v.as_u64().and_then(|x| u16::try_from(x).ok()).filter(|x| *x > 0)
+        .or_else(|| v.as_str().and_then(|s| s.trim().parse::<u16>().ok()).filter(|x| *x > 0))
+}
+
+fn parse_bind_address_port(raw: &str) -> Option<u16> {
+    for line in raw.lines() {
+        let s = line.trim();
+        if !s.to_ascii_lowercase().starts_with("bindaddress") { continue; }
+        let Some((_, value)) = s.split_once('=') else { continue; };
+        if let Some(port_s) = value.trim().rsplit(':').next() {
+            if let Ok(port) = port_s.trim().parse::<u16>() {
+                if port > 0 { return Some(port); }
+            }
+        }
+    }
+    None
+}
+
+fn put_registry_port(out: &mut HashMap<u16, TrafficBackendPort>, port: u16, program: &str, profile: Option<String>, server: Option<String>) {
+    let label = match (&profile, &server) {
+        (Some(p), Some(s)) => format!("{program}/{p}/{s}:{port}"),
+        (Some(p), None) => format!("{program}/{p}:{port}"),
+        (None, Some(s)) => format!("{program}/{s}:{port}"),
+        (None, None) => format!("{program}:{port}"),
+    };
+    out.entry(port).or_insert_with(|| TrafficBackendPort {
+        port,
+        label,
+        program_id: Some(program.to_string()),
+        profile,
+        server,
+    });
+}
+
+fn file_name_string(path: &Path) -> Option<String> {
+    path.file_name().and_then(|s| s.to_str()).map(str::to_string).filter(|s| !s.starts_with('.'))
 }
 
 fn value_after<'a>(tokens: &[&'a str], key: &str) -> Option<&'a str> {

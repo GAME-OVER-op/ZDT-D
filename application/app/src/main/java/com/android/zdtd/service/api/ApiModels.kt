@@ -76,6 +76,8 @@ object ApiModels {
     val vpn: List<VpnTraffic> = emptyList(),
     val interfaces: List<InterfaceTraffic> = emptyList(),
     val warnings: List<String> = emptyList(),
+    val proxyEndpoints: List<TrafficBackendPort> = emptyList(),
+    val t2sInstances: List<TrafficT2sInstance> = emptyList(),
   )
 
   data class TrafficRuleCounter(
@@ -109,6 +111,21 @@ object ApiModels {
     val programId: String? = null,
     val profile: String? = null,
     val server: String? = null,
+  )
+
+  data class TrafficT2sInstance(
+    val instanceId: String = "",
+    val program: String = "",
+    val profile: String = "",
+    val scope: String = "",
+    val pid: Int = 0,
+    val webAddr: String = "127.0.0.1",
+    val webPort: Int = 0,
+    val listenAddr: String = "127.0.0.1",
+    val listenPort: Int = 0,
+    val backendMode: String = "",
+    val prioritySpeedAware: Boolean = false,
+    val updatedAt: Long = 0L,
   )
 
   data class TrafficChainSummary(
@@ -742,7 +759,33 @@ object ApiModels {
       vpn = vpn,
       interfaces = interfaces,
       warnings = jsonStringList(data, "warnings"),
+      proxyEndpoints = parseTrafficBackendPorts(data.optJSONArray("proxy_endpoints")),
+      t2sInstances = parseTrafficT2sInstances(data.optJSONArray("t2s_instances")),
     )
+  }
+
+
+  private fun parseTrafficT2sInstances(arr: JSONArray?): List<TrafficT2sInstance> {
+    if (arr == null) return emptyList()
+    val out = ArrayList<TrafficT2sInstance>(arr.length())
+    for (i in 0 until arr.length()) {
+      val o = arr.optJSONObject(i) ?: continue
+      out += TrafficT2sInstance(
+        instanceId = o.optString("instance_id", ""),
+        program = o.optString("program", ""),
+        profile = o.optString("profile", ""),
+        scope = o.optString("scope", ""),
+        pid = o.optInt("pid", 0),
+        webAddr = o.optString("web_addr", "127.0.0.1"),
+        webPort = o.optInt("web_port", 0),
+        listenAddr = o.optString("listen_addr", "127.0.0.1"),
+        listenPort = o.optInt("listen_port", 0),
+        backendMode = o.optString("backend_mode", ""),
+        prioritySpeedAware = o.optBoolean("priority_speed_aware", false),
+        updatedAt = o.optLong("updated_at", 0L),
+      )
+    }
+    return out.filter { it.webPort > 0 && it.listenPort > 0 }
   }
 
 

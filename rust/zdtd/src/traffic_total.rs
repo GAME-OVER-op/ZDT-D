@@ -39,6 +39,10 @@ pub struct TrafficRuleReport {
     pub vpn: Vec<VpnTraffic>,
     pub interfaces: Vec<InterfaceTraffic>,
     pub warnings: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub proxy_endpoints: Vec<TrafficBackendPort>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub t2s_instances: Vec<T2sInstanceMeta>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -249,6 +253,9 @@ pub fn collect_rule_snapshot() -> Result<TrafficRuleReport> {
     let uid_file_packages = load_uid_file_packages(&route_meta);
     let interfaces = read_interfaces(&mut report.warnings);
     report.vpn = read_vpn_traffic(&interfaces, &uid_packages, &uid_file_packages, &mut report.warnings);
+    report.proxy_endpoints = build_local_port_registry(Path::new("/data/adb/modules/ZDT-D/working_folder")).into_values().collect();
+    report.proxy_endpoints.sort_by(|a, b| a.label.cmp(&b.label).then(a.port.cmp(&b.port)));
+    report.t2s_instances = load_t2s_instances(&mut report.warnings);
     report.interfaces = interfaces.into_values().collect();
     report.interfaces.sort_by(|a, b| a.iface.cmp(&b.iface));
 
@@ -445,6 +452,23 @@ fn build_counter(
     }
 }
 
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct T2sInstanceMeta {
+    pub instance_id: String,
+    pub program: String,
+    pub profile: String,
+    pub scope: String,
+    pub pid: u32,
+    pub web_addr: String,
+    pub web_port: u16,
+    pub listen_addr: String,
+    pub listen_port: u16,
+    pub backend_mode: String,
+    pub priority_speed_aware: bool,
+    pub updated_at: u64,
+}
+
 fn resolve_backend_ports(meta: &RouteMeta) -> Vec<TrafficBackendPort> {
     if meta.program_id.as_deref() != Some("myproxy") {
         return Vec::new();
@@ -521,9 +545,10 @@ fn build_local_port_registry(root: &Path) -> HashMap<u16, TrafficBackendPort> {
     collect_singbox_ports(root, &mut out);
     collect_wireproxy_ports(root, &mut out);
     collect_operaproxy_ports(root, &mut out);
-    collect_simple_json_port(root.join("tor/setting.json"), "tor", None, None, &["socks_port", "port"], &mut out);
-    collect_simple_json_port(root.join("mihomo/setting.json"), "mihomo", None, None, &["mixed_port"], &mut out);
-    collect_simple_json_port(root.join("mieru/setting.json"), "mieru", None, None, &["socks5_port"], &mut out);
+    collect_tor_socks_port(root, &mut out);
+    collect_mihomo_profile_ports(root, &mut out);
+    collect_mieru_profile_ports(root, &mut out);
+    collect_myprogram_t2s_ports(root, &mut out);
     out
 }
 
@@ -534,7 +559,6 @@ fn collect_singbox_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>
         let profile_dir = ent.path();
         if !profile_dir.is_dir() { continue; }
         let Some(profile) = file_name_string(&profile_dir) else { continue; };
-        collect_simple_json_port(profile_dir.join("setting.json"), "singbox", Some(profile.clone()), None, &["t2s_port"], out);
         let server_root = profile_dir.join("server");
         let Ok(servers) = fs::read_dir(&server_root) else { continue; };
         for server_ent in servers.flatten() {
@@ -553,7 +577,6 @@ fn collect_wireproxy_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPor
         let profile_dir = ent.path();
         if !profile_dir.is_dir() { continue; }
         let Some(profile) = file_name_string(&profile_dir) else { continue; };
-        collect_simple_json_port(profile_dir.join("setting.json"), "wireproxy", Some(profile.clone()), None, &["t2s_port"], out);
         let server_root = profile_dir.join("server");
         let Ok(servers) = fs::read_dir(&server_root) else { continue; };
         for server_ent in servers.flatten() {
@@ -572,12 +595,88 @@ fn collect_wireproxy_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPor
 
 fn collect_operaproxy_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>) {
     let path = root.join("operaproxy/port.json");
-    collect_simple_json_port(path.clone(), "operaproxy", None, None, &["t2s_port", "byedpi_port"], out);
     let Ok(raw) = fs::read_to_string(path) else { return; };
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { return; };
-    if let Some(port) = v.get("opera_start_port").and_then(json_u16) {
-        put_registry_port(out, port, "operaproxy", None, Some("opera-proxy".to_string()));
+    let Some(start) = v.get("opera_start_port").and_then(json_u16) else { return; };
+    let count = operaproxy_server_count(root).max(1).min(12);
+    for idx in 0..count {
+        if let Some(port) = start.checked_add(idx as u16) {
+            put_registry_port(out, port, "operaproxy", None, Some(format!("opera-proxy-{}", idx + 1)));
+        }
     }
+}
+
+fn operaproxy_server_count(root: &Path) -> usize {
+    let path = root.join("operaproxy/config/sni.json");
+    let Ok(raw) = fs::read_to_string(path) else { return 1; };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { return 1; };
+    v.as_array().map(|a| a.len()).or_else(|| v.get("items").and_then(|x| x.as_array()).map(|a| a.len())).unwrap_or(1)
+}
+
+fn collect_tor_socks_port(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>) {
+    let path = root.join("tor/torrc");
+    let Ok(raw) = fs::read_to_string(path) else { return; };
+    if let Some(port) = parse_tor_socks_port(&raw) {
+        put_registry_port(out, port, "tor", None, Some("SocksPort".to_string()));
+    }
+}
+
+fn collect_mihomo_profile_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>) {
+    collect_profile_setting_ports(root, "mihomo", &["mixed_port"], out);
+}
+
+fn collect_mieru_profile_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>) {
+    collect_profile_setting_ports(root, "mieru", &["socks5_port"], out);
+}
+
+fn collect_profile_setting_ports(root: &Path, program: &str, keys: &[&str], out: &mut HashMap<u16, TrafficBackendPort>) {
+    let profile_root = root.join(program).join("profile");
+    let Ok(profiles) = fs::read_dir(&profile_root) else { return; };
+    for ent in profiles.flatten() {
+        let profile_dir = ent.path();
+        if !profile_dir.is_dir() { continue; }
+        let Some(profile) = file_name_string(&profile_dir) else { continue; };
+        for key in keys {
+            collect_simple_json_port(profile_dir.join("setting.json"), program, Some(profile.clone()), Some((*key).to_string()), &[*key], out);
+        }
+    }
+}
+
+fn collect_myprogram_t2s_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>) {
+    let profile_root = root.join("myprogram/profile");
+    let Ok(profiles) = fs::read_dir(&profile_root) else { return; };
+    for ent in profiles.flatten() {
+        let profile_dir = ent.path();
+        if !profile_dir.is_dir() { continue; }
+        let Some(profile) = file_name_string(&profile_dir) else { continue; };
+        let Ok(raw) = fs::read_to_string(profile_dir.join("t2s_ports.txt")) else { continue; };
+        for port in parse_port_list_text(&raw) {
+            put_registry_port(out, port, "myprogram", Some(profile.clone()), Some("t2s_ports".to_string()));
+        }
+    }
+}
+
+fn parse_port_list_text(raw: &str) -> Vec<u16> {
+    let mut out = Vec::new();
+    for part in raw.replace('\n', ",").split(',') {
+        if let Ok(port) = part.trim().parse::<u16>() {
+            if port > 0 && !out.contains(&port) { out.push(port); }
+        }
+    }
+    out
+}
+
+fn parse_tor_socks_port(raw: &str) -> Option<u16> {
+    for line in raw.lines() {
+        let s = line.trim();
+        if !s.to_ascii_lowercase().starts_with("socksport") { continue; }
+        let value = s.split_whitespace().nth(1)?;
+        let port_s = value.rsplit(':').next().unwrap_or(value);
+        if let Ok(port) = port_s.trim().parse::<u16>() {
+            if port > 0 { return Some(port); }
+        }
+    }
+    None
 }
 
 fn collect_simple_json_port(path: PathBuf, program: &str, profile: Option<String>, server: Option<String>, keys: &[&str], out: &mut HashMap<u16, TrafficBackendPort>) {
@@ -627,6 +726,44 @@ fn put_registry_port(out: &mut HashMap<u16, TrafficBackendPort>, port: u16, prog
 
 fn file_name_string(path: &Path) -> Option<String> {
     path.file_name().and_then(|s| s.to_str()).map(str::to_string).filter(|s| !s.starts_with('.'))
+}
+
+fn load_t2s_instances(warnings: &mut Vec<String>) -> Vec<T2sInstanceMeta> {
+    let dir = Path::new("/data/adb/modules/ZDT-D/api/t2s/instances");
+    let Ok(entries) = fs::read_dir(dir) else { return Vec::new(); };
+    let mut out = Vec::new();
+    for ent in entries.flatten() {
+        let path = ent.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") { continue; }
+        let Ok(raw) = fs::read_to_string(&path) else { continue; };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            warnings.push(format!("parse t2s metadata failed: {}", path.display()));
+            continue;
+        };
+        let web_port = v.get("web_port").and_then(json_u16).unwrap_or(0);
+        let listen_port = v.get("listen_port").and_then(json_u16).unwrap_or(0);
+        if web_port == 0 || listen_port == 0 { continue; }
+        out.push(T2sInstanceMeta {
+            instance_id: json_str(&v, "instance_id"),
+            program: json_str(&v, "program"),
+            profile: json_str(&v, "profile"),
+            scope: json_str(&v, "scope"),
+            pid: v.get("pid").and_then(|x| x.as_u64()).and_then(|x| u32::try_from(x).ok()).unwrap_or(0),
+            web_addr: json_str(&v, "web_addr"),
+            web_port,
+            listen_addr: json_str(&v, "listen_addr"),
+            listen_port,
+            backend_mode: json_str(&v, "backend_mode"),
+            priority_speed_aware: v.get("priority_speed_aware").and_then(|x| x.as_bool()).unwrap_or(false),
+            updated_at: v.get("updated_at").and_then(|x| x.as_u64()).unwrap_or(0),
+        });
+    }
+    out.sort_by(|a, b| a.scope.cmp(&b.scope).then(a.listen_port.cmp(&b.listen_port)));
+    out
+}
+
+fn json_str(v: &serde_json::Value, key: &str) -> String {
+    v.get(key).and_then(|x| x.as_str()).unwrap_or("").to_string()
 }
 
 fn value_after<'a>(tokens: &[&'a str], key: &str) -> Option<&'a str> {

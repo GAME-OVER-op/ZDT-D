@@ -89,11 +89,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.R
+import com.android.zdtd.service.RootConfigManager
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
+import com.android.zdtd.service.api.T2sApiClient
+import com.android.zdtd.service.api.T2sPollResult
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -137,11 +142,14 @@ private data class StudioNode(
   val onPort: (() -> Unit)? = null,
 )
 
+private enum class StudioEdgeKind { NORMAL, DIRECT_FALLBACK }
+
 private data class StudioEdge(
   val fromId: String,
   val toId: String,
   val accent: Color,
   val active: Boolean,
+  val kind: StudioEdgeKind = StudioEdgeKind.NORMAL,
 )
 
 private data class StudioGraph(
@@ -163,6 +171,7 @@ fun ConstructionStudioScreen(
   var loading by remember { mutableStateOf(false) }
   var requestInFlight by remember { mutableStateOf(false) }
   var report by remember { mutableStateOf(ApiModels.TrafficReport()) }
+  var t2sPolls by remember { mutableStateOf<Map<Int, T2sPollResult>>(emptyMap()) }
   var selectedGroup by remember { mutableStateOf<StudioAppGroup?>(null) }
   var selectedVpn by remember { mutableStateOf<ApiModels.VpnTraffic?>(null) }
   var showWarnings by remember { mutableStateOf(false) }
@@ -180,6 +189,7 @@ fun ConstructionStudioScreen(
   // is restored on next open instead of being rebuilt from scratch.
   val density = LocalDensity.current
   val context = LocalContext.current
+  val rootManager = remember(context) { RootConfigManager(context) }
   val layoutPrefs = remember { context.getSharedPreferences("construction_studio_layout", android.content.Context.MODE_PRIVATE) }
   val nodeOffsets = remember { mutableStateMapOf<String, Offset>() }
   var showSearch by remember { mutableStateOf(false) }
@@ -221,6 +231,23 @@ fun ConstructionStudioScreen(
     }
   }
 
+  LaunchedEffect(report.t2sInstances) {
+    val ports = report.t2sInstances.map { it.webPort }.filter { it > 0 }.distinct()
+    if (ports.isEmpty()) {
+      t2sPolls = emptyMap()
+      return@LaunchedEffect
+    }
+    while (isActive) {
+      val next = withContext(Dispatchers.IO) {
+        ports.mapNotNull { port ->
+          runCatching { port to T2sApiClient(rootManager, port).poll() }.getOrNull()
+        }.toMap()
+      }
+      t2sPolls = next
+      delay(1_500)
+    }
+  }
+
   val visibleRules = remember(report) { report.rules.filter(::shouldShowStudioRule) }
   val activeRules = remember(visibleRules) { visibleRules.count { it.active } }
   val groups = remember(visibleRules) { buildStudioGroups(visibleRules) }
@@ -236,6 +263,9 @@ fun ConstructionStudioScreen(
   val graph = buildStudioGraph(
     groups = groups,
     vpnItems = vpnItems,
+    proxyEndpoints = report.proxyEndpoints,
+    t2sInstances = report.t2sInstances,
+    t2sPolls = t2sPolls,
     appListLabel = appListLabel,
     internetLabel = internetLabel,
     appsWord = appsWord,
@@ -447,11 +477,30 @@ fun ConstructionStudioScreen(
 
     val connectFrom = connectFromId?.let { id -> graph.nodes.find { it.id == id } }
     if (connectFrom != null) {
+      val connectPort = connectFrom.id.substringAfter("t2s:", "").substringBefore(":").toIntOrNull()?.takeIf { it > 0 }
+      val connectPoll = connectPort?.let { t2sPolls[it] }
       StudioConnectSheet(
         from = connectFrom,
-        targets = graph.nodes.filter { it.id != connectFrom.id && it.kind != StudioNodeKind.APP },
+        endpoints = report.proxyEndpoints,
+        connectedAddrs = connectPoll?.state?.backends?.map { it.addr }?.toSet().orEmpty(),
         onDismiss = { connectFromId = null },
-        onPick = { connectFromId = null },
+        onPick = { endpoint ->
+          val port = connectPort
+          if (port != null) {
+            scope.launch {
+              withContext(Dispatchers.IO) {
+                val client = T2sApiClient(rootManager, port)
+                val addr = "127.0.0.1:${endpoint.port}"
+                val connected = connectPoll?.state?.backends?.any { it.addr == addr || it.addr.endsWith(":${endpoint.port}") } == true
+                runCatching { if (connected) client.removeBackend(addr) else client.addBackend("127.0.0.1", endpoint.port) }
+                runCatching { client.recheckBackends() }
+              }
+              connectFromId = null
+            }
+          } else {
+            connectFromId = null
+          }
+        },
       )
     }
 
@@ -502,6 +551,9 @@ private fun colX(index: Int): Float = MARGIN_X + index * COL_STEP
 private fun buildStudioGraph(
   groups: List<StudioAppGroup>,
   vpnItems: List<ApiModels.VpnTraffic>,
+  proxyEndpoints: List<ApiModels.TrafficBackendPort>,
+  t2sInstances: List<ApiModels.TrafficT2sInstance>,
+  t2sPolls: Map<Int, T2sPollResult>,
   appListLabel: String,
   internetLabel: String,
   appsWord: String,
@@ -528,15 +580,24 @@ private fun buildStudioGraph(
   val hasT2s = groups.any { usesT2s(it.programId) }
   val programCol = if (hasT2s) 2 else 1
   val backendCol = programCol + 1
-  val internetCol = (if (hasAnyBackend) backendCol else programCol) + 1
+  val internetCol = (if (hasAnyBackend || hasT2s) backendCol else programCol) + 1
   val internetX = colX(internetCol)
 
   var cursorY = MARGIN_TOP
   var totalBytes = 0L
   var anyActive = false
 
+  val addedBackendNodes = mutableSetOf<String>()
+
   groups.forEach { group ->
-    val backends = group.rules.flatMap { it.backendPorts }.distinctBy { it.port }.take(6)
+    val showT2s = usesT2s(group.programId)
+    val routePorts = group.rules.mapNotNull { it.redirectPort }.distinct()
+    val t2sInstance = if (showT2s) findT2sInstanceForGroup(group, routePorts, t2sInstances) else null
+    val t2sPoll = t2sInstance?.webPort?.let { t2sPolls[it] }
+    val t2sBackendAddrs = t2sPoll?.state?.backends.orEmpty()
+    val t2sBackendPorts = t2sBackendAddrs.mapNotNull { backendPortFromAddr(it.addr) }.distinct()
+    val ruleBackends = group.rules.flatMap { it.backendPorts }
+    val backends = mergeBackendCards(ruleBackends, proxyEndpoints, t2sBackendPorts).take(6)
     val active = group.rules.any { it.active }
     if (active) anyActive = true
     val bytes = group.rules.sumOf { it.bytes }
@@ -552,8 +613,7 @@ private fun buildStudioGraph(
 
     val appId = "app:${group.key}"
     val progId = "prog:${group.key}"
-    val showT2s = usesT2s(group.programId)
-    val t2sId = "t2s:${group.key}"
+    val t2sId = "t2s:${t2sInstance?.webPort ?: 0}:${group.key}"
     val t2sColor = Color(0xFF06B6D4)
     nodes += StudioNode(
       id = appId,
@@ -566,12 +626,12 @@ private fun buildStudioGraph(
     )
     if (showT2s) {
       // t2s is the advanced hub: rules are pulled from here toward the program/backends.
-      val t2sPorts = group.rules.mapNotNull { it.redirectPort }.distinct().joinToString(",")
+      val t2sPorts = routePorts.joinToString(",")
       nodes += StudioNode(
         id = t2sId,
         x = colX(1), y = rowTopY, w = NODE_W, h = NODE_H,
         title = "t2s",
-        subtitle = if (t2sPorts.isNotBlank()) "порт $t2sPorts • продвинутый узел" else "продвинутый узел",
+        subtitle = t2sSubtitle(t2sPorts, t2sPoll, t2sInstance),
         icon = Icons.Filled.Hub, accent = t2sColor, active = active,
         // t2s is a routing hub, not a program: tapping it (or its port) opens the
         // "where to direct the connection" picker. It must NOT open program
@@ -592,29 +652,35 @@ private fun buildStudioGraph(
     if (showT2s) {
       edges += StudioEdge(appId, t2sId, t2sColor, active)
       edges += StudioEdge(t2sId, progId, accent, active)
+      if (shouldShowDirectFallback(t2sPoll)) {
+        edges += StudioEdge(t2sId, "internet", Color(0xFFF97316), hasDirectConnections(t2sPoll), StudioEdgeKind.DIRECT_FALLBACK)
+      }
     } else {
       edges += StudioEdge(appId, progId, accent, active)
     }
 
     if (backends.isEmpty()) {
-      edges += StudioEdge(progId, "internet", tertiary, active)
+      if (!showT2s) edges += StudioEdge(progId, "internet", tertiary, active)
     } else {
       var by = centerY - backendsHeight / 2f
       backends.forEach { backend ->
-        val bId = "backend:${group.key}:${backend.port}"
-        nodes += StudioNode(
-          id = bId,
-          x = colX(backendCol), y = by, w = BACKEND_W, h = BACKEND_H,
-          title = backend.label.ifBlank { "127.0.0.1:${backend.port}" },
-          subtitle = listOfNotNull(backend.programId, backend.profile, backend.server)
-            .joinToString(" / ").ifBlank { "backend ${backend.port}" },
-          icon = Icons.Filled.CallSplit, accent = backendColor, active = active,
-          kind = StudioNodeKind.BACKEND, onClick = null,
-          iconRes = programIconRes(normalizeRouteProgramId(backend.programId.orEmpty())),
-        )
-        edges += StudioEdge(progId, bId, backendColor, active)
-        edges += StudioEdge(bId, "internet", tertiary, active)
-        by += BACKEND_H + BACKEND_GAP
+        val bId = backendNodeId(backend)
+        if (addedBackendNodes.add(bId)) {
+          nodes += StudioNode(
+            id = bId,
+            x = colX(backendCol), y = by, w = BACKEND_W, h = BACKEND_H,
+            title = backend.label.ifBlank { "127.0.0.1:${backend.port}" },
+            subtitle = listOfNotNull(backend.programId, backend.profile, backend.server)
+              .joinToString(" / ").ifBlank { "backend ${backend.port}" },
+            icon = Icons.Filled.CallSplit, accent = backendColor, active = backendActive(t2sPoll, backend.port, active),
+            kind = StudioNodeKind.BACKEND, onClick = null,
+            iconRes = programIconRes(normalizeRouteProgramId(backend.programId.orEmpty())),
+          )
+          by += BACKEND_H + BACKEND_GAP
+        }
+        val beActive = backendActive(t2sPoll, backend.port, active)
+        edges += StudioEdge(if (showT2s) t2sId else progId, bId, backendColor, beActive)
+        edges += StudioEdge(bId, "internet", tertiary, beActive)
       }
     }
 
@@ -670,6 +736,75 @@ private fun buildStudioGraph(
   return StudioGraph(nodes = nodes, edges = edges, width = width, height = height)
 }
 
+private fun findT2sInstanceForGroup(
+  group: StudioAppGroup,
+  routePorts: List<Int>,
+  instances: List<ApiModels.TrafficT2sInstance>,
+): ApiModels.TrafficT2sInstance? {
+  return instances.firstOrNull { it.listenPort in routePorts }
+    ?: instances.firstOrNull { normalizeRouteProgramId(it.program) == normalizeRouteProgramId(group.programId) && (group.profile.isNullOrBlank() || it.profile == group.profile) }
+}
+
+private fun backendPortFromAddr(addr: String): Int? = addr.substringAfterLast(':', "").toIntOrNull()
+
+private fun mergeBackendCards(
+  ruleBackends: List<ApiModels.TrafficBackendPort>,
+  proxyEndpoints: List<ApiModels.TrafficBackendPort>,
+  t2sBackendPorts: List<Int>,
+): List<ApiModels.TrafficBackendPort> {
+  val byPort = LinkedHashMap<Int, ApiModels.TrafficBackendPort>()
+  (ruleBackends + t2sBackendPorts.mapNotNull { port -> proxyEndpoints.firstOrNull { it.port == port } ?: ApiModels.TrafficBackendPort(port = port, label = "127.0.0.1:$port") }).forEach { backend ->
+    if (backend.port > 0) byPort.putIfAbsent(backend.port, backend)
+  }
+  return byPort.values.toList()
+}
+
+private fun backendNodeId(backend: ApiModels.TrafficBackendPort): String {
+  val p = normalizeRouteProgramId(backend.programId.orEmpty()).ifBlank { "port" }
+  val profile = backend.profile.orEmpty().ifBlank { "default" }
+  val server = backend.server.orEmpty().ifBlank { backend.port.toString() }
+  return "backend:$p:$profile:$server:${backend.port}"
+}
+
+private fun backendActive(poll: T2sPollResult?, port: Int, fallback: Boolean): Boolean {
+  if (poll == null) return fallback
+  return poll.state.backends.any { backendPortFromAddr(it.addr) == port && it.healthy }
+}
+
+private fun hasDirectConnections(poll: T2sPollResult?): Boolean = poll?.state?.connections?.any { it.mode.equals("direct", ignoreCase = true) } == true
+
+private fun shouldShowDirectFallback(poll: T2sPollResult?): Boolean {
+  val state = poll?.state ?: return false
+  val hasGreen = state.backends.any { it.healthy }
+  return !hasGreen || hasDirectConnections(poll)
+}
+
+private fun t2sSubtitle(ports: String, poll: T2sPollResult?, meta: ApiModels.TrafficT2sInstance?): String {
+  val mode = poll?.state?.runtime?.backendMode?.ifBlank { meta?.backendMode.orEmpty() }.orEmpty().ifBlank { "balance" }
+  val backends = poll?.state?.backends.orEmpty()
+  val green = backends.count { it.healthy }
+  val direct = hasDirectConnections(poll)
+  val base = if (ports.isNotBlank()) "порт $ports" else "продвинутый узел"
+  return when {
+    poll == null -> "$base • $mode"
+    backends.isEmpty() -> "$base • нет backend • direct fallback"
+    green == 0 -> "$base • все backend RED • direct fallback"
+    direct -> "$base • $green/${backends.size} GREEN • direct активен"
+    else -> "$base • $mode • $green/${backends.size} GREEN"
+  }
+}
+
+private fun programColor(programId: String): Color = when (normalizeRouteProgramId(programId)) {
+  "mihomo" -> Color(0xFF8B5CF6)
+  "mieru" -> Color(0xFF14B8A6)
+  "sing-box" -> Color(0xFF3B82F6)
+  "wireproxy" -> Color(0xFF22C55E)
+  "tor" -> Color(0xFF7C3AED)
+  "operaproxy" -> Color(0xFFEF4444)
+  "myprogram" -> Color(0xFFF97316)
+  else -> Color(0xFFF59E0B)
+}
+
 @Composable
 private fun StudioEdgeCanvas(
   graph: StudioGraph,
@@ -695,7 +830,8 @@ private fun StudioEdgeCanvas(
       }
       // Stopped (inactive) lines are grey and static; active lines flow in the route color.
       val grey = Color(0xFF64748B)
-      val color = if (edge.active) edge.accent.copy(alpha = 0.92f) else grey.copy(alpha = 0.5f)
+      val inactiveAlpha = if (edge.kind == StudioEdgeKind.DIRECT_FALLBACK) 0.74f else 0.5f
+      val color = if (edge.active) edge.accent.copy(alpha = 0.92f) else if (edge.kind == StudioEdgeKind.DIRECT_FALLBACK) edge.accent.copy(alpha = inactiveAlpha) else grey.copy(alpha = inactiveAlpha)
       val progress = buildProgress.coerceIn(0f, 1f)
       // While the map builds, the route is "drawn in" from source to target.
       val drawn = if (progress >= 1f) {
@@ -712,14 +848,14 @@ private fun StudioEdgeCanvas(
         path = drawn,
         color = color,
         style = Stroke(
-          width = if (edge.active) 4.5f else 2.5f,
+          width = if (edge.active) 4.5f else if (edge.kind == StudioEdgeKind.DIRECT_FALLBACK) 3.4f else 2.5f,
           cap = StrokeCap.Round,
           pathEffect = effect,
         ),
       )
       // Connection ports appear once the line is fully drawn.
       if (progress >= 1f) {
-        val portColor = if (edge.active) edge.accent else grey
+        val portColor = if (edge.active || edge.kind == StudioEdgeKind.DIRECT_FALLBACK) edge.accent else grey
         val portRadius = if (edge.active) 7f else 6f
         drawCircle(color = portRing, radius = portRadius + 2.5f, center = Offset(sx, sy))
         drawCircle(color = portColor, radius = portRadius, center = Offset(sx, sy))
@@ -800,9 +936,10 @@ private fun StudioGraphNode(node: StudioNode) {
 @Composable
 private fun StudioConnectSheet(
   from: StudioNode,
-  targets: List<StudioNode>,
+  endpoints: List<ApiModels.TrafficBackendPort>,
+  connectedAddrs: Set<String>,
   onDismiss: () -> Unit,
-  onPick: (StudioNode) -> Unit,
+  onPick: (ApiModels.TrafficBackendPort) -> Unit,
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -816,35 +953,44 @@ private fun StudioConnectSheet(
     ) {
       Text("Куда направить от «${from.title}»", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
       Text(
-        "Выбери карточку-получателя. В одну программу можно направить несколько соединений.",
+        "Показаны только локальные proxy endpoints проекта. Галочка означает, что endpoint уже подключён к этому t2s; повторный выбор отключит его.",
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
       )
-      if (targets.isEmpty()) {
-        Text("Нет доступных целей", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+      if (endpoints.isEmpty()) {
+        Text("Нет доступных proxy endpoints", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
       }
-      targets.forEach { target ->
+      endpoints.forEach { endpoint ->
+        val connected = connectedAddrs.any { it == "127.0.0.1:${endpoint.port}" || it.endsWith(":${endpoint.port}") }
+        val accent = programColor(endpoint.programId.orEmpty())
         Surface(
           modifier = Modifier.fillMaxWidth(),
           shape = RoundedCornerShape(14.dp),
-          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-          onClick = { onPick(target) },
+          color = if (connected) accent.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+          border = if (connected) BorderStroke(1.dp, accent.copy(alpha = 0.55f)) else null,
+          onClick = { onPick(endpoint) },
         ) {
           Row(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
           ) {
-            Surface(shape = RoundedCornerShape(12.dp), color = target.accent.copy(alpha = 0.16f), contentColor = target.accent) {
-              if (target.iconRes != null) {
-                Icon(painterResource(target.iconRes), contentDescription = null, modifier = Modifier.padding(7.dp).size(18.dp), tint = target.accent)
+            Surface(shape = RoundedCornerShape(12.dp), color = accent.copy(alpha = 0.16f), contentColor = accent) {
+              val iconRes = programIconRes(normalizeRouteProgramId(endpoint.programId.orEmpty()))
+              if (iconRes != null) {
+                Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.padding(7.dp).size(18.dp), tint = accent)
               } else {
-                Icon(target.icon, contentDescription = null, modifier = Modifier.padding(7.dp).size(18.dp))
+                Icon(Icons.Filled.CallSplit, contentDescription = null, modifier = Modifier.padding(7.dp).size(18.dp))
               }
             }
             Column(Modifier.weight(1f)) {
-              Text(target.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-              Text(target.subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+              Text(endpoint.label.ifBlank { "127.0.0.1:${endpoint.port}" }, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+              Text(listOfNotNull(endpoint.programId, endpoint.profile, endpoint.server).joinToString(" / ").ifBlank { "local SOCKS ${endpoint.port}" }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            if (connected) {
+              Box(Modifier.size(22.dp).clip(CircleShape).background(accent), contentAlignment = Alignment.Center) {
+                Text("✓", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.White)
+              }
             }
           }
         }

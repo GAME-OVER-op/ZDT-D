@@ -4,6 +4,9 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateOffsetAsState
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -52,6 +55,8 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -69,6 +74,8 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.asAndroidPath
+import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
@@ -86,6 +93,7 @@ import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -160,8 +168,13 @@ fun ConstructionStudioScreen(
   var showWarnings by remember { mutableStateOf(false) }
 
   // Canvas transform state: the entire map pans and zooms as one surface.
-  var scale by remember { mutableStateOf(0.82f) }
-  var pan by remember { mutableStateOf(Offset.Zero) }
+  // Animatable so button zoom, reset and "center on card" glide smoothly,
+  // while finger gestures stay instant via snapTo.
+  val scope = rememberCoroutineScope()
+  val scaleAnim = remember { Animatable(0.82f) }
+  val panX = remember { Animatable(0f) }
+  val panY = remember { Animatable(0f) }
+  val transformTween = tween<Float>(320, easing = FastOutSlowInEasing)
 
   // Per-card position overrides (user can drag cards); persisted so the layout
   // is restored on next open instead of being rebuilt from scratch.
@@ -246,6 +259,15 @@ fun ConstructionStudioScreen(
 
   val anyActive = graph.edges.any { it.active }
 
+  // One-time "draw-in" of routes when the map first builds (cards then lines).
+  val buildProgress = remember { Animatable(0f) }
+  val hasRealNodes = graph.nodes.any { it.kind != StudioNodeKind.INTERNET }
+  LaunchedEffect(hasRealNodes) {
+    if (hasRealNodes && buildProgress.value < 1f) {
+      buildProgress.animateTo(1f, tween(600, easing = FastOutSlowInEasing))
+    }
+  }
+
   // Animated dash phase makes active routes look like flowing traffic.
   val flow = rememberInfiniteTransition(label = "flow")
   val phase by flow.animateFloat(
@@ -261,9 +283,16 @@ fun ConstructionStudioScreen(
       .background(MaterialTheme.colorScheme.background)
       .clipToBounds()
       .pointerInput(Unit) {
-        detectTransformGestures { _, panChange, zoomChange, _ ->
-          scale = (scale * zoomChange).coerceIn(0.4f, 2.6f)
-          pan += panChange
+        detectTransformGestures { centroid, panChange, zoomChange, _ ->
+          // Finger gestures are instant (snapTo); zoom keeps the pinch point fixed.
+          scope.launch {
+            val old = scaleAnim.value
+            val newScale = (old * zoomChange).coerceIn(0.4f, 2.6f)
+            val factor = newScale / old
+            scaleAnim.snapTo(newScale)
+            panX.snapTo(centroid.x - (centroid.x - panX.value) * factor + panChange.x)
+            panY.snapTo(centroid.y - (centroid.y - panY.value) * factor + panChange.y)
+          }
         }
       },
   ) {
@@ -273,41 +302,73 @@ fun ConstructionStudioScreen(
     Box(
       modifier = Modifier
         .graphicsLayer {
-          scaleX = scale
-          scaleY = scale
-          translationX = pan.x
-          translationY = pan.y
+          scaleX = scaleAnim.value
+          scaleY = scaleAnim.value
+          translationX = panX.value
+          translationY = panY.value
           transformOrigin = TransformOrigin(0f, 0f)
         }
         .size(graph.width.dp, graph.height.dp),
     ) {
-      // Apply user drag overrides to node positions so edges follow the cards.
-      val positionedNodes = graph.nodes.map { n ->
-        val o = nodeOffsets[n.id]
-        if (o != null) n.copy(x = n.x + o.x, y = n.y + o.y) else n
+      // Edges follow animated card positions (1-frame lag is invisible). Until a
+      // card reports its animated position, fall back to its raw layout + drag.
+      val renderPos = remember { mutableStateMapOf<String, Offset>() }
+      val edgeNodeMap = graph.nodes.associate { n ->
+        val drag = nodeOffsets[n.id] ?: Offset.Zero
+        n.id to n.copy(
+          x = renderPos[n.id]?.x ?: (n.x + drag.x),
+          y = renderPos[n.id]?.y ?: (n.y + drag.y),
+        )
       }
-      val positionedMap = positionedNodes.associateBy { it.id }
-      StudioEdgeCanvas(graph = graph, nodeMap = positionedMap, phase = phase)
-      positionedNodes.forEach { node ->
-        Box(
-          modifier = Modifier
-            .offset { IntOffset(node.x.dp.roundToPx(), node.y.dp.roundToPx()) }
-            .pointerInput(node.id) {
-              // Dragging a card moves only that card (not the whole canvas);
-              // consuming the gesture stops the parent pan/zoom from firing.
-              detectDragGestures(
-                onDragEnd = {
-                  val o = nodeOffsets[node.id]
-                  if (o != null) layoutPrefs.edit().putString(node.id, "${o.x},${o.y}").apply()
-                },
-              ) { change, dragAmount ->
-                change.consume()
-                val current = nodeOffsets[node.id] ?: Offset.Zero
-                nodeOffsets[node.id] = current + Offset(dragAmount.x.toDp().value, dragAmount.y.toDp().value)
+      StudioEdgeCanvas(graph = graph, nodeMap = edgeNodeMap, phase = phase, buildProgress = buildProgress.value)
+
+      graph.nodes.forEach { node ->
+        key(node.id) {
+          val drag = nodeOffsets[node.id] ?: Offset.Zero
+          // Animate only the layout base; the live drag delta stays instant so
+          // the card never lags behind the finger.
+          val animatedBase by animateOffsetAsState(
+            targetValue = Offset(node.x, node.y),
+            animationSpec = tween(380, easing = FastOutSlowInEasing),
+            label = "nodePos",
+          )
+          val finalPos = Offset(animatedBase.x + drag.x, animatedBase.y + drag.y)
+          LaunchedEffect(finalPos) { renderPos[node.id] = finalPos }
+
+          // Build/appear: fade + scale-up, staggered left-to-right by column.
+          val appear = remember { Animatable(0f) }
+          LaunchedEffect(node.id) {
+            val col = (node.x / COL_STEP).toInt().coerceAtLeast(0)
+            delay(col * 70L)
+            appear.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
+          }
+
+          Box(
+            modifier = Modifier
+              .offset { IntOffset(finalPos.x.dp.roundToPx(), finalPos.y.dp.roundToPx()) }
+              .graphicsLayer {
+                alpha = appear.value
+                val s = 0.8f + 0.2f * appear.value
+                scaleX = s
+                scaleY = s
               }
-            },
-        ) {
-          StudioGraphNode(node)
+              .pointerInput(node.id) {
+                // Dragging a card moves only that card (not the whole canvas);
+                // consuming the gesture stops the parent pan/zoom from firing.
+                detectDragGestures(
+                  onDragEnd = {
+                    val o = nodeOffsets[node.id]
+                    if (o != null) layoutPrefs.edit().putString(node.id, "${o.x},${o.y}").apply()
+                  },
+                ) { change, dragAmount ->
+                  change.consume()
+                  val current = nodeOffsets[node.id] ?: Offset.Zero
+                  nodeOffsets[node.id] = current + Offset(dragAmount.x.toDp().value, dragAmount.y.toDp().value)
+                }
+              },
+          ) {
+            StudioGraphNode(node)
+          }
         }
       }
     }
@@ -332,9 +393,31 @@ fun ConstructionStudioScreen(
       modifier = Modifier
         .align(Alignment.BottomEnd)
         .padding(end = 14.dp, bottom = bottomContentPadding + 18.dp),
-      onZoomIn = { scale = (scale * 1.2f).coerceAtMost(2.6f) },
-      onZoomOut = { scale = (scale / 1.2f).coerceAtLeast(0.4f) },
-      onReset = { scale = 0.82f; pan = Offset.Zero },
+      onZoomIn = {
+        val old = scaleAnim.value
+        val ns = (old * 1.2f).coerceAtMost(2.6f)
+        val f = ns / old
+        val cx = viewportW / 2f
+        val cy = viewportH / 2f
+        scope.launch { scaleAnim.animateTo(ns, transformTween) }
+        scope.launch { panX.animateTo(cx - (cx - panX.value) * f, transformTween) }
+        scope.launch { panY.animateTo(cy - (cy - panY.value) * f, transformTween) }
+      },
+      onZoomOut = {
+        val old = scaleAnim.value
+        val ns = (old / 1.2f).coerceAtLeast(0.4f)
+        val f = ns / old
+        val cx = viewportW / 2f
+        val cy = viewportH / 2f
+        scope.launch { scaleAnim.animateTo(ns, transformTween) }
+        scope.launch { panX.animateTo(cx - (cx - panX.value) * f, transformTween) }
+        scope.launch { panY.animateTo(cy - (cy - panY.value) * f, transformTween) }
+      },
+      onReset = {
+        scope.launch { scaleAnim.animateTo(0.82f, transformTween) }
+        scope.launch { panX.animateTo(0f, transformTween) }
+        scope.launch { panY.animateTo(0f, transformTween) }
+      },
     )
 
     // Search: open a list of cards and center the map on the chosen one.
@@ -349,7 +432,11 @@ fun ConstructionStudioScreen(
         val o = nodeOffsets[node.id] ?: Offset.Zero
         val cx = with(density) { (node.x + o.x + node.w / 2f).dp.toPx() }
         val cy = with(density) { (node.y + o.y + node.h / 2f).dp.toPx() }
-        pan = Offset(viewportW / 2f - cx * scale, viewportH / 2f - cy * scale)
+        val targetX = viewportW / 2f - cx * scaleAnim.value
+        val targetY = viewportH / 2f - cy * scaleAnim.value
+        val centerTween = tween<Float>(420, easing = FastOutSlowInEasing)
+        scope.launch { panX.animateTo(targetX, centerTween) }
+        scope.launch { panY.animateTo(targetY, centerTween) }
         showSearch = false
       },
     )
@@ -588,6 +675,7 @@ private fun StudioEdgeCanvas(
   graph: StudioGraph,
   nodeMap: Map<String, StudioNode>,
   phase: Float,
+  buildProgress: Float,
 ) {
   val portRing = MaterialTheme.colorScheme.background
   Canvas(modifier = Modifier.size(graph.width.dp, graph.height.dp)) {
@@ -608,9 +696,20 @@ private fun StudioEdgeCanvas(
       // Stopped (inactive) lines are grey and static; active lines flow in the route color.
       val grey = Color(0xFF64748B)
       val color = if (edge.active) edge.accent.copy(alpha = 0.92f) else grey.copy(alpha = 0.5f)
-      val effect = if (edge.active) PathEffect.dashPathEffect(floatArrayOf(14f, 14f), -phase) else null
+      val progress = buildProgress.coerceIn(0f, 1f)
+      // While the map builds, the route is "drawn in" from source to target.
+      val drawn = if (progress >= 1f) {
+        path
+      } else {
+        val measure = android.graphics.PathMeasure(path.asAndroidPath(), false)
+        val segment = android.graphics.Path()
+        measure.getSegment(0f, measure.length * progress, segment, true)
+        segment.asComposePath()
+      }
+      // Dash flow only after the line has finished drawing in.
+      val effect = if (edge.active && progress >= 1f) PathEffect.dashPathEffect(floatArrayOf(14f, 14f), -phase) else null
       drawPath(
-        path = path,
+        path = drawn,
         color = color,
         style = Stroke(
           width = if (edge.active) 4.5f else 2.5f,
@@ -618,13 +717,15 @@ private fun StudioEdgeCanvas(
           pathEffect = effect,
         ),
       )
-      // Connection ports: a small round bump where a line meets a card.
-      val portColor = if (edge.active) edge.accent else grey
-      val portRadius = if (edge.active) 7f else 6f
-      drawCircle(color = portRing, radius = portRadius + 2.5f, center = Offset(sx, sy))
-      drawCircle(color = portColor, radius = portRadius, center = Offset(sx, sy))
-      drawCircle(color = portRing, radius = portRadius + 2.5f, center = Offset(ex, ey))
-      drawCircle(color = portColor, radius = portRadius, center = Offset(ex, ey))
+      // Connection ports appear once the line is fully drawn.
+      if (progress >= 1f) {
+        val portColor = if (edge.active) edge.accent else grey
+        val portRadius = if (edge.active) 7f else 6f
+        drawCircle(color = portRing, radius = portRadius + 2.5f, center = Offset(sx, sy))
+        drawCircle(color = portColor, radius = portRadius, center = Offset(sx, sy))
+        drawCircle(color = portRing, radius = portRadius + 2.5f, center = Offset(ex, ey))
+        drawCircle(color = portColor, radius = portRadius, center = Offset(ex, ey))
+      }
     }
   }
 }
@@ -632,9 +733,17 @@ private fun StudioEdgeCanvas(
 @Composable
 private fun StudioGraphNode(node: StudioNode) {
   val shape = RoundedCornerShape(20.dp)
+  // Active cards gently "breathe" via a pulsing border alpha.
+  val pulseT = rememberInfiniteTransition(label = "pulse")
+  val pulseAlpha by pulseT.animateFloat(
+    initialValue = 0.42f,
+    targetValue = 0.85f,
+    animationSpec = infiniteRepeatable(tween(1100, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+    label = "pulseAlpha",
+  )
   val border = BorderStroke(
     if (node.active) 1.5.dp else 1.dp,
-    node.accent.copy(alpha = if (node.active) 0.62f else 0.26f),
+    node.accent.copy(alpha = if (node.active) pulseAlpha else 0.26f),
   )
   val container = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
   val body: @Composable () -> Unit = {
@@ -798,7 +907,7 @@ private fun StudioTopBar(
       val status = when {
         busy -> report.message.ifBlank { "Готовлю данные, подожди…" }
         report.error.isNotBlank() -> report.error
-        else -> "Живая карта • автообновление 5 сек • тяни и масштабируй"
+        else -> "Автообновление 5 сек • тяни и масштабируй"
       }
       Text(
         status,

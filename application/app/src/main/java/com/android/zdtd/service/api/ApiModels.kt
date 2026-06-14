@@ -63,6 +63,83 @@ object ApiModels {
     val profiles: List<Profile> = emptyList(),
   )
 
+  data class TrafficReport(
+    val updatedAtUnix: Long = 0L,
+    val source: String = "",
+    val rules: List<TrafficRuleCounter> = emptyList(),
+    val chains: List<TrafficChainSummary> = emptyList(),
+    val vpn: List<VpnTraffic> = emptyList(),
+    val interfaces: List<InterfaceTraffic> = emptyList(),
+    val warnings: List<String> = emptyList(),
+  )
+
+  data class TrafficRuleCounter(
+    val family: String = "",
+    val table: String = "",
+    val chain: String = "",
+    val semantic: String = "",
+    val target: String = "",
+    val programId: String? = null,
+    val profile: String? = null,
+    val slot: String? = null,
+    val uidFile: String? = null,
+    val uid: Int? = null,
+    val packageName: String? = null,
+    val packages: List<String> = emptyList(),
+    val proto: String? = null,
+    val destPorts: List<String> = emptyList(),
+    val redirectPort: Int? = null,
+    val queue: Int? = null,
+    val packets: Long = 0L,
+    val bytes: Long = 0L,
+    val active: Boolean = false,
+    val actionCounter: Boolean = false,
+    val raw: String = "",
+  )
+
+  data class TrafficChainSummary(
+    val family: String = "",
+    val table: String = "",
+    val chain: String = "",
+    val kind: String = "",
+    val ruleCount: Long = 0L,
+    val actionPackets: Long = 0L,
+    val actionBytes: Long = 0L,
+    val returnPackets: Long = 0L,
+    val returnBytes: Long = 0L,
+    val passPackets: Long = 0L,
+    val passBytes: Long = 0L,
+  )
+
+  data class InterfaceTraffic(
+    val iface: String = "",
+    val rxBytes: Long = 0L,
+    val rxPackets: Long = 0L,
+    val txBytes: Long = 0L,
+    val txPackets: Long = 0L,
+    val totalBytes: Long = 0L,
+  )
+
+  data class VpnTraffic(
+    val ownerProgram: String = "",
+    val profile: String = "",
+    val netid: Int = 0,
+    val tun: String = "",
+    val rxBytes: Long = 0L,
+    val rxPackets: Long = 0L,
+    val txBytes: Long = 0L,
+    val txPackets: Long = 0L,
+    val totalBytes: Long = 0L,
+    val uidRanges: List<String> = emptyList(),
+    val apps: List<VpnApp> = emptyList(),
+  )
+
+  data class VpnApp(
+    val uid: Int = 0,
+    val packageName: String? = null,
+    val packages: List<String> = emptyList(),
+  )
+
   /** Prebuilt strategy variant metadata (optional sha256 for quick matching). */
   data class StrategyVariant(
     val name: String,
@@ -152,6 +229,16 @@ object ApiModels {
       }
       else -> default
     }
+  }
+
+  private fun jsonStringList(obj: JSONObject?, key: String): List<String> {
+    val arr = obj?.optJSONArray(key) ?: return emptyList()
+    val out = ArrayList<String>(arr.length())
+    for (i in 0 until arr.length()) {
+      val value = arr.optString(i, "").trim()
+      if (value.isNotEmpty()) out += value
+    }
+    return out
   }
 
 
@@ -523,6 +610,112 @@ object ApiModels {
     }
     return AppAssignmentsState(lists = lists, proxyInfoPackages = proxyPkgs)
   }
+
+  fun parseTrafficReport(wrapper: JSONObject?): TrafficReport {
+    val data = wrapper?.optJSONObject("traffic") ?: wrapper ?: return TrafficReport()
+
+    val rulesArr = data.optJSONArray("rules") ?: JSONArray()
+    val rules = ArrayList<TrafficRuleCounter>(rulesArr.length())
+    for (i in 0 until rulesArr.length()) {
+      val o = rulesArr.optJSONObject(i) ?: continue
+      rules += TrafficRuleCounter(
+        family = o.optString("family", ""),
+        table = o.optString("table", ""),
+        chain = o.optString("chain", ""),
+        semantic = o.optString("semantic", ""),
+        target = o.optString("target", ""),
+        programId = o.optString("program_id", "").trim().takeIf { it.isNotEmpty() },
+        profile = o.optString("profile", "").trim().takeIf { it.isNotEmpty() },
+        slot = o.optString("slot", "").trim().takeIf { it.isNotEmpty() },
+        uidFile = o.optString("uid_file", "").trim().takeIf { it.isNotEmpty() },
+        uid = if (o.has("uid") && !o.isNull("uid")) o.optInt("uid") else null,
+        packageName = o.optString("package", "").trim().takeIf { it.isNotEmpty() },
+        packages = jsonStringList(o, "packages"),
+        proto = o.optString("proto", "").trim().takeIf { it.isNotEmpty() },
+        destPorts = jsonStringList(o, "dest_ports"),
+        redirectPort = if (o.has("redirect_port") && !o.isNull("redirect_port")) o.optInt("redirect_port") else null,
+        queue = if (o.has("queue") && !o.isNull("queue")) o.optInt("queue") else null,
+        packets = o.optLong("packets", 0L),
+        bytes = o.optLong("bytes", 0L),
+        active = o.optBoolean("active", false),
+        actionCounter = o.optBoolean("action_counter", false),
+        raw = o.optString("raw", ""),
+      )
+    }
+
+    val chainsArr = data.optJSONArray("chains") ?: JSONArray()
+    val chains = ArrayList<TrafficChainSummary>(chainsArr.length())
+    for (i in 0 until chainsArr.length()) {
+      val o = chainsArr.optJSONObject(i) ?: continue
+      chains += TrafficChainSummary(
+        family = o.optString("family", ""),
+        table = o.optString("table", ""),
+        chain = o.optString("chain", ""),
+        kind = o.optString("kind", ""),
+        ruleCount = o.optLong("rule_count", 0L),
+        actionPackets = o.optLong("action_packets", 0L),
+        actionBytes = o.optLong("action_bytes", 0L),
+        returnPackets = o.optLong("return_packets", 0L),
+        returnBytes = o.optLong("return_bytes", 0L),
+        passPackets = o.optLong("pass_packets", 0L),
+        passBytes = o.optLong("pass_bytes", 0L),
+      )
+    }
+
+    val ifacesArr = data.optJSONArray("interfaces") ?: JSONArray()
+    val interfaces = ArrayList<InterfaceTraffic>(ifacesArr.length())
+    for (i in 0 until ifacesArr.length()) {
+      val o = ifacesArr.optJSONObject(i) ?: continue
+      interfaces += InterfaceTraffic(
+        iface = o.optString("iface", ""),
+        rxBytes = o.optLong("rx_bytes", 0L),
+        rxPackets = o.optLong("rx_packets", 0L),
+        txBytes = o.optLong("tx_bytes", 0L),
+        txPackets = o.optLong("tx_packets", 0L),
+        totalBytes = o.optLong("total_bytes", 0L),
+      )
+    }
+
+    val vpnArr = data.optJSONArray("vpn") ?: JSONArray()
+    val vpn = ArrayList<VpnTraffic>(vpnArr.length())
+    for (i in 0 until vpnArr.length()) {
+      val o = vpnArr.optJSONObject(i) ?: continue
+      val appsArr = o.optJSONArray("apps") ?: JSONArray()
+      val apps = ArrayList<VpnApp>(appsArr.length())
+      for (j in 0 until appsArr.length()) {
+        val app = appsArr.optJSONObject(j) ?: continue
+        apps += VpnApp(
+          uid = app.optInt("uid", 0),
+          packageName = app.optString("package", "").trim().takeIf { it.isNotEmpty() },
+          packages = jsonStringList(app, "packages"),
+        )
+      }
+      vpn += VpnTraffic(
+        ownerProgram = o.optString("owner_program", ""),
+        profile = o.optString("profile", ""),
+        netid = o.optInt("netid", 0),
+        tun = o.optString("tun", ""),
+        rxBytes = o.optLong("rx_bytes", 0L),
+        rxPackets = o.optLong("rx_packets", 0L),
+        txBytes = o.optLong("tx_bytes", 0L),
+        txPackets = o.optLong("tx_packets", 0L),
+        totalBytes = o.optLong("total_bytes", 0L),
+        uidRanges = jsonStringList(o, "uid_ranges"),
+        apps = apps,
+      )
+    }
+
+    return TrafficReport(
+      updatedAtUnix = data.optLong("updated_at_unix", 0L),
+      source = data.optString("source", ""),
+      rules = rules,
+      chains = chains,
+      vpn = vpn,
+      interfaces = interfaces,
+      warnings = jsonStringList(data, "warnings"),
+    )
+  }
+
   fun parsePrograms(wrapper: JSONObject?): List<Program> {
     if (wrapper == null) return emptyList()
     if (!wrapper.optBoolean("ok", false)) return emptyList()

@@ -1571,6 +1571,24 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="analysis_tools_header_desc">Additional tools provided by the ZDT-D module. Here you can run useful diagnostics, network checks, and maintenance utilities.</string>
     <string name="analysis_tools_badge_basic">BASE</string>
 
+    <string name="construction_studio_title">Construction Studio</string>
+    <string name="construction_studio_short_desc">Visual graph of active app lists, routing rules, VPN paths and traffic counters.</string>
+    <string name="construction_studio_desc">Read-only runtime constructor: app lists, tools, rule counters, VPN interfaces and Internet path in one visual chain.</string>
+    <string name="construction_studio_rules">Rules</string>
+    <string name="construction_studio_active">Active</string>
+    <string name="construction_studio_refresh">Refresh traffic</string>
+    <string name="construction_studio_app_list">App list</string>
+    <string name="construction_studio_internet">Internet</string>
+    <string name="construction_studio_open_apps">Apps</string>
+    <string name="construction_studio_open_settings">Settings</string>
+    <string name="construction_studio_apps">apps</string>
+    <string name="construction_studio_active_now">ACTIVE</string>
+    <string name="construction_studio_idle">IDLE</string>
+    <string name="construction_studio_empty_title">No active graph yet</string>
+    <string name="construction_studio_empty_desc">Start ZDT-D or enable a profile with app routing, then refresh this screen.</string>
+    <string name="construction_studio_warnings">Traffic collector warnings</string>
+    <string name="construction_studio_no_apps">No per-app UID counters were found for this route yet.</string>
+
     <string name="dpi_detector_title">DPI Detector</string>
     <string name="dpi_detector_short_desc">Detects possible DPI blocking patterns and connection anomalies.</string>
     <string name="dpi_detector_desc">Native DPI diagnostics: DNS, DoH, TLS/SNI, HTTP/HTTPS, TCP 12-64 KB, whitelist SNI and Telegram checks.</string>

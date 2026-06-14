@@ -44,6 +44,7 @@ import com.android.zdtd.service.R
 
 @Composable
 fun AnalysisToolsScreen(
+  onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
   topContentPadding: Dp = 0.dp,
@@ -64,6 +65,16 @@ fun AnalysisToolsScreen(
   ) {
     item {
       AnalysisIntroCard(compact = compact)
+    }
+    item {
+      AnalysisToolCard(
+        title = stringResource(R.string.construction_studio_title),
+        subtitle = stringResource(R.string.construction_studio_short_desc),
+        badge = stringResource(R.string.analysis_tools_badge_advanced),
+        icon = Icons.Outlined.Speed,
+        accent = MaterialTheme.colorScheme.secondary,
+        onClick = onOpenConstructionStudio,
+      )
     }
     item {
       AnalysisToolCard(

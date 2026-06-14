@@ -2469,34 +2469,9 @@ jobs:
           elif gh release view "$STABLE_TAG" >/dev/null 2>&1; then
             STABLE_RELEASE_EXISTS=true
             STABLE_BODY="$(gh release view "$STABLE_TAG" --json body --jq '.body // ""')"
-            STABLE_PUBLISHED_VERSION_CODE="$(printf '%s\n' "$STABLE_BODY" | parse_version_code_from_body)"
-            STABLE_ASSET_EXISTS=false
-            if gh release view "$STABLE_TAG" --json assets --jq '.assets[].name' | grep -Fx 'app-release.apk' >/dev/null 2>&1; then
-              STABLE_ASSET_EXISTS=true
-            fi
-
-            if [[ -n "$STABLE_PUBLISHED_VERSION_CODE" && "$STABLE_PUBLISHED_VERSION_CODE" =~ ^[0-9]+$ ]]; then
-              if (( VERSION_CODE > STABLE_PUBLISHED_VERSION_CODE )); then
-                upload_asset_with_retry "$STABLE_TAG" "$STABLE_ASSET_SPEC" "app-release.apk"
-                STABLE_UPLOAD_MODE="$UPLOAD_MODE"
-                STABLE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
-                STABLE_ACTION="asset-updated"
-                STABLE_REASON="versionCode increased for existing ${STABLE_TAG}: ${STABLE_PUBLISHED_VERSION_CODE} -> ${VERSION_CODE}"
-              elif (( VERSION_CODE == STABLE_PUBLISHED_VERSION_CODE )) && [[ "$STABLE_ASSET_EXISTS" != "true" ]]; then
-                upload_asset_with_retry "$STABLE_TAG" "$STABLE_ASSET_SPEC" "app-release.apk"
-                STABLE_UPLOAD_MODE="$UPLOAD_MODE"
-                STABLE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
-                STABLE_ACTION="asset-restored"
-                STABLE_REASON="app-release.apk was missing in existing ${STABLE_TAG}; restored asset for versionCode ${VERSION_CODE}"
-              else
-                STABLE_ACTION="skipped"
-                STABLE_REASON="stable release preserved because current versionCode ${VERSION_CODE} is not greater than published ${STABLE_PUBLISHED_VERSION_CODE}"
-              fi
-            else
-              STABLE_ACTION="skipped"
-              STABLE_REASON="existing ${STABLE_TAG} release body does not contain a parseable version code"
-              echo "::warning::$STABLE_REASON. Stable asset sync skipped to avoid unsafe overwrite."
-            fi
+            STABLE_PUBLISHED_VERSION_CODE="$(printf '%s\n' "$STABLE_BODY" | parse_version_code_from_body || true)"
+            STABLE_ACTION="skipped"
+            STABLE_REASON="stable release ${STABLE_TAG} already exists for module.prop version ${VERSION_NAME}; service build was updated, stable release post and app-release.apk were preserved"
           else
             PREVIOUS_STABLE_TAG=""
             while IFS= read -r version; do

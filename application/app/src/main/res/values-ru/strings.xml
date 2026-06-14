@@ -1571,6 +1571,24 @@ APatch: 10700+</string>
     <string name="analysis_tools_header_desc">Дополнительные полезные инструменты, предоставляемые модулем ZDT-D. Здесь можно запускать функции диагностики, проверки сети и обслуживания.</string>
     <string name="analysis_tools_badge_basic">БАЗА</string>
 
+    <string name="construction_studio_title">Construction Studio</string>
+    <string name="construction_studio_short_desc">Визуальный граф активных списков приложений, правил маршрутизации, VPN-путей и счётчиков трафика.</string>
+    <string name="construction_studio_desc">Read-only конструктор runtime: списки приложений, инструменты, счётчики правил, VPN-интерфейсы и путь в интернет в одной визуальной цепочке.</string>
+    <string name="construction_studio_rules">Правила</string>
+    <string name="construction_studio_active">Активные</string>
+    <string name="construction_studio_refresh">Обновить трафик</string>
+    <string name="construction_studio_app_list">Список приложений</string>
+    <string name="construction_studio_internet">Интернет</string>
+    <string name="construction_studio_open_apps">Приложения</string>
+    <string name="construction_studio_open_settings">Настройки</string>
+    <string name="construction_studio_apps">прил.</string>
+    <string name="construction_studio_active_now">АКТИВНО</string>
+    <string name="construction_studio_idle">ПУСТО</string>
+    <string name="construction_studio_empty_title">Активный граф пока пуст</string>
+    <string name="construction_studio_empty_desc">Запустите ZDT-D или включите профиль с маршрутизацией приложений, затем обновите экран.</string>
+    <string name="construction_studio_warnings">Предупреждения сборщика трафика</string>
+    <string name="construction_studio_no_apps">Для этого маршрута пока не найдены UID-счётчики по приложениям.</string>
+
     <string name="dpi_detector_title">DPI Detector</string>
     <string name="dpi_detector_short_desc">Определяет возможные признаки DPI-блокировок и аномалии соединений.</string>
     <string name="dpi_detector_desc">Native DPI-диагностика: DNS, DoH, TLS/SNI, HTTP/HTTPS, TCP 12–64 КБ, whitelist SNI и проверки Telegram.</string>

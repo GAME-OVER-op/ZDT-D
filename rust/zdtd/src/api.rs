@@ -14,7 +14,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use crate::{api_status, daemon, daemon::SharedState, energy_saver, protector, settings, stats};
+use crate::{api_status, daemon, daemon::SharedState, energy_saver, protector, settings, stats, traffic_total};
 
 const MAX_HEADER: usize = 16 * 1024;
 // Allow uploading strategic files (including binaries). The API is local-only and authenticated,
@@ -5619,6 +5619,14 @@ match (method.as_str(), path.as_str()) {
                 });
             }
             write_json(stream, 200, value)
+        }
+
+        ("GET", "/api/traffic/rules") | ("GET", "/api/traffic/total") => {
+            let res = traffic_total::collect_rule_snapshot();
+            match res {
+                Ok(report) => write_json(stream, 200, json!({"ok": true, "traffic": report})),
+                Err(e) => write_json(stream, 200, json!({"ok": false, "error": format!("{e:#}")})),
+            }
         }
 
         ("GET", "/api/setting") => {

@@ -5247,6 +5247,14 @@ private fun shQuote(s: String): String {
     }
   }
 
+  override fun loadTrafficRules(onDone: (ApiModels.TrafficReport?) -> Unit) {
+    launchIO {
+      val report = runCatching { api.getTrafficRules() }.getOrNull()
+      if (report == null) log("ERR", "/api/traffic/rules: load failed")
+      withContext(Dispatchers.Main.immediate) { onDone(report) }
+    }
+  }
+
   override fun saveJsonData(path: String, obj: JSONObject, onDone: (Boolean) -> Unit) {
     launchIO {
       val ok = runCatching { api.putJsonData(path, obj) }.getOrDefault(false)

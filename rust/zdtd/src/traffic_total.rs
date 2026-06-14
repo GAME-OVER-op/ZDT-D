@@ -1,0 +1,809 @@
+use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fs,
+    path::Path,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+
+use crate::{settings, shell::{self, Capture}};
+
+const IPT_SAVE_TIMEOUT: Duration = Duration::from_secs(4);
+const PKG_LIST_TIMEOUT: Duration = Duration::from_secs(5);
+const PROC_NET_DEV: &str = "/proc/net/dev";
+const ROUTING_CACHE: &str = "/data/adb/modules/ZDT-D/working_folder/runtime_refresh/routing.json";
+const VPN_NETD_APPLIED: &str = "/data/adb/modules/ZDT-D/working_folder/vpn_netd/applied.json";
+
+/// Read-only, on-demand ZDT-D rule traffic collector.
+///
+/// This module is intentionally passive:
+/// - no background thread;
+/// - no periodic polling;
+/// - no iptables/netd/runtime mutations;
+/// - no counter reset (`iptables -Z` is never used).
+///
+/// The snapshot is collected only when the API endpoint requests it.  The main
+/// purpose is to show whether traffic actually matched a concrete ZDT-D rule
+/// (DNAT/NFQUEUE/DROP/REJECT/etc.) after the user assigns an app/profile.
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct TrafficRuleReport {
+    pub updated_at_unix: u64,
+    pub source: &'static str,
+    pub rules: Vec<TrafficRuleCounter>,
+    pub chains: Vec<TrafficChainSummary>,
+    pub vpn: Vec<VpnTraffic>,
+    pub interfaces: Vec<InterfaceTraffic>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct TrafficRuleCounter {
+    pub family: String,
+    pub table: String,
+    pub chain: String,
+    pub semantic: String,
+    pub target: String,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub program_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub slot: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uid_file: Option<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub packages: Vec<String>,
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proto: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dest_ports: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redirect_port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queue: Option<u16>,
+
+    pub packets: u64,
+    pub bytes: u64,
+    pub active: bool,
+    pub action_counter: bool,
+
+    pub raw_rule: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct TrafficChainSummary {
+    pub family: String,
+    pub table: String,
+    pub chain: String,
+    pub kind: String,
+    pub rule_count: u64,
+    pub action_packets: u64,
+    pub action_bytes: u64,
+    pub return_packets: u64,
+    pub return_bytes: u64,
+    pub pass_packets: u64,
+    pub pass_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct InterfaceTraffic {
+    pub iface: String,
+    pub rx_bytes: u64,
+    pub rx_packets: u64,
+    pub tx_bytes: u64,
+    pub tx_packets: u64,
+    pub total_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct VpnTraffic {
+    pub owner_program: String,
+    pub profile: String,
+    pub netid: u32,
+    pub tun: String,
+    pub rx_bytes: u64,
+    pub rx_packets: u64,
+    pub tx_bytes: u64,
+    pub tx_packets: u64,
+    pub total_bytes: u64,
+    #[serde(default)]
+    pub uid_ranges: Vec<String>,
+    #[serde(default)]
+    pub apps: Vec<VpnApp>,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct VpnApp {
+    pub uid: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub packages: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "kind")]
+enum RoutingSnapshot {
+    NfqV1 {
+        uid_file: String,
+        mode: String,
+        queue: u16,
+        iface: Option<String>,
+        filter: Option<serde_json::Value>,
+    },
+    NfqV2 {
+        uid_file: String,
+        port: u16,
+        filter: Option<serde_json::Value>,
+    },
+    Nat {
+        uid_file: String,
+        dest_port: u16,
+        proto_choice: String,
+        ifaces_raw: Option<String>,
+        port_preference: u8,
+        dpi_ports: String,
+    },
+}
+
+#[derive(Debug, Clone, Default)]
+struct RouteMeta {
+    kind: String,
+    program_id: Option<String>,
+    profile: Option<String>,
+    slot: Option<String>,
+    uid_file: Option<String>,
+    dest_port: Option<u16>,
+    queue: Option<u16>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct AppliedSnapshot {
+    #[serde(default)]
+    profiles: Vec<AppliedProfile>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+struct AppliedProfile {
+    owner_program: String,
+    profile: String,
+    netid: u32,
+    tun: String,
+    #[serde(default)]
+    uid_ranges: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+struct ParsedSaveRule {
+    family: String,
+    table: String,
+    chain: String,
+    packets: u64,
+    bytes: u64,
+    raw_rule: String,
+}
+
+/// Collect a single on-demand traffic snapshot for ZDT-D rules.
+pub fn collect_rule_snapshot() -> Result<TrafficRuleReport> {
+    let mut report = TrafficRuleReport {
+        updated_at_unix: now_unix(),
+        source: "on_demand",
+        ..Default::default()
+    };
+
+    let route_meta = load_route_meta(&mut report.warnings);
+    let uid_packages = load_uid_package_map(&mut report.warnings);
+    let uid_file_packages = load_uid_file_packages(&route_meta);
+    let interfaces = read_interfaces(&mut report.warnings);
+    report.vpn = read_vpn_traffic(&interfaces, &uid_packages, &uid_file_packages, &mut report.warnings);
+    report.interfaces = interfaces.into_values().collect();
+    report.interfaces.sort_by(|a, b| a.iface.cmp(&b.iface));
+
+    let mut parsed_rules = Vec::new();
+    for (family, cmd, tables) in [
+        ("ipv4", "iptables-save", &["nat", "mangle", "filter"][..]),
+        ("ipv6", "ip6tables-save", &["mangle", "filter"][..]),
+    ] {
+        for table in tables {
+            match run_iptables_save(cmd, table) {
+                Ok(out) => parsed_rules.extend(parse_iptables_save(family, table, &out)),
+                Err(e) => report.warnings.push(format!("{cmd} -t {table} failed: {e:#}")),
+            }
+        }
+    }
+
+    let mut chain_acc: BTreeMap<(String, String, String), ChainAccumulator> = BTreeMap::new();
+    for parsed in parsed_rules {
+        if !is_relevant_rule(&parsed) {
+            continue;
+        }
+        let counter = build_counter(parsed, &route_meta, &uid_packages, &uid_file_packages);
+        let key = (counter.family.clone(), counter.table.clone(), counter.chain.clone());
+        chain_acc.entry(key).or_default().add(&counter);
+        report.rules.push(counter);
+    }
+
+    report.rules.sort_by(|a, b| {
+        (&a.family, &a.table, &a.chain, &a.program_id, &a.profile, &a.uid, &a.proto, &a.target)
+            .cmp(&(&b.family, &b.table, &b.chain, &b.program_id, &b.profile, &b.uid, &b.proto, &b.target))
+    });
+
+    report.chains = chain_acc.into_iter().map(|((family, table, chain), acc)| {
+        TrafficChainSummary {
+            family,
+            table,
+            kind: classify_chain(&chain).to_string(),
+            chain,
+            rule_count: acc.rule_count,
+            action_packets: acc.action_packets,
+            action_bytes: acc.action_bytes,
+            return_packets: acc.return_packets,
+            return_bytes: acc.return_bytes,
+            pass_packets: acc.pass_packets,
+            pass_bytes: acc.pass_bytes,
+        }
+    }).collect();
+
+    Ok(report)
+}
+
+fn now_unix() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::from_secs(0))
+        .as_secs()
+}
+
+fn run_iptables_save(cmd: &str, table: &str) -> Result<String> {
+    let (rc, out) = shell::run_timeout(cmd, &["-c", "-t", table], Capture::Both, IPT_SAVE_TIMEOUT)?;
+    if rc != 0 {
+        anyhow::bail!("exit={rc}: {}", out.trim());
+    }
+    Ok(out)
+}
+
+fn parse_iptables_save(family: &str, table: &str, out: &str) -> Vec<ParsedSaveRule> {
+    let mut rules = Vec::new();
+    for line in out.lines().map(str::trim) {
+        if !line.starts_with('[') {
+            continue;
+        }
+        let Some(end) = line.find(']') else { continue; };
+        let Some((packets_s, bytes_s)) = line[1..end].split_once(':') else { continue; };
+        let Ok(packets) = packets_s.parse::<u64>() else { continue; };
+        let Ok(bytes) = bytes_s.parse::<u64>() else { continue; };
+        let rest = line[end + 1..].trim();
+        let Some(rest) = rest.strip_prefix("-A ") else { continue; };
+        let mut parts = rest.splitn(2, char::is_whitespace);
+        let Some(chain) = parts.next() else { continue; };
+        let raw_rule = parts.next().unwrap_or("").trim().to_string();
+        rules.push(ParsedSaveRule {
+            family: family.to_string(),
+            table: table.to_string(),
+            chain: chain.to_string(),
+            packets,
+            bytes,
+            raw_rule,
+        });
+    }
+    rules
+}
+
+fn is_relevant_rule(rule: &ParsedSaveRule) -> bool {
+    is_relevant_chain(&rule.chain) || rule.raw_rule.split_whitespace().any(is_relevant_target)
+}
+
+fn is_relevant_chain(chain: &str) -> bool {
+    chain == "MANGLE_APP"
+        || chain == "NAT_DPI"
+        || chain == "NAT_DPI_LOCAL"
+        || chain.starts_with("ZDT")
+}
+
+fn is_relevant_target(tok: &str) -> bool {
+    tok == "MANGLE_APP" || tok == "NAT_DPI" || tok == "NAT_DPI_LOCAL" || tok.starts_with("ZDT")
+}
+
+fn build_counter(
+    parsed: ParsedSaveRule,
+    route_meta: &HashMap<String, RouteMeta>,
+    uid_packages: &HashMap<u32, Vec<String>>,
+    uid_file_packages: &HashMap<String, HashMap<u32, Vec<String>>>,
+) -> TrafficRuleCounter {
+    let tokens: Vec<&str> = parsed.raw_rule.split_whitespace().collect();
+    let target = value_after(&tokens, "-j").unwrap_or("").to_string();
+    let proto = value_after(&tokens, "-p").map(str::to_string);
+    let uid = value_after(&tokens, "--uid-owner").and_then(parse_uid_owner);
+    let queue = value_after(&tokens, "--queue-num").and_then(|s| s.parse::<u16>().ok());
+    let dest_ports = parse_dest_ports(&tokens);
+    let redirect_port = parse_redirect_port(&tokens);
+    let semantic = classify_semantic(&parsed.chain, &target, &dest_ports, redirect_port, &tokens).to_string();
+    let action_counter = is_action_semantic(&semantic);
+
+    let mut meta = route_meta.get(&parsed.chain).cloned().unwrap_or_default();
+    if meta.program_id.is_none() {
+        meta = infer_builtin_meta(&parsed.chain, &target);
+    }
+
+    let packages = uid
+        .map(|u| packages_for_uid(u, &meta, uid_packages, uid_file_packages))
+        .unwrap_or_default();
+    let package = packages.first().cloned();
+
+    let note = match semantic.as_str() {
+        "nat_redirect" | "dns_redirect" => Some("rule counter shows traffic matched the NAT/redirect rule; it is not a full-flow app total".to_string()),
+        "chain_jump" => Some("jump/pass-through counter; do not sum as processed traffic".to_string()),
+        "chain_return" | "guard_return" => Some("return/pass-through counter; traffic was not processed by an action rule here".to_string()),
+        _ => None,
+    };
+
+    TrafficRuleCounter {
+        family: parsed.family,
+        table: parsed.table,
+        chain: parsed.chain,
+        semantic,
+        target,
+        program_id: meta.program_id,
+        profile: meta.profile,
+        slot: meta.slot,
+        uid_file: meta.uid_file,
+        uid,
+        package,
+        packages,
+        proto,
+        dest_ports,
+        redirect_port,
+        queue: queue.or(meta.queue),
+        packets: parsed.packets,
+        bytes: parsed.bytes,
+        active: parsed.packets > 0 || parsed.bytes > 0,
+        action_counter,
+        raw_rule: parsed.raw_rule,
+        note,
+    }
+}
+
+fn value_after<'a>(tokens: &[&'a str], key: &str) -> Option<&'a str> {
+    tokens.windows(2).find_map(|w| if w[0] == key { Some(w[1]) } else { None })
+}
+
+fn parse_uid_owner(s: &str) -> Option<u32> {
+    // Most ZDT-D rules use a single UID. If a future rule uses a range, expose
+    // the first UID as a best-effort key while keeping raw_rule for exact data.
+    let first = s.split('-').next().unwrap_or(s).trim();
+    first.parse::<u32>().ok().filter(|v| *v > 0)
+}
+
+fn parse_dest_ports(tokens: &[&str]) -> Vec<String> {
+    let mut out = Vec::new();
+    for key in ["--dports", "--dport", "--sports", "--sport"] {
+        if let Some(v) = value_after(tokens, key) {
+            for part in v.split(',') {
+                let p = part.trim();
+                if !p.is_empty() && !out.iter().any(|x| x == p) {
+                    out.push(p.to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
+fn parse_redirect_port(tokens: &[&str]) -> Option<u16> {
+    for key in ["--to-destination", "--to-ports", "--to"] {
+        if let Some(v) = value_after(tokens, key) {
+            if let Some(port) = v.rsplit(':').next().and_then(|p| p.parse::<u16>().ok()) {
+                return Some(port);
+            }
+            if let Ok(port) = v.parse::<u16>() {
+                return Some(port);
+            }
+        }
+    }
+    None
+}
+
+fn classify_semantic<'a>(chain: &str, target: &'a str, dest_ports: &[String], redirect_port: Option<u16>, tokens: &[&str]) -> &'a str {
+    match target {
+        "NFQUEUE" => "nfqueue",
+        "DNAT" | "REDIRECT" => {
+            let dns_ports = dest_ports.iter().any(|p| p == "53" || p.contains("53")) || redirect_port == Some(53) || redirect_port == Some(853) || redirect_port == Some(5353);
+            if chain == "NAT_DPI" && dns_ports { "dns_redirect" } else { "nat_redirect" }
+        }
+        "DROP" => "drop",
+        "REJECT" => "reject",
+        "MASQUERADE" => "masquerade",
+        "ACCEPT" => "accept",
+        "RETURN" => {
+            if tokens.iter().any(|t| *t == "-o" || *t == "-d") { "guard_return" } else { "chain_return" }
+        }
+        _ if is_relevant_target(target) => "chain_jump",
+        _ => "unknown",
+    }
+}
+
+fn is_action_semantic(s: &str) -> bool {
+    matches!(s, "nfqueue" | "nat_redirect" | "dns_redirect" | "drop" | "reject" | "masquerade" | "accept")
+}
+
+fn classify_chain(chain: &str) -> &'static str {
+    if chain.starts_with("ZDTN_") { "scoped_nat" }
+    else if chain.starts_with("ZDTM_") { "scoped_mangle" }
+    else if chain == "NAT_DPI" || chain == "NAT_DPI_LOCAL" { "base_nat" }
+    else if chain == "MANGLE_APP" { "base_mangle" }
+    else if chain.starts_with("ZDT_VPN_TETHER") { "vpn_tether" }
+    else if chain == "ZDT_BLOCKEDQUIC" { "blocked_quic" }
+    else if chain == "ZDT_PROXYINFO" { "proxyinfo" }
+    else { "zdt" }
+}
+
+#[derive(Default)]
+struct ChainAccumulator {
+    rule_count: u64,
+    action_packets: u64,
+    action_bytes: u64,
+    return_packets: u64,
+    return_bytes: u64,
+    pass_packets: u64,
+    pass_bytes: u64,
+}
+
+impl ChainAccumulator {
+    fn add(&mut self, c: &TrafficRuleCounter) {
+        self.rule_count += 1;
+        if c.action_counter {
+            self.action_packets = self.action_packets.saturating_add(c.packets);
+            self.action_bytes = self.action_bytes.saturating_add(c.bytes);
+        } else if c.semantic == "chain_return" || c.semantic == "guard_return" {
+            self.return_packets = self.return_packets.saturating_add(c.packets);
+            self.return_bytes = self.return_bytes.saturating_add(c.bytes);
+        } else {
+            self.pass_packets = self.pass_packets.saturating_add(c.packets);
+            self.pass_bytes = self.pass_bytes.saturating_add(c.bytes);
+        }
+    }
+}
+
+fn load_route_meta(warnings: &mut Vec<String>) -> HashMap<String, RouteMeta> {
+    let mut out = HashMap::new();
+    let raw = match fs::read_to_string(ROUTING_CACHE) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return out,
+        Err(e) => {
+            warnings.push(format!("read routing cache failed: {e}"));
+            return out;
+        }
+    };
+    let items = match serde_json::from_str::<Vec<RoutingSnapshot>>(&raw) {
+        Ok(v) => v,
+        Err(e) => {
+            warnings.push(format!("parse routing cache failed: {e}"));
+            return out;
+        }
+    };
+
+    for item in items {
+        match item {
+            RoutingSnapshot::NfqV1 { uid_file, mode, queue, iface, filter: _ } => {
+                let mut meta = meta_from_uid_file(&uid_file);
+                meta.kind = "nfqueue_v1".to_string();
+                meta.uid_file = Some(uid_file.clone());
+                meta.queue = Some(queue);
+                let scope = format!(
+                    "nfqueue:v1:mode={}:queue={}:iface={}:uid={}",
+                    mode,
+                    queue,
+                    iface.as_deref().unwrap_or(""),
+                    uid_file,
+                );
+                out.insert(scoped_mangle_chain_name(&scope), meta.clone());
+                out.insert(scoped_mangle_chain_name(&format!("{scope}:v6")), meta);
+            }
+            RoutingSnapshot::NfqV2 { uid_file, port, filter: _ } => {
+                let mut meta = meta_from_uid_file(&uid_file);
+                meta.kind = "nfqueue_v2".to_string();
+                meta.uid_file = Some(uid_file.clone());
+                meta.queue = Some(port);
+                let scope = format!("nfqueue:v2:queue={}:uid={}", port, uid_file);
+                out.insert(scoped_mangle_chain_name(&scope), meta.clone());
+                out.insert(scoped_mangle_chain_name(&format!("{scope}:v6")), meta);
+            }
+            RoutingSnapshot::Nat { uid_file, dest_port, proto_choice, ifaces_raw, port_preference, dpi_ports } => {
+                let mut meta = meta_from_uid_file(&uid_file);
+                meta.kind = "nat".to_string();
+                meta.uid_file = Some(uid_file.clone());
+                meta.dest_port = Some(dest_port);
+                let scope = format!(
+                    "nat:uid={}:dest={}:proto={}:ifaces={}:pref={}:ports={}",
+                    uid_file,
+                    dest_port,
+                    proto_choice_debug(&proto_choice),
+                    ifaces_raw.unwrap_or_default(),
+                    port_preference,
+                    dpi_ports,
+                );
+                out.insert(scoped_nat_chain_name(&scope), meta.clone());
+                out.insert(scoped_nat_chain_name(&format!("local:{scope}")), meta);
+            }
+        }
+    }
+    out
+}
+
+fn proto_choice_debug(s: &str) -> &'static str {
+    match s {
+        "udp" => "Udp",
+        "tcp_udp" => "TcpUdp",
+        _ => "Tcp",
+    }
+}
+
+fn scoped_mangle_chain_name(label: &str) -> String { scoped_hash_name("ZDTM", label) }
+fn scoped_nat_chain_name(label: &str) -> String { scoped_hash_name("ZDTN", label) }
+
+fn scoped_hash_name(prefix: &str, label: &str) -> String {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for b in label.as_bytes() {
+        hash ^= *b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{prefix}_{hash:016x}")
+}
+
+fn meta_from_uid_file(uid_file: &str) -> RouteMeta {
+    let mut meta = RouteMeta::default();
+    let path = Path::new(uid_file);
+    meta.slot = path.file_name().and_then(|s| s.to_str()).map(str::to_string);
+
+    let parts: Vec<String> = path.components()
+        .filter_map(|c| c.as_os_str().to_str().map(str::to_string))
+        .collect();
+    let Some(idx) = parts.iter().position(|p| p == "working_folder") else { return meta; };
+    let Some(program) = parts.get(idx + 1) else { return meta; };
+    meta.program_id = Some(program.clone());
+
+    if parts.get(idx + 2).map(String::as_str) == Some("profile") {
+        meta.profile = parts.get(idx + 3).cloned();
+    } else if parts.get(idx + 2).map(String::as_str) != Some("app") {
+        meta.profile = parts.get(idx + 2).cloned();
+    }
+    meta
+}
+
+fn infer_builtin_meta(chain: &str, target: &str) -> RouteMeta {
+    let mut meta = RouteMeta::default();
+    if chain == "ZDT_BLOCKEDQUIC" {
+        meta.kind = "blocked_quic".to_string();
+        meta.program_id = Some("blockedquic".to_string());
+        meta.slot = Some("common".to_string());
+    } else if chain == "ZDT_PROXYINFO" {
+        meta.kind = "proxyinfo".to_string();
+        meta.program_id = Some("proxyinfo".to_string());
+        meta.slot = Some("common".to_string());
+    } else if chain.starts_with("ZDT_VPN_TETHER") || target.contains("ZDT_VPN_TETHER") {
+        meta.kind = "vpn_tether".to_string();
+        meta.program_id = Some("vpn_tether".to_string());
+    }
+    meta
+}
+
+fn load_uid_file_packages(route_meta: &HashMap<String, RouteMeta>) -> HashMap<String, HashMap<u32, Vec<String>>> {
+    let mut out = HashMap::new();
+    for uid_file in route_meta.values().filter_map(|m| m.uid_file.as_deref()) {
+        if out.contains_key(uid_file) {
+            continue;
+        }
+        out.insert(uid_file.to_string(), read_uid_file_packages(uid_file));
+    }
+    out
+}
+
+fn read_uid_file_packages(uid_file: &str) -> HashMap<u32, Vec<String>> {
+    let mut out: HashMap<u32, Vec<String>> = HashMap::new();
+    let Ok(raw) = fs::read_to_string(uid_file) else { return out; };
+    for line in raw.lines() {
+        let s = line.trim();
+        if s.is_empty() || s.starts_with('#') {
+            continue;
+        }
+        let Some((pkg, uid_s)) = s.rsplit_once('=') else { continue; };
+        let Ok(uid) = uid_s.trim().parse::<u32>() else { continue; };
+        if uid == 0 {
+            continue;
+        }
+        let pkg = pkg.trim();
+        if pkg.is_empty() {
+            continue;
+        }
+        let list = out.entry(uid).or_default();
+        if !list.iter().any(|p| p == pkg) {
+            list.push(pkg.to_string());
+        }
+    }
+    out
+}
+
+fn load_uid_package_map(warnings: &mut Vec<String>) -> HashMap<u32, Vec<String>> {
+    let mut out: HashMap<u32, Vec<String>> = HashMap::new();
+    let cmd_out = shell::run_timeout(
+        "cmd",
+        &["package", "list", "packages", "-U"],
+        Capture::Stdout,
+        PKG_LIST_TIMEOUT,
+    ).ok()
+        .and_then(|(rc, s)| if rc == 0 && !s.trim().is_empty() { Some(s) } else { None })
+        .or_else(|| {
+            shell::run_timeout(
+                "pm",
+                &["list", "packages", "-U"],
+                Capture::Stdout,
+                PKG_LIST_TIMEOUT,
+            ).ok().and_then(|(rc, s)| if rc == 0 && !s.trim().is_empty() { Some(s) } else { None })
+        });
+
+    let Some(raw) = cmd_out else {
+        warnings.push("package UID map unavailable from cmd/pm".to_string());
+        return out;
+    };
+
+    for line in raw.lines() {
+        let mut pkg: Option<String> = None;
+        let mut uid: Option<u32> = None;
+        for tok in line.split_whitespace() {
+            if let Some(rest) = tok.strip_prefix("package:") {
+                if !rest.is_empty() {
+                    pkg = Some(rest.to_string());
+                }
+            } else if let Some(rest) = tok.strip_prefix("uid:") {
+                uid = rest.parse::<u32>().ok();
+            }
+        }
+        if let (Some(pkg), Some(uid)) = (pkg, uid) {
+            if uid > 0 {
+                let list = out.entry(uid).or_default();
+                if !list.iter().any(|p| p == &pkg) {
+                    list.push(pkg);
+                }
+            }
+        }
+    }
+    out
+}
+
+fn packages_for_uid(
+    uid: u32,
+    meta: &RouteMeta,
+    uid_packages: &HashMap<u32, Vec<String>>,
+    uid_file_packages: &HashMap<String, HashMap<u32, Vec<String>>>,
+) -> Vec<String> {
+    if let Some(uid_file) = meta.uid_file.as_deref() {
+        if let Some(by_uid) = uid_file_packages.get(uid_file) {
+            if let Some(pkgs) = by_uid.get(&uid) {
+                if !pkgs.is_empty() {
+                    return pkgs.clone();
+                }
+            }
+        }
+    }
+    uid_packages.get(&uid).cloned().unwrap_or_default()
+}
+
+fn read_interfaces(warnings: &mut Vec<String>) -> HashMap<String, InterfaceTraffic> {
+    let raw = match fs::read_to_string(PROC_NET_DEV) {
+        Ok(s) => s,
+        Err(e) => {
+            warnings.push(format!("read {PROC_NET_DEV} failed: {e}"));
+            return HashMap::new();
+        }
+    };
+    let mut out = HashMap::new();
+    for line in raw.lines() {
+        let Some((iface, rest)) = line.split_once(':') else { continue; };
+        let vals: Vec<&str> = rest.split_whitespace().collect();
+        if vals.len() < 16 {
+            continue;
+        }
+        let rx_bytes = vals[0].parse::<u64>().unwrap_or(0);
+        let rx_packets = vals[1].parse::<u64>().unwrap_or(0);
+        let tx_bytes = vals[8].parse::<u64>().unwrap_or(0);
+        let tx_packets = vals[9].parse::<u64>().unwrap_or(0);
+        let iface = iface.trim().to_string();
+        out.insert(iface.clone(), InterfaceTraffic {
+            iface,
+            rx_bytes,
+            rx_packets,
+            tx_bytes,
+            tx_packets,
+            total_bytes: rx_bytes.saturating_add(tx_bytes),
+        });
+    }
+    out
+}
+
+fn read_vpn_traffic(
+    interfaces: &HashMap<String, InterfaceTraffic>,
+    uid_packages: &HashMap<u32, Vec<String>>,
+    uid_file_packages: &HashMap<String, HashMap<u32, Vec<String>>>,
+    warnings: &mut Vec<String>,
+) -> Vec<VpnTraffic> {
+    let raw = match fs::read_to_string(VPN_NETD_APPLIED) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        Err(e) => {
+            warnings.push(format!("read vpn_netd applied snapshot failed: {e}"));
+            return Vec::new();
+        }
+    };
+    let snapshot = match serde_json::from_str::<AppliedSnapshot>(&raw) {
+        Ok(v) => v,
+        Err(e) => {
+            warnings.push(format!("parse vpn_netd applied snapshot failed: {e}"));
+            return Vec::new();
+        }
+    };
+
+    snapshot.profiles.into_iter().map(|p| {
+        let iface = interfaces.get(&p.tun).cloned().unwrap_or_else(|| InterfaceTraffic { iface: p.tun.clone(), ..Default::default() });
+        let apps = expand_uid_ranges(&p.uid_ranges)
+            .into_iter()
+            .map(|uid| {
+                let pkgs = uid_packages.get(&uid)
+                    .cloned()
+                    .or_else(|| uid_file_packages.values().find_map(|m| m.get(&uid).cloned()))
+                    .unwrap_or_default();
+                VpnApp { uid, package: pkgs.first().cloned(), packages: pkgs }
+            })
+            .collect();
+        VpnTraffic {
+            owner_program: p.owner_program,
+            profile: p.profile,
+            netid: p.netid,
+            tun: p.tun,
+            rx_bytes: iface.rx_bytes,
+            rx_packets: iface.rx_packets,
+            tx_bytes: iface.tx_bytes,
+            tx_packets: iface.tx_packets,
+            total_bytes: iface.total_bytes,
+            uid_ranges: p.uid_ranges,
+            apps,
+        }
+    }).collect()
+}
+
+fn expand_uid_ranges(ranges: &[String]) -> Vec<u32> {
+    let mut out = Vec::new();
+    for r in ranges {
+        if let Some((a, b)) = r.split_once('-') {
+            let Ok(start) = a.trim().parse::<u32>() else { continue; };
+            let Ok(end) = b.trim().parse::<u32>() else { continue; };
+            if start == 0 || end < start || end.saturating_sub(start) > 1024 {
+                continue;
+            }
+            for uid in start..=end {
+                out.push(uid);
+            }
+        } else if let Ok(uid) = r.trim().parse::<u32>() {
+            if uid > 0 {
+                out.push(uid);
+            }
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+#[allow(dead_code)]
+fn _module_dir() -> &'static str {
+    settings::MODULE_DIR
+}

@@ -57,6 +57,11 @@ class ApiClient(
     return ApiModels.parsePrograms(obj)
   }
 
+  fun getTrafficRules(): ApiModels.TrafficReport {
+    val obj = requestJson("GET", "/api/traffic/rules", null)
+    return ApiModels.parseTrafficReport(obj)
+  }
+
   fun setProgramEnabled(programId: String, enabled: Boolean): Boolean {
     val path = "/api/programs/${enc(programId)}/enabled"
     val body = JSONObject().put("enabled", enabled)

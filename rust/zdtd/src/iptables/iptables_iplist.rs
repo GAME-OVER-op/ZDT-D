@@ -1,3 +1,26 @@
+//! Legacy IP-list NFQUEUE helper.
+//!
+//! This module is currently **not used** by the active ZDT-D runtime.
+//! It is preserved as a Rust port of an older experimental routing idea where
+//! destination IP lists were matched in iptables and sent to an NFQUEUE queue.
+//!
+//! The implementation below is intentionally kept for historical context only.
+//! It is not integrated with the current scoped `MANGLE_APP` architecture used
+//! by active NFQUEUE routing (`iptables_v1` / `iptables_v2`). It also does not
+//! participate in runtime refresh snapshots, app-list conflict handling, or the
+//! current cleanup model.
+//!
+//! Do not wire this module into start/runtime paths without redesigning it first.
+//! IP-list routing, UID-based routing, `OUTPUT` vs `PREROUTING` scope, and
+//! local-port redirection have different iptables semantics and must not be
+//! mixed blindly. In particular, UID owner matching is only meaningful for local
+//! `OUTPUT` traffic, while IP-list matching can also affect broader traffic if
+//! placed in `PREROUTING`.
+//!
+//! If this idea is revived later, it should be rebuilt around explicit scope,
+//! scoped chains, clear cleanup, and a documented distinction between
+//! IP-list -> NFQUEUE and IP-list -> local-port redirect behavior.
+
 use anyhow::{Context, Result};
 use log::info;
 use std::{fs, path::Path, thread, time::Duration};

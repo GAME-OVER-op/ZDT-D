@@ -1,5 +1,6 @@
 package com.android.zdtd.service
 
+import com.android.zdtd.service.api.ApiModels
 import org.json.JSONObject
 
 /**
@@ -214,6 +215,7 @@ interface ZdtdActions {
 
   fun loadJsonData(path: String, onDone: (JSONObject?) -> Unit)
   fun saveJsonData(path: String, obj: JSONObject, onDone: (Boolean) -> Unit)
+  fun loadTrafficRules(onDone: (ApiModels.TrafficReport?) -> Unit)
 
   // ----- Strategic files (zapret / zapret2) -----
   /** List files in strategic/<dir>. dir: list | bin | lua */

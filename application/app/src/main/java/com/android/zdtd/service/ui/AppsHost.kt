@@ -37,6 +37,7 @@ fun AppsHost(
   onOpenProgram: (String) -> Unit,
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
+  onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
   actions: ZdtdActions,
@@ -57,6 +58,7 @@ fun AppsHost(
   fun AppsRoute.depth(): Int = when (this) {
     AppsRoute.List -> 0
     AppsRoute.AnalysisTools -> 1
+    AppsRoute.ConstructionStudio -> 2
     AppsRoute.DpiDetector -> 2
     AppsRoute.NfqwsTester -> 2
     is AppsRoute.Program -> 1
@@ -90,8 +92,17 @@ fun AppsHost(
         bottomContentPadding = bottomContentPadding,
       )
       AppsRoute.AnalysisTools -> AnalysisToolsScreen(
+        onOpenConstructionStudio = onOpenConstructionStudio,
         onOpenDpiDetector = onOpenDpiDetector,
         onOpenNfqwsTester = onOpenNfqwsTester,
+        topContentPadding = topContentPadding,
+        bottomContentPadding = bottomContentPadding,
+      )
+      AppsRoute.ConstructionStudio -> ConstructionStudioScreen(
+        programs = programs,
+        actions = actions,
+        onOpenProgram = onOpenProgram,
+        onOpenProfile = onOpenProfile,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
       )

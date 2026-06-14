@@ -22,6 +22,7 @@ mod settings;
 mod shell;
 mod stats;
 mod stop;
+mod traffic_total;
 mod vpn_netd;
 mod vpn_tether;
 mod xtables_lock;

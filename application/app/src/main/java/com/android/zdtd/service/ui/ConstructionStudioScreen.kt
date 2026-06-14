@@ -9,15 +9,20 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,7 +32,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.CallSplit
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Hub
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.VpnKey
@@ -43,6 +51,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -62,7 +71,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -108,6 +119,8 @@ private data class StudioNode(
   val active: Boolean,
   val kind: StudioNodeKind,
   val onClick: (() -> Unit)?,
+  val iconRes: Int? = null,
+  val warn: Boolean = false,
 )
 
 private data class StudioEdge(
@@ -143,6 +156,22 @@ fun ConstructionStudioScreen(
   // Canvas transform state: the entire map pans and zooms as one surface.
   var scale by remember { mutableStateOf(0.82f) }
   var pan by remember { mutableStateOf(Offset.Zero) }
+
+  // Per-card position overrides (user can drag cards); persisted so the layout
+  // is restored on next open instead of being rebuilt from scratch.
+  val density = LocalDensity.current
+  val context = LocalContext.current
+  val layoutPrefs = remember { context.getSharedPreferences("construction_studio_layout", android.content.Context.MODE_PRIVATE) }
+  val nodeOffsets = remember { mutableStateMapOf<String, Offset>() }
+  var showSearch by remember { mutableStateOf(false) }
+  LaunchedEffect(Unit) {
+    layoutPrefs.all.forEach { (key, value) ->
+      val parts = (value as? String)?.split(",")
+      val px = parts?.getOrNull(0)?.toFloatOrNull()
+      val py = parts?.getOrNull(1)?.toFloatOrNull()
+      if (px != null && py != null) nodeOffsets[key] = Offset(px, py)
+    }
+  }
 
   fun requestTraffic() {
     if (requestInFlight) return
@@ -206,7 +235,6 @@ fun ConstructionStudioScreen(
     },
   )
 
-  val nodeMap = remember(graph) { graph.nodes.associateBy { it.id } }
   val anyActive = graph.edges.any { it.active }
 
   // Animated dash phase makes active routes look like flowing traffic.
@@ -218,7 +246,7 @@ fun ConstructionStudioScreen(
     label = "phase",
   )
 
-  Box(
+  BoxWithConstraints(
     modifier = Modifier
       .fillMaxSize()
       .background(MaterialTheme.colorScheme.background)
@@ -230,6 +258,8 @@ fun ConstructionStudioScreen(
         }
       },
   ) {
+    val viewportW = constraints.maxWidth.toFloat()
+    val viewportH = constraints.maxHeight.toFloat()
     // The map: one transformed surface holding every node and edge.
     Box(
       modifier = Modifier
@@ -242,9 +272,32 @@ fun ConstructionStudioScreen(
         }
         .size(graph.width.dp, graph.height.dp),
     ) {
-      StudioEdgeCanvas(graph = graph, nodeMap = nodeMap, phase = phase)
-      graph.nodes.forEach { node ->
-        Box(modifier = Modifier.offset { IntOffset(node.x.dp.roundToPx(), node.y.dp.roundToPx()) }) {
+      // Apply user drag overrides to node positions so edges follow the cards.
+      val positionedNodes = graph.nodes.map { n ->
+        val o = nodeOffsets[n.id]
+        if (o != null) n.copy(x = n.x + o.x, y = n.y + o.y) else n
+      }
+      val positionedMap = positionedNodes.associateBy { it.id }
+      StudioEdgeCanvas(graph = graph, nodeMap = positionedMap, phase = phase)
+      positionedNodes.forEach { node ->
+        Box(
+          modifier = Modifier
+            .offset { IntOffset(node.x.dp.roundToPx(), node.y.dp.roundToPx()) }
+            .pointerInput(node.id) {
+              // Dragging a card moves only that card (not the whole canvas);
+              // consuming the gesture stops the parent pan/zoom from firing.
+              detectDragGestures(
+                onDragEnd = {
+                  val o = nodeOffsets[node.id]
+                  if (o != null) layoutPrefs.edit().putString(node.id, "${o.x},${o.y}").apply()
+                },
+              ) { change, dragAmount ->
+                change.consume()
+                val current = nodeOffsets[node.id] ?: Offset.Zero
+                nodeOffsets[node.id] = current + Offset(dragAmount.x.toDp().value, dragAmount.y.toDp().value)
+              }
+            },
+        ) {
           StudioGraphNode(node)
         }
       }
@@ -273,6 +326,23 @@ fun ConstructionStudioScreen(
       onZoomIn = { scale = (scale * 1.2f).coerceAtMost(2.6f) },
       onZoomOut = { scale = (scale / 1.2f).coerceAtLeast(0.4f) },
       onReset = { scale = 0.82f; pan = Offset.Zero },
+    )
+
+    // Search: open a list of cards and center the map on the chosen one.
+    StudioSearchControl(
+      modifier = Modifier
+        .align(Alignment.BottomStart)
+        .padding(start = 14.dp, bottom = bottomContentPadding + 18.dp),
+      expanded = showSearch,
+      nodes = graph.nodes.filter { it.kind != StudioNodeKind.INTERNET },
+      onToggle = { showSearch = !showSearch },
+      onPick = { node ->
+        val o = nodeOffsets[node.id] ?: Offset.Zero
+        val cx = with(density) { (node.x + o.x + node.w / 2f).dp.toPx() }
+        val cy = with(density) { (node.y + o.y + node.h / 2f).dp.toPx() }
+        pan = Offset(viewportW / 2f - cx * scale, viewportH / 2f - cy * scale)
+        showSearch = false
+      },
     )
 
     if (graph.nodes.all { it.kind == StudioNodeKind.INTERNET } && !loading && !report.busy && !report.preparing) {
@@ -342,8 +412,16 @@ private fun buildStudioGraph(
   val edges = mutableListOf<StudioEdge>()
   val backendColor = Color(0xFFF59E0B)
 
+  // Programs that actually route through t2s get a dedicated t2s card placed
+  // right after the app list (apps -> t2s -> program -> backends -> internet).
+  val t2sFronted = setOf("wireproxy", "myproxy", "operaproxy", "tor", "myprogram")
+  fun usesT2s(programId: String): Boolean = normalizeRouteProgramId(programId) in t2sFronted
+
   val hasAnyBackend = groups.any { g -> g.rules.any { it.backendPorts.isNotEmpty() } }
-  val internetCol = if (hasAnyBackend) 3 else 2
+  val hasT2s = groups.any { usesT2s(it.programId) }
+  val programCol = if (hasT2s) 2 else 1
+  val backendCol = programCol + 1
+  val internetCol = (if (hasAnyBackend) backendCol else programCol) + 1
   val internetX = colX(internetCol)
 
   var cursorY = MARGIN_TOP
@@ -367,6 +445,9 @@ private fun buildStudioGraph(
 
     val appId = "app:${group.key}"
     val progId = "prog:${group.key}"
+    val showT2s = usesT2s(group.programId)
+    val t2sId = "t2s:${group.key}"
+    val t2sColor = Color(0xFF06B6D4)
     nodes += StudioNode(
       id = appId,
       x = colX(0), y = rowTopY, w = NODE_W, h = NODE_H,
@@ -374,16 +455,35 @@ private fun buildStudioGraph(
       subtitle = if (appCount > 0) "$appCount $appsWord" else (group.uidFile ?: appListLabel),
       icon = Icons.Filled.Apps, accent = primary, active = active,
       kind = StudioNodeKind.APP, onClick = { onOpenGroupApps(group) },
+      warn = appCount == 0,
     )
+    if (showT2s) {
+      // t2s is the advanced hub: rules are pulled from here toward the program/backends.
+      val t2sPorts = group.rules.mapNotNull { it.redirectPort }.distinct().joinToString(",")
+      nodes += StudioNode(
+        id = t2sId,
+        x = colX(1), y = rowTopY, w = NODE_W, h = NODE_H,
+        title = "t2s",
+        subtitle = if (t2sPorts.isNotBlank()) "порт $t2sPorts • продвинутый узел" else "продвинутый узел",
+        icon = Icons.Filled.Hub, accent = t2sColor, active = active,
+        kind = StudioNodeKind.PROGRAM, onClick = { onOpenGroupSettings(group) },
+      )
+    }
     nodes += StudioNode(
       id = progId,
-      x = colX(1), y = rowTopY, w = NODE_W, h = NODE_H,
+      x = colX(programCol), y = rowTopY, w = NODE_W, h = NODE_H,
       title = programNodeTitle(programName(group.programId), group.profile),
       subtitle = ruleSummary(group.rules),
       icon = Icons.Filled.CallSplit, accent = accent, active = active,
       kind = StudioNodeKind.PROGRAM, onClick = { onOpenGroupSettings(group) },
+      iconRes = programIconRes(normalizeRouteProgramId(group.programId)),
     )
-    edges += StudioEdge(appId, progId, accent, active)
+    if (showT2s) {
+      edges += StudioEdge(appId, t2sId, t2sColor, active)
+      edges += StudioEdge(t2sId, progId, accent, active)
+    } else {
+      edges += StudioEdge(appId, progId, accent, active)
+    }
 
     if (backends.isEmpty()) {
       edges += StudioEdge(progId, "internet", tertiary, active)
@@ -393,7 +493,7 @@ private fun buildStudioGraph(
         val bId = "backend:${group.key}:${backend.port}"
         nodes += StudioNode(
           id = bId,
-          x = colX(2), y = by, w = BACKEND_W, h = BACKEND_H,
+          x = colX(backendCol), y = by, w = BACKEND_W, h = BACKEND_H,
           title = backend.label.ifBlank { "127.0.0.1:${backend.port}" },
           subtitle = listOfNotNull(backend.programId, backend.profile, backend.server)
             .joinToString(" / ").ifBlank { "backend ${backend.port}" },
@@ -430,7 +530,7 @@ private fun buildStudioGraph(
     )
     nodes += StudioNode(
       id = progId,
-      x = colX(1), y = rowTopY, w = NODE_W, h = NODE_H,
+      x = colX(programCol), y = rowTopY, w = NODE_W, h = NODE_H,
       title = "${programName(vpn.ownerProgram)} / ${vpn.profile}",
       subtitle = "netId ${vpn.netid} • ${vpn.tun} • ↓${formatBytes(vpn.rxBytes)} ↑${formatBytes(vpn.txBytes)}",
       icon = Icons.Filled.VpnKey, accent = vpnColor, active = active,
@@ -463,6 +563,7 @@ private fun StudioEdgeCanvas(
   nodeMap: Map<String, StudioNode>,
   phase: Float,
 ) {
+  val portRing = MaterialTheme.colorScheme.background
   Canvas(modifier = Modifier.size(graph.width.dp, graph.height.dp)) {
     graph.edges.forEach { edge ->
       val from = nodeMap[edge.fromId] ?: return@forEach
@@ -476,7 +577,9 @@ private fun StudioEdgeCanvas(
         moveTo(sx, sy)
         cubicTo(sx + dx, sy, ex - dx, ey, ex, ey)
       }
-      val color = edge.accent.copy(alpha = if (edge.active) 0.92f else 0.30f)
+      // Stopped (inactive) lines are grey and static; active lines flow in the route color.
+      val grey = Color(0xFF64748B)
+      val color = if (edge.active) edge.accent.copy(alpha = 0.92f) else grey.copy(alpha = 0.5f)
       val effect = if (edge.active) PathEffect.dashPathEffect(floatArrayOf(14f, 14f), -phase) else null
       drawPath(
         path = path,
@@ -487,6 +590,13 @@ private fun StudioEdgeCanvas(
           pathEffect = effect,
         ),
       )
+      // Connection ports: a small round bump where a line meets a card.
+      val portColor = if (edge.active) edge.accent else grey
+      val portRadius = if (edge.active) 7f else 6f
+      drawCircle(color = portRing, radius = portRadius + 2.5f, center = Offset(sx, sy))
+      drawCircle(color = portColor, radius = portRadius, center = Offset(sx, sy))
+      drawCircle(color = portRing, radius = portRadius + 2.5f, center = Offset(ex, ey))
+      drawCircle(color = portColor, radius = portRadius, center = Offset(ex, ey))
     }
   }
 }
@@ -506,13 +616,21 @@ private fun StudioGraphNode(node: StudioNode) {
       horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
       Surface(shape = RoundedCornerShape(14.dp), color = node.accent.copy(alpha = 0.16f), contentColor = node.accent) {
-        Icon(node.icon, contentDescription = null, modifier = Modifier.padding(8.dp).size(20.dp))
+        if (node.iconRes != null) {
+          Icon(painterResource(node.iconRes), contentDescription = null, modifier = Modifier.padding(8.dp).size(20.dp), tint = Color.Unspecified)
+        } else {
+          Icon(node.icon, contentDescription = null, modifier = Modifier.padding(8.dp).size(20.dp))
+        }
       }
       Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Text(node.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(node.subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), maxLines = 2, overflow = TextOverflow.Ellipsis)
       }
-      if (node.active) {
+      if (node.warn) {
+        Box(Modifier.size(18.dp).clip(CircleShape).background(Color(0xFFF59E0B)), contentAlignment = Alignment.Center) {
+          Text("!", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.Black)
+        }
+      } else if (node.active) {
         Box(Modifier.size(9.dp).clip(CircleShape).background(node.accent))
       }
     }
@@ -631,6 +749,71 @@ private fun StudioZoomButton(symbol: String, onClick: () -> Unit) {
   ) {
     Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
       Text(symbol, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+    }
+  }
+}
+
+@Composable
+private fun StudioSearchControl(
+  modifier: Modifier,
+  expanded: Boolean,
+  nodes: List<StudioNode>,
+  onToggle: () -> Unit,
+  onPick: (StudioNode) -> Unit,
+) {
+  Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    if (expanded) {
+      Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+        modifier = Modifier.widthIn(max = 280.dp),
+      ) {
+        Column(
+          Modifier.padding(8.dp).heightIn(max = 280.dp).verticalScroll(rememberScrollState()),
+          verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+          if (nodes.isEmpty()) {
+            Text(
+              "Нет карточек",
+              modifier = Modifier.padding(8.dp),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            )
+          } else {
+            nodes.forEach { node ->
+              Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Color.Transparent,
+                onClick = { onPick(node) },
+                modifier = Modifier.fillMaxWidth(),
+              ) {
+                Row(
+                  Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                  Box(Modifier.size(8.dp).clip(CircleShape).background(node.accent))
+                  Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                    Text(node.title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(node.subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    Surface(
+      shape = CircleShape,
+      color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+      border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)),
+      onClick = onToggle,
+    ) {
+      Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+        Icon(if (expanded) Icons.Filled.Close else Icons.Filled.Search, contentDescription = null)
+      }
     }
   }
 }

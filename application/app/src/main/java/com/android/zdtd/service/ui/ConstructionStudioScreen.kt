@@ -534,7 +534,7 @@ private fun programNodeTitle(programName: String, profile: String?): String {
   return if (profile.isNullOrBlank()) programName else "$programName / $profile"
 }
 
-private fun ruleSummary(rules: List<ApiModels.TrafficRuleCounter): String {
+private fun ruleSummary(rules: List<ApiModels.TrafficRuleCounter>): String {
   val parts = rules.groupBy { it.semantic }.map { (semantic, rs) ->
     "$semantic ${formatPackets(rs.sumOf { it.packets })} / ${formatBytes(rs.sumOf { it.bytes })}"
   }

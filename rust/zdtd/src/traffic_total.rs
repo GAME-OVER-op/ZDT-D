@@ -332,8 +332,14 @@ fn run_iptables_save(cmd: &str, table: &str) -> Result<String> {
 
 fn looks_like_wait_unsupported(out: &str) -> bool {
     let s = out.to_ascii_lowercase();
-    (s.contains("unknown option") || s.contains("unrecognized option") || s.contains("invalid option"))
-        && (s.contains("-w") || s.contains("wait"))
+    // Android/busybox iptables-save may print either "invalid option -- w"
+    // or a shorter "unknown option" without echoing "-w" back.  In this
+    // helper the only extra option we add before the known-good fallback is
+    // `-w`, so any option-parser failure means we should retry without it.
+    s.contains("unknown option")
+        || s.contains("unrecognized option")
+        || s.contains("invalid option")
+        || s.contains("illegal option")
 }
 
 fn parse_iptables_save(family: &str, table: &str, out: &str) -> Vec<ParsedSaveRule> {

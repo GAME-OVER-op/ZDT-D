@@ -9,6 +9,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -122,6 +123,10 @@ private data class StudioNode(
   val onClick: (() -> Unit)?,
   val iconRes: Int? = null,
   val warn: Boolean = false,
+  // When set, the card shows a tappable output port. Tapping it (or, for hub
+  // cards like t2s, the whole card) opens the "direct connection" picker
+  // instead of requiring a drag gesture.
+  val onPort: (() -> Unit)? = null,
 )
 
 private data class StudioEdge(
@@ -165,6 +170,8 @@ fun ConstructionStudioScreen(
   val layoutPrefs = remember { context.getSharedPreferences("construction_studio_layout", android.content.Context.MODE_PRIVATE) }
   val nodeOffsets = remember { mutableStateMapOf<String, Offset>() }
   var showSearch by remember { mutableStateOf(false) }
+  // Id of the card whose output port was tapped; drives the "direct connection" picker.
+  var connectFromId by remember { mutableStateOf<String?>(null) }
   LaunchedEffect(Unit) {
     layoutPrefs.all.forEach { (key, value) ->
       val parts = (value as? String)?.split(",")
@@ -234,6 +241,7 @@ fun ConstructionStudioScreen(
       val routeProgramId = normalizeRouteProgramId(vpn.ownerProgram)
       if (vpn.profile.isNotBlank()) onOpenProfile(routeProgramId, vpn.profile) else onOpenProgram(routeProgramId)
     },
+    onConnectFrom = { connectFromId = it },
   )
 
   val anyActive = graph.edges.any { it.active }
@@ -350,6 +358,16 @@ fun ConstructionStudioScreen(
       StudioEmptyOverlay(modifier = Modifier.align(Alignment.Center))
     }
 
+    val connectFrom = connectFromId?.let { id -> graph.nodes.find { it.id == id } }
+    if (connectFrom != null) {
+      StudioConnectSheet(
+        from = connectFrom,
+        targets = graph.nodes.filter { it.id != connectFrom.id && it.kind != StudioNodeKind.APP },
+        onDismiss = { connectFromId = null },
+        onPick = { connectFromId = null },
+      )
+    }
+
     if (showWarnings && report.warnings.isNotEmpty()) {
       StudioWarningsOverlay(
         warnings = report.warnings,
@@ -408,6 +426,7 @@ private fun buildStudioGraph(
   onOpenGroupSettings: (StudioAppGroup) -> Unit,
   onOpenVpnApps: (ApiModels.VpnTraffic) -> Unit,
   onOpenVpnSettings: (ApiModels.VpnTraffic) -> Unit,
+  onConnectFrom: (String) -> Unit,
 ): StudioGraph {
   val nodes = mutableListOf<StudioNode>()
   val edges = mutableListOf<StudioEdge>()
@@ -467,7 +486,11 @@ private fun buildStudioGraph(
         title = "t2s",
         subtitle = if (t2sPorts.isNotBlank()) "порт $t2sPorts • продвинутый узел" else "продвинутый узел",
         icon = Icons.Filled.Hub, accent = t2sColor, active = active,
-        kind = StudioNodeKind.PROGRAM, onClick = { onOpenGroupSettings(group) },
+        // t2s is a routing hub, not a program: tapping it (or its port) opens the
+        // "where to direct the connection" picker. It must NOT open program
+        // settings — only the program card does that.
+        kind = StudioNodeKind.PROGRAM, onClick = { onConnectFrom(t2sId) },
+        onPort = { onConnectFrom(t2sId) },
       )
     }
     nodes += StudioNode(
@@ -640,10 +663,84 @@ private fun StudioGraphNode(node: StudioNode) {
       }
     }
   }
-  if (node.onClick != null) {
-    Surface(modifier = Modifier.size(node.w.dp, node.h.dp), shape = shape, color = container, border = border, onClick = node.onClick) { body() }
-  } else {
-    Surface(modifier = Modifier.size(node.w.dp, node.h.dp), shape = shape, color = container, border = border) { body() }
+  Box(modifier = Modifier.size(node.w.dp, node.h.dp)) {
+    if (node.onClick != null) {
+      Surface(modifier = Modifier.fillMaxSize(), shape = shape, color = container, border = border, onClick = node.onClick) { body() }
+    } else {
+      Surface(modifier = Modifier.fillMaxSize(), shape = shape, color = container, border = border) { body() }
+    }
+    if (node.onPort != null) {
+      // Tappable output port (replaces drag-to-connect); sits on the right edge.
+      Box(
+        modifier = Modifier
+          .align(Alignment.CenterEnd)
+          .offset(x = 11.dp)
+          .size(22.dp)
+          .clip(CircleShape)
+          .background(MaterialTheme.colorScheme.surface)
+          .clickable(onClick = node.onPort),
+        contentAlignment = Alignment.Center,
+      ) {
+        Box(Modifier.size(15.dp).clip(CircleShape).background(node.accent))
+      }
+    }
+  }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StudioConnectSheet(
+  from: StudioNode,
+  targets: List<StudioNode>,
+  onDismiss: () -> Unit,
+  onPick: (StudioNode) -> Unit,
+) {
+  val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+  ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 18.dp)
+        .padding(bottom = 24.dp)
+        .verticalScroll(rememberScrollState()),
+      verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      Text("Куда направить от «${from.title}»", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+      Text(
+        "Выбери карточку-получателя. В одну программу можно направить несколько соединений.",
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+      )
+      if (targets.isEmpty()) {
+        Text("Нет доступных целей", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+      }
+      targets.forEach { target ->
+        Surface(
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(14.dp),
+          color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+          onClick = { onPick(target) },
+        ) {
+          Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+          ) {
+            Surface(shape = RoundedCornerShape(12.dp), color = target.accent.copy(alpha = 0.16f), contentColor = target.accent) {
+              if (target.iconRes != null) {
+                Icon(painterResource(target.iconRes), contentDescription = null, modifier = Modifier.padding(7.dp).size(18.dp), tint = target.accent)
+              } else {
+                Icon(target.icon, contentDescription = null, modifier = Modifier.padding(7.dp).size(18.dp))
+              }
+            }
+            Column(Modifier.weight(1f)) {
+              Text(target.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+              Text(target.subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+          }
+        }
+      }
+    }
   }
 }
 

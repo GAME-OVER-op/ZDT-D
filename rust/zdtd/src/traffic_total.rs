@@ -410,6 +410,7 @@ fn build_counter(
         "chain_return" | "guard_return" => Some("return/pass-through counter; traffic was not processed by an action rule here".to_string()),
         _ => None,
     };
+    let backend_ports = resolve_backend_ports(&meta);
 
     TrafficRuleCounter {
         family: parsed.family,
@@ -428,7 +429,7 @@ fn build_counter(
         dest_ports,
         redirect_port,
         queue: queue.or(meta.queue),
-        backend_ports: resolve_backend_ports(&meta),
+        backend_ports,
         packets: parsed.packets,
         bytes: parsed.bytes,
         active: parsed.packets > 0 || parsed.bytes > 0,
@@ -1052,7 +1053,3 @@ fn expand_uid_ranges(ranges: &[String]) -> Vec<u32> {
     out
 }
 
-#[allow(dead_code)]
-fn _module_dir() -> &'static str {
-    settings::MODULE_DIR
-}

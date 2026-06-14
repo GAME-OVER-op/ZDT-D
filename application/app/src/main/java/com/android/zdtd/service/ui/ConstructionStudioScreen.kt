@@ -1,24 +1,27 @@
 package com.android.zdtd.service.ui
 
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -27,15 +30,13 @@ import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timeline
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.filled.VpnKey
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -48,14 +49,25 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
@@ -64,6 +76,14 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlin.math.max
 
+// ---------------------------------------------------------------------------
+// Construction Studio is a single living canvas (pan + zoom), not a list of
+// cards.  Traffic routes are laid out as a left-to-right dependency graph:
+//   app-list -> program/rule -> [t2s backend split] -> internet
+// The whole map moves and scales as one surface, similar to the GitHub Actions
+// workflow visualization.
+// ---------------------------------------------------------------------------
+
 private data class StudioAppGroup(
   val key: String,
   val programId: String,
@@ -71,6 +91,37 @@ private data class StudioAppGroup(
   val slot: String?,
   val uidFile: String?,
   val rules: List<ApiModels.TrafficRuleCounter>,
+)
+
+private enum class StudioNodeKind { APP, PROGRAM, BACKEND, VPN, INTERNET }
+
+private data class StudioNode(
+  val id: String,
+  val x: Float,
+  val y: Float,
+  val w: Float,
+  val h: Float,
+  val title: String,
+  val subtitle: String,
+  val icon: ImageVector,
+  val accent: Color,
+  val active: Boolean,
+  val kind: StudioNodeKind,
+  val onClick: (() -> Unit)?,
+)
+
+private data class StudioEdge(
+  val fromId: String,
+  val toId: String,
+  val accent: Color,
+  val active: Boolean,
+)
+
+private data class StudioGraph(
+  val nodes: List<StudioNode>,
+  val edges: List<StudioEdge>,
+  val width: Float,
+  val height: Float,
 )
 
 @Composable
@@ -87,7 +138,11 @@ fun ConstructionStudioScreen(
   var report by remember { mutableStateOf(ApiModels.TrafficReport()) }
   var selectedGroup by remember { mutableStateOf<StudioAppGroup?>(null) }
   var selectedVpn by remember { mutableStateOf<ApiModels.VpnTraffic?>(null) }
-  val compact = rememberIsCompactWidth()
+  var showWarnings by remember { mutableStateOf(false) }
+
+  // Canvas transform state: the entire map pans and zooms as one surface.
+  var scale by remember { mutableStateOf(0.82f) }
+  var pan by remember { mutableStateOf(Offset.Zero) }
 
   fun requestTraffic() {
     if (requestInFlight) return
@@ -95,7 +150,7 @@ fun ConstructionStudioScreen(
     loading = true
     actions.loadTrafficRules { loaded ->
       if (loaded != null) {
-        // Busy/preparing keeps the last good graph visible and only updates the header state.
+        // Busy/preparing keeps the last good graph visible and only updates header state.
         report = if ((loaded.busy || loaded.preparing) && report.updatedAtUnix > 0L) {
           report.copy(ok = loaded.ok, busy = true, preparing = true, message = loaded.message, error = loaded.error)
         } else {
@@ -121,56 +176,117 @@ fun ConstructionStudioScreen(
   val groups = remember(visibleRules) { buildStudioGroups(visibleRules) }
   val vpnItems = remember(report) { report.vpn.filter { it.tun.isNotBlank() } }
 
-  LazyColumn(
-    modifier = Modifier.fillMaxSize(),
-    contentPadding = PaddingValues(
-      start = if (compact) 10.dp else 12.dp,
-      end = if (compact) 10.dp else 12.dp,
-      top = topContentPadding + 10.dp,
-      bottom = bottomContentPadding + 16.dp,
-    ),
-    verticalArrangement = Arrangement.spacedBy(10.dp),
+  val primary = MaterialTheme.colorScheme.primary
+  val tertiary = MaterialTheme.colorScheme.tertiary
+  val vpnColor = Color(0xFF22C55E)
+  val appListLabel = stringResource(R.string.construction_studio_app_list)
+  val internetLabel = stringResource(R.string.construction_studio_internet)
+  val appsWord = stringResource(R.string.construction_studio_apps)
+
+  val graph = buildStudioGraph(
+    groups = groups,
+    vpnItems = vpnItems,
+    appListLabel = appListLabel,
+    internetLabel = internetLabel,
+    appsWord = appsWord,
+    primary = primary,
+    tertiary = tertiary,
+    vpnColor = vpnColor,
+    programName = { id -> displayProgramName(programs, id) },
+    onOpenGroupApps = { selectedGroup = it },
+    onOpenGroupSettings = { group ->
+      val routeProgramId = normalizeRouteProgramId(group.programId)
+      val profile = group.profile
+      if (!profile.isNullOrBlank()) onOpenProfile(routeProgramId, profile) else onOpenProgram(routeProgramId)
+    },
+    onOpenVpnApps = { selectedVpn = it },
+    onOpenVpnSettings = { vpn ->
+      val routeProgramId = normalizeRouteProgramId(vpn.ownerProgram)
+      if (vpn.profile.isNotBlank()) onOpenProfile(routeProgramId, vpn.profile) else onOpenProgram(routeProgramId)
+    },
+  )
+
+  val nodeMap = remember(graph) { graph.nodes.associateBy { it.id } }
+  val anyActive = graph.edges.any { it.active }
+
+  // Animated dash phase makes active routes look like flowing traffic.
+  val flow = rememberInfiniteTransition(label = "flow")
+  val phase by flow.animateFloat(
+    initialValue = 0f,
+    targetValue = 28f,
+    animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart),
+    label = "phase",
+  )
+
+  Box(
+    modifier = Modifier
+      .fillMaxSize()
+      .background(MaterialTheme.colorScheme.background)
+      .clipToBounds()
+      .pointerInput(Unit) {
+        detectTransformGestures { _, panChange, zoomChange, _ ->
+          scale = (scale * zoomChange).coerceIn(0.4f, 2.6f)
+          pan += panChange
+        }
+      },
   ) {
-    item {
-      StudioHeaderCard(
-        loading = loading,
-        report = report,
-        activeRules = activeRules,
-        actionRules = visibleRules.size,
+    // The map: one transformed surface holding every node and edge.
+    Box(
+      modifier = Modifier
+        .graphicsLayer {
+          scaleX = scale
+          scaleY = scale
+          translationX = pan.x
+          translationY = pan.y
+          transformOrigin = TransformOrigin(0f, 0f)
+        }
+        .size(graph.width.dp, graph.height.dp),
+    ) {
+      StudioEdgeCanvas(graph = graph, nodeMap = nodeMap, phase = phase)
+      graph.nodes.forEach { node ->
+        Box(modifier = Modifier.offset { IntOffset(node.x.dp.roundToPx(), node.y.dp.roundToPx()) }) {
+          StudioGraphNode(node)
+        }
+      }
+    }
+
+    // Floating status bar (overlay, not part of the map).
+    StudioTopBar(
+      modifier = Modifier
+        .align(Alignment.TopCenter)
+        .padding(top = topContentPadding + 10.dp, start = 12.dp, end = 12.dp)
+        .fillMaxWidth(),
+      report = report,
+      loading = loading,
+      activeRules = activeRules,
+      totalRules = visibleRules.size,
+      vpnCount = report.vpn.size,
+      warningCount = report.warnings.size,
+      onToggleWarnings = { showWarnings = !showWarnings },
+    )
+
+    // Zoom / reset controls (overlay).
+    StudioZoomControls(
+      modifier = Modifier
+        .align(Alignment.BottomEnd)
+        .padding(end = 14.dp, bottom = bottomContentPadding + 18.dp),
+      onZoomIn = { scale = (scale * 1.2f).coerceAtMost(2.6f) },
+      onZoomOut = { scale = (scale / 1.2f).coerceAtLeast(0.4f) },
+      onReset = { scale = 0.82f; pan = Offset.Zero },
+    )
+
+    if (graph.nodes.all { it.kind == StudioNodeKind.INTERNET } && !loading && !report.busy && !report.preparing) {
+      StudioEmptyOverlay(modifier = Modifier.align(Alignment.Center))
+    }
+
+    if (showWarnings && report.warnings.isNotEmpty()) {
+      StudioWarningsOverlay(
+        warnings = report.warnings,
+        modifier = Modifier
+          .align(Alignment.BottomStart)
+          .padding(start = 12.dp, end = 12.dp, bottom = bottomContentPadding + 18.dp),
+        onClose = { showWarnings = false },
       )
-    }
-
-    if (groups.isEmpty() && vpnItems.isEmpty() && !loading && !report.busy && !report.preparing) {
-      item { EmptyStudioCard() }
-    }
-
-    items(groups, key = { it.key }) { group ->
-      StudioRouteGraphCard(
-        group = group,
-        programName = displayProgramName(programs, group.programId),
-        onOpenApps = { selectedGroup = group },
-        onOpenSettings = {
-          val routeProgramId = normalizeRouteProgramId(group.programId)
-          val profile = group.profile
-          if (!profile.isNullOrBlank()) onOpenProfile(routeProgramId, profile) else onOpenProgram(routeProgramId)
-        },
-      )
-    }
-
-    items(vpnItems, key = { "vpn:${it.ownerProgram}:${it.profile}:${it.tun}" }) { vpn ->
-      VpnStudioGraphCard(
-        vpn = vpn,
-        programName = displayProgramName(programs, vpn.ownerProgram),
-        onOpenApps = { selectedVpn = vpn },
-        onOpenSettings = {
-          val routeProgramId = normalizeRouteProgramId(vpn.ownerProgram)
-          if (vpn.profile.isNotBlank()) onOpenProfile(routeProgramId, vpn.profile) else onOpenProgram(routeProgramId)
-        },
-      )
-    }
-
-    if (report.warnings.isNotEmpty()) {
-      item { WarningsCard(report.warnings) }
     }
   }
 
@@ -190,269 +306,344 @@ fun ConstructionStudioScreen(
   }
 }
 
-@Composable
-private fun StudioHeaderCard(
-  loading: Boolean,
-  report: ApiModels.TrafficReport,
-  activeRules: Int,
-  actionRules: Int,
-) {
-  val busy = report.busy || report.preparing
-  Card(
-    modifier = Modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(26.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
-  ) {
-    Column(
-      modifier = Modifier
-        .fillMaxWidth()
-        .background(
-          Brush.linearGradient(
-            listOf(
-              MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-              Color.Transparent,
-              MaterialTheme.colorScheme.tertiary.copy(alpha = 0.10f),
-            ),
-          ),
+// ---------------------------------------------------------------------------
+// Layout: turn traffic routes into absolute node/edge coordinates (in dp).
+// ---------------------------------------------------------------------------
+
+private const val NODE_W = 204f
+private const val NODE_H = 96f
+private const val BACKEND_W = 188f
+private const val BACKEND_H = 70f
+private const val BACKEND_GAP = 12f
+private const val COL_STEP = 312f
+private const val BAND_GAP = 34f
+private const val MARGIN_X = 28f
+private const val MARGIN_TOP = 118f
+private const val MARGIN_BOTTOM = 48f
+
+private fun colX(index: Int): Float = MARGIN_X + index * COL_STEP
+
+private fun buildStudioGraph(
+  groups: List<StudioAppGroup>,
+  vpnItems: List<ApiModels.VpnTraffic>,
+  appListLabel: String,
+  internetLabel: String,
+  appsWord: String,
+  primary: Color,
+  tertiary: Color,
+  vpnColor: Color,
+  programName: (String) -> String,
+  onOpenGroupApps: (StudioAppGroup) -> Unit,
+  onOpenGroupSettings: (StudioAppGroup) -> Unit,
+  onOpenVpnApps: (ApiModels.VpnTraffic) -> Unit,
+  onOpenVpnSettings: (ApiModels.VpnTraffic) -> Unit,
+): StudioGraph {
+  val nodes = mutableListOf<StudioNode>()
+  val edges = mutableListOf<StudioEdge>()
+  val backendColor = Color(0xFFF59E0B)
+
+  val hasAnyBackend = groups.any { g -> g.rules.any { it.backendPorts.isNotEmpty() } }
+  val internetCol = if (hasAnyBackend) 3 else 2
+  val internetX = colX(internetCol)
+
+  var cursorY = MARGIN_TOP
+  var totalBytes = 0L
+  var anyActive = false
+
+  groups.forEach { group ->
+    val backends = group.rules.flatMap { it.backendPorts }.distinctBy { it.port }.take(6)
+    val active = group.rules.any { it.active }
+    if (active) anyActive = true
+    val bytes = group.rules.sumOf { it.bytes }
+    val packets = group.rules.sumOf { it.packets }
+    totalBytes += bytes
+    val appCount = group.rules.mapNotNull { it.uid }.distinct().size
+    val accent = semanticAccent(group.rules.firstOrNull()?.semantic.orEmpty())
+
+    val backendsHeight = if (backends.isEmpty()) 0f else backends.size * BACKEND_H + (backends.size - 1) * BACKEND_GAP
+    val bandH = max(NODE_H, backendsHeight)
+    val centerY = cursorY + bandH / 2f
+    val rowTopY = centerY - NODE_H / 2f
+
+    val appId = "app:${group.key}"
+    val progId = "prog:${group.key}"
+    nodes += StudioNode(
+      id = appId,
+      x = colX(0), y = rowTopY, w = NODE_W, h = NODE_H,
+      title = appListShortTitle(group),
+      subtitle = if (appCount > 0) "$appCount $appsWord" else (group.uidFile ?: appListLabel),
+      icon = Icons.Filled.Apps, accent = primary, active = active,
+      kind = StudioNodeKind.APP, onClick = { onOpenGroupApps(group) },
+    )
+    nodes += StudioNode(
+      id = progId,
+      x = colX(1), y = rowTopY, w = NODE_W, h = NODE_H,
+      title = programNodeTitle(programName(group.programId), group.profile),
+      subtitle = ruleSummary(group.rules),
+      icon = Icons.Filled.CallSplit, accent = accent, active = active,
+      kind = StudioNodeKind.PROGRAM, onClick = { onOpenGroupSettings(group) },
+    )
+    edges += StudioEdge(appId, progId, accent, active)
+
+    if (backends.isEmpty()) {
+      edges += StudioEdge(progId, "internet", tertiary, active)
+    } else {
+      var by = centerY - backendsHeight / 2f
+      backends.forEach { backend ->
+        val bId = "backend:${group.key}:${backend.port}"
+        nodes += StudioNode(
+          id = bId,
+          x = colX(2), y = by, w = BACKEND_W, h = BACKEND_H,
+          title = backend.label.ifBlank { "127.0.0.1:${backend.port}" },
+          subtitle = listOfNotNull(backend.programId, backend.profile, backend.server)
+            .joinToString(" / ").ifBlank { "backend ${backend.port}" },
+          icon = Icons.Filled.CallSplit, accent = backendColor, active = active,
+          kind = StudioNodeKind.BACKEND, onClick = null,
         )
-        .padding(16.dp),
-      verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f), contentColor = MaterialTheme.colorScheme.primary) {
-          Icon(Icons.Filled.Timeline, contentDescription = null, modifier = Modifier.padding(10.dp).size(24.dp))
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-          Text(stringResource(R.string.construction_studio_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-          Text(stringResource(R.string.construction_studio_desc), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f))
-        }
-        if (loading || busy) CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
+        edges += StudioEdge(progId, bId, backendColor, active)
+        edges += StudioEdge(bId, "internet", tertiary, active)
+        by += BACKEND_H + BACKEND_GAP
       }
+    }
 
-      Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        StudioMetricChip(stringResource(R.string.construction_studio_rules), actionRules.toString())
-        StudioMetricChip(stringResource(R.string.construction_studio_active), activeRules.toString())
-        StudioMetricChip("VPN", report.vpn.size.toString())
-      }
+    // Ignore unused locals warning for packets: surfaced via node subtitles.
+    if (packets < 0L) anyActive = anyActive
+    cursorY += bandH + BAND_GAP
+  }
 
-      Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = if (busy) MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.70f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.48f),
-        contentColor = if (busy) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-      ) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-          Icon(Icons.Filled.Timeline, contentDescription = null, modifier = Modifier.size(18.dp))
-          Text(
-            when {
-              busy -> report.message.ifBlank { "Готовлю данные, подожди…" }
-              report.error.isNotBlank() -> report.error
-              else -> "Автообновление каждые 5 сек, пока открыт экран. Карта двигается целиком."
-            },
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = if (busy) FontWeight.SemiBold else FontWeight.Normal,
-          )
-        }
+  vpnItems.forEach { vpn ->
+    val active = vpn.totalBytes > 0L
+    if (active) anyActive = true
+    totalBytes += vpn.totalBytes
+    val centerY = cursorY + NODE_H / 2f
+    val rowTopY = centerY - NODE_H / 2f
+    val key = "${vpn.ownerProgram}:${vpn.profile}:${vpn.tun}"
+    val appId = "vpnapp:$key"
+    val progId = "vpn:$key"
+    nodes += StudioNode(
+      id = appId,
+      x = colX(0), y = rowTopY, w = NODE_W, h = NODE_H,
+      title = "${vpn.apps.size} $appsWord",
+      subtitle = vpn.uidRanges.joinToString(", ").ifBlank { vpn.tun },
+      icon = Icons.Filled.Apps, accent = primary, active = active,
+      kind = StudioNodeKind.APP, onClick = { onOpenVpnApps(vpn) },
+    )
+    nodes += StudioNode(
+      id = progId,
+      x = colX(1), y = rowTopY, w = NODE_W, h = NODE_H,
+      title = "${programName(vpn.ownerProgram)} / ${vpn.profile}",
+      subtitle = "netId ${vpn.netid} • ${vpn.tun} • ↓${formatBytes(vpn.rxBytes)} ↑${formatBytes(vpn.txBytes)}",
+      icon = Icons.Filled.VpnKey, accent = vpnColor, active = active,
+      kind = StudioNodeKind.VPN, onClick = { onOpenVpnSettings(vpn) },
+    )
+    edges += StudioEdge(appId, progId, vpnColor, active)
+    edges += StudioEdge(progId, "internet", tertiary, active)
+    cursorY += NODE_H + BAND_GAP
+  }
+
+  val contentBottom = (cursorY - BAND_GAP).coerceAtLeast(MARGIN_TOP + NODE_H)
+  val internetY = MARGIN_TOP + (contentBottom - MARGIN_TOP) / 2f - NODE_H / 2f
+  nodes += StudioNode(
+    id = "internet",
+    x = internetX, y = internetY, w = NODE_W, h = NODE_H,
+    title = internetLabel,
+    subtitle = formatBytes(totalBytes),
+    icon = Icons.Filled.Cloud, accent = tertiary, active = anyActive,
+    kind = StudioNodeKind.INTERNET, onClick = null,
+  )
+
+  val width = internetX + NODE_W + MARGIN_X
+  val height = contentBottom + MARGIN_BOTTOM
+  return StudioGraph(nodes = nodes, edges = edges, width = width, height = height)
+}
+
+@Composable
+private fun StudioEdgeCanvas(
+  graph: StudioGraph,
+  nodeMap: Map<String, StudioNode>,
+  phase: Float,
+) {
+  Canvas(modifier = Modifier.size(graph.width.dp, graph.height.dp)) {
+    graph.edges.forEach { edge ->
+      val from = nodeMap[edge.fromId] ?: return@forEach
+      val to = nodeMap[edge.toId] ?: return@forEach
+      val sx = (from.x + from.w).dp.toPx()
+      val sy = (from.y + from.h / 2f).dp.toPx()
+      val ex = to.x.dp.toPx()
+      val ey = (to.y + to.h / 2f).dp.toPx()
+      val dx = (ex - sx) * 0.5f
+      val path = Path().apply {
+        moveTo(sx, sy)
+        cubicTo(sx + dx, sy, ex - dx, ey, ex, ey)
       }
+      val color = edge.accent.copy(alpha = if (edge.active) 0.92f else 0.30f)
+      val effect = if (edge.active) PathEffect.dashPathEffect(floatArrayOf(14f, 14f), -phase) else null
+      drawPath(
+        path = path,
+        color = color,
+        style = Stroke(
+          width = if (edge.active) 4.5f else 2.5f,
+          cap = StrokeCap.Round,
+          pathEffect = effect,
+        ),
+      )
     }
   }
 }
 
 @Composable
-private fun StudioMetricChip(label: String, value: String) {
-  AssistChip(onClick = {}, label = { Text("$label: $value", fontWeight = FontWeight.SemiBold) })
+private fun StudioGraphNode(node: StudioNode) {
+  val shape = RoundedCornerShape(20.dp)
+  val border = BorderStroke(
+    if (node.active) 1.5.dp else 1.dp,
+    node.accent.copy(alpha = if (node.active) 0.62f else 0.26f),
+  )
+  val container = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)
+  val body: @Composable () -> Unit = {
+    Row(
+      modifier = Modifier.fillMaxSize().padding(12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      Surface(shape = RoundedCornerShape(14.dp), color = node.accent.copy(alpha = 0.16f), contentColor = node.accent) {
+        Icon(node.icon, contentDescription = null, modifier = Modifier.padding(8.dp).size(20.dp))
+      }
+      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(node.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(node.subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+      }
+      if (node.active) {
+        Box(Modifier.size(9.dp).clip(CircleShape).background(node.accent))
+      }
+    }
+  }
+  if (node.onClick != null) {
+    Surface(modifier = Modifier.size(node.w.dp, node.h.dp), shape = shape, color = container, border = border, onClick = node.onClick) { body() }
+  } else {
+    Surface(modifier = Modifier.size(node.w.dp, node.h.dp), shape = shape, color = container, border = border) { body() }
+  }
 }
 
 @Composable
-private fun StudioRouteGraphCard(
-  group: StudioAppGroup,
-  programName: String,
-  onOpenApps: () -> Unit,
-  onOpenSettings: () -> Unit,
+private fun StudioTopBar(
+  modifier: Modifier,
+  report: ApiModels.TrafficReport,
+  loading: Boolean,
+  activeRules: Int,
+  totalRules: Int,
+  vpnCount: Int,
+  warningCount: Int,
+  onToggleWarnings: () -> Unit,
 ) {
-  val activeBytes = group.rules.sumOf { it.bytes }
-  val activePackets = group.rules.sumOf { it.packets }
-  val active = group.rules.any { it.active }
-  val semantic = group.rules.firstOrNull()?.semantic.orEmpty().ifBlank { "rule" }
-  val accent = semanticAccent(semantic)
-  val backendPorts = group.rules.flatMap { it.backendPorts }.distinctBy { it.port }
-  val horizontal = rememberScrollState()
-
-  Card(
-    modifier = Modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(24.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
-    border = BorderStroke(1.dp, accent.copy(alpha = if (active) 0.52f else 0.22f)),
+  val busy = report.busy || report.preparing
+  Surface(
+    modifier = modifier,
+    shape = RoundedCornerShape(22.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)),
   ) {
-    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        StatusPill(active)
-        Text(appListTitle(group), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text("${formatPackets(activePackets)} • ${formatBytes(activeBytes)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f))
-      }
-
-      Box(
-        Modifier
-          .fillMaxWidth()
-          .clip(RoundedCornerShape(22.dp))
-          .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f))
-          .horizontalScroll(horizontal)
-          .padding(14.dp),
-      ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            StudioGraphNode(Icons.Filled.Apps, appListShortTitle(group), group.uidFile ?: stringResource(R.string.construction_studio_app_list), MaterialTheme.colorScheme.primary, onOpenApps)
-            StudioGraphEdge(accent, active, "iptables")
-            StudioGraphNode(Icons.Filled.CallSplit, programNodeTitle(programName, group.profile), ruleSummary(group.rules), accent, onOpenSettings)
-            if (backendPorts.isNotEmpty()) {
-              StudioGraphEdge(Color(0xFFF59E0B), active, "t2s split")
-              StudioBackendColumn(backendPorts, active)
+    Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f), contentColor = MaterialTheme.colorScheme.primary) {
+          Icon(Icons.Filled.Timeline, contentDescription = null, modifier = Modifier.padding(8.dp).size(20.dp))
+        }
+        Text(
+          stringResource(R.string.construction_studio_title),
+          style = MaterialTheme.typography.titleMedium,
+          fontWeight = FontWeight.Bold,
+          modifier = Modifier.weight(1f),
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        if (loading || busy) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.5.dp)
+        if (warningCount > 0) {
+          Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f),
+            contentColor = MaterialTheme.colorScheme.onErrorContainer,
+            onClick = onToggleWarnings,
+          ) {
+            Row(Modifier.padding(horizontal = 8.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+              Icon(Icons.Filled.Warning, contentDescription = null, modifier = Modifier.size(15.dp))
+              Text(warningCount.toString(), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
             }
-            StudioGraphEdge(MaterialTheme.colorScheme.tertiary, active, "out")
-            StudioGraphNode(Icons.Filled.Cloud, stringResource(R.string.construction_studio_internet), "${formatPackets(activePackets)} / ${formatBytes(activeBytes)}", MaterialTheme.colorScheme.tertiary, null)
           }
         }
       }
-
-      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onOpenApps, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.construction_studio_open_apps)) }
-        OutlinedButton(onClick = onOpenSettings, modifier = Modifier.weight(1f)) {
-          Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(17.dp))
-          Spacer(Modifier.size(6.dp))
-          Text(stringResource(R.string.construction_studio_open_settings))
-        }
+      Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        StudioMetricPill(stringResource(R.string.construction_studio_rules), totalRules.toString())
+        StudioMetricPill(stringResource(R.string.construction_studio_active), activeRules.toString())
+        StudioMetricPill("VPN", vpnCount.toString())
       }
+      val status = when {
+        busy -> report.message.ifBlank { "Готовлю данные, подожди…" }
+        report.error.isNotBlank() -> report.error
+        else -> "Живая карта • автообновление 5 сек • тяни и масштабируй"
+      }
+      Text(
+        status,
+        style = MaterialTheme.typography.labelSmall,
+        color = if (busy) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+        fontWeight = if (busy) FontWeight.SemiBold else FontWeight.Normal,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+      )
     }
   }
 }
 
 @Composable
-private fun StudioBackendColumn(ports: List<ApiModels.TrafficBackendPort>, active: Boolean) {
-  Column(verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-    ports.take(6).forEach { backend ->
-      val title = backend.label.ifBlank { "127.0.0.1:${backend.port}" }
-      val subtitle = listOfNotNull(backend.programId, backend.profile, backend.server).joinToString(" / ").ifBlank { "backend ${backend.port}" }
-      MiniBackendNode(title, subtitle, active)
-    }
-  }
-}
-
-@Composable
-private fun MiniBackendNode(title: String, subtitle: String, active: Boolean) {
+private fun StudioMetricPill(label: String, value: String) {
   Surface(
-    modifier = Modifier.width(178.dp),
-    shape = RoundedCornerShape(18.dp),
-    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
-    border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = if (active) 0.55f else 0.22f)),
+    shape = RoundedCornerShape(12.dp),
+    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
   ) {
-    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-      Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-      Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-    }
+    Text(
+      "$label: $value",
+      modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+      style = MaterialTheme.typography.labelMedium,
+      fontWeight = FontWeight.SemiBold,
+    )
   }
 }
 
 @Composable
-private fun VpnStudioGraphCard(
-  vpn: ApiModels.VpnTraffic,
-  programName: String,
-  onOpenApps: () -> Unit,
-  onOpenSettings: () -> Unit,
+private fun StudioZoomControls(
+  modifier: Modifier,
+  onZoomIn: () -> Unit,
+  onZoomOut: () -> Unit,
+  onReset: () -> Unit,
 ) {
-  val active = vpn.totalBytes > 0L
-  val accent = Color(0xFF22C55E)
-  val horizontal = rememberScrollState()
-  Card(
-    modifier = Modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(24.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)),
-    border = BorderStroke(1.dp, accent.copy(alpha = if (active) 0.50f else 0.22f)),
-  ) {
-    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        StatusPill(active)
-        Text("$programName / ${vpn.profile}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
-        Text(formatBytes(vpn.totalBytes), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f))
-      }
-      Box(
-        Modifier
-          .fillMaxWidth()
-          .clip(RoundedCornerShape(22.dp))
-          .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f))
-          .horizontalScroll(horizontal)
-          .padding(14.dp),
-      ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          StudioGraphNode(Icons.Filled.Apps, "${vpn.apps.size} ${stringResource(R.string.construction_studio_apps)}", vpn.uidRanges.joinToString(", "), MaterialTheme.colorScheme.primary, onOpenApps)
-          StudioGraphEdge(accent, active, vpn.tun)
-          StudioGraphNode(Icons.Filled.CallSplit, "$programName / ${vpn.profile}", "netId ${vpn.netid} • ↓ ${formatBytes(vpn.rxBytes)} / ↑ ${formatBytes(vpn.txBytes)}", accent, onOpenSettings)
-          StudioGraphEdge(MaterialTheme.colorScheme.tertiary, active, "out")
-          StudioGraphNode(Icons.Filled.Cloud, stringResource(R.string.construction_studio_internet), formatBytes(vpn.totalBytes), MaterialTheme.colorScheme.tertiary, null)
-        }
-      }
-      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onOpenApps, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.construction_studio_open_apps)) }
-        OutlinedButton(onClick = onOpenSettings, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.construction_studio_open_settings)) }
-      }
-    }
+  Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    StudioZoomButton("+", onZoomIn)
+    StudioZoomButton("−", onZoomOut)
+    StudioZoomButton("⤢", onReset)
   }
 }
 
 @Composable
-private fun StudioGraphNode(
-  icon: ImageVector,
-  title: String,
-  subtitle: String,
-  tint: Color,
-  onClick: (() -> Unit)?,
-) {
-  val content: @Composable () -> Unit = {
-    Column(Modifier.width(190.dp).padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-      Surface(shape = RoundedCornerShape(15.dp), color = tint.copy(alpha = 0.16f), contentColor = tint) {
-        Icon(icon, contentDescription = null, modifier = Modifier.padding(9.dp).size(22.dp))
-      }
-      Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-      Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f), maxLines = 2, overflow = TextOverflow.Ellipsis)
-    }
-  }
+private fun StudioZoomButton(symbol: String, onClick: () -> Unit) {
   Surface(
-    shape = RoundedCornerShape(20.dp),
-    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
-    border = BorderStroke(1.dp, tint.copy(alpha = 0.28f)),
-    onClick = onClick ?: {},
-    enabled = onClick != null,
-  ) { content() }
-}
-
-@Composable
-private fun StudioGraphEdge(accent: Color, active: Boolean, label: String) {
-  Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-      Box(Modifier.width(56.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(accent.copy(alpha = if (active) 0.82f else 0.24f)))
-      AnimatedVisibility(visible = active) { Text("›", color = accent, fontWeight = FontWeight.Bold) }
-      Box(Modifier.width(56.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(accent.copy(alpha = if (active) 0.82f else 0.24f)))
+    shape = CircleShape,
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)),
+    onClick = onClick,
+  ) {
+    Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+      Text(symbol, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
     }
-    Text(label, style = MaterialTheme.typography.labelSmall, color = accent.copy(alpha = 0.78f), maxLines = 1, overflow = TextOverflow.Ellipsis)
   }
 }
 
 @Composable
-private fun StatusPill(active: Boolean) {
-  val color = if (active) Color(0xFF22C55E) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-  Surface(shape = CircleShape, color = color.copy(alpha = 0.14f), contentColor = color) {
-    Text(if (active) stringResource(R.string.construction_studio_active_now) else stringResource(R.string.construction_studio_idle), modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
-  }
-}
-
-@Composable
-private fun EmptyStudioCard() {
-  Card(
-    modifier = Modifier.fillMaxWidth(),
+private fun StudioEmptyOverlay(modifier: Modifier) {
+  Surface(
+    modifier = modifier.widthIn(max = 320.dp),
     shape = RoundedCornerShape(22.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)),
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
   ) {
-    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
       Text(stringResource(R.string.construction_studio_empty_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
       Text(stringResource(R.string.construction_studio_empty_desc), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
     }
@@ -460,14 +651,21 @@ private fun EmptyStudioCard() {
 }
 
 @Composable
-private fun WarningsCard(warnings: List<String>) {
-  Card(
-    modifier = Modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(20.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.50f)),
+private fun StudioWarningsOverlay(warnings: List<String>, modifier: Modifier, onClose: () -> Unit) {
+  Surface(
+    modifier = modifier.widthIn(max = 420.dp),
+    shape = RoundedCornerShape(18.dp),
+    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.92f),
+    contentColor = MaterialTheme.colorScheme.onErrorContainer,
   ) {
     Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-      Text(stringResource(R.string.construction_studio_warnings), fontWeight = FontWeight.SemiBold)
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(Icons.Filled.Warning, contentDescription = null, modifier = Modifier.size(18.dp))
+        Text(stringResource(R.string.construction_studio_warnings), fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+        Surface(shape = CircleShape, color = Color.Transparent, onClick = onClose) {
+          Text("✕", modifier = Modifier.padding(6.dp), fontWeight = FontWeight.Bold)
+        }
+      }
       warnings.take(5).forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
     }
   }

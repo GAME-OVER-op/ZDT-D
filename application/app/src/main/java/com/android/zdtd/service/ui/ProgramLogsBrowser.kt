@@ -544,7 +544,7 @@ private fun buildProgramLogsListScript(target: ProgramLogTarget): String {
     commands += "if test -d ${shQuote(dir)}; then find ${shQuote(dir)} -maxdepth $maxDepth -type f -name ${shQuote(name)} 2>/dev/null | while IFS= read -r p; do s=\$(wc -c < \"\$p\" 2>/dev/null || echo 0); b=\$(basename \"\$p\"); printf '%s\\t%s\\t%s\\n' \"\$s\" \"\$b\" \"\$p\"; done; fi"
   }
   fun addFindExact(dir: String, maxDepth: Int, exactFile: String) {
-    commands += "if test -d ${shQuote(dir)}; then find ${shQuote(dir)} -maxdepth $maxDepth -type f -name ${shQuote(exactFile)} 2>/dev/null | while IFS= read -r p; do s=\$(wc -c < \"\$p\" 2>/dev/null || echo 0); rel=\${p#${shQuote(dir).removeSurrounding("'")}/}; printf '%s\\t%s\\t%s\\n' \"\$s\" \"\$rel\" \"\$p\"; done; fi"
+    commands += "if test -d ${shQuote(dir)}; then find ${shQuote(dir)} -maxdepth $maxDepth -type f -name ${shQuote(exactFile)} 2>/dev/null | while IFS= read -r p; do s=\$(wc -c < \"\$p\" 2>/dev/null || echo 0); rel=\${p#${shUnquote(shQuote(dir))}/}; printf '%s\\t%s\\t%s\\n' \"\$s\" \"\$rel\" \"\$p\"; done; fi"
   }
 
   val profile = target.profile
@@ -614,3 +614,5 @@ private fun formatBytes(bytes: Long): String {
 }
 
 private fun shQuote(s: String): String = "'" + s.replace("'", "'\\''") + "'"
+
+private fun shUnquote(s: String): String = s.removeSurrounding("'")

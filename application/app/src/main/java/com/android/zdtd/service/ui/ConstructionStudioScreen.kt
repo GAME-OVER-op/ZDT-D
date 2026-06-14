@@ -85,6 +85,7 @@ import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlin.math.abs
 import kotlin.math.max
 
 // ---------------------------------------------------------------------------
@@ -414,7 +415,7 @@ private fun buildStudioGraph(
 
   // Programs that actually route through t2s get a dedicated t2s card placed
   // right after the app list (apps -> t2s -> program -> backends -> internet).
-  val t2sFronted = setOf("wireproxy", "myproxy", "operaproxy", "tor", "myprogram")
+  val t2sFronted = setOf("wireproxy", "myproxy", "operaproxy", "tor", "myprogram", "sing-box")
   fun usesT2s(programId: String): Boolean = normalizeRouteProgramId(programId) in t2sFronted
 
   val hasAnyBackend = groups.any { g -> g.rules.any { it.backendPorts.isNotEmpty() } }
@@ -499,6 +500,7 @@ private fun buildStudioGraph(
             .joinToString(" / ").ifBlank { "backend ${backend.port}" },
           icon = Icons.Filled.CallSplit, accent = backendColor, active = active,
           kind = StudioNodeKind.BACKEND, onClick = null,
+          iconRes = programIconRes(normalizeRouteProgramId(backend.programId.orEmpty())),
         )
         edges += StudioEdge(progId, bId, backendColor, active)
         edges += StudioEdge(bId, "internet", tertiary, active)
@@ -535,6 +537,7 @@ private fun buildStudioGraph(
       subtitle = "netId ${vpn.netid} • ${vpn.tun} • ↓${formatBytes(vpn.rxBytes)} ↑${formatBytes(vpn.txBytes)}",
       icon = Icons.Filled.VpnKey, accent = vpnColor, active = active,
       kind = StudioNodeKind.VPN, onClick = { onOpenVpnSettings(vpn) },
+      iconRes = programIconRes(normalizeRouteProgramId(vpn.ownerProgram)),
     )
     edges += StudioEdge(appId, progId, vpnColor, active)
     edges += StudioEdge(progId, "internet", tertiary, active)
@@ -572,7 +575,9 @@ private fun StudioEdgeCanvas(
       val sy = (from.y + from.h / 2f).dp.toPx()
       val ex = to.x.dp.toPx()
       val ey = (to.y + to.h / 2f).dp.toPx()
-      val dx = (ex - sx) * 0.5f
+      // Always bow out horizontally so lines stay curved and route around cards
+      // instead of collapsing into a straight line under them when cards are moved.
+      val dx = max(abs(ex - sx) * 0.5f, 90f)
       val path = Path().apply {
         moveTo(sx, sy)
         cubicTo(sx + dx, sy, ex - dx, ey, ex, ey)
@@ -617,7 +622,7 @@ private fun StudioGraphNode(node: StudioNode) {
     ) {
       Surface(shape = RoundedCornerShape(14.dp), color = node.accent.copy(alpha = 0.16f), contentColor = node.accent) {
         if (node.iconRes != null) {
-          Icon(painterResource(node.iconRes), contentDescription = null, modifier = Modifier.padding(8.dp).size(20.dp), tint = Color.Unspecified)
+          Icon(painterResource(node.iconRes), contentDescription = null, modifier = Modifier.padding(8.dp).size(20.dp), tint = node.accent)
         } else {
           Icon(node.icon, contentDescription = null, modifier = Modifier.padding(8.dp).size(20.dp))
         }

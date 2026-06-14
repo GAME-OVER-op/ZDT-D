@@ -193,3 +193,13 @@ Each proxy program reaches the internet through t2s the same way
 > NOTE: Construction Studio is currently **read-only**. Writing routes
 > (drag-to-connect, changing backends) requires a separate write mechanism on
 > the backend-model side. The visual layer only prepares the handles and states.
+
+
+---
+
+## Fixes round 2
+
+- **Colored tool icons:** `ic_tool_*` PNGs are single-color (black) glyphs. The tools list tints them via content color, so the Studio must tint too. The Studio program/backend/VPN icon now uses `Icon(painterResource(node.iconRes), tint = node.accent)` instead of `Color.Unspecified` (which rendered them black).
+- **All cards use tool icons:** `iconRes` is now set on program nodes, VPN nodes (`programIconRes(normalizeRouteProgramId(vpn.ownerProgram))`), and backend/server nodes (`programIconRes(normalizeRouteProgramId(backend.programId))`). Falls back to the vector icon when no logo exists for that id.
+- **sing-box now goes through t2s:** added `"sing-box"` to `t2sFronted` (covers both `singbox` and `sing-box` via `normalizeRouteProgramId`). Chain becomes App list -> t2s -> sing-box -> servers -> Internet. Multiple servers render as multiple backend nodes from `group.rules.flatMap { it.backendPorts }`; if the daemon does not yet expose sing-box's servers as backend ports, the backend model must surface them for the cards to appear.
+- **Smooth lines / no straight-under-card lines:** edge control offset is now `dx = max(abs(ex - sx) * 0.5f, 90f)`, so lines always keep a horizontal bow (curve around cards) instead of collapsing into a straight line under a card when cards are dragged close or vertically aligned. Full obstacle avoidance is not implemented; this guarantees curvature.

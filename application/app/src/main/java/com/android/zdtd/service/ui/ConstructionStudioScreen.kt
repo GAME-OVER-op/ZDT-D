@@ -1083,25 +1083,10 @@ private fun mergeConstructionCandidates(
       byAddr[key] = candidate
     }
   }
-  candidates.forEach(::putBest)
-  running.forEach { endpoint ->
-    val programId = endpoint.programId.orEmpty().ifBlank { localEndpointLabel }
-    val key = "$programId:${endpoint.profile.orEmpty()}:${endpoint.server.orEmpty()}:${endpoint.port}"
-    putBest(
-      ApiModels.ConstructionProxyEndpointCandidate(
-        key = key,
-        programId = programId,
-        profile = endpoint.profile,
-        server = endpoint.server,
-        host = "127.0.0.1",
-        port = endpoint.port,
-        label = endpoint.label.ifBlank { "127.0.0.1:${endpoint.port}" },
-        kind = "socks5",
-        enabled = true,
-        running = true,
-      )
-    )
-  }
+  candidates
+    .asSequence()
+    .filter { it.enabled }
+    .forEach(::putBest)
   return byAddr.values
     .filter { candidate ->
       val host = candidate.host.ifBlank { "127.0.0.1" }
@@ -1626,12 +1611,21 @@ private fun shouldShowStudioRule(rule: ApiModels.TrafficRuleCounter): Boolean {
 private fun buildStudioGroups(rules: List<ApiModels.TrafficRuleCounter>): List<StudioAppGroup> {
   return rules
     .filter { it.actionCounter && (it.programId != null || it.uidFile != null) }
-    .groupBy { listOf(it.programId.orEmpty(), it.profile.orEmpty(), it.slot.orEmpty(), it.uidFile.orEmpty()).joinToString("|") }
+    .groupBy { listOf(it.programId.orEmpty(), it.profile.orEmpty()).joinToString("|") }
     .map { (key, groupRules) ->
       val first = groupRules.first()
-      StudioAppGroup(key = key, programId = first.programId ?: "unknown", profile = first.profile, slot = first.slot, uidFile = first.uidFile, rules = groupRules)
+      val slots = groupRules.mapNotNull { it.slot?.trim()?.takeIf(String::isNotEmpty) }.distinct()
+      val uidFiles = groupRules.mapNotNull { it.uidFile?.trim()?.takeIf(String::isNotEmpty) }.distinct()
+      StudioAppGroup(
+        key = key,
+        programId = first.programId ?: "unknown",
+        profile = first.profile,
+        slot = slots.singleOrNull(),
+        uidFile = uidFiles.singleOrNull(),
+        rules = groupRules,
+      )
     }
-    .sortedWith(compareBy<StudioAppGroup> { it.programId }.thenBy { it.profile ?: "" }.thenBy { it.slot ?: "" })
+    .sortedWith(compareBy<StudioAppGroup> { it.programId }.thenBy { it.profile ?: "" })
 }
 
 private fun groupPackages(group: StudioAppGroup): Set<String> =
@@ -1640,7 +1634,19 @@ private fun groupPackages(group: StudioAppGroup): Set<String> =
     .filter { it.isNotEmpty() }
     .toSet()
 
+private fun groupSlots(group: StudioAppGroup): List<String> =
+  group.rules.mapNotNull { it.slot?.trim()?.takeIf(String::isNotEmpty) }
+    .distinct()
+
+private fun groupUidFiles(group: StudioAppGroup): List<String> =
+  group.rules.mapNotNull { it.uidFile?.trim()?.takeIf(String::isNotEmpty) }
+    .distinct()
+
+private fun hasMultipleAppLists(group: StudioAppGroup): Boolean =
+  groupSlots(group).size > 1 || groupUidFiles(group).size > 1
+
 private fun resolveEditableAppPath(group: StudioAppGroup, data: ApiModels.AppAssignmentsState?): String? {
+  if (hasMultipleAppLists(group)) return null
   return findAssignmentForGroup(group, data)?.path
     ?: deriveEditableAppPath(group)
     ?: group.uidFile?.let(::uidFileToEditableAppPath)
@@ -1649,6 +1655,7 @@ private fun resolveEditableAppPath(group: StudioAppGroup, data: ApiModels.AppAss
 private fun findAssignmentForGroup(group: StudioAppGroup, data: ApiModels.AppAssignmentsState?): ApiModels.AppAssignmentEntry? {
   val lists = data?.lists.orEmpty()
   if (lists.isEmpty()) return null
+  if (hasMultipleAppLists(group)) return null
   val program = normalizeRouteProgramId(group.programId)
   val profile = group.profile.orEmpty()
   val slot = group.slot.orEmpty().lowercase(Locale.ROOT)
@@ -1717,8 +1724,24 @@ private fun normalizeRouteProgramId(id: String): String = when (id) {
   else -> id
 }
 
-private fun appListTitle(group: StudioAppGroup): String = listOfNotNull(group.programId, group.profile, group.slot).joinToString(" / ").ifBlank { group.uidFile ?: "App list" }
-private fun appListShortTitle(group: StudioAppGroup): String = group.slot?.takeIf { it.isNotBlank() } ?: stringResourceNameFallback(group.programId)
+private fun appListTitle(group: StudioAppGroup): String {
+  val slots = groupSlots(group)
+  val slotLabel = when {
+    slots.isEmpty() -> null
+    slots.size == 1 -> slots.first()
+    else -> slots.joinToString(" + ")
+  }
+  return listOfNotNull(group.programId, group.profile, slotLabel).joinToString(" / ").ifBlank { group.uidFile ?: "App list" }
+}
+
+private fun appListShortTitle(group: StudioAppGroup): String {
+  val slots = groupSlots(group)
+  return when {
+    slots.isEmpty() -> stringResourceNameFallback(group.programId)
+    slots.size == 1 -> slots.first()
+    else -> slots.joinToString(" + ")
+  }
+}
 private fun stringResourceNameFallback(id: String): String = if (id.isBlank()) "App list" else id
 private fun programNodeTitle(programName: String, profile: String?): String = if (profile.isNullOrBlank()) programName else "$programName / $profile"
 

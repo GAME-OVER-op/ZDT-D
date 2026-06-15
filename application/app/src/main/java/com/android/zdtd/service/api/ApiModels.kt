@@ -273,6 +273,12 @@ object ApiModels {
     val error: String = "",
   )
 
+  data class ConstructionReleaseEndpointResult(
+    val ok: Boolean = false,
+    val stopped: Boolean = false,
+    val error: String = "",
+  )
+
 
   private fun jsonBool(obj: JSONObject?, key: String, default: Boolean = false): Boolean {
     if (obj == null || !obj.has(key)) return default
@@ -871,6 +877,15 @@ object ApiModels {
       started = jsonBool(wrapper, "started", false),
       triggerAdded = jsonBool(wrapper, "trigger_added", false),
       endpoint = endpoint,
+      error = wrapper.optString("error", ""),
+    )
+  }
+
+  fun parseConstructionReleaseEndpointResult(wrapper: JSONObject?): ConstructionReleaseEndpointResult {
+    if (wrapper == null) return ConstructionReleaseEndpointResult(error = "empty response")
+    return ConstructionReleaseEndpointResult(
+      ok = jsonBool(wrapper, "ok", false),
+      stopped = jsonBool(wrapper, "stopped", false),
       error = wrapper.optString("error", ""),
     )
   }

@@ -5277,6 +5277,18 @@ private fun shQuote(s: String): String {
     }
   }
 
+  override fun releaseConstructionProxyEndpoint(candidate: ApiModels.ConstructionProxyEndpointCandidate, onDone: (ApiModels.ConstructionReleaseEndpointResult?) -> Unit) {
+    launchIO {
+      val result = runCatching { api.releaseConstructionProxyEndpoint(candidate) }.getOrNull()
+      if (result?.ok == true) {
+        log("OK", "construction endpoint ${candidate.label.ifBlank { candidate.programId }} ${if (result.stopped) "stopped" else "released"}")
+      } else {
+        log("ERR", "construction endpoint ${candidate.label.ifBlank { candidate.programId }} release failed")
+      }
+      withContext(Dispatchers.Main.immediate) { onDone(result) }
+    }
+  }
+
   override fun saveJsonData(path: String, obj: JSONObject, onDone: (Boolean) -> Unit) {
     launchIO {
       val ok = runCatching { api.putJsonData(path, obj) }.getOrDefault(false)

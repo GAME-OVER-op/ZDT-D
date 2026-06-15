@@ -271,6 +271,17 @@ class ApiClient(
     return ApiModels.parseConstructionStartEndpointResult(obj)
   }
 
+  fun releaseConstructionProxyEndpoint(candidate: ApiModels.ConstructionProxyEndpointCandidate): ApiModels.ConstructionReleaseEndpointResult {
+    val body = JSONObject()
+      .put("program_id", candidate.programId)
+      .put("slot", candidate.slot.ifBlank { "common" })
+      .put("port", candidate.port)
+    candidate.profile?.takeIf { it.isNotBlank() }?.let { body.put("profile", it) }
+    candidate.server?.takeIf { it.isNotBlank() }?.let { body.put("server", it) }
+    val obj = requestJson("POST", "/api/construction/proxy-endpoints/release", body)
+    return ApiModels.parseConstructionReleaseEndpointResult(obj)
+  }
+
   fun getProxyInfo(): ApiModels.ProxyInfoState {
     val obj = requestJson("GET", "/api/proxyinfo", null)
     return ApiModels.parseProxyInfo(obj)

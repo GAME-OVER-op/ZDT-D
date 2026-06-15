@@ -510,12 +510,32 @@ fun ConstructionStudioScreen(
           return
         }
         scope.launch {
-          withContext(Dispatchers.IO) {
+          val (latestPolls, shouldRelease) = withContext(Dispatchers.IO) {
             val client = T2sApiClient(rootManager, port)
             val host = endpoint.host.ifBlank { "127.0.0.1" }
             val addr = "$host:${endpoint.port}"
             runCatching { if (disconnect) client.removeBackend(addr) else client.addBackend(host, endpoint.port) }
             runCatching { client.recheckBackends() }
+            if (!disconnect) {
+              emptyMap<Int, T2sPollResult>() to false
+            } else {
+              val latest = report.t2sInstances
+                .map { it.webPort }
+                .filter { it > 0 }
+                .distinct()
+                .mapNotNull { wp -> runCatching { wp to T2sApiClient(rootManager, wp).poll() }.getOrNull() }
+                .toMap()
+              latest to latest.values.none { poll ->
+                poll.state.backends.any { backend -> backendAddrMatches(backend.addr, host, endpoint.port) }
+              }
+            }
+          }
+          if (latestPolls.isNotEmpty()) t2sPolls = latestPolls
+          if (disconnect && shouldRelease) {
+            actions.releaseConstructionProxyEndpoint(endpoint) {
+              requestConstructionEndpoints()
+              requestTraffic()
+            }
           }
           startingEndpointKey = null
           connectFromId = null
@@ -548,26 +568,26 @@ fun ConstructionStudioScreen(
           }
         },
       )
-    }
 
-    pendingStartCandidate?.let { candidate ->
-      ConfirmConstructionStartDialog(
-        candidate = candidate,
-        onDismiss = { pendingStartCandidate = null },
-        onConfirm = {
-          pendingStartCandidate = null
-          startingEndpointKey = candidate.key
-          actions.startConstructionProxyEndpoint(candidate) { result ->
-            val endpoint = result?.endpoint ?: candidate
-            if (result?.ok == true && result.started) {
-              finishT2sBackend(endpoint, disconnect = false)
-            } else {
-              startingEndpointKey = null
-              requestConstructionEndpoints()
+      pendingStartCandidate?.let { candidate ->
+        ConfirmConstructionStartDialog(
+          candidate = candidate,
+          onDismiss = { pendingStartCandidate = null },
+          onConfirm = {
+            pendingStartCandidate = null
+            startingEndpointKey = candidate.key
+            actions.startConstructionProxyEndpoint(candidate) { result ->
+              val endpoint = result?.endpoint ?: candidate
+              if (result?.ok == true && result.started) {
+                finishT2sBackend(endpoint, disconnect = false)
+              } else {
+                startingEndpointKey = null
+                requestConstructionEndpoints()
+              }
             }
-          }
-        },
-      )
+          },
+        )
+      }
     }
 
     if (showWarnings && report.warnings.isNotEmpty()) {
@@ -1696,6 +1716,10 @@ private fun formatPackets(value: Long): String {
     safe >= 1_000 -> "%.1fK pkt".format(safe / 1_000.0)
     else -> "$safe pkt"
   }
+}
+
+private fun backendAddrMatches(addr: String, host: String, port: Int): Boolean {
+  return addr == "$host:$port" || addr.endsWith(":$port")
 }
 
 private fun formatBytes(bytes: Long): String {

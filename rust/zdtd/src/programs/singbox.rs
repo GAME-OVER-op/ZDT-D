@@ -309,6 +309,119 @@ pub fn start_if_enabled() -> Result<()> {
     start_t2s_if_enabled()
 }
 
+pub fn start_construction_profile(profile: &str) -> Result<()> {
+    ensure_valid_profile_name(profile)?;
+    ensure_base_layout()?;
+    ensure_file(SINGBOX_BIN)?;
+
+    let active = read_active_profiles().unwrap_or_default();
+    if !active.profiles.get(profile).map(|st| st.enabled).unwrap_or(false) {
+        info!("sing-box: construction profile '{}' is disabled, skip targeted start", profile);
+        return Ok(());
+    }
+
+    let api_settings = settings::load_api_settings().unwrap_or_default();
+    let hotspot_profile = api_settings
+        .hotspot_t2s_singbox_profile()
+        .map(|s| s.to_string());
+    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding(true, false)
+        .unwrap_or_else(|_| BTreeSet::new());
+    let other_enabled_names: Vec<String> = active
+        .profiles
+        .iter()
+        .filter(|(name, st)| st.enabled && name.as_str() != profile)
+        .map(|(name, _)| name.clone())
+        .collect();
+    let own_used = collect_enabled_t2s_local_ports(&other_enabled_names);
+
+    let Some(plan) = build_t2s_profile_plan(profile, &external_used, &own_used, hotspot_profile.as_deref())? else {
+        info!("sing-box: construction profile '{}' has no runnable plan", profile);
+        return Ok(());
+    };
+
+    let t2s_bin = if plan.needs_t2s {
+        Some(find_bin("t2s")?)
+    } else {
+        None
+    };
+    let ports_csv = plan
+        .servers
+        .iter()
+        .map(|srv| srv.port.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+
+    for server in &plan.servers {
+        ensure_parent_dir(&server.log_path)?;
+        truncate_file(&server.log_path)?;
+        spawn_singbox(&server.config_path, &server.log_path)
+            .with_context(|| format!("spawn sing-box profile={} server={}", plan.name, server.name))?;
+    }
+
+    let hotspot_for_plan = hotspot_profile.as_deref() == Some(plan.name.as_str());
+    let t2s_listen_addr = if hotspot_for_plan { "0.0.0.0" } else { "127.0.0.1" };
+
+    if plan.needs_t2s {
+        let t2s_bin = t2s_bin.as_ref().context("t2s binary path missing for sing-box profile")?;
+        truncate_file(&plan.t2s_log)?;
+        spawn_t2s(
+            t2s_bin,
+            t2s_listen_addr,
+            plan.setting.t2s_port,
+            plan.setting.t2s_web_port,
+            &ports_csv,
+            &plan.t2s_log,
+            &plan.name,
+        )
+        .with_context(|| format!("spawn t2s profile={}", plan.name))?;
+
+        if hotspot_for_plan {
+            hotspot::ensure_prerouting_redirect(hotspot::HotspotRedirectConfig {
+                owner: "sing-box",
+                listen_port: plan.setting.t2s_port,
+                capture_all: api_settings.hotspot_t2s_capture_all,
+                bypass_ports: hotspot::DEFAULT_HOTSPOT_BYPASS_PORTS,
+            })?;
+        }
+
+        iptables_port::apply(
+            &plan.uid_out,
+            plan.setting.t2s_port,
+            ProtoChoice::Tcp,
+            None,
+            DpiTunnelOptions {
+                port_preference: 1,
+                ..DpiTunnelOptions::default()
+            },
+        )
+        .with_context(|| format!("iptables profile={}", plan.name))?;
+        if plan.uid_count == 0 {
+            info!("sing-box: profile={} has no routed app UIDs yet; registered runtime routing for hot app refresh", plan.name);
+        }
+
+        info!(
+            "sing-box: targeted construction start profile={} apps={} servers={} t2s_port={} t2s_web_port={} socks_ports={} listen_addr={}",
+            plan.name,
+            plan.uid_count,
+            plan.servers.len(),
+            plan.setting.t2s_port,
+            plan.setting.t2s_web_port,
+            ports_csv,
+            t2s_listen_addr,
+        );
+    } else {
+        info!(
+            "sing-box: targeted construction start profile={} apps={} servers={} socks_ports={} mode=server-only",
+            plan.name,
+            plan.uid_count,
+            plan.servers.len(),
+            ports_csv,
+        );
+    }
+
+    Ok(())
+}
+
 pub fn start_t2s_if_enabled() -> Result<()> {
     ensure_base_layout()?;
     ensure_file(SINGBOX_BIN)?;

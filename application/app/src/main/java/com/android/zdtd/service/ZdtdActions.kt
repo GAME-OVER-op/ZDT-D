@@ -219,6 +219,7 @@ interface ZdtdActions {
 
   fun loadConstructionProxyEndpoints(onDone: (List<ApiModels.ConstructionProxyEndpointCandidate>?) -> Unit)
   fun startConstructionProxyEndpoint(candidate: ApiModels.ConstructionProxyEndpointCandidate, onDone: (ApiModels.ConstructionStartEndpointResult?) -> Unit)
+  fun releaseConstructionProxyEndpoint(candidate: ApiModels.ConstructionProxyEndpointCandidate, onDone: (ApiModels.ConstructionReleaseEndpointResult?) -> Unit)
 
   // ----- Strategic files (zapret / zapret2) -----
   /** List files in strategic/<dir>. dir: list | bin | lua */

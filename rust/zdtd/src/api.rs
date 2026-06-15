@@ -332,6 +332,19 @@ struct ConstructionStartEndpointReq {
     ensure_trigger: Option<bool>,
 }
 
+#[derive(Debug, Deserialize)]
+struct ConstructionReleaseEndpointReq {
+    program_id: String,
+    #[serde(default)]
+    profile: Option<String>,
+    #[serde(default)]
+    server: Option<String>,
+    #[serde(default)]
+    slot: Option<String>,
+    #[serde(default)]
+    port: Option<u16>,
+}
+
 fn refresh_apps_after_save_if_running(services_running: bool, program: &str, profile: Option<&str>, slot: &str) -> Result<()> {
     if !services_running {
         return Ok(());
@@ -5555,6 +5568,17 @@ fn handle_construction_subroutes(stream: TcpStream, method: &str, path: &str, bo
                 Err(e) => write_err(stream, e),
             }
         }
+        ("POST", "/api/construction/proxy-endpoints/release") => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: ConstructionReleaseEndpointReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                release_construction_proxy_endpoint(req)
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
         _ => write_empty_404(stream),
     }
 }
@@ -5757,7 +5781,7 @@ fn start_construction_proxy_endpoint(req: ConstructionStartEndpointReq, _service
         if trigger_added { invalidate_assignment_cache(); }
     }
     enable_construction_endpoint(&program, profile, server, req.port)?;
-    start_construction_program(&program)?;
+    start_construction_endpoint_runtime(&program, profile, server)?;
 
     let candidates = collect_construction_proxy_endpoint_candidates()?;
     let selected = candidates.into_iter().find(|c| {
@@ -5779,6 +5803,21 @@ fn start_construction_proxy_endpoint(req: ConstructionStartEndpointReq, _service
         "started": true,
         "trigger_added": trigger_added,
         "endpoint": candidate,
+    }))
+}
+
+fn release_construction_proxy_endpoint(req: ConstructionReleaseEndpointReq) -> Result<serde_json::Value> {
+    let program = normalize_construction_program_id(&req.program_id);
+    let profile = req.profile.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let server = req.server.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let port = req.port.ok_or_else(|| anyhow::anyhow!("port is required"))?;
+    ensure_safe_segment(&program, "program id")?;
+    if let Some(p) = profile { ensure_safe_segment(p, "profile name")?; }
+    if let Some(srv) = server { ensure_safe_segment(srv, "server name")?; }
+    let stopped = stop_construction_endpoint_owner(&program, profile, server, port)?;
+    Ok(json!({
+        "ok": true,
+        "stopped": stopped,
     }))
 }
 
@@ -5888,6 +5927,26 @@ fn start_construction_program(program: &str) -> Result<()> {
     }
 }
 
+fn start_construction_endpoint_runtime(program: &str, profile: Option<&str>, server: Option<&str>) -> Result<()> {
+    match (program, profile, server) {
+        ("sing-box", Some(profile), Some(_)) => {
+            let setting = crate::programs::singbox::read_setting(profile)?;
+            if setting.mode.is_t2s() {
+                let _ = kill_listener_processes_by_port(setting.t2s_port);
+                let _ = kill_listener_processes_by_port(setting.t2s_web_port);
+            }
+            crate::programs::singbox::start_construction_profile(profile)
+        }
+        ("wireproxy", Some(profile), Some(_)) => {
+            let setting = crate::programs::wireproxy::read_setting(profile)?;
+            let _ = kill_listener_processes_by_port(setting.t2s_port);
+            let _ = kill_listener_processes_by_port(setting.t2s_web_port);
+            crate::programs::wireproxy::start_construction_profile(profile)
+        }
+        _ => start_construction_program(program),
+    }
+}
+
 fn set_profile_enabled_in_active(path: &Path, profile: &str) -> Result<()> {
     let mut active: ProfilesActive = read_json(path).unwrap_or_default();
     if !active.profiles.contains_key(profile) {
@@ -5934,6 +5993,46 @@ fn tcp_port_open(host: &str, port: u16) -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(140)).is_ok()
 }
 
+
+fn stop_construction_endpoint_owner(program: &str, _profile: Option<&str>, _server: Option<&str>, port: u16) -> Result<bool> {
+    match program {
+        "sing-box" | "wireproxy" | "mihomo" | "mieru" | "tor" | "operaproxy" => kill_listener_processes_by_port(port),
+        _ => Ok(false),
+    }
+}
+
+fn kill_listener_processes_by_port(port: u16) -> Result<bool> {
+    let (code, out) = crate::shell::run("ss", &["-ltnp"], crate::shell::Capture::Stdout).unwrap_or_default();
+    if code != 0 {
+        return Ok(false);
+    }
+    let needle = format!(":{}", port);
+    let mut pids = BTreeSet::<i32>::new();
+    for line in out.lines().filter(|l| l.contains(&needle)) {
+        let mut tail = line;
+        while let Some(idx) = tail.find("pid=") {
+            let rest = &tail[idx + 4..];
+            let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            if let Ok(pid) = digits.parse::<i32>() {
+                if pid > 1 { pids.insert(pid); }
+            }
+            tail = rest;
+        }
+    }
+    if pids.is_empty() {
+        return Ok(false);
+    }
+    for pid in &pids {
+        let _ = crate::shell::ok_sh(&format!("kill -15 {}", pid));
+    }
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    for pid in &pids {
+        if Path::new("/proc").join(pid.to_string()).is_dir() {
+            let _ = crate::shell::ok_sh(&format!("kill -9 {}", pid));
+        }
+    }
+    Ok(true)
+}
 
 fn parse_myproxy_ports_for_construction(v: &serde_json::Value) -> Vec<u16> {
     let mut out = Vec::<u16>::new();

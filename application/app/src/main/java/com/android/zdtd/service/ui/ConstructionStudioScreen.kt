@@ -796,6 +796,14 @@ private fun buildStudioGraph(
 
   val addedBackendNodes = mutableSetOf<String>()
   val routeGroups = groups.groupBy { routeGroupKey(it) }.values.toList()
+  val routeProgramNodeByKey = routeGroups.associate { routeGroup ->
+    val g = routeGroup.first()
+    wrappedProgramKey(normalizeRouteProgramId(g.programId), g.profile) to "prog:${routeGroupKey(g)}"
+  }
+  val existingBackendNodeIds = groups
+    .flatMap { group -> group.rules.flatMap { it.backendPorts } }
+    .map { backendNodeId(it) }
+    .toSet()
 
   routeGroups.forEach { routeGroup ->
     val group = routeGroup.first()
@@ -814,7 +822,11 @@ private fun buildStudioGraph(
     val allBackends = mergeBackendCards(ruleBackends, proxyEndpoints, t2sBackendPorts)
     val cascadeBackends = allBackends.filter { backend -> t2sCascadeByPort.containsKey(backend.port) }.take(6)
     val backends = allBackends.filterNot { backend -> t2sCascadeByPort.containsKey(backend.port) }.take(6)
-    val wrappedNodes = backends.mapNotNull { wrappedBackendCard(it) }.distinctBy { wrappedBackendKey(it) }.take(4)
+    val wrappedNodes = backends
+      .mapNotNull { wrappedBackendCard(it) }
+      .filter { wrapped -> existingWrappedTargetNodeId(wrapped, routeProgramNodeByKey, existingBackendNodeIds, t2sCascadeByPort) == null }
+      .distinctBy { wrappedBackendKey(it) }
+      .take(4)
     val ruleBytes = routeRules.sumOf { it.bytes }
     val chainBytesOverride = t2sTrafficBytes(t2sPoll)
     val chainBytes = chainBytesOverride ?: ruleBytes
@@ -936,39 +948,28 @@ private fun buildStudioGraph(
       if (wrappedNodes.isNotEmpty()) {
         var wy = centerY - wrappedHeight / 2f
         wrappedNodes.forEach { wrapped ->
-          val wrappedId = wrappedBackendNodeId(wrapped)
+          val nodeId = wrappedBackendNodeId(wrapped)
           val wrappedPort = wrapped.port
-          val wrappedT2s = t2sCascadeByPort[wrappedPort]
-          val isT2sWrapper = wrappedT2s != null
-          val nodeId = if (isT2sWrapper) t2sCascadeNodeId(wrappedT2s!!, wrappedPort) else wrappedId
           if (addedBackendNodes.add(nodeId)) {
-            nodes += if (isT2sWrapper) {
-              StudioNode(
-                id = nodeId,
-                x = colX(wrapperCol), y = wy, w = BACKEND_W, h = BACKEND_H,
-                title = "t2s",
-                subtitle = t2sCascadeSubtitle(wrappedT2s!!, wrappedPort),
-                icon = Icons.Filled.Hub, accent = t2sColor, active = active,
-                kind = StudioNodeKind.BACKEND, onClick = null,
-              )
-            } else {
-              StudioNode(
-                id = nodeId,
-                x = colX(wrapperCol), y = wy, w = BACKEND_W, h = BACKEND_H,
-                title = wrapped.label.ifBlank { "SOCKS5 ${wrapped.host ?: "127.0.0.1"}:$wrappedPort" },
-                subtitle = listOfNotNull(wrapped.programId, wrapped.profile, wrapped.server)
-                  .joinToString(" / ").ifBlank { "SOCKS5 ${wrapped.host ?: "127.0.0.1"}:$wrappedPort" },
-                icon = Icons.Filled.CallSplit, accent = backendColor, active = active,
-                kind = StudioNodeKind.BACKEND, onClick = null,
-                iconRes = programIconRes(normalizeRouteProgramId(wrapped.programId.orEmpty())),
-              )
-            }
+            nodes += StudioNode(
+              id = nodeId,
+              x = colX(wrapperCol), y = wy, w = BACKEND_W, h = BACKEND_H,
+              title = wrapped.label.ifBlank { "SOCKS5 ${wrapped.host ?: "127.0.0.1"}:$wrappedPort" },
+              subtitle = listOfNotNull(wrapped.programId, wrapped.profile, wrapped.server)
+                .joinToString(" / ").ifBlank { "SOCKS5 ${wrapped.host ?: "127.0.0.1"}:$wrappedPort" },
+              icon = Icons.Filled.CallSplit, accent = backendColor, active = active,
+              kind = StudioNodeKind.BACKEND, onClick = null,
+              iconRes = programIconRes(normalizeRouteProgramId(wrapped.programId.orEmpty())),
+            )
             wy += BACKEND_H + BACKEND_GAP
           }
           edges += StudioEdge(nodeId, "internet", tertiary, active)
-          backends.filter { wrappedBackendCard(it)?.let { w -> wrappedBackendKey(w) == wrappedBackendKey(wrapped) } == true }
-            .forEach { backend -> edges += StudioEdge(backendNodeId(backend), nodeId, backendColor, backendActive(t2sPoll, backend.port, active)) }
         }
+      }
+      backends.forEach { backend ->
+        val wrapped = wrappedBackendCard(backend) ?: return@forEach
+        val targetId = existingWrappedTargetNodeId(wrapped, routeProgramNodeByKey, existingBackendNodeIds, t2sCascadeByPort) ?: wrappedBackendNodeId(wrapped)
+        edges += StudioEdge(backendNodeId(backend), targetId, backendColor, backendActive(t2sPoll, backend.port, active))
       }
     }
 
@@ -1070,9 +1071,33 @@ private fun wrappedBackendCard(backend: ApiModels.TrafficBackendPort): ApiModels
 }
 
 private fun wrappedBackendKey(backend: ApiModels.TrafficBackendPort): String =
-  listOf(backend.host.orEmpty().ifBlank { "127.0.0.1" }, backend.port.toString(), normalizeRouteProgramId(backend.programId.orEmpty()), backend.profile.orEmpty(), backend.server.orEmpty()).joinToString("|")
+  listOf(normalizeLocalHost(backend.host), backend.port.toString(), normalizeRouteProgramId(backend.programId.orEmpty()), backend.profile.orEmpty(), backend.server.orEmpty()).joinToString("|")
 
 private fun wrappedBackendNodeId(backend: ApiModels.TrafficBackendPort): String = "wrapped:${wrappedBackendKey(backend)}"
+
+private fun normalizeLocalHost(host: String?): String = when (host.orEmpty().trim().lowercase()) {
+  "", "127.0.0.1", "localhost", "::1", "0.0.0.0" -> "127.0.0.1"
+  else -> host.orEmpty().trim().lowercase()
+}
+
+private fun wrappedProgramKey(programId: String?, profile: String?): String =
+  listOf(normalizeRouteProgramId(programId.orEmpty()), profile.orEmpty()).joinToString("|")
+
+private fun existingWrappedTargetNodeId(
+  wrapped: ApiModels.TrafficBackendPort,
+  routeProgramNodeByKey: Map<String, String>,
+  existingBackendNodeIds: Set<String>,
+  t2sCascadeByPort: Map<Int, ApiModels.TrafficT2sInstance>,
+): String? {
+  t2sCascadeByPort[wrapped.port]?.let { return t2sCascadeNodeId(it, wrapped.port) }
+  val program = normalizeRouteProgramId(wrapped.programId.orEmpty())
+  if (program.isNotBlank()) {
+    routeProgramNodeByKey[wrappedProgramKey(program, wrapped.profile)]?.let { return it }
+  }
+  val backendId = backendNodeId(wrapped)
+  if (backendId in existingBackendNodeIds) return backendId
+  return null
+}
 
 private fun t2sCascadeNodeId(instance: ApiModels.TrafficT2sInstance, port: Int): String =
   "t2s-cascade:${instance.webPort}:$port:${instance.instanceId}"

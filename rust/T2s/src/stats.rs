@@ -2782,11 +2782,122 @@ async fn probe_one_target(
     auth: Option<(String, String)>,
 ) -> Option<f64> {
     let start = Instant::now();
-    if crate::socks5::connect_via_socks5(backend, target, auth, timeout).await.is_ok() {
+    let mut stream = match crate::socks5::connect_via_socks5(backend, target.clone(), auth, timeout).await {
+        Ok(stream) => stream,
+        Err(_) => return None,
+    };
+
+    // A SOCKS5 CONNECT success only means the local proxy accepted the request.
+    // Some backends (notably sing-box with a dead upstream) can return
+    // "request granted" and then immediately close/drop the data plane.  Treat
+    // Internet as available only after the remote side answers real TLS data.
+    if verify_backend_data_plane(&mut stream, &target, timeout).await {
         Some(start.elapsed().as_secs_f64() * 1000.0)
     } else {
         None
     }
+}
+
+async fn verify_backend_data_plane(
+    stream: &mut TcpStream,
+    target: &TargetAddr,
+    timeout: Duration,
+) -> bool {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let probe_timeout = timeout.min(Duration::from_millis(1500)).max(Duration::from_millis(700));
+    let sni = match target {
+        TargetAddr::Domain(host, _) => Some(host.as_str()),
+        TargetAddr::Ip(_) => None,
+    };
+    let hello = build_tls_client_hello(sni);
+
+    if tokio::time::timeout(probe_timeout, stream.write_all(&hello)).await.is_err() {
+        return false;
+    }
+
+    let mut first = [0u8; 1];
+    match tokio::time::timeout(probe_timeout, stream.read_exact(&mut first)).await {
+        Ok(Ok(_)) => true,
+        _ => false,
+    }
+}
+
+fn build_tls_client_hello(sni: Option<&str>) -> Vec<u8> {
+    let mut random = [0u8; 32];
+    for (idx, chunk) in random.chunks_mut(8).enumerate() {
+        let v = rand_u64().wrapping_add(idx as u64).to_be_bytes();
+        chunk.copy_from_slice(&v[..chunk.len()]);
+    }
+
+    let mut extensions = Vec::new();
+
+    if let Some(host) = sni.map(str::trim).filter(|h| !h.is_empty() && h.len() <= 253) {
+        let host_bytes = host.as_bytes();
+        if host_bytes.len() <= 255 {
+            let server_name_len = 1 + 2 + host_bytes.len();
+            let list_len = server_name_len;
+            let ext_len = 2 + list_len;
+            extensions.extend_from_slice(&0x0000u16.to_be_bytes());
+            extensions.extend_from_slice(&(ext_len as u16).to_be_bytes());
+            extensions.extend_from_slice(&(list_len as u16).to_be_bytes());
+            extensions.push(0x00);
+            extensions.extend_from_slice(&(host_bytes.len() as u16).to_be_bytes());
+            extensions.extend_from_slice(host_bytes);
+        }
+    }
+
+    // supported_groups: x25519, secp256r1
+    extensions.extend_from_slice(&0x000au16.to_be_bytes());
+    extensions.extend_from_slice(&6u16.to_be_bytes());
+    extensions.extend_from_slice(&4u16.to_be_bytes());
+    extensions.extend_from_slice(&0x001du16.to_be_bytes());
+    extensions.extend_from_slice(&0x0017u16.to_be_bytes());
+
+    // signature_algorithms: rsa_pss_rsae_sha256, ecdsa_secp256r1_sha256, rsa_pkcs1_sha256
+    extensions.extend_from_slice(&0x000du16.to_be_bytes());
+    extensions.extend_from_slice(&8u16.to_be_bytes());
+    extensions.extend_from_slice(&6u16.to_be_bytes());
+    extensions.extend_from_slice(&0x0804u16.to_be_bytes());
+    extensions.extend_from_slice(&0x0403u16.to_be_bytes());
+    extensions.extend_from_slice(&0x0401u16.to_be_bytes());
+
+    // supported_versions: TLS 1.3, TLS 1.2
+    extensions.extend_from_slice(&0x002bu16.to_be_bytes());
+    extensions.extend_from_slice(&5u16.to_be_bytes());
+    extensions.push(4);
+    extensions.extend_from_slice(&0x0304u16.to_be_bytes());
+    extensions.extend_from_slice(&0x0303u16.to_be_bytes());
+
+    let cipher_suites: [u16; 6] = [0x1301, 0x1302, 0x1303, 0xc02f, 0xc02b, 0x009c];
+
+    let mut body = Vec::new();
+    body.extend_from_slice(&0x0303u16.to_be_bytes()); // legacy_version
+    body.extend_from_slice(&random);
+    body.push(0); // legacy_session_id length
+    body.extend_from_slice(&((cipher_suites.len() * 2) as u16).to_be_bytes());
+    for cs in cipher_suites {
+        body.extend_from_slice(&cs.to_be_bytes());
+    }
+    body.push(1);
+    body.push(0); // null compression
+    body.extend_from_slice(&(extensions.len() as u16).to_be_bytes());
+    body.extend_from_slice(&extensions);
+
+    let mut handshake = Vec::new();
+    handshake.push(0x01); // ClientHello
+    let body_len = body.len() as u32;
+    handshake.push(((body_len >> 16) & 0xff) as u8);
+    handshake.push(((body_len >> 8) & 0xff) as u8);
+    handshake.push((body_len & 0xff) as u8);
+    handshake.extend_from_slice(&body);
+
+    let mut record = Vec::new();
+    record.push(0x16); // handshake
+    record.extend_from_slice(&0x0301u16.to_be_bytes()); // TLS record legacy version
+    record.extend_from_slice(&(handshake.len() as u16).to_be_bytes());
+    record.extend_from_slice(&handshake);
+    record
 }
 
 async fn first_successful_probe(

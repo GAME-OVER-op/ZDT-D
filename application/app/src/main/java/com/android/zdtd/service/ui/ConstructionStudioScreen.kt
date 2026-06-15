@@ -80,7 +80,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.asAndroidPath
 import androidx.compose.ui.graphics.asComposePath
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -164,26 +163,25 @@ private data class StudioGraph(
   val height: Float,
 )
 
-private class StudioNodeRenderState(initial: StudioNode) {
+private class StudioExitingNodeState(initial: StudioNode) {
   var node by mutableStateOf(initial)
-  var exiting by mutableStateOf(false)
-  val appear = Animatable(0f)
+  val alpha = Animatable(1f)
 }
 
 private class StudioEdgeRenderState(initial: StudioEdge) {
   var edge by mutableStateOf(initial)
   var exiting by mutableStateOf(false)
   var activeExiting by mutableStateOf(false)
-  val progress = Animatable(0f)
+  val reveal = Animatable(0f)
   val activeLevel = Animatable(if (initial.active) 1f else 0f)
-  val activeProgress = Animatable(if (initial.active) 1f else 0f)
+  val activeReveal = Animatable(if (initial.active) 1f else 0f)
 }
 
 private data class StudioRenderedEdge(
   val edge: StudioEdge,
-  val progress: Float,
+  val reveal: Float,
   val activeLevel: Float,
-  val activeProgress: Float,
+  val activeReveal: Float,
   val exiting: Boolean,
   val activeExiting: Boolean,
 )
@@ -385,44 +383,40 @@ fun ConstructionStudioScreen(
         }
         .size(graph.width.dp, graph.height.dp),
     ) {
-      // Render through a small retained layer so nodes/edges can exit smoothly
-      // instead of disappearing the moment graph data changes.
-      val renderNodes = remember { mutableStateMapOf<String, StudioNodeRenderState>() }
-      val renderEdges = remember { mutableStateMapOf<String, StudioEdgeRenderState>() }
+      // Live nodes keep the original opening animation. Separate retained
+      // states are used only for exiting nodes and edges so the normal visual
+      // style is not dimmed by frequent traffic refreshes.
+      val renderPos = remember { mutableStateMapOf<String, Offset>() }
+      val lastNodes = remember { mutableStateMapOf<String, StudioNode>() }
+      val knownNodeIds = remember { mutableStateMapOf<String, Boolean>() }
+      val exitingNodes = remember { mutableStateMapOf<String, StudioExitingNodeState>() }
+      val edgeStates = remember { mutableStateMapOf<String, StudioEdgeRenderState>() }
 
       val nodeAnimKey = remember(graph.nodes) { graph.nodes.map { "${it.id}|${it.x}|${it.y}|${it.w}|${it.h}|${it.title}|${it.subtitle}|${it.active}|${it.warn}" } }
       val edgeAnimKey = remember(graph.edges) { graph.edges.map { "${studioEdgeId(it)}|${it.active}" } }
 
       LaunchedEffect(nodeAnimKey) {
-        val incoming = graph.nodes.associateBy { it.id }
-        incoming.forEach { (id, node) ->
-          val current = renderNodes[id]
-          if (current == null) {
-            val state = StudioNodeRenderState(node)
-            renderNodes[id] = state
-            launch {
-              val col = (node.x / COL_STEP).toInt().coerceAtLeast(0)
-              delay(col * 70L)
-              state.exiting = false
-              state.appear.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
-            }
-          } else {
-            current.node = node
-            if (current.exiting) {
-              current.exiting = false
-              launch { current.appear.animateTo(1f, tween(260, easing = FastOutSlowInEasing)) }
-            }
-          }
+        val incomingIds = graph.nodes.map { it.id }.toSet()
+        graph.nodes.forEach { node ->
+          lastNodes[node.id] = node
+          knownNodeIds[node.id] = true
+          exitingNodes.remove(node.id)
         }
-        val removed = renderNodes.keys.filter { it !in incoming.keys }
+        val removed = knownNodeIds.keys.filter { it !in incomingIds }
         removed.forEach { id ->
-          val state = renderNodes[id] ?: return@forEach
-          state.exiting = true
+          val oldNode = lastNodes[id] ?: return@forEach
+          val drag = nodeOffsets[id] ?: Offset.Zero
+          val lastPos = renderPos[id] ?: Offset(oldNode.x + drag.x, oldNode.y + drag.y)
+          val exitNode = oldNode.copy(x = lastPos.x, y = lastPos.y, onClick = null, onPort = null)
+          val state = StudioExitingNodeState(exitNode)
+          exitingNodes[id] = state
+          knownNodeIds.remove(id)
+          lastNodes.remove(id)
           launch {
-            // First let the links break, then fade the card out.
-            delay(220)
-            state.appear.animateTo(0f, tween(240, easing = FastOutSlowInEasing))
-            if (state.exiting && renderNodes[id] === state) renderNodes.remove(id)
+            // Links break first; then the orphan card fades away.
+            delay(260)
+            state.alpha.animateTo(0f, tween(240, easing = FastOutSlowInEasing))
+            if (exitingNodes[id] === state) exitingNodes.remove(id)
           }
         }
       }
@@ -430,88 +424,76 @@ fun ConstructionStudioScreen(
       LaunchedEffect(edgeAnimKey) {
         val incoming = graph.edges.associateBy(::studioEdgeId)
         incoming.forEach { (id, edge) ->
-          val current = renderEdges[id]
-          if (current == null) {
-            val state = StudioEdgeRenderState(edge)
-            renderEdges[id] = state
+          val state = edgeStates[id]
+          if (state == null) {
+            val created = StudioEdgeRenderState(edge)
+            edgeStates[id] = created
             launch {
-              // Card first, then the connection grows from the left port.
-              delay(190)
-              state.exiting = false
-              state.progress.animateTo(1f, tween(360, easing = FastOutSlowInEasing))
+              // Card appears first, then the connection grows left-to-right.
+              delay(210)
+              created.exiting = false
+              created.reveal.animateTo(1f, tween(360, easing = FastOutSlowInEasing))
             }
           } else {
-            current.edge = edge
-            if (current.exiting) {
-              current.exiting = false
-              launch { current.progress.animateTo(1f, tween(320, easing = FastOutSlowInEasing)) }
+            state.edge = edge
+            if (state.exiting) {
+              state.exiting = false
+              launch { state.reveal.animateTo(1f, tween(320, easing = FastOutSlowInEasing)) }
             }
           }
-          val state = renderEdges[id]
-          if (state != null) {
-            if (edge.active) {
-              state.activeExiting = false
-              launch { state.activeLevel.animateTo(1f, tween(220, easing = FastOutSlowInEasing)) }
-              launch { state.activeProgress.animateTo(1f, tween(360, easing = FastOutSlowInEasing)) }
-            } else {
-              state.activeExiting = true
-              launch {
-                // Active dashes break from the left, while the grey connection remains.
-                state.activeProgress.animateTo(0f, tween(320, easing = FastOutSlowInEasing))
-                if (!state.edge.active) state.activeExiting = false
-              }
-              launch { state.activeLevel.animateTo(0f, tween(260, easing = FastOutSlowInEasing)) }
+          val current = edgeStates[id] ?: return@forEach
+          if (edge.active) {
+            current.activeExiting = false
+            launch { current.activeLevel.animateTo(1f, tween(220, easing = FastOutSlowInEasing)) }
+            launch { current.activeReveal.animateTo(1f, tween(360, easing = FastOutSlowInEasing)) }
+          } else {
+            current.activeExiting = true
+            launch {
+              current.activeReveal.animateTo(0f, tween(320, easing = FastOutSlowInEasing))
+              if (!current.edge.active) current.activeExiting = false
             }
+            launch { current.activeLevel.animateTo(0f, tween(260, easing = FastOutSlowInEasing)) }
           }
         }
-        val removed = renderEdges.keys.filter { it !in incoming.keys }
+        val removed = edgeStates.keys.filter { it !in incoming.keys }
         removed.forEach { id ->
-          val state = renderEdges[id] ?: return@forEach
+          val state = edgeStates[id] ?: return@forEach
           state.exiting = true
           launch {
-            // Break from the left side: the visible segment slides toward target.
-            state.progress.animateTo(0f, tween(320, easing = FastOutSlowInEasing))
-            if (state.exiting && renderEdges[id] === state) renderEdges.remove(id)
+            // The physical connection breaks from the left side.
+            state.reveal.animateTo(0f, tween(330, easing = FastOutSlowInEasing))
+            if (state.exiting && edgeStates[id] === state) edgeStates.remove(id)
           }
         }
       }
 
-      val renderNodeStates = renderNodes.values.toList().sortedWith(compareBy<StudioNodeRenderState> { it.node.x }.thenBy { it.node.y })
-      val renderedEdges = renderEdges.values.toList().map { state ->
-        StudioRenderedEdge(
-          edge = state.edge,
-          progress = state.progress.value.coerceIn(0f, 1f),
-          activeLevel = state.activeLevel.value.coerceIn(0f, 1f),
-          activeProgress = state.activeProgress.value.coerceIn(0f, 1f),
-          exiting = state.exiting,
-          activeExiting = state.activeExiting,
-        )
-      }
-      val renderWidth = max(graph.width, renderNodeStates.maxOfOrNull { it.node.x + it.node.w + MARGIN_X } ?: graph.width)
-      val renderHeight = max(graph.height, renderNodeStates.maxOfOrNull { it.node.y + it.node.h + MARGIN_BOTTOM } ?: graph.height)
-
-      // Edges follow animated card positions (1-frame lag is invisible). Until a
-      // card reports its animated position, fall back to its raw layout + drag.
-      val renderPos = remember { mutableStateMapOf<String, Offset>() }
-      val edgeNodeMap = renderNodeStates.associate { state ->
-        val n = state.node
+      val edgeNodeMap = (graph.nodes + exitingNodes.values.map { it.node }).associate { n ->
         val drag = nodeOffsets[n.id] ?: Offset.Zero
         n.id to n.copy(
           x = renderPos[n.id]?.x ?: (n.x + drag.x),
           y = renderPos[n.id]?.y ?: (n.y + drag.y),
         )
       }
+      val renderedEdges = edgeStates.values.toList().map { state ->
+        StudioRenderedEdge(
+          edge = state.edge,
+          reveal = state.reveal.value.coerceIn(0f, 1f),
+          activeLevel = state.activeLevel.value.coerceIn(0f, 1f),
+          activeReveal = state.activeReveal.value.coerceIn(0f, 1f),
+          exiting = state.exiting,
+          activeExiting = state.activeExiting,
+        )
+      }
       StudioEdgeCanvas(
-        width = renderWidth,
-        height = renderHeight,
+        width = graph.width,
+        height = graph.height,
         edges = renderedEdges,
         nodeMap = edgeNodeMap,
         phase = phase,
         buildProgress = buildProgress.value,
       )
 
-      renderNodeStates.forEach { state ->
-        val node = state.node
+      graph.nodes.forEach { node ->
         key(node.id) {
           val drag = nodeOffsets[node.id] ?: Offset.Zero
           // Animate only the layout base; the live drag delta stays instant so
@@ -524,36 +506,57 @@ fun ConstructionStudioScreen(
           val finalPos = Offset(animatedBase.x + drag.x, animatedBase.y + drag.y)
           LaunchedEffect(finalPos) { renderPos[node.id] = finalPos }
 
+          // Build/appear: fade + scale-up, staggered left-to-right by column.
+          val appear = remember { Animatable(0f) }
+          LaunchedEffect(node.id) {
+            val col = (node.x / COL_STEP).toInt().coerceAtLeast(0)
+            delay(col * 70L)
+            appear.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
+          }
+
           Box(
             modifier = Modifier
               .offset { IntOffset(finalPos.x.dp.roundToPx(), finalPos.y.dp.roundToPx()) }
               .graphicsLayer {
-                // Do not dim live cards: frequent traffic/layout refreshes can restart
-                // enter animations and make the whole map look almost black. Keep
-                // visible cards fully opaque; use appear only for the exit fade.
-                alpha = if (state.exiting) state.appear.value else 1f
-                val s = if (state.exiting) 0.86f + 0.14f * state.appear.value else 1f
+                alpha = appear.value
+                val s = 0.8f + 0.2f * appear.value
                 scaleX = s
                 scaleY = s
               }
-              .pointerInput(node.id, state.exiting) {
-                if (!state.exiting) {
-                  // Dragging a card moves only that card (not the whole canvas);
-                  // consuming the gesture stops the parent pan/zoom from firing.
-                  detectDragGestures(
-                    onDragEnd = {
-                      val o = nodeOffsets[node.id]
-                      if (o != null) layoutPrefs.edit().putString(node.id, "${o.x},${o.y}").apply()
-                    },
-                  ) { change, dragAmount ->
-                    change.consume()
-                    val current = nodeOffsets[node.id] ?: Offset.Zero
-                    nodeOffsets[node.id] = current + Offset(dragAmount.x.toDp().value, dragAmount.y.toDp().value)
-                  }
+              .pointerInput(node.id) {
+                // Dragging a card moves only that card (not the whole canvas);
+                // consuming the gesture stops the parent pan/zoom from firing.
+                detectDragGestures(
+                  onDragEnd = {
+                    val o = nodeOffsets[node.id]
+                    if (o != null) layoutPrefs.edit().putString(node.id, "${o.x},${o.y}").apply()
+                  },
+                ) { change, dragAmount ->
+                  change.consume()
+                  val current = nodeOffsets[node.id] ?: Offset.Zero
+                  nodeOffsets[node.id] = current + Offset(dragAmount.x.toDp().value, dragAmount.y.toDp().value)
                 }
               },
           ) {
-            StudioGraphNode(if (state.exiting) node.copy(onClick = null, onPort = null) else node)
+            StudioGraphNode(node)
+          }
+        }
+      }
+
+      exitingNodes.values.forEach { state ->
+        val node = state.node
+        key("exit:${node.id}") {
+          Box(
+            modifier = Modifier
+              .offset { IntOffset(node.x.dp.roundToPx(), node.y.dp.roundToPx()) }
+              .graphicsLayer {
+                alpha = state.alpha.value
+                val s = 0.86f + 0.14f * state.alpha.value
+                scaleX = s
+                scaleY = s
+              },
+          ) {
+            StudioGraphNode(node)
           }
         }
       }
@@ -1054,23 +1057,20 @@ private fun StudioEdgeCanvas(
         moveTo(sx, sy)
         cubicTo(sx + dx, sy, ex - dx, ey, ex, ey)
       }
-      // The physical connection is drawn as an inactive base line. Active
-      // traffic is a separate dashed overlay that appears from the left and
-      // breaks from the left while the base line can remain connected.
       val grey = Color(0xFF64748B)
-      val baseInactiveAlpha = if (edge.kind == StudioEdgeKind.DIRECT_FALLBACK) 0.74f else 0.5f
-      val activeLevel = rendered.activeLevel.coerceIn(0f, 1f)
-      val visible = rendered.progress.coerceIn(0f, 1f)
+      val inactiveAlpha = if (edge.kind == StudioEdgeKind.DIRECT_FALLBACK) 0.74f else 0.5f
       val build = buildProgress.coerceIn(0f, 1f)
-      val lineProgress = (visible * build).coerceIn(0f, 1f)
+      val reveal = (rendered.reveal * build).coerceIn(0f, 1f)
       val measure = android.graphics.PathMeasure(path.asAndroidPath(), false)
       val baseSegment = android.graphics.Path()
       if (rendered.exiting) {
-        measure.getSegment(measure.length * (1f - lineProgress), measure.length, baseSegment, true)
+        // Connection removal breaks from the left side.
+        measure.getSegment(measure.length * (1f - reveal), measure.length, baseSegment, true)
       } else {
-        measure.getSegment(0f, measure.length * lineProgress, baseSegment, true)
+        // Connection creation grows from the left side.
+        measure.getSegment(0f, measure.length * reveal, baseSegment, true)
       }
-      val baseColor = if (edge.kind == StudioEdgeKind.DIRECT_FALLBACK) edge.accent.copy(alpha = baseInactiveAlpha) else grey.copy(alpha = baseInactiveAlpha)
+      val baseColor = if (edge.kind == StudioEdgeKind.DIRECT_FALLBACK) edge.accent.copy(alpha = inactiveAlpha) else grey.copy(alpha = inactiveAlpha)
       drawPath(
         path = baseSegment.asComposePath(),
         color = baseColor,
@@ -1080,35 +1080,33 @@ private fun StudioEdgeCanvas(
         ),
       )
 
-      val activeProgress = (rendered.activeProgress * build).coerceIn(0f, 1f)
-      if (activeLevel > 0.01f && activeProgress > 0.01f && lineProgress > 0.01f) {
+      val activeLevel = rendered.activeLevel.coerceIn(0f, 1f)
+      val activeReveal = (rendered.activeReveal * build).coerceIn(0f, 1f)
+      if (activeLevel > 0.01f && activeReveal > 0.01f && reveal > 0.01f) {
         val activeSegment = android.graphics.Path()
-        val activeEnd = measure.length * lineProgress
+        val lineEnd = measure.length * reveal
         if (rendered.exiting || rendered.activeExiting) {
-          // Active dashes disappear from the left side.
-          val start = activeEnd * (1f - activeProgress)
-          measure.getSegment(start, activeEnd, activeSegment, true)
+          // Active dash overlay also breaks from the left.
+          measure.getSegment(lineEnd * (1f - activeReveal), lineEnd, activeSegment, true)
         } else {
-          // Active dashes appear from the left side.
-          measure.getSegment(0f, activeEnd * activeProgress, activeSegment, true)
+          // Active dash overlay appears from the left.
+          measure.getSegment(0f, lineEnd * activeReveal, activeSegment, true)
         }
-        val effect = PathEffect.dashPathEffect(floatArrayOf(14f, 14f), -phase)
         drawPath(
           path = activeSegment.asComposePath(),
           color = edge.accent.copy(alpha = 0.92f * activeLevel),
           style = Stroke(
             width = lerpFloat(if (edge.kind == StudioEdgeKind.DIRECT_FALLBACK) 3.4f else 2.5f, 4.5f, activeLevel),
             cap = StrokeCap.Round,
-            pathEffect = effect,
+            pathEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 14f), -phase),
           ),
         )
       }
 
-      // Connection ports fade with the physical line and brighten with activity.
-      if (lineProgress > 0.05f) {
-        val portColor = lerp(if (edge.kind == StudioEdgeKind.DIRECT_FALLBACK) edge.accent else grey, edge.accent, activeLevel)
+      if (reveal >= 0.05f) {
+        val portColor = if (activeLevel > 0.05f || edge.kind == StudioEdgeKind.DIRECT_FALLBACK) edge.accent else grey
         val portRadius = lerpFloat(6f, 7f, activeLevel)
-        val portAlpha = lineProgress.coerceIn(0f, 1f)
+        val portAlpha = reveal.coerceIn(0f, 1f)
         drawCircle(color = portRing.copy(alpha = portAlpha), radius = portRadius + 2.5f, center = Offset(sx, sy))
         drawCircle(color = portColor.copy(alpha = portAlpha), radius = portRadius, center = Offset(sx, sy))
         drawCircle(color = portRing.copy(alpha = portAlpha), radius = portRadius + 2.5f, center = Offset(ex, ey))

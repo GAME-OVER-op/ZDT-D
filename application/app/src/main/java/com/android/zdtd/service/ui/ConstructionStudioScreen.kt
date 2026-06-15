@@ -97,6 +97,7 @@ import com.android.zdtd.service.RootConfigManager
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
 import com.android.zdtd.service.api.T2sApiClient
+import com.android.zdtd.service.api.T2sBackend
 import com.android.zdtd.service.api.T2sPollResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -496,9 +497,8 @@ fun ConstructionStudioScreen(
       val connectPort = connectFrom.id.substringAfter("t2s:", "").substringBefore(":").toIntOrNull()?.takeIf { it > 0 }
       val connectPoll = connectPort?.let { t2sPolls[it] }
       val connectedAddrs = connectPoll?.state?.backends?.map { it.addr }?.toSet().orEmpty()
-      val localEndpointLabel = stringResource(R.string.construction_studio_local_endpoint)
-      val connectCandidates = remember(report.proxyEndpoints, constructionEndpoints, localEndpointLabel, connectedAddrs) {
-        mergeConstructionCandidates(report.proxyEndpoints, constructionEndpoints, localEndpointLabel, connectedAddrs)
+      val connectCandidates = remember(constructionEndpoints, connectedAddrs) {
+        mergeConstructionCandidates(constructionEndpoints, connectedAddrs)
       }
 
       fun finishT2sBackend(endpoint: ApiModels.ConstructionProxyEndpointCandidate, disconnect: Boolean) {
@@ -661,11 +661,13 @@ private fun buildStudioGraph(
     val t2sBackendPorts = t2sBackendAddrs.mapNotNull { backendPortFromAddr(it.addr) }.distinct()
     val ruleBackends = group.rules.flatMap { it.backendPorts }
     val backends = mergeBackendCards(ruleBackends, proxyEndpoints, t2sBackendPorts).take(6)
-    val active = group.rules.any { it.active }
+    val ruleBytes = group.rules.sumOf { it.bytes }
+    val chainBytesOverride = t2sTrafficBytes(t2sPoll)
+    val chainBytes = chainBytesOverride ?: ruleBytes
+    val active = group.rules.any { it.active } || chainBytes > 0L
     if (active) anyActive = true
-    val bytes = group.rules.sumOf { it.bytes }
     val packets = group.rules.sumOf { it.packets }
-    totalBytes += bytes
+    totalBytes += chainBytes
     val appCount = group.rules.mapNotNull { it.uid }.distinct().size
     val accent = semanticAccent(group.rules.firstOrNull()?.semantic.orEmpty())
 
@@ -707,7 +709,7 @@ private fun buildStudioGraph(
       id = progId,
       x = colX(programCol), y = rowTopY, w = NODE_W, h = NODE_H,
       title = programNodeTitle(programName(group.programId), group.profile),
-      subtitle = ruleSummary(group.rules),
+      subtitle = ruleSummary(group.rules, chainBytesOverride),
       icon = Icons.Filled.CallSplit, accent = accent, active = active,
       kind = StudioNodeKind.PROGRAM, onClick = { onOpenGroupSettings(group) },
       iconRes = programIconRes(normalizeRouteProgramId(group.programId)),
@@ -732,9 +734,8 @@ private fun buildStudioGraph(
           nodes += StudioNode(
             id = bId,
             x = colX(backendCol), y = by, w = BACKEND_W, h = BACKEND_H,
-            title = backend.label.ifBlank { "127.0.0.1:${backend.port}" },
-            subtitle = listOfNotNull(backend.programId, backend.profile, backend.server)
-              .joinToString(" / ").ifBlank { "backend ${backend.port}" },
+            title = backendCardTitle(backend),
+            subtitle = backendCardSubtitle(backend, t2sPoll),
             icon = Icons.Filled.CallSplit, accent = backendColor, active = backendActive(t2sPoll, backend.port, active),
             kind = StudioNodeKind.BACKEND, onClick = null,
             iconRes = programIconRes(normalizeRouteProgramId(backend.programId.orEmpty())),
@@ -764,8 +765,8 @@ private fun buildStudioGraph(
     nodes += StudioNode(
       id = appId,
       x = colX(0), y = rowTopY, w = NODE_W, h = NODE_H,
-      title = "${vpn.apps.size} $appsWord",
-      subtitle = vpn.uidRanges.joinToString(", ").ifBlank { vpn.tun },
+      title = vpnAppListTitle(vpn),
+      subtitle = if (vpn.apps.isNotEmpty()) "${vpn.apps.size} $appsWord" else appListLabel,
       icon = Icons.Filled.Apps, accent = primary, active = active,
       kind = StudioNodeKind.APP, onClick = { onOpenVpnApps(vpn) },
     )
@@ -827,6 +828,47 @@ private fun backendNodeId(backend: ApiModels.TrafficBackendPort): String {
   val profile = backend.profile.orEmpty().ifBlank { "default" }
   val server = backend.server.orEmpty().ifBlank { backend.port.toString() }
   return "backend:$p:$profile:$server:${backend.port}"
+}
+
+private fun backendCardTitle(backend: ApiModels.TrafficBackendPort): String {
+  val server = backend.server.orEmpty().trim()
+  val normalized = normalizeBackendServerName(server)
+  if (normalized.isNotBlank()) return normalized
+
+  val labelName = backend.label
+    .substringBeforeLast(':', "")
+    .substringAfterLast('/')
+    .trim()
+    .takeIf { it.isNotBlank() && it != backend.programId && it != backend.profile }
+  return labelName ?: "127.0.0.1:${backend.port}"
+}
+
+private fun backendCardSubtitle(backend: ApiModels.TrafficBackendPort, poll: T2sPollResult?): String {
+  val runtime = t2sBackendForPort(poll, backend.port)
+  val parts = mutableListOf<String>()
+  backend.profile?.takeIf { it.isNotBlank() }?.let { parts += it }
+  parts += runtime?.addr?.takeIf { it.isNotBlank() } ?: "127.0.0.1:${backend.port}"
+  runtime?.state?.takeIf { it.isNotBlank() }?.let { parts += it.lowercase(Locale.ROOT) }
+  runtime?.totalBytes?.takeIf { it > 0L }?.let { parts += formatBytes(it) }
+  return parts.joinToString(" • ")
+}
+
+private fun normalizeBackendServerName(server: String): String {
+  if (server.isBlank()) return ""
+  return when (server) {
+    "mixed_port" -> "Mixed"
+    "socks5_port", "SocksPort" -> "SOCKS5"
+    "upstream" -> "Upstream"
+    "t2s_ports" -> "t2s port"
+    else -> when {
+      server.startsWith("opera-proxy-") -> "Opera proxy ${server.removePrefix("opera-proxy-")}"
+      else -> server
+    }
+  }
+}
+
+private fun t2sBackendForPort(poll: T2sPollResult?, port: Int): T2sBackend? {
+  return poll?.state?.backends?.firstOrNull { backendPortFromAddr(it.addr) == port }
 }
 
 private fun backendActive(poll: T2sPollResult?, port: Int, fallback: Boolean): Boolean {
@@ -1069,9 +1111,7 @@ private fun StudioConnectSheet(
 }
 
 private fun mergeConstructionCandidates(
-  running: List<ApiModels.TrafficBackendPort>,
   candidates: List<ApiModels.ConstructionProxyEndpointCandidate>,
-  localEndpointLabel: String,
   connectedAddrs: Set<String>,
 ): List<ApiModels.ConstructionProxyEndpointCandidate> {
   val byAddr = LinkedHashMap<String, ApiModels.ConstructionProxyEndpointCandidate>()
@@ -1344,7 +1384,8 @@ private fun StudioAppsBottomSheet(
   val iconCache = remember { mutableMapOf<String, ImageBitmap?>() }
   val listState = rememberLazyListState()
   var assignments by remember(group.key) { mutableStateOf<ApiModels.AppAssignmentsState?>(null) }
-  var showPicker by remember { mutableStateOf(false) }
+  var pickerTarget by remember(group.key) { mutableStateOf<ApiModels.AppAssignmentEntry?>(null) }
+  var showSinglePicker by remember(group.key) { mutableStateOf(false) }
   var saving by remember { mutableStateOf(false) }
   var selectedPackages by remember(group.key) { mutableStateOf(groupPackages(group)) }
   val compact = rememberIsCompactWidth() || rememberIsShortHeight()
@@ -1352,32 +1393,45 @@ private fun StudioAppsBottomSheet(
   LaunchedEffect(group.key) {
     actions.loadAppAssignments { data ->
       assignments = data ?: ApiModels.AppAssignmentsState()
-      selectedPackages = findAssignmentForGroup(group, data)?.packages ?: groupPackages(group)
+      selectedPackages = editableAssignmentsForGroup(group, data)
+        .flatMap { it.packages }
+        .toSet()
+        .ifEmpty { groupPackages(group) }
     }
   }
 
-  val editableEntry = remember(assignments, group) { findAssignmentForGroup(group, assignments) }
+  val editableEntries = remember(assignments, group) { editableAssignmentsForGroup(group, assignments) }
   val editablePath = remember(assignments, group) { resolveEditableAppPath(group, assignments) }
-  val canEdit = !editablePath.isNullOrBlank()
+  val singleEntry = editableEntries.singleOrNull()
+  val singleEditPath = singleEntry?.path ?: editablePath
+  val singleEditPackages = singleEntry?.packages ?: selectedPackages
+  val canEdit = editableEntries.isNotEmpty() || !editablePath.isNullOrBlank()
+  val activePickerPath = pickerTarget?.path ?: singleEditPath?.takeIf { showSinglePicker }
+  val activePickerPackages = pickerTarget?.packages ?: singleEditPackages
+  val activePickerTitle = pickerTarget?.let { appListTitle(group, studioSlotLabel(it.slot)) } ?: appListTitle(group)
 
-  if (showPicker && canEdit) {
-    val targetPath = editablePath!!
+  if (activePickerPath != null) {
+    val targetPath = activePickerPath
     AppPickerSheet(
-      title = stringResource(R.string.construction_studio_edit_list_title, appListTitle(group)),
+      title = stringResource(R.string.construction_studio_edit_list_title, activePickerTitle),
       path = targetPath,
       actions = actions,
       programs = programs,
-      initialSelected = selectedPackages,
-      onDismiss = { showPicker = false },
+      initialSelected = activePickerPackages,
+      onDismiss = {
+        pickerTarget = null
+        showSinglePicker = false
+      },
       onSave = { newSel, removalsByPath ->
-        showPicker = false
+        pickerTarget = null
+        showSinglePicker = false
         saving = true
-        selectedPackages = newSel
+        selectedPackages = mergeSelectedPackagesAfterSave(editableEntries, targetPath, newSel).ifEmpty { newSel }
         val payload = if (newSel.isEmpty()) "" else newSel.sorted().joinToString("\n", postfix = "\n")
         val done: (Boolean) -> Unit = { ok ->
           saving = false
           if (ok) {
-            selectedPackages = newSel
+            selectedPackages = mergeSelectedPackagesAfterSave(editableEntries, targetPath, newSel).ifEmpty { newSel }
             onSaved()
           }
         }
@@ -1412,12 +1466,27 @@ private fun StudioAppsBottomSheet(
             }
             StudioEditAppsButton(
               compact = compact,
-              enabled = canEdit && !saving,
+              enabled = canEdit && !saving && editableEntries.size <= 1,
               saving = saving,
-              onClick = { showPicker = true },
+              onClick = { showSinglePicker = true },
             )
           }
-          if (!canEdit) {
+          if (editableEntries.size > 1) {
+            Text(
+              stringResource(R.string.construction_studio_choose_list_to_edit),
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              editableEntries.forEach { entry ->
+                StudioAppListChip(
+                  label = studioSlotLabel(entry.slot),
+                  enabled = !saving,
+                  onClick = { pickerTarget = entry },
+                )
+              }
+            }
+          } else if (!canEdit) {
             Text(
               stringResource(R.string.construction_studio_list_path_missing),
               style = MaterialTheme.typography.labelSmall,
@@ -1436,6 +1505,29 @@ private fun StudioAppsBottomSheet(
         }
       }
     }
+  }
+}
+
+@Composable
+private fun StudioAppListChip(
+  label: String,
+  enabled: Boolean,
+  onClick: () -> Unit,
+) {
+  val color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.28f)
+  Surface(
+    shape = RoundedCornerShape(999.dp),
+    color = color.copy(alpha = 0.14f),
+    contentColor = color,
+    border = BorderStroke(1.dp, color.copy(alpha = 0.34f)),
+    onClick = { if (enabled) onClick() },
+  ) {
+    Text(
+      label,
+      modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+      style = MaterialTheme.typography.labelMedium,
+      fontWeight = FontWeight.SemiBold,
+    )
   }
 }
 
@@ -1645,6 +1737,28 @@ private fun groupUidFiles(group: StudioAppGroup): List<String> =
 private fun hasMultipleAppLists(group: StudioAppGroup): Boolean =
   groupSlots(group).size > 1 || groupUidFiles(group).size > 1
 
+private fun editableAssignmentsForGroup(group: StudioAppGroup, data: ApiModels.AppAssignmentsState?): List<ApiModels.AppAssignmentEntry> {
+  val lists = data?.lists.orEmpty()
+  if (lists.isEmpty()) return emptyList()
+  val program = normalizeRouteProgramId(group.programId)
+  val profile = group.profile.orEmpty()
+  val slots = groupSlots(group).map { it.lowercase(Locale.ROOT) }.toSet()
+  val uidFiles = groupUidFiles(group)
+  return lists.filter { entry ->
+    normalizeRouteProgramId(entry.programId) == program &&
+      (profile.isBlank() || entry.profile.orEmpty() == profile) &&
+      (
+        (slots.isNotEmpty() && entry.slot.lowercase(Locale.ROOT) in slots) ||
+          uidFiles.any { uidFile -> uidFile.endsWith("/" + entry.path.substringAfterLast('/')) || uidFile.contains(entry.path.substringAfter("working_folder/", entry.path)) }
+      )
+  }.ifEmpty {
+    if (hasMultipleAppLists(group)) emptyList() else listOfNotNull(findAssignmentForGroup(group, data))
+  }.distinctBy { it.path }
+}
+
+private fun mergeSelectedPackagesAfterSave(entries: List<ApiModels.AppAssignmentEntry>, targetPath: String, newSel: Set<String>): Set<String> =
+  entries.flatMap { entry -> if (entry.path == targetPath) newSel else entry.packages }.toSet()
+
 private fun resolveEditableAppPath(group: StudioAppGroup, data: ApiModels.AppAssignmentsState?): String? {
   if (hasMultipleAppLists(group)) return null
   return findAssignmentForGroup(group, data)?.path
@@ -1734,6 +1848,17 @@ private fun appListTitle(group: StudioAppGroup): String {
   return listOfNotNull(group.programId, group.profile, slotLabel).joinToString(" / ").ifBlank { group.uidFile ?: "App list" }
 }
 
+private fun appListTitle(group: StudioAppGroup, slotLabel: String): String =
+  listOfNotNull(group.programId, group.profile, slotLabel.takeIf { it.isNotBlank() }).joinToString(" / ").ifBlank { group.uidFile ?: "App list" }
+
+@Composable
+private fun studioSlotLabel(slot: String): String = when (slot.lowercase(Locale.ROOT)) {
+  "common", "user" -> stringResource(R.string.apps_conflict_slot_common)
+  "mobile" -> stringResource(R.string.apps_conflict_slot_mobile)
+  "wifi" -> stringResource(R.string.apps_conflict_slot_wifi)
+  else -> slot
+}
+
 private fun appListShortTitle(group: StudioAppGroup): String {
   val slots = groupSlots(group)
   return when {
@@ -1742,13 +1867,40 @@ private fun appListShortTitle(group: StudioAppGroup): String {
     else -> slots.joinToString(" + ")
   }
 }
+private fun vpnAppListTitle(vpn: ApiModels.VpnTraffic): String {
+  return when {
+    vpn.profile.isNotBlank() -> vpn.profile
+    vpn.ownerProgram.isNotBlank() -> stringResourceNameFallback(vpn.ownerProgram)
+    else -> stringResourceNameFallback("")
+  }
+}
 private fun stringResourceNameFallback(id: String): String = if (id.isBlank()) "App list" else id
 private fun programNodeTitle(programName: String, profile: String?): String = if (profile.isNullOrBlank()) programName else "$programName / $profile"
 
-private fun ruleSummary(rules: List<ApiModels.TrafficRuleCounter>): String {
+private fun ruleSummary(rules: List<ApiModels.TrafficRuleCounter>, bytesOverride: Long? = null): String {
   val ports = rules.mapNotNull { it.redirectPort }.distinct().joinToString(",")
-  val base = rules.groupBy { it.semantic }.map { (semantic, rs) -> "$semantic ${formatPackets(rs.sumOf { it.packets })} / ${formatBytes(rs.sumOf { it.bytes })}" }.joinToString(" • ")
+  val grouped = rules.groupBy { it.semantic }
+  val totalRuleBytes = rules.sumOf { it.bytes }.coerceAtLeast(0L)
+  val overrideBytes = bytesOverride?.coerceAtLeast(0L)
+  val base = grouped.map { (semantic, rs) ->
+    val packets = rs.sumOf { it.packets }
+    val ruleBytes = rs.sumOf { it.bytes }.coerceAtLeast(0L)
+    val bytes = overrideBytes?.let { total ->
+      if (grouped.size == 1 || totalRuleBytes <= 0L) {
+        total
+      } else {
+        ((total.toDouble() * ruleBytes.toDouble()) / totalRuleBytes.toDouble()).toLong()
+      }
+    } ?: ruleBytes
+    "$semantic ${formatPackets(packets)} / ${formatBytes(bytes)}"
+  }.joinToString(" • ")
   return if (ports.isNotBlank()) "$base • local:$ports" else base
+}
+
+private fun t2sTrafficBytes(poll: T2sPollResult?): Long? {
+  val state = poll?.state ?: return null
+  val bytes = state.bytesUp.coerceAtLeast(0L) + state.bytesDown.coerceAtLeast(0L)
+  return bytes
 }
 
 private fun semanticAccent(semantic: String): Color = when (semantic) {

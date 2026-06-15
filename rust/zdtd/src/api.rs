@@ -1,4 +1,4 @@
-use anyhow::{Result, Context};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 use serde_json::json;
@@ -5531,7 +5531,7 @@ fn write_empty_404(mut stream: TcpStream) -> Result<()> {
 }
 
 
-fn handle_construction_subroutes(stream: TcpStream, method: &str, path: &str, body: &[u8], services_running: bool) -> Result<()> {
+fn handle_construction_subroutes(stream: TcpStream, method: &str, path: &str, body: &[u8], _services_running: bool) -> Result<()> {
     match (method, path) {
         ("GET", "/api/construction/proxy-endpoints") => {
             let res = collect_construction_proxy_endpoint_candidates();
@@ -5748,29 +5748,6 @@ fn normalize_construction_program_id(raw: &str) -> String {
         other => other.to_string(),
     }
 }
-
-fn construction_app_list_path(program: &str, profile: Option<&str>) -> Result<PathBuf> {
-    Ok(match program {
-        "sing-box" => singbox_profile_root(profile.ok_or_else(|| anyhow::anyhow!("profile is required"))?).join("app/uid/user_program"),
-        "wireproxy" => wireproxy_profile_root(profile.ok_or_else(|| anyhow::anyhow!("profile is required"))?).join("app/uid/user_program"),
-        "myproxy" => myproxy_profile_root(profile.ok_or_else(|| anyhow::anyhow!("profile is required"))?).join("app/uid/user_program"),
-        "myprogram" => myprogram_profile_root(profile.ok_or_else(|| anyhow::anyhow!("profile is required"))?).join("app/uid/user_program"),
-        "mihomo" => mihomo_profile_root(profile.ok_or_else(|| anyhow::anyhow!("profile is required"))?).join("app/uid/user_program"),
-        "mieru" => mieru_profile_root(profile.ok_or_else(|| anyhow::anyhow!("profile is required"))?).join("app/uid/user_program"),
-        "tor" => settings::tor_uid_program_path(),
-        "operaproxy" => program_root("operaproxy").join("app/uid/user_program"),
-        _ => anyhow::bail!("unsupported construction endpoint program: {program}"),
-    })
-}
-
-
-
-
-
-
-
-
-
 
 fn app_path_to_api_path(program: &str, profile: Option<&str>, slot: &str) -> String {
     match (program, profile) {

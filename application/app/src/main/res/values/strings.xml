@@ -1608,6 +1608,7 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="construction_studio_edit_list_title">Edit list: %1$s</string>
     <string name="construction_studio_edit">Edit</string>
     <string name="construction_studio_list_path_missing">No editable apps path was found for this list in assignments.</string>
+    <string name="construction_studio_choose_list_to_edit">This card combines several app lists. Choose which list to edit.</string>
     <string name="construction_studio_vpn_list_path_missing">No editable apps path was found for this VPN profile.</string>
     <string name="construction_studio_proxy_endpoint_fallback">proxy endpoint</string>
     <string name="construction_studio_local_endpoint">local</string>

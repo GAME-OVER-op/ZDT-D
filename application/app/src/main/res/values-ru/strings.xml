@@ -1608,6 +1608,7 @@ APatch: 10700+</string>
     <string name="construction_studio_edit_list_title">Редактировать список: %1$s</string>
     <string name="construction_studio_edit">Редактировать</string>
     <string name="construction_studio_list_path_missing">Для этого списка не найден редактируемый путь apps в assignments.</string>
+    <string name="construction_studio_choose_list_to_edit">Эта карточка объединяет несколько списков приложений. Выберите, какой список редактировать.</string>
     <string name="construction_studio_vpn_list_path_missing">Для этого VPN-профиля не найден редактируемый путь apps.</string>
     <string name="construction_studio_proxy_endpoint_fallback">прокси-узел</string>
     <string name="construction_studio_local_endpoint">локальный</string>

@@ -5741,7 +5741,7 @@ fn collect_construction_operaproxy_candidates(root: &Path, out: &mut Vec<Constru
     }
 }
 
-fn start_construction_proxy_endpoint(req: ConstructionStartEndpointReq, services_running: bool) -> Result<serde_json::Value> {
+fn start_construction_proxy_endpoint(req: ConstructionStartEndpointReq, _services_running: bool) -> Result<serde_json::Value> {
     let program = normalize_construction_program_id(&req.program_id);
     let profile = req.profile.as_deref().map(str::trim).filter(|s| !s.is_empty());
     let server = req.server.as_deref().map(str::trim).filter(|s| !s.is_empty());
@@ -5757,10 +5757,7 @@ fn start_construction_proxy_endpoint(req: ConstructionStartEndpointReq, services
         if trigger_added { invalidate_assignment_cache(); }
     }
     enable_construction_endpoint(&program, profile, server, req.port)?;
-
-    if services_running {
-        start_construction_program(&program)?;
-    }
+    start_construction_program(&program)?;
 
     let candidates = collect_construction_proxy_endpoint_candidates()?;
     let selected = candidates.into_iter().find(|c| {
@@ -5779,7 +5776,7 @@ fn start_construction_proxy_endpoint(req: ConstructionStartEndpointReq, services
 
     Ok(json!({
         "ok": true,
-        "started": services_running,
+        "started": true,
         "trigger_added": trigger_added,
         "endpoint": candidate,
     }))

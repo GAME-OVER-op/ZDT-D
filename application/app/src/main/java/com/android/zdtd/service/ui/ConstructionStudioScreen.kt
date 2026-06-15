@@ -47,6 +47,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -54,6 +55,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -201,6 +203,7 @@ fun ConstructionStudioScreen(
   // Id of the card whose output port was tapped; drives the "direct connection" picker.
   var connectFromId by remember { mutableStateOf<String?>(null) }
   var startingEndpointKey by remember { mutableStateOf<String?>(null) }
+  var pendingStartCandidate by remember { mutableStateOf<ApiModels.ConstructionProxyEndpointCandidate?>(null) }
   LaunchedEffect(Unit) {
     layoutPrefs.all.forEach { (key, value) ->
       val parts = (value as? String)?.split(",")
@@ -527,6 +530,7 @@ fun ConstructionStudioScreen(
         connectedAddrs = connectPoll?.state?.backends?.map { it.addr }?.toSet().orEmpty(),
         startingEndpointKey = startingEndpointKey,
         onDismiss = {
+          pendingStartCandidate = null
           startingEndpointKey = null
           connectFromId = null
         },
@@ -538,19 +542,29 @@ fun ConstructionStudioScreen(
             connected -> finishT2sBackend(candidate, disconnect = true)
             candidate.running -> finishT2sBackend(candidate, disconnect = false)
             candidate.canStart -> {
-              startingEndpointKey = candidate.key
-              actions.startConstructionProxyEndpoint(candidate) { result ->
-                val endpoint = result?.endpoint ?: candidate
-                if (result?.ok == true) {
-                  finishT2sBackend(endpoint, disconnect = false)
-                } else {
-                  startingEndpointKey = null
-                  connectFromId = null
-                  requestConstructionEndpoints()
-                }
-              }
+              pendingStartCandidate = candidate
             }
             else -> connectFromId = null
+          }
+        },
+      )
+    }
+
+    pendingStartCandidate?.let { candidate ->
+      ConfirmConstructionStartDialog(
+        candidate = candidate,
+        onDismiss = { pendingStartCandidate = null },
+        onConfirm = {
+          pendingStartCandidate = null
+          startingEndpointKey = candidate.key
+          actions.startConstructionProxyEndpoint(candidate) { result ->
+            val endpoint = result?.endpoint ?: candidate
+            if (result?.ok == true && result.started) {
+              finishT2sBackend(endpoint, disconnect = false)
+            } else {
+              startingEndpointKey = null
+              requestConstructionEndpoints()
+            }
           }
         },
       )
@@ -1061,6 +1075,36 @@ private fun StudioConnectSheet(
   }
 }
 
+@Composable
+private fun ConfirmConstructionStartDialog(
+  candidate: ApiModels.ConstructionProxyEndpointCandidate,
+  onDismiss: () -> Unit,
+  onConfirm: () -> Unit,
+) {
+  val title = listOfNotNull(candidate.programId, candidate.profile, candidate.server)
+    .joinToString(" / ")
+    .ifBlank { candidate.label.ifBlank { "proxy endpoint" } }
+  val body = buildString {
+    append("Запустить ")
+    append(title)
+    append(" и подключить к t2s?")
+    if (candidate.appListEmpty) {
+      append("\n\nСписок приложений пустой — будет добавлен trigger com.android.zdtd.service.")
+    }
+  }
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text("Запуск инструмента") },
+    text = { Text(body) },
+    confirmButton = {
+      TextButton(onClick = onConfirm) { Text("Запустить") }
+    },
+    dismissButton = {
+      TextButton(onClick = onDismiss) { Text("Отмена") }
+    },
+  )
+}
+
 private fun mergeConstructionCandidates(
   running: List<ApiModels.TrafficBackendPort>,
   candidates: List<ApiModels.ConstructionProxyEndpointCandidate>,
@@ -1362,7 +1406,7 @@ private fun StudioAppsBottomSheet(
   }
 
   val editableEntry = remember(assignments, group) { findAssignmentForGroup(group, assignments) }
-  val editablePath = editableEntry?.path ?: group.uidFile?.let(::uidFileToEditableAppPath)
+  val editablePath = remember(assignments, group) { resolveEditableAppPath(group, assignments) }
   val canEdit = !editablePath.isNullOrBlank()
 
   if (showPicker && canEdit) {
@@ -1565,6 +1609,12 @@ private fun groupPackages(group: StudioAppGroup): Set<String> =
     .filter { it.isNotEmpty() }
     .toSet()
 
+private fun resolveEditableAppPath(group: StudioAppGroup, data: ApiModels.AppAssignmentsState?): String? {
+  return findAssignmentForGroup(group, data)?.path
+    ?: deriveEditableAppPath(group)
+    ?: group.uidFile?.let(::uidFileToEditableAppPath)
+}
+
 private fun findAssignmentForGroup(group: StudioAppGroup, data: ApiModels.AppAssignmentsState?): ApiModels.AppAssignmentEntry? {
   val lists = data?.lists.orEmpty()
   if (lists.isEmpty()) return null
@@ -1572,12 +1622,28 @@ private fun findAssignmentForGroup(group: StudioAppGroup, data: ApiModels.AppAss
   val profile = group.profile.orEmpty()
   val slot = group.slot.orEmpty().lowercase(Locale.ROOT)
   val uidFile = group.uidFile.orEmpty()
-  return lists.firstOrNull { entry ->
+  val sameProgram = lists.filter { entry ->
     normalizeRouteProgramId(entry.programId) == program &&
-      (profile.isBlank() || entry.profile.orEmpty() == profile) &&
-      (slot.isBlank() || entry.slot.lowercase(Locale.ROOT) == slot)
-  } ?: lists.firstOrNull { entry ->
+      (profile.isBlank() || entry.profile.orEmpty() == profile)
+  }
+  return sameProgram.firstOrNull { entry ->
+    slot.isNotBlank() && entry.slot.lowercase(Locale.ROOT) == slot
+  } ?: sameProgram.firstOrNull { entry ->
+    entry.slot.lowercase(Locale.ROOT) == "user"
+  } ?: sameProgram.firstOrNull() ?: lists.firstOrNull { entry ->
     uidFile.isNotBlank() && (uidFile.endsWith("/" + entry.path.substringAfterLast('/')) || uidFile.contains(entry.path.substringAfter("working_folder/", entry.path)))
+  }
+}
+
+private fun deriveEditableAppPath(group: StudioAppGroup): String? {
+  val program = normalizeRouteProgramId(group.programId)
+  val profile = group.profile?.takeIf { it.isNotBlank() }
+  return when (program) {
+    "tor" -> "/api/programs/tor/apps"
+    "operaproxy" -> "/api/programs/operaproxy/apps/user"
+    "sing-box", "wireproxy", "myproxy", "myprogram", "mihomo", "mieru", "openvpn", "amneziawg", "tun2socks", "myvpn" ->
+      profile?.let { "/api/programs/$program/profiles/$it/apps/user" }
+    else -> null
   }
 }
 

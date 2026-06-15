@@ -800,6 +800,15 @@ private fun buildStudioGraph(
     val g = routeGroup.first()
     wrappedProgramKey(normalizeRouteProgramId(g.programId), g.profile) to "prog:${routeGroupKey(g)}"
   }
+  val t2sNodeByListenPort = routeGroups.mapNotNull { routeGroup ->
+    val g = routeGroup.first()
+    if (!usesT2s(g.programId)) return@mapNotNull null
+    val rules = routeGroup.flatMap { it.rules }
+    val ports = rules.mapNotNull { it.redirectPort }.distinct()
+    val instance = findT2sInstanceForGroup(g.copy(rules = rules), ports, t2sInstances) ?: return@mapNotNull null
+    if (instance.listenPort <= 0) return@mapNotNull null
+    instance.listenPort to "t2s:${instance.webPort}:${routeGroupKey(g)}"
+  }.toMap()
   val existingBackendNodeIds = groups
     .flatMap { group -> group.rules.flatMap { it.backendPorts } }
     .map { backendNodeId(it) }
@@ -820,11 +829,13 @@ private fun buildStudioGraph(
       .associateBy { it.listenPort }
     val ruleBackends = routeRules.flatMap { it.backendPorts }
     val allBackends = mergeBackendCards(ruleBackends, proxyEndpoints, t2sBackendPorts)
-    val cascadeBackends = allBackends.filter { backend -> t2sCascadeByPort.containsKey(backend.port) }.take(6)
+    val t2sBackendCards = allBackends.filter { backend -> t2sCascadeByPort.containsKey(backend.port) }
+    val reusedT2sBackends = t2sBackendCards.filter { backend -> t2sNodeByListenPort.containsKey(backend.port) }.take(6)
+    val cascadeBackends = t2sBackendCards.filterNot { backend -> t2sNodeByListenPort.containsKey(backend.port) }.take(6)
     val backends = allBackends.filterNot { backend -> t2sCascadeByPort.containsKey(backend.port) }.take(6)
     val wrappedNodes = backends
       .mapNotNull { wrappedBackendCard(it) }
-      .filter { wrapped -> existingWrappedTargetNodeId(wrapped, routeProgramNodeByKey, existingBackendNodeIds, t2sCascadeByPort) == null }
+      .filter { wrapped -> existingWrappedTargetNodeId(wrapped, routeProgramNodeByKey, existingBackendNodeIds, t2sNodeByListenPort, t2sCascadeByPort) == null }
       .distinctBy { wrappedBackendKey(it) }
       .take(4)
     val ruleBytes = routeRules.sumOf { it.bytes }
@@ -906,6 +917,11 @@ private fun buildStudioGraph(
       if (!showT2s) edges += StudioEdge(progId, "internet", tertiary, active)
     } else {
       var by = centerY - backendsHeight / 2f
+      reusedT2sBackends.forEach { backend ->
+        val targetId = t2sNodeByListenPort[backend.port] ?: return@forEach
+        val beActive = backendActive(t2sPoll, backend.port, active)
+        edges += StudioEdge(if (showT2s) t2sId else progId, targetId, t2sColor, beActive)
+      }
       cascadeBackends.forEach { backend ->
         val target = t2sCascadeByPort[backend.port] ?: return@forEach
         val cId = t2sCascadeNodeId(target, backend.port)
@@ -968,7 +984,7 @@ private fun buildStudioGraph(
       }
       backends.forEach { backend ->
         val wrapped = wrappedBackendCard(backend) ?: return@forEach
-        val targetId = existingWrappedTargetNodeId(wrapped, routeProgramNodeByKey, existingBackendNodeIds, t2sCascadeByPort) ?: wrappedBackendNodeId(wrapped)
+        val targetId = existingWrappedTargetNodeId(wrapped, routeProgramNodeByKey, existingBackendNodeIds, t2sNodeByListenPort, t2sCascadeByPort) ?: wrappedBackendNodeId(wrapped)
         edges += StudioEdge(backendNodeId(backend), targetId, backendColor, backendActive(t2sPoll, backend.port, active))
       }
     }
@@ -1087,8 +1103,10 @@ private fun existingWrappedTargetNodeId(
   wrapped: ApiModels.TrafficBackendPort,
   routeProgramNodeByKey: Map<String, String>,
   existingBackendNodeIds: Set<String>,
+  t2sNodeByListenPort: Map<Int, String>,
   t2sCascadeByPort: Map<Int, ApiModels.TrafficT2sInstance>,
 ): String? {
+  t2sNodeByListenPort[wrapped.port]?.let { return it }
   t2sCascadeByPort[wrapped.port]?.let { return t2sCascadeNodeId(it, wrapped.port) }
   val program = normalizeRouteProgramId(wrapped.programId.orEmpty())
   if (program.isNotBlank()) {

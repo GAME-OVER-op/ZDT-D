@@ -7,10 +7,10 @@ mod web;
 mod sniff;
 mod api_runtime;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use cli::Args;
 use parking_lot::Mutex;
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{net::{IpAddr, Ipv4Addr, SocketAddr}, sync::Arc, time::Duration};
 use tokio::{net::TcpListener, signal, sync::{broadcast, Semaphore}};
 use tracing::{error, info, warn};
 
@@ -377,7 +377,7 @@ async fn run_tcp_on(state: AppState, addr: SocketAddr, ingress: stats::Ingress) 
 }
 
 async fn proxy_tcp(
-    client: tokio::net::TcpStream,
+    mut client: tokio::net::TcpStream,
     _peer: SocketAddr,
     cid: u64,
     state: AppState,
@@ -389,8 +389,13 @@ async fn proxy_tcp(
 
     state.conns.set_mode(cid, "pending");
 
-    // Determine target
-    let target = if let (Some(h), Some(p)) = (state.args.target_host.clone(), state.args.target_port) {
+    // Determine target. The same listen_port is mixed-aware: if the peer speaks
+    // SOCKS5, the target comes from CONNECT and we must not call SO_ORIGINAL_DST.
+    // Otherwise keep the existing transparent/explicit-target behaviour.
+    let target = if let Some(socks_target) = try_accept_socks5_inbound(&mut client).await? {
+        state.conns.set_mode(cid, "socks_inbound");
+        socks_target
+    } else if let (Some(h), Some(p)) = (state.args.target_host.clone(), state.args.target_port) {
         stats::Target::HostPort(h, p)
     } else {
         let dst = transparent::get_original_dst(&client)
@@ -748,6 +753,96 @@ let mut chosen_mode = "socks";
     Ok(())
 }
 
+async fn try_accept_socks5_inbound(client: &mut tokio::net::TcpStream) -> Result<Option<stats::Target>> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut peek = [0u8; 2];
+    let Ok(Ok(n)) = tokio::time::timeout(Duration::from_millis(35), client.peek(&mut peek)).await else {
+        return Ok(None);
+    };
+    if n < 2 || peek[0] != 0x05 {
+        return Ok(None);
+    }
+
+    let nmethods = peek[1] as usize;
+    if nmethods == 0 || nmethods > 16 {
+        return Ok(None);
+    }
+
+    let mut greeting = vec![0u8; 2 + nmethods];
+    client.read_exact(&mut greeting).await.context("read SOCKS5 inbound greeting")?;
+    if greeting[0] != 0x05 {
+        return Ok(None);
+    }
+    if !greeting[2..].contains(&0x00) {
+        let _ = client.write_all(&[0x05, 0xFF]).await;
+        return Err(anyhow!("SOCKS5 inbound: no-auth method is required"));
+    }
+    client.write_all(&[0x05, 0x00]).await.context("write SOCKS5 inbound greeting reply")?;
+
+    let mut hdr = [0u8; 4];
+    client.read_exact(&mut hdr).await.context("read SOCKS5 inbound request header")?;
+    if hdr[0] != 0x05 {
+        return Err(anyhow!("SOCKS5 inbound: invalid request version {}", hdr[0]));
+    }
+    if hdr[1] != 0x01 {
+        let _ = write_socks5_inbound_reply(client, 0x07).await;
+        return Err(anyhow!("SOCKS5 inbound: only CONNECT is supported"));
+    }
+    if hdr[2] != 0x00 {
+        let _ = write_socks5_inbound_reply(client, 0x01).await;
+        return Err(anyhow!("SOCKS5 inbound: invalid reserved byte"));
+    }
+
+    let target = match hdr[3] {
+        0x01 => {
+            let mut buf = [0u8; 6];
+            client.read_exact(&mut buf).await.context("read SOCKS5 inbound IPv4 target")?;
+            let ip = IpAddr::V4(Ipv4Addr::new(buf[0], buf[1], buf[2], buf[3]));
+            let port = u16::from_be_bytes([buf[4], buf[5]]);
+            stats::Target::SockAddr(SocketAddr::new(ip, port))
+        }
+        0x03 => {
+            let mut len = [0u8; 1];
+            client.read_exact(&mut len).await.context("read SOCKS5 inbound domain length")?;
+            let l = len[0] as usize;
+            if l == 0 {
+                let _ = write_socks5_inbound_reply(client, 0x08).await;
+                return Err(anyhow!("SOCKS5 inbound: empty domain"));
+            }
+            let mut host = vec![0u8; l];
+            client.read_exact(&mut host).await.context("read SOCKS5 inbound domain")?;
+            let mut port_b = [0u8; 2];
+            client.read_exact(&mut port_b).await.context("read SOCKS5 inbound domain port")?;
+            let host = String::from_utf8(host).context("SOCKS5 inbound domain is not UTF-8")?;
+            let port = u16::from_be_bytes(port_b);
+            stats::Target::HostPort(host, port)
+        }
+        0x04 => {
+            let mut buf = [0u8; 18];
+            client.read_exact(&mut buf).await.context("read SOCKS5 inbound IPv6 target")?;
+            let ip = IpAddr::V6(std::net::Ipv6Addr::from(<[u8; 16]>::try_from(&buf[..16]).unwrap()));
+            let port = u16::from_be_bytes([buf[16], buf[17]]);
+            stats::Target::SockAddr(SocketAddr::new(ip, port))
+        }
+        atyp => {
+            let _ = write_socks5_inbound_reply(client, 0x08).await;
+            return Err(anyhow!("SOCKS5 inbound: unsupported ATYP {}", atyp));
+        }
+    };
+
+    write_socks5_inbound_reply(client, 0x00).await?;
+    Ok(Some(target))
+}
+
+async fn write_socks5_inbound_reply(client: &mut tokio::net::TcpStream, rep: u8) -> Result<()> {
+    use tokio::io::AsyncWriteExt;
+    // VER, REP, RSV, ATYP=IPv4, BND.ADDR=0.0.0.0, BND.PORT=0
+    client.write_all(&[0x05, rep, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+        .await
+        .context("write SOCKS5 inbound reply")
+}
+
 async fn connect_direct(target: &stats::Target, timeout_s: u32) -> Result<tokio::net::TcpStream> {
     let timeout = Duration::from_secs(timeout_s as u64);
     let addr = target.resolve_socket_addr().await?;
@@ -865,7 +960,13 @@ async fn connect_socks(
         state.conns.set_mode(cid, "socks_connecting");
         state.conns.set_backend(cid, Some(backend));
 
-        let attempt = socks5::connect_via_socks5(backend, taddr.clone(), auth, timeout).await;
+        let wrapper = state.args.wrapped_socks_addr()?;
+        let wrapper_auth = state.args.wrapped_socks_auth();
+        let attempt = if let Some(wrapper) = wrapper {
+            socks5::connect_via_socks5_wrapped(wrapper, backend, taddr.clone(), wrapper_auth, auth, timeout).await
+        } else {
+            socks5::connect_via_socks5(backend, taddr.clone(), auth, timeout).await
+        };
         {
             let mut b = state.backends.lock();
             b.release_connect_slot(backend_idx);

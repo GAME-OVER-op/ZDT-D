@@ -510,6 +510,9 @@ impl SocksBackends {
         if addrs.is_empty() {
             return Err(anyhow!("no SOCKS backends after resolution"));
         }
+        if addrs.iter().any(|sa| sa.port() == args.listen_port) {
+            return Err(anyhow!("t2s backend points to its own listen port {}", args.listen_port));
+        }
         let priority_groups = Self::build_priority_groups(args, &addrs)?;
         let priority_rr = vec![0; priority_groups.len()];
         let now = now_ts();
@@ -2271,11 +2274,13 @@ async fn probe_backend_once(
     auth: Option<(String, String)>,
     internet_ttl: Option<u32>,
     probe_mode: ProbeMode,
+    wrapper: Option<SocketAddr>,
+    wrapper_auth: Option<(String, String)>,
 ) -> (Option<String>, Option<f64>, Option<f64>, Option<u32>) {
-    let socks_ping_ms = check_backend_rtt(backend, timeout, auth.clone()).await;
+    let socks_ping_ms = check_backend_rtt(backend, timeout, auth.clone(), wrapper, wrapper_auth.clone()).await;
     let mut err = if socks_ping_ms.is_some() { None } else { Some("connect/greeting/auth failed".to_string()) };
     let internet_ping_ms = if socks_ping_ms.is_some() && probe_mode == ProbeMode::Full {
-        let summary = check_internet_via_backend(backend, timeout, auth).await;
+        let summary = check_internet_via_backend(backend, timeout, auth, wrapper, wrapper_auth).await;
         if summary.ok {
             summary.best_ping_ms
         } else {
@@ -2369,8 +2374,10 @@ async fn refresh_backend_index_once(
 
     let Some(backend) = backend else { return false; };
 
+    let wrapper = state.args.wrapped_socks_addr().ok().flatten();
+    let wrapper_auth = state.args.wrapped_socks_auth();
     let (err, socks_ping_ms, internet_ping_ms, ttl) =
-        probe_backend_once(backend, timeout, auth, internet_ttl, probe_mode).await;
+        probe_backend_once(backend, timeout, auth, internet_ttl, probe_mode, wrapper, wrapper_auth).await;
 
     let mut b = state.backends.lock();
     let before_any_healthy = b.any_healthy();
@@ -2780,9 +2787,16 @@ async fn probe_one_target(
     target: TargetAddr,
     timeout: Duration,
     auth: Option<(String, String)>,
+    wrapper: Option<SocketAddr>,
+    wrapper_auth: Option<(String, String)>,
 ) -> Option<f64> {
     let start = Instant::now();
-    let mut stream = match crate::socks5::connect_via_socks5(backend, target.clone(), auth, timeout).await {
+    let connect = if let Some(wrapper) = wrapper {
+        crate::socks5::connect_via_socks5_wrapped(wrapper, backend, target.clone(), wrapper_auth, auth, timeout).await
+    } else {
+        crate::socks5::connect_via_socks5(backend, target.clone(), auth, timeout).await
+    };
+    let mut stream = match connect {
         Ok(stream) => stream,
         Err(_) => return None,
     };
@@ -2906,12 +2920,14 @@ async fn first_successful_probe(
     auth: Option<(String, String)>,
     targets: Vec<TargetAddr>,
     stop_after: usize,
+    wrapper: Option<SocketAddr>,
+    wrapper_auth: Option<(String, String)>,
 ) -> (usize, Option<f64>) {
     let mut ok_count = 0usize;
     let mut best: Option<f64> = None;
 
     for target in targets {
-        if let Some(ping_ms) = probe_one_target(backend, target, timeout, auth.clone()).await {
+        if let Some(ping_ms) = probe_one_target(backend, target, timeout, auth.clone(), wrapper, wrapper_auth.clone()).await {
             ok_count += 1;
             best = Some(match best {
                 Some(prev) => prev.min(ping_ms),
@@ -3134,45 +3150,23 @@ async fn check_backend_rtt(
     backend: SocketAddr,
     timeout: Duration,
     auth: Option<(String, String)>,
+    wrapper: Option<SocketAddr>,
+    wrapper_auth: Option<(String, String)>,
 ) -> Option<f64> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
     let start = Instant::now();
-    let hs_timeout = timeout.min(Duration::from_secs(3)).max(Duration::from_millis(800));
-    let res = tokio::time::timeout(timeout, TcpStream::connect(backend)).await;
-    if let Ok(Ok(mut s)) = res {
-        let mut methods = vec![0x00u8];
-        if auth.is_some() {
-            methods.push(0x02u8);
-        }
-        if tokio::time::timeout(hs_timeout, s.write_all(&[0x05u8, methods.len() as u8])).await.is_err() { return None; }
-        if tokio::time::timeout(hs_timeout, s.write_all(&methods)).await.is_err() { return None; }
-        let mut resp = [0u8; 2];
-        match tokio::time::timeout(hs_timeout, s.read_exact(&mut resp)).await {
-            Ok(Ok(_)) => {}
-            _ => return None,
-        }
-        if resp[0] != 0x05 { return None; }
-        match resp[1] {
-            0x00 => Some(start.elapsed().as_secs_f64() * 1000.0),
-            0x02 => {
-                let (u, p) = auth?;
-                match tokio::time::timeout(hs_timeout, crate::socks5::do_userpass_auth_for_healthcheck(&mut s, &u, &p)).await {
-                    Ok(Ok(())) => Some(start.elapsed().as_secs_f64() * 1000.0),
-                    _ => None,
-                }
-            }
-            _ => None,
-        }
+    let res = if let Some(wrapper) = wrapper {
+        crate::socks5::connect_to_socks5_server_wrapped(wrapper, backend, wrapper_auth, auth, timeout).await
     } else {
-        None
-    }
+        crate::socks5::connect_to_socks5_server(backend, auth, timeout).await
+    };
+    res.ok().map(|_| start.elapsed().as_secs_f64() * 1000.0)
 }
-
 async fn check_internet_via_backend(
     backend: SocketAddr,
     timeout: Duration,
     auth: Option<(String, String)>,
+    wrapper: Option<SocketAddr>,
+    wrapper_auth: Option<(String, String)>,
 ) -> InternetProbeSummary {
     // Keep Internet validation cheap: one raw IP target + one domain target.
     // This is enough to distinguish a merely reachable SOCKS backend from
@@ -3186,9 +3180,9 @@ async fn check_internet_via_backend(
         TargetAddr::Domain("cloudflare.com".to_string(), 443),
     ];
 
-    let (ip_ok, ip_best) = first_successful_probe(backend, per_probe_timeout, auth.clone(), ip_targets, 1).await;
+    let (ip_ok, ip_best) = first_successful_probe(backend, per_probe_timeout, auth.clone(), ip_targets, 1, wrapper, wrapper_auth.clone()).await;
     let (domain_ok, domain_best) = if ip_ok >= 1 {
-        first_successful_probe(backend, per_probe_timeout, auth, domain_targets, 1).await
+        first_successful_probe(backend, per_probe_timeout, auth, domain_targets, 1, wrapper, wrapper_auth).await
     } else {
         (0usize, None)
     };

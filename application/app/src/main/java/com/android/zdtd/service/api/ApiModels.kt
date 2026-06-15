@@ -108,9 +108,16 @@ object ApiModels {
   data class TrafficBackendPort(
     val port: Int = 0,
     val label: String = "",
+    val host: String? = null,
     val programId: String? = null,
     val profile: String? = null,
     val server: String? = null,
+    val wrappedHost: String? = null,
+    val wrappedPort: Int? = null,
+    val wrappedLabel: String? = null,
+    val wrappedProgramId: String? = null,
+    val wrappedProfile: String? = null,
+    val wrappedServer: String? = null,
   )
 
   data class TrafficT2sInstance(
@@ -858,9 +865,16 @@ object ApiModels {
       out += TrafficBackendPort(
         port = o.optInt("port", 0),
         label = o.optString("label", ""),
+        host = o.optString("host", "").trim().takeIf { it.isNotEmpty() },
         programId = o.optString("program_id", "").trim().takeIf { it.isNotEmpty() },
         profile = o.optString("profile", "").trim().takeIf { it.isNotEmpty() },
         server = o.optString("server", "").trim().takeIf { it.isNotEmpty() },
+        wrappedHost = o.optString("wrapped_host", "").trim().takeIf { it.isNotEmpty() },
+        wrappedPort = if (o.has("wrapped_port") && !o.isNull("wrapped_port")) o.optInt("wrapped_port").takeIf { it > 0 } else null,
+        wrappedLabel = o.optString("wrapped_label", "").trim().takeIf { it.isNotEmpty() },
+        wrappedProgramId = o.optString("wrapped_program_id", "").trim().takeIf { it.isNotEmpty() },
+        wrappedProfile = o.optString("wrapped_profile", "").trim().takeIf { it.isNotEmpty() },
+        wrappedServer = o.optString("wrapped_server", "").trim().takeIf { it.isNotEmpty() },
       )
     }
     return out

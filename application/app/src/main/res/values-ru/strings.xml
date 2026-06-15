@@ -1058,6 +1058,13 @@ APatch: 10700+</string>
     <string name="myproxy_backend_priority_label">Приоритет backend</string>
     <string name="myproxy_backend_priority_hint">Пример: 1145,1146;1147. Оставьте пустым, чтобы использовать порядок SOCKS5 портов.</string>
     <string name="myproxy_backend_priority_invalid">Используйте только порты из списка SOCKS5. Группы разделяются через ;, порты — через запятую. Дубли не допускаются.</string>
+    <string name="myproxy_wrapped_socks_title">Wrapped SOCKS5</string>
+    <string name="myproxy_wrapped_socks_desc">Опциональная обёртка. t2s сначала подключается к локальной обёртке, а через неё достаёт SOCKS5-серверы из списка выше.</string>
+    <string name="myproxy_wrapped_host_label">Хост обёртки</string>
+    <string name="myproxy_wrapped_port_label">Порт обёртки</string>
+    <string name="myproxy_wrapped_user_label">Логин обёртки</string>
+    <string name="myproxy_wrapped_pass_label">Пароль обёртки</string>
+    <string name="myproxy_wrapped_hint">Оставьте хост и порт пустыми, чтобы сохранить обычный прямой режим SOCKS5 backend.</string>
     <string name="myproxy_auto_save_failed">Не удалось выполнить автосохранение</string>
 
     <string name="tab_opera_args">Аргументы</string>

@@ -1,5 +1,6 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::{Parser, ValueEnum};
+use std::net::{SocketAddr, ToSocketAddrs};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum BackendMode {
@@ -60,6 +61,15 @@ pub struct Args {
     #[arg(long)]
     pub socks_pass: Option<String>,
 
+    #[arg(long, default_value="", help="Optional SOCKS5 wrapper host. Empty disables Wrapped SOCKS5.")]
+    pub wrapped_socks_host: String,
+    #[arg(long, default_value_t=0, help="Optional SOCKS5 wrapper port. 0 disables Wrapped SOCKS5.")]
+    pub wrapped_socks_port: u16,
+    #[arg(long)]
+    pub wrapped_socks_user: Option<String>,
+    #[arg(long)]
+    pub wrapped_socks_pass: Option<String>,
+
     #[arg(long, value_enum, default_value = "balance", help="SOCKS5 backend selection mode: balance or priority")]
     pub backend_mode: BackendMode,
     #[arg(long, help="Priority groups for --backend-mode priority. Example: 1145,1146;1147. If omitted, --socks-port order is used as 1145;1146;1147")]
@@ -115,6 +125,16 @@ impl Args {
         if (a.target_host.is_some() && a.target_port.is_none()) || (a.target_host.is_none() && a.target_port.is_some()) {
             return Err(anyhow!("--target-host and --target-port must be used together"));
         }
+        let wrapped_host_set = !a.wrapped_socks_host.trim().is_empty();
+        let wrapped_port_set = a.wrapped_socks_port != 0;
+        if wrapped_host_set ^ wrapped_port_set {
+            return Err(anyhow!("--wrapped-socks-host and --wrapped-socks-port must be used together, or both left empty"));
+        }
+        if a.wrapped_socks_user.as_ref().map(|s| !s.trim().is_empty()).unwrap_or(false)
+            ^ a.wrapped_socks_pass.as_ref().map(|s| !s.is_empty()).unwrap_or(false)
+        {
+            return Err(anyhow!("--wrapped-socks-user and --wrapped-socks-pass must both be set or both empty"));
+        }
         Ok(a)
     }
 
@@ -126,5 +146,28 @@ impl Args {
         self.socks_port.split(',')
             .filter_map(|p| p.trim().parse::<u16>().ok())
             .collect()
+    }
+
+    pub fn wrapped_socks_addr(&self) -> Result<Option<SocketAddr>> {
+        let host = self.wrapped_socks_host.trim();
+        if host.is_empty() || self.wrapped_socks_port == 0 {
+            return Ok(None);
+        }
+        let mut first: Option<SocketAddr> = None;
+        for sa in (host, self.wrapped_socks_port)
+            .to_socket_addrs()
+            .with_context(|| format!("resolve wrapped SOCKS5 {}:{}", host, self.wrapped_socks_port))?
+        {
+            if first.is_none() { first = Some(sa); }
+            if sa.is_ipv4() { return Ok(Some(sa)); }
+        }
+        first.map(Some).ok_or_else(|| anyhow!("no addr for wrapped SOCKS5 {}:{}", host, self.wrapped_socks_port))
+    }
+
+    pub fn wrapped_socks_auth(&self) -> Option<(String, String)> {
+        match (self.wrapped_socks_user.clone(), self.wrapped_socks_pass.clone()) {
+            (Some(u), Some(p)) if !u.trim().is_empty() && !p.is_empty() => Some((u.trim().to_string(), p)),
+            _ => None,
+        }
     }
 }

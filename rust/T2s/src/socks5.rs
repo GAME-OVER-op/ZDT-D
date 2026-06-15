@@ -121,6 +121,119 @@ pub async fn connect_via_socks5(
     Ok(stream)
 }
 
+
+pub async fn connect_via_socks5_wrapped(
+    wrapper: SocketAddr,
+    remote_socks: SocketAddr,
+    target: TargetAddr,
+    wrapper_auth: Option<(String, String)>,
+    remote_auth: Option<(String, String)>,
+    timeout: Duration,
+) -> Result<TcpStream> {
+    let tunnel = connect_via_socks5(wrapper, TargetAddr::Ip(remote_socks), wrapper_auth, timeout)
+        .await
+        .with_context(|| format!("wrapped SOCKS5: connect wrapper {} -> remote socks {}", wrapper, remote_socks))?;
+    connect_via_socks5_on_stream(tunnel, target, remote_auth, timeout)
+        .await
+        .with_context(|| format!("wrapped SOCKS5: remote socks CONNECT through {}", remote_socks))
+}
+
+pub async fn connect_to_socks5_server(
+    backend: SocketAddr,
+    auth: Option<(String, String)>,
+    timeout: Duration,
+) -> Result<TcpStream> {
+    let stream = tokio::time::timeout(timeout, TcpStream::connect(backend))
+        .await
+        .context("socks tcp connect timeout")?
+        .context("socks tcp connect failed")?;
+    socks5_greeting_on_stream(stream, auth, timeout).await
+}
+
+pub async fn connect_to_socks5_server_wrapped(
+    wrapper: SocketAddr,
+    remote_socks: SocketAddr,
+    wrapper_auth: Option<(String, String)>,
+    remote_auth: Option<(String, String)>,
+    timeout: Duration,
+) -> Result<TcpStream> {
+    let tunnel = connect_via_socks5(wrapper, TargetAddr::Ip(remote_socks), wrapper_auth, timeout)
+        .await
+        .with_context(|| format!("wrapped SOCKS5: connect wrapper {} -> remote socks {}", wrapper, remote_socks))?;
+    socks5_greeting_on_stream(tunnel, remote_auth, timeout)
+        .await
+        .with_context(|| format!("wrapped SOCKS5: remote socks greeting {}", remote_socks))
+}
+
+async fn socks5_greeting_on_stream(
+    mut stream: TcpStream,
+    auth: Option<(String, String)>,
+    timeout: Duration,
+) -> Result<TcpStream> {
+    let hs_timeout = handshake_timeout(timeout);
+    let mut methods = vec![0x00u8];
+    if auth.is_some() { methods.push(0x02u8); }
+    io_step(hs_timeout, "greeting header write", stream.write_all(&[0x05u8, methods.len() as u8])).await?;
+    io_step(hs_timeout, "greeting methods write", stream.write_all(&methods)).await?;
+    let mut resp = [0u8; 2];
+    io_step(hs_timeout, "greeting reply read", stream.read_exact(&mut resp)).await?;
+    if resp[0] != 0x05 { return Err(anyhow!("invalid SOCKS version {}", resp[0])); }
+    match resp[1] {
+        0x00 => Ok(stream),
+        0x02 => {
+            let (u, p) = auth.ok_or_else(|| anyhow!("server requires auth but no creds"))?;
+            tokio::time::timeout(hs_timeout, do_userpass_auth_for_healthcheck(&mut stream, &u, &p))
+                .await
+                .context("socks handshake timeout: userpass auth")??;
+            Ok(stream)
+        }
+        0xFF => Err(anyhow!("no acceptable auth methods")),
+        m => Err(anyhow!("unsupported auth method {:#x}", m)),
+    }
+}
+
+async fn connect_via_socks5_on_stream(
+    mut stream: TcpStream,
+    target: TargetAddr,
+    auth: Option<(String, String)>,
+    timeout: Duration,
+) -> Result<TcpStream> {
+    stream = socks5_greeting_on_stream(stream, auth, timeout).await?;
+    socks5_connect_on_stream(&mut stream, target, timeout).await?;
+    Ok(stream)
+}
+
+async fn socks5_connect_on_stream(stream: &mut TcpStream, target: TargetAddr, timeout: Duration) -> Result<()> {
+    let hs_timeout = handshake_timeout(timeout);
+    let mut req = vec![0x05u8, 0x01u8, 0x00u8];
+    match target {
+        TargetAddr::Ip(sa) => {
+            match sa.ip() {
+                std::net::IpAddr::V4(v4) => { req.push(0x01u8); req.extend_from_slice(&v4.octets()); }
+                std::net::IpAddr::V6(v6) => { req.push(0x04u8); req.extend_from_slice(&v6.octets()); }
+            }
+            req.extend_from_slice(&sa.port().to_be_bytes());
+        }
+        TargetAddr::Domain(host, port) => {
+            let hb = host.as_bytes();
+            if hb.len() > 255 { return Err(anyhow!("domain too long for SOCKS5")); }
+            req.push(0x03u8); req.push(hb.len() as u8); req.extend_from_slice(hb); req.extend_from_slice(&port.to_be_bytes());
+        }
+    }
+    io_step(hs_timeout, "connect request write", stream.write_all(&req)).await?;
+    let mut hdr = [0u8; 4];
+    io_step(hs_timeout, "connect reply head read", stream.read_exact(&mut hdr)).await?;
+    if hdr[0] != 0x05 { return Err(anyhow!("invalid SOCKS version in reply {}", hdr[0])); }
+    if hdr[1] != 0x00 { return Err(anyhow!("SOCKS CONNECT failed, REP={:#x}", hdr[1])); }
+    match hdr[3] {
+        0x01 => { let mut buf = [0u8; 6]; io_step(hs_timeout, "connect reply ipv4 read", stream.read_exact(&mut buf)).await?; }
+        0x04 => { let mut buf = [0u8; 18]; io_step(hs_timeout, "connect reply ipv6 read", stream.read_exact(&mut buf)).await?; }
+        0x03 => { let mut ln=[0u8;1]; io_step(hs_timeout, "connect reply domain len read", stream.read_exact(&mut ln)).await?; let mut buf=vec![0u8; ln[0] as usize + 2]; io_step(hs_timeout, "connect reply domain read", stream.read_exact(&mut buf)).await?; }
+        _ => return Err(anyhow!("unknown ATYP in reply {}", hdr[3])),
+    }
+    Ok(())
+}
+
 pub(crate) async fn do_userpass_auth_for_healthcheck(stream: &mut TcpStream, user: &str, pass: &str) -> Result<()> {
     let ub = user.as_bytes();
     let pb = pass.as_bytes();

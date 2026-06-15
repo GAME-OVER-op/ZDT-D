@@ -95,11 +95,25 @@ pub struct TrafficBackendPort {
     pub port: u16,
     pub label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub program_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub server: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wrapped_host: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wrapped_port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wrapped_label: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wrapped_program_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wrapped_profile: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wrapped_server: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -483,15 +497,71 @@ fn resolve_backend_ports(meta: &RouteMeta) -> Vec<TrafficBackendPort> {
         return Vec::new();
     }
     let registry = build_local_port_registry(root);
+    let proxy_host = json_str_value(&v, "host").unwrap_or_else(|| "127.0.0.1".to_string());
+    let wrapped = parse_wrapped_socks(&v, &registry);
     ports.into_iter().map(|port| {
-        registry.get(&port).cloned().unwrap_or_else(|| TrafficBackendPort {
+        let mut item = registry.get(&port).cloned().unwrap_or_else(|| TrafficBackendPort {
             port,
-            label: format!("127.0.0.1:{port}"),
-            program_id: None,
-            profile: None,
-            server: None,
-        })
+            label: format!("{}:{}", proxy_host, port),
+            host: Some(proxy_host.clone()),
+            program_id: Some("myproxy".to_string()),
+            profile: meta.profile.clone(),
+            server: Some(format!("{}:{}", proxy_host, port)),
+            wrapped_host: None,
+            wrapped_port: None,
+            wrapped_label: None,
+            wrapped_program_id: None,
+            wrapped_profile: None,
+            wrapped_server: None,
+        });
+        if let Some(w) = &wrapped {
+            item.wrapped_host = Some(w.host.clone());
+            item.wrapped_port = Some(w.port);
+            item.wrapped_label = Some(w.label.clone());
+            item.wrapped_program_id = w.program_id.clone();
+            item.wrapped_profile = w.profile.clone();
+            item.wrapped_server = w.server.clone();
+        }
+        item
     }).collect()
+}
+
+#[derive(Debug, Clone)]
+struct WrappedBackendView {
+    host: String,
+    port: u16,
+    label: String,
+    program_id: Option<String>,
+    profile: Option<String>,
+    server: Option<String>,
+}
+
+fn parse_wrapped_socks(v: &serde_json::Value, registry: &HashMap<u16, TrafficBackendPort>) -> Option<WrappedBackendView> {
+    let w = v.get("wrapped_socks")?.as_object()?;
+    let host = w.get("host").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+    let port = w.get("port").and_then(json_u16).unwrap_or(0);
+    if host.is_empty() || port == 0 { return None; }
+    let local = matches!(host.as_str(), "127.0.0.1" | "localhost" | "::1" | "0.0.0.0");
+    if local {
+        if let Some(found) = registry.get(&port) {
+            return Some(WrappedBackendView {
+                host,
+                port,
+                label: found.label.clone(),
+                program_id: found.program_id.clone(),
+                profile: found.profile.clone(),
+                server: found.server.clone(),
+            });
+        }
+    }
+    Some(WrappedBackendView {
+        host: host.clone(),
+        port,
+        label: format!("SOCKS5 {}:{}", host, port),
+        program_id: None,
+        profile: None,
+        server: Some(format!("{}:{}", host, port)),
+    })
 }
 
 fn parse_proxy_ports(v: &serde_json::Value) -> Vec<u16> {
@@ -718,10 +788,21 @@ fn put_registry_port(out: &mut HashMap<u16, TrafficBackendPort>, port: u16, prog
     out.entry(port).or_insert_with(|| TrafficBackendPort {
         port,
         label,
+        host: Some("127.0.0.1".to_string()),
         program_id: Some(program.to_string()),
         profile,
         server,
+        wrapped_host: None,
+        wrapped_port: None,
+        wrapped_label: None,
+        wrapped_program_id: None,
+        wrapped_profile: None,
+        wrapped_server: None,
     });
+}
+
+fn json_str_value(v: &serde_json::Value, key: &str) -> Option<String> {
+    v.get(key).and_then(|x| x.as_str()).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string)
 }
 
 fn file_name_string(path: &Path) -> Option<String> {

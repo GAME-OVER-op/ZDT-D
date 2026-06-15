@@ -89,6 +89,10 @@ private data class MyProxyUpstreamUi(
   val prioritySpeedAware: Boolean,
   val user: String,
   val pass: String,
+  val wrappedHost: String,
+  val wrappedPort: Int?,
+  val wrappedUser: String,
+  val wrappedPass: String,
 )
 
 private suspend fun awaitLoadJsonMyProxy(actions: ZdtdActions, path: String): JSONObject? =
@@ -184,6 +188,10 @@ private fun buildMyProxyUpstreamJson(
   prioritySpeedAware: Boolean,
   user: String,
   pass: String,
+  wrappedHost: String,
+  wrappedPort: Int?,
+  wrappedUser: String,
+  wrappedPass: String,
 ): JSONObject =
   JSONObject()
     .put("host", host)
@@ -192,6 +200,14 @@ private fun buildMyProxyUpstreamJson(
     .put("priority_speed_aware", normalizeMyProxyBackendMode(backendMode) == "priority" && prioritySpeedAware)
     .put("user", user)
     .put("pass", pass)
+    .put(
+      "wrapped_socks",
+      JSONObject()
+        .put("host", wrappedHost)
+        .put("port", wrappedPort ?: 0)
+        .put("user", wrappedUser)
+        .put("pass", wrappedPass)
+    )
     .also { obj ->
       if (ports.size == 1) {
         obj.put("port", ports.first())
@@ -203,6 +219,7 @@ private fun buildMyProxyUpstreamJson(
 private fun parseMyProxyUpstreamUi(obj: JSONObject?): MyProxyUpstreamUi {
   val data = obj?.optJSONObject("data") ?: obj
   val portsFromArray = parseMyProxyPortValue(data?.opt("ports"))
+  val wrapped = data?.optJSONObject("wrapped_socks")
   return MyProxyUpstreamUi(
     host = data?.optString("host", "")?.trim().orEmpty(),
     ports = portsFromArray.takeIf { it.isNotEmpty() } ?: parseMyProxyPortValue(data?.opt("port")),
@@ -211,6 +228,10 @@ private fun parseMyProxyUpstreamUi(obj: JSONObject?): MyProxyUpstreamUi {
     prioritySpeedAware = data?.optBoolean("priority_speed_aware", false) == true,
     user = data?.optString("user", "")?.trim().orEmpty(),
     pass = data?.optString("pass", "") ?: "",
+    wrappedHost = wrapped?.optString("host", "")?.trim().orEmpty(),
+    wrappedPort = wrapped?.optInt("port", 0)?.takeIf { it in 1..65535 },
+    wrappedUser = wrapped?.optString("user", "")?.trim().orEmpty(),
+    wrappedPass = wrapped?.optString("pass", "") ?: "",
   )
 }
 
@@ -418,7 +439,7 @@ fun MyProxyProfileScreen(
   var proxySaving by remember(profile) { mutableStateOf(false) }
 
   var syncedSetting by remember(profile) { mutableStateOf(MyProxySettingUi(null, null)) }
-  var syncedProxy by remember(profile) { mutableStateOf(MyProxyUpstreamUi("", emptyList(), "balance", "", false, "", "")) }
+  var syncedProxy by remember(profile) { mutableStateOf(MyProxyUpstreamUi("", emptyList(), "balance", "", false, "", "", "", null, "", "")) }
 
   var t2sPortText by remember(profile) { mutableStateOf("") }
   var t2sWebPortText by remember(profile) { mutableStateOf("") }
@@ -429,6 +450,10 @@ fun MyProxyProfileScreen(
   var prioritySpeedAware by remember(profile) { mutableStateOf(false) }
   var userText by remember(profile) { mutableStateOf("") }
   var passText by remember(profile) { mutableStateOf("") }
+  var wrappedHostText by remember(profile) { mutableStateOf("") }
+  var wrappedPortText by remember(profile) { mutableStateOf("") }
+  var wrappedUserText by remember(profile) { mutableStateOf("") }
+  var wrappedPassText by remember(profile) { mutableStateOf("") }
 
   var settingInitialized by remember(profile) { mutableStateOf(false) }
   var proxyInitialized by remember(profile) { mutableStateOf(false) }
@@ -455,6 +480,10 @@ fun MyProxyProfileScreen(
       prioritySpeedAware = parsedProxy.prioritySpeedAware
       userText = parsedProxy.user
       passText = parsedProxy.pass
+      wrappedHostText = parsedProxy.wrappedHost
+      wrappedPortText = parsedProxy.wrappedPort?.toString().orEmpty()
+      wrappedUserText = parsedProxy.wrappedUser
+      wrappedPassText = parsedProxy.wrappedPass
       settingInitialized = true
       proxyInitialized = true
       loading = false
@@ -482,7 +511,7 @@ fun MyProxyProfileScreen(
     if (ok) syncedSetting = current else showSnack(context.getString(R.string.myproxy_auto_save_failed))
   }
 
-  LaunchedEffect(hostText, proxyPortText, backendMode, backendPriorityText, prioritySpeedAware, userText, passText, proxyInitialized) {
+  LaunchedEffect(hostText, proxyPortText, backendMode, backendPriorityText, prioritySpeedAware, userText, passText, wrappedHostText, wrappedPortText, wrappedUserText, wrappedPassText, proxyInitialized) {
     if (!proxyInitialized) return@LaunchedEffect
     delay(700)
     val host = hostText.trim()
@@ -496,10 +525,17 @@ fun MyProxyProfileScreen(
     val effectivePrioritySpeedAware = mode == "priority" && prioritySpeedAware
     val user = userText.trim()
     val pass = passText
+    val wrappedHost = wrappedHostText.trim()
+    val wrappedPort = wrappedPortText.trim().toIntOrNull()?.takeIf { it in 1..65535 }
+    val wrappedUser = wrappedUserText.trim()
+    val wrappedPass = wrappedPassText
+    val wrappedConfigured = wrappedHost.isNotBlank() || wrappedPortText.isNotBlank()
     if (host.isBlank()) return@LaunchedEffect
     val portsForSave = ports?.takeIf { it.isNotEmpty() } ?: return@LaunchedEffect
     val priorityForSave = priority ?: return@LaunchedEffect
     if ((user.isBlank()) xor pass.isBlank()) return@LaunchedEffect
+    if (wrappedConfigured && (wrappedHost.isBlank() || wrappedPort == null)) return@LaunchedEffect
+    if ((wrappedUser.isBlank()) xor wrappedPass.isBlank()) return@LaunchedEffect
     val current = MyProxyUpstreamUi(
       host = host,
       ports = portsForSave,
@@ -508,13 +544,17 @@ fun MyProxyProfileScreen(
       prioritySpeedAware = effectivePrioritySpeedAware,
       user = user,
       pass = pass,
+      wrappedHost = wrappedHost,
+      wrappedPort = if (wrappedConfigured) wrappedPort else null,
+      wrappedUser = wrappedUser,
+      wrappedPass = wrappedPass,
     )
     if (current == syncedProxy) return@LaunchedEffect
     proxySaving = true
     val ok = awaitSaveJsonMyProxy(
       actions,
       "$basePath/proxy",
-      buildMyProxyUpstreamJson(host, portsForSave, mode, priorityForSave, effectivePrioritySpeedAware, user, pass)
+      buildMyProxyUpstreamJson(host, portsForSave, mode, priorityForSave, effectivePrioritySpeedAware, user, pass, wrappedHost, if (wrappedConfigured) wrappedPort else null, wrappedUser, wrappedPass)
     )
     proxySaving = false
     if (ok) {
@@ -802,6 +842,65 @@ fun MyProxyProfileScreen(
           )
           FieldHint(stringResource(R.string.myproxy_pass_hint))
           if ((userText.isBlank()) xor passText.isBlank()) {
+            Text(
+              stringResource(R.string.myproxy_credentials_pair_required),
+              color = MaterialTheme.colorScheme.error,
+              style = MaterialTheme.typography.bodySmall,
+            )
+          }
+        }
+      }
+
+      Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+        border = BorderStroke(1.dp, Color(0xFF22C55E).copy(alpha = 0.18f)),
+      ) {
+        Column(Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text(
+            stringResource(R.string.myproxy_wrapped_socks_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+          )
+          Text(
+            stringResource(R.string.myproxy_wrapped_socks_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+          )
+          OutlinedTextField(
+            value = wrappedHostText,
+            onValueChange = { wrappedHostText = it },
+            label = { Text(stringResource(R.string.myproxy_wrapped_host_label)) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+          )
+          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedTextField(
+              value = wrappedPortText,
+              onValueChange = { wrappedPortText = it.filter(Char::isDigit).take(5) },
+              label = { Text(stringResource(R.string.myproxy_wrapped_port_label)) },
+              modifier = Modifier.weight(1f),
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+              singleLine = true,
+              isError = wrappedPortText.isNotBlank() && wrappedPortText.toIntOrNull()?.let { it !in 1..65535 } != false,
+            )
+          }
+          FieldHint(stringResource(R.string.myproxy_wrapped_hint))
+          OutlinedTextField(
+            value = wrappedUserText,
+            onValueChange = { wrappedUserText = it },
+            label = { Text(stringResource(R.string.myproxy_wrapped_user_label)) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+          )
+          OutlinedTextField(
+            value = wrappedPassText,
+            onValueChange = { wrappedPassText = it },
+            label = { Text(stringResource(R.string.myproxy_wrapped_pass_label)) },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+          )
+          if ((wrappedUserText.isBlank()) xor wrappedPassText.isBlank()) {
             Text(
               stringResource(R.string.myproxy_credentials_pair_required),
               color = MaterialTheme.colorScheme.error,

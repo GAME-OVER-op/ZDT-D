@@ -1060,6 +1060,13 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="myproxy_backend_priority_label">Backend priority</string>
     <string name="myproxy_backend_priority_hint">Example: 1145,1146;1147. Leave empty to use the SOCKS5 port order.</string>
     <string name="myproxy_backend_priority_invalid">Use only ports from the SOCKS5 ports list. Separate groups with ; and ports with commas. Duplicates are not allowed.</string>
+    <string name="myproxy_wrapped_socks_title">Wrapped SOCKS5</string>
+    <string name="myproxy_wrapped_socks_desc">Optional wrapper. t2s connects to the local wrapper first, then reaches the SOCKS5 servers listed above through it.</string>
+    <string name="myproxy_wrapped_host_label">Wrapper host</string>
+    <string name="myproxy_wrapped_port_label">Wrapper port</string>
+    <string name="myproxy_wrapped_user_label">Wrapper username</string>
+    <string name="myproxy_wrapped_pass_label">Wrapper password</string>
+    <string name="myproxy_wrapped_hint">Leave host and port empty to keep the normal direct SOCKS5 backend mode.</string>
     <string name="myproxy_auto_save_failed">Failed to auto-save changes</string>
 
     <string name="tab_opera_args">Args</string>

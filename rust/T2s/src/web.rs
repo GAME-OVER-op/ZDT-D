@@ -195,6 +195,9 @@ fn backend_add_impl(state: &AppState, req: &BackendReq) -> Response {
 
     match resolve_backend_addr(&req.host, req.port) {
         Ok(sa) => {
+            if sa.port() == state.args.listen_port {
+                return json_response(StatusCode::BAD_REQUEST, serde_json::json!({"error":"t2s backend points to its own listen port"}));
+            }
             let mut b = state.backends.lock();
             if b.snapshot().iter().any(|s| s.addr == sa.to_string()) {
                 return json_response(StatusCode::OK, serde_json::json!({"result":"ok","note":"already exists"}));

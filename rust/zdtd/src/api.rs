@@ -1506,7 +1506,8 @@ fn default_myproxy_proxy_value() -> serde_json::Value {
         "backend_priority": "",
         "priority_speed_aware": false,
         "user": "",
-        "pass": ""
+        "pass": "",
+        "wrapped_socks": { "host": "", "port": 0, "user": "", "pass": "" }
     })
 }
 
@@ -5566,6 +5567,7 @@ fn collect_construction_proxy_endpoint_candidates() -> Result<Vec<ConstructionPr
     collect_construction_myprogram_candidates(&root, &mut out);
     collect_construction_tor_candidate(&root, &mut out);
     collect_construction_operaproxy_candidates(&root, &mut out);
+    collect_construction_t2s_candidates(&mut out);
 
     out.sort_by(|a, b| {
         a.program_id.cmp(&b.program_id)
@@ -5575,6 +5577,41 @@ fn collect_construction_proxy_endpoint_candidates() -> Result<Vec<ConstructionPr
     });
     out.dedup_by(|a, b| a.program_id == b.program_id && a.profile == b.profile && a.server == b.server && a.port == b.port);
     Ok(out)
+}
+
+fn collect_construction_t2s_candidates(out: &mut Vec<ConstructionProxyEndpointCandidate>) {
+    let dir = Path::new("/data/adb/modules/ZDT-D/api/t2s/instances");
+    let Ok(entries) = fs::read_dir(dir) else { return; };
+    for ent in entries.flatten() {
+        let path = ent.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("json") { continue; }
+        let Ok(raw) = fs::read_to_string(&path) else { continue; };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { continue; };
+        let port = v.get("listen_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
+        if port == 0 { continue; }
+        let program = v.get("program").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+        let profile = v.get("profile").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+        let web_port = v.get("web_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
+        let label_parts = ["t2s".to_string(), program.clone(), profile.clone()]
+            .into_iter()
+            .filter(|s| !s.is_empty())
+            .collect::<Vec<_>>();
+        let label_base = if label_parts.is_empty() { "t2s".to_string() } else { label_parts.join(" / ") };
+        out.push(ConstructionProxyEndpointCandidate {
+            key: format!("t2s:{}:{}:{}", web_port, profile, port),
+            program_id: "t2s".to_string(),
+            profile: if profile.is_empty() { None } else { Some(profile) },
+            server: if program.is_empty() { None } else { Some(program) },
+            slot: "common".to_string(),
+            host: "127.0.0.1".to_string(),
+            port,
+            label: format!("{} :{}", label_base, port),
+            kind: "t2s".to_string(),
+            enabled: true,
+            running: tcp_port_open("127.0.0.1", port),
+            app_list_path: None,
+        });
+    }
 }
 
 fn push_construction_candidate(

@@ -47,6 +47,24 @@ impl Default for ProfileSetting {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct WrappedSocksConfig {
+    #[serde(default)]
+    pub host: String,
+    #[serde(default)]
+    pub port: u16,
+    #[serde(default)]
+    pub user: String,
+    #[serde(default)]
+    pub pass: String,
+}
+
+impl WrappedSocksConfig {
+    pub fn enabled(&self) -> bool {
+        !self.host.trim().is_empty() && self.port != 0
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProxyConfig {
     #[serde(default)]
@@ -84,6 +102,8 @@ pub struct ProxyConfig {
     pub user: String,
     #[serde(default)]
     pub pass: String,
+    #[serde(default)]
+    pub wrapped_socks: WrappedSocksConfig,
 }
 
 impl Default for ProxyConfig {
@@ -97,6 +117,7 @@ impl Default for ProxyConfig {
             priority_speed_aware: false,
             user: String::new(),
             pass: String::new(),
+            wrapped_socks: WrappedSocksConfig::default(),
         }
     }
 }
@@ -346,6 +367,16 @@ pub fn validate_proxy_config(proxy: &ProxyConfig) -> Result<()> {
     if user_empty ^ pass_empty {
         anyhow::bail!("proxy user and pass must both be set or both be empty");
     }
+    let wh = proxy.wrapped_socks.host.trim();
+    let wp = proxy.wrapped_socks.port;
+    if wh.is_empty() ^ (wp == 0) {
+        anyhow::bail!("wrapped_socks host and port must both be set or both empty");
+    }
+    let wu_empty = proxy.wrapped_socks.user.trim().is_empty();
+    let wpass_empty = proxy.wrapped_socks.pass.is_empty();
+    if wu_empty ^ wpass_empty {
+        anyhow::bail!("wrapped_socks user and pass must both be set or both be empty");
+    }
     Ok(())
 }
 
@@ -499,6 +530,15 @@ fn spawn_t2s(bin: &Path, setting: &ProfileSetting, proxy: &ProxyConfig, log_path
     if !proxy.user.trim().is_empty() || !proxy.pass.trim().is_empty() {
         cmd.arg("--socks-user").arg(proxy.user.trim())
             .arg("--socks-pass").arg(proxy.pass.trim());
+    }
+
+    if proxy.wrapped_socks.enabled() {
+        cmd.arg("--wrapped-socks-host").arg(proxy.wrapped_socks.host.trim())
+            .arg("--wrapped-socks-port").arg(proxy.wrapped_socks.port.to_string());
+        if !proxy.wrapped_socks.user.trim().is_empty() || !proxy.wrapped_socks.pass.is_empty() {
+            cmd.arg("--wrapped-socks-user").arg(proxy.wrapped_socks.user.trim())
+                .arg("--wrapped-socks-pass").arg(proxy.wrapped_socks.pass.as_str());
+        }
     }
 
     unsafe {

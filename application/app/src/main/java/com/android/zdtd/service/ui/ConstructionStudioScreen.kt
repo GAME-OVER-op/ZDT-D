@@ -635,10 +635,11 @@ fun ConstructionStudioScreen(
     val connectFrom = connectFromId?.let { id -> graph.nodes.find { it.id == id } }
     if (connectFrom != null) {
       val connectPort = connectFrom.id.substringAfter("t2s:", "").substringBefore(":").toIntOrNull()?.takeIf { it > 0 }
+      val sourceT2sListenPort = connectPort?.let { webPort -> report.t2sInstances.firstOrNull { it.webPort == webPort }?.listenPort }
       val connectPoll = connectPort?.let { t2sPolls[it] }
       val connectedAddrs = connectPoll?.state?.backends?.map { it.addr }?.toSet().orEmpty()
-      val connectCandidates = remember(constructionEndpoints, connectedAddrs, report.proxyEndpoints) {
-        mergeConstructionCandidates(constructionEndpoints, connectedAddrs, report.proxyEndpoints)
+      val connectCandidates = remember(constructionEndpoints, connectedAddrs, report.proxyEndpoints, sourceT2sListenPort) {
+        mergeConstructionCandidates(constructionEndpoints, connectedAddrs, report.proxyEndpoints, sourceT2sListenPort)
       }
 
       fun finishT2sBackend(endpoint: ApiModels.ConstructionProxyEndpointCandidate, disconnect: Boolean) {
@@ -781,10 +782,12 @@ private fun buildStudioGraph(
   fun usesT2s(programId: String): Boolean = normalizeRouteProgramId(programId) in t2sFronted
 
   val hasAnyBackend = groups.any { g -> g.rules.any { it.backendPorts.isNotEmpty() } }
+  val hasWrappedBackend = groups.any { g -> g.rules.any { rule -> rule.backendPorts.any { it.wrappedPort != null } } }
   val hasT2s = groups.any { usesT2s(it.programId) }
   val programCol = if (hasT2s) 2 else 1
   val backendCol = programCol + 1
-  val internetCol = (if (hasAnyBackend || hasT2s) backendCol else programCol) + 1
+  val wrapperCol = backendCol + 1
+  val internetCol = (if (hasAnyBackend || hasT2s) { if (hasWrappedBackend) wrapperCol else backendCol } else programCol) + 1
   val internetX = colX(internetCol)
 
   var cursorY = MARGIN_TOP
@@ -803,8 +806,15 @@ private fun buildStudioGraph(
     val t2sPoll = t2sInstance?.webPort?.let { t2sPolls[it] }
     val t2sBackendAddrs = t2sPoll?.state?.backends.orEmpty()
     val t2sBackendPorts = t2sBackendAddrs.mapNotNull { backendPortFromAddr(it.addr) }.distinct()
+    val routeT2sListenPort = t2sInstance?.listenPort ?: 0
+    val t2sCascadeByPort = t2sInstances
+      .filter { it.listenPort > 0 && it.listenPort != routeT2sListenPort }
+      .associateBy { it.listenPort }
     val ruleBackends = routeRules.flatMap { it.backendPorts }
-    val backends = mergeBackendCards(ruleBackends, proxyEndpoints, t2sBackendPorts).take(6)
+    val allBackends = mergeBackendCards(ruleBackends, proxyEndpoints, t2sBackendPorts)
+    val cascadeBackends = allBackends.filter { backend -> t2sCascadeByPort.containsKey(backend.port) }.take(6)
+    val backends = allBackends.filterNot { backend -> t2sCascadeByPort.containsKey(backend.port) }.take(6)
+    val wrappedNodes = backends.mapNotNull { wrappedBackendCard(it) }.distinctBy { wrappedBackendKey(it) }.take(4)
     val ruleBytes = routeRules.sumOf { it.bytes }
     val chainBytesOverride = t2sTrafficBytes(t2sPoll)
     val chainBytes = chainBytesOverride ?: ruleBytes
@@ -815,8 +825,10 @@ private fun buildStudioGraph(
     val accent = semanticAccent(routeRules.firstOrNull()?.semantic.orEmpty())
 
     val appStackHeight = routeGroup.size * NODE_H + (routeGroup.size - 1).coerceAtLeast(0) * BACKEND_GAP
-    val backendsHeight = if (backends.isEmpty()) 0f else backends.size * BACKEND_H + (backends.size - 1) * BACKEND_GAP
-    val bandH = max(max(NODE_H, appStackHeight), backendsHeight)
+    val backendNodeCount = backends.size + cascadeBackends.size
+    val backendsHeight = if (backendNodeCount == 0) 0f else backendNodeCount * BACKEND_H + (backendNodeCount - 1) * BACKEND_GAP
+    val wrappedHeight = if (wrappedNodes.isEmpty()) 0f else wrappedNodes.size * BACKEND_H + (wrappedNodes.size - 1) * BACKEND_GAP
+    val bandH = max(max(max(NODE_H, appStackHeight), backendsHeight), wrappedHeight)
     val centerY = cursorY + bandH / 2f
     val rowTopY = centerY - NODE_H / 2f
 
@@ -878,19 +890,36 @@ private fun buildStudioGraph(
       }
     }
 
-    if (backends.isEmpty()) {
+    if (backendNodeCount == 0) {
       if (!showT2s) edges += StudioEdge(progId, "internet", tertiary, active)
     } else {
       var by = centerY - backendsHeight / 2f
+      cascadeBackends.forEach { backend ->
+        val target = t2sCascadeByPort[backend.port] ?: return@forEach
+        val cId = t2sCascadeNodeId(target, backend.port)
+        val beActive = backendActive(t2sPoll, backend.port, active)
+        if (addedBackendNodes.add(cId)) {
+          nodes += StudioNode(
+            id = cId,
+            x = colX(backendCol), y = by, w = BACKEND_W, h = BACKEND_H,
+            title = "t2s",
+            subtitle = t2sCascadeSubtitle(target, backend.port),
+            icon = Icons.Filled.Hub, accent = t2sColor, active = beActive,
+            kind = StudioNodeKind.BACKEND, onClick = null,
+          )
+          by += BACKEND_H + BACKEND_GAP
+        }
+        edges += StudioEdge(if (showT2s) t2sId else progId, cId, t2sColor, beActive)
+      }
       backends.forEach { backend ->
         val bId = backendNodeId(backend)
         if (addedBackendNodes.add(bId)) {
           nodes += StudioNode(
             id = bId,
             x = colX(backendCol), y = by, w = BACKEND_W, h = BACKEND_H,
-            title = backend.label.ifBlank { "127.0.0.1:${backend.port}" },
+            title = backend.label.ifBlank { "${backend.host ?: "127.0.0.1"}:${backend.port}" },
             subtitle = listOfNotNull(backend.programId, backend.profile, backend.server)
-              .joinToString(" / ").ifBlank { "backend ${backend.port}" },
+              .joinToString(" / ").ifBlank { "SOCKS5 ${backend.host ?: "127.0.0.1"}:${backend.port}" },
             icon = Icons.Filled.CallSplit, accent = backendColor, active = backendActive(t2sPoll, backend.port, active),
             kind = StudioNodeKind.BACKEND, onClick = null,
             iconRes = programIconRes(normalizeRouteProgramId(backend.programId.orEmpty())),
@@ -899,7 +928,47 @@ private fun buildStudioGraph(
         }
         val beActive = backendActive(t2sPoll, backend.port, active)
         edges += StudioEdge(if (showT2s) t2sId else progId, bId, backendColor, beActive)
-        edges += StudioEdge(bId, "internet", tertiary, beActive)
+        val wrapped = wrappedBackendCard(backend)
+        if (wrapped == null) {
+          edges += StudioEdge(bId, "internet", tertiary, beActive)
+        }
+      }
+      if (wrappedNodes.isNotEmpty()) {
+        var wy = centerY - wrappedHeight / 2f
+        wrappedNodes.forEach { wrapped ->
+          val wrappedId = wrappedBackendNodeId(wrapped)
+          val wrappedPort = wrapped.port
+          val wrappedT2s = t2sCascadeByPort[wrappedPort]
+          val isT2sWrapper = wrappedT2s != null
+          val nodeId = if (isT2sWrapper) t2sCascadeNodeId(wrappedT2s!!, wrappedPort) else wrappedId
+          if (addedBackendNodes.add(nodeId)) {
+            nodes += if (isT2sWrapper) {
+              StudioNode(
+                id = nodeId,
+                x = colX(wrapperCol), y = wy, w = BACKEND_W, h = BACKEND_H,
+                title = "t2s",
+                subtitle = t2sCascadeSubtitle(wrappedT2s!!, wrappedPort),
+                icon = Icons.Filled.Hub, accent = t2sColor, active = active,
+                kind = StudioNodeKind.BACKEND, onClick = null,
+              )
+            } else {
+              StudioNode(
+                id = nodeId,
+                x = colX(wrapperCol), y = wy, w = BACKEND_W, h = BACKEND_H,
+                title = wrapped.label.ifBlank { "SOCKS5 ${wrapped.host ?: "127.0.0.1"}:$wrappedPort" },
+                subtitle = listOfNotNull(wrapped.programId, wrapped.profile, wrapped.server)
+                  .joinToString(" / ").ifBlank { "SOCKS5 ${wrapped.host ?: "127.0.0.1"}:$wrappedPort" },
+                icon = Icons.Filled.CallSplit, accent = backendColor, active = active,
+                kind = StudioNodeKind.BACKEND, onClick = null,
+                iconRes = programIconRes(normalizeRouteProgramId(wrapped.programId.orEmpty())),
+              )
+            }
+            wy += BACKEND_H + BACKEND_GAP
+          }
+          edges += StudioEdge(nodeId, "internet", tertiary, active)
+          backends.filter { wrappedBackendCard(it)?.let { w -> wrappedBackendKey(w) == wrappedBackendKey(wrapped) } == true }
+            .forEach { backend -> edges += StudioEdge(backendNodeId(backend), nodeId, backendColor, backendActive(t2sPoll, backend.port, active)) }
+        }
       }
     }
 
@@ -982,7 +1051,36 @@ private fun backendNodeId(backend: ApiModels.TrafficBackendPort): String {
   val p = normalizeRouteProgramId(backend.programId.orEmpty()).ifBlank { "port" }
   val profile = backend.profile.orEmpty().ifBlank { "default" }
   val server = backend.server.orEmpty().ifBlank { backend.port.toString() }
-  return "backend:$p:$profile:$server:${backend.port}"
+  val host = backend.host.orEmpty().ifBlank { "127.0.0.1" }
+  return "backend:$p:$profile:$server:$host:${backend.port}"
+}
+
+private fun wrappedBackendCard(backend: ApiModels.TrafficBackendPort): ApiModels.TrafficBackendPort? {
+  val port = backend.wrappedPort ?: return null
+  if (port <= 0) return null
+  val host = backend.wrappedHost?.ifBlank { null } ?: "127.0.0.1"
+  return ApiModels.TrafficBackendPort(
+    port = port,
+    label = backend.wrappedLabel.orEmpty().ifBlank { "SOCKS5 $host:$port" },
+    host = host,
+    programId = backend.wrappedProgramId,
+    profile = backend.wrappedProfile,
+    server = backend.wrappedServer,
+  )
+}
+
+private fun wrappedBackendKey(backend: ApiModels.TrafficBackendPort): String =
+  listOf(backend.host.orEmpty().ifBlank { "127.0.0.1" }, backend.port.toString(), normalizeRouteProgramId(backend.programId.orEmpty()), backend.profile.orEmpty(), backend.server.orEmpty()).joinToString("|")
+
+private fun wrappedBackendNodeId(backend: ApiModels.TrafficBackendPort): String = "wrapped:${wrappedBackendKey(backend)}"
+
+private fun t2sCascadeNodeId(instance: ApiModels.TrafficT2sInstance, port: Int): String =
+  "t2s-cascade:${instance.webPort}:$port:${instance.instanceId}"
+
+private fun t2sCascadeSubtitle(instance: ApiModels.TrafficT2sInstance, port: Int): String {
+  val owner = listOf(instance.program, instance.profile).filter { it.isNotBlank() }.joinToString(" / ")
+  val mode = instance.backendMode.ifBlank { "balance" }
+  return listOf(owner.ifBlank { instance.scope.ifBlank { "cascade" } }, "in :$port", mode).joinToString(" • ")
 }
 
 private fun backendActive(poll: T2sPollResult?, port: Int, fallback: Boolean): Boolean {
@@ -1227,7 +1325,9 @@ private fun StudioConnectSheet(
           ) {
             Surface(shape = RoundedCornerShape(12.dp), color = accent.copy(alpha = 0.16f), contentColor = accent) {
               val iconRes = programIconRes(normalizeRouteProgramId(endpoint.programId))
-              if (iconRes != null) {
+              if (normalizeRouteProgramId(endpoint.programId) == "t2s") {
+                Icon(Icons.Filled.Hub, contentDescription = null, modifier = Modifier.padding(7.dp).size(18.dp))
+              } else if (iconRes != null) {
                 Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.padding(7.dp).size(18.dp), tint = accent)
               } else {
                 Icon(Icons.Filled.CallSplit, contentDescription = null, modifier = Modifier.padding(7.dp).size(18.dp))
@@ -1253,6 +1353,7 @@ private fun mergeConstructionCandidates(
   candidates: List<ApiModels.ConstructionProxyEndpointCandidate>,
   connectedAddrs: Set<String>,
   proxyEndpoints: List<ApiModels.TrafficBackendPort>,
+  sourceT2sListenPort: Int?,
 ): List<ApiModels.ConstructionProxyEndpointCandidate> {
   val byAddr = LinkedHashMap<String, ApiModels.ConstructionProxyEndpointCandidate>()
   fun putBest(candidate: ApiModels.ConstructionProxyEndpointCandidate) {
@@ -1266,6 +1367,7 @@ private fun mergeConstructionCandidates(
   candidates
     .asSequence()
     .filter { it.enabled }
+    .filterNot { normalizeRouteProgramId(it.programId) == "t2s" && sourceT2sListenPort != null && it.port == sourceT2sListenPort }
     .forEach(::putBest)
   return byAddr.values
     .filter { candidate ->
@@ -1288,6 +1390,9 @@ private fun constructionEndpointTitle(
   endpoint: ApiModels.ConstructionProxyEndpointCandidate,
   proxyEndpoints: List<ApiModels.TrafficBackendPort>,
 ): String {
+  if (normalizeRouteProgramId(endpoint.programId) == "t2s") {
+    return endpoint.label.ifBlank { "t2s :${endpoint.port}" }
+  }
   val resolved = resolveProxyEndpointForDisplay(endpoint, proxyEndpoints)
   val label = resolved?.label?.takeIf { it.isNotBlank() }
   if (label != null) return label
@@ -1302,6 +1407,19 @@ private fun constructionEndpointSubtitle(
   connected: Boolean,
   proxyEndpoints: List<ApiModels.TrafficBackendPort>,
 ): String {
+  if (normalizeRouteProgramId(endpoint.programId) == "t2s") {
+    val source = listOfNotNull(endpoint.server, endpoint.profile).joinToString(" / ").ifBlank { endpoint.kind }
+    val parts = mutableListOf<String>()
+    parts += "t2s cascade"
+    if (source.isNotBlank()) parts += source
+    parts += "${endpoint.host.ifBlank { "127.0.0.1" }}:${endpoint.port}"
+    parts += when {
+      connected -> stringResource(R.string.construction_studio_endpoint_status_connected)
+      endpoint.running -> stringResource(R.string.construction_studio_endpoint_status_running)
+      else -> stringResource(R.string.construction_studio_endpoint_status_unavailable)
+    }
+    return parts.joinToString(" • ")
+  }
   val resolved = resolveProxyEndpointForDisplay(endpoint, proxyEndpoints)
   val source = listOfNotNull(endpoint.programId, endpoint.profile)
     .joinToString(" / ")

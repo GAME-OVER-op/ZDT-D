@@ -1794,17 +1794,15 @@ private fun findAssignmentForGroup(group: StudioAppGroup, data: ApiModels.AppAss
   if (hasMultipleAppLists(group)) return null
   val program = normalizeRouteProgramId(group.programId)
   val profile = group.profile.orEmpty()
-  val slot = group.slot.orEmpty().lowercase(Locale.ROOT)
   val uidFile = group.uidFile.orEmpty()
+  val expectedSlot = assignmentSlotForKind(appSlotKind(group))
   val sameProgram = lists.filter { entry ->
     normalizeRouteProgramId(entry.programId) == program &&
       (profile.isBlank() || entry.profile.orEmpty() == profile)
   }
   return sameProgram.firstOrNull { entry ->
-    slot.isNotBlank() && entry.slot.lowercase(Locale.ROOT) == slot
-  } ?: sameProgram.firstOrNull { entry ->
-    entry.slot.lowercase(Locale.ROOT) == "user"
-  } ?: sameProgram.firstOrNull() ?: lists.firstOrNull { entry ->
+    entry.slot.lowercase(Locale.ROOT) == expectedSlot
+  } ?: lists.firstOrNull { entry ->
     uidFile.isNotBlank() && (uidFile.endsWith("/" + entry.path.substringAfterLast('/')) || uidFile.contains(entry.path.substringAfter("working_folder/", entry.path)))
   }
 }
@@ -1832,6 +1830,12 @@ private fun appSlotKind(group: StudioAppGroup): String {
     slot == "wifi" || uidFile.endsWith("wifi_program") -> "wifi"
     else -> "user"
   }
+}
+
+private fun assignmentSlotForKind(kind: String): String = when (kind.lowercase(Locale.ROOT)) {
+  "mobile" -> "mobile"
+  "wifi" -> "wifi"
+  else -> "common"
 }
 
 private fun deriveEditableVpnAppPath(vpn: ApiModels.VpnTraffic): String? {

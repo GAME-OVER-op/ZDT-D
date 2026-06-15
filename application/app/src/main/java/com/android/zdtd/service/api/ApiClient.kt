@@ -275,6 +275,11 @@ class ApiClient(
     return ApiModels.parseProxyInfo(obj)
   }
 
+  fun getHidingStatus(): ApiModels.HidingStatus {
+    val obj = requestJson("GET", "/api/hiding/status", null)
+    return ApiModels.parseHidingStatus(obj)
+  }
+
   fun setProxyInfoEnabled(enabled: Boolean): Boolean {
     val body = JSONObject().put("enabled", enabled)
     return requestOk("PUT", "/api/proxyinfo/enabled", body)

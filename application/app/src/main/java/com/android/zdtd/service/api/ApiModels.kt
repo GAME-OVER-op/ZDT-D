@@ -234,6 +234,23 @@ object ApiModels {
     val active: Boolean = false,
   )
 
+  data class HidingLayerStatus(
+    val status: String = "unknown",
+    val active: Boolean = false,
+    val installed: Boolean = false,
+    val requested: Boolean = false,
+    val enabled: Boolean = false,
+    val selectedApps: Int = 0,
+    val lastSeenMs: Long = 0L,
+  )
+
+  data class HidingStatus(
+    val selectedApps: Int = 0,
+    val zygisk: HidingLayerStatus = HidingLayerStatus(),
+    val lsposed: HidingLayerStatus = HidingLayerStatus(),
+    val proxyInfo: HidingLayerStatus = HidingLayerStatus(),
+  )
+
   data class AppAssignmentEntry(
     val programId: String,
     val profile: String? = null,
@@ -609,6 +626,29 @@ object ApiModels {
     }
     out.sortBy { it.name.lowercase(Locale.ROOT) }
     return out
+  }
+
+
+  fun parseHidingStatus(wrapper: JSONObject?): HidingStatus {
+    if (wrapper == null) return HidingStatus()
+    fun layer(o: JSONObject?): HidingLayerStatus {
+      if (o == null) return HidingLayerStatus()
+      return HidingLayerStatus(
+        status = o.optString("status", "unknown"),
+        active = jsonBool(o, "active", false),
+        installed = jsonBool(o, "installed", false),
+        requested = jsonBool(o, "requested", false),
+        enabled = jsonBool(o, "enabled", false),
+        selectedApps = o.optInt("selected_apps", 0),
+        lastSeenMs = o.optLong("last_seen_ms", 0L),
+      )
+    }
+    return HidingStatus(
+      selectedApps = wrapper.optInt("selected_apps", 0),
+      zygisk = layer(wrapper.optJSONObject("zygisk")),
+      lsposed = layer(wrapper.optJSONObject("lsposed")),
+      proxyInfo = layer(wrapper.optJSONObject("proxyinfo")),
+    )
   }
 
   fun parseProxyInfo(wrapper: JSONObject?): ProxyInfoState {

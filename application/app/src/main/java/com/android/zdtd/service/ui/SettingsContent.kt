@@ -109,6 +109,7 @@ fun AppUpdateSettings(
   proxyInfoEnabled: Boolean,
   proxyInfoBusy: Boolean,
   proxyInfoAppsContent: String,
+  hidingStatus: com.android.zdtd.service.api.ApiModels.HidingStatus,
   onProxyInfoEnabledChange: (Boolean) -> Unit,
   onLoadAppAssignments: (((com.android.zdtd.service.api.ApiModels.AppAssignmentsState?) -> Unit) -> Unit),
   onProxyInfoAppsSave: (String, (Boolean) -> Unit) -> Unit,
@@ -222,6 +223,7 @@ fun AppUpdateSettings(
           ProxyInfoSectionCard(
             enabled = proxyInfoEnabled,
             busy = proxyInfoBusy,
+            hidingStatus = hidingStatus,
             onEnabledChange = onProxyInfoEnabledChange,
             onConfigure = { showProxyInfoConfigure = true },
           )
@@ -403,6 +405,7 @@ fun AppUpdateSettings(
     ProxyInfoSectionCard(
       enabled = proxyInfoEnabled,
       busy = proxyInfoBusy,
+      hidingStatus = hidingStatus,
       onEnabledChange = onProxyInfoEnabledChange,
       onConfigure = { showProxyInfoConfigure = true },
     )

@@ -36,6 +36,7 @@ data class AppUpdateUiState(
   val proxyInfoEnabled: Boolean = false,
   val proxyInfoAppsContent: String = "",
   val proxyInfoBusy: Boolean = false,
+  val hidingStatus: ApiModels.HidingStatus = ApiModels.HidingStatus(),
   /** Block QUIC traffic for selected apps. */
   val blockedQuicEnabled: Boolean = false,
   val blockedQuicAppsContent: String = "",

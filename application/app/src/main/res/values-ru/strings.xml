@@ -847,22 +847,38 @@ APatch: 10700+</string>
     <string name="settings_blockedquic_conflict_title">Приложения уже добавлены в защиту портов</string>
     <string name="settings_blockedquic_conflict_body">Эти приложения уже находятся в списке защиты от сканирования портов. Уберите их из выбора блокировки QUIC.</string>
     <string name="settings_blockedquic_conflict_uncheck">Снять галочки</string>
-    <string name="settings_proxyinfo_title">Защита от сканирования портов</string>
-    <string name="settings_proxyinfo_body">Блокирует приложениям возможность определить открытые порты модуля.</string>
-    <string name="settings_proxyinfo_warning_title">Защита от сканирования портов</string>
-    <string name="settings_proxyinfo_warning_body">Данная функция блокирует приложениям возможность определить открытые порты модуля, из-за чего приложение не сможет определить, установлен ли ZDT-D на вашем устройстве.
+    <string name="settings_proxyinfo_title">Скрытие от приложений</string>
+    <string name="settings_proxyinfo_body">Выбрано приложений: %1$d. ZDT-D скрывает от них интерфейсы, пакет приложения и локальные proxy-порты.</string>
+    <string name="settings_proxyinfo_warning_title">Скрытие от приложений</string>
+    <string name="settings_proxyinfo_warning_body">Эта функция использует три слоя для выбранных приложений: Zygisk скрывает VPN-интерфейсы ZDT-D, LSPosed скрывает пакет приложения ZDT-D, а ProxyInfo скрывает локальные proxy-порты.
 
 Защита не работает для режима точки доступа. Если включена точка доступа и выбран sing-box, защита для него работать не будет.</string>
     <string name="settings_proxyinfo_warning_accept">Понятно</string>
-    <string name="settings_proxyinfo_configure">Настроить</string>
+    <string name="settings_proxyinfo_configure">Выбрать приложения</string>
     <string name="settings_proxyinfo_apps_title">Выбор приложений</string>
-    <string name="settings_proxyinfo_apps_body">Выбранные приложения не смогут определить наличие открытых портов модуля ZDT-D.</string>
+    <string name="settings_proxyinfo_apps_body">Выбранные приложения используются слоями скрытия Zygisk, LSPosed и ProxyInfo.</string>
     <string name="settings_proxyinfo_search_hint">Поиск приложений</string>
     <string name="settings_proxyinfo_selected_header">Выбранные приложения</string>
     <string name="settings_proxyinfo_all_apps_title">Все приложения</string>
     <string name="settings_proxyinfo_empty">Ничего не выбрано</string>
     <string name="settings_proxyinfo_saved">Настройки защиты сохранены</string>
     <string name="settings_proxyinfo_save_failed">Не удалось сохранить настройки защиты</string>
+    <string name="hiding_layer_zygisk_title">Zygisk</string>
+    <string name="hiding_layer_zygisk_short">Скрывает VPN/TUN-интерфейсы ZDT-D</string>
+    <string name="hiding_layer_zygisk_desc">Zygisk скрывает от выбранных приложений VPN/TUN/netd-интерфейсы, созданные ZDT-D. Он не скрывает root, пакеты приложений и proxy-порты.</string>
+    <string name="hiding_layer_lsposed_title">LSPosed</string>
+    <string name="hiding_layer_lsposed_short">Скрывает пакет приложения ZDT-D</string>
+    <string name="hiding_layer_lsposed_desc">LSPosed скрывает от выбранных приложений факт установки com.android.zdtd.service. Модуль должен быть включён в LSPosed со scope Android/System Framework.</string>
+    <string name="hiding_layer_proxyinfo_title">ProxyInfo</string>
+    <string name="hiding_layer_proxyinfo_short">Скрывает локальные proxy-порты</string>
+    <string name="hiding_layer_proxyinfo_desc">ProxyInfo блокирует выбранным приложениям сканирование локально созданных ZDT-D proxy/SOCKS/T2S-портов.</string>
+    <string name="hiding_layer_status_active">Активно</string>
+    <string name="hiding_layer_status_installed">Установлен</string>
+    <string name="hiding_layer_status_requested">Запрошен</string>
+    <string name="hiding_layer_status_enabled">Включено</string>
+    <string name="hiding_layer_status_stale">Устарел</string>
+    <string name="hiding_layer_status_inactive">Неактивно</string>
+
     <string name="settings_reset_identifier_title">Сбросить идентификатор модуля</string>
     <string name="settings_reset_identifier_body">Пересобрать список приложений модуля, если приложение было удалено и установлено заново.</string>
     <string name="settings_reset_identifier_action">Сбросить идентификатор модуля</string>

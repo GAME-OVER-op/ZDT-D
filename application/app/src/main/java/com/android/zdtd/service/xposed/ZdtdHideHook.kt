@@ -7,6 +7,7 @@ import de.robv.android.xposed.XC_MethodHook
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
+import java.io.File
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 
@@ -26,6 +27,7 @@ class ZdtdHideHook : IXposedHookLoadPackage {
         runCatching {
             hookPackageManagerClass(lpparam, "com.android.server.pm.ComputerEngine")
             hookPackageManagerClass(lpparam, "com.android.server.pm.PackageManagerService")
+            writeLsposedStatus("installed")
             log("installed for PackageManager hooks")
         }.onFailure {
             log("install error: ${it.stackTraceToString()}")
@@ -171,7 +173,62 @@ class ZdtdHideHook : IXposedHookLoadPackage {
         val callerPackages = resolvePackagesForUid(uid)
         if (callerPackages.any { it == ZDTD_PACKAGE || it in TRUSTED_CALLER_PACKAGES }) return false
 
-        return true
+        val selected = isProxyInfoTargetUid(uid)
+        if (selected) writeLsposedStatus("matched")
+        return selected
+    }
+
+    private fun isProxyInfoTargetUid(uid: Int): Boolean {
+        if (uid <= 0) return false
+        val now = System.currentTimeMillis()
+        synchronized(targetCacheLock) {
+            if (now - targetCacheLoadedAtMs > TARGET_CACHE_TTL_MS) {
+                targetCache = readProxyInfoTargets()
+                targetCacheLoadedAtMs = now
+            }
+            return uid in targetCache
+        }
+    }
+
+    private fun readProxyInfoTargets(): Set<Int> {
+        if (!proxyInfoEnabled()) return emptySet()
+        val file = File(PROXYINFO_OUT_PROGRAM_PATH)
+        if (!file.isFile) return emptySet()
+        return runCatching {
+            file.readLines()
+                .mapNotNull { line ->
+                    val clean = line.substringBefore('#').trim()
+                    if (clean.isBlank()) return@mapNotNull null
+                    clean.substringAfterLast('=', missingDelimiterValue = "")
+                        .trim()
+                        .toIntOrNull()
+                        ?.takeIf { it > 0 }
+                }
+                .toSet()
+        }.getOrDefault(emptySet())
+    }
+
+    private fun proxyInfoEnabled(): Boolean {
+        val file = File(PROXYINFO_ENABLED_PATH)
+        if (!file.isFile) return false
+        return runCatching {
+            val raw = file.readText().lowercase()
+            raw.contains("\"enabled\"") && raw.contains("true")
+        }.getOrDefault(false)
+    }
+
+    private fun writeLsposedStatus(reason: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastStatusWriteMs < STATUS_WRITE_TTL_MS) return
+        lastStatusWriteMs = now
+        runCatching {
+            val dir = File(PROXYINFO_DIR)
+            if (!dir.exists()) dir.mkdirs()
+            val targets = synchronized(targetCacheLock) { targetCache.size }
+            File(dir, "lsposed_status.json").writeText(
+                "{\"active\":true,\"package\":\"android\",\"reason\":\"$reason\",\"last_seen_ms\":$now,\"targets_loaded\":$targets}"
+            )
+        }
     }
 
     private fun resolvePackagesForUid(uid: Int): Array<String> {
@@ -325,6 +382,15 @@ class ZdtdHideHook : IXposedHookLoadPackage {
     private companion object {
         const val ZDTD_PACKAGE = "com.android.zdtd.service"
         const val PER_USER_RANGE = 100000
+        const val PROXYINFO_DIR = "/data/adb/modules/ZDT-D/working_folder/proxyInfo"
+        const val PROXYINFO_OUT_PROGRAM_PATH = "$PROXYINFO_DIR/out_program"
+        const val PROXYINFO_ENABLED_PATH = "$PROXYINFO_DIR/enabled.json"
+        const val TARGET_CACHE_TTL_MS = 2_000L
+        const val STATUS_WRITE_TTL_MS = 5_000L
+        var targetCacheLoadedAtMs = 0L
+        var targetCache: Set<Int> = emptySet()
+        var lastStatusWriteMs = 0L
+        val targetCacheLock = Any()
 
         val TRUSTED_CALLER_PACKAGES = setOf(
             "com.android.packageinstaller",

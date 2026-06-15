@@ -849,22 +849,38 @@ It forces the app to use TCP as the primary connection.</string>
     <string name="settings_blockedquic_conflict_title">Apps are already in port scan protection</string>
     <string name="settings_blockedquic_conflict_body">These apps are already added to port scan protection. Remove them from the QUIC blocking list selection.</string>
     <string name="settings_blockedquic_conflict_uncheck">Uncheck them</string>
-    <string name="settings_proxyinfo_title">Port Scan Protection</string>
-    <string name="settings_proxyinfo_body">Blocks apps from detecting the open ports of the module.</string>
-    <string name="settings_proxyinfo_warning_title">Port Scan Protection</string>
-    <string name="settings_proxyinfo_warning_body">This feature blocks apps from detecting the open ports of the module, so the app cannot determine whether ZDT-D is installed on your device.
+    <string name="settings_proxyinfo_title">App hiding</string>
+    <string name="settings_proxyinfo_body">Selected apps: %1$d. ZDT-D hides its interfaces, app package and local proxy ports from them.</string>
+    <string name="settings_proxyinfo_warning_title">App hiding</string>
+    <string name="settings_proxyinfo_warning_body">This feature uses three layers for selected apps: Zygisk hides ZDT-D VPN interfaces, LSPosed hides the ZDT-D app package, and ProxyInfo hides local proxy ports.
 
 Protection does not work in hotspot mode. If hotspot is enabled and sing-box is selected, protection will not apply to it.</string>
     <string name="settings_proxyinfo_warning_accept">Understood</string>
-    <string name="settings_proxyinfo_configure">Configure</string>
+    <string name="settings_proxyinfo_configure">Select apps</string>
     <string name="settings_proxyinfo_apps_title">Select apps</string>
-    <string name="settings_proxyinfo_apps_body">Selected apps will not be able to detect the open ports of the ZDT-D module.</string>
+    <string name="settings_proxyinfo_apps_body">Selected apps are used by Zygisk, LSPosed and ProxyInfo hiding layers.</string>
     <string name="settings_proxyinfo_search_hint">Search apps</string>
     <string name="settings_proxyinfo_selected_header">Selected apps</string>
     <string name="settings_proxyinfo_all_apps_title">All apps</string>
     <string name="settings_proxyinfo_empty">Nothing selected</string>
     <string name="settings_proxyinfo_saved">Protection settings saved</string>
     <string name="settings_proxyinfo_save_failed">Failed to save protection settings</string>
+    <string name="hiding_layer_zygisk_title">Zygisk</string>
+    <string name="hiding_layer_zygisk_short">Hides ZDT-D VPN/TUN interfaces</string>
+    <string name="hiding_layer_zygisk_desc">Zygisk hides VPN/TUN/netd interfaces created by ZDT-D from selected apps. It does not hide root, packages or proxy ports.</string>
+    <string name="hiding_layer_lsposed_title">LSPosed</string>
+    <string name="hiding_layer_lsposed_short">Hides the ZDT-D app package</string>
+    <string name="hiding_layer_lsposed_desc">LSPosed hides the fact that com.android.zdtd.service is installed from the selected apps. The module must be enabled in LSPosed with Android/System Framework scope.</string>
+    <string name="hiding_layer_proxyinfo_title">ProxyInfo</string>
+    <string name="hiding_layer_proxyinfo_short">Hides local proxy ports</string>
+    <string name="hiding_layer_proxyinfo_desc">ProxyInfo blocks selected apps from scanning locally created ZDT-D proxy/SOCKS/T2S ports.</string>
+    <string name="hiding_layer_status_active">Active</string>
+    <string name="hiding_layer_status_installed">Installed</string>
+    <string name="hiding_layer_status_requested">Requested</string>
+    <string name="hiding_layer_status_enabled">Enabled</string>
+    <string name="hiding_layer_status_stale">Stale</string>
+    <string name="hiding_layer_status_inactive">Inactive</string>
+
     <string name="settings_reset_identifier_title">Reset module identifier</string>
     <string name="settings_reset_identifier_body">Rebuild the module app list if an app was removed and installed again.</string>
     <string name="settings_reset_identifier_action">Reset module identifier</string>

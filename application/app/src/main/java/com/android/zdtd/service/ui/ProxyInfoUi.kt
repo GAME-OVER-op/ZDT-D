@@ -2,6 +2,7 @@ package com.android.zdtd.service.ui
 
 import android.content.pm.PackageManager
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +26,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -65,13 +67,32 @@ import java.util.Locale
 fun ProxyInfoSectionCard(
   enabled: Boolean,
   busy: Boolean,
+  hidingStatus: ApiModels.HidingStatus,
   onEnabledChange: (Boolean) -> Unit,
   onConfigure: () -> Unit,
 ) {
   var showWarning by remember { mutableStateOf(false) }
+  var infoLayer by remember { mutableStateOf<String?>(null) }
   val compactWidth = rememberIsCompactWidth()
   val shape = androidx.compose.foundation.shape.RoundedCornerShape(26.dp)
   val accent = MaterialTheme.colorScheme.primary
+  val activeStatusText = stringResource(R.string.hiding_layer_status_active)
+  val installedStatusText = stringResource(R.string.hiding_layer_status_installed)
+  val requestedStatusText = stringResource(R.string.hiding_layer_status_requested)
+  val enabledStatusText = stringResource(R.string.hiding_layer_status_enabled)
+  val staleStatusText = stringResource(R.string.hiding_layer_status_stale)
+  val inactiveStatusText = stringResource(R.string.hiding_layer_status_inactive)
+
+  fun statusText(layer: ApiModels.HidingLayerStatus, fallbackActive: Boolean = false): String {
+    return when {
+      layer.active || fallbackActive -> activeStatusText
+      layer.installed -> installedStatusText
+      layer.requested -> requestedStatusText
+      layer.enabled -> enabledStatusText
+      layer.status == "stale" -> staleStatusText
+      else -> inactiveStatusText
+    }
+  }
 
   Surface(
     modifier = Modifier.fillMaxWidth(),
@@ -134,7 +155,7 @@ fun ProxyInfoSectionCard(
           }
           Spacer(Modifier.height(3.dp))
           Text(
-            stringResource(R.string.settings_proxyinfo_body),
+            stringResource(R.string.settings_proxyinfo_body, hidingStatus.selectedApps),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
           )
@@ -162,6 +183,28 @@ fun ProxyInfoSectionCard(
           enabled = !busy,
         )
       }
+
+      HidingLayerRow(
+        title = stringResource(R.string.hiding_layer_zygisk_title),
+        subtitle = stringResource(R.string.hiding_layer_zygisk_short),
+        status = statusText(hidingStatus.zygisk),
+        active = hidingStatus.zygisk.installed,
+        onInfo = { infoLayer = "zygisk" },
+      )
+      HidingLayerRow(
+        title = stringResource(R.string.hiding_layer_lsposed_title),
+        subtitle = stringResource(R.string.hiding_layer_lsposed_short),
+        status = statusText(hidingStatus.lsposed),
+        active = hidingStatus.lsposed.active,
+        onInfo = { infoLayer = "lsposed" },
+      )
+      HidingLayerRow(
+        title = stringResource(R.string.hiding_layer_proxyinfo_title),
+        subtitle = stringResource(R.string.hiding_layer_proxyinfo_short),
+        status = statusText(hidingStatus.proxyInfo, fallbackActive = hidingStatus.proxyInfo.active),
+        active = hidingStatus.proxyInfo.active,
+        onInfo = { infoLayer = "proxyinfo" },
+      )
 
       AnimatedVisibility(visible = enabled) {
         Surface(
@@ -216,7 +259,66 @@ fun ProxyInfoSectionCard(
       },
     )
   }
+
+  infoLayer?.let { layer ->
+    val title = when (layer) {
+      "zygisk" -> R.string.hiding_layer_zygisk_title
+      "lsposed" -> R.string.hiding_layer_lsposed_title
+      else -> R.string.hiding_layer_proxyinfo_title
+    }
+    val body = when (layer) {
+      "zygisk" -> R.string.hiding_layer_zygisk_desc
+      "lsposed" -> R.string.hiding_layer_lsposed_desc
+      else -> R.string.hiding_layer_proxyinfo_desc
+    }
+    AlertDialog(
+      onDismissRequest = { infoLayer = null },
+      title = { Text(stringResource(title)) },
+      text = { Text(stringResource(body)) },
+      confirmButton = {
+        Button(onClick = { infoLayer = null }) { Text(stringResource(R.string.common_ok)) }
+      },
+    )
+  }
 }
+
+@Composable
+private fun HidingLayerRow(
+  title: String,
+  subtitle: String,
+  status: String,
+  active: Boolean,
+  onInfo: () -> Unit,
+) {
+  val accent = MaterialTheme.colorScheme.primary
+  Surface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.34f),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f)),
+  ) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 12.dp, vertical = 9.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      Box(
+        Modifier.size(9.dp).background(if (active) accent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.34f), CircleShape)
+      )
+      Column(Modifier.weight(1f)) {
+        Text(title, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+      }
+      Text(status, style = MaterialTheme.typography.labelSmall, color = if (active) accent else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f))
+      IconButton(onClick = onInfo, modifier = Modifier.size(36.dp)) {
+        Icon(Icons.Filled.Info, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f))
+      }
+    }
+  }
+}
+
 
 @Composable
 fun ProxyInfoAppsDialog(

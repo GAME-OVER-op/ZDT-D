@@ -528,8 +528,11 @@ fun ConstructionStudioScreen(
             modifier = Modifier
               .offset { IntOffset(finalPos.x.dp.roundToPx(), finalPos.y.dp.roundToPx()) }
               .graphicsLayer {
-                alpha = state.appear.value
-                val s = 0.86f + 0.14f * state.appear.value
+                // Do not dim live cards: frequent traffic/layout refreshes can restart
+                // enter animations and make the whole map look almost black. Keep
+                // visible cards fully opaque; use appear only for the exit fade.
+                alpha = if (state.exiting) state.appear.value else 1f
+                val s = if (state.exiting) 0.86f + 0.14f * state.appear.value else 1f
                 scaleX = s
                 scaleY = s
               }

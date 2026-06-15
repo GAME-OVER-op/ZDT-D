@@ -5759,7 +5759,7 @@ fn collect_construction_operaproxy_candidates(root: &Path, out: &mut Vec<Constru
     let port_json: serde_json::Value = read_json(&root.join("operaproxy/port.json")).unwrap_or_else(|_| json!({}));
     let start = port_json.get("opera_start_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
     let count = construction_operaproxy_server_count(root).max(1).min(12);
-    for idx in 0 until count {
+    for idx in 0..count {
         let Some(port) = start.checked_add(idx as u16) else { continue; };
         push_construction_candidate(out, "operaproxy", None, Some(format!("opera-proxy-{}", idx + 1)), port, "socks5", enabled.enabled, Some(program_root("operaproxy").join("app/uid/user_program")), true);
     }
@@ -5975,7 +5975,7 @@ fn start_construction_endpoint_runtime(program: &str, profile: Option<&str>, ser
                 let _ = kill_listener_processes_by_port(byedpi_port);
             }
             let count = construction_operaproxy_server_count(&working_root()).max(1).min(12);
-            for idx in 0 until count {
+            for idx in 0..count {
                 let Some(bind_port) = opera_start_port.checked_add(idx as u16) else { continue };
                 if bind_port > 0 {
                     let _ = kill_listener_processes_by_port(bind_port);

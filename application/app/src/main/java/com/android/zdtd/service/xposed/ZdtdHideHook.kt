@@ -27,7 +27,7 @@ class ZdtdHideHook : IXposedHookLoadPackage {
         runCatching {
             hookPackageManagerClass(lpparam, "com.android.server.pm.ComputerEngine")
             hookPackageManagerClass(lpparam, "com.android.server.pm.PackageManagerService")
-            writeLsposedStatus("installed")
+            writeLsposedStatus("installed", "install", Binder.getCallingUid(), false)
             log("installed for PackageManager hooks")
         }.onFailure {
             log("install error: ${it.stackTraceToString()}")
@@ -40,18 +40,18 @@ class ZdtdHideHook : IXposedHookLoadPackage {
             return
         }
 
-        hookAfterAll(cls, "getInstalledPackages", ::filterPackageListResult)
-        hookAfterAll(cls, "getInstalledApplications", ::filterApplicationListResult)
+        hookAfterAll(cls, "getInstalledPackages") { param -> filterPackageListResult(param, "getInstalledPackages") }
+        hookAfterAll(cls, "getInstalledApplications") { param -> filterApplicationListResult(param, "getInstalledApplications") }
 
-        hookAfterAll(cls, "queryIntentActivities", ::filterResolveListResult)
-        hookAfterAll(cls, "queryIntentActivitiesInternal", ::filterResolveListResult)
-        hookAfterAll(cls, "queryIntentServices", ::filterResolveListResult)
-        hookAfterAll(cls, "queryIntentReceivers", ::filterResolveListResult)
-        hookAfterAll(cls, "queryIntentContentProviders", ::filterResolveListResult)
-        hookAfterAll(cls, "queryContentProviders", ::filterProviderListResult)
-        hookAfterAll(cls, "getPackagesHoldingPermissions", ::filterPackageListResult)
-        hookAfterAll(cls, "getPersistentApplications", ::filterApplicationListResult)
-        hookAfterAll(cls, "getPreferredPackages", ::filterPackageListResult)
+        hookAfterAll(cls, "queryIntentActivities") { param -> filterResolveListResult(param, "queryIntentActivities") }
+        hookAfterAll(cls, "queryIntentActivitiesInternal") { param -> filterResolveListResult(param, "queryIntentActivitiesInternal") }
+        hookAfterAll(cls, "queryIntentServices") { param -> filterResolveListResult(param, "queryIntentServices") }
+        hookAfterAll(cls, "queryIntentReceivers") { param -> filterResolveListResult(param, "queryIntentReceivers") }
+        hookAfterAll(cls, "queryIntentContentProviders") { param -> filterResolveListResult(param, "queryIntentContentProviders") }
+        hookAfterAll(cls, "queryContentProviders") { param -> filterProviderListResult(param, "queryContentProviders") }
+        hookAfterAll(cls, "getPackagesHoldingPermissions") { param -> filterPackageListResult(param, "getPackagesHoldingPermissions") }
+        hookAfterAll(cls, "getPersistentApplications") { param -> filterApplicationListResult(param, "getPersistentApplications") }
+        hookAfterAll(cls, "getPreferredPackages") { param -> filterPackageListResult(param, "getPreferredPackages") }
 
         hookBeforeDirectPackage(cls, "getPackageInfo")
         hookBeforeDirectPackage(cls, "getPackageInfoInternal")
@@ -97,7 +97,7 @@ class ZdtdHideHook : IXposedHookLoadPackage {
             object : XC_MethodHook() {
                 override fun afterHookedMethod(param: MethodHookParam) {
                     if (insideHook.get()) return
-                    if (!shouldHideFromCaller()) return
+                    if (!shouldHideFromCaller(methodName)) return
                     runCatching {
                         insideHook.set(true)
                         after(param)
@@ -122,10 +122,11 @@ class ZdtdHideHook : IXposedHookLoadPackage {
             object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     if (insideHook.get()) return
-                    if (!shouldHideFromCaller()) return
+                    if (!shouldHideFromCaller(methodName)) return
                     if (!param.args.any { directPackageName(it) == ZDTD_PACKAGE }) return
 
                     runCatching {
+                        writeLsposedStatus("direct_hide", methodName, Binder.getCallingUid(), true)
                         param.result = hiddenDirectResult(param.method as? Method)
                     }.onFailure {
                         log("$methodName before-hook error: ${it.stackTraceToString()}")
@@ -146,10 +147,11 @@ class ZdtdHideHook : IXposedHookLoadPackage {
             object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     if (insideHook.get()) return
-                    if (!shouldHideFromCaller()) return
+                    if (!shouldHideFromCaller(methodName)) return
                     if (!param.args.any { componentPackageName(it) == ZDTD_PACKAGE }) return
 
                     runCatching {
+                        writeLsposedStatus("component_hide", methodName, Binder.getCallingUid(), true)
                         param.result = hiddenDirectResult(param.method as? Method)
                     }.onFailure {
                         log("$methodName component before-hook error: ${it.stackTraceToString()}")
@@ -160,7 +162,7 @@ class ZdtdHideHook : IXposedHookLoadPackage {
         log("hooked ${cls.name}.$methodName component x${methods.size}")
     }
 
-    private fun shouldHideFromCaller(): Boolean {
+    private fun shouldHideFromCaller(methodName: String): Boolean {
         val uid = Binder.getCallingUid()
         if (uid == 0 || uid == Process.SYSTEM_UID || uid == Process.SHELL_UID || uid == Process.PHONE_UID) {
             return false
@@ -174,7 +176,7 @@ class ZdtdHideHook : IXposedHookLoadPackage {
         if (callerPackages.any { it == ZDTD_PACKAGE || it in TRUSTED_CALLER_PACKAGES }) return false
 
         val selected = isProxyInfoTargetUid(uid)
-        if (selected) writeLsposedStatus("matched")
+        if (selected) writeLsposedStatus("matched", methodName, uid, false)
         return selected
     }
 
@@ -217,16 +219,16 @@ class ZdtdHideHook : IXposedHookLoadPackage {
         }.getOrDefault(false)
     }
 
-    private fun writeLsposedStatus(reason: String) {
+    private fun writeLsposedStatus(reason: String, methodName: String, callerUid: Int, filtered: Boolean) {
         val now = System.currentTimeMillis()
-        if (now - lastStatusWriteMs < STATUS_WRITE_TTL_MS) return
+        if (!filtered && reason != "matched" && now - lastStatusWriteMs < STATUS_WRITE_TTL_MS) return
         lastStatusWriteMs = now
         runCatching {
             val dir = File(PROXYINFO_DIR)
             if (!dir.exists()) dir.mkdirs()
             val targets = synchronized(targetCacheLock) { targetCache.size }
             File(dir, "lsposed_status.json").writeText(
-                "{\"active\":true,\"package\":\"android\",\"reason\":\"$reason\",\"last_seen_ms\":$now,\"targets_loaded\":$targets}"
+                "{\"active\":true,\"package\":\"android\",\"reason\":\"$reason\",\"method\":\"$methodName\",\"caller_uid\":$callerUid,\"filtered\":$filtered,\"last_seen_ms\":$now,\"targets_loaded\":$targets}"
             )
         }
     }
@@ -262,26 +264,26 @@ class ZdtdHideHook : IXposedHookLoadPackage {
         }
     }
 
-    private fun filterPackageListResult(param: XC_MethodHook.MethodHookParam) {
-        param.result = filterListLikeResult(param.result) { item ->
+    private fun filterPackageListResult(param: XC_MethodHook.MethodHookParam, methodName: String) {
+        param.result = filterListLikeResult(param.result, methodName) { item ->
             readObjectStringField(item, "packageName") != ZDTD_PACKAGE
         }
     }
 
-    private fun filterApplicationListResult(param: XC_MethodHook.MethodHookParam) {
-        param.result = filterListLikeResult(param.result) { item ->
+    private fun filterApplicationListResult(param: XC_MethodHook.MethodHookParam, methodName: String) {
+        param.result = filterListLikeResult(param.result, methodName) { item ->
             readObjectStringField(item, "packageName") != ZDTD_PACKAGE
         }
     }
 
-    private fun filterResolveListResult(param: XC_MethodHook.MethodHookParam) {
-        param.result = filterListLikeResult(param.result) { item ->
+    private fun filterResolveListResult(param: XC_MethodHook.MethodHookParam, methodName: String) {
+        param.result = filterListLikeResult(param.result, methodName) { item ->
             resolveInfoPackageName(item) != ZDTD_PACKAGE
         }
     }
 
-    private fun filterProviderListResult(param: XC_MethodHook.MethodHookParam) {
-        param.result = filterListLikeResult(param.result) { item ->
+    private fun filterProviderListResult(param: XC_MethodHook.MethodHookParam, methodName: String) {
+        param.result = filterListLikeResult(param.result, methodName) { item ->
             readObjectStringField(item, "packageName") != ZDTD_PACKAGE
         }
     }
@@ -313,35 +315,62 @@ class ZdtdHideHook : IXposedHookLoadPackage {
         return value == ZDTD_PACKAGE || value.endsWith(":$ZDTD_PACKAGE") || value.split(":").contains(ZDTD_PACKAGE)
     }
 
-    private fun filterListLikeResult(result: Any?, keep: (Any?) -> Boolean): Any? {
+    private fun filterListLikeResult(result: Any?, methodName: String, keep: (Any?) -> Boolean): Any? {
         if (result == null) return null
 
         if (result is MutableList<*>) {
             @Suppress("UNCHECKED_CAST")
-            return (result as MutableList<Any?>).filterTo(ArrayList()) { keep(it) }
+            val filtered = (result as MutableList<Any?>).filterTo(ArrayList()) { keep(it) }
+            if (filtered.size != result.size) writeLsposedStatus("filtered_list", methodName, Binder.getCallingUid(), true)
+            return filtered
         }
         if (result is List<*>) {
-            return result.filterTo(ArrayList()) { keep(it) }
+            val filtered = result.filterTo(ArrayList()) { keep(it) }
+            if (filtered.size != result.size) writeLsposedStatus("filtered_list", methodName, Binder.getCallingUid(), true)
+            return filtered
         }
 
         if (result.javaClass.name == "android.content.pm.ParceledListSlice") {
-            val list = runCatching { XposedHelpers.callMethod(result, "getList") as? List<*> }.getOrNull()
-                ?: return result
+            val list = readParceledListSliceList(result) ?: return result
             val filtered = list.filterTo(ArrayList()) { keep(it) }
             if (filtered.size == list.size) return result
-            return newParceledListSlice(result.javaClass, filtered) ?: result
+            writeLsposedStatus("filtered_slice", methodName, Binder.getCallingUid(), true)
+            return newParceledListSlice(result.javaClass, filtered)
+                ?: clearParceledListSliceInPlace(result, filtered)
+                ?: result
         }
 
+        writeLsposedStatus("unknown_result", methodName, Binder.getCallingUid(), false)
         return result
     }
 
+    private fun readParceledListSliceList(result: Any): List<*>? {
+        return runCatching { XposedHelpers.callMethod(result, "getList") as? List<*> }.getOrNull()
+            ?: runCatching {
+                val field = result.javaClass.getDeclaredField("mList")
+                if (!field.isAccessible) field.isAccessible = true
+                field.get(result) as? List<*>
+            }.getOrNull()
+    }
+
     private fun newParceledListSlice(cls: Class<*>, list: List<*>): Any? {
+        // Thanox returns a fresh ParceledListSlice. Do the same, but through reflection so the
+        // app still compiles against the public SDK where ParceledListSlice is hidden.
         return runCatching {
             val ctor = cls.declaredConstructors.firstOrNull { ctor ->
                 ctor.parameterTypes.size == 1 && List::class.java.isAssignableFrom(ctor.parameterTypes[0])
             } ?: return@runCatching null
             if (!Modifier.isPublic(ctor.modifiers) || !ctor.isAccessible) ctor.isAccessible = true
             ctor.newInstance(list)
+        }.getOrNull()
+    }
+
+    private fun clearParceledListSliceInPlace(result: Any, filtered: List<*>): Any? {
+        return runCatching {
+            val field = result.javaClass.getDeclaredField("mList")
+            if (!field.isAccessible) field.isAccessible = true
+            field.set(result, filtered)
+            result
         }.getOrNull()
     }
 

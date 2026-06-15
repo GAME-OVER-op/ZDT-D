@@ -6379,6 +6379,10 @@ match (method.as_str(), path.as_str()) {
                         "status_file": lsposed_path.exists(),
                         "last_seen_ms": lsposed_seen_ms,
                         "targets_loaded": lsposed_json.as_ref().and_then(|v| v.get("targets_loaded")).and_then(|v| v.as_u64()).unwrap_or(0),
+                        "reason": lsposed_json.as_ref().and_then(|v| v.get("reason")).and_then(|v| v.as_str()).unwrap_or(""),
+                        "method": lsposed_json.as_ref().and_then(|v| v.get("method")).and_then(|v| v.as_str()).unwrap_or(""),
+                        "caller_uid": lsposed_json.as_ref().and_then(|v| v.get("caller_uid")).and_then(|v| v.as_i64()).unwrap_or(0),
+                        "filtered": lsposed_json.as_ref().and_then(|v| v.get("filtered")).and_then(|v| v.as_bool()).unwrap_or(false),
                         "status": if lsposed_recent { "active" } else if lsposed_path.exists() { "stale" } else { "unknown" }
                     },
                     "proxyinfo": {

@@ -5759,7 +5759,7 @@ fn collect_construction_operaproxy_candidates(root: &Path, out: &mut Vec<Constru
     let port_json: serde_json::Value = read_json(&root.join("operaproxy/port.json")).unwrap_or_else(|_| json!({}));
     let start = port_json.get("opera_start_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
     let count = construction_operaproxy_server_count(root).max(1).min(12);
-    for idx in 0..count {
+    for idx in 0 until count {
         let Some(port) = start.checked_add(idx as u16) else { continue; };
         push_construction_candidate(out, "operaproxy", None, Some(format!("opera-proxy-{}", idx + 1)), port, "socks5", enabled.enabled, Some(program_root("operaproxy").join("app/uid/user_program")), true);
     }
@@ -5781,7 +5781,7 @@ fn start_construction_proxy_endpoint(req: ConstructionStartEndpointReq, _service
         if trigger_added { invalidate_assignment_cache(); }
     }
     enable_construction_endpoint(&program, profile, server, req.port)?;
-    start_construction_endpoint_runtime(&program, profile, server)?;
+    start_construction_endpoint_runtime(&program, profile, server, req.port)?;
 
     let candidates = collect_construction_proxy_endpoint_candidates()?;
     let selected = candidates.into_iter().find(|c| {
@@ -5927,7 +5927,7 @@ fn start_construction_program(program: &str) -> Result<()> {
     }
 }
 
-fn start_construction_endpoint_runtime(program: &str, profile: Option<&str>, server: Option<&str>) -> Result<()> {
+fn start_construction_endpoint_runtime(program: &str, profile: Option<&str>, server: Option<&str>, port: Option<u16>) -> Result<()> {
     match (program, profile, server) {
         ("sing-box", Some(profile), Some(_)) => {
             let setting = crate::programs::singbox::read_setting(profile)?;
@@ -5962,6 +5962,32 @@ fn start_construction_endpoint_runtime(program: &str, profile: Option<&str>, ser
             let _ = kill_listener_processes_by_port(setting.t2s_port);
             let _ = kill_listener_processes_by_port(setting.t2s_web_port);
             start_construction_program(program)
+        }
+        ("operaproxy", _, _) => {
+            let port_json: serde_json::Value = read_json(&program_root("operaproxy").join("port.json")).unwrap_or_else(|_| json!({}));
+            let t2s_port = port_json.get("t2s_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
+            let byedpi_port = port_json.get("byedpi_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
+            let opera_start_port = port_json.get("opera_start_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).unwrap_or(0);
+            if t2s_port > 0 {
+                let _ = kill_listener_processes_by_port(t2s_port);
+            }
+            if byedpi_port > 0 {
+                let _ = kill_listener_processes_by_port(byedpi_port);
+            }
+            let count = construction_operaproxy_server_count(&working_root()).max(1).min(12);
+            for idx in 0 until count {
+                let Some(bind_port) = opera_start_port.checked_add(idx as u16) else { continue };
+                if bind_port > 0 {
+                    let _ = kill_listener_processes_by_port(bind_port);
+                }
+            }
+            start_construction_program(program)?;
+            if let Some(target_port) = port.filter(|p| *p > 0) {
+                if !tcp_port_open("127.0.0.1", target_port) {
+                    anyhow::bail!("operaproxy target port {} is not listening after start", target_port);
+                }
+            }
+            Ok(())
         }
         _ => start_construction_program(program),
     }

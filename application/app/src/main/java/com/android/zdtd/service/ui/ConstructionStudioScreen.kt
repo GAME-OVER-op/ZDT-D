@@ -499,8 +499,9 @@ fun ConstructionStudioScreen(
     if (connectFrom != null) {
       val connectPort = connectFrom.id.substringAfter("t2s:", "").substringBefore(":").toIntOrNull()?.takeIf { it > 0 }
       val connectPoll = connectPort?.let { t2sPolls[it] }
-      val connectCandidates = remember(report.proxyEndpoints, constructionEndpoints) {
-        mergeConstructionCandidates(report.proxyEndpoints, constructionEndpoints)
+      val localEndpointLabel = stringResource(R.string.construction_studio_local_endpoint)
+      val connectCandidates = remember(report.proxyEndpoints, constructionEndpoints, localEndpointLabel) {
+        mergeConstructionCandidates(report.proxyEndpoints, constructionEndpoints, localEndpointLabel)
       }
 
       fun finishT2sBackend(endpoint: ApiModels.ConstructionProxyEndpointCandidate, disconnect: Boolean) {
@@ -1136,6 +1137,7 @@ private fun ConfirmConstructionStartDialog(
 private fun mergeConstructionCandidates(
   running: List<ApiModels.TrafficBackendPort>,
   candidates: List<ApiModels.ConstructionProxyEndpointCandidate>,
+  localEndpointLabel: String,
 ): List<ApiModels.ConstructionProxyEndpointCandidate> {
   val byAddr = LinkedHashMap<String, ApiModels.ConstructionProxyEndpointCandidate>()
   fun putBest(candidate: ApiModels.ConstructionProxyEndpointCandidate) {
@@ -1148,7 +1150,7 @@ private fun mergeConstructionCandidates(
   }
   candidates.forEach(::putBest)
   running.forEach { endpoint ->
-    val programId = endpoint.programId.orEmpty().ifBlank { stringResource(R.string.construction_studio_local_endpoint) }
+    val programId = endpoint.programId.orEmpty().ifBlank { localEndpointLabel }
     val key = "$programId:${endpoint.profile.orEmpty()}:${endpoint.server.orEmpty()}:${endpoint.port}"
     putBest(
       ApiModels.ConstructionProxyEndpointCandidate(

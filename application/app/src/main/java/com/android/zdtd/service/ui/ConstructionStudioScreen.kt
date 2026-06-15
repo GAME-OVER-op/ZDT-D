@@ -47,7 +47,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timeline
 import androidx.compose.material.icons.filled.VpnKey
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -55,7 +54,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -202,8 +200,6 @@ fun ConstructionStudioScreen(
   var showSearch by remember { mutableStateOf(false) }
   // Id of the card whose output port was tapped; drives the "direct connection" picker.
   var connectFromId by remember { mutableStateOf<String?>(null) }
-  var startingEndpointKey by remember { mutableStateOf<String?>(null) }
-  var pendingStartCandidate by remember { mutableStateOf<ApiModels.ConstructionProxyEndpointCandidate?>(null) }
   LaunchedEffect(Unit) {
     layoutPrefs.all.forEach { (key, value) ->
       val parts = (value as? String)?.split(",")
@@ -499,9 +495,10 @@ fun ConstructionStudioScreen(
     if (connectFrom != null) {
       val connectPort = connectFrom.id.substringAfter("t2s:", "").substringBefore(":").toIntOrNull()?.takeIf { it > 0 }
       val connectPoll = connectPort?.let { t2sPolls[it] }
+      val connectedAddrs = connectPoll?.state?.backends?.map { it.addr }?.toSet().orEmpty()
       val localEndpointLabel = stringResource(R.string.construction_studio_local_endpoint)
-      val connectCandidates = remember(report.proxyEndpoints, constructionEndpoints, localEndpointLabel) {
-        mergeConstructionCandidates(report.proxyEndpoints, constructionEndpoints, localEndpointLabel)
+      val connectCandidates = remember(report.proxyEndpoints, constructionEndpoints, localEndpointLabel, connectedAddrs) {
+        mergeConstructionCandidates(report.proxyEndpoints, constructionEndpoints, localEndpointLabel, connectedAddrs)
       }
 
       fun finishT2sBackend(endpoint: ApiModels.ConstructionProxyEndpointCandidate, disconnect: Boolean) {
@@ -538,7 +535,6 @@ fun ConstructionStudioScreen(
               requestTraffic()
             }
           }
-          startingEndpointKey = null
           connectFromId = null
           requestTraffic()
           requestConstructionEndpoints()
@@ -548,47 +544,20 @@ fun ConstructionStudioScreen(
       StudioConnectSheet(
         from = connectFrom,
         candidates = connectCandidates,
-        connectedAddrs = connectPoll?.state?.backends?.map { it.addr }?.toSet().orEmpty(),
-        startingEndpointKey = startingEndpointKey,
+        connectedAddrs = connectedAddrs,
         onDismiss = {
-          pendingStartCandidate = null
-          startingEndpointKey = null
           connectFromId = null
         },
         onPick = { candidate ->
           val host = candidate.host.ifBlank { "127.0.0.1" }
           val connected = connectPoll?.state?.backends?.any { it.addr == "$host:${candidate.port}" || it.addr.endsWith(":${candidate.port}") } == true
           when {
-            startingEndpointKey != null && startingEndpointKey != candidate.key -> Unit
             connected -> finishT2sBackend(candidate, disconnect = true)
             candidate.running -> finishT2sBackend(candidate, disconnect = false)
-            candidate.canStart -> {
-              pendingStartCandidate = candidate
-            }
             else -> connectFromId = null
           }
         },
       )
-
-      pendingStartCandidate?.let { candidate ->
-        ConfirmConstructionStartDialog(
-          candidate = candidate,
-          onDismiss = { pendingStartCandidate = null },
-          onConfirm = {
-            pendingStartCandidate = null
-            startingEndpointKey = candidate.key
-            actions.startConstructionProxyEndpoint(candidate) { result ->
-              val endpoint = result?.endpoint ?: candidate
-              if (result?.ok == true && result.started) {
-                finishT2sBackend(endpoint, disconnect = false)
-              } else {
-                startingEndpointKey = null
-                requestConstructionEndpoints()
-              }
-            }
-          },
-        )
-      }
     }
 
     if (showWarnings && report.warnings.isNotEmpty()) {
@@ -1037,7 +1006,6 @@ private fun StudioConnectSheet(
   from: StudioNode,
   candidates: List<ApiModels.ConstructionProxyEndpointCandidate>,
   connectedAddrs: Set<String>,
-  startingEndpointKey: String?,
   onDismiss: () -> Unit,
   onPick: (ApiModels.ConstructionProxyEndpointCandidate) -> Unit,
 ) {
@@ -1063,14 +1031,13 @@ private fun StudioConnectSheet(
       candidates.forEach { endpoint ->
         val host = endpoint.host.ifBlank { "127.0.0.1" }
         val connected = connectedAddrs.any { it == "$host:${endpoint.port}" || it.endsWith(":${endpoint.port}") }
-        val busy = startingEndpointKey == endpoint.key
         val accent = programColor(endpoint.programId)
         Surface(
           modifier = Modifier.fillMaxWidth(),
           shape = RoundedCornerShape(14.dp),
           color = if (connected) accent.copy(alpha = 0.14f) else if (!endpoint.running) Color(0xFFF97316).copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
           border = if (connected) BorderStroke(1.dp, accent.copy(alpha = 0.55f)) else if (!endpoint.running) BorderStroke(1.dp, Color(0xFFF97316).copy(alpha = 0.45f)) else null,
-          onClick = { if (!busy) onPick(endpoint) },
+          onClick = { onPick(endpoint) },
         ) {
           Row(
             modifier = Modifier.padding(12.dp),
@@ -1089,14 +1056,10 @@ private fun StudioConnectSheet(
               Text(endpoint.label.ifBlank { "$host:${endpoint.port}" }, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
               Text(constructionEndpointSubtitle(endpoint, connected), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            when {
-              busy -> CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-              connected -> {
-                Box(Modifier.size(22.dp).clip(CircleShape).background(accent), contentAlignment = Alignment.Center) {
-                  Text("✓", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.White)
-                }
+            if (connected) {
+              Box(Modifier.size(22.dp).clip(CircleShape).background(accent), contentAlignment = Alignment.Center) {
+                Text("✓", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.White)
               }
-              !endpoint.running && endpoint.canStart -> Text(stringResource(R.string.construction_studio_start_badge), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xFFF97316))
             }
           }
         }
@@ -1105,39 +1068,11 @@ private fun StudioConnectSheet(
   }
 }
 
-@Composable
-private fun ConfirmConstructionStartDialog(
-  candidate: ApiModels.ConstructionProxyEndpointCandidate,
-  onDismiss: () -> Unit,
-  onConfirm: () -> Unit,
-) {
-  val title = listOfNotNull(candidate.programId, candidate.profile, candidate.server)
-    .joinToString(" / ")
-    .ifBlank { candidate.label.ifBlank { stringResource(R.string.construction_studio_proxy_endpoint_fallback) } }
-  val body = buildString {
-    append(stringResource(R.string.construction_studio_tool_start_body, title))
-    if (candidate.appListEmpty) {
-      append("\n\n")
-      append(stringResource(R.string.construction_studio_tool_start_trigger_note))
-    }
-  }
-  AlertDialog(
-    onDismissRequest = onDismiss,
-    title = { Text(stringResource(R.string.construction_studio_tool_start_title)) },
-    text = { Text(body) },
-    confirmButton = {
-      TextButton(onClick = onConfirm) { Text(stringResource(R.string.construction_studio_start_badge)) }
-    },
-    dismissButton = {
-      TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
-    },
-  )
-}
-
 private fun mergeConstructionCandidates(
   running: List<ApiModels.TrafficBackendPort>,
   candidates: List<ApiModels.ConstructionProxyEndpointCandidate>,
   localEndpointLabel: String,
+  connectedAddrs: Set<String>,
 ): List<ApiModels.ConstructionProxyEndpointCandidate> {
   val byAddr = LinkedHashMap<String, ApiModels.ConstructionProxyEndpointCandidate>()
   fun putBest(candidate: ApiModels.ConstructionProxyEndpointCandidate) {
@@ -1164,11 +1099,15 @@ private fun mergeConstructionCandidates(
         kind = "socks5",
         enabled = true,
         running = true,
-        canStart = false,
       )
     )
   }
-  return byAddr.values.sortedWith(compareBy<ApiModels.ConstructionProxyEndpointCandidate> { !it.running }.thenBy { !it.canStart && !it.running }.thenBy { it.programId }.thenBy { it.profile.orEmpty() }.thenBy { it.server.orEmpty() }.thenBy { it.port })
+  return byAddr.values
+    .filter { candidate ->
+      val host = candidate.host.ifBlank { "127.0.0.1" }
+      candidate.running || connectedAddrs.any { it == "$host:${candidate.port}" || it.endsWith(":${candidate.port}") }
+    }
+    .sortedWith(compareBy<ApiModels.ConstructionProxyEndpointCandidate> { !it.running }.thenBy { it.programId }.thenBy { it.profile.orEmpty() }.thenBy { it.server.orEmpty() }.thenBy { it.port })
 }
 
 private fun constructionCandidatePriority(candidate: ApiModels.ConstructionProxyEndpointCandidate): Int {
@@ -1176,8 +1115,6 @@ private fun constructionCandidatePriority(candidate: ApiModels.ConstructionProxy
   return when {
     candidate.running && program != "myproxy" -> 0
     candidate.running -> 1
-    candidate.canStart && candidate.enabled -> 2
-    candidate.canStart -> 3
     else -> 8
   }
 }
@@ -1190,8 +1127,6 @@ private fun constructionEndpointSubtitle(endpoint: ApiModels.ConstructionProxyEn
   parts += when {
     connected -> stringResource(R.string.construction_studio_endpoint_status_connected)
     endpoint.running -> stringResource(R.string.construction_studio_endpoint_status_running)
-    endpoint.canStart && endpoint.appListEmpty -> stringResource(R.string.construction_studio_endpoint_status_empty_start)
-    endpoint.canStart -> stringResource(R.string.construction_studio_endpoint_status_disabled_start)
     else -> stringResource(R.string.construction_studio_endpoint_status_unavailable)
   }
   return parts.joinToString(" • ")

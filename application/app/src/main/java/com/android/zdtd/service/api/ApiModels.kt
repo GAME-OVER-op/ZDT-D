@@ -260,17 +260,6 @@ object ApiModels {
     val enabled: Boolean = false,
     val running: Boolean = false,
     val appListPath: String? = null,
-    val appListEmpty: Boolean = false,
-    val hasTrigger: Boolean = false,
-    val canStart: Boolean = false,
-  )
-
-  data class ConstructionStartEndpointResult(
-    val ok: Boolean = false,
-    val started: Boolean = false,
-    val triggerAdded: Boolean = false,
-    val endpoint: ConstructionProxyEndpointCandidate? = null,
-    val error: String = "",
   )
 
   data class ConstructionReleaseEndpointResult(
@@ -859,26 +848,9 @@ object ApiModels {
         enabled = jsonBool(o, "enabled", false),
         running = jsonBool(o, "running", false),
         appListPath = o.optString("app_list_path", "").trim().takeIf { it.isNotEmpty() },
-        appListEmpty = jsonBool(o, "app_list_empty", false),
-        hasTrigger = jsonBool(o, "has_trigger", false),
-        canStart = jsonBool(o, "can_start", false),
       )
     }
     return out
-  }
-
-  fun parseConstructionStartEndpointResult(wrapper: JSONObject?): ConstructionStartEndpointResult {
-    if (wrapper == null) return ConstructionStartEndpointResult(error = "empty response")
-    val endpoint = wrapper.optJSONObject("endpoint")?.let { obj ->
-      parseConstructionProxyEndpoints(JSONObject().put("ok", true).put("candidates", JSONArray().put(obj))).firstOrNull()
-    }
-    return ConstructionStartEndpointResult(
-      ok = jsonBool(wrapper, "ok", false),
-      started = jsonBool(wrapper, "started", false),
-      triggerAdded = jsonBool(wrapper, "trigger_added", false),
-      endpoint = endpoint,
-      error = wrapper.optString("error", ""),
-    )
   }
 
   fun parseConstructionReleaseEndpointResult(wrapper: JSONObject?): ConstructionReleaseEndpointResult {

@@ -1597,15 +1597,10 @@ APatch: 10700+</string>
     <string name="construction_studio_t2s_mode_green">%1$s • %2$s • %3$d/%4$d backend активны</string>
     <string name="construction_studio_t2s_mode_only">%1$s • %2$s</string>
     <string name="construction_studio_connect_picker_title">Куда направить от «%1$s»</string>
-    <string name="construction_studio_connect_picker_desc">Показаны локальные proxy endpoints проекта: запущенные подключаются сразу, выключенные профили запускаются и затем подключаются к этому t2s.</string>
+    <string name="construction_studio_connect_picker_desc">Показаны локальные proxy endpoints проекта: к этому t2s можно подключать только доступные уже запущенные endpoints.</string>
     <string name="construction_studio_connect_picker_empty">Нет доступных proxy endpoints</string>
-    <string name="construction_studio_tool_start_title">Запуск инструмента</string>
-    <string name="construction_studio_tool_start_body">Запустить %1$s и подключить к t2s?</string>
-    <string name="construction_studio_tool_start_trigger_note">Список приложений пустой — будет добавлен trigger com.android.zdtd.service.</string>
     <string name="construction_studio_endpoint_status_connected">подключён</string>
     <string name="construction_studio_endpoint_status_running">запущен</string>
-    <string name="construction_studio_endpoint_status_empty_start">пустой список → trigger + запуск</string>
-    <string name="construction_studio_endpoint_status_disabled_start">выключен → запуск</string>
     <string name="construction_studio_endpoint_status_unavailable">недоступен</string>
     <string name="construction_studio_preparing">Готовлю данные, подожди…</string>
     <string name="construction_studio_auto_refresh_hint">Автообновление 5 сек • тяни и масштабируй</string>
@@ -1616,7 +1611,6 @@ APatch: 10700+</string>
     <string name="construction_studio_vpn_list_path_missing">Для этого VPN-профиля не найден редактируемый путь apps.</string>
     <string name="construction_studio_proxy_endpoint_fallback">прокси-узел</string>
     <string name="construction_studio_local_endpoint">локальный</string>
-    <string name="construction_studio_start_badge">Запустить</string>
 
     <string name="dpi_detector_title">DPI Detector</string>
     <string name="dpi_detector_short_desc">Определяет возможные признаки DPI-блокировок и аномалии соединений.</string>

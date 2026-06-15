@@ -259,18 +259,6 @@ class ApiClient(
     return ApiModels.parseConstructionProxyEndpoints(obj)
   }
 
-  fun startConstructionProxyEndpoint(candidate: ApiModels.ConstructionProxyEndpointCandidate): ApiModels.ConstructionStartEndpointResult {
-    val body = JSONObject()
-      .put("program_id", candidate.programId)
-      .put("slot", candidate.slot.ifBlank { "common" })
-      .put("port", candidate.port)
-      .put("ensure_trigger", true)
-    candidate.profile?.takeIf { it.isNotBlank() }?.let { body.put("profile", it) }
-    candidate.server?.takeIf { it.isNotBlank() }?.let { body.put("server", it) }
-    val obj = requestJson("POST", "/api/construction/proxy-endpoints/start", body)
-    return ApiModels.parseConstructionStartEndpointResult(obj)
-  }
-
   fun releaseConstructionProxyEndpoint(candidate: ApiModels.ConstructionProxyEndpointCandidate): ApiModels.ConstructionReleaseEndpointResult {
     val body = JSONObject()
       .put("program_id", candidate.programId)

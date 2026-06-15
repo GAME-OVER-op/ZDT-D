@@ -5263,20 +5263,6 @@ private fun shQuote(s: String): String {
     }
   }
 
-  override fun startConstructionProxyEndpoint(candidate: ApiModels.ConstructionProxyEndpointCandidate, onDone: (ApiModels.ConstructionStartEndpointResult?) -> Unit) {
-    launchIO {
-      val result = runCatching { api.startConstructionProxyEndpoint(candidate) }.getOrNull()
-      if (result?.ok == true) {
-        val ep = result.endpoint
-        val label = listOfNotNull(ep?.programId, ep?.profile, ep?.server).joinToString("/")
-        log("OK", "construction endpoint ${label.ifBlank { candidate.label }} started${if (result.triggerAdded) " + trigger" else ""}")
-      } else {
-        log("ERR", "construction endpoint ${candidate.label.ifBlank { candidate.programId }} start failed")
-      }
-      withContext(Dispatchers.Main.immediate) { onDone(result) }
-    }
-  }
-
   override fun releaseConstructionProxyEndpoint(candidate: ApiModels.ConstructionProxyEndpointCandidate, onDone: (ApiModels.ConstructionReleaseEndpointResult?) -> Unit) {
     launchIO {
       val result = runCatching { api.releaseConstructionProxyEndpoint(candidate) }.getOrNull()

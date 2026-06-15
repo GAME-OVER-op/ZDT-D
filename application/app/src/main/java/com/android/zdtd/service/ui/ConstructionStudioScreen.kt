@@ -27,6 +27,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -88,6 +91,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import java.util.Locale
 import com.android.zdtd.service.R
 import com.android.zdtd.service.RootConfigManager
 import com.android.zdtd.service.ZdtdActions
@@ -171,6 +175,7 @@ fun ConstructionStudioScreen(
   var loading by remember { mutableStateOf(false) }
   var requestInFlight by remember { mutableStateOf(false) }
   var report by remember { mutableStateOf(ApiModels.TrafficReport()) }
+  var constructionEndpoints by remember { mutableStateOf<List<ApiModels.ConstructionProxyEndpointCandidate>>(emptyList()) }
   var t2sPolls by remember { mutableStateOf<Map<Int, T2sPollResult>>(emptyMap()) }
   var selectedGroup by remember { mutableStateOf<StudioAppGroup?>(null) }
   var selectedVpn by remember { mutableStateOf<ApiModels.VpnTraffic?>(null) }
@@ -195,6 +200,7 @@ fun ConstructionStudioScreen(
   var showSearch by remember { mutableStateOf(false) }
   // Id of the card whose output port was tapped; drives the "direct connection" picker.
   var connectFromId by remember { mutableStateOf<String?>(null) }
+  var startingEndpointKey by remember { mutableStateOf<String?>(null) }
   LaunchedEffect(Unit) {
     layoutPrefs.all.forEach { (key, value) ->
       val parts = (value as? String)?.split(",")
@@ -224,11 +230,22 @@ fun ConstructionStudioScreen(
     }
   }
 
+  fun requestConstructionEndpoints() {
+    actions.loadConstructionProxyEndpoints { loaded ->
+      if (loaded != null) constructionEndpoints = loaded
+    }
+  }
+
   LaunchedEffect(Unit) {
     while (isActive) {
       requestTraffic()
+      requestConstructionEndpoints()
       delay(5_000)
     }
+  }
+
+  LaunchedEffect(connectFromId) {
+    if (connectFromId != null) requestConstructionEndpoints()
   }
 
   LaunchedEffect(report.t2sInstances) {
@@ -479,26 +496,61 @@ fun ConstructionStudioScreen(
     if (connectFrom != null) {
       val connectPort = connectFrom.id.substringAfter("t2s:", "").substringBefore(":").toIntOrNull()?.takeIf { it > 0 }
       val connectPoll = connectPort?.let { t2sPolls[it] }
+      val connectCandidates = remember(report.proxyEndpoints, constructionEndpoints) {
+        mergeConstructionCandidates(report.proxyEndpoints, constructionEndpoints)
+      }
+
+      fun finishT2sBackend(endpoint: ApiModels.ConstructionProxyEndpointCandidate, disconnect: Boolean) {
+        val port = connectPort
+        if (port == null) {
+          connectFromId = null
+          return
+        }
+        scope.launch {
+          withContext(Dispatchers.IO) {
+            val client = T2sApiClient(rootManager, port)
+            val host = endpoint.host.ifBlank { "127.0.0.1" }
+            val addr = "$host:${endpoint.port}"
+            runCatching { if (disconnect) client.removeBackend(addr) else client.addBackend(host, endpoint.port) }
+            runCatching { client.recheckBackends() }
+          }
+          startingEndpointKey = null
+          connectFromId = null
+          requestTraffic()
+          requestConstructionEndpoints()
+        }
+      }
+
       StudioConnectSheet(
         from = connectFrom,
-        endpoints = report.proxyEndpoints,
+        candidates = connectCandidates,
         connectedAddrs = connectPoll?.state?.backends?.map { it.addr }?.toSet().orEmpty(),
-        onDismiss = { connectFromId = null },
-        onPick = { endpoint ->
-          val port = connectPort
-          if (port != null) {
-            scope.launch {
-              withContext(Dispatchers.IO) {
-                val client = T2sApiClient(rootManager, port)
-                val addr = "127.0.0.1:${endpoint.port}"
-                val connected = connectPoll?.state?.backends?.any { it.addr == addr || it.addr.endsWith(":${endpoint.port}") } == true
-                runCatching { if (connected) client.removeBackend(addr) else client.addBackend("127.0.0.1", endpoint.port) }
-                runCatching { client.recheckBackends() }
+        startingEndpointKey = startingEndpointKey,
+        onDismiss = {
+          startingEndpointKey = null
+          connectFromId = null
+        },
+        onPick = { candidate ->
+          val host = candidate.host.ifBlank { "127.0.0.1" }
+          val connected = connectPoll?.state?.backends?.any { it.addr == "$host:${candidate.port}" || it.addr.endsWith(":${candidate.port}") } == true
+          when {
+            startingEndpointKey != null && startingEndpointKey != candidate.key -> Unit
+            connected -> finishT2sBackend(candidate, disconnect = true)
+            candidate.running -> finishT2sBackend(candidate, disconnect = false)
+            candidate.canStart -> {
+              startingEndpointKey = candidate.key
+              actions.startConstructionProxyEndpoint(candidate) { result ->
+                val endpoint = result?.endpoint ?: candidate
+                if (result?.ok == true) {
+                  finishT2sBackend(endpoint, disconnect = false)
+                } else {
+                  startingEndpointKey = null
+                  connectFromId = null
+                  requestConstructionEndpoints()
+                }
               }
-              connectFromId = null
             }
-          } else {
-            connectFromId = null
+            else -> connectFromId = null
           }
         },
       )
@@ -519,6 +571,9 @@ fun ConstructionStudioScreen(
     StudioAppsBottomSheet(
       group = group,
       programName = displayProgramName(programs, group.programId),
+      actions = actions,
+      programs = programs,
+      onSaved = { requestTraffic() },
       onDismiss = { selectedGroup = null },
     )
   }
@@ -936,10 +991,11 @@ private fun StudioGraphNode(node: StudioNode) {
 @Composable
 private fun StudioConnectSheet(
   from: StudioNode,
-  endpoints: List<ApiModels.TrafficBackendPort>,
+  candidates: List<ApiModels.ConstructionProxyEndpointCandidate>,
   connectedAddrs: Set<String>,
+  startingEndpointKey: String?,
   onDismiss: () -> Unit,
-  onPick: (ApiModels.TrafficBackendPort) -> Unit,
+  onPick: (ApiModels.ConstructionProxyEndpointCandidate) -> Unit,
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -953,22 +1009,24 @@ private fun StudioConnectSheet(
     ) {
       Text("Куда направить от «${from.title}»", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
       Text(
-        "Показаны только локальные proxy endpoints проекта. Галочка означает, что endpoint уже подключён к этому t2s; повторный выбор отключит его.",
+        "Показаны локальные proxy endpoints проекта: запущенные подключаются сразу, выключенные профили запускаются и затем подключаются к этому t2s.",
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
       )
-      if (endpoints.isEmpty()) {
+      if (candidates.isEmpty()) {
         Text("Нет доступных proxy endpoints", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
       }
-      endpoints.forEach { endpoint ->
-        val connected = connectedAddrs.any { it == "127.0.0.1:${endpoint.port}" || it.endsWith(":${endpoint.port}") }
-        val accent = programColor(endpoint.programId.orEmpty())
+      candidates.forEach { endpoint ->
+        val host = endpoint.host.ifBlank { "127.0.0.1" }
+        val connected = connectedAddrs.any { it == "$host:${endpoint.port}" || it.endsWith(":${endpoint.port}") }
+        val busy = startingEndpointKey == endpoint.key
+        val accent = programColor(endpoint.programId)
         Surface(
           modifier = Modifier.fillMaxWidth(),
           shape = RoundedCornerShape(14.dp),
-          color = if (connected) accent.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-          border = if (connected) BorderStroke(1.dp, accent.copy(alpha = 0.55f)) else null,
-          onClick = { onPick(endpoint) },
+          color = if (connected) accent.copy(alpha = 0.14f) else if (!endpoint.running) Color(0xFFF97316).copy(alpha = 0.10f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+          border = if (connected) BorderStroke(1.dp, accent.copy(alpha = 0.55f)) else if (!endpoint.running) BorderStroke(1.dp, Color(0xFFF97316).copy(alpha = 0.45f)) else null,
+          onClick = { if (!busy) onPick(endpoint) },
         ) {
           Row(
             modifier = Modifier.padding(12.dp),
@@ -976,7 +1034,7 @@ private fun StudioConnectSheet(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
           ) {
             Surface(shape = RoundedCornerShape(12.dp), color = accent.copy(alpha = 0.16f), contentColor = accent) {
-              val iconRes = programIconRes(normalizeRouteProgramId(endpoint.programId.orEmpty()))
+              val iconRes = programIconRes(normalizeRouteProgramId(endpoint.programId))
               if (iconRes != null) {
                 Icon(painterResource(iconRes), contentDescription = null, modifier = Modifier.padding(7.dp).size(18.dp), tint = accent)
               } else {
@@ -984,19 +1042,84 @@ private fun StudioConnectSheet(
               }
             }
             Column(Modifier.weight(1f)) {
-              Text(endpoint.label.ifBlank { "127.0.0.1:${endpoint.port}" }, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-              Text(listOfNotNull(endpoint.programId, endpoint.profile, endpoint.server).joinToString(" / ").ifBlank { "local SOCKS ${endpoint.port}" }, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+              Text(endpoint.label.ifBlank { "$host:${endpoint.port}" }, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+              Text(constructionEndpointSubtitle(endpoint, connected), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
-            if (connected) {
-              Box(Modifier.size(22.dp).clip(CircleShape).background(accent), contentAlignment = Alignment.Center) {
-                Text("✓", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.White)
+            when {
+              busy -> CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+              connected -> {
+                Box(Modifier.size(22.dp).clip(CircleShape).background(accent), contentAlignment = Alignment.Center) {
+                  Text("✓", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                }
               }
+              !endpoint.running && endpoint.canStart -> Text("Start", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xFFF97316))
             }
           }
         }
       }
     }
   }
+}
+
+private fun mergeConstructionCandidates(
+  running: List<ApiModels.TrafficBackendPort>,
+  candidates: List<ApiModels.ConstructionProxyEndpointCandidate>,
+): List<ApiModels.ConstructionProxyEndpointCandidate> {
+  val byAddr = LinkedHashMap<String, ApiModels.ConstructionProxyEndpointCandidate>()
+  fun putBest(candidate: ApiModels.ConstructionProxyEndpointCandidate) {
+    val host = candidate.host.ifBlank { "127.0.0.1" }
+    val key = "$host:${candidate.port}"
+    val prev = byAddr[key]
+    if (prev == null || constructionCandidatePriority(candidate) < constructionCandidatePriority(prev)) {
+      byAddr[key] = candidate
+    }
+  }
+  candidates.forEach(::putBest)
+  running.forEach { endpoint ->
+    val programId = endpoint.programId.orEmpty().ifBlank { "local" }
+    val key = "$programId:${endpoint.profile.orEmpty()}:${endpoint.server.orEmpty()}:${endpoint.port}"
+    putBest(
+      ApiModels.ConstructionProxyEndpointCandidate(
+        key = key,
+        programId = programId,
+        profile = endpoint.profile,
+        server = endpoint.server,
+        host = "127.0.0.1",
+        port = endpoint.port,
+        label = endpoint.label.ifBlank { "127.0.0.1:${endpoint.port}" },
+        kind = "socks5",
+        enabled = true,
+        running = true,
+        canStart = false,
+      )
+    )
+  }
+  return byAddr.values.sortedWith(compareBy<ApiModels.ConstructionProxyEndpointCandidate> { !it.running }.thenBy { !it.canStart && !it.running }.thenBy { it.programId }.thenBy { it.profile.orEmpty() }.thenBy { it.server.orEmpty() }.thenBy { it.port })
+}
+
+private fun constructionCandidatePriority(candidate: ApiModels.ConstructionProxyEndpointCandidate): Int {
+  val program = normalizeRouteProgramId(candidate.programId)
+  return when {
+    candidate.running && program != "myproxy" -> 0
+    candidate.running -> 1
+    candidate.canStart && candidate.enabled -> 2
+    candidate.canStart -> 3
+    else -> 8
+  }
+}
+
+private fun constructionEndpointSubtitle(endpoint: ApiModels.ConstructionProxyEndpointCandidate, connected: Boolean): String {
+  val parts = mutableListOf<String>()
+  parts += listOfNotNull(endpoint.programId, endpoint.profile, endpoint.server).joinToString(" / ").ifBlank { endpoint.kind }
+  parts += "${endpoint.host.ifBlank { "127.0.0.1" }}:${endpoint.port}"
+  parts += when {
+    connected -> "подключён"
+    endpoint.running -> "запущен"
+    endpoint.canStart && endpoint.appListEmpty -> "пустой список → trigger + start"
+    endpoint.canStart -> "выключен → start"
+    else -> "недоступен"
+  }
+  return parts.joinToString(" • ")
 }
 
 @Composable
@@ -1216,20 +1339,132 @@ private fun StudioWarningsOverlay(warnings: List<String>, modifier: Modifier, on
 private fun StudioAppsBottomSheet(
   group: StudioAppGroup,
   programName: String,
+  actions: ZdtdActions,
+  programs: List<ApiModels.Program>,
+  onSaved: () -> Unit,
   onDismiss: () -> Unit,
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   val byUid = remember(group) { group.rules.filter { it.uid != null }.groupBy { it.uid ?: 0 } }
   val iconCache = remember { mutableMapOf<String, ImageBitmap?>() }
+  val listState = rememberLazyListState()
+  var assignments by remember(group.key) { mutableStateOf<ApiModels.AppAssignmentsState?>(null) }
+  var showPicker by remember { mutableStateOf(false) }
+  var saving by remember { mutableStateOf(false) }
+  var selectedPackages by remember(group.key) { mutableStateOf(groupPackages(group)) }
+  val compact = rememberIsCompactWidth() || rememberIsShortHeight()
+
+  LaunchedEffect(group.key) {
+    actions.loadAppAssignments { data ->
+      assignments = data ?: ApiModels.AppAssignmentsState()
+      selectedPackages = findAssignmentForGroup(group, data)?.packages ?: groupPackages(group)
+    }
+  }
+
+  val editableEntry = remember(assignments, group) { findAssignmentForGroup(group, assignments) }
+  val editablePath = editableEntry?.path ?: group.uidFile?.let(::uidFileToEditableAppPath)
+  val canEdit = !editablePath.isNullOrBlank()
+
+  if (showPicker && canEdit) {
+    val targetPath = editablePath!!
+    AppPickerSheet(
+      title = "Редактировать список: ${appListTitle(group)}",
+      path = targetPath,
+      actions = actions,
+      programs = programs,
+      initialSelected = selectedPackages,
+      onDismiss = { showPicker = false },
+      onSave = { newSel, removalsByPath ->
+        showPicker = false
+        saving = true
+        selectedPackages = newSel
+        val payload = if (newSel.isEmpty()) "" else newSel.sorted().joinToString("\n", postfix = "\n")
+        val done: (Boolean) -> Unit = { ok ->
+          saving = false
+          if (ok) {
+            selectedPackages = newSel
+            onSaved()
+          }
+        }
+        if (removalsByPath.isEmpty()) {
+          actions.saveText(targetPath, payload, done)
+        } else {
+          actions.saveAppListResolvingConflicts(targetPath, payload, removalsByPath, done)
+        }
+      },
+    )
+  }
+
   ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Text(appListTitle(group), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-      Text(programNodeTitle(programName, group.profile), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
-      if (byUid.isEmpty()) {
-        Text(stringResource(R.string.construction_studio_no_apps), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
-      } else {
-        byUid.toSortedMap().forEach { (uid, rules) -> AppTrafficRow(uid = uid, rules = rules, iconCache = iconCache) }
+    LazyColumn(
+      state = listState,
+      modifier = Modifier
+        .fillMaxWidth()
+        .heightIn(max = if (rememberIsShortHeight()) 520.dp else 720.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+      contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+    ) {
+      item(key = "header") {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+          ) {
+            Column(Modifier.weight(1f)) {
+              Text(appListTitle(group), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+              Text(programNodeTitle(programName, group.profile), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            StudioEditAppsButton(
+              compact = compact,
+              enabled = canEdit && !saving,
+              saving = saving,
+              onClick = { showPicker = true },
+            )
+          }
+          if (!canEdit) {
+            Text(
+              "Для этого списка не найден редактируемый путь apps в assignments.",
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+            )
+          }
+        }
       }
+      if (byUid.isEmpty()) {
+        item(key = "empty") {
+          Text(stringResource(R.string.construction_studio_no_apps), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
+        }
+      } else {
+        items(byUid.toSortedMap().entries.toList(), key = { it.key }) { (uid, rules) ->
+          AppTrafficRow(uid = uid, rules = rules, iconCache = iconCache)
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun StudioEditAppsButton(
+  compact: Boolean,
+  enabled: Boolean,
+  saving: Boolean,
+  onClick: () -> Unit,
+) {
+  val color = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primary.copy(alpha = 0.36f)
+  Surface(
+    shape = if (compact) CircleShape else RoundedCornerShape(14.dp),
+    color = color,
+    contentColor = MaterialTheme.colorScheme.onPrimary,
+    onClick = { if (enabled) onClick() },
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = if (compact) 10.dp else 12.dp, vertical = 9.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+      Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
+      if (!compact) Text(if (saving) "..." else "Редактировать", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
     }
   }
 }
@@ -1244,13 +1479,27 @@ private fun VpnAppsBottomSheet(
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   val iconCache = remember { mutableMapOf<String, ImageBitmap?>() }
   ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Text("$programName / ${vpn.profile}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-      Text("netId ${vpn.netid} • ${vpn.tun} • ${vpn.uidRanges.joinToString(", ")}", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
+    LazyColumn(
+      modifier = Modifier
+        .fillMaxWidth()
+        .heightIn(max = if (rememberIsShortHeight()) 520.dp else 720.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+      contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+    ) {
+      item(key = "header") {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+          Text("$programName / ${vpn.profile}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+          Text("netId ${vpn.netid} • ${vpn.tun} • ${vpn.uidRanges.joinToString(", ")}", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
+        }
+      }
       if (vpn.apps.isEmpty()) {
-        Text(stringResource(R.string.construction_studio_no_apps), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
+        item(key = "empty") {
+          Text(stringResource(R.string.construction_studio_no_apps), color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
+        }
       } else {
-        vpn.apps.sortedBy { it.uid }.forEach { app -> VpnAppRow(app = app, iconCache = iconCache) }
+        items(vpn.apps.sortedBy { it.uid }, key = { it.uid }) { app ->
+          VpnAppRow(app = app, iconCache = iconCache)
+        }
       }
     }
   }
@@ -1308,6 +1557,41 @@ private fun buildStudioGroups(rules: List<ApiModels.TrafficRuleCounter>): List<S
       StudioAppGroup(key = key, programId = first.programId ?: "unknown", profile = first.profile, slot = first.slot, uidFile = first.uidFile, rules = groupRules)
     }
     .sortedWith(compareBy<StudioAppGroup> { it.programId }.thenBy { it.profile ?: "" }.thenBy { it.slot ?: "" })
+}
+
+private fun groupPackages(group: StudioAppGroup): Set<String> =
+  group.rules.flatMap { it.packages.ifEmpty { listOfNotNull(it.packageName) } }
+    .map { it.trim() }
+    .filter { it.isNotEmpty() }
+    .toSet()
+
+private fun findAssignmentForGroup(group: StudioAppGroup, data: ApiModels.AppAssignmentsState?): ApiModels.AppAssignmentEntry? {
+  val lists = data?.lists.orEmpty()
+  if (lists.isEmpty()) return null
+  val program = normalizeRouteProgramId(group.programId)
+  val profile = group.profile.orEmpty()
+  val slot = group.slot.orEmpty().lowercase(Locale.ROOT)
+  val uidFile = group.uidFile.orEmpty()
+  return lists.firstOrNull { entry ->
+    normalizeRouteProgramId(entry.programId) == program &&
+      (profile.isBlank() || entry.profile.orEmpty() == profile) &&
+      (slot.isBlank() || entry.slot.lowercase(Locale.ROOT) == slot)
+  } ?: lists.firstOrNull { entry ->
+    uidFile.isNotBlank() && (uidFile.endsWith("/" + entry.path.substringAfterLast('/')) || uidFile.contains(entry.path.substringAfter("working_folder/", entry.path)))
+  }
+}
+
+private fun uidFileToEditableAppPath(uidFile: String): String? {
+  val marker = "working_folder/"
+  val idx = uidFile.indexOf(marker)
+  if (idx < 0) return null
+  val rel = uidFile.substring(idx)
+  return when {
+    rel.endsWith("/apps_out/user") -> rel.removeSuffix("_out/user").plus("/user")
+    rel.contains("/apps_out/") -> rel.replace("/apps_out/", "/apps/")
+    rel.contains("/apps/") -> rel
+    else -> null
+  }
 }
 
 private fun displayProgramName(programs: List<ApiModels.Program>, id: String): String {

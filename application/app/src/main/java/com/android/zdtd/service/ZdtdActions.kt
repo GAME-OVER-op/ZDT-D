@@ -217,6 +217,9 @@ interface ZdtdActions {
   fun saveJsonData(path: String, obj: JSONObject, onDone: (Boolean) -> Unit)
   fun loadTrafficRules(onDone: (ApiModels.TrafficReport?) -> Unit)
 
+  fun loadConstructionProxyEndpoints(onDone: (List<ApiModels.ConstructionProxyEndpointCandidate>?) -> Unit)
+  fun startConstructionProxyEndpoint(candidate: ApiModels.ConstructionProxyEndpointCandidate, onDone: (ApiModels.ConstructionStartEndpointResult?) -> Unit)
+
   // ----- Strategic files (zapret / zapret2) -----
   /** List files in strategic/<dir>. dir: list | bin | lua */
   fun listStrategicFiles(dir: String, onDone: (List<String>?) -> Unit)

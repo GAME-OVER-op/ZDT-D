@@ -247,6 +247,32 @@ object ApiModels {
     val proxyInfoPackages: Set<String> = emptySet(),
   )
 
+  data class ConstructionProxyEndpointCandidate(
+    val key: String = "",
+    val programId: String = "",
+    val profile: String? = null,
+    val server: String? = null,
+    val slot: String = "common",
+    val host: String = "127.0.0.1",
+    val port: Int = 0,
+    val label: String = "",
+    val kind: String = "socks5",
+    val enabled: Boolean = false,
+    val running: Boolean = false,
+    val appListPath: String? = null,
+    val appListEmpty: Boolean = false,
+    val hasTrigger: Boolean = false,
+    val canStart: Boolean = false,
+  )
+
+  data class ConstructionStartEndpointResult(
+    val ok: Boolean = false,
+    val started: Boolean = false,
+    val triggerAdded: Boolean = false,
+    val endpoint: ConstructionProxyEndpointCandidate? = null,
+    val error: String = "",
+  )
+
 
   private fun jsonBool(obj: JSONObject?, key: String, default: Boolean = false): Boolean {
     if (obj == null || !obj.has(key)) return default
@@ -803,6 +829,50 @@ object ApiModels {
       )
     }
     return out
+  }
+
+  fun parseConstructionProxyEndpoints(wrapper: JSONObject?): List<ConstructionProxyEndpointCandidate> {
+    if (wrapper == null || !wrapper.optBoolean("ok", false)) return emptyList()
+    val arr = wrapper.optJSONArray("candidates") ?: return emptyList()
+    val out = ArrayList<ConstructionProxyEndpointCandidate>(arr.length())
+    for (i in 0 until arr.length()) {
+      val o = arr.optJSONObject(i) ?: continue
+      val port = o.optInt("port", 0)
+      val programId = o.optString("program_id", "").trim()
+      if (port <= 0 || programId.isEmpty()) continue
+      out += ConstructionProxyEndpointCandidate(
+        key = o.optString("key", ""),
+        programId = programId,
+        profile = o.optString("profile", "").trim().takeIf { it.isNotEmpty() },
+        server = o.optString("server", "").trim().takeIf { it.isNotEmpty() },
+        slot = o.optString("slot", "common").ifBlank { "common" },
+        host = o.optString("host", "127.0.0.1").ifBlank { "127.0.0.1" },
+        port = port,
+        label = o.optString("label", ""),
+        kind = o.optString("kind", "socks5").ifBlank { "socks5" },
+        enabled = jsonBool(o, "enabled", false),
+        running = jsonBool(o, "running", false),
+        appListPath = o.optString("app_list_path", "").trim().takeIf { it.isNotEmpty() },
+        appListEmpty = jsonBool(o, "app_list_empty", false),
+        hasTrigger = jsonBool(o, "has_trigger", false),
+        canStart = jsonBool(o, "can_start", false),
+      )
+    }
+    return out
+  }
+
+  fun parseConstructionStartEndpointResult(wrapper: JSONObject?): ConstructionStartEndpointResult {
+    if (wrapper == null) return ConstructionStartEndpointResult(error = "empty response")
+    val endpoint = wrapper.optJSONObject("endpoint")?.let { obj ->
+      parseConstructionProxyEndpoints(JSONObject().put("ok", true).put("candidates", JSONArray().put(obj))).firstOrNull()
+    }
+    return ConstructionStartEndpointResult(
+      ok = jsonBool(wrapper, "ok", false),
+      started = jsonBool(wrapper, "started", false),
+      triggerAdded = jsonBool(wrapper, "trigger_added", false),
+      endpoint = endpoint,
+      error = wrapper.optString("error", ""),
+    )
   }
 
   fun parsePrograms(wrapper: JSONObject?): List<Program> {

@@ -5255,6 +5255,28 @@ private fun shQuote(s: String): String {
     }
   }
 
+  override fun loadConstructionProxyEndpoints(onDone: (List<ApiModels.ConstructionProxyEndpointCandidate>?) -> Unit) {
+    launchIO {
+      val endpoints = runCatching { api.getConstructionProxyEndpoints() }.getOrNull()
+      if (endpoints == null) log("ERR", "/api/construction/proxy-endpoints: load failed")
+      withContext(Dispatchers.Main.immediate) { onDone(endpoints) }
+    }
+  }
+
+  override fun startConstructionProxyEndpoint(candidate: ApiModels.ConstructionProxyEndpointCandidate, onDone: (ApiModels.ConstructionStartEndpointResult?) -> Unit) {
+    launchIO {
+      val result = runCatching { api.startConstructionProxyEndpoint(candidate) }.getOrNull()
+      if (result?.ok == true) {
+        val ep = result.endpoint
+        val label = listOfNotNull(ep?.programId, ep?.profile, ep?.server).joinToString("/")
+        log("OK", "construction endpoint ${label.ifBlank { candidate.label }} started${if (result.triggerAdded) " + trigger" else ""}")
+      } else {
+        log("ERR", "construction endpoint ${candidate.label.ifBlank { candidate.programId }} start failed")
+      }
+      withContext(Dispatchers.Main.immediate) { onDone(result) }
+    }
+  }
+
   override fun saveJsonData(path: String, obj: JSONObject, onDone: (Boolean) -> Unit) {
     launchIO {
       val ok = runCatching { api.putJsonData(path, obj) }.getOrDefault(false)

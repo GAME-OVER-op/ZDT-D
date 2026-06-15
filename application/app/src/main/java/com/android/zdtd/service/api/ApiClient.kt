@@ -254,6 +254,23 @@ class ApiClient(
     val obj = requestJson("GET", "/api/apps/assignments", null)
     return ApiModels.parseAppAssignments(obj)
   }
+  fun getConstructionProxyEndpoints(): List<ApiModels.ConstructionProxyEndpointCandidate> {
+    val obj = requestJson("GET", "/api/construction/proxy-endpoints", null)
+    return ApiModels.parseConstructionProxyEndpoints(obj)
+  }
+
+  fun startConstructionProxyEndpoint(candidate: ApiModels.ConstructionProxyEndpointCandidate): ApiModels.ConstructionStartEndpointResult {
+    val body = JSONObject()
+      .put("program_id", candidate.programId)
+      .put("slot", candidate.slot.ifBlank { "common" })
+      .put("port", candidate.port)
+      .put("ensure_trigger", true)
+    candidate.profile?.takeIf { it.isNotBlank() }?.let { body.put("profile", it) }
+    candidate.server?.takeIf { it.isNotBlank() }?.let { body.put("server", it) }
+    val obj = requestJson("POST", "/api/construction/proxy-endpoints/start", body)
+    return ApiModels.parseConstructionStartEndpointResult(obj)
+  }
+
   fun getProxyInfo(): ApiModels.ProxyInfoState {
     val obj = requestJson("GET", "/api/proxyinfo", null)
     return ApiModels.parseProxyInfo(obj)

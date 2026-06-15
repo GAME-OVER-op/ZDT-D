@@ -262,7 +262,7 @@ private data class AppPickerMoveConfirm(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AppPickerSheet(
+internal fun AppPickerSheet(
   title: String,
   path: String,
   actions: ZdtdActions,

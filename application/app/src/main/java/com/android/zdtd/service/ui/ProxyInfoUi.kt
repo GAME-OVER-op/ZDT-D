@@ -191,11 +191,15 @@ fun ProxyInfoSectionCard(
         active = hidingStatus.zygisk.installed,
         onInfo = { infoLayer = "zygisk" },
       )
+      val lsposedConfigured = enabled && hidingStatus.selectedApps > 0
       HidingLayerRow(
         title = stringResource(R.string.hiding_layer_lsposed_title),
         subtitle = stringResource(R.string.hiding_layer_lsposed_short),
-        status = statusText(hidingStatus.lsposed),
-        active = hidingStatus.lsposed.active,
+        status = statusText(
+          hidingStatus.lsposed,
+          fallbackActive = hidingStatus.lsposed.active || hidingStatus.lsposed.enabled || lsposedConfigured,
+        ),
+        active = hidingStatus.lsposed.active || hidingStatus.lsposed.enabled || lsposedConfigured,
         onInfo = { infoLayer = "lsposed" },
       )
       HidingLayerRow(

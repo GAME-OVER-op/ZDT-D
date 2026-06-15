@@ -4,10 +4,10 @@ import android.os.Binder
 import android.os.Process
 import de.robv.android.xposed.IXposedHookLoadPackage
 import de.robv.android.xposed.XC_MethodHook
+import de.robv.android.xposed.XSharedPreferences
 import de.robv.android.xposed.XposedBridge
 import de.robv.android.xposed.XposedHelpers
 import de.robv.android.xposed.callbacks.XC_LoadPackage
-import java.io.File
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 
@@ -175,62 +175,66 @@ class ZdtdHideHook : IXposedHookLoadPackage {
         val callerPackages = resolvePackagesForUid(uid)
         if (callerPackages.any { it == ZDTD_PACKAGE || it in TRUSTED_CALLER_PACKAGES }) return false
 
-        val selected = isProxyInfoTargetUid(uid)
+        val selected = shouldHideForLsposedPrefs(uid, callerPackages)
         if (selected) writeLsposedStatus("matched", methodName, uid, false)
         return selected
     }
 
-    private fun isProxyInfoTargetUid(uid: Int): Boolean {
+    private fun shouldHideForLsposedPrefs(uid: Int, callerPackages: Array<String>): Boolean {
         if (uid <= 0) return false
         val now = System.currentTimeMillis()
-        synchronized(targetCacheLock) {
+        val targets = synchronized(targetCacheLock) {
             if (now - targetCacheLoadedAtMs > TARGET_CACHE_TTL_MS) {
-                targetCache = readProxyInfoTargets()
+                targetCache = readLsposedTargetsOrNull()
                 targetCacheLoadedAtMs = now
             }
-            return uid in targetCache
+            targetCache
         }
+
+        // If LSPosed preferences cannot be read for any reason, keep the old known-good
+        // behaviour: hide ZDT-D from ordinary untrusted apps instead of disabling protection.
+        return targets?.let { prefs ->
+            uid in prefs.uids || callerPackages.any { it in prefs.packages }
+        } ?: true
     }
 
-    private fun readProxyInfoTargets(): Set<Int> {
-        if (!proxyInfoEnabled()) return emptySet()
-        val file = File(PROXYINFO_OUT_PROGRAM_PATH)
-        if (!file.isFile) return emptySet()
+    private fun readLsposedTargetsOrNull(): TargetPrefs? {
+        val prefs = runCatching { XSharedPreferences(ZDTD_PACKAGE, LSPOSED_HIDE_PREFS_NAME) }
+            .getOrElse {
+                log("prefs open failed: ${it.message ?: it}")
+                return null
+            }
         return runCatching {
-            file.readLines()
-                .mapNotNull { line ->
-                    val clean = line.substringBefore('#').trim()
-                    if (clean.isBlank()) return@mapNotNull null
-                    clean.substringAfterLast('=', missingDelimiterValue = "")
-                        .trim()
-                        .toIntOrNull()
-                        ?.takeIf { it > 0 }
-                }
+            val prefFile = runCatching { prefs.file }.getOrNull()
+            if (prefFile != null && !prefFile.canRead()) {
+                log("prefs not readable: ${prefFile.absolutePath}")
+                return null
+            }
+            prefs.reload()
+            if (!prefs.getBoolean(LSPOSED_HIDE_PREF_ENABLED, true)) {
+                return TargetPrefs(emptySet(), emptySet())
+            }
+            val uidSet = (prefs.getStringSet(LSPOSED_HIDE_PREF_UIDS, emptySet<String>()) ?: emptySet())
+                .mapNotNull { it.trim().toIntOrNull() }
+                .filter { it > 0 }
                 .toSet()
-        }.getOrDefault(emptySet())
-    }
-
-    private fun proxyInfoEnabled(): Boolean {
-        val file = File(PROXYINFO_ENABLED_PATH)
-        if (!file.isFile) return false
-        return runCatching {
-            val raw = file.readText().lowercase()
-            raw.contains("\"enabled\"") && raw.contains("true")
-        }.getOrDefault(false)
+            val packageSet = (prefs.getStringSet(LSPOSED_HIDE_PREF_PACKAGES, emptySet<String>()) ?: emptySet())
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && it != ZDTD_PACKAGE }
+                .toSet()
+            TargetPrefs(uidSet, packageSet)
+        }.getOrElse {
+            log("prefs read failed: ${it.message ?: it}")
+            null
+        }
     }
 
     private fun writeLsposedStatus(reason: String, methodName: String, callerUid: Int, filtered: Boolean) {
         val now = System.currentTimeMillis()
         if (!filtered && reason != "matched" && now - lastStatusWriteMs < STATUS_WRITE_TTL_MS) return
         lastStatusWriteMs = now
-        runCatching {
-            val dir = File(PROXYINFO_DIR)
-            if (!dir.exists()) dir.mkdirs()
-            val targets = synchronized(targetCacheLock) { targetCache.size }
-            File(dir, "lsposed_status.json").writeText(
-                "{\"active\":true,\"package\":\"android\",\"reason\":\"$reason\",\"method\":\"$methodName\",\"caller_uid\":$callerUid,\"filtered\":$filtered,\"last_seen_ms\":$now,\"targets_loaded\":$targets}"
-            )
-        }
+        val targetCount = synchronized(targetCacheLock) { targetCache?.let { it.uids.size + it.packages.size } ?: -1 }
+        log("status reason=$reason method=$methodName caller_uid=$callerUid filtered=$filtered targets_loaded=$targetCount")
     }
 
     private fun resolvePackagesForUid(uid: Int): Array<String> {
@@ -408,16 +412,22 @@ class ZdtdHideHook : IXposedHookLoadPackage {
         XposedBridge.log("ZDT-D HideHook: $message")
     }
 
+    private data class TargetPrefs(
+        val uids: Set<Int>,
+        val packages: Set<String>,
+    )
+
     private companion object {
         const val ZDTD_PACKAGE = "com.android.zdtd.service"
         const val PER_USER_RANGE = 100000
-        const val PROXYINFO_DIR = "/data/adb/modules/ZDT-D/working_folder/proxyInfo"
-        const val PROXYINFO_OUT_PROGRAM_PATH = "$PROXYINFO_DIR/out_program"
-        const val PROXYINFO_ENABLED_PATH = "$PROXYINFO_DIR/enabled.json"
+        const val LSPOSED_HIDE_PREFS_NAME = "zdtd_hide_targets"
+        const val LSPOSED_HIDE_PREF_ENABLED = "enabled"
+        const val LSPOSED_HIDE_PREF_PACKAGES = "packages"
+        const val LSPOSED_HIDE_PREF_UIDS = "uids"
         const val TARGET_CACHE_TTL_MS = 2_000L
         const val STATUS_WRITE_TTL_MS = 5_000L
         var targetCacheLoadedAtMs = 0L
-        var targetCache: Set<Int> = emptySet()
+        var targetCache: TargetPrefs? = null
         var lastStatusWriteMs = 0L
         val targetCacheLock = Any()
 

@@ -60,6 +60,11 @@ import kotlin.random.Random
 private const val ZIP_GENERAL_PURPOSE_ENCRYPTED_FLAG = 0x0001
 private const val ZIP_EOCD_MIN_SIZE = 22
 private const val ZIP_EOCD_MAX_SEARCH = 65557
+private const val LSPOSED_HIDE_PREFS_NAME = "zdtd_hide_targets"
+private const val LSPOSED_HIDE_PREF_ENABLED = "enabled"
+private const val LSPOSED_HIDE_PREF_PACKAGES = "packages"
+private const val LSPOSED_HIDE_PREF_UIDS = "uids"
+private const val LSPOSED_HIDE_PREF_UPDATED_AT = "updated_at"
 
 enum class RootState {
   CHECKING,
@@ -5578,6 +5583,41 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     }
   }
 
+  @Suppress("DEPRECATION")
+  private fun syncLsposedHidePreferences(enabled: Boolean, content: String) {
+    val packages = content
+      .lineSequence()
+      .map { it.substringBefore('#').trim() }
+      .filter { it.isNotEmpty() && it != BuildConfig.APPLICATION_ID }
+      .distinct()
+      .toList()
+    val app = getApplication<Application>()
+    val pm = app.packageManager
+    val uids = packages.mapNotNull { pkg ->
+      runCatching {
+        if (Build.VERSION.SDK_INT >= 33) {
+          pm.getApplicationInfo(pkg, PackageManager.ApplicationInfoFlags.of(0)).uid
+        } else {
+          pm.getApplicationInfo(pkg, 0).uid
+        }
+      }.getOrNull()
+    }.map { it.toString() }.toSet()
+
+    val prefs = runCatching {
+      app.getSharedPreferences(LSPOSED_HIDE_PREFS_NAME, Context.MODE_WORLD_READABLE)
+    }.getOrElse { err ->
+      log("WARN", "LSPosed hide prefs world-readable open failed: ${err.message ?: err}")
+      app.getSharedPreferences(LSPOSED_HIDE_PREFS_NAME, Context.MODE_PRIVATE)
+    }
+    prefs.edit()
+      .putBoolean(LSPOSED_HIDE_PREF_ENABLED, enabled)
+      .putStringSet(LSPOSED_HIDE_PREF_PACKAGES, packages.toSet())
+      .putStringSet(LSPOSED_HIDE_PREF_UIDS, uids)
+      .putLong(LSPOSED_HIDE_PREF_UPDATED_AT, System.currentTimeMillis())
+      .apply()
+    log("OK", "LSPosed hide prefs synced: enabled=$enabled packages=${packages.size} uids=${uids.size}")
+  }
+
   private suspend fun fetchProxyInfoState(): ApiModels.ProxyInfoState {
     val base = runCatching { api.getProxyInfo() }.getOrDefault(ApiModels.ProxyInfoState())
     val apps = base.appsContent.ifBlank {
@@ -5618,6 +5658,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hidingStatus = hiding,
         )
       }
+      syncLsposedHidePreferences(state.enabled, state.appsContent)
     }
   }
 
@@ -5673,6 +5714,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       }
       val hiding = fetchHidingStatus()
       _appUpdate.update { it.copy(hidingStatus = hiding) }
+      syncLsposedHidePreferences(enabled, _appUpdate.value.proxyInfoAppsContent)
       withContext(Dispatchers.Main.immediate) {
         toast(str(R.string.settings_proxyinfo_saved))
       }
@@ -5705,6 +5747,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       }
       val hiding = fetchHidingStatus()
       _appUpdate.update { it.copy(proxyInfoAppsContent = normalized, proxyInfoBusy = false, hidingStatus = hiding) }
+      syncLsposedHidePreferences(_appUpdate.value.proxyInfoEnabled, normalized)
       scheduleProxyInfoApply("apps-save")
       withContext(Dispatchers.Main.immediate) {
         toast(str(R.string.settings_proxyinfo_saved))
@@ -5740,6 +5783,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       }
       val hiding = fetchHidingStatus()
       _appUpdate.update { it.copy(proxyInfoAppsContent = normalized, proxyInfoBusy = false, hidingStatus = hiding) }
+      syncLsposedHidePreferences(_appUpdate.value.proxyInfoEnabled, normalized)
       scheduleProxyInfoApply("apps-save-resolved")
       withContext(Dispatchers.Main.immediate) {
         toast(str(R.string.settings_proxyinfo_saved))

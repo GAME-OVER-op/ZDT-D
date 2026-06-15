@@ -6356,13 +6356,7 @@ match (method.as_str(), path.as_str()) {
                 let proxy_enabled = crate::proxyinfo::load_enabled_json()?.is_enabled();
                 let proxy_apps = crate::proxyinfo::read_proxy_packages()?.len();
                 let proxy_active = services_running && crate::proxyinfo::is_active();
-                let proxy_root = settings::proxyinfo_root_path();
-                let lsposed_path = proxy_root.join("lsposed_status.json");
-                let lsposed_json = fs::read_to_string(&lsposed_path).ok()
-                    .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok());
-                let lsposed_seen_ms = lsposed_json.as_ref().and_then(|v| v.get("last_seen_ms")).and_then(|v| v.as_i64()).unwrap_or(0);
-                let now_ms = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis() as i64;
-                let lsposed_recent = lsposed_seen_ms > 0 && now_ms.saturating_sub(lsposed_seen_ms) <= 10 * 60 * 1000;
+                let lsposed_configured = proxy_enabled && proxy_apps > 0;
                 let zygisk_requested = Path::new("/data/adb/ZDT-D/zygisk").exists();
                 let zygisk_installed = Path::new(settings::MODULE_DIR).join("zygisk/arm64-v8a.so").exists();
                 Ok(json!({
@@ -6375,15 +6369,10 @@ match (method.as_str(), path.as_str()) {
                         "status": if zygisk_installed { "installed" } else if zygisk_requested { "requested" } else { "not_installed" }
                     },
                     "lsposed": {
-                        "active": lsposed_recent,
-                        "status_file": lsposed_path.exists(),
-                        "last_seen_ms": lsposed_seen_ms,
-                        "targets_loaded": lsposed_json.as_ref().and_then(|v| v.get("targets_loaded")).and_then(|v| v.as_u64()).unwrap_or(0),
-                        "reason": lsposed_json.as_ref().and_then(|v| v.get("reason")).and_then(|v| v.as_str()).unwrap_or(""),
-                        "method": lsposed_json.as_ref().and_then(|v| v.get("method")).and_then(|v| v.as_str()).unwrap_or(""),
-                        "caller_uid": lsposed_json.as_ref().and_then(|v| v.get("caller_uid")).and_then(|v| v.as_i64()).unwrap_or(0),
-                        "filtered": lsposed_json.as_ref().and_then(|v| v.get("filtered")).and_then(|v| v.as_bool()).unwrap_or(false),
-                        "status": if lsposed_recent { "active" } else if lsposed_path.exists() { "stale" } else { "unknown" }
+                        "enabled": lsposed_configured,
+                        "active": lsposed_configured,
+                        "selected_apps": proxy_apps,
+                        "status": if lsposed_configured { "enabled" } else { "unknown" }
                     },
                     "proxyinfo": {
                         "enabled": proxy_enabled,

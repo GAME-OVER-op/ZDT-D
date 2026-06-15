@@ -615,6 +615,9 @@ fun ConstructionStudioScreen(
     VpnAppsBottomSheet(
       vpn = vpn,
       programName = displayProgramName(programs, vpn.ownerProgram),
+      actions = actions,
+      programs = programs,
+      onSaved = { requestTraffic() },
       onDismiss = { selectedVpn = null },
     )
   }
@@ -637,6 +640,7 @@ private const val MARGIN_BOTTOM = 48f
 
 private fun colX(index: Int): Float = MARGIN_X + index * COL_STEP
 
+@Composable
 private fun buildStudioGraph(
   groups: List<StudioAppGroup>,
   vpnItems: List<ApiModels.VpnTraffic>,
@@ -868,18 +872,23 @@ private fun shouldShowDirectFallback(poll: T2sPollResult?): Boolean {
   return !hasGreen || hasDirectConnections(poll)
 }
 
+@Composable
 private fun t2sSubtitle(ports: String, poll: T2sPollResult?, meta: ApiModels.TrafficT2sInstance?): String {
   val mode = poll?.state?.runtime?.backendMode?.ifBlank { meta?.backendMode.orEmpty() }.orEmpty().ifBlank { "balance" }
   val backends = poll?.state?.backends.orEmpty()
   val green = backends.count { it.healthy }
   val direct = hasDirectConnections(poll)
-  val base = if (ports.isNotBlank()) "порт $ports" else "продвинутый узел"
+  val base = if (ports.isNotBlank()) {
+    stringResource(R.string.construction_studio_t2s_port, ports)
+  } else {
+    stringResource(R.string.construction_studio_t2s_advanced_node)
+  }
   return when {
-    poll == null -> "$base • $mode"
-    backends.isEmpty() -> "$base • нет backend • direct fallback"
-    green == 0 -> "$base • все backend RED • direct fallback"
-    direct -> "$base • $green/${backends.size} GREEN • direct активен"
-    else -> "$base • $mode • $green/${backends.size} GREEN"
+    poll == null -> stringResource(R.string.construction_studio_t2s_mode_only, base, mode)
+    backends.isEmpty() -> stringResource(R.string.construction_studio_t2s_no_backend, base)
+    green == 0 -> stringResource(R.string.construction_studio_t2s_all_backend_red, base)
+    direct -> stringResource(R.string.construction_studio_t2s_direct_active, base, green, backends.size)
+    else -> stringResource(R.string.construction_studio_t2s_mode_green, base, mode, green, backends.size)
   }
 }
 
@@ -1041,14 +1050,14 @@ private fun StudioConnectSheet(
         .verticalScroll(rememberScrollState()),
       verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      Text("Куда направить от «${from.title}»", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+      Text(stringResource(R.string.construction_studio_connect_picker_title, from.title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
       Text(
-        "Показаны локальные proxy endpoints проекта: запущенные подключаются сразу, выключенные профили запускаются и затем подключаются к этому t2s.",
+        stringResource(R.string.construction_studio_connect_picker_desc),
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
       )
       if (candidates.isEmpty()) {
-        Text("Нет доступных proxy endpoints", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+        Text(stringResource(R.string.construction_studio_connect_picker_empty), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
       }
       candidates.forEach { endpoint ->
         val host = endpoint.host.ifBlank { "127.0.0.1" }
@@ -1086,7 +1095,7 @@ private fun StudioConnectSheet(
                   Text("✓", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color.White)
                 }
               }
-              !endpoint.running && endpoint.canStart -> Text("Start", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xFFF97316))
+              !endpoint.running && endpoint.canStart -> Text(stringResource(R.string.construction_studio_start_badge), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xFFF97316))
             }
           }
         }
@@ -1103,24 +1112,23 @@ private fun ConfirmConstructionStartDialog(
 ) {
   val title = listOfNotNull(candidate.programId, candidate.profile, candidate.server)
     .joinToString(" / ")
-    .ifBlank { candidate.label.ifBlank { "proxy endpoint" } }
+    .ifBlank { candidate.label.ifBlank { stringResource(R.string.construction_studio_proxy_endpoint_fallback) } }
   val body = buildString {
-    append("Запустить ")
-    append(title)
-    append(" и подключить к t2s?")
+    append(stringResource(R.string.construction_studio_tool_start_body, title))
     if (candidate.appListEmpty) {
-      append("\n\nСписок приложений пустой — будет добавлен trigger com.android.zdtd.service.")
+      append("\n\n")
+      append(stringResource(R.string.construction_studio_tool_start_trigger_note))
     }
   }
   AlertDialog(
     onDismissRequest = onDismiss,
-    title = { Text("Запуск инструмента") },
+    title = { Text(stringResource(R.string.construction_studio_tool_start_title)) },
     text = { Text(body) },
     confirmButton = {
-      TextButton(onClick = onConfirm) { Text("Запустить") }
+      TextButton(onClick = onConfirm) { Text(stringResource(R.string.construction_studio_start_badge)) }
     },
     dismissButton = {
-      TextButton(onClick = onDismiss) { Text("Отмена") }
+      TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
     },
   )
 }
@@ -1140,7 +1148,7 @@ private fun mergeConstructionCandidates(
   }
   candidates.forEach(::putBest)
   running.forEach { endpoint ->
-    val programId = endpoint.programId.orEmpty().ifBlank { "local" }
+    val programId = endpoint.programId.orEmpty().ifBlank { stringResource(R.string.construction_studio_local_endpoint) }
     val key = "$programId:${endpoint.profile.orEmpty()}:${endpoint.server.orEmpty()}:${endpoint.port}"
     putBest(
       ApiModels.ConstructionProxyEndpointCandidate(
@@ -1172,16 +1180,17 @@ private fun constructionCandidatePriority(candidate: ApiModels.ConstructionProxy
   }
 }
 
+@Composable
 private fun constructionEndpointSubtitle(endpoint: ApiModels.ConstructionProxyEndpointCandidate, connected: Boolean): String {
   val parts = mutableListOf<String>()
   parts += listOfNotNull(endpoint.programId, endpoint.profile, endpoint.server).joinToString(" / ").ifBlank { endpoint.kind }
   parts += "${endpoint.host.ifBlank { "127.0.0.1" }}:${endpoint.port}"
   parts += when {
-    connected -> "подключён"
-    endpoint.running -> "запущен"
-    endpoint.canStart && endpoint.appListEmpty -> "пустой список → trigger + start"
-    endpoint.canStart -> "выключен → start"
-    else -> "недоступен"
+    connected -> stringResource(R.string.construction_studio_endpoint_status_connected)
+    endpoint.running -> stringResource(R.string.construction_studio_endpoint_status_running)
+    endpoint.canStart && endpoint.appListEmpty -> stringResource(R.string.construction_studio_endpoint_status_empty_start)
+    endpoint.canStart -> stringResource(R.string.construction_studio_endpoint_status_disabled_start)
+    else -> stringResource(R.string.construction_studio_endpoint_status_unavailable)
   }
   return parts.joinToString(" • ")
 }
@@ -1235,12 +1244,12 @@ private fun StudioTopBar(
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         StudioMetricPill(stringResource(R.string.construction_studio_rules), totalRules.toString())
         StudioMetricPill(stringResource(R.string.construction_studio_active), activeRules.toString())
-        StudioMetricPill("VPN", vpnCount.toString())
+        StudioMetricPill(stringResource(R.string.construction_studio_metric_vpn), vpnCount.toString())
       }
       val status = when {
-        busy -> report.message.ifBlank { "Готовлю данные, подожди…" }
+        busy -> report.message.ifBlank { stringResource(R.string.construction_studio_preparing) }
         report.error.isNotBlank() -> report.error
-        else -> "Автообновление 5 сек • тяни и масштабируй"
+        else -> stringResource(R.string.construction_studio_auto_refresh_hint)
       }
       Text(
         status,
@@ -1319,7 +1328,7 @@ private fun StudioSearchControl(
         ) {
           if (nodes.isEmpty()) {
             Text(
-              "Нет карточек",
+              stringResource(R.string.construction_studio_no_cards),
               modifier = Modifier.padding(8.dp),
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
@@ -1432,7 +1441,7 @@ private fun StudioAppsBottomSheet(
   if (showPicker && canEdit) {
     val targetPath = editablePath!!
     AppPickerSheet(
-      title = "Редактировать список: ${appListTitle(group)}",
+      title = stringResource(R.string.construction_studio_edit_list_title, appListTitle(group)),
       path = targetPath,
       actions = actions,
       programs = programs,
@@ -1488,7 +1497,7 @@ private fun StudioAppsBottomSheet(
           }
           if (!canEdit) {
             Text(
-              "Для этого списка не найден редактируемый путь apps в assignments.",
+              stringResource(R.string.construction_studio_list_path_missing),
               style = MaterialTheme.typography.labelSmall,
               color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
             )
@@ -1528,7 +1537,7 @@ private fun StudioEditAppsButton(
       horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
       Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
-      if (!compact) Text(if (saving) "..." else "Редактировать", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+      if (!compact) Text(if (saving) "..." else stringResource(R.string.construction_studio_edit), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
     }
   }
 }
@@ -1538,10 +1547,50 @@ private fun StudioEditAppsButton(
 private fun VpnAppsBottomSheet(
   vpn: ApiModels.VpnTraffic,
   programName: String,
+  actions: ZdtdActions,
+  programs: List<ApiModels.Program>,
+  onSaved: () -> Unit,
   onDismiss: () -> Unit,
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   val iconCache = remember { mutableMapOf<String, ImageBitmap?>() }
+  var showPicker by remember { mutableStateOf(false) }
+  var saving by remember { mutableStateOf(false) }
+  var selectedPackages by remember(vpn.ownerProgram, vpn.profile, vpn.tun) { mutableStateOf(vpnPackages(vpn)) }
+  val compact = rememberIsCompactWidth() || rememberIsShortHeight()
+  val editablePath = remember(vpn.ownerProgram, vpn.profile) { deriveEditableVpnAppPath(vpn) }
+  val canEdit = !editablePath.isNullOrBlank()
+
+  if (showPicker && canEdit) {
+    val targetPath = editablePath!!
+    AppPickerSheet(
+      title = stringResource(R.string.construction_studio_edit_list_title, programNodeTitle(programName, vpn.profile.takeIf { it.isNotBlank() })),
+      path = targetPath,
+      actions = actions,
+      programs = programs,
+      initialSelected = selectedPackages,
+      onDismiss = { showPicker = false },
+      onSave = { newSel, removalsByPath ->
+        showPicker = false
+        saving = true
+        selectedPackages = newSel
+        val payload = if (newSel.isEmpty()) "" else newSel.sorted().joinToString("\n", postfix = "\n")
+        val done: (Boolean) -> Unit = { ok ->
+          saving = false
+          if (ok) {
+            selectedPackages = newSel
+            onSaved()
+          }
+        }
+        if (removalsByPath.isEmpty()) {
+          actions.saveText(targetPath, payload, done)
+        } else {
+          actions.saveAppListResolvingConflicts(targetPath, payload, removalsByPath, done)
+        }
+      },
+    )
+  }
+
   ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
     LazyColumn(
       modifier = Modifier
@@ -1552,8 +1601,33 @@ private fun VpnAppsBottomSheet(
     ) {
       item(key = "header") {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-          Text("$programName / ${vpn.profile}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-          Text("netId ${vpn.netid} • ${vpn.tun} • ${vpn.uidRanges.joinToString(", ")}", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+          ) {
+            Text(
+              programNodeTitle(programName, vpn.profile.takeIf { it.isNotBlank() }),
+              style = MaterialTheme.typography.titleLarge,
+              fontWeight = FontWeight.Bold,
+              modifier = Modifier.weight(1f),
+              maxLines = 2,
+              overflow = TextOverflow.Ellipsis,
+            )
+            StudioEditAppsButton(
+              compact = compact,
+              enabled = canEdit && !saving,
+              saving = saving,
+              onClick = { showPicker = true },
+            )
+          }
+          if (!canEdit) {
+            Text(
+              stringResource(R.string.construction_studio_vpn_list_path_missing),
+              style = MaterialTheme.typography.labelSmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+            )
+          }
         }
       }
       if (vpn.apps.isEmpty()) {
@@ -1666,6 +1740,22 @@ private fun deriveEditableAppPath(group: StudioAppGroup): String? {
     else -> null
   }
 }
+
+private fun deriveEditableVpnAppPath(vpn: ApiModels.VpnTraffic): String? {
+  val program = normalizeRouteProgramId(vpn.ownerProgram)
+  val profile = vpn.profile.takeIf { it.isNotBlank() }
+  return when (program) {
+    "mihomo", "mieru", "openvpn", "amneziawg", "tun2socks", "myvpn" ->
+      profile?.let { "/api/programs/$program/profiles/$it/apps/user" }
+    else -> null
+  }
+}
+
+private fun vpnPackages(vpn: ApiModels.VpnTraffic): Set<String> =
+  vpn.apps.flatMap { it.packages.ifEmpty { listOfNotNull(it.packageName) } }
+    .map { it.trim() }
+    .filter { it.isNotEmpty() }
+    .toSet()
 
 private fun uidFileToEditableAppPath(uidFile: String): String? {
   val marker = "working_folder/"

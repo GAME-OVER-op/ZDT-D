@@ -5943,6 +5943,26 @@ fn start_construction_endpoint_runtime(program: &str, profile: Option<&str>, ser
             let _ = kill_listener_processes_by_port(setting.t2s_web_port);
             crate::programs::wireproxy::start_construction_profile(profile)
         }
+        ("mihomo", Some(profile), _) => {
+            let setting = crate::programs::mihomo::read_setting(profile)?;
+            let _ = kill_listener_processes_by_port(setting.mixed_port);
+            crate::programs::mihomo::start_construction_profile(profile)
+        }
+        ("mieru", Some(profile), _) => {
+            let setting = crate::programs::mieru::read_setting(profile)?;
+            let _ = kill_listener_processes_by_port(setting.socks5_port);
+            let _ = kill_listener_processes_by_port(setting.rpc_port);
+            crate::programs::mieru::start_construction_profile(profile)
+        }
+        ("tor", _, _) => {
+            let setting = crate::programs::tor::load_setting()?;
+            let torrc = crate::programs::tor::read_torrc_text().unwrap_or_default();
+            let socks_port = parse_tor_socks_port_for_construction(&torrc).unwrap_or(9050);
+            let _ = kill_listener_processes_by_port(socks_port);
+            let _ = kill_listener_processes_by_port(setting.t2s_port);
+            let _ = kill_listener_processes_by_port(setting.t2s_web_port);
+            start_construction_program(program)
+        }
         _ => start_construction_program(program),
     }
 }
@@ -6750,4 +6770,3 @@ pub fn serve(state: SharedState, bind: &str) -> Result<()> {
 
     Ok(())
 }
-

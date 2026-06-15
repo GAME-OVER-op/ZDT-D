@@ -621,6 +621,88 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
     Ok(profiles)
 }
 
+pub fn start_construction_profile(profile: &str) -> Result<()> {
+	ensure_root_layout()?;
+	ensure_valid_profile_name(profile)?;
+	let active = read_active().unwrap_or_default();
+	if !active.profiles.get(profile).map(|st| st.enabled).unwrap_or(false) {
+		info!("mieru: construction profile '{}' is disabled, skip targeted start", profile);
+		return Ok(());
+	}
+
+	if !Path::new(MIERU_BIN).is_file() {
+		warn!("mieru: binary not found: {MIERU_BIN} -> skip targeted start");
+		return Ok(());
+	}
+	let tun2proxy_available = Path::new(TUN2PROXY_BIN).is_file();
+	let hotspot_vpn_profile = crate::settings::load_api_settings()
+		.ok()
+		.and_then(|st| st.hotspot_vpn_profile_for("mieru").map(|name| name.to_string()));
+
+	let mut used_netids = BTreeSet::<u32>::new();
+	let mut plans = Vec::<ProfilePlan>::new();
+	for (name, st) in active.profiles.iter() {
+		if !st.enabled || name == profile {
+			continue;
+		}
+		let force_tun = hotspot_vpn_profile.as_deref() == Some(name.as_str());
+		match build_profile_plan(name, &used_netids, force_tun) {
+			Ok(plan) => {
+				if plan.requires_tun {
+					used_netids.insert(plan.netid);
+				}
+				plans.push(plan);
+			}
+			Err(e) => warn!(
+				"mieru: ignoring unrelated enabled profile '{}' during targeted construction start of '{}': {e:#}",
+				name,
+				profile
+			),
+		}
+	}
+
+	let force_tun = hotspot_vpn_profile.as_deref() == Some(profile);
+	let plan = build_profile_plan(profile, &used_netids, force_tun)
+		.with_context(|| format!("mieru targeted construction plan profile={profile}"))?;
+	plans.push(plan.clone());
+	validate_plan_conflicts(&plans)?;
+
+	prepare_runtime_config(&plan)?;
+	spawn_mieru(&plan)?;
+	wait_tcp_port("127.0.0.1", plan.setting.socks5_port)
+		.with_context(|| format!("mieru targeted profile={} wait socks5_port={}", plan.name, plan.setting.socks5_port))?;
+	if !plan.requires_tun {
+		info!("mieru: targeted profile={} uses launch marker only; skipping tun2proxy/vpn_netd", plan.name);
+		return Ok(());
+	}
+	if !tun2proxy_available {
+		bail!("tun2proxy binary not found: {TUN2PROXY_BIN}");
+	}
+	spawn_tun2proxy(&plan)?;
+	wait_tun_link(&plan.setting.tun)
+		.with_context(|| format!("mieru targeted profile={} wait tun={}", plan.name, plan.setting.tun))?;
+	configure_tun_addr(&plan.setting.tun, &plan.tun_addr)
+		.with_context(|| format!("mieru targeted profile={} configure tun={}", plan.name, plan.setting.tun))?;
+	wait_tun_ready(&plan.setting.tun)
+		.with_context(|| format!("mieru targeted profile={} wait IPv4 tun={}", plan.name, plan.setting.tun))?;
+	info!("mieru: targeted tun ready profile={} tun={} cidr={}", plan.name, plan.setting.tun, plan.cidr);
+	if plan.requires_netd {
+		crate::vpn_netd::start_profiles(vec![VpnNetdProfile {
+			owner_program: "mieru".to_string(),
+			profile: plan.name.clone(),
+			netid: plan.netid,
+			tun: plan.setting.tun.clone(),
+			cidr: plan.cidr.clone(),
+			gateway: None,
+			dns: vec!["8.8.8.8".to_string()],
+			app_list_path: plan.app_in.clone(),
+			app_out_path: plan.app_out.clone(),
+			endpoint_escape_ips: Vec::new(),
+		}])?;
+	}
+	Ok(())
+}
+
 pub fn start_profile_for_hotspot_vpn(profile: &str) -> Result<Option<VpnTetherProfile>> {
     ensure_root_layout()?;
     let active = read_active().unwrap_or_default();

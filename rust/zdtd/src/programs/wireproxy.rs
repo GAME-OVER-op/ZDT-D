@@ -11,10 +11,7 @@ use std::{
 
 use crate::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
 use crate::iptables::{hotspot, iptables_port::{self, DpiTunnelOptions, ProtoChoice}};
-use crate::{
-    settings,
-    shell::{self, Capture},
-};
+use crate::settings;
 
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
 const WORKING_DIR: &str = "/data/adb/modules/ZDT-D/working_folder";
@@ -419,6 +416,54 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn app_list_has_real_apps(path: &Path) -> Result<bool> {
+    let raw = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    for line in raw.lines() {
+        let mut s = line.trim();
+        if let Some((left, _)) = s.split_once('#') {
+            s = left.trim();
+        }
+        if s.is_empty() {
+            continue;
+        }
+        if !pkg_uid::is_launch_marker_package(s) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn read_sorted_dirs(root: &Path) -> Result<Vec<(String, PathBuf)>> {
+    if !root.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut entries = Vec::<(String, PathBuf)>::new();
+    for ent in fs::read_dir(root).with_context(|| format!("readdir {}", root.display()))? {
+        let ent = match ent {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let dir = ent.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let Some(name) = dir.file_name().and_then(|s| s.to_str()).map(ToOwned::to_owned) else { continue };
+        if name.starts_with('.') {
+            continue;
+        }
+        if let Err(e) = ensure_valid_profile_name(&name) {
+            warn!(
+                "wireproxy: skip server-dir='{}' (invalid directory name): {e:#}",
+                name
+            );
+            continue;
+        }
+        entries.push((name, dir));
+    }
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(entries)
 }
 
 fn build_profile_plan(

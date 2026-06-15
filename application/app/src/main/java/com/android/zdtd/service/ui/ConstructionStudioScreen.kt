@@ -172,7 +172,7 @@ private class StudioEdgeRenderState(initial: StudioEdge) {
   var edge by mutableStateOf(initial)
   var exiting by mutableStateOf(false)
   var activeExiting by mutableStateOf(false)
-  val reveal = Animatable(0f)
+  val reveal = Animatable(1f)
   val activeLevel = Animatable(if (initial.active) 1f else 0f)
   val activeReveal = Animatable(if (initial.active) 1f else 0f)
 }
@@ -428,12 +428,10 @@ fun ConstructionStudioScreen(
           if (state == null) {
             val created = StudioEdgeRenderState(edge)
             edgeStates[id] = created
-            launch {
-              // Card appears first, then the connection grows left-to-right.
-              delay(210)
-              created.exiting = false
-              created.reveal.animateTo(1f, tween(360, easing = FastOutSlowInEasing))
-            }
+            // Keep current/live edges visible immediately. The first map opening
+            // is still drawn by buildProgress, while removed edges use reveal for
+            // smooth left-side break animation.
+            created.exiting = false
           } else {
             state.edge = edge
             if (state.exiting) {
@@ -1058,7 +1056,7 @@ private fun StudioEdgeCanvas(
         cubicTo(sx + dx, sy, ex - dx, ey, ex, ey)
       }
       val grey = Color(0xFF64748B)
-      val inactiveAlpha = if (edge.kind == StudioEdgeKind.DIRECT_FALLBACK) 0.74f else 0.5f
+      val inactiveAlpha = if (edge.kind == StudioEdgeKind.DIRECT_FALLBACK) 0.86f else 0.78f
       val build = buildProgress.coerceIn(0f, 1f)
       val reveal = (rendered.reveal * build).coerceIn(0f, 1f)
       val measure = android.graphics.PathMeasure(path.asAndroidPath(), false)
@@ -1075,7 +1073,7 @@ private fun StudioEdgeCanvas(
         path = baseSegment.asComposePath(),
         color = baseColor,
         style = Stroke(
-          width = if (edge.kind == StudioEdgeKind.DIRECT_FALLBACK) 3.4f else 2.5f,
+          width = if (edge.kind == StudioEdgeKind.DIRECT_FALLBACK) 3.8f else 3.2f,
           cap = StrokeCap.Round,
         ),
       )
@@ -1096,7 +1094,7 @@ private fun StudioEdgeCanvas(
           path = activeSegment.asComposePath(),
           color = edge.accent.copy(alpha = 0.92f * activeLevel),
           style = Stroke(
-            width = lerpFloat(if (edge.kind == StudioEdgeKind.DIRECT_FALLBACK) 3.4f else 2.5f, 4.5f, activeLevel),
+            width = lerpFloat(if (edge.kind == StudioEdgeKind.DIRECT_FALLBACK) 3.8f else 3.2f, 4.8f, activeLevel),
             cap = StrokeCap.Round,
             pathEffect = PathEffect.dashPathEffect(floatArrayOf(14f, 14f), -phase),
           ),

@@ -3197,41 +3197,33 @@ async fn check_internet_via_backend(
     wrapper: Option<SocketAddr>,
     wrapper_auth: Option<(String, String)>,
 ) -> InternetProbeSummary {
-    // Detailed Internet validation uses several independent data-plane probes.
-    // Each probe is still strict: SOCKS CONNECT is not enough; the remote side
-    // must answer our TLS ClientHello.  Green requires a quorum (2/3), so one
-    // slow target (for example 1.1.1.1 or DNS/domain) cannot make a stable
-    // backend flap, while broken backends that only grant SOCKS CONNECT remain
-    // Yellow because they fail the TLS data-plane checks.
+    // Keep detailed validation energy-efficient: one strict data-plane probe.
+    // SOCKS CONNECT alone is not enough; the remote side must answer our TLS
+    // ClientHello.  Stability is handled by the Green hysteresis in update(), not
+    // by running multiple external probes per backend.
     let per_probe_timeout = timeout
-        .min(Duration::from_millis(2500))
-        .max(Duration::from_millis(1000));
+        .min(Duration::from_millis(1500))
+        .max(Duration::from_millis(700));
 
     let targets = vec![
         TargetAddr::Ip(SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(1, 1, 1, 1)), 443)),
-        TargetAddr::Ip(SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(8, 8, 8, 8)), 443)),
-        TargetAddr::Domain("cloudflare.com".to_string(), 443),
     ];
-    let total_targets = targets.len();
-    let required_ok = 2usize;
 
     let (ok_count, best_ping_ms) = first_successful_probe(
         backend,
         per_probe_timeout,
         auth,
         targets,
-        required_ok,
+        1,
         wrapper,
         wrapper_auth,
     ).await;
 
-    let ok = ok_count >= required_ok;
+    let ok = ok_count >= 1;
     let error_summary = if ok {
-        format!("data-plane probes ok ({}/{}, quorum={})", ok_count, total_targets, required_ok)
-    } else if ok_count > 0 {
-        format!("data-plane probes weak ({}/{}, quorum={})", ok_count, total_targets, required_ok)
+        format!("data-plane probe ok ({}/1)", ok_count)
     } else {
-        format!("data-plane probes failed ({}/{}, quorum={})", ok_count, total_targets, required_ok)
+        format!("data-plane probe failed ({}/1)", ok_count)
     };
 
     InternetProbeSummary { ok, best_ping_ms, error_summary }

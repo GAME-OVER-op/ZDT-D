@@ -905,6 +905,25 @@ fn is_soft_backend_failure(err: &str) -> bool {
         || e.contains("timed out")
 }
 
+fn is_backend_runtime_failure(err: &str) -> bool {
+    let e = err.to_ascii_lowercase();
+    // Only failures that prove the SOCKS/backend itself is unusable may change
+    // backend health.  Destination-level failures (SOCKS CONNECT REP, connect
+    // reply timeouts/resets caused by blockers, DNS/target refusal, etc.) must
+    // only fail the current client connection; health probes remain the source of
+    // truth for Internet availability.
+    e.contains("socks tcp connect timeout")
+        || e.contains("socks tcp connect failed")
+        || e.contains("socks handshake timeout: greeting")
+        || e.contains("socks handshake failed: greeting")
+        || e.contains("socks handshake timeout: userpass auth")
+        || e.contains("socks handshake failed: userpass auth")
+        || e.contains("invalid socks version")
+        || e.contains("no acceptable auth methods")
+        || e.contains("server requires auth")
+        || e.contains("unsupported auth method")
+}
+
 async fn connect_socks(
     target: &stats::Target,
     domain_hint: Option<&str>,
@@ -981,32 +1000,42 @@ async fn connect_socks(
             Err(e) => {
                 state.stats.inc_socks_fail();
                 let err_text = format!("{:#}", e);
-                let mut b = state.backends.lock();
-                let before_state = b.raw_state_for_addr(backend);
-                let wake_backend = if let Some(inflight) = b.inflight_connects(backend) {
-                    let prefix = if is_soft_backend_failure(&err_text) { "soft runtime failure" } else { "runtime failure" };
-                    b.mark_backend_failed(backend, format!("{}: {} (inflight={})", prefix, err_text, inflight))
-                } else {
-                    b.mark_backend_failed(backend, err_text)
-                };
-                let after_state = b.raw_state_for_addr(backend);
-                let kill_unhealthy_backend = before_state == Some(stats::BackendState::Green)
-                    && after_state != Some(stats::BackendState::Green);
-                drop(b);
-                if kill_unhealthy_backend {
-                    let killed = state.conns.kill_backend(backend);
-                    if killed > 0 {
-                        tracing::info!(
-                            "backend {} failed at runtime ({:?} -> {:?}); cancelled {} pinned SOCKS connections",
-                            backend,
-                            before_state,
-                            after_state,
-                            killed
-                        );
+                if is_backend_runtime_failure(&err_text) {
+                    let mut b = state.backends.lock();
+                    let before_state = b.raw_state_for_addr(backend);
+                    let wake_backend = if let Some(inflight) = b.inflight_connects(backend) {
+                        let prefix = if is_soft_backend_failure(&err_text) { "soft backend runtime failure" } else { "backend runtime failure" };
+                        b.mark_backend_failed(backend, format!("{}: {} (inflight={})", prefix, err_text, inflight))
+                    } else {
+                        b.mark_backend_failed(backend, format!("backend runtime failure: {}", err_text))
+                    };
+                    let after_state = b.raw_state_for_addr(backend);
+                    let kill_unhealthy_backend = before_state == Some(stats::BackendState::Green)
+                        && after_state != Some(stats::BackendState::Green);
+                    drop(b);
+                    if kill_unhealthy_backend {
+                        let killed = state.conns.kill_backend(backend);
+                        if killed > 0 {
+                            tracing::info!(
+                                "backend {} failed at runtime ({:?} -> {:?}); cancelled {} pinned SOCKS connections: {}",
+                                backend,
+                                before_state,
+                                after_state,
+                                killed,
+                                err_text
+                            );
+                        }
                     }
-                }
-                if wake_backend {
-                    state.runtime.backend_wake_throttled(2500);
+                    if wake_backend {
+                        state.runtime.backend_wake_throttled(2500);
+                    }
+                } else {
+                    tracing::debug!(
+                        "backend {} target-level SOCKS failure for cid {} ignored for health: {}",
+                        backend,
+                        cid,
+                        err_text
+                    );
                 }
                 state.conns.set_mode(cid, "pending");
                 // try next backend

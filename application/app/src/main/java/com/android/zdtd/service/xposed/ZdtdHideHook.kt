@@ -185,17 +185,26 @@ class ZdtdHideHook : IXposedHookLoadPackage {
         val now = System.currentTimeMillis()
         val targets = synchronized(targetCacheLock) {
             if (now - targetCacheLoadedAtMs > TARGET_CACHE_TTL_MS) {
-                targetCache = readLsposedTargetsOrNull()
-                targetCacheLoadedAtMs = now
+                val loaded = readLsposedTargetsOrNull()
+                if (loaded != null) {
+                    targetCache = loaded
+                    targetCacheLoadedAtMs = now
+                } else {
+                    // Keep the previous valid cache when a package update / LSPosed prefs
+                    // transition temporarily makes XSharedPreferences unreadable. Never turn
+                    // a read failure into global hiding.
+                    if (targetCache == null) targetCacheLoadedAtMs = now
+                }
             }
             targetCache
         }
 
-        // If LSPosed preferences cannot be read for any reason, keep the old known-good
-        // behaviour: hide ZDT-D from ordinary untrusted apps instead of disabling protection.
+        // Safe default: if the selected-app list cannot be read and no previous valid cache
+        // exists, do not hide globally. LSPosed runs this hook in system_server, so scope
+        // alone cannot restrict callers; our package/uid list must be authoritative.
         return targets?.let { prefs ->
             uid in prefs.uids || callerPackages.any { it in prefs.packages }
-        } ?: true
+        } ?: false
     }
 
     private fun readLsposedTargetsOrNull(): TargetPrefs? {
@@ -211,7 +220,7 @@ class ZdtdHideHook : IXposedHookLoadPackage {
                 return null
             }
             prefs.reload()
-            if (!prefs.getBoolean(LSPOSED_HIDE_PREF_ENABLED, true)) {
+            if (!prefs.getBoolean(LSPOSED_HIDE_PREF_ENABLED, false)) {
                 return TargetPrefs(emptySet(), emptySet())
             }
             val uidSet = (prefs.getStringSet(LSPOSED_HIDE_PREF_UIDS, emptySet<String>()) ?: emptySet())

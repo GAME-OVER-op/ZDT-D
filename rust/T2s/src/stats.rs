@@ -3197,45 +3197,41 @@ async fn check_internet_via_backend(
     wrapper: Option<SocketAddr>,
     wrapper_auth: Option<(String, String)>,
 ) -> InternetProbeSummary {
-    // Keep Internet validation cheap: one raw IP target + one domain target.
-    // This is enough to distinguish a merely reachable SOCKS backend from
-    // one that can really pass Internet traffic without the old fan-out burst.
-    let per_probe_timeout = timeout.min(Duration::from_millis(1500));
+    // Detailed Internet validation uses several independent data-plane probes.
+    // Each probe is still strict: SOCKS CONNECT is not enough; the remote side
+    // must answer our TLS ClientHello.  Green requires a quorum (2/3), so one
+    // slow target (for example 1.1.1.1 or DNS/domain) cannot make a stable
+    // backend flap, while broken backends that only grant SOCKS CONNECT remain
+    // Yellow because they fail the TLS data-plane checks.
+    let per_probe_timeout = timeout
+        .min(Duration::from_millis(2500))
+        .max(Duration::from_millis(1000));
 
-    let ip_targets = vec![
+    let targets = vec![
         TargetAddr::Ip(SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(1, 1, 1, 1)), 443)),
-    ];
-    let domain_targets = vec![
+        TargetAddr::Ip(SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(8, 8, 8, 8)), 443)),
         TargetAddr::Domain("cloudflare.com".to_string(), 443),
     ];
+    let total_targets = targets.len();
+    let required_ok = 2usize;
 
-    let (ip_ok, ip_best) = first_successful_probe(backend, per_probe_timeout, auth.clone(), ip_targets, 1, wrapper, wrapper_auth.clone()).await;
-    let (domain_ok, domain_best) = if ip_ok >= 1 {
-        first_successful_probe(backend, per_probe_timeout, auth, domain_targets, 1, wrapper, wrapper_auth).await
-    } else {
-        (0usize, None)
-    };
+    let (ok_count, best_ping_ms) = first_successful_probe(
+        backend,
+        per_probe_timeout,
+        auth,
+        targets,
+        required_ok,
+        wrapper,
+        wrapper_auth,
+    ).await;
 
-    let ok = ip_ok >= 1 && domain_ok >= 1;
-    let best_ping_ms = match (ip_best, domain_best) {
-        (Some(a), Some(b)) => Some(a.min(b)),
-        (Some(a), None) => Some(a),
-        (None, Some(b)) => Some(b),
-        (None, None) => None,
-    };
-
+    let ok = ok_count >= required_ok;
     let error_summary = if ok {
-        if ip_ok >= 2 {
-            format!("probe ok (ip={}/1, domain=skipped)", ip_ok)
-        } else {
-            format!("probe ok (ip={}/1, domain={}/1)", ip_ok, domain_ok)
-        }
-    } else if ip_ok >= 1 && domain_ok == 0 {
-        format!("internet probes weak: raw IP works (ip={}/1) but domain/DNS failed (domain=0/1)", ip_ok)
-    } else if ip_ok == 0 && domain_ok >= 1 {
-        format!("internet probes weak: domain worked (domain={}/1) but raw IP failed (ip=0/1)", domain_ok)
+        format!("data-plane probes ok ({}/{}, quorum={})", ok_count, total_targets, required_ok)
+    } else if ok_count > 0 {
+        format!("data-plane probes weak ({}/{}, quorum={})", ok_count, total_targets, required_ok)
     } else {
-        format!("internet probes failed (ip={}/1, domain={}/1)", ip_ok, domain_ok)
+        format!("data-plane probes failed ({}/{}, quorum={})", ok_count, total_targets, required_ok)
     };
 
     InternetProbeSummary { ok, best_ping_ms, error_summary }

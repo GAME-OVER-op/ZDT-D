@@ -5771,10 +5771,13 @@ fn release_construction_proxy_endpoint(req: ConstructionReleaseEndpointReq) -> R
     ensure_safe_segment(&program, "program id")?;
     if let Some(p) = profile { ensure_safe_segment(p, "profile name")?; }
     if let Some(srv) = server { ensure_safe_segment(srv, "server name")?; }
-    let stopped = stop_construction_endpoint_owner(&program, profile, server, port)?;
+    let _ = (program, profile, server, port);
+    // Non-destructive by design: removing a backend from t2s must not stop/kill
+    // the local SOCKS/proxy owner service. Keep the API as a no-op for backward
+    // compatibility with older UI calls.
     Ok(json!({
         "ok": true,
-        "stopped": stopped,
+        "stopped": false,
     }))
 }
 
@@ -5800,46 +5803,6 @@ fn tcp_port_open(host: &str, port: u16) -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(140)).is_ok()
 }
 
-
-fn stop_construction_endpoint_owner(program: &str, _profile: Option<&str>, _server: Option<&str>, port: u16) -> Result<bool> {
-    match program {
-        "sing-box" | "wireproxy" | "mihomo" | "mieru" | "tor" | "operaproxy" => kill_listener_processes_by_port(port),
-        _ => Ok(false),
-    }
-}
-
-fn kill_listener_processes_by_port(port: u16) -> Result<bool> {
-    let (code, out) = crate::shell::run("ss", &["-ltnp"], crate::shell::Capture::Stdout).unwrap_or_default();
-    if code != 0 {
-        return Ok(false);
-    }
-    let needle = format!(":{}", port);
-    let mut pids = BTreeSet::<i32>::new();
-    for line in out.lines().filter(|l| l.contains(&needle)) {
-        let mut tail = line;
-        while let Some(idx) = tail.find("pid=") {
-            let rest = &tail[idx + 4..];
-            let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-            if let Ok(pid) = digits.parse::<i32>() {
-                if pid > 1 { pids.insert(pid); }
-            }
-            tail = rest;
-        }
-    }
-    if pids.is_empty() {
-        return Ok(false);
-    }
-    for pid in &pids {
-        let _ = crate::shell::ok_sh(&format!("kill -15 {}", pid));
-    }
-    std::thread::sleep(std::time::Duration::from_millis(400));
-    for pid in &pids {
-        if Path::new("/proc").join(pid.to_string()).is_dir() {
-            let _ = crate::shell::ok_sh(&format!("kill -9 {}", pid));
-        }
-    }
-    Ok(true)
-}
 
 fn parse_myproxy_ports_for_construction(v: &serde_json::Value) -> Vec<u16> {
     let mut out = Vec::<u16>::new();

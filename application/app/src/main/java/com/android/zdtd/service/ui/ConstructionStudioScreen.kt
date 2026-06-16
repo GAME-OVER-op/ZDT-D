@@ -649,33 +649,27 @@ fun ConstructionStudioScreen(
           return
         }
         scope.launch {
-          val (latestPolls, shouldRelease) = withContext(Dispatchers.IO) {
+          val latestPolls = withContext(Dispatchers.IO) {
             val client = T2sApiClient(rootManager, port)
             val host = endpoint.host.ifBlank { "127.0.0.1" }
             val addr = "$host:${endpoint.port}"
             runCatching { if (disconnect) client.removeBackend(addr) else client.addBackend(host, endpoint.port) }
             runCatching { client.recheckBackends() }
             if (!disconnect) {
-              emptyMap<Int, T2sPollResult>() to false
+              emptyMap()
             } else {
-              val latest = report.t2sInstances
+              report.t2sInstances
                 .map { it.webPort }
                 .filter { it > 0 }
                 .distinct()
                 .mapNotNull { wp -> runCatching { wp to T2sApiClient(rootManager, wp).poll() }.getOrNull() }
                 .toMap()
-              latest to latest.values.none { poll ->
-                poll.state.backends.any { backend -> backendAddrMatches(backend.addr, host, endpoint.port) }
-              }
             }
           }
           if (latestPolls.isNotEmpty()) t2sPolls = latestPolls
-          if (disconnect && shouldRelease) {
-            actions.releaseConstructionProxyEndpoint(endpoint) {
-              requestConstructionEndpoints()
-              requestTraffic()
-            }
-          }
+          // Disconnecting a backend from t2s must only remove it from this t2s instance.
+          // Do not stop/kill the SOCKS owner process: the user may add it back later or
+          // another route may still need the service/runtime state intact.
           connectFromId = null
           requestTraffic()
           requestConstructionEndpoints()

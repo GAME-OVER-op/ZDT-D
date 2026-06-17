@@ -507,6 +507,16 @@ To install ZDT-D correctly, the metamodule must be working properly or be comple
     <string name="backup_restore_confirm_text">Current settings will be completely replaced with the contents of the archive. The service will be stopped during the operation.</string>
     <string name="backup_restore">Restore</string>
     <string name="backup_cancel">Cancel</string>
+    <string name="backup_external_restore_title">Apply backup?</string>
+    <string name="backup_external_restore_text">Do you want to apply this ZDT-D backup now?
+
+File: %1$s
+
+Current settings will be completely replaced, and the service will be stopped during restore.</string>
+    <string name="backup_external_restore_apply">Apply backup</string>
+    <string name="backup_external_restore_checking">Checking backup…</string>
+    <string name="backup_external_restore_invalid">This file is not a valid ZDT-D backup.</string>
+    <string name="backup_external_restore_default_file">Selected backup</string>
     <string name="backup_delete_confirm_title">Delete backup?</string>
     <string name="backup_delete_confirm_text">The file will be deleted and cannot be recovered.</string>
     <string name="backup_delete">Delete</string>

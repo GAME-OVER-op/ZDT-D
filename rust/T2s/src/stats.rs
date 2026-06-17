@@ -29,7 +29,6 @@ const PRIORITY_STREAM_DEGRADED_MIN_BYTES: u64 = 128 * 1024;
 const PRIORITY_STREAM_DEGRADED_MIN_WINDOW_BYTES: u64 = 16 * 1024;
 const PRIORITY_STREAM_RECYCLE_COOLDOWN_SECS: u64 = 20;
 const PRIORITY_STREAM_RECYCLE_MAX_PER_PASS: usize = 2;
-const INTERNET_PROBE_DEGRADE_THRESHOLD: u8 = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Ingress {
@@ -1551,22 +1550,13 @@ impl SocksBackends {
         let prev = self.status[idx].clone();
         let now = now_ts();
 
-        let prev_internet_fail_streak = self.internet_probe_fail_streak.get(idx).copied().unwrap_or(0);
-        let next_internet_fail_streak = prev_internet_fail_streak.saturating_add(1);
-        let detailed_probe_failed = full_probe && socks_ping_ms.is_some() && internet_ping_ms.is_none();
-        let tolerated_detailed_fail = detailed_probe_failed
-            && prev.state == BackendState::Green
-            && next_internet_fail_streak < INTERNET_PROBE_DEGRADE_THRESHOLD;
-
         let state = if socks_ping_ms.is_none() {
             // Stage 1/simple check failed: the SOCKS backend itself is not reachable.
             BackendState::Red
         } else if full_probe {
-            // Stage 2/detailed check: SOCKS is reachable; only the current TLS
-            // data-plane probe decides Green vs Yellow.  A previously-GREEN backend
-            // needs several consecutive detailed failures before we degrade it, so a
-            // single slow probe does not make multi-backend routing flap.
-            if internet_ping_ms.is_some() || tolerated_detailed_fail {
+            // Stage 2/detailed check: SOCKS is reachable; the strict single
+            // data-plane probe decides Green vs Yellow immediately.
+            if internet_ping_ms.is_some() {
                 BackendState::Green
             } else {
                 BackendState::Yellow
@@ -1602,18 +1592,8 @@ impl SocksBackends {
                 self.last_full_probe[idx] = now;
             }
             self.note_internet_probe_result(idx, internet_ping_ms.is_some());
-            if tolerated_detailed_fail {
-                self.status[idx].internet_ping_ms = prev.internet_ping_ms;
-                self.status[idx].last_error = Some(format!(
-                    "internet detailed probe soft fail {}/{}; keeping previous GREEN state: {}",
-                    next_internet_fail_streak,
-                    INTERNET_PROBE_DEGRADE_THRESHOLD,
-                    err.unwrap_or_else(|| "no data-plane response".to_string())
-                ));
-            } else {
-                self.status[idx].internet_ping_ms = internet_ping_ms;
-                self.status[idx].last_error = err;
-            }
+            self.status[idx].internet_ping_ms = internet_ping_ms;
+            self.status[idx].last_error = err;
         } else {
             if state == BackendState::Red {
                 self.status[idx].internet_ping_ms = None;

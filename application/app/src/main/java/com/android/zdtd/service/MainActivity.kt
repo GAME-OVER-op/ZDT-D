@@ -60,6 +60,7 @@ class MainActivity : AppCompatActivity() {
     // Detect a true cold start from launcher (to show the optional module update prompt).
     val fromLauncher = intent?.action == Intent.ACTION_MAIN && (intent?.categories?.contains(Intent.CATEGORY_LAUNCHER) == true)
     vm.onAppStart(fromLauncher)
+    handleIncomingBackupIntent(intent)
 
     // Handle update events (open browser / request permission / install APK).
     lifecycleScope.launch {
@@ -124,6 +125,18 @@ class MainActivity : AppCompatActivity() {
         }
       }
     }
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    setIntent(intent)
+    handleIncomingBackupIntent(intent)
+  }
+
+  private fun handleIncomingBackupIntent(intent: Intent?) {
+    if (intent?.action != Intent.ACTION_VIEW) return
+    val uri = intent.data ?: return
+    vm.onExternalBackupOpen(uri)
   }
 
   private fun openUrl(url: String) {

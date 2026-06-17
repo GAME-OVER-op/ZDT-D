@@ -42,6 +42,15 @@ interface ZdtdActions {
   /** Called after SAF returns a URI (or null if cancelled). */
   fun onBackupImportResult(uri: android.net.Uri?)
 
+  /** Called when Android opens a .zdtb backup file with this app. */
+  fun onExternalBackupOpen(uri: android.net.Uri)
+
+  /** Apply the validated backup opened from Android file manager. */
+  fun confirmExternalBackupRestore()
+
+  /** Cancel applying the backup opened from Android file manager. */
+  fun dismissExternalBackupRestore()
+
   /** Restore (apply) the selected backup file. */
   fun restoreBackup(name: String, ignoreVersionCode: Boolean = false)
 

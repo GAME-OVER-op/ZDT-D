@@ -335,6 +335,16 @@
     <string name="backup_restore_confirm_text">Текущие настройки будут полностью заменены содержимым архива. Сервис будет остановлен на время операции.</string>
     <string name="backup_restore">Восстановить</string>
     <string name="backup_cancel">Отмена</string>
+    <string name="backup_external_restore_title">Применить бэкап?</string>
+    <string name="backup_external_restore_text">Вы хотите применить этот бэкап ZDT-D сейчас?
+
+Файл: %1$s
+
+Текущие настройки будут полностью заменены, а сервис будет остановлен на время восстановления.</string>
+    <string name="backup_external_restore_apply">Применить бэкап</string>
+    <string name="backup_external_restore_checking">Проверка бэкапа…</string>
+    <string name="backup_external_restore_invalid">Этот файл не является корректным бэкапом ZDT-D.</string>
+    <string name="backup_external_restore_default_file">Выбранный бэкап</string>
     <string name="backup_delete_confirm_title">Удалить бэкап?</string>
     <string name="backup_delete_confirm_text">Файл будет удалён без возможности восстановления.</string>
     <string name="backup_delete">Удалить</string>

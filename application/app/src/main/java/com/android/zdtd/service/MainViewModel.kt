@@ -217,6 +217,11 @@ data class BackupUiState(
   // Version mismatch: allow user to force restore (advanced).
   val forceRestoreAvailable: Boolean = false,
   val forceRestoreName: String? = null,
+
+  // Backup file opened externally by Android file manager (.zdtb ACTION_VIEW).
+  val externalRestorePromptVisible: Boolean = false,
+  val externalRestoreName: String? = null,
+  val externalRestoreDisplayName: String = "",
 )
 
 
@@ -317,6 +322,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
 
   private val _backupEvents = MutableSharedFlow<BackupEvent>(extraBufferCapacity = 8)
   val backupEvents: SharedFlow<BackupEvent> = _backupEvents.asSharedFlow()
+  private var externalBackupOpenJob: Job? = null
 
   // ----- Program updates (zapret / zapret2 / mihomo / mieru / opera-proxy) -----
   private val _programUpdates = MutableStateFlow(ProgramUpdatesUiState())
@@ -2026,6 +2032,117 @@ fi""".trimIndent()
 
       finishBackupProgress(text = str(R.string.mv_backup_import_done, name), percent = 100)
       refreshBackups()
+    }
+  }
+
+  override fun onExternalBackupOpen(uri: Uri) {
+    externalBackupOpenJob?.cancel()
+    externalBackupOpenJob = launchIO {
+      // ACTION_VIEW can arrive before the cold-start root check finishes.
+      val waitStartedAt = System.currentTimeMillis()
+      while (_rootState.value != RootState.GRANTED && System.currentTimeMillis() - waitStartedAt < 15_000L) {
+        currentCoroutineContext().ensureActive()
+        delay(250L)
+      }
+      if (_rootState.value != RootState.GRANTED) {
+        toast(str(R.string.mv_auto_029))
+        return@launchIO
+      }
+      if (_backup.value.progressVisible && !_backup.value.progressFinished) return@launchIO
+
+      showBackupProgress(
+        title = str(R.string.backup_external_restore_checking),
+        text = str(R.string.mv_auto_032),
+        percent = 5,
+      )
+
+      val tmp = File(ctx.cacheDir, "zdtb_external_${System.currentTimeMillis()}.zdtb")
+      val okCopy = runCatching {
+        ctx.contentResolver.openInputStream(uri)?.use { input ->
+          FileOutputStream(tmp).use { output -> input.copyTo(output) }
+        } ?: return@runCatching false
+        true
+      }.getOrDefault(false)
+
+      if (!okCopy || !tmp.exists()) {
+        runCatching { tmp.delete() }
+        _backup.update { it.copy(progressVisible = false, progressFinished = false, progressError = null) }
+        toast(str(R.string.mv_auto_033))
+        return@launchIO
+      }
+
+      _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_034), progressPercent = 25) }
+      // Validate the archive structure here, but let restoreBackup() do the strict versionCode
+      // decision so the existing "Restore anyway" path still works for external files.
+      val validation = validateBackupFile(tmp.absolutePath, ignoreVersionCode = true)
+      if (!validation.ok) {
+        runCatching { tmp.delete() }
+        _backup.update { it.copy(progressVisible = false, progressFinished = false, progressError = null) }
+        toast(validation.error ?: str(R.string.backup_external_restore_invalid))
+        return@launchIO
+      }
+
+      root.execRootSh("mkdir -p ${shQuote(backupDirPath)} 2>/dev/null || true")
+      val tsForFile = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
+      val importedName = "ZDT-D_backup_${tsForFile}_external.zdtb"
+      val dest = "${backupDirPath}/${importedName}"
+      _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_036), progressPercent = 70) }
+      val r = root.execRootSh("cp -f ${shQuote(tmp.absolutePath)} ${shQuote(dest)} 2>/dev/null || cat ${shQuote(tmp.absolutePath)} > ${shQuote(dest)}; chmod 0644 ${shQuote(dest)} 2>/dev/null || true")
+      runCatching { tmp.delete() }
+      if (!r.isSuccess) {
+        val err = (r.out + r.err).joinToString("\n").trim()
+        val detail = if (err.isBlank()) "copy failed" else err
+        _backup.update { it.copy(progressVisible = false, progressFinished = false, progressError = null) }
+        toast(str(R.string.mv_backup_import_save_failed, detail))
+        return@launchIO
+      }
+
+      val displayName = uri.lastPathSegment
+        ?.substringAfterLast('/')
+        ?.substringAfterLast(':')
+        ?.takeIf { it.isNotBlank() }
+        ?: importedName
+
+      _backup.update { st ->
+        st.copy(
+          progressVisible = false,
+          progressFinished = false,
+          progressError = null,
+          externalRestorePromptVisible = true,
+          externalRestoreName = importedName,
+          externalRestoreDisplayName = displayName,
+        )
+      }
+      refreshBackups()
+    }
+  }
+
+  override fun confirmExternalBackupRestore() {
+    val name = _backup.value.externalRestoreName ?: return
+    _backup.update { st ->
+      st.copy(
+        externalRestorePromptVisible = false,
+        externalRestoreName = null,
+        externalRestoreDisplayName = "",
+      )
+    }
+    restoreBackup(name, ignoreVersionCode = false)
+  }
+
+  override fun dismissExternalBackupRestore() {
+    val name = _backup.value.externalRestoreName
+    _backup.update { st ->
+      st.copy(
+        externalRestorePromptVisible = false,
+        externalRestoreName = null,
+        externalRestoreDisplayName = "",
+      )
+    }
+    if (!name.isNullOrBlank()) {
+      launchIO {
+        root.execRootSh("rm -f ${shQuote(backupDirPath + "/" + name)} 2>/dev/null || true")
+        refreshBackups()
+      }
     }
   }
 

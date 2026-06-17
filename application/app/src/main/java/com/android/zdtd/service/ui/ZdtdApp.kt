@@ -809,9 +809,36 @@ private fun MainShell(
 
   val snackHost = remember { SnackbarHostState() }
   val uiState by uiStateFlow.collectAsStateWithLifecycle()
+  val backup by backupFlow.collectAsStateWithLifecycle()
   val landscapeControl = rememberUseLandscapeControlLayout()
 
   DaemonUnavailableDialogHost(uiState = uiState)
+
+  if (backup.externalRestorePromptVisible) {
+    AlertDialog(
+      onDismissRequest = actions::dismissExternalBackupRestore,
+      title = { Text(stringResource(R.string.backup_external_restore_title)) },
+      text = {
+        val fileName = backup.externalRestoreDisplayName.ifBlank {
+          backup.externalRestoreName ?: stringResource(R.string.backup_external_restore_default_file)
+        }
+        Text(stringResource(R.string.backup_external_restore_text, fileName))
+      },
+      dismissButton = {
+        TextButton(onClick = actions::dismissExternalBackupRestore) {
+          Text(stringResource(R.string.backup_cancel))
+        }
+      },
+      confirmButton = {
+        TextButton(onClick = {
+          showBackup = true
+          actions.confirmExternalBackupRestore()
+        }) {
+          Text(stringResource(R.string.backup_external_restore_apply))
+        }
+      },
+    )
+  }
 
   if (showWorldMapPrompt) {
     AlertDialog(
@@ -879,7 +906,6 @@ private fun MainShell(
   }
 
   if (showBackup) {
-    val backup by backupFlow.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) {
       actions.refreshBackups()
     }

@@ -17,6 +17,7 @@ mod scan_detector;
 mod programs;
 mod runtime;
 mod runtime_refresh;
+mod runtime_sanitize;
 mod runtime_state;
 mod settings;
 mod shell;

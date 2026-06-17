@@ -50,6 +50,7 @@ pub fn start_full() -> Result<()> {
     wait_android_runtime_ready_best_effort();
 
     settings::ensure_minimal_program_layouts()?;
+    crate::runtime_sanitize::sanitize_runtime_files_best_effort();
 
     if can_adopt_existing_runtime() {
         final_sync_runtime_settings_best_effort("adopted runtime");

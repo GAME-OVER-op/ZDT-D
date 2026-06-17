@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use serde::Serialize;
-use std::{fs, path::{Path, PathBuf}};
+use std::{fs, path::{Path, PathBuf}, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 pub const SHARED_TOKEN_FILE: &str = "/data/adb/modules/ZDT-D/api/token";
 
@@ -176,13 +176,28 @@ fn sanitize_id(raw: &str) -> String {
     if trimmed.is_empty() { "t2s".to_string() } else { trimmed.chars().take(120).collect() }
 }
 
+fn unique_tmp_path(target: &Path) -> PathBuf {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::from_secs(0))
+        .as_nanos();
+    let pid = std::process::id();
+    let name = target.file_name().and_then(|s| s.to_str()).unwrap_or("metadata");
+    target.with_file_name(format!(".{name}.{pid}.{ts}.tmp"))
+}
+
 fn write_json_atomic(path: &Path, value: &serde_json::Value) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
     }
-    let tmp = path.with_extension("tmp");
+    let tmp = unique_tmp_path(path);
     let txt = serde_json::to_string_pretty(value)?;
-    fs::write(&tmp, txt.as_bytes()).with_context(|| format!("write {}", tmp.display()))?;
+    {
+        use std::io::Write;
+        let mut f = fs::File::create(&tmp).with_context(|| format!("create {}", tmp.display()))?;
+        f.write_all(txt.as_bytes()).with_context(|| format!("write {}", tmp.display()))?;
+        let _ = f.sync_all();
+    }
     fs::rename(&tmp, path).with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))?;
     Ok(())
 }

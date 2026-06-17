@@ -61,6 +61,7 @@ pub fn run(_cfg: &Config) -> Result<()> {
     if let Err(e) = settings::ensure_minimal_program_layouts() {
         logging::warn(&format!("failed to restore minimal working_folder layout: {e:#}"));
     }
+    crate::runtime_sanitize::sanitize_runtime_files_best_effort();
 
     // Ensure token exists and write api info (no token in API responses).
     let token = settings::read_or_create_token()?;

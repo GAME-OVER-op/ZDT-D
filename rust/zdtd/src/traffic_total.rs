@@ -816,11 +816,13 @@ fn load_t2s_instances(warnings: &mut Vec<String>) -> Vec<T2sInstanceMeta> {
     for ent in entries.flatten() {
         let path = ent.path();
         if path.extension().and_then(|s| s.to_str()) != Some("json") { continue; }
-        let Ok(raw) = fs::read_to_string(&path) else { continue; };
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else {
-            warnings.push(format!("parse t2s metadata failed: {}", path.display()));
+        let Ok(raw) = fs::read(&path) else { continue; };
+        if crate::runtime_sanitize::json_bytes_are_corrupt(&raw) {
+            let _ = fs::remove_file(&path);
+            log::warn!("traffic_total: removed corrupt t2s metadata {}", path.display());
             continue;
-        };
+        }
+        let Ok(v) = serde_json::from_slice::<serde_json::Value>(&raw) else { continue; };
         let web_port = v.get("web_port").and_then(json_u16).unwrap_or(0);
         let listen_port = v.get("listen_port").and_then(json_u16).unwrap_or(0);
         if web_port == 0 || listen_port == 0 { continue; }
@@ -1210,7 +1212,7 @@ fn read_vpn_traffic(
     uid_file_packages: &HashMap<String, HashMap<u32, Vec<String>>>,
     warnings: &mut Vec<String>,
 ) -> Vec<VpnTraffic> {
-    let raw = match fs::read_to_string(VPN_NETD_APPLIED) {
+    let raw = match fs::read(VPN_NETD_APPLIED) {
         Ok(s) => s,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
         Err(e) => {
@@ -1218,7 +1220,12 @@ fn read_vpn_traffic(
             return Vec::new();
         }
     };
-    let snapshot = match serde_json::from_str::<AppliedSnapshot>(&raw) {
+    if crate::runtime_sanitize::json_bytes_are_corrupt(&raw) {
+        let _ = fs::remove_file(VPN_NETD_APPLIED);
+        log::warn!("traffic_total: removed corrupt vpn_netd applied snapshot {}", VPN_NETD_APPLIED);
+        return Vec::new();
+    }
+    let snapshot = match serde_json::from_slice::<AppliedSnapshot>(&raw) {
         Ok(v) => v,
         Err(e) => {
             warnings.push(format!("parse vpn_netd applied snapshot failed: {e}"));

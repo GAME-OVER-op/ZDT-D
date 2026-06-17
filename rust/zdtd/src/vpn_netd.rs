@@ -139,6 +139,10 @@ fn cleanup_runtime_files() {
     let _ = fs::remove_dir(VPN_NETD_DIR);
 }
 
+fn snapshot_text_is_empty_or_nul(text: &str) -> bool {
+    text.chars().all(|c| c == '\0' || c.is_whitespace())
+}
+
 fn trim_ndc_output(out: &str) -> String {
     out.replace('\r', "").trim().to_string()
 }
@@ -1005,8 +1009,38 @@ pub fn stop_applied() -> Result<()> {
         return Ok(());
     }
 
-    let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    let snapshot: AppliedSnapshot = serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) => {
+            log::warn!(
+                "vpn_netd: stale applied snapshot is unreadable ({}), removing runtime files and continuing fresh apply: {e}",
+                path.display()
+            );
+            cleanup_runtime_files();
+            return Ok(());
+        }
+    };
+
+    if snapshot_text_is_empty_or_nul(&text) {
+        log::warn!(
+            "vpn_netd: stale applied snapshot is empty/NUL-filled ({}), removing runtime files and continuing fresh apply",
+            path.display()
+        );
+        cleanup_runtime_files();
+        return Ok(());
+    }
+
+    let snapshot: AppliedSnapshot = match serde_json::from_str(&text) {
+        Ok(snapshot) => snapshot,
+        Err(e) => {
+            log::warn!(
+                "vpn_netd: stale applied snapshot is corrupted ({}), removing runtime files and continuing fresh apply: {e}",
+                path.display()
+            );
+            cleanup_runtime_files();
+            return Ok(());
+        }
+    };
 
     if !snapshot.profiles.is_empty() {
         log::info!("vpn_netd: cleanup {} applied profile(s)", snapshot.profiles.len());
@@ -1032,6 +1066,22 @@ pub fn read_applied_snapshot() -> Result<AppliedSnapshot> {
     if !path.is_file() {
         return Ok(AppliedSnapshot::default());
     }
-    let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    serde_json::from_str(&text).map_err(|e| anyhow!("parse {}: {e}", path.display()))
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(e) => {
+            log::warn!("vpn_netd: applied snapshot is unreadable ({}), treating as not applied: {e}", path.display());
+            return Ok(AppliedSnapshot::default());
+        }
+    };
+    if snapshot_text_is_empty_or_nul(&text) {
+        log::warn!("vpn_netd: applied snapshot is empty/NUL-filled ({}), treating as not applied", path.display());
+        return Ok(AppliedSnapshot::default());
+    }
+    match serde_json::from_str(&text) {
+        Ok(snapshot) => Ok(snapshot),
+        Err(e) => {
+            log::warn!("vpn_netd: applied snapshot is corrupted ({}), treating as not applied: {e}", path.display());
+            Ok(AppliedSnapshot::default())
+        }
+    }
 }

@@ -1003,6 +1003,9 @@ async fn connect_socks(
                 if is_backend_runtime_failure(&err_text) {
                     let mut b = state.backends.lock();
                     let before_state = b.raw_state_for_addr(backend);
+                    if before_state == Some(stats::BackendState::Green) {
+                        stats::spawn_suspect_backend_recheck(state.clone(), backend, err_text.clone());
+                    }
                     let wake_backend = if let Some(inflight) = b.inflight_connects(backend) {
                         let prefix = if is_soft_backend_failure(&err_text) { "soft backend runtime failure" } else { "backend runtime failure" };
                         b.mark_backend_failed(backend, format!("{}: {} (inflight={})", prefix, err_text, inflight))

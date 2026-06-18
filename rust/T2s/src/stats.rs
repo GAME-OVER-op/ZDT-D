@@ -120,6 +120,11 @@ pub struct RuntimeConfig {
     /// Only one accelerated recovery ladder may run at a time.
     pub burst_recovery_ladder_active: AtomicU64,
 
+    /// Throttle event-triggered full rechecks for a backend that failed on the hot path.
+    pub next_suspect_recheck_after_ms: AtomicU64,
+    /// Only one suspect-backend full recheck may run at a time.
+    pub suspect_recheck_active: AtomicU64,
+
     /// Throttle priority speed-aware stream recycling so a flaky backend cannot
     /// cause repeated reconnect loops.
     pub next_priority_stream_recycle_after_ts: AtomicU64,
@@ -143,6 +148,8 @@ impl Default for RuntimeConfig {
             next_burst_recheck_after_ms: AtomicU64::new(0),
             burst_recheck_active: AtomicU64::new(0),
             burst_recovery_ladder_active: AtomicU64::new(0),
+            next_suspect_recheck_after_ms: AtomicU64::new(0),
+            suspect_recheck_active: AtomicU64::new(0),
             next_priority_stream_recycle_after_ts: AtomicU64::new(0),
         }
     }
@@ -281,6 +288,39 @@ impl RuntimeConfig {
 
     pub fn leave_burst_recovery_ladder(&self) {
         self.burst_recovery_ladder_active.store(0, Ordering::Relaxed);
+    }
+
+    pub fn try_enter_suspect_recheck(&self, min_interval_ms: u64) -> bool {
+        if !self.try_begin_suspect_recheck(min_interval_ms) {
+            return false;
+        }
+        self.suspect_recheck_active
+            .compare_exchange(0, 1, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+    }
+
+    fn try_begin_suspect_recheck(&self, min_interval_ms: u64) -> bool {
+        let now = now_ms();
+        loop {
+            let next_allowed = self.next_suspect_recheck_after_ms.load(Ordering::Relaxed);
+            if next_allowed > now {
+                return false;
+            }
+            let new_next = now.saturating_add(min_interval_ms.max(1));
+            match self.next_suspect_recheck_after_ms.compare_exchange(
+                next_allowed,
+                new_next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return true,
+                Err(_) => continue,
+            }
+        }
+    }
+
+    pub fn leave_suspect_recheck(&self) {
+        self.suspect_recheck_active.store(0, Ordering::Relaxed);
     }
 
     pub fn priority_stream_recycle_allowed(&self) -> bool {
@@ -1472,6 +1512,10 @@ impl SocksBackends {
         self.addrs.get(idx).copied()
     }
 
+    pub fn index_for_addr(&self, addr: SocketAddr) -> Option<usize> {
+        self.addrs.iter().position(|a| *a == addr)
+    }
+
     pub fn try_acquire_connect_slot(&mut self, idx: usize, limit: u32) -> bool {
         if idx >= self.addrs.len() {
             return false;
@@ -2510,6 +2554,63 @@ pub async fn refresh_one_backend_once_rr(state: crate::AppState, timeout: Durati
 
     let Some(idx) = idx else { return false; };
     refresh_backend_index_once(state.clone(), idx, timeout, None, auth, probe_mode).await
+}
+
+pub fn spawn_suspect_backend_recheck(state: crate::AppState, backend: SocketAddr, reason: String) {
+    if !state.runtime.try_enter_suspect_recheck(750) {
+        return;
+    }
+    std::thread::spawn(move || {
+        let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+            Ok(rt) => rt,
+            Err(e) => {
+                tracing::warn!("suspect backend recheck runtime create failed: {:#}", e);
+                state.runtime.leave_suspect_recheck();
+                return;
+            }
+        };
+        rt.block_on(async move {
+            suspect_backend_recheck_once(state, backend, reason).await;
+        });
+    });
+}
+
+async fn suspect_backend_recheck_once(state: crate::AppState, backend: SocketAddr, reason: String) {
+    let _guard = state.runtime.refresh_lock.lock().await;
+    let timeout = health_timeout(&state);
+    let global_auth = global_backend_auth(&state.args);
+    let choice = {
+        let b = state.backends.lock();
+        b.index_for_addr(backend).map(|idx| (idx, b.effective_auth_at(idx, global_auth.as_ref())))
+    };
+    let Some((idx, auth)) = choice else {
+        state.runtime.leave_suspect_recheck();
+        return;
+    };
+
+    tracing::debug!("backend {} suspect runtime failure; forcing full recheck: {}", backend, reason);
+    let _ = refresh_backend_index_once(state.clone(), idx, timeout, None, auth, ProbeMode::Full).await;
+
+    // If this backend was the only GREEN route and the full recheck confirmed the
+    // loss, sweep other backends immediately so failover does not wait for the
+    // normal quiet/idle health cadence.
+    if !state.backends.lock().any_green() {
+        let followup: Vec<(usize, Option<(String, String)>)> = {
+            let b = state.backends.lock();
+            (0..b.len())
+                .filter(|other_idx| *other_idx != idx && b.addr_at(*other_idx).is_some())
+                .map(|other_idx| (other_idx, b.effective_auth_at(other_idx, global_auth.as_ref())))
+                .collect()
+        };
+        for (other_idx, other_auth) in followup {
+            let _ = refresh_backend_index_once(state.clone(), other_idx, timeout, None, other_auth, ProbeMode::Full).await;
+            if state.backends.lock().any_green() {
+                break;
+            }
+        }
+    }
+
+    state.runtime.leave_suspect_recheck();
 }
 
 pub async fn burst_recheck_one_backend(state: crate::AppState) -> bool {

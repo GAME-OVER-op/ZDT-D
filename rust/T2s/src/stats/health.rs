@@ -211,17 +211,16 @@ async fn refresh_backend_index_once(
     };
     let after_any_healthy = b.any_healthy();
     let after_any_green = b.any_green();
-    let after_any_yellow = b.any_yellow();
+    let after_has_backends = b.len() > 0;
     if after_any_green {
         state.runtime.clear_direct_cooldown();
     }
-    // If Internet just dropped across all backends but SOCKS is still reachable
-    // (Yellow/no-GREEN state), immediately start the accelerated recovery ladder.
-    // This avoids waiting for a later burst of new connections before we begin
-    // trying to recover Internet availability again.
+    // If all backends have no confirmed Internet route (no GREEN), immediately
+    // start the accelerated recovery ladder. The ladder full-probes every
+    // non-GREEN backend, including Red, because Red can recover directly to Green.
     let should_start_recovery_ladder = changed
         && !after_any_green
-        && after_any_yellow
+        && after_has_backends
         && (before_any_green || !before_any_healthy || probe_mode == ProbeMode::Full);
     let wake_backend = changed && should_wake_backend_loops(before_any_healthy, after_any_healthy, before_any_green, after_any_green);
     drop(b);
@@ -380,18 +379,27 @@ pub async fn burst_recheck_one_backend(state: crate::AppState) -> bool {
     let res = async {
         let _guard = state.runtime.refresh_lock.lock().await;
         let global_auth = global_backend_auth(&state.args);
-        let choice = {
+        let plan = {
             let mut b = state.backends.lock();
             // Recovery ladder is intentionally more aggressive than normal background
-            // probes. It bypasses the regular per-backend internet-probe due/backoff
-            // gate so a recently-yellow backend can be revalidated quickly after the
-            // network comes back. The ladder cadence itself (2s / 5s / 15s) remains
-            // the safety limiter against overly frequent probing.
-            b.choose_burst_recheck_index(global_auth.as_ref(), true)
+            // probes. When there is no GREEN backend, sweep every non-GREEN backend
+            // with a full probe. This includes Red: a Red backend may recover
+            // directly to Green when SOCKS and Internet return.
+            // The ladder cadence itself (2s / 5s / 15s) remains the safety limiter.
+            b.choose_burst_recheck_indices(global_auth.as_ref(), true)
         };
-        let Some((idx, auth)) = choice else { return false; };
+        if plan.is_empty() {
+            return false;
+        }
         let timeout = health_timeout(&state);
-        refresh_backend_index_once(state.clone(), idx, timeout, None, auth, ProbeMode::Full).await
+        let mut checked_any = false;
+        for (idx, auth) in plan {
+            if state.backends.lock().any_green() {
+                break;
+            }
+            checked_any |= refresh_backend_index_once(state.clone(), idx, timeout, None, auth, ProbeMode::Full).await;
+        }
+        checked_any
     }.await;
 
     state.runtime.leave_burst_recheck();

@@ -836,49 +836,33 @@ impl SocksBackends {
         self.status.iter().any(|s| s.state == BackendState::Yellow)
     }
 
-    pub fn choose_burst_recheck_index(&mut self, global_auth: Option<&(String, String)>, ignore_normal_due: bool) -> Option<(usize, Option<(String, String)>)> {
+    pub fn choose_burst_recheck_indices(&mut self, global_auth: Option<&(String, String)>, ignore_normal_due: bool) -> Vec<(usize, Option<(String, String)>)> {
         if self.protector_mode_enabled() || self.any_green() {
-            return None;
+            return Vec::new();
         }
         let now = now_ts();
-        let mut candidates: Vec<usize> = self.status
-            .iter()
-            .enumerate()
-            .filter(|(idx, s)| {
-                s.state == BackendState::Yellow
-                    && (ignore_normal_due || self.internet_probe_due_idx(*idx, now))
-            })
-            .map(|(idx, _)| idx)
-            .collect();
-        if candidates.is_empty() {
-            return None;
+        let mut yellow = Vec::new();
+        let mut red = Vec::new();
+        for (idx, s) in self.status.iter().enumerate() {
+            if !ignore_normal_due && !self.internet_probe_due_idx(idx, now) {
+                continue;
+            }
+            match s.state {
+                BackendState::Yellow => yellow.push(idx),
+                BackendState::Red => red.push(idx),
+                BackendState::Green => {}
+            }
         }
 
-        let latest_green = candidates
-            .iter()
-            .filter_map(|idx| self.last_green_ts.get(*idx).copied())
-            .max()
-            .unwrap_or(0);
-        if latest_green > 0 {
-            candidates.retain(|idx| self.last_green_ts.get(*idx).copied().unwrap_or(0) == latest_green);
-        }
-
-        let best_rtt = candidates
-            .iter()
-            .filter_map(|idx| self.status.get(*idx).and_then(|s| s.internet_ping_ms.or(s.socks_ping_ms)))
-            .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        if let Some(best_rtt) = best_rtt {
-            candidates.retain(|idx| {
-                self.status
-                    .get(*idx)
-                    .and_then(|s| s.internet_ping_ms.or(s.socks_ping_ms))
-                    .map(|rtt| (rtt - best_rtt).abs() <= 0.5)
-                    .unwrap_or(false)
-            });
-        }
-
-        let idx = Self::pick_from_bucket(&candidates, &mut self.burst_check_rr)?;
-        Some((idx, self.effective_auth_at(idx, global_auth)))
+        // During no-GREEN recovery every non-GREEN backend is a candidate for a
+        // full probe: Red can recover directly to Green when SOCKS and Internet
+        // come back. Prefer Yellow first because SOCKS was recently reachable,
+        // then sweep Red too so recovery does not wait for the normal health loop.
+        yellow.extend(red);
+        yellow
+            .into_iter()
+            .map(|idx| (idx, self.effective_auth_at(idx, global_auth)))
+            .collect()
     }
 
     pub fn any_healthy(&self) -> bool {

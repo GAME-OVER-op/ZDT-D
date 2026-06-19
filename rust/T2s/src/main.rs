@@ -337,13 +337,13 @@ async fn run_tcp_on(state: AppState, addr: SocketAddr, ingress: stats::Ingress) 
             state.runtime.backend_wake_throttled(250);
         }
 
-        // If a small burst of new connections arrives while all backends are
-        // reachable but currently have no confirmed Internet access, temporarily
-        // accelerate Internet rechecks until one backend turns green again.
+        // If a small burst of new connections arrives while no backend has a
+        // confirmed Internet route, temporarily accelerate full rechecks of all
+        // non-GREEN backends until one backend turns green again.
         if state.runtime.note_new_connection_spike(2, Duration::from_secs(5)) {
             let should_start_recovery_ladder = {
                 let b = state.backends.lock();
-                !b.any_green() && b.any_yellow()
+                !b.any_green() && b.len() > 0
             };
             if should_start_recovery_ladder && state.runtime.try_enter_burst_recovery_ladder() {
                 let st_burst = state.clone();

@@ -333,6 +333,18 @@ hr.sep{border:0;border-top:1px solid rgba(255,255,255,.06); margin:12px 0}
 (function(){
   const $ = (id)=>document.getElementById(id);
 
+  const API_TOKEN = new URLSearchParams(location.search).get('token') || '';
+  function authHeaders(extra){
+    const h = Object.assign({}, extra || {});
+    if(API_TOKEN) h['x-api-key'] = API_TOKEN;
+    return h;
+  }
+  function authWsPath(path){
+    if(!API_TOKEN) return path;
+    const sep = path.includes('?') ? '&' : '?';
+    return `${path}${sep}token=${encodeURIComponent(API_TOKEN)}`;
+  }
+
   // --- UI prefs (desktop-first + density/scale) ---
   const LS_SCALE = 't2s_ui_scale';
   const LS_DENSE = 't2s_ui_dense';
@@ -546,7 +558,7 @@ hr.sep{border:0;border-top:1px solid rgba(255,255,255,.06); margin:12px 0}
   }
 
   async function fetchState(){
-    const r = await fetch('/api/state', {cache:'no-store'});
+    const r = await fetch('/api/state', {cache:'no-store', headers: authHeaders()});
     const s = await r.json();
     applyState(s);
   }
@@ -555,7 +567,7 @@ hr.sep{border:0;border-top:1px solid rgba(255,255,255,.06); margin:12px 0}
     const v = Number($('dl_limit_input').value || 0);
     await fetch('/api/download_limit', {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers: authHeaders({'Content-Type':'application/json'}),
       body: JSON.stringify({mbit: v})
     });
     await fetchState();
@@ -574,7 +586,7 @@ hr.sep{border:0;border-top:1px solid rgba(255,255,255,.06); margin:12px 0}
     }
     const r = await fetch('/api/backends/add', {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers: authHeaders({'Content-Type':'application/json'}),
       body: JSON.stringify(body)
     });
     if(r.ok){
@@ -590,7 +602,7 @@ hr.sep{border:0;border-top:1px solid rgba(255,255,255,.06); margin:12px 0}
     if(!host || !port) return;
     await fetch('/api/backends/remove', {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers: authHeaders({'Content-Type':'application/json'}),
       body: JSON.stringify({host, port})
     });
     await fetchState();
@@ -599,7 +611,7 @@ hr.sep{border:0;border-top:1px solid rgba(255,255,255,.06); margin:12px 0}
   async function killConn(cid){
     await fetch('/api/kill', {
       method:'POST',
-      headers:{'Content-Type':'application/json'},
+      headers: authHeaders({'Content-Type':'application/json'}),
       body: JSON.stringify({cid})
     });
     await fetchState();
@@ -607,7 +619,7 @@ hr.sep{border:0;border-top:1px solid rgba(255,255,255,.06); margin:12px 0}
 
   function connectWS(){
     let proto = (location.protocol === 'https:') ? 'wss' : 'ws';
-    const ws = new WebSocket(`${proto}://${location.host}/ws`);
+    const ws = new WebSocket(`${proto}://${location.host}${authWsPath('/ws')}`);
     $('ws_status').textContent = 'WS: connecting…';
     ws.onopen = ()=>{ $('ws_status').textContent = 'WS: connected'; };
     ws.onclose = ()=>{ $('ws_status').textContent = 'WS: closed'; setTimeout(connectWS, 800); };

@@ -1,7 +1,7 @@
 use crate::{stats, AppState};
 use anyhow::{Context, Result};
 use axum::{
-    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, State},
+    extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Query, State},
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Response},
     routing::{get, post, put},
@@ -33,6 +33,51 @@ struct BackendReq {
 #[derive(Clone, Debug, Deserialize)]
 struct KillReq {
     cid: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct LegacyAuthQuery {
+    #[serde(default)]
+    token: Option<String>,
+    #[serde(default)]
+    api_key: Option<String>,
+}
+
+fn is_loopback_web_addr(addr: &str) -> bool {
+    let a = addr.trim();
+    if a.eq_ignore_ascii_case("localhost") {
+        return true;
+    }
+    match a.parse::<std::net::IpAddr>() {
+        Ok(ip) => ip.is_loopback(),
+        Err(_) => false,
+    }
+}
+
+fn legacy_api_requires_auth(state: &AppState) -> bool {
+    !is_loopback_web_addr(&state.args.web_addr)
+}
+
+fn authorize_legacy_http(state: &AppState, headers: &HeaderMap) -> bool {
+    !legacy_api_requires_auth(state) || state.api.is_authorized(headers)
+}
+
+fn authorize_legacy_query(state: &AppState, q: &LegacyAuthQuery) -> bool {
+    if !legacy_api_requires_auth(state) {
+        return true;
+    }
+    let Some(expected) = state.api.token.as_deref().filter(|s| !s.is_empty()) else {
+        return false;
+    };
+    q.token.as_deref().map(str::trim) == Some(expected)
+        || q.api_key.as_deref().map(str::trim) == Some(expected)
+}
+
+fn legacy_unauthorized() -> Response {
+    json_response(
+        StatusCode::UNAUTHORIZED,
+        serde_json::json!({"error":"authorization required for public web bind"}),
+    )
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -130,17 +175,19 @@ async fn api_version() -> impl IntoResponse {
     (StatusCode::OK, Json(serde_json::json!({"build": BUILD_TAG})))
 }
 
-async fn api_state(State(state): State<AppState>) -> impl IntoResponse {
+async fn api_state(headers: HeaderMap, State(state): State<AppState>) -> Response {
+    if !authorize_legacy_http(&state, &headers) { return legacy_unauthorized(); }
     if state.runtime.try_begin_forced_refresh(30_000) {
         let st = state.clone();
         tokio::spawn(async move {
             stats::refresh_backends_for_ui(st.clone(), stats::health_timeout(&st)).await;
         });
     }
-    Json(build_state(&state))
+    json_response(StatusCode::OK, serde_json::to_value(build_state(&state)).unwrap_or_else(|_| serde_json::json!({"error":"state serialization failed"})))
 }
 
-async fn api_download_limit(State(state): State<AppState>, Json(req): Json<DownloadLimitReq>) -> Response {
+async fn api_download_limit(headers: HeaderMap, State(state): State<AppState>, Json(req): Json<DownloadLimitReq>) -> Response {
+    if !authorize_legacy_http(&state, &headers) { return legacy_unauthorized(); }
     let mbit = set_download_limit(&state, &req);
     (StatusCode::OK, Json(serde_json::json!({"result":"ok","mbit":mbit}))).into_response()
 }
@@ -233,19 +280,23 @@ fn kill_connection_impl(state: &AppState, cid_raw: &str) -> Response {
     }
 }
 
-async fn api_backend_add(State(state): State<AppState>, Json(req): Json<BackendReq>) -> Response {
+async fn api_backend_add(headers: HeaderMap, State(state): State<AppState>, Json(req): Json<BackendReq>) -> Response {
+    if !authorize_legacy_http(&state, &headers) { return legacy_unauthorized(); }
     backend_add_impl(&state, &req)
 }
 
-async fn api_backend_remove(State(state): State<AppState>, Json(req): Json<BackendReq>) -> Response {
+async fn api_backend_remove(headers: HeaderMap, State(state): State<AppState>, Json(req): Json<BackendReq>) -> Response {
+    if !authorize_legacy_http(&state, &headers) { return legacy_unauthorized(); }
     backend_remove_impl(&state, &req)
 }
 
-async fn api_kill_get(State(state): State<AppState>, axum::extract::Query(q): axum::extract::Query<KillReq>) -> Response {
+async fn api_kill_get(headers: HeaderMap, State(state): State<AppState>, Query(q): Query<KillReq>) -> Response {
+    if !authorize_legacy_http(&state, &headers) { return legacy_unauthorized(); }
     kill_connection_impl(&state, &q.cid)
 }
 
-async fn api_kill_post(State(state): State<AppState>, Json(req): Json<KillReq>) -> Response {
+async fn api_kill_post(headers: HeaderMap, State(state): State<AppState>, Json(req): Json<KillReq>) -> Response {
+    if !authorize_legacy_http(&state, &headers) { return legacy_unauthorized(); }
     kill_connection_impl(&state, &req.cid)
 }
 
@@ -467,8 +518,15 @@ fn state_fingerprint(st: &ApiState) -> u64 {
     hasher.finish()
 }
 
-async fn ws_upgrade(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| ws_handle(socket, state))
+async fn ws_upgrade(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+    Query(q): Query<LegacyAuthQuery>,
+) -> Response {
+    if !authorize_legacy_query(&state, &q) {
+        return legacy_unauthorized();
+    }
+    ws.on_upgrade(move |socket| ws_handle(socket, state)).into_response()
 }
 
 async fn ws_handle(mut socket: WebSocket, state: AppState) {

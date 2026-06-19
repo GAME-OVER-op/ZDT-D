@@ -603,12 +603,12 @@ let mut chosen_mode = "socks";
                 tokio::select! {
                     _ = c1.cancelled() => break,
                     _ = sleep.as_mut() => break,
-                    res = cr.read(&mut buf) => res?,
+                    res = cr.read(&mut buf) => res.context("proxy client read failed")?,
                 }
             } else {
                 tokio::select! {
                     _ = c1.cancelled() => break,
-                    res = cr.read(&mut buf) => res?,
+                    res = cr.read(&mut buf) => res.context("proxy client read failed")?,
                 }
             };
             if n == 0 { break; }
@@ -618,13 +618,13 @@ let mut chosen_mode = "socks";
                 tokio::select! {
                     _ = c1.cancelled() => break,
                     _ = sleep.as_mut() => break,
-                    res = uw.write_all(&buf[..n]) => res?,
+                    res = uw.write_all(&buf[..n]) => res.context("proxy upstream write failed")?,
                 }
                 sleep.as_mut().reset(tokio::time::Instant::now() + idle_d);
             } else {
                 tokio::select! {
                     _ = c1.cancelled() => break,
-                    res = uw.write_all(&buf[..n]) => res?,
+                    res = uw.write_all(&buf[..n]) => res.context("proxy upstream write failed")?,
                 }
             }
 
@@ -674,12 +674,12 @@ let mut chosen_mode = "socks";
                 tokio::select! {
                     _ = c2.cancelled() => break,
                     _ = sleep.as_mut() => break,
-                    res = ur.read(&mut buf) => res?,
+                    res = ur.read(&mut buf) => res.context("proxy upstream read failed")?,
                 }
             } else {
                 tokio::select! {
                     _ = c2.cancelled() => break,
-                    res = ur.read(&mut buf) => res?,
+                    res = ur.read(&mut buf) => res.context("proxy upstream read failed")?,
                 }
             };
             if n == 0 { break; }
@@ -712,13 +712,13 @@ let mut chosen_mode = "socks";
                 tokio::select! {
                     _ = c2.cancelled() => break,
                     _ = sleep.as_mut() => break,
-                    res = cw.write_all(&buf[..n]) => res?,
+                    res = cw.write_all(&buf[..n]) => res.context("proxy client write failed")?,
                 }
                 sleep.as_mut().reset(tokio::time::Instant::now() + idle_d);
             } else {
                 tokio::select! {
                     _ = c2.cancelled() => break,
-                    res = cw.write_all(&buf[..n]) => res?,
+                    res = cw.write_all(&buf[..n]) => res.context("proxy client write failed")?,
                 }
             }
             st2.stats.add_down(n as u64);
@@ -748,7 +748,31 @@ let mut chosen_mode = "socks";
         anyhow::Ok(())
     });
 
-    let _ = tokio::try_join!(t1, t2)?;
+    let (upload_res, download_res) = tokio::try_join!(t1, t2)?;
+    let mut first_error: Option<anyhow::Error> = None;
+    let mut suspect_reason: Option<String> = None;
+
+    for res in [upload_res, download_res] {
+        if let Err(e) = res {
+            let err_text = format!("{:#}", e);
+            if suspect_reason.is_none() && is_proxy_backend_suspect_error(&err_text) {
+                suspect_reason = Some(err_text.clone());
+            }
+            if first_error.is_none() {
+                first_error = Some(e);
+            }
+        }
+    }
+
+    if let (Some(backend), Some(reason)) = (chosen_backend, suspect_reason) {
+        if chosen_mode == "socks" {
+            stats::spawn_suspect_backend_recheck(state.clone(), backend, reason);
+        }
+    }
+
+    if let Some(e) = first_error {
+        return Err(e);
+    }
 
     Ok(())
 }
@@ -922,6 +946,15 @@ fn is_backend_runtime_failure(err: &str) -> bool {
         || e.contains("no acceptable auth methods")
         || e.contains("server requires auth")
         || e.contains("unsupported auth method")
+}
+
+fn is_proxy_backend_suspect_error(err: &str) -> bool {
+    let e = err.to_ascii_lowercase();
+    // Established SOCKS data-plane errors are only a signal to force a full
+    // backend recheck. They do not directly change backend state; the full
+    // probe remains the source of truth for Green/Yellow/Red.
+    e.contains("proxy upstream read failed")
+        || e.contains("proxy upstream write failed")
 }
 
 async fn connect_socks(

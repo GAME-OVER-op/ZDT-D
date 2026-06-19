@@ -374,4 +374,3 @@ impl Stats {
     }
 }
 
-#[derive(Clone, Debug)]

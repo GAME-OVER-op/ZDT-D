@@ -4,7 +4,7 @@ use axum::{
     extract::{ws::{Message, WebSocket, WebSocketUpgrade}, Query, State},
     http::{HeaderMap, StatusCode},
     response::{Html, IntoResponse, Response},
-    routing::{get, post, put},
+    routing::{get, post},
     Json, Router,
 };
 use serde::{Deserialize, Serialize};

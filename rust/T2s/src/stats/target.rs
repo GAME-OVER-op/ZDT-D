@@ -1,3 +1,4 @@
+#[derive(Clone, Debug)]
 pub enum Target {
     SockAddr(SocketAddr),
     HostPort(String, u16),
@@ -41,6 +42,3 @@ impl Target {
     }
 }
 
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]

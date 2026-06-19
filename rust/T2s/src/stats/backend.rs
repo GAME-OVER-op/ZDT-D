@@ -1,3 +1,5 @@
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum BackendState {
     Green,
     Yellow,
@@ -1292,4 +1294,3 @@ impl SocksBackends {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]

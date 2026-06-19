@@ -1,3 +1,4 @@
+#[derive(Clone, Debug, Serialize)]
 pub struct Event {
     pub ts: u64,
     pub kind: String,

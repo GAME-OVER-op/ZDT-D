@@ -1,3 +1,4 @@
+#[derive(Clone, Debug, Serialize)]
 pub struct ConnInfo {
     pub cid: u64,
     pub peer: String,
@@ -483,4 +484,3 @@ impl ConnRegistry {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]

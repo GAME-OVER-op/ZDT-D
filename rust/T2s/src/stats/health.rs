@@ -870,12 +870,23 @@ pub async fn proxy_enforce_loop(state: crate::AppState) {
             };
             (green, non_green_backends, lower_priority_backends, speed_recycle_pair)
         };
+        let stalled_suspect_backends = if !deep_idle && green && active > 0 {
+            state.conns.suspect_stalled_socks_backends(12, 8, 1024)
+        } else {
+            Vec::new()
+        };
         let has_non_green_backends = !non_green_backends.is_empty();
         let has_lower_priority_backends = !lower_priority_backends.is_empty();
         let has_speed_recycle_pair = speed_recycle_pair.is_some();
+        let has_stalled_suspects = !stalled_suspect_backends.is_empty();
         let recovery_edge = !had_green && green;
         let needs_enforce = !deep_idle
-            && (has_direct || connecting_now > 0 || recovery_edge || has_non_green_backends || has_lower_priority_backends);
+            && (has_direct
+                || connecting_now > 0
+                || recovery_edge
+                || has_non_green_backends
+                || has_lower_priority_backends
+                || has_stalled_suspects);
 
         if needs_enforce {
             // Safety net: if any DIRECT connections exist while GREEN backends are available,
@@ -926,6 +937,10 @@ pub async fn proxy_enforce_loop(state: crate::AppState) {
                 if killed_connecting > 0 {
                     tracing::info!("proxy enforce: cancelled {} stuck pending/connecting connections", killed_connecting);
                 }
+            }
+
+            for (backend, reason) in &stalled_suspect_backends {
+                spawn_suspect_backend_recheck(state.clone(), *backend, reason.clone());
             }
         }
 
@@ -987,7 +1002,9 @@ pub async fn proxy_enforce_loop(state: crate::AppState) {
             }
         } else if needs_enforce {
             idle_since = None;
-            if has_lower_priority_backends {
+            if has_stalled_suspects {
+                Duration::from_secs(15)
+            } else if has_lower_priority_backends {
                 Duration::from_secs(15)
             } else {
                 Duration::from_secs(40)

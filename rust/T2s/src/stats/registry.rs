@@ -461,6 +461,51 @@ impl ConnRegistry {
         }
         n
     }
+
+    pub fn get(&self, cid: u64) -> Option<ConnInfo> {
+        self.inner.lock().get(&cid).map(|(info, _)| info.clone())
+    }
+
+    /// Returns backends with established SOCKS streams that uploaded data, then
+    /// stalled without any downstream bytes. This does not change health by
+    /// itself; callers use it only as a signal to force a full backend probe.
+    pub fn suspect_stalled_socks_backends(
+        &self,
+        min_age_secs: u64,
+        min_idle_secs: u64,
+        min_up_bytes: u64,
+    ) -> Vec<(SocketAddr, String)> {
+        let now = now_ts();
+        let mut out: Vec<(SocketAddr, String)> = Vec::new();
+        let g = self.inner.lock();
+        for (info, _) in g.values() {
+            if info.mode.as_deref() != Some("socks") {
+                continue;
+            }
+            if info.bytes_up < min_up_bytes || info.bytes_down != 0 {
+                continue;
+            }
+            let age = now.saturating_sub(info.started_ts);
+            let idle = now.saturating_sub(info.last_progress_ts);
+            if age < min_age_secs || idle < min_idle_secs {
+                continue;
+            }
+            let Some(backend_str) = info.backend.as_deref() else { continue; };
+            let Ok(backend) = backend_str.parse::<SocketAddr>() else { continue; };
+            if out.iter().any(|(existing, _)| *existing == backend) {
+                continue;
+            }
+            out.push((
+                backend,
+                format!(
+                    "stalled SOCKS data-plane: cid={}, up={}, down={}, age={}s, idle={}s",
+                    info.cid, info.bytes_up, info.bytes_down, age, idle
+                ),
+            ));
+        }
+        out
+    }
+
     pub fn finish_conn(&self, cid: u64) {
         let removed = self.inner.lock().remove(&cid);
         if let Some((info, _)) = removed {

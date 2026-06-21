@@ -87,6 +87,14 @@ fn conn_stats_flush_threshold() -> u64 {
     16 * 1024
 }
 
+fn is_proxy_zero_down_suspect(info: &stats::ConnInfo) -> bool {
+    info.mode.as_deref() == Some("socks")
+        && info.backend.is_some()
+        && info.bytes_up >= 1024
+        && info.bytes_down == 0
+        && stats::now_ts().saturating_sub(info.started_ts) >= 3
+}
+
 async fn sniff_client_host(client: &tokio::net::TcpStream, mode: SniffMode) -> Option<crate::sniff::SniffResult> {
     use tokio::time::{Duration, Instant};
 
@@ -760,6 +768,20 @@ let mut chosen_mode = "socks";
             }
             if first_error.is_none() {
                 first_error = Some(e);
+            }
+        }
+    }
+
+    if suspect_reason.is_none() && chosen_mode == "socks" && chosen_backend.is_some() {
+        if let Some(info) = state.conns.get(cid) {
+            if is_proxy_zero_down_suspect(&info) {
+                suspect_reason = Some(format!(
+                    "proxy completed with zero downstream: cid={}, up={}, down={}, age={}s",
+                    cid,
+                    info.bytes_up,
+                    info.bytes_down,
+                    stats::now_ts().saturating_sub(info.started_ts)
+                ));
             }
         }
     }

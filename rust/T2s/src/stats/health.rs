@@ -314,6 +314,71 @@ pub async fn refresh_one_backend_once_rr(state: crate::AppState, timeout: Durati
     refresh_backend_index_once(state.clone(), idx, timeout, None, auth, probe_mode).await
 }
 
+pub fn spawn_all_green_failure_recheck(state: crate::AppState, reason: String) {
+    // A single target/site failure is not enough evidence. The caller only invokes
+    // this after a short aggregate failure window is exceeded; this function then
+    // coalesces storms so thousands of failed connects become one full sweep.
+    if !state.runtime.try_enter_all_green_failure_recheck(5000) {
+        return;
+    }
+    std::thread::spawn(move || {
+        let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+            Ok(rt) => rt,
+            Err(e) => {
+                tracing::warn!("all-GREEN failure recheck runtime create failed: {:#}", e);
+                state.runtime.leave_all_green_failure_recheck();
+                return;
+            }
+        };
+        rt.block_on(async move {
+            all_green_failure_recheck_once(state, reason).await;
+        });
+    });
+}
+
+async fn all_green_failure_recheck_once(state: crate::AppState, reason: String) {
+    let _guard = state.runtime.refresh_lock.lock().await;
+    let timeout = health_timeout(&state);
+    let global_auth = global_backend_auth(&state.args);
+    let plan = {
+        let b = state.backends.lock();
+        b.green_recheck_plan(global_auth.as_ref())
+    };
+
+    if plan.is_empty() {
+        state.runtime.leave_all_green_failure_recheck();
+        return;
+    }
+
+    tracing::debug!(
+        "aggregate all-GREEN connect failures; forcing full recheck of {} GREEN backend(s): {}",
+        plan.len(),
+        reason
+    );
+
+    for (idx, backend, auth) in plan {
+        let before_state = state.backends.lock().raw_state_at(idx);
+        let _ = refresh_backend_index_once(state.clone(), idx, timeout, None, auth, ProbeMode::Full).await;
+        let after_state = state.backends.lock().raw_state_at(idx);
+        if before_state == Some(BackendState::Green) && after_state != Some(BackendState::Green) {
+            tracing::debug!(
+                "aggregate all-GREEN connect failure confirmed backend {} stale ({:?} -> {:?})",
+                backend,
+                before_state,
+                after_state
+            );
+        }
+    }
+
+    // If the sweep confirms that all GREEN routes were stale, immediately start the
+    // existing accelerated recovery ladder over non-GREEN backends (Yellow and Red).
+    if !state.backends.lock().any_green() && state.runtime.try_enter_burst_recovery_ladder() {
+        spawn_burst_recovery_ladder(state.clone());
+    }
+
+    state.runtime.leave_all_green_failure_recheck();
+}
+
 pub fn spawn_suspect_backend_recheck(state: crate::AppState, backend: SocketAddr, reason: String) {
     if !state.runtime.try_enter_suspect_recheck(750) {
         return;

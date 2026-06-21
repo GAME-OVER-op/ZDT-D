@@ -110,6 +110,15 @@ pub struct RuntimeConfig {
     /// Only one suspect-backend full recheck may run at a time.
     pub suspect_recheck_active: AtomicU64,
 
+    /// Aggregate connect-path failures where all currently GREEN backends were tried
+    /// but no SOCKS connection reached the proxy loop. This catches stale-GREEN
+    /// backends that fail before established traffic counters can report anything.
+    pub recent_all_green_failures_ms: Mutex<VecDeque<u64>>,
+    /// Throttle full sweeps triggered by aggregate all-GREEN connect failures.
+    pub next_all_green_failure_recheck_after_ms: AtomicU64,
+    /// Only one aggregate all-GREEN failure recheck may run at a time.
+    pub all_green_failure_recheck_active: AtomicU64,
+
     /// Throttle priority speed-aware stream recycling so a flaky backend cannot
     /// cause repeated reconnect loops.
     pub next_priority_stream_recycle_after_ts: AtomicU64,
@@ -135,6 +144,9 @@ impl Default for RuntimeConfig {
             burst_recovery_ladder_active: AtomicU64::new(0),
             next_suspect_recheck_after_ms: AtomicU64::new(0),
             suspect_recheck_active: AtomicU64::new(0),
+            recent_all_green_failures_ms: Mutex::new(VecDeque::with_capacity(8)),
+            next_all_green_failure_recheck_after_ms: AtomicU64::new(0),
+            all_green_failure_recheck_active: AtomicU64::new(0),
             next_priority_stream_recycle_after_ts: AtomicU64::new(0),
         }
     }
@@ -306,6 +318,49 @@ impl RuntimeConfig {
 
     pub fn leave_suspect_recheck(&self) {
         self.suspect_recheck_active.store(0, Ordering::Relaxed);
+    }
+
+    pub fn note_all_green_connect_failure(&self, threshold: usize, window: Duration) -> bool {
+        let threshold = threshold.max(1);
+        let now = now_ms();
+        let cutoff = now.saturating_sub(window.as_millis() as u64);
+        let mut q = self.recent_all_green_failures_ms.lock();
+        q.push_back(now);
+        while let Some(front) = q.front().copied() {
+            if front < cutoff {
+                q.pop_front();
+            } else {
+                break;
+            }
+        }
+        q.len() >= threshold
+    }
+
+    pub fn try_enter_all_green_failure_recheck(&self, min_interval_ms: u64) -> bool {
+        let now = now_ms();
+        loop {
+            let next_allowed = self.next_all_green_failure_recheck_after_ms.load(Ordering::Relaxed);
+            if next_allowed > now {
+                return false;
+            }
+            let new_next = now.saturating_add(min_interval_ms.max(1));
+            match self.next_all_green_failure_recheck_after_ms.compare_exchange(
+                next_allowed,
+                new_next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => break,
+                Err(_) => continue,
+            }
+        }
+        self.all_green_failure_recheck_active
+            .compare_exchange(0, 1, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+    }
+
+    pub fn leave_all_green_failure_recheck(&self) {
+        self.all_green_failure_recheck_active.store(0, Ordering::Relaxed);
     }
 
     pub fn priority_stream_recycle_allowed(&self) -> bool {

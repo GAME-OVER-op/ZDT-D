@@ -663,6 +663,15 @@ impl SocksBackends {
             .collect()
     }
 
+    pub fn green_recheck_plan(&self, global_auth: Option<&(String, String)>) -> Vec<(usize, SocketAddr, Option<(String, String)>)> {
+        self.addrs
+            .iter()
+            .enumerate()
+            .filter(|(idx, _)| self.state_at(*idx) == Some(BackendState::Green))
+            .map(|(idx, addr)| (idx, *addr, self.effective_auth_at(idx, global_auth)))
+            .collect()
+    }
+
     pub fn len(&self) -> usize { self.addrs.len() }
     pub fn addr_at(&self, idx: usize) -> Option<SocketAddr> { self.addrs.get(idx).copied() }
 

@@ -1101,6 +1101,23 @@ async fn connect_socks(
         }
     }
 
+    // If every currently GREEN backend failed before an established proxy loop,
+    // the data-plane stall detectors cannot see it. Treat repeated aggregate
+    // failures as a signal to force full probes of the GREEN set, but never mutate
+    // status directly here: the full backend probe remains the source of truth.
+    if state.backends.lock().any_green()
+        && state.runtime.note_all_green_connect_failure(3, Duration::from_secs(8))
+    {
+        stats::spawn_all_green_failure_recheck(
+            state.clone(),
+            format!(
+                "all GREEN backends failed before proxy loop: cid={}, tried={} backend(s)",
+                cid,
+                tried.len()
+            ),
+        );
+    }
+
     Err(anyhow::anyhow!("all GREEN backends failed"))
 }
 

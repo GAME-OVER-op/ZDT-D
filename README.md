@@ -48,9 +48,6 @@
   <a href="https://github.com/GAME-OVER-op/ZDT-D/commits/main">
     <img src="https://img.shields.io/github/last-commit/GAME-OVER-op/ZDT-D?style=flat-square" alt="Last Commit" />
   </a>
-  <a href="https://tokei.kojix2.net/github/GAME-OVER-op/ZDT-D">
-   <img src="https://img.shields.io/endpoint?url=https%3A%2F%2Ftokei.kojix2.net%2Fbadge%2Fgithub%2FGAME-OVER-op%2FZDT-D%2Flines&style=flat-square&logo=github" alt="Lines of Code" />
-  </a>
 </p>
 
 <p align="center">

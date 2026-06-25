@@ -1222,6 +1222,54 @@ async fn probe_direct_target(target: TargetAddr, timeout: Duration) -> Option<f6
     }
 }
 
+pub async fn check_direct_target_data_plane(
+    target: &Target,
+    domain_hint: Option<&str>,
+    timeout: Duration,
+) -> bool {
+    let addr = match target.resolve_socket_addr().await {
+        Ok(addr) => addr,
+        Err(_) => return false,
+    };
+
+    let (_, port) = target.to_host_port_string();
+    let verify_target = if let Some(host) = domain_hint
+        .map(str::trim)
+        .filter(|h| !h.is_empty() && h.parse::<std::net::IpAddr>().is_err())
+    {
+        TargetAddr::Domain(host.to_string(), port)
+    } else {
+        match target {
+            Target::HostPort(host, port) if host.parse::<std::net::IpAddr>().is_err() => {
+                TargetAddr::Domain(host.clone(), *port)
+            }
+            _ => TargetAddr::Ip(addr),
+        }
+    };
+
+    let per_probe_timeout = timeout
+        .min(Duration::from_millis(1500))
+        .max(Duration::from_millis(700));
+    probe_direct_socket_target(addr, verify_target, per_probe_timeout).await.is_some()
+}
+
+async fn probe_direct_socket_target(addr: SocketAddr, verify_target: TargetAddr, timeout: Duration) -> Option<f64> {
+    let start = Instant::now();
+    let connect_timeout = timeout
+        .min(Duration::from_millis(1500))
+        .max(Duration::from_millis(700));
+    let mut stream = match tokio::time::timeout(connect_timeout, TcpStream::connect(addr)).await {
+        Ok(Ok(stream)) => stream,
+        _ => return None,
+    };
+
+    if verify_backend_data_plane(&mut stream, &verify_target, timeout).await {
+        Some(start.elapsed().as_secs_f64() * 1000.0)
+    } else {
+        None
+    }
+}
+
 async fn check_direct_internet(timeout: Duration) -> InternetProbeSummary {
     // Same strict data-plane rule as SOCKS5 Internet health: a TCP connect is not
     // enough; the remote side must answer our TLS ClientHello.

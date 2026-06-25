@@ -536,7 +536,9 @@ async fn proxy_tcp(
             }
         }
     } else if priority_zero_mode == PriorityZeroMode::DirectFirst {
-        if ensure_direct_path_ready(&state, Duration::from_millis(1200)).await {
+        if ensure_direct_path_ready(&state, Duration::from_millis(1200)).await
+            && ensure_direct_target_ready(&state, &target, sniff_host.as_deref()).await
+        {
             match connect_direct(&target, state.args.connect_timeout).await {
                 Ok(s) => {
                     chosen_mode = "direct";
@@ -986,6 +988,20 @@ async fn ensure_direct_path_ready(state: &AppState, wait: Duration) -> bool {
         }
     }
     false
+}
+
+async fn ensure_direct_target_ready(
+    state: &AppState,
+    target: &stats::Target,
+    domain_hint: Option<&str>,
+) -> bool {
+    let (_, port) = target.to_host_port_string();
+    if !matches!(port, 443 | 8443) {
+        return true;
+    }
+
+    let timeout = stats::health_timeout(state);
+    stats::check_direct_target_data_plane(target, domain_hint, timeout).await
 }
 
 fn looks_like_ip(host: &str) -> bool {

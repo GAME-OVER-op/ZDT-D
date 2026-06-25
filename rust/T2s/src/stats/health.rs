@@ -295,13 +295,16 @@ pub async fn refresh_backends_once(state: crate::AppState, timeout: Duration) {
     let refresh_plan: Vec<(usize, Option<(String, String)>, ProbeMode)> = {
         let b = state.backends.lock();
         let now = now_ts();
+        let no_green_recovery = !b.any_green();
         let mut full_idx: Option<usize> = None;
         let mut plan = Vec::with_capacity(b.len());
         for idx in 0..b.len() {
             if b.addr_at(idx).is_none() {
                 continue;
             }
-            let probe_mode = if full_idx.is_none() {
+            let probe_mode = if no_green_recovery {
+                ProbeMode::Full
+            } else if full_idx.is_none() {
                 let pm = choose_probe_mode(&b, idx, now, false);
                 if pm == ProbeMode::Full {
                     full_idx = Some(idx);
@@ -990,7 +993,12 @@ pub async fn proxy_enforce_loop(state: crate::AppState) {
         if needs_enforce {
             // Safety net: if any DIRECT connections exist while GREEN backends are available,
             // cancel them. This enforces the "no bypass" rule.
-            if green && has_direct {
+            if green && has_direct
+                && !matches!(
+                    state.args.priority_zero_mode(),
+                    crate::cli::PriorityZeroMode::DirectFirst | crate::cli::PriorityZeroMode::DirectOnly
+                )
+            {
                 let killed_direct = state.conns.kill_mode("direct");
                 if killed_direct > 0 {
                     tracing::info!("proxy enforce: cancelled {} DIRECT connections (GREEN available)", killed_direct);

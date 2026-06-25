@@ -960,7 +960,7 @@ async fn ensure_direct_path_ready(state: &AppState, wait: Duration) -> bool {
     if !state.runtime.direct_allowed() {
         return false;
     }
-    if state.runtime.direct_internet_healthy() {
+    if state.runtime.direct_internet_fresh_healthy(5) {
         return true;
     }
 

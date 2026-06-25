@@ -231,6 +231,14 @@ impl RuntimeConfig {
         st.enabled && st.healthy
     }
 
+    pub fn direct_internet_fresh_healthy(&self, max_age_secs: u64) -> bool {
+        let st = self.direct_internet.lock();
+        st.enabled
+            && st.healthy
+            && st.last_check != 0
+            && now_ts().saturating_sub(st.last_check) <= max_age_secs
+    }
+
     pub fn direct_path_available(&self) -> bool {
         self.direct_allowed() && self.direct_internet_healthy()
     }

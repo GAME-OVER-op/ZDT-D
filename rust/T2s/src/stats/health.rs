@@ -114,8 +114,9 @@ fn direct_internet_enabled(state: &crate::AppState) -> bool {
 }
 
 pub async fn refresh_direct_internet_once(state: crate::AppState, timeout: Duration) -> bool {
+    let st = state.clone();
     let _guard = state.runtime.refresh_lock.lock().await;
-    refresh_direct_internet_once_unlocked(state, timeout).await
+    refresh_direct_internet_once_unlocked(st, timeout).await
 }
 
 async fn refresh_direct_internet_once_unlocked(state: crate::AppState, timeout: Duration) -> bool {

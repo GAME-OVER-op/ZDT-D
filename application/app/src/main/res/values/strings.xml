@@ -1052,12 +1052,12 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="myproxy_ports_autosave_hint">Valid changes are saved automatically after a short pause.</string>
     <string name="myproxy_ports_saving">Saving changes…</string>
     <string name="myproxy_upstream_title">Upstream SOCKS5</string>
-    <string name="myproxy_upstream_desc">Each profile uses one SOCKS5 upstream server. Multiple upstream ports can be separated by commas.</string>
+    <string name="myproxy_upstream_desc">Configure the SOCKS5 upstream ports. In Priority mode, port 0 can be used at the beginning or end to control direct routing.</string>
     <string name="myproxy_host_label">Host</string>
     <string name="myproxy_proxy_port_label">Port(s)</string>
     <string name="myproxy_user_label">Username</string>
     <string name="myproxy_pass_label">Password</string>
-    <string name="myproxy_proxy_ports_invalid">Enter ports from 1 to 65535, separated by commas.</string>
+    <string name="myproxy_proxy_ports_invalid">Enter ports separated by commas. Use 1..65535, or port 0 only in Priority mode as the first or last item.</string>
     <string name="myproxy_credentials_title">SOCKS5 credentials</string>
     <string name="myproxy_credentials_pair_required">If username or password is used, fill in both fields.</string>
     <string name="myproxy_backend_mode_title">Backend mode</string>
@@ -1068,8 +1068,8 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="myproxy_priority_speed_aware_title">Speed-aware priority</string>
     <string name="myproxy_priority_speed_aware_desc">If the primary backend is alive but too slow, t2s probes the next backend and temporarily sends new connections through the faster one.</string>
     <string name="myproxy_backend_priority_label">Backend priority</string>
-    <string name="myproxy_backend_priority_hint">Example: 1145,1146;1147. Leave empty to use the SOCKS5 port order.</string>
-    <string name="myproxy_backend_priority_invalid">Use only ports from the SOCKS5 ports list. Separate groups with ; and ports with commas. Duplicates are not allowed.</string>
+    <string name="myproxy_backend_priority_hint">Example: 1145,1146;1147. Leave empty to use the SOCKS5 port order. Port 0 is allowed only in the ports field, not here.</string>
+    <string name="myproxy_backend_priority_invalid">Use only real SOCKS5 ports from the ports list. Port 0 is not allowed here. Separate groups with ; and ports with commas. Duplicates are not allowed.</string>
     <string name="myproxy_wrapped_socks_title">Wrapped SOCKS5</string>
     <string name="myproxy_wrapped_socks_desc">Optional wrapper. t2s connects to the local wrapper first, then reaches the SOCKS5 servers listed above through it.</string>
     <string name="myproxy_wrapped_host_label">Wrapper host</string>
@@ -1151,8 +1151,8 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 
     <string name="myproxy_t2s_port_hint">Local port where t2s receives app traffic.</string>
     <string name="myproxy_t2s_web_port_hint">Local service web port used by t2s.</string>
-    <string name="myproxy_host_hint">SOCKS5 proxy address: server IP or domain.</string>
-    <string name="myproxy_proxy_port_hint">SOCKS5 proxy upstream port or ports on the server, separated by commas.</string>
+    <string name="myproxy_host_hint">SOCKS5 proxy address: server IP or domain. Not required for Priority mode with only port 0.</string>
+    <string name="myproxy_proxy_port_hint">SOCKS5 upstream ports, separated by commas. In Priority mode: 0 = direct-only, 0,1145 = direct first, 1145,0 = block direct fallback.</string>
     <string name="myproxy_user_hint">SOCKS5 username. Leave empty if auth is not required.</string>
     <string name="myproxy_pass_hint">SOCKS5 password. Leave empty if auth is not required.</string>
 

@@ -112,30 +112,46 @@ private fun parseMyProxySettingUi(obj: JSONObject?): MyProxySettingUi {
   )
 }
 
-private fun parseMyProxyPortToken(token: String): Int? =
-  token.trim().takeIf { it.isNotEmpty() && it.all(Char::isDigit) }?.toIntOrNull()?.takeIf { it in 1..65535 }
+private fun parseMyProxyPortToken(token: String, allowZero: Boolean = false): Int? =
+  token.trim()
+    .takeIf { it.isNotEmpty() && it.all(Char::isDigit) }
+    ?.toIntOrNull()
+    ?.takeIf { it in 1..65535 || (allowZero && it == 0) }
 
-private fun normalizeMyProxyPortList(raw: String): List<Int>? {
+private fun normalizeMyProxyPortList(raw: String, allowZeroMarker: Boolean = false): List<Int>? {
+  val zeroPositions = mutableListOf<Int>()
   val ports = raw
     .split(',')
-    .mapNotNull { part ->
+    .mapIndexedNotNull { index, part ->
       val trimmed = part.trim()
-      if (trimmed.isEmpty()) null else parseMyProxyPortToken(trimmed) ?: return null
+      if (trimmed.isEmpty()) {
+        null
+      } else {
+        val port = parseMyProxyPortToken(trimmed, allowZero = allowZeroMarker) ?: return null
+        if (port == 0) zeroPositions += index
+        port
+      }
     }
-    .distinct()
-  return ports.takeIf { it.isNotEmpty() }
+  if (ports.isEmpty()) return null
+  if (0 in ports) {
+    if (!allowZeroMarker) return null
+    if (zeroPositions.size != 1) return null
+    val zeroIndex = zeroPositions.first()
+    if (zeroIndex != 0 && zeroIndex != ports.lastIndex) return null
+  }
+  return ports.distinct().takeIf { it.size == ports.size }
 }
 
 private fun parseMyProxyPortValue(value: Any?): List<Int> = when (value) {
   null, JSONObject.NULL -> emptyList()
-  is Number -> value.toInt().takeIf { it in 1..65535 }?.let { listOf(it) } ?: emptyList()
-  is String -> normalizeMyProxyPortList(value).orEmpty()
+  is Number -> value.toInt().takeIf { it in 0..65535 }?.let { listOf(it) } ?: emptyList()
+  is String -> normalizeMyProxyPortList(value, allowZeroMarker = true).orEmpty()
   is JSONArray -> {
     val out = mutableListOf<Int>()
     for (i in 0 until value.length()) {
       when (val item = value.opt(i)) {
-        is Number -> item.toInt().takeIf { it in 1..65535 }?.let(out::add)
-        is String -> parseMyProxyPortToken(item)?.let(out::add)
+        is Number -> item.toInt().takeIf { it in 0..65535 }?.let(out::add)
+        is String -> parseMyProxyPortToken(item, allowZero = true)?.let(out::add)
       }
     }
     out.distinct()
@@ -515,14 +531,16 @@ fun MyProxyProfileScreen(
     if (!proxyInitialized) return@LaunchedEffect
     delay(700)
     val host = hostText.trim()
-    val ports = normalizeMyProxyPortList(proxyPortText.trim())
     val mode = normalizeMyProxyBackendMode(backendMode)
+    val ports = normalizeMyProxyPortList(proxyPortText.trim(), allowZeroMarker = mode == "priority")
+    val realBackendPorts = ports?.filter { it != 0 }.orEmpty()
+    val directOnly = mode == "priority" && ports == listOf(0)
     val priority = if (mode == "priority" && ports != null) {
-      normalizeMyProxyBackendPriority(backendPriorityText, ports)
+      normalizeMyProxyBackendPriority(backendPriorityText, realBackendPorts)
     } else {
       ""
     }
-    val effectivePrioritySpeedAware = mode == "priority" && prioritySpeedAware
+    val effectivePrioritySpeedAware = mode == "priority" && prioritySpeedAware && !directOnly
     val user = userText.trim()
     val pass = passText
     val wrappedHost = wrappedHostText.trim()
@@ -530,7 +548,7 @@ fun MyProxyProfileScreen(
     val wrappedUser = wrappedUserText.trim()
     val wrappedPass = wrappedPassText
     val wrappedConfigured = wrappedHost.isNotBlank() || wrappedPortText.isNotBlank()
-    if (host.isBlank()) return@LaunchedEffect
+    if (host.isBlank() && !directOnly) return@LaunchedEffect
     val portsForSave = ports?.takeIf { it.isNotEmpty() } ?: return@LaunchedEffect
     val priorityForSave = priority ?: return@LaunchedEffect
     if ((user.isBlank()) xor pass.isBlank()) return@LaunchedEffect
@@ -680,17 +698,20 @@ fun MyProxyProfileScreen(
       accent = Color(0xFFFACC15),
       icon = { Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp)) },
     ) {
+      val currentMode = normalizeMyProxyBackendMode(backendMode)
+      val currentPorts = normalizeMyProxyPortList(proxyPortText, allowZeroMarker = currentMode == "priority")
+      val directOnlyPorts = currentMode == "priority" && currentPorts == listOf(0)
       OutlinedTextField(
         value = hostText,
         onValueChange = { hostText = it },
         label = { Text(stringResource(R.string.myproxy_host_label)) },
         modifier = Modifier.fillMaxWidth(),
         singleLine = true,
-        isError = hostText.isBlank(),
+        isError = hostText.isBlank() && !directOnlyPorts,
       )
       FieldHint(stringResource(R.string.myproxy_host_hint))
 
-      val proxyPortsValid = proxyPortText.isNotBlank() && normalizeMyProxyPortList(proxyPortText) != null
+      val proxyPortsValid = proxyPortText.isNotBlank() && currentPorts != null
       OutlinedTextField(
         value = proxyPortText,
         onValueChange = { proxyPortText = it.filter { ch -> ch.isDigit() || ch == ',' || ch.isWhitespace() }.take(128) },
@@ -789,7 +810,7 @@ fun MyProxyProfileScreen(
         exit = fadeOut(tween(120)) + shrinkVertically(animationSpec = tween(150)),
       ) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-          val priorityAllowedPorts = normalizeMyProxyPortList(proxyPortText).orEmpty()
+          val priorityAllowedPorts = normalizeMyProxyPortList(proxyPortText, allowZeroMarker = true).orEmpty().filter { it != 0 }
           val backendPriorityValid = backendPriorityText.isBlank() ||
             normalizeMyProxyBackendPriority(backendPriorityText, priorityAllowedPorts) != null
           OutlinedTextField(

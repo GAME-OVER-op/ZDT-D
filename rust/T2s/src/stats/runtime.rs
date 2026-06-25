@@ -27,6 +27,29 @@ pub struct PortStats {
     pub bytes_down: AtomicU64,
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub struct DirectInternetStatus {
+    pub enabled: bool,
+    pub state: String,
+    pub healthy: bool,
+    pub last_check: u64,
+    pub last_error: Option<String>,
+    pub internet_ping_ms: Option<f64>,
+}
+
+impl Default for DirectInternetStatus {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            state: "disabled".to_string(),
+            healthy: false,
+            last_check: 0,
+            last_error: None,
+            internet_ping_ms: None,
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct Stats {
     pub bytes_up: AtomicU64,
@@ -78,6 +101,11 @@ pub struct RuntimeConfig {
     /// While this timestamp is in the future, direct fallback is temporarily blocked
     /// because recent direct attempts failed with timeouts or unreachable errors.
     pub direct_cooldown_until_ts: AtomicU64,
+
+    /// Health of the direct Internet path used by priority port 0.  It is
+    /// checked by the same detailed data-plane probe style as SOCKS5 backend
+    /// Internet health, but without the SOCKS hop.
+    pub direct_internet: Mutex<DirectInternetStatus>,
 
     /// Deduplicate forced health refreshes triggered by new connections.
     pub refresh_lock: tokio::sync::Mutex<()>,
@@ -132,6 +160,7 @@ impl Default for RuntimeConfig {
             ui_wakeup: tokio::sync::Notify::new(),
             backend_wakeup: tokio::sync::Notify::new(),
             direct_cooldown_until_ts: AtomicU64::new(0),
+            direct_internet: Mutex::new(DirectInternetStatus::default()),
             refresh_lock: tokio::sync::Mutex::new(()),
             last_ttl_ping_ts: AtomicU64::new(0),
             next_forced_refresh_after_ms: AtomicU64::new(0),
@@ -191,6 +220,45 @@ impl RuntimeConfig {
 
     pub fn direct_allowed(&self) -> bool {
         now_ts() >= self.direct_cooldown_until_ts.load(Ordering::Relaxed)
+    }
+
+    pub fn direct_internet_snapshot(&self) -> DirectInternetStatus {
+        self.direct_internet.lock().clone()
+    }
+
+    pub fn direct_internet_healthy(&self) -> bool {
+        let st = self.direct_internet.lock();
+        st.enabled && st.healthy
+    }
+
+    pub fn direct_path_available(&self) -> bool {
+        self.direct_allowed() && self.direct_internet_healthy()
+    }
+
+    pub fn update_direct_internet(&self, enabled: bool, ping_ms: Option<f64>, err: Option<String>) -> bool {
+        let now = now_ts();
+        let next = DirectInternetStatus {
+            enabled,
+            state: if !enabled {
+                "disabled".to_string()
+            } else if ping_ms.is_some() {
+                "green".to_string()
+            } else {
+                "red".to_string()
+            },
+            healthy: enabled && ping_ms.is_some(),
+            last_check: now,
+            last_error: err,
+            internet_ping_ms: ping_ms,
+        };
+        let mut st = self.direct_internet.lock();
+        let changed = st.enabled != next.enabled
+            || st.state != next.state
+            || st.healthy != next.healthy
+            || st.last_error != next.last_error
+            || st.internet_ping_ms != next.internet_ping_ms;
+        *st = next;
+        changed
     }
 
     pub fn note_direct_failure(&self, seconds: u64) {
@@ -428,4 +496,3 @@ impl Stats {
         }
     }
 }
-

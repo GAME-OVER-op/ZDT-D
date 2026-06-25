@@ -106,6 +106,35 @@ async fn probe_backend_once(
     (err, socks_ping_ms, internet_ping_ms, ttl)
 }
 
+fn direct_internet_enabled(state: &crate::AppState) -> bool {
+    matches!(
+        state.args.priority_zero_mode(),
+        crate::cli::PriorityZeroMode::DirectOnly | crate::cli::PriorityZeroMode::DirectFirst
+    )
+}
+
+pub async fn refresh_direct_internet_once(state: crate::AppState, timeout: Duration) -> bool {
+    let _guard = state.runtime.refresh_lock.lock().await;
+    refresh_direct_internet_once_unlocked(state, timeout).await
+}
+
+async fn refresh_direct_internet_once_unlocked(state: crate::AppState, timeout: Duration) -> bool {
+    if !direct_internet_enabled(&state) {
+        return state.runtime.update_direct_internet(false, None, None);
+    }
+
+    let summary = check_direct_internet(timeout).await;
+    let changed = if summary.ok {
+        state.runtime.update_direct_internet(true, summary.best_ping_ms, None)
+    } else {
+        state.runtime.update_direct_internet(true, None, Some(summary.error_summary))
+    };
+    if changed {
+        state.runtime.backend_wake_throttled(750);
+    }
+    changed
+}
+
 fn global_backend_auth(args: &Args) -> Option<(String, String)> {
     match (args.socks_user.clone(), args.socks_pass.clone()) {
         (Some(u), Some(p)) => Some((u, p)),
@@ -295,6 +324,8 @@ pub async fn refresh_backends_once(state: crate::AppState, timeout: Duration) {
             probe_mode,
         ).await;
     }
+
+    let _ = refresh_direct_internet_once_unlocked(state.clone(), timeout).await;
 }
 
 pub async fn refresh_one_backend_once_rr(state: crate::AppState, timeout: Duration) -> bool {
@@ -554,6 +585,8 @@ pub async fn refresh_backends_for_ui(state: crate::AppState, timeout: Duration) 
             ProbeMode::Full,
         ).await;
     }
+
+    let _ = refresh_direct_internet_once_unlocked(state.clone(), timeout).await;
 }
 
 // --- background tasks
@@ -1154,6 +1187,60 @@ async fn check_internet_via_backend(
         format!("data-plane probe ok ({}/1)", ok_count)
     } else {
         format!("data-plane probe failed ({}/1)", ok_count)
+    };
+
+    InternetProbeSummary { ok, best_ping_ms, error_summary }
+}
+
+async fn probe_direct_target(target: TargetAddr, timeout: Duration) -> Option<f64> {
+    let start = Instant::now();
+    let connect_timeout = timeout
+        .min(Duration::from_millis(1500))
+        .max(Duration::from_millis(700));
+    let addr = match target.clone() {
+        TargetAddr::Ip(sa) => sa,
+        TargetAddr::Domain(_, _) => return None,
+    };
+    let mut stream = match tokio::time::timeout(connect_timeout, TcpStream::connect(addr)).await {
+        Ok(Ok(stream)) => stream,
+        _ => return None,
+    };
+
+    if verify_backend_data_plane(&mut stream, &target, timeout).await {
+        Some(start.elapsed().as_secs_f64() * 1000.0)
+    } else {
+        None
+    }
+}
+
+async fn check_direct_internet(timeout: Duration) -> InternetProbeSummary {
+    // Same strict data-plane rule as SOCKS5 Internet health: a TCP connect is not
+    // enough; the remote side must answer our TLS ClientHello.
+    let per_probe_timeout = timeout
+        .min(Duration::from_millis(1500))
+        .max(Duration::from_millis(700));
+    let targets = vec![
+        TargetAddr::Ip(SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(1, 1, 1, 1)), 443)),
+    ];
+
+    let mut ok_count = 0usize;
+    let mut best_ping_ms: Option<f64> = None;
+    for target in targets {
+        if let Some(ping_ms) = probe_direct_target(target, per_probe_timeout).await {
+            ok_count += 1;
+            best_ping_ms = Some(match best_ping_ms {
+                Some(prev) => prev.min(ping_ms),
+                None => ping_ms,
+            });
+            break;
+        }
+    }
+
+    let ok = ok_count >= 1;
+    let error_summary = if ok {
+        format!("direct data-plane probe ok ({}/1)", ok_count)
+    } else {
+        format!("direct data-plane probe failed ({}/1)", ok_count)
     };
 
     InternetProbeSummary { ok, best_ping_ms, error_summary }

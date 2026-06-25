@@ -525,8 +525,8 @@ async fn proxy_tcp(
     let mut chosen_backend: Option<SocketAddr> = None;
     let upstream = if priority_zero_mode == PriorityZeroMode::DirectOnly {
         chosen_mode = "direct";
-        if !state.runtime.direct_allowed() {
-            return Err(anyhow::anyhow!("direct-only priority mode is cooling down after recent direct failures"));
+        if !ensure_direct_path_ready(&state, Duration::from_millis(1200)).await {
+            return Err(anyhow::anyhow!("direct-only priority mode has no confirmed direct Internet route"));
         }
         match connect_direct(&target, state.args.connect_timeout).await {
             Ok(s) => s,
@@ -536,7 +536,7 @@ async fn proxy_tcp(
             }
         }
     } else if priority_zero_mode == PriorityZeroMode::DirectFirst {
-        if state.runtime.direct_allowed() {
+        if ensure_direct_path_ready(&state, Duration::from_millis(1200)).await {
             match connect_direct(&target, state.args.connect_timeout).await {
                 Ok(s) => {
                     chosen_mode = "direct";
@@ -564,7 +564,7 @@ async fn proxy_tcp(
             chosen_backend = Some(be);
             s
         } else {
-            return Err(anyhow::anyhow!("direct priority is cooling down and no GREEN SOCKS5 backends are available"));
+            return Err(anyhow::anyhow!("direct priority has no confirmed direct Internet route and no GREEN SOCKS5 backends are available"));
         }
     } else if priority_zero_mode == PriorityZeroMode::BlockDirectFallback {
         if state.backends.lock().any_green()
@@ -954,6 +954,38 @@ async fn connect_direct(target: &stats::Target, timeout_s: u32) -> Result<tokio:
         .context("direct connect timeout")?
         .context("direct connect failed")?;
     Ok(s)
+}
+
+async fn ensure_direct_path_ready(state: &AppState, wait: Duration) -> bool {
+    if !state.runtime.direct_allowed() {
+        return false;
+    }
+    if state.runtime.direct_internet_healthy() {
+        return true;
+    }
+
+    let timeout = stats::health_timeout(state);
+    let _ = stats::refresh_direct_internet_once(state.clone(), timeout).await;
+    if state.runtime.direct_path_available() {
+        return true;
+    }
+
+    if wait.is_zero() {
+        return false;
+    }
+    let deadline = tokio::time::Instant::now() + wait;
+    while tokio::time::Instant::now() < deadline {
+        let now = tokio::time::Instant::now();
+        let sleep_for = (deadline - now).min(Duration::from_millis(300));
+        tokio::select! {
+            _ = tokio::time::sleep(sleep_for) => {},
+            _ = state.runtime.backend_wakeup.notified() => {},
+        }
+        if state.runtime.direct_path_available() {
+            return true;
+        }
+    }
+    false
 }
 
 fn looks_like_ip(host: &str) -> bool {

@@ -8,7 +8,7 @@ mod sniff;
 mod api_runtime;
 
 use anyhow::{anyhow, Context, Result};
-use cli::Args;
+use cli::{Args, PriorityZeroMode};
 use parking_lot::Mutex;
 use std::{net::{IpAddr, Ipv4Addr, SocketAddr}, sync::Arc, time::Duration};
 use tokio::{net::TcpListener, signal, sync::{broadcast, Semaphore}};
@@ -512,15 +512,72 @@ async fn proxy_tcp(
     }
 
     
+    let priority_zero_mode = state.args.priority_zero_mode();
+
     // Enforce: when there is at least one GREEN backend, do NOT allow direct connections.
     // Only bypass the proxy when no GREEN backends are available.
-    if socks_available {
+    // Priority mode can explicitly put `0` at the beginning of --socks-port to make
+    // direct access the first priority before SOCKS backends.
+    if socks_available && priority_zero_mode != PriorityZeroMode::DirectFirst {
         use_direct = false;
     }
-
-let mut chosen_mode = "socks";
+    let mut chosen_mode = "socks";
     let mut chosen_backend: Option<SocketAddr> = None;
-    let upstream = if use_direct || !socks_available {
+    let upstream = if priority_zero_mode == PriorityZeroMode::DirectOnly {
+        chosen_mode = "direct";
+        if !state.runtime.direct_allowed() {
+            return Err(anyhow::anyhow!("direct-only priority mode is cooling down after recent direct failures"));
+        }
+        match connect_direct(&target, state.args.connect_timeout).await {
+            Ok(s) => s,
+            Err(e) => {
+                state.runtime.note_direct_failure(20);
+                return Err(e);
+            }
+        }
+    } else if priority_zero_mode == PriorityZeroMode::DirectFirst {
+        if state.runtime.direct_allowed() {
+            match connect_direct(&target, state.args.connect_timeout).await {
+                Ok(s) => {
+                    chosen_mode = "direct";
+                    s
+                }
+                Err(direct_err) => {
+                    state.runtime.note_direct_failure(20);
+                    tracing::debug!("[cid={}] direct priority failed, trying SOCKS priority: {:#}", cid, direct_err);
+
+                    if state.backends.lock().any_green()
+                        || stats::wait_for_backend_recovery(state.clone(), Duration::from_millis(1200)).await
+                    {
+                        let (s, be) = connect_socks(&target, sniff_host.as_deref(), state.clone(), cid).await?;
+                        chosen_backend = Some(be);
+                        s
+                    } else {
+                        return Err(direct_err);
+                    }
+                }
+            }
+        } else if state.backends.lock().any_green()
+            || stats::wait_for_backend_recovery(state.clone(), Duration::from_millis(1200)).await
+        {
+            let (s, be) = connect_socks(&target, sniff_host.as_deref(), state.clone(), cid).await?;
+            chosen_backend = Some(be);
+            s
+        } else {
+            return Err(anyhow::anyhow!("direct priority is cooling down and no GREEN SOCKS5 backends are available"));
+        }
+    } else if priority_zero_mode == PriorityZeroMode::BlockDirectFallback {
+        if state.backends.lock().any_green()
+            || stats::wait_for_backend_recovery(state.clone(), Duration::from_millis(1200)).await
+        {
+            let (s, be) = connect_socks(&target, sniff_host.as_deref(), state.clone(), cid).await?;
+            chosen_backend = Some(be);
+            s
+        } else {
+            state.stats.inc_policy_drop();
+            return Err(anyhow::anyhow!("priority mode blocks direct fallback and no GREEN SOCKS5 backends are available"));
+        }
+    } else if use_direct || !socks_available {
         let refreshed = stats::wait_for_backend_recovery(state.clone(), Duration::from_millis(1200)).await;
         if refreshed {
             let (s, be) = connect_socks(&target, sniff_host.as_deref(), state.clone(), cid).await?;
@@ -1120,5 +1177,3 @@ async fn connect_socks(
 
     Err(anyhow::anyhow!("all GREEN backends failed"))
 }
-
-

@@ -539,7 +539,7 @@
     <string name="setup_arch_unsupported_fmt">Неподдерживаемая архитектура. ZDT-D работает только на arm64-v8a. Текущее устройство: %1$s.</string>
     <string name="setup_root_title">Нужен Root-доступ</string>
     <string name="setup_root_body">ZDT-D — это root-модуль (Magisk / KernelSU / APatch) для обхода DPI-блокировок и ограничений трафика. Root нужен, потому что модуль запускает системные скрипты и сетевые компоненты на уровне ОС — то, что обычным приложениям недоступно.\n\nТакже root используется для установки/обновления модуля, управления демоном и чтения файлов модуля (токен и логи). Запрос root всегда подтверждается через ваш root-менеджер (Magisk / KernelSU / APatch), а разрешение можно отозвать в любой момент.</string>
-    <string name="setup_root_waiting">Ожидание ответа от root-мен��джера…</string>
+    <string name="setup_root_waiting">Ожидание ответа от root-менэджера…</string>
     <string name="setup_request_root">Запросить Root</string>
     <string name="setup_root_denied">Root не предоставлен. Если вы нажали «Отказать», попробуйте ещё раз.</string>
     <string name="setup_reboot_required_title">Требуется перезагрузка</string>
@@ -689,7 +689,7 @@ APatch: 10700+</string>
     <string name="startup_stage_opening">Открытие интерфейса...</string>
     <string name="startup_daemon_failed_module_found">Не удалось подключиться к службе.
 Модуль найден, но, возможно, работает некорректно.
-Реко��ендуется переустановить модуль.</string>
+Рекомендуется переустановить модуль.</string>
     <string name="startup_daemon_failed_module_broken">Не удалось подключиться к службе.
 Модуль найден, но его структура выглядит некорректной.
 Рекомендуется переустановить модуль.</string>
@@ -811,7 +811,7 @@ APatch: 10700+</string>
     <string name="singbox_import_replace_current_hint">Сгенерированный config заменит текущий config сервера. Меняется только inbound-блок под выбранный режим.</string>
 
     <string name="settings_hotspot_title">Включить точку доступа</string>
-    <string name="settings_hotspot_body">Позволяет направлять трафик точки доступа через выбра��ный инструмент.</string>
+    <string name="settings_hotspot_body">Позволяет направлять трафик точки доступа через выбранный инструмент.</string>
     <string name="settings_hotspot_capture_all_title">Захват всего трафика hotspot режима</string>
     <string name="settings_hotspot_capture_all_body">Если включено, весь входящий TCP-трафик режима точки доступа направляется в выбранный инструмент. Если выключено, служебные reverse-proxy порты исключаются перед редиректом остального трафика.</string>
     <string name="settings_hotspot_mode_title">Режим точки доступа</string>
@@ -962,7 +962,7 @@ APatch: 10700+</string>
     <string name="wireproxy_t2s_web_port_label">Веб-порт t2s</string>
     <string name="wireproxy_profile_autosave_hint">Изменения сохраняются автоматически после короткой паузы.</string>
     <string name="wireproxy_profile_ports_must_differ">Порт t2s и веб-порт t2s должны отличаться.</string>
-    <string name="wireproxy_profile_fix_conflicts">Устраните кон��ликты портов перед сохранением.</string>
+    <string name="wireproxy_profile_fix_conflicts">Устраните конфликты портов перед сохранением.</string>
     <string name="wireproxy_auto_save_failed">Не удалось выполнить автосохранение</string>
     <string name="wireproxy_servers_title">Серверы</string>
     <string name="wireproxy_servers_desc">Создавайте, редактируйте и удаляйте серверы внутри этого профиля WireProxy. SOCKS5 использует только 127.0.0.1.</string>
@@ -978,7 +978,7 @@ APatch: 10700+</string>
     <string name="wireproxy_server_name_too_short">Имя сервера слишком короткое.</string>
     <string name="wireproxy_server_created_fmt">Сервер создан: %1$s</string>
     <string name="wireproxy_delete_server_title">Удалить сервер</string>
-    <string name="wireproxy_delete_server_message_fmt">Удалить ��ервер %1$s / %2$s?</string>
+    <string name="wireproxy_delete_server_message_fmt">Удалить сервер %1$s / %2$s?</string>
     <string name="wireproxy_config_editor_title_fmt">Редактирование конфига: %1$s</string>
     <string name="wireproxy_config_editor_desc">Редактируйте конфиг wireproxy. Если [Socks5] BindAddress отсутствует, приложение автоматически создаст локальный порт на 127.0.0.1.</string>
     <string name="wireproxy_config_label">config.conf</string>
@@ -1510,7 +1510,7 @@ APatch: 10700+</string>
     <string name="action_move_up">Вверх</string>
     <string name="action_move_down">Вниз</string>
     <string name="mihomo_rule_match_fallback">Финальное правило</string>
-    <string name="mihomo_rule_match_desc">Это правило ��спользуется, если предыдущие правила не подошли.</string>
+    <string name="mihomo_rule_match_desc">Это правило используется, если предыдущие правила не подошли.</string>
     <string name="mihomo_dashboard_controller_invalid">Используйте формат host:port, например 127.0.0.1:19090.</string>
     <string name="mihomo_dashboard_controller_port_conflict">Этот порт панели уже используется другим профилем Mihomo.</string>
     <string name="mihomo_no_available_proxies">Прокси пока нет. Сначала создайте прокси, затем добавьте его в группу.</string>
@@ -1791,7 +1791,7 @@ APatch: 10700+</string>
     <string name="nfqws_tester_service_blocked_start">Сначала остановите тестер стратегий. Перед запуском службы его временные правила iptables должны быть очищены.</string>
 
     <string name="nfqws_tester_overlay_section_strategy">Стратегия</string>
-    <string name="nfqws_tester_overlay_section_progress">��рогресс</string>
+    <string name="nfqws_tester_overlay_section_progress">прогресс</string>
     <string name="nfqws_tester_overlay_section_resources">Ресурсы</string>
     <string name="nfqws_tester_overlay_section_actions">Действия</string>
     <string name="nfqws_tester_overlay_progress_running">Активно</string>

@@ -10,6 +10,18 @@ pub enum BackendMode {
     Priority,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PriorityZeroMode {
+    /// No special direct marker in the priority list.
+    None,
+    /// `--socks-port 0`: run without SOCKS backends and use only direct access.
+    DirectOnly,
+    /// `--socks-port 0,1145,...`: try direct first, then fall back to SOCKS priority.
+    DirectFirst,
+    /// `--socks-port 1145,...,0`: use SOCKS priority only; block direct fallback when servers are dead.
+    BlockDirectFallback,
+}
+
 #[derive(Clone, Debug, Parser)]
 #[command(
     name = "t2s",
@@ -52,7 +64,7 @@ pub struct Args {
     #[arg(long, default_value_t=0)]
     pub external_port: u16,
 
-    #[arg(long, required=true, help="Upstream SOCKS5 host(s), comma-separated")]
+    #[arg(long, default_value="", help="Upstream SOCKS5 host(s), comma-separated. Not required for priority direct-only mode (--socks-port 0).")]
     pub socks_host: String,
     #[arg(long, required=true, help="Upstream SOCKS5 port(s), comma-separated")]
     pub socks_port: String,
@@ -135,7 +147,73 @@ impl Args {
         {
             return Err(anyhow!("--wrapped-socks-user and --wrapped-socks-pass must both be set or both empty"));
         }
+        a.validate_priority_zero_mode()?;
+        if !a.socks_ports().is_empty() && a.socks_hosts().is_empty() {
+            return Err(anyhow!("--socks-host is required when --socks-port contains SOCKS5 backend ports"));
+        }
         Ok(a)
+    }
+
+    fn socks_port_tokens(&self) -> Vec<&str> {
+        self.socks_port
+            .split(',')
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .collect()
+    }
+
+    fn validate_priority_zero_mode(&self) -> Result<()> {
+        let tokens = self.socks_port_tokens();
+        let zero_positions: Vec<usize> = tokens
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, p)| if *p == "0" { Some(idx) } else { None })
+            .collect();
+
+        if zero_positions.is_empty() {
+            return Ok(());
+        }
+
+        if self.backend_mode != BackendMode::Priority {
+            return Err(anyhow!("port 0 is allowed only with --backend-mode priority"));
+        }
+        if zero_positions.len() > 1 {
+            return Err(anyhow!("port 0 may appear only once in --socks-port"));
+        }
+
+        let zero_idx = zero_positions[0];
+        let last_idx = tokens.len().saturating_sub(1);
+        if zero_idx != 0 && zero_idx != last_idx {
+            return Err(anyhow!("port 0 is allowed only at the beginning or at the end of --socks-port in priority mode"));
+        }
+
+        if self.backend_priority
+            .as_deref()
+            .map(|s| s.split([',', ';']).any(|p| p.trim() == "0"))
+            .unwrap_or(false)
+        {
+            return Err(anyhow!("port 0 is supported only in --socks-port, not in --backend-priority"));
+        }
+
+        Ok(())
+    }
+
+    pub fn priority_zero_mode(&self) -> PriorityZeroMode {
+        if self.backend_mode != BackendMode::Priority {
+            return PriorityZeroMode::None;
+        }
+
+        let tokens = self.socks_port_tokens();
+        if tokens.len() == 1 && tokens[0] == "0" {
+            return PriorityZeroMode::DirectOnly;
+        }
+        if tokens.first().copied() == Some("0") {
+            return PriorityZeroMode::DirectFirst;
+        }
+        if tokens.last().copied() == Some("0") {
+            return PriorityZeroMode::BlockDirectFallback;
+        }
+        PriorityZeroMode::None
     }
 
     pub fn socks_hosts(&self) -> Vec<String> {
@@ -145,6 +223,7 @@ impl Args {
     pub fn socks_ports(&self) -> Vec<u16> {
         self.socks_port.split(',')
             .filter_map(|p| p.trim().parse::<u16>().ok())
+            .filter(|p| *p != 0)
             .collect()
     }
 

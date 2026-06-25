@@ -80,9 +80,47 @@ pub struct SocksBackends {
 }
 
 impl SocksBackends {
+    fn empty(args: &Args) -> Self {
+        Self {
+            addrs: Vec::new(),
+            auth_override: Vec::new(),
+            status: Vec::new(),
+            ttl_hist: Vec::new(),
+            rtt_hist: Vec::new(),
+            runtime_fail_streak: Vec::new(),
+            last_runtime_fail_ts: Vec::new(),
+            last_full_probe: Vec::new(),
+            last_green_ts: Vec::new(),
+            last_activity_ts: Vec::new(),
+            inflight_connects: Vec::new(),
+            backend_cooldown_until_ts: Vec::new(),
+            internet_probe_fail_streak: Vec::new(),
+            next_internet_probe_after_ts: Vec::new(),
+            recent_speed: Vec::new(),
+            priority_speed_aware: false,
+            priority_speed_shift_from: None,
+            priority_speed_shift_to: None,
+            priority_speed_hold_until_ts: 0,
+            priority_speed_last_probe_ts: 0,
+            priority_speed_probe_rr: 0,
+            backend_mode: args.backend_mode,
+            priority_groups: Vec::new(),
+            priority_rr: Vec::new(),
+            rr: 0,
+            check_rr: 0,
+            active_check_rr: 0,
+            audit_check_rr: 0,
+            burst_check_rr: 0,
+            check_cycle: 0,
+        }
+    }
+
     pub fn new(args: &Args) -> Result<Self> {
         let hosts = args.socks_hosts();
         let ports = args.socks_ports();
+        if ports.is_empty() && args.priority_zero_mode() == crate::cli::PriorityZeroMode::DirectOnly {
+            return Ok(Self::empty(args));
+        }
         if hosts.is_empty() || ports.is_empty() {
             return Err(anyhow!("socks-host/socks-port parse produced empty list"));
         }
@@ -1286,4 +1324,3 @@ impl SocksBackends {
         }
     }
 }
-

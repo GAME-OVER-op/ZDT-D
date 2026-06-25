@@ -97,8 +97,12 @@ Both target options must be used together. Supplying only one is an error.
 
 ### SOCKS5 upstreams
 
-- `--socks-host <HOST[,HOST...]>` — required comma-separated SOCKS5 host list.
+- `--socks-host <HOST[,HOST...]>` — comma-separated SOCKS5 host list. Required
+  when `--socks-port` contains real SOCKS5 backend ports. It can be omitted only
+  for priority direct-only mode (`--backend-mode priority --socks-port 0`).
 - `--socks-port <PORT[,PORT...]>` — required comma-separated SOCKS5 port list.
+  In priority mode, a single `0` marker is also supported at the beginning or at
+  the end of the list; see Priority mode below.
 - `--socks-user <USER>` — optional global SOCKS5 username.
 - `--socks-pass <PASS>` — optional global SOCKS5 password.
 
@@ -155,6 +159,41 @@ behaves like:
 
 In priority mode, the ZDT-D `protector_mode` forced-GREEN behavior is ignored so
 failed priority backends do not remain artificially selectable.
+
+#### Priority direct marker `0`
+
+Priority mode supports a special `0` marker in `--socks-port`. It is not a real
+SOCKS5 port and no backend is created for it. The marker is valid only with
+`--backend-mode priority`, may appear only once, and must be either the first or
+the last item in the comma-separated port list.
+
+Supported forms:
+
+- `--socks-port 0` — direct-only mode. `t2s` runs without SOCKS backends and
+  sends traffic directly. If direct access fails, the connection fails.
+- `--socks-port 0,1145,1146` — direct-first priority. `t2s` tries direct access
+  first. If direct access fails, it temporarily cools down direct attempts and
+  uses the normal SOCKS priority chain (`1145` then `1146`).
+- `--socks-port 1145,1146,0` — SOCKS-only priority with blocked direct fallback.
+  `t2s` uses the normal SOCKS priority chain. If all configured SOCKS backends
+  are dead, direct fallback is blocked and traffic does not leave until a backend
+  becomes GREEN again.
+
+Examples:
+
+```bash
+# Prefer direct Internet, then fall back to local SOCKS backends.
+t2s --backend-mode priority --socks-host 127.0.0.1 --socks-port 0,1145,1146
+
+# Use one SOCKS backend; if it is dead, block traffic instead of leaking direct.
+t2s --backend-mode priority --socks-host 127.0.0.1 --socks-port 1145,0
+
+# Direct-only mode, no SOCKS host is required.
+t2s --backend-mode priority --socks-port 0
+```
+
+Invalid forms include `1145,0,1146`, `0,1145,0`, and any use of `0` outside
+priority mode.
 
 #### Priority speed-aware mode
 
@@ -273,6 +312,10 @@ skipped when no host-based rule requires it.
 Backends are monitored and classified by runtime health. GREEN backends are
 eligible for SOCKS forwarding. When no eligible SOCKS backend is available,
 `t2s` can use direct fallback if current rules and policy allow it.
+
+Priority `0` marker modes adjust this behavior: a leading `0` tries direct first,
+a trailing `0` blocks direct fallback when all SOCKS backends are unavailable,
+and a single `0` runs direct-only without SOCKS backends.
 
 Direct fallback is not treated as a permanent bypass. When healthy backends
 recover, direct connections can be terminated so clients reconnect through the

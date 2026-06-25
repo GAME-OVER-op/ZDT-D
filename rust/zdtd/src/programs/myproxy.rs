@@ -151,6 +151,10 @@ impl ProxyConfig {
     pub fn backend_priority_trimmed(&self) -> &str {
         self.backend_priority.trim()
     }
+
+    pub fn is_priority_direct_only(&self) -> Result<bool> {
+        Ok(self.effective_backend_mode()? == "priority" && self.effective_ports()? == vec![0])
+    }
 }
 
 fn collect_ports_from_value(v: &Value, out: &mut Vec<u16>) -> Result<()> {
@@ -182,8 +186,14 @@ fn collect_ports_from_value(v: &Value, out: &mut Vec<u16>) -> Result<()> {
 fn normalize_ports(ports: Vec<u16>) -> Result<Vec<u16>> {
     let mut seen = BTreeSet::<u16>::new();
     let mut out = Vec::<u16>::new();
+    let mut zero_count = 0usize;
     for port in ports {
-        if port == 0 { anyhow::bail!("proxy port must be > 0"); }
+        if port == 0 {
+            zero_count += 1;
+            if zero_count > 1 {
+                anyhow::bail!("proxy port 0 may appear only once");
+            }
+        }
         if seen.insert(port) {
             out.push(port);
         }
@@ -353,14 +363,17 @@ fn validate_profile_setting(
 }
 
 pub fn validate_proxy_config(proxy: &ProxyConfig) -> Result<()> {
-    if proxy.host.trim().is_empty() {
-        anyhow::bail!("proxy host is required");
-    }
     let ports = proxy.effective_ports()?;
     let backend_mode = proxy.effective_backend_mode()?;
-    validate_backend_priority(proxy.backend_priority_trimmed(), backend_mode, &ports)?;
-    if proxy.priority_speed_aware && backend_mode != "priority" {
-        anyhow::bail!("priority_speed_aware can be used only when backend_mode is priority");
+    validate_priority_zero_marker(&ports, backend_mode)?;
+    let direct_only = backend_mode == "priority" && ports == vec![0];
+    if proxy.host.trim().is_empty() && !direct_only {
+        anyhow::bail!("proxy host is required");
+    }
+    let real_ports: Vec<u16> = ports.iter().copied().filter(|p| *p != 0).collect();
+    validate_backend_priority(proxy.backend_priority_trimmed(), backend_mode, &real_ports)?;
+    if proxy.priority_speed_aware && (backend_mode != "priority" || direct_only) {
+        anyhow::bail!("priority_speed_aware can be used only when backend_mode is priority with SOCKS backends");
     }
     let user_empty = proxy.user.trim().is_empty();
     let pass_empty = proxy.pass.trim().is_empty();
@@ -376,6 +389,29 @@ pub fn validate_proxy_config(proxy: &ProxyConfig) -> Result<()> {
     let wpass_empty = proxy.wrapped_socks.pass.is_empty();
     if wu_empty ^ wpass_empty {
         anyhow::bail!("wrapped_socks user and pass must both be set or both be empty");
+    }
+    Ok(())
+}
+
+fn validate_priority_zero_marker(ports: &[u16], backend_mode: &str) -> Result<()> {
+    let zero_positions: Vec<usize> = ports
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, port)| if *port == 0 { Some(idx) } else { None })
+        .collect();
+    if zero_positions.is_empty() {
+        return Ok(());
+    }
+    if backend_mode != "priority" {
+        anyhow::bail!("proxy port 0 is allowed only when backend_mode is priority");
+    }
+    if zero_positions.len() > 1 {
+        anyhow::bail!("proxy port 0 may appear only once");
+    }
+    let zero_idx = zero_positions[0];
+    let last_idx = ports.len().saturating_sub(1);
+    if zero_idx != 0 && zero_idx != last_idx {
+        anyhow::bail!("proxy port 0 is allowed only at the beginning or at the end of the ports list");
     }
     Ok(())
 }

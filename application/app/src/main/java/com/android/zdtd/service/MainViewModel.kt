@@ -383,6 +383,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
 
   private var appUpdateCheckedThisSession: Boolean = false
   private var appUpdateDownloadJob: Job? = null
+  private var appReleaseBuildPollJob: Job? = null
 
   private var pendingEnableDaemonNotification: Boolean = false
 
@@ -499,7 +500,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
 
   private fun releaseApkUrl(tag: String): String {
     // Asset name is stable by design.
-    return "https://github.com/GAME-OVER-op/ZDT-D/releases/download/${tag}/app-release.apk"
+    return "https" + "://github.com/GAME-OVER-op/ZDT-D/releases/download/${tag}/app-release.apk"
   }
 
   private suspend fun httpGetMaybeCached(
@@ -522,6 +523,209 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     }
   }
 
+
+  private suspend fun httpGetText(url: String): String? {
+    val req = Request.Builder()
+      .url(url)
+      .header("User-Agent", "ZDT-D-Android")
+      .build()
+    githubHttp.newCall(req).execute().use { resp ->
+      if (!resp.isSuccessful) return null
+      return resp.body?.string()
+    }
+  }
+
+  private data class ReleaseMeta(
+    val version: String? = null,
+    val versionCode: Int? = null,
+    val commit: String? = null,
+    val workflowRunId: Long? = null,
+    val assetReady: Boolean = false,
+  )
+
+  private data class WorkflowRunInfo(
+    val id: Long,
+    val htmlUrl: String,
+    val headSha: String,
+    val status: String,
+    val conclusion: String?,
+  )
+
+  private data class WorkflowJobInfo(
+    val name: String,
+    val status: String,
+    val conclusion: String?,
+  )
+
+
+
+  private suspend fun fetchReleaseJsonByTag(tag: String): JSONObject? {
+    val body = httpGetText("https" + "://api.github.com/repos/GAME-OVER-op/ZDT-D/releases/tags/${tag}") ?: return null
+    return runCatching { JSONObject(body) }.getOrNull()
+  }
+
+  private fun releaseHasApkAsset(js: JSONObject?): Boolean {
+    val assets = js?.optJSONArray("assets") ?: return true
+    for (i in 0 until assets.length()) {
+      val asset = assets.optJSONObject(i) ?: continue
+      if (asset.optString("name") == "app-release.apk") return true
+    }
+    return false
+  }
+
+  private fun parseReleaseMeta(body: String?): ReleaseMeta? {
+    if (body.isNullOrBlank()) return null
+    val start = body.indexOf("ZDTD_APP_UPDATE_META_START")
+    val end = body.indexOf("ZDTD_APP_UPDATE_META_END")
+    if (start >= 0 && end > start) {
+      val raw = body.substring(start + "ZDTD_APP_UPDATE_META_START".length, end)
+        .replace("```json", "")
+        .replace("```", "")
+        .trim()
+        .trim('-', '>', '<', '!', ' ', '\n', '\r', '\t')
+      val js = runCatching { JSONObject(raw) }.getOrNull()
+      if (js != null) {
+        return ReleaseMeta(
+          version = js.optString("version").takeIf { it.isNotBlank() },
+          versionCode = js.optInt("versionCode", 0).takeIf { it > 0 },
+          commit = js.optString("commit").takeIf { it.isNotBlank() },
+          workflowRunId = js.optLong("workflowRunId", 0L).takeIf { it > 0L },
+          assetReady = js.optBoolean("assetReady", false),
+        )
+      }
+    }
+    return ReleaseMeta(versionCode = parseVersionCodeFromReleaseBody(body), assetReady = true)
+  }
+
+  private fun parseVersionCodeFromReleaseBody(body: String?): Int? {
+    if (body.isNullOrBlank()) return null
+    val tableMatch = Regex("(?im)^\\|\\s*(?:Version code|Код версии)\\s*\\|\\s*`?([0-9]+)`?\\s*\\|").find(body)
+    if (tableMatch != null) return tableMatch.groupValues.getOrNull(1)?.toIntOrNull()
+    val jsonMatch = Regex("\\\"versionCode\\\"\\s*:\\s*([0-9]+)").find(body)
+    return jsonMatch?.groupValues?.getOrNull(1)?.toIntOrNull()
+  }
+
+  private fun defaultReleaseBuildStages(status: AppReleaseStageStatus = AppReleaseStageStatus.WAITING): List<AppReleaseBuildStageUi> = listOf(
+    AppReleaseBuildStageUi("binaries", R.string.app_update_stage_binaries, status),
+    AppReleaseBuildStageUi("apk", R.string.app_update_stage_apk, AppReleaseStageStatus.WAITING),
+    AppReleaseBuildStageUi("release", R.string.app_update_stage_release, AppReleaseStageStatus.WAITING),
+    AppReleaseBuildStageUi("ready", R.string.app_update_stage_ready, AppReleaseStageStatus.WAITING),
+  )
+
+  private suspend fun fetchModulePropCommitSha(): String? {
+    val body = httpGetText("https://api.github.com/repos/GAME-OVER-op/ZDT-D/commits?path=module.prop&sha=main&per_page=1") ?: return null
+    val arr = runCatching { JSONArray(body) }.getOrNull() ?: return null
+    return arr.optJSONObject(0)?.optString("sha")?.takeIf { it.isNotBlank() }
+  }
+
+  private suspend fun fetchRelevantBuildRun(expectedSha: String?, publishedSha: String?): WorkflowRunInfo? {
+    val body = httpGetText("https://api.github.com/repos/GAME-OVER-op/ZDT-D/actions/workflows/build.yml/runs?branch=main&per_page=10") ?: return null
+    val arr = runCatching { JSONObject(body).optJSONArray("workflow_runs") }.getOrNull() ?: return null
+    val runs = buildList {
+      for (i in 0 until arr.length()) {
+        val o = arr.optJSONObject(i) ?: continue
+        add(WorkflowRunInfo(
+          id = o.optLong("id", 0L),
+          htmlUrl = o.optString("html_url"),
+          headSha = o.optString("head_sha"),
+          status = o.optString("status"),
+          conclusion = o.optString("conclusion").takeIf { it.isNotBlank() && it != "null" },
+        ))
+      }
+    }.filter { it.id > 0L }
+    return runs.firstOrNull { expectedSha != null && it.headSha.equals(expectedSha, ignoreCase = true) }
+      ?: runs.firstOrNull { publishedSha == null || !it.headSha.equals(publishedSha, ignoreCase = true) }
+      ?: runs.firstOrNull()
+  }
+
+  private suspend fun fetchWorkflowJobs(runId: Long): List<WorkflowJobInfo> {
+    val body = httpGetText("https" + "://api.github.com/repos/GAME-OVER-op/ZDT-D/actions/runs/${runId}/jobs?per_page=100") ?: return emptyList()
+    val arr = runCatching { JSONObject(body).optJSONArray("jobs") }.getOrNull() ?: return emptyList()
+    return buildList {
+      for (i in 0 until arr.length()) {
+        val o = arr.optJSONObject(i) ?: continue
+        add(WorkflowJobInfo(
+          name = o.optString("name"),
+          status = o.optString("status"),
+          conclusion = o.optString("conclusion").takeIf { it.isNotBlank() && it != "null" },
+        ))
+      }
+    }
+  }
+
+  private fun jobIsFailed(job: WorkflowJobInfo): Boolean = job.conclusion in setOf("failure", "cancelled", "timed_out")
+  private fun jobIsDone(job: WorkflowJobInfo): Boolean = job.status == "completed" && job.conclusion == "success"
+  private fun jobIsRunning(job: WorkflowJobInfo): Boolean = job.status in setOf("queued", "in_progress", "waiting", "requested", "pending")
+
+  private fun stageStatusForJobs(jobs: List<WorkflowJobInfo>): AppReleaseStageStatus {
+    if (jobs.isEmpty()) return AppReleaseStageStatus.WAITING
+    if (jobs.any { jobIsFailed(it) }) return AppReleaseStageStatus.FAILED
+    if (jobs.all { jobIsDone(it) }) return AppReleaseStageStatus.DONE
+    if (jobs.any { jobIsRunning(it) }) return AppReleaseStageStatus.RUNNING
+    return AppReleaseStageStatus.WAITING
+  }
+
+  private suspend fun fetchReleaseBuildUi(expectedSha: String?, publishedSha: String?): AppReleaseBuildUi {
+    val run = fetchRelevantBuildRun(expectedSha, publishedSha)
+      ?: return AppReleaseBuildUi(
+        status = AppReleaseBuildStatus.PREPARING,
+        messageRes = R.string.app_update_release_preparing_body,
+        stages = defaultReleaseBuildStages(AppReleaseStageStatus.RUNNING),
+      )
+    val jobs = fetchWorkflowJobs(run.id)
+    val binaries = jobs.filter { name ->
+      val n = name.name.lowercase(Locale.ROOT)
+      (n.contains("core") || n.contains("module binary") || n.contains("zygisk") || n.contains("apk tool") || n.contains("busybox")) && !n.contains("build apk")
+    }
+    val apk = jobs.filter { it.name.lowercase(Locale.ROOT).contains("build apk") }
+    val release = jobs.filter { it.name.lowercase(Locale.ROOT).contains("publish service") }
+
+    var binariesStatus = stageStatusForJobs(binaries)
+    var apkStatus = stageStatusForJobs(apk)
+    var releaseStatus = stageStatusForJobs(release)
+    var readyStatus = AppReleaseStageStatus.WAITING
+
+    if (run.status == "queued" && binariesStatus == AppReleaseStageStatus.WAITING) binariesStatus = AppReleaseStageStatus.RUNNING
+    if (run.status == "completed" && run.conclusion == "success") {
+      if (binariesStatus == AppReleaseStageStatus.WAITING) binariesStatus = AppReleaseStageStatus.DONE
+      if (apkStatus == AppReleaseStageStatus.WAITING) apkStatus = AppReleaseStageStatus.DONE
+      releaseStatus = AppReleaseStageStatus.RUNNING
+    }
+    if (run.status == "completed" && run.conclusion in setOf("failure", "cancelled", "timed_out")) {
+      if (releaseStatus != AppReleaseStageStatus.FAILED && apkStatus != AppReleaseStageStatus.FAILED && binariesStatus != AppReleaseStageStatus.FAILED) {
+        when {
+          release.isNotEmpty() -> releaseStatus = AppReleaseStageStatus.FAILED
+          apk.isNotEmpty() -> apkStatus = AppReleaseStageStatus.FAILED
+          else -> binariesStatus = AppReleaseStageStatus.FAILED
+        }
+      }
+    }
+
+    val failed = listOf(binariesStatus, apkStatus, releaseStatus).any { it == AppReleaseStageStatus.FAILED }
+    return AppReleaseBuildUi(
+      status = if (failed) AppReleaseBuildStatus.FAILED else AppReleaseBuildStatus.PREPARING,
+      runId = run.id,
+      runUrl = run.htmlUrl.takeIf { it.isNotBlank() },
+      messageRes = if (failed) R.string.app_update_release_failed_body else R.string.app_update_release_preparing_body,
+      stages = listOf(
+        AppReleaseBuildStageUi("binaries", R.string.app_update_stage_binaries, binariesStatus),
+        AppReleaseBuildStageUi("apk", R.string.app_update_stage_apk, apkStatus),
+        AppReleaseBuildStageUi("release", R.string.app_update_stage_release, releaseStatus),
+        AppReleaseBuildStageUi("ready", R.string.app_update_stage_ready, readyStatus),
+      ),
+    )
+  }
+
+  private fun startReleaseBuildPolling() {
+    appReleaseBuildPollJob?.cancel()
+    appReleaseBuildPollJob = viewModelScope.launch(Dispatchers.IO + ceh) {
+      while (isActive && _appUpdate.value.bannerVisible && _appUpdate.value.releaseBuild.status in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED)) {
+        delay(30_000L)
+        checkAppUpdateInternal(force = true, silent = true)
+      }
+    }
+  }
+
   private fun maybeCheckAppUpdate(force: Boolean) {
     if (!_appUpdate.value.enabled) return
     if (!force && appUpdateCheckedThisSession) return
@@ -529,8 +733,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     launchIO { checkAppUpdateInternal(force = force) }
   }
 
-  private suspend fun checkAppUpdateInternal(force: Boolean) {
-    val manual = force
+  private suspend fun checkAppUpdateInternal(force: Boolean, silent: Boolean = false) {
+    val manual = force && !silent
     if (!root.isAppUpdateCheckEnabled()) {
       if (manual) toast(str(R.string.mv_auto_001))
       return
@@ -631,23 +835,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     // remoteCode is a var (filled through multiple branches), so keep it in a stable val for smart-casts.
     val rc = remoteCode!!
 
-    // Confirm that latest release tag matches module.prop version.
+    // Preferred stable release tag for the version currently present in module.prop.
+    // If latest release is still older, keep showing the preparation state instead of hiding the update.
     val tagVer = normalizeTagToVersion(tag)
-    if (tagVer != remoteVersion) {
-      // Tag and module.prop are out of sync: do not notify.
-      root.setAppUpdateLastCheckTs(now) // still rate-limit to avoid spamming
-      root.clearCachedAppUpdate()
-      _appUpdate.update { it.copy(checking = false) }
-      if (manual) toast(str(R.string.mv_auto_004))
-      return
-    }
+    val stableTag = if (tagVer == remoteVersion) tag else "V${remoteVersion}"
+    val stableHtmlUrl = if (tagVer == remoteVersion) htmlUrl else "https" + "://github.com/GAME-OVER-op/ZDT-D/releases/tag/${stableTag}"
 
     // Local comparison is based on the bundled module.prop inside the APK (next to the installer payload).
     // This ensures that online update checks follow the same versioning as the embedded module.
     val (localNameRaw, localCodeRaw) = readBundledModuleVersionAndCode()
     val localCode = localCodeRaw ?: BuildConfig.VERSION_CODE
     val localName = localNameRaw ?: BuildConfig.VERSION_NAME
-    val downloadUrl = releaseApkUrl(tag)
+    val downloadUrl = releaseApkUrl(stableTag)
     val updateAvailable = rc > localCode
 
     if (!updateAvailable) {
@@ -662,9 +861,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
         localVersionCode = localCode,
         remoteVersionName = remoteVersion,
         remoteVersionCode = rc,
-        releaseTag = tag,
-        releaseHtmlUrl = htmlUrl,
+        releaseTag = stableTag,
+        releaseHtmlUrl = stableHtmlUrl,
         downloadUrl = downloadUrl,
+        releaseBuild = AppReleaseBuildUi(),
         errorText = null,
       ) }
       if (manual) toast(str(R.string.mv_auto_005))
@@ -672,18 +872,48 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     }
 
     val urgent = (rc / 100 == localCode / 100) && (rc % 100 != 0)
+    val releaseJson = fetchReleaseJsonByTag(stableTag)
+    val releaseMeta = parseReleaseMeta(releaseJson?.optString("body"))
+    val releaseVersionCode = releaseMeta?.versionCode ?: 0
+    val releaseAssetReady = releaseMeta?.assetReady == true && releaseHasApkAsset(releaseJson)
+    val releaseReady = releaseVersionCode >= rc && releaseAssetReady
 
     appUpdateBannerDismissedThisSession = false
-
     root.setAppUpdateLastCheckTs(now)
     root.setCachedAppUpdateAvailable(true)
     root.setCachedAppUpdateUrgent(urgent)
-    root.setCachedAppUpdateReleaseTag(tag)
-    root.setCachedAppUpdateReleaseHtmlUrl(htmlUrl)
+    root.setCachedAppUpdateReleaseTag(stableTag)
+    root.setCachedAppUpdateReleaseHtmlUrl(stableHtmlUrl)
     root.setCachedAppUpdateRemoteVersion(remoteVersion)
     root.setCachedAppUpdateRemoteVersionCode(rc)
-    root.setCachedAppUpdateDownloadUrl(downloadUrl)
     root.setCachedAppUpdateFoundTs(now)
+
+    if (!releaseReady) {
+      val expectedSha = fetchModulePropCommitSha()
+      val buildUi = fetchReleaseBuildUi(expectedSha = expectedSha, publishedSha = releaseMeta?.commit)
+      root.setCachedAppUpdateDownloadUrl(null)
+      _appUpdate.update { it.copy(
+        enabled = root.isAppUpdateCheckEnabled(),
+        checking = false,
+        bannerVisible = !appUpdateBannerDismissedThisSession,
+        urgent = urgent,
+        localVersionName = localName,
+        localVersionCode = localCode,
+        remoteVersionName = remoteVersion,
+        remoteVersionCode = rc,
+        releaseTag = stableTag,
+        releaseHtmlUrl = stableHtmlUrl,
+        downloadUrl = null,
+        releaseBuild = buildUi,
+        errorText = null,
+      ) }
+      startReleaseBuildPolling()
+      if (manual) toast(str(R.string.app_update_release_preparing_title))
+      return
+    }
+
+    appReleaseBuildPollJob?.cancel()
+    root.setCachedAppUpdateDownloadUrl(downloadUrl)
     _appUpdate.update { it.copy(
       enabled = root.isAppUpdateCheckEnabled(),
       checking = false,
@@ -693,9 +923,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       localVersionCode = localCode,
       remoteVersionName = remoteVersion,
       remoteVersionCode = rc,
-      releaseTag = tag,
-      releaseHtmlUrl = htmlUrl,
+      releaseTag = stableTag,
+      releaseHtmlUrl = stableHtmlUrl,
       downloadUrl = downloadUrl,
+      releaseBuild = AppReleaseBuildUi(
+        status = AppReleaseBuildStatus.READY,
+        stages = listOf(
+          AppReleaseBuildStageUi("binaries", R.string.app_update_stage_binaries, AppReleaseStageStatus.DONE),
+          AppReleaseBuildStageUi("apk", R.string.app_update_stage_apk, AppReleaseStageStatus.DONE),
+          AppReleaseBuildStageUi("release", R.string.app_update_stage_release, AppReleaseStageStatus.DONE),
+          AppReleaseBuildStageUi("ready", R.string.app_update_stage_ready, AppReleaseStageStatus.DONE),
+        ),
+      ),
       errorText = null,
     ) }
 
@@ -743,6 +982,7 @@ private fun restoreCachedAppUpdateState() {
       releaseTag = null,
       releaseHtmlUrl = null,
       downloadUrl = null,
+      releaseBuild = AppReleaseBuildUi(),
       errorText = null,
     ) }
     return
@@ -760,6 +1000,15 @@ private fun restoreCachedAppUpdateState() {
     releaseTag = tag,
     releaseHtmlUrl = htmlUrl,
     downloadUrl = downloadUrl,
+    releaseBuild = if (downloadUrl.isNullOrBlank()) {
+      AppReleaseBuildUi(
+        status = AppReleaseBuildStatus.PREPARING,
+        messageRes = R.string.app_update_release_preparing_body,
+        stages = defaultReleaseBuildStages(AppReleaseStageStatus.RUNNING),
+      )
+    } else {
+      AppReleaseBuildUi()
+    },
     errorText = null,
   ) }
 }
@@ -6421,7 +6670,11 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     val url = _appUpdate.value.downloadUrl
     val releaseUrl = _appUpdate.value.releaseHtmlUrl ?: "https://github.com/GAME-OVER-op/ZDT-D/releases"
     if (url.isNullOrBlank()) {
-      _appUpdateEvents.tryEmit(AppUpdateEvent.OpenUrl(releaseUrl))
+      if (_appUpdate.value.releaseBuild.status in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED)) {
+        maybeCheckAppUpdate(force = true)
+      } else {
+        _appUpdateEvents.tryEmit(AppUpdateEvent.OpenUrl(releaseUrl))
+      }
       return
     }
 

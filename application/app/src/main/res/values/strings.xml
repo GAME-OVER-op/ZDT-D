@@ -172,6 +172,14 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="app_update_available_version_prefix">Available: </string>
     <string name="app_update_available_version_code_fmt"> (code=%1$d)</string>
     <string name="app_update_urgent_body">Bugfix for the previous update.</string>
+    <string name="app_update_release_preparing_title">Preparing release build</string>
+    <string name="app_update_release_preparing_body">A new version is already being prepared by the author. Download will become available automatically after publication.</string>
+    <string name="app_update_release_failed_body">Oops, looks like automation made a mistake :) Please wait while the author fixes or restarts the release build.</string>
+    <string name="app_update_stage_binaries">Building binaries</string>
+    <string name="app_update_stage_apk">Building APK</string>
+    <string name="app_update_stage_release">Preparing release</string>
+    <string name="app_update_stage_ready">Update ready</string>
+    <string name="app_update_check_again">Check again</string>
     <string name="settings_title">Settings</string>
     <string name="settings_subtitle">Controls for updates, notifications, language, hotspot routing and module maintenance.</string>
     <string name="app_update_check_title">Check for updates</string>

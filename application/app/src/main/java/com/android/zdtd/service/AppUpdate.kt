@@ -2,6 +2,35 @@ package com.android.zdtd.service
 
 import com.android.zdtd.service.api.ApiModels
 
+
+enum class AppReleaseBuildStatus {
+  NONE,
+  PREPARING,
+  READY,
+  FAILED,
+}
+
+enum class AppReleaseStageStatus {
+  WAITING,
+  RUNNING,
+  DONE,
+  FAILED,
+}
+
+data class AppReleaseBuildStageUi(
+  val id: String,
+  val titleRes: Int,
+  val status: AppReleaseStageStatus = AppReleaseStageStatus.WAITING,
+)
+
+data class AppReleaseBuildUi(
+  val status: AppReleaseBuildStatus = AppReleaseBuildStatus.NONE,
+  val runId: Long? = null,
+  val runUrl: String? = null,
+  val messageRes: Int? = null,
+  val stages: List<AppReleaseBuildStageUi> = emptyList(),
+)
+
 /**
  * State for online app updates (APK downloaded from GitHub releases).
  */
@@ -61,6 +90,7 @@ data class AppUpdateUiState(
   val releaseTag: String? = null,
   val releaseHtmlUrl: String? = null,
   val downloadUrl: String? = null,
+  val releaseBuild: AppReleaseBuildUi = AppReleaseBuildUi(),
 
   // Download UI
   val downloading: Boolean = false,

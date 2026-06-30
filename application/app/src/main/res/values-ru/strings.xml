@@ -476,6 +476,14 @@
     <string name="app_update_available_version_prefix">Доступно: </string>
     <string name="app_update_available_version_code_fmt"> (code=%1$d)</string>
     <string name="app_update_urgent_body">Исправление ошибок предыдущего обновления.</string>
+    <string name="app_update_release_preparing_title">Подготовка релизной сборки</string>
+    <string name="app_update_release_preparing_body">Новая версия уже готовится автором. Загрузка станет доступна автоматически после публикации.</string>
+    <string name="app_update_release_failed_body">Ой, кажется авто ошибся :) Подождите, пока автор исправит или перезапустит релизную сборку.</string>
+    <string name="app_update_stage_binaries">Сборка бинарников</string>
+    <string name="app_update_stage_apk">Сборка APK</string>
+    <string name="app_update_stage_release">Подготовка релиза</string>
+    <string name="app_update_stage_ready">Обновление готово</string>
+    <string name="app_update_check_again">Проверить снова</string>
     <string name="settings_title">Настройки</string>
     <string name="settings_subtitle">Обновления, уведомления, язык, точка доступа и обслуживание модуля.</string>
     <string name="app_update_check_title">Проверять обновления</string>

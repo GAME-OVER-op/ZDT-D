@@ -8,6 +8,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
@@ -49,6 +51,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -59,7 +63,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.filled.BatteryChargingFull
 import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import com.android.zdtd.service.AppReleaseBuildStatus
+import com.android.zdtd.service.AppReleaseStageStatus
+import com.android.zdtd.service.AppReleaseBuildStageUi
 import com.android.zdtd.service.AppUpdateUiState
 import com.android.zdtd.service.R
 import kotlin.math.roundToInt
@@ -93,7 +101,9 @@ fun AppUpdateBanner(
         ) {
           Column(Modifier.weight(1f)) {
             Text(
-              text = if (state.urgent) stringResource(R.string.app_update_urgent_title) else stringResource(R.string.app_update_available_title),
+              text = if (state.releaseBuild.status == AppReleaseBuildStatus.PREPARING || state.releaseBuild.status == AppReleaseBuildStatus.FAILED) {
+                stringResource(R.string.app_update_release_preparing_title)
+              } else if (state.urgent) stringResource(R.string.app_update_urgent_title) else stringResource(R.string.app_update_available_title),
               style = MaterialTheme.typography.titleMedium,
               fontWeight = FontWeight.SemiBold,
             )
@@ -117,7 +127,10 @@ fun AppUpdateBanner(
           }
         }
 
-        if (state.urgent) {
+        if (state.releaseBuild.status == AppReleaseBuildStatus.PREPARING || state.releaseBuild.status == AppReleaseBuildStatus.FAILED) {
+          Spacer(Modifier.height(8.dp))
+          AppReleaseBuildProgressCard(state = state)
+        } else if (state.urgent) {
           Spacer(Modifier.height(6.dp))
           Text(
             text = stringResource(R.string.app_update_urgent_body),
@@ -160,7 +173,13 @@ fun AppUpdateBanner(
           }
         } else {
           Button(onClick = onUpdate, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.common_update))
+            Text(
+              if (state.releaseBuild.status == AppReleaseBuildStatus.PREPARING || state.releaseBuild.status == AppReleaseBuildStatus.FAILED) {
+                stringResource(R.string.app_update_check_again)
+              } else {
+                stringResource(R.string.common_update)
+              }
+            )
           }
         }
       }
@@ -169,6 +188,114 @@ fun AppUpdateBanner(
 }
 
 
+
+
+@Composable
+private fun AppReleaseBuildProgressCard(state: AppUpdateUiState) {
+  val messageRes = state.releaseBuild.messageRes ?: if (state.releaseBuild.status == AppReleaseBuildStatus.FAILED) {
+    R.string.app_update_release_failed_body
+  } else {
+    R.string.app_update_release_preparing_body
+  }
+  Surface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(16.dp),
+    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.28f),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
+  ) {
+    Column(
+      modifier = Modifier.padding(12.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      Text(
+        text = stringResource(messageRes),
+        style = MaterialTheme.typography.bodySmall,
+        color = if (state.releaseBuild.status == AppReleaseBuildStatus.FAILED) {
+          MaterialTheme.colorScheme.error
+        } else {
+          MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f)
+        },
+      )
+      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val stages = state.releaseBuild.stages.ifEmpty {
+          listOf(
+            AppReleaseBuildStageUi("binaries", R.string.app_update_stage_binaries, AppReleaseStageStatus.RUNNING),
+            AppReleaseBuildStageUi("apk", R.string.app_update_stage_apk, AppReleaseStageStatus.WAITING),
+            AppReleaseBuildStageUi("release", R.string.app_update_stage_release, AppReleaseStageStatus.WAITING),
+            AppReleaseBuildStageUi("ready", R.string.app_update_stage_ready, AppReleaseStageStatus.WAITING),
+          )
+        }
+        stages.forEach { stage ->
+          AppReleaseBuildStageRow(stage)
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun AppReleaseBuildStageRow(stage: AppReleaseBuildStageUi) {
+  Row(
+    modifier = Modifier.fillMaxWidth(),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(10.dp),
+  ) {
+    AppReleaseBuildStageIcon(stage.status)
+    Text(
+      text = stringResource(stage.titleRes),
+      style = MaterialTheme.typography.bodyMedium,
+      fontWeight = if (stage.status == AppReleaseStageStatus.RUNNING) FontWeight.SemiBold else FontWeight.Normal,
+      color = when (stage.status) {
+        AppReleaseStageStatus.FAILED -> MaterialTheme.colorScheme.error
+        AppReleaseStageStatus.DONE -> MaterialTheme.colorScheme.onSurface
+        AppReleaseStageStatus.RUNNING -> MaterialTheme.colorScheme.primary
+        AppReleaseStageStatus.WAITING -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f)
+      },
+    )
+  }
+}
+
+@Composable
+private fun AppReleaseBuildStageIcon(status: AppReleaseStageStatus) {
+  val tint = when (status) {
+    AppReleaseStageStatus.DONE -> MaterialTheme.colorScheme.primary
+    AppReleaseStageStatus.RUNNING -> MaterialTheme.colorScheme.primary
+    AppReleaseStageStatus.FAILED -> MaterialTheme.colorScheme.error
+    AppReleaseStageStatus.WAITING -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.40f)
+  }
+  Surface(
+    shape = CircleShape,
+    color = tint.copy(alpha = 0.14f),
+    contentColor = tint,
+  ) {
+    Box(
+      modifier = Modifier.padding(4.dp).size(20.dp),
+      contentAlignment = Alignment.Center,
+    ) {
+      when (status) {
+        AppReleaseStageStatus.DONE -> Icon(Icons.Filled.CheckCircle, contentDescription = null, modifier = Modifier.size(18.dp))
+        AppReleaseStageStatus.RUNNING -> {
+          CircularProgressIndicator(
+            modifier = Modifier.matchParentSize(),
+            strokeWidth = 2.dp,
+            color = MaterialTheme.colorScheme.primary,
+          )
+          Box(
+            modifier = Modifier
+              .size(5.dp)
+              .background(MaterialTheme.colorScheme.primary, CircleShape),
+          )
+        }
+        AppReleaseStageStatus.FAILED -> Icon(Icons.Filled.Close, contentDescription = null, modifier = Modifier.size(17.dp))
+        AppReleaseStageStatus.WAITING -> Box(
+          modifier = Modifier
+            .size(9.dp)
+            .background(tint, CircleShape),
+        )
+      }
+    }
+  }
+}
 
 @Composable
 fun UnknownSourcesPermissionDialog(

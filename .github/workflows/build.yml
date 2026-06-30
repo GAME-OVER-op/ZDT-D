@@ -2470,8 +2470,87 @@ jobs:
             STABLE_RELEASE_EXISTS=true
             STABLE_BODY="$(gh release view "$STABLE_TAG" --json body --jq '.body // ""')"
             STABLE_PUBLISHED_VERSION_CODE="$(printf '%s\n' "$STABLE_BODY" | parse_version_code_from_body || true)"
-            STABLE_ACTION="skipped"
-            STABLE_REASON="stable release ${STABLE_TAG} already exists for module.prop version ${VERSION_NAME}; service build was updated, stable release post and app-release.apk were preserved"
+
+            if [[ -n "$STABLE_PUBLISHED_VERSION_CODE" && "$STABLE_PUBLISHED_VERSION_CODE" =~ ^[0-9]+$ ]] && (( VERSION_CODE <= STABLE_PUBLISHED_VERSION_CODE )); then
+              STABLE_ACTION="skipped"
+              STABLE_REASON="stable release ${STABLE_TAG} already has versionCode ${STABLE_PUBLISHED_VERSION_CODE}; current versionCode ${VERSION_CODE} is not newer, so app-release.apk was preserved"
+            else
+              if [[ -n "$STABLE_PUBLISHED_VERSION_CODE" && "$STABLE_PUBLISHED_VERSION_CODE" =~ ^[0-9]+$ ]]; then
+                STABLE_REASON="updated existing stable release ${STABLE_TAG}: versionCode ${VERSION_CODE} is newer than published ${STABLE_PUBLISHED_VERSION_CODE}"
+              else
+                STABLE_REASON="updated existing stable release ${STABLE_TAG}: published versionCode is missing or unreadable"
+              fi
+
+              PREVIOUS_STABLE_TAG=""
+              while IFS= read -r version; do
+                [[ -z "$version" ]] && continue
+                if [[ "$(printf '%s\n%s\n' "$version" "$VERSION_NAME" | sort -V | head -n1)" == "$version" && "$version" != "$VERSION_NAME" ]]; then
+                  PREVIOUS_STABLE_TAG="V${version}"
+                fi
+              done < <(git tag -l 'V[0-9]*.[0-9]*.0' | sed 's/^V//' | sort -V)
+
+              PREVIOUS_STABLE_SHA=""
+              if [[ -n "$PREVIOUS_STABLE_TAG" ]] && git rev-parse -q --verify "refs/tags/${PREVIOUS_STABLE_TAG}" >/dev/null 2>&1; then
+                PREVIOUS_STABLE_SHA="$(git rev-list -n 1 "$PREVIOUS_STABLE_TAG" 2>/dev/null || true)"
+              fi
+
+              STABLE_COMPARE_URL="$(compare_url_for_range "$PREVIOUS_STABLE_SHA" "$FULL_SHA")"
+              STABLE_COMMIT_LIST="$(make_commit_list "$PREVIOUS_STABLE_SHA" "$FULL_SHA" 0)"
+              printf '%s\n' "$STABLE_COMMIT_LIST" > stable_commit_list.txt
+              generate_service_ai_summary stable_commit_list.txt stable_ai_summary.md "$PREVIOUS_STABLE_TAG"
+              STABLE_SUMMARY="$(cat stable_ai_summary.md)"
+
+              cat > stable_release_notes.md <<EOF_STABLE_NOTES
+          # ZDT-D V${VERSION_NAME}
+
+          ## Highlights
+
+          ${STABLE_SUMMARY}
+
+          ## Release information
+
+          | Field | Value |
+          |---|---|
+          | Version | \`${VERSION_NAME}\` |
+          | Version code | \`${VERSION_CODE}\` |
+          | Tag | \`${STABLE_TAG}\` |
+          | Commit | [\`${SHORT_SHA}\`](${REPO_URL}/commit/${FULL_SHA}) |
+          | Workflow run | [#${{ github.run_number }}](${RUN_URL}) |
+          | Build date | \`${BUILD_TIME_UTC}\` |
+
+          <!-- ZDTD_APP_UPDATE_META_START
+          {
+            "schema": 1,
+            "kind": "stable-release",
+            "version": "${VERSION_NAME}",
+            "versionCode": ${VERSION_CODE},
+            "commit": "${FULL_SHA}",
+            "shortCommit": "${SHORT_SHA}",
+            "workflow": "build.yml",
+            "workflowRunId": ${GITHUB_RUN_ID},
+            "workflowRunNumber": ${GITHUB_RUN_NUMBER},
+            "asset": "app-release.apk",
+            "assetReady": true,
+            "updatedAt": "${BUILD_TIME_UTC}"
+          }
+          ZDTD_APP_UPDATE_META_END -->
+          EOF_STABLE_NOTES
+
+              echo "===== Stable release notes ====="
+              cat stable_release_notes.md
+
+              git tag -f "$STABLE_TAG" "$FULL_SHA"
+              git push -f origin "refs/tags/${STABLE_TAG}"
+
+              # Upload the APK before replacing the release notes meta block. This prevents the app
+              # from seeing a new versionCode while the old app-release.apk asset is still attached.
+              upload_asset_with_retry "$STABLE_TAG" "$STABLE_ASSET_SPEC" "app-release.apk"
+              STABLE_UPLOAD_MODE="$UPLOAD_MODE"
+              STABLE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
+
+              gh release edit "$STABLE_TAG" --title "$STABLE_TITLE" --notes-file stable_release_notes.md
+              STABLE_ACTION="updated"
+            fi
           else
             PREVIOUS_STABLE_TAG=""
             while IFS= read -r version; do
@@ -2509,6 +2588,23 @@ jobs:
           | Commit | [\`${SHORT_SHA}\`](${REPO_URL}/commit/${FULL_SHA}) |
           | Workflow run | [#${{ github.run_number }}](${RUN_URL}) |
           | Build date | \`${BUILD_TIME_UTC}\` |
+
+          <!-- ZDTD_APP_UPDATE_META_START
+          {
+            "schema": 1,
+            "kind": "stable-release",
+            "version": "${VERSION_NAME}",
+            "versionCode": ${VERSION_CODE},
+            "commit": "${FULL_SHA}",
+            "shortCommit": "${SHORT_SHA}",
+            "workflow": "build.yml",
+            "workflowRunId": ${GITHUB_RUN_ID},
+            "workflowRunNumber": ${GITHUB_RUN_NUMBER},
+            "asset": "app-release.apk",
+            "assetReady": true,
+            "updatedAt": "${BUILD_TIME_UTC}"
+          }
+          ZDTD_APP_UPDATE_META_END -->
           EOF_STABLE_NOTES
 
             echo "===== Stable release notes ====="

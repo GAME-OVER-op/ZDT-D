@@ -41,6 +41,14 @@ env:
   AMNEZIAWG_UAPI_SOCKET_DIR: "/data/adb/modules/ZDT-D/working_folder/amneziawg/run/amneziawg"
   AMNEZIAWG_GO_UAPI_SOCKET_DIR: "run/amneziawg"
   WIREPROXY_REF: "v1.1.2"
+  TUN2SOCKS_REF: "v2.6.0"
+  MIHOMO_REF: "v1.19.27"
+  SING_BOX_REF: "1.13.14"
+  BYEDPI_REF: "v0.17.3"
+  BYEDPI_ANDROID_API_LEVEL: 24
+  DNSCRYPT_PROXY_REF: "2.1.16"
+  MIERU_REF: "v3.34.0"
+  OPERA_PROXY_REF: "v1.26.0"
 
 permissions:
   contents: write
@@ -248,7 +256,7 @@ jobs:
           echo "reason=$reason"
 
   build_zdtd:
-    name: 1 Core / build zdtd
+    name: build zdtd
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -361,7 +369,7 @@ jobs:
           retention-days: 1
 
   build_t2s:
-    name: 1 Core / build T2S
+    name: build T2S
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -488,7 +496,7 @@ jobs:
         run: echo "zdtd and T2S artifacts are ready for module packaging"
 
   build_openvpn:
-    name: 2 Module binary / build OpenVPN arm64
+    name: build OpenVPN arm64
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -723,7 +731,7 @@ jobs:
           retention-days: 1
 
   build_amneziawg:
-    name: 2 Module binary / build AmneziaWG arm64
+    name: build AmneziaWG arm64
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -895,7 +903,7 @@ jobs:
           retention-days: 1
 
   build_wireproxy:
-    name: 2 Module binary / build wireproxy arm64
+    name: build wireproxy arm64
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -959,8 +967,623 @@ jobs:
             out/artifacts/wireproxy/wireproxy.dynamic.txt
           retention-days: 1
 
+  build_tun2socks:
+    name: build tun2socks arm64
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+          cache: false
+
+      - name: Build tun2socks from official source
+        run: |
+          set -euo pipefail
+
+          go version
+
+          WORK="$PWD/out/build/tun2socks-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/tun2socks"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official tun2socks source ==="
+          git clone --depth 1 --branch "$TUN2SOCKS_REF" https://github.com/xjasonlyu/tun2socks "$SRC/tun2socks"
+          TUN2SOCKS_COMMIT="$(git -C "$SRC/tun2socks" rev-parse HEAD)"
+          TUN2SOCKS_COMMIT_SHORT="$(git -C "$SRC/tun2socks" rev-parse --short HEAD)"
+          printf '%s\n' "$TUN2SOCKS_COMMIT" | tee "$ARTIFACT_DIR/tun2socks.commit"
+
+          echo "=== Build tun2socks (${TUN2SOCKS_REF}) ==="
+          pushd "$SRC/tun2socks" > /dev/null
+          GOOS=android \
+          GOARCH=arm64 \
+          CGO_ENABLED=0 \
+            go build \
+              -trimpath \
+              -ldflags="-s -w -buildid= -X github.com/xjasonlyu/tun2socks/v2/internal/version.Version=${TUN2SOCKS_REF} -X github.com/xjasonlyu/tun2socks/v2/internal/version.GitCommit=${TUN2SOCKS_COMMIT_SHORT}" \
+              -o "$ARTIFACT_DIR/tun2socks" \
+              .
+          popd > /dev/null
+
+          chmod 755 "$ARTIFACT_DIR/tun2socks"
+
+          cat > "$ARTIFACT_DIR/tun2socks.version" <<EOF_TUN2SOCKS_VERSION
+          source=https://github.com/xjasonlyu/tun2socks
+          ref=$TUN2SOCKS_REF
+          commit=$TUN2SOCKS_COMMIT
+          binary=tun2socks
+          target=android-arm64
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_TUN2SOCKS_VERSION
+
+          echo "=== Verify tun2socks artifact ==="
+          file "$ARTIFACT_DIR/tun2socks"
+          readelf -h "$ARTIFACT_DIR/tun2socks" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/tun2socks" | tee "$ARTIFACT_DIR/tun2socks.dynamic.txt" || true
+          "$ARTIFACT_DIR/tun2socks" -version || true
+          "$ARTIFACT_DIR/tun2socks" --help | head -60 || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/tun2socks.version"
+
+      - name: Upload tun2socks binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: tun2socks-arm64
+          path: |
+            out/artifacts/tun2socks/tun2socks
+            out/artifacts/tun2socks/tun2socks.version
+            out/artifacts/tun2socks/tun2socks.commit
+            out/artifacts/tun2socks/tun2socks.dynamic.txt
+          retention-days: 1
+
+  build_mihomo:
+    name: build mihomo arm64
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+          cache: false
+
+      - name: Build mihomo from official source
+        run: |
+          set -euo pipefail
+
+          go version
+
+          WORK="$PWD/out/build/mihomo-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/mihomo"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official mihomo source ==="
+          git clone --depth 1 --branch "$MIHOMO_REF" https://github.com/MetaCubeX/mihomo "$SRC/mihomo"
+          MIHOMO_COMMIT="$(git -C "$SRC/mihomo" rev-parse HEAD)"
+          MIHOMO_COMMIT_SHORT="$(git -C "$SRC/mihomo" rev-parse --short HEAD)"
+          MIHOMO_VERSION="${MIHOMO_REF#v}"
+          printf '%s\n' "$MIHOMO_COMMIT" | tee "$ARTIFACT_DIR/mihomo.commit"
+
+          echo "=== Build mihomo (${MIHOMO_REF}) ==="
+          pushd "$SRC/mihomo" > /dev/null
+          GOOS=android \
+          GOARCH=arm64 \
+          CGO_ENABLED=0 \
+            go build \
+              -tags with_gvisor \
+              -trimpath \
+              -ldflags="-s -w -buildid= -X github.com/metacubex/mihomo/constant.Version=${MIHOMO_VERSION} -X github.com/metacubex/mihomo/constant.BuildTime=$(date -u +%Y-%m-%dT%H:%M:%SZ) -X github.com/metacubex/mihomo/constant.CommitID=${MIHOMO_COMMIT_SHORT}" \
+              -o "$ARTIFACT_DIR/mihomo" \
+              .
+          popd > /dev/null
+
+          chmod 755 "$ARTIFACT_DIR/mihomo"
+
+          cat > "$ARTIFACT_DIR/mihomo.version" <<EOF_MIHOMO_VERSION
+          source=https://github.com/MetaCubeX/mihomo
+          ref=$MIHOMO_REF
+          commit=$MIHOMO_COMMIT
+          binary=mihomo
+          target=android-arm64
+          tags=with_gvisor
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_MIHOMO_VERSION
+
+          echo "=== Verify mihomo artifact ==="
+          file "$ARTIFACT_DIR/mihomo"
+          readelf -h "$ARTIFACT_DIR/mihomo" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/mihomo" | tee "$ARTIFACT_DIR/mihomo.dynamic.txt" || true
+          "$ARTIFACT_DIR/mihomo" -v || true
+          "$ARTIFACT_DIR/mihomo" -h | head -60 || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/mihomo.version"
+
+      - name: Upload mihomo binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: mihomo-arm64
+          path: |
+            out/artifacts/mihomo/mihomo
+            out/artifacts/mihomo/mihomo.version
+            out/artifacts/mihomo/mihomo.commit
+            out/artifacts/mihomo/mihomo.dynamic.txt
+          retention-days: 1
+
+  build_singbox:
+    name: build sing-box arm64
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+          cache: false
+
+      - name: Build sing-box from official source
+        run: |
+          set -euo pipefail
+
+          go version
+
+          WORK="$PWD/out/build/sing-box-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/sing-box"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official sing-box source ==="
+          git clone --depth 1 --branch "$SING_BOX_REF" https://github.com/SagerNet/sing-box "$SRC/sing-box"
+          SING_BOX_COMMIT="$(git -C "$SRC/sing-box" rev-parse HEAD)"
+          SING_BOX_COMMIT_SHORT="$(git -C "$SRC/sing-box" rev-parse --short HEAD)"
+          SING_BOX_VERSION="${SING_BOX_REF#v}"
+          printf '%s\n' "$SING_BOX_COMMIT" | tee "$ARTIFACT_DIR/sing-box.commit"
+
+          echo "=== Build sing-box (${SING_BOX_REF}) ==="
+          pushd "$SRC/sing-box" > /dev/null
+          if [[ -f release/DEFAULT_BUILD_TAGS ]]; then
+            SING_BOX_TAGS="$(tr -d '\r\n' < release/DEFAULT_BUILD_TAGS)"
+          elif [[ -f release/DEFAULT_BUILD_TAGS_OTHERS ]]; then
+            SING_BOX_TAGS="$(tr -d '\r\n' < release/DEFAULT_BUILD_TAGS_OTHERS)"
+          else
+            SING_BOX_TAGS="with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_clash_api"
+          fi
+          SING_BOX_LDFLAGS=""
+          if [[ -f release/LDFLAGS ]]; then
+            SING_BOX_LDFLAGS="$(tr '\n' ' ' < release/LDFLAGS)"
+          fi
+          echo "Build tags: $SING_BOX_TAGS"
+          echo "Extra ldflags: $SING_BOX_LDFLAGS"
+          GOOS=android \
+          GOARCH=arm64 \
+          CGO_ENABLED=0 \
+            go build \
+              -tags "$SING_BOX_TAGS" \
+              -trimpath \
+              -ldflags="-X 'github.com/sagernet/sing-box/constant.Version=${SING_BOX_VERSION}' ${SING_BOX_LDFLAGS} -s -w -buildid=" \
+              -o "$ARTIFACT_DIR/sing-box" \
+              ./cmd/sing-box
+          popd > /dev/null
+
+          chmod 755 "$ARTIFACT_DIR/sing-box"
+
+          cat > "$ARTIFACT_DIR/sing-box.version" <<EOF_SING_BOX_VERSION
+          source=https://github.com/SagerNet/sing-box
+          ref=$SING_BOX_REF
+          commit=$SING_BOX_COMMIT
+          binary=sing-box
+          target=android-arm64
+          tags=$SING_BOX_TAGS
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_SING_BOX_VERSION
+
+          echo "=== Verify sing-box artifact ==="
+          file "$ARTIFACT_DIR/sing-box"
+          readelf -h "$ARTIFACT_DIR/sing-box" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/sing-box" | tee "$ARTIFACT_DIR/sing-box.dynamic.txt" || true
+          "$ARTIFACT_DIR/sing-box" version || true
+          "$ARTIFACT_DIR/sing-box" help | head -60 || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/sing-box.version"
+
+      - name: Upload sing-box binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: sing-box-arm64
+          path: |
+            out/artifacts/sing-box/sing-box
+            out/artifacts/sing-box/sing-box.version
+            out/artifacts/sing-box/sing-box.commit
+            out/artifacts/sing-box/sing-box.dynamic.txt
+          retention-days: 1
+
+  build_byedpi:
+    name: build byedpi arm64
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK and build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            file \
+            git \
+            make
+
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "BYEDPI_CC=$NDK_BIN/aarch64-linux-android${BYEDPI_ANDROID_API_LEVEL}-clang"
+            echo "BYEDPI_STRIP=$NDK_BIN/llvm-strip"
+          } >> "$GITHUB_ENV"
+
+      - name: Build ByeDPI from official source
+        run: |
+          set -euo pipefail
+
+          test -x "$BYEDPI_CC" || { echo "::error::Android C compiler not found: $BYEDPI_CC"; exit 1; }
+          test -x "$BYEDPI_STRIP" || { echo "::error::Android strip not found: $BYEDPI_STRIP"; exit 1; }
+          "$BYEDPI_CC" --version | head -1
+
+          WORK="$PWD/out/build/byedpi-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/byedpi"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official ByeDPI source ==="
+          git clone --depth 1 --branch "$BYEDPI_REF" https://github.com/hufrea/byedpi "$SRC/byedpi"
+          BYEDPI_COMMIT="$(git -C "$SRC/byedpi" rev-parse HEAD)"
+          printf '%s\n' "$BYEDPI_COMMIT" | tee "$ARTIFACT_DIR/byedpi.commit"
+
+          echo "=== Build ByeDPI (${BYEDPI_REF}) ==="
+          pushd "$SRC/byedpi" > /dev/null
+          make clean || true
+          make \
+            CC="$BYEDPI_CC" \
+            CFLAGS="-O3 -fPIE -ffunction-sections -fdata-sections" \
+            LDFLAGS="-pie -Wl,--gc-sections -Wl,-z,max-page-size=16384"
+
+          BYEDPI_OUTPUT=""
+          for candidate in ./ciadpi ./ciadpi-* ./build/ciadpi ./build/ciadpi-* ./byedpi ./build/byedpi; do
+            if [[ -f "$candidate" ]]; then
+              BYEDPI_OUTPUT="$candidate"
+              break
+            fi
+          done
+          if [[ -z "$BYEDPI_OUTPUT" ]]; then
+            BYEDPI_OUTPUT="$(find . -maxdepth 3 -type f \( -name 'ciadpi' -o -name 'ciadpi-*' -o -name 'byedpi' \) | sort | head -1 || true)"
+          fi
+          test -n "$BYEDPI_OUTPUT" || { echo "::error::ByeDPI output binary not found"; find . -maxdepth 3 -type f | sort; exit 1; }
+          cp -f "$BYEDPI_OUTPUT" "$ARTIFACT_DIR/byedpi"
+          popd > /dev/null
+
+          "$BYEDPI_STRIP" --strip-unneeded "$ARTIFACT_DIR/byedpi" || true
+          chmod 755 "$ARTIFACT_DIR/byedpi"
+
+          cat > "$ARTIFACT_DIR/byedpi.version" <<EOF_BYEDPI_VERSION
+          source=https://github.com/hufrea/byedpi
+          ref=$BYEDPI_REF
+          commit=$BYEDPI_COMMIT
+          upstream_binary=ciadpi
+          packaged_binary=byedpi
+          target=android-arm64
+          android_api=$BYEDPI_ANDROID_API_LEVEL
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_BYEDPI_VERSION
+
+          echo "=== Verify ByeDPI artifact ==="
+          file "$ARTIFACT_DIR/byedpi"
+          readelf -h "$ARTIFACT_DIR/byedpi" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/byedpi" | tee "$ARTIFACT_DIR/byedpi.dynamic.txt" || true
+          "$ARTIFACT_DIR/byedpi" --help | head -80 || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/byedpi.version"
+
+      - name: Upload byedpi binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: byedpi-arm64
+          path: |
+            out/artifacts/byedpi/byedpi
+            out/artifacts/byedpi/byedpi.version
+            out/artifacts/byedpi/byedpi.commit
+            out/artifacts/byedpi/byedpi.dynamic.txt
+          retention-days: 1
+
+  build_dnscrypt:
+    name: build dnscrypt arm64
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+          cache: false
+
+      - name: Build dnscrypt-proxy from official source
+        run: |
+          set -euo pipefail
+
+          go version
+
+          WORK="$PWD/out/build/dnscrypt-proxy-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/dnscrypt"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official dnscrypt-proxy source ==="
+          git clone --depth 1 --branch "$DNSCRYPT_PROXY_REF" https://github.com/DNSCrypt/dnscrypt-proxy "$SRC/dnscrypt-proxy"
+          DNSCRYPT_PROXY_COMMIT="$(git -C "$SRC/dnscrypt-proxy" rev-parse HEAD)"
+          printf '%s\n' "$DNSCRYPT_PROXY_COMMIT" | tee "$ARTIFACT_DIR/dnscrypt.commit"
+
+          echo "=== Locate dnscrypt-proxy Go module ==="
+          if [[ -f "$SRC/dnscrypt-proxy/dnscrypt-proxy/go.mod" ]]; then
+            DNSCRYPT_BUILD_DIR="$SRC/dnscrypt-proxy/dnscrypt-proxy"
+          elif [[ -f "$SRC/dnscrypt-proxy/go.mod" ]]; then
+            DNSCRYPT_BUILD_DIR="$SRC/dnscrypt-proxy"
+          else
+            DNSCRYPT_BUILD_DIR="$(find "$SRC/dnscrypt-proxy" -maxdepth 3 -name go.mod -type f -printf '%h\n' | sort | head -1 || true)"
+          fi
+          test -n "$DNSCRYPT_BUILD_DIR" || { echo "::error::dnscrypt-proxy go.mod not found"; find "$SRC/dnscrypt-proxy" -maxdepth 3 -type f | sort | head -200; exit 1; }
+          echo "Build directory: $DNSCRYPT_BUILD_DIR"
+
+          echo "=== Build dnscrypt-proxy (${DNSCRYPT_PROXY_REF}) ==="
+          pushd "$DNSCRYPT_BUILD_DIR" > /dev/null
+          GOOS=android \
+          GOARCH=arm64 \
+          CGO_ENABLED=0 \
+            go build \
+              -trimpath \
+              -buildvcs=false \
+              -ldflags="-s -w -buildid=" \
+              -o "$ARTIFACT_DIR/dnscrypt" \
+              .
+          popd > /dev/null
+
+          chmod 755 "$ARTIFACT_DIR/dnscrypt"
+
+          cat > "$ARTIFACT_DIR/dnscrypt.version" <<EOF_DNSCRYPT_VERSION
+          source=https://github.com/DNSCrypt/dnscrypt-proxy
+          ref=$DNSCRYPT_PROXY_REF
+          commit=$DNSCRYPT_PROXY_COMMIT
+          upstream_binary=dnscrypt-proxy
+          packaged_binary=dnscrypt
+          target=android-arm64
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_DNSCRYPT_VERSION
+
+          echo "=== Verify dnscrypt artifact ==="
+          file "$ARTIFACT_DIR/dnscrypt"
+          readelf -h "$ARTIFACT_DIR/dnscrypt" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/dnscrypt" | tee "$ARTIFACT_DIR/dnscrypt.dynamic.txt" || true
+          "$ARTIFACT_DIR/dnscrypt" -version || true
+          "$ARTIFACT_DIR/dnscrypt" -help | head -80 || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/dnscrypt.version"
+
+      - name: Upload dnscrypt binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: dnscrypt-arm64
+          path: |
+            out/artifacts/dnscrypt/dnscrypt
+            out/artifacts/dnscrypt/dnscrypt.version
+            out/artifacts/dnscrypt/dnscrypt.commit
+            out/artifacts/dnscrypt/dnscrypt.dynamic.txt
+          retention-days: 1
+
+  build_mieru:
+    name: build mieru arm64
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+          cache: false
+
+      - name: Build mieru from official source
+        run: |
+          set -euo pipefail
+
+          go version
+
+          WORK="$PWD/out/build/mieru-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/mieru"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official mieru source ==="
+          git clone --depth 1 --branch "$MIERU_REF" https://github.com/enfein/mieru "$SRC/mieru"
+          MIERU_COMMIT="$(git -C "$SRC/mieru" rev-parse HEAD)"
+          printf '%s\n' "$MIERU_COMMIT" | tee "$ARTIFACT_DIR/mieru.commit"
+
+          echo "=== Build mieru (${MIERU_REF}) ==="
+          pushd "$SRC/mieru" > /dev/null
+          GOOS=android \
+          GOARCH=arm64 \
+          CGO_ENABLED=0 \
+            go build \
+              -trimpath \
+              -buildvcs=false \
+              -ldflags="-s -w -buildid=" \
+              -o "$ARTIFACT_DIR/mieru" \
+              ./cmd/mieru/mieru
+          popd > /dev/null
+
+          chmod 755 "$ARTIFACT_DIR/mieru"
+
+          cat > "$ARTIFACT_DIR/mieru.version" <<EOF_MIERU_VERSION
+          source=https://github.com/enfein/mieru
+          ref=$MIERU_REF
+          commit=$MIERU_COMMIT
+          binary=mieru
+          target=android-arm64
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_MIERU_VERSION
+
+          echo "=== Verify mieru artifact ==="
+          file "$ARTIFACT_DIR/mieru"
+          readelf -h "$ARTIFACT_DIR/mieru" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/mieru" | tee "$ARTIFACT_DIR/mieru.dynamic.txt" || true
+          "$ARTIFACT_DIR/mieru" version || true
+          "$ARTIFACT_DIR/mieru" help | head -80 || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/mieru.version"
+
+      - name: Upload mieru binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: mieru-arm64
+          path: |
+            out/artifacts/mieru/mieru
+            out/artifacts/mieru/mieru.version
+            out/artifacts/mieru/mieru.commit
+            out/artifacts/mieru/mieru.dynamic.txt
+          retention-days: 1
+
+  build_operaproxy:
+    name: build opera-proxy arm64
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+          cache: false
+
+      - name: Build opera-proxy from official source
+        run: |
+          set -euo pipefail
+
+          go version
+
+          WORK="$PWD/out/build/opera-proxy-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/opera-proxy"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official opera-proxy source ==="
+          git clone --depth 1 --branch "$OPERA_PROXY_REF" https://github.com/Alexey71/opera-proxy "$SRC/opera-proxy"
+          OPERA_PROXY_COMMIT="$(git -C "$SRC/opera-proxy" rev-parse HEAD)"
+          printf '%s\n' "$OPERA_PROXY_COMMIT" | tee "$ARTIFACT_DIR/opera-proxy.commit"
+
+          echo "=== Build opera-proxy (${OPERA_PROXY_REF}) ==="
+          pushd "$SRC/opera-proxy" > /dev/null
+          GOOS=android \
+          GOARCH=arm64 \
+          CGO_ENABLED=0 \
+            go build \
+              -trimpath \
+              -buildvcs=false \
+              -ldflags="-s -w -buildid=" \
+              -o "$ARTIFACT_DIR/opera-proxy" \
+              .
+          popd > /dev/null
+
+          chmod 755 "$ARTIFACT_DIR/opera-proxy"
+
+          cat > "$ARTIFACT_DIR/opera-proxy.version" <<EOF_OPERA_PROXY_VERSION
+          source=https://github.com/Alexey71/opera-proxy
+          ref=$OPERA_PROXY_REF
+          commit=$OPERA_PROXY_COMMIT
+          binary=opera-proxy
+          target=android-arm64
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_OPERA_PROXY_VERSION
+
+          echo "=== Verify opera-proxy artifact ==="
+          file "$ARTIFACT_DIR/opera-proxy"
+          readelf -h "$ARTIFACT_DIR/opera-proxy" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/opera-proxy" | tee "$ARTIFACT_DIR/opera-proxy.dynamic.txt" || true
+          "$ARTIFACT_DIR/opera-proxy" -version || true
+          "$ARTIFACT_DIR/opera-proxy" -help | head -80 || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/opera-proxy.version"
+
+      - name: Upload opera-proxy binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: opera-proxy-arm64
+          path: |
+            out/artifacts/opera-proxy/opera-proxy
+            out/artifacts/opera-proxy/opera-proxy.version
+            out/artifacts/opera-proxy/opera-proxy.commit
+            out/artifacts/opera-proxy/opera-proxy.dynamic.txt
+          retention-days: 1
+
   build_nfqws:
-    name: 2 Module binary / build nfqws arm64
+    name: build nfqws arm64
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -1156,7 +1779,7 @@ jobs:
           retention-days: 1
 
   build_nfqws2:
-    name: 2 Module binary / build nfqws2 arm64
+    name: build nfqws2 arm64
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -1392,18 +2015,32 @@ jobs:
           retention-days: 1
 
   module_binaries_ready:
-    name: 2 Module binaries ready (OpenVPN + AmneziaWG + wireproxy + nfqws + nfqws2)
+    name: Module binaries ready (OpenVPN + AmneziaWG + wireproxy + tun2socks + mihomo + sing-box + byedpi + dnscrypt + mieru + opera-proxy + nfqws + nfqws2)
     runs-on: ubuntu-latest
     needs:
       - build_openvpn
       - build_amneziawg
       - build_wireproxy
+      - build_tun2socks
+      - build_mihomo
+      - build_singbox
+      - build_byedpi
+      - build_dnscrypt
+      - build_mieru
+      - build_operaproxy
       - build_nfqws
       - build_nfqws2
     if: >-
       needs.build_openvpn.result == 'success' &&
       needs.build_amneziawg.result == 'success' &&
       needs.build_wireproxy.result == 'success' &&
+      needs.build_tun2socks.result == 'success' &&
+      needs.build_mihomo.result == 'success' &&
+      needs.build_singbox.result == 'success' &&
+      needs.build_byedpi.result == 'success' &&
+      needs.build_dnscrypt.result == 'success' &&
+      needs.build_mieru.result == 'success' &&
+      needs.build_operaproxy.result == 'success' &&
       needs.build_nfqws.result == 'success' &&
       needs.build_nfqws2.result == 'success'
 
@@ -1412,7 +2049,7 @@ jobs:
         run: echo "External module binary artifacts are ready for module packaging"
 
   build_zygisk:
-    name: 3 Zygisk / compile module
+    name: build Zygisk module
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -1532,6 +2169,48 @@ jobs:
           name: wireproxy-arm64
           path: out/artifacts/wireproxy
 
+      - name: Download tun2socks binary
+        uses: actions/download-artifact@v7
+        with:
+          name: tun2socks-arm64
+          path: out/artifacts/tun2socks
+
+      - name: Download mihomo binary
+        uses: actions/download-artifact@v7
+        with:
+          name: mihomo-arm64
+          path: out/artifacts/mihomo
+
+      - name: Download sing-box binary
+        uses: actions/download-artifact@v7
+        with:
+          name: sing-box-arm64
+          path: out/artifacts/sing-box
+
+      - name: Download byedpi binary
+        uses: actions/download-artifact@v7
+        with:
+          name: byedpi-arm64
+          path: out/artifacts/byedpi
+
+      - name: Download dnscrypt binary
+        uses: actions/download-artifact@v7
+        with:
+          name: dnscrypt-arm64
+          path: out/artifacts/dnscrypt
+
+      - name: Download mieru binary
+        uses: actions/download-artifact@v7
+        with:
+          name: mieru-arm64
+          path: out/artifacts/mieru
+
+      - name: Download opera-proxy binary
+        uses: actions/download-artifact@v7
+        with:
+          name: opera-proxy-arm64
+          path: out/artifacts/opera-proxy
+
       - name: Download nfqws binary
         uses: actions/download-artifact@v7
         with:
@@ -1546,7 +2225,7 @@ jobs:
 
       - name: Check prebuilt binaries
         run: |
-          REQUIRED=(byedpi dnscrypt dpitunnel-cli opera-proxy sing-box mieru torproxy lyrebird tun2socks mihomo)
+          REQUIRED=(dpitunnel-cli torproxy lyrebird)
           MISSING=()
           for bin in "${REQUIRED[@]}"; do
             [[ -f "prebuilt/bin/arm64-v8a/$bin" ]] || MISSING+=("$bin")
@@ -1571,6 +2250,13 @@ jobs:
           AMNEZIAWG_GO_BIN="out/artifacts/amneziawg/amneziawg-go"
           AWG_BIN="out/artifacts/amneziawg/awg"
           WIREPROXY_BIN="out/artifacts/wireproxy/wireproxy"
+          TUN2SOCKS_BIN="out/artifacts/tun2socks/tun2socks"
+          MIHOMO_BIN="out/artifacts/mihomo/mihomo"
+          SING_BOX_BIN="out/artifacts/sing-box/sing-box"
+          BYEDPI_BIN="out/artifacts/byedpi/byedpi"
+          DNSCRYPT_BIN="out/artifacts/dnscrypt/dnscrypt"
+          MIERU_BIN="out/artifacts/mieru/mieru"
+          OPERA_PROXY_BIN="out/artifacts/opera-proxy/opera-proxy"
           NFQWS_BIN="out/artifacts/nfqws/nfqws"
           NFQWS2_BIN="out/artifacts/nfqws2/nfqws2"
 
@@ -1581,6 +2267,13 @@ jobs:
           test -s "$AMNEZIAWG_GO_BIN" || { echo "::error::amneziawg-go artifact missing: $AMNEZIAWG_GO_BIN"; exit 1; }
           test -s "$AWG_BIN" || { echo "::error::awg artifact missing: $AWG_BIN"; exit 1; }
           test -s "$WIREPROXY_BIN" || { echo "::error::wireproxy artifact missing: $WIREPROXY_BIN"; exit 1; }
+          test -s "$TUN2SOCKS_BIN" || { echo "::error::tun2socks artifact missing: $TUN2SOCKS_BIN"; exit 1; }
+          test -s "$MIHOMO_BIN" || { echo "::error::mihomo artifact missing: $MIHOMO_BIN"; exit 1; }
+          test -s "$SING_BOX_BIN" || { echo "::error::sing-box artifact missing: $SING_BOX_BIN"; exit 1; }
+          test -s "$BYEDPI_BIN" || { echo "::error::byedpi artifact missing: $BYEDPI_BIN"; exit 1; }
+          test -s "$DNSCRYPT_BIN" || { echo "::error::dnscrypt artifact missing: $DNSCRYPT_BIN"; exit 1; }
+          test -s "$MIERU_BIN" || { echo "::error::mieru artifact missing: $MIERU_BIN"; exit 1; }
+          test -s "$OPERA_PROXY_BIN" || { echo "::error::opera-proxy artifact missing: $OPERA_PROXY_BIN"; exit 1; }
           test -s "$NFQWS_BIN" || { echo "::error::nfqws artifact missing: $NFQWS_BIN"; exit 1; }
           test -s "$NFQWS2_BIN" || { echo "::error::nfqws2 artifact missing: $NFQWS2_BIN"; exit 1; }
 
@@ -1603,9 +2296,16 @@ jobs:
           cp -f "$AMNEZIAWG_GO_BIN" "$MODULE_BUILD_DIR/bin/amneziawg-go" && chmod 755 "$MODULE_BUILD_DIR/bin/amneziawg-go"
           cp -f "$AWG_BIN" "$MODULE_BUILD_DIR/bin/awg" && chmod 755 "$MODULE_BUILD_DIR/bin/awg"
           cp -f "$WIREPROXY_BIN" "$MODULE_BUILD_DIR/bin/wireproxy" && chmod 755 "$MODULE_BUILD_DIR/bin/wireproxy"
+          cp -f "$TUN2SOCKS_BIN" "$MODULE_BUILD_DIR/bin/tun2socks" && chmod 755 "$MODULE_BUILD_DIR/bin/tun2socks"
+          cp -f "$MIHOMO_BIN" "$MODULE_BUILD_DIR/bin/mihomo" && chmod 755 "$MODULE_BUILD_DIR/bin/mihomo"
+          cp -f "$SING_BOX_BIN" "$MODULE_BUILD_DIR/bin/sing-box" && chmod 755 "$MODULE_BUILD_DIR/bin/sing-box"
+          cp -f "$BYEDPI_BIN" "$MODULE_BUILD_DIR/bin/byedpi" && chmod 755 "$MODULE_BUILD_DIR/bin/byedpi"
+          cp -f "$DNSCRYPT_BIN" "$MODULE_BUILD_DIR/bin/dnscrypt" && chmod 755 "$MODULE_BUILD_DIR/bin/dnscrypt"
+          cp -f "$MIERU_BIN" "$MODULE_BUILD_DIR/bin/mieru" && chmod 755 "$MODULE_BUILD_DIR/bin/mieru"
+          cp -f "$OPERA_PROXY_BIN" "$MODULE_BUILD_DIR/bin/opera-proxy" && chmod 755 "$MODULE_BUILD_DIR/bin/opera-proxy"
           cp -f "$NFQWS_BIN" "$MODULE_BUILD_DIR/bin/nfqws" && chmod 755 "$MODULE_BUILD_DIR/bin/nfqws"
           cp -f "$NFQWS2_BIN" "$MODULE_BUILD_DIR/bin/nfqws2" && chmod 755 "$MODULE_BUILD_DIR/bin/nfqws2"
-          for bin in byedpi dnscrypt dpitunnel-cli opera-proxy sing-box mieru torproxy lyrebird tun2socks mihomo; do
+          for bin in dpitunnel-cli torproxy lyrebird; do
             cp -f "$PREBUILT/$bin" "$MODULE_BUILD_DIR/bin/$bin" && chmod 755 "$MODULE_BUILD_DIR/bin/$bin"
           done
 
@@ -1654,7 +2354,7 @@ jobs:
           retention-days: 1
 
   build_dpi_detector:
-    name: 4 APK tool / build dpi-detector
+    name: build dpi-detector
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -1767,7 +2467,7 @@ jobs:
           retention-days: 1
 
   build_nfqws_tester:
-    name: 4 APK tool / build nfqws-tester
+    name: build nfqws-tester
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -1880,7 +2580,7 @@ jobs:
           retention-days: 1
 
   build_busybox:
-    name: 4 APK tool / build BusyBox arm64
+    name: build BusyBox arm64
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -1942,7 +2642,7 @@ jobs:
         run: echo "APK tool artifacts are ready for APK packaging"
 
   build_apk:
-    name: 6 Build APK with module ZIP
+    name: build APK with module ZIP
     runs-on: ubuntu-latest
     needs:
       - pack_module

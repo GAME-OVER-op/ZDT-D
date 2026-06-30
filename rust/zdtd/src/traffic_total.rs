@@ -43,6 +43,8 @@ pub struct TrafficRuleReport {
     pub proxy_endpoints: Vec<TrafficBackendPort>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub t2s_instances: Vec<T2sInstanceMeta>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dnscrypt: Option<DnscryptLayer>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -117,6 +119,13 @@ pub struct TrafficBackendPort {
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
+pub struct DnscryptLayer {
+    pub enabled: bool,
+    pub listen_port: u16,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize, Default)]
 pub struct TrafficChainSummary {
     pub family: String,
     pub table: String,
@@ -156,6 +165,8 @@ pub struct VpnTraffic {
     pub uid_ranges: Vec<String>,
     #[serde(default)]
     pub apps: Vec<VpnApp>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proxy_endpoint: Option<TrafficBackendPort>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -266,10 +277,13 @@ pub fn collect_rule_snapshot() -> Result<TrafficRuleReport> {
     let uid_packages = load_uid_package_map(&mut report.warnings);
     let uid_file_packages = load_uid_file_packages(&route_meta);
     let interfaces = read_interfaces(&mut report.warnings);
-    report.vpn = read_vpn_traffic(&interfaces, &uid_packages, &uid_file_packages, &mut report.warnings);
-    report.proxy_endpoints = build_local_port_registry(Path::new("/data/adb/modules/ZDT-D/working_folder")).into_values().collect();
+    let working_root = Path::new("/data/adb/modules/ZDT-D/working_folder");
+    let local_registry = build_local_port_registry(working_root);
+    report.vpn = read_vpn_traffic(&interfaces, &uid_packages, &uid_file_packages, &local_registry, &mut report.warnings);
+    report.proxy_endpoints = local_registry.values().cloned().collect();
     report.proxy_endpoints.sort_by(|a, b| a.label.cmp(&b.label).then(a.port.cmp(&b.port)));
     report.t2s_instances = load_t2s_instances(&mut report.warnings);
+    report.dnscrypt = collect_dnscrypt_layer(&mut report.warnings);
     report.interfaces = interfaces.into_values().collect();
     report.interfaces.sort_by(|a, b| a.iface.cmp(&b.iface));
 
@@ -668,19 +682,53 @@ fn collect_operaproxy_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPo
     let Ok(raw) = fs::read_to_string(path) else { return; };
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { return; };
     let Some(start) = v.get("opera_start_port").and_then(json_u16) else { return; };
-    let count = operaproxy_server_count(root).max(1).min(12);
+    let byedpi_port = v.get("byedpi_port").and_then(json_u16);
+    let sni_entries = operaproxy_sni_entries(root);
+    let count = sni_entries.len().max(1).min(12);
     for idx in 0..count {
         if let Some(port) = start.checked_add(idx as u16) {
-            put_registry_port(out, port, "operaproxy", None, Some(format!("opera-proxy-{}", idx + 1)));
+            let server = format!("opera-proxy-{}", idx + 1);
+            let mut item = TrafficBackendPort {
+                port,
+                label: format!("operaproxy/{}:{}", server, port),
+                host: Some("127.0.0.1".to_string()),
+                program_id: Some("operaproxy".to_string()),
+                profile: None,
+                server: Some(server),
+                ..Default::default()
+            };
+            if sni_entries.get(idx).map(|entry| entry.use_byedpi).unwrap_or(false) {
+                if let Some(bp) = byedpi_port {
+                    item.wrapped_host = Some("127.0.0.1".to_string());
+                    item.wrapped_port = Some(bp);
+                    item.wrapped_label = Some(format!("operaproxy/byedpi:{}", bp));
+                    item.wrapped_program_id = Some("byedpi".to_string());
+                    item.wrapped_server = Some(format!("127.0.0.1:{}", bp));
+                }
+            }
+            out.entry(port).or_insert(item);
         }
     }
 }
 
-fn operaproxy_server_count(root: &Path) -> usize {
+#[derive(Debug, Clone, Default)]
+struct OperaproxySniView {
+    use_byedpi: bool,
+}
+
+fn operaproxy_sni_entries(root: &Path) -> Vec<OperaproxySniView> {
     let path = root.join("operaproxy/config/sni.json");
-    let Ok(raw) = fs::read_to_string(path) else { return 1; };
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { return 1; };
-    v.as_array().map(|a| a.len()).or_else(|| v.get("items").and_then(|x| x.as_array()).map(|a| a.len())).unwrap_or(1)
+    let Ok(raw) = fs::read_to_string(path) else { return Vec::new(); };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { return Vec::new(); };
+    let arr = v.as_array().or_else(|| v.get("items").and_then(|x| x.as_array()));
+    let Some(arr) = arr else { return Vec::new(); };
+    arr.iter().map(|item| OperaproxySniView {
+        use_byedpi: item.get("use_byedpi").and_then(|x| x.as_bool()).unwrap_or(false),
+    }).collect()
+}
+
+fn operaproxy_server_count(root: &Path) -> usize {
+    operaproxy_sni_entries(root).len().max(1)
 }
 
 fn collect_tor_socks_port(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>) {
@@ -1210,6 +1258,7 @@ fn read_vpn_traffic(
     interfaces: &HashMap<String, InterfaceTraffic>,
     uid_packages: &HashMap<u32, Vec<String>>,
     uid_file_packages: &HashMap<String, HashMap<u32, Vec<String>>>,
+    local_registry: &HashMap<u16, TrafficBackendPort>,
     warnings: &mut Vec<String>,
 ) -> Vec<VpnTraffic> {
     let raw = match fs::read(VPN_NETD_APPLIED) {
@@ -1235,6 +1284,7 @@ fn read_vpn_traffic(
 
     snapshot.profiles.into_iter().map(|p| {
         let iface = interfaces.get(&p.tun).cloned().unwrap_or_else(|| InterfaceTraffic { iface: p.tun.clone(), ..Default::default() });
+        let proxy_endpoint = resolve_vpn_proxy_endpoint(&p.owner_program, &p.profile, local_registry);
         let apps = expand_uid_ranges(&p.uid_ranges)
             .into_iter()
             .map(|uid| {
@@ -1255,10 +1305,126 @@ fn read_vpn_traffic(
             tx_bytes: iface.tx_bytes,
             tx_packets: iface.tx_packets,
             total_bytes: iface.total_bytes,
+            proxy_endpoint,
             uid_ranges: p.uid_ranges,
             apps,
         }
     }).collect()
+}
+
+
+fn collect_dnscrypt_layer(warnings: &mut Vec<String>) -> Option<DnscryptLayer> {
+    match crate::programs::dnscrypt::active_listen_port() {
+        Ok(Some(port)) => Some(DnscryptLayer {
+            enabled: true,
+            listen_port: port,
+            label: format!("DNSCrypt :{}", port),
+        }),
+        Ok(None) => None,
+        Err(e) => {
+            warnings.push(format!("dnscrypt status failed: {e:#}"));
+            None
+        }
+    }
+}
+
+fn resolve_vpn_proxy_endpoint(owner_program: &str, profile: &str, registry: &HashMap<u16, TrafficBackendPort>) -> Option<TrafficBackendPort> {
+    let root = Path::new("/data/adb/modules/ZDT-D/working_folder");
+    match normalize_program_id(owner_program).as_str() {
+        "tun2socks" => {
+            let path = root.join("tun2socks/profile").join(profile).join("setting.json");
+            let raw = fs::read_to_string(path).ok()?;
+            let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+            let proxy = v.get("proxy").and_then(|x| x.as_str()).unwrap_or("");
+            traffic_backend_from_proxy_url(proxy, registry)
+        }
+        "mihomo" => profile_setting_endpoint(root, "mihomo", profile, "mixed_port", registry),
+        "mieru" => profile_setting_endpoint(root, "mieru", profile, "socks5_port", registry),
+        "singbox" | "sing-box" => singbox_vpn_endpoint(root, profile, registry),
+        _ => None,
+    }
+}
+
+fn profile_setting_endpoint(root: &Path, program: &str, profile: &str, key: &str, registry: &HashMap<u16, TrafficBackendPort>) -> Option<TrafficBackendPort> {
+    let path = root.join(program).join("profile").join(profile).join("setting.json");
+    let raw = fs::read_to_string(path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let port = v.get(key).and_then(json_u16)?;
+    Some(registry.get(&port).cloned().unwrap_or_else(|| TrafficBackendPort {
+        port,
+        label: format!("{program}/{profile}/{key}:{port}"),
+        host: Some("127.0.0.1".to_string()),
+        program_id: Some(program.to_string()),
+        profile: Some(profile.to_string()),
+        server: Some(key.to_string()),
+        ..Default::default()
+    }))
+}
+
+fn singbox_vpn_endpoint(root: &Path, profile: &str, registry: &HashMap<u16, TrafficBackendPort>) -> Option<TrafficBackendPort> {
+    let server_root = root.join("singbox/profile").join(profile).join("server");
+    let entries = fs::read_dir(server_root).ok()?;
+    for ent in entries.flatten() {
+        let dir = ent.path();
+        if !dir.is_dir() { continue; }
+        let raw = fs::read_to_string(dir.join("setting.json")).ok()?;
+        let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+        if !v.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false) { continue; }
+        let Some(port) = v.get("port").and_then(json_u16) else { continue; };
+        return Some(registry.get(&port).cloned().unwrap_or_else(|| TrafficBackendPort {
+            port,
+            label: format!("sing-box/{profile}:{}", port),
+            host: Some("127.0.0.1".to_string()),
+            program_id: Some("sing-box".to_string()),
+            profile: Some(profile.to_string()),
+            server: file_name_string(&dir),
+            ..Default::default()
+        }));
+    }
+    None
+}
+
+fn traffic_backend_from_proxy_url(proxy: &str, registry: &HashMap<u16, TrafficBackendPort>) -> Option<TrafficBackendPort> {
+    let (host, port) = parse_proxy_host_port(proxy)?;
+    let local = matches!(host.as_str(), "127.0.0.1" | "localhost" | "::1" | "0.0.0.0");
+    if local {
+        if let Some(found) = registry.get(&port) {
+            return Some(found.clone());
+        }
+    }
+    Some(TrafficBackendPort {
+        port,
+        label: format!("{}:{}", host, port),
+        host: Some(host.clone()),
+        program_id: Some("external-proxy".to_string()),
+        profile: None,
+        server: Some(format!("{}:{}", host, port)),
+        ..Default::default()
+    })
+}
+
+fn parse_proxy_host_port(proxy: &str) -> Option<(String, u16)> {
+    let mut value = proxy.trim();
+    if let Some((_, rest)) = value.split_once("://") {
+        value = rest;
+    }
+    let hostport = value.rsplit_once('@').map(|(_, hp)| hp).unwrap_or(value);
+    if let Some(rest) = hostport.strip_prefix('[') {
+        let (host, tail) = rest.split_once(']')?;
+        let port = tail.strip_prefix(':')?.parse::<u16>().ok()?;
+        return Some((host.to_string(), port));
+    }
+    let (host, port_raw) = hostport.rsplit_once(':')?;
+    let port = port_raw.parse::<u16>().ok()?;
+    if host.trim().is_empty() || port == 0 { return None; }
+    Some((host.trim().to_string(), port))
+}
+
+fn normalize_program_id(raw: &str) -> String {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "singbox" => "sing-box".to_string(),
+        other => other.to_string(),
+    }
 }
 
 fn expand_uid_ranges(ranges: &[String]) -> Vec<u32> {

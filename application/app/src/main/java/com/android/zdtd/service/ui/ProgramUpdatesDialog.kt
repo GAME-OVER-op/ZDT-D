@@ -154,6 +154,7 @@ fun ProgramUpdatesDialog(
                     ProgramUpdateCard(
                       modifier = Modifier.weight(1f),
                       item = state.zapret,
+                      programId = "nfqws",
                       enabled = enabledFor(state.zapret),
                       onCheck = actions::checkZapretNow,
                       onUpdate = actions::updateZapretNow,
@@ -165,6 +166,7 @@ fun ProgramUpdatesDialog(
                     ProgramUpdateCard(
                       modifier = Modifier.weight(1f),
                       item = state.zapret2,
+                      programId = "nfqws2",
                       enabled = enabledFor(state.zapret2),
                       onCheck = actions::checkZapret2Now,
                       onUpdate = actions::updateZapret2Now,
@@ -183,6 +185,7 @@ fun ProgramUpdatesDialog(
                     ProgramUpdateCard(
                       modifier = Modifier.weight(1f),
                       item = state.mihomo,
+                      programId = "mihomo",
                       enabled = enabledFor(state.mihomo),
                       onCheck = actions::checkMihomoNow,
                       onUpdate = actions::updateMihomoNow,
@@ -194,6 +197,7 @@ fun ProgramUpdatesDialog(
                     ProgramUpdateCard(
                       modifier = Modifier.weight(1f),
                       item = state.mieru,
+                      programId = "mieru",
                       enabled = enabledFor(state.mieru),
                       onCheck = actions::checkMieruNow,
                       onUpdate = actions::updateMieruNow,
@@ -212,6 +216,7 @@ fun ProgramUpdatesDialog(
                     ProgramUpdateCard(
                       modifier = Modifier.weight(1f),
                       item = state.operaProxy,
+                      programId = "operaproxy",
                       enabled = enabledFor(state.operaProxy),
                       onCheck = actions::checkOperaProxyNow,
                       onUpdate = actions::updateOperaProxyNow,
@@ -227,6 +232,7 @@ fun ProgramUpdatesDialog(
                 item(key = "zapret") {
                   ProgramUpdateCard(
                     item = state.zapret,
+                      programId = "nfqws",
                     enabled = enabledFor(state.zapret),
                     onCheck = actions::checkZapretNow,
                     onUpdate = actions::updateZapretNow,
@@ -239,6 +245,7 @@ fun ProgramUpdatesDialog(
                 item(key = "zapret2") {
                   ProgramUpdateCard(
                     item = state.zapret2,
+                      programId = "nfqws2",
                     enabled = enabledFor(state.zapret2),
                     onCheck = actions::checkZapret2Now,
                     onUpdate = actions::updateZapret2Now,
@@ -251,6 +258,7 @@ fun ProgramUpdatesDialog(
                 item(key = "mihomo") {
                   ProgramUpdateCard(
                     item = state.mihomo,
+                      programId = "mihomo",
                     enabled = enabledFor(state.mihomo),
                     onCheck = actions::checkMihomoNow,
                     onUpdate = actions::updateMihomoNow,
@@ -263,6 +271,7 @@ fun ProgramUpdatesDialog(
                 item(key = "mieru") {
                   ProgramUpdateCard(
                     item = state.mieru,
+                      programId = "mieru",
                     enabled = enabledFor(state.mieru),
                     onCheck = actions::checkMieruNow,
                     onUpdate = actions::updateMieruNow,
@@ -275,6 +284,7 @@ fun ProgramUpdatesDialog(
                 item(key = "operaproxy") {
                   ProgramUpdateCard(
                     item = state.operaProxy,
+                      programId = "operaproxy",
                     enabled = enabledFor(state.operaProxy),
                     onCheck = actions::checkOperaProxyNow,
                     onUpdate = actions::updateOperaProxyNow,
@@ -435,6 +445,7 @@ private fun ServiceRunningUpdateCard(
 private fun ProgramUpdateCard(
   modifier: Modifier = Modifier,
   item: ProgramUpdateItemUi,
+  programId: String,
   enabled: Boolean,
   onCheck: () -> Unit,
   onUpdate: () -> Unit,
@@ -463,7 +474,13 @@ private fun ProgramUpdateCard(
             if (item.checking || item.updating) {
               CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
             } else {
-              Icon(painter = painterResource(R.drawable.ic_program_updates_custom), contentDescription = null, tint = accent, modifier = Modifier.size(19.dp))
+              val iconRes = programIconRes(programId)
+              Icon(
+                painter = painterResource(iconRes ?: R.drawable.ic_program_updates_custom),
+                contentDescription = null,
+                tint = accent,
+                modifier = Modifier.size(19.dp),
+              )
             }
           }
         }

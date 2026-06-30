@@ -1081,9 +1081,9 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 
     <string name="tab_opera_args">Args</string>
     <string name="opera_args_api_proxy_title">API Proxy (-api-proxy)</string>
-    <string name="opera_args_api_proxy_desc">SOCKS5/HTTP(S) proxy used by opera-proxy to reach Opera backend API. You may specify one proxy URL, several proxy URLs separated by commas, or a URL to a plain text proxy list.</string>
-    <string name="opera_args_api_proxy_invalid">Use proxy URLs with a scheme: http://, https://, socks5:// or socks5h://. You can also use an http(s) URL to a plain text proxy list.</string>
-    <string name="opera_args_api_proxy_hint">Format: http://, https://, socks5:// or socks5h://[login:password@]host[:port]. Multiple proxies can be separated by commas. You may also paste an http(s) URL to a plain text list where each line contains a proxy URL. The list is downloaded again on every Opera-proxy start. Addresses without a scheme are not supported. If no working proxy is found or the list cannot be downloaded, Opera-proxy starts without api-proxy.</string>
+    <string name="opera_args_api_proxy_desc">SOCKS5/HTTP(S) proxy used by opera-proxy to reach Opera backend API. You may specify one proxy URL, several proxy URLs separated by commas, a URL to a plain text proxy list, or an absolute path to a proxy list file already stored on the device.</string>
+    <string name="opera_args_api_proxy_invalid">Use proxy URLs with a scheme: http://, https://, socks5:// or socks5h://. You can also use an http(s) URL to a plain text proxy list, or an absolute local file path starting with /.</string>
+    <string name="opera_args_api_proxy_hint">Format: http://, https://, socks5:// or socks5h://[login:password@]host[:port]. Multiple proxies can be separated by commas. You may also paste an http(s) URL to a plain text list, or an absolute local path such as /sdcard/proxies.txt or /storage/emulated/0/proxies.txt. Local files are read from the device on every Opera-proxy start. Addresses without a scheme are not supported unless they are absolute file paths. If no working proxy is found or the list cannot be downloaded/read, Opera-proxy starts without api-proxy.</string>
     <string name="opera_args_server_selection_title">Server Selection</string>
     <string name="opera_args_dl_limit_hint">Download limit in bytes for server speed test. Default: 204800 (200 KB)</string>
     <string name="opera_args_misc_title">Timing &amp; Verbosity</string>

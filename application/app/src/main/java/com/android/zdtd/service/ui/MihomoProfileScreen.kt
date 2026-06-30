@@ -109,7 +109,7 @@ private data class MihomoPendingChange(
 private val mihomoProfileNameRegex = Regex("^[A-Za-z0-9_-]{1,10}$")
 private val mihomoTunRegex = Regex("^[A-Za-z0-9_.-]{1,15}$")
 private val mihomoForbiddenTunNames = setOf("wlan0", "rmnet_data0", "eth0", "lo", "dummy0")
-private val mihomoLogLevels = listOf("debug", "info", "warning", "error", "silent")
+private val mihomoLogLevels = listOf("debug", "info", "warn", "error", "silent")
 private val mihomoTun2SocksLogLevels = listOf("debug", "info", "warn", "error", "silent")
 private const val MIHOMO_AUTOSAVE_DELAY_MS = 1500L
 

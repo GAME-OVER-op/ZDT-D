@@ -1184,6 +1184,7 @@ impl SocksBackends {
         internet_ping_ms: Option<f64>,
         internet_ttl: Option<u32>,
         full_probe: bool,
+        simple_success_is_green: bool,
     ) -> bool {
         if idx >= self.status.len() { return false; }
         let prev = self.status[idx].clone();
@@ -1192,6 +1193,12 @@ impl SocksBackends {
         let state = if socks_ping_ms.is_none() {
             // Stage 1/simple check failed: the SOCKS backend itself is not reachable.
             BackendState::Red
+        } else if simple_success_is_green {
+            // Remote SOCKS backends are considered usable after the SOCKS
+            // connect/greeting/auth check.  The strict Internet probe is kept for
+            // local loopback backends where the local proxy process may be alive
+            // while its upstream route is still broken.
+            BackendState::Green
         } else if full_probe {
             // Stage 2/detailed check: SOCKS is reachable; the strict single
             // data-plane probe decides Green vs Yellow immediately.

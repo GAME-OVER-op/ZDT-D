@@ -1079,9 +1079,9 @@ APatch: 10700+</string>
 
     <string name="tab_opera_args">Аргументы</string>
     <string name="opera_args_api_proxy_title">API Прокси (-api-proxy)</string>
-    <string name="opera_args_api_proxy_desc">SOCKS5/HTTP(S) прокси, через который opera-proxy авторизуется на серверах Opera. Можно указать один URL прокси, несколько URL через запятую или ссылку на текстовый список прокси.</string>
-    <string name="opera_args_api_proxy_invalid">Укажите URL прокси со схемой: http://, https://, socks5:// или socks5h://. Также можно указать http(s)-ссылку на текстовый список прокси.</string>
-    <string name="opera_args_api_proxy_hint">Формат: http://, https://, socks5:// или socks5h://[логин:пароль@]хост[:порт]. Несколько прокси можно разделять запятыми. Также можно вставить http(s)-ссылку на текстовый список, где каждая строка содержит URL прокси. Список загружается заново при каждом запуске Opera-proxy. Адреса без схемы не поддерживаются. Если рабочий прокси не найден или список не удалось скачать, Opera-proxy запустится без api-proxy.</string>
+    <string name="opera_args_api_proxy_desc">SOCKS5/HTTP(S) прокси, через который opera-proxy авторизуется на серверах Opera. Можно указать один URL прокси, несколько URL через запятую, ссылку на текстовый список прокси или абсолютный путь к файлу со списком прокси, который уже есть на устройстве.</string>
+    <string name="opera_args_api_proxy_invalid">Укажите URL прокси со схемой: http://, https://, socks5:// или socks5h://. Также можно указать http(s)-ссылку на текстовый список прокси или абсолютный локальный путь к файлу, начинающийся с /.</string>
+    <string name="opera_args_api_proxy_hint">Формат: http://, https://, socks5:// или socks5h://[логин:пароль@]хост[:порт]. Несколько прокси можно разделять запятыми. Также можно вставить http(s)-ссылку на текстовый список или абсолютный локальный путь, например /sdcard/proxies.txt или /storage/emulated/0/proxies.txt. Локальные файлы читаются с устройства при каждом запуске Opera-proxy. Адреса без схемы не поддерживаются, кроме абсолютных путей к файлам. Если рабочий прокси не найден или список не удалось скачать/прочитать, Opera-proxy запустится без api-proxy.</string>
     <string name="opera_args_server_selection_title">Выбор сервера</string>
     <string name="opera_args_dl_limit_hint">Лимит загрузки в байтах для теста скорости серверов. По умолчанию: 204800 (200 КБ)</string>
     <string name="opera_args_misc_title">Тайминги и логирование</string>

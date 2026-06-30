@@ -2936,7 +2936,7 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
     return trimmed.split(',')
       .map { it.trim() }
       .filter { it.isNotEmpty() }
-      .any { token -> allowed.none { prefix -> token.startsWith(prefix, ignoreCase = true) } }
+      .any { token -> !token.startsWith("/") && allowed.none { prefix -> token.startsWith(prefix, ignoreCase = true) } }
   }
 
   fun save() {
@@ -3008,7 +3008,7 @@ private fun OperaArgsSection(actions: ZdtdActions, snackHost: SnackbarHostState)
           modifier = Modifier.fillMaxWidth(),
           singleLine = true,
           label = { Text("-api-proxy") },
-          placeholder = { Text("socks5://host:port") },
+          placeholder = { Text("socks5://host:port or /sdcard/proxies.txt") },
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
           isError = apiProxyInvalid,
           supportingText = {

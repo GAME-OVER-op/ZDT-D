@@ -78,6 +78,7 @@ object ApiModels {
     val warnings: List<String> = emptyList(),
     val proxyEndpoints: List<TrafficBackendPort> = emptyList(),
     val t2sInstances: List<TrafficT2sInstance> = emptyList(),
+    val dnscrypt: DnscryptLayer? = null,
   )
 
   data class TrafficRuleCounter(
@@ -118,6 +119,12 @@ object ApiModels {
     val wrappedProgramId: String? = null,
     val wrappedProfile: String? = null,
     val wrappedServer: String? = null,
+  )
+
+  data class DnscryptLayer(
+    val enabled: Boolean = false,
+    val listenPort: Int = 0,
+    val label: String = "",
   )
 
   data class TrafficT2sInstance(
@@ -170,6 +177,7 @@ object ApiModels {
     val totalBytes: Long = 0L,
     val uidRanges: List<String> = emptyList(),
     val apps: List<VpnApp> = emptyList(),
+    val proxyEndpoint: TrafficBackendPort? = null,
   )
 
   data class VpnApp(
@@ -811,6 +819,7 @@ object ApiModels {
         totalBytes = o.optLong("total_bytes", 0L),
         uidRanges = jsonStringList(o, "uid_ranges"),
         apps = apps,
+        proxyEndpoint = parseTrafficBackendPort(o.optJSONObject("proxy_endpoint")),
       )
     }
 
@@ -829,6 +838,7 @@ object ApiModels {
       warnings = jsonStringList(data, "warnings"),
       proxyEndpoints = parseTrafficBackendPorts(data.optJSONArray("proxy_endpoints")),
       t2sInstances = parseTrafficT2sInstances(data.optJSONArray("t2s_instances")),
+      dnscrypt = parseDnscryptLayer(data.optJSONObject("dnscrypt")),
     )
   }
 
@@ -862,22 +872,41 @@ object ApiModels {
     val out = ArrayList<TrafficBackendPort>(arr.length())
     for (i in 0 until arr.length()) {
       val o = arr.optJSONObject(i) ?: continue
-      out += TrafficBackendPort(
-        port = o.optInt("port", 0),
-        label = o.optString("label", ""),
-        host = o.optString("host", "").trim().takeIf { it.isNotEmpty() },
-        programId = o.optString("program_id", "").trim().takeIf { it.isNotEmpty() },
-        profile = o.optString("profile", "").trim().takeIf { it.isNotEmpty() },
-        server = o.optString("server", "").trim().takeIf { it.isNotEmpty() },
-        wrappedHost = o.optString("wrapped_host", "").trim().takeIf { it.isNotEmpty() },
-        wrappedPort = if (o.has("wrapped_port") && !o.isNull("wrapped_port")) o.optInt("wrapped_port").takeIf { it > 0 } else null,
-        wrappedLabel = o.optString("wrapped_label", "").trim().takeIf { it.isNotEmpty() },
-        wrappedProgramId = o.optString("wrapped_program_id", "").trim().takeIf { it.isNotEmpty() },
-        wrappedProfile = o.optString("wrapped_profile", "").trim().takeIf { it.isNotEmpty() },
-        wrappedServer = o.optString("wrapped_server", "").trim().takeIf { it.isNotEmpty() },
-      )
+      parseTrafficBackendPort(o)?.let(out::add)
     }
     return out
+  }
+
+  private fun parseTrafficBackendPort(o: JSONObject?): TrafficBackendPort? {
+    if (o == null) return null
+    val port = o.optInt("port", 0)
+    if (port <= 0) return null
+    return TrafficBackendPort(
+      port = port,
+      label = o.optString("label", ""),
+      host = o.optString("host", "").trim().takeIf { it.isNotEmpty() },
+      programId = o.optString("program_id", "").trim().takeIf { it.isNotEmpty() },
+      profile = o.optString("profile", "").trim().takeIf { it.isNotEmpty() },
+      server = o.optString("server", "").trim().takeIf { it.isNotEmpty() },
+      wrappedHost = o.optString("wrapped_host", "").trim().takeIf { it.isNotEmpty() },
+      wrappedPort = if (o.has("wrapped_port") && !o.isNull("wrapped_port")) o.optInt("wrapped_port").takeIf { it > 0 } else null,
+      wrappedLabel = o.optString("wrapped_label", "").trim().takeIf { it.isNotEmpty() },
+      wrappedProgramId = o.optString("wrapped_program_id", "").trim().takeIf { it.isNotEmpty() },
+      wrappedProfile = o.optString("wrapped_profile", "").trim().takeIf { it.isNotEmpty() },
+      wrappedServer = o.optString("wrapped_server", "").trim().takeIf { it.isNotEmpty() },
+    )
+  }
+
+  private fun parseDnscryptLayer(o: JSONObject?): DnscryptLayer? {
+    if (o == null) return null
+    val port = o.optInt("listen_port", 0)
+    val enabled = jsonBool(o, "enabled", false)
+    if (!enabled || port <= 0) return null
+    return DnscryptLayer(
+      enabled = true,
+      listenPort = port,
+      label = o.optString("label", "DNSCrypt :$port"),
+    )
   }
 
   fun parseConstructionProxyEndpoints(wrapper: JSONObject?): List<ConstructionProxyEndpointCandidate> {

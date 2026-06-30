@@ -109,7 +109,7 @@ import kotlin.math.max
 // ---------------------------------------------------------------------------
 // Construction Studio is a single living canvas (pan + zoom), not a list of
 // cards.  Traffic routes are laid out as a left-to-right dependency graph:
-//   app-list -> program/rule -> [t2s backend split] -> internet
+//   app-list -> program/rule -> [t2s backend split] -> global layers -> internet
 // The whole map moves and scales as one surface, similar to the GitHub Actions
 // workflow visualization.
 // ---------------------------------------------------------------------------
@@ -123,7 +123,7 @@ private data class StudioAppGroup(
   val rules: List<ApiModels.TrafficRuleCounter>,
 )
 
-private enum class StudioNodeKind { APP, PROGRAM, BACKEND, VPN, INTERNET }
+private enum class StudioNodeKind { APP, PROGRAM, BACKEND, VPN, GLOBAL, INTERNET }
 
 private data class StudioNode(
   val id: String,
@@ -307,6 +307,7 @@ fun ConstructionStudioScreen(
     groups = groups,
     vpnItems = vpnItems,
     proxyEndpoints = report.proxyEndpoints,
+    dnscrypt = report.dnscrypt,
     t2sInstances = report.t2sInstances,
     t2sPolls = t2sPolls,
     appListLabel = appListLabel,
@@ -751,6 +752,7 @@ private fun buildStudioGraph(
   groups: List<StudioAppGroup>,
   vpnItems: List<ApiModels.VpnTraffic>,
   proxyEndpoints: List<ApiModels.TrafficBackendPort>,
+  dnscrypt: ApiModels.DnscryptLayer?,
   t2sInstances: List<ApiModels.TrafficT2sInstance>,
   t2sPolls: Map<Int, T2sPollResult>,
   appListLabel: String,
@@ -775,13 +777,17 @@ private fun buildStudioGraph(
   val t2sFronted = setOf("wireproxy", "myproxy", "operaproxy", "tor", "myprogram", "sing-box")
   fun usesT2s(programId: String): Boolean = normalizeRouteProgramId(programId) in t2sFronted
 
-  val hasAnyBackend = groups.any { g -> g.rules.any { it.backendPorts.isNotEmpty() } }
+  val hasAnyBackend = groups.any { g -> g.rules.any { it.backendPorts.isNotEmpty() } } || vpnItems.any { it.proxyEndpoint != null }
   val hasWrappedBackend = groups.any { g -> g.rules.any { rule -> rule.backendPorts.any { it.wrappedPort != null } } }
   val hasT2s = groups.any { usesT2s(it.programId) }
+  val dnscryptEnabled = dnscrypt?.enabled == true && dnscrypt.listenPort > 0
   val programCol = if (hasT2s) 2 else 1
   val backendCol = programCol + 1
   val wrapperCol = backendCol + 1
-  val internetCol = (if (hasAnyBackend || hasT2s) { if (hasWrappedBackend) wrapperCol else backendCol } else programCol) + 1
+  val egressCol = (if (hasAnyBackend || hasT2s) { if (hasWrappedBackend) wrapperCol else backendCol } else programCol) + 1
+  val dnsCol = egressCol
+  val internetCol = if (dnscryptEnabled) egressCol + 1 else egressCol
+  val internetEntryId = if (dnscryptEnabled) "dnscrypt" else "internet"
   val internetX = colX(internetCol)
 
   var cursorY = MARGIN_TOP
@@ -903,12 +909,12 @@ private fun buildStudioGraph(
     if (showT2s) {
       edges += StudioEdge(t2sId, progId, accent, active)
       if (shouldShowDirectFallback(t2sPoll)) {
-        edges += StudioEdge(t2sId, "internet", Color(0xFFF97316), hasDirectConnections(t2sPoll), StudioEdgeKind.DIRECT_FALLBACK)
+        edges += StudioEdge(t2sId, internetEntryId, Color(0xFFF97316), hasDirectConnections(t2sPoll), StudioEdgeKind.DIRECT_FALLBACK)
       }
     }
 
     if (backendNodeCount == 0) {
-      if (!showT2s) edges += StudioEdge(progId, "internet", tertiary, active)
+      if (!showT2s) edges += StudioEdge(progId, internetEntryId, tertiary, active)
     } else {
       var by = centerY - backendsHeight / 2f
       reusedT2sBackends.forEach { backend ->
@@ -952,7 +958,7 @@ private fun buildStudioGraph(
         edges += StudioEdge(if (showT2s) t2sId else progId, bId, backendColor, beActive)
         val wrapped = wrappedBackendCard(backend)
         if (wrapped == null) {
-          edges += StudioEdge(bId, "internet", tertiary, beActive)
+          edges += StudioEdge(bId, internetEntryId, tertiary, beActive)
         }
       }
       if (wrappedNodes.isNotEmpty()) {
@@ -973,7 +979,7 @@ private fun buildStudioGraph(
             )
             wy += BACKEND_H + BACKEND_GAP
           }
-          edges += StudioEdge(nodeId, "internet", tertiary, active)
+          edges += StudioEdge(nodeId, internetEntryId, tertiary, active)
         }
       }
       backends.forEach { backend ->
@@ -992,7 +998,9 @@ private fun buildStudioGraph(
     val active = vpn.totalBytes > 0L
     if (active) anyActive = true
     totalBytes += vpn.totalBytes
-    val centerY = cursorY + NODE_H / 2f
+    val endpoint = vpn.proxyEndpoint
+    val bandH = if (endpoint == null) NODE_H else max(NODE_H, BACKEND_H)
+    val centerY = cursorY + bandH / 2f
     val rowTopY = centerY - NODE_H / 2f
     val key = "${vpn.ownerProgram}:${vpn.profile}:${vpn.tun}"
     val appId = "vpnapp:$key"
@@ -1015,12 +1023,42 @@ private fun buildStudioGraph(
       iconRes = programIconRes(normalizeRouteProgramId(vpn.ownerProgram)),
     )
     edges += StudioEdge(appId, progId, vpnColor, active)
-    edges += StudioEdge(progId, "internet", tertiary, active)
-    cursorY += NODE_H + BAND_GAP
+    if (endpoint != null) {
+      val bId = backendNodeId(endpoint)
+      if (addedBackendNodes.add(bId)) {
+        nodes += StudioNode(
+          id = bId,
+          x = colX(backendCol), y = centerY - BACKEND_H / 2f, w = BACKEND_W, h = BACKEND_H,
+          title = endpoint.label.ifBlank { "${endpoint.host ?: "127.0.0.1"}:${endpoint.port}" },
+          subtitle = listOfNotNull(endpoint.programId, endpoint.profile, endpoint.server)
+            .joinToString(" / ").ifBlank { "Proxy ${endpoint.host ?: "127.0.0.1"}:${endpoint.port}" },
+          icon = Icons.Filled.CallSplit, accent = backendColor, active = active,
+          kind = StudioNodeKind.BACKEND, onClick = null,
+          iconRes = programIconRes(normalizeRouteProgramId(endpoint.programId.orEmpty())),
+        )
+      }
+      edges += StudioEdge(progId, bId, backendColor, active)
+      edges += StudioEdge(bId, internetEntryId, tertiary, active)
+    } else {
+      edges += StudioEdge(progId, internetEntryId, tertiary, active)
+    }
+    cursorY += bandH + BAND_GAP
   }
 
   val contentBottom = (cursorY - BAND_GAP).coerceAtLeast(MARGIN_TOP + NODE_H)
   val internetY = MARGIN_TOP + (contentBottom - MARGIN_TOP) / 2f - NODE_H / 2f
+  if (dnscryptEnabled) {
+    nodes += StudioNode(
+      id = "dnscrypt",
+      x = colX(dnsCol), y = internetY, w = NODE_W, h = NODE_H,
+      title = "DNSCrypt",
+      subtitle = dnscrypt?.label?.ifBlank { "global DNS capture" } ?: "global DNS capture",
+      icon = Icons.Filled.Hub, accent = Color(0xFF8B5CF6), active = anyActive,
+      kind = StudioNodeKind.GLOBAL, onClick = null,
+      iconRes = programIconRes("dnscrypt"),
+    )
+    edges += StudioEdge("dnscrypt", "internet", Color(0xFF8B5CF6), anyActive)
+  }
   nodes += StudioNode(
     id = "internet",
     x = internetX, y = internetY, w = NODE_W, h = NODE_H,
@@ -1125,7 +1163,9 @@ private fun backendActive(poll: T2sPollResult?, port: Int, fallback: Boolean): B
   return poll.state.backends.any { backendPortFromAddr(it.addr) == port && it.healthy }
 }
 
-private fun hasDirectConnections(poll: T2sPollResult?): Boolean = poll?.state?.connections?.any { it.mode.equals("direct", ignoreCase = true) } == true
+private fun hasDirectConnections(poll: T2sPollResult?): Boolean = poll?.state?.connections?.any {
+  it.mode.equals("direct", ignoreCase = true) || it.mode.equals("transparent", ignoreCase = true)
+} == true
 
 private fun shouldShowDirectFallback(poll: T2sPollResult?): Boolean {
   val state = poll?.state ?: return false

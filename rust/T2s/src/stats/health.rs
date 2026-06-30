@@ -91,7 +91,8 @@ async fn probe_backend_once(
 ) -> (Option<String>, Option<f64>, Option<f64>, Option<u32>) {
     let socks_ping_ms = check_backend_rtt(backend, timeout, auth.clone(), wrapper, wrapper_auth.clone()).await;
     let mut err = if socks_ping_ms.is_some() { None } else { Some("connect/greeting/auth failed".to_string()) };
-    let internet_ping_ms = if socks_ping_ms.is_some() && probe_mode == ProbeMode::Full {
+    let full_internet_probe = probe_mode == ProbeMode::Full && backend_requires_full_internet_probe(backend);
+    let internet_ping_ms = if socks_ping_ms.is_some() && full_internet_probe {
         let summary = check_internet_via_backend(backend, timeout, auth, wrapper, wrapper_auth).await;
         if summary.ok {
             summary.best_ping_ms
@@ -102,8 +103,12 @@ async fn probe_backend_once(
     } else {
         None
     };
-    let ttl = if probe_mode == ProbeMode::Full { internet_ttl } else { None };
+    let ttl = if full_internet_probe { internet_ttl } else { None };
     (err, socks_ping_ms, internet_ping_ms, ttl)
+}
+
+fn backend_requires_full_internet_probe(backend: SocketAddr) -> bool {
+    backend.ip().is_loopback()
 }
 
 fn direct_internet_enabled(state: &crate::AppState) -> bool {
@@ -225,7 +230,9 @@ async fn refresh_backend_index_once(
     let before_any_healthy = b.any_healthy();
     let before_any_green = b.any_green();
     let before_state = b.raw_state_at(idx);
-    let changed = b.update(idx, socks_ping_ms.is_some(), err, socks_ping_ms, internet_ping_ms, ttl, probe_mode == ProbeMode::Full);
+    let simple_success_is_green = !backend_requires_full_internet_probe(backend);
+    let full_probe = probe_mode == ProbeMode::Full && backend_requires_full_internet_probe(backend);
+    let changed = b.update(idx, socks_ping_ms.is_some(), err, socks_ping_ms, internet_ping_ms, ttl, full_probe, simple_success_is_green);
     let after_state = b.raw_state_at(idx);
     let kill_unhealthy_backend = changed
         && before_state == Some(BackendState::Green)

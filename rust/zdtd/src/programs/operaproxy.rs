@@ -108,10 +108,12 @@ struct PortJson {
 pub struct OperaArgs {
     /// -api-proxy: HTTP(S)/SOCKS5 proxy used by opera-proxy to reach Opera backend API.
     /// Accepts one proxy URL, several proxy URLs separated by commas,
-    /// or an http(s) URL to a plain text proxy list.
+    /// an http(s) URL to a plain text proxy list, or an absolute local
+    /// path to a plain text proxy list stored on the device.
     /// Examples:
     ///   "socks5://10.0.0.1:1080,socks5://10.0.0.1:1081"
     ///   "https://example.com/socks5-list.txt"
+    ///   "/sdcard/proxies.txt"
     #[serde(default = "default_api_proxy")]
     pub api_proxy: String,
 
@@ -776,12 +778,30 @@ fn collect_api_proxy_candidates(raw: &str, log_path: &Path) -> Vec<ApiProxyCandi
         return Vec::new();
     }
 
+    if is_api_proxy_list_file_path(trimmed) {
+        append_log_line(log_path, "api_proxy list file mode: 1 file");
+        return collect_api_proxy_candidates_from_files(&[trimmed.to_string()], log_path);
+    }
+
     let raw_tokens = split_api_proxy_tokens(trimmed);
+    let list_files: Vec<String> = raw_tokens
+        .iter()
+        .filter(|token| is_api_proxy_list_file_path(token))
+        .cloned()
+        .collect();
     let list_urls: Vec<String> = raw_tokens
         .iter()
         .filter(|token| is_api_proxy_list_url(token))
         .cloned()
         .collect();
+
+    if !list_files.is_empty() {
+        append_log_line(
+            log_path,
+            &format!("api_proxy list file mode: {} file(s)", list_files.len()),
+        );
+        return collect_api_proxy_candidates_from_files(&list_files, log_path);
+    }
 
     if !list_urls.is_empty() {
         append_log_line(
@@ -863,6 +883,63 @@ fn collect_api_proxy_candidates_from_urls(urls: &[String], log_path: &Path) -> V
     candidates
 }
 
+fn collect_api_proxy_candidates_from_files(paths: &[String], log_path: &Path) -> Vec<ApiProxyCandidate> {
+    let list_path = Path::new(API_PROXY_LIST_TXT);
+    // Always reset the cached list before reading so every start uses current file contents.
+    if let Err(e) = write_api_proxy_list_file(list_path, "") {
+        append_log_line(
+            log_path,
+            &format!("failed to reset api_proxy list {}: {}", list_path.display(), e),
+        );
+    }
+    let mut combined = String::new();
+
+    for path in paths {
+        append_log_line(log_path, &format!("reading api_proxy list file: {}", path));
+        match read_api_proxy_list_file(path) {
+            Ok(text) => {
+                append_log_line(
+                    log_path,
+                    &format!("read {} byte(s) from {}", text.as_bytes().len(), path),
+                );
+                if !combined.is_empty() {
+                    combined.push('\n');
+                }
+                combined.push_str(&text);
+            }
+            Err(e) => {
+                append_log_line(
+                    log_path,
+                    &format!("failed to read api_proxy list file {}: {}", path, e),
+                );
+            }
+        }
+    }
+
+    if combined.trim().is_empty() {
+        append_log_line(log_path, "api_proxy list file read failed or empty -> start without -api-proxy");
+        warn!("operaproxy: api_proxy list file read failed or empty -> start without -api-proxy");
+        return Vec::new();
+    }
+
+    if let Err(e) = write_api_proxy_list_file(list_path, &combined) {
+        append_log_line(
+            log_path,
+            &format!("failed to save api_proxy list {}: {}", list_path.display(), e),
+        );
+        warn!("operaproxy: failed to save api_proxy list {}: {}", list_path.display(), e);
+    } else {
+        append_log_line(log_path, &format!("saved api_proxy list: {}", list_path.display()));
+    }
+
+    let candidates = parse_api_proxy_candidates_from_text(&combined, log_path);
+    append_log_line(
+        log_path,
+        &format!("parsed {} valid candidate(s) from local api_proxy list", candidates.len()),
+    );
+    candidates
+}
+
 fn download_api_proxy_list(url: &str) -> Result<String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(API_PROXY_LIST_DOWNLOAD_TIMEOUT)
@@ -886,6 +963,24 @@ fn download_api_proxy_list(url: &str) -> Result<String> {
     limited
         .read_to_end(&mut body)
         .with_context(|| "read api_proxy list response")?;
+    if body.len() > API_PROXY_LIST_MAX_BYTES {
+        anyhow::bail!("api_proxy list is larger than {} byte(s)", API_PROXY_LIST_MAX_BYTES);
+    }
+
+    Ok(String::from_utf8_lossy(&body).into_owned())
+}
+
+fn read_api_proxy_list_file(path: &str) -> Result<String> {
+    let path = Path::new(path.trim());
+    if !path.is_absolute() {
+        anyhow::bail!("api_proxy list file path must be absolute");
+    }
+    let file = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
+    let mut body = Vec::new();
+    let mut limited = file.take((API_PROXY_LIST_MAX_BYTES + 1) as u64);
+    limited
+        .read_to_end(&mut body)
+        .with_context(|| format!("read {}", path.display()))?;
     if body.len() > API_PROXY_LIST_MAX_BYTES {
         anyhow::bail!("api_proxy list is larger than {} byte(s)", API_PROXY_LIST_MAX_BYTES);
     }
@@ -973,6 +1068,11 @@ fn is_api_proxy_list_url(token: &str) -> bool {
 
     let path_or_query_is_not_root = !matches!(tail, "/" | "" | "?" | "#");
     path_or_query_is_not_root
+}
+
+fn is_api_proxy_list_file_path(token: &str) -> bool {
+    let token = token.trim();
+    !token.is_empty() && Path::new(token).is_absolute()
 }
 
 fn parse_api_proxy_candidate(token: &str) -> Option<ApiProxyCandidate> {

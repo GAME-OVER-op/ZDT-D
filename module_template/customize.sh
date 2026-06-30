@@ -50,7 +50,7 @@ fail() {
 }
 
 ################################################################################
-# Pre-checks: Android 9+ (SDK >= 28) and arm64 only
+# Pre-checks: Android 9+ (SDK >= 28) and supported ARM ABI
 ################################################################################
 zdt_progress 65 "Running module pre-checks"
 hr
@@ -58,7 +58,7 @@ sec "Magisk Module Pre-checks"
 ui_print "## Requirements:"
 ui_print "## - Android 9+ (SDK >= 28)"
 ui_print "## - Officially supported: Android 11+ (SDK >= 30)"
-ui_print "## - arm64 only (arm64-v8a / aarch64)"
+ui_print "## - arm64-v8a / armeabi-v7a"
 hr
 
 
@@ -165,16 +165,34 @@ ui_print "## - abilist:   ${ABILIST:-unknown}"
 ui_print "## - uname -m:  ${UNAME_M:-unknown}"
 hr
 
+ZDT_BIN_ARCH=""
+ZDT_ZYGISK_SO_NAME=""
 if echo "$ABI64" | grep -qE '(^|[ ,])arm64-v8a([ ,]|$)'; then
+  ZDT_BIN_ARCH="arm64-v8a"
+  ZDT_ZYGISK_SO_NAME="arm64-v8a.so"
   ok "arm64-v8a detected (abilist64)"
 elif echo "$ABILIST $ABI" | grep -qE '(^|[ ,])arm64-v8a([ ,]|$)'; then
+  ZDT_BIN_ARCH="arm64-v8a"
+  ZDT_ZYGISK_SO_NAME="arm64-v8a.so"
   ok "arm64-v8a detected"
 elif [ "$UNAME_M" = "aarch64" ]; then
+  ZDT_BIN_ARCH="arm64-v8a"
+  ZDT_ZYGISK_SO_NAME="arm64-v8a.so"
   ok "aarch64 detected"
+elif echo "$ABILIST $ABI" | grep -qE '(^|[ ,])armeabi-v7a([ ,]|$)'; then
+  ZDT_BIN_ARCH="arm-v7a"
+  ZDT_ZYGISK_SO_NAME="armeabi-v7a.so"
+  ok "armeabi-v7a detected"
+elif [ "$UNAME_M" = "armv7l" ] || [ "$UNAME_M" = "armv8l" ] || [ "$UNAME_M" = "arm" ]; then
+  ZDT_BIN_ARCH="arm-v7a"
+  ZDT_ZYGISK_SO_NAME="armeabi-v7a.so"
+  ok "ARM 32-bit detected ($UNAME_M)"
 else
   warn "Unsupported architecture detected"
-  fail "arm64 required (arm64-v8a/aarch64). Detected ABI64='${ABI64:-unknown}' ABI='${ABI:-unknown}' uname='${UNAME_M:-unknown}'"
+  fail "arm64-v8a or armeabi-v7a required. Detected ABI64='${ABI64:-unknown}' ABI='${ABI:-unknown}' uname='${UNAME_M:-unknown}'"
 fi
+export ZDT_BIN_ARCH ZDT_ZYGISK_SO_NAME
+ui_print "## - selected binary arch: $ZDT_BIN_ARCH"
 
 zdt_progress 82 "Pre-checks passed"
 hr
@@ -210,13 +228,22 @@ hr
 sec "Permissions"
 ui_print "## Setting executable permissions (755)..."
 
-# bin directory inside module
+# Select architecture-specific module binaries.
 BINDIR="$MODDIR/bin"
+ARCH_BINDIR="$MODDIR/prebuilt/bin/$ZDT_BIN_ARCH"
 SERVICE="$MODDIR/service.sh"
 
-if [ ! -d "$BINDIR" ]; then
-  fail "Folder not found: $BINDIR"
+if [ ! -d "$ARCH_BINDIR" ]; then
+  fail "Architecture binary folder not found: $ARCH_BINDIR"
 fi
+rm -rf "$BINDIR" 2>/dev/null || true
+mkdir -p "$BINDIR" 2>/dev/null || fail "Unable to create folder: $BINDIR"
+for f in "$ARCH_BINDIR"/*; do
+  [ -e "$f" ] || continue
+  [ -f "$f" ] || continue
+  cp -f "$f" "$BINDIR/$(basename "$f")" 2>/dev/null || fail "Unable to install binary: $(basename "$f")"
+done
+rm -rf "$MODDIR/prebuilt" 2>/dev/null || true
 
 # chmod all regular files in bin
 COUNT=0
@@ -247,14 +274,17 @@ fi
 
 zdt_progress 93 "Preparing optional Zygisk component"
 ZYGISK_DIR="$MODDIR/zygisk"
-ZYGISK_SO="$ZYGISK_DIR/arm64-v8a.so"
+ZYGISK_SO="$ZYGISK_DIR/$ZDT_ZYGISK_SO_NAME"
 if [ -f "$ZYGISK_MARKER" ]; then
   ui_print "- Zygisk component: enabled by marker"
   rm -f "$ZYGISK_DIR/unloaded" 2>/dev/null || true
   if [ -f "$ZYGISK_SO" ]; then
     chmod 755 "$ZYGISK_DIR" 2>/dev/null || true
-    chmod 644 "$ZYGISK_SO" 2>/dev/null || fail "chmod 644 failed: $ZYGISK_SO"
-    ok "Zygisk arm64-v8a.so found"
+    for zdt_zygisk_so in "$ZYGISK_DIR"/*.so; do
+      [ -e "$zdt_zygisk_so" ] || continue
+      chmod 644 "$zdt_zygisk_so" 2>/dev/null || fail "chmod 644 failed: $zdt_zygisk_so"
+    done
+    ok "Zygisk $ZDT_ZYGISK_SO_NAME found; keeping both arm64-v8a.so and armeabi-v7a.so when present"
   else
     fail_code "ZDTD_ZYGISK_LIBRARY_MISSING" "Zygisk marker exists, but library not found: $ZYGISK_SO"
   fi

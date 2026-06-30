@@ -1,12 +1,34 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build the bundled Android arm64 BusyBox helper from official BusyBox sources.
+# Build the bundled Android BusyBox helper from official BusyBox sources.
 # The resulting binary is used only as a local unzip fallback for ZDT-D module
 # installation/checks. No prebuilt third-party BusyBox binary is downloaded.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT_PATH="${1:-$ROOT_DIR/prebuilt/bin/arm64-v8a/busybox}"
+ZDT_BUSYBOX_ABI="${ZDT_BUSYBOX_ABI:-}"
+if [[ -z "$ZDT_BUSYBOX_ABI" ]]; then
+  case "$OUT_PATH" in
+    */arm-v7a/*|*/armeabi-v7a/*) ZDT_BUSYBOX_ABI="arm-v7a" ;;
+    *) ZDT_BUSYBOX_ABI="arm64-v8a" ;;
+  esac
+fi
+case "$ZDT_BUSYBOX_ABI" in
+  arm64-v8a)
+    BUSYBOX_CLANG_PREFIX="aarch64-linux-android"
+    BUSYBOX_FILE_PATTERN="aarch64|ARM aarch64"
+    ;;
+  arm-v7a|armeabi-v7a)
+    ZDT_BUSYBOX_ABI="arm-v7a"
+    BUSYBOX_CLANG_PREFIX="armv7a-linux-androideabi"
+    BUSYBOX_FILE_PATTERN="ARM"
+    ;;
+  *)
+    printf '[ZDT-D][BusyBox][ERR] Unsupported ZDT_BUSYBOX_ABI: %s\n' "$ZDT_BUSYBOX_ABI" >&2
+    exit 1
+    ;;
+esac
 BUSYBOX_VERSION="${ZDT_BUSYBOX_VERSION:-1.37.0}"
 BUSYBOX_TARBALL="busybox-${BUSYBOX_VERSION}.tar.bz2"
 BUSYBOX_URL="${ZDT_BUSYBOX_SOURCE_URL:-https://busybox.net/downloads/${BUSYBOX_TARBALL}}"
@@ -18,7 +40,7 @@ TOOLS_DIR="${ZDT_TOOLS_DIR:-$ROOT_DIR/.tools}"
 WORK_DIR="$TOOLS_DIR/busybox"
 DOWNLOAD_DIR="$WORK_DIR/downloads"
 SRC_DIR="$WORK_DIR/src/busybox-${BUSYBOX_VERSION}"
-BUILD_DIR="$WORK_DIR/build/arm64-v8a"
+BUILD_DIR="$WORK_DIR/build/$ZDT_BUSYBOX_ABI"
 TARBALL_PATH="$DOWNLOAD_DIR/$BUSYBOX_TARBALL"
 
 msg() { printf '[ZDT-D][BusyBox] %s\n' "$*"; }
@@ -245,7 +267,7 @@ build_busybox() {
   local tag tc cc ar ranlib strip
   tag="$(host_tag)"
   tc="$ndk_root/toolchains/llvm/prebuilt/$tag/bin"
-  cc="$tc/aarch64-linux-android${ANDROID_API}-clang"
+  cc="$tc/${BUSYBOX_CLANG_PREFIX}${ANDROID_API}-clang"
   ar="$tc/llvm-ar"
   ranlib="$tc/llvm-ranlib"
   strip="$tc/llvm-strip"
@@ -254,7 +276,7 @@ build_busybox() {
   rm -rf "$BUILD_DIR"
   configure_busybox
 
-  msg "building BusyBox $BUSYBOX_VERSION for arm64-v8a with $cc"
+  msg "building BusyBox $BUSYBOX_VERSION for $ZDT_BUSYBOX_ABI with $cc"
   make -C "$SRC_DIR" O="$BUILD_DIR" \
     CC="$cc" AR="$ar" RANLIB="$ranlib" STRIP="$strip" \
     -j"$JOBS" busybox
@@ -266,7 +288,7 @@ build_busybox() {
 
   [[ -s "$OUT_PATH" ]] || fail "BusyBox binary was not created: $OUT_PATH"
   if command -v file >/dev/null 2>&1; then
-    file "$OUT_PATH" | grep -qiE 'aarch64|ARM aarch64' || fail "BusyBox output is not arm64 ELF: $(file "$OUT_PATH")"
+    file "$OUT_PATH" | grep -qiE "$BUSYBOX_FILE_PATTERN" || fail "BusyBox output is not $ZDT_BUSYBOX_ABI ELF: $(file "$OUT_PATH")"
   fi
   if command -v strings >/dev/null 2>&1; then
     strings "$OUT_PATH" | grep -q "unzip" || fail "Built BusyBox does not appear to contain unzip applet"
@@ -281,6 +303,7 @@ source=$BUSYBOX_URL
 sourceSha256=$BUSYBOX_SHA256
 license=GPL-2.0-only
 androidApi=$ANDROID_API
+abi=$ZDT_BUSYBOX_ABI
 ndk=$ndk_root
 binarySha256=$digest
 SRC

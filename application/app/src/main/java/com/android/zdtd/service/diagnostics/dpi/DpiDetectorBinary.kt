@@ -1,6 +1,7 @@
 package com.android.zdtd.service.diagnostics.dpi
 
 import android.content.Context
+import android.os.Build
 import java.io.File
 import java.security.MessageDigest
 
@@ -19,6 +20,9 @@ class DpiDetectorBinary(private val context: Context) {
     val targetFile: File
         get() = File(File(context.noBackupFilesDir, "bin"), BINARY_NAME)
 
+    private val assetPath: String
+        get() = "dpi-detector/" + preferredAbi() + "/dpi-detector"
+
     fun ensureInstalled(): File {
         val target = targetFile
         val parent = target.parentFile ?: error("Invalid dpi-detector target path: $target")
@@ -26,7 +30,7 @@ class DpiDetectorBinary(private val context: Context) {
             error("Unable to create dpi-detector directory: $parent")
         }
 
-        val assetBytes = context.assets.open(ASSET_PATH).use { input -> input.readBytes() }
+        val assetBytes = context.assets.open(assetPath).use { input -> input.readBytes() }
         val assetSha256 = sha256(assetBytes)
         val shouldRewrite = !target.exists() || sha256OrNull(target) != assetSha256
 
@@ -80,6 +84,10 @@ class DpiDetectorBinary(private val context: Context) {
 
     companion object {
         const val BINARY_NAME = "dpi-detector"
-        const val ASSET_PATH = "dpi-detector/arm64-v8a/dpi-detector"
+        private fun preferredAbi(): String = when {
+            Build.SUPPORTED_ABIS.any { it == "arm64-v8a" } -> "arm64-v8a"
+            Build.SUPPORTED_ABIS.any { it == "armeabi-v7a" } -> "armeabi-v7a"
+            else -> Build.SUPPORTED_ABIS.firstOrNull() ?: "arm64-v8a"
+        }
     }
 }

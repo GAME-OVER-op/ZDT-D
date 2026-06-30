@@ -240,7 +240,7 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="setup_features_body">• Bypass blocks and speed limits\n• Convenient graphical interface for configuration</string>
     <string name="setup_notes_title">Important notes</string>
     <string name="setup_notes_body">• Privacy &amp; security: the module does not collect personal data and does not harm device functionality.\n• Freedom &amp; openness: completely free and will remain so.</string>
-    <string name="setup_arch_unsupported_fmt">Unsupported architecture. ZDT-D works only on arm64-v8a. Current device: %1$s.</string>
+    <string name="setup_arch_unsupported_fmt">Unsupported architecture. ZDT-D supports arm64-v8a and armeabi-v7a. Current device: %1$s.</string>
     <string name="setup_root_title">Root access required</string>
     <string name="setup_root_body">ZDT-D is a root module (Magisk / KernelSU / APatch) to bypass DPI blocks and traffic restrictions. Root is required because the module runs system scripts and networking components at OS level — something regular apps can’t do.\n\nRoot is also used to install/update the module, control the daemon, and read module files (token and logs). Root requests are always confirmed via your root manager, and permissions can be revoked at any time.</string>
     <string name="setup_root_waiting">Waiting for the root manager response…</string>

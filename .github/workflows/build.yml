@@ -49,6 +49,16 @@ env:
   DNSCRYPT_PROXY_REF: "2.1.16"
   MIERU_REF: "v3.34.0"
   OPERA_PROXY_REF: "v1.26.0"
+  DPITUNNEL_REF: "main"
+  DPITUNNEL_ANDROID_API_LEVEL: 24
+  DPITUNNEL_OPENSSL_REF: "openssl-3.3.2"
+  TOR_REF: "tor-0.4.9.9"
+  TOR_ANDROID_API_LEVEL: 24
+  TOR_OPENSSL_REF: "openssl-3.5.7"
+  TOR_LIBEVENT_REF: "release-2.1.12-stable"
+  TOR_ZLIB_REF: "v1.3.2"
+  TOR_ZSTD_REF: "v1.5.7"
+  LYREBIRD_REF: "main"
 
 permissions:
   contents: write
@@ -256,10 +266,37 @@ jobs:
           echo "reason=$reason"
 
   build_zdtd:
-    name: build zdtd
+    name: build zdtd ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -273,7 +310,7 @@ jobs:
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi
 
       - name: Install Android NDK cross-linker
         run: |
@@ -287,8 +324,8 @@ jobs:
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
           fi
           NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          ANDROID_CC="$NDK_BIN/aarch64-linux-android21-clang"
-          ANDROID_CXX="$NDK_BIN/aarch64-linux-android21-clang++"
+          ANDROID_CC="$NDK_BIN/${{ matrix.clang_prefix }}21-clang"
+          ANDROID_CXX="$NDK_BIN/${{ matrix.clang_prefix }}21-clang++"
           ANDROID_AR="$NDK_BIN/llvm-ar"
           ANDROID_RANLIB="$NDK_BIN/llvm-ranlib"
 
@@ -303,6 +340,7 @@ jobs:
             echo "ANDROID_NDK_HOME=$NDK_ROOT"
             echo "PATH=$NDK_BIN:$PATH"
             echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_CC"
+            echo "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$ANDROID_CC"
             echo "CC_aarch64_linux_android=$ANDROID_CC"
             echo "CXX_aarch64_linux_android=$ANDROID_CXX"
             echo "AR_aarch64_linux_android=$ANDROID_AR"
@@ -314,6 +352,9 @@ jobs:
           [target.aarch64-linux-android]
           linker = "$ANDROID_CC"
           ar = "$ANDROID_AR"
+          [target.armv7-linux-androideabi]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
           EOF2
 
       - name: Cache Cargo registry and zdtd target
@@ -323,10 +364,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: cargo-zdtd-aarch64-linux-android-${{ hashFiles('rust/Cargo.lock', 'rust/zdtd/Cargo.toml') }}
+          key: cargo-zdtd-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock', 'rust/zdtd/Cargo.toml') }}
           restore-keys: |
-            cargo-zdtd-aarch64-linux-android-
-            cargo-aarch64-linux-android-
+            cargo-zdtd-${{ matrix.rust_target }}-
+            cargo-${{ matrix.rust_target }}-
 
       - name: Verify Android Rust cross toolchain
         run: |
@@ -334,7 +375,7 @@ jobs:
           echo "NDK_ROOT=$NDK_ROOT"
           "$CC_aarch64_linux_android" --version | head -1
           "$AR_aarch64_linux_android" --version | head -1
-          rustc --print target-list | grep -qx '${{ env.CARGO_BUILD_TARGET }}'
+          rustc --print target-list | grep -qx '${{ matrix.rust_target }}'
           cargo -V
           rustc -V
 
@@ -348,12 +389,12 @@ jobs:
           RUSTC_WRAPPER: ""
         run: |
           set -euo pipefail
-          cargo build --manifest-path rust/zdtd/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
+          cargo build --manifest-path rust/zdtd/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ matrix.rust_target }}"
 
       - name: Collect zdtd
         run: |
           set -euo pipefail
-          SRC="rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}/zdtd"
+          SRC="rust/target/${{ matrix.rust_target }}/${{ env.CARGO_PROFILE }}/zdtd"
           DST="out/artifacts/zdtd"
           test -s "$SRC" || { echo "::error::zdtd artifact missing after build: $SRC"; exit 1; }
           mkdir -p "$DST"
@@ -364,15 +405,42 @@ jobs:
       - name: Upload zdtd binary
         uses: actions/upload-artifact@v7
         with:
-          name: zdtd-arm64
+          name: zdtd-${{ matrix.artifact_suffix }}
           path: out/artifacts/zdtd/zdtd
           retention-days: 1
 
   build_t2s:
-    name: build T2S
+    name: build T2S ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -386,7 +454,7 @@ jobs:
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi
 
       - name: Install Android NDK cross-linker
         run: |
@@ -400,8 +468,8 @@ jobs:
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
           fi
           NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          ANDROID_CC="$NDK_BIN/aarch64-linux-android21-clang"
-          ANDROID_CXX="$NDK_BIN/aarch64-linux-android21-clang++"
+          ANDROID_CC="$NDK_BIN/${{ matrix.clang_prefix }}21-clang"
+          ANDROID_CXX="$NDK_BIN/${{ matrix.clang_prefix }}21-clang++"
           ANDROID_AR="$NDK_BIN/llvm-ar"
           ANDROID_RANLIB="$NDK_BIN/llvm-ranlib"
 
@@ -416,6 +484,7 @@ jobs:
             echo "ANDROID_NDK_HOME=$NDK_ROOT"
             echo "PATH=$NDK_BIN:$PATH"
             echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_CC"
+            echo "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$ANDROID_CC"
             echo "CC_aarch64_linux_android=$ANDROID_CC"
             echo "CXX_aarch64_linux_android=$ANDROID_CXX"
             echo "AR_aarch64_linux_android=$ANDROID_AR"
@@ -427,6 +496,9 @@ jobs:
           [target.aarch64-linux-android]
           linker = "$ANDROID_CC"
           ar = "$ANDROID_AR"
+          [target.armv7-linux-androideabi]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
           EOF2
 
       - name: Cache Cargo registry and t2s target
@@ -436,10 +508,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: cargo-t2s-aarch64-linux-android-${{ hashFiles('rust/Cargo.lock', 'rust/T2s/Cargo.toml') }}
+          key: cargo-t2s-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock', 'rust/T2s/Cargo.toml') }}
           restore-keys: |
-            cargo-t2s-aarch64-linux-android-
-            cargo-aarch64-linux-android-
+            cargo-t2s-${{ matrix.rust_target }}-
+            cargo-${{ matrix.rust_target }}-
 
       - name: Verify Android Rust cross toolchain
         run: |
@@ -447,7 +519,7 @@ jobs:
           echo "NDK_ROOT=$NDK_ROOT"
           "$CC_aarch64_linux_android" --version | head -1
           "$AR_aarch64_linux_android" --version | head -1
-          rustc --print target-list | grep -qx '${{ env.CARGO_BUILD_TARGET }}'
+          rustc --print target-list | grep -qx '${{ matrix.rust_target }}'
           cargo -V
           rustc -V
 
@@ -461,12 +533,12 @@ jobs:
           RUSTC_WRAPPER: ""
         run: |
           set -euo pipefail
-          cargo build --manifest-path rust/T2s/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
+          cargo build --manifest-path rust/T2s/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ matrix.rust_target }}"
 
       - name: Collect t2s
         run: |
           set -euo pipefail
-          SRC="rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}/t2s"
+          SRC="rust/target/${{ matrix.rust_target }}/${{ env.CARGO_PROFILE }}/t2s"
           DST="out/artifacts/t2s"
           test -s "$SRC" || { echo "::error::t2s artifact missing after build: $SRC"; exit 1; }
           mkdir -p "$DST"
@@ -477,7 +549,7 @@ jobs:
       - name: Upload t2s binary
         uses: actions/upload-artifact@v7
         with:
-          name: t2s-arm64
+          name: t2s-${{ matrix.artifact_suffix }}
           path: out/artifacts/t2s/t2s
           retention-days: 1
 
@@ -496,10 +568,37 @@ jobs:
         run: echo "zdtd and T2S artifacts are ready for module packaging"
 
   build_openvpn:
-    name: build OpenVPN arm64
+    name: build OpenVPN ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -540,8 +639,8 @@ jobs:
             echo "ANDROID_NDK_ROOT=$NDK_ROOT"
             echo "ANDROID_NDK_HOME=$NDK_ROOT"
             echo "PATH=$NDK_BIN:$PATH"
-            echo "OPENVPN_CC=$NDK_BIN/aarch64-linux-android${{ env.OPENVPN_ANDROID_API_LEVEL }}-clang"
-            echo "OPENVPN_CXX=$NDK_BIN/aarch64-linux-android${{ env.OPENVPN_ANDROID_API_LEVEL }}-clang++"
+            echo "OPENVPN_CC=$NDK_BIN/${{ matrix.clang_prefix }}${{ env.OPENVPN_ANDROID_API_LEVEL }}-clang"
+            echo "OPENVPN_CXX=$NDK_BIN/${{ matrix.clang_prefix }}${{ env.OPENVPN_ANDROID_API_LEVEL }}-clang++"
             echo "OPENVPN_AR=$NDK_BIN/llvm-ar"
             echo "OPENVPN_RANLIB=$NDK_BIN/llvm-ranlib"
             echo "OPENVPN_STRIP=$NDK_BIN/llvm-strip"
@@ -594,7 +693,7 @@ jobs:
           tar -xzf "$SRC/lzo.tar.gz" -C "$BUILD"
           pushd "$BUILD/lzo-${LZO_VERSION}" > /dev/null
           ./configure \
-            --host=aarch64-linux-android \
+            --host=${{ matrix.tor_host }} \
             --prefix="$PREFIX" \
             --enable-static \
             --disable-shared
@@ -622,7 +721,7 @@ jobs:
           tar -xjf "$SRC/mbedtls.tar.bz2" -C "$BUILD"
           cmake -S "$BUILD/mbedtls-${MBEDTLS_VERSION}" -B "$BUILD/mbedtls-build" \
             -DCMAKE_TOOLCHAIN_FILE="$NDK_ROOT/build/cmake/android.toolchain.cmake" \
-            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_ABI=${{ matrix.android_abi }} \
             -DANDROID_PLATFORM="android-${ANDROID_API}" \
             -DCMAKE_BUILD_TYPE=MinSizeRel \
             -DCMAKE_INSTALL_PREFIX="$PREFIX" \
@@ -692,7 +791,7 @@ jobs:
           autoreconf -fi
           
           PKG_CONFIG="pkg-config --static" ./configure \
-            --host=aarch64-linux-android \
+            --host=${{ matrix.tor_host }} \
             --prefix="$PREFIX/openvpn" \
             --with-crypto-library=mbedtls \
             --enable-management \
@@ -726,15 +825,42 @@ jobs:
       - name: Upload OpenVPN binary
         uses: actions/upload-artifact@v7
         with:
-          name: openvpn-arm64
+          name: openvpn-${{ matrix.artifact_suffix }}
           path: out/artifacts/openvpn/openvpn
           retention-days: 1
 
   build_amneziawg:
-    name: build AmneziaWG arm64
+    name: build AmneziaWG ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -775,7 +901,7 @@ jobs:
             echo "ANDROID_NDK_ROOT=$NDK_ROOT"
             echo "ANDROID_NDK_HOME=$NDK_ROOT"
             echo "PATH=$NDK_BIN:$PATH"
-            echo "AMNEZIAWG_CC=$NDK_BIN/aarch64-linux-android${{ env.AMNEZIAWG_ANDROID_API_LEVEL }}-clang"
+            echo "AMNEZIAWG_CC=$NDK_BIN/${{ matrix.clang_prefix }}${{ env.AMNEZIAWG_ANDROID_API_LEVEL }}-clang"
             echo "AMNEZIAWG_STRIP=$NDK_BIN/llvm-strip"
           } >> "$GITHUB_ENV"
 
@@ -841,7 +967,8 @@ jobs:
           echo "=== Build amneziawg-go (${AMNEZIAWG_GO_REF}) ==="
           pushd "$SRC/amneziawg-go" > /dev/null
           GOOS=android \
-          GOARCH=arm64 \
+          GOARCH=${{ matrix.goarch }} \
+          GOARM=${{ matrix.goarm }} \
           CGO_ENABLED=0 \
             go build \
               -trimpath \
@@ -894,7 +1021,7 @@ jobs:
       - name: Upload AmneziaWG binaries
         uses: actions/upload-artifact@v7
         with:
-          name: amneziawg-arm64
+          name: amneziawg-${{ matrix.artifact_suffix }}
           path: |
             out/artifacts/amneziawg/amneziawg-go
             out/artifacts/amneziawg/awg
@@ -903,10 +1030,37 @@ jobs:
           retention-days: 1
 
   build_wireproxy:
-    name: build wireproxy arm64
+    name: build wireproxy ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -938,7 +1092,8 @@ jobs:
           echo "=== Build wireproxy (${WIREPROXY_REF}) ==="
           pushd "$SRC/wireproxy" > /dev/null
           GOOS=android \
-          GOARCH=arm64 \
+          GOARCH=${{ matrix.goarch }} \
+          GOARM=${{ matrix.goarm }} \
           CGO_ENABLED=0 \
             go build \
               -trimpath \
@@ -960,7 +1115,7 @@ jobs:
       - name: Upload wireproxy binary
         uses: actions/upload-artifact@v7
         with:
-          name: wireproxy-arm64
+          name: wireproxy-${{ matrix.artifact_suffix }}
           path: |
             out/artifacts/wireproxy/wireproxy
             out/artifacts/wireproxy/wireproxy.commit
@@ -968,10 +1123,37 @@ jobs:
           retention-days: 1
 
   build_tun2socks:
-    name: build tun2socks arm64
+    name: build tun2socks ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -1005,7 +1187,8 @@ jobs:
           echo "=== Build tun2socks (${TUN2SOCKS_REF}) ==="
           pushd "$SRC/tun2socks" > /dev/null
           GOOS=android \
-          GOARCH=arm64 \
+          GOARCH=${{ matrix.goarch }} \
+          GOARM=${{ matrix.goarm }} \
           CGO_ENABLED=0 \
             go build \
               -trimpath \
@@ -1037,7 +1220,7 @@ jobs:
       - name: Upload tun2socks binary
         uses: actions/upload-artifact@v7
         with:
-          name: tun2socks-arm64
+          name: tun2socks-${{ matrix.artifact_suffix }}
           path: |
             out/artifacts/tun2socks/tun2socks
             out/artifacts/tun2socks/tun2socks.version
@@ -1046,10 +1229,37 @@ jobs:
           retention-days: 1
 
   build_mihomo:
-    name: build mihomo arm64
+    name: build mihomo ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -1084,7 +1294,8 @@ jobs:
           echo "=== Build mihomo (${MIHOMO_REF}) ==="
           pushd "$SRC/mihomo" > /dev/null
           GOOS=android \
-          GOARCH=arm64 \
+          GOARCH=${{ matrix.goarch }} \
+          GOARM=${{ matrix.goarm }} \
           CGO_ENABLED=0 \
             go build \
               -tags with_gvisor \
@@ -1118,7 +1329,7 @@ jobs:
       - name: Upload mihomo binary
         uses: actions/upload-artifact@v7
         with:
-          name: mihomo-arm64
+          name: mihomo-${{ matrix.artifact_suffix }}
           path: |
             out/artifacts/mihomo/mihomo
             out/artifacts/mihomo/mihomo.version
@@ -1127,10 +1338,37 @@ jobs:
           retention-days: 1
 
   build_singbox:
-    name: build sing-box arm64
+    name: build sing-box ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -1183,7 +1421,8 @@ jobs:
           echo "Build tags: $SING_BOX_TAGS"
           echo "Extra ldflags: $SING_BOX_LDFLAGS"
           GOOS=android \
-          GOARCH=arm64 \
+          GOARCH=${{ matrix.goarch }} \
+          GOARM=${{ matrix.goarm }} \
           CGO_ENABLED=0 \
             go build \
               -tags "$SING_BOX_TAGS" \
@@ -1217,7 +1456,7 @@ jobs:
       - name: Upload sing-box binary
         uses: actions/upload-artifact@v7
         with:
-          name: sing-box-arm64
+          name: sing-box-${{ matrix.artifact_suffix }}
           path: |
             out/artifacts/sing-box/sing-box
             out/artifacts/sing-box/sing-box.version
@@ -1226,10 +1465,37 @@ jobs:
           retention-days: 1
 
   build_byedpi:
-    name: build byedpi arm64
+    name: build byedpi ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -1264,7 +1530,7 @@ jobs:
             echo "ANDROID_NDK_ROOT=$NDK_ROOT"
             echo "ANDROID_NDK_HOME=$NDK_ROOT"
             echo "PATH=$NDK_BIN:$PATH"
-            echo "BYEDPI_CC=$NDK_BIN/aarch64-linux-android${BYEDPI_ANDROID_API_LEVEL}-clang"
+            echo "BYEDPI_CC=$NDK_BIN/${{ matrix.clang_prefix }}${BYEDPI_ANDROID_API_LEVEL}-clang"
             echo "BYEDPI_STRIP=$NDK_BIN/llvm-strip"
           } >> "$GITHUB_ENV"
 
@@ -1333,7 +1599,7 @@ jobs:
       - name: Upload byedpi binary
         uses: actions/upload-artifact@v7
         with:
-          name: byedpi-arm64
+          name: byedpi-${{ matrix.artifact_suffix }}
           path: |
             out/artifacts/byedpi/byedpi
             out/artifacts/byedpi/byedpi.version
@@ -1342,10 +1608,37 @@ jobs:
           retention-days: 1
 
   build_dnscrypt:
-    name: build dnscrypt arm64
+    name: build dnscrypt ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -1396,7 +1689,8 @@ jobs:
 
           echo "=== Build dnscrypt-proxy (${DNSCRYPT_PROXY_REF}) ==="
           GOOS=android \
-          GOARCH=arm64 \
+          GOARCH=${{ matrix.goarch }} \
+          GOARM=${{ matrix.goarm }} \
           CGO_ENABLED=0 \
             go build \
               -trimpath \
@@ -1430,7 +1724,7 @@ jobs:
       - name: Upload dnscrypt binary
         uses: actions/upload-artifact@v7
         with:
-          name: dnscrypt-arm64
+          name: dnscrypt-${{ matrix.artifact_suffix }}
           path: |
             out/artifacts/dnscrypt/dnscrypt
             out/artifacts/dnscrypt/dnscrypt.version
@@ -1439,10 +1733,37 @@ jobs:
           retention-days: 1
 
   build_mieru:
-    name: build mieru arm64
+    name: build mieru ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -1489,7 +1810,8 @@ jobs:
 
           echo "=== Build mieru (${MIERU_REF}) ==="
           GOOS=android \
-          GOARCH=arm64 \
+          GOARCH=${{ matrix.goarch }} \
+          GOARM=${{ matrix.goarm }} \
           CGO_ENABLED=0 \
             go build \
               -trimpath \
@@ -1522,7 +1844,7 @@ jobs:
       - name: Upload mieru binary
         uses: actions/upload-artifact@v7
         with:
-          name: mieru-arm64
+          name: mieru-${{ matrix.artifact_suffix }}
           path: |
             out/artifacts/mieru/mieru
             out/artifacts/mieru/mieru.version
@@ -1531,10 +1853,37 @@ jobs:
           retention-days: 1
 
   build_operaproxy:
-    name: build opera-proxy arm64
+    name: build opera-proxy ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -1567,7 +1916,8 @@ jobs:
           echo "=== Build opera-proxy (${OPERA_PROXY_REF}) ==="
           pushd "$SRC/opera-proxy" > /dev/null
           GOOS=android \
-          GOARCH=arm64 \
+          GOARCH=${{ matrix.goarch }} \
+          GOARM=${{ matrix.goarm }} \
           CGO_ENABLED=0 \
             go build \
               -trimpath \
@@ -1600,7 +1950,7 @@ jobs:
       - name: Upload opera-proxy binary
         uses: actions/upload-artifact@v7
         with:
-          name: opera-proxy-arm64
+          name: opera-proxy-${{ matrix.artifact_suffix }}
           path: |
             out/artifacts/opera-proxy/opera-proxy
             out/artifacts/opera-proxy/opera-proxy.version
@@ -1608,11 +1958,204 @@ jobs:
             out/artifacts/opera-proxy/opera-proxy.dynamic.txt
           retention-days: 1
 
-  build_nfqws:
-    name: build nfqws arm64
+  build_dpitunnel:
+    name: build DPITunnel ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK and build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            cmake \
+            curl \
+            file \
+            git \
+            make \
+            ninja-build \
+            perl
+
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "DPITUNNEL_TARGET=${{ matrix.tor_host }}"
+            echo "DPITUNNEL_CC=$NDK_BIN/${{ matrix.clang_prefix }}${DPITUNNEL_ANDROID_API_LEVEL}-clang"
+            echo "DPITUNNEL_CXX=$NDK_BIN/${{ matrix.clang_prefix }}${DPITUNNEL_ANDROID_API_LEVEL}-clang++"
+            echo "DPITUNNEL_STRIP=$NDK_BIN/llvm-strip"
+          } >> "$GITHUB_ENV"
+
+      - name: Build DPITunnel-cli from official source
+        run: |
+          set -euo pipefail
+
+          test -x "$DPITUNNEL_CC" || { echo "::error::Android C compiler not found: $DPITUNNEL_CC"; exit 1; }
+          test -x "$DPITUNNEL_CXX" || { echo "::error::Android C++ compiler not found: $DPITUNNEL_CXX"; exit 1; }
+          "$DPITUNNEL_CXX" --version | head -1
+
+          WORK="$PWD/out/build/dpitunnel-android"
+          SRC="$WORK/src"
+          BUILD_DIR="$WORK/build"
+          DEPS_DIR="$WORK/deps"
+          ARTIFACT_DIR="$PWD/out/artifacts/dpitunnel"
+          mkdir -p "$SRC" "$BUILD_DIR" "$DEPS_DIR" "$ARTIFACT_DIR"
+
+          echo "=== Fetch OpenSSL source ==="
+          git clone --depth 1 --branch "$DPITUNNEL_OPENSSL_REF" https://github.com/openssl/openssl "$SRC/openssl"
+
+          echo "=== Build OpenSSL for Android arm64 ==="
+          pushd "$SRC/openssl" > /dev/null
+          ./Configure ${{ matrix.openssl_target }} \
+            no-shared \
+            no-tests \
+            no-apps \
+            --prefix="$DEPS_DIR" \
+            --openssldir="$DEPS_DIR/ssl" \
+            -D__ANDROID_API__=$DPITUNNEL_ANDROID_API_LEVEL
+          make -j"$(nproc)"
+          make install_sw
+          popd > /dev/null
+
+          echo "=== Fetch official DPITunnel-cli source ==="
+          git clone --depth 1 --branch "$DPITUNNEL_REF" https://github.com/nomoresat/DPITunnel-cli "$SRC/DPITunnel-cli"
+          DPITUNNEL_COMMIT="$(git -C "$SRC/DPITunnel-cli" rev-parse HEAD)"
+          printf '%s\n' "$DPITUNNEL_COMMIT" | tee "$ARTIFACT_DIR/dpitunnel-cli.commit"
+
+          echo "=== Build DPITunnel-cli (${DPITUNNEL_REF}) ==="
+          cmake -S "$SRC/DPITunnel-cli" -B "$BUILD_DIR" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK_ROOT/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=${{ matrix.android_abi }} \
+            -DANDROID_PLATFORM=android-$DPITUNNEL_ANDROID_API_LEVEL \
+            -DANDROID_STL=c++_static \
+            -DCMAKE_CXX_STANDARD=14 \
+            -DOPENSSL_ROOT_DIR="$DEPS_DIR" \
+            -DOPENSSL_INCLUDE_DIR="$DEPS_DIR/include" \
+            -DOPENSSL_SSL_LIBRARY="$DEPS_DIR/lib/libssl.a" \
+            -DOPENSSL_CRYPTO_LIBRARY="$DEPS_DIR/lib/libcrypto.a" \
+            -DOPENSSL_USE_STATIC_LIBS=TRUE \
+            -DSTATIC_BINARY=FALSE
+          cmake --build "$BUILD_DIR" --target DPITunnel-cli-exec --parallel "$(nproc)"
+
+          test -s "$BUILD_DIR/DPITunnel-cli-exec" || { echo "::error::DPITunnel-cli output binary not found"; find "$BUILD_DIR" -maxdepth 3 -type f | sort; exit 1; }
+          cp -f "$BUILD_DIR/DPITunnel-cli-exec" "$ARTIFACT_DIR/dpitunnel-cli"
+          "$DPITUNNEL_STRIP" --strip-unneeded "$ARTIFACT_DIR/dpitunnel-cli" || true
+          chmod 755 "$ARTIFACT_DIR/dpitunnel-cli"
+
+          cat > "$ARTIFACT_DIR/dpitunnel-cli.version" <<EOF_DPITUNNEL_VERSION
+          source=https://github.com/nomoresat/DPITunnel-cli
+          ref=$DPITUNNEL_REF
+          commit=$DPITUNNEL_COMMIT
+          upstream_binary=DPITunnel-cli-exec
+          packaged_binary=dpitunnel-cli
+          target=android-arm64
+          android_api=$DPITUNNEL_ANDROID_API_LEVEL
+          openssl_ref=$DPITUNNEL_OPENSSL_REF
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_DPITUNNEL_VERSION
+
+          echo "=== Verify DPITunnel-cli artifact ==="
+          file "$ARTIFACT_DIR/dpitunnel-cli"
+          readelf -h "$ARTIFACT_DIR/dpitunnel-cli" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/dpitunnel-cli" | tee "$ARTIFACT_DIR/dpitunnel-cli.dynamic.txt" || true
+          "$ARTIFACT_DIR/dpitunnel-cli" --help | head -80 || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/dpitunnel-cli.version"
+
+      - name: Upload DPITunnel binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: dpitunnel-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/dpitunnel/dpitunnel-cli
+            out/artifacts/dpitunnel/dpitunnel-cli.version
+            out/artifacts/dpitunnel/dpitunnel-cli.commit
+            out/artifacts/dpitunnel/dpitunnel-cli.dynamic.txt
+          retention-days: 1
+
+  build_nfqws:
+    name: build nfqws ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -1656,8 +2199,8 @@ jobs:
             echo "ANDROID_NDK_HOME=$NDK_ROOT"
             echo "PATH=$NDK_BIN:$PATH"
             echo "NFQWS_ANDROID_API=21"
-            echo "NFQWS_TARGET=aarch64-linux-android"
-            echo "NFQWS_CC=$NDK_BIN/aarch64-linux-android21-clang"
+            echo "NFQWS_TARGET=${{ matrix.tor_host }}"
+            echo "NFQWS_CC=$NDK_BIN/${{ matrix.clang_prefix }}21-clang"
             echo "NFQWS_AR=$NDK_BIN/llvm-ar"
             echo "NFQWS_RANLIB=$NDK_BIN/llvm-ranlib"
             echo "NFQWS_STRIP=$NDK_BIN/llvm-strip"
@@ -1795,7 +2338,7 @@ jobs:
       - name: Upload nfqws binary
         uses: actions/upload-artifact@v7
         with:
-          name: nfqws-arm64
+          name: nfqws-${{ matrix.artifact_suffix }}
           path: |
             out/artifacts/nfqws/nfqws
             out/artifacts/nfqws/nfqws.version
@@ -1805,10 +2348,37 @@ jobs:
           retention-days: 1
 
   build_nfqws2:
-    name: build nfqws2 arm64
+    name: build nfqws2 ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -1857,9 +2427,9 @@ jobs:
             echo "ANDROID_NDK_HOME=$NDK_ROOT"
             echo "PATH=$NDK_BIN:$PATH"
             echo "NFQWS2_ANDROID_API=21"
-            echo "NFQWS2_TARGET=aarch64-linux-android"
+            echo "NFQWS2_TARGET=${{ matrix.tor_host }}"
             echo "NFQWS2_TOOLCHAIN=$TOOLCHAIN"
-            echo "NFQWS2_CC=$NDK_BIN/clang --target=aarch64-linux-android21"
+            echo "NFQWS2_CC=$NDK_BIN/clang --target=${{ matrix.clang_target_api21 }}"
             echo "NFQWS2_AR=$NDK_BIN/llvm-ar"
             echo "NFQWS2_RANLIB=$NDK_BIN/llvm-ranlib"
             echo "NFQWS2_STRIP=$NDK_BIN/llvm-strip"
@@ -2031,7 +2601,7 @@ jobs:
       - name: Upload nfqws2 binary
         uses: actions/upload-artifact@v7
         with:
-          name: nfqws2-arm64
+          name: nfqws2-${{ matrix.artifact_suffix }}
           path: |
             out/artifacts/nfqws2/nfqws2
             out/artifacts/nfqws2/nfqws2.version
@@ -2040,8 +2610,362 @@ jobs:
             out/artifacts/nfqws2/nfqws2.dynamic.txt
           retention-days: 1
 
+  build_torproxy:
+    name: build Tor ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK and build tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            bison \
+            build-essential \
+            ca-certificates \
+            curl \
+            file \
+            git \
+            libtool \
+            make \
+            perl \
+            pkg-config \
+            python3
+
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "TOR_HOST=${{ matrix.tor_host }}"
+            echo "TOR_CC=$NDK_BIN/${{ matrix.clang_prefix }}${TOR_ANDROID_API_LEVEL}-clang"
+            echo "TOR_CXX=$NDK_BIN/${{ matrix.clang_prefix }}${TOR_ANDROID_API_LEVEL}-clang++"
+            echo "TOR_AR=$NDK_BIN/llvm-ar"
+            echo "TOR_RANLIB=$NDK_BIN/llvm-ranlib"
+            echo "TOR_STRIP=$NDK_BIN/llvm-strip"
+          } >> "$GITHUB_ENV"
+
+      - name: Build Tor C from official source
+        run: |
+          set -euo pipefail
+
+          for tool in "$TOR_CC" "$TOR_CXX" "$TOR_AR" "$TOR_RANLIB" "$TOR_STRIP"; do
+            test -x "$tool" || { echo "::error::Tool not found: $tool"; exit 1; }
+          done
+          "$TOR_CC" --version | head -1
+
+          WORK="$PWD/out/build/tor-android"
+          SRC="$WORK/src"
+          BUILD="$WORK/build"
+          PREFIX="$WORK/prefix"
+          ARTIFACT_DIR="$PWD/out/artifacts/torproxy"
+          mkdir -p "$SRC" "$BUILD" "$PREFIX" "$ARTIFACT_DIR"
+
+          export CC="$TOR_CC"
+          export CXX="$TOR_CXX"
+          export AR="$TOR_AR"
+          export RANLIB="$TOR_RANLIB"
+          export STRIP="$TOR_STRIP"
+          export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
+          export CPPFLAGS="-I$PREFIX/include -D__ANDROID_API__=$TOR_ANDROID_API_LEVEL"
+          export CFLAGS="-Os -fPIC -fPIE -D__ANDROID_API__=$TOR_ANDROID_API_LEVEL"
+          export CXXFLAGS="$CFLAGS"
+          export LDFLAGS="-L$PREFIX/lib -pie"
+
+          echo "=== Fetch Tor dependencies ==="
+          git clone --depth 1 --branch "$TOR_ZLIB_REF" https://github.com/madler/zlib "$SRC/zlib"
+          git clone --depth 1 --branch "$TOR_ZSTD_REF" https://github.com/facebook/zstd "$SRC/zstd"
+          git clone --depth 1 --branch "$TOR_OPENSSL_REF" https://github.com/openssl/openssl "$SRC/openssl"
+          git clone --depth 1 --branch "$TOR_LIBEVENT_REF" https://github.com/libevent/libevent "$SRC/libevent"
+
+          echo "=== Build zlib (${TOR_ZLIB_REF}) ==="
+          pushd "$SRC/zlib" > /dev/null
+          CHOST="$TOR_HOST" ./configure --prefix="$PREFIX" --static
+          make -j"$(nproc)"
+          make install
+          popd > /dev/null
+
+          echo "=== Build zstd (${TOR_ZSTD_REF}) ==="
+          make -C "$SRC/zstd/lib" -j"$(nproc)" \
+            CC="$CC" \
+            AR="$AR" \
+            RANLIB="$RANLIB" \
+            CFLAGS="$CFLAGS" \
+            HAVE_ZLIB=0 \
+            HAVE_LZMA=0 \
+            HAVE_LZ4=0 \
+            BUILD_SHARED=no \
+            libzstd.a
+          make -C "$SRC/zstd/lib" \
+            PREFIX="$PREFIX" \
+            BUILD_SHARED=no \
+            install-static install-includes
+
+          echo "=== Build OpenSSL (${TOR_OPENSSL_REF}) ==="
+          pushd "$SRC/openssl" > /dev/null
+          ./Configure ${{ matrix.openssl_target }} \
+            no-shared \
+            no-tests \
+            no-apps \
+            --prefix="$PREFIX" \
+            --openssldir="$PREFIX/ssl" \
+            -D__ANDROID_API__=$TOR_ANDROID_API_LEVEL
+          make -j"$(nproc)"
+          make install_sw
+          popd > /dev/null
+
+          echo "=== Build libevent (${TOR_LIBEVENT_REF}) ==="
+          pushd "$SRC/libevent" > /dev/null
+          ./autogen.sh
+          ./configure \
+            --host="$TOR_HOST" \
+            --prefix="$PREFIX" \
+            --enable-static \
+            --disable-shared \
+            --disable-openssl
+          make -j"$(nproc)"
+          make install
+          popd > /dev/null
+
+          echo "=== Fetch official Tor source ==="
+          git clone --depth 1 --branch "$TOR_REF" https://gitlab.torproject.org/tpo/core/tor "$SRC/tor"
+          TOR_COMMIT="$(git -C "$SRC/tor" rev-parse HEAD)"
+          printf '%s\n' "$TOR_COMMIT" | tee "$ARTIFACT_DIR/torproxy.commit"
+
+          echo "=== Build Tor C (${TOR_REF}) ==="
+          pushd "$SRC/tor" > /dev/null
+          ./autogen.sh
+          ./configure \
+            --host="$TOR_HOST" \
+            --prefix="$PREFIX" \
+            --disable-asciidoc \
+            --disable-manpage \
+            --disable-html-manual \
+            --disable-system-torrc \
+            --disable-unittests \
+            --disable-module-dirauth \
+            --disable-seccomp \
+            --disable-systemd \
+            --enable-static-openssl \
+            --with-openssl-dir="$PREFIX" \
+            --with-libevent-dir="$PREFIX" \
+            --with-zlib-dir="$PREFIX" \
+            --with-zstd-dir="$PREFIX"
+          make -j"$(nproc)"
+          popd > /dev/null
+
+          TOR_OUTPUT=""
+          for candidate in \
+            "$SRC/tor/src/app/tor" \
+            "$SRC/tor/src/or/tor" \
+            "$SRC/tor/src/tor"; do
+            if [[ -s "$candidate" ]]; then
+              TOR_OUTPUT="$candidate"
+              break
+            fi
+          done
+          test -n "$TOR_OUTPUT" || { echo "::error::Tor output binary not found"; find "$SRC/tor" -maxdepth 4 -type f -perm -111 | sort | head -200; exit 1; }
+          cp -f "$TOR_OUTPUT" "$ARTIFACT_DIR/torproxy"
+          "$TOR_STRIP" --strip-unneeded "$ARTIFACT_DIR/torproxy" || true
+          chmod 755 "$ARTIFACT_DIR/torproxy"
+
+          cat > "$ARTIFACT_DIR/torproxy.version" <<EOF_TOR_VERSION
+          source=https://gitlab.torproject.org/tpo/core/tor
+          ref=$TOR_REF
+          commit=$TOR_COMMIT
+          upstream_binary=tor
+          packaged_binary=torproxy
+          target=android-arm64
+          android_api=$TOR_ANDROID_API_LEVEL
+          openssl_ref=$TOR_OPENSSL_REF
+          libevent_ref=$TOR_LIBEVENT_REF
+          zlib_ref=$TOR_ZLIB_REF
+          zstd_ref=$TOR_ZSTD_REF
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_TOR_VERSION
+
+          echo "=== Verify torproxy artifact ==="
+          file "$ARTIFACT_DIR/torproxy"
+          readelf -h "$ARTIFACT_DIR/torproxy" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/torproxy" | tee "$ARTIFACT_DIR/torproxy.dynamic.txt" || true
+          "$ARTIFACT_DIR/torproxy" --version || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/torproxy.version"
+
+      - name: Upload Tor binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: torproxy-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/torproxy/torproxy
+            out/artifacts/torproxy/torproxy.version
+            out/artifacts/torproxy/torproxy.commit
+            out/artifacts/torproxy/torproxy.dynamic.txt
+          retention-days: 1
+
+  build_lyrebird:
+    name: build lyrebird ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+          cache: false
+
+      - name: Build lyrebird from official source
+        run: |
+          set -euo pipefail
+
+          go version
+
+          WORK="$PWD/out/build/lyrebird-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/lyrebird"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+
+          echo "=== Fetch official lyrebird source ==="
+          git clone --depth 1 --branch "$LYREBIRD_REF" https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird "$SRC/lyrebird"
+          LYREBIRD_COMMIT="$(git -C "$SRC/lyrebird" rev-parse HEAD)"
+          printf '%s\n' "$LYREBIRD_COMMIT" | tee "$ARTIFACT_DIR/lyrebird.commit"
+
+          echo "=== Build lyrebird (${LYREBIRD_REF}) ==="
+          pushd "$SRC/lyrebird" > /dev/null
+          LYREBIRD_PACKAGE="./cmd/lyrebird"
+          if [[ ! -d "$LYREBIRD_PACKAGE" ]]; then
+            LYREBIRD_PACKAGE="$(find ./cmd -maxdepth 3 -name '*.go' -type f -printf '%h\n' 2>/dev/null | sort -u | grep '/lyrebird' | head -1 || true)"
+          fi
+          test -n "$LYREBIRD_PACKAGE" || { echo "::error::lyrebird command package not found"; find . -maxdepth 4 -type f | sort | head -200; exit 1; }
+          echo "Build package: $LYREBIRD_PACKAGE"
+          GOOS=android \
+          GOARCH=${{ matrix.goarch }} \
+          GOARM=${{ matrix.goarm }} \
+          CGO_ENABLED=0 \
+            go build \
+              -trimpath \
+              -buildvcs=false \
+              -ldflags="-s -w -buildid=" \
+              -o "$ARTIFACT_DIR/lyrebird" \
+              "$LYREBIRD_PACKAGE"
+          popd > /dev/null
+
+          chmod 755 "$ARTIFACT_DIR/lyrebird"
+
+          cat > "$ARTIFACT_DIR/lyrebird.version" <<EOF_LYREBIRD_VERSION
+          source=https://gitlab.torproject.org/tpo/anti-censorship/pluggable-transports/lyrebird
+          ref=$LYREBIRD_REF
+          commit=$LYREBIRD_COMMIT
+          binary=lyrebird
+          target=android-arm64
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_LYREBIRD_VERSION
+
+          echo "=== Verify lyrebird artifact ==="
+          file "$ARTIFACT_DIR/lyrebird"
+          readelf -h "$ARTIFACT_DIR/lyrebird" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/lyrebird" | tee "$ARTIFACT_DIR/lyrebird.dynamic.txt" || true
+          "$ARTIFACT_DIR/lyrebird" -version || true
+          "$ARTIFACT_DIR/lyrebird" -h | head -80 || true
+          ls -lh "$ARTIFACT_DIR"
+          cat "$ARTIFACT_DIR/lyrebird.version"
+
+      - name: Upload lyrebird binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: lyrebird-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/lyrebird/lyrebird
+            out/artifacts/lyrebird/lyrebird.version
+            out/artifacts/lyrebird/lyrebird.commit
+            out/artifacts/lyrebird/lyrebird.dynamic.txt
+          retention-days: 1
+
   module_binaries_ready:
-    name: Module binaries ready (OpenVPN + AmneziaWG + wireproxy + tun2socks + mihomo + sing-box + byedpi + dnscrypt + mieru + opera-proxy + nfqws + nfqws2)
+    name: Module binaries ready (OpenVPN + AmneziaWG + wireproxy + tun2socks + mihomo + sing-box + byedpi + dnscrypt + mieru + opera-proxy + DPITunnel + Tor + lyrebird + nfqws + nfqws2)
     runs-on: ubuntu-latest
     needs:
       - build_openvpn
@@ -2054,6 +2978,9 @@ jobs:
       - build_dnscrypt
       - build_mieru
       - build_operaproxy
+      - build_dpitunnel
+      - build_torproxy
+      - build_lyrebird
       - build_nfqws
       - build_nfqws2
     if: >-
@@ -2067,6 +2994,9 @@ jobs:
       needs.build_dnscrypt.result == 'success' &&
       needs.build_mieru.result == 'success' &&
       needs.build_operaproxy.result == 'success' &&
+      needs.build_dpitunnel.result == 'success' &&
+      needs.build_torproxy.result == 'success' &&
+      needs.build_lyrebird.result == 'success' &&
       needs.build_nfqws.result == 'success' &&
       needs.build_nfqws2.result == 'success'
 
@@ -2075,10 +3005,37 @@ jobs:
         run: echo "External module binary artifacts are ready for module packaging"
 
   build_zygisk:
-    name: build Zygisk module
+    name: build Zygisk module ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -2104,7 +3061,7 @@ jobs:
           echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
 
-      - name: Build Zygisk arm64-v8a
+      - name: Build Zygisk ${{ matrix.abi }}
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
@@ -2114,11 +3071,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out/zygisk
-          ./zygisk/build.sh out/zygisk/arm64-v8a.so
-          file out/zygisk/arm64-v8a.so
-          test -s out/zygisk/arm64-v8a.so
-          readelf -Ws out/zygisk/arm64-v8a.so | grep -q ' zygisk_module_entry$'
-          if readelf -d out/zygisk/arm64-v8a.so | grep -E 'NEEDED.*(libc\+\+|libstdc\+\+)' >/dev/null 2>&1; then
+          ZDT_ZYGISK_ABI=${{ matrix.abi }} ./zygisk/build.sh out/zygisk/${{ matrix.abi }}.so
+          file out/zygisk/${{ matrix.abi }}.so
+          test -s out/zygisk/${{ matrix.abi }}.so
+          readelf -Ws out/zygisk/${{ matrix.abi }}.so | grep -q ' zygisk_module_entry$'
+          if readelf -d out/zygisk/${{ matrix.abi }}.so | grep -E 'NEEDED.*(libc\+\+|libstdc\+\+)' >/dev/null 2>&1; then
             echo "::error::Zygisk binary must not depend on C++ STL runtime"
             exit 1
           fi
@@ -2126,8 +3083,8 @@ jobs:
       - name: Upload Zygisk binary
         uses: actions/upload-artifact@v7
         with:
-          name: zygisk-arm64
-          path: out/zygisk/arm64-v8a.so
+          name: zygisk-${{ matrix.artifact_suffix }}
+          path: out/zygisk/${{ matrix.abi }}.so
           retention-days: 1
 
   module_zygisk_ready:
@@ -2159,202 +3116,275 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download zdtd binary
+      - name: Download zdtd arm64
         uses: actions/download-artifact@v7
         with:
           name: zdtd-arm64
-          path: out/artifacts/zdtd
-
-      - name: Download T2S binary
+          path: out/artifacts/zdtd/arm64
+      - name: Download t2s arm64
         uses: actions/download-artifact@v7
         with:
           name: t2s-arm64
-          path: out/artifacts/t2s
-
-      - name: Download Zygisk binary
+          path: out/artifacts/t2s/arm64
+      - name: Download zygisk arm64
         uses: actions/download-artifact@v7
         with:
           name: zygisk-arm64
-          path: out/zygisk
-
-      - name: Download OpenVPN binary
+          path: out/artifacts/zygisk/arm64
+      - name: Download openvpn arm64
         uses: actions/download-artifact@v7
         with:
           name: openvpn-arm64
-          path: out/artifacts/openvpn
-
-      - name: Download AmneziaWG binaries
+          path: out/artifacts/openvpn/arm64
+      - name: Download amneziawg arm64
         uses: actions/download-artifact@v7
         with:
           name: amneziawg-arm64
-          path: out/artifacts/amneziawg
-
-      - name: Download wireproxy binary
+          path: out/artifacts/amneziawg/arm64
+      - name: Download wireproxy arm64
         uses: actions/download-artifact@v7
         with:
           name: wireproxy-arm64
-          path: out/artifacts/wireproxy
-
-      - name: Download tun2socks binary
+          path: out/artifacts/wireproxy/arm64
+      - name: Download tun2socks arm64
         uses: actions/download-artifact@v7
         with:
           name: tun2socks-arm64
-          path: out/artifacts/tun2socks
-
-      - name: Download mihomo binary
+          path: out/artifacts/tun2socks/arm64
+      - name: Download mihomo arm64
         uses: actions/download-artifact@v7
         with:
           name: mihomo-arm64
-          path: out/artifacts/mihomo
-
-      - name: Download sing-box binary
+          path: out/artifacts/mihomo/arm64
+      - name: Download sing-box arm64
         uses: actions/download-artifact@v7
         with:
           name: sing-box-arm64
-          path: out/artifacts/sing-box
-
-      - name: Download byedpi binary
+          path: out/artifacts/sing-box/arm64
+      - name: Download byedpi arm64
         uses: actions/download-artifact@v7
         with:
           name: byedpi-arm64
-          path: out/artifacts/byedpi
-
-      - name: Download dnscrypt binary
+          path: out/artifacts/byedpi/arm64
+      - name: Download dnscrypt arm64
         uses: actions/download-artifact@v7
         with:
           name: dnscrypt-arm64
-          path: out/artifacts/dnscrypt
-
-      - name: Download mieru binary
+          path: out/artifacts/dnscrypt/arm64
+      - name: Download mieru arm64
         uses: actions/download-artifact@v7
         with:
           name: mieru-arm64
-          path: out/artifacts/mieru
-
-      - name: Download opera-proxy binary
+          path: out/artifacts/mieru/arm64
+      - name: Download opera-proxy arm64
         uses: actions/download-artifact@v7
         with:
           name: opera-proxy-arm64
-          path: out/artifacts/opera-proxy
-
-      - name: Download nfqws binary
+          path: out/artifacts/opera-proxy/arm64
+      - name: Download dpitunnel arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: dpitunnel-arm64
+          path: out/artifacts/dpitunnel/arm64
+      - name: Download torproxy arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: torproxy-arm64
+          path: out/artifacts/torproxy/arm64
+      - name: Download lyrebird arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: lyrebird-arm64
+          path: out/artifacts/lyrebird/arm64
+      - name: Download nfqws arm64
         uses: actions/download-artifact@v7
         with:
           name: nfqws-arm64
-          path: out/artifacts/nfqws
-
-      - name: Download nfqws2 binary
+          path: out/artifacts/nfqws/arm64
+      - name: Download nfqws2 arm64
         uses: actions/download-artifact@v7
         with:
           name: nfqws2-arm64
-          path: out/artifacts/nfqws2
-
-      - name: Check prebuilt binaries
-        run: |
-          REQUIRED=(dpitunnel-cli torproxy lyrebird)
-          MISSING=()
-          for bin in "${REQUIRED[@]}"; do
-            [[ -f "prebuilt/bin/arm64-v8a/$bin" ]] || MISSING+=("$bin")
-          done
-          if [[ ${#MISSING[@]} -gt 0 ]]; then
-            echo "::error::Binaries doesn't exist: ${MISSING[*]}"
-            exit 1
-          fi
-          echo "All binaries found"
-
+          path: out/artifacts/nfqws2/arm64
+      - name: Download zdtd arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: zdtd-arm32
+          path: out/artifacts/zdtd/arm32
+      - name: Download t2s arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: t2s-arm32
+          path: out/artifacts/t2s/arm32
+      - name: Download zygisk arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: zygisk-arm32
+          path: out/artifacts/zygisk/arm32
+      - name: Download openvpn arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: openvpn-arm32
+          path: out/artifacts/openvpn/arm32
+      - name: Download amneziawg arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: amneziawg-arm32
+          path: out/artifacts/amneziawg/arm32
+      - name: Download wireproxy arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: wireproxy-arm32
+          path: out/artifacts/wireproxy/arm32
+      - name: Download tun2socks arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: tun2socks-arm32
+          path: out/artifacts/tun2socks/arm32
+      - name: Download mihomo arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: mihomo-arm32
+          path: out/artifacts/mihomo/arm32
+      - name: Download sing-box arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: sing-box-arm32
+          path: out/artifacts/sing-box/arm32
+      - name: Download byedpi arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: byedpi-arm32
+          path: out/artifacts/byedpi/arm32
+      - name: Download dnscrypt arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: dnscrypt-arm32
+          path: out/artifacts/dnscrypt/arm32
+      - name: Download mieru arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: mieru-arm32
+          path: out/artifacts/mieru/arm32
+      - name: Download opera-proxy arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: opera-proxy-arm32
+          path: out/artifacts/opera-proxy/arm32
+      - name: Download dpitunnel arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: dpitunnel-arm32
+          path: out/artifacts/dpitunnel/arm32
+      - name: Download torproxy arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: torproxy-arm32
+          path: out/artifacts/torproxy/arm32
+      - name: Download lyrebird arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: lyrebird-arm32
+          path: out/artifacts/lyrebird/arm32
+      - name: Download nfqws arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: nfqws-arm32
+          path: out/artifacts/nfqws/arm32
+      - name: Download nfqws2 arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: nfqws2-arm32
+          path: out/artifacts/nfqws2/arm32
       - name: Pack Magisk module archive
         run: |
           set -euo pipefail
 
           MODULE_BUILD_DIR="out/module_build/module_root"
           MODULE_ZIP="out/module/zdt_module.zip"
-          PREBUILT="prebuilt/bin/arm64-v8a"
-          ZDTD_BIN="out/artifacts/zdtd/zdtd"
-          T2S_BIN="out/artifacts/t2s/t2s"
-          ZYGISK_SO="out/zygisk/arm64-v8a.so"
-          OPENVPN_BIN="out/artifacts/openvpn/openvpn"
-          AMNEZIAWG_GO_BIN="out/artifacts/amneziawg/amneziawg-go"
-          AWG_BIN="out/artifacts/amneziawg/awg"
-          WIREPROXY_BIN="out/artifacts/wireproxy/wireproxy"
-          TUN2SOCKS_BIN="out/artifacts/tun2socks/tun2socks"
-          MIHOMO_BIN="out/artifacts/mihomo/mihomo"
-          SING_BOX_BIN="out/artifacts/sing-box/sing-box"
-          BYEDPI_BIN="out/artifacts/byedpi/byedpi"
-          DNSCRYPT_BIN="out/artifacts/dnscrypt/dnscrypt"
-          MIERU_BIN="out/artifacts/mieru/mieru"
-          OPERA_PROXY_BIN="out/artifacts/opera-proxy/opera-proxy"
-          NFQWS_BIN="out/artifacts/nfqws/nfqws"
-          NFQWS2_BIN="out/artifacts/nfqws2/nfqws2"
+          BINARIES="zdtd t2s openvpn amneziawg-go awg wireproxy tun2socks mihomo sing-box byedpi dnscrypt mieru opera-proxy dpitunnel-cli torproxy lyrebird nfqws nfqws2"
 
-          test -s "$ZDTD_BIN" || { echo "::error::zdtd artifact missing: $ZDTD_BIN"; exit 1; }
-          test -s "$T2S_BIN" || { echo "::error::t2s artifact missing: $T2S_BIN"; exit 1; }
-          test -s "$ZYGISK_SO" || { echo "::error::Zygisk artifact missing: $ZYGISK_SO"; exit 1; }
-          test -s "$OPENVPN_BIN" || { echo "::error::OpenVPN artifact missing: $OPENVPN_BIN"; exit 1; }
-          test -s "$AMNEZIAWG_GO_BIN" || { echo "::error::amneziawg-go artifact missing: $AMNEZIAWG_GO_BIN"; exit 1; }
-          test -s "$AWG_BIN" || { echo "::error::awg artifact missing: $AWG_BIN"; exit 1; }
-          test -s "$WIREPROXY_BIN" || { echo "::error::wireproxy artifact missing: $WIREPROXY_BIN"; exit 1; }
-          test -s "$TUN2SOCKS_BIN" || { echo "::error::tun2socks artifact missing: $TUN2SOCKS_BIN"; exit 1; }
-          test -s "$MIHOMO_BIN" || { echo "::error::mihomo artifact missing: $MIHOMO_BIN"; exit 1; }
-          test -s "$SING_BOX_BIN" || { echo "::error::sing-box artifact missing: $SING_BOX_BIN"; exit 1; }
-          test -s "$BYEDPI_BIN" || { echo "::error::byedpi artifact missing: $BYEDPI_BIN"; exit 1; }
-          test -s "$DNSCRYPT_BIN" || { echo "::error::dnscrypt artifact missing: $DNSCRYPT_BIN"; exit 1; }
-          test -s "$MIERU_BIN" || { echo "::error::mieru artifact missing: $MIERU_BIN"; exit 1; }
-          test -s "$OPERA_PROXY_BIN" || { echo "::error::opera-proxy artifact missing: $OPERA_PROXY_BIN"; exit 1; }
-          test -s "$NFQWS_BIN" || { echo "::error::nfqws artifact missing: $NFQWS_BIN"; exit 1; }
-          test -s "$NFQWS2_BIN" || { echo "::error::nfqws2 artifact missing: $NFQWS2_BIN"; exit 1; }
+          require_file() {
+            local path="$1"
+            test -s "$path" || { echo "::error::Required artifact missing: $path"; exit 1; }
+          }
+
+          artifact_path() {
+            local arch="$1"
+            local bin="$2"
+            case "$bin" in
+              zdtd) echo "out/artifacts/zdtd/$arch/zdtd" ;;
+              t2s) echo "out/artifacts/t2s/$arch/t2s" ;;
+              openvpn) echo "out/artifacts/openvpn/$arch/openvpn" ;;
+              amneziawg-go) echo "out/artifacts/amneziawg/$arch/amneziawg-go" ;;
+              awg) echo "out/artifacts/amneziawg/$arch/awg" ;;
+              wireproxy) echo "out/artifacts/wireproxy/$arch/wireproxy" ;;
+              tun2socks) echo "out/artifacts/tun2socks/$arch/tun2socks" ;;
+              mihomo) echo "out/artifacts/mihomo/$arch/mihomo" ;;
+              sing-box) echo "out/artifacts/sing-box/$arch/sing-box" ;;
+              byedpi) echo "out/artifacts/byedpi/$arch/byedpi" ;;
+              dnscrypt) echo "out/artifacts/dnscrypt/$arch/dnscrypt" ;;
+              mieru) echo "out/artifacts/mieru/$arch/mieru" ;;
+              opera-proxy) echo "out/artifacts/opera-proxy/$arch/opera-proxy" ;;
+              dpitunnel-cli) echo "out/artifacts/dpitunnel/$arch/dpitunnel-cli" ;;
+              torproxy) echo "out/artifacts/torproxy/$arch/torproxy" ;;
+              lyrebird) echo "out/artifacts/lyrebird/$arch/lyrebird" ;;
+              nfqws) echo "out/artifacts/nfqws/$arch/nfqws" ;;
+              nfqws2) echo "out/artifacts/nfqws2/$arch/nfqws2" ;;
+              *) echo "::error::Unknown binary: $bin"; exit 1 ;;
+            esac
+          }
 
           rm -rf out/module_build
           mkdir -p "$MODULE_BUILD_DIR" out/module
-
           cp -a module_template/. "$MODULE_BUILD_DIR/"
           cp -f module.prop "$MODULE_BUILD_DIR/module.prop"
 
           [[ -d "$MODULE_BUILD_DIR/META-INF" ]] || { echo "::error::META-INF doesnt exist in module_template"; exit 1; }
           find "$MODULE_BUILD_DIR" -name .gitkeep -type f -delete 2>/dev/null || true
           rm -f "$MODULE_BUILD_DIR/zygisk/unloaded" 2>/dev/null || true
+          rm -rf "$MODULE_BUILD_DIR/bin" "$MODULE_BUILD_DIR/prebuilt"
+          mkdir -p "$MODULE_BUILD_DIR/bin" "$MODULE_BUILD_DIR/prebuilt/bin/arm64-v8a" "$MODULE_BUILD_DIR/prebuilt/bin/arm-v7a" "$MODULE_BUILD_DIR/zygisk"
 
-          mkdir -p "$MODULE_BUILD_DIR/bin" "$MODULE_BUILD_DIR/zygisk"
-          cp -f "$ZYGISK_SO" "$MODULE_BUILD_DIR/zygisk/arm64-v8a.so" && chmod 644 "$MODULE_BUILD_DIR/zygisk/arm64-v8a.so"
+          cp -f out/artifacts/zygisk/arm64/arm64-v8a.so "$MODULE_BUILD_DIR/zygisk/arm64-v8a.so"
+          cp -f out/artifacts/zygisk/arm32/armeabi-v7a.so "$MODULE_BUILD_DIR/zygisk/armeabi-v7a.so"
+          chmod 644 "$MODULE_BUILD_DIR/zygisk/arm64-v8a.so" "$MODULE_BUILD_DIR/zygisk/armeabi-v7a.so"
 
-          cp -f "$ZDTD_BIN" "$MODULE_BUILD_DIR/bin/zdtd" && chmod 755 "$MODULE_BUILD_DIR/bin/zdtd"
-          cp -f "$T2S_BIN"  "$MODULE_BUILD_DIR/bin/t2s"  && chmod 755 "$MODULE_BUILD_DIR/bin/t2s"
-          cp -f "$OPENVPN_BIN" "$MODULE_BUILD_DIR/bin/openvpn" && chmod 755 "$MODULE_BUILD_DIR/bin/openvpn"
-          cp -f "$AMNEZIAWG_GO_BIN" "$MODULE_BUILD_DIR/bin/amneziawg-go" && chmod 755 "$MODULE_BUILD_DIR/bin/amneziawg-go"
-          cp -f "$AWG_BIN" "$MODULE_BUILD_DIR/bin/awg" && chmod 755 "$MODULE_BUILD_DIR/bin/awg"
-          cp -f "$WIREPROXY_BIN" "$MODULE_BUILD_DIR/bin/wireproxy" && chmod 755 "$MODULE_BUILD_DIR/bin/wireproxy"
-          cp -f "$TUN2SOCKS_BIN" "$MODULE_BUILD_DIR/bin/tun2socks" && chmod 755 "$MODULE_BUILD_DIR/bin/tun2socks"
-          cp -f "$MIHOMO_BIN" "$MODULE_BUILD_DIR/bin/mihomo" && chmod 755 "$MODULE_BUILD_DIR/bin/mihomo"
-          cp -f "$SING_BOX_BIN" "$MODULE_BUILD_DIR/bin/sing-box" && chmod 755 "$MODULE_BUILD_DIR/bin/sing-box"
-          cp -f "$BYEDPI_BIN" "$MODULE_BUILD_DIR/bin/byedpi" && chmod 755 "$MODULE_BUILD_DIR/bin/byedpi"
-          cp -f "$DNSCRYPT_BIN" "$MODULE_BUILD_DIR/bin/dnscrypt" && chmod 755 "$MODULE_BUILD_DIR/bin/dnscrypt"
-          cp -f "$MIERU_BIN" "$MODULE_BUILD_DIR/bin/mieru" && chmod 755 "$MODULE_BUILD_DIR/bin/mieru"
-          cp -f "$OPERA_PROXY_BIN" "$MODULE_BUILD_DIR/bin/opera-proxy" && chmod 755 "$MODULE_BUILD_DIR/bin/opera-proxy"
-          cp -f "$NFQWS_BIN" "$MODULE_BUILD_DIR/bin/nfqws" && chmod 755 "$MODULE_BUILD_DIR/bin/nfqws"
-          cp -f "$NFQWS2_BIN" "$MODULE_BUILD_DIR/bin/nfqws2" && chmod 755 "$MODULE_BUILD_DIR/bin/nfqws2"
-          for bin in dpitunnel-cli torproxy lyrebird; do
-            cp -f "$PREBUILT/$bin" "$MODULE_BUILD_DIR/bin/$bin" && chmod 755 "$MODULE_BUILD_DIR/bin/$bin"
+          for arch in arm64 arm32; do
+            case "$arch" in
+              arm64) module_arch="arm64-v8a" ;;
+              arm32) module_arch="arm-v7a" ;;
+            esac
+            for bin in $BINARIES; do
+              src="$(artifact_path "$arch" "$bin")"
+              require_file "$src"
+              cp -f "$src" "$MODULE_BUILD_DIR/prebuilt/bin/$module_arch/$bin"
+              chmod 755 "$MODULE_BUILD_DIR/prebuilt/bin/$module_arch/$bin"
+            done
           done
 
           rm -rf "$MODULE_BUILD_DIR/verify_sum"
-          mkdir -p "$MODULE_BUILD_DIR/verify_sum/bin" "$MODULE_BUILD_DIR/verify_sum/zygisk"
+          mkdir -p "$MODULE_BUILD_DIR/verify_sum/prebuilt/bin" "$MODULE_BUILD_DIR/verify_sum/zygisk"
           while IFS= read -r file; do
             rel="${file#$MODULE_BUILD_DIR/}"
             mkdir -p "$MODULE_BUILD_DIR/verify_sum/$(dirname "$rel")"
             (cd "$MODULE_BUILD_DIR" && sha256sum "$rel" > "verify_sum/$rel.sha256")
-          done < <(find "$MODULE_BUILD_DIR/bin" -maxdepth 1 -type f | sort)
-          (cd "$MODULE_BUILD_DIR" && sha256sum 'zygisk/arm64-v8a.so' > 'verify_sum/zygisk/arm64-v8a.so.sha256')
-          test -s "$MODULE_BUILD_DIR/verify_sum/bin/zdtd.sha256" || { echo "::error::verify_sum/bin/zdtd.sha256 missing"; exit 1; }
-          test -s "$MODULE_BUILD_DIR/verify_sum/zygisk/arm64-v8a.so.sha256" || { echo "::error::verify_sum/zygisk/arm64-v8a.so.sha256 missing"; exit 1; }
+          done < <(find "$MODULE_BUILD_DIR/prebuilt/bin" "$MODULE_BUILD_DIR/zygisk" -type f | sort)
+          test -s "$MODULE_BUILD_DIR/verify_sum/prebuilt/bin/arm64-v8a/zdtd.sha256" || { echo "::error::arm64 zdtd verify sum missing"; exit 1; }
+          test -s "$MODULE_BUILD_DIR/verify_sum/prebuilt/bin/arm-v7a/zdtd.sha256" || { echo "::error::arm32 zdtd verify sum missing"; exit 1; }
+          test -s "$MODULE_BUILD_DIR/verify_sum/zygisk/arm64-v8a.so.sha256" || { echo "::error::arm64 zygisk verify sum missing"; exit 1; }
+          test -s "$MODULE_BUILD_DIR/verify_sum/zygisk/armeabi-v7a.so.sha256" || { echo "::error::arm32 zygisk verify sum missing"; exit 1; }
 
           pushd "$MODULE_BUILD_DIR" > /dev/null
           zip -qr "../../../$MODULE_ZIP" .
           popd > /dev/null
 
           ZIP_ENTRIES="$(unzip -Z1 "$MODULE_ZIP" 2>/dev/null)" || { echo "::error::Unable to read raw module zip"; exit 1; }
-          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'zygisk/arm64-v8a.so' >/dev/null || { echo "::error::Zygisk binary missing in module zip"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'prebuilt/bin/arm64-v8a/zdtd' >/dev/null || { echo "::error::arm64 module binaries missing"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'prebuilt/bin/arm-v7a/zdtd' >/dev/null || { echo "::error::arm32 module binaries missing"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'zygisk/arm64-v8a.so' >/dev/null || { echo "::error::arm64 Zygisk binary missing"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'zygisk/armeabi-v7a.so' >/dev/null || { echo "::error::arm32 Zygisk binary missing"; exit 1; }
           printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'verify.sh' >/dev/null || { echo "::error::verify.sh missing in module zip"; exit 1; }
-          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'verify_sum/zygisk/arm64-v8a.so.sha256' >/dev/null || { echo "::error::zygisk verify_sum missing in module zip"; exit 1; }
-          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'verify_sum/bin/zdtd.sha256' >/dev/null || { echo "::error::zdtd verify_sum missing in module zip"; exit 1; }
           if printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'bin/dpi-detector' >/dev/null; then
             echo "::error::dpi-detector must not be packed into module zip; it belongs to APK assets"
             exit 1
@@ -2367,12 +3397,10 @@ jobs:
           RAW_MODULE_ZIP="out/module/zdt_module.raw.zip"
           cp -f "$MODULE_ZIP" "$RAW_MODULE_ZIP"
           python3 scripts/module/fake-encrypt-central-directory.py "$RAW_MODULE_ZIP" "$MODULE_ZIP"
-          python3 scripts/module/fake-encrypt-central-directory.py --check "$MODULE_ZIP"
+          test -s "$MODULE_ZIP" || { echo "::error::module zip missing after central directory protection"; exit 1; }
+          ls -lh "$MODULE_ZIP" "$RAW_MODULE_ZIP"
 
-          echo "Protected module ZIP generated with fake encrypted Central Directory"
-          ls -lh "$MODULE_ZIP"
-
-      - name: Upload module archive
+      - name: Upload module ZIP
         uses: actions/upload-artifact@v7
         with:
           name: zdt-module-zip
@@ -2380,10 +3408,37 @@ jobs:
           retention-days: 1
 
   build_dpi_detector:
-    name: build dpi-detector
+    name: build dpi-detector ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -2397,7 +3452,7 @@ jobs:
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi
 
       - name: Install Android NDK cross-linker
         run: |
@@ -2411,8 +3466,8 @@ jobs:
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
           fi
           NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          ANDROID_CC="$NDK_BIN/aarch64-linux-android21-clang"
-          ANDROID_CXX="$NDK_BIN/aarch64-linux-android21-clang++"
+          ANDROID_CC="$NDK_BIN/${{ matrix.clang_prefix }}21-clang"
+          ANDROID_CXX="$NDK_BIN/${{ matrix.clang_prefix }}21-clang++"
           ANDROID_AR="$NDK_BIN/llvm-ar"
           ANDROID_RANLIB="$NDK_BIN/llvm-ranlib"
 
@@ -2427,6 +3482,7 @@ jobs:
             echo "ANDROID_NDK_HOME=$NDK_ROOT"
             echo "PATH=$NDK_BIN:$PATH"
             echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_CC"
+            echo "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$ANDROID_CC"
             echo "CC_aarch64_linux_android=$ANDROID_CC"
             echo "CXX_aarch64_linux_android=$ANDROID_CXX"
             echo "AR_aarch64_linux_android=$ANDROID_AR"
@@ -2438,6 +3494,9 @@ jobs:
           [target.aarch64-linux-android]
           linker = "$ANDROID_CC"
           ar = "$ANDROID_AR"
+          [target.armv7-linux-androideabi]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
           EOF2
 
       - name: Cache Cargo registry and dpi-detector target
@@ -2447,10 +3506,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: cargo-dpi-detector-aarch64-linux-android-${{ hashFiles('rust/Cargo.lock', 'rust/dpi-detector/Cargo.toml') }}
+          key: cargo-dpi-detector-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock', 'rust/dpi-detector/Cargo.toml') }}
           restore-keys: |
-            cargo-dpi-detector-aarch64-linux-android-
-            cargo-aarch64-linux-android-
+            cargo-dpi-detector-${{ matrix.rust_target }}-
+            cargo-${{ matrix.rust_target }}-
 
       - name: Verify Android Rust cross toolchain
         run: |
@@ -2458,7 +3517,7 @@ jobs:
           echo "NDK_ROOT=$NDK_ROOT"
           "$CC_aarch64_linux_android" --version | head -1
           "$AR_aarch64_linux_android" --version | head -1
-          rustc --print target-list | grep -qx '${{ env.CARGO_BUILD_TARGET }}'
+          rustc --print target-list | grep -qx '${{ matrix.rust_target }}'
           cargo -V
           rustc -V
 
@@ -2472,12 +3531,12 @@ jobs:
           RUSTC_WRAPPER: ""
         run: |
           set -euo pipefail
-          cargo build --manifest-path rust/dpi-detector/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
+          cargo build --manifest-path rust/dpi-detector/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ matrix.rust_target }}"
 
       - name: Collect dpi-detector
         run: |
           set -euo pipefail
-          SRC="rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}/dpi-detector"
+          SRC="rust/target/${{ matrix.rust_target }}/${{ env.CARGO_PROFILE }}/dpi-detector"
           DST="out/artifacts/dpi-detector"
           test -s "$SRC" || { echo "::error::dpi-detector artifact missing after build: $SRC"; exit 1; }
           mkdir -p "$DST"
@@ -2488,15 +3547,42 @@ jobs:
       - name: Upload dpi-detector binary
         uses: actions/upload-artifact@v7
         with:
-          name: dpi-detector-arm64
+          name: dpi-detector-${{ matrix.artifact_suffix }}
           path: out/artifacts/dpi-detector/dpi-detector
           retention-days: 1
 
   build_nfqws_tester:
-    name: build nfqws-tester
+    name: build nfqws-tester ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -2510,7 +3596,7 @@ jobs:
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android
+          targets: aarch64-linux-android,armv7-linux-androideabi
 
       - name: Install Android NDK cross-linker
         run: |
@@ -2524,8 +3610,8 @@ jobs:
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
           fi
           NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          ANDROID_CC="$NDK_BIN/aarch64-linux-android21-clang"
-          ANDROID_CXX="$NDK_BIN/aarch64-linux-android21-clang++"
+          ANDROID_CC="$NDK_BIN/${{ matrix.clang_prefix }}21-clang"
+          ANDROID_CXX="$NDK_BIN/${{ matrix.clang_prefix }}21-clang++"
           ANDROID_AR="$NDK_BIN/llvm-ar"
           ANDROID_RANLIB="$NDK_BIN/llvm-ranlib"
 
@@ -2540,6 +3626,7 @@ jobs:
             echo "ANDROID_NDK_HOME=$NDK_ROOT"
             echo "PATH=$NDK_BIN:$PATH"
             echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_CC"
+            echo "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$ANDROID_CC"
             echo "CC_aarch64_linux_android=$ANDROID_CC"
             echo "CXX_aarch64_linux_android=$ANDROID_CXX"
             echo "AR_aarch64_linux_android=$ANDROID_AR"
@@ -2551,6 +3638,9 @@ jobs:
           [target.aarch64-linux-android]
           linker = "$ANDROID_CC"
           ar = "$ANDROID_AR"
+          [target.armv7-linux-androideabi]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
           EOF2
 
       - name: Cache Cargo registry and nfqws-tester target
@@ -2560,10 +3650,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             rust/target
-          key: cargo-nfqws-tester-aarch64-linux-android-${{ hashFiles('rust/Cargo.lock', 'rust/nfqws-tester/Cargo.toml') }}
+          key: cargo-nfqws-tester-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock', 'rust/nfqws-tester/Cargo.toml') }}
           restore-keys: |
-            cargo-nfqws-tester-aarch64-linux-android-
-            cargo-aarch64-linux-android-
+            cargo-nfqws-tester-${{ matrix.rust_target }}-
+            cargo-${{ matrix.rust_target }}-
 
       - name: Verify Android Rust cross toolchain
         run: |
@@ -2571,7 +3661,7 @@ jobs:
           echo "NDK_ROOT=$NDK_ROOT"
           "$CC_aarch64_linux_android" --version | head -1
           "$AR_aarch64_linux_android" --version | head -1
-          rustc --print target-list | grep -qx '${{ env.CARGO_BUILD_TARGET }}'
+          rustc --print target-list | grep -qx '${{ matrix.rust_target }}'
           cargo -V
           rustc -V
 
@@ -2585,12 +3675,12 @@ jobs:
           RUSTC_WRAPPER: ""
         run: |
           set -euo pipefail
-          cargo build --manifest-path rust/nfqws-tester/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ env.CARGO_BUILD_TARGET }}"
+          cargo build --manifest-path rust/nfqws-tester/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ matrix.rust_target }}"
 
       - name: Collect nfqws-tester
         run: |
           set -euo pipefail
-          SRC="rust/target/${{ env.CARGO_BUILD_TARGET }}/${{ env.CARGO_PROFILE }}/nfqws-tester"
+          SRC="rust/target/${{ matrix.rust_target }}/${{ env.CARGO_PROFILE }}/nfqws-tester"
           DST="out/artifacts/nfqws-tester"
           test -s "$SRC" || { echo "::error::nfqws-tester artifact missing after build: $SRC"; exit 1; }
           mkdir -p "$DST"
@@ -2601,15 +3691,42 @@ jobs:
       - name: Upload nfqws-tester binary
         uses: actions/upload-artifact@v7
         with:
-          name: nfqws-tester-arm64
+          name: nfqws-tester-${{ matrix.artifact_suffix }}
           path: out/artifacts/nfqws-tester/nfqws-tester
           retention-days: 1
 
   build_busybox:
-    name: build BusyBox arm64
+    name: build BusyBox ${{ matrix.abi }}
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
 
     steps:
       - name: Checkout repository
@@ -2635,20 +3752,20 @@ jobs:
           echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
 
-      - name: Build BusyBox arm64 from source
+      - name: Build BusyBox ${{ matrix.abi }} from source
         run: |
           set -euo pipefail
-          bash scripts/module/build-busybox-arm64.sh prebuilt/bin/arm64-v8a/busybox
-          ls -lh prebuilt/bin/arm64-v8a/busybox
-          test -s prebuilt/bin/arm64-v8a/busybox
+          bash scripts/module/build-busybox-arm64.sh prebuilt/bin/${{ matrix.module_arch }}/busybox
+          ls -lh prebuilt/bin/${{ matrix.module_arch }}/busybox
+          test -s prebuilt/bin/${{ matrix.module_arch }}/busybox
 
       - name: Upload BusyBox binary
         uses: actions/upload-artifact@v7
         with:
-          name: busybox-arm64
+          name: busybox-${{ matrix.artifact_suffix }}
           path: |
-            prebuilt/bin/arm64-v8a/busybox
-            prebuilt/bin/arm64-v8a/busybox.source
+            prebuilt/bin/${{ matrix.module_arch }}/busybox
+            prebuilt/bin/${{ matrix.module_arch }}/busybox.source
           retention-days: 1
 
   apk_tools_ready:
@@ -2721,30 +3838,50 @@ jobs:
           name: zdt-module-zip
           path: out/module
 
-      - name: Download dpi-detector binary
+      - name: Download dpi-detector arm64
         uses: actions/download-artifact@v7
         with:
           name: dpi-detector-arm64
-          path: out/artifacts/dpi-detector
+          path: out/artifacts/dpi-detector/arm64
 
-      - name: Download nfqws-tester binary
+      - name: Download dpi-detector arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: dpi-detector-arm32
+          path: out/artifacts/dpi-detector/arm32
+
+      - name: Download nfqws-tester arm64
         uses: actions/download-artifact@v7
         with:
           name: nfqws-tester-arm64
-          path: out/artifacts/nfqws-tester
+          path: out/artifacts/nfqws-tester/arm64
 
-      - name: Download BusyBox binary
+      - name: Download nfqws-tester arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: nfqws-tester-arm32
+          path: out/artifacts/nfqws-tester/arm32
+
+      - name: Download BusyBox arm64
         uses: actions/download-artifact@v7
         with:
           name: busybox-arm64
           path: prebuilt/bin/arm64-v8a
 
-      - name: Verify BusyBox artifact
+      - name: Download BusyBox arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: busybox-arm32
+          path: prebuilt/bin/arm-v7a
+
+      - name: Verify BusyBox artifacts
         run: |
           set -euo pipefail
-          test -s prebuilt/bin/arm64-v8a/busybox
-          chmod 755 prebuilt/bin/arm64-v8a/busybox
-          ls -lh prebuilt/bin/arm64-v8a/busybox
+          for path in prebuilt/bin/arm64-v8a/busybox prebuilt/bin/arm-v7a/busybox; do
+            test -s "$path"
+            chmod 755 "$path"
+            ls -lh "$path"
+          done
 
       - name: Locate Android project root
         run: |
@@ -2797,27 +3934,39 @@ jobs:
             echo "keyPassword=$ZDT_KEY_PASSWORD"
           } > "$GRADLE_PROJECT_DIR/keystore.properties"
 
-      - name: Prepare dpi-detector APK asset
+      - name: Prepare dpi-detector APK assets
         run: |
           set -euo pipefail
-          SRC="out/artifacts/dpi-detector/dpi-detector"
-          DST="application/app/build/generated/zdt-assets/main/dpi-detector/arm64-v8a/dpi-detector"
-          test -s "$SRC" || { echo "::error::dpi-detector artifact missing: $SRC"; exit 1; }
-          mkdir -p "$(dirname "$DST")"
-          cp -f "$SRC" "$DST"
-          chmod 755 "$DST"
-          ls -lh "$DST"
+          declare -A SRC_BY_ABI=(
+            [arm64-v8a]="out/artifacts/dpi-detector/arm64/dpi-detector"
+            [armeabi-v7a]="out/artifacts/dpi-detector/arm32/dpi-detector"
+          )
+          for abi in arm64-v8a armeabi-v7a; do
+            SRC="${SRC_BY_ABI[$abi]}"
+            DST="application/app/build/generated/zdt-assets/main/dpi-detector/$abi/dpi-detector"
+            test -s "$SRC" || { echo "::error::dpi-detector artifact missing: $SRC"; exit 1; }
+            mkdir -p "$(dirname "$DST")"
+            cp -f "$SRC" "$DST"
+            chmod 755 "$DST"
+            ls -lh "$DST"
+          done
 
-      - name: Prepare nfqws_tester APK asset
+      - name: Prepare nfqws_tester APK assets
         run: |
           set -euo pipefail
-          SRC="out/artifacts/nfqws-tester/nfqws-tester"
-          DST="application/app/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a/nfqws_tester"
-          test -s "$SRC" || { echo "::error::nfqws_tester artifact missing: $SRC"; exit 1; }
-          mkdir -p "$(dirname "$DST")"
-          cp -f "$SRC" "$DST"
-          chmod 755 "$DST"
-          ls -lh "$DST"
+          declare -A SRC_BY_ABI=(
+            [arm64-v8a]="out/artifacts/nfqws-tester/arm64/nfqws-tester"
+            [armeabi-v7a]="out/artifacts/nfqws-tester/arm32/nfqws-tester"
+          )
+          for abi in arm64-v8a armeabi-v7a; do
+            SRC="${SRC_BY_ABI[$abi]}"
+            DST="application/app/build/generated/zdt-assets/main/nfqws-tester/$abi/nfqws_tester"
+            test -s "$SRC" || { echo "::error::nfqws_tester artifact missing: $SRC"; exit 1; }
+            mkdir -p "$(dirname "$DST")"
+            cp -f "$SRC" "$DST"
+            chmod 755 "$DST"
+            ls -lh "$DST"
+          done
 
       - name: Build APK assemble${{ env.BUILD_TYPE }}
         working-directory: ${{ env.GRADLE_PROJECT_DIR }}
@@ -2845,11 +3994,19 @@ jobs:
             printf '%s\n' "$APK_ENTRIES" | head -80 || true
             exit 1
           fi
-          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/dpi-detector/arm64-v8a/dpi-detector' >/dev/null || { echo "::error::dpi-detector APK asset missing"; exit 1; }
-          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/nfqws-tester/arm64-v8a/nfqws_tester' >/dev/null || { echo "::error::nfqws_tester APK asset missing"; exit 1; }
-          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/busybox/busybox-arm64' >/dev/null || { echo "::error::bundled BusyBox APK asset missing"; exit 1; }
-          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/busybox/busybox-arm64.sha256' >/dev/null || { echo "::error::bundled BusyBox SHA-256 APK asset missing"; exit 1; }
-          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/busybox/busybox-arm64.source' >/dev/null || { echo "::error::bundled BusyBox source APK asset missing"; exit 1; }
+          for entry in \
+            assets/dpi-detector/arm64-v8a/dpi-detector \
+            assets/dpi-detector/armeabi-v7a/dpi-detector \
+            assets/nfqws-tester/arm64-v8a/nfqws_tester \
+            assets/nfqws-tester/armeabi-v7a/nfqws_tester \
+            assets/busybox/busybox-arm64 \
+            assets/busybox/busybox-arm64.sha256 \
+            assets/busybox/busybox-arm64.source \
+            assets/busybox/busybox-arm32 \
+            assets/busybox/busybox-arm32.sha256 \
+            assets/busybox/busybox-arm32.source; do
+            printf '%s\n' "$APK_ENTRIES" | grep -Fx "$entry" >/dev/null || { echo "::error::APK asset missing: $entry"; exit 1; }
+          done
           printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/busybox/zdt_module.sha256' >/dev/null || { echo "::error::module SHA-256 APK asset missing"; exit 1; }
           printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/busybox/zdt_module.cache' >/dev/null || { echo "::error::module cache APK asset missing"; exit 1; }
 

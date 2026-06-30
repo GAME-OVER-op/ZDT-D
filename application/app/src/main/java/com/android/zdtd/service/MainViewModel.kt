@@ -4910,16 +4910,24 @@ private fun shQuote(s: String): String {
     data[offset + 1] = ((value shr 8) and 0xff).toByte()
   }
 
+  private fun preferredNativeAssetAbi(): String = when {
+    Build.SUPPORTED_ABIS.any { it == "arm64-v8a" } -> "arm64"
+    Build.SUPPORTED_ABIS.any { it == "armeabi-v7a" } -> "arm32"
+    else -> "arm64"
+  }
+
   private suspend fun stageBundledBusyBoxToTmp(): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-    val expected = readSha256Asset("busybox/busybox-arm64.sha256")
-      ?: return@withContext (false to "asset busybox/busybox-arm64.sha256 missing or invalid")
-    val cacheBusyBox = File(ctx.cacheDir, "busybox-arm64")
+    val busyBoxAbi = preferredNativeAssetAbi()
+    val busyBoxAssetName = if (busyBoxAbi == "arm32") "busybox-arm32" else "busybox-arm64"
+    val expected = readSha256Asset("busybox/${busyBoxAssetName}.sha256")
+      ?: return@withContext (false to "asset busybox/${busyBoxAssetName}.sha256 missing or invalid")
+    val cacheBusyBox = File(ctx.cacheDir, busyBoxAssetName)
     runCatching {
-      ctx.assets.open("busybox/busybox-arm64").use { input ->
+      ctx.assets.open("busybox/${busyBoxAssetName}").use { input ->
         cacheBusyBox.outputStream().use { out -> input.copyTo(out) }
       }
     }.getOrElse {
-      return@withContext (false to "asset busybox/busybox-arm64 missing: ${it.message ?: it}")
+      return@withContext (false to "asset busybox/${busyBoxAssetName} missing: ${it.message ?: it}")
     }
     val actual = runCatching { sha256Hex(cacheBusyBox) }.getOrElse {
       return@withContext (false to "busybox SHA-256 failed: ${it.message ?: it}")

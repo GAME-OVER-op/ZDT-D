@@ -61,8 +61,8 @@ import com.android.zdtd.service.RootState
 import com.android.zdtd.service.SetupUiState
 
 private fun isArm64OnlySupported(): Boolean {
-  // Module binaries are built for arm64-v8a only.
-  return Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
+  // Module binaries are built for arm64-v8a and armeabi-v7a.
+  return Build.SUPPORTED_ABIS.any { it == "arm64-v8a" || it == "armeabi-v7a" }
 }
 
 private fun isModuleInstallOsSupported(): Boolean {

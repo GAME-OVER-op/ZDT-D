@@ -6358,7 +6358,8 @@ match (method.as_str(), path.as_str()) {
                 let proxy_active = services_running && crate::proxyinfo::is_active();
                 let lsposed_configured = proxy_enabled && proxy_apps > 0;
                 let zygisk_requested = Path::new("/data/adb/ZDT-D/zygisk").exists();
-                let zygisk_installed = Path::new(settings::MODULE_DIR).join("zygisk/arm64-v8a.so").exists();
+                let zygisk_installed = Path::new(settings::MODULE_DIR).join("zygisk/arm64-v8a.so").exists()
+                    || Path::new(settings::MODULE_DIR).join("zygisk/armeabi-v7a.so").exists();
                 Ok(json!({
                     "ok": true,
                     "selected_apps": proxy_apps,

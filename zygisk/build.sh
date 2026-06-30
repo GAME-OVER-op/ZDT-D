@@ -3,12 +3,36 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REQUESTED_OUT="${1:-}"
+ZDT_ZYGISK_ABI="${ZDT_ZYGISK_ABI:-}"
+if [[ -z "$ZDT_ZYGISK_ABI" && "$REQUESTED_OUT" == *"armeabi-v7a.so" ]]; then
+  ZDT_ZYGISK_ABI="armeabi-v7a"
+elif [[ -z "$ZDT_ZYGISK_ABI" ]]; then
+  ZDT_ZYGISK_ABI="arm64-v8a"
+fi
+case "$ZDT_ZYGISK_ABI" in
+  arm64-v8a)
+    ZDT_ZYGISK_TARGET="aarch64-linux-android"
+    ZDT_ZYGISK_NDK_PREFIX="aarch64-linux-android"
+    ZDT_ZYGISK_HOST_ARCH_PATTERN="aarch64|arm64"
+    ;;
+  armeabi-v7a|arm-v7a)
+    ZDT_ZYGISK_ABI="armeabi-v7a"
+    ZDT_ZYGISK_TARGET="armv7a-linux-androideabi"
+    ZDT_ZYGISK_NDK_PREFIX="armv7a-linux-androideabi"
+    ZDT_ZYGISK_HOST_ARCH_PATTERN="armv7l|armv8l|arm"
+    ;;
+  *)
+    printf '[ZDT-D][Zygisk][ERR] Unsupported ZDT_ZYGISK_ABI: %s
+' "$ZDT_ZYGISK_ABI" >&2
+    exit 1
+    ;;
+esac
 if [[ "$REQUESTED_OUT" == "module" || "$REQUESTED_OUT" == "--module" ]]; then
-  OUT_SO="$ROOT_DIR/zygisk/arm64-v8a.so"
+  OUT_SO="$ROOT_DIR/zygisk/${ZDT_ZYGISK_ABI}.so"
 elif [[ -n "$REQUESTED_OUT" ]]; then
   OUT_SO="$REQUESTED_OUT"
 else
-  OUT_SO="$ROOT_DIR/out/arm64-v8a.so"
+  OUT_SO="$ROOT_DIR/out/${ZDT_ZYGISK_ABI}.so"
 fi
 API_LEVEL="${ANDROID_API_LEVEL:-24}"
 SRC="$ROOT_DIR/src/main.cpp"
@@ -65,7 +89,7 @@ find_ndk_clang() {
   for ndk in "${candidates[@]}"; do
     [[ -n "$ndk" && -d "$ndk" ]] || continue
     local clang
-    clang="$(find "$ndk/toolchains/llvm/prebuilt" -type f -name "aarch64-linux-android${API_LEVEL}-clang++" 2>/dev/null | head -n 1)"
+    clang="$(find "$ndk/toolchains/llvm/prebuilt" -type f -name "${ZDT_ZYGISK_NDK_PREFIX}${API_LEVEL}-clang++" 2>/dev/null | head -n 1)"
     [[ -x "$clang" ]] || continue
     # Official NDK prebuilts are host binaries. On Android/Termux an x86_64 host toolchain
     # cannot run on arm64, so never select it there.
@@ -75,8 +99,8 @@ find_ndk_clang() {
     printf '%s' "$clang"
     return 0
   done
-  if ! is_android_host && command -v "aarch64-linux-android${API_LEVEL}-clang++" >/dev/null 2>&1; then
-    command -v "aarch64-linux-android${API_LEVEL}-clang++"
+  if ! is_android_host && command -v "${ZDT_ZYGISK_NDK_PREFIX}${API_LEVEL}-clang++" >/dev/null 2>&1; then
+    command -v "${ZDT_ZYGISK_NDK_PREFIX}${API_LEVEL}-clang++"
     return 0
   fi
   return 1
@@ -102,7 +126,7 @@ COMMON_FLAGS=(
 link_with() {
   local compiler="$1"
   shift
-  "$compiler" "${COMMON_FLAGS[@]}" "$SRC" -o "$OUT_SO" -Wl,-soname,arm64-v8a.so -Wl,--gc-sections -Wl,--exclude-libs,ALL "$@"
+  "$compiler" "${COMMON_FLAGS[@]}" "$SRC" -o "$OUT_SO" -Wl,-soname,${ZDT_ZYGISK_ABI}.so -Wl,--gc-sections -Wl,--exclude-libs,ALL "$@"
 }
 
 if [[ ! -f "$SRC" ]]; then
@@ -116,10 +140,10 @@ if [[ -n "${ZDT_ZYGISK_CLANG:-}" ]]; then
 elif is_android_host; then
   ensure_termux_zygisk_prereqs
   case "$(host_arch)" in
-    aarch64|arm64) ;;
-    *) fail "Zygisk arm64 сборка на устройстве поддерживается только на arm64/aarch64 host. Текущий host: $(host_arch)" ;;
+    $ZDT_ZYGISK_HOST_ARCH_PATTERN) ;;
+    *) fail "Zygisk $ZDT_ZYGISK_ABI сборка на устройстве не поддерживается на host: $(host_arch)" ;;
   esac
-  msg "Using Termux/Android arm64 clang++: $(command -v clang++)"
+  msg "Using Termux/Android clang++ for $ZDT_ZYGISK_ABI: $(command -v clang++)"
   link_with "clang++"
 elif CLANG="$(find_ndk_clang 2>/dev/null)"; then
   msg "Using Android NDK compiler: $CLANG"
@@ -128,11 +152,11 @@ elif command -v clang++ >/dev/null 2>&1; then
   # Lightweight fallback for dev containers without Android NDK. It is useful for syntax/ELF checks,
   # while release/device builds should use Termux arm64 clang++ or the Android NDK path above.
   msg "Using fallback host clang++ cross target"
-  clang++ -target "aarch64-linux-android${API_LEVEL}" \
+  clang++ -target "${ZDT_ZYGISK_TARGET}${API_LEVEL}" \
     "${COMMON_FLAGS[@]}" "$SRC" -o "$OUT_SO" \
-    -nostdlib -Wl,--allow-shlib-undefined -Wl,-soname,arm64-v8a.so
+    -nostdlib -Wl,--allow-shlib-undefined -Wl,-soname,${ZDT_ZYGISK_ABI}.so
 else
-  fail "No clang++/NDK compiler found for Zygisk arm64-v8a.so"
+  fail "No clang++/NDK compiler found for Zygisk ${ZDT_ZYGISK_ABI}.so"
 fi
 
 if command -v llvm-strip >/dev/null 2>&1; then

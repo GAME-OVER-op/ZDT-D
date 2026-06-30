@@ -21,14 +21,20 @@ target_compile_options(zdtd_zygisk PRIVATE
   -Wall
   -Wextra
 )
+if(ANDROID_ABI)
+  set(ZDT_ZYGISK_ABI_NAME "${ANDROID_ABI}")
+else()
+  set(ZDT_ZYGISK_ABI_NAME "arm64-v8a")
+endif()
+
 target_link_options(zdtd_zygisk PRIVATE
   -nostdlib++
   -Wl,--gc-sections
   -Wl,--exclude-libs,ALL
-  -Wl,-soname,arm64-v8a.so
+  -Wl,-soname,${ZDT_ZYGISK_ABI_NAME}.so
 )
 set_target_properties(zdtd_zygisk PROPERTIES
   PREFIX ""
-  OUTPUT_NAME "arm64-v8a"
+  OUTPUT_NAME "${ZDT_ZYGISK_ABI_NAME}"
   SUFFIX ".so"
 )

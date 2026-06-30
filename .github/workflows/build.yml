@@ -283,6 +283,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -294,6 +295,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -345,6 +347,10 @@ jobs:
             echo "CXX_aarch64_linux_android=$ANDROID_CXX"
             echo "AR_aarch64_linux_android=$ANDROID_AR"
             echo "RANLIB_aarch64_linux_android=$ANDROID_RANLIB"
+            echo "CC_armv7_linux_androideabi=$ANDROID_CC"
+            echo "CXX_armv7_linux_androideabi=$ANDROID_CXX"
+            echo "AR_armv7_linux_androideabi=$ANDROID_AR"
+            echo "RANLIB_armv7_linux_androideabi=$ANDROID_RANLIB"
           } >> "$GITHUB_ENV"
 
           mkdir -p ~/.cargo
@@ -427,6 +433,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -438,6 +445,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -489,6 +497,10 @@ jobs:
             echo "CXX_aarch64_linux_android=$ANDROID_CXX"
             echo "AR_aarch64_linux_android=$ANDROID_AR"
             echo "RANLIB_aarch64_linux_android=$ANDROID_RANLIB"
+            echo "CC_armv7_linux_androideabi=$ANDROID_CC"
+            echo "CXX_armv7_linux_androideabi=$ANDROID_CXX"
+            echo "AR_armv7_linux_androideabi=$ANDROID_AR"
+            echo "RANLIB_armv7_linux_androideabi=$ANDROID_RANLIB"
           } >> "$GITHUB_ENV"
 
           mkdir -p ~/.cargo
@@ -585,6 +597,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -596,6 +609,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -847,6 +861,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -858,6 +873,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -873,6 +889,33 @@ jobs:
         with:
           go-version: '1.24.4'
           cache: false
+
+      - name: Set up Android SDK for Go cgo
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for Go cgo
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -969,7 +1012,7 @@ jobs:
           GOOS=android \
           GOARCH=${{ matrix.goarch }} \
           GOARM=${{ matrix.goarm }} \
-          CGO_ENABLED=0 \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
             go build \
               -trimpath \
               -ldflags="-s -w -buildid=" \
@@ -1047,6 +1090,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -1058,6 +1102,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -1073,6 +1118,33 @@ jobs:
         with:
           go-version: '1.24.4'
           cache: false
+
+      - name: Set up Android SDK for Go cgo
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for Go cgo
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
 
       - name: Build wireproxy from official source
         run: |
@@ -1094,7 +1166,7 @@ jobs:
           GOOS=android \
           GOARCH=${{ matrix.goarch }} \
           GOARM=${{ matrix.goarm }} \
-          CGO_ENABLED=0 \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
             go build \
               -trimpath \
               -ldflags="-s -w -buildid=" \
@@ -1140,6 +1212,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -1151,6 +1224,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -1166,6 +1240,33 @@ jobs:
         with:
           go-version: '1.24.4'
           cache: false
+
+      - name: Set up Android SDK for Go cgo
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for Go cgo
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
 
       - name: Build tun2socks from official source
         run: |
@@ -1189,7 +1290,7 @@ jobs:
           GOOS=android \
           GOARCH=${{ matrix.goarch }} \
           GOARM=${{ matrix.goarm }} \
-          CGO_ENABLED=0 \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
             go build \
               -trimpath \
               -ldflags="-s -w -buildid= -X github.com/xjasonlyu/tun2socks/v2/internal/version.Version=${TUN2SOCKS_REF} -X github.com/xjasonlyu/tun2socks/v2/internal/version.GitCommit=${TUN2SOCKS_COMMIT_SHORT}" \
@@ -1246,6 +1347,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -1257,6 +1359,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -1272,6 +1375,33 @@ jobs:
         with:
           go-version: '1.24.4'
           cache: false
+
+      - name: Set up Android SDK for Go cgo
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for Go cgo
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
 
       - name: Build mihomo from official source
         run: |
@@ -1296,7 +1426,7 @@ jobs:
           GOOS=android \
           GOARCH=${{ matrix.goarch }} \
           GOARM=${{ matrix.goarm }} \
-          CGO_ENABLED=0 \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
             go build \
               -tags with_gvisor \
               -trimpath \
@@ -1355,6 +1485,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -1366,6 +1497,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -1381,6 +1513,33 @@ jobs:
         with:
           go-version: '1.24.4'
           cache: false
+
+      - name: Set up Android SDK for Go cgo
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for Go cgo
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
 
       - name: Build sing-box from official source
         run: |
@@ -1423,7 +1582,7 @@ jobs:
           GOOS=android \
           GOARCH=${{ matrix.goarch }} \
           GOARM=${{ matrix.goarm }} \
-          CGO_ENABLED=0 \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
             go build \
               -tags "$SING_BOX_TAGS" \
               -trimpath \
@@ -1482,6 +1641,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -1493,6 +1653,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -1625,6 +1786,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -1636,6 +1798,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -1651,6 +1814,33 @@ jobs:
         with:
           go-version: '1.24.4'
           cache: false
+
+      - name: Set up Android SDK for Go cgo
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for Go cgo
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
 
       - name: Build dnscrypt-proxy from official source
         run: |
@@ -1691,7 +1881,7 @@ jobs:
           GOOS=android \
           GOARCH=${{ matrix.goarch }} \
           GOARM=${{ matrix.goarm }} \
-          CGO_ENABLED=0 \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
             go build \
               -trimpath \
               -buildvcs=false \
@@ -1750,6 +1940,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -1761,6 +1952,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -1776,6 +1968,33 @@ jobs:
         with:
           go-version: '1.24.4'
           cache: false
+
+      - name: Set up Android SDK for Go cgo
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for Go cgo
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
 
       - name: Build mieru from official source
         run: |
@@ -1812,7 +2031,7 @@ jobs:
           GOOS=android \
           GOARCH=${{ matrix.goarch }} \
           GOARM=${{ matrix.goarm }} \
-          CGO_ENABLED=0 \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
             go build \
               -trimpath \
               -buildvcs=false \
@@ -1870,6 +2089,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -1881,6 +2101,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -1896,6 +2117,33 @@ jobs:
         with:
           go-version: '1.24.4'
           cache: false
+
+      - name: Set up Android SDK for Go cgo
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for Go cgo
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
 
       - name: Build opera-proxy from official source
         run: |
@@ -1918,7 +2166,7 @@ jobs:
           GOOS=android \
           GOARCH=${{ matrix.goarch }} \
           GOARM=${{ matrix.goarm }} \
-          CGO_ENABLED=0 \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
             go build \
               -trimpath \
               -buildvcs=false \
@@ -1976,6 +2224,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -1987,6 +2236,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -2072,6 +2322,24 @@ jobs:
           DPITUNNEL_COMMIT="$(git -C "$SRC/DPITunnel-cli" rev-parse HEAD)"
           printf '%s\n' "$DPITUNNEL_COMMIT" | tee "$ARTIFACT_DIR/dpitunnel-cli.commit"
 
+          echo "=== Patch DPITunnel bundled libnl for Android pkt_sched headers ==="
+          LIBNL_TYPES="$SRC/DPITunnel-cli/libnl/include/netlink-private/types.h"
+          if [[ -f "$LIBNL_TYPES" ]] && ! grep -q 'ZDT_ANDROID_CBQ_COMPAT' "$LIBNL_TYPES"; then
+            python3 - "$LIBNL_TYPES" <<'PY_DPI_LIBNL'
+          from pathlib import Path
+          import sys
+          path = Path(sys.argv[1])
+          text = path.read_text()
+          compat = '\n#ifdef __ANDROID__\n#ifndef ZDT_ANDROID_CBQ_COMPAT\n#define ZDT_ANDROID_CBQ_COMPAT 1\nstruct tc_cbq_lssopt { unsigned char zdt_dummy; };\nstruct tc_cbq_wrropt { unsigned char zdt_dummy; };\nstruct tc_cbq_ovl { unsigned char zdt_dummy; };\nstruct tc_cbq_fopt { unsigned char zdt_dummy; };\nstruct tc_cbq_police { unsigned char zdt_dummy; };\n#endif\n#endif\n'
+          insert_after = '#include <linux/pkt_sched.h>'
+          if insert_after in text:
+              text = text.replace(insert_after, insert_after + compat, 1)
+          else:
+              text = compat + text
+          path.write_text(text)
+          PY_DPI_LIBNL
+          fi
+
           echo "=== Build DPITunnel-cli (${DPITUNNEL_REF}) ==="
           cmake -S "$SRC/DPITunnel-cli" -B "$BUILD_DIR" -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
@@ -2142,6 +2410,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -2153,6 +2422,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -2181,7 +2451,9 @@ jobs:
             pkg-config \
             python3 \
             xz-utils \
-            zlib1g-dev
+            zlib1g-dev \
+            gcc-multilib \
+            g++-multilib
 
           NDK_VERSION="27.2.12479018"
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
@@ -2365,6 +2637,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -2376,6 +2649,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -2408,7 +2682,9 @@ jobs:
             python3 \
             tar \
             xz-utils \
-            zlib1g-dev
+            zlib1g-dev \
+            gcc-multilib \
+            g++-multilib
 
           NDK_VERSION="27.2.12479018"
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
@@ -2490,10 +2766,15 @@ jobs:
           luajitdir="$(find "$BUILD" -maxdepth 1 -type d -name 'luajit2-*' | head -1)"
           test -d "$luajitdir" || { echo "::error::LuaJIT source directory not found"; exit 1; }
           pushd "$luajitdir" > /dev/null
+          if [[ "${{ matrix.goarch }}" = "arm" ]]; then
+            LUAJIT_HOST_CC="gcc -m32"
+          else
+            LUAJIT_HOST_CC="cc"
+          fi
           make \
             BUILDMODE=static \
             XCFLAGS="-DLUAJIT_DISABLE_FFI" \
-            HOST_CC="cc" \
+            HOST_CC="$LUAJIT_HOST_CC" \
             CROSS= \
             CC="$NFQWS2_CC" \
             TARGET_AR="$NFQWS2_AR rcus" \
@@ -2628,6 +2909,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -2639,6 +2921,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -2715,6 +2998,9 @@ jobs:
           export AR="$TOR_AR"
           export RANLIB="$TOR_RANLIB"
           export STRIP="$TOR_STRIP"
+          export ac_cv_prog_AR="$TOR_AR"
+          export ac_cv_prog_RANLIB="$TOR_RANLIB"
+          export ac_cv_prog_STRIP="$TOR_STRIP"
           export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
           export CPPFLAGS="-I$PREFIX/include -D__ANDROID_API__=$TOR_ANDROID_API_LEVEL"
           export CFLAGS="-Os -fPIC -fPIE -D__ANDROID_API__=$TOR_ANDROID_API_LEVEL"
@@ -2787,6 +3073,7 @@ jobs:
           ./configure \
             --host="$TOR_HOST" \
             --prefix="$PREFIX" \
+            --disable-tool-name-check \
             --disable-asciidoc \
             --disable-manpage \
             --disable-html-manual \
@@ -2870,6 +3157,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -2881,6 +3169,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -2894,8 +3183,35 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.24.4'
+          go-version: '1.22.12'
           cache: false
+
+      - name: Set up Android SDK for Go cgo
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK for Go cgo
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          GO_CC="$NDK_BIN/${{ matrix.clang_prefix }}24-clang"
+          GO_CXX="$NDK_BIN/${{ matrix.clang_prefix }}24-clang++"
+          test -x "$GO_CC" || { echo "::error::Android Go cgo compiler not found: $GO_CC"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CC=$GO_CC"
+            echo "CXX=$GO_CXX"
+          } >> "$GITHUB_ENV"
 
       - name: Build lyrebird from official source
         run: |
@@ -2924,7 +3240,7 @@ jobs:
           GOOS=android \
           GOARCH=${{ matrix.goarch }} \
           GOARM=${{ matrix.goarm }} \
-          CGO_ENABLED=0 \
+          CGO_ENABLED=${{ matrix.cgo_enabled }} \
             go build \
               -trimpath \
               -buildvcs=false \
@@ -3022,6 +3338,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -3033,6 +3350,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -3425,6 +3743,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -3436,6 +3755,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -3487,6 +3807,10 @@ jobs:
             echo "CXX_aarch64_linux_android=$ANDROID_CXX"
             echo "AR_aarch64_linux_android=$ANDROID_AR"
             echo "RANLIB_aarch64_linux_android=$ANDROID_RANLIB"
+            echo "CC_armv7_linux_androideabi=$ANDROID_CC"
+            echo "CXX_armv7_linux_androideabi=$ANDROID_CXX"
+            echo "AR_armv7_linux_androideabi=$ANDROID_AR"
+            echo "RANLIB_armv7_linux_androideabi=$ANDROID_RANLIB"
           } >> "$GITHUB_ENV"
 
           mkdir -p ~/.cargo
@@ -3569,6 +3893,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -3580,6 +3905,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi
@@ -3631,6 +3957,10 @@ jobs:
             echo "CXX_aarch64_linux_android=$ANDROID_CXX"
             echo "AR_aarch64_linux_android=$ANDROID_AR"
             echo "RANLIB_aarch64_linux_android=$ANDROID_RANLIB"
+            echo "CC_armv7_linux_androideabi=$ANDROID_CC"
+            echo "CXX_armv7_linux_androideabi=$ANDROID_CXX"
+            echo "AR_armv7_linux_androideabi=$ANDROID_AR"
+            echo "RANLIB_armv7_linux_androideabi=$ANDROID_RANLIB"
           } >> "$GITHUB_ENV"
 
           mkdir -p ~/.cargo
@@ -3713,6 +4043,7 @@ jobs:
             clang_target_api21: aarch64-linux-android21
             goarch: arm64
             goarm: "7"
+            cgo_enabled: "0"
             android_abi: arm64-v8a
             openssl_target: android-arm64
             tor_host: aarch64-linux-android
@@ -3724,6 +4055,7 @@ jobs:
             clang_target_api21: armv7a-linux-androideabi21
             goarch: arm
             goarm: "7"
+            cgo_enabled: "1"
             android_abi: armeabi-v7a
             openssl_target: android-arm
             tor_host: arm-linux-androideabi

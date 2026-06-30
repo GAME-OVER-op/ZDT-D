@@ -43,7 +43,7 @@ env:
   WIREPROXY_REF: "v1.1.2"
   TUN2SOCKS_REF: "v2.6.0"
   MIHOMO_REF: "v1.19.27"
-  SING_BOX_REF: "1.13.14"
+  SING_BOX_REF: "v1.13.14"
   BYEDPI_REF: "v0.17.3"
   BYEDPI_ANDROID_API_LEVEL: 24
   DNSCRYPT_PROXY_REF: "2.1.16"
@@ -1370,19 +1370,26 @@ jobs:
           DNSCRYPT_PROXY_COMMIT="$(git -C "$SRC/dnscrypt-proxy" rev-parse HEAD)"
           printf '%s\n' "$DNSCRYPT_PROXY_COMMIT" | tee "$ARTIFACT_DIR/dnscrypt.commit"
 
-          echo "=== Locate dnscrypt-proxy Go module ==="
-          if [[ -f "$SRC/dnscrypt-proxy/dnscrypt-proxy/go.mod" ]]; then
-            DNSCRYPT_BUILD_DIR="$SRC/dnscrypt-proxy/dnscrypt-proxy"
-          elif [[ -f "$SRC/dnscrypt-proxy/go.mod" ]]; then
+          echo "=== Locate dnscrypt-proxy Go module and package ==="
+          if [[ -f "$SRC/dnscrypt-proxy/go.mod" ]]; then
             DNSCRYPT_BUILD_DIR="$SRC/dnscrypt-proxy"
           else
             DNSCRYPT_BUILD_DIR="$(find "$SRC/dnscrypt-proxy" -maxdepth 3 -name go.mod -type f -printf '%h\n' | sort | head -1 || true)"
           fi
           test -n "$DNSCRYPT_BUILD_DIR" || { echo "::error::dnscrypt-proxy go.mod not found"; find "$SRC/dnscrypt-proxy" -maxdepth 3 -type f | sort | head -200; exit 1; }
+          pushd "$DNSCRYPT_BUILD_DIR" > /dev/null
+          if [[ -d dnscrypt-proxy ]] && find dnscrypt-proxy -maxdepth 1 -name '*.go' -type f | grep -q .; then
+            DNSCRYPT_PACKAGE="./dnscrypt-proxy"
+          elif find . -maxdepth 1 -name '*.go' -type f | grep -q .; then
+            DNSCRYPT_PACKAGE="."
+          else
+            DNSCRYPT_PACKAGE="$(find . -maxdepth 3 -name '*.go' -type f -printf '%h\n' | sort -u | grep -E '(^\./dnscrypt-proxy$|/dnscrypt-proxy$|/cmd/)' | head -1 || true)"
+          fi
+          test -n "$DNSCRYPT_PACKAGE" || { echo "::error::dnscrypt-proxy Go package not found"; find . -maxdepth 3 -type f | sort | head -200; exit 1; }
           echo "Build directory: $DNSCRYPT_BUILD_DIR"
+          echo "Build package: $DNSCRYPT_PACKAGE"
 
           echo "=== Build dnscrypt-proxy (${DNSCRYPT_PROXY_REF}) ==="
-          pushd "$DNSCRYPT_BUILD_DIR" > /dev/null
           GOOS=android \
           GOARCH=arm64 \
           CGO_ENABLED=0 \
@@ -1391,7 +1398,7 @@ jobs:
               -buildvcs=false \
               -ldflags="-s -w -buildid=" \
               -o "$ARTIFACT_DIR/dnscrypt" \
-              .
+              "$DNSCRYPT_PACKAGE"
           popd > /dev/null
 
           chmod 755 "$ARTIFACT_DIR/dnscrypt"
@@ -1460,8 +1467,22 @@ jobs:
           MIERU_COMMIT="$(git -C "$SRC/mieru" rev-parse HEAD)"
           printf '%s\n' "$MIERU_COMMIT" | tee "$ARTIFACT_DIR/mieru.commit"
 
-          echo "=== Build mieru (${MIERU_REF}) ==="
+          echo "=== Locate mieru client package ==="
           pushd "$SRC/mieru" > /dev/null
+          MIERU_PACKAGE=""
+          for candidate in ./cmd/mieru/mieru ./cmd/mieru ./cmd/client/mieru ./client/mieru; do
+            if [[ -d "$candidate" ]] && find "$candidate" -maxdepth 1 -name '*.go' -type f | grep -q .; then
+              MIERU_PACKAGE="$candidate"
+              break
+            fi
+          done
+          if [[ -z "$MIERU_PACKAGE" ]]; then
+            MIERU_PACKAGE="$(find ./cmd -maxdepth 3 -name '*.go' -type f -printf '%h\n' 2>/dev/null | sort -u | grep '/mieru' | head -1 || true)"
+          fi
+          test -n "$MIERU_PACKAGE" || { echo "::error::mieru client Go package not found"; find . -maxdepth 4 -type f | sort | head -200; exit 1; }
+          echo "Build package: $MIERU_PACKAGE"
+
+          echo "=== Build mieru (${MIERU_REF}) ==="
           GOOS=android \
           GOARCH=arm64 \
           CGO_ENABLED=0 \
@@ -1470,7 +1491,7 @@ jobs:
               -buildvcs=false \
               -ldflags="-s -w -buildid=" \
               -o "$ARTIFACT_DIR/mieru" \
-              ./cmd/mieru/mieru
+              "$MIERU_PACKAGE"
           popd > /dev/null
 
           chmod 755 "$ARTIFACT_DIR/mieru"

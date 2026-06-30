@@ -2339,6 +2339,17 @@ jobs:
           path.write_text(text)
           PY_DPI_LIBNL
           fi
+          LIBNL_INET6="$SRC/DPITunnel-cli/libnl/lib/route/link/inet6.c"
+          if [[ -f "$LIBNL_INET6" ]] && grep -q '__ICMP6_MIB_MAX == 6' "$LIBNL_INET6"; then
+            python3 - "$LIBNL_INET6" <<'PY_DPI_INET6'
+          from pathlib import Path
+          import sys
+          path = Path(sys.argv[1])
+          text = path.read_text()
+          text = text.replace('_NL_STATIC_ASSERT (__ICMP6_MIB_MAX == 6);', '#ifndef __ANDROID__\n\t\t_NL_STATIC_ASSERT (__ICMP6_MIB_MAX == 6);\n#endif')
+          path.write_text(text)
+          PY_DPI_INET6
+          fi
 
           echo "=== Build DPITunnel-cli (${DPITUNNEL_REF}) ==="
           cmake -S "$SRC/DPITunnel-cli" -B "$BUILD_DIR" -G Ninja \

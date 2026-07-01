@@ -2350,6 +2350,18 @@ jobs:
           path.write_text(text)
           PY_DPI_INET6
           fi
+          for LIBNL_ANDROID_QDISC_SRC in             "$SRC/DPITunnel-cli/libnl/lib/route/qdisc/cbq.c"             "$SRC/DPITunnel-cli/libnl/lib/route/qdisc/dsmark.c"; do
+            if [[ -f "$LIBNL_ANDROID_QDISC_SRC" ]]; then
+              cat > "$LIBNL_ANDROID_QDISC_SRC" <<'EOF_DPI_QDISC_STUB'
+          /*
+           * Android NDK headers do not expose the legacy CBQ/DSMARK qdisc
+           * constants used by these optional libnl modules. DPITunnel-cli does
+           * not use these qdisc helpers, so keep the bundled libnl buildable by
+           * compiling them as empty translation units for Android builds.
+           */
+          EOF_DPI_QDISC_STUB
+            fi
+          done
 
           echo "=== Build DPITunnel-cli (${DPITUNNEL_REF}) ==="
           cmake -S "$SRC/DPITunnel-cli" -B "$BUILD_DIR" -G Ninja \

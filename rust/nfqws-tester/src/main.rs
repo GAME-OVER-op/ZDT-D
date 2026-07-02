@@ -16,6 +16,8 @@ const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
 const STRATEGIC_DIR: &str = "/data/adb/modules/ZDT-D/strategic/strategicvar";
 const WORK_DIR: &str = "/data/adb/modules/ZDT-D/working_folder/nfqws_tester";
 const SESSION_FILE: &str = "/data/adb/modules/ZDT-D/working_folder/nfqws_tester/session.json";
+const SETTING_DIR: &str = "/data/adb/modules/ZDT-D/setting";
+const MULTIPORT_NO_FILE: &str = "multiport_no";
 const DEFAULT_QNUM: u16 = 200;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -366,12 +368,60 @@ fn apply_nfqueue_rules_family(cmd: &str, chain: &str, queue: u16, filter: &Proto
         }
         return Ok(());
     }
-    add_protocol_rules(cmd, chain, queue, "tcp", &filter.tcp)?;
-    add_protocol_rules(cmd, chain, queue, "udp", &filter.udp)?;
+
+    if multiport_disabled_by_flag() {
+        add_filter_rules_per_port(cmd, chain, queue, filter)?;
+        return Ok(());
+    }
+
+    if let Err(err) = add_filter_rules_multiport(cmd, chain, queue, filter) {
+        disable_multiport_persistently(&format!("nfqws-tester {cmd} multiport failed: {err:#}"));
+        cleanup_family(cmd, chain)?;
+        let _ = run(cmd, &["-w", "5", "-t", "mangle", "-N", chain]);
+        let (rc, out) = run(cmd, &["-w", "5", "-t", "mangle", "-A", "OUTPUT", "-j", chain])?;
+        if rc != 0 {
+            bail!("{cmd} add OUTPUT jump after multiport fallback failed: {out}");
+        }
+        add_filter_rules_per_port(cmd, chain, queue, filter)?;
+    }
     Ok(())
 }
 
-fn add_protocol_rules(cmd: &str, chain: &str, queue: u16, proto: &str, ranges: &[PortRange]) -> Result<()> {
+fn multiport_no_path() -> PathBuf {
+    Path::new(SETTING_DIR).join(MULTIPORT_NO_FILE)
+}
+
+fn multiport_disabled_by_flag() -> bool {
+    multiport_no_path().is_file()
+}
+
+fn disable_multiport_persistently(reason: &str) {
+    let path = multiport_no_path();
+    if let Some(parent) = path.parent() {
+        if let Err(err) = fs::create_dir_all(parent) {
+            let _ = writeln!(io::stderr(), "nfqws-tester: multiport disabled in memory, but setting dir create failed: {err:#}");
+            return;
+        }
+    }
+    let body = format!("disabled_by=nfqws-tester\nreason={}\n", reason.trim());
+    if let Err(err) = fs::write(&path, body) {
+        let _ = writeln!(io::stderr(), "nfqws-tester: failed to write {}: {err:#}", path.display());
+    }
+}
+
+fn add_filter_rules_multiport(cmd: &str, chain: &str, queue: u16, filter: &ProtoPortFilter) -> Result<()> {
+    add_protocol_rules_multiport(cmd, chain, queue, "tcp", &filter.tcp)?;
+    add_protocol_rules_multiport(cmd, chain, queue, "udp", &filter.udp)?;
+    Ok(())
+}
+
+fn add_filter_rules_per_port(cmd: &str, chain: &str, queue: u16, filter: &ProtoPortFilter) -> Result<()> {
+    add_protocol_rules_per_port(cmd, chain, queue, "tcp", &filter.tcp)?;
+    add_protocol_rules_per_port(cmd, chain, queue, "udp", &filter.udp)?;
+    Ok(())
+}
+
+fn add_protocol_rules_multiport(cmd: &str, chain: &str, queue: u16, proto: &str, ranges: &[PortRange]) -> Result<()> {
     if ranges.is_empty() {
         return Ok(());
     }
@@ -390,7 +440,35 @@ fn add_protocol_rules(cmd: &str, chain: &str, queue: u16, proto: &str, ranges: &
             ],
         )?;
         if rc != 0 {
-            bail!("{cmd} add {proto} NFQUEUE rule failed: {out}");
+            bail!("{cmd} add {proto} multiport NFQUEUE rule failed: {out}");
+        }
+    }
+    Ok(())
+}
+
+fn add_protocol_rules_per_port(cmd: &str, chain: &str, queue: u16, proto: &str, ranges: &[PortRange]) -> Result<()> {
+    if ranges.is_empty() {
+        return Ok(());
+    }
+    for range in ranges {
+        let dport = if range.start == range.end {
+            range.start.to_string()
+        } else {
+            format!("{}:{}", range.start, range.end)
+        };
+        let (rc, out) = run(
+            cmd,
+            &[
+                "-w", "5", "-t", "mangle", "-A", chain,
+                "-p", proto,
+                "--dport", &dport,
+                "-j", "NFQUEUE",
+                "--queue-num", &queue.to_string(),
+                "--queue-bypass",
+            ],
+        )?;
+        if rc != 0 {
+            bail!("{cmd} add {proto} per-port NFQUEUE rule failed dport={dport}: {out}");
         }
     }
     Ok(())

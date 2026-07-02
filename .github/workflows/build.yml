@@ -2780,6 +2780,13 @@ jobs:
           echo "$ZAPRET2_REF" | tee "$ARTIFACT_DIR/zapret2.ref"
           echo "$ZAPRET2_COMMIT" | tee "$ARTIFACT_DIR/zapret2.commit"
 
+          echo "=== Collect zapret2 Lua scripts from the same source checkout ==="
+          test -d "$SRC/zapret2/lua" || { echo "::error::zapret2 lua directory not found"; exit 1; }
+          mkdir -p "$ARTIFACT_DIR/lua"
+          cp -a "$SRC/zapret2/lua/." "$ARTIFACT_DIR/lua/"
+          test -s "$ARTIFACT_DIR/lua/zapret-lib.lua" || { echo "::error::zapret2 zapret-lib.lua missing"; exit 1; }
+          grep -n 'NFQWS2_COMPAT_VER_REQUIRED' "$ARTIFACT_DIR/lua/zapret-lib.lua" || true
+
           echo "=== Build LuaJIT for Android arm64 ==="
           LUAJIT_VER="2.1"
           LUAJIT_RELEASE="2.1-20250826"
@@ -2912,6 +2919,7 @@ jobs:
             out/artifacts/nfqws2/zapret2.ref
             out/artifacts/nfqws2/zapret2.commit
             out/artifacts/nfqws2/nfqws2.dynamic.txt
+            out/artifacts/nfqws2/lua
           retention-days: 1
 
   build_torproxy:
@@ -3691,6 +3699,26 @@ jobs:
           cp -f out/artifacts/zygisk/arm32/armeabi-v7a.so "$MODULE_BUILD_DIR/zygisk/armeabi-v7a.so"
           chmod 644 "$MODULE_BUILD_DIR/zygisk/arm64-v8a.so" "$MODULE_BUILD_DIR/zygisk/armeabi-v7a.so"
 
+          echo "=== Install zapret2 Lua scripts matching the packaged nfqws2 binary ==="
+          require_file "out/artifacts/nfqws2/arm64/lua/zapret-lib.lua"
+          CUSTOM_LUA_DIR="$RUNNER_TEMP/zdt-custom-lua"
+          rm -rf "$CUSTOM_LUA_DIR"
+          mkdir -p "$CUSTOM_LUA_DIR"
+          for custom_lua in zapret-sni.lua zapret-wgobfs.lua; do
+            if [[ -f "$MODULE_BUILD_DIR/strategic/lua/$custom_lua" ]]; then
+              cp -f "$MODULE_BUILD_DIR/strategic/lua/$custom_lua" "$CUSTOM_LUA_DIR/$custom_lua"
+            fi
+          done
+          rm -rf "$MODULE_BUILD_DIR/strategic/lua"
+          mkdir -p "$MODULE_BUILD_DIR/strategic/lua"
+          cp -a out/artifacts/nfqws2/arm64/lua/. "$MODULE_BUILD_DIR/strategic/lua/"
+          for custom_lua in zapret-sni.lua zapret-wgobfs.lua; do
+            require_file "$CUSTOM_LUA_DIR/$custom_lua"
+            cp -f "$CUSTOM_LUA_DIR/$custom_lua" "$MODULE_BUILD_DIR/strategic/lua/$custom_lua"
+          done
+          chmod 644 "$MODULE_BUILD_DIR/strategic/lua"/*.lua
+          grep -n 'NFQWS2_COMPAT_VER_REQUIRED' "$MODULE_BUILD_DIR/strategic/lua/zapret-lib.lua" || true
+
           for arch in arm64 arm32; do
             case "$arch" in
               arm64) module_arch="arm64-v8a" ;;
@@ -3725,6 +3753,9 @@ jobs:
           printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'prebuilt/bin/arm-v7a/zdtd' >/dev/null || { echo "::error::arm32 module binaries missing"; exit 1; }
           printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'zygisk/arm64-v8a.so' >/dev/null || { echo "::error::arm64 Zygisk binary missing"; exit 1; }
           printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'zygisk/armeabi-v7a.so' >/dev/null || { echo "::error::arm32 Zygisk binary missing"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'strategic/lua/zapret-lib.lua' >/dev/null || { echo "::error::zapret2 Lua library missing"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'strategic/lua/zapret-sni.lua' >/dev/null || { echo "::error::custom zapret-sni.lua missing"; exit 1; }
+          printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'strategic/lua/zapret-wgobfs.lua' >/dev/null || { echo "::error::custom zapret-wgobfs.lua missing"; exit 1; }
           printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'verify.sh' >/dev/null || { echo "::error::verify.sh missing in module zip"; exit 1; }
           if printf '%s\n' "$ZIP_ENTRIES" | grep -Fx 'bin/dpi-detector' >/dev/null; then
             echo "::error::dpi-detector must not be packed into module zip; it belongs to APK assets"

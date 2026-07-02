@@ -492,6 +492,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       || caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
   }
 
+  private fun markGitHubApiOnline(online: Boolean) {
+    _appUpdate.update { it.copy(githubApiOnline = online) }
+  }
+
+  private fun isGitHubApiUrl(url: String): Boolean =
+    runCatching { Uri.parse(url).host.equals("api.github.com", ignoreCase = true) }.getOrDefault(false)
+
   private fun normalizeTagToVersion(tag: String): String {
     var s = tag.trim()
     if (s.startsWith("v", ignoreCase = true)) s = s.substring(1)
@@ -515,11 +522,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       }
       .build()
 
-    githubHttp.newCall(req).execute().use { resp ->
-      val code = resp.code
-      val newEtag = resp.header("ETag")
-      val body = if (code == 200) resp.body?.string() else null
-      return Triple(code, body, newEtag)
+    try {
+      githubHttp.newCall(req).execute().use { resp ->
+        if (isGitHubApiUrl(url)) markGitHubApiOnline(true)
+        val code = resp.code
+        val newEtag = resp.header("ETag")
+        val body = if (code == 200) resp.body?.string() else null
+        return Triple(code, body, newEtag)
+      }
+    } catch (e: Exception) {
+      if (isGitHubApiUrl(url)) markGitHubApiOnline(false)
+      throw e
     }
   }
 
@@ -529,9 +542,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       .url(url)
       .header("User-Agent", "ZDT-D-Android")
       .build()
-    githubHttp.newCall(req).execute().use { resp ->
-      if (!resp.isSuccessful) return null
-      return resp.body?.string()
+    return try {
+      githubHttp.newCall(req).execute().use { resp ->
+        if (isGitHubApiUrl(url)) markGitHubApiOnline(true)
+        if (!resp.isSuccessful) return null
+        return resp.body?.string()
+      }
+    } catch (e: Exception) {
+      if (isGitHubApiUrl(url)) markGitHubApiOnline(false)
+      null
     }
   }
 
@@ -607,6 +626,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
 
   private fun defaultReleaseBuildStages(status: AppReleaseStageStatus = AppReleaseStageStatus.WAITING): List<AppReleaseBuildStageUi> = listOf(
     AppReleaseBuildStageUi("binaries", R.string.app_update_stage_binaries, status),
+    AppReleaseBuildStageUi("archives", R.string.app_update_stage_archives, AppReleaseStageStatus.WAITING),
     AppReleaseBuildStageUi("apk", R.string.app_update_stage_apk, AppReleaseStageStatus.WAITING),
     AppReleaseBuildStageUi("release", R.string.app_update_stage_release, AppReleaseStageStatus.WAITING),
     AppReleaseBuildStageUi("ready", R.string.app_update_stage_ready, AppReleaseStageStatus.WAITING),
@@ -673,35 +693,79 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
         stages = defaultReleaseBuildStages(AppReleaseStageStatus.RUNNING),
       )
     val jobs = fetchWorkflowJobs(run.id)
-    val binaries = jobs.filter { name ->
-      val n = name.name.lowercase(Locale.ROOT)
-      (n.contains("core") || n.contains("module binary") || n.contains("zygisk") || n.contains("apk tool") || n.contains("busybox")) && !n.contains("build apk")
+
+    fun named(predicate: (String) -> Boolean): List<WorkflowJobInfo> = jobs.filter { predicate(it.name.lowercase(Locale.ROOT)) }
+
+    val binaries = named { n ->
+      n.startsWith("build ") ||
+        n.contains("core ready") ||
+        n.contains("module binaries ready") ||
+        n.contains("module zygisk ready") ||
+        n.contains("apk tools ready")
+    }.filter { job ->
+      val n = job.name.lowercase(Locale.ROOT)
+      !n.contains("build apk") && !n.contains("pack module")
     }
-    val apk = jobs.filter { it.name.lowercase(Locale.ROOT).contains("build apk") }
-    val release = jobs.filter { it.name.lowercase(Locale.ROOT).contains("publish service") }
+    val archives = named { it.contains("pack module zip") }
+    val apk = named { it.contains("build apk") }
+    val release = named { it.contains("publish service") }
 
-    var binariesStatus = stageStatusForJobs(binaries)
-    var apkStatus = stageStatusForJobs(apk)
-    var releaseStatus = stageStatusForJobs(release)
-    var readyStatus = AppReleaseStageStatus.WAITING
+    fun stageStatus(jobsForStage: List<WorkflowJobInfo>): AppReleaseStageStatus = stageStatusForJobs(jobsForStage)
 
-    if (run.status == "queued" && binariesStatus == AppReleaseStageStatus.WAITING) binariesStatus = AppReleaseStageStatus.RUNNING
+    var binariesStatus = stageStatus(binaries)
+    var archivesStatus = stageStatus(archives)
+    var apkStatus = stageStatus(apk)
+    var releaseStatus = stageStatus(release)
+    val readyStatus = AppReleaseStageStatus.WAITING
+
+    fun promotePreviousStages() {
+      if (archivesStatus == AppReleaseStageStatus.RUNNING || archivesStatus == AppReleaseStageStatus.DONE) {
+        if (binariesStatus == AppReleaseStageStatus.WAITING) binariesStatus = AppReleaseStageStatus.DONE
+      }
+      if (apkStatus == AppReleaseStageStatus.RUNNING || apkStatus == AppReleaseStageStatus.DONE) {
+        if (binariesStatus == AppReleaseStageStatus.WAITING) binariesStatus = AppReleaseStageStatus.DONE
+        if (archivesStatus == AppReleaseStageStatus.WAITING) archivesStatus = AppReleaseStageStatus.DONE
+      }
+      if (releaseStatus == AppReleaseStageStatus.RUNNING || releaseStatus == AppReleaseStageStatus.DONE) {
+        if (binariesStatus == AppReleaseStageStatus.WAITING) binariesStatus = AppReleaseStageStatus.DONE
+        if (archivesStatus == AppReleaseStageStatus.WAITING) archivesStatus = AppReleaseStageStatus.DONE
+        if (apkStatus == AppReleaseStageStatus.WAITING) apkStatus = AppReleaseStageStatus.DONE
+      }
+    }
+
+    if (run.status == "queued" && binariesStatus == AppReleaseStageStatus.WAITING) {
+      binariesStatus = AppReleaseStageStatus.RUNNING
+    }
+    promotePreviousStages()
+    if (run.status in setOf("queued", "in_progress") &&
+      listOf(binariesStatus, archivesStatus, apkStatus, releaseStatus).none { it == AppReleaseStageStatus.RUNNING || it == AppReleaseStageStatus.FAILED }
+    ) {
+      when {
+        binariesStatus == AppReleaseStageStatus.WAITING -> binariesStatus = AppReleaseStageStatus.RUNNING
+        archivesStatus == AppReleaseStageStatus.WAITING -> archivesStatus = AppReleaseStageStatus.RUNNING
+        apkStatus == AppReleaseStageStatus.WAITING -> apkStatus = AppReleaseStageStatus.RUNNING
+        releaseStatus == AppReleaseStageStatus.WAITING -> releaseStatus = AppReleaseStageStatus.RUNNING
+      }
+    }
+
     if (run.status == "completed" && run.conclusion == "success") {
       if (binariesStatus == AppReleaseStageStatus.WAITING) binariesStatus = AppReleaseStageStatus.DONE
+      if (archivesStatus == AppReleaseStageStatus.WAITING) archivesStatus = AppReleaseStageStatus.DONE
       if (apkStatus == AppReleaseStageStatus.WAITING) apkStatus = AppReleaseStageStatus.DONE
-      releaseStatus = AppReleaseStageStatus.RUNNING
+      releaseStatus = if (releaseStatus == AppReleaseStageStatus.DONE) AppReleaseStageStatus.DONE else AppReleaseStageStatus.RUNNING
     }
     if (run.status == "completed" && run.conclusion in setOf("failure", "cancelled", "timed_out")) {
-      if (releaseStatus != AppReleaseStageStatus.FAILED && apkStatus != AppReleaseStageStatus.FAILED && binariesStatus != AppReleaseStageStatus.FAILED) {
+      if (listOf(binariesStatus, archivesStatus, apkStatus, releaseStatus).none { it == AppReleaseStageStatus.FAILED }) {
         when {
           release.isNotEmpty() -> releaseStatus = AppReleaseStageStatus.FAILED
           apk.isNotEmpty() -> apkStatus = AppReleaseStageStatus.FAILED
+          archives.isNotEmpty() -> archivesStatus = AppReleaseStageStatus.FAILED
           else -> binariesStatus = AppReleaseStageStatus.FAILED
         }
       }
     }
 
-    val failed = listOf(binariesStatus, apkStatus, releaseStatus).any { it == AppReleaseStageStatus.FAILED }
+    val failed = listOf(binariesStatus, archivesStatus, apkStatus, releaseStatus).any { it == AppReleaseStageStatus.FAILED }
     return AppReleaseBuildUi(
       status = if (failed) AppReleaseBuildStatus.FAILED else AppReleaseBuildStatus.PREPARING,
       runId = run.id,
@@ -709,6 +773,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       messageRes = if (failed) R.string.app_update_release_failed_body else R.string.app_update_release_preparing_body,
       stages = listOf(
         AppReleaseBuildStageUi("binaries", R.string.app_update_stage_binaries, binariesStatus),
+        AppReleaseBuildStageUi("archives", R.string.app_update_stage_archives, archivesStatus),
         AppReleaseBuildStageUi("apk", R.string.app_update_stage_apk, apkStatus),
         AppReleaseBuildStageUi("release", R.string.app_update_stage_release, releaseStatus),
         AppReleaseBuildStageUi("ready", R.string.app_update_stage_ready, readyStatus),
@@ -720,7 +785,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     appReleaseBuildPollJob?.cancel()
     appReleaseBuildPollJob = viewModelScope.launch(Dispatchers.IO + ceh) {
       while (isActive && _appUpdate.value.bannerVisible && _appUpdate.value.releaseBuild.status in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED)) {
-        delay(30_000L)
+        delay(15_000L)
         checkAppUpdateInternal(force = true, silent = true)
       }
     }
@@ -728,9 +793,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
 
   private fun maybeCheckAppUpdate(force: Boolean) {
     if (!_appUpdate.value.enabled) return
-    if (!force && appUpdateCheckedThisSession) return
+    val liveBuildVisible = _appUpdate.value.bannerVisible && _appUpdate.value.releaseBuild.status in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED)
+    if (!force && appUpdateCheckedThisSession && !liveBuildVisible) return
     appUpdateCheckedThisSession = true
-    launchIO { checkAppUpdateInternal(force = force) }
+    launchIO { checkAppUpdateInternal(force = force || liveBuildVisible, silent = liveBuildVisible) }
   }
 
   private suspend fun checkAppUpdateInternal(force: Boolean, silent: Boolean = false) {
@@ -740,6 +806,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       return
     }
     if (!isNetworkAvailable()) {
+      markGitHubApiOnline(false)
+      _appUpdate.update { it.copy(checking = false) }
       if (manual) toast(str(R.string.mv_auto_002))
       return
     }
@@ -760,6 +828,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     val etagRel = root.getGitHubEtagLatestRelease()
     val (codeRel, bodyRel, newEtagRel) = runCatching { httpGetMaybeCached(latestUrl, etagRel) }
       .getOrElse {
+        markGitHubApiOnline(false)
         _appUpdate.update { it.copy(checking = false) }
         if (manual) toast(str(R.string.mv_auto_003))
         return
@@ -930,6 +999,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
         status = AppReleaseBuildStatus.READY,
         stages = listOf(
           AppReleaseBuildStageUi("binaries", R.string.app_update_stage_binaries, AppReleaseStageStatus.DONE),
+          AppReleaseBuildStageUi("archives", R.string.app_update_stage_archives, AppReleaseStageStatus.DONE),
           AppReleaseBuildStageUi("apk", R.string.app_update_stage_apk, AppReleaseStageStatus.DONE),
           AppReleaseBuildStageUi("release", R.string.app_update_stage_release, AppReleaseStageStatus.DONE),
           AppReleaseBuildStageUi("ready", R.string.app_update_stage_ready, AppReleaseStageStatus.DONE),
@@ -1011,13 +1081,16 @@ private fun restoreCachedAppUpdateState() {
     },
     errorText = null,
   ) }
+  if (downloadUrl.isNullOrBlank()) {
+    startReleaseBuildPolling()
+  }
 }
 
 fun onAppResumed() {
-  // Re-check in background on resume if cooldown is over (or clock changed).
-  maybeCheckAppUpdate(force = false)
-  // Also re-sync banner state with current installed version (in case the app got updated).
+  // Re-sync banner state first so cached preparing states immediately enter live polling.
   restoreCachedAppUpdateState()
+  // Re-check in background on resume if cooldown is over, or force when a release build is visible.
+  maybeCheckAppUpdate(force = _appUpdate.value.bannerVisible && _appUpdate.value.releaseBuild.status in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED))
 }
 
 private fun clearDownloadedUpdateApk() {
@@ -6678,9 +6751,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
     val url = _appUpdate.value.downloadUrl
     val releaseUrl = _appUpdate.value.releaseHtmlUrl ?: "https://github.com/GAME-OVER-op/ZDT-D/releases"
     if (url.isNullOrBlank()) {
-      if (_appUpdate.value.releaseBuild.status in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED)) {
-        maybeCheckAppUpdate(force = true)
-      } else {
+      if (_appUpdate.value.releaseBuild.status !in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED)) {
         _appUpdateEvents.tryEmit(AppUpdateEvent.OpenUrl(releaseUrl))
       }
       return

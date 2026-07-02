@@ -75,6 +75,7 @@ data class AppUpdateUiState(
   // App-owned notification about daemon status (running/stopped).
   val daemonStatusNotificationEnabled: Boolean = false,
   val checking: Boolean = false,
+  val githubApiOnline: Boolean? = null,
   val bannerVisible: Boolean = false,
   val urgent: Boolean = false,
 

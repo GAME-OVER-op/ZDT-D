@@ -101,10 +101,10 @@ pub fn apply(
         let mut uid_added_v4 = false;
         if use_filter_v4 {
             if let Some(f) = filter {
-                if !f.tcp.is_empty() && add_multiport_rule(&mut mangle_v4, uid.as_str(), &q, "tcp", &f.tcp)? {
+                if !f.tcp.is_empty() && add_multiport_rule_with_fallback(&mut mangle_v4, uid.as_str(), &q, "tcp", &f.tcp)? {
                     uid_added_v4 = true;
                 }
-                if !f.udp.is_empty() && add_multiport_rule(&mut mangle_v4, uid.as_str(), &q, "udp", &f.udp)? {
+                if !f.udp.is_empty() && add_multiport_rule_with_fallback(&mut mangle_v4, uid.as_str(), &q, "udp", &f.udp)? {
                     uid_added_v4 = true;
                 }
             }
@@ -121,17 +121,17 @@ pub fn apply(
             if use_filter_v6 {
                 if let Some(f) = filter {
                     if !f.tcp.is_empty() {
-                        match add_multiport_rule(mangle_v6, uid.as_str(), &q, "tcp", &f.tcp) {
+                        match add_multiport_rule_with_fallback(mangle_v6, uid.as_str(), &q, "tcp", &f.tcp) {
                             Ok(true) => uid_added_v6 = true,
                             Ok(false) => {}
-                            Err(e) => warn!("ip6tables add NFQUEUE multiport rule failed for uid={}: {e}", uid),
+                            Err(e) => warn!("ip6tables add NFQUEUE rule failed for uid={}: {e}", uid),
                         }
                     }
                     if !f.udp.is_empty() {
-                        match add_multiport_rule(mangle_v6, uid.as_str(), &q, "udp", &f.udp) {
+                        match add_multiport_rule_with_fallback(mangle_v6, uid.as_str(), &q, "udp", &f.udp) {
                             Ok(true) => uid_added_v6 = true,
                             Ok(false) => {}
-                            Err(e) => warn!("ip6tables add NFQUEUE multiport rule failed for uid={}: {e}", uid),
+                            Err(e) => warn!("ip6tables add NFQUEUE rule failed for uid={}: {e}", uid),
                         }
                     }
                 }
@@ -163,6 +163,26 @@ pub fn apply(
     Ok(())
 }
 
+fn add_multiport_rule_with_fallback(
+    mangle: &mut mangle_app::PreparedScopedMangleApp,
+    uid: &str,
+    q: &str,
+    proto: &str,
+    ranges: &[port_filter::PortRange],
+) -> Result<bool> {
+    if !caps::multiport_v4() {
+        return add_per_port_rule(mangle, uid, q, proto, ranges);
+    }
+    match add_multiport_rule(mangle, uid, q, proto, ranges) {
+        Ok(added) => Ok(added),
+        Err(e) => {
+            warn!("NFQUEUE multiport rule failed for proto={proto} uid={uid}: {e:#}; falling back to per-port");
+            caps::disable_multiport_persistently(&format!("nfqueue {proto} multiport failed: {e:#}"));
+            add_per_port_rule(mangle, uid, q, proto, ranges)
+        }
+    }
+}
+
 fn add_multiport_rule(
     mangle: &mut mangle_app::PreparedScopedMangleApp,
     uid: &str,
@@ -181,6 +201,41 @@ fn add_multiport_rule(
             "multiport".into(),
             "--dports".into(),
             ports_csv,
+            "-m".into(),
+            "owner".into(),
+            "--uid-owner".into(),
+            uid.into(),
+            "-j".into(),
+            "NFQUEUE".into(),
+            "--queue-num".into(),
+            q.into(),
+            "--queue-bypass".into(),
+        ];
+        mangle_app::add_scoped_rule(mangle, &tail)?;
+        any_added = true;
+    }
+    Ok(any_added)
+}
+
+fn add_per_port_rule(
+    mangle: &mut mangle_app::PreparedScopedMangleApp,
+    uid: &str,
+    q: &str,
+    proto: &str,
+    ranges: &[port_filter::PortRange],
+) -> Result<bool> {
+    let mut any_added = false;
+    for range in ranges {
+        let dport = if range.start == range.end {
+            range.start.to_string()
+        } else {
+            format!("{}:{}", range.start, range.end)
+        };
+        let tail: Vec<String> = vec![
+            "-p".into(),
+            proto.into(),
+            "--dport".into(),
+            dport,
             "-m".into(),
             "owner".into(),
             "--uid-owner".into(),

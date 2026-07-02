@@ -152,52 +152,53 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
     let ports_csv = normalize_ports_csv(&opt.dpi_ports);
     let (parts_count, has_range) = analyze_ports(&ports_csv);
 
-    let multiport_supported = test_multiport_supported()?;
+    let multiport_supported = crate::iptables::caps::multiport_v4() && test_multiport_supported()?;
     info!("DPI: parts_count={} has_range={} multiport_supported={}", parts_count, has_range, multiport_supported);
 
     let use_multiport = !has_range && parts_count <= 15 && multiport_supported;
     if use_multiport {
         let ports_for_multi = ports_csv.replace(' ', "").replace('\t', "");
-        for uid in &uids {
-            for proto in protos {
-                if allow_loopback_redirect {
-                    ensure_nat_local_dest_port_return(scoped_local_chain.as_deref().unwrap(), uid, proto, dest_port)?;
-                    let extra = format!("-m multiport --dports {}", ports_for_multi);
-                    add_nat_local_rule_idempotent(scoped_local_chain.as_deref().unwrap(), uid, proto, Some(extra.as_str()), dest_port)?;
-                }
-                ensure_nat_multiport(&scoped_chain, uid, proto, &ports_for_multi, &mode, &ifaces, dest_port)?;
-            }
+        let multiport_result = apply_nat_multiport_rules(
+            &uids,
+            protos,
+            allow_loopback_redirect,
+            scoped_local_chain.as_deref(),
+            &scoped_chain,
+            &ports_for_multi,
+            &mode,
+            &ifaces,
+            dest_port,
+        );
+        if let Err(e) = multiport_result {
+            warn!("DPI: NAT multiport failed: {e:#}; falling back to per-port");
+            crate::iptables::caps::disable_multiport_persistently(&format!("nat multiport failed: {e:#}"));
+            apply_nat_per_port_rules(
+                &uids,
+                protos,
+                allow_loopback_redirect,
+                scoped_local_chain.as_deref(),
+                &scoped_chain,
+                &ports_csv,
+                &mode,
+                &ifaces,
+                dest_port,
+            )?;
         }
     } else {
         if !multiport_supported {
             warn!("DPI: device iptables without multiport: fallback will be slower");
         }
-
-        // Pre-parse port tokens so we can iterate by UID (progress per app).
-        let mut dport_args: Vec<String> = Vec::new();
-        for token in ports_csv.split(',').map(|t| t.trim()).filter(|t| !t.is_empty()) {
-            if let Some((a,b)) = parse_range(token) {
-                dport_args.push(format!("--dport {}:{}", a, b));
-            } else if token.chars().all(|c| c.is_ascii_digit()) {
-                dport_args.push(format!("--dport {}", token));
-            } else {
-                warn!("DPI: skipping invalid port token: {}", token);
-            }
-        }
-
-        for uid in &uids {
-            for proto in protos {
-                if allow_loopback_redirect {
-                    ensure_nat_local_dest_port_return(scoped_local_chain.as_deref().unwrap(), uid, proto, dest_port)?;
-                }
-                for dp in &dport_args {
-                    if allow_loopback_redirect {
-                        add_nat_local_rule_idempotent(scoped_local_chain.as_deref().unwrap(), uid, proto, Some(dp.as_str()), dest_port)?;
-                    }
-                    add_nat_rule_idempotent(&scoped_chain, uid, proto, Some(dp.as_str()), &mode, &ifaces, dest_port)?;
-                }
-            }
-        }
+        apply_nat_per_port_rules(
+            &uids,
+            protos,
+            allow_loopback_redirect,
+            scoped_local_chain.as_deref(),
+            &scoped_chain,
+            &ports_csv,
+            &mode,
+            &ifaces,
+            dest_port,
+        )?;
     }
 
     finish_nat_scoped_chain(&scoped_chain)?;
@@ -682,12 +683,13 @@ fn analyze_ports(ports_csv: &str) -> (usize, bool) {
 
 fn test_multiport_supported() -> Result<bool> {
     let ins = ["-t","nat","-I","NAT_DPI","1","-p","tcp","-m","multiport","--dports","1","-j","RETURN"];
-    let (c, _) = ipt_run_timeout(&ins, Capture::None, IPT_CMD_TIMEOUT)?;
+    let (c, out) = ipt_run_timeout(&ins, Capture::Both, IPT_CMD_TIMEOUT)?;
     if c == 0 {
         let del = ["-t","nat","-D","NAT_DPI","-p","tcp","-m","multiport","--dports","1","-j","RETURN"];
         let _ = ipt_run_timeout(&del, Capture::None, IPT_CMD_TIMEOUT)?;
         return Ok(true);
     }
+    crate::iptables::caps::disable_multiport_persistently(&format!("nat multiport probe failed: {}", out.trim()));
     Ok(false)
 }
 
@@ -702,6 +704,72 @@ fn parse_range(token: &str) -> Option<(u16,u16)> {
     Some((a,b))
 }
 
+fn apply_nat_multiport_rules(
+    uids: &[String],
+    protos: &[&str],
+    allow_loopback_redirect: bool,
+    scoped_local_chain: Option<&str>,
+    scoped_chain: &str,
+    ports_for_multi: &str,
+    mode: &str,
+    ifaces: &[String],
+    dest_port: u16,
+) -> Result<()> {
+    for uid in uids {
+        for proto in protos {
+            if allow_loopback_redirect {
+                let local_chain = scoped_local_chain.context("NAT_DPI_LOCAL chain missing")?;
+                ensure_nat_local_dest_port_return(local_chain, uid, proto, dest_port)?;
+                let extra = format!("-m multiport --dports {}", ports_for_multi);
+                add_nat_local_rule_idempotent(local_chain, uid, proto, Some(extra.as_str()), dest_port)?;
+            }
+            ensure_nat_multiport(scoped_chain, uid, proto, ports_for_multi, mode, ifaces, dest_port)?;
+        }
+    }
+    Ok(())
+}
+
+fn apply_nat_per_port_rules(
+    uids: &[String],
+    protos: &[&str],
+    allow_loopback_redirect: bool,
+    scoped_local_chain: Option<&str>,
+    scoped_chain: &str,
+    ports_csv: &str,
+    mode: &str,
+    ifaces: &[String],
+    dest_port: u16,
+) -> Result<()> {
+    // Pre-parse port tokens so we can iterate by UID (progress per app).
+    let mut dport_args: Vec<String> = Vec::new();
+    for token in ports_csv.split(',').map(|t| t.trim()).filter(|t| !t.is_empty()) {
+        if let Some((a,b)) = parse_range(token) {
+            dport_args.push(format!("--dport {}:{}", a, b));
+        } else if token.chars().all(|c| c.is_ascii_digit()) {
+            dport_args.push(format!("--dport {}", token));
+        } else {
+            warn!("DPI: skipping invalid port token: {}", token);
+        }
+    }
+
+    for uid in uids {
+        for proto in protos {
+            if allow_loopback_redirect {
+                let local_chain = scoped_local_chain.context("NAT_DPI_LOCAL chain missing")?;
+                ensure_nat_local_dest_port_return(local_chain, uid, proto, dest_port)?;
+            }
+            for dp in &dport_args {
+                if allow_loopback_redirect {
+                    let local_chain = scoped_local_chain.context("NAT_DPI_LOCAL chain missing")?;
+                    add_nat_local_rule_idempotent(local_chain, uid, proto, Some(dp.as_str()), dest_port)?;
+                }
+                add_nat_rule_idempotent(scoped_chain, uid, proto, Some(dp.as_str()), mode, ifaces, dest_port)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn ensure_nat_multiport(chain: &str, uid: &str, proto: &str, ports: &str, mode: &str, ifaces: &[String], dest_port: u16) -> Result<()> {
     let to = format!("127.0.0.1:{dest_port}");
     if mode == "all" {
@@ -709,7 +777,10 @@ fn ensure_nat_multiport(chain: &str, uid: &str, proto: &str, ports: &str, mode: 
         let (c, _) = ipt_run_timeout(&check, Capture::None, IPT_CMD_TIMEOUT)?;
         if c != 0 {
             let add = ["-t","nat","-A",chain,"-p",proto,"-m","owner","--uid-owner",uid,"-m","multiport","--dports",ports,"-j","DNAT","--to-destination",&to];
-            let _ = ipt_run_timeout(&add, Capture::Both, IPT_CMD_TIMEOUT)?;
+            let (rc, out) = ipt_run_timeout(&add, Capture::Both, IPT_CMD_TIMEOUT)?;
+            if rc != 0 {
+                anyhow::bail!("DPI: add NAT multiport rule failed uid={} proto={} ports={}: {}", uid, proto, ports, out.trim());
+            }
         }
         return Ok(());
     }
@@ -719,7 +790,10 @@ fn ensure_nat_multiport(chain: &str, uid: &str, proto: &str, ports: &str, mode: 
         let (c, _) = ipt_run_timeout(&check, Capture::None, IPT_CMD_TIMEOUT)?;
         if c != 0 {
             let add = ["-t","nat","-A",chain,"-o",iface,"-p",proto,"-m","owner","--uid-owner",uid,"-m","multiport","--dports",ports,"-j","DNAT","--to-destination",&to];
-            let _ = ipt_run_timeout(&add, Capture::Both, IPT_CMD_TIMEOUT)?;
+            let (rc, out) = ipt_run_timeout(&add, Capture::Both, IPT_CMD_TIMEOUT)?;
+            if rc != 0 {
+                anyhow::bail!("DPI: add NAT multiport rule failed uid={} proto={} iface={} ports={}: {}", uid, proto, iface, ports, out.trim());
+            }
         }
     }
     Ok(())

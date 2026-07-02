@@ -122,8 +122,14 @@ fun AppUpdateBanner(
               )
             }
           }
-          IconButton(onClick = onDismiss) {
-            Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_close))
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            GitHubApiStatusPill(state.githubApiOnline)
+            IconButton(onClick = onDismiss) {
+              Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.common_close))
+            }
           }
         }
 
@@ -171,15 +177,9 @@ fun AppUpdateBanner(
           OutlinedButton(onClick = onUpdate, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.common_cancel))
           }
-        } else {
+        } else if (state.releaseBuild.status != AppReleaseBuildStatus.PREPARING && state.releaseBuild.status != AppReleaseBuildStatus.FAILED) {
           Button(onClick = onUpdate, modifier = Modifier.fillMaxWidth()) {
-            Text(
-              if (state.releaseBuild.status == AppReleaseBuildStatus.PREPARING || state.releaseBuild.status == AppReleaseBuildStatus.FAILED) {
-                stringResource(R.string.app_update_check_again)
-              } else {
-                stringResource(R.string.common_update)
-              }
-            )
+            Text(stringResource(R.string.common_update))
           }
         }
       }
@@ -189,6 +189,40 @@ fun AppUpdateBanner(
 
 
 
+
+@Composable
+private fun GitHubApiStatusPill(online: Boolean?) {
+  val isOnline = online == true
+  val color = if (isOnline) Color(0xFF22C55E) else MaterialTheme.colorScheme.error
+  val text = when (online) {
+    true -> stringResource(R.string.app_update_github_api_online)
+    false -> stringResource(R.string.app_update_github_api_offline)
+    null -> stringResource(R.string.app_update_github_api_offline)
+  }
+  Surface(
+    shape = RoundedCornerShape(999.dp),
+    color = color.copy(alpha = 0.12f),
+    contentColor = color,
+    border = BorderStroke(1.dp, color.copy(alpha = 0.30f)),
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(5.dp),
+    ) {
+      Box(
+        modifier = Modifier
+          .size(7.dp)
+          .background(color, CircleShape),
+      )
+      Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.SemiBold,
+      )
+    }
+  }
+}
 
 @Composable
 private fun AppReleaseBuildProgressCard(state: AppUpdateUiState) {
@@ -220,6 +254,7 @@ private fun AppReleaseBuildProgressCard(state: AppUpdateUiState) {
         val stages = state.releaseBuild.stages.ifEmpty {
           listOf(
             AppReleaseBuildStageUi("binaries", R.string.app_update_stage_binaries, AppReleaseStageStatus.RUNNING),
+            AppReleaseBuildStageUi("archives", R.string.app_update_stage_archives, AppReleaseStageStatus.WAITING),
             AppReleaseBuildStageUi("apk", R.string.app_update_stage_apk, AppReleaseStageStatus.WAITING),
             AppReleaseBuildStageUi("release", R.string.app_update_stage_release, AppReleaseStageStatus.WAITING),
             AppReleaseBuildStageUi("ready", R.string.app_update_stage_ready, AppReleaseStageStatus.WAITING),

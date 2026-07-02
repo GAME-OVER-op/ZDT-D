@@ -479,6 +479,9 @@
     <string name="app_update_release_preparing_title">Подготовка релизной сборки</string>
     <string name="app_update_release_preparing_body">Новая версия уже готовится автором. Загрузка станет доступна автоматически после публикации.</string>
     <string name="app_update_release_failed_body">Ой, кажется авто ошибся :) Подождите, пока автор исправит или перезапустит релизную сборку.</string>
+    <string name="app_update_stage_archives">Подготовка архивов</string>
+    <string name="app_update_github_api_online">GitHub API online</string>
+    <string name="app_update_github_api_offline">GitHub API offline</string>
     <string name="app_update_stage_binaries">Сборка бинарников</string>
     <string name="app_update_stage_apk">Сборка APK</string>
     <string name="app_update_stage_release">Подготовка релиза</string>

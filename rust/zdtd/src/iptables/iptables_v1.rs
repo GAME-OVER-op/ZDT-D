@@ -186,10 +186,10 @@ fn apply_uid_or_global(
             if use_multiport_filter {
                 if let Some(f) = filter {
                     if !f.tcp.is_empty() {
-                        add_multiport_rules(mangle, iopt, uid, queue, "tcp", &f.tcp)?;
+                        add_multiport_rules_with_fallback(mangle, iopt, uid, queue, "tcp", &f.tcp)?;
                     }
                     if !f.udp.is_empty() {
-                        add_multiport_rules(mangle, iopt, uid, queue, "udp", &f.udp)?;
+                        add_multiport_rules_with_fallback(mangle, iopt, uid, queue, "udp", &f.udp)?;
                     }
                     return Ok(());
                 }
@@ -201,6 +201,27 @@ fn apply_uid_or_global(
             add_nfqueue_rule(mangle, iopt, uid, queue, Some("tcp"), Some("443"), None)
         }
         _ => unreachable!(),
+    }
+}
+
+fn add_multiport_rules_with_fallback(
+    mangle: &mut mangle_app::PreparedScopedMangleApp,
+    iopt: &[String],
+    uid: Option<&str>,
+    queue: u16,
+    proto: &str,
+    ranges: &[port_filter::PortRange],
+) -> Result<()> {
+    if !caps::multiport_v4() {
+        return add_per_port_rules(mangle, iopt, uid, queue, proto, ranges);
+    }
+    match add_multiport_rules(mangle, iopt, uid, queue, proto, ranges) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            warn!("iptables NFQUEUE multiport rule failed for proto={proto} uid={uid:?}: {e:#}; falling back to per-port");
+            caps::disable_multiport_persistently(&format!("nfqueue {proto} multiport failed: {e:#}"));
+            add_per_port_rules(mangle, iopt, uid, queue, proto, ranges)
+        }
     }
 }
 
@@ -216,6 +237,25 @@ fn add_multiport_rules(
     for chunk in port_filter::chunk_multiport(&elems, 15) {
         let ports_csv = port_filter::join_elems_csv(&chunk);
         add_nfqueue_rule(mangle, iopt, uid, queue, Some(proto), None, Some(ports_csv.as_str()))?;
+    }
+    Ok(())
+}
+
+fn add_per_port_rules(
+    mangle: &mut mangle_app::PreparedScopedMangleApp,
+    iopt: &[String],
+    uid: Option<&str>,
+    queue: u16,
+    proto: &str,
+    ranges: &[port_filter::PortRange],
+) -> Result<()> {
+    for range in ranges {
+        let dport = if range.start == range.end {
+            range.start.to_string()
+        } else {
+            format!("{}:{}", range.start, range.end)
+        };
+        add_nfqueue_rule(mangle, iopt, uid, queue, Some(proto), Some(dport.as_str()), None)?;
     }
     Ok(())
 }

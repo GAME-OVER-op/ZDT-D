@@ -175,6 +175,9 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="app_update_release_preparing_title">Preparing release build</string>
     <string name="app_update_release_preparing_body">A new version is already being prepared by the author. Download will become available automatically after publication.</string>
     <string name="app_update_release_failed_body">Oops, looks like automation made a mistake :) Please wait while the author fixes or restarts the release build.</string>
+    <string name="app_update_stage_archives">Preparing archives</string>
+    <string name="app_update_github_api_online">GitHub API online</string>
+    <string name="app_update_github_api_offline">GitHub API offline</string>
     <string name="app_update_stage_binaries">Building binaries</string>
     <string name="app_update_stage_apk">Building APK</string>
     <string name="app_update_stage_release">Preparing release</string>

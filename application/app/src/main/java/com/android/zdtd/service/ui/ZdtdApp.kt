@@ -144,21 +144,23 @@ fun ZdtdApp(
         onRetryInstallWithoutZygisk = actions::retryInstallWithoutZygisk,
       )
       SetupStep.REBOOT -> {
-        when (rootState) {
-          RootState.CHECKING -> SplashScreen()
-          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
-          RootState.GRANTED -> RebootRequiredScreen(
-            setup = setup,
-            text = setup.rebootRequiredText,
-            onReboot = actions::rebootNow,
-          )
-        }
+        RootStateContent(
+          rootState = rootState,
+          onRetry = actions::retryRoot,
+          grantedContent = {
+            RebootRequiredScreen(
+              setup = setup,
+              text = setup.rebootRequiredText,
+              onReboot = actions::rebootNow,
+            )
+          }
+        )
       }
       SetupStep.DONE -> {
-        when (rootState) {
-          RootState.CHECKING -> SplashScreen()
-          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
-          RootState.GRANTED -> {
+        RootStateContent(
+          rootState = rootState,
+          onRetry = actions::retryRoot,
+          grantedContent = {
             UpdatePromptDialog(setup = setup, onUpdate = actions::openModuleInstaller, onSkip = actions::dismissUpdatePrompt)
             MainShell(
               uiStateFlow = uiStateFlow,
@@ -169,7 +171,7 @@ fun ZdtdApp(
               actions = actions,
             )
           }
-        }
+        )
       }
     }
   }
@@ -182,8 +184,18 @@ private fun SplashScreen() {
   }
 }
 
-
-
+@Composable
+private fun RootStateContent(
+  rootState: RootState,
+  onRetry: () -> Unit,
+  grantedContent: @Composable () -> Unit,
+) {
+  when (rootState) {
+    RootState.CHECKING -> SplashScreen()
+    RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = onRetry)
+    RootState.GRANTED -> grantedContent()
+  }
+}
 
 @Composable
 private fun StartupDialogHost(

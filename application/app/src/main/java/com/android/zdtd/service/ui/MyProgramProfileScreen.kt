@@ -301,7 +301,9 @@ private fun MyProgramProfileEnabledCard(
 
 private fun uriDisplayName(context: Context, uri: Uri): String? = runCatching {
   context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-    if (c.moveToFirst()) c.getString(0) else null
+    if (!c.moveToFirst()) return@use null
+    val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+    if (idx >= 0) c.getString(idx) else null
   }
 }.getOrNull()
 

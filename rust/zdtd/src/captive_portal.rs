@@ -519,33 +519,63 @@ fn escape_html(s: &str) -> String {
 }
 
 fn render_page(device: &CaptiveDevice) -> String {
-    let status = if device.allowed { "разрешено" } else { "ожидает разрешения" };
-    let mut page = r#"<!doctype html>
+    let status_ru = if device.allowed { "разрешено" } else { "ожидает разрешения" };
+    let status_en = if device.allowed { "allowed" } else { "waiting for approval" };
+    let mut page = r##"<!doctype html>
 <html lang="ru">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ZDT-D Captive Portal</title>
+<title>ZDT-D Captive Gate</title>
 <style>
-body{margin:0;background:#0b0f14;color:#e8eef5;font-family:Arial,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center}
-.card{width:min(92vw,520px);background:#111923;border:1px solid #26384d;border-radius:16px;padding:24px;box-shadow:0 12px 40px rgba(0,0,0,.35)}
-h1{font-size:22px;margin:0 0 12px;color:#7bdcff}p{line-height:1.45;color:#b7c5d4}
-.row{margin:12px 0;padding:12px;border-radius:10px;background:#0b121a}
-.label{font-size:12px;color:#7f91a6;text-transform:uppercase;letter-spacing:.08em}.value{margin-top:5px;font-size:18px;word-break:break-all}.status{color:#ffd479}
+:root{--bg:#050000;--bg2:#0d0303;--card:rgba(18,7,7,.82);--card2:rgba(30,7,7,.9);--text:#fff;--muted:#bdaaaa;--red:#ff1e1e;--red2:#8d0000;--soft:rgba(255,30,30,.16);--border:rgba(255,30,30,.38);--line:rgba(255,255,255,.08);--shadow:0 0 46px rgba(255,0,0,.2)}
+*{box-sizing:border-box}html{background:var(--bg)}body{margin:0;min-height:100vh;color:var(--text);font-family:Arial,Helvetica,sans-serif;background:radial-gradient(circle at 16% 8%,rgba(255,0,0,.24),transparent 30%),radial-gradient(circle at 86% 12%,rgba(255,0,0,.16),transparent 27%),radial-gradient(circle at 50% 88%,rgba(255,0,0,.1),transparent 34%),linear-gradient(180deg,#000 0%,#0a0101 50%,#000 100%);overflow:hidden;display:grid;place-items:center;padding:22px}
+body:before{content:"";position:fixed;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.026) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.026) 1px,transparent 1px);background-size:42px 42px;mask-image:linear-gradient(to bottom,rgba(0,0,0,.78),transparent 82%)}
+body:after{content:"";position:fixed;inset:0;pointer-events:none;background:linear-gradient(transparent 0 96%,rgba(255,0,0,.075) 97% 100%);background-size:100% 5px;mix-blend-mode:screen;opacity:.18}
+.gate{position:relative;z-index:1;width:min(94vw,620px);border:1px solid var(--border);border-radius:24px;background:linear-gradient(135deg,rgba(255,0,0,.18),rgba(255,255,255,.025)),var(--card);box-shadow:var(--shadow);overflow:hidden;padding:24px}
+.gate:before{content:"";position:absolute;inset:-1px;pointer-events:none;background:linear-gradient(120deg,transparent,rgba(255,255,255,.12),transparent);transform:translateX(-100%);animation:shine 5s infinite}.gate:after{content:"";position:absolute;width:210px;height:210px;right:-92px;bottom:-96px;border-radius:50%;background:rgba(255,0,0,.16);filter:blur(10px);pointer-events:none}
+.top{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:24px}.brand{display:flex;align-items:center;gap:12px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}.mark{width:34px;height:34px;display:grid;place-items:center;border:1px solid var(--border);border-radius:12px;background:linear-gradient(135deg,var(--soft),rgba(255,255,255,.03));box-shadow:0 0 18px rgba(255,0,0,.24);color:var(--red)}.lang{min-width:48px;min-height:34px;border:1px solid var(--border);border-radius:999px;color:#fff;background:rgba(16,0,0,.74);font-size:12px;font-weight:900;letter-spacing:.08em;cursor:pointer}.lang:hover{background:rgba(255,0,0,.2);border-color:rgba(255,90,90,.86)}
+.eyebrow{position:relative;z-index:2;display:inline-flex;align-items:center;gap:10px;color:var(--red);font-size:12px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;margin-bottom:16px}.pulse{width:9px;height:9px;border-radius:50%;background:var(--red);box-shadow:0 0 0 0 rgba(255,30,30,.7);animation:pulse 1.8s infinite}
+h1{position:relative;z-index:2;margin:0;font-size:clamp(30px,7vw,56px);line-height:.95;letter-spacing:-.05em;text-transform:uppercase}.outline{color:transparent;-webkit-text-stroke:1px rgba(255,255,255,.5)}.lead{position:relative;z-index:2;margin:18px 0 22px;color:var(--muted);line-height:1.55;font-size:16px}.grid{position:relative;z-index:2;display:grid;grid-template-columns:1fr 1fr;gap:10px}.item{border:1px solid var(--line);border-radius:16px;background:rgba(0,0,0,.26);padding:13px}.label{display:block;color:#a98e8e;font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase}.value{display:block;margin-top:7px;font-size:17px;font-weight:900;word-break:break-all}.status{color:#ffdada;text-shadow:0 0 16px rgba(255,0,0,.26)}.foot{position:relative;z-index:2;margin:20px 0 0;padding:14px;border:1px solid var(--border);border-radius:16px;background:rgba(255,0,0,.1);color:#ffe2e2;line-height:1.45;font-weight:700}@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,30,30,.7)}70%{box-shadow:0 0 0 12px rgba(255,30,30,0)}100%{box-shadow:0 0 0 0 rgba(255,30,30,0)}}@keyframes shine{0%{transform:translateX(-100%)}45%,100%{transform:translateX(100%)}}@media(max-width:520px){.gate{padding:20px;border-radius:20px}.grid{grid-template-columns:1fr}h1{font-size:34px}.top{align-items:flex-start}.brand{font-size:13px}}
 </style>
 </head>
-<body><main class="card">
-<h1>Требуется авторизация сети</h1>
-<p>Ваше устройство подключено к точке доступа ZDT-D, но доступ в интернет пока не разрешён. Обратитесь к администратору сети.</p>
-<div class="row"><div class="label">Локальный IP</div><div class="value">%IP%</div></div>
-<div class="row"><div class="label">Идентификатор устройства</div><div class="value">%ID%</div></div>
-<div class="row"><div class="label">Модель</div><div class="value">%MODEL%</div></div>
-<div class="row"><div class="label">Статус</div><div class="value status">%STATUS%</div></div>
-</main></body></html>"#.to_string();
+<body>
+<main class="gate">
+  <div class="top">
+    <div class="brand"><span class="mark">▣</span><span>ZDT-D Gate</span></div>
+    <button class="lang" id="langBtn" type="button">EN</button>
+  </div>
+  <div class="eyebrow"><span class="pulse"></span><span data-ru="Доступ ограничен" data-en="Access locked">Доступ ограничен</span></div>
+  <h1><span data-ru="Требуется" data-en="Network">Требуется</span><br><span class="outline" data-ru="авторизация" data-en="authorization">авторизация</span></h1>
+  <p class="lead" data-ru="Ваше устройство подключено к точке доступа ZDT-D, но доступ в интернет пока не разрешён." data-en="Your device is connected to the ZDT-D hotspot, but internet access is not approved yet.">Ваше устройство подключено к точке доступа ZDT-D, но доступ в интернет пока не разрешён.</p>
+  <section class="grid" aria-label="Device authorization data">
+    <div class="item"><span class="label" data-ru="Локальный IP" data-en="Local IP">Локальный IP</span><span class="value">%IP%</span></div>
+    <div class="item"><span class="label" data-ru="ID устройства" data-en="Device ID">ID устройства</span><span class="value">%ID%</span></div>
+    <div class="item"><span class="label" data-ru="Модель" data-en="Device model">Модель</span><span class="value">%MODEL%</span></div>
+    <div class="item"><span class="label" data-ru="Статус" data-en="Status">Статус</span><span class="value status" data-ru="%STATUS_RU%" data-en="%STATUS_EN%">%STATUS_RU%</span></div>
+  </section>
+  <p class="foot" data-ru="Обратитесь к администратору сети для разрешения доступа." data-en="Contact the network administrator to approve access.">Обратитесь к администратору сети для разрешения доступа.</p>
+</main>
+<script>
+(function(){
+  var lang=(navigator.language||'ru').toLowerCase().indexOf('ru')===0?'ru':'en';
+  var btn=document.getElementById('langBtn');
+  function apply(next){
+    lang=next; document.documentElement.lang=lang; btn.textContent=lang==='ru'?'EN':'RU';
+    var nodes=document.querySelectorAll('[data-ru][data-en]');
+    for(var i=0;i<nodes.length;i++){nodes[i].textContent=nodes[i].getAttribute('data-'+lang)||nodes[i].textContent;}
+  }
+  btn.onclick=function(){apply(lang==='ru'?'en':'ru')};
+  apply(lang);
+})();
+</script>
+</body>
+</html>"##.to_string();
     page = page.replace("%IP%", &escape_html(&device.ip));
     page = page.replace("%ID%", &escape_html(&device.short_id));
     page = page.replace("%MODEL%", &escape_html(&device.model));
-    page.replace("%STATUS%", &escape_html(status))
+    page = page.replace("%STATUS_RU%", &escape_html(status_ru));
+    page.replace("%STATUS_EN%", &escape_html(status_en))
 }
 
 fn allowed_ips() -> Result<Vec<String>> {

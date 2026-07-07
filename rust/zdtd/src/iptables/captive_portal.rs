@@ -106,8 +106,8 @@ pub fn apply(allowed_ips: &[String]) -> Result<()> {
         None,
         IN_CHAIN,
         &[
-            "-i".into(), iface.into(), "-p".into(), "tcp".into(),
-            "--dport".into(), portal_port.clone(), "-j".into(), "ACCEPT".into(),
+            "-p".into(), "tcp".into(), "--dport".into(), portal_port.clone(),
+            "-j".into(), "ACCEPT".into(),
         ],
     )?;
     append_rule(
@@ -142,9 +142,17 @@ pub fn apply(allowed_ips: &[String]) -> Result<()> {
     )?;
     append_rule(None, FWD_CHAIN, &["-j".into(), "DROP".into()])?;
 
-    ensure_hook(Some("nat"), "PREROUTING", &["-i", iface, "-p", "tcp"], PRE_CHAIN)?;
+    // Older builds hooked by interface (-i wlan1). On some Android tether paths the
+    // packets that the existing hotspot REDIRECT sees do not carry that input iface,
+    // so keep the captive hook source-scoped instead and remove stale iface hooks.
+    delete_hook_loop(Some("nat"), "PREROUTING", &["-i", iface, "-p", "tcp"], PRE_CHAIN);
+    delete_hook_loop(Some("nat"), "PREROUTING", &["-p", "tcp"], PRE_CHAIN);
+    delete_hook_loop(None, "FORWARD", &["-i", iface], FWD_CHAIN);
+    delete_hook_loop(None, "FORWARD", &[], FWD_CHAIN);
+
+    ensure_hook(Some("nat"), "PREROUTING", &["-p", "tcp"], PRE_CHAIN)?;
     ensure_hook(None, "INPUT", &["-p", "tcp", "--dport", portal_port.as_str()], IN_CHAIN)?;
-    ensure_hook(None, "FORWARD", &["-i", iface], FWD_CHAIN)?;
+    ensure_hook(None, "FORWARD", &[], FWD_CHAIN)?;
 
     info!(
         "captive portal rules applied iface={} port={} allowed={}",
@@ -197,8 +205,10 @@ pub fn cleanup() -> Result<()> {
     let port = captive_portal::PORTAL_PORT.to_string();
 
     delete_hook_loop(Some("nat"), "PREROUTING", &["-i", iface, "-p", "tcp"], PRE_CHAIN);
+    delete_hook_loop(Some("nat"), "PREROUTING", &["-p", "tcp"], PRE_CHAIN);
     delete_hook_loop(None, "INPUT", &["-p", "tcp", "--dport", &port], IN_CHAIN);
     delete_hook_loop(None, "FORWARD", &["-i", iface], FWD_CHAIN);
+    delete_hook_loop(None, "FORWARD", &[], FWD_CHAIN);
 
     delete_chain(Some("nat"), PRE_CHAIN);
     delete_chain(None, IN_CHAIN);

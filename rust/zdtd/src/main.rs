@@ -1,5 +1,7 @@
 mod android;
 mod blockedquic;
+mod capabilities;
+mod captive_portal;
 mod api;
 mod api_status;
 mod config;

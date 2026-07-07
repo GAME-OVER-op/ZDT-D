@@ -5959,6 +5959,10 @@ fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
     }
 
 match (method.as_str(), path.as_str()) {
+        ("GET", "/api/system/capabilities") => {
+            write_json(stream, 200, crate::capabilities::collect())
+        }
+
         ("GET", "/api/status") => {
             let (report, cached, degraded) = get_status_snapshot(services_running);
             let mut value = match serde_json::to_value(report) {
@@ -6039,6 +6043,8 @@ match (method.as_str(), path.as_str()) {
                 #[serde(default)]
                 hotspot_t2s_capture_all: Option<bool>,
                 #[serde(default)]
+                captive_portal_enabled: Option<bool>,
+                #[serde(default)]
                 allow_loopback_redirect: Option<bool>,
                 #[serde(default)]
                 selinux_permissive_enabled: Option<bool>,
@@ -6112,6 +6118,9 @@ match (method.as_str(), path.as_str()) {
             if let Some(capture_all) = patch.hotspot_t2s_capture_all {
                 setting.hotspot_t2s_capture_all = capture_all;
             }
+            if let Some(enabled) = patch.captive_portal_enabled {
+                setting.captive_portal_enabled = enabled;
+            }
             if let Some(enabled) = patch.allow_loopback_redirect {
                 setting.allow_loopback_redirect = enabled;
             }
@@ -6131,8 +6140,24 @@ match (method.as_str(), path.as_str()) {
                 crate::android::sysctl::set_ipv4_forward(enabled)?;
             }
             let saved = settings::load_api_settings().unwrap_or(setting);
+            if services_running {
+                crate::captive_portal::sync_from_settings_best_effort();
+            }
             protector::refresh(services_running);
             write_json(stream, 200, json!({"ok": true, "setting": saved}))
+        }
+
+        ("GET", "/api/hotspot/captive/status") => {
+            write_json(stream, 200, crate::captive_portal::api_status())
+        }
+        ("GET", "/api/hotspot/captive/devices") => {
+            write_json(stream, 200, crate::captive_portal::api_devices())
+        }
+        ("POST", "/api/hotspot/captive/allow") => {
+            write_json(stream, 200, crate::captive_portal::api_allow(&body, services_running))
+        }
+        ("POST", "/api/hotspot/captive/deny") => {
+            write_json(stream, 200, crate::captive_portal::api_deny(&body, services_running))
         }
 
         ("GET", "/api/energy-saver") | ("GET", "/api/energy-saver/programs") => {

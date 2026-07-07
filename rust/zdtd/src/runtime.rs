@@ -53,6 +53,7 @@ pub fn start_full() -> Result<()> {
     crate::runtime_sanitize::sanitize_runtime_files_best_effort();
 
     if can_adopt_existing_runtime() {
+        crate::captive_portal::sync_from_settings_best_effort();
         final_sync_runtime_settings_best_effort("adopted runtime");
         crate::runtime_state::write_running(false, true).ok();
         crate::logging::user_info("Инициализация завершена");
@@ -264,6 +265,8 @@ pub fn start_full() -> Result<()> {
     // Opera-proxy pipeline (may use local dnscrypt port if running).
     // Start it last to avoid interfering with other startup logic.
     start_best_effort("operaproxy", operaproxy::start_if_enabled);
+
+    crate::captive_portal::sync_from_settings_best_effort();
 
 
 
@@ -1012,4 +1015,3 @@ fn wait_start_group(stage_name: &str, handles: Vec<(&'static str, thread::JoinHa
         );
     }
 }
-

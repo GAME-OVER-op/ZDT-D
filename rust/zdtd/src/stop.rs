@@ -189,6 +189,10 @@ pub fn stop_services_and_restore_iptables() -> Result<()> {
     if let Err(e) = crate::vpn_tether::cleanup() {
         log::warn!("vpn_tether cleanup failed during stop: {e:#}");
     }
+    crate::captive_portal::stop();
+    if let Err(e) = crate::iptables::captive_portal::cleanup() {
+        log::warn!("captive portal cleanup failed during stop: {e:#}");
+    }
     if let Err(e) = crate::iptables::hotspot::cleanup() {
         log::warn!("hotspot redirect cleanup failed during stop: {e:#}");
     }

@@ -69,6 +69,9 @@ pub fn run(_cfg: &Config) -> Result<()> {
     if let Err(e) = settings::load_api_settings() {
         logging::warn(&format!("failed to init setting/setting.json: {e:#}"));
     }
+    if let Err(e) = crate::captive_portal::ensure_layout() {
+        logging::warn(&format!("failed to init hotspot captive portal files: {e:#}"));
+    }
     crate::android::sysctl::sync_ipv4_forward_from_settings_best_effort();
     if let Err(e) = crate::proxyinfo::ensure_layout() {
         logging::warn(&format!("failed to init proxyInfo files: {e:#}"));

@@ -79,6 +79,10 @@ pub struct TrafficRuleCounter {
     pub redirect_port: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub queue: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mark: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub route_table: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub backend_ports: Vec<TrafficBackendPort>,
 
@@ -201,6 +205,16 @@ enum RoutingSnapshot {
         port_preference: u8,
         dpi_ports: String,
     },
+    Tproxy {
+        uid_file: String,
+        dest_port: u16,
+        proto_choice: String,
+        ifaces_raw: Option<String>,
+        port_preference: u8,
+        dpi_ports: String,
+        mark: u32,
+        table: u32,
+    },
 }
 
 #[derive(Debug, Clone, Default)]
@@ -212,6 +226,8 @@ struct RouteMeta {
     uid_file: Option<String>,
     dest_port: Option<u16>,
     queue: Option<u16>,
+    mark: Option<u32>,
+    table: Option<u32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -447,6 +463,8 @@ fn build_counter(
 
     let note = match semantic.as_str() {
         "nat_redirect" | "dns_redirect" => Some("rule counter shows traffic matched the NAT/redirect rule; it is not a full-flow app total".to_string()),
+        "tproxy" => Some("rule counter shows traffic delivered by TPROXY; it is not a full-flow app total".to_string()),
+        "mark" => Some("rule counter shows traffic marked for TPROXY policy routing".to_string()),
         "chain_jump" => Some("jump/pass-through counter; do not sum as processed traffic".to_string()),
         "chain_return" | "guard_return" => Some("return/pass-through counter; traffic was not processed by an action rule here".to_string()),
         _ => None,
@@ -470,6 +488,8 @@ fn build_counter(
         dest_ports,
         redirect_port,
         queue: queue.or(meta.queue),
+        mark: meta.mark,
+        route_table: meta.table,
         backend_ports,
         packets: parsed.packets,
         bytes: parsed.bytes,
@@ -924,7 +944,7 @@ fn parse_dest_ports(tokens: &[&str]) -> Vec<String> {
 }
 
 fn parse_redirect_port(tokens: &[&str]) -> Option<u16> {
-    for key in ["--to-destination", "--to-ports", "--to"] {
+    for key in ["--to-destination", "--to-ports", "--to", "--on-port"] {
         if let Some(v) = value_after(tokens, key) {
             if let Some(port) = v.rsplit(':').next().and_then(|p| p.parse::<u16>().ok()) {
                 return Some(port);
@@ -944,6 +964,8 @@ fn classify_semantic<'a>(chain: &str, target: &'a str, dest_ports: &[String], re
             let dns_ports = dest_ports.iter().any(|p| p == "53" || p.contains("53")) || redirect_port == Some(53) || redirect_port == Some(853) || redirect_port == Some(5353);
             if chain == "NAT_DPI" && dns_ports { "dns_redirect" } else { "nat_redirect" }
         }
+        "TPROXY" => "tproxy",
+        "MARK" => "mark",
         "DROP" => "drop",
         "REJECT" => "reject",
         "MASQUERADE" => "masquerade",
@@ -957,13 +979,16 @@ fn classify_semantic<'a>(chain: &str, target: &'a str, dest_ports: &[String], re
 }
 
 fn is_action_semantic(s: &str) -> bool {
-    matches!(s, "nfqueue" | "nat_redirect" | "dns_redirect" | "drop" | "reject" | "masquerade" | "accept")
+    matches!(s, "nfqueue" | "nat_redirect" | "dns_redirect" | "tproxy" | "mark" | "drop" | "reject" | "masquerade" | "accept")
 }
 
 fn classify_chain(chain: &str) -> &'static str {
     if chain.starts_with("ZDTN_") { "scoped_nat" }
+    else if chain.starts_with("ZDTPP_") { "scoped_tproxy_pre" }
+    else if chain.starts_with("ZDTP_") { "scoped_tproxy_out" }
     else if chain.starts_with("ZDTM_") { "scoped_mangle" }
     else if chain == "NAT_DPI" || chain == "NAT_DPI_LOCAL" { "base_nat" }
+    else if chain == "ZDT_TPROXY_OUT" || chain == "ZDT_TPROXY_PRE" { "base_tproxy" }
     else if chain == "MANGLE_APP" { "base_mangle" }
     else if chain.starts_with("ZDT_VPN_TETHER") { "vpn_tether" }
     else if chain == "ZDT_BLOCKEDQUIC" { "blocked_quic" }
@@ -1059,6 +1084,25 @@ fn load_route_meta(warnings: &mut Vec<String>) -> HashMap<String, RouteMeta> {
                 out.insert(scoped_nat_chain_name(&scope), meta.clone());
                 out.insert(scoped_nat_chain_name(&format!("local:{scope}")), meta);
             }
+            RoutingSnapshot::Tproxy { uid_file, dest_port, proto_choice, ifaces_raw, port_preference, dpi_ports, mark, table } => {
+                let mut meta = meta_from_uid_file(&uid_file);
+                meta.kind = "tproxy".to_string();
+                meta.uid_file = Some(uid_file.clone());
+                meta.dest_port = Some(dest_port);
+                meta.mark = Some(mark);
+                meta.table = Some(table);
+                let scope = format!(
+                    "tproxy:uid={}:dest={}:proto={}:ifaces={}:pref={}:ports={}",
+                    uid_file,
+                    dest_port,
+                    proto_choice_debug(&proto_choice),
+                    ifaces_raw.unwrap_or_default(),
+                    port_preference,
+                    dpi_ports,
+                );
+                out.insert(scoped_tproxy_out_chain_name(&scope), meta.clone());
+                out.insert(scoped_tproxy_pre_chain_name(&scope), meta);
+            }
         }
     }
     out
@@ -1074,6 +1118,8 @@ fn proto_choice_debug(s: &str) -> &'static str {
 
 fn scoped_mangle_chain_name(label: &str) -> String { scoped_hash_name("ZDTM", label) }
 fn scoped_nat_chain_name(label: &str) -> String { scoped_hash_name("ZDTN", label) }
+fn scoped_tproxy_out_chain_name(label: &str) -> String { scoped_hash_name("ZDTP", label) }
+fn scoped_tproxy_pre_chain_name(label: &str) -> String { scoped_hash_name("ZDTPP", label) }
 
 fn scoped_hash_name(prefix: &str, label: &str) -> String {
     let mut hash: u64 = 0xcbf29ce484222325;

@@ -83,6 +83,24 @@ fn allow_loopback_redirect_enabled() -> bool {
 /// - Adds DNAT rules into NAT_DPI to 127.0.0.1:<dest_port> for selected ports/protocols,
 ///   optionally per-interface `-o iface`.
 pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: DpiTunnelOptions) -> Result<()> {
+    match crate::iptables::iptables_tproxy::apply(uid_file, dest_port, proto_choice, ifaces_raw, &opt) {
+        Ok(()) => {
+            if let Err(cleanup_err) = cleanup_dnat_scope(uid_file, dest_port, proto_choice, ifaces_raw, &opt) {
+                warn!("DPI: cleanup old DNAT scope after TPROXY success failed: {cleanup_err:#}");
+            }
+            return Ok(());
+        }
+        Err(e) => {
+            warn!("DPI: TPROXY priority path unavailable, fallback to DNAT: {e}");
+            if let Err(cleanup_err) = crate::iptables::iptables_tproxy::cleanup_scope(uid_file, dest_port, proto_choice, ifaces_raw, &opt) {
+                warn!("DPI: TPROXY partial cleanup failed before DNAT fallback: {cleanup_err:#}");
+            }
+        }
+    }
+    apply_dnat(uid_file, dest_port, proto_choice, ifaces_raw, opt)
+}
+
+fn apply_dnat(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: DpiTunnelOptions) -> Result<()> {
     let _xtables_guard = xtables_lock::lock();
     let allow_loopback_redirect = allow_loopback_redirect_enabled();
     let (mode, ifaces, invalid) = normalize_ifaces(ifaces_raw)?;
@@ -206,6 +224,23 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
         finish_nat_scoped_chain(chain)?;
     }
     crate::runtime_refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
+    Ok(())
+}
+
+
+pub fn cleanup_dnat_scope(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: &DpiTunnelOptions) -> Result<()> {
+    let _xtables_guard = xtables_lock::lock();
+    let scope = format!(
+        "nat:uid={}:dest={}:proto={:?}:ifaces={}:pref={}:ports={}",
+        uid_file.display(),
+        dest_port,
+        proto_choice,
+        ifaces_raw.unwrap_or(""),
+        opt.port_preference,
+        opt.dpi_ports,
+    );
+    remove_nat_scoped_chain(&scoped_nat_chain_name(&scope), "NAT_DPI")?;
+    remove_nat_scoped_chain(&scoped_nat_chain_name(&format!("local:{scope}")), "NAT_DPI_LOCAL")?;
     Ok(())
 }
 

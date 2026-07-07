@@ -41,6 +41,16 @@ pub enum RoutingSnapshot {
         port_preference: u8,
         dpi_ports: String,
     },
+    Tproxy {
+        uid_file: String,
+        dest_port: u16,
+        proto_choice: String,
+        ifaces_raw: Option<String>,
+        port_preference: u8,
+        dpi_ports: String,
+        mark: u32,
+        table: u32,
+    },
 }
 
 impl RoutingSnapshot {
@@ -49,11 +59,37 @@ impl RoutingSnapshot {
             RoutingSnapshot::NfqV1 { uid_file, .. } => uid_file,
             RoutingSnapshot::NfqV2 { uid_file, .. } => uid_file,
             RoutingSnapshot::Nat { uid_file, .. } => uid_file,
+            RoutingSnapshot::Tproxy { uid_file, .. } => uid_file,
         }
     }
 
     fn same_runtime_slot(&self, other: &RoutingSnapshot) -> bool {
-        self == other
+        match (self, other) {
+            (
+                RoutingSnapshot::Nat { uid_file: a_uid, dest_port: a_dest, proto_choice: a_proto, ifaces_raw: a_ifaces, port_preference: a_pref, dpi_ports: a_ports },
+                RoutingSnapshot::Tproxy { uid_file: b_uid, dest_port: b_dest, proto_choice: b_proto, ifaces_raw: b_ifaces, port_preference: b_pref, dpi_ports: b_ports, .. },
+            )
+            | (
+                RoutingSnapshot::Tproxy { uid_file: a_uid, dest_port: a_dest, proto_choice: a_proto, ifaces_raw: a_ifaces, port_preference: a_pref, dpi_ports: a_ports, .. },
+                RoutingSnapshot::Nat { uid_file: b_uid, dest_port: b_dest, proto_choice: b_proto, ifaces_raw: b_ifaces, port_preference: b_pref, dpi_ports: b_ports },
+            )
+            | (
+                RoutingSnapshot::Nat { uid_file: a_uid, dest_port: a_dest, proto_choice: a_proto, ifaces_raw: a_ifaces, port_preference: a_pref, dpi_ports: a_ports },
+                RoutingSnapshot::Nat { uid_file: b_uid, dest_port: b_dest, proto_choice: b_proto, ifaces_raw: b_ifaces, port_preference: b_pref, dpi_ports: b_ports },
+            )
+            | (
+                RoutingSnapshot::Tproxy { uid_file: a_uid, dest_port: a_dest, proto_choice: a_proto, ifaces_raw: a_ifaces, port_preference: a_pref, dpi_ports: a_ports, .. },
+                RoutingSnapshot::Tproxy { uid_file: b_uid, dest_port: b_dest, proto_choice: b_proto, ifaces_raw: b_ifaces, port_preference: b_pref, dpi_ports: b_ports, .. },
+            ) => {
+                a_uid == b_uid
+                    && a_dest == b_dest
+                    && a_proto == b_proto
+                    && a_ifaces == b_ifaces
+                    && a_pref == b_pref
+                    && a_ports == b_ports
+            }
+            _ => self == other,
+        }
     }
 }
 
@@ -164,6 +200,33 @@ pub fn register_nat(
     });
 }
 
+
+pub fn register_tproxy(
+    uid_file: &Path,
+    dest_port: u16,
+    proto_choice: crate::iptables::iptables_port::ProtoChoice,
+    ifaces_raw: Option<&str>,
+    opt: &crate::iptables::iptables_port::DpiTunnelOptions,
+    mark: u32,
+    table: u32,
+) {
+    let proto_choice = match proto_choice {
+        crate::iptables::iptables_port::ProtoChoice::Tcp => "tcp",
+        crate::iptables::iptables_port::ProtoChoice::Udp => "udp",
+        crate::iptables::iptables_port::ProtoChoice::TcpUdp => "tcp_udp",
+    };
+    register_snapshot(RoutingSnapshot::Tproxy {
+        uid_file: uid_file.display().to_string(),
+        dest_port,
+        proto_choice: proto_choice.to_string(),
+        ifaces_raw: ifaces_raw.map(str::to_string).filter(|s| !s.trim().is_empty()),
+        port_preference: opt.port_preference,
+        dpi_ports: opt.dpi_ports.clone(),
+        mark,
+        table,
+    });
+}
+
 pub fn refresh_routing_by_uid_file(uid_file: &Path) -> Result<bool> {
     let key = uid_file.display().to_string();
     let snapshots = read_routing_cache()
@@ -186,6 +249,11 @@ pub fn refresh_routing_by_uid_file(uid_file: &Path) -> Result<bool> {
                 crate::iptables::iptables_v2::apply(port, Some(Path::new(&uid_file)), filter.as_ref())?;
             }
             RoutingSnapshot::Nat { uid_file, dest_port, proto_choice, ifaces_raw, port_preference, dpi_ports } => {
+                let proto_choice = crate::iptables::iptables_port::ProtoChoice::from_str(&proto_choice);
+                let opt = crate::iptables::iptables_port::DpiTunnelOptions { port_preference, dpi_ports };
+                crate::iptables::iptables_port::apply(Path::new(&uid_file), dest_port, proto_choice, ifaces_raw.as_deref(), opt)?;
+            }
+            RoutingSnapshot::Tproxy { uid_file, dest_port, proto_choice, ifaces_raw, port_preference, dpi_ports, mark: _, table: _ } => {
                 let proto_choice = crate::iptables::iptables_port::ProtoChoice::from_str(&proto_choice);
                 let opt = crate::iptables::iptables_port::DpiTunnelOptions { port_preference, dpi_ports };
                 crate::iptables::iptables_port::apply(Path::new(&uid_file), dest_port, proto_choice, ifaces_raw.as_deref(), opt)?;

@@ -129,6 +129,8 @@ pub struct ApiSettings {
     #[serde(default)]
     pub allow_loopback_redirect: bool,
     #[serde(default)]
+    pub tproxy_enabled: bool,
+    #[serde(default)]
     pub selinux_permissive_enabled: bool,
     #[serde(default)]
     pub ip_forward_enabled: bool,
@@ -148,6 +150,7 @@ impl Default for ApiSettings {
             hotspot_t2s_capture_all: false,
             captive_portal_enabled: false,
             allow_loopback_redirect: false,
+            tproxy_enabled: false,
             selinux_permissive_enabled: false,
             ip_forward_enabled: false,
         }

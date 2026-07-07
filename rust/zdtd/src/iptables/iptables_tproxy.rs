@@ -124,6 +124,12 @@ pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_
 }
 
 fn apply_locked(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: &DpiTunnelOptions) -> std::result::Result<(), TproxyApplyError> {
+    match settings::load_api_settings() {
+        Ok(st) if st.tproxy_enabled => {}
+        Ok(_) => return Err(unsupported("disabled by setting: tproxy_enabled=false")),
+        Err(e) => return Err(unsupported(format!("settings load failed: {e:#}"))),
+    }
+
     if tproxy_disabled_by_flag() {
         return Err(unsupported(disabled_reason().unwrap_or_else(|| "disabled by tproxy_no flag".to_string())));
     }

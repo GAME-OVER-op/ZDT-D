@@ -6047,6 +6047,8 @@ match (method.as_str(), path.as_str()) {
                 #[serde(default)]
                 allow_loopback_redirect: Option<bool>,
                 #[serde(default)]
+                tproxy_enabled: Option<bool>,
+                #[serde(default)]
                 selinux_permissive_enabled: Option<bool>,
                 #[serde(default)]
                 ip_forward_enabled: Option<bool>,
@@ -6123,6 +6125,9 @@ match (method.as_str(), path.as_str()) {
             }
             if let Some(enabled) = patch.allow_loopback_redirect {
                 setting.allow_loopback_redirect = enabled;
+            }
+            if let Some(enabled) = patch.tproxy_enabled {
+                setting.tproxy_enabled = enabled;
             }
             if let Some(enabled) = patch.selinux_permissive_enabled {
                 setting.selinux_permissive_enabled = enabled;

@@ -110,6 +110,9 @@ pub fn collect() -> Value {
     let nfqueue = help_check("iptables", &["-j", "NFQUEUE", "-h"], "nfqueue");
     let mark = help_check("iptables", &["-j", "MARK", "-h"], "mark");
     let tproxy = help_check("iptables", &["-j", "TPROXY", "-h"], "tproxy");
+    let tproxy_setting_enabled = crate::settings::load_api_settings()
+        .map(|st| st.tproxy_enabled)
+        .unwrap_or(false);
     let tproxy_disabled_flag = Path::new(crate::settings::SETTING_DIR).join("tproxy_no").is_file();
     let tproxy_disabled_reason = if tproxy_disabled_flag {
         std::fs::read_to_string(Path::new(crate::settings::SETTING_DIR).join("tproxy_no"))
@@ -139,7 +142,7 @@ pub fn collect() -> Value {
     let nat_redirect_routing = iptables_available && iptables_nat_output && owner_match && dnat;
     let nfqueue_routing = iptables_available && iptables_mangle_output && owner_match && nfqueue;
     let vpn_netd_routing = ndc_network_list && ip_rule && (package_uid_lookup || package_uid_lookup_shell);
-    let tproxy_experimental = !tproxy_disabled_flag && iptables_available && iptables_mangle_output && owner_match && mark && tproxy && ip_rule && ip_route_table_all;
+    let tproxy_experimental = tproxy_setting_enabled && !tproxy_disabled_flag && iptables_available && iptables_mangle_output && owner_match && mark && tproxy && ip_rule && ip_route_table_all;
 
     if !iptables_available {
         warnings.push("iptables is not available".to_string());
@@ -197,8 +200,9 @@ pub fn collect() -> Value {
             "TPROXY": tproxy
         },
         "tproxy": {
-            "priority_backend": true,
+            "priority_backend": tproxy_setting_enabled,
             "fallback_backend": "DNAT",
+            "enabled_by_setting": tproxy_setting_enabled,
             "disabled_by_flag": tproxy_disabled_flag,
             "disabled_reason": tproxy_disabled_reason,
             "mark_prefix": "0x5d700000/0xffff0000",

@@ -400,7 +400,10 @@ fn register_or_touch_device(ip: &str, user_agent: &str) -> Result<CaptiveDevice>
         }
         // Fire-once notify: the daemon knocks the app a single time per pending
         // device. No retries even if it stays pending (design decision).
-        if !existing.allowed && existing.notified_at.is_none() {
+        // Deferred until a meaningful device model is known so the notification
+        // shows the same name as the web authorization page (not a generic
+        // "unknown" produced by system captive-portal probe requests).
+        if !existing.allowed && existing.notified_at.is_none() && !is_generic_model(&existing.model) {
             notify_pending(&existing.short_id, &existing.model);
             existing.notified_at = Some(now);
         }
@@ -424,9 +427,15 @@ fn register_or_touch_device(ip: &str, user_agent: &str) -> Result<CaptiveDevice>
         denied_at: None,
         notified_at: None,
     };
-    // Fire-once notify for the freshly seen device.
-    notify_pending(&device.short_id, &device.model);
-    device.notified_at = Some(now);
+    // Fire-once notify for the freshly seen device, but only once we have a
+    // meaningful device name (same value the web portal page shows). Generic
+    // probe requests (system captive checks with a poor User-Agent) are skipped
+    // so the notification carries the real device model, not "unknown". A later
+    // request from the real browser will fire it with the proper name.
+    if !is_generic_model(&device.model) {
+        notify_pending(&device.short_id, &device.model);
+        device.notified_at = Some(now);
+    }
     store.devices.push(device.clone());
     write_store(&store)?;
     Ok(device)
@@ -439,6 +448,18 @@ fn notify_pending(short_id: &str, model: &str) {
     if let Err(e) = crate::android::notification::send_captive_device_pending(short_id, model) {
         warn!("captive pending notify failed: {e:#}");
     }
+}
+
+/// A model is "generic" when `guess_model` could only infer a platform bucket
+/// (or nothing) from a poor User-Agent — typical for system captive-portal
+/// probe requests. We defer the fire-once notification until a real device
+/// model is known so the notification shows the same name as the web
+/// authorization page.
+fn is_generic_model(model: &str) -> bool {
+    matches!(
+        model.trim(),
+        "" | "unknown" | "Android" | "iPhone" | "iPad" | "Windows" | "macOS" | "Linux"
+    )
 }
 
 fn fallback_device(ip: &str, user_agent: &str) -> CaptiveDevice {

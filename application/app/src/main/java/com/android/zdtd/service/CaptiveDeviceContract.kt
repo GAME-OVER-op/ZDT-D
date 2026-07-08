@@ -14,13 +14,13 @@ data class CaptiveDeviceEvent(
   val shortId: String,
   val model: String,
 ) {
-  /** Human-friendly "name (identifier)" label for the notification body. */
+  /**
+   * Device name for the notification body — the same value the web
+   * authorization page shows (the device model). Falls back to the short id
+   * only when no model is known.
+   */
   val displayLabel: String
-    get() = when {
-      model.isNotBlank() && shortId.isNotBlank() && model != shortId -> "$model ($shortId)"
-      model.isNotBlank() -> model
-      else -> shortId
-    }
+    get() = model.trim().ifBlank { shortId }
 
   /** Stable, per-device notification id so multiple pending devices coexist. */
   val notificationId: Int

@@ -196,7 +196,7 @@ pub fn stop_services_and_restore_iptables() -> Result<()> {
     if let Err(e) = crate::iptables::hotspot::cleanup() {
         log::warn!("hotspot redirect cleanup failed during stop: {e:#}");
     }
-    if let Err(e) = crate::iptables::iptables_tproxy::cleanup_all() {
+    if let Err(e) = crate::iptables::tproxy_port::cleanup_all() {
         log::warn!("TPROXY cleanup failed during stop: {e:#}");
     }
     if let Err(e) = crate::vpn_netd::stop_applied() {

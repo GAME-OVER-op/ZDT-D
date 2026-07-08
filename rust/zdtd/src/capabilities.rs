@@ -142,7 +142,7 @@ pub fn collect() -> Value {
     let nat_redirect_routing = iptables_available && iptables_nat_output && owner_match && dnat;
     let nfqueue_routing = iptables_available && iptables_mangle_output && owner_match && nfqueue;
     let vpn_netd_routing = ndc_network_list && ip_rule && (package_uid_lookup || package_uid_lookup_shell);
-    let tproxy_experimental = tproxy_setting_enabled && !tproxy_disabled_flag && iptables_available && iptables_mangle_output && owner_match && mark && tproxy && ip_rule && ip_route_table_all;
+    let tproxy_experimental = false;
 
     if !iptables_available {
         warnings.push("iptables is not available".to_string());
@@ -169,7 +169,7 @@ pub fn collect() -> Value {
         warnings.push("fast package UID lookup is not available".to_string());
     }
 
-    let selected_backend = if tproxy_setting_enabled { "tproxy" } else { "dnat" };
+    let selected_backend = "dnat";
 
     json!({
         "ok": true,
@@ -206,13 +206,16 @@ pub fn collect() -> Value {
             "enabled_by_setting": tproxy_setting_enabled,
             "disabled_by_flag": tproxy_disabled_flag,
             "disabled_reason": tproxy_disabled_reason,
-            "dnat_fallback": false,
-            "route_mark": "0x50000000/0xf0000000",
-            "scope_mark_mask": "0xfff00000",
-            "preserves_android_fwmark_low_bits": true,
-            "divert_chain": "ZDT_TPROXY_DIVERT",
-            "route_table": 1057,
-            "route_pref": 9999
+            "status": "experimental_disabled",
+            "production_apply": false,
+            "warning_only": true,
+            "dnat_stays_active": true,
+            "notes": "TPROXY setting is kept, but production routing intentionally stays on DNAT. See src/iptables/tproxy_port.rs for the full problem memo and future implementation plan.",
+            "route_mark_candidate": "0x50000000/0xf0000000",
+            "scope_mark_mask_candidate": "0xfff00000",
+            "preserves_android_fwmark_low_bits_required": true,
+            "route_table_candidate": 1057,
+            "route_pref_candidate": 9999
         },
         "routing": {
             "ip_rule": ip_rule,

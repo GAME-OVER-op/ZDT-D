@@ -83,19 +83,6 @@ fn allow_loopback_redirect_enabled() -> bool {
 /// - Adds DNAT rules into NAT_DPI to 127.0.0.1:<dest_port> for selected ports/protocols,
 ///   optionally per-interface `-o iface`.
 pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: DpiTunnelOptions) -> Result<()> {
-    let tproxy_enabled = settings::load_api_settings()
-        .map(|st| st.tproxy_enabled)
-        .unwrap_or(false);
-
-    if tproxy_enabled {
-        crate::iptables::iptables_tproxy::apply(uid_file, dest_port, proto_choice, ifaces_raw, &opt)
-            .map_err(|e| anyhow::anyhow!("TPROXY backend failed: {e}"))
-    } else {
-        apply_dnat(uid_file, dest_port, proto_choice, ifaces_raw, opt)
-    }
-}
-
-pub fn apply_dnat(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: DpiTunnelOptions) -> Result<()> {
     let _xtables_guard = xtables_lock::lock();
     let allow_loopback_redirect = allow_loopback_redirect_enabled();
     let (mode, ifaces, invalid) = normalize_ifaces(ifaces_raw)?;
@@ -221,8 +208,6 @@ pub fn apply_dnat(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, if
     crate::runtime_refresh::register_nat(uid_file, dest_port, proto_choice, ifaces_raw, &opt);
     Ok(())
 }
-
-
 
 fn normalize_ifaces(ifaces_raw: Option<&str>) -> Result<(String, Vec<String>, Vec<String>)> {
     let raw_opt = ifaces_raw.map(|s| s.trim()).filter(|s| !s.is_empty());

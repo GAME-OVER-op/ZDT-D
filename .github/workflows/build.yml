@@ -3847,8 +3847,14 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: valnesfjord/tg-ws-proxy-rs
-          ref: $ env.TG_WS_PROXY_REF 
           fetch-depth: 1
+
+      - name: Checkout requested tg-ws-proxy ref
+        run: |
+          set -euo pipefail
+          git fetch --tags --force origin
+          git checkout "$TG_WS_PROXY_REF"
+          git rev-parse --short HEAD
 
       - name: Prepare Android SDK paths
         run: |

@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use super::common::*;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -679,11 +680,6 @@ fn collect_profile_servers(
     Ok(out)
 }
 
-fn is_nonempty_file(p: &Path) -> Result<bool> {
-    let md = fs::metadata(p).with_context(|| format!("stat {}", p.display()))?;
-    Ok(md.len() > 0)
-}
-
 fn profile_root(profile: &str) -> PathBuf {
     Path::new(WIREPROXY_PROFILE_ROOT).join(profile)
 }
@@ -836,34 +832,6 @@ fn ensure_file_empty(p: &Path) -> Result<()> {
             fs::create_dir_all(parent).ok();
         }
         fs::write(p, b"").with_context(|| format!("create {}", p.display()))?;
-    }
-    Ok(())
-}
-
-fn count_valid_uid_pairs(path: &Path) -> Result<usize> {
-    if !path.is_file() {
-        return Ok(0);
-    }
-    let s = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    let mut n = 0usize;
-    for line in s.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if let Some((_pkg, uid_s)) = line.split_once('=') {
-            let uid_s = uid_s.trim();
-            if !uid_s.is_empty() && uid_s.chars().all(|c| c.is_ascii_digit()) {
-                n += 1;
-            }
-        }
-    }
-    Ok(n)
-}
-
-fn ensure_parent_dir(p: &Path) -> Result<()> {
-    if let Some(parent) = p.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
     }
     Ok(())
 }

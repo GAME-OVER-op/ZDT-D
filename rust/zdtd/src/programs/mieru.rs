@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use super::common::*;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -275,7 +276,7 @@ pub fn enabled_cidr_claims() -> Vec<(String, String)> {
         if validate_setting(&setting).is_err() { continue; }
         let selected_for_hotspot = hotspot_profile.as_deref() == Some(name.as_str());
         if !selected_for_hotspot && !app_list_requires_netd(&profile_root(&name).join("app/uid/user_program")) { continue; }
-        let Ok(netid) = generate_netid(&used_netids) else { break; };
+        let Ok(netid) = generate_netid(&used_netids, NETID_BASE, NETID_MAX) else { break; };
         used_netids.insert(netid);
         if let Ok((_, cidr)) = generated_tun_addr_and_cidr(netid) {
             out.push((format!("mieru/{name}"), cidr));
@@ -574,7 +575,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
         let res: Result<Option<VpnNetdProfile>> = (|| {
             prepare_runtime_config(plan)?;
             spawn_mieru(plan)?;
-            wait_tcp_port("127.0.0.1", plan.setting.socks5_port)
+            wait_tcp_port("127.0.0.1", plan.setting.socks5_port, PORT_WAIT)
                 .with_context(|| format!("mieru profile={} wait socks5_port={}", plan.name, plan.setting.socks5_port))?;
             if !plan.requires_tun {
                 info!("mieru: profile={} uses launch marker only; skipping tun2proxy/vpn_netd", plan.name);
@@ -584,7 +585,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                 bail!("tun2proxy binary not found: {TUN2PROXY_BIN}");
             }
             spawn_tun2proxy(plan)?;
-            wait_tun_link(&plan.setting.tun)
+            wait_tun_link(&plan.setting.tun, TUN_WAIT)
                 .with_context(|| format!("mieru profile={} wait tun={}", plan.name, plan.setting.tun))?;
             configure_tun_addr(&plan.setting.tun, &plan.tun_addr)
                 .with_context(|| format!("mieru profile={} configure tun={}", plan.name, plan.setting.tun))?;
@@ -669,7 +670,7 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
 
 	prepare_runtime_config(&plan)?;
 	spawn_mieru(&plan)?;
-	wait_tcp_port("127.0.0.1", plan.setting.socks5_port)
+	wait_tcp_port("127.0.0.1", plan.setting.socks5_port, PORT_WAIT)
 		.with_context(|| format!("mieru targeted profile={} wait socks5_port={}", plan.name, plan.setting.socks5_port))?;
 	if !plan.requires_tun {
 		info!("mieru: targeted profile={} uses launch marker only; skipping tun2proxy/vpn_netd", plan.name);
@@ -679,7 +680,7 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
 		bail!("tun2proxy binary not found: {TUN2PROXY_BIN}");
 	}
 	spawn_tun2proxy(&plan)?;
-	wait_tun_link(&plan.setting.tun)
+	wait_tun_link(&plan.setting.tun, TUN_WAIT)
 		.with_context(|| format!("mieru targeted profile={} wait tun={}", plan.name, plan.setting.tun))?;
 	configure_tun_addr(&plan.setting.tun, &plan.tun_addr)
 		.with_context(|| format!("mieru targeted profile={} configure tun={}", plan.name, plan.setting.tun))?;
@@ -725,10 +726,10 @@ pub fn start_profile_for_hotspot_vpn(profile: &str) -> Result<Option<VpnTetherPr
     } else {
         prepare_runtime_config(&plan)?;
         spawn_mieru(&plan)?;
-        wait_tcp_port("127.0.0.1", plan.setting.socks5_port)
+        wait_tcp_port("127.0.0.1", plan.setting.socks5_port, PORT_WAIT)
             .with_context(|| format!("mieru hotspot profile={} wait socks5_port={}", plan.name, plan.setting.socks5_port))?;
         spawn_tun2proxy(&plan)?;
-        wait_tun_link(&plan.setting.tun)
+        wait_tun_link(&plan.setting.tun, TUN_WAIT)
             .with_context(|| format!("mieru hotspot profile={} wait tun={}", plan.name, plan.setting.tun))?;
         configure_tun_addr(&plan.setting.tun, &plan.tun_addr)
             .with_context(|| format!("mieru hotspot profile={} configure tun={}", plan.name, plan.setting.tun))?;
@@ -790,7 +791,7 @@ fn build_profile_plan(profile: &str, used_netids: &BTreeSet<u32>, force_tun: boo
     let raw_config = fs::read_to_string(&config_path).with_context(|| format!("read {}", config_path.display()))?;
     if raw_config.trim().is_empty() { bail!("config.json is empty"); }
 
-    let netid = if requires_tun { generate_netid(used_netids)? } else { 0 };
+    let netid = if requires_tun { generate_netid(used_netids, NETID_BASE, NETID_MAX)? } else { 0 };
     let (tun_addr, cidr) = if requires_tun {
         generated_tun_addr_and_cidr(netid)?
     } else {
@@ -949,27 +950,6 @@ fn tun2proxy_profile_process_running(tun: &str, proxy: &str) -> bool {
     shell::ok_sh(&cmd).is_ok()
 }
 
-fn wait_tcp_port(host: &str, port: u16) -> Result<()> {
-    let ip: IpAddr = host.parse().unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
-    let addr = SocketAddr::new(ip, port);
-    let start = Instant::now();
-    loop {
-        if start.elapsed() >= PORT_WAIT { bail!("127.0.0.1:{port} is not listening after {:?}", PORT_WAIT); }
-        if TcpStream::connect_timeout(&addr, Duration::from_millis(250)).is_ok() { return Ok(()); }
-        thread::sleep(Duration::from_millis(300));
-    }
-}
-
-fn wait_tun_link(tun: &str) -> Result<()> {
-    let start = Instant::now();
-    loop {
-        if start.elapsed() >= TUN_WAIT { bail!("tun {tun} was not created after {:?}", TUN_WAIT); }
-        let (code, _) = shell::run_timeout("ip", &["link", "show", tun], Capture::Both, IP_TIMEOUT).unwrap_or((1, String::new()));
-        if code == 0 { return Ok(()); }
-        thread::sleep(Duration::from_millis(300));
-    }
-}
-
 fn wait_tun_ready(tun: &str) -> Result<()> {
     let start = Instant::now();
     loop {
@@ -980,33 +960,12 @@ fn wait_tun_ready(tun: &str) -> Result<()> {
     }
 }
 
-fn configure_tun_addr(tun: &str, tun_addr: &str) -> Result<()> {
-    let (code, out) = shell::run_timeout("ip", &["addr", "replace", tun_addr, "dev", tun], Capture::Both, IP_TIMEOUT)
-        .with_context(|| format!("ip addr replace {tun_addr} dev {tun}"))?;
-    if code != 0 { bail!("ip addr replace {tun_addr} dev {tun} failed: {}", out.trim()); }
-    let (code, out) = shell::run_timeout("ip", &["link", "set", tun, "up"], Capture::Both, IP_TIMEOUT)
-        .with_context(|| format!("ip link set {tun} up"))?;
-    if code != 0 { bail!("ip link set {tun} up failed: {}", out.trim()); }
-    Ok(())
-}
-
-fn generate_netid(used: &BTreeSet<u32>) -> Result<u32> {
-    for id in NETID_BASE..=NETID_MAX {
-        if !used.contains(&id) { return Ok(id); }
-    }
-    bail!("no free mieru netid in range {NETID_BASE}..={NETID_MAX}")
-}
-
 fn generated_tun_addr_and_cidr(netid: u32) -> Result<(String, String)> {
     if !(NETID_BASE..=NETID_MAX).contains(&netid) { bail!("mieru netid out of generated range: {netid}"); }
     let offset = (netid - NETID_BASE) * 4;
     let network = MIERU_NET_BASE.checked_add(offset).ok_or_else(|| anyhow::anyhow!("mieru cidr overflow"))?;
     let addr = network + 1;
     Ok((format!("{}/30", u32_to_ipv4(addr)), format!("{}/30", u32_to_ipv4(network))))
-}
-
-fn is_valid_ifname(s: &str) -> bool {
-    !s.is_empty() && s.len() <= 15 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-')
 }
 
 fn is_forbidden_tun_name(s: &str) -> bool {
@@ -1038,14 +997,6 @@ fn write_text_atomic(path: &Path, txt: &str) -> Result<()> {
     Ok(())
 }
 
-fn u32_to_ipv4(v: u32) -> String {
-    format!("{}.{}.{}.{}", (v >> 24) & 0xff, (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff)
-}
-
-fn parse_pid_lines(out: &str) -> Vec<i32> {
-    out.split_whitespace().filter_map(|s| s.trim().parse::<i32>().ok()).filter(|p| *p > 1).collect()
-}
-
 pub fn main_pids_exact() -> Vec<i32> {
     let mut pids = Vec::new();
     let cmd = r#"sh -c "pgrep -f '^/data/adb/modules/ZDT-D/bin/mieru run$' 2>/dev/null || true""#;
@@ -1074,8 +1025,6 @@ pub fn tun2proxy_pids_exact() -> Vec<i32> {
     pids.dedup();
     pids
 }
-
-fn shell_quote_for_sh(s: &str) -> String { format!("'{}'", s.replace('\'', "'\\''")) }
 
 fn default_setting_for_profile(profile: &str) -> ProfileSetting {
     let mut s = ProfileSetting::default();

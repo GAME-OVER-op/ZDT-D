@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use super::common::*;
 use log::info;
 use serde::Deserialize;
 use std::{
@@ -116,74 +117,6 @@ fn start_profile(profile_name: &str, tracker: &Sha256Tracker) -> Result<()> {
     info!("byedpi profile started: {} port={}", profile_name, port_cfg.port);
     Ok(())
 }
-
-fn count_valid_uid_pairs(path: &Path) -> Result<usize> {
-    if !path.is_file() {
-        return Ok(0);
-    }
-    let s = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    let mut n = 0usize;
-    for line in s.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if let Some((_pkg, uid_s)) = line.split_once('=') {
-            let uid_s = uid_s.trim();
-            if !uid_s.is_empty() && uid_s.chars().all(|c| c.is_ascii_digit()) {
-                n += 1;
-            }
-        }
-    }
-    Ok(n)
-}
-fn normalize_config_args(raw: &str) -> Vec<String> {
-    // Convert multiline config into argv tokens.
-    // - Treat '\' immediately followed by newline as a line continuation (removed)
-    // - Other newlines/CR become spaces
-    // - Collapse whitespace via split_whitespace
-    // - Drop standalone "\" tokens
-    // Quotes (") are preserved; this is NOT a full shell-quoting parser.
-    let mut s = String::with_capacity(raw.len());
-    let mut it = raw.chars().peekable();
-
-    while let Some(c) = it.next() {
-        if c == '\\' {
-            match it.peek().copied() {
-                Some('\n') => {
-                    it.next();
-                    // line continuation: remove \ + newline without inserting space (shell-like)
-                    continue;
-                }
-                Some('\r') => {
-                    it.next();
-                    if matches!(it.peek().copied(), Some('\n')) {
-                        it.next();
-                    }
-                    // line continuation: remove \ + CRLF without inserting space (shell-like)
-                    continue;
-                }
-                _ => {}
-            }
-        }
-
-        if c == '\n' || c == '\r' {
-            s.push(' ');
-        } else {
-            s.push(c);
-        }
-    }
-
-    let mut out: Vec<String> = Vec::new();
-    for tok in s.split_whitespace() {
-        if tok == "\\" {
-            continue;
-        }
-        out.push(tok.to_string());
-    }
-    out
-}
-
 
 
 fn spawn_byedpi(workdir: &Path, bin: &Path, port: u16, extra_args: &[String], log_path: &Path) -> Result<()> {

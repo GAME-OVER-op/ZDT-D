@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use super::common::*;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -467,38 +468,12 @@ fn ensure_dir(p: &str) -> Result<()> {
     Ok(())
 }
 
-fn ensure_parent_dir(p: &Path) -> Result<()> {
-    if let Some(parent) = p.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
-    }
-    Ok(())
-}
-
 fn ensure_file_empty(p: &Path) -> Result<()> {
     if !p.exists() {
         ensure_parent_dir(p)?;
         fs::write(p, "").with_context(|| format!("write {}", p.display()))?;
     }
     Ok(())
-}
-
-fn count_valid_uid_pairs(path: &Path) -> Result<usize> {
-    if !path.is_file() {
-        return Ok(0);
-    }
-    let s = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    let mut n = 0usize;
-    for line in s.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') { continue; }
-        if let Some((_pkg, uid_s)) = line.split_once('=') {
-            let uid_s = uid_s.trim();
-            if !uid_s.is_empty() && uid_s.chars().all(|c| c.is_ascii_digit()) {
-                n += 1;
-            }
-        }
-    }
-    Ok(n)
 }
 
 fn profile_root(profile: &str) -> PathBuf {

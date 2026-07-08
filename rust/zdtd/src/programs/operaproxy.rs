@@ -1,5 +1,6 @@
 
 use anyhow::{Context, Result};
+use super::common::*;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -1688,80 +1689,11 @@ fn sanitize_for_filename(s: &str) -> String {
     out
 }
 
-fn normalize_config_args(raw: &str) -> Vec<String> {
-    // Convert multiline config into argv tokens.
-    // - Treat '\' immediately followed by newline as a line continuation (removed)
-    // - Other newlines/CR become spaces
-    // - Collapse whitespace via split_whitespace
-    // - Drop standalone "\" tokens
-    // Quotes (") are preserved; this is NOT a full shell-quoting parser.
-    let mut s = String::with_capacity(raw.len());
-    let mut it = raw.chars().peekable();
-
-    while let Some(c) = it.next() {
-        if c == '\\' {
-            match it.peek().copied() {
-                Some('\n') => {
-                    it.next();
-                    // line continuation: remove \ + newline without inserting space (shell-like)
-                    continue;
-                }
-                Some('\r') => {
-                    it.next();
-                    if matches!(it.peek().copied(), Some('\n')) {
-                        it.next();
-                    }
-                    // line continuation: remove \ + CRLF without inserting space (shell-like)
-                    continue;
-                }
-                _ => {}
-            }
-        }
-
-        if c == '\n' || c == '\r' {
-            s.push(' ');
-        } else {
-            s.push(c);
-        }
-    }
-
-    let mut out: Vec<String> = Vec::new();
-    for tok in s.split_whitespace() {
-        if tok == "\\" {
-            continue;
-        }
-        out.push(tok.to_string());
-    }
-    out
-}
-
-
 
 fn truncate_file(p: &Path) -> Result<()> {
     let _ = OpenOptions::new().create(true).write(true).truncate(true).open(p)
         .with_context(|| format!("truncate {}", p.display()))?;
     Ok(())
-}
-
-fn count_valid_uid_pairs(path: &Path) -> Result<usize> {
-    if !path.is_file() {
-        return Ok(0);
-    }
-    let s = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    let mut n = 0usize;
-    for line in s.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if let Some((_pkg, uid_s)) = line.split_once('=') {
-            let uid_s = uid_s.trim();
-            if !uid_s.is_empty() && uid_s.chars().all(|c| c.is_ascii_digit()) {
-                n += 1;
-            }
-        }
-    }
-    Ok(n)
 }
 
 fn find_bin(name: &str) -> Result<PathBuf> {
@@ -1800,8 +1732,4 @@ fn ensure_file_empty(path: &Path) -> Result<()> {
     fs::write(path, b"")
         .with_context(|| format!("create empty file {}", path.display()))?;
     Ok(())
-}
-
-fn default_iface() -> String {
-    "auto".to_string()
 }

@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use super::common::*;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -610,34 +611,6 @@ fn find_bin(name: &str) -> Result<PathBuf> {
 fn truncate_file(p: &Path) -> Result<()> {
     ensure_parent_dir(p)?;
     let _ = OpenOptions::new().create(true).write(true).truncate(true).open(p)?;
-    Ok(())
-}
-
-fn count_valid_uid_pairs(path: &Path) -> Result<usize> {
-    if !path.is_file() {
-        return Ok(0);
-    }
-    let s = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    let mut n = 0usize;
-    for line in s.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if let Some((_pkg, uid_s)) = line.split_once('=') {
-            let uid_s = uid_s.trim();
-            if !uid_s.is_empty() && uid_s.chars().all(|c| c.is_ascii_digit()) {
-                n += 1;
-            }
-        }
-    }
-    Ok(n)
-}
-
-fn ensure_parent_dir(p: &Path) -> Result<()> {
-    if let Some(parent) = p.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
-    }
     Ok(())
 }
 

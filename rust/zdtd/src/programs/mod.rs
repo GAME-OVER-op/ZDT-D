@@ -1,3 +1,4 @@
+pub mod common;
 pub mod nfqws_filters;
 pub mod nfqws;
 pub mod nfqws2;

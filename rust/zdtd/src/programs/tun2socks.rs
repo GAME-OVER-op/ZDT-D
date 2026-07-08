@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use super::common::*;
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -238,19 +239,13 @@ pub fn enabled_cidr_claims() -> Vec<(String, String)> {
         if !st.enabled { continue; }
         let Ok(setting) = read_setting(&name) else { continue; };
         if validate_setting(&setting).is_err() || enabled_app_list_empty(&profile_root(&name).join("app/uid/user_program")) { continue; }
-        let Ok(netid) = generate_netid(&used_netids) else { break; };
+        let Ok(netid) = generate_netid(&used_netids, NETID_BASE, NETID_MAX) else { break; };
         used_netids.insert(netid);
         if let Ok((_, cidr)) = generated_tun_addr_and_cidr(netid) {
             out.push((format!("tun2socks/{name}"), cidr));
         }
     }
     out
-}
-
-fn enabled_app_list_empty(path: &Path) -> bool {
-    fs::read_to_string(path)
-        .map(|raw| raw.lines().map(str::trim).all(|l| l.is_empty() || l.starts_with('#')))
-        .unwrap_or(true)
 }
 
 fn validate_plan_tuns_unique(plans: &[ProfilePlan]) -> Result<()> {
@@ -394,7 +389,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                 plan.log_path.display()
             );
             spawn_tun2socks(plan)?;
-            wait_tun_link(&plan.setting.tun)
+            wait_tun_link(&plan.setting.tun, TUN_WAIT)
                 .with_context(|| format!("tun2socks profile={} wait tun={}", plan.name, plan.setting.tun))?;
             configure_tun_addr(&plan.setting.tun, &plan.tun_addr)
                 .with_context(|| format!("tun2socks profile={} configure tun={}", plan.name, plan.setting.tun))?;
@@ -453,7 +448,7 @@ fn build_profile_plan(profile: &str, used_netids: &BTreeSet<u32>) -> Result<Prof
         bail!("app list is empty: {}", app_in.display());
     }
 
-    let netid = generate_netid(used_netids)?;
+    let netid = generate_netid(used_netids, NETID_BASE, NETID_MAX)?;
     let (tun_addr, cidr) = generated_tun_addr_and_cidr(netid)?;
 
     Ok(ProfilePlan {
@@ -554,23 +549,6 @@ fn tun2socks_profile_process_running(tun: &str, proxy: &str) -> bool {
     shell::ok_sh(&cmd).is_ok()
 }
 
-fn shell_quote_for_sh(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
-
-fn wait_tun_link(tun: &str) -> Result<()> {
-    let start = Instant::now();
-    loop {
-        if start.elapsed() >= TUN_WAIT {
-            bail!("tun {tun} was not created after {:?}", TUN_WAIT);
-        }
-        let (code, _) = shell::run_timeout("ip", &["link", "show", tun], Capture::Both, IP_TIMEOUT)
-            .unwrap_or((1, String::new()));
-        if code == 0 { return Ok(()); }
-        thread::sleep(Duration::from_millis(300));
-    }
-}
-
 fn wait_tun_ready(tun: &str) -> Result<()> {
     let start = Instant::now();
     loop {
@@ -584,27 +562,6 @@ fn wait_tun_ready(tun: &str) -> Result<()> {
         }
         thread::sleep(Duration::from_millis(300));
     }
-}
-
-fn configure_tun_addr(tun: &str, tun_addr: &str) -> Result<()> {
-    let (code, out) = shell::run_timeout("ip", &["addr", "replace", tun_addr, "dev", tun], Capture::Both, IP_TIMEOUT)
-        .with_context(|| format!("ip addr replace {tun_addr} dev {tun}"))?;
-    if code != 0 {
-        bail!("ip addr replace {tun_addr} dev {tun} failed: {}", out.trim());
-    }
-    let (code, out) = shell::run_timeout("ip", &["link", "set", tun, "up"], Capture::Both, IP_TIMEOUT)
-        .with_context(|| format!("ip link set {tun} up"))?;
-    if code != 0 {
-        bail!("ip link set {tun} up failed: {}", out.trim());
-    }
-    Ok(())
-}
-
-fn generate_netid(used: &BTreeSet<u32>) -> Result<u32> {
-    for id in NETID_BASE..=NETID_MAX {
-        if !used.contains(&id) { return Ok(id); }
-    }
-    bail!("no free tun2socks netid in range {NETID_BASE}..={NETID_MAX}")
 }
 
 fn generated_tun_addr_and_cidr(netid: u32) -> Result<(String, String)> {
@@ -654,12 +611,6 @@ fn is_ipv4(s: &str) -> bool {
     parts.iter().all(|p| !p.is_empty() && p.parse::<u8>().is_ok())
 }
 
-fn is_valid_ifname(s: &str) -> bool {
-    !s.is_empty()
-        && s.len() <= 15
-        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-')
-}
-
 fn is_forbidden_tun_name(s: &str) -> bool {
     s == "lo"
         || s == "dummy0"
@@ -689,17 +640,6 @@ fn write_json_pretty<T: Serialize>(path: &Path, v: &T) -> Result<()> {
     fs::write(&tmp, txt)?;
     fs::rename(&tmp, path)?;
     Ok(())
-}
-
-fn u32_to_ipv4(v: u32) -> String {
-    format!("{}.{}.{}.{}", (v >> 24) & 0xff, (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff)
-}
-
-fn parse_pid_lines(out: &str) -> Vec<i32> {
-    out.split_whitespace()
-        .filter_map(|s| s.trim().parse::<i32>().ok())
-        .filter(|p| *p > 1)
-        .collect()
 }
 
 pub fn main_pids_exact() -> Vec<i32> {

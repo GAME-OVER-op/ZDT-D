@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use super::common::*;
 use log::{info, warn};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{
@@ -718,7 +719,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                     );
                 }
             }
-            let netid = generate_netid(&used_netids)?;
+            let netid = generate_netid(&used_netids, NETID_BASE, NETID_MAX)?;
             Ok(VpnNetdProfile {
                 owner_program: "amneziawg".to_string(),
                 profile: plan.name.clone(),
@@ -1419,23 +1420,6 @@ fn route_gateway_for_tun(tun: &str) -> Result<String> {
     bail!("no gateway via route for {tun}")
 }
 
-fn first_host_for_cidr(cidr: &str) -> Option<String> {
-    let (ip, prefix_s) = cidr.split_once('/')?;
-    let prefix = prefix_s.parse::<u8>().ok()?;
-    if prefix > 30 { return None; }
-    let net = ipv4_to_u32(ip)?;
-    Some(u32_to_ipv4(net.saturating_add(1)))
-}
-
-fn generate_netid(used: &BTreeSet<u32>) -> Result<u32> {
-    for id in NETID_BASE..=NETID_MAX {
-        if !used.contains(&id) {
-            return Ok(id);
-        }
-    }
-    bail!("no free netid in range {NETID_BASE}..={NETID_MAX}")
-}
-
 fn normalize_cidr_network(cidr: &str) -> Result<String> {
     let (ip, prefix_s) = cidr.split_once('/').ok_or_else(|| anyhow::anyhow!("bad cidr {cidr}"))?;
     let prefix = prefix_s.parse::<u8>().with_context(|| format!("bad cidr prefix {cidr}"))?;
@@ -1453,21 +1437,6 @@ fn cidrs_overlap(a: &str, b: &str) -> Result<bool> {
     let b_start = bn;
     let b_end = bn | !bm;
     Ok(a_start <= b_end && b_start <= a_end)
-}
-
-fn cidr_network_mask(cidr: &str) -> Result<(u32, u32)> {
-    let (ip, prefix_s) = cidr.split_once('/').ok_or_else(|| anyhow::anyhow!("bad cidr {cidr}"))?;
-    let prefix = prefix_s.parse::<u8>().with_context(|| format!("bad cidr prefix {cidr}"))?;
-    if prefix > 32 { bail!("bad cidr prefix {cidr}"); }
-    let addr = ipv4_to_u32(ip).ok_or_else(|| anyhow::anyhow!("bad cidr ip {cidr}"))?;
-    let mask = if prefix == 0 { 0 } else { u32::MAX << (32 - prefix) };
-    Ok((addr & mask, mask))
-}
-
-fn is_valid_ifname(s: &str) -> bool {
-    !s.is_empty()
-        && s.len() <= 15
-        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '-')
 }
 
 fn is_forbidden_tun_name(s: &str) -> bool {
@@ -1506,21 +1475,6 @@ fn normalize_ipv4_cidr_token(s: &str) -> Option<String> {
         return Some(format!("{s}/32"));
     }
     None
-}
-
-fn ipv4_to_u32(s: &str) -> Option<u32> {
-    let mut out = 0u32;
-    let mut count = 0usize;
-    for part in s.split('.') {
-        let n = part.parse::<u8>().ok()? as u32;
-        out = (out << 8) | n;
-        count += 1;
-    }
-    if count == 4 { Some(out) } else { None }
-}
-
-fn u32_to_ipv4(v: u32) -> String {
-    format!("{}.{}.{}.{}", (v >> 24) & 0xff, (v >> 16) & 0xff, (v >> 8) & 0xff, v & 0xff)
 }
 
 fn ensure_file_empty(path: &Path) -> Result<()> {
@@ -1786,10 +1740,6 @@ fn append_awg_log(plan: &ProfilePlan, text: &str) {
     }
 }
 
-fn shell_quote_for_sh(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
-
 fn socket_path(tun: &str) -> PathBuf {
     Path::new(SOCK_DIR).join(format!("{tun}.sock"))
 }
@@ -1819,13 +1769,6 @@ pub fn cleanup_all_interfaces() {
     for tun in tuns {
         cleanup_interface(&tun);
     }
-}
-
-fn parse_pid_lines(out: &str) -> Vec<i32> {
-    out.split_whitespace()
-        .filter_map(|s| s.trim().parse::<i32>().ok())
-        .filter(|p| *p > 1)
-        .collect()
 }
 
 pub fn main_pids_exact() -> Vec<i32> {

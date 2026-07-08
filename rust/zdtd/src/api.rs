@@ -6164,6 +6164,9 @@ match (method.as_str(), path.as_str()) {
         ("POST", "/api/hotspot/captive/deny") => {
             write_json(stream, 200, crate::captive_portal::api_deny(&body, services_running))
         }
+        ("POST", "/api/hotspot/captive/rename") => {
+            write_json(stream, 200, crate::captive_portal::api_rename(&body))
+        }
 
         ("GET", "/api/energy-saver") | ("GET", "/api/energy-saver/programs") => {
             write_json(stream, 200, energy_saver::api_snapshot())

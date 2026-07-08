@@ -1885,5 +1885,11 @@ APatch: 10700+</string>
     <string name="captive_devices_field_status">Статус</string>
     <string name="captive_devices_field_user_agent">User-Agent</string>
     <string name="captive_devices_close">Закрыть</string>
+    <string name="captive_devices_field_model">Модель</string>
+    <string name="captive_action_rename">Переименовать</string>
+    <string name="captive_rename_title">Переименовать устройство</string>
+    <string name="captive_rename_label">Название устройства</string>
+    <string name="captive_rename_save">Сохранить</string>
+    <string name="captive_rename_cancel">Отмена</string>
 
 </resources>

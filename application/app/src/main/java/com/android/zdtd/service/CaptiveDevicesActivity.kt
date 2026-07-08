@@ -13,14 +13,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -106,6 +109,12 @@ private fun CaptiveDevicesScreen(api: ApiClient, onClose: () -> Unit) {
       reload()
     }
   }
+  val doRename: (String, String) -> Unit = { id, name ->
+    scope.launch {
+      withContext(Dispatchers.IO) { runCatching { api.renameCaptiveDevice(id, name) } }
+      reload()
+    }
+  }
 
   val pending = devices.filter { it.status == "pending" || (!it.allowed && it.status != "denied") }
   val allowed = devices.filter { it.status == "allowed" || it.allowed }
@@ -163,6 +172,7 @@ private fun CaptiveDevicesScreen(api: ApiClient, onClose: () -> Unit) {
         canDeny = true,
         onAllow = doAllow,
         onDeny = doDeny,
+        onRename = doRename,
       )
       DeviceSection(
         title = stringResource(R.string.captive_devices_section_allowed),
@@ -171,6 +181,7 @@ private fun CaptiveDevicesScreen(api: ApiClient, onClose: () -> Unit) {
         canDeny = true,
         onAllow = doAllow,
         onDeny = doDeny,
+        onRename = doRename,
       )
       DeviceSection(
         title = stringResource(R.string.captive_devices_section_denied),
@@ -179,6 +190,7 @@ private fun CaptiveDevicesScreen(api: ApiClient, onClose: () -> Unit) {
         canDeny = false,
         onAllow = doAllow,
         onDeny = doDeny,
+        onRename = doRename,
       )
     }
 
@@ -196,6 +208,7 @@ private fun DeviceSection(
   canDeny: Boolean,
   onAllow: (String) -> Unit,
   onDeny: (String) -> Unit,
+  onRename: (String, String) -> Unit,
 ) {
   Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
     Text(
@@ -212,7 +225,7 @@ private fun DeviceSection(
       )
     } else {
       devices.forEach { d ->
-        DeviceCard(device = d, canAllow = canAllow, canDeny = canDeny, onAllow = onAllow, onDeny = onDeny)
+        DeviceCard(device = d, canAllow = canAllow, canDeny = canDeny, onAllow = onAllow, onDeny = onDeny, onRename = onRename)
       }
     }
   }
@@ -225,16 +238,23 @@ private fun DeviceCard(
   canDeny: Boolean,
   onAllow: (String) -> Unit,
   onDeny: (String) -> Unit,
+  onRename: (String, String) -> Unit,
 ) {
   val unknown = stringResource(R.string.captive_devices_unknown)
   val idForAction = device.shortId.ifBlank { device.id }
+  val displayName = device.alias.ifBlank { device.model.ifBlank { device.shortId.ifBlank { unknown } } }
+  var showRename by remember { mutableStateOf(false) }
   Card(Modifier.fillMaxWidth()) {
     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
       Text(
-        text = device.model.ifBlank { device.shortId.ifBlank { unknown } },
+        text = displayName,
         style = MaterialTheme.typography.bodyLarge,
         fontWeight = FontWeight.SemiBold,
       )
+      // When a custom alias is set, still surface the auto-detected model below.
+      if (device.alias.isNotBlank() && device.model.isNotBlank()) {
+        FieldRow(stringResource(R.string.captive_devices_field_model), device.model)
+      }
       FieldRow(stringResource(R.string.captive_devices_field_id), device.shortId.ifBlank { unknown })
       FieldRow(stringResource(R.string.captive_devices_field_ip), device.ip.ifBlank { unknown })
       FieldRow(stringResource(R.string.captive_devices_field_mac), device.mac.ifBlank { unknown })
@@ -242,24 +262,52 @@ private fun DeviceCard(
       if (device.userAgent.isNotBlank()) {
         FieldRow(stringResource(R.string.captive_devices_field_user_agent), device.userAgent)
       }
-      if (canAllow || canDeny) {
-        Row(
-          Modifier.fillMaxWidth().padding(top = 8.dp),
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-          if (canAllow) {
-            Button(onClick = { onAllow(idForAction) }, modifier = Modifier.weight(1f)) {
-              Text(stringResource(R.string.captive_action_allow))
-            }
+      Row(
+        Modifier.fillMaxWidth().padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        if (canAllow) {
+          Button(onClick = { onAllow(idForAction) }, modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.captive_action_allow))
           }
-          if (canDeny) {
-            OutlinedButton(onClick = { onDeny(idForAction) }, modifier = Modifier.weight(1f)) {
-              Text(stringResource(R.string.captive_action_deny))
-            }
+        }
+        if (canDeny) {
+          OutlinedButton(onClick = { onDeny(idForAction) }, modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.captive_action_deny))
           }
         }
       }
+      TextButton(onClick = { showRename = true }, modifier = Modifier.padding(top = 2.dp)) {
+        Text(stringResource(R.string.captive_action_rename))
+      }
     }
+  }
+
+  if (showRename) {
+    var name by remember { mutableStateOf(device.alias) }
+    AlertDialog(
+      onDismissRequest = { showRename = false },
+      title = { Text(stringResource(R.string.captive_rename_title)) },
+      text = {
+        OutlinedTextField(
+          value = name,
+          onValueChange = { name = it },
+          singleLine = true,
+          label = { Text(stringResource(R.string.captive_rename_label)) },
+        )
+      },
+      confirmButton = {
+        TextButton(onClick = {
+          onRename(idForAction, name.trim())
+          showRename = false
+        }) { Text(stringResource(R.string.captive_rename_save)) }
+      },
+      dismissButton = {
+        TextButton(onClick = { showRename = false }) {
+          Text(stringResource(R.string.captive_rename_cancel))
+        }
+      },
+    )
   }
 }
 

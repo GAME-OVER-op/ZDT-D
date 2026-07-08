@@ -44,6 +44,8 @@ pub struct CaptiveDevice {
     #[serde(default)]
     pub model: String,
     #[serde(default)]
+    pub alias: String,
+    #[serde(default)]
     pub user_agent: String,
     #[serde(default)]
     pub allowed: bool,
@@ -286,6 +288,20 @@ fn handle_client(mut stream: TcpStream) -> Result<()> {
         return write_response(&mut stream, 204, "image/x-icon", b"", req.method == "HEAD");
     }
 
+    // Lightweight per-device status endpoint polled by the portal page so the
+    // connecting device sees allow/deny decisions live without a manual reload.
+    // Identified by peer IP (same trust model as serving the page itself).
+    if req.path == "/status" || req.path == "/status.json" {
+        let body = format!("{{\"status\":\"{}\"}}", device_state(&device));
+        return write_response(
+            &mut stream,
+            200,
+            "application/json; charset=utf-8",
+            body.as_bytes(),
+            req.method == "HEAD",
+        );
+    }
+
     let body = render_page(&device).into_bytes();
     write_response(&mut stream, 200, "text/html; charset=utf-8", &body, req.method == "HEAD")
 }
@@ -418,6 +434,7 @@ fn register_or_touch_device(ip: &str, user_agent: &str) -> Result<CaptiveDevice>
         ip: ip.to_string(),
         mac,
         model,
+        alias: String::new(),
         user_agent: user_agent.to_string(),
         allowed: false,
         status: "pending".to_string(),
@@ -431,7 +448,7 @@ fn register_or_touch_device(ip: &str, user_agent: &str) -> Result<CaptiveDevice>
     // meaningful device name (same value the web portal page shows). Generic
     // probe requests (system captive checks with a poor User-Agent) are skipped
     // so the notification carries the real device model, not "unknown". A later
-    // request from the real browser will fire it with the proper name.
+    // request from the real browser fires it with the proper name.
     if !is_generic_model(&device.model) {
         notify_pending(&device.short_id, &device.model);
         device.notified_at = Some(now);
@@ -470,6 +487,7 @@ fn fallback_device(ip: &str, user_agent: &str) -> CaptiveDevice {
         ip: ip.to_string(),
         mac: String::new(),
         model: guess_model(user_agent),
+        alias: String::new(),
         user_agent: user_agent.to_string(),
         allowed: false,
         status: "pending".to_string(),
@@ -561,9 +579,27 @@ fn escape_html(s: &str) -> String {
         .replace('\'', "&#39;")
 }
 
+/// Canonical three-state decision for a device: "allowed" / "denied" /
+/// "pending". Shared by the portal page and the live `/status` endpoint so the
+/// server render and the poller can never disagree.
+fn device_state(device: &CaptiveDevice) -> &'static str {
+    if device.allowed || device.status == "allowed" {
+        "allowed"
+    } else if device.status == "denied" || device.denied_at.is_some() {
+        "denied"
+    } else {
+        "pending"
+    }
+}
+
 fn render_page(device: &CaptiveDevice) -> String {
-    let status_ru = if device.allowed { "разрешено" } else { "ожидает разрешения" };
-    let status_en = if device.allowed { "allowed" } else { "waiting for approval" };
+    // Localized status label + color class derived from the canonical state, so
+    // the initial server render matches what the live poller shows afterwards.
+    let (status_ru, status_en, status_class) = match device_state(device) {
+        "allowed" => ("разрешено", "allowed", "ok"),
+        "denied" => ("отказано", "denied", "bad"),
+        _ => ("ожидание", "waiting", "wait"),
+    };
     let mut page = r##"<!doctype html>
 <html lang="ru">
 <head>
@@ -579,7 +615,7 @@ body:after{content:"";position:fixed;inset:0;pointer-events:none;background:line
 .gate:before{content:"";position:absolute;inset:-1px;pointer-events:none;background:linear-gradient(120deg,transparent,rgba(255,255,255,.12),transparent);transform:translateX(-100%);animation:shine 5s infinite}.gate:after{content:"";position:absolute;width:210px;height:210px;right:-92px;bottom:-96px;border-radius:50%;background:rgba(255,0,0,.16);filter:blur(10px);pointer-events:none}
 .top{position:relative;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:24px}.brand{display:flex;align-items:center;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:#fff;text-shadow:0 0 18px rgba(255,0,0,.32)}.lang{min-width:48px;min-height:34px;border:1px solid var(--border);border-radius:999px;color:#fff;background:rgba(16,0,0,.74);font-size:12px;font-weight:900;letter-spacing:.08em;cursor:pointer;-webkit-tap-highlight-color:transparent;outline:none;user-select:none;touch-action:manipulation}.lang:hover{background:rgba(255,0,0,.2);border-color:rgba(255,90,90,.86)}.lang:focus,.lang:active{outline:none;background:rgba(16,0,0,.74);box-shadow:none}.lang:focus-visible{border-color:rgba(255,90,90,.86);box-shadow:0 0 18px rgba(255,0,0,.22)}
 .eyebrow{position:relative;z-index:2;display:inline-flex;align-items:center;gap:10px;color:var(--red);font-size:12px;font-weight:900;letter-spacing:.14em;text-transform:uppercase;margin-bottom:16px}.pulse{width:9px;height:9px;border-radius:50%;background:var(--red);box-shadow:0 0 0 0 rgba(255,30,30,.7);animation:pulse 1.8s infinite}
-h1{position:relative;z-index:2;margin:0;font-size:clamp(30px,7vw,56px);line-height:.95;letter-spacing:-.05em;text-transform:uppercase}.outline{color:transparent;-webkit-text-stroke:1px rgba(255,255,255,.5)}.lead{position:relative;z-index:2;margin:18px 0 22px;color:var(--muted);line-height:1.55;font-size:16px}.grid{position:relative;z-index:2;display:grid;grid-template-columns:1fr 1fr;gap:10px}.item{border:1px solid var(--line);border-radius:16px;background:rgba(0,0,0,.26);padding:13px}.label{display:block;color:#a98e8e;font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase}.value{display:block;margin-top:7px;font-size:17px;font-weight:900;word-break:break-all}.status{color:#ffdada;text-shadow:0 0 16px rgba(255,0,0,.26)}.foot{position:relative;z-index:2;margin:20px 0 0;padding:14px;border:1px solid var(--border);border-radius:16px;background:rgba(255,0,0,.1);color:#ffe2e2;line-height:1.45;font-weight:700}@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,30,30,.7)}70%{box-shadow:0 0 0 12px rgba(255,30,30,0)}100%{box-shadow:0 0 0 0 rgba(255,30,30,0)}}@keyframes shine{0%{transform:translateX(-100%)}45%,100%{transform:translateX(100%)}}@media(max-width:520px){.gate{padding:20px;border-radius:20px}.grid{grid-template-columns:1fr}h1{font-size:34px}.top{align-items:flex-start}.brand{font-size:13px}}
+h1{position:relative;z-index:2;margin:0;font-size:clamp(30px,7vw,56px);line-height:.95;letter-spacing:-.05em;text-transform:uppercase}.outline{color:transparent;-webkit-text-stroke:1px rgba(255,255,255,.5)}.lead{position:relative;z-index:2;margin:18px 0 22px;color:var(--muted);line-height:1.55;font-size:16px}.grid{position:relative;z-index:2;display:grid;grid-template-columns:1fr 1fr;gap:10px}.item{border:1px solid var(--line);border-radius:16px;background:rgba(0,0,0,.26);padding:13px}.label{display:block;color:#a98e8e;font-size:11px;font-weight:900;letter-spacing:.1em;text-transform:uppercase}.value{display:block;margin-top:7px;font-size:17px;font-weight:900;word-break:break-all}.status{color:#ffdada;text-shadow:0 0 16px rgba(255,0,0,.26)}.status.ok{color:#7dffa8;text-shadow:0 0 16px rgba(0,255,120,.3)}.status.bad{color:#ff6b6b;text-shadow:0 0 18px rgba(255,0,0,.34)}.status.wait{color:#ffd479;text-shadow:0 0 16px rgba(255,170,0,.28)}.foot{position:relative;z-index:2;margin:20px 0 0;padding:14px;border:1px solid var(--border);border-radius:16px;background:rgba(255,0,0,.1);color:#ffe2e2;line-height:1.45;font-weight:700}@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(255,30,30,.7)}70%{box-shadow:0 0 0 12px rgba(255,30,30,0)}100%{box-shadow:0 0 0 0 rgba(255,30,30,0)}}@keyframes shine{0%{transform:translateX(-100%)}45%,100%{transform:translateX(100%)}}@media(max-width:520px){.gate{padding:20px;border-radius:20px}.grid{grid-template-columns:1fr}h1{font-size:34px}.top{align-items:flex-start}.brand{font-size:13px}}
 </style>
 </head>
 <body>
@@ -595,7 +631,7 @@ h1{position:relative;z-index:2;margin:0;font-size:clamp(30px,7vw,56px);line-heig
     <div class="item"><span class="label" data-ru="Локальный IP" data-en="Local IP">Локальный IP</span><span class="value">%IP%</span></div>
     <div class="item"><span class="label" data-ru="ID устройства" data-en="Device ID">ID устройства</span><span class="value">%ID%</span></div>
     <div class="item"><span class="label" data-ru="Модель" data-en="Device model">Модель</span><span class="value">%MODEL%</span></div>
-    <div class="item"><span class="label" data-ru="Статус" data-en="Status">Статус</span><span class="value status" data-ru="%STATUS_RU%" data-en="%STATUS_EN%">%STATUS_RU%</span></div>
+    <div class="item"><span class="label" data-ru="Статус" data-en="Status">Статус</span><span id="statusValue" class="value status %STATUS_CLASS%" data-ru="%STATUS_RU%" data-en="%STATUS_EN%">%STATUS_RU%</span></div>
   </section>
   <p class="foot" data-ru="Обратитесь к администратору сети для разрешения доступа." data-en="Contact the network administrator to approve access.">Обратитесь к администратору сети для разрешения доступа.</p>
 </main>
@@ -610,6 +646,28 @@ h1{position:relative;z-index:2;margin:0;font-size:clamp(30px,7vw,56px);line-heig
   }
   btn.onclick=function(){apply(lang==='ru'?'en':'ru')};
   apply(lang);
+
+  // Live status: poll the per-device endpoint and update the status pill in
+  // place (text follows the current language, color follows the state).
+  var MAP={
+    pending:{ru:'ожидание',en:'waiting',cls:'wait'},
+    allowed:{ru:'разрешено',en:'allowed',cls:'ok'},
+    denied:{ru:'отказано',en:'denied',cls:'bad'}
+  };
+  var node=document.getElementById('statusValue');
+  var last='';
+  function setState(code){
+    var m=MAP[code]; if(!m||!node||code===last) return; last=code;
+    node.setAttribute('data-ru',m.ru); node.setAttribute('data-en',m.en);
+    node.className='value status '+m.cls;
+    node.textContent=node.getAttribute('data-'+lang)||node.textContent;
+  }
+  function poll(){
+    fetch('/status',{cache:'no-store'}).then(function(r){return r.ok?r.json():null;}).then(function(d){
+      if(d&&d.status) setState(d.status);
+    }).catch(function(){});
+  }
+  setInterval(poll,4000);
 })();
 </script>
 </body>
@@ -617,6 +675,7 @@ h1{position:relative;z-index:2;margin:0;font-size:clamp(30px,7vw,56px);line-heig
     page = page.replace("%IP%", &escape_html(&device.ip));
     page = page.replace("%ID%", &escape_html(&device.short_id));
     page = page.replace("%MODEL%", &escape_html(&device.model));
+    page = page.replace("%STATUS_CLASS%", status_class);
     page = page.replace("%STATUS_RU%", &escape_html(status_ru));
     page.replace("%STATUS_EN%", &escape_html(status_en))
 }
@@ -707,6 +766,46 @@ fn api_set_allowed(body: &[u8], allowed: bool, services_running: bool) -> Value 
         if services_running {
             refresh_rules_best_effort();
         }
+        Ok(out)
+    })();
+
+    match res {
+        Ok(device) => json!({"ok": true, "device": device}),
+        Err(e) => json!({"ok": false, "error": format!("{e:#}")}),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct DeviceRenameRequest {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    ip: String,
+    #[serde(default)]
+    name: String,
+}
+
+/// Set (or clear, when `name` is blank) a human-friendly alias for a device so
+/// the panel can show e.g. "Петин телефон" instead of a raw model guess. The alias
+/// is stored alongside the device and returned by `api_devices`.
+pub fn api_rename(body: &[u8]) -> Value {
+    let res = (|| -> Result<CaptiveDevice> {
+        let req: DeviceRenameRequest = serde_json::from_slice(body).context("bad JSON body")?;
+        let alias = req.name.trim();
+        if alias.chars().count() > 60 {
+            anyhow::bail!("name too long");
+        }
+        let mut store = read_store()?;
+        let Some(device) = store.devices.iter_mut().find(|d| {
+            (!req.id.trim().is_empty() && d.id == req.id.trim())
+                || (!req.id.trim().is_empty() && d.short_id == req.id.trim())
+                || (!req.ip.trim().is_empty() && d.ip == req.ip.trim())
+        }) else {
+            anyhow::bail!("device not found");
+        };
+        device.alias = alias.to_string();
+        let out = device.clone();
+        write_store(&store)?;
         Ok(out)
     })();
 

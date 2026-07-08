@@ -268,6 +268,9 @@ class ApiClient(
   fun denyCaptiveDevice(id: String): Boolean {
     return requestOk("POST", "/api/hotspot/captive/deny", JSONObject().put("id", id))
   }
+  fun renameCaptiveDevice(id: String, name: String): Boolean {
+    return requestOk("POST", "/api/hotspot/captive/rename", JSONObject().put("id", id).put("name", name))
+  }
 
   fun getSingBoxProfiles(): List<ApiModels.SingBoxProfileChoice> {
     val obj = requestJson("GET", "/api/programs/sing-box/profiles", null)

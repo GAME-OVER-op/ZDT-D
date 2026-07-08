@@ -18,6 +18,9 @@ import androidx.core.content.ContextCompat
 import com.android.zdtd.service.api.ApiClient
 import com.android.zdtd.service.api.ApiModels
 import com.android.zdtd.service.api.DeviceInfo
+import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentRepository
+import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentStage
+import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentState
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -176,6 +179,7 @@ data class UiState(
   val busy: Boolean = false,
   val daemonLogTail: String = "",
   val daemonLogDetailedTail: String = "",
+  val tgWsProxy: TgWsProxyComponentState = TgWsProxyComponentState(),
 )
 
 private data class StartupTimingPlan(
@@ -281,6 +285,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     baseUrlProvider = { _uiState.value.baseUrl },
     tokenProvider = { _uiState.value.token },
   )
+  private val tgWsProxyRepository = TgWsProxyComponentRepository(ctx, root)
 
   private val hotspotSettingsMutex = Mutex()
 
@@ -5249,6 +5254,48 @@ private fun shQuote(s: String): String {
   override fun refreshPrograms() {
     launchIO {
       refreshProgramsNow(force = false)
+    }
+  }
+
+
+  override fun refreshOptionalTools() {
+    launchIO {
+      val state = runCatching { tgWsProxyRepository.currentState() }.getOrDefault(TgWsProxyComponentState(stage = TgWsProxyComponentStage.FAILED, errorMessage = "Status check failed"))
+      _uiState.update { it.copy(tgWsProxy = state) }
+    }
+  }
+
+  override fun installTgWsProxy() {
+    launchIO {
+      val initial = TgWsProxyComponentState(stage = TgWsProxyComponentStage.DOWNLOADING, selectedAbi = _uiState.value.tgWsProxy.selectedAbi)
+      _uiState.update { it.copy(tgWsProxy = initial) }
+      val finalState = tgWsProxyRepository.downloadAndInstall { state ->
+        _uiState.update { it.copy(tgWsProxy = state) }
+      }
+      _uiState.update { it.copy(tgWsProxy = finalState) }
+      if (finalState.installed) {
+        log("OK", "tg-ws-proxy installed (${finalState.selectedAbi})")
+      } else {
+        log("ERR", "tg-ws-proxy install failed: ${finalState.errorMessage ?: "unknown"}")
+      }
+    }
+  }
+
+  override fun removeTgWsProxy() {
+    launchIO {
+      val state = runCatching { tgWsProxyRepository.remove() }.getOrElse {
+        TgWsProxyComponentState(
+          stage = TgWsProxyComponentStage.FAILED,
+          installed = tgWsProxyRepository.isInstalled(),
+          errorMessage = it.message ?: it.javaClass.simpleName,
+        )
+      }
+      _uiState.update { it.copy(tgWsProxy = state) }
+      if (!state.installed && state.stage != TgWsProxyComponentStage.FAILED) {
+        log("OK", "tg-ws-proxy removed")
+      } else if (state.stage == TgWsProxyComponentStage.FAILED) {
+        log("ERR", "tg-ws-proxy remove failed: ${state.errorMessage ?: "unknown"}")
+      }
     }
   }
 

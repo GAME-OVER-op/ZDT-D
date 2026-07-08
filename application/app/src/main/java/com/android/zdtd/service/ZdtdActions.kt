@@ -148,6 +148,9 @@ interface ZdtdActions {
   fun toggleService()
   fun refreshStatus()
   fun refreshPrograms()
+  fun refreshOptionalTools()
+  fun installTgWsProxy()
+  fun removeTgWsProxy()
   fun clearLogs()
 
   /**

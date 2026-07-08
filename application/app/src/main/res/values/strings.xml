@@ -1167,6 +1167,26 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="myproxy_user_hint">SOCKS5 username. Leave empty if auth is not required.</string>
     <string name="myproxy_pass_hint">SOCKS5 password. Leave empty if auth is not required.</string>
 
+    <string name="optional_tools_title">Additional utilities</string>
+    <string name="optional_tools_entry_desc">Downloadable components that extend the main tools list.</string>
+    <string name="optional_tools_screen_desc">Utilities are not bundled into the module by default. Download a component and it will appear in the main tools list.</string>
+    <string name="optional_tools_available">Available to install</string>
+    <string name="optional_tools_installed_count">Installed: %1$d</string>
+    <string name="optional_tools_download">Download</string>
+    <string name="optional_tools_download_again">Download again</string>
+    <string name="optional_tools_status_installed">Installed</string>
+    <string name="optional_tools_status_not_installed">Not installed</string>
+    <string name="optional_tools_status_downloading">Downloading…</string>
+    <string name="optional_tools_status_unpacking">Unpacking…</string>
+    <string name="optional_tools_status_verifying">Verifying…</string>
+    <string name="optional_tools_status_installing">Installing…</string>
+    <string name="optional_tools_status_failed">Failed</string>
+    <string name="optional_tools_download_progress">%1$d%% • %2$s / %3$s</string>
+    <string name="optional_tools_progress_percent">%1$d%%</string>
+    <string name="tg_ws_proxy_title">Telegram WS Proxy</string>
+    <string name="tg_ws_proxy_desc">MTProto → WebSocket bridge for Telegram. For now the app only downloads and prepares the binary.</string>
+    <string name="apps_list_desc_tgwsproxy">Additional Telegram MTProto → WebSocket utility.</string>
+
     <string name="world_map_title">World map</string>
     <string name="world_map_prompt_title">Open world map?</string>
     <string name="world_map_prompt_body">Note: while this window is active, CPU usage may increase to render the map. If the local geolocation database is not installed, ZDT-D will download dbip-city-lite.mmdb.gz from GitHub. Internet is required for this preparation.</string>

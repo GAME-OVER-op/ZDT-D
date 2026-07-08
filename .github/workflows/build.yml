@@ -59,6 +59,7 @@ env:
   TOR_ZLIB_REF: "v1.3.2"
   TOR_ZSTD_REF: "v1.5.7"
   LYREBIRD_REF: "main"
+  TG_WS_PROXY_REF: "v1.6.4"
 
 permissions:
   contents: write
@@ -3779,6 +3780,159 @@ jobs:
           path: out/module/zdt_module.zip
           retention-days: 1
 
+
+
+
+  build_tg_ws_proxy:
+    name: build tg-ws-proxy ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            cargo_linker_var: CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER
+          - abi: armeabi-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            cargo_linker_var: CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER
+
+    steps:
+      - name: Checkout tg-ws-proxy-rs
+        uses: actions/checkout@v6
+        with:
+          repository: valnesfjord/tg-ws-proxy-rs
+          ref: ${{ env.TG_WS_PROXY_REF }}
+          fetch-depth: 1
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Install Android NDK cross-linker
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "ndk;$NDK_VERSION"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          ANDROID_CC="$NDK_BIN/${{ matrix.clang_target_api21 }}-clang"
+          ANDROID_AR="$NDK_BIN/llvm-ar"
+          if [[ ! -x "$ANDROID_CC" ]]; then echo "::error::Android C compiler not found: $ANDROID_CC"; exit 1; fi
+          if [[ ! -x "$ANDROID_AR" ]]; then echo "::error::Android archiver not found: $ANDROID_AR"; exit 1; fi
+          echo "PATH=$NDK_BIN:$PATH" >> "$GITHUB_ENV"
+          echo "${{ matrix.cargo_linker_var }}=$ANDROID_CC" >> "$GITHUB_ENV"
+          mkdir -p ~/.cargo
+          cat >> ~/.cargo/config.toml <<EOF_CARGO_ANDROID
+          [target.${{ matrix.rust_target }}]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
+          EOF_CARGO_ANDROID
+
+      - name: Build tg-ws-proxy
+        run: |
+          set -euo pipefail
+          cargo build --release --target "${{ matrix.rust_target }}"
+
+      - name: Collect tg-ws-proxy
+        run: |
+          set -euo pipefail
+          SRC="target/${{ matrix.rust_target }}/release/tg-ws-proxy"
+          DST="out/tg-ws-proxy/${{ matrix.abi }}"
+          if [[ ! -s "$SRC" ]]; then echo "::error::tg-ws-proxy artifact missing after build: $SRC"; exit 1; fi
+          mkdir -p "$DST"
+          cp -f "$SRC" "$DST/tg-ws-proxy"
+          chmod 755 "$DST/tg-ws-proxy"
+          file "$DST/tg-ws-proxy"
+          ls -lh "$DST/tg-ws-proxy"
+
+      - name: Upload tg-ws-proxy binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: tg-ws-proxy-${{ matrix.artifact_suffix }}
+          path: out/tg-ws-proxy/${{ matrix.abi }}/tg-ws-proxy
+          retention-days: 1
+
+  package_tg_ws_proxy_asset:
+    name: package tg_ws_proxy.zip
+    runs-on: ubuntu-latest
+    needs:
+      - build_tg_ws_proxy
+    if: needs.build_tg_ws_proxy.result == 'success'
+
+    steps:
+      - name: Download tg-ws-proxy arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: tg-ws-proxy-arm64
+          path: out/tg-ws-proxy/arm64-v8a
+
+      - name: Download tg-ws-proxy arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: tg-ws-proxy-arm32
+          path: out/tg-ws-proxy/armeabi-v7a
+
+      - name: Build tg_ws_proxy.zip
+        run: |
+          set -euo pipefail
+          mkdir -p out/technical/tg_ws_proxy/arm64-v8a out/technical/tg_ws_proxy/armeabi-v7a
+          cp -f out/tg-ws-proxy/arm64-v8a/tg-ws-proxy out/technical/tg_ws_proxy/arm64-v8a/tg-ws-proxy
+          cp -f out/tg-ws-proxy/armeabi-v7a/tg-ws-proxy out/technical/tg_ws_proxy/armeabi-v7a/tg-ws-proxy
+          chmod 755 out/technical/tg_ws_proxy/arm64-v8a/tg-ws-proxy out/technical/tg_ws_proxy/armeabi-v7a/tg-ws-proxy
+          ARM64_SHA="$(sha256sum out/technical/tg_ws_proxy/arm64-v8a/tg-ws-proxy | cut -d ' ' -f1)"
+          ARM32_SHA="$(sha256sum out/technical/tg_ws_proxy/armeabi-v7a/tg-ws-proxy | cut -d ' ' -f1)"
+          ARM64_SIZE="$(stat -c%s out/technical/tg_ws_proxy/arm64-v8a/tg-ws-proxy)"
+          ARM32_SIZE="$(stat -c%s out/technical/tg_ws_proxy/armeabi-v7a/tg-ws-proxy)"
+          cat > out/technical/tg_ws_proxy/manifest.json <<EOF_MANIFEST
+          {
+            "name": "tg-ws-proxy",
+            "version": "$TG_WS_PROXY_REF",
+            "source": "https://github.com/valnesfjord/tg-ws-proxy-rs",
+            "ref": "$TG_WS_PROXY_REF",
+            "files": {
+              "arm64-v8a/tg-ws-proxy": {
+                "sha256": "$ARM64_SHA",
+                "size": $ARM64_SIZE
+              },
+              "armeabi-v7a/tg-ws-proxy": {
+                "sha256": "$ARM32_SHA",
+                "size": $ARM32_SIZE
+              }
+            }
+          }
+          EOF_MANIFEST
+          (cd out/technical/tg_ws_proxy && zip -9 -r ../tg_ws_proxy.zip manifest.json arm64-v8a/tg-ws-proxy armeabi-v7a/tg-ws-proxy)
+          unzip -t out/technical/tg_ws_proxy.zip
+          unzip -Z1 out/technical/tg_ws_proxy.zip | grep -Fx 'manifest.json'
+          unzip -Z1 out/technical/tg_ws_proxy.zip | grep -Fx 'arm64-v8a/tg-ws-proxy'
+          unzip -Z1 out/technical/tg_ws_proxy.zip | grep -Fx 'armeabi-v7a/tg-ws-proxy'
+          ls -lh out/technical/tg_ws_proxy.zip
+
+      - name: Upload tg_ws_proxy.zip artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: tg-ws-proxy-technical-asset
+          path: out/technical/tg_ws_proxy.zip
+          retention-days: 1
+
+
   build_dpi_detector:
     name: build dpi-detector ${{ matrix.abi }}
     runs-on: ubuntu-latest
@@ -4425,7 +4579,8 @@ jobs:
     needs:
       - build_gate
       - build_apk
-    if: github.ref == 'refs/heads/main' && needs.build_apk.result == 'success'
+      - package_tg_ws_proxy_asset
+    if: github.ref == 'refs/heads/main' && needs.build_apk.result == 'success' && needs.package_tg_ws_proxy_asset.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -4438,6 +4593,12 @@ jobs:
         with:
           name: zdt-apk
           path: out/dist
+
+      - name: Download tg_ws_proxy.zip artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: tg-ws-proxy-technical-asset
+          path: out/technical
 
       - name: Publish service and stable releases
         env:
@@ -4720,6 +4881,19 @@ jobs:
           upload_asset_with_retry "$SERVICE_TAG" "$SERVICE_APK" "ZDT-D-service-build.apk"
           SERVICE_UPLOAD_MODE="$UPLOAD_MODE"
           SERVICE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
+
+          TECHNICAL_TAG="Technical_Assets"
+          TECHNICAL_TITLE="ZDT-D Technical Assets"
+          TG_WS_PROXY_ASSET="out/technical/tg_ws_proxy.zip"
+          test -s "$TG_WS_PROXY_ASSET" || { echo "::error::tg_ws_proxy.zip technical asset is missing"; exit 1; }
+          if gh release view "$TECHNICAL_TAG" >/dev/null 2>&1; then
+            gh release edit "$TECHNICAL_TAG" --title "$TECHNICAL_TITLE" --prerelease --latest=false
+          else
+            gh release create "$TECHNICAL_TAG" --target "$FULL_SHA" --title "$TECHNICAL_TITLE" --notes "Technical assets used by ZDT-D optional components." --prerelease --latest=false
+          fi
+          upload_asset_with_retry "$TECHNICAL_TAG" "$TG_WS_PROXY_ASSET#tg_ws_proxy.zip" "tg_ws_proxy.zip"
+          TG_WS_PROXY_UPLOAD_MODE="$UPLOAD_MODE"
+          TG_WS_PROXY_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
 
           STABLE_ACTION="skipped"
           STABLE_REASON=""

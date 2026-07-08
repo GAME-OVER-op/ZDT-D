@@ -1165,6 +1165,26 @@ APatch: 10700+</string>
     <string name="myproxy_user_hint">Логин SOCKS5. Оставьте пустым, если авторизация не нужна.</string>
     <string name="myproxy_pass_hint">Пароль SOCKS5. Оставьте пустым, если авторизация не нужна.</string>
 
+    <string name="optional_tools_title">Дополнительные утилиты</string>
+    <string name="optional_tools_entry_desc">Скачиваемые компоненты, которые расширяют список основных инструментов.</string>
+    <string name="optional_tools_screen_desc">Утилиты не входят в модуль по умолчанию. Скачай нужный компонент, и он появится в списке основных инструментов.</string>
+    <string name="optional_tools_available">Доступно для установки</string>
+    <string name="optional_tools_installed_count">Установлено: %1$d</string>
+    <string name="optional_tools_download">Скачать</string>
+    <string name="optional_tools_download_again">Скачать снова</string>
+    <string name="optional_tools_status_installed">Установлено</string>
+    <string name="optional_tools_status_not_installed">Не установлено</string>
+    <string name="optional_tools_status_downloading">Загрузка…</string>
+    <string name="optional_tools_status_unpacking">Распаковка…</string>
+    <string name="optional_tools_status_verifying">Проверка…</string>
+    <string name="optional_tools_status_installing">Установка…</string>
+    <string name="optional_tools_status_failed">Ошибка</string>
+    <string name="optional_tools_download_progress">%1$d%% • %2$s / %3$s</string>
+    <string name="optional_tools_progress_percent">%1$d%%</string>
+    <string name="tg_ws_proxy_title">Telegram WS Proxy</string>
+    <string name="tg_ws_proxy_desc">MTProto → WebSocket bridge для Telegram. Сейчас приложение только скачивает и подготавливает бинарник.</string>
+    <string name="apps_list_desc_tgwsproxy">Дополнительная утилита Telegram MTProto → WebSocket.</string>
+
     <string name="world_map_title">Карта мира</string>
     <string name="world_map_prompt_title">Вы желаете открыть карту мира?</string>
     <string name="world_map_prompt_body">Примечание: пока окно будет активно, возможно повышение потребления CPU для показа карты. Если локальная база геолокации не установлена, ZDT-D скачает dbip-city-lite.mmdb.gz с GitHub. Для подготовки понадобится интернет.</string>

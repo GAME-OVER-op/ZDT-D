@@ -712,6 +712,7 @@ private fun UpdatePromptDialog(setup: SetupUiState, onUpdate: () -> Unit, onSkip
 private fun parentAppsRoute(route: AppsRoute): AppsRoute = when (route) {
   AppsRoute.List -> AppsRoute.List
   AppsRoute.AnalysisTools -> AppsRoute.List
+  AppsRoute.OptionalTools -> AppsRoute.List
   AppsRoute.ConstructionStudio -> AppsRoute.AnalysisTools
   AppsRoute.DpiDetector -> AppsRoute.AnalysisTools
   AppsRoute.NfqwsTester -> AppsRoute.AnalysisTools
@@ -1255,6 +1256,7 @@ private fun MainShell(
     tab == Tab.SUPPORT -> stringResource(R.string.nav_support)
     tab == Tab.APPS && appsRoute == AppsRoute.List -> stringResource(R.string.nav_programs)
     tab == Tab.APPS && appsRoute == AppsRoute.AnalysisTools -> stringResource(R.string.analysis_tools_title)
+    tab == Tab.APPS && appsRoute == AppsRoute.OptionalTools -> stringResource(R.string.optional_tools_title)
     tab == Tab.APPS && appsRoute == AppsRoute.ConstructionStudio -> stringResource(R.string.construction_studio_title)
     tab == Tab.APPS && appsRoute == AppsRoute.DpiDetector -> stringResource(R.string.dpi_detector_title)
     tab == Tab.APPS && appsRoute == AppsRoute.NfqwsTester -> stringResource(R.string.nfqws_tester_title)
@@ -1277,6 +1279,7 @@ private fun MainShell(
       when (val route = appsRoute) {
         AppsRoute.List -> null
         AppsRoute.AnalysisTools -> null
+        AppsRoute.OptionalTools -> null
         AppsRoute.ConstructionStudio -> null
         AppsRoute.DpiDetector -> null
         AppsRoute.NfqwsTester -> null
@@ -1377,6 +1380,7 @@ private fun MainShell(
           onOpenProgram = { appsRoute = AppsRoute.Program(it) },
           onOpenProfile = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) },
           onOpenAnalysisTools = { appsRoute = AppsRoute.AnalysisTools },
+          onOpenOptionalTools = { appsRoute = AppsRoute.OptionalTools },
           onOpenConstructionStudio = { appsRoute = AppsRoute.ConstructionStudio },
           onOpenDpiDetector = { appsRoute = AppsRoute.DpiDetector },
           onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
@@ -1402,6 +1406,7 @@ private fun MainShell(
               onOpenProgram = { appsRoute = AppsRoute.Program(it) },
               onOpenProfile = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) },
               onOpenAnalysisTools = { appsRoute = AppsRoute.AnalysisTools },
+              onOpenOptionalTools = { appsRoute = AppsRoute.OptionalTools },
               onOpenConstructionStudio = { appsRoute = AppsRoute.ConstructionStudio },
               onOpenDpiDetector = { appsRoute = AppsRoute.DpiDetector },
               onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
@@ -1515,6 +1520,7 @@ private fun LandscapeShellContent(
   onOpenProgram: (String) -> Unit,
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
+  onOpenOptionalTools: () -> Unit,
   onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
@@ -1553,6 +1559,7 @@ private fun LandscapeShellContent(
           onOpenProgram = onOpenProgram,
           onOpenProfile = onOpenProfile,
           onOpenAnalysisTools = onOpenAnalysisTools,
+          onOpenOptionalTools = onOpenOptionalTools,
           onOpenConstructionStudio = onOpenConstructionStudio,
           onOpenDpiDetector = onOpenDpiDetector,
           onOpenNfqwsTester = onOpenNfqwsTester,
@@ -2302,6 +2309,7 @@ private fun TabBody(
   onOpenProgram: (String) -> Unit,
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
+  onOpenOptionalTools: () -> Unit,
   onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
@@ -2342,6 +2350,7 @@ private fun TabBody(
             onOpenProgram = onOpenProgram,
             onOpenProfile = onOpenProfile,
             onOpenAnalysisTools = onOpenAnalysisTools,
+            onOpenOptionalTools = onOpenOptionalTools,
             onOpenConstructionStudio = onOpenConstructionStudio,
             onOpenDpiDetector = onOpenDpiDetector,
             onOpenNfqwsTester = onOpenNfqwsTester,

@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -37,6 +38,7 @@ fun AppsHost(
   onOpenProgram: (String) -> Unit,
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
+  onOpenOptionalTools: () -> Unit,
   onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
@@ -53,11 +55,20 @@ fun AppsHost(
     uiStateFlow.map { it.daemonOnline }.distinctUntilChanged()
   }.collectAsStateWithLifecycle(initialValue = false)
 
+  val tgWsProxy by remember(uiStateFlow) {
+    uiStateFlow.map { it.tgWsProxy }.distinctUntilChanged()
+  }.collectAsStateWithLifecycle(initialValue = com.android.zdtd.service.tgwsproxy.TgWsProxyComponentState())
+
   val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
+
+  LaunchedEffect(Unit) {
+    actions.refreshOptionalTools()
+  }
 
   fun AppsRoute.depth(): Int = when (this) {
     AppsRoute.List -> 0
     AppsRoute.AnalysisTools -> 1
+    AppsRoute.OptionalTools -> 1
     AppsRoute.ConstructionStudio -> 2
     AppsRoute.DpiDetector -> 2
     AppsRoute.NfqwsTester -> 2
@@ -85,9 +96,17 @@ fun AppsHost(
       AppsRoute.List -> AppsListScreen(
         programs = programs,
         daemonOnline = daemonOnline,
+        tgWsProxy = tgWsProxy,
         onOpenProgram = onOpenProgram,
         onOpenAnalysisTools = onOpenAnalysisTools,
+        onOpenOptionalTools = onOpenOptionalTools,
         listState = listState,
+        topContentPadding = topContentPadding,
+        bottomContentPadding = bottomContentPadding,
+      )
+      AppsRoute.OptionalTools -> OptionalToolsScreen(
+        state = tgWsProxy,
+        actions = actions,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
       )
@@ -117,6 +136,12 @@ fun AppsHost(
         bottomContentPadding = bottomContentPadding,
       )
       is AppsRoute.Program -> when (r.programId) {
+        "tgwsproxy" -> OptionalToolsScreen(
+          state = tgWsProxy,
+          actions = actions,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
+        )
         "openvpn" -> OpenVpnProgramScreen(
           programs = programs,
           onOpenProfile = onOpenProfile,

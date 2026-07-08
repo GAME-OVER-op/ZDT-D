@@ -18,6 +18,7 @@ internal fun toolDisplayName(id: String, rawName: String? = null): String {
     "mihomo" -> normalizedRaw?.takeUnless { it.equals("mihomo", ignoreCase = true) } ?: "Mihomo"
     "mieru" -> normalizedRaw?.takeUnless { it.equals("mieru", ignoreCase = true) } ?: "mieru"
     "amneziawg" -> normalizedRaw?.takeUnless { it.equals("amneziawg", ignoreCase = true) } ?: "AmneziaWG"
+    "tgwsproxy" -> normalizedRaw?.takeUnless { it.equals("tgwsproxy", ignoreCase = true) } ?: "Telegram WS Proxy"
     else -> normalizedRaw ?: id
   }
 }
@@ -42,6 +43,7 @@ internal fun toolDescription(id: String): String {
     "myvpn" -> stringResource(R.string.apps_list_desc_myvpn)
     "mihomo" -> stringResource(R.string.apps_list_desc_mihomo)
     "mieru" -> stringResource(R.string.apps_list_desc_mieru)
+    "tgwsproxy" -> stringResource(R.string.apps_list_desc_tgwsproxy)
     else -> stringResource(R.string.apps_list_desc_default)
   }
 }

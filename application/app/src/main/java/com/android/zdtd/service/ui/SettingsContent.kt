@@ -106,6 +106,8 @@ fun AppUpdateSettings(
   onHotspotT2sSingboxProfileChange: (String) -> Unit,
   onHotspotT2sWireproxyProfileChange: (String) -> Unit,
   onHotspotT2sCaptureAllChange: (Boolean) -> Unit,
+  captivePortalEnabled: Boolean,
+  onCaptivePortalEnabledChange: (Boolean) -> Unit,
   proxyInfoEnabled: Boolean,
   proxyInfoBusy: Boolean,
   proxyInfoAppsContent: String,
@@ -210,6 +212,8 @@ fun AppUpdateSettings(
             onSingboxProfileChange = onHotspotT2sSingboxProfileChange,
             onWireproxyProfileChange = onHotspotT2sWireproxyProfileChange,
             onCaptureAllChange = onHotspotT2sCaptureAllChange,
+            captivePortalEnabled = captivePortalEnabled,
+            onCaptivePortalEnabledChange = onCaptivePortalEnabledChange,
           )
         }
 
@@ -399,6 +403,8 @@ fun AppUpdateSettings(
         onSingboxProfileChange = onHotspotT2sSingboxProfileChange,
         onWireproxyProfileChange = onHotspotT2sWireproxyProfileChange,
         onCaptureAllChange = onHotspotT2sCaptureAllChange,
+        captivePortalEnabled = captivePortalEnabled,
+        onCaptivePortalEnabledChange = onCaptivePortalEnabledChange,
       )
     }
 
@@ -1174,6 +1180,8 @@ private fun HotspotT2sSection(
   onSingboxProfileChange: (String) -> Unit,
   onWireproxyProfileChange: (String) -> Unit,
   onCaptureAllChange: (Boolean) -> Unit,
+  captivePortalEnabled: Boolean,
+  onCaptivePortalEnabledChange: (Boolean) -> Unit,
 ) {
   val safeMode = if (mode.trim().lowercase() == "vpn") "vpn" else "proxy"
   val selectedProgram = program.ifBlank { target }.trim().lowercase().let {
@@ -1255,6 +1263,38 @@ private fun HotspotT2sSection(
             )
           }
           Switch(checked = captureAll, onCheckedChange = onCaptureAllChange)
+        }
+      }
+
+      if (safeMode == "proxy") {
+        Row(
+          Modifier.fillMaxWidth(),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+          Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(stringResource(R.string.captive_devices_toggle_title), style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
+            Text(
+              stringResource(R.string.captive_devices_toggle_body),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+            )
+          }
+          Switch(checked = captivePortalEnabled, onCheckedChange = onCaptivePortalEnabledChange)
+        }
+      }
+      AnimatedVisibility(visible = safeMode == "proxy" && captivePortalEnabled) {
+        val captiveContext = androidx.compose.ui.platform.LocalContext.current
+        OutlinedButton(
+          onClick = {
+            captiveContext.startActivity(
+              android.content.Intent(captiveContext, com.android.zdtd.service.CaptiveDevicesActivity::class.java)
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+          },
+          modifier = Modifier.fillMaxWidth(),
+        ) {
+          Text(stringResource(R.string.captive_devices_open))
         }
       }
 

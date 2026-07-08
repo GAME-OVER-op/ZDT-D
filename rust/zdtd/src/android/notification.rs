@@ -307,3 +307,81 @@ pub fn send_proxyinfo_probe_detected(
         );
     }
 }
+
+/// Notify the Android app that a captive-portal client is waiting for approval.
+///
+/// Best-effort, fire-once: the daemon sends a single broadcast carrying only the
+/// minimal fields needed to render the notification (short id + model). The app
+/// owns the notification UI and shows Allow/Deny actions. MAC/IP/User-Agent are
+/// intentionally NOT included here because the receivers are exported; the app
+/// loads the full device card over the token-authenticated local API instead.
+pub fn send_captive_device_pending(short_id: &str, model: &str) -> Result<()> {
+    let am_args = [
+        "broadcast",
+        "--user",
+        "0",
+        "-a",
+        "com.android.zdtd.service.ACTION_CAPTIVE_DEVICE_PENDING",
+        "-p",
+        APP_PACKAGE,
+        "--es",
+        "short_id",
+        short_id,
+        "--es",
+        "model",
+        model,
+    ];
+
+    let status = Command::new(AM_BIN)
+        .args(am_args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .context("run am broadcast captive pending")?;
+
+    if status.success() {
+        info!("captive pending broadcast sent short_id={} model={}", short_id, model);
+        return Ok(());
+    }
+
+    let cmd_args = [
+        "activity",
+        "broadcast",
+        "--user",
+        "0",
+        "-a",
+        "com.android.zdtd.service.ACTION_CAPTIVE_DEVICE_PENDING",
+        "-p",
+        APP_PACKAGE,
+        "--es",
+        "short_id",
+        short_id,
+        "--es",
+        "model",
+        model,
+    ];
+
+    let fallback = Command::new(CMD_BIN)
+        .args(cmd_args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .context("run cmd activity broadcast captive pending")?;
+
+    if fallback.success() {
+        info!("captive pending broadcast sent via cmd short_id={} model={}", short_id, model);
+        Ok(())
+    } else {
+        warn!(
+            "captive pending broadcast failed am={:?} cmd={:?} short_id={}",
+            status.code(),
+            fallback.code(),
+            short_id
+        );
+        anyhow::bail!(
+            "captive pending broadcast failed (am={:?}, cmd={:?})",
+            status.code(),
+            fallback.code()
+        )
+    }
+}

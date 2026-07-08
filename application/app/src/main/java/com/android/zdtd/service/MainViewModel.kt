@@ -5935,6 +5935,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         hotspotT2sSingboxProfile = settings.hotspotT2sSingboxProfile,
         hotspotT2sWireproxyProfile = settings.hotspotT2sWireproxyProfile,
         hotspotT2sCaptureAll = settings.hotspotT2sCaptureAll,
+        captivePortalEnabled = settings.captivePortalEnabled,
         selinuxPermissiveEnabled = settings.selinuxPermissiveEnabled,
         ipForwardEnabled = settings.ipForwardEnabled,
         hotspotSingboxProfiles = singboxProfiles,
@@ -6645,6 +6646,31 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           ipForwardEnabled = applied.ipForwardEnabled,
         )
       }
+      withContext(Dispatchers.Main.immediate) {
+        toast(str(R.string.settings_hotspot_saved))
+      }
+    }
+  }
+
+  override fun setCaptivePortalEnabled(enabled: Boolean) {
+    val previous = _appUpdate.value.captivePortalEnabled
+    if (previous == enabled) return
+
+    _appUpdate.update { it.copy(captivePortalEnabled = enabled) }
+
+    launchIO {
+      val applied = runCatching {
+        hotspotSettingsMutex.withLock { api.setCaptivePortalEnabled(enabled) }
+      }.getOrElse {
+        log("ERR", "captive portal toggle failed: ${it.message ?: it}")
+        _appUpdate.update { it.copy(captivePortalEnabled = previous) }
+        withContext(Dispatchers.Main.immediate) {
+          toast(str(R.string.settings_hotspot_save_failed))
+        }
+        return@launchIO
+      }
+
+      _appUpdate.update { it.copy(captivePortalEnabled = applied.captivePortalEnabled) }
       withContext(Dispatchers.Main.immediate) {
         toast(str(R.string.settings_hotspot_saved))
       }

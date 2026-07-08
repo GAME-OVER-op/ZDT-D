@@ -54,6 +54,8 @@ data class AppUpdateUiState(
   val hotspotT2sSingboxProfile: String = "",
   val hotspotT2sWireproxyProfile: String = "",
   val hotspotT2sCaptureAll: Boolean = false,
+  /** Captive authorization portal for hotspot clients (proxy mode). */
+  val captivePortalEnabled: Boolean = false,
   val hotspotSingboxProfiles: List<ApiModels.SingBoxProfileChoice> = emptyList(),
   val hotspotWireproxyProfiles: List<ApiModels.SingBoxProfileChoice> = emptyList(),
   val hotspotProxyPrograms: List<ApiModels.Program> = emptyList(),

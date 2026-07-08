@@ -240,6 +240,35 @@ class ApiClient(
     return ApiModels.parseDaemonSettings(obj)
   }
 
+  // ----- Captive portal (hotspot device authorization) -----
+
+  fun setCaptivePortalEnabled(enabled: Boolean): ApiModels.DaemonSettings {
+    val obj = requestJson(
+      "POST",
+      "/api/setting",
+      JSONObject().put("captive_portal_enabled", enabled),
+    )
+    return ApiModels.parseDaemonSettings(obj)
+  }
+
+  fun getCaptivePortalStatus(): ApiModels.CaptivePortalStatus {
+    val obj = requestJson("GET", "/api/hotspot/captive/status", null)
+    return ApiModels.parseCaptivePortalStatus(obj)
+  }
+
+  fun getCaptiveDevices(): List<ApiModels.CaptiveDevice> {
+    val obj = requestJson("GET", "/api/hotspot/captive/devices", null)
+    return ApiModels.parseCaptiveDevices(obj)
+  }
+
+  fun allowCaptiveDevice(id: String): Boolean {
+    return requestOk("POST", "/api/hotspot/captive/allow", JSONObject().put("id", id))
+  }
+
+  fun denyCaptiveDevice(id: String): Boolean {
+    return requestOk("POST", "/api/hotspot/captive/deny", JSONObject().put("id", id))
+  }
+
   fun getSingBoxProfiles(): List<ApiModels.SingBoxProfileChoice> {
     val obj = requestJson("GET", "/api/programs/sing-box/profiles", null)
     return ApiModels.parseSingBoxProfiles(obj)

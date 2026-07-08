@@ -57,6 +57,8 @@ pub struct CaptiveDevice {
     pub allowed_at: Option<u64>,
     #[serde(default)]
     pub denied_at: Option<u64>,
+    #[serde(default)]
+    pub notified_at: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -396,12 +398,18 @@ fn register_or_touch_device(ip: &str, user_agent: &str) -> Result<CaptiveDevice>
         if existing.status.is_empty() {
             existing.status = if existing.allowed { "allowed" } else { "pending" }.to_string();
         }
+        // Fire-once notify: the daemon knocks the app a single time per pending
+        // device. No retries even if it stays pending (design decision).
+        if !existing.allowed && existing.notified_at.is_none() {
+            notify_pending(&existing.short_id, &existing.model);
+            existing.notified_at = Some(now);
+        }
         let out = existing.clone();
         write_store(&store)?;
         return Ok(out);
     }
 
-    let device = CaptiveDevice {
+    let mut device = CaptiveDevice {
         id,
         short_id,
         ip: ip.to_string(),
@@ -414,10 +422,23 @@ fn register_or_touch_device(ip: &str, user_agent: &str) -> Result<CaptiveDevice>
         last_seen: now,
         allowed_at: None,
         denied_at: None,
+        notified_at: None,
     };
+    // Fire-once notify for the freshly seen device.
+    notify_pending(&device.short_id, &device.model);
+    device.notified_at = Some(now);
     store.devices.push(device.clone());
     write_store(&store)?;
     Ok(device)
+}
+
+/// Best-effort, fire-once notification to the Android app that a captive-portal
+/// client is waiting for approval. Failures are swallowed on purpose: per design
+/// we never retry, the request simply stays `pending` in the device list.
+fn notify_pending(short_id: &str, model: &str) {
+    if let Err(e) = crate::android::notification::send_captive_device_pending(short_id, model) {
+        warn!("captive pending notify failed: {e:#}");
+    }
 }
 
 fn fallback_device(ip: &str, user_agent: &str) -> CaptiveDevice {
@@ -435,6 +456,7 @@ fn fallback_device(ip: &str, user_agent: &str) -> CaptiveDevice {
         last_seen: now_unix(),
         allowed_at: None,
         denied_at: None,
+        notified_at: None,
     }
 }
 

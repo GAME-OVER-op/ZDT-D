@@ -325,6 +325,9 @@ interface ZdtdActions {
   /** Capture all hotspot TCP traffic instead of bypassing known reverse-proxy service ports. */
   fun setHotspotT2sCaptureAll(enabled: Boolean)
 
+  /** Toggle the captive authorization portal for hotspot clients (proxy mode). */
+  fun setCaptivePortalEnabled(enabled: Boolean)
+
   /** Remove working_folder/flag.sha256 and restart the daemon when needed. */
   fun resetModuleIdentifier()
 

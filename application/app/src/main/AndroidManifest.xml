@@ -111,6 +111,10 @@
             android:name=".ProxyInfoProbeDetailsActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".CaptiveDevicesActivity"
+            android:exported="false" />
+
         <service
             android:name=".tile.ZdtdTileService"
             android:label="@string/qs_tile_label"
@@ -136,6 +140,25 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="com.android.zdtd.service.ACTION_PROXYINFO_PROBE_DETECTED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Receives fire-once captive-portal "device pending" broadcasts from the daemon. -->
+        <receiver
+            android:name=".CaptiveDeviceReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.android.zdtd.service.ACTION_CAPTIVE_DEVICE_PENDING" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Handles Allow/Deny action buttons; app-private (not exported). -->
+        <receiver
+            android:name=".CaptiveActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.android.zdtd.service.ACTION_CAPTIVE_ALLOW" />
+                <action android:name="com.android.zdtd.service.ACTION_CAPTIVE_DENY" />
             </intent-filter>
         </receiver>
 

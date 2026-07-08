@@ -204,6 +204,30 @@ object ApiModels {
     val hotspotT2sCaptureAll: Boolean = false,
     val selinuxPermissiveEnabled: Boolean = false,
     val ipForwardEnabled: Boolean = false,
+    val captivePortalEnabled: Boolean = false,
+  )
+
+  data class CaptiveDevice(
+    val id: String = "",
+    val shortId: String = "",
+    val ip: String = "",
+    val mac: String = "",
+    val model: String = "",
+    val userAgent: String = "",
+    val allowed: Boolean = false,
+    val status: String = "pending",
+    val firstSeen: Long = 0L,
+    val lastSeen: Long = 0L,
+    val allowedAt: Long? = null,
+    val deniedAt: Long? = null,
+    val notifiedAt: Long? = null,
+  )
+
+  data class CaptivePortalStatus(
+    val enabled: Boolean = false,
+    val active: Boolean = false,
+    val hotspotProxy: Boolean = false,
+    val serverRunning: Boolean = false,
   )
 
   data class SingBoxProfileChoice(
@@ -541,7 +565,44 @@ object ApiModels {
       hotspotT2sCaptureAll = hotspotCaptureAll,
       selinuxPermissiveEnabled = setting?.optBoolean("selinux_permissive_enabled", false) ?: false,
       ipForwardEnabled = setting?.optBoolean("ip_forward_enabled", false) ?: false,
+      captivePortalEnabled = setting?.optBoolean("captive_portal_enabled", false) ?: false,
     )
+  }
+
+  fun parseCaptivePortalStatus(wrapper: JSONObject?): CaptivePortalStatus {
+    if (wrapper == null) return CaptivePortalStatus()
+    return CaptivePortalStatus(
+      enabled = wrapper.optBoolean("enabled", false),
+      active = wrapper.optBoolean("active", false),
+      hotspotProxy = wrapper.optBoolean("hotspot_proxy", false),
+      serverRunning = wrapper.optBoolean("server_running", false),
+    )
+  }
+
+  fun parseCaptiveDevices(wrapper: JSONObject?): List<CaptiveDevice> {
+    val arr = wrapper?.optJSONArray("devices") ?: return emptyList()
+    val out = ArrayList<CaptiveDevice>(arr.length())
+    for (i in 0 until arr.length()) {
+      val o = arr.optJSONObject(i) ?: continue
+      out.add(
+        CaptiveDevice(
+          id = o.optString("id", ""),
+          shortId = o.optString("short_id", ""),
+          ip = o.optString("ip", ""),
+          mac = o.optString("mac", ""),
+          model = o.optString("model", ""),
+          userAgent = o.optString("user_agent", ""),
+          allowed = o.optBoolean("allowed", false),
+          status = o.optString("status", "pending").ifBlank { "pending" },
+          firstSeen = o.optLong("first_seen", 0L),
+          lastSeen = o.optLong("last_seen", 0L),
+          allowedAt = if (o.isNull("allowed_at")) null else o.optLong("allowed_at").takeIf { it > 0 },
+          deniedAt = if (o.isNull("denied_at")) null else o.optLong("denied_at").takeIf { it > 0 },
+          notifiedAt = if (o.isNull("notified_at")) null else o.optLong("notified_at").takeIf { it > 0 },
+        )
+      )
+    }
+    return out
   }
 
 

@@ -446,7 +446,7 @@
     <string name="strategic_strategies_loading">Стратегии: загрузка…</string>
     <string name="strategic_strategies_none">Стратегии: нет</string>
     <string name="strategic_strategy_selected">Стратегия: %1$s</string>
-    <string name="strategic_user_config">Пользовательский конфиг</string>
+    <string name="strategic_user_config">Пол��зовательский конфиг</string>
     <string name="strategic_variants_sheet_title">Доступные конфиги</string>
     <string name="strategic_variants_sheet_hint">Нажмите на конфиг, чтобы сразу применить его.</string>
     <string name="strategic_variants_current_hint">Текущий конфиг</string>
@@ -810,7 +810,7 @@ APatch: 10700+</string>
     <string name="singbox_vpn_tun_hint">Рекомендуется: sbtun0 или tun0. До 15 символов: латиница, цифры, underscore.</string>
     <string name="singbox_vpn_dns_label">DNS-серверы</string>
     <string name="singbox_vpn_dns_hint">Только IPv4. Один адрес на строку или через запятую.</string>
-    <string name="singbox_vpn_log_level_label">Уровень логов tun2socks</string>
+    <string name="singbox_vpn_log_level_label">Уровень л��гов tun2socks</string>
     <string name="singbox_vpn_autosave_hint">Интерфейс, DNS и уровень логов tun2socks сохраняются автоматически. config.json остаётся на локальном mixed inbound.</string>
     <string name="singbox_vpn_single_server_required">VPN через tun2socks поддерживает ровно один сервер sing-box. Удалите лишние серверы или оставьте Proxy / T2S.</string>
     <string name="singbox_vpn_add_server_blocked">В VPN-режиме разрешён только один сервер.</string>
@@ -821,7 +821,7 @@ APatch: 10700+</string>
     <string name="singbox_vpn_servers_desc">VPN через tun2socks поддерживает только один сервер. Его порт — локальный mixed inbound, к которому подключается tun2socks.</string>
     <string name="singbox_import_replace_current_hint">Сгенерированный config заменит текущий config сервера. Меняется только inbound-блок под выбранный режим.</string>
 
-    <string name="settings_hotspot_title">Включить точку доступа</string>
+    <string name="settings_hotspot_title">Включить то��ку доступа</string>
     <string name="settings_hotspot_body">Позволяет направлять трафик точки доступа через выбранный инструмент.</string>
     <string name="settings_hotspot_capture_all_title">Захват всего трафика hotspot режима</string>
     <string name="settings_hotspot_capture_all_body">Если включено, весь входящий TCP-трафик режима точки доступа направляется в выбранный инструмент. Если выключено, служебные reverse-proxy порты исключаются перед редиректом остального трафика.</string>
@@ -1333,7 +1333,7 @@ APatch: 10700+</string>
     <string name="amneziawg_profile_name_readonly_hint">Имя профиля используется как имя папки и здесь не редактируется.</string>
     <string name="amneziawg_settings_title">Настройки профиля</string>
     <string name="amneziawg_tun_label">TUN-интерфейс</string>
-    <string name="amneziawg_tun_hint">По умолчанию начинается с awg1. Нельзя использовать физические интерфейсы вроде wlan0, rmnet, ccmni, eth, ap, rndis или lo.</string>
+    <string name="amneziawg_tun_hint">По умолчанию начинается с awg1. Нельзя использовать физиче��кие интерфейсы вроде wlan0, rmnet, ccmni, eth, ap, rndis или lo.</string>
     <string name="amneziawg_tun_invalid">Неверное имя TUN или запрещённый физический интерфейс.</string>
     <string name="amneziawg_address_label">IPv4 Address</string>
     <string name="amneziawg_address_hint">Введите 1..4 IPv4 CIDR через пробел или запятую, например 172.16.0.2/32. IPv6 не используется.</string>
@@ -1862,5 +1862,28 @@ APatch: 10700+</string>
     <string name="settings_energy_saver_cores_title">Ядра процессора</string>
     <string name="settings_energy_saver_saved">Настройки энергосбережения сохранены</string>
     <string name="settings_energy_saver_save_failed">Не удалось сохранить настройки энергосбережения</string>
+
+    <!-- Captive portal: авторизация устройств точки доступа -->
+    <string name="captive_notif_channel_name">Запросы доступа устройств</string>
+    <string name="captive_notif_channel_desc">Показывается, когда устройство точки доступа запрашивает доступ в интернет</string>
+    <string name="captive_notif_title">Запрос доступа в интернет</string>
+    <string name="captive_notif_content">Устройство \u00ab%1$s\u00bb запрашивает разрешение на доступ в интернет</string>
+    <string name="captive_action_allow">Разрешить</string>
+    <string name="captive_action_deny">Запретить</string>
+    <string name="captive_devices_title">Настройки устройств</string>
+    <string name="captive_devices_toggle_title">Портал авторизации</string>
+    <string name="captive_devices_toggle_body">Требовать подтверждение перед выдачей доступа в интернет устройствам точки доступа</string>
+    <string name="captive_devices_open">Настройки устройств</string>
+    <string name="captive_devices_section_pending">Ожидают подтверждения</string>
+    <string name="captive_devices_section_allowed">Разрешённые</string>
+    <string name="captive_devices_section_denied">Запрещённые</string>
+    <string name="captive_devices_empty">Нет устройств</string>
+    <string name="captive_devices_unknown">Неизвестно</string>
+    <string name="captive_devices_field_id">Идентификатор</string>
+    <string name="captive_devices_field_ip">IP</string>
+    <string name="captive_devices_field_mac">MAC</string>
+    <string name="captive_devices_field_status">Статус</string>
+    <string name="captive_devices_field_user_agent">User-Agent</string>
+    <string name="captive_devices_close">Закрыть</string>
 
 </resources>

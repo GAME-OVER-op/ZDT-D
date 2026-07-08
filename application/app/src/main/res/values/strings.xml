@@ -1863,4 +1863,27 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="settings_energy_saver_saved">Energy saver settings saved</string>
     <string name="settings_energy_saver_save_failed">Failed to save energy saver settings</string>
 
+    <!-- Captive portal: hotspot device authorization -->
+    <string name="captive_notif_channel_name">Device access requests</string>
+    <string name="captive_notif_channel_desc">Shown when a hotspot device asks for internet access</string>
+    <string name="captive_notif_title">Internet access request</string>
+    <string name="captive_notif_content">Device \u00ab%1$s\u00bb is requesting permission to access the internet</string>
+    <string name="captive_action_allow">Allow</string>
+    <string name="captive_action_deny">Deny</string>
+    <string name="captive_devices_title">Device settings</string>
+    <string name="captive_devices_toggle_title">Authorization portal</string>
+    <string name="captive_devices_toggle_body">Require approval before hotspot devices get internet access</string>
+    <string name="captive_devices_open">Device settings</string>
+    <string name="captive_devices_section_pending">Awaiting approval</string>
+    <string name="captive_devices_section_allowed">Allowed</string>
+    <string name="captive_devices_section_denied">Denied</string>
+    <string name="captive_devices_empty">No devices</string>
+    <string name="captive_devices_unknown">Unknown</string>
+    <string name="captive_devices_field_id">ID</string>
+    <string name="captive_devices_field_ip">IP</string>
+    <string name="captive_devices_field_mac">MAC</string>
+    <string name="captive_devices_field_status">Status</string>
+    <string name="captive_devices_field_user_agent">User-Agent</string>
+    <string name="captive_devices_close">Close</string>
+
 </resources>

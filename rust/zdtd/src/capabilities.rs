@@ -169,6 +169,8 @@ pub fn collect() -> Value {
         warnings.push("fast package UID lookup is not available".to_string());
     }
 
+    let selected_backend = if tproxy_setting_enabled { "tproxy" } else { "dnat" };
+
     json!({
         "ok": true,
         "schema_version": 1,
@@ -200,13 +202,17 @@ pub fn collect() -> Value {
             "TPROXY": tproxy
         },
         "tproxy": {
-            "priority_backend": tproxy_setting_enabled,
-            "fallback_backend": "DNAT",
+            "selected_backend": selected_backend,
             "enabled_by_setting": tproxy_setting_enabled,
             "disabled_by_flag": tproxy_disabled_flag,
             "disabled_reason": tproxy_disabled_reason,
-            "mark_prefix": "0x5d700000/0xffff0000",
-            "route_table": 1057
+            "dnat_fallback": false,
+            "route_mark": "0x50000000/0xf0000000",
+            "scope_mark_mask": "0xfff00000",
+            "preserves_android_fwmark_low_bits": true,
+            "divert_chain": "ZDT_TPROXY_DIVERT",
+            "route_table": 1057,
+            "route_pref": 9999
         },
         "routing": {
             "ip_rule": ip_rule,

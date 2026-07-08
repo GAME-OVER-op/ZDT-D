@@ -12,9 +12,18 @@ const XT_WAIT_SECS: &str = "5";
 
 const OUT_CHAIN: &str = "ZDT_TPROXY_OUT";
 const PRE_CHAIN: &str = "ZDT_TPROXY_PRE";
+const DIVERT_CHAIN: &str = "ZDT_TPROXY_DIVERT";
 const ROUTE_TABLE: u32 = 1057;
-const MARK_PREFIX: u32 = 0x5d70_0000;
-const MARK_MASK: u32 = 0xffff_0000;
+const ROUTE_PREF: &str = "9999";
+
+// Android uses the low fwmark bits for netId/permission/VPN routing.
+// Do not overwrite the whole mark.  Keep ZDT-D TPROXY metadata in the high
+// nibble/byte area only, preserving the lower 20 bits used by Android rules.
+const ROUTE_MARK: u32 = 0x5000_0000;
+const ROUTE_MASK: u32 = 0xf000_0000;
+const SCOPE_MASK: u32 = 0xfff0_0000;
+const LEGACY_ROUTE_MARK: u32 = 0x5d70_0000;
+const LEGACY_ROUTE_MASK: u32 = 0xffff_0000;
 const TPROXY_NO_FILE: &str = "tproxy_no";
 
 #[derive(Debug)]
@@ -110,13 +119,17 @@ pub fn scoped_out_chain_name(label: &str) -> String { format!("ZDTP_{:016x}", sc
 pub fn scoped_pre_chain_name(label: &str) -> String { format!("ZDTPP_{:016x}", scoped_hash(label)) }
 
 fn mark_for_scope(label: &str) -> u32 {
-    let low = (scoped_hash(label) as u32) & 0x0000_ffff;
-    MARK_PREFIX | low.max(1)
+    // 8 bits of per-scope identity in bits 20..27, plus a route nibble in
+    // bits 28..31.  The lower 20 Android fwmark bits are left untouched by
+    // MARK --set-xmark and by TPROXY --tproxy-mark.
+    let slot = ((scoped_hash(label) as u32) & 0x0000_00ff).max(1);
+    ROUTE_MARK | (slot << 20)
 }
 
 fn mark_hex(mark: u32) -> String { format!("0x{mark:08x}") }
-fn mark_mask_hex(mark: u32) -> String { format!("0x{mark:08x}/0xffffffff") }
-fn prefix_mask_hex() -> String { format!("0x{MARK_PREFIX:08x}/0x{MARK_MASK:08x}") }
+fn mark_mask_hex(mark: u32) -> String { format!("0x{mark:08x}/0x{SCOPE_MASK:08x}") }
+fn route_mask_hex() -> String { format!("0x{ROUTE_MARK:08x}/0x{ROUTE_MASK:08x}") }
+fn legacy_route_mask_hex() -> String { format!("0x{LEGACY_ROUTE_MARK:08x}/0x{LEGACY_ROUTE_MASK:08x}") }
 
 pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: &DpiTunnelOptions) -> std::result::Result<(), TproxyApplyError> {
     let _xtables_guard = xtables_lock::lock();
@@ -206,31 +219,33 @@ fn probe_tproxy_runtime() -> Result<()> {
     if rc != 0 { anyhow::bail!("create test chain failed: {}", out.trim()); }
     let (rc, out) = ipt_run_timeout(&[
         "-t", "mangle", "-A", "ZDT_TPROXY_TEST",
-        "-p", "tcp", "-j", "TPROXY", "--on-port", "1", "--tproxy-mark", "0x5d7/0xffffffff",
+        "-p", "tcp", "-j", "TPROXY", "--on-port", "1", "--tproxy-mark", "0x50000000/0xf0000000",
     ], Capture::Both, IPT_CMD_TIMEOUT)?;
     let _ = ipt_run_timeout(&["-t", "mangle", "-F", "ZDT_TPROXY_TEST"], Capture::None, IPT_CMD_TIMEOUT);
     let _ = ipt_run_timeout(&["-t", "mangle", "-X", "ZDT_TPROXY_TEST"], Capture::None, IPT_CMD_TIMEOUT);
     if rc != 0 { anyhow::bail!("TPROXY target test failed: {}", out.trim()); }
 
-    let _ = ip_run_timeout(&["rule", "del", "fwmark", "0x5d7/0xffffffff", "lookup", "1057"], Capture::None, IP_CMD_TIMEOUT);
-    let (rc, out) = ip_run_timeout(&["rule", "add", "fwmark", "0x5d7/0xffffffff", "lookup", "1057"], Capture::Both, IP_CMD_TIMEOUT)?;
+    let _ = ip_run_timeout(&["rule", "del", "fwmark", "0x50000000/0xf0000000", "lookup", "1057"], Capture::None, IP_CMD_TIMEOUT);
+    let (rc, out) = ip_run_timeout(&["rule", "add", "fwmark", "0x50000000/0xf0000000", "lookup", "1057"], Capture::Both, IP_CMD_TIMEOUT)?;
     if rc != 0 { anyhow::bail!("ip rule test failed: {}", out.trim()); }
     let (rc, out) = ip_run_timeout(&["route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", "1057"], Capture::Both, IP_CMD_TIMEOUT)?;
-    let _ = ip_run_timeout(&["rule", "del", "fwmark", "0x5d7/0xffffffff", "lookup", "1057"], Capture::None, IP_CMD_TIMEOUT);
+    let _ = ip_run_timeout(&["rule", "del", "fwmark", "0x50000000/0xf0000000", "lookup", "1057"], Capture::None, IP_CMD_TIMEOUT);
     if rc != 0 { anyhow::bail!("ip local route test failed: {}", out.trim()); }
     Ok(())
 }
 
 fn ensure_policy_route() -> Result<()> {
-    let fwmark = prefix_mask_hex();
+    let fwmark = route_mask_hex();
     let table = ROUTE_TABLE.to_string();
-    let (rc, out) = ip_run_timeout(&["rule", "add", "fwmark", fwmark.as_str(), "lookup", table.as_str()], Capture::Both, IP_CMD_TIMEOUT)?;
-    if rc != 0 {
-        let lower = out.to_ascii_lowercase();
-        if !lower.contains("file exists") && !lower.contains("exists") {
-            anyhow::bail!("ip rule add failed: {}", out.trim());
-        }
-    }
+
+    // Android ip rule allows duplicates.  Keep this idempotent: remove every
+    // old ZDT-D TPROXY rule, including the legacy 0x5d700000/0xffff0000 rule,
+    // then add exactly one rule at a stable priority.
+    cleanup_policy_rules_best_effort();
+
+    let (rc, out) = ip_run_timeout(&["rule", "add", "pref", ROUTE_PREF, "fwmark", fwmark.as_str(), "lookup", table.as_str()], Capture::Both, IP_CMD_TIMEOUT)?;
+    if rc != 0 { anyhow::bail!("ip rule add failed: {}", out.trim()); }
+
     let (rc, out) = ip_run_timeout(&["route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", table.as_str()], Capture::Both, IP_CMD_TIMEOUT)?;
     if rc != 0 { anyhow::bail!("ip route local replace failed: {}", out.trim()); }
     Ok(())
@@ -239,8 +254,21 @@ fn ensure_policy_route() -> Result<()> {
 fn ensure_base_chains() -> Result<()> {
     ensure_chain("mangle", OUT_CHAIN)?;
     ensure_chain("mangle", PRE_CHAIN)?;
-    ensure_hook("OUTPUT", OUT_CHAIN)?;
-    ensure_hook("PREROUTING", PRE_CHAIN)?;
+    ensure_chain("mangle", DIVERT_CHAIN)?;
+
+    // Keep hooks deterministic and Box-for-Android-like:
+    //   PREROUTING #1: existing transparent sockets are accepted via DIVERT
+    //   PREROUTING #2: locally re-routed packets enter TPROXY delivery
+    //   OUTPUT      #1: selected app traffic gets only high fwmark bits set
+    delete_rule_all("mangle", "OUTPUT", &["-j", OUT_CHAIN])?;
+    insert_rule_at("mangle", "OUTPUT", 1, &["-j", OUT_CHAIN])?;
+
+    delete_rule_all("mangle", "PREROUTING", &["-p", "tcp", "-m", "socket", "--transparent", "-j", DIVERT_CHAIN])?;
+    delete_rule_all("mangle", "PREROUTING", &["-p", "tcp", "-m", "socket", "-j", DIVERT_CHAIN])?;
+    delete_rule_all("mangle", "PREROUTING", &["-j", PRE_CHAIN])?;
+    insert_rule_at("mangle", "PREROUTING", 1, &["-p", "tcp", "-m", "socket", "-j", DIVERT_CHAIN])?;
+    insert_rule_at("mangle", "PREROUTING", 2, &["-j", PRE_CHAIN])?;
+
     ensure_ordered_return_prefix(OUT_CHAIN, &[
         &["-o", "lo", "-j", "RETURN"],
         &["-d", "127.0.0.0/8", "-j", "RETURN"],
@@ -248,6 +276,16 @@ fn ensure_base_chains() -> Result<()> {
     ensure_ordered_return_prefix(PRE_CHAIN, &[
         &["-d", "127.0.0.0/8", "-j", "RETURN"],
     ])?;
+    ensure_divert_chain()?;
+    Ok(())
+}
+
+fn ensure_divert_chain() -> Result<()> {
+    let (rc, out) = ipt_run_timeout(&["-t", "mangle", "-F", DIVERT_CHAIN], Capture::Both, IPT_CMD_TIMEOUT)?;
+    if rc != 0 { anyhow::bail!("flush {DIVERT_CHAIN} failed: {}", out.trim()); }
+    let fwmark = route_mask_hex();
+    add_rule_idempotent(DIVERT_CHAIN, vec!["-j".into(), "MARK".into(), "--set-xmark".into(), fwmark])?;
+    add_rule_idempotent(DIVERT_CHAIN, vec!["-j".into(), "ACCEPT".into()])?;
     Ok(())
 }
 
@@ -331,27 +369,62 @@ fn remove_scoped_chain(parent: &str, chain: &str) -> Result<()> {
     Ok(())
 }
 
+fn cleanup_policy_rules_best_effort() {
+    let table = ROUTE_TABLE.to_string();
+    for fwmark in [route_mask_hex(), legacy_route_mask_hex()] {
+        loop {
+            let Ok((rc, _)) = ip_run_timeout(&["rule", "del", "fwmark", fwmark.as_str(), "lookup", table.as_str()], Capture::None, IP_CMD_TIMEOUT) else {
+                break;
+            };
+            if rc != 0 { break; }
+        }
+    }
+    let _ = ip_run_timeout(&["rule", "del", "pref", ROUTE_PREF], Capture::None, IP_CMD_TIMEOUT);
+}
+
 pub fn cleanup_all() -> Result<()> {
     let _guard = xtables_lock::lock();
     delete_rule_all("mangle", "OUTPUT", &["-j", OUT_CHAIN])?;
+    delete_rule_all("mangle", "PREROUTING", &["-p", "tcp", "-m", "socket", "--transparent", "-j", DIVERT_CHAIN])?;
+    delete_rule_all("mangle", "PREROUTING", &["-p", "tcp", "-m", "socket", "-j", DIVERT_CHAIN])?;
     delete_rule_all("mangle", "PREROUTING", &["-j", PRE_CHAIN])?;
-    let _ = ipt_run_timeout(&["-t", "mangle", "-F", OUT_CHAIN], Capture::None, IPT_CMD_TIMEOUT);
-    let _ = ipt_run_timeout(&["-t", "mangle", "-X", OUT_CHAIN], Capture::None, IPT_CMD_TIMEOUT);
-    let _ = ipt_run_timeout(&["-t", "mangle", "-F", PRE_CHAIN], Capture::None, IPT_CMD_TIMEOUT);
-    let _ = ipt_run_timeout(&["-t", "mangle", "-X", PRE_CHAIN], Capture::None, IPT_CMD_TIMEOUT);
-    let fwmark = prefix_mask_hex();
-    let table = ROUTE_TABLE.to_string();
-    loop {
-        let (rc, _) = ip_run_timeout(&["rule", "del", "fwmark", fwmark.as_str(), "lookup", table.as_str()], Capture::None, IP_CMD_TIMEOUT)?;
-        if rc != 0 { break; }
+
+    // First flush parents so scoped chains are no longer referenced, then delete
+    // every scoped chain explicitly.  This keeps stop correct even if the later
+    // iptables backup restore is missing or fails.
+    for chain in [OUT_CHAIN, PRE_CHAIN, DIVERT_CHAIN] {
+        let _ = ipt_run_timeout(&["-t", "mangle", "-F", chain], Capture::None, IPT_CMD_TIMEOUT);
     }
+
+    for chain in list_mangle_chains_with_prefix("ZDTP") {
+        let _ = ipt_run_timeout(&["-t", "mangle", "-F", chain.as_str()], Capture::None, IPT_CMD_TIMEOUT);
+        let _ = ipt_run_timeout(&["-t", "mangle", "-X", chain.as_str()], Capture::None, IPT_CMD_TIMEOUT);
+    }
+
+    for chain in [OUT_CHAIN, PRE_CHAIN, DIVERT_CHAIN] {
+        let _ = ipt_run_timeout(&["-t", "mangle", "-X", chain], Capture::None, IPT_CMD_TIMEOUT);
+    }
+
+    let table = ROUTE_TABLE.to_string();
+    cleanup_policy_rules_best_effort();
     let _ = ip_run_timeout(&["route", "flush", "table", table.as_str()], Capture::None, IP_CMD_TIMEOUT);
     Ok(())
 }
 
+fn list_mangle_chains_with_prefix(prefix: &str) -> Vec<String> {
+    let Ok((0, out)) = crate::shell::run_timeout("iptables-save", &["-t", "mangle"], Capture::Stdout, IPT_SLOW_TIMEOUT) else {
+        return Vec::new();
+    };
+    out.lines()
+        .filter_map(|line| line.strip_prefix(':'))
+        .filter_map(|line| line.split_whitespace().next())
+        .filter(|name| name.starts_with(prefix))
+        .map(|name| name.to_string())
+        .collect()
+}
+
 fn add_mark_rule(chain: &str, uid: &str, proto: &str, extra: Option<&str>, mode: &str, ifaces: &[String], mark: u32) -> Result<()> {
     let extra_tokens = extra.map(|s| s.split_whitespace().map(|t| t.to_string()).collect::<Vec<_>>()).unwrap_or_default();
-    let mark_s = mark_hex(mark);
     let iface_list: Vec<Option<&str>> = if mode == "all" { vec![None] } else { ifaces.iter().map(|s| Some(s.as_str())).collect() };
     for iface in iface_list {
         let mut matcher: Vec<String> = Vec::new();
@@ -363,7 +436,8 @@ fn add_mark_rule(chain: &str, uid: &str, proto: &str, extra: Option<&str>, mode:
         matcher.extend(extra_tokens.clone());
 
         let mut mark_rule = matcher.clone();
-        mark_rule.extend(["-j", "MARK", "--set-mark", mark_s.as_str()].iter().map(|s| s.to_string()));
+        let mark_mask = mark_mask_hex(mark);
+        mark_rule.extend(["-j", "MARK", "--set-xmark", mark_mask.as_str()].iter().map(|s| s.to_string()));
         add_rule_idempotent(chain, mark_rule)?;
 
         // MARK is non-terminating. Add a matching terminating ACCEPT directly
@@ -380,7 +454,7 @@ fn add_tproxy_rule(chain: &str, proto: &str, extra: Option<&str>, mark: u32, des
     let extra_tokens = extra.map(|s| s.split_whitespace().map(|t| t.to_string()).collect::<Vec<_>>()).unwrap_or_default();
     let mark_match = mark_mask_hex(mark);
     let port_s = dest_port.to_string();
-    let mut rule: Vec<String> = vec!["-m".into(), "mark".into(), "--mark".into(), mark_match.clone(), "-p".into(), proto.into(), "-m".into(), proto.into()];
+    let mut rule: Vec<String> = vec!["-i".into(), "lo".into(), "-m".into(), "mark".into(), "--mark".into(), mark_match.clone(), "-p".into(), proto.into(), "-m".into(), proto.into()];
     rule.extend(extra_tokens);
     rule.extend(vec!["-j".into(), "TPROXY".into(), "--on-port".into(), port_s, "--tproxy-mark".into(), mark_match]);
     add_rule_idempotent(chain, rule)

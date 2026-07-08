@@ -1,9 +1,37 @@
+//! ZDT-D TPROXY backend (groundwork). Only `apply_or_fallback` is wired into
+//! the runtime; it falls back to DNAT because a transparent receiver does not
+//! exist yet. The full apply/cleanup below is kept compiled for future use.
+#![allow(dead_code)]
+
 use anyhow::{Context, Result};
 use log::{info, warn};
 use std::{collections::BTreeSet, fs, path::Path, time::Duration};
 
 use crate::{settings, shell::Capture, xtables_lock};
 use super::iptables_port::{DpiTunnelOptions, ProtoChoice};
+
+/// Gated TPROXY entrypoint. TPROXY needs a transparent receiver that does not
+/// exist yet, so this installs nothing and returns Ok; the caller falls back to
+/// DNAT. The full apply/cleanup below is kept compiled as groundwork.
+pub fn apply_or_fallback(
+    uid_file: &Path,
+    dest_port: u16,
+    proto_choice: ProtoChoice,
+    ifaces_raw: Option<&str>,
+    opt: &DpiTunnelOptions,
+) -> Result<()> {
+    warn!(
+        "TPROXY: tproxy_enabled=true, but the transparent receiver is not implemented yet; \
+         skipping TPROXY and continuing with DNAT (uid_file={} dest_port={} proto={:?} ifaces={} port_preference={} dpi_ports='{}')",
+        uid_file.display(),
+        dest_port,
+        proto_choice,
+        ifaces_raw.unwrap_or(""),
+        opt.port_preference,
+        opt.dpi_ports,
+    );
+    Ok(())
+}
 
 const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(5);
 const IPT_SLOW_TIMEOUT: Duration = Duration::from_secs(15);

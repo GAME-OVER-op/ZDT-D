@@ -2,7 +2,7 @@ pub mod caps;
 pub mod port_filter;
 pub mod mangle_app;
 pub mod iptables_port;
-pub mod tproxy_port;
+pub mod iptables_tproxy;
 pub mod iptables_v1;
 pub mod iptables_iplist;
 pub mod iptables_v2;

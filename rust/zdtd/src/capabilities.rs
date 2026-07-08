@@ -210,7 +210,7 @@ pub fn collect() -> Value {
             "production_apply": false,
             "warning_only": true,
             "dnat_stays_active": true,
-            "notes": "TPROXY setting is kept, but production routing intentionally stays on DNAT. See src/iptables/tproxy_port.rs for the full problem memo and future implementation plan.",
+            "notes": "TPROXY setting is kept, but production routing intentionally stays on DNAT until a transparent receiver exists. The gated entrypoint (apply_or_fallback) in src/iptables/iptables_tproxy.rs installs nothing and falls back to DNAT; the full apply/cleanup is kept compiled as groundwork.",
             "route_mark_candidate": "0x50000000/0xf0000000",
             "scope_mark_mask_candidate": "0xfff00000",
             "preserves_android_fwmark_low_bits_required": true,

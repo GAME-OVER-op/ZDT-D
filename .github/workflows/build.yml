@@ -2248,8 +2248,22 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          test -x "$SDKMANAGER" || { echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"; exit 1; }
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android NDK and build tools
         run: |
@@ -2267,8 +2281,23 @@ jobs:
             perl
 
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -3783,8 +3812,9 @@ jobs:
 
 
 
+
   build_tg_ws_proxy:
-    name: build tg-ws-proxy ${{ matrix.abi }}
+    name: build tg-ws-proxy $ matrix.abi 
     runs-on: ubuntu-latest
     needs: build_gate
     if: needs.build_gate.outputs.should_build == 'true'
@@ -3798,22 +3828,44 @@ jobs:
             rust_target: aarch64-linux-android
             clang_target_api21: aarch64-linux-android21
             cargo_linker_var: CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER
+            cc_env: CC_aarch64_linux_android
+            cxx_env: CXX_aarch64_linux_android
+            ar_env: AR_aarch64_linux_android
+            ranlib_env: RANLIB_aarch64_linux_android
           - abi: armeabi-v7a
             artifact_suffix: arm32
             rust_target: armv7-linux-androideabi
             clang_target_api21: armv7a-linux-androideabi21
             cargo_linker_var: CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER
+            cc_env: CC_armv7_linux_androideabi
+            cxx_env: CXX_armv7_linux_androideabi
+            ar_env: AR_armv7_linux_androideabi
+            ranlib_env: RANLIB_armv7_linux_androideabi
 
     steps:
       - name: Checkout tg-ws-proxy-rs
         uses: actions/checkout@v6
         with:
           repository: valnesfjord/tg-ws-proxy-rs
-          ref: ${{ env.TG_WS_PROXY_REF }}
+          ref: $ env.TG_WS_PROXY_REF 
           fetch-depth: 1
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          test -x "$SDKMANAGER" || { echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"; exit 1; }
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -3824,23 +3876,57 @@ jobs:
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
           fi
           NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          ANDROID_CC="$NDK_BIN/${{ matrix.clang_target_api21 }}-clang"
+          ANDROID_CC="$NDK_BIN/$ matrix.clang_target_api21 -clang"
+          ANDROID_CXX="$NDK_BIN/$ matrix.clang_target_api21 -clang++"
           ANDROID_AR="$NDK_BIN/llvm-ar"
-          if [[ ! -x "$ANDROID_CC" ]]; then echo "::error::Android C compiler not found: $ANDROID_CC"; exit 1; fi
-          if [[ ! -x "$ANDROID_AR" ]]; then echo "::error::Android archiver not found: $ANDROID_AR"; exit 1; fi
-          echo "PATH=$NDK_BIN:$PATH" >> "$GITHUB_ENV"
-          echo "${{ matrix.cargo_linker_var }}=$ANDROID_CC" >> "$GITHUB_ENV"
+          ANDROID_RANLIB="$NDK_BIN/llvm-ranlib"
+          test -x "$ANDROID_CC" || { echo "::error::Android C compiler not found: $ANDROID_CC"; exit 1; }
+          test -x "$ANDROID_CXX" || { echo "::error::Android C++ compiler not found: $ANDROID_CXX"; exit 1; }
+          test -x "$ANDROID_AR" || { echo "::error::Android archiver not found: $ANDROID_AR"; exit 1; }
+          test -x "$ANDROID_RANLIB" || { echo "::error::Android ranlib not found: $ANDROID_RANLIB"; exit 1; }
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "$ matrix.cargo_linker_var =$ANDROID_CC"
+            echo "$ matrix.cc_env =$ANDROID_CC"
+            echo "$ matrix.cxx_env =$ANDROID_CXX"
+            echo "$ matrix.ar_env =$ANDROID_AR"
+            echo "$ matrix.ranlib_env =$ANDROID_RANLIB"
+            echo "TARGET_CC=$ANDROID_CC"
+            echo "TARGET_CXX=$ANDROID_CXX"
+            echo "CC=$ANDROID_CC"
+            echo "CXX=$ANDROID_CXX"
+            echo "AR=$ANDROID_AR"
+            echo "RANLIB=$ANDROID_RANLIB"
+          } >> "$GITHUB_ENV"
           mkdir -p ~/.cargo
           cat >> ~/.cargo/config.toml <<EOF_CARGO_ANDROID
-          [target.${{ matrix.rust_target }}]
+          [target.$ matrix.rust_target ]
           linker = "$ANDROID_CC"
           ar = "$ANDROID_AR"
           EOF_CARGO_ANDROID
@@ -3848,14 +3934,14 @@ jobs:
       - name: Build tg-ws-proxy
         run: |
           set -euo pipefail
-          cargo build --release --target "${{ matrix.rust_target }}"
+          cargo build --release --target "$ matrix.rust_target "
 
       - name: Collect tg-ws-proxy
         run: |
           set -euo pipefail
-          SRC="target/${{ matrix.rust_target }}/release/tg-ws-proxy"
-          DST="out/tg-ws-proxy/${{ matrix.abi }}"
-          if [[ ! -s "$SRC" ]]; then echo "::error::tg-ws-proxy artifact missing after build: $SRC"; exit 1; fi
+          SRC="target/$ matrix.rust_target /release/tg-ws-proxy"
+          DST="out/tg-ws-proxy/$ matrix.abi "
+          test -s "$SRC" || { echo "::error::tg-ws-proxy artifact missing after build: $SRC"; exit 1; }
           mkdir -p "$DST"
           cp -f "$SRC" "$DST/tg-ws-proxy"
           chmod 755 "$DST/tg-ws-proxy"
@@ -3865,8 +3951,8 @@ jobs:
       - name: Upload tg-ws-proxy binary
         uses: actions/upload-artifact@v7
         with:
-          name: tg-ws-proxy-${{ matrix.artifact_suffix }}
-          path: out/tg-ws-proxy/${{ matrix.abi }}/tg-ws-proxy
+          name: tg-ws-proxy-$ matrix.artifact_suffix 
+          path: out/tg-ws-proxy/$ matrix.abi /tg-ws-proxy
           retention-days: 1
 
   package_tg_ws_proxy_asset:

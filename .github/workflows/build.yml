@@ -339,7 +339,23 @@ jobs:
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -508,7 +524,23 @@ jobs:
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -698,7 +730,23 @@ jobs:
 
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -975,7 +1023,23 @@ jobs:
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -1027,7 +1091,23 @@ jobs:
 
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -1242,7 +1322,23 @@ jobs:
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -1383,7 +1479,23 @@ jobs:
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -1537,7 +1649,23 @@ jobs:
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -1694,7 +1822,23 @@ jobs:
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -1869,7 +2013,23 @@ jobs:
 
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -2033,7 +2193,23 @@ jobs:
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -2206,7 +2382,23 @@ jobs:
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -2374,7 +2566,23 @@ jobs:
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -2776,7 +2984,23 @@ jobs:
 
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -3026,7 +3250,23 @@ jobs:
 
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -3321,7 +3561,23 @@ jobs:
 
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -3578,7 +3834,23 @@ jobs:
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -3772,7 +4044,23 @@ jobs:
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -4457,7 +4745,23 @@ jobs:
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -4626,7 +4930,23 @@ jobs:
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -4790,7 +5110,23 @@ jobs:
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -4878,12 +5214,28 @@ jobs:
 
       - name: Install Android SDK packages
         run: |
+          set -euo pipefail
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          "$SDKMANAGER" \
-            "platform-tools" \
-            "platforms;android-${{ env.ANDROID_API_LEVEL }}" \
-            "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}" \
-            "ndk;27.2.12479018"
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          install_sdk_package "platform-tools"
+          install_sdk_package "platforms;android-${{ env.ANDROID_API_LEVEL }}"
+          install_sdk_package "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}"
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/27.2.12479018" ]]; then
+            install_sdk_package "ndk;27.2.12479018"
+          fi
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/27.2.12479018"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"

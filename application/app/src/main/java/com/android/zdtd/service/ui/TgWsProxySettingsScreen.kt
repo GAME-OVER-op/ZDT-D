@@ -22,7 +22,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Send
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.WarningAmber
@@ -61,6 +60,7 @@ import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.api.ApiModels
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
@@ -115,6 +115,8 @@ fun TgWsProxySettingsScreen(
   val program = programs.firstOrNull { it.id == "tgwsproxy" } ?: ApiModels.Program("tgwsproxy", "Telegram WS Proxy", false, "single")
 
   var setting by remember { mutableStateOf(TgWsSettingUi()) }
+  var syncedSetting by remember { mutableStateOf<TgWsSettingUi?>(null) }
+  var settingInitialized by remember { mutableStateOf(false) }
   var enabled by remember(program.enabled) { mutableStateOf(program.enabled) }
   var loading by remember { mutableStateOf(true) }
   var saving by remember { mutableStateOf(false) }
@@ -148,8 +150,12 @@ fun TgWsProxySettingsScreen(
 
   fun loadAll() {
     loading = true
+    settingInitialized = false
     actions.loadJsonData("/api/programs/tgwsproxy/setting") { obj ->
-      setting = parseTgWsSetting(obj)
+      val loaded = parseTgWsSetting(obj)
+      setting = loaded
+      syncedSetting = loaded
+      settingInitialized = true
       loading = false
       refreshPreview()
     }
@@ -157,6 +163,26 @@ fun TgWsProxySettingsScreen(
 
   LaunchedEffect(Unit) { loadAll() }
   LaunchedEffect(program.enabled) { enabled = program.enabled }
+
+  LaunchedEffect(setting, settingInitialized, loading) {
+    if (!settingInitialized || loading) return@LaunchedEffect
+    delay(700)
+    val current = setting
+    if (current == syncedSetting) return@LaunchedEffect
+    val obj = current.toJson()
+    val err = validateTgWsSetting(obj)
+    if (err != null) return@LaunchedEffect
+    saving = true
+    actions.saveJsonData("/api/programs/tgwsproxy/setting", obj) { ok ->
+      saving = false
+      if (ok) {
+        syncedSetting = current
+        refreshPreview()
+      } else {
+        showSnack(context.getString(R.string.save_failed))
+      }
+    }
+  }
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
@@ -359,44 +385,6 @@ fun TgWsProxySettingsScreen(
       }
     }
 
-    item {
-      TgWsSectionCard(title = stringResource(R.string.tgws_command_title), desc = stringResource(R.string.tgws_command_desc), icon = { Icon(Icons.Outlined.Security, contentDescription = null, modifier = Modifier.size(21.dp)) }) {
-        Text(
-          text = preview.commandLine.ifBlank { stringResource(R.string.tgws_preview_empty) },
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
-        )
-        OutlinedButton(onClick = { copyText(preview.commandLine, context.getString(R.string.tgws_command_copied)) }, enabled = preview.commandLine.isNotBlank()) {
-          Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(17.dp))
-          Spacer(Modifier.size(7.dp))
-          Text(stringResource(R.string.tgws_copy_command))
-        }
-      }
-    }
-
-    item {
-      Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(
-          onClick = {
-            val obj = setting.toJson()
-            val err = validateTgWsSetting(obj)
-            if (err != null) {
-              showSnack(err)
-              return@Button
-            }
-            saving = true
-            actions.saveJsonData("/api/programs/tgwsproxy/setting", obj) { ok ->
-              saving = false
-              showSnack(context.getString(if (ok) R.string.saved else R.string.save_failed))
-              if (ok) refreshPreview()
-            }
-          },
-          enabled = !loading && !saving,
-          modifier = Modifier.weight(1f),
-        ) { Text(stringResource(if (saving) R.string.common_in_progress else R.string.action_save)) }
-        OutlinedButton(onClick = { loadAll() }, enabled = !saving, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.retry)) }
-      }
-    }
 
     item { Spacer(Modifier.height(40.dp)) }
   }

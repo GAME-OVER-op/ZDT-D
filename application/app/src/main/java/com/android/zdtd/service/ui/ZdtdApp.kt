@@ -2161,7 +2161,7 @@ private fun LandscapeLogsShelf(
 
 private fun supportsProgramLogs(programId: String, profile: String?): Boolean {
   return if (profile == null) {
-    programId in setOf("operaproxy", "dnscrypt", "tor")
+    programId in setOf("operaproxy", "dnscrypt", "tor", "tgwsproxy")
   } else {
     programId in setOf(
       "nfqws",

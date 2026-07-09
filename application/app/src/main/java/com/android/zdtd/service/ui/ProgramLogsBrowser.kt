@@ -556,6 +556,7 @@ private fun buildProgramLogsListScript(target: ProgramLogTarget): String {
         addStatic("tor.log", "/data/adb/modules/ZDT-D/working_folder/tor/log/tor.log")
         addStatic("t2s.log", "/data/adb/modules/ZDT-D/working_folder/tor/log/t2s.log")
       }
+      "tgwsproxy" -> addStatic("tg-ws-proxy.log", "/data/adb/modules/ZDT-D/working_folder/tgwsproxy/log/tg-ws-proxy.log")
     }
   } else {
     when (target.programId) {

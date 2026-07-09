@@ -208,7 +208,23 @@ pub fn load_enabled() -> Result<EnabledJson> {
 
 pub fn save_enabled(enabled: bool) -> Result<()> {
     ensure_layout()?;
-    write_json_pretty(Path::new(ACTIVE_JSON), &EnabledJson { enabled })
+    let effective_enabled = if enabled && !is_installed() {
+        log::warn!("tgwsproxy: refusing to enable because binary is missing: {TGWS_BIN}");
+        false
+    } else {
+        enabled
+    };
+    write_json_pretty(Path::new(ACTIVE_JSON), &EnabledJson { enabled: effective_enabled })
+}
+
+pub fn load_effective_enabled() -> Result<EnabledJson> {
+    let mut state = load_enabled()?;
+    if state.enabled && !is_installed() {
+        log::warn!("tgwsproxy: enabled but binary is missing, disabling profile");
+        save_enabled(false)?;
+        state.enabled = false;
+    }
+    Ok(state)
 }
 
 pub fn read_setting() -> Result<Setting> {
@@ -261,7 +277,7 @@ pub fn is_local_protected_mode(setting: &Setting) -> bool {
 }
 
 pub fn protected_local_port() -> Option<u16> {
-    let enabled = load_enabled().ok()?.enabled;
+    let enabled = load_effective_enabled().ok()?.enabled;
     if !enabled { return None; }
     let setting = read_setting().ok()?;
     if is_local_protected_mode(&setting) && setting.port > 0 { Some(setting.port) } else { None }
@@ -493,7 +509,7 @@ fn shell_quote_for_sh(s: &str) -> String {
 
 pub fn start_if_enabled() -> Result<()> {
     ensure_layout()?;
-    if !load_enabled()?.enabled {
+    if !load_effective_enabled()?.enabled {
         return Ok(());
     }
     if !is_installed() {

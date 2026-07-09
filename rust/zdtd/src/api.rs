@@ -2599,7 +2599,7 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
 
     // Optional tg-ws-proxy appears in the main list only after the binary is installed.
     if crate::programs::tgwsproxy::is_installed() {
-        let enabled = crate::programs::tgwsproxy::load_enabled().map(|v| v.enabled).unwrap_or(false);
+        let enabled = crate::programs::tgwsproxy::load_effective_enabled().map(|v| v.enabled).unwrap_or(false);
         out.push(json!({
             "id": "tgwsproxy",
             "name": program_display_name("tgwsproxy"),
@@ -2789,7 +2789,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
         // --- tg-ws-proxy optional utility settings
         ("GET", ["api", "programs", "tgwsproxy", "enabled"]) => {
             let res = (|| -> Result<serde_json::Value> {
-                let enabled = crate::programs::tgwsproxy::load_enabled()?.enabled;
+                let enabled = crate::programs::tgwsproxy::load_effective_enabled()?.enabled;
                 Ok(json!({"ok": true, "enabled": enabled}))
             })();
             match res {

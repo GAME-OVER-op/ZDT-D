@@ -580,7 +580,7 @@ fn operaproxy_enabled() -> bool {
 }
 
 fn tgwsproxy_enabled() -> bool {
-    simple_enabled_json("tgwsproxy", "active.json")
+    tgwsproxy::load_effective_enabled().map(|v| v.enabled).unwrap_or(false)
 }
 
 fn tor_enabled() -> bool {

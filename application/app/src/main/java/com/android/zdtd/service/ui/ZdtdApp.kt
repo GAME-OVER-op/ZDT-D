@@ -2,6 +2,7 @@ package com.android.zdtd.service.ui
 
 import android.app.Activity
 import android.content.Intent
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
@@ -103,6 +104,10 @@ import com.android.zdtd.service.ui.AppUpdateBanner
 import com.android.zdtd.service.ui.AppUpdateSettings
 import com.android.zdtd.service.ui.settings.SettingsScreen
 import com.android.zdtd.service.ui.UnknownSourcesPermissionDialog
+
+private fun supportsArm64ToolUpdates(): Boolean {
+  return Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
+}
 
 @Composable
 fun ZdtdApp(
@@ -1941,12 +1946,14 @@ private fun LandscapeQuickActions(
       IconButton(onClick = { onOpenSettings() }, modifier = Modifier.size(44.dp)) {
         Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings), modifier = Modifier.size(26.dp))
       }
-      IconButton(onClick = { onOpenProgramUpdates() }, modifier = Modifier.size(44.dp)) {
-        Icon(
-          painter = painterResource(R.drawable.ic_program_updates_custom),
-          contentDescription = stringResource(R.string.cd_program_updates),
-          modifier = Modifier.size(26.dp),
-        )
+      if (supportsArm64ToolUpdates()) {
+        IconButton(onClick = { onOpenProgramUpdates() }, modifier = Modifier.size(44.dp)) {
+          Icon(
+            painter = painterResource(R.drawable.ic_program_updates_custom),
+            contentDescription = stringResource(R.string.cd_program_updates),
+            modifier = Modifier.size(26.dp),
+          )
+        }
       }
       IconButton(onClick = { onOpenBackup() }, modifier = Modifier.size(44.dp)) {
         Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup), modifier = Modifier.size(26.dp))
@@ -2248,12 +2255,14 @@ private fun TopBarActionCluster(
           Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup))
         }
       }
-      CollapsingTopBarAction(visible = showFullActions) {
-        IconButton(onClick = onOpenProgramUpdates) {
-          Icon(
-            painter = painterResource(R.drawable.ic_program_updates_custom),
-            contentDescription = stringResource(R.string.cd_program_updates),
-          )
+      if (supportsArm64ToolUpdates()) {
+        CollapsingTopBarAction(visible = showFullActions) {
+          IconButton(onClick = onOpenProgramUpdates) {
+            Icon(
+              painter = painterResource(R.drawable.ic_program_updates_custom),
+              contentDescription = stringResource(R.string.cd_program_updates),
+            )
+          }
         }
       }
       CollapsingTopBarAction(visible = showFullActions) {

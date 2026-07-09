@@ -84,6 +84,10 @@ fun StatsScreen(
     uiStateFlow.map { it.device }.distinctUntilChanged()
   }.collectAsStateWithLifecycle(initialValue = UiState().device)
 
+  val installedProgramIds by remember(uiStateFlow) {
+    uiStateFlow.map { it.programs.map { p -> p.id }.toSet() }.distinctUntilChanged()
+  }.collectAsStateWithLifecycle(initialValue = emptySet())
+
   // Optional: freeze updates while the user is actively scrolling to avoid visual jitter.
   var stableRep by remember { mutableStateOf<ApiModels.StatusReport?>(null) }
   LaunchedEffect(rep, listState.isScrollInProgress) {
@@ -102,27 +106,31 @@ fun StatsScreen(
   val usedFrac = if (totalRamMb != null) (usedMb / totalRamMb).toFloat().coerceIn(0f, 1f) else null
   val freeMb = if (totalRamMb != null) (totalRamMb - usedMb).coerceAtLeast(0.0) else null
 
-  val rows by remember(showRep) {
+  val rows by remember(showRep, installedProgramIds) {
     derivedStateOf {
-      listOf(
-        ProcRow("zdt-d", showRep?.zdtd ?: ApiModels.ProcAgg(), 0),
-        ProcRow("Zapret", showRep?.zapret ?: ApiModels.ProcAgg(), 1),
-        ProcRow("Zapret 2", showRep?.zapret2 ?: ApiModels.ProcAgg(), 2),
-        ProcRow("ByeDPI", showRep?.byedpi ?: ApiModels.ProcAgg(), 3),
-        ProcRow("DPITunnel", showRep?.dpitunnel ?: ApiModels.ProcAgg(), 4),
-        ProcRow("DNSCrypt", showRep?.dnscrypt ?: ApiModels.ProcAgg(), 5),
-        ProcRow("sing-box", showRep?.singBox ?: ApiModels.ProcAgg(), 6),
-        ProcRow("WireProxy", showRep?.wireProxy ?: ApiModels.ProcAgg(), 7),
-        ProcRow("Tor", showRep?.tor ?: ApiModels.ProcAgg(), 8),
-        ProcRow("OpenVPN", showRep?.openVpn ?: ApiModels.ProcAgg(), 9),
-        ProcRow("Mihomo", showRep?.mihomo ?: ApiModels.ProcAgg(), 10),
-        ProcRow("mieru", showRep?.mieru ?: ApiModels.ProcAgg(), 11),
-        ProcRow("tun2proxy", showRep?.tun2Proxy ?: ApiModels.ProcAgg(), 12),
-        ProcRow("AmneziaWG", showRep?.amneziaWg ?: ApiModels.ProcAgg(), 13),
-        ProcRow("opera-proxy", showRep?.opera?.opera ?: ApiModels.ProcAgg(), 14),
-        ProcRow("t2s", showRep?.t2s ?: ApiModels.ProcAgg(), 15),
-        ProcRow("opera-ByeDPI", showRep?.opera?.byedpi ?: ApiModels.ProcAgg(), 16),
-      ).sortedWith(
+      buildList {
+        add(ProcRow("zdt-d", showRep?.zdtd ?: ApiModels.ProcAgg(), 0))
+        add(ProcRow("Zapret", showRep?.zapret ?: ApiModels.ProcAgg(), 1))
+        add(ProcRow("Zapret 2", showRep?.zapret2 ?: ApiModels.ProcAgg(), 2))
+        add(ProcRow("ByeDPI", showRep?.byedpi ?: ApiModels.ProcAgg(), 3))
+        add(ProcRow("DPITunnel", showRep?.dpitunnel ?: ApiModels.ProcAgg(), 4))
+        add(ProcRow("DNSCrypt", showRep?.dnscrypt ?: ApiModels.ProcAgg(), 5))
+        add(ProcRow("sing-box", showRep?.singBox ?: ApiModels.ProcAgg(), 6))
+        add(ProcRow("WireProxy", showRep?.wireProxy ?: ApiModels.ProcAgg(), 7))
+        add(ProcRow("Tor", showRep?.tor ?: ApiModels.ProcAgg(), 8))
+        add(ProcRow("OpenVPN", showRep?.openVpn ?: ApiModels.ProcAgg(), 9))
+        add(ProcRow("Mihomo", showRep?.mihomo ?: ApiModels.ProcAgg(), 10))
+        add(ProcRow("mieru", showRep?.mieru ?: ApiModels.ProcAgg(), 11))
+        val tgwsAgg = showRep?.tgwsproxy ?: ApiModels.ProcAgg()
+        if ("tgwsproxy" in installedProgramIds || tgwsAgg.count > 0) {
+          add(ProcRow("Telegram WS Proxy", tgwsAgg, 12))
+        }
+        add(ProcRow("tun2proxy", showRep?.tun2Proxy ?: ApiModels.ProcAgg(), 13))
+        add(ProcRow("AmneziaWG", showRep?.amneziaWg ?: ApiModels.ProcAgg(), 14))
+        add(ProcRow("opera-proxy", showRep?.opera?.opera ?: ApiModels.ProcAgg(), 15))
+        add(ProcRow("t2s", showRep?.t2s ?: ApiModels.ProcAgg(), 16))
+        add(ProcRow("opera-ByeDPI", showRep?.opera?.byedpi ?: ApiModels.ProcAgg(), 17))
+      }.sortedWith(
         compareByDescending<ProcRow> { it.agg.count > 0 }
           .thenByDescending { it.agg.cpuPercent }
           .thenByDescending { it.agg.rssMb }

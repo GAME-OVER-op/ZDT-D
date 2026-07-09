@@ -34,6 +34,7 @@ object ApiModels {
     val openVpn: ProcAgg = ProcAgg(),
     val mihomo: ProcAgg = ProcAgg(),
     val mieru: ProcAgg = ProcAgg(),
+    val tgwsproxy: ProcAgg = ProcAgg(),
     val tun2Proxy: ProcAgg = ProcAgg(),
     val amneziaWg: ProcAgg = ProcAgg(),
     val t2s: ProcAgg = ProcAgg(),
@@ -390,6 +391,7 @@ object ApiModels {
       openVpn = parseProcAgg(o.optJSONObject("openvpn")),
       mihomo = parseProcAgg(o.optJSONObject("mihomo")),
       mieru = parseProcAgg(o.optJSONObject("mieru")),
+      tgwsproxy = parseProcAgg(o.optJSONObject("tgwsproxy")),
       tun2Proxy = parseProcAgg(o.optJSONObject("tun2proxy")),
       amneziaWg = parseProcAgg(o.optJSONObject("amneziawg")),
       t2s = parseProcAgg(o.optJSONObject("t2s")),
@@ -445,7 +447,7 @@ object ApiModels {
       "off", "error" -> return false
     }
     val opera = r.opera
-    val sum = r.zapret.count + r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.dpitunnel.count + r.singBox.count + r.wireProxy.count + r.tor.count + r.openVpn.count + r.mihomo.count + r.mieru.count + r.tun2Proxy.count + r.amneziaWg.count +
+    val sum = r.zapret.count + r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.dpitunnel.count + r.singBox.count + r.wireProxy.count + r.tor.count + r.openVpn.count + r.mihomo.count + r.mieru.count + r.tgwsproxy.count + r.tun2Proxy.count + r.amneziaWg.count +
       (opera?.opera?.count ?: 0) + r.t2s.count + (opera?.byedpi?.count ?: 0)
     return sum > 0
   }
@@ -486,6 +488,7 @@ object ApiModels {
       add(r.openVpn)
       add(r.mihomo)
       add(r.mieru)
+      add(r.tgwsproxy)
       add(r.tun2Proxy)
       add(r.amneziaWg)
       add(r.t2s)
@@ -1035,6 +1038,7 @@ object ApiModels {
         "myvpn" -> rawName ?: "myvpn"
         "mihomo" -> rawName?.takeUnless { it.equals("mihomo", ignoreCase = true) } ?: "Mihomo"
         "mieru" -> rawName?.takeUnless { it.equals("mieru", ignoreCase = true) } ?: "mieru"
+        "tgwsproxy" -> rawName?.takeUnless { it.equals("tgwsproxy", ignoreCase = true) } ?: "Telegram WS Proxy"
         "amneziawg" -> rawName?.takeUnless { it.equals("amneziawg", ignoreCase = true) } ?: "AmneziaWG"
         else -> rawName
       }

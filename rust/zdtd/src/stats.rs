@@ -45,6 +45,7 @@ pub struct StatusReport {
     pub tun2socks: UsageAgg,
     pub mihomo: UsageAgg,
     pub mieru: UsageAgg,
+    pub tgwsproxy: UsageAgg,
     pub tun2proxy: UsageAgg, // combined tun2socks/tun2proxy helper processes
     pub tor: UsageAgg,
     pub t2s: UsageAgg,       // t2s used by opera-proxy, sing-box, wireproxy and tor
@@ -129,6 +130,7 @@ pub fn collect_status() -> Result<StatusReport> {
     let mihomo_pids = mihomo_pids();
     let mihomo_tun2socks_pids = mihomo_tun2socks_pids();
     let mieru_pids = mieru_pids();
+    let tgwsproxy_pids = pidof("tg-ws-proxy");
     let mieru_tun2proxy_pids = mieru_tun2proxy_pids();
     let mut tun2proxy_pids = Vec::new();
     tun2proxy_pids.extend(tun2socks_pids.iter().copied());
@@ -173,6 +175,7 @@ pub fn collect_status() -> Result<StatusReport> {
         &tun2socks_pids,
         &mihomo_pids,
         &mieru_pids,
+        &tgwsproxy_pids,
         &tun2proxy_pids,
         &tor_pids,
         &t2s_all_pids,
@@ -203,6 +206,7 @@ pub fn collect_status() -> Result<StatusReport> {
         tun2socks: agg_from_map(&tun2socks_pids, &usage),
         mihomo: agg_from_map(&mihomo_pids, &usage),
         mieru: agg_from_map(&mieru_pids, &usage),
+        tgwsproxy: agg_from_map(&tgwsproxy_pids, &usage),
         tun2proxy: agg_from_map(&tun2proxy_pids, &usage),
         tor: agg_from_map(&tor_pids, &usage),
         t2s: agg_from_map(&t2s_all_pids, &usage),

@@ -1168,8 +1168,8 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="myproxy_pass_hint">SOCKS5 password. Leave empty if auth is not required.</string>
 
     <string name="optional_tools_title">Additional utilities</string>
-    <string name="optional_tools_entry_desc">Downloadable components that extend the main tools list.</string>
-    <string name="optional_tools_screen_desc">Utilities are not bundled into the module by default. Download a component and it will appear in the main tools list.</string>
+    <string name="optional_tools_entry_desc">Here you can download available tools supported by the project author.</string>
+    <string name="optional_tools_screen_desc">Here you can download available tools supported by the project author.</string>
     <string name="optional_tools_available">Available to install</string>
     <string name="optional_tools_installed_count">Installed: %1$d</string>
     <string name="optional_tools_download">Download</string>
@@ -1184,8 +1184,8 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="optional_tools_download_progress">%1$d%% • %2$s / %3$s</string>
     <string name="optional_tools_progress_percent">%1$d%%</string>
     <string name="tg_ws_proxy_title">Telegram WS Proxy</string>
-    <string name="tg_ws_proxy_desc">MTProto → WebSocket bridge for Telegram. For now the app only downloads and prepares the binary.</string>
-    <string name="apps_list_desc_tgwsproxy">Additional Telegram MTProto → WebSocket utility.</string>
+    <string name="tg_ws_proxy_desc">Telegram MTProto → WebSocket proxy utility.</string>
+    <string name="apps_list_desc_tgwsproxy">Telegram MTProto → WebSocket proxy utility.</string>
 
     <string name="world_map_title">World map</string>
     <string name="world_map_prompt_title">Open world map?</string>
@@ -1911,5 +1911,78 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="captive_rename_label">Device name</string>
     <string name="captive_rename_save">Save</string>
     <string name="captive_rename_cancel">Cancel</string>
+
+
+    <string name="tgws_screen_desc">Configure local Telegram MTProto → WebSocket proxy.</string>
+    <string name="tgws_disabled">Disabled</string>
+    <string name="tgws_enable_title">Tool state</string>
+    <string name="tgws_enable_desc">Enable or disable Telegram WS Proxy. Changes apply after service restart.</string>
+    <string name="tgws_basic_title">Basic settings</string>
+    <string name="tgws_basic_desc">Port, access mode and stable MTProto secret.</string>
+    <string name="tgws_port">Port</string>
+    <string name="tgws_host_local">Only device</string>
+    <string name="tgws_host_lan">Local network</string>
+    <string name="tgws_host_local_desc">Binds to 127.0.0.1. The port is protected by proxyInfo.</string>
+    <string name="tgws_host_lan_desc">Binds to 0.0.0.0. Other devices in your local network can connect; this port is not protected by proxyInfo.</string>
+    <string name="tgws_secret">MTProto secret</string>
+    <string name="tgws_generate_secret">Generate</string>
+    <string name="tgws_copy_secret">Copy secret</string>
+    <string name="tgws_secret_copied">Secret copied</string>
+    <string name="tgws_link_title">Telegram link</string>
+    <string name="tgws_link_desc">Copy the proxy link or open it in Telegram.</string>
+    <string name="tgws_copy_link">Copy link</string>
+    <string name="tgws_copy_lan_link">Copy LAN link</string>
+    <string name="tgws_open_link">Open link</string>
+    <string name="tgws_open_link_failed">Failed to open the link.</string>
+    <string name="tgws_link_copied">Link copied</string>
+    <string name="tgws_lan_ip_fmt">LAN address: %1$s</string>
+    <string name="tgws_lan_ip_missing">Couldn’t detect the device LAN IP.</string>
+    <string name="tgws_preview_empty">Save settings to refresh the preview.</string>
+    <string name="tgws_faketls_title">FakeTLS</string>
+    <string name="tgws_faketls_desc">Accept inbound clients using ee FakeTLS camouflage.</string>
+    <string name="tgws_faketls_switch">Enable FakeTLS</string>
+    <string name="tgws_faketls_switch_desc">The generated Telegram link will use ee&lt;key&gt;&lt;domainhex&gt;.</string>
+    <string name="tgws_faketls_domain">FakeTLS SNI domain</string>
+    <string name="tgws_cloudflare_title">Cloudflare routing</string>
+    <string name="tgws_cloudflare_desc">Optional Cloudflare domains, Worker fallback and routing policy.</string>
+    <string name="tgws_default_domains">Use default domains</string>
+    <string name="tgws_default_domains_desc">Load the upstream default Cloudflare domain list.</string>
+    <string name="tgws_cf_domains">Cloudflare domains, one per line</string>
+    <string name="tgws_cf_worker_domains">Worker domains, one per line</string>
+    <string name="tgws_cf_priority">Cloudflare priority</string>
+    <string name="tgws_cf_priority_desc">Try Cloudflare before direct WebSocket.</string>
+    <string name="tgws_cf_balance">Balance domains</string>
+    <string name="tgws_cf_balance_desc">Distribute connections across Cloudflare domains.</string>
+    <string name="tgws_fallback_title">Fallback routing</string>
+    <string name="tgws_fallback_desc">Upstream MTProto proxies, Telegram DC overrides and domain fronting.</string>
+    <string name="tgws_mtproto_proxies">MTProto proxies HOST:PORT:SECRET</string>
+    <string name="tgws_dc_ip">DC IP overrides DC:IP</string>
+    <string name="tgws_fronting_domain">Domain fronting SNI</string>
+    <string name="tgws_fronting_cooldown">Fronting cooldown, seconds</string>
+    <string name="tgws_logs_title">Logs</string>
+    <string name="tgws_logs_desc">Logging mode and default log file.</string>
+    <string name="tgws_verbose">Verbose logs</string>
+    <string name="tgws_verbose_desc">Enable DEBUG output.</string>
+    <string name="tgws_quiet">Quiet mode</string>
+    <string name="tgws_quiet_desc">Suppress logs. Overrides verbose mode.</string>
+    <string name="tgws_advanced_title">Advanced</string>
+    <string name="tgws_advanced_desc">Buffers, connection pool and outbound proxy options.</string>
+    <string name="tgws_show_advanced">Show advanced</string>
+    <string name="tgws_hide_advanced">Hide advanced</string>
+    <string name="tgws_buf_kb">Buffer size, KiB</string>
+    <string name="tgws_pool_size">Pool size</string>
+    <string name="tgws_max_connections">Max connections (empty = auto)</string>
+    <string name="tgws_outbound_proxy">Outbound proxy URL</string>
+    <string name="tgws_no_outbound_proxy">Disable outbound proxy discovery</string>
+    <string name="tgws_no_outbound_proxy_desc">Ignore standard proxy environment variables.</string>
+    <string name="tgws_no_proxy">No-proxy hosts</string>
+    <string name="tgws_danger_title">Danger zone</string>
+    <string name="tgws_danger_desc">Settings that reduce transport security.</string>
+    <string name="tgws_skip_tls_verify">Accept invalid TLS certificates</string>
+    <string name="tgws_skip_tls_verify_desc">Use only if you understand the risk on untrusted networks.</string>
+    <string name="tgws_command_title">Generated command</string>
+    <string name="tgws_command_desc">Preview generated by zdtd Rust. Runtime uses argv, not shell parsing.</string>
+    <string name="tgws_copy_command">Copy command</string>
+    <string name="tgws_command_copied">Command copied</string>
 
 </resources>

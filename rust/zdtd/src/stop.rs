@@ -163,6 +163,7 @@ fn stop_process_groups_parallel() -> Result<()> {
         "opera-proxy",
         "sing-box",
         "wireproxy",
+        "tg-ws-proxy",
     ] {
         let proc_name = name.to_string();
         jobs.push(thread::spawn(move || kill_by_name(&proc_name)));

@@ -411,6 +411,7 @@ ClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules
         ("mieru", "active.json", PROFILES_DEFAULT_JSON),
         ("dnscrypt", "active.json", ENABLED_FALSE_JSON),
         ("operaproxy", "active.json", ENABLED_FALSE_JSON),
+        ("tgwsproxy", "active.json", ENABLED_FALSE_JSON),
         ("proxyInfo", "enabled.json", PROXYINFO_ENABLED_JSON),
         ("blockedquic", "enabled.json", PROXYINFO_ENABLED_JSON),
         ("tor", "enabled.json", PROXYINFO_ENABLED_JSON),

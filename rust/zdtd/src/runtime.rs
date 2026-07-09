@@ -11,7 +11,7 @@ use std::{
 use crate::{
     android::{boot, selinux::SelinuxGuard},
     iptables_backup,
-    programs::{amneziawg, byedpi, dnscrypt, dpitunnel, myproxy, myprogram, nfqws, nfqws2, openvpn, operaproxy, tor, tun2socks, myvpn, mihomo, mieru},
+    programs::{amneziawg, byedpi, dnscrypt, dpitunnel, myproxy, myprogram, nfqws, nfqws2, openvpn, operaproxy, tor, tgwsproxy, tun2socks, myvpn, mihomo, mieru},
     programs::{singbox, wireproxy},
     stats,
     settings,
@@ -128,12 +128,14 @@ pub fn start_full() -> Result<()> {
     let wireproxy_handle = thread::spawn(wireproxy::start_if_enabled);
     let myproxy_handle = thread::spawn(myproxy::start_if_enabled);
     let myprogram_handle = thread::spawn(myprogram::start_if_enabled);
+    let tgwsproxy_handle = thread::spawn(tgwsproxy::start_if_enabled);
     wait_start_group(
         "proxy-programs",
         vec![
             ("wireproxy", wireproxy_handle),
             ("myproxy", myproxy_handle),
             ("myprogram", myprogram_handle),
+            ("tgwsproxy", tgwsproxy_handle),
         ],
     );
 
@@ -533,6 +535,14 @@ fn enabled_runtime_processes_look_complete() -> bool {
         }
     }
 
+    if tgwsproxy_enabled() {
+        expected_any = true;
+        if !tgwsproxy::is_running() {
+            log::info!("runtime adoption: tgwsproxy is enabled but process count is 0");
+            return false;
+        }
+    }
+
     expected_any
 }
 
@@ -567,6 +577,10 @@ fn dnscrypt_enabled() -> bool {
 
 fn operaproxy_enabled() -> bool {
     simple_enabled_json("operaproxy", "active.json")
+}
+
+fn tgwsproxy_enabled() -> bool {
+    simple_enabled_json("tgwsproxy", "active.json")
 }
 
 fn tor_enabled() -> bool {
@@ -942,6 +956,7 @@ fn any_main_service_running() -> bool {
     let myvpn_expected = myvpn::has_enabled_profiles();
     let mihomo_expected = mihomo::has_enabled_profiles();
     let singbox_vpn_expected = singbox::has_enabled_vpn_profiles();
+    let tgwsproxy_expected = tgwsproxy_enabled();
 
     // Give processes a short moment to initialize; some binaries may exit immediately on bad args.
     for _ in 0..20 {
@@ -956,6 +971,7 @@ fn any_main_service_running() -> bool {
                 || r.myprogram.count > 0
                 || r.tor.count > 0
                 || r.opera.opera.count > 0
+                || (tgwsproxy_expected && tgwsproxy::is_running())
                 || (dnscrypt_expected && r.dnscrypt.count > 0)
                 || (openvpn_expected && openvpn::is_running())
                 || (amneziawg_expected && amneziawg::is_running())

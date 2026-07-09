@@ -356,6 +356,7 @@ fn program_display_name<'a>(id: &'a str) -> &'a str {
         "nfqws" => "zapret",
         "nfqws2" => "zapret2",
         "operaproxy" => "opera-proxy",
+        "tgwsproxy" => "Telegram WS Proxy",
         "openvpn" => "openvpn",
         "amneziawg" => "amneziawg",
         "tun2socks" => "tun2socks",
@@ -2596,6 +2597,17 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
         }));
     }
 
+    // Optional tg-ws-proxy appears in the main list only after the binary is installed.
+    if crate::programs::tgwsproxy::is_installed() {
+        let enabled = crate::programs::tgwsproxy::load_enabled().map(|v| v.enabled).unwrap_or(false);
+        out.push(json!({
+            "id": "tgwsproxy",
+            "name": program_display_name("tgwsproxy"),
+            "type": "single",
+            "enabled": enabled
+        }));
+    }
+
     {
         let enabled = crate::programs::tor::load_enabled_json().map(|v| v.is_enabled()).unwrap_or(false);
         out.push(json!({
@@ -2774,6 +2786,59 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
     let seg: Vec<&str> = path.trim_start_matches('/').split('/').collect();
 
     match (method, seg.as_slice()) {
+        // --- tg-ws-proxy optional utility settings
+        ("GET", ["api", "programs", "tgwsproxy", "enabled"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let enabled = crate::programs::tgwsproxy::load_enabled()?.enabled;
+                Ok(json!({"ok": true, "enabled": enabled}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "tgwsproxy", "enabled"]) => {
+            let res = (|| -> Result<()> {
+                let req: EnabledReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                crate::programs::tgwsproxy::save_enabled(req.enabled)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "tgwsproxy", "setting"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let setting = crate::programs::tgwsproxy::read_setting()?;
+                Ok(json!({"ok": true, "data": setting}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "tgwsproxy", "setting"]) => {
+            let res = (|| -> Result<()> {
+                let setting: crate::programs::tgwsproxy::Setting = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                crate::programs::tgwsproxy::write_setting(&setting)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "programs", "tgwsproxy", "command"]) => {
+            let res = crate::programs::tgwsproxy::command_preview_json();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
         // --- openvpn profile API
         ("GET", ["api", "programs", "openvpn", "profiles"]) => {
             let res = (|| -> Result<serde_json::Value> {

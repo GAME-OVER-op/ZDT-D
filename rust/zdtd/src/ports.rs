@@ -160,6 +160,7 @@ pub fn collect_used_ports_for_conflict_check_excluding_programs(
     if !exclude_mieru {
         used.extend(collect_defined_mieru_ports());
     }
+    used.extend(collect_defined_tgwsproxy_ports());
     Ok(used)
 }
 
@@ -334,6 +335,8 @@ pub fn normalize_ports() -> Result<()> {
     used.extend(collect_defined_mihomo_ports());
     used.extend(collect_defined_mieru_ports());
 
+    used.extend(collect_defined_tgwsproxy_ports());
+
     let entries = collect_adjustable_ports().context("collect adjustable ports")?;
     let mut changed = 0usize;
 
@@ -396,6 +399,8 @@ pub fn suggest_port_for_new_profile(program: &str) -> Result<u16> {
     used.extend(collect_defined_myprogram_ports());
     used.extend(collect_defined_mihomo_ports());
     used.extend(collect_defined_mieru_ports());
+
+    used.extend(collect_defined_tgwsproxy_ports());
 
     let entries = collect_adjustable_ports().unwrap_or_default();
     let mut max_self: Option<u16> = None;
@@ -510,6 +515,19 @@ fn collect_defined_mieru_ports() -> BTreeSet<u16> {
                     }
                 }
             }
+        }
+    }
+    used
+}
+
+fn collect_defined_tgwsproxy_ports() -> BTreeSet<u16> {
+    let mut used = BTreeSet::new();
+    if !crate::programs::tgwsproxy::is_installed() {
+        return used;
+    }
+    if let Ok(setting) = crate::programs::tgwsproxy::read_setting() {
+        if setting.port > 0 {
+            used.insert(setting.port);
         }
     }
     used

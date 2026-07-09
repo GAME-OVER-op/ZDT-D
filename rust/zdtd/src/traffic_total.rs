@@ -653,7 +653,29 @@ fn build_local_port_registry(root: &Path) -> HashMap<u16, TrafficBackendPort> {
     collect_mihomo_profile_ports(root, &mut out);
     collect_mieru_profile_ports(root, &mut out);
     collect_myprogram_t2s_ports(root, &mut out);
+    collect_tgwsproxy_ports(root, &mut out);
     out
+}
+
+fn collect_tgwsproxy_ports(_root: &Path, out: &mut HashMap<u16, TrafficBackendPort>) {
+    if !crate::programs::tgwsproxy::is_installed() { return; }
+    let Ok(setting) = crate::programs::tgwsproxy::read_setting() else { return; };
+    if setting.port == 0 { return; }
+    let host = crate::programs::tgwsproxy::effective_host(&setting).to_string();
+    out.entry(setting.port).or_insert_with(|| TrafficBackendPort {
+        port: setting.port,
+        label: format!("tgwsproxy:{}", setting.port),
+        host: Some(host),
+        program_id: Some("tgwsproxy".to_string()),
+        profile: None,
+        server: None,
+        wrapped_host: None,
+        wrapped_port: None,
+        wrapped_label: None,
+        wrapped_program_id: None,
+        wrapped_profile: None,
+        wrapped_server: None,
+    });
 }
 
 fn collect_singbox_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>) {

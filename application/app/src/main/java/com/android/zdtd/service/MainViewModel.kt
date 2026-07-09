@@ -5328,6 +5328,7 @@ private fun shQuote(s: String): String {
     return when (programId) {
       "dnscrypt" -> "/data/adb/modules/ZDT-D/working_folder/dnscrypt/active.json"
       "operaproxy" -> "/data/adb/modules/ZDT-D/working_folder/operaproxy/active.json"
+      "tgwsproxy" -> "/data/adb/modules/ZDT-D/working_folder/tgwsproxy/active.json"
       else -> null
     }
   }

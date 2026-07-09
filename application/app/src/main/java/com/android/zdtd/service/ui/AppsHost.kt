@@ -136,9 +136,10 @@ fun AppsHost(
         bottomContentPadding = bottomContentPadding,
       )
       is AppsRoute.Program -> when (r.programId) {
-        "tgwsproxy" -> OptionalToolsScreen(
-          state = tgWsProxy,
+        "tgwsproxy" -> TgWsProxySettingsScreen(
+          programs = programs,
           actions = actions,
+          snackHost = snackHost,
           topContentPadding = topContentPadding,
           bottomContentPadding = bottomContentPadding,
         )

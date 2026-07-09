@@ -71,6 +71,7 @@ pub(crate) fn protected_pids() -> Vec<u32> {
     pids.extend(pidof("opera-proxy"));
     pids.extend(singbox_pids());
     pids.extend(wireproxy_pids());
+    pids.extend(pidof("tg-ws-proxy"));
     pids.extend(myproxy_t2s_pids());
     pids.extend(myprogram_main_pids());
     pids.extend(myprogram_t2s_pids());

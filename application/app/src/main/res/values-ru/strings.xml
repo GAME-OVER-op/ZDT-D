@@ -1166,8 +1166,8 @@ APatch: 10700+</string>
     <string name="myproxy_pass_hint">Пароль SOCKS5. Оставьте пустым, если авторизация не нужна.</string>
 
     <string name="optional_tools_title">Дополнительные утилиты</string>
-    <string name="optional_tools_entry_desc">Скачиваемые компоненты, которые расширяют список основных инструментов.</string>
-    <string name="optional_tools_screen_desc">Утилиты не входят в модуль по умолчанию. Скачай нужный компонент, и он появится в списке основных инструментов.</string>
+    <string name="optional_tools_entry_desc">Здесь вы можете загрузить доступные инструменты, поддерживаемые автором проекта.</string>
+    <string name="optional_tools_screen_desc">Здесь вы можете загрузить доступные инструменты, поддерживаемые автором проекта.</string>
     <string name="optional_tools_available">Доступно для установки</string>
     <string name="optional_tools_installed_count">Установлено: %1$d</string>
     <string name="optional_tools_download">Скачать</string>
@@ -1182,8 +1182,8 @@ APatch: 10700+</string>
     <string name="optional_tools_download_progress">%1$d%% • %2$s / %3$s</string>
     <string name="optional_tools_progress_percent">%1$d%%</string>
     <string name="tg_ws_proxy_title">Telegram WS Proxy</string>
-    <string name="tg_ws_proxy_desc">MTProto → WebSocket bridge для Telegram. Сейчас приложение только скачивает и подготавливает бинарник.</string>
-    <string name="apps_list_desc_tgwsproxy">Дополнительная утилита Telegram MTProto → WebSocket.</string>
+    <string name="tg_ws_proxy_desc">Утилита Telegram MTProto → WebSocket proxy.</string>
+    <string name="apps_list_desc_tgwsproxy">Утилита Telegram MTProto → WebSocket proxy.</string>
 
     <string name="world_map_title">Карта мира</string>
     <string name="world_map_prompt_title">Вы желаете открыть карту мира?</string>
@@ -1911,5 +1911,78 @@ APatch: 10700+</string>
     <string name="captive_rename_label">Название устройства</string>
     <string name="captive_rename_save">Сохранить</string>
     <string name="captive_rename_cancel">Отмена</string>
+
+
+    <string name="tgws_screen_desc">Настройка локального Telegram MTProto → WebSocket proxy.</string>
+    <string name="tgws_disabled">Выключено</string>
+    <string name="tgws_enable_title">Состояние инструмента</string>
+    <string name="tgws_enable_desc">Включение или отключение Telegram WS Proxy. Изменения применяются после перезапуска службы.</string>
+    <string name="tgws_basic_title">Основные настройки</string>
+    <string name="tgws_basic_desc">Порт, режим доступа и постоянный MTProto secret.</string>
+    <string name="tgws_port">Порт</string>
+    <string name="tgws_host_local">Только устройство</string>
+    <string name="tgws_host_lan">Локальная сеть</string>
+    <string name="tgws_host_local_desc">Привязка к 127.0.0.1. Порт защищается через proxyInfo.</string>
+    <string name="tgws_host_lan_desc">Привязка к 0.0.0.0. Другие устройства в локальной сети смогут подключиться; этот порт не защищается через proxyInfo.</string>
+    <string name="tgws_secret">MTProto secret</string>
+    <string name="tgws_generate_secret">Сгенерировать</string>
+    <string name="tgws_copy_secret">Скопировать secret</string>
+    <string name="tgws_secret_copied">Secret скопирован</string>
+    <string name="tgws_link_title">Telegram-ссылка</string>
+    <string name="tgws_link_desc">Скопируйте ссылку proxy или откройте её в Telegram.</string>
+    <string name="tgws_copy_link">Скопировать ссылку</string>
+    <string name="tgws_copy_lan_link">Скопировать LAN-ссылку</string>
+    <string name="tgws_open_link">Открыть ссылку</string>
+    <string name="tgws_open_link_failed">Не удалось открыть ссылку.</string>
+    <string name="tgws_link_copied">Ссылка скопирована</string>
+    <string name="tgws_lan_ip_fmt">Адрес в сети: %1$s</string>
+    <string name="tgws_lan_ip_missing">Не удалось определить LAN IP устройства.</string>
+    <string name="tgws_preview_empty">Сохраните настройки, чтобы обновить предпросмотр.</string>
+    <string name="tgws_faketls_title">FakeTLS</string>
+    <string name="tgws_faketls_desc">Принимать входящих клиентов с маскировкой ee FakeTLS.</string>
+    <string name="tgws_faketls_switch">Включить FakeTLS</string>
+    <string name="tgws_faketls_switch_desc">Сгенерированная Telegram-ссылка будет использовать ee&lt;key&gt;&lt;domainhex&gt;.</string>
+    <string name="tgws_faketls_domain">FakeTLS SNI domain</string>
+    <string name="tgws_cloudflare_title">Cloudflare routing</string>
+    <string name="tgws_cloudflare_desc">Дополнительные Cloudflare-домены, Worker fallback и политика маршрутизации.</string>
+    <string name="tgws_default_domains">Использовать default domains</string>
+    <string name="tgws_default_domains_desc">Загружать upstream-список Cloudflare-доменов по умолчанию.</string>
+    <string name="tgws_cf_domains">Cloudflare domains, по одному в строке</string>
+    <string name="tgws_cf_worker_domains">Worker domains, по одному в строке</string>
+    <string name="tgws_cf_priority">Приоритет Cloudflare</string>
+    <string name="tgws_cf_priority_desc">Пробовать Cloudflare раньше прямого WebSocket.</string>
+    <string name="tgws_cf_balance">Балансировать домены</string>
+    <string name="tgws_cf_balance_desc">Распределять подключения между Cloudflare-доменами.</string>
+    <string name="tgws_fallback_title">Fallback routing</string>
+    <string name="tgws_fallback_desc">Upstream MTProto proxies, переопределения Telegram DC и domain fronting.</string>
+    <string name="tgws_mtproto_proxies">MTProto proxies HOST:PORT:SECRET</string>
+    <string name="tgws_dc_ip">Переопределения DC IP, DC:IP</string>
+    <string name="tgws_fronting_domain">Domain fronting SNI</string>
+    <string name="tgws_fronting_cooldown">Fronting cooldown, секунд</string>
+    <string name="tgws_logs_title">Логи</string>
+    <string name="tgws_logs_desc">Режим логирования и файл логов по умолчанию.</string>
+    <string name="tgws_verbose">Подробные логи</string>
+    <string name="tgws_verbose_desc">Включить DEBUG-вывод.</string>
+    <string name="tgws_quiet">Тихий режим</string>
+    <string name="tgws_quiet_desc">Отключить логи. Перекрывает подробный режим.</string>
+    <string name="tgws_advanced_title">Дополнительно</string>
+    <string name="tgws_advanced_desc">Буферы, пул соединений и параметры outbound proxy.</string>
+    <string name="tgws_show_advanced">Показать дополнительные</string>
+    <string name="tgws_hide_advanced">Скрыть дополнительные</string>
+    <string name="tgws_buf_kb">Размер буфера, KiB</string>
+    <string name="tgws_pool_size">Размер пула</string>
+    <string name="tgws_max_connections">Макс. подключений (пусто = auto)</string>
+    <string name="tgws_outbound_proxy">Outbound proxy URL</string>
+    <string name="tgws_no_outbound_proxy">Отключить обнаружение outbound proxy</string>
+    <string name="tgws_no_outbound_proxy_desc">Игнорировать стандартные proxy-переменные окружения.</string>
+    <string name="tgws_no_proxy">No-proxy hosts</string>
+    <string name="tgws_danger_title">Опасные настройки</string>
+    <string name="tgws_danger_desc">Настройки, снижающие безопасность транспорта.</string>
+    <string name="tgws_skip_tls_verify">Принимать недействительные TLS-сертификаты</string>
+    <string name="tgws_skip_tls_verify_desc">Используйте только если понимаете риск в недоверенных сетях.</string>
+    <string name="tgws_command_title">Сгенерированная команда</string>
+    <string name="tgws_command_desc">Предпросмотр генерируется zdtd Rust. Runtime использует argv, не shell parsing.</string>
+    <string name="tgws_copy_command">Скопировать команду</string>
+    <string name="tgws_command_copied">Команда скопирована</string>
 
 </resources>

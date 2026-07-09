@@ -1207,6 +1207,7 @@ pub fn collect_protected_port_sets() -> Result<(BTreeSet<u16>, BTreeSet<u16>)> {
     collect_myprogram_ports(&mut local)?;
     collect_mihomo_ports(&mut local)?;
     collect_mieru_ports(&mut local)?;
+    collect_tgwsproxy_ports(&mut local)?;
     drop_reserved_system_ports("local", &mut local);
     drop_reserved_system_ports("global", &mut global);
     local.insert(API_PORT);
@@ -1221,6 +1222,13 @@ pub fn collect_protected_ports() -> Result<BTreeSet<u16>> {
 
 fn working_program_dir(program: &str) -> PathBuf {
     Path::new(settings::MODULE_DIR).join("working_folder").join(program)
+}
+
+fn collect_tgwsproxy_ports(out: &mut BTreeSet<u16>) -> Result<()> {
+    if let Some(port) = crate::programs::tgwsproxy::protected_local_port() {
+        out.insert(port);
+    }
+    Ok(())
 }
 
 fn collect_byedpi_ports(out: &mut BTreeSet<u16>) -> Result<()> {

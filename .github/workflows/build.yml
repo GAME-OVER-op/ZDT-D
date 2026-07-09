@@ -307,8 +307,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -319,8 +338,8 @@ jobs:
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -457,8 +476,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -469,8 +507,8 @@ jobs:
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -621,8 +659,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android NDK and build tools
         run: |
@@ -640,8 +697,8 @@ jobs:
             xz-utils
 
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -891,15 +948,34 @@ jobs:
           go-version: '1.24.4'
           cache: false
 
-      - name: Set up Android SDK for Go cgo
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -918,8 +994,27 @@ jobs:
             echo "CXX=$GO_CXX"
           } >> "$GITHUB_ENV"
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android NDK and build tools
         run: |
@@ -931,8 +1026,8 @@ jobs:
             make
 
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -1120,15 +1215,34 @@ jobs:
           go-version: '1.24.4'
           cache: false
 
-      - name: Set up Android SDK for Go cgo
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -1242,15 +1356,34 @@ jobs:
           go-version: '1.24.4'
           cache: false
 
-      - name: Set up Android SDK for Go cgo
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -1377,15 +1510,34 @@ jobs:
           go-version: '1.24.4'
           cache: false
 
-      - name: Set up Android SDK for Go cgo
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -1515,15 +1667,34 @@ jobs:
           go-version: '1.24.4'
           cache: false
 
-      - name: Set up Android SDK for Go cgo
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -1665,8 +1836,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android NDK and build tools
         run: |
@@ -1678,8 +1868,8 @@ jobs:
             make
 
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -1816,15 +2006,34 @@ jobs:
           go-version: '1.24.4'
           cache: false
 
-      - name: Set up Android SDK for Go cgo
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -1970,15 +2179,34 @@ jobs:
           go-version: '1.24.4'
           cache: false
 
-      - name: Set up Android SDK for Go cgo
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -2119,15 +2347,34 @@ jobs:
           go-version: '1.24.4'
           cache: false
 
-      - name: Set up Android SDK for Go cgo
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -2486,8 +2733,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android NDK and build tools
         run: |
@@ -2509,8 +2775,8 @@ jobs:
             g++-multilib
 
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -2713,8 +2979,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android NDK and build tools
         run: |
@@ -2740,8 +3025,8 @@ jobs:
             g++-multilib
 
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -2993,8 +3278,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android NDK and build tools
         run: |
@@ -3016,8 +3320,8 @@ jobs:
             python3
 
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -3247,15 +3551,34 @@ jobs:
           go-version: '1.22.12'
           cache: false
 
-      - name: Set up Android SDK for Go cgo
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -3422,15 +3745,34 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android NDK
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -4083,8 +4425,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -4095,8 +4456,8 @@ jobs:
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -4233,8 +4594,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -4245,8 +4625,8 @@ jobs:
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -4383,15 +4763,34 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android NDK
         run: |
           set -euo pipefail
           NDK_VERSION="27.2.12479018"
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager "ndk;$NDK_VERSION"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
@@ -4455,13 +4854,32 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
 
       - name: Install Android SDK packages
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          sdkmanager \
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" \
             "platform-tools" \
             "platforms;android-${{ env.ANDROID_API_LEVEL }}" \
             "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}" \

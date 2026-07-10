@@ -214,7 +214,7 @@ pub fn collect() -> Value {
             "production_apply": tproxy_available_for_t2s,
             "warning_only": false,
             "dnat_fallback": true,
-            "notes": "When tproxy_enabled=true, t2s-aware program routing tries the TPROXY backend first. If the device/kernel or runtime probe does not support it, ZDT-D automatically falls back to the standard DNAT routing path.",
+            "notes": "When tproxy_enabled=true, t2s-aware program routing sends TCP and UDP through the TPROXY backend first. If the device/kernel or runtime probe does not support it, ZDT-D automatically falls back to the standard TCP-only DNAT routing path.",
             "route_mark_candidate": "0x50000000/0xf0000000",
             "scope_mark_mask_candidate": "0xfff00000",
             "preserves_android_fwmark_low_bits_required": true,

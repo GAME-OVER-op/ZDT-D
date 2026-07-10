@@ -233,8 +233,8 @@ pub fn shell_quote_for_sh(s: &str) -> String {
 // Shared t2s launcher and routing helpers.
 // t2s itself reads /data/adb/modules/ZDT-D/setting/setting.json and enables
 // its transparent listener when tproxy_enabled=true. zdtd uses the same setting
-// to decide whether to try TPROXY routing first and fall back to DNAT if the
-// device/kernel cannot support it.
+// to decide whether to route TCP+UDP through TPROXY first and fall back to
+// TCP-only DNAT if the device/kernel cannot support it.
 use log::{info, warn};
 use std::fs::OpenOptions;
 use std::os::unix::process::CommandExt;
@@ -404,25 +404,39 @@ pub fn apply_t2s_routing(
     ifaces_raw: Option<&str>,
     opt: DpiTunnelOptions,
 ) -> Result<()> {
+    let tproxy_proto_choice = ProtoChoice::TcpUdp;
+    let dnat_fallback_proto_choice = ProtoChoice::Tcp;
+
     if t2s_tproxy_enabled() {
-        match iptables_tproxy::apply(uid_file, dest_port, proto_choice, ifaces_raw, &opt) {
+        match iptables_tproxy::apply(uid_file, dest_port, tproxy_proto_choice, ifaces_raw, &opt) {
             Ok(()) => {
                 info!(
-                    "t2s routing: TPROXY applied uid_file={} dest_port={} proto={:?}",
+                    "t2s routing: TPROXY applied uid_file={} dest_port={} proto={:?} requested_proto={:?}",
                     uid_file.display(),
                     dest_port,
+                    tproxy_proto_choice,
                     proto_choice,
                 );
                 return Ok(());
             }
             Err(iptables_tproxy::TproxyApplyError::Unsupported(reason)) => {
-                warn!("t2s routing: TPROXY unsupported, falling back to DNAT: {reason}");
+                warn!(
+                    "t2s routing: TPROXY tcp+udp unsupported, falling back to TCP DNAT: {reason}"
+                );
             }
             Err(iptables_tproxy::TproxyApplyError::Failed(err)) => {
-                warn!("t2s routing: TPROXY failed, falling back to DNAT: {err:#}");
+                warn!(
+                    "t2s routing: TPROXY tcp+udp failed, falling back to TCP DNAT: {err:#}"
+                );
             }
         }
     }
 
-    iptables_port::apply(uid_file, dest_port, proto_choice, ifaces_raw, opt)
+    iptables_port::apply(
+        uid_file,
+        dest_port,
+        dnat_fallback_proto_choice,
+        ifaces_raw,
+        opt,
+    )
 }

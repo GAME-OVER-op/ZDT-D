@@ -25,6 +25,10 @@ pub struct BackendStatus {
     pub socks_ping_ms: Option<f64>,
     /// A cheap "internet through backend" latency check (SOCKS CONNECT to 1.1.1.1:443), ms.
     pub internet_ping_ms: Option<f64>,
+    /// SOCKS5 UDP ASSOCIATE support/RTT, ms. Used only by TPROXY UDP routing.
+    pub udp_ping_ms: Option<f64>,
+    pub udp_healthy: bool,
+    pub udp_last_error: Option<String>,
     /// Percent of recent RTT samples considered "stable" (0..100).
     pub rtt_integrity: Option<f64>,
 
@@ -168,6 +172,9 @@ impl SocksBackends {
             last_error: Some("not checked yet".to_string()),
             socks_ping_ms: None,
             internet_ping_ms: None,
+            udp_ping_ms: None,
+            udp_healthy: false,
+            udp_last_error: None,
             rtt_integrity: None,
             ttl_min: None,
             ttl_max: None,
@@ -701,6 +708,96 @@ impl SocksBackends {
             .collect()
     }
 
+    fn udp_healthy_idx(&self, idx: usize) -> bool {
+        self.status.get(idx).map(|s| s.healthy && s.udp_healthy).unwrap_or(false)
+    }
+
+    fn udp_indices_by_ports(&self, ports: &[u16], now: u64, respect_cooldown: bool) -> Vec<usize> {
+        self.addrs
+            .iter()
+            .enumerate()
+            .filter(|(idx, sa)| {
+                ports.contains(&sa.port())
+                    && self.udp_healthy_idx(*idx)
+                    && (!respect_cooldown || !self.backend_in_cooldown_idx(*idx, now))
+            })
+            .map(|(idx, _)| idx)
+            .collect()
+    }
+
+    pub fn udp_available(&self) -> bool {
+        if self.backend_mode == BackendMode::Priority {
+            let now = now_ts();
+            for group in &self.priority_groups {
+                let green = self.healthy_indices_by_ports(group, now, false);
+                if green.is_empty() {
+                    continue;
+                }
+                return green.iter().any(|idx| self.udp_healthy_idx(*idx));
+            }
+            return false;
+        }
+        self.status.iter().enumerate().any(|(idx, _)| self.udp_healthy_idx(idx))
+    }
+
+    pub fn select_udp_with_auth(&mut self, global_auth: Option<(String, String)>, respect_cooldown: bool) -> Option<(usize, SocketAddr, Option<(String, String)>)> {
+        let now = now_ts();
+        let global_ref = global_auth.as_ref();
+        if self.backend_mode == BackendMode::Priority {
+            for group_idx in 0..self.priority_groups.len() {
+                let green = self.healthy_indices_by_ports(&self.priority_groups[group_idx], now, false);
+                if green.is_empty() {
+                    continue;
+                }
+                let mut candidates = self.udp_indices_by_ports(&self.priority_groups[group_idx], now, respect_cooldown);
+                if candidates.is_empty() && respect_cooldown {
+                    candidates = self.udp_indices_by_ports(&self.priority_groups[group_idx], now, false);
+                }
+                if candidates.is_empty() {
+                    return None;
+                }
+                let cursor = self.priority_rr.get_mut(group_idx)?;
+                let idx = Self::pick_from_bucket(&candidates, cursor)?;
+                return Some((idx, self.addrs[idx], self.effective_auth_at(idx, global_ref)));
+            }
+            return None;
+        }
+
+        let mut candidates: Vec<usize> = self.status
+            .iter()
+            .enumerate()
+            .filter(|(idx, _)| self.udp_healthy_idx(*idx) && (!respect_cooldown || !self.backend_in_cooldown_idx(*idx, now)))
+            .map(|(idx, _)| idx)
+            .collect();
+        if candidates.is_empty() && respect_cooldown {
+            candidates = self.status
+                .iter()
+                .enumerate()
+                .filter(|(idx, _)| self.udp_healthy_idx(*idx))
+                .map(|(idx, _)| idx)
+                .collect();
+        }
+        if candidates.is_empty() {
+            return None;
+        }
+        self.rr = (self.rr + 1) % candidates.len();
+        let idx = candidates[self.rr];
+        Some((idx, self.addrs[idx], self.effective_auth_at(idx, global_ref)))
+    }
+
+    pub fn update_udp(&mut self, idx: usize, udp_ping_ms: Option<f64>, err: Option<String>) -> bool {
+        if idx >= self.status.len() { return false; }
+        let prev_ping = self.status[idx].udp_ping_ms;
+        let prev_healthy = self.status[idx].udp_healthy;
+        let prev_err = self.status[idx].udp_last_error.clone();
+        self.status[idx].udp_ping_ms = udp_ping_ms;
+        self.status[idx].udp_healthy = udp_ping_ms.is_some();
+        self.status[idx].udp_last_error = err;
+        prev_ping != self.status[idx].udp_ping_ms
+            || prev_healthy != self.status[idx].udp_healthy
+            || prev_err != self.status[idx].udp_last_error
+    }
+
     pub fn green_recheck_plan(&self, global_auth: Option<&(String, String)>) -> Vec<(usize, SocketAddr, Option<(String, String)>)> {
         self.addrs
             .iter()
@@ -1009,6 +1106,9 @@ impl SocksBackends {
             last_error: Some("added (not checked yet)".to_string()),
             socks_ping_ms: None,
             internet_ping_ms: None,
+            udp_ping_ms: None,
+            udp_healthy: false,
+            udp_last_error: None,
             rtt_integrity: None,
             ttl_min: None,
             ttl_max: None,

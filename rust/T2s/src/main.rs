@@ -1,6 +1,7 @@
 mod cli;
 mod socks5;
 mod transparent;
+mod udp;
 mod rules;
 mod stats;
 mod web;
@@ -25,6 +26,7 @@ pub struct AppState {
     pub events: broadcast::Sender<stats::Event>,
     pub semaphore: Arc<Semaphore>,
     pub api: Arc<api_runtime::ApiRuntime>,
+    pub tproxy_enabled: bool,
 }
 
 
@@ -151,6 +153,10 @@ async fn async_main(workers: usize) -> Result<()> {
     let args = Args::parse_and_normalize().context("parse args")?;
     let started_at = stats::now_ts();
     let api = Arc::new(api_runtime::ApiRuntime::new(&args, started_at).context("init t2s api runtime")?);
+    let tproxy_enabled = transparent::tproxy_enabled_from_settings();
+    if tproxy_enabled {
+        info!("ZDT-D tproxy_enabled=true: enabling TCP TPROXY listener and UDP TPROXY receiver");
+    }
 
     let rules = rules::Rules::load_from_env();
     let stats = Arc::new(stats::Stats::default());
@@ -176,6 +182,7 @@ async fn async_main(workers: usize) -> Result<()> {
         events,
         semaphore,
         api,
+        tproxy_enabled,
     };
 
     // Background: periodic backend checks + stats tick
@@ -229,6 +236,15 @@ async fn async_main(workers: usize) -> Result<()> {
             }
         });
 
+        if state.tproxy_enabled {
+            let st = state.clone();
+            tokio::spawn(async move {
+                if let Err(e) = udp::run_udp_tproxy(st).await {
+                    error!("udp tproxy server error: {:#}", e);
+                }
+            });
+        }
+
         // Optional external listener on 0.0.0.0:<external_port>
         if args.external_port != 0 {
             let st = state.clone();
@@ -270,7 +286,7 @@ async fn run_tcp_on(state: AppState, addr: SocketAddr, ingress: stats::Ingress) 
         }
     }
 
-    let listener = TcpListener::bind(addr).await.context("bind tcp listener")?;
+    let listener = transparent::bind_tcp_listener(addr, state.tproxy_enabled && ingress == stats::Ingress::Internal).await.context("bind tcp listener")?;
     info!("TCP ({:?}) listening on {}", ingress, addr);
 
     loop {
@@ -406,8 +422,8 @@ async fn proxy_tcp(
     } else if let (Some(h), Some(p)) = (state.args.target_host.clone(), state.args.target_port) {
         stats::Target::HostPort(h, p)
     } else {
-        let dst = transparent::get_original_dst(&client)
-            .context("SO_ORIGINAL_DST failed (need iptables REDIRECT/TPROXY style setup)")?;
+        let dst = transparent::get_transparent_dst(&client, &state.args.listen_addr, state.args.listen_port, state.tproxy_enabled)
+            .context("transparent destination lookup failed")?;
         stats::Target::SockAddr(dst)
     };
 

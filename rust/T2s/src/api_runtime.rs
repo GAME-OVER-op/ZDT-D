@@ -24,6 +24,7 @@ pub struct InstanceMeta {
     pub backend_mode: String,
     pub priority_speed_aware: bool,
     pub token_file: String,
+    pub tproxy_enabled: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -82,6 +83,7 @@ impl ApiRuntime {
             backend_mode: format!("{:?}", args.backend_mode).to_ascii_lowercase(),
             priority_speed_aware: args.priority_speed_aware,
             token_file: SHARED_TOKEN_FILE.to_string(),
+            tproxy_enabled: crate::transparent::tproxy_enabled_from_settings(),
         };
         let rt = Self { api_dir, token_file, token, instance };
         if let Err(e) = rt.write_metadata() {

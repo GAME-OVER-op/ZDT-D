@@ -12,7 +12,7 @@ use anyhow::{anyhow, Context, Result};
 use cli::{Args, PriorityZeroMode};
 use parking_lot::Mutex;
 use std::{net::{IpAddr, Ipv4Addr, SocketAddr}, sync::Arc, time::Duration};
-use tokio::{net::TcpListener, signal, sync::{broadcast, Semaphore}};
+use tokio::{signal, sync::{broadcast, Semaphore}};
 use tracing::{error, info, warn};
 
 #[derive(Clone)]

@@ -257,136 +257,48 @@ pub(crate) async fn do_userpass_auth_for_healthcheck(stream: &mut TcpStream, use
 }
 
 
-pub async fn udp_associate(
-    backend: SocketAddr,
-    auth: Option<(String, String)>,
-    timeout: Duration,
-) -> Result<(TcpStream, SocketAddr)> {
+pub async fn udp_associate(backend: SocketAddr, auth: Option<(String, String)>, timeout: Duration) -> Result<(TcpStream, SocketAddr)> {
     let mut stream = connect_to_socks5_server(backend, auth, timeout).await?;
     let hs_timeout = handshake_timeout(timeout);
-    let req = vec![
-        0x05u8, 0x03u8, 0x00u8, // VER, CMD=UDP ASSOCIATE, RSV
-        0x01u8, 0, 0, 0, 0,     // ATYP=IPv4, ADDR=0.0.0.0
-        0, 0,                   // PORT=0
-    ];
+    let req = vec![0x05u8, 0x03u8, 0x00u8, 0x01u8, 0, 0, 0, 0, 0, 0];
     io_step(hs_timeout, "udp associate request write", stream.write_all(&req)).await?;
     let mut hdr = [0u8; 4];
     io_step(hs_timeout, "udp associate reply head read", stream.read_exact(&mut hdr)).await?;
-    if hdr[0] != 0x05 {
-        return Err(anyhow!("invalid SOCKS version in UDP ASSOCIATE reply {}", hdr[0]));
-    }
-    if hdr[1] != 0x00 {
-        return Err(anyhow!("SOCKS UDP ASSOCIATE failed, REP={:#x}", hdr[1]));
-    }
+    if hdr[0] != 0x05 { return Err(anyhow!("invalid SOCKS version in UDP ASSOCIATE reply {}", hdr[0])); }
+    if hdr[1] != 0x00 { return Err(anyhow!("SOCKS UDP ASSOCIATE failed, REP={:#x}", hdr[1])); }
     let relay = match hdr[3] {
-        0x01 => {
-            let mut buf = [0u8; 6];
-            io_step(hs_timeout, "udp associate ipv4 relay read", stream.read_exact(&mut buf)).await?;
-            let ip = std::net::Ipv4Addr::new(buf[0], buf[1], buf[2], buf[3]);
-            let port = u16::from_be_bytes([buf[4], buf[5]]);
-            SocketAddr::new(std::net::IpAddr::V4(ip), port)
-        }
-        0x04 => {
-            let mut buf = [0u8; 18];
-            io_step(hs_timeout, "udp associate ipv6 relay read", stream.read_exact(&mut buf)).await?;
-            let ip = std::net::Ipv6Addr::from(<[u8; 16]>::try_from(&buf[..16]).map_err(|_| anyhow!("invalid ipv6 relay length"))?);
-            let port = u16::from_be_bytes([buf[16], buf[17]]);
-            SocketAddr::new(std::net::IpAddr::V6(ip), port)
-        }
-        0x03 => {
-            let mut ln = [0u8; 1];
-            io_step(hs_timeout, "udp associate domain relay len read", stream.read_exact(&mut ln)).await?;
-            let l = ln[0] as usize;
-            let mut buf = vec![0u8; l + 2];
-            io_step(hs_timeout, "udp associate domain relay read", stream.read_exact(&mut buf)).await?;
-            let host = std::str::from_utf8(&buf[..l]).context("UDP ASSOCIATE relay domain utf8")?;
-            let port = u16::from_be_bytes([buf[l], buf[l + 1]]);
-            let mut addrs = (host, port).to_socket_addrs().context("resolve UDP ASSOCIATE relay domain")?;
-            addrs.next().ok_or_else(|| anyhow!("no UDP ASSOCIATE relay address"))?
-        }
+        0x01 => { let mut buf=[0u8;6]; io_step(hs_timeout,"udp associate ipv4 relay read",stream.read_exact(&mut buf)).await?; SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(buf[0],buf[1],buf[2],buf[3])), u16::from_be_bytes([buf[4],buf[5]])) }
+        0x04 => { let mut buf=[0u8;18]; io_step(hs_timeout,"udp associate ipv6 relay read",stream.read_exact(&mut buf)).await?; let ip=std::net::Ipv6Addr::from(<[u8;16]>::try_from(&buf[..16]).map_err(|_| anyhow!("invalid ipv6 relay length"))?); SocketAddr::new(std::net::IpAddr::V6(ip), u16::from_be_bytes([buf[16],buf[17]])) }
+        0x03 => { let mut ln=[0u8;1]; io_step(hs_timeout,"udp associate domain relay len read",stream.read_exact(&mut ln)).await?; let l=ln[0] as usize; let mut buf=vec![0u8;l+2]; io_step(hs_timeout,"udp associate domain relay read",stream.read_exact(&mut buf)).await?; let host=std::str::from_utf8(&buf[..l]).context("UDP ASSOCIATE relay domain utf8")?; let port=u16::from_be_bytes([buf[l],buf[l+1]]); let mut addrs=(host,port).to_socket_addrs().context("resolve UDP ASSOCIATE relay domain")?; addrs.next().ok_or_else(|| anyhow!("no UDP ASSOCIATE relay address"))? }
         atyp => return Err(anyhow!("unknown ATYP in UDP ASSOCIATE reply {}", atyp)),
     };
-    let relay = if relay.ip().is_unspecified() {
-        SocketAddr::new(backend.ip(), relay.port())
-    } else {
-        relay
-    };
+    let relay = if relay.ip().is_unspecified() { SocketAddr::new(backend.ip(), relay.port()) } else { relay };
     Ok((stream, relay))
 }
 
-pub async fn check_udp_associate(
-    backend: SocketAddr,
-    auth: Option<(String, String)>,
-    timeout: Duration,
-) -> Option<f64> {
+pub async fn check_udp_associate(backend: SocketAddr, auth: Option<(String, String)>, timeout: Duration) -> Option<f64> {
     let start = std::time::Instant::now();
-    match udp_associate(backend, auth, timeout).await {
-        Ok((_control, _relay)) => Some(start.elapsed().as_secs_f64() * 1000.0),
-        Err(_) => None,
-    }
+    match udp_associate(backend, auth, timeout).await { Ok((_control, _relay)) => Some(start.elapsed().as_secs_f64()*1000.0), Err(_) => None }
 }
 
 pub fn encode_udp_packet(target: TargetAddr, data: &[u8]) -> Result<Vec<u8>> {
-    let mut out = vec![0u8, 0u8, 0u8]; // RSV, RSV, FRAG=0
+    let mut out=vec![0u8,0u8,0u8];
     match target {
-        TargetAddr::Ip(sa) => {
-            match sa.ip() {
-                std::net::IpAddr::V4(v4) => { out.push(0x01); out.extend_from_slice(&v4.octets()); }
-                std::net::IpAddr::V6(v6) => { out.push(0x04); out.extend_from_slice(&v6.octets()); }
-            }
-            out.extend_from_slice(&sa.port().to_be_bytes());
-        }
-        TargetAddr::Domain(host, port) => {
-            let hb = host.as_bytes();
-            if hb.len() > 255 { return Err(anyhow!("domain too long for SOCKS5 UDP")); }
-            out.push(0x03);
-            out.push(hb.len() as u8);
-            out.extend_from_slice(hb);
-            out.extend_from_slice(&port.to_be_bytes());
-        }
+        TargetAddr::Ip(sa)=>{ match sa.ip(){ std::net::IpAddr::V4(v4)=>{out.push(0x01); out.extend_from_slice(&v4.octets());} std::net::IpAddr::V6(v6)=>{out.push(0x04); out.extend_from_slice(&v6.octets());} } out.extend_from_slice(&sa.port().to_be_bytes()); }
+        TargetAddr::Domain(host,port)=>{ let hb=host.as_bytes(); if hb.len()>255 { return Err(anyhow!("domain too long for SOCKS5 UDP")); } out.push(0x03); out.push(hb.len() as u8); out.extend_from_slice(hb); out.extend_from_slice(&port.to_be_bytes()); }
     }
-    out.extend_from_slice(data);
-    Ok(out)
+    out.extend_from_slice(data); Ok(out)
 }
 
 pub fn decode_udp_packet(buf: &[u8]) -> Result<(TargetAddr, &[u8])> {
-    if buf.len() < 4 || buf[0] != 0 || buf[1] != 0 {
-        return Err(anyhow!("invalid SOCKS5 UDP header"));
-    }
-    if buf[2] != 0 {
-        return Err(anyhow!("fragmented SOCKS5 UDP packets are not supported"));
-    }
-    let atyp = buf[3];
-    let mut i = 4usize;
-    let target = match atyp {
-        0x01 => {
-            if buf.len() < i + 4 + 2 { return Err(anyhow!("short SOCKS5 UDP IPv4 packet")); }
-            let ip = std::net::Ipv4Addr::new(buf[i], buf[i + 1], buf[i + 2], buf[i + 3]);
-            i += 4;
-            let port = u16::from_be_bytes([buf[i], buf[i + 1]]);
-            i += 2;
-            TargetAddr::Ip(SocketAddr::new(std::net::IpAddr::V4(ip), port))
-        }
-        0x04 => {
-            if buf.len() < i + 16 + 2 { return Err(anyhow!("short SOCKS5 UDP IPv6 packet")); }
-            let ip = std::net::Ipv6Addr::from(<[u8; 16]>::try_from(&buf[i..i + 16]).map_err(|_| anyhow!("invalid IPv6 length"))?);
-            i += 16;
-            let port = u16::from_be_bytes([buf[i], buf[i + 1]]);
-            i += 2;
-            TargetAddr::Ip(SocketAddr::new(std::net::IpAddr::V6(ip), port))
-        }
-        0x03 => {
-            if buf.len() < i + 1 { return Err(anyhow!("short SOCKS5 UDP domain packet")); }
-            let l = buf[i] as usize;
-            i += 1;
-            if buf.len() < i + l + 2 { return Err(anyhow!("short SOCKS5 UDP domain body")); }
-            let host = std::str::from_utf8(&buf[i..i + l]).context("SOCKS5 UDP domain utf8")?.to_string();
-            i += l;
-            let port = u16::from_be_bytes([buf[i], buf[i + 1]]);
-            i += 2;
-            TargetAddr::Domain(host, port)
-        }
-        _ => return Err(anyhow!("unknown SOCKS5 UDP ATYP {}", atyp)),
+    if buf.len()<4 || buf[0]!=0 || buf[1]!=0 { return Err(anyhow!("invalid SOCKS5 UDP header")); }
+    if buf[2]!=0 { return Err(anyhow!("fragmented SOCKS5 UDP packets are not supported")); }
+    let mut i=4usize;
+    let target=match buf[3] {
+        0x01=>{ if buf.len()<i+6 { return Err(anyhow!("short SOCKS5 UDP IPv4 packet")); } let ip=std::net::Ipv4Addr::new(buf[i],buf[i+1],buf[i+2],buf[i+3]); i+=4; let port=u16::from_be_bytes([buf[i],buf[i+1]]); i+=2; TargetAddr::Ip(SocketAddr::new(std::net::IpAddr::V4(ip),port)) }
+        0x04=>{ if buf.len()<i+18 { return Err(anyhow!("short SOCKS5 UDP IPv6 packet")); } let ip=std::net::Ipv6Addr::from(<[u8;16]>::try_from(&buf[i..i+16]).map_err(|_| anyhow!("invalid IPv6 length"))?); i+=16; let port=u16::from_be_bytes([buf[i],buf[i+1]]); i+=2; TargetAddr::Ip(SocketAddr::new(std::net::IpAddr::V6(ip),port)) }
+        0x03=>{ if buf.len()<i+1 { return Err(anyhow!("short SOCKS5 UDP domain packet")); } let l=buf[i] as usize; i+=1; if buf.len()<i+l+2 { return Err(anyhow!("short SOCKS5 UDP domain body")); } let host=std::str::from_utf8(&buf[i..i+l]).context("SOCKS5 UDP domain utf8")?.to_string(); i+=l; let port=u16::from_be_bytes([buf[i],buf[i+1]]); i+=2; TargetAddr::Domain(host,port) }
+        atyp=>return Err(anyhow!("unknown SOCKS5 UDP ATYP {}", atyp)),
     };
     Ok((target, &buf[i..]))
 }

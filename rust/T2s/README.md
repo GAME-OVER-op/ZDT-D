@@ -15,7 +15,6 @@ redirection and proxy engines that expose SOCKS5-compatible local ports.
 - optionally expose an external listener;
 - recover the original destination with Linux `SO_ORIGINAL_DST` in transparent mode;
 - forward TCP streams to SOCKS5 upstreams;
-- in TPROXY mode, relay UDP through SOCKS5 UDP ASSOCIATE when the selected backend supports it;
 - use multiple SOCKS5 backends;
 - select backends by balance or priority policy;
 - monitor backend health;
@@ -24,14 +23,10 @@ redirection and proxy engines that expose SOCKS5-compatible local ports.
 - keep a connection registry and kill active connections;
 - apply download throttling;
 - evaluate traffic rules from `TRAFFIC_RULES`;
-- read ZDT-D `tproxy_enabled` from `/data/adb/modules/ZDT-D/setting/setting.json`;
 - sniff HTTP Host, HTTP CONNECT target and TLS SNI on a best-effort basis.
 
-By default this build is TCP-only. When ZDT-D `setting.json` has
-`tproxy_enabled: true`, `t2s` also opens a UDP TPROXY receiver on the same
-listen port and relays UDP either through SOCKS5 UDP ASSOCIATE or directly
-according to backend capability and policy. It does not implement DNS routing
-internally.
+This build is TCP-only. It does not proxy UDP and it does not implement DNS
+resolution/routing internally.
 
 ## Where ZDT-D uses it
 
@@ -52,11 +47,11 @@ selected app UID -> iptables REDIRECT -> t2s listener -> SOCKS5 backend -> upstr
 
 ## Modes
 
-### REDIRECT transparent mode
+### Transparent mode
 
-When `--target-host` and `--target-port` are omitted and `tproxy_enabled` is
-`false`, `t2s` expects TCP traffic that was redirected by firewall NAT rules. It
-calls `SO_ORIGINAL_DST` to recover the original destination address and port.
+When `--target-host` and `--target-port` are omitted, `t2s` expects traffic that
+was redirected by firewall rules. It calls `SO_ORIGINAL_DST` to recover the
+original destination address and port.
 
 Example:
 
@@ -73,33 +68,6 @@ Example redirect rule:
 ```bash
 iptables -t nat -A OUTPUT -p tcp -j REDIRECT --to-ports 11290
 ```
-
-
-### TPROXY transparent mode
-
-When `/data/adb/modules/ZDT-D/setting/setting.json` contains
-`"tproxy_enabled": true`, `t2s` opens the normal TCP listen port as a transparent
-socket and also opens a UDP transparent receiver on the same numeric port. `t2s`
-does not install firewall, mark, or policy-routing rules; those are managed by
-ZDT-D services outside this helper.
-
-For TCP TPROXY, the original destination is read from the accepted socket local
-address, with a REDIRECT compatibility fallback.
-
-For UDP TPROXY, `t2s` receives the original destination using Linux ancillary
-packet metadata and applies the same traffic-rule concept with `is_udp=true`.
-UDP is supported only in TPROXY mode; when `tproxy_enabled` is `false`, no UDP
-listener is started.
-
-UDP backend selection rules:
-
-- Balance mode: use a GREEN backend that supports SOCKS5 UDP ASSOCIATE; if no
-  currently working backend supports UDP, relay UDP directly.
-- Priority mode: first determine the first GREEN priority group using the normal
-  TCP health/priority order. UDP may use only UDP-capable backends inside that
-  first GREEN group. If that group has no UDP-capable backend, relay UDP
-  directly; do not fall through to lower-priority groups only because they
-  support UDP.
 
 ### Explicit target mode
 
@@ -322,7 +290,7 @@ Supported match fields:
 - `port_range` such as `1000-2000`;
 - `host_regex`;
 - `socks_available`;
-- `is_udp` (`true` for UDP TPROXY packets, `false` for TCP).
+- `is_udp`.
 
 Example:
 
@@ -361,8 +329,8 @@ runtime state and kill selected connections.
 
 ## Limitations
 
-- TCP REDIRECT mode only handles TCP;
-- UDP is available only when ZDT-D `tproxy_enabled` is true and uses TPROXY;
+- TCP only;
+- no UDP proxying;
 - no internal DNS server;
 - `--enable-http2` is a compatibility flag, not a separate HTTP/2 engine;
 - host detection is best-effort and depends on early traffic bytes;
@@ -374,3 +342,10 @@ runtime state and kill selected connections.
 ```bash
 cargo build --release -p t2s
 ```
+
+
+## TPROXY transparent mode
+
+When `/data/adb/modules/ZDT-D/setting/setting.json` has `"tproxy_enabled": true`, t2s opens TCP as a transparent listener and starts a UDP TPROXY receiver on the same numeric listen port. No CLI arguments are added. Firewall, mark and policy-routing rules are managed outside t2s. When `tproxy_enabled` is false, UDP is not started.
+
+UDP routing: balance mode uses a GREEN backend with SOCKS5 UDP ASSOCIATE support, otherwise direct. Priority mode first finds the first GREEN priority group; UDP may use only UDP-capable backends in that group, otherwise direct.

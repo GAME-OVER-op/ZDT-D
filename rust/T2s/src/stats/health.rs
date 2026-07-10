@@ -229,16 +229,12 @@ async fn refresh_backend_index_once(
     let udp_probe_supported = state.tproxy_enabled && state.args.wrapped_socks_addr().ok().flatten().is_none();
     let udp_ping_ms = if udp_probe_supported && socks_ping_ms.is_some() {
         crate::socks5::check_udp_associate(backend, auth.clone(), timeout.min(Duration::from_secs(3))).await
-    } else {
-        None
-    };
+    } else { None };
     let udp_err = if state.tproxy_enabled && state.args.wrapped_socks_addr().ok().flatten().is_some() {
         Some("UDP ASSOCIATE through wrapped SOCKS is unsupported; UDP will use direct fallback".to_string())
     } else if udp_probe_supported && socks_ping_ms.is_some() && udp_ping_ms.is_none() {
         Some("UDP ASSOCIATE failed or unsupported".to_string())
-    } else {
-        None
-    };
+    } else { None };
 
     let mut b = state.backends.lock();
     let before_any_healthy = b.any_healthy();
@@ -247,9 +243,7 @@ async fn refresh_backend_index_once(
     let simple_success_is_green = !backend_requires_full_internet_probe(backend);
     let full_probe = probe_mode == ProbeMode::Full && backend_requires_full_internet_probe(backend);
     let mut changed = b.update(idx, socks_ping_ms.is_some(), err, socks_ping_ms, internet_ping_ms, ttl, full_probe, simple_success_is_green);
-    if state.tproxy_enabled {
-        changed |= b.update_udp(idx, udp_ping_ms, udp_err);
-    }
+    if state.tproxy_enabled { changed |= b.update_udp(idx, udp_ping_ms, udp_err); }
     let after_state = b.raw_state_at(idx);
     let kill_unhealthy_backend = changed
         && before_state == Some(BackendState::Green)

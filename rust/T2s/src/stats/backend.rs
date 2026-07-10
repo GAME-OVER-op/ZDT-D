@@ -713,16 +713,7 @@ impl SocksBackends {
     }
 
     fn udp_indices_by_ports(&self, ports: &[u16], now: u64, respect_cooldown: bool) -> Vec<usize> {
-        self.addrs
-            .iter()
-            .enumerate()
-            .filter(|(idx, sa)| {
-                ports.contains(&sa.port())
-                    && self.udp_healthy_idx(*idx)
-                    && (!respect_cooldown || !self.backend_in_cooldown_idx(*idx, now))
-            })
-            .map(|(idx, _)| idx)
-            .collect()
+        self.addrs.iter().enumerate().filter(|(idx, sa)| ports.contains(&sa.port()) && self.udp_healthy_idx(*idx) && (!respect_cooldown || !self.backend_in_cooldown_idx(*idx, now))).map(|(idx, _)| idx).collect()
     }
 
     pub fn udp_available(&self) -> bool {
@@ -730,9 +721,7 @@ impl SocksBackends {
             let now = now_ts();
             for group in &self.priority_groups {
                 let green = self.healthy_indices_by_ports(group, now, false);
-                if green.is_empty() {
-                    continue;
-                }
+                if green.is_empty() { continue; }
                 return green.iter().any(|idx| self.udp_healthy_idx(*idx));
             }
             return false;
@@ -746,40 +735,19 @@ impl SocksBackends {
         if self.backend_mode == BackendMode::Priority {
             for group_idx in 0..self.priority_groups.len() {
                 let green = self.healthy_indices_by_ports(&self.priority_groups[group_idx], now, false);
-                if green.is_empty() {
-                    continue;
-                }
+                if green.is_empty() { continue; }
                 let mut candidates = self.udp_indices_by_ports(&self.priority_groups[group_idx], now, respect_cooldown);
-                if candidates.is_empty() && respect_cooldown {
-                    candidates = self.udp_indices_by_ports(&self.priority_groups[group_idx], now, false);
-                }
-                if candidates.is_empty() {
-                    return None;
-                }
+                if candidates.is_empty() && respect_cooldown { candidates = self.udp_indices_by_ports(&self.priority_groups[group_idx], now, false); }
+                if candidates.is_empty() { return None; }
                 let cursor = self.priority_rr.get_mut(group_idx)?;
                 let idx = Self::pick_from_bucket(&candidates, cursor)?;
                 return Some((idx, self.addrs[idx], self.effective_auth_at(idx, global_ref)));
             }
             return None;
         }
-
-        let mut candidates: Vec<usize> = self.status
-            .iter()
-            .enumerate()
-            .filter(|(idx, _)| self.udp_healthy_idx(*idx) && (!respect_cooldown || !self.backend_in_cooldown_idx(*idx, now)))
-            .map(|(idx, _)| idx)
-            .collect();
-        if candidates.is_empty() && respect_cooldown {
-            candidates = self.status
-                .iter()
-                .enumerate()
-                .filter(|(idx, _)| self.udp_healthy_idx(*idx))
-                .map(|(idx, _)| idx)
-                .collect();
-        }
-        if candidates.is_empty() {
-            return None;
-        }
+        let mut candidates: Vec<usize> = self.status.iter().enumerate().filter(|(idx, _)| self.udp_healthy_idx(*idx) && (!respect_cooldown || !self.backend_in_cooldown_idx(*idx, now))).map(|(idx, _)| idx).collect();
+        if candidates.is_empty() && respect_cooldown { candidates = self.status.iter().enumerate().filter(|(idx, _)| self.udp_healthy_idx(*idx)).map(|(idx, _)| idx).collect(); }
+        if candidates.is_empty() { return None; }
         self.rr = (self.rr + 1) % candidates.len();
         let idx = candidates[self.rr];
         Some((idx, self.addrs[idx], self.effective_auth_at(idx, global_ref)))
@@ -793,9 +761,7 @@ impl SocksBackends {
         self.status[idx].udp_ping_ms = udp_ping_ms;
         self.status[idx].udp_healthy = udp_ping_ms.is_some();
         self.status[idx].udp_last_error = err;
-        prev_ping != self.status[idx].udp_ping_ms
-            || prev_healthy != self.status[idx].udp_healthy
-            || prev_err != self.status[idx].udp_last_error
+        prev_ping != self.status[idx].udp_ping_ms || prev_healthy != self.status[idx].udp_healthy || prev_err != self.status[idx].udp_last_error
     }
 
     pub fn green_recheck_plan(&self, global_auth: Option<&(String, String)>) -> Vec<(usize, SocketAddr, Option<(String, String)>)> {

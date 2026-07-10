@@ -16,7 +16,7 @@ use std::{
 };
 
 use crate::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
-use crate::iptables::{hotspot, iptables_port::{self, DpiTunnelOptions, ProtoChoice}};
+use crate::iptables::{hotspot, iptables_port::{DpiTunnelOptions, ProtoChoice}};
 use crate::{
     settings,
     shell::{self, Capture},
@@ -358,15 +358,19 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
     if plan.needs_t2s {
         let t2s_bin = t2s_bin.as_ref().context("t2s binary path missing for sing-box profile")?;
         truncate_file(&plan.t2s_log)?;
-        spawn_t2s(
-            t2s_bin,
-            t2s_listen_addr,
-            plan.setting.t2s_port,
-            plan.setting.t2s_web_port,
-            &ports_csv,
-            &plan.t2s_log,
-            &plan.name,
-        )
+        spawn_t2s_proxy(T2sSpawnConfig {
+            bin: t2s_bin,
+            listen_addr: t2s_listen_addr,
+            listen_port: plan.setting.t2s_port,
+            socks_host: "127.0.0.1",
+            socks_ports_csv: &ports_csv,
+            web_port: Some(plan.setting.t2s_web_port),
+            program: "sing-box",
+            profile: &plan.name,
+            scope: &format!("profile/sing-box/{}", plan.name),
+            log_path: &plan.t2s_log,
+            ..Default::default()
+        })
         .with_context(|| format!("spawn t2s profile={}", plan.name))?;
 
         if hotspot_for_plan {
@@ -378,7 +382,7 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
             })?;
         }
 
-        iptables_port::apply(
+        apply_t2s_routing(
             &plan.uid_out,
             plan.setting.t2s_port,
             ProtoChoice::Tcp,
@@ -519,15 +523,19 @@ pub fn start_t2s_if_enabled() -> Result<()> {
         if plan.needs_t2s {
             let t2s_bin = t2s_bin.as_ref().context("t2s binary path missing for sing-box profile")?;
             truncate_file(&plan.t2s_log)?;
-            spawn_t2s(
-                t2s_bin,
-                t2s_listen_addr,
-                plan.setting.t2s_port,
-                plan.setting.t2s_web_port,
-                &ports_csv,
-                &plan.t2s_log,
-                &plan.name,
-            )
+            spawn_t2s_proxy(T2sSpawnConfig {
+                bin: t2s_bin,
+                listen_addr: t2s_listen_addr,
+                listen_port: plan.setting.t2s_port,
+                socks_host: "127.0.0.1",
+                socks_ports_csv: &ports_csv,
+                web_port: Some(plan.setting.t2s_web_port),
+                program: "sing-box",
+                profile: &plan.name,
+                scope: &format!("profile/sing-box/{}", plan.name),
+                log_path: &plan.t2s_log,
+                ..Default::default()
+            })
             .with_context(|| format!("spawn t2s profile={}", plan.name))?;
 
             if hotspot_for_plan {
@@ -539,7 +547,7 @@ pub fn start_t2s_if_enabled() -> Result<()> {
                 })?;
             }
 
-            iptables_port::apply(
+            apply_t2s_routing(
                 &plan.uid_out,
                 plan.setting.t2s_port,
                 ProtoChoice::Tcp,
@@ -1855,72 +1863,6 @@ fn spawn_singbox(config_path: &Path, log_path: &Path) -> Result<()> {
     if !proc_path.is_dir() {
         warn!("sing-box pid={} exited quickly; check log {}", child.id(), log_path.display());
     }
-    Ok(())
-}
-
-fn spawn_t2s(
-    bin: &Path,
-    listen_addr: &str,
-    listen_port: u16,
-    web_port: u16,
-    socks_ports_csv: &str,
-    log_path: &Path,
-    profile: &str,
-) -> Result<()> {
-    let logf = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(log_path)
-        .with_context(|| format!("open log {}", log_path.display()))?;
-    let logf_err = logf.try_clone().with_context(|| "clone log file")?;
-
-    let mut cmd = Command::new(bin);
-    cmd.arg("--listen-addr")
-        .arg(listen_addr)
-        .arg("--listen-port")
-        .arg(listen_port.to_string())
-        .arg("--socks-host")
-        .arg("127.0.0.1")
-        .arg("--socks-port")
-        .arg(socks_ports_csv)
-        .arg("--max-conns")
-        .arg("1200")
-        .arg("--idle-timeout")
-        .arg("400")
-        .arg("--connect-timeout")
-        .arg("30")
-        .arg("--enable-http2")
-        .arg("--web-socket")
-        .arg("--web-port")
-        .arg(web_port.to_string())
-        .arg("--program")
-        .arg("sing-box")
-        .arg("--profile")
-        .arg(profile)
-        .arg("--scope")
-        .arg(format!("profile/sing-box/{}", profile))
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(logf))
-        .stderr(Stdio::from(logf_err));
-
-    unsafe {
-        cmd.pre_exec(|| {
-            let _ = libc::setsid();
-            Ok(())
-        });
-    }
-
-    let child = cmd.spawn().with_context(|| format!("spawn {}", bin.display()))?;
-    info!(
-        "spawned t2s pid={} listen_addr={} listen_port={} socks_ports={} web_port={} log={}",
-        child.id(),
-        listen_addr,
-        listen_port,
-        socks_ports_csv,
-        web_port,
-        log_path.display()
-    );
     Ok(())
 }
 

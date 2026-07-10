@@ -20,7 +20,7 @@ use crate::{
     android::pkg_uid::{self, Sha256Tracker, Mode as UidMode},
     iptables::{
         hotspot,
-        iptables_port::{self, DpiTunnelOptions, ProtoChoice},
+        iptables_port::{DpiTunnelOptions, ProtoChoice},
     },
     programs::dnscrypt,
     settings,
@@ -470,7 +470,19 @@ pub fn start_if_enabled() -> Result<()> {
         let t2s_log = log_dir.join("t2s.log");
         truncate_file(&t2s_log)?;
 
-        spawn_t2s(&t2s_bin, t2s_listen_addr, port_cfg.t2s_port, &ports_csv, &t2s_log)?;
+        spawn_t2s_proxy(T2sSpawnConfig {
+            bin: &t2s_bin,
+            listen_addr: t2s_listen_addr,
+            listen_port: port_cfg.t2s_port,
+            socks_host: "127.0.0.1",
+            socks_ports_csv: &ports_csv,
+            web_port: None,
+            program: "operaproxy",
+            profile: "main",
+            scope: "program/operaproxy",
+            log_path: &t2s_log,
+            ..Default::default()
+        })?;
         info!(
             "operaproxy: t2s started listen_addr={} listen_port={} socks_ports={}",
             t2s_listen_addr,
@@ -495,21 +507,21 @@ pub fn start_if_enabled() -> Result<()> {
     // - mobile/wifi lists apply to specified interfaces from port.json
     let opt = DpiTunnelOptions { port_preference: 1, ..DpiTunnelOptions::default() };
 
-    iptables_port::apply(
+    apply_t2s_routing(
         Path::new(APP_OUT_USER),
         port_cfg.t2s_port,
         ProtoChoice::Tcp,
         None,
         opt.clone(),
     )?;
-    iptables_port::apply(
+    apply_t2s_routing(
         Path::new(APP_OUT_MOBILE),
         port_cfg.t2s_port,
         ProtoChoice::Tcp,
         Some(port_cfg.iface_mobile.as_str()),
         opt.clone(),
     )?;
-    iptables_port::apply(
+    apply_t2s_routing(
         Path::new(APP_OUT_WIFI),
         port_cfg.t2s_port,
         ProtoChoice::Tcp,
@@ -1427,62 +1439,6 @@ fn spawn_opera_proxy(
     );
     Ok(())
 }
-
-fn spawn_t2s(bin: &Path, listen_addr: &str, listen_port: u16, socks_ports_csv: &str, log_path: &Path) -> Result<()> {
-    let logf = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(true)
-        .open(log_path)
-        .with_context(|| format!("open log {}", log_path.display()))?;
-    let logf_err = logf.try_clone().with_context(|| "clone log file")?;
-
-    let mut cmd = Command::new(bin);
-    cmd.arg("--listen-addr")
-        .arg(listen_addr)
-        .arg("--listen-port")
-        .arg(listen_port.to_string())
-        .arg("--socks-host")
-        .arg("127.0.0.1")
-        .arg("--socks-port")
-        .arg(socks_ports_csv)
-        .arg("--max-conns")
-        .arg("1200")
-        .arg("--idle-timeout")
-        .arg("400")
-        .arg("--connect-timeout")
-        .arg("30")
-        .arg("--enable-http2")
-        .arg("--web-socket")
-        .arg("--program")
-        .arg("operaproxy")
-        .arg("--profile")
-        .arg("main")
-        .arg("--scope")
-        .arg("program/operaproxy")
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(logf))
-        .stderr(Stdio::from(logf_err));
-
-    unsafe {
-        cmd.pre_exec(|| {
-            let _ = libc::setsid();
-            Ok(())
-        });
-    }
-
-    let child = cmd.spawn().with_context(|| format!("spawn {}", bin.display()))?;
-    info!(
-        "spawned t2s pid={} listen_addr={} listen_port={} socks_ports={} log={}",
-        child.id(),
-        listen_addr,
-        listen_port,
-        socks_ports_csv,
-        log_path.display()
-    );
-    Ok(())
-}
-
 
 fn wait_for_socks(
     min_ok: usize,

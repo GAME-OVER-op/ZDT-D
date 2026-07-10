@@ -5459,7 +5459,7 @@ jobs:
       - build_gate
       - build_apk
       - package_tg_ws_proxy_asset
-    if: github.ref == 'refs/heads/main' && needs.build_apk.result == 'success' && needs.package_tg_ws_proxy_asset.result == 'success'
+    if: always() && github.ref == 'refs/heads/main' && needs.build_apk.result == 'success'
 
     steps:
       - name: Checkout repository
@@ -5474,6 +5474,7 @@ jobs:
           path: out/dist
 
       - name: Download tg_ws_proxy.zip artifact
+        if: needs.package_tg_ws_proxy_asset.result == 'success'
         uses: actions/download-artifact@v7
         with:
           name: tg-ws-proxy-technical-asset
@@ -5483,6 +5484,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BUILD_START_TS: ${{ needs.build_gate.outputs.build_start_ts }}
+          TG_WS_PROXY_PACKAGE_RESULT: ${{ needs.package_tg_ws_proxy_asset.result }}
         run: |
           set -euo pipefail
 
@@ -5682,6 +5684,32 @@ jobs:
             return 1
           }
 
+          upload_optional_asset_clobber_only() {
+            local tag="$1"
+            local file_spec="$2"
+            local asset_name="$3"
+            local attempt=1
+            local max_attempts=5
+            OPTIONAL_UPLOAD_MODE="clobber"
+            OPTIONAL_UPLOAD_ATTEMPTS="0"
+
+            while [[ "$attempt" -le "$max_attempts" ]]; do
+              echo "Upload optional $asset_name to $tag with --clobber: attempt $attempt/$max_attempts"
+              if gh release upload "$tag" "$file_spec" --clobber; then
+                OPTIONAL_UPLOAD_MODE="clobber"
+                OPTIONAL_UPLOAD_ATTEMPTS="$attempt"
+                return 0
+              fi
+              if [[ "$attempt" -lt "$max_attempts" ]]; then
+                sleep $((attempt * 5))
+              fi
+              attempt=$((attempt + 1))
+            done
+
+            echo "::error::Failed to upload optional $asset_name to $tag. Existing release asset was not deleted by workflow."
+            return 1
+          }
+
           version_code_matches_version=false
           stable_version_shape=false
           code_min=""
@@ -5764,15 +5792,29 @@ jobs:
           TECHNICAL_TAG="Technical_Assets"
           TECHNICAL_TITLE="ZDT-D Technical Assets"
           TG_WS_PROXY_ASSET="out/technical/tg_ws_proxy.zip"
-          test -s "$TG_WS_PROXY_ASSET" || { echo "::error::tg_ws_proxy.zip technical asset is missing"; exit 1; }
-          if gh release view "$TECHNICAL_TAG" >/dev/null 2>&1; then
-            gh release edit "$TECHNICAL_TAG" --title "$TECHNICAL_TITLE" --prerelease --latest=false
+          TG_WS_PROXY_UPLOAD_MODE="skipped"
+          TG_WS_PROXY_UPLOAD_ATTEMPTS="0"
+
+          if [[ "${TG_WS_PROXY_PACKAGE_RESULT:-skipped}" != "success" ]]; then
+            echo "::warning::tg-ws-proxy technical asset was not rebuilt: package job result=${TG_WS_PROXY_PACKAGE_RESULT:-unknown}. Existing Technical_Assets/tg_ws_proxy.zip is left untouched."
+          elif [[ ! -s "$TG_WS_PROXY_ASSET" ]]; then
+            echo "::error::tg_ws_proxy.zip technical asset is missing after successful package job: $TG_WS_PROXY_ASSET"
+            echo "::warning::Existing Technical_Assets/tg_ws_proxy.zip is left untouched."
           else
-            gh release create "$TECHNICAL_TAG" --target "$FULL_SHA" --title "$TECHNICAL_TITLE" --notes "Technical assets used by ZDT-D optional components." --prerelease --latest=false
+            if gh release view "$TECHNICAL_TAG" >/dev/null 2>&1; then
+              gh release edit "$TECHNICAL_TAG" --title "$TECHNICAL_TITLE" --prerelease --latest=false
+            else
+              gh release create "$TECHNICAL_TAG" --target "$FULL_SHA" --title "$TECHNICAL_TITLE" --notes "Technical assets used by ZDT-D optional components." --prerelease --latest=false
+            fi
+            if upload_optional_asset_clobber_only "$TECHNICAL_TAG" "$TG_WS_PROXY_ASSET#tg_ws_proxy.zip" "tg_ws_proxy.zip"; then
+              TG_WS_PROXY_UPLOAD_MODE="$OPTIONAL_UPLOAD_MODE"
+              TG_WS_PROXY_UPLOAD_ATTEMPTS="$OPTIONAL_UPLOAD_ATTEMPTS"
+            else
+              TG_WS_PROXY_UPLOAD_MODE="failed-clobber-only"
+              TG_WS_PROXY_UPLOAD_ATTEMPTS="$OPTIONAL_UPLOAD_ATTEMPTS"
+              echo "::warning::Existing Technical_Assets/tg_ws_proxy.zip was not deleted or replaced by fallback."
+            fi
           fi
-          upload_asset_with_retry "$TECHNICAL_TAG" "$TG_WS_PROXY_ASSET#tg_ws_proxy.zip" "tg_ws_proxy.zip"
-          TG_WS_PROXY_UPLOAD_MODE="$UPLOAD_MODE"
-          TG_WS_PROXY_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
 
           STABLE_ACTION="skipped"
           STABLE_REASON=""

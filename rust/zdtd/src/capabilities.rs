@@ -142,7 +142,7 @@ pub fn collect() -> Value {
     let nat_redirect_routing = iptables_available && iptables_nat_output && owner_match && dnat;
     let nfqueue_routing = iptables_available && iptables_mangle_output && owner_match && nfqueue;
     let vpn_netd_routing = ndc_network_list && ip_rule && (package_uid_lookup || package_uid_lookup_shell);
-    let tproxy_experimental = false;
+    let tproxy_available_for_t2s = tproxy_setting_enabled && tproxy && !tproxy_disabled_flag;
 
     if !iptables_available {
         warnings.push("iptables is not available".to_string());
@@ -169,7 +169,11 @@ pub fn collect() -> Value {
         warnings.push("fast package UID lookup is not available".to_string());
     }
 
-    let selected_backend = "dnat";
+    let selected_backend = if tproxy_available_for_t2s {
+        "tproxy_with_dnat_fallback"
+    } else {
+        "dnat"
+    };
 
     json!({
         "ok": true,
@@ -206,11 +210,11 @@ pub fn collect() -> Value {
             "enabled_by_setting": tproxy_setting_enabled,
             "disabled_by_flag": tproxy_disabled_flag,
             "disabled_reason": tproxy_disabled_reason,
-            "status": "experimental_disabled",
-            "production_apply": false,
-            "warning_only": true,
-            "dnat_stays_active": true,
-            "notes": "TPROXY setting is kept, but production routing intentionally stays on DNAT until a transparent receiver exists. The gated entrypoint (apply_or_fallback) in src/iptables/iptables_tproxy.rs installs nothing and falls back to DNAT; the full apply/cleanup is kept compiled as groundwork.",
+            "status": if tproxy_available_for_t2s { "enabled_for_t2s" } else { "dnat_default" },
+            "production_apply": tproxy_available_for_t2s,
+            "warning_only": false,
+            "dnat_fallback": true,
+            "notes": "When tproxy_enabled=true, t2s-aware program routing tries the TPROXY backend first. If the device/kernel or runtime probe does not support it, ZDT-D automatically falls back to the standard DNAT routing path.",
             "route_mark_candidate": "0x50000000/0xf0000000",
             "scope_mark_mask_candidate": "0xfff00000",
             "preserves_android_fwmark_low_bits_required": true,
@@ -233,7 +237,7 @@ pub fn collect() -> Value {
             "nat_redirect_routing": nat_redirect_routing,
             "nfqueue_routing": nfqueue_routing,
             "vpn_netd_routing": vpn_netd_routing,
-            "tproxy_experimental": tproxy_experimental
+            "tproxy_available_for_t2s": tproxy_available_for_t2s
         },
         "warnings": warnings
     })

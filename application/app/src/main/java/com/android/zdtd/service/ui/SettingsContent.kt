@@ -86,6 +86,7 @@ fun AppUpdateSettings(
   onSaveEnergySaver: (com.android.zdtd.service.api.ApiModels.EnergySaverConfig) -> Unit,
   selinuxPermissiveEnabled: Boolean,
   ipForwardEnabled: Boolean,
+  tproxyEnabled: Boolean,
   onAdvancedSettingChange: (String, Boolean) -> Unit,
   hotspotT2sEnabled: Boolean,
   hotspotMode: String,
@@ -313,6 +314,7 @@ fun AppUpdateSettings(
       showAdvancedSettings = showAdvancedSettings,
       selinuxPermissiveEnabled = selinuxPermissiveEnabled,
       ipForwardEnabled = ipForwardEnabled,
+      tproxyEnabled = tproxyEnabled,
       onDismissAdvancedSettings = { showAdvancedSettings = false },
       onAdvancedSettingChange = onAdvancedSettingChange,
     )
@@ -488,6 +490,7 @@ fun AppUpdateSettings(
     showAdvancedSettings = showAdvancedSettings,
     selinuxPermissiveEnabled = selinuxPermissiveEnabled,
     ipForwardEnabled = ipForwardEnabled,
+    tproxyEnabled = tproxyEnabled,
     onDismissAdvancedSettings = { showAdvancedSettings = false },
     onAdvancedSettingChange = onAdvancedSettingChange,
   )
@@ -900,6 +903,7 @@ private fun SettingsDialogsHost(
   showAdvancedSettings: Boolean,
   selinuxPermissiveEnabled: Boolean,
   ipForwardEnabled: Boolean,
+  tproxyEnabled: Boolean,
   onDismissAdvancedSettings: () -> Unit,
   onAdvancedSettingChange: (String, Boolean) -> Unit,
 ) {
@@ -959,6 +963,7 @@ private fun SettingsDialogsHost(
     visible = showAdvancedSettings,
     selinuxPermissiveEnabled = selinuxPermissiveEnabled,
     ipForwardEnabled = ipForwardEnabled,
+    tproxyEnabled = tproxyEnabled,
     onDismiss = onDismissAdvancedSettings,
     onAdvancedSettingChange = onAdvancedSettingChange,
   )
@@ -969,6 +974,7 @@ private fun AdvancedSettingsDialog(
   visible: Boolean,
   selinuxPermissiveEnabled: Boolean,
   ipForwardEnabled: Boolean,
+  tproxyEnabled: Boolean,
   onDismiss: () -> Unit,
   onAdvancedSettingChange: (String, Boolean) -> Unit,
 ) {
@@ -1028,6 +1034,12 @@ private fun AdvancedSettingsDialog(
           body = stringResource(R.string.settings_advanced_ip_forward_body),
           checked = ipForwardEnabled,
           onCheckedChange = { onAdvancedSettingChange("ip_forward_enabled", it) },
+        )
+        AdvancedSwitchRow(
+          title = stringResource(R.string.settings_advanced_tproxy_title),
+          body = stringResource(R.string.settings_advanced_tproxy_body),
+          checked = tproxyEnabled,
+          onCheckedChange = { onAdvancedSettingChange("tproxy_enabled", it) },
         )
       }
     }

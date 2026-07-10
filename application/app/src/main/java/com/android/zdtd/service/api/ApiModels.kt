@@ -205,6 +205,7 @@ object ApiModels {
     val hotspotT2sCaptureAll: Boolean = false,
     val selinuxPermissiveEnabled: Boolean = false,
     val ipForwardEnabled: Boolean = false,
+    val tproxyEnabled: Boolean = false,
     val captivePortalEnabled: Boolean = false,
   )
 
@@ -569,6 +570,7 @@ object ApiModels {
       hotspotT2sCaptureAll = hotspotCaptureAll,
       selinuxPermissiveEnabled = setting?.optBoolean("selinux_permissive_enabled", false) ?: false,
       ipForwardEnabled = setting?.optBoolean("ip_forward_enabled", false) ?: false,
+      tproxyEnabled = setting?.optBoolean("tproxy_enabled", false) ?: false,
       captivePortalEnabled = setting?.optBoolean("captive_portal_enabled", false) ?: false,
     )
   }

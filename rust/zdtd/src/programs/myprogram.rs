@@ -175,9 +175,24 @@ pub fn start_if_enabled() -> Result<()> {
 
         if plan.setting.apps_mode {
             if route_mode_is_t2s(&plan.setting) {
-                spawn_t2s(t2s_bin.as_ref().expect("t2s checked"), &plan.setting, &plan.t2s_ports, &plan.t2s_log, &plan.name)
+                let t2s_ports_csv = plan.t2s_ports.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(",");
+                spawn_t2s_proxy(T2sSpawnConfig {
+                    bin: t2s_bin.as_ref().expect("t2s checked"),
+                    listen_addr: "127.0.0.1",
+                    listen_port: plan.setting.t2s_port,
+                    socks_host: FIXED_SOCKS_HOST,
+                    socks_ports_csv: &t2s_ports_csv,
+                    web_port: Some(plan.setting.t2s_web_port),
+                    program: "myprogram",
+                    profile: &plan.name,
+                    scope: &format!("profile/myprogram/{}", plan.name),
+                    log_path: &plan.t2s_log,
+                    socks_user: Some(plan.setting.socks_user.as_str()),
+                    socks_pass: Some(plan.setting.socks_pass.as_str()),
+                    ..Default::default()
+                })
                     .with_context(|| format!("spawn t2s profile={}", plan.name))?;
-                iptables_port::apply(
+                apply_t2s_routing(
                     &plan.uid_out,
                     plan.setting.t2s_port,
                     ProtoChoice::Tcp,
@@ -553,56 +568,6 @@ fn spawn_program(command: &str, bin_dir: &Path, log_path: &Path) -> Result<Runti
     };
     info!("spawned myprogram pid={} cwd={} log={}", pid, bin_dir.display(), log_path.display());
     Ok(runtime)
-}
-
-fn spawn_t2s(bin: &Path, setting: &ProfileSetting, t2s_ports: &[u16], log_path: &Path, profile: &str) -> Result<()> {
-    let logf = OpenOptions::new().create(true).write(true).truncate(true).open(log_path)
-        .with_context(|| format!("open log {}", log_path.display()))?;
-    let logf_err = logf.try_clone().with_context(|| "clone log file")?;
-    let mut cmd = Command::new(bin);
-    cmd.arg("--listen-addr")
-        .arg("127.0.0.1")
-        .arg("--listen-port")
-        .arg(setting.t2s_port.to_string())
-        .arg("--socks-host")
-        .arg(FIXED_SOCKS_HOST)
-        .arg("--socks-port")
-        .arg(t2s_ports.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(","))
-        .arg("--max-conns")
-        .arg("1200")
-        .arg("--idle-timeout")
-        .arg("400")
-        .arg("--connect-timeout")
-        .arg("30")
-        .arg("--enable-http2")
-        .arg("--web-socket")
-        .arg("--web-port")
-        .arg(setting.t2s_web_port.to_string())
-        .arg("--program")
-        .arg("myprogram")
-        .arg("--profile")
-        .arg(profile)
-        .arg("--scope")
-        .arg(format!("profile/myprogram/{}", profile))
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(logf))
-        .stderr(Stdio::from(logf_err));
-    if !setting.socks_user.trim().is_empty() || !setting.socks_pass.trim().is_empty() {
-        cmd.arg("--socks-user").arg(setting.socks_user.trim())
-            .arg("--socks-pass").arg(setting.socks_pass.trim());
-    }
-    unsafe {
-        cmd.pre_exec(|| {
-            let _ = libc::setsid();
-            Ok(())
-        });
-    }
-    let child = cmd.spawn().with_context(|| format!("spawn {}", bin.display()))?;
-    info!(
-        "spawned t2s pid={} listen_addr=127.0.0.1 listen_port={} socks_host={} socks_port={} web_port={} log={}",
-        child.id(), setting.t2s_port, FIXED_SOCKS_HOST, t2s_ports.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(","), setting.t2s_web_port, log_path.display()
-    );
-    Ok(())
 }
 
 fn find_bin(name: &str) -> Result<PathBuf> {

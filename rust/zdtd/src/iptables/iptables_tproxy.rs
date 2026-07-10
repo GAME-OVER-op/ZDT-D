@@ -1,6 +1,7 @@
-//! ZDT-D TPROXY backend (groundwork). Only `apply_or_fallback` is wired into
-//! the runtime; it falls back to DNAT because a transparent receiver does not
-//! exist yet. The full apply/cleanup below is kept compiled for future use.
+//! ZDT-D TPROXY backend for t2s-aware routing.
+//! The production t2s path now calls the real `apply` function through
+//! `programs::common::apply_t2s_routing`; if the device/kernel cannot support
+//! TPROXY, the caller falls back to the standard DNAT backend.
 #![allow(dead_code)]
 
 use anyhow::{Context, Result};
@@ -10,9 +11,9 @@ use std::{collections::BTreeSet, fs, path::Path, time::Duration};
 use crate::{settings, shell::Capture, xtables_lock};
 use super::iptables_port::{DpiTunnelOptions, ProtoChoice};
 
-/// Gated TPROXY entrypoint. TPROXY needs a transparent receiver that does not
-/// exist yet, so this installs nothing and returns Ok; the caller falls back to
-/// DNAT. The full apply/cleanup below is kept compiled as groundwork.
+/// Legacy compatibility entrypoint for stale callers.
+/// New t2s routing should use `programs::common::apply_t2s_routing`, which
+/// tries the real TPROXY backend and then falls back to DNAT when unsupported.
 pub fn apply_or_fallback(
     uid_file: &Path,
     dest_port: u16,
@@ -21,8 +22,8 @@ pub fn apply_or_fallback(
     opt: &DpiTunnelOptions,
 ) -> Result<()> {
     warn!(
-        "TPROXY: tproxy_enabled=true, but the transparent receiver is not implemented yet; \
-         skipping TPROXY and continuing with DNAT (uid_file={} dest_port={} proto={:?} ifaces={} port_preference={} dpi_ports='{}')",
+        "TPROXY: legacy fallback entrypoint called; use apply_t2s_routing for real TPROXY, \
+         continuing with DNAT (uid_file={} dest_port={} proto={:?} ifaces={} port_preference={} dpi_ports='{}')",
         uid_file.display(),
         dest_port,
         proto_choice,

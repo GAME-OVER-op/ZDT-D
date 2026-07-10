@@ -6,13 +6,11 @@ use serde_json::Value;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
-    os::unix::process::CommandExt,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
 };
 
 use crate::android::pkg_uid::{self, Mode as UidMode, Sha256Tracker};
-use crate::iptables::iptables_port::{self, DpiTunnelOptions, ProtoChoice};
+use crate::iptables::iptables_port::{DpiTunnelOptions, ProtoChoice};
 use crate::settings;
 
 const MODULE_DIR: &str = "/data/adb/modules/ZDT-D";
@@ -270,10 +268,34 @@ pub fn start_if_enabled() -> Result<()> {
 
     for plan in &plans {
         truncate_file(&plan.t2s_log)?;
-        spawn_t2s(&t2s_bin, &plan.setting, &plan.proxy, &plan.t2s_log, &plan.name)
+        let t2s_socks_ports_csv = plan.proxy.effective_ports_csv()?;
+        let t2s_backend_mode = plan.proxy.effective_backend_mode()?;
+        let t2s_backend_priority = plan.proxy.backend_priority_trimmed();
+        spawn_t2s_proxy(T2sSpawnConfig {
+            bin: &t2s_bin,
+            listen_addr: "127.0.0.1",
+            listen_port: plan.setting.t2s_port,
+            socks_host: plan.proxy.host.trim(),
+            socks_ports_csv: &t2s_socks_ports_csv,
+            web_port: Some(plan.setting.t2s_web_port),
+            program: "myproxy",
+            profile: &plan.name,
+            scope: &format!("profile/myproxy/{}", plan.name),
+            log_path: &plan.t2s_log,
+            backend_mode: Some(t2s_backend_mode),
+            backend_priority: if t2s_backend_mode == "priority" && !t2s_backend_priority.is_empty() { Some(t2s_backend_priority) } else { None },
+            priority_speed_aware: t2s_backend_mode == "priority" && plan.proxy.priority_speed_aware,
+            socks_user: Some(plan.proxy.user.as_str()),
+            socks_pass: Some(plan.proxy.pass.as_str()),
+            wrapped_socks_host: if plan.proxy.wrapped_socks.enabled() { Some(plan.proxy.wrapped_socks.host.as_str()) } else { None },
+            wrapped_socks_port: if plan.proxy.wrapped_socks.enabled() { Some(plan.proxy.wrapped_socks.port) } else { None },
+            wrapped_socks_user: Some(plan.proxy.wrapped_socks.user.as_str()),
+            wrapped_socks_pass: Some(plan.proxy.wrapped_socks.pass.as_str()),
+            ..Default::default()
+        })
             .with_context(|| format!("spawn t2s profile={}", plan.name))?;
 
-        iptables_port::apply(
+        apply_t2s_routing(
             &plan.uid_out,
             plan.setting.t2s_port,
             ProtoChoice::Tcp,
@@ -490,88 +512,6 @@ pub fn ensure_valid_profile_name(name: &str) -> Result<()> {
     if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
         anyhow::bail!("profile name must contain only English letters/digits/_/-");
     }
-    Ok(())
-}
-
-fn spawn_t2s(bin: &Path, setting: &ProfileSetting, proxy: &ProxyConfig, log_path: &Path, profile: &str) -> Result<()> {
-    let logf = OpenOptions::new().create(true).write(true).truncate(true).open(log_path)
-        .with_context(|| format!("open log {}", log_path.display()))?;
-    let logf_err = logf.try_clone().with_context(|| "clone log file")?;
-
-    let mut cmd = Command::new(bin);
-    cmd.arg("--listen-addr")
-        .arg("127.0.0.1")
-        .arg("--listen-port")
-        .arg(setting.t2s_port.to_string())
-        .arg("--socks-host")
-        .arg(proxy.host.trim())
-        .arg("--socks-port")
-        .arg(proxy.effective_ports_csv()?)
-        .arg("--backend-mode")
-        .arg(proxy.effective_backend_mode()?)
-        .arg("--max-conns")
-        .arg("1200")
-        .arg("--idle-timeout")
-        .arg("400")
-        .arg("--connect-timeout")
-        .arg("30")
-        .arg("--enable-http2")
-        .arg("--web-socket")
-        .arg("--web-port")
-        .arg(setting.t2s_web_port.to_string())
-        .arg("--program")
-        .arg("myproxy")
-        .arg("--profile")
-        .arg(profile)
-        .arg("--scope")
-        .arg(format!("profile/myproxy/{}", profile))
-        .stdin(Stdio::null())
-        .stdout(Stdio::from(logf))
-        .stderr(Stdio::from(logf_err));
-
-    let backend_mode = proxy.effective_backend_mode()?;
-    if backend_mode == "priority" && !proxy.backend_priority_trimmed().is_empty() {
-        cmd.arg("--backend-priority").arg(proxy.backend_priority_trimmed());
-    }
-
-    if backend_mode == "priority" && proxy.priority_speed_aware {
-        cmd.arg("--priority-speed-aware");
-    }
-
-    if !proxy.user.trim().is_empty() || !proxy.pass.trim().is_empty() {
-        cmd.arg("--socks-user").arg(proxy.user.trim())
-            .arg("--socks-pass").arg(proxy.pass.trim());
-    }
-
-    if proxy.wrapped_socks.enabled() {
-        cmd.arg("--wrapped-socks-host").arg(proxy.wrapped_socks.host.trim())
-            .arg("--wrapped-socks-port").arg(proxy.wrapped_socks.port.to_string());
-        if !proxy.wrapped_socks.user.trim().is_empty() || !proxy.wrapped_socks.pass.is_empty() {
-            cmd.arg("--wrapped-socks-user").arg(proxy.wrapped_socks.user.trim())
-                .arg("--wrapped-socks-pass").arg(proxy.wrapped_socks.pass.as_str());
-        }
-    }
-
-    unsafe {
-        cmd.pre_exec(|| {
-            let _ = libc::setsid();
-            Ok(())
-        });
-    }
-
-    let child = cmd.spawn().with_context(|| format!("spawn {}", bin.display()))?;
-    info!(
-        "spawned t2s pid={} listen_addr=127.0.0.1 listen_port={} socks_host={} socks_port={} backend_mode={} backend_priority={} priority_speed_aware={} web_port={} log={}",
-        child.id(),
-        setting.t2s_port,
-        proxy.host,
-        proxy.effective_ports_csv().unwrap_or_else(|_| "?".to_string()),
-        proxy.effective_backend_mode().unwrap_or("balance"),
-        proxy.backend_priority_trimmed(),
-        proxy.priority_speed_aware,
-        setting.t2s_web_port,
-        log_path.display()
-    );
     Ok(())
 }
 

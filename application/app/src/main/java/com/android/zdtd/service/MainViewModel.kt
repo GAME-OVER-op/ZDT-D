@@ -347,6 +347,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       hotspotT2sCaptureAll = false,
       selinuxPermissiveEnabled = false,
       ipForwardEnabled = false,
+      tproxyEnabled = false,
       daemonStatusNotificationEnabled = root.isDaemonStatusNotificationEnabled(),
     )
   )
@@ -5986,6 +5987,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         captivePortalEnabled = settings.captivePortalEnabled,
         selinuxPermissiveEnabled = settings.selinuxPermissiveEnabled,
         ipForwardEnabled = settings.ipForwardEnabled,
+        tproxyEnabled = settings.tproxyEnabled,
         hotspotSingboxProfiles = singboxProfiles,
         hotspotWireproxyProfiles = wireproxyProfiles,
         hotspotProxyPrograms = proxyPrograms,
@@ -6039,6 +6041,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
       when (safeKey) {
         "selinux_permissive_enabled" -> current.copy(selinuxPermissiveEnabled = enabled)
         "ip_forward_enabled" -> current.copy(ipForwardEnabled = enabled)
+        "tproxy_enabled" -> current.copy(tproxyEnabled = enabled)
         else -> current
       }
     }
@@ -6048,6 +6051,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         when (safeKey) {
           "selinux_permissive_enabled" -> api.setAdvancedSettings(selinuxPermissiveEnabled = enabled)
           "ip_forward_enabled" -> api.setAdvancedSettings(ipForwardEnabled = enabled)
+          "tproxy_enabled" -> api.setAdvancedSettings(tproxyEnabled = enabled)
           else -> api.getDaemonSettings()
         }
       }.getOrElse {
@@ -6071,6 +6075,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           selinuxPermissiveEnabled = applied.selinuxPermissiveEnabled,
           ipForwardEnabled = applied.ipForwardEnabled,
+          tproxyEnabled = applied.tproxyEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -6372,6 +6377,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
+          tproxyEnabled = applied.tproxyEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -6424,6 +6430,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
+          tproxyEnabled = applied.tproxyEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -6467,6 +6474,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
+          tproxyEnabled = applied.tproxyEnabled,
         )
       }
     }
@@ -6513,6 +6521,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
+          tproxyEnabled = applied.tproxyEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) { toast(str(R.string.settings_hotspot_saved)) }
@@ -6565,6 +6574,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
+          tproxyEnabled = applied.tproxyEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -6609,6 +6619,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
+          tproxyEnabled = applied.tproxyEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -6653,6 +6664,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sWireproxyProfile = applied.hotspotT2sWireproxyProfile,
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           ipForwardEnabled = applied.ipForwardEnabled,
+          tproxyEnabled = applied.tproxyEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {
@@ -6692,6 +6704,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           hotspotT2sCaptureAll = applied.hotspotT2sCaptureAll,
           selinuxPermissiveEnabled = applied.selinuxPermissiveEnabled,
           ipForwardEnabled = applied.ipForwardEnabled,
+          tproxyEnabled = applied.tproxyEnabled,
         )
       }
       withContext(Dispatchers.Main.immediate) {

@@ -232,11 +232,13 @@ pub fn refresh_routing_by_uid_file(uid_file: &Path) -> Result<bool> {
             RoutingSnapshot::Tproxy { uid_file, dest_port, proto_choice, ifaces_raw, port_preference, dpi_ports, mark: _, table: _ } => {
                 let proto_choice = crate::iptables::iptables_port::ProtoChoice::from_str(&proto_choice);
                 let opt = crate::iptables::iptables_port::DpiTunnelOptions { port_preference, dpi_ports };
-                // TPROXY snapshots may exist from older experimental builds. Do not
-                // restore broken TPROXY rules; the gated entrypoint installs nothing
-                // and we rebuild the equivalent DNAT route below.
-                crate::iptables::iptables_tproxy::apply_or_fallback(Path::new(&uid_file), dest_port, proto_choice, ifaces_raw.as_deref(), &opt)?;
-                crate::iptables::iptables_port::apply(Path::new(&uid_file), dest_port, proto_choice, ifaces_raw.as_deref(), opt)?;
+                crate::programs::common::apply_t2s_routing(
+                    Path::new(&uid_file),
+                    dest_port,
+                    proto_choice,
+                    ifaces_raw.as_deref(),
+                    opt,
+                )?;
             }
         }
     }

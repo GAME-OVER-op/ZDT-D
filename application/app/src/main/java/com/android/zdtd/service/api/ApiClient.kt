@@ -232,10 +232,12 @@ class ApiClient(
   fun setAdvancedSettings(
     selinuxPermissiveEnabled: Boolean? = null,
     ipForwardEnabled: Boolean? = null,
+    tproxyEnabled: Boolean? = null,
   ): ApiModels.DaemonSettings {
     val body = JSONObject()
     selinuxPermissiveEnabled?.let { body.put("selinux_permissive_enabled", it) }
     ipForwardEnabled?.let { body.put("ip_forward_enabled", it) }
+    tproxyEnabled?.let { body.put("tproxy_enabled", it) }
     val obj = requestJson("POST", "/api/setting", body)
     return ApiModels.parseDaemonSettings(obj)
   }

@@ -168,11 +168,15 @@ async fn handle_udp_packet(state: AppState, udp_sock: Arc<AsyncFd<AsyncUdpSocket
     let key = UdpSessionKey { peer: pkt.peer, original_dst: pkt.original_dst };
     cleanup_sessions(&sessions);
 
+    let mut data = pkt.data;
     if let Some(handle) = sessions.lock().get(&key).cloned() {
-        if send_to_session(&handle, pkt.data).await.is_ok() {
-            return Ok(());
+        match send_to_session(&handle, data).await {
+            Ok(()) => return Ok(()),
+            Err(returned_data) => {
+                data = returned_data;
+                sessions.lock().remove(&key);
+            }
         }
-        sessions.lock().remove(&key);
     }
 
     let Some(new_handle) = create_udp_session(state, udp_sock, key).await? else {
@@ -192,7 +196,7 @@ async fn handle_udp_packet(state: AppState, udp_sock: Arc<AsyncFd<AsyncUdpSocket
         }
     };
 
-    if send_to_session(&handle, pkt.data).await.is_err() {
+    if send_to_session(&handle, data).await.is_err() {
         sessions.lock().remove(&key);
     }
     Ok(())
@@ -206,9 +210,9 @@ fn cleanup_sessions(sessions: &UdpSessions) {
     });
 }
 
-async fn send_to_session(handle: &UdpSessionHandle, data: Vec<u8>) -> Result<()> {
+async fn send_to_session(handle: &UdpSessionHandle, data: Vec<u8>) -> std::result::Result<(), Vec<u8>> {
     handle.last_activity_ms.store(now_ms(), Ordering::Relaxed);
-    handle.tx.send(data).await.context("send udp packet to session")
+    handle.tx.send(data).await.map_err(|e| e.0)
 }
 
 async fn create_udp_session(state: AppState, udp_sock: Arc<AsyncFd<AsyncUdpSocket>>, key: UdpSessionKey) -> Result<Option<UdpSessionHandle>> {

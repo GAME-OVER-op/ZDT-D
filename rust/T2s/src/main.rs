@@ -153,10 +153,8 @@ async fn async_main(workers: usize) -> Result<()> {
     let args = Args::parse_and_normalize().context("parse args")?;
     let started_at = stats::now_ts();
     let api = Arc::new(api_runtime::ApiRuntime::new(&args, started_at).context("init t2s api runtime")?);
-    let tproxy_enabled = !args.non_root_mode && transparent::tproxy_enabled_from_settings();
-    if args.non_root_mode {
-        info!("ZDT-D non-root mode: transparent root features are disabled; accepting SOCKS5 inbound/explicit target traffic only");
-    } else if tproxy_enabled {
+    let tproxy_enabled = transparent::tproxy_enabled_from_settings();
+    if tproxy_enabled {
         info!("ZDT-D tproxy_enabled=true: enabling TCP TPROXY listener and UDP TPROXY receiver");
     }
 
@@ -423,9 +421,6 @@ async fn proxy_tcp(
         socks_target
     } else if let (Some(h), Some(p)) = (state.args.target_host.clone(), state.args.target_port) {
         stats::Target::HostPort(h, p)
-    } else if state.args.non_root_mode {
-        state.conns.set_mode(cid, "non_root_reject");
-        return Err(anyhow!("non-root mode accepts only SOCKS5 inbound or explicit --target-host/--target-port traffic"));
     } else {
         let dst = transparent::get_transparent_dst(&client, &state.args.listen_addr, state.args.listen_port, state.tproxy_enabled)
             .context("transparent destination lookup failed")?;

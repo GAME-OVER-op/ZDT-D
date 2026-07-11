@@ -129,6 +129,9 @@ pub struct Args {
     #[arg(long, default_value="", help="Owning ZDT-D scope, e.g. profile/sing-box/main. Auto-derived when omitted.")]
     pub scope: String,
 
+    #[arg(long, default_value_t=false, help="Run in Android app non-root mode: accept only explicit SOCKS5 inbound/target traffic and disable transparent root features.")]
+    pub non_root_mode: bool,
+
 }
 
 impl Args {

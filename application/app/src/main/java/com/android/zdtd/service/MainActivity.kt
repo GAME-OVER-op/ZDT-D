@@ -111,8 +111,10 @@ class MainActivity : AppCompatActivity() {
       ZdtdTheme(themeMode = themeMode) {
         Surface {
           val rootState by vm.rootState.collectAsStateWithLifecycle()
+          val runtimeMode by vm.runtimeMode.collectAsStateWithLifecycle()
 
           ZdtdApp(
+            runtimeMode = runtimeMode,
             rootState = rootState,
             setupFlow = vm.setup,
             uiStateFlow = vm.uiState,

@@ -94,6 +94,26 @@
 
         </activity>
 
+
+        <activity
+            android:name=".nonroot.NonRootModeActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.android.zdtd.service.action.NON_ROOT_MODE" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".nonroot.NonRootVpnService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="false"
+            android:foregroundServiceType="dataSync">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+        </service>
+
         <activity
             android:name=".WorldMapActivity"
             android:exported="false" />

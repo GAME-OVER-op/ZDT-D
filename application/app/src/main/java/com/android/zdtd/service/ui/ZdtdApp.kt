@@ -93,6 +93,8 @@ import com.android.zdtd.service.WorldMapActivity
 import com.android.zdtd.service.StartupStage
 import com.android.zdtd.service.StartupUiState
 import com.android.zdtd.service.ZdtdActions
+import com.android.zdtd.service.nonroot.RuntimeMode
+import com.android.zdtd.service.ui.nonroot.NonRootShell
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.delay
@@ -111,6 +113,7 @@ private fun supportsArm64ToolUpdates(): Boolean {
 
 @Composable
 fun ZdtdApp(
+  runtimeMode: RuntimeMode,
   rootState: RootState,
   setupFlow: StateFlow<SetupUiState>,
   uiStateFlow: StateFlow<UiState>,
@@ -120,6 +123,11 @@ fun ZdtdApp(
   programUpdatesFlow: StateFlow<ProgramUpdatesUiState>,
   actions: ZdtdActions,
 ) {
+  if (runtimeMode == RuntimeMode.NON_ROOT) {
+    NonRootShell()
+    return
+  }
+
   val setup by setupFlow.collectAsStateWithLifecycle()
 
   Crossfade(

@@ -18,6 +18,8 @@ import androidx.core.content.ContextCompat
 import com.android.zdtd.service.api.ApiClient
 import com.android.zdtd.service.api.ApiModels
 import com.android.zdtd.service.api.DeviceInfo
+import com.android.zdtd.service.nonroot.RuntimeMode
+import com.android.zdtd.service.nonroot.RuntimeModeStore
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentRepository
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentStage
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentState
@@ -280,6 +282,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     getApplication<Application>().getString(id, *args)
 
   private val root = RootConfigManager(ctx)
+  private val runtimeModeStore = RuntimeModeStore(ctx)
+  private val _runtimeMode = MutableStateFlow(runtimeModeStore.runtimeMode())
+  val runtimeMode: StateFlow<RuntimeMode> = _runtimeMode.asStateFlow()
+
   private val api = ApiClient(
     rootManager = root,
     baseUrlProvider = { _uiState.value.baseUrl },
@@ -438,6 +444,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
 
     // Restore cached app-update banner state (persists across restarts).
     restoreCachedAppUpdateState()
+
+    _runtimeMode.value = runtimeModeStore.runtimeMode()
+    if (_runtimeMode.value == RuntimeMode.NON_ROOT && runtimeModeStore.isNonRootWarningAccepted()) {
+      _rootState.value = RootState.DENIED
+      return
+    }
 
     // If the user has already accepted the welcome screen (or completed setup earlier),
     // kick off a root check automatically on app start.
@@ -1418,6 +1430,7 @@ private fun clearDownloadedUpdateApk() {
       return
     }
 
+    if (_runtimeMode.value == RuntimeMode.NON_ROOT) return
     maybeStartForegroundJobs()
   }
 

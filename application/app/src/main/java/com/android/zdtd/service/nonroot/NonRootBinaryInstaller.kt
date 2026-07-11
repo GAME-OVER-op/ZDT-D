@@ -103,14 +103,11 @@ class NonRootBinaryInstaller(private val context: Context) {
     private fun installAssetFile(assetPath: String, target: File) {
         val parent = target.parentFile ?: error("Invalid target: $target")
         if (!parent.exists() && !parent.mkdirs()) error("Unable to create ${parent.absolutePath}")
-        val assetSha = sha256Asset(assetPath)
+        val bytes = context.assets.open(assetPath).use { it.readBytes() }
+        val assetSha = sha256(bytes)
         if (target.isFile && sha256OrNull(target) == assetSha) return
         val tmp = File(parent, "${target.name}.tmp")
-        context.assets.open(assetPath).use { input ->
-            tmp.outputStream().use { output ->
-                input.copyTo(output, bufferSize = 64 * 1024)
-            }
-        }
+        tmp.outputStream().use { it.write(bytes) }
         tmp.setReadable(true, true)
         tmp.setWritable(true, true)
         if (target.exists() && !target.delete()) {
@@ -138,19 +135,7 @@ class NonRootBinaryInstaller(private val context: Context) {
         return digest.digest().toHexString()
     }
 
-    private fun sha256Asset(assetPath: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        context.assets.open(assetPath).use { input ->
-            val buffer = ByteArray(64 * 1024)
-            while (true) {
-                val read = input.read(buffer)
-                if (read <= 0) break
-                digest.update(buffer, 0, read)
-            }
-        }
-        return digest.digest().toHexString()
-    }
-
+    private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).toHexString()
     private fun sha256OrNull(file: File): String? = runCatching { sha256(file) }.getOrNull()
     private fun ByteArray.toHexString(): String = joinToString("") { "%02x".format(it.toInt() and 0xff) }
 

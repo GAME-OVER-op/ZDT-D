@@ -79,13 +79,25 @@ pub fn get_original_dst(_stream: &TcpStream) -> Result<SocketAddr> {
     Err(anyhow::anyhow!("SO_ORIGINAL_DST is only supported on Linux in this port"))
 }
 
-pub fn get_transparent_dst(stream: &TcpStream, listen_addr: &str, listen_port: u16, tproxy_enabled: bool) -> Result<SocketAddr> {
-    if !tproxy_enabled { return get_original_dst(stream); }
-    let local = stream.local_addr().context("read accepted socket local_addr for TPROXY")?;
-    let own_listener = local.port() == listen_port
-        && (local.ip().is_unspecified()
-            || listen_addr.parse::<IpAddr>().map(|ip| ip == local.ip()).unwrap_or(false)
-            || local.ip().is_loopback());
-    if !own_listener { return Ok(local); }
-    get_original_dst(stream)
+pub fn get_transparent_dst(stream: &TcpStream, _listen_addr: &str, _listen_port: u16, tproxy_enabled: bool) -> Result<SocketAddr> {
+    // Always try SO_ORIGINAL_DST first.  ZDT-D can feed the same t2s instance
+    // from both true TPROXY rules and NAT REDIRECT/DNAT paths; hotspot/tethering
+    // still uses PREROUTING REDIRECT even when the global tproxy_enabled setting
+    // is enabled.  For REDIRECT traffic, SO_ORIGINAL_DST is the reliable real
+    // destination, while local_addr() may only be the device/hotspot address and
+    // the t2s listen port.
+    match get_original_dst(stream) {
+        Ok(dst) => return Ok(dst),
+        Err(original_dst_err) => {
+            if !tproxy_enabled {
+                return Err(original_dst_err);
+            }
+            tracing::debug!("SO_ORIGINAL_DST unavailable in TPROXY mode, using accepted socket local_addr: {:#}", original_dst_err);
+        }
+    }
+
+    // In true TPROXY delivery the accepted socket's local address is the
+    // original destination.  This is only a fallback after SO_ORIGINAL_DST
+    // failed, so NAT REDIRECT/DNAT hotspot traffic keeps working.
+    stream.local_addr().context("read accepted socket local_addr for TPROXY")
 }

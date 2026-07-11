@@ -169,7 +169,11 @@ async fn handle_udp_packet(state: AppState, udp_sock: Arc<AsyncFd<AsyncUdpSocket
     cleanup_sessions(&sessions);
 
     let mut data = pkt.data;
-    if let Some(handle) = sessions.lock().get(&key).cloned() {
+    let existing_handle = {
+        let guard = sessions.lock();
+        guard.get(&key).cloned()
+    };
+    if let Some(handle) = existing_handle {
         match send_to_session(&handle, data).await {
             Ok(()) => return Ok(()),
             Err(returned_data) => {

@@ -1,5 +1,5 @@
 {
-  "api_proxy": "https://raw.githubusercontent.com/proxifly/free-proxy-list/refs/heads/main/proxies/protocols/socks5/data.txt",
+  "api_proxy": "https://raw.githubusercontent.com/stormsia/proxy-list/main/working_proxies.txt",
   "api_user_agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36",
   "init_retry_interval": "3s",
   "server_selection": "fastest",

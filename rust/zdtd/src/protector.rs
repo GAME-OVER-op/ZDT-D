@@ -122,11 +122,12 @@ fn auto_monitor_loop(probe: screen::ScreenProbe, token: u64) {
     }
 
     loop {
-        let poll_interval = if stable_on {
+        let base_poll_interval = if stable_on {
             AUTO_SCREEN_ON_POLL_INTERVAL
         } else {
             AUTO_SCREEN_OFF_POLL_INTERVAL
         };
+        let poll_interval = crate::power_mode::protector_poll(base_poll_interval);
 
         if !interruptible_sleep(poll_interval, token) {
             break;

@@ -76,7 +76,7 @@ fn build_uid_map_from_cmd_package_cached() -> Option<HashMap<String, u32>> {
             Err(poisoned) => poisoned.into_inner(),
         };
         if let Some(cache) = guard.as_ref() {
-            if cache.created_at.elapsed() <= FULL_SCAN_CACHE_TTL {
+            if cache.created_at.elapsed() <= crate::power_mode::package_cache_ttl(FULL_SCAN_CACHE_TTL) {
                 return Some(cache.map.clone());
             }
         }

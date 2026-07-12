@@ -12,6 +12,7 @@ mod iptables_backup;
 mod internet_wait;
 mod logging;
 mod ports;
+mod power_mode;
 mod proxyinfo;
 mod protector;
 mod screen;

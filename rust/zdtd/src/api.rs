@@ -14,7 +14,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use crate::{api_status, daemon, daemon::SharedState, energy_saver, protector, settings, stats, traffic_total};
+use crate::{api_status, daemon, daemon::SharedState, energy_saver, power_mode, protector, settings, stats, traffic_total};
 
 const MAX_HEADER: usize = 16 * 1024;
 // Allow uploading strategic files (including binaries). The API is local-only and authenticated,
@@ -112,7 +112,7 @@ fn get_status_snapshot(services_running: bool) -> (stats::Report, bool, bool) {
         Ok(guard) => {
             if let Some(entry) = &*guard {
                 let age = entry.created.elapsed();
-                if age < STATUS_CACHE_TTL {
+                if age < power_mode::status_cache_ttl(STATUS_CACHE_TTL) {
                     return (entry.report.clone(), true, false);
                 }
                 let stale = entry.report.clone();
@@ -2344,7 +2344,7 @@ fn collect_assignment_files_uncached() -> Vec<AppAssignmentFile> {
 fn collect_assignment_files() -> Vec<AppAssignmentFile> {
     if let Ok(guard) = assignment_cache().lock() {
         if let Some(entry) = &*guard {
-            if entry.created.elapsed() < ASSIGNMENT_CACHE_TTL {
+            if entry.created.elapsed() < power_mode::status_cache_ttl(ASSIGNMENT_CACHE_TTL) {
                 return entry.items.clone();
             }
         }

@@ -115,7 +115,7 @@ pub fn stop() {
 fn detector_loop() -> Result<()> {
     let mut state = DetectorState::default();
     while should_run().load(Ordering::SeqCst) {
-        let sleep_for = next_poll_interval(&state);
+        let sleep_for = crate::power_mode::detector_poll(next_poll_interval(&state));
         match detector_tick(&mut state, sleep_for) {
             Ok(outcome) => {
                 if outcome.had_hits {

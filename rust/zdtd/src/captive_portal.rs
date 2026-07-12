@@ -242,10 +242,10 @@ fn serve_loop(listener: TcpListener, stop: Arc<AtomicBool>) {
                     }
                 });
             }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => thread::sleep(ACCEPT_SLEEP),
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => thread::sleep(crate::power_mode::captive_portal_accept_sleep(ACCEPT_SLEEP)),
             Err(e) => {
                 warn!("captive portal accept failed: {e}");
-                thread::sleep(ACCEPT_SLEEP);
+                thread::sleep(crate::power_mode::captive_portal_accept_sleep(ACCEPT_SLEEP));
             }
         }
     }
@@ -667,7 +667,7 @@ h1{position:relative;z-index:2;margin:0;font-size:clamp(30px,7vw,56px);line-heig
       if(d&&d.status) setState(d.status);
     }).catch(function(){});
   }
-  setInterval(poll,4000);
+  setInterval(poll,%POLL_MS%);
 })();
 </script>
 </body>
@@ -677,7 +677,9 @@ h1{position:relative;z-index:2;margin:0;font-size:clamp(30px,7vw,56px);line-heig
     page = page.replace("%MODEL%", &escape_html(&device.model));
     page = page.replace("%STATUS_CLASS%", status_class);
     page = page.replace("%STATUS_RU%", &escape_html(status_ru));
-    page.replace("%STATUS_EN%", &escape_html(status_en))
+    page = page.replace("%STATUS_EN%", &escape_html(status_en));
+    page = page.replace("%POLL_MS%", &crate::power_mode::captive_portal_page_poll_ms(4000).to_string());
+    page
 }
 
 fn allowed_ips() -> Result<Vec<String>> {

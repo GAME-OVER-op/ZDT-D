@@ -293,7 +293,7 @@ fn monitor_loop(probe: screen::ScreenProbe, token: u64) {
             break;
         }
 
-        if last_affinity.elapsed() >= Duration::from_secs(AFFINITY_REAPPLY_SECS) {
+        if last_affinity.elapsed() >= crate::power_mode::medium_poll(Duration::from_secs(AFFINITY_REAPPLY_SECS)) {
             let _ = apply_affinity_from_settings(&cfg);
             last_affinity = Instant::now();
         }
@@ -309,7 +309,7 @@ fn monitor_loop(probe: screen::ScreenProbe, token: u64) {
             }
         }
 
-        if !interruptible_sleep(Duration::from_secs(MONITOR_POLL_SECS), token) {
+        if !interruptible_sleep(crate::power_mode::medium_poll(Duration::from_secs(MONITOR_POLL_SECS)), token) {
             break;
         }
     }

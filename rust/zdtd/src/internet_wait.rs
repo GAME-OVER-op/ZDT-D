@@ -14,6 +14,14 @@ const PROBE_INTERVAL: Duration = Duration::from_secs(3);
 const LOG_INTERVAL: Duration = Duration::from_secs(1);
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(600);
 
+fn probe_interval() -> Duration {
+    crate::power_mode::medium_poll(PROBE_INTERVAL)
+}
+
+fn log_interval() -> Duration {
+    crate::power_mode::medium_poll(LOG_INTERVAL)
+}
+
 static WAIT_ACTIVE: AtomicBool = AtomicBool::new(false);
 static COUNTDOWN_ACTIVE: AtomicBool = AtomicBool::new(false);
 static SKIP_REQUESTED: AtomicBool = AtomicBool::new(false);
@@ -113,7 +121,7 @@ fn wait_initial_online_check() -> InitialCheckResult {
             if has_internet() {
                 return InitialCheckResult::Online;
             }
-            next_probe = now + PROBE_INTERVAL;
+            next_probe = now + probe_interval();
             continue;
         }
 
@@ -126,7 +134,7 @@ fn run_fallback_countdown() {
     SKIP_REQUESTED.store(false, Ordering::SeqCst);
 
     let deadline = Instant::now() + FALLBACK_WAIT;
-    let mut next_probe = Instant::now() + PROBE_INTERVAL;
+    let mut next_probe = Instant::now() + probe_interval();
     let mut next_log = Instant::now();
 
     loop {
@@ -145,7 +153,7 @@ fn run_fallback_countdown() {
 
         if now >= next_log {
             crate::logging::user_internet_wait_countdown(deadline.saturating_duration_since(now));
-            next_log = now + LOG_INTERVAL;
+            next_log = now + log_interval();
         }
 
         if now >= next_probe {
@@ -154,7 +162,7 @@ fn run_fallback_countdown() {
                 crate::logging::user_internet_wait_finished();
                 break;
             }
-            next_probe = now + PROBE_INTERVAL;
+            next_probe = now + probe_interval();
         }
 
         let wake_at = next_log.min(next_probe).min(deadline);

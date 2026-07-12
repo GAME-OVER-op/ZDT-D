@@ -6,7 +6,7 @@
 
 use anyhow::{Context, Result};
 use log::{info, warn};
-use std::{collections::BTreeSet, fs, path::Path, time::Duration};
+use std::{collections::{BTreeMap, BTreeSet}, fs, path::Path, time::Duration};
 
 use crate::{settings, shell::Capture, xtables_lock};
 use super::iptables_port::{DpiTunnelOptions, ProtoChoice};
@@ -147,12 +147,118 @@ fn scoped_hash(label: &str) -> u64 {
 pub fn scoped_out_chain_name(label: &str) -> String { format!("ZDTP_{:016x}", scoped_hash(label)) }
 pub fn scoped_pre_chain_name(label: &str) -> String { format!("ZDTPP_{:016x}", scoped_hash(label)) }
 
-fn mark_for_scope(label: &str) -> u32 {
-    // 8 bits of per-scope identity in bits 20..27, plus a route nibble in
-    // bits 28..31.  The lower 20 Android fwmark bits are left untouched by
-    // MARK --set-xmark and by TPROXY --tproxy-mark.
-    let slot = ((scoped_hash(label) as u32) & 0x0000_00ff).max(1);
-    ROUTE_MARK | (slot << 20)
+// Persistent, collision-free per-scope slot registry.
+//
+// The fwmark carries only 8 bits of per-scope identity (bits 20..27) plus a
+// route nibble (bits 28..31); the lower 20 Android fwmark bits must stay
+// untouched.  Deriving that slot from a hash (hash & 0xff) let two different
+// scopes share a mark: PREROUTING TPROXY delivery is selected purely by mark
+// (--uid-owner is not available there), so a collision routed one app's
+// packets to another app's proxy port.  That is the "split-tunnel paths
+// cross" bug.  We now assign each scope a unique slot from a persisted
+// registry so marks never collide.
+const SLOT_REGISTRY_FILE: &str = "tproxy_slots";
+const SLOT_MIN: u32 = 1;
+const SLOT_MAX: u32 = 254;
+
+fn mark_from_slot(slot: u32) -> u32 { ROUTE_MARK | (slot << 20) }
+
+fn slot_registry_path() -> std::path::PathBuf {
+    Path::new(settings::SETTING_DIR).join(SLOT_REGISTRY_FILE)
+}
+
+// Registry format: one `slot\tscope_label` line per scope.  scope_label is
+// always single-line, so a tab separator is unambiguous and needs no escaping.
+fn load_slot_registry() -> BTreeMap<String, u32> {
+    let mut map = BTreeMap::new();
+    let Ok(body) = fs::read_to_string(slot_registry_path()) else {
+        return map;
+    };
+    for line in body.lines() {
+        let line = line.trim_end_matches('\r');
+        if line.is_empty() {
+            continue;
+        }
+        let Some((slot_str, label)) = line.split_once('\t') else {
+            continue;
+        };
+        let Ok(slot) = slot_str.trim().parse::<u32>() else {
+            continue;
+        };
+        if !(SLOT_MIN..=SLOT_MAX).contains(&slot) || label.is_empty() {
+            continue;
+        }
+        map.insert(label.to_string(), slot);
+    }
+    map
+}
+
+fn save_slot_registry(map: &BTreeMap<String, u32>) -> Result<()> {
+    let path = slot_registry_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("create setting dir {}", parent.display()))?;
+    }
+    let mut body = String::new();
+    for (label, slot) in map {
+        // scope labels are single-line; skip any that would corrupt the file.
+        if label.contains('\t') || label.contains('\n') {
+            continue;
+        }
+        body.push_str(&format!("{slot}\t{label}\n"));
+    }
+    fs::write(&path, body).with_context(|| format!("write {}", path.display()))?;
+    Ok(())
+}
+
+fn alloc_slot_for_scope(scope: &str) -> Result<u32> {
+    let mut map = load_slot_registry();
+    if let Some(&slot) = map.get(scope) {
+        return Ok(slot);
+    }
+    let used: BTreeSet<u32> = map.values().copied().collect();
+    let mut chosen: Option<u32> = None;
+    for slot in SLOT_MIN..=SLOT_MAX {
+        if used.contains(&slot) {
+            continue;
+        }
+        // Never hand out the slot whose mark equals the legacy route mark, to
+        // avoid ambiguity with legacy 0x5d700000/0xffff0000 policy rules.
+        if mark_from_slot(slot) == LEGACY_ROUTE_MARK {
+            continue;
+        }
+        chosen = Some(slot);
+        break;
+    }
+    let slot = chosen.ok_or_else(|| {
+        anyhow::anyhow!(
+            "TPROXY: no free scope slot (all {}..={} in use, {} scopes registered)",
+            SLOT_MIN,
+            SLOT_MAX,
+            map.len()
+        )
+    })?;
+    map.insert(scope.to_string(), slot);
+    save_slot_registry(&map)?;
+    Ok(slot)
+}
+
+fn free_slot_for_scope(scope: &str) {
+    let mut map = load_slot_registry();
+    if map.remove(scope).is_some() {
+        if let Err(e) = save_slot_registry(&map) {
+            warn!("TPROXY: failed to persist slot registry after freeing scope: {e:#}");
+        }
+    }
+}
+
+fn clear_slot_registry() {
+    let path = slot_registry_path();
+    if path.exists() {
+        if let Err(e) = fs::remove_file(&path) {
+            warn!("TPROXY: failed to remove slot registry {}: {e:#}", path.display());
+        }
+    }
 }
 
 fn mark_hex(mark: u32) -> String { format!("0x{mark:08x}") }
@@ -188,7 +294,8 @@ fn apply_locked(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifac
     }
 
     let scope = scope_label(uid_file, dest_port, proto_choice, ifaces_raw, opt);
-    let mark = mark_for_scope(&scope);
+    let slot = alloc_slot_for_scope(&scope).map_err(failed)?;
+    let mark = mark_from_slot(slot);
     let uids = read_uids(uid_file).map_err(failed)?;
 
     ensure_policy_route().map_err(failed)?;
@@ -472,6 +579,8 @@ pub fn cleanup_scope(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice,
 fn cleanup_scope_by_label(scope: &str) -> Result<()> {
     remove_scoped_chain(OUT_CHAIN, &scoped_out_chain_name(scope))?;
     remove_scoped_chain(PRE_CHAIN, &scoped_pre_chain_name(scope))?;
+    // Release the scope's fwmark slot so it can be reused by another profile.
+    free_slot_for_scope(scope);
     Ok(())
 }
 
@@ -521,6 +630,8 @@ pub fn cleanup_all() -> Result<()> {
     let table = ROUTE_TABLE.to_string();
     cleanup_policy_rules_best_effort();
     let _ = ip_run_timeout(&["route", "flush", "table", table.as_str()], Capture::None, IP_CMD_TIMEOUT);
+    // All scoped chains and policy rules are gone; drop the slot registry too.
+    clear_slot_registry();
     Ok(())
 }
 

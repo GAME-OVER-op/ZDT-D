@@ -42,6 +42,23 @@ const XT_WAIT_SECS: &str = "5";
 const OUT_CHAIN: &str = "ZDT_TPROXY_OUT";
 const PRE_CHAIN: &str = "ZDT_TPROXY_PRE";
 const DIVERT_CHAIN: &str = "ZDT_TPROXY_DIVERT";
+
+/// IPv4 ranges that must never be TPROXY'd: they have to reach the local stack
+/// or the LAN directly.  Covers CGNAT/RFC1918 private space, link-local,
+/// multicast and reserved blocks.  Matches the proven box_for_magisk bypass
+/// list.  Loopback 127.0.0.0/8 is handled separately (see ensure_local_bypass).
+const INTRANET_V4: &[&str] = &[
+    "0.0.0.0/8",
+    "10.0.0.0/8",
+    "100.64.0.0/10",
+    "169.254.0.0/16",
+    "172.16.0.0/12",
+    "192.0.0.0/24",
+    "192.168.0.0/16",
+    "224.0.0.0/4",
+    "240.0.0.0/4",
+    "255.255.255.255/32",
+];
 const ROUTE_TABLE: u32 = 1057;
 const ROUTE_PREF: &str = "9999";
 
@@ -392,82 +409,22 @@ fn ensure_policy_route() -> Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TproxyPreroutingLayout {
-    /// Most compatible Android layout: scoped ZDT-D TPROXY rules are evaluated
-    /// before any socket DIVERT shortcut.  This is required on Android 11-era
-    /// kernels where a plain socket match can accept locally re-routed packets
-    /// before they reach the scoped TPROXY target.
-    ScopedFirstNoDivert,
-    /// Optional optimization for newer kernels: only transparent sockets are
-    /// diverted, and only after scoped TPROXY delivery had the first chance to
-    /// consume the packet.
-    ScopedFirstTransparentDivert,
-}
-
-fn android_sdk_version() -> Option<u32> {
-    let Ok((0, out)) = crate::shell::run_timeout(
-        "getprop",
-        &["ro.build.version.sdk"],
-        Capture::Stdout,
-        Duration::from_secs(1),
-    ) else {
-        return None;
-    };
-    out.trim().parse::<u32>().ok()
-}
-
-fn supports_socket_transparent_match() -> bool {
-    let chain = "ZDT_TPROXY_SOCKET_TEST";
-    let _ = ipt_run_timeout(&["-t", "mangle", "-F", chain], Capture::None, IPT_CMD_TIMEOUT);
-    let _ = ipt_run_timeout(&["-t", "mangle", "-X", chain], Capture::None, IPT_CMD_TIMEOUT);
-    let Ok((0, _)) = ipt_run_timeout(&["-t", "mangle", "-N", chain], Capture::None, IPT_CMD_TIMEOUT) else {
-        return false;
-    };
-    let ok = matches!(
-        ipt_run_timeout(&[
-            "-t", "mangle", "-A", chain,
-            "-p", "tcp", "-m", "socket", "--transparent", "-j", "RETURN",
-        ], Capture::None, IPT_CMD_TIMEOUT),
-        Ok((0, _))
-    );
-    let _ = ipt_run_timeout(&["-t", "mangle", "-F", chain], Capture::None, IPT_CMD_TIMEOUT);
-    let _ = ipt_run_timeout(&["-t", "mangle", "-X", chain], Capture::None, IPT_CMD_TIMEOUT);
-    ok
-}
-
-fn select_prerouting_layout() -> TproxyPreroutingLayout {
-    // Android 11 is the problem case reported by users.  Keep the safest path
-    // for Android 11 and older: no DIVERT shortcut at all.  For Android 12+
-    // allow the transparent-socket DIVERT optimization only if the kernel and
-    // iptables implementation accept the exact `--transparent` matcher.
-    let sdk = android_sdk_version();
-    let transparent_socket = supports_socket_transparent_match();
-    let layout = if sdk.map(|v| v <= 30).unwrap_or(true) || !transparent_socket {
-        TproxyPreroutingLayout::ScopedFirstNoDivert
-    } else {
-        TproxyPreroutingLayout::ScopedFirstTransparentDivert
-    };
-    info!(
-        "TPROXY layout selected: {:?} android_sdk={:?} socket_transparent={}",
-        layout,
-        sdk,
-        transparent_socket,
-    );
-    layout
-}
-
 fn ensure_base_chains() -> Result<()> {
     ensure_chain("mangle", OUT_CHAIN)?;
     ensure_chain("mangle", PRE_CHAIN)?;
     ensure_chain("mangle", DIVERT_CHAIN)?;
 
-    // Keep hooks deterministic and Android-version-safe:
-    //   OUTPUT      #1: selected app traffic gets only high fwmark bits set.
-    //   PREROUTING #1: scoped marked packets enter ZDT-D TPROXY delivery.
-    //   PREROUTING #2: optional transparent-socket DIVERT optimization only on
-    //                  systems that support it safely.  Never use plain
-    //                  `-m socket` before scoped TPROXY on Android.
+    // Keep hooks deterministic and aligned with the proven box_for_magisk
+    // layout that reliably delivers TPROXY traffic to the local t2s sockets:
+    //   OUTPUT      #1: selected app traffic gets only the high fwmark bits.
+    //   PREROUTING #1: socket DIVERT.  Packets that already belong to an
+    //                  established local (t2s) socket are re-marked for the
+    //                  policy route and accepted before TPROXY, so existing
+    //                  connections are delivered locally instead of being
+    //                  re-TPROXY'd.  A plain `-m socket` match (no
+    //                  `--transparent`) is used so it also catches sockets
+    //                  that are not flagged transparent.
+    //   PREROUTING #2: scoped marked packets enter ZDT-D TPROXY delivery.
     delete_rule_all("mangle", "OUTPUT", &["-j", OUT_CHAIN])?;
     insert_rule_at("mangle", "OUTPUT", 1, &["-j", OUT_CHAIN])?;
 
@@ -475,34 +432,36 @@ fn ensure_base_chains() -> Result<()> {
     delete_rule_all("mangle", "PREROUTING", &["-p", "tcp", "-m", "socket", "-j", DIVERT_CHAIN])?;
     delete_rule_all("mangle", "PREROUTING", &["-j", PRE_CHAIN])?;
 
+    // Insert PRE first, then DIVERT in front of it, so the resulting order is
+    // #1 DIVERT, #2 PRE.
     insert_rule_at("mangle", "PREROUTING", 1, &["-j", PRE_CHAIN])?;
-    let layout = select_prerouting_layout();
-    if layout == TproxyPreroutingLayout::ScopedFirstTransparentDivert {
-        insert_rule_at("mangle", "PREROUTING", 2, &["-p", "tcp", "-m", "socket", "--transparent", "-j", DIVERT_CHAIN])?;
-        ensure_divert_chain(true)?;
-    } else {
-        ensure_divert_chain(false)?;
+    // Socket DIVERT is an optimization for already-established local sockets and
+    // relies on the xt_socket match.  It is present on all mainstream Android
+    // 11..17 kernels, but if some vendor kernel lacks it we keep scoped TPROXY
+    // working instead of failing the whole apply (which would otherwise drop
+    // t2s down to the TCP-only DNAT fallback).  Both steps are best-effort.
+    match ensure_divert_chain() {
+        Ok(()) => {
+            if let Err(e) = insert_rule_at("mangle", "PREROUTING", 1, &["-p", "tcp", "-m", "socket", "-j", DIVERT_CHAIN]) {
+                warn!("TPROXY socket DIVERT hook not installed, continuing without it: {e:#}");
+            }
+        }
+        Err(e) => warn!("TPROXY DIVERT chain setup failed, continuing without socket divert: {e:#}"),
     }
 
-    ensure_ordered_return_prefix(OUT_CHAIN, &[
-        &["-o", "lo", "-j", "RETURN"],
-        &["-d", "127.0.0.0/8", "-j", "RETURN"],
-    ])?;
-
-    // Do not add a 127/8 RETURN to PRE_CHAIN.  Android local-output TPROXY is
-    // OUTPUT mark -> policy route local dev lo -> PREROUTING; a loopback return
-    // in PREROUTING can skip the scoped TPROXY target on Android 11 kernels.
-    delete_rule_all("mangle", PRE_CHAIN, &["-d", "127.0.0.0/8", "-j", "RETURN"])?;
+    // Never TPROXY loopback or intranet/private-range destinations: those must
+    // reach the local stack or the LAN directly.  Keep these RETURN rules at
+    // the very top of both hook chains, before any scoped TPROXY jump.
+    ensure_local_bypass(OUT_CHAIN, true)?;
+    ensure_local_bypass(PRE_CHAIN, false)?;
     Ok(())
 }
 
-fn ensure_divert_chain(enabled: bool) -> Result<()> {
+fn ensure_divert_chain() -> Result<()> {
     let (rc, out) = ipt_run_timeout(&["-t", "mangle", "-F", DIVERT_CHAIN], Capture::Both, IPT_CMD_TIMEOUT)?;
     if rc != 0 { anyhow::bail!("flush {DIVERT_CHAIN} failed: {}", out.trim()); }
-    if !enabled {
-        info!("TPROXY DIVERT disabled for selected Android-compatible layout");
-        return Ok(());
-    }
+    // Mark for the ZDT-D policy route (local dev lo -> t2s) and accept, so an
+    // established-socket packet is delivered locally instead of re-TPROXY'd.
     let fwmark = route_mask_hex();
     add_rule_idempotent(DIVERT_CHAIN, vec!["-j".into(), "MARK".into(), "--set-xmark".into(), fwmark])?;
     add_rule_idempotent(DIVERT_CHAIN, vec!["-j".into(), "ACCEPT".into()])?;
@@ -527,9 +486,21 @@ fn ensure_hook(parent: &str, jump: &str) -> Result<()> {
     Ok(())
 }
 
-fn ensure_ordered_return_prefix(chain: &str, expected: &[&[&str]]) -> Result<()> {
-    for rule in expected { delete_rule_all("mangle", chain, rule)?; }
-    for (idx, rule) in expected.iter().enumerate() { insert_rule_at("mangle", chain, idx + 1, rule)?; }
+fn ensure_local_bypass(chain: &str, include_loopback: bool) -> Result<()> {
+    // Ordered leading RETURN rules for local/intranet destinations.  Loopback
+    // (-o lo and 127.0.0.0/8) is only added to the OUTPUT-side chain; adding a
+    // 127/8 RETURN to the PREROUTING chain could skip the scoped TPROXY target
+    // on some Android kernels, so PRE_CHAIN gets the intranet ranges only.
+    let mut rules: Vec<Vec<&str>> = Vec::new();
+    if include_loopback {
+        rules.push(vec!["-o", "lo", "-j", "RETURN"]);
+        rules.push(vec!["-d", "127.0.0.0/8", "-j", "RETURN"]);
+    }
+    for &net in INTRANET_V4 {
+        rules.push(vec!["-d", net, "-j", "RETURN"]);
+    }
+    for rule in &rules { delete_rule_all("mangle", chain, rule)?; }
+    for (idx, rule) in rules.iter().enumerate() { insert_rule_at("mangle", chain, idx + 1, rule)?; }
     Ok(())
 }
 

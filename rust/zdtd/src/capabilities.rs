@@ -215,11 +215,11 @@ pub fn collect() -> Value {
             "warning_only": false,
             "dnat_fallback": true,
             "notes": "When tproxy_enabled=true, t2s-aware program routing sends TCP and UDP through the TPROXY backend first. If the device/kernel or runtime probe does not support it, ZDT-D automatically falls back to the standard TCP-only DNAT routing path.",
-            "route_mark_candidate": "0x50000000/0xf0000000",
-            "scope_mark_mask_candidate": "0xfff00000",
+            "route_mark_candidate": "0x01000000/0x01000000",
+            "scope_mark_mask_candidate": "0xff000000",
             "preserves_android_fwmark_low_bits_required": true,
-            "route_table_candidate": 1057,
-            "route_pref_candidate": 9999
+            "route_table_candidate": 787,
+            "route_pref_candidate": 100
         },
         "routing": {
             "ip_rule": ip_rule,

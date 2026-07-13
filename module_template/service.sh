@@ -10,9 +10,6 @@ LOGFILE="$LOGDIR/deamon.log"
 
 mkdir -p "$LOGDIR"
 
-
-setsid "$MODDIR/bin/zdtd" >>"$LOGFILE" 2>&1 </dev/null &
-
 apply() {
   k="$1"
   v="$2"
@@ -64,6 +61,9 @@ apply net.ipv4.tcp_max_syn_backlog 4096
 apply net.ipv4.tcp_mtu_probing 1
 apply net.ipv4.tcp_slow_start_after_idle 0
 
+# forwarding baseline (zdtd may still adjust this later from settings)
+apply net.ipv4.ip_forward 1
+
 # security / sane defaults
 apply net.ipv4.conf.all.accept_redirects 0
 apply net.ipv4.conf.default.accept_redirects 0
@@ -75,6 +75,13 @@ apply net.ipv4.conf.all.route_localnet 0
 apply net.ipv4.conf.default.route_localnet 0
 apply net.ipv4.conf.all.rp_filter 2
 apply net.ipv4.conf.default.rp_filter 2
+# Loopback must accept the TPROXY-delivered packets that arrive with a
+# non-local (original) destination after the policy route sends them to
+# `dev lo`.  Keep rp_filter loose on lo and allow accept_local so the
+# reverse-path check never drops them.  route_localnet stays 0: delivery uses
+# `-i lo` and does not need 127/8 to be routable from other interfaces.
+apply net.ipv4.conf.lo.rp_filter 2
+apply net.ipv4.conf.lo.accept_local 1
 apply net.ipv4.icmp_echo_ignore_broadcasts 1
 apply net.ipv4.icmp_ignore_bogus_error_responses 1
 apply net.ipv4.conf.all.log_martians 0
@@ -89,5 +96,9 @@ apply kernel.printk "3 3 3 3"
 
 # Disable system DNS 
 settings put global private_dns_mode off
+
+# Start the ZDT-D daemon only after the network sysctl baseline above is in
+# place, so its first routing-rule build sees the final kernel settings.
+setsid "$MODDIR/bin/zdtd" >>"$LOGFILE" 2>&1 </dev/null &
 
 exit 0

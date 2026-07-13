@@ -59,18 +59,36 @@ const INTRANET_V4: &[&str] = &[
     "240.0.0.0/4",
     "255.255.255.255/32",
 ];
-const ROUTE_TABLE: u32 = 1057;
-const ROUTE_PREF: &str = "9999";
+// Dedicated routing table for ZDT-D TPROXY delivery.  Android numbers its
+// per-interface tables as ifindex+1000 (>=1000) and reserves 253..255 for
+// local/main/default, so a value in the 256..999 gap avoids collisions on
+// every Android release.
+const ROUTE_TABLE: u32 = 787;
+// Low priority number so the ZDT-D rule sits above Android/OEM policy rules
+// (box_for_magisk uses 100 for the same reason).
+const ROUTE_PREF: &str = "100";
 
-// Android uses the low fwmark bits for netId/permission/VPN routing.
-// Do not overwrite the whole mark.  Keep ZDT-D TPROXY metadata in the high
-// nibble/byte area only, preserving the lower 20 bits used by Android rules.
-const ROUTE_MARK: u32 = 0x5000_0000;
-const ROUTE_MASK: u32 = 0xf000_0000;
-const SCOPE_MASK: u32 = 0xfff0_0000;
+// Android packs netId/permission/protectedFromVpn/uidBillingDone into the low
+// fwmark bits (0..20).  ZDT-D must never touch those, so all TPROXY metadata
+// lives in bits 24..31:
+//   * bit 24      -> ROUTE_MARK: the single "divert to local t2s" marker that
+//                    the ip rule and the DIVERT chain match on (same idea as
+//                    box_for_magisk's dedicated bit).
+//   * bits 25..31 -> per-scope slot, selecting the right TPROXY --on-port.
+// Bits 21..23 are a deliberate gap between Android's range and ours.
+const ROUTE_MARK: u32 = 0x0100_0000; // bit 24
+const ROUTE_MASK: u32 = 0x0100_0000; // ip rule / DIVERT match: route bit only
+const SCOPE_MASK: u32 = 0xff00_0000; // MARK / TPROXY match: route bit + slot bits
+// Old-scheme mark/mask/table/pref from earlier ZDT-D versions.  Kept only so
+// cleanup can delete any rules they may have left behind after an upgrade.
+const OLD_ROUTE_MARK: u32 = 0x5000_0000;
+const OLD_ROUTE_MASK: u32 = 0xf000_0000;
+const OLD_ROUTE_TABLE: u32 = 1057;
+const OLD_ROUTE_PREF: &str = "9999";
 const LEGACY_ROUTE_MARK: u32 = 0x5d70_0000;
 const LEGACY_ROUTE_MASK: u32 = 0xffff_0000;
 const TPROXY_NO_FILE: &str = "tproxy_no";
+const V6_BLOCK_PREFIX: &str = "ZDTV6";
 
 #[derive(Debug)]
 pub enum TproxyApplyError {
@@ -166,19 +184,19 @@ pub fn scoped_pre_chain_name(label: &str) -> String { format!("ZDTPP_{:016x}", s
 
 // Persistent, collision-free per-scope slot registry.
 //
-// The fwmark carries only 8 bits of per-scope identity (bits 20..27) plus a
-// route nibble (bits 28..31); the lower 20 Android fwmark bits must stay
-// untouched.  Deriving that slot from a hash (hash & 0xff) let two different
-// scopes share a mark: PREROUTING TPROXY delivery is selected purely by mark
-// (--uid-owner is not available there), so a collision routed one app's
-// packets to another app's proxy port.  That is the "split-tunnel paths
+// The fwmark carries the per-scope identity in bits 25..31 (7 bits) on top of
+// the bit-24 route marker; the low 24 fwmark bits (all of Android's range plus
+// the 21..23 gap) must stay untouched.  Deriving that slot from a hash let two
+// different scopes share a mark: PREROUTING TPROXY delivery is selected purely
+// by mark (--uid-owner is not available there), so a collision routed one
+// app's packets to another app's proxy port.  That is the "split-tunnel paths
 // cross" bug.  We now assign each scope a unique slot from a persisted
 // registry so marks never collide.
 const SLOT_REGISTRY_FILE: &str = "tproxy_slots";
 const SLOT_MIN: u32 = 1;
-const SLOT_MAX: u32 = 254;
+const SLOT_MAX: u32 = 127;
 
-fn mark_from_slot(slot: u32) -> u32 { ROUTE_MARK | (slot << 20) }
+fn mark_from_slot(slot: u32) -> u32 { ROUTE_MARK | (slot << 25) }
 
 fn slot_registry_path() -> std::path::PathBuf {
     Path::new(settings::SETTING_DIR).join(SLOT_REGISTRY_FILE)
@@ -281,6 +299,7 @@ fn clear_slot_registry() {
 fn mark_hex(mark: u32) -> String { format!("0x{mark:08x}") }
 fn mark_mask_hex(mark: u32) -> String { format!("0x{mark:08x}/0x{SCOPE_MASK:08x}") }
 fn route_mask_hex() -> String { format!("0x{ROUTE_MARK:08x}/0x{ROUTE_MASK:08x}") }
+fn old_route_mask_hex() -> String { format!("0x{OLD_ROUTE_MARK:08x}/0x{OLD_ROUTE_MASK:08x}") }
 fn legacy_route_mask_hex() -> String { format!("0x{LEGACY_ROUTE_MARK:08x}/0x{LEGACY_ROUTE_MASK:08x}") }
 
 pub fn apply(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifaces_raw: Option<&str>, opt: &DpiTunnelOptions) -> std::result::Result<(), TproxyApplyError> {
@@ -358,6 +377,10 @@ fn apply_locked(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifac
 
     finish_scoped_chain(&out_chain).map_err(failed)?;
     finish_scoped_chain(&pre_chain).map_err(failed)?;
+    // TPROXY is IPv4-only.  Block IPv6 for exactly these UIDs so their traffic
+    // cannot leak straight out over IPv6 and instead falls back to IPv4 (which
+    // is what gets TPROXY'd).  Best-effort: never fail the whole apply on it.
+    apply_ipv6_block(&scope, &uids);
     crate::runtime_refresh::register_tproxy(uid_file, dest_port, proto_choice, ifaces_raw, opt, mark, ROUTE_TABLE);
     info!("TPROXY applied uid_file={} dest_port={} mark={} table={}", uid_file.display(), dest_port, mark_hex(mark), ROUTE_TABLE);
     Ok(())
@@ -370,19 +393,21 @@ fn probe_tproxy_runtime() -> Result<()> {
     let _ = ipt_run_timeout(&["-t", "mangle", "-X", "ZDT_TPROXY_TEST"], Capture::None, IPT_CMD_TIMEOUT);
     let (rc, out) = ipt_run_timeout(&["-t", "mangle", "-N", "ZDT_TPROXY_TEST"], Capture::Both, IPT_CMD_TIMEOUT)?;
     if rc != 0 { anyhow::bail!("create test chain failed: {}", out.trim()); }
+    let tp_mark = route_mask_hex();
+    let table = ROUTE_TABLE.to_string();
     let (rc, out) = ipt_run_timeout(&[
         "-t", "mangle", "-A", "ZDT_TPROXY_TEST",
-        "-p", "tcp", "-j", "TPROXY", "--on-ip", "127.0.0.1", "--on-port", "1", "--tproxy-mark", "0x50000000/0xf0000000",
+        "-p", "tcp", "-j", "TPROXY", "--on-ip", "127.0.0.1", "--on-port", "1", "--tproxy-mark", tp_mark.as_str(),
     ], Capture::Both, IPT_CMD_TIMEOUT)?;
     let _ = ipt_run_timeout(&["-t", "mangle", "-F", "ZDT_TPROXY_TEST"], Capture::None, IPT_CMD_TIMEOUT);
     let _ = ipt_run_timeout(&["-t", "mangle", "-X", "ZDT_TPROXY_TEST"], Capture::None, IPT_CMD_TIMEOUT);
     if rc != 0 { anyhow::bail!("TPROXY target test failed: {}", out.trim()); }
 
-    let _ = ip_run_timeout(&["rule", "del", "fwmark", "0x50000000/0xf0000000", "lookup", "1057"], Capture::None, IP_CMD_TIMEOUT);
-    let (rc, out) = ip_run_timeout(&["rule", "add", "fwmark", "0x50000000/0xf0000000", "lookup", "1057"], Capture::Both, IP_CMD_TIMEOUT)?;
+    let _ = ip_run_timeout(&["rule", "del", "fwmark", tp_mark.as_str(), "lookup", table.as_str()], Capture::None, IP_CMD_TIMEOUT);
+    let (rc, out) = ip_run_timeout(&["rule", "add", "fwmark", tp_mark.as_str(), "lookup", table.as_str()], Capture::Both, IP_CMD_TIMEOUT)?;
     if rc != 0 { anyhow::bail!("ip rule test failed: {}", out.trim()); }
-    let (rc, out) = ip_run_timeout(&["route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", "1057"], Capture::Both, IP_CMD_TIMEOUT)?;
-    let _ = ip_run_timeout(&["rule", "del", "fwmark", "0x50000000/0xf0000000", "lookup", "1057"], Capture::None, IP_CMD_TIMEOUT);
+    let (rc, out) = ip_run_timeout(&["route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", table.as_str()], Capture::Both, IP_CMD_TIMEOUT)?;
+    let _ = ip_run_timeout(&["rule", "del", "fwmark", tp_mark.as_str(), "lookup", table.as_str()], Capture::None, IP_CMD_TIMEOUT);
     if rc != 0 { anyhow::bail!("ip local route test failed: {}", out.trim()); }
     Ok(())
 }
@@ -550,6 +575,10 @@ pub fn cleanup_scope(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice,
 fn cleanup_scope_by_label(scope: &str) -> Result<()> {
     remove_scoped_chain(OUT_CHAIN, &scoped_out_chain_name(scope))?;
     remove_scoped_chain(PRE_CHAIN, &scoped_pre_chain_name(scope))?;
+    // Remove this scope's per-UID IPv6 leak-block chain, if any.
+    if ip6tables_available() {
+        remove_v6_block_chain(&scoped_v6_chain_name(scope));
+    }
     // Release the scope's fwmark slot so it can be reused by another profile.
     free_slot_for_scope(scope);
     Ok(())
@@ -562,17 +591,127 @@ fn remove_scoped_chain(parent: &str, chain: &str) -> Result<()> {
     Ok(())
 }
 
-fn cleanup_policy_rules_best_effort() {
-    let table = ROUTE_TABLE.to_string();
-    for fwmark in [route_mask_hex(), legacy_route_mask_hex()] {
-        loop {
-            let Ok((rc, _)) = ip_run_timeout(&["rule", "del", "fwmark", fwmark.as_str(), "lookup", table.as_str()], Capture::None, IP_CMD_TIMEOUT) else {
-                break;
-            };
-            if rc != 0 { break; }
-        }
+fn del_ip_rules_by_fwmark(fwmark: &str, table: &str) {
+    loop {
+        let Ok((rc, _)) = ip_run_timeout(&["rule", "del", "fwmark", fwmark, "lookup", table], Capture::None, IP_CMD_TIMEOUT) else {
+            break;
+        };
+        if rc != 0 { break; }
     }
+}
+
+fn cleanup_policy_rules_best_effort() {
+    // Current scheme: bit-24 fwmark -> ROUTE_TABLE at pref ROUTE_PREF.
+    let table = ROUTE_TABLE.to_string();
+    del_ip_rules_by_fwmark(route_mask_hex().as_str(), table.as_str());
     let _ = ip_run_timeout(&["rule", "del", "pref", ROUTE_PREF], Capture::None, IP_CMD_TIMEOUT);
+
+    // Old/legacy rules left by previous ZDT-D versions (0x50000000/0xf0000000
+    // and 0x5d700000/0xffff0000, pref 9999, table 1057).  Remove them from both
+    // the old and the new table so an upgrade never leaves a stale policy rule.
+    let old_table = OLD_ROUTE_TABLE.to_string();
+    for fwmark in [old_route_mask_hex(), legacy_route_mask_hex()] {
+        del_ip_rules_by_fwmark(fwmark.as_str(), old_table.as_str());
+        del_ip_rules_by_fwmark(fwmark.as_str(), table.as_str());
+    }
+    let _ = ip_run_timeout(&["rule", "del", "pref", OLD_ROUTE_PREF], Capture::None, IP_CMD_TIMEOUT);
+}
+
+// --- Per-UID IPv6 leak blocking for TPROXY scopes ---------------------------
+//
+// TPROXY only intercepts IPv4.  A proxied app that also has working IPv6 would
+// send traffic straight out over IPv6 and bypass t2s (an IPv6 leak, and a
+// plausible reason a scope looked "broken" on some devices).  For each TPROXY
+// scope we therefore REJECT all IPv6 originating from exactly the routed UIDs,
+// using ICMPv6 admin-prohibited so the app fails fast and falls back to IPv4
+// (which is what actually gets TPROXY'd).  Non-routed apps keep their IPv6.
+//
+// Everything here is best-effort: if ip6tables is unavailable we log and keep
+// the IPv4 TPROXY path working rather than failing the whole apply.
+
+fn ip6t_run_timeout(args: &[&str], capture: Capture, timeout: Duration) -> Result<(i32, String)> {
+    let mut a: Vec<&str> = Vec::with_capacity(args.len() + 2);
+    a.push("-w");
+    a.push(XT_WAIT_SECS);
+    a.extend_from_slice(args);
+    xtables_lock::run_timeout_retry("ip6tables", &a, capture, timeout)
+}
+
+fn ip6tables_available() -> bool {
+    matches!(
+        ip6t_run_timeout(&["-t", "filter", "-nL", "OUTPUT"], Capture::None, IPT_CMD_TIMEOUT),
+        Ok((0, _))
+    )
+}
+
+pub fn scoped_v6_chain_name(label: &str) -> String { format!("{V6_BLOCK_PREFIX}_{:016x}", scoped_hash(label)) }
+
+fn remove_v6_block_chain(chain: &str) {
+    loop {
+        let Ok((rc, _)) = ip6t_run_timeout(&["-t", "filter", "-D", "OUTPUT", "-j", chain], Capture::None, IPT_CMD_TIMEOUT) else {
+            break;
+        };
+        if rc != 0 { break; }
+    }
+    let _ = ip6t_run_timeout(&["-t", "filter", "-F", chain], Capture::None, IPT_CMD_TIMEOUT);
+    let _ = ip6t_run_timeout(&["-t", "filter", "-X", chain], Capture::None, IPT_CMD_TIMEOUT);
+}
+
+fn build_ipv6_block_chain(chain: &str, uids: &[String]) -> Result<()> {
+    let (rc, out) = ip6t_run_timeout(&["-t", "filter", "-N", chain], Capture::Both, IPT_CMD_TIMEOUT)?;
+    if rc != 0 { anyhow::bail!("create v6 chain {chain} failed: {}", out.trim()); }
+    for uid in uids {
+        let (rc, out) = ip6t_run_timeout(&[
+            "-t", "filter", "-A", chain,
+            "-m", "owner", "--uid-owner", uid.as_str(),
+            "-j", "REJECT", "--reject-with", "icmp6-adm-prohibited",
+        ], Capture::Both, IPT_CMD_TIMEOUT)?;
+        if rc != 0 { anyhow::bail!("v6 reject rule uid={uid} failed: {}", out.trim()); }
+    }
+    let (rc, out) = ip6t_run_timeout(&["-t", "filter", "-A", chain, "-j", "RETURN"], Capture::Both, IPT_CMD_TIMEOUT)?;
+    if rc != 0 { anyhow::bail!("v6 final RETURN in {chain} failed: {}", out.trim()); }
+    // Hook at the very top of OUTPUT so the REJECT wins over later ACCEPT rules.
+    let (rc, _) = ip6t_run_timeout(&["-t", "filter", "-C", "OUTPUT", "-j", chain], Capture::None, IPT_CMD_TIMEOUT)?;
+    if rc != 0 {
+        let (rc, out) = ip6t_run_timeout(&["-t", "filter", "-I", "OUTPUT", "1", "-j", chain], Capture::Both, IPT_CMD_TIMEOUT)?;
+        if rc != 0 { anyhow::bail!("hook v6 OUTPUT->{chain} failed: {}", out.trim()); }
+    }
+    Ok(())
+}
+
+fn apply_ipv6_block(scope: &str, uids: &[String]) {
+    if uids.is_empty() { return; }
+    if !ip6tables_available() {
+        warn!("TPROXY: ip6tables unavailable; IPv6 leak protection skipped for scope");
+        return;
+    }
+    let chain = scoped_v6_chain_name(scope);
+    // Rebuild from scratch so re-apply is idempotent.
+    remove_v6_block_chain(&chain);
+    if let Err(e) = build_ipv6_block_chain(&chain, uids) {
+        warn!("TPROXY: failed to install IPv6 block for scope, continuing: {e:#}");
+        // Never leave a half-installed chain behind.
+        remove_v6_block_chain(&chain);
+    }
+}
+
+fn list_ip6_filter_chains_with_prefix(prefix: &str) -> Vec<String> {
+    let Ok((0, out)) = crate::shell::run_timeout("ip6tables-save", &["-t", "filter"], Capture::Stdout, IPT_SLOW_TIMEOUT) else {
+        return Vec::new();
+    };
+    out.lines()
+        .filter_map(|line| line.strip_prefix(':'))
+        .filter_map(|line| line.split_whitespace().next())
+        .filter(|name| name.starts_with(prefix))
+        .map(|name| name.to_string())
+        .collect()
+}
+
+fn cleanup_all_ipv6_blocks() {
+    if !ip6tables_available() { return; }
+    for chain in list_ip6_filter_chains_with_prefix(V6_BLOCK_PREFIX) {
+        remove_v6_block_chain(&chain);
+    }
 }
 
 pub fn cleanup_all() -> Result<()> {
@@ -601,6 +740,12 @@ pub fn cleanup_all() -> Result<()> {
     let table = ROUTE_TABLE.to_string();
     cleanup_policy_rules_best_effort();
     let _ = ip_run_timeout(&["route", "flush", "table", table.as_str()], Capture::None, IP_CMD_TIMEOUT);
+    let old_table = OLD_ROUTE_TABLE.to_string();
+    let _ = ip_run_timeout(&["route", "flush", "table", old_table.as_str()], Capture::None, IP_CMD_TIMEOUT);
+
+    // Remove every per-scope IPv6 leak-block chain and its OUTPUT hook.
+    cleanup_all_ipv6_blocks();
+
     // All scoped chains and policy rules are gone; drop the slot registry too.
     clear_slot_registry();
     Ok(())

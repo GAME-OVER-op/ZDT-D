@@ -831,10 +831,9 @@ private fun MainShell(
       onDismissRequest = { showRemoteTargetDialog = false },
       title = { Text("Удалённая настройка") },
       text = {
-        Text("Вы настраиваете: ${uiState.remoteTargetName}
-${uiState.remoteTargetAddress}
-
-Все изменения выполняются на выбранном устройстве.")
+        Text(
+          text = "Вы настраиваете: ${uiState.remoteTargetName}\n${uiState.remoteTargetAddress}\n\nВсе изменения выполняются на выбранном устройстве."
+        )
       },
       confirmButton = {
         TextButton(onClick = {
@@ -1764,10 +1763,7 @@ private fun RuntimeApplyStatusCard(
             label = "runtime_apply_cube_bottom_to_top",
           ) { target ->
             val message = target.second
-            val flip by transition.animateFloat(
-              transitionSpec = { tween(durationMillis = 260, easing = FastOutSlowInEasing) },
-              label = "runtime_apply_cube_flip",
-            ) { animatedTarget -> if (animatedTarget == target) 0f else -90f }
+            val flip = 0f
             Text(
               text = message.ifBlank { "Применяю правила" },
               modifier = Modifier.graphicsLayer {

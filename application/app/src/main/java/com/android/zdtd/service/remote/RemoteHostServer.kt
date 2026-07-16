@@ -333,7 +333,7 @@ class RemoteHostServer(
           !a.isLoopbackAddress && !addr.contains(':') && (
             addr.startsWith("192.168.") ||
               addr.startsWith("10.") ||
-              Regex("^172\.(1[6-9]|2[0-9]|3[0-1])\.").containsMatchIn(addr)
+              Regex("^172\\.(1[6-9]|2[0-9]|3[0-1])\\.").containsMatchIn(addr)
             )
         }
         ?.hostAddress

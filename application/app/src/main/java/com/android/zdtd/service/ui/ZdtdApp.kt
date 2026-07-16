@@ -135,7 +135,7 @@ fun ZdtdApp(
   ) { setupStep ->
     when (setupStep) {
       SetupStep.WELCOME -> WelcomeScreen(onAccept = actions::acceptWelcome)
-      SetupStep.ROOT -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
+      SetupStep.ROOT -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
       SetupStep.INSTALL -> InstallModuleScreen(
         rootState = rootState,
         setup = setup,
@@ -157,7 +157,7 @@ fun ZdtdApp(
       SetupStep.REBOOT -> {
         when (rootState) {
           RootState.CHECKING -> SplashScreen()
-          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
+          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
           RootState.GRANTED -> RebootRequiredScreen(
             setup = setup,
             text = setup.rebootRequiredText,
@@ -168,7 +168,7 @@ fun ZdtdApp(
       SetupStep.DONE -> {
         when (rootState) {
           RootState.CHECKING -> SplashScreen()
-          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
+          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
           RootState.GRANTED -> {
             UpdatePromptDialog(setup = setup, onUpdate = actions::openModuleInstaller, onSkip = actions::dismissUpdatePrompt)
             MainShell(
@@ -1387,6 +1387,7 @@ private fun MainShell(
             settingsCloseRequested = false
             showSettings = true
           },
+          onOpenRemoteSetup = actions::openRemoteSetup,
           appUpdate = appUpdate,
           uiStateFlow = uiStateFlow,
           appsRoute = appsRoute,
@@ -1471,6 +1472,7 @@ private fun MainShell(
             settingsCloseRequested = false
             showSettings = true
           },
+          onOpenRemoteSetup = actions::openRemoteSetup,
         )
 
         FloatingBottomNavigationCard(
@@ -1498,6 +1500,17 @@ private fun MainShell(
           .align(Alignment.BottomCenter)
           .zIndex(4.8f),
         bottomPadding = notificationBottomPadding + 62.dp,
+      )
+
+      RemoteTargetStatusCard(
+        name = uiState.remoteTargetName,
+        address = uiState.remoteTargetAddress,
+        onOpen = actions::openRemoteSetup,
+        onDisconnect = actions::exitRemoteControl,
+        modifier = Modifier
+          .align(Alignment.BottomCenter)
+          .zIndex(4.7f),
+        bottomPadding = notificationBottomPadding + (if (appUpdate.runtimeApplyVisible) 124.dp else 62.dp),
       )
 
       FloatingSnackbarHost(
@@ -1538,6 +1551,7 @@ private fun LandscapeShellContent(
   onOpenBackup: () -> Unit,
   onOpenProgramUpdates: () -> Unit,
   onOpenSettings: () -> Unit,
+  onOpenRemoteSetup: () -> Unit,
   appUpdate: AppUpdateUiState,
   uiStateFlow: StateFlow<UiState>,
   appsRoute: AppsRoute,
@@ -1603,6 +1617,7 @@ private fun LandscapeShellContent(
       onOpenBackup = onOpenBackup,
       onOpenProgramUpdates = onOpenProgramUpdates,
       onOpenSettings = onOpenSettings,
+      onOpenRemoteSetup = onOpenRemoteSetup,
     )
 
     LandscapeRightNav(
@@ -1834,6 +1849,50 @@ private fun FloatingSnackbarHost(
   }
 }
 
+
+@Composable
+private fun RemoteTargetStatusCard(
+  name: String,
+  address: String,
+  onOpen: () -> Unit,
+  onDisconnect: () -> Unit,
+  modifier: Modifier = Modifier,
+  bottomPadding: Dp,
+) {
+  AnimatedVisibility(
+    visible = name.isNotBlank(),
+    enter = fadeIn(animationSpec = tween(durationMillis = 180)) + slideInVertically(animationSpec = tween(durationMillis = 220)) { it / 2 },
+    exit = fadeOut(animationSpec = tween(durationMillis = 160)) + slideOutVertically(animationSpec = tween(durationMillis = 180)) { it / 2 },
+    modifier = modifier,
+  ) {
+    Surface(
+      shape = RoundedCornerShape(22.dp),
+      color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.96f),
+      tonalElevation = 4.dp,
+      shadowElevation = 10.dp,
+      border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.24f)),
+      modifier = Modifier
+        .padding(horizontal = 14.dp)
+        .padding(bottom = bottomPadding)
+        .fillMaxWidth(),
+    ) {
+      Row(
+        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        Icon(Icons.Filled.Sync, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
+        Column(Modifier.weight(1f)) {
+          Text("Удалённо: $name", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+          Text(address, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.74f))
+        }
+        TextButton(onClick = onOpen) { Text("Настройка") }
+        TextButton(onClick = onDisconnect) { Text("Откл.") }
+      }
+    }
+  }
+}
+
 @Composable
 private fun FloatingTopBarCard(
   modifier: Modifier = Modifier,
@@ -1847,6 +1906,7 @@ private fun FloatingTopBarCard(
   onOpenBackup: () -> Unit,
   onOpenProgramUpdates: () -> Unit,
   onOpenSettings: () -> Unit,
+  onOpenRemoteSetup: () -> Unit,
 ) {
   val shape = RoundedCornerShape(24.dp)
   Box(
@@ -1905,6 +1965,7 @@ private fun FloatingTopBarCard(
           onOpenBackup = onOpenBackup,
           onOpenProgramUpdates = onOpenProgramUpdates,
           onOpenSettings = onOpenSettings,
+          onOpenRemoteSetup = onOpenRemoteSetup,
         )
       }
     }
@@ -2053,6 +2114,7 @@ private fun LandscapeQuickActions(
   onOpenBackup: () -> Unit,
   onOpenProgramUpdates: () -> Unit,
   onOpenSettings: () -> Unit,
+  onOpenRemoteSetup: () -> Unit,
 ) {
   Surface(
     modifier = modifier,
@@ -2066,6 +2128,9 @@ private fun LandscapeQuickActions(
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(2.dp),
     ) {
+      IconButton(onClick = { onOpenRemoteSetup() }, modifier = Modifier.size(44.dp)) {
+        Icon(Icons.Filled.Sync, contentDescription = "Remote", modifier = Modifier.size(26.dp))
+      }
       IconButton(onClick = { onOpenSettings() }, modifier = Modifier.size(44.dp)) {
         Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings), modifier = Modifier.size(26.dp))
       }
@@ -2312,6 +2377,7 @@ private fun TopBarActionCluster(
   onOpenBackup: () -> Unit,
   onOpenProgramUpdates: () -> Unit,
   onOpenSettings: () -> Unit,
+  onOpenRemoteSetup: () -> Unit,
 ) {
   val target = programLogTarget
   var collapsed by remember { mutableStateOf(false) }
@@ -2372,6 +2438,11 @@ private fun TopBarActionCluster(
     Row(verticalAlignment = Alignment.CenterVertically) {
       IconButton(onClick = { onOpenLogs(target) }) {
         Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs))
+      }
+      CollapsingTopBarAction(visible = showFullActions) {
+        IconButton(onClick = onOpenRemoteSetup) {
+          Icon(Icons.Filled.Sync, contentDescription = "Remote")
+        }
       }
       CollapsingTopBarAction(visible = showFullActions) {
         IconButton(onClick = onOpenBackup) {

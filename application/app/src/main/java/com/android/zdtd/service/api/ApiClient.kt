@@ -437,9 +437,10 @@ fun uploadMultipart(path: String, filename: String, file: File): Boolean {
       if (resp.isSuccessful) return isOkJsonOrSuccess(resp.body?.string().orEmpty())
     }
   } catch (_: IOException) {
-    // fall through to root-proxy
+    // fall through to root-proxy only for the local daemon
   }
 
+  if (!isLocalBaseUrl(baseUrl)) return false
   return multipartProxyResultOk(rootManager.proxyUploadMultipart(path, filename, file))
 }
 
@@ -472,9 +473,10 @@ fun uploadMultipart(path: String, filename: String, bytes: ByteArray): Boolean {
       if (resp.isSuccessful) return isOkJsonOrSuccess(resp.body?.string().orEmpty())
     }
   } catch (_: IOException) {
-    // fall through to root-proxy
+    // fall through to root-proxy only for the local daemon
   }
 
+  if (!isLocalBaseUrl(baseUrl)) return false
   return multipartProxyResultOk(rootManager.proxyUploadMultipart(path, filename, bytes))
 }
 
@@ -517,8 +519,9 @@ private fun isOkJsonOrSuccess(text: String): Boolean {
 
   private fun requestJson(method: String, path: String, body: JSONObject?): JSONObject? {
     // 1) Try normal HTTP.
+    val baseUrl = baseUrlProvider().trimEnd('/').ifEmpty { "h" + "ttp://127.0.0.1:1006" }
     try {
-      val url = baseUrlProvider().trimEnd('/') + path
+      val url = baseUrl + path
       val req = buildRequest(method, url, body)
       http.newCall(req).execute().use { resp ->
         val text = resp.body?.string().orEmpty()
@@ -526,6 +529,7 @@ private fun isOkJsonOrSuccess(text: String): Boolean {
         return parseJsonOrThrow(text)
       }
     } catch (e: Throwable) {
+      if (!isLocalBaseUrl(baseUrl)) throw e
       // 2) Root-proxy fallback.
       val raw = when (method.uppercase()) {
         "GET", "HEAD" -> rootManager.proxyGet(path)
@@ -574,6 +578,13 @@ private fun isOkJsonOrSuccess(text: String): Boolean {
       "DELETE" -> b.delete((body ?: JSONObject()).toString().toRequestBody(jsonMedia)).build()
       else -> b.method(method.uppercase(), (body ?: JSONObject()).toString().toRequestBody(jsonMedia)).build()
     }
+  }
+
+  private fun isLocalBaseUrl(baseUrl: String): Boolean {
+    val value = baseUrl.trim().lowercase()
+    return value.startsWith("http://127.0.0.1") ||
+      value.startsWith("http://localhost") ||
+      value.startsWith("http://[::1]")
   }
 
   private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")

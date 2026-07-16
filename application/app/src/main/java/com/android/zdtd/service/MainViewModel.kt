@@ -3,6 +3,7 @@ package com.android.zdtd.service
 import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -18,6 +19,8 @@ import androidx.core.content.ContextCompat
 import com.android.zdtd.service.api.ApiClient
 import com.android.zdtd.service.api.ApiModels
 import com.android.zdtd.service.api.DeviceInfo
+import com.android.zdtd.service.remote.RemoteControlCenter
+import com.android.zdtd.service.remote.RemoteRootClient
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentRepository
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentStage
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentState
@@ -42,6 +45,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -169,6 +173,8 @@ data class StartupUiState(
 data class UiState(
   val baseUrl: String = "http://127.0.0.1:1006",
   val token: String = "",
+  val remoteTargetName: String = "",
+  val remoteTargetAddress: String = "",
   val device: DeviceInfo = DeviceInfo(),
   val status: ApiModels.StatusReport? = null,
   // True when the daemon API responds successfully (e.g., /api/status returns 2xx).
@@ -285,6 +291,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     baseUrlProvider = { _uiState.value.baseUrl },
     tokenProvider = { _uiState.value.token },
   )
+  private val remoteRoot = RemoteRootClient()
   private val tgWsProxyRepository = TgWsProxyComponentRepository(ctx, root)
 
   private val hotspotSettingsMutex = Mutex()
@@ -470,6 +477,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
 
   init {
     // Initialization is triggered from MainActivity.onCreate via onAppStart().
+    viewModelScope.launch(Dispatchers.Main.immediate + ceh) {
+      RemoteControlCenter.target.collect { target ->
+        if (target == null) {
+          _uiState.update {
+            it.copy(
+              baseUrl = "http" + "://127.0.0.1:1006",
+              remoteTargetName = "",
+              remoteTargetAddress = "",
+            )
+          }
+        } else {
+          _uiState.update {
+            it.copy(
+              baseUrl = target.baseUrl,
+              token = target.sessionToken,
+              remoteTargetName = target.device.displayTitle(),
+              remoteTargetAddress = "${target.device.host}:${target.device.port}",
+            )
+          }
+          log("OK", "remote connected: ${target.device.displayTitle()} (${target.device.host}:${target.device.port})")
+        }
+      }
+    }
   }
 
   fun onAppStart(fromLauncher: Boolean) {
@@ -1687,6 +1717,23 @@ private fun clearDownloadedUpdateApk() {
     runCatching { root.resetRootShell() }
     _rootState.value = RootState.CHECKING
     ensureRootAndLoadToken()
+  }
+
+  override fun openRemoteSetup() {
+    val intent = Intent(ctx, RemoteSetupActivity::class.java).apply {
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    runCatching { ctx.startActivity(intent) }
+      .onFailure { log("ERR", "remote setup open failed: ${it.message ?: it}") }
+  }
+
+  override fun exitRemoteControl() {
+    RemoteControlCenter.exit()
+    launchIO {
+      val token = runCatching { root.readApiToken() }.getOrDefault("")
+      _uiState.update { it.copy(token = token) }
+    }
+    log("OK", "remote disconnected")
   }
 
   override fun acceptWelcome() {
@@ -5698,7 +5745,10 @@ private fun shQuote(s: String): String {
 
   override fun loadRootTextFile(path: String, onDone: (String?) -> Unit) {
     launchIO {
-      val content = runCatching { root.readTextFile(path) }.getOrNull()
+      val target = RemoteControlCenter.target.value
+      val content = runCatching {
+        if (target != null) remoteRoot.readText(target, path) else root.readTextFile(path)
+      }.getOrNull()
       if (content == null) log("ERR", "$path: root read failed")
       withContext(Dispatchers.Main.immediate) { onDone(content) }
     }
@@ -5783,7 +5833,10 @@ private fun shQuote(s: String): String {
 
   override fun saveRootTextFile(path: String, content: String, onDone: (Boolean) -> Unit) {
     launchIO {
-      val ok = runCatching { root.writeTextFile(path, content) }.getOrDefault(false)
+      val target = RemoteControlCenter.target.value
+      val ok = runCatching {
+        if (target != null) remoteRoot.writeText(target, path, content) else root.writeTextFile(path, content)
+      }.getOrDefault(false)
       if (ok) log("OK", "$path: root saved")
       else log("ERR", "$path: root save failed")
       withContext(Dispatchers.Main.immediate) { onDone(ok) }

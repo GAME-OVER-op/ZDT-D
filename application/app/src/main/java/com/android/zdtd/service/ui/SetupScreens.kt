@@ -209,7 +209,7 @@ fun WelcomeScreen(onAccept: () -> Unit) {
 }
 
 @Composable
-fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit) {
+fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit, onRemoteSetup: () -> Unit) {
   val arm64Ok = remember { isArm64OnlySupported() }
   val screenPadding = rememberAdaptiveScreenPadding()
   SetupScaffold { padding ->
@@ -246,6 +246,12 @@ fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit) {
               modifier = Modifier.fillMaxWidth(),
               text = stringResource(R.string.setup_request_root),
             )
+            OutlinedButton(
+              onClick = onRemoteSetup,
+              modifier = Modifier.fillMaxWidth(),
+            ) {
+              Text("Удалённая настройка")
+            }
 
             if (!arm64Ok) {
               SetupInfoCard(

@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit
 
 class RemoteClient {
   private val http = OkHttpClient.Builder()
-    .connectTimeout(3, TimeUnit.SECONDS)
+    .connectTimeout(7, TimeUnit.SECONDS)
     .readTimeout(6, TimeUnit.SECONDS)
     .writeTimeout(6, TimeUnit.SECONDS)
     .retryOnConnectionFailure(true)

@@ -39,8 +39,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -488,58 +486,68 @@ private fun RemoteQrScannerPage(permissionGranted: Boolean, onRequestPermission:
           .aspectRatio(1f)
           .clip(RoundedCornerShape(24.dp)),
         factory = { ctx ->
-          val previewView = PreviewView(ctx).apply { scaleType = PreviewView.ScaleType.FILL_CENTER }
+          val previewView = PreviewView(ctx).apply {
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+          }
           val providerFuture = ProcessCameraProvider.getInstance(ctx)
           val scanned = java.util.concurrent.atomic.AtomicBoolean(false)
           providerFuture.addListener({
-            runCatching {
-              val provider = providerFuture.get()
-              val selector = when {
-                provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) -> CameraSelector.DEFAULT_BACK_CAMERA
-                provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) -> CameraSelector.DEFAULT_FRONT_CAMERA
-                else -> null
-              }
-              if (selector == null) {
-                cameraError = "Камера не найдена на устройстве"
-                return@runCatching
-              }
-              val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
+            val providerResult = runCatching { providerFuture.get() }
+            val provider = providerResult.getOrNull()
+            if (provider == null) {
+              cameraError = providerResult.exceptionOrNull()?.message ?: "Не удалось открыть камеру"
+            } else {
               val scanner = BarcodeScanning.getClient()
-              val analysis = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-              analysis.setAnalyzer(executor) { proxy ->
-                if (scanned.get()) {
-                  proxy.close()
-                  return@setAnalyzer
-                }
-                try {
-                  val media = proxy.image
-                  if (media == null) {
-                    proxy.close()
-                    return@setAnalyzer
-                  }
-                  val image = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)
-                  scanner.process(image)
-                    .addOnSuccessListener { codes ->
-                      val raw = codes.firstOrNull { it.format == Barcode.FORMAT_QR_CODE }?.rawValue
-                      if (!raw.isNullOrBlank() && scanned.compareAndSet(false, true)) {
-                        analysis.clearAnalyzer()
-                        onResult(raw)
+              var bound = false
+              var lastError = ""
+              val selectors = listOf(CameraSelector.DEFAULT_BACK_CAMERA, CameraSelector.DEFAULT_FRONT_CAMERA)
+              for (selector in selectors) {
+                if (bound) break
+                runCatching {
+                  val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
+                  val analysis = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
+                  analysis.setAnalyzer(executor) { proxy ->
+                    if (scanned.get()) {
+                      proxy.close()
+                    } else {
+                      val media = proxy.image
+                      if (media == null) {
+                        proxy.close()
+                      } else {
+                        try {
+                          val image = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)
+                          scanner.process(image)
+                            .addOnSuccessListener { codes ->
+                              val raw = codes.firstOrNull { it.format == Barcode.FORMAT_QR_CODE }?.rawValue
+                              if (!raw.isNullOrBlank() && scanned.compareAndSet(false, true)) {
+                                analysis.clearAnalyzer()
+                                onResult(raw)
+                              }
+                            }
+                            .addOnFailureListener { cameraError = it.message ?: "Ошибка сканирования QR" }
+                            .addOnCompleteListener { proxy.close() }
+                        } catch (e: Throwable) {
+                          proxy.close()
+                          cameraError = e.message ?: "Ошибка камеры"
+                        }
                       }
                     }
-                    .addOnFailureListener { cameraError = it.message ?: "Ошибка сканирования QR" }
-                    .addOnCompleteListener { proxy.close() }
-                } catch (e: Throwable) {
-                  proxy.close()
-                  cameraError = e.message ?: "Ошибка камеры"
+                  }
+                  provider.unbindAll()
+                  provider.bindToLifecycle(owner, selector, preview, analysis)
+                  bound = true
+                }.onFailure { e ->
+                  lastError = e.message ?: "Ошибка камеры"
                 }
               }
-              provider.unbindAll()
-              provider.bindToLifecycle(owner, selector, preview, analysis)
-              cameraError = ""
-            }.onFailure { e ->
-              cameraError = e.message ?: "Не удалось открыть камеру"
+              if (bound) {
+                cameraError = ""
+              } else {
+                cameraError = lastError.ifBlank { "Камера не найдена на устройстве" }
+              }
             }
           }, ContextCompat.getMainExecutor(context))
           previewView

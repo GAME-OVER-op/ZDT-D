@@ -84,8 +84,24 @@ class RemoteSetupViewModel(app: Application) : AndroidViewModel(app) {
       _state.update { it.copy(message = "Поиск устройств ZDT-D в сети…", error = "") }
       val found = linkedMapOf<String, RemoteDeviceInfo>()
       fun putFound(d: RemoteDeviceInfo) {
-        found[d.deviceId.ifBlank { "${d.host}:${d.port}" }] = d
+        val key = d.deviceId.ifBlank { "${d.host}:${d.port}" }
+        val current = found[key]
+        val merged = when {
+          current == null -> d
+          current.appVersionCode == 0 && d.appVersionCode != 0 -> d.copy(sessionToken = current.sessionToken.ifBlank { d.sessionToken })
+          current.appVersionCode != 0 && d.appVersionCode == 0 -> current.copy(online = true, lastSeenMs = maxOf(current.lastSeenMs, d.lastSeenMs))
+          else -> d
+        }
+        found[key] = merged
         _state.update { it.copy(discovered = found.values.toList(), message = "") }
+        if (merged.appVersionCode == 0) {
+          launch {
+            client.ping(merged)?.let { fresh ->
+              found[key] = fresh
+              _state.update { it.copy(discovered = found.values.toList(), message = "") }
+            }
+          }
+        }
       }
       val nsdJob = launch {
         runCatching { discovery.discoverNsd().collect { d -> putFound(d) } }

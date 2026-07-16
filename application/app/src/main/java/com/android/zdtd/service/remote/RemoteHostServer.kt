@@ -26,6 +26,7 @@ import java.io.File
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.NetworkInterface
 import java.net.ServerSocket
 import java.net.Socket
@@ -55,7 +56,12 @@ class RemoteHostServer(
     stop()
     val host = localIpAddress().ifBlank { "127.0.0.1" }
     val socket = (10320..10340).firstNotNullOfOrNull { port ->
-      runCatching { ServerSocket(port).apply { reuseAddress = true } }.getOrNull()
+      runCatching {
+        ServerSocket().apply {
+          reuseAddress = true
+          bind(InetSocketAddress("0.0.0.0", port))
+        }
+      }.getOrNull()
     } ?: run {
       val failed = RemoteHostState(error = "Не удалось открыть порт 10320–10340")
       _state.value = failed

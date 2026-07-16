@@ -128,7 +128,9 @@ fun AppListPickerCard(
       saving = false
       if (ok) onSavedSelection?.invoke(newSel)
       scope.launch {
-        snackHost.showSnackbar(if (ok) msgSaved else (saveFailedMessage ?: msgSaveFailed))
+        if (!ok || !isRuntimeApplyAppListPath(path)) {
+          snackHost.showSnackbar(if (ok) msgSaved else (saveFailedMessage ?: msgSaveFailed))
+        }
       }
     }
     if (removalsByPath.isEmpty()) {
@@ -211,6 +213,14 @@ fun AppListPickerCard(
       }
     }
   }
+}
+
+private fun isRuntimeApplyAppListPath(path: String): Boolean {
+  val p = path.substringBefore('?')
+  if (p == "/api/blockedquic/apps" || p == "/api/proxyinfo/apps") return false
+  if (p == "/api/programs/tor/apps") return true
+  if (p.startsWith("/api/programs/operaproxy/apps/")) return true
+  return Regex("^/api/programs/[^/]+/profiles/[^/]+/apps/[^/]+$").matches(p)
 }
 
 @Composable

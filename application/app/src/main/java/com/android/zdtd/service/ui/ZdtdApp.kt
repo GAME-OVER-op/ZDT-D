@@ -1683,8 +1683,7 @@ private fun RuntimeApplyStatusCard(
     val shape = RoundedCornerShape(24.dp)
     val accent = when (status.state) {
       "success" -> Color(0xFF22C55E)
-      "failed" -> MaterialTheme.colorScheme.error
-      "deferred_until_start", "no_active_runtime" -> Color(0xFFF59E0B)
+      "failed", "deferred_until_start", "no_active_runtime" -> MaterialTheme.colorScheme.error
       else -> MaterialTheme.colorScheme.primary
     }
     Surface(
@@ -1711,8 +1710,7 @@ private fun RuntimeApplyStatusCard(
         ) {
           val icon = when (status.state) {
             "success" -> Icons.Filled.CheckCircle
-            "failed" -> Icons.Filled.ErrorOutline
-            "deferred_until_start", "no_active_runtime" -> Icons.Filled.RadioButtonUnchecked
+            "failed", "deferred_until_start", "no_active_runtime" -> Icons.Filled.ErrorOutline
             else -> Icons.Filled.Sync
           }
           Icon(
@@ -1739,7 +1737,10 @@ private fun RuntimeApplyStatusCard(
             },
             label = "runtime_apply_cube_bottom_to_top",
           ) { target ->
-            val message = target.second
+            val message = when (target.first) {
+              "failed", "deferred_until_start", "no_active_runtime" -> stringResource(R.string.runtime_apply_failed_restart_service)
+              else -> target.second
+            }
             val flip by transition.animateFloat(
               transitionSpec = { tween(durationMillis = 260, easing = FastOutSlowInEasing) },
               label = "runtime_apply_cube_flip",

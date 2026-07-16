@@ -454,6 +454,7 @@ To install ZDT-D correctly, the metamodule must be working properly or be comple
 
     <string name="app_picker_saved_apply">Saved (apply after stop/start)</string>
     <string name="app_picker_save_failed">Save failed</string>
+    <string name="runtime_apply_failed_restart_service">Could not apply rules. Try restarting the service.</string>
     <string name="app_picker_select">Select</string>
     <string name="app_picker_empty">(empty)</string>
     <string name="app_picker_selected_count">Selected: %1$d</string>

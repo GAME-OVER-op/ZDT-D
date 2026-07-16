@@ -271,6 +271,7 @@
 
     <string name="app_picker_saved_apply">Сохранено (применится после стоп/старт)</string>
     <string name="app_picker_save_failed">Не удалось сохранить</string>
+    <string name="runtime_apply_failed_restart_service">Не удалось применить, попробуйте перезапустить службу</string>
     <string name="app_picker_select">Выбрать</string>
     <string name="app_picker_empty">(пусто)</string>
     <string name="app_picker_selected_count">Выбрано: %1$d</string>

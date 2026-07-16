@@ -60,6 +60,11 @@ import com.android.zdtd.service.R
 import com.android.zdtd.service.RootState
 import com.android.zdtd.service.SetupUiState
 
+private const val REMOTE_SETUP_ENTRY_ENABLED = false
+// Remote setup is intentionally hidden/disabled for now: the feature is not stable yet.
+// Keep the implementation and callback so development can continue later.
+
+
 private fun isArm64OnlySupported(): Boolean {
   // Module binaries are built for arm64-v8a and armeabi-v7a.
   return Build.SUPPORTED_ABIS.any { it == "arm64-v8a" || it == "armeabi-v7a" }
@@ -246,11 +251,13 @@ fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit, onRemoteSetup: (
               modifier = Modifier.fillMaxWidth(),
               text = stringResource(R.string.setup_request_root),
             )
-            OutlinedButton(
-              onClick = onRemoteSetup,
-              modifier = Modifier.fillMaxWidth(),
-            ) {
-              Text("Удалённая настройка")
+            if (REMOTE_SETUP_ENTRY_ENABLED) {
+              OutlinedButton(
+                onClick = onRemoteSetup,
+                modifier = Modifier.fillMaxWidth(),
+              ) {
+                Text("Удалённая настройка")
+              }
             }
 
             if (!arm64Ok) {

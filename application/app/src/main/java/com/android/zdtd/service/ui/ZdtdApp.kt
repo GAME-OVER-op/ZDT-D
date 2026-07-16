@@ -112,6 +112,10 @@ import com.android.zdtd.service.ui.AppUpdateSettings
 import com.android.zdtd.service.ui.settings.SettingsScreen
 import com.android.zdtd.service.ui.UnknownSourcesPermissionDialog
 
+private const val REMOTE_CONTROL_FEATURE_ENABLED = false
+// Remote control is intentionally hidden/disabled for now: the feature is not stable yet.
+// Keep the implementation in the tree so it can be restored and continued later.
+
 private fun supportsArm64ToolUpdates(): Boolean {
   return Build.SUPPORTED_ABIS.any { it == "arm64-v8a" }
 }
@@ -1268,7 +1272,7 @@ private fun MainShell(
     .calculateBottomPadding() + (if (compactBottomBar) 82.dp else 94.dp)
   val floatingTopBarReserve = WindowInsets.statusBars
     .asPaddingValues()
-    .calculateTopPadding() + (if (uiState.remoteTargetName.isNotBlank()) 104.dp else 74.dp)
+    .calculateTopPadding() + (if (REMOTE_CONTROL_FEATURE_ENABLED && uiState.remoteTargetName.isNotBlank()) 104.dp else 74.dp)
 
   LaunchedEffect(tab) {
     actions.setActiveMainTab(tab.name)
@@ -1872,7 +1876,7 @@ private fun RemoteTargetTopLine(
   onRemoteSetup: () -> Unit,
   onDisconnect: () -> Unit,
 ) {
-  if (name.isBlank()) return
+  if (!REMOTE_CONTROL_FEATURE_ENABLED || name.isBlank()) return
   var expanded by remember { mutableStateOf(false) }
   Box(
     modifier = Modifier
@@ -1954,7 +1958,7 @@ private fun FloatingTopBarCard(
     Surface(
       modifier = Modifier
         .fillMaxWidth()
-        .height(if (remoteTargetName.isNotBlank()) 88.dp else 58.dp)
+        .height(if (REMOTE_CONTROL_FEATURE_ENABLED && remoteTargetName.isNotBlank()) 88.dp else 58.dp)
         .clip(shape),
       shape = shape,
       color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
@@ -2178,8 +2182,10 @@ private fun LandscapeQuickActions(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(2.dp),
       ) {
-        IconButton(onClick = { onOpenRemoteSetup() }, modifier = Modifier.size(44.dp)) {
-          Icon(Icons.Filled.Sync, contentDescription = "Remote", modifier = Modifier.size(26.dp))
+        if (REMOTE_CONTROL_FEATURE_ENABLED) {
+          IconButton(onClick = { onOpenRemoteSetup() }, modifier = Modifier.size(44.dp)) {
+            Icon(Icons.Filled.Sync, contentDescription = "Remote", modifier = Modifier.size(26.dp))
+          }
         }
         IconButton(onClick = { onOpenSettings() }, modifier = Modifier.size(44.dp)) {
           Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings), modifier = Modifier.size(26.dp))
@@ -2496,9 +2502,11 @@ private fun TopBarActionCluster(
       IconButton(onClick = { onOpenLogs(target) }) {
         Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs))
       }
-      CollapsingTopBarAction(visible = showFullActions) {
-        IconButton(onClick = onOpenRemoteSetup) {
-          Icon(Icons.Filled.Sync, contentDescription = "Remote")
+      if (REMOTE_CONTROL_FEATURE_ENABLED) {
+        CollapsingTopBarAction(visible = showFullActions) {
+          IconButton(onClick = onOpenRemoteSetup) {
+            Icon(Icons.Filled.Sync, contentDescription = "Remote")
+          }
         }
       }
       CollapsingTopBarAction(visible = showFullActions) {

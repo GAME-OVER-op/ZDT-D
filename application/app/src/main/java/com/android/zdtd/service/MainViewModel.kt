@@ -1742,6 +1742,12 @@ private fun clearDownloadedUpdateApk() {
   }
 
   override fun openRemoteSetup() {
+    // Remote control is intentionally disabled/hidden for now: the feature is not stable yet.
+    // Keep the implementation in the project so it can be restored and continued later.
+    log("WARN", "remote setup is disabled")
+    return
+
+    @Suppress("UNREACHABLE_CODE")
     val intent = Intent(ctx, RemoteSetupActivity::class.java).apply {
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }

@@ -9,8 +9,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.zdtd.service.remote.RemoteSetupViewModel
 import com.android.zdtd.service.ui.remote.RemoteSetupScreen
 import com.android.zdtd.service.ui.theme.ZdtdTheme
-import com.google.android.gms.code.scanner.GmsBarcodeScannerOptions
-import com.google.android.gms.code.scanner.GmsBarcodeScanning
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 
 class RemoteSetupActivity : AppCompatActivity() {
@@ -53,11 +53,11 @@ class RemoteSetupActivity : AppCompatActivity() {
       .build()
     GmsBarcodeScanning.getClient(this, options)
       .startScan()
-      .addOnSuccessListener { barcode ->
+      .addOnSuccessListener { barcode: Barcode ->
         val raw = barcode.rawValue.orEmpty()
         if (raw.isNotBlank()) vm.connectQr(raw)
       }
-      .addOnFailureListener { e ->
+      .addOnFailureListener { e: Exception ->
         vm.setError(e.message ?: "Не удалось открыть сканер QR")
       }
   }

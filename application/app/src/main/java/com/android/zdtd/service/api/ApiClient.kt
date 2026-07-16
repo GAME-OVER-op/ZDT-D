@@ -526,13 +526,7 @@ private fun isOkJsonOrSuccess(text: String): Boolean {
         return parseJsonOrThrow(text)
       }
     } catch (e: Throwable) {
-      // 2) Root-proxy fallback is valid only for the local daemon. In remote-control
-      // mode the host app already proxies /api/*, so falling back to local root would
-      // accidentally execute actions on the phone instead of the selected device.
-      val base = baseUrlProvider().trim()
-      if (!base.contains("127.0.0.1") && !base.contains("localhost")) {
-        throw e
-      }
+      // 2) Root-proxy fallback.
       val raw = when (method.uppercase()) {
         "GET", "HEAD" -> rootManager.proxyGet(path)
         "POST" -> rootManager.proxyPost(path, (body ?: JSONObject()).toString())

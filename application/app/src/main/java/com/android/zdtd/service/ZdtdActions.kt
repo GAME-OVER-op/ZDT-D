@@ -145,8 +145,6 @@ interface ZdtdActions {
   fun retryDaemonStartup()
 
   fun retryRoot()
-  fun openRemoteSetup()
-  fun exitRemoteControl()
   fun toggleService()
   fun refreshStatus()
   fun refreshPrograms()

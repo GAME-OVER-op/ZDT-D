@@ -100,7 +100,6 @@ fun AppsHost(
         onOpenProgram = onOpenProgram,
         onOpenAnalysisTools = onOpenAnalysisTools,
         onOpenOptionalTools = onOpenOptionalTools,
-        onOpenRemoteSetup = actions::openRemoteSetup,
         listState = listState,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,

@@ -134,7 +134,7 @@ fun ZdtdApp(
   ) { setupStep ->
     when (setupStep) {
       SetupStep.WELCOME -> WelcomeScreen(onAccept = actions::acceptWelcome)
-      SetupStep.ROOT -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
+      SetupStep.ROOT -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
       SetupStep.INSTALL -> InstallModuleScreen(
         rootState = rootState,
         setup = setup,
@@ -156,7 +156,7 @@ fun ZdtdApp(
       SetupStep.REBOOT -> {
         when (rootState) {
           RootState.CHECKING -> SplashScreen()
-          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
+          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
           RootState.GRANTED -> RebootRequiredScreen(
             setup = setup,
             text = setup.rebootRequiredText,
@@ -167,7 +167,7 @@ fun ZdtdApp(
       SetupStep.DONE -> {
         when (rootState) {
           RootState.CHECKING -> SplashScreen()
-          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
+          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
           RootState.GRANTED -> {
             UpdatePromptDialog(setup = setup, onUpdate = actions::openModuleInstaller, onSkip = actions::dismissUpdatePrompt)
             MainShell(
@@ -820,32 +820,10 @@ private fun MainShell(
 
   val snackHost = remember { SnackbarHostState() }
   val uiState by uiStateFlow.collectAsStateWithLifecycle()
-  var showRemoteTargetDialog by remember { mutableStateOf(false) }
   val backup by backupFlow.collectAsStateWithLifecycle()
   val landscapeControl = rememberUseLandscapeControlLayout()
 
   DaemonUnavailableDialogHost(uiState = uiState)
-
-  if (showRemoteTargetDialog && uiState.remoteTargetName.isNotBlank()) {
-    AlertDialog(
-      onDismissRequest = { showRemoteTargetDialog = false },
-      title = { Text("Удалённая настройка") },
-      text = {
-        Text(
-          text = "Вы настраиваете: ${uiState.remoteTargetName}\n${uiState.remoteTargetAddress}\n\nВсе изменения выполняются на выбранном устройстве."
-        )
-      },
-      confirmButton = {
-        TextButton(onClick = {
-          showRemoteTargetDialog = false
-          actions.exitRemoteControl()
-        }) { Text("Выйти") }
-      },
-      dismissButton = {
-        TextButton(onClick = { showRemoteTargetDialog = false }) { Text("Остаться") }
-      },
-    )
-  }
 
   if (backup.externalRestorePromptVisible) {
     AlertDialog(
@@ -1492,8 +1470,6 @@ private fun MainShell(
             settingsCloseRequested = false
             showSettings = true
           },
-          remoteTargetName = uiState.remoteTargetName,
-          onRemoteTargetClick = { showRemoteTargetDialog = true },
         )
 
         FloatingBottomNavigationCard(
@@ -1763,7 +1739,10 @@ private fun RuntimeApplyStatusCard(
             label = "runtime_apply_cube_bottom_to_top",
           ) { target ->
             val message = target.second
-            val flip = 0f
+            val flip by transition.animateFloat(
+              transitionSpec = { tween(durationMillis = 260, easing = FastOutSlowInEasing) },
+              label = "runtime_apply_cube_flip",
+            ) { animatedTarget -> if (animatedTarget == target) 0f else -90f }
             Text(
               text = message.ifBlank { "Применяю правила" },
               modifier = Modifier.graphicsLayer {
@@ -1866,8 +1845,6 @@ private fun FloatingTopBarCard(
   onOpenBackup: () -> Unit,
   onOpenProgramUpdates: () -> Unit,
   onOpenSettings: () -> Unit,
-  remoteTargetName: String = "",
-  onRemoteTargetClick: () -> Unit = {},
 ) {
   val shape = RoundedCornerShape(24.dp)
   Box(
@@ -1920,24 +1897,6 @@ private fun FloatingTopBarCard(
             Modifier.weight(1f)
           },
         )
-        if (remoteTargetName.isNotBlank()) {
-          Surface(
-            modifier = Modifier
-              .padding(end = 6.dp)
-              .clickable(onClick = onRemoteTargetClick),
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.78f),
-          ) {
-            Text(
-              text = "Настройка: $remoteTargetName",
-              modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-              style = MaterialTheme.typography.labelMedium,
-              color = MaterialTheme.colorScheme.onSecondaryContainer,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-            )
-          }
-        }
         TopBarActionCluster(
           programLogTarget = programLogTarget,
           onOpenLogs = onOpenLogs,

@@ -3,7 +3,6 @@ package com.android.zdtd.service
 import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
-import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
@@ -19,9 +18,6 @@ import androidx.core.content.ContextCompat
 import com.android.zdtd.service.api.ApiClient
 import com.android.zdtd.service.api.ApiModels
 import com.android.zdtd.service.api.DeviceInfo
-import com.android.zdtd.service.remote.RemoteControlCenter
-import com.android.zdtd.service.remote.RemoteControlTarget
-import com.android.zdtd.service.remote.RemoteRootClient
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentRepository
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentStage
 import com.android.zdtd.service.tgwsproxy.TgWsProxyComponentState
@@ -173,8 +169,6 @@ data class StartupUiState(
 data class UiState(
   val baseUrl: String = "http://127.0.0.1:1006",
   val token: String = "",
-  val remoteTargetName: String = "",
-  val remoteTargetAddress: String = "",
   val device: DeviceInfo = DeviceInfo(),
   val status: ApiModels.StatusReport? = null,
   // True when the daemon API responds successfully (e.g., /api/status returns 2xx).
@@ -292,7 +286,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     tokenProvider = { _uiState.value.token },
   )
   private val tgWsProxyRepository = TgWsProxyComponentRepository(ctx, root)
-  private val remoteRootClient = RemoteRootClient()
 
   private val hotspotSettingsMutex = Mutex()
 
@@ -475,110 +468,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
 
   private fun isSetupDone(): Boolean = _setup.value.step == SetupStep.DONE
 
-  private fun currentRemoteTarget(): RemoteControlTarget? = RemoteControlCenter.target.value
-
-  private data class ControlShellResult(
-    val isSuccess: Boolean,
-    val code: Int,
-    val out: List<String> = emptyList(),
-    val err: List<String> = emptyList(),
-  )
-
-  private suspend fun controlExecSh(script: String): ControlShellResult {
-    val target = currentRemoteTarget()
-    return if (target != null) {
-      val r = remoteRootClient.exec(target, script)
-      ControlShellResult(r.ok, r.code, r.out.lineSequence().toList(), r.err.lineSequence().toList())
-    } else {
-      val r = root.execRootSh(script)
-      ControlShellResult(
-        isSuccess = r.isSuccess,
-        code = runCatching { r.code }.getOrDefault(if (r.isSuccess) 0 else -1),
-        out = r.out,
-        err = r.err,
-      )
-    }
-  }
-
-  private suspend fun controlReadTextFile(path: String): String? {
-    val target = currentRemoteTarget()
-    return if (target != null) remoteRootClient.readText(target, path) else root.readTextFile(path)
-  }
-
-  private suspend fun controlWriteTextFile(path: String, content: String): Boolean {
-    val target = currentRemoteTarget()
-    return if (target != null) remoteRootClient.writeText(target, path, content) else root.writeTextFile(path, content)
-  }
-
-  private suspend fun controlReadBytes(path: String): ByteArray? {
-    val target = currentRemoteTarget()
-    return if (target != null) {
-      remoteRootClient.readBytes(target, path)
-    } else {
-      File(path).takeIf { it.exists() && it.canRead() }?.readBytes()
-    }
-  }
-
-  private suspend fun controlWriteBytes(path: String, bytes: ByteArray): Boolean {
-    val target = currentRemoteTarget()
-    return if (target != null) {
-      remoteRootClient.writeBytes(target, path, bytes)
-    } else {
-      val tmp = File(ctx.cacheDir, "root_bytes_${System.currentTimeMillis()}")
-      val ok = runCatching {
-        tmp.writeBytes(bytes)
-        val r = root.execRootSh("mkdir -p ${shQuote(File(path).parent ?: "/")} 2>/dev/null || true; cp -f ${shQuote(tmp.absolutePath)} ${shQuote(path)} 2>/dev/null || cat ${shQuote(tmp.absolutePath)} > ${shQuote(path)}; chmod 0644 ${shQuote(path)} 2>/dev/null || true")
-        r.isSuccess
-      }.getOrDefault(false)
-      runCatching { tmp.delete() }
-      ok
-    }
-  }
-
   init {
     // Initialization is triggered from MainActivity.onCreate via onAppStart().
-    viewModelScope.launch(ceh) {
-      RemoteControlCenter.target.collect { target ->
-        applyRemoteTarget(target)
-      }
-    }
-  }
-
-  private fun applyRemoteTarget(target: RemoteControlTarget?) {
-    if (target == null) {
-      val token = if (_rootState.value == RootState.GRANTED) runCatching { root.readApiToken() }.getOrDefault("") else ""
-      _uiState.update {
-        it.copy(
-          baseUrl = "http://127.0.0.1:1006",
-          token = token,
-          remoteTargetName = "",
-          remoteTargetAddress = "",
-          status = null,
-          programs = emptyList(),
-          daemonOnline = false,
-          daemonUnavailableVisible = false,
-        )
-      }
-      return
-    }
-
-    _rootState.value = RootState.GRANTED
-    _setup.update { it.copy(step = SetupStep.DONE) }
-    _uiState.update {
-      it.copy(
-        baseUrl = target.baseUrl,
-        token = target.sessionToken,
-        remoteTargetName = target.device.displayTitle(),
-        remoteTargetAddress = "${target.device.host}:${target.device.port}",
-        status = null,
-        programs = emptyList(),
-        daemonOnline = false,
-        daemonUnavailableVisible = false,
-      )
-    }
-    log("OK", "remote control: ${target.device.displayTitle()} (${target.device.host}:${target.device.port})")
-    refreshStatus()
-    refreshPrograms()
   }
 
   fun onAppStart(fromLauncher: Boolean) {
@@ -1790,23 +1681,6 @@ private fun clearDownloadedUpdateApk() {
     startStartupHandshake()
   }
 
-  override fun openRemoteSetup() {
-    runCatching {
-      val intent = Intent(ctx, RemoteSetupActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-      ctx.startActivity(intent)
-    }.onFailure {
-      log("ERR", "remote setup open failed: ${it.message ?: it}")
-    }
-  }
-
-  override fun exitRemoteControl() {
-    RemoteControlCenter.exit()
-    if (root.isSetupDone() || root.isWelcomeAccepted()) {
-      _rootState.value = RootState.CHECKING
-      ensureRootAndLoadToken()
-    }
-  }
-
   override fun retryRoot() {
     // If the user denied the initial Magisk prompt, libsu may keep a non-root shell cached.
     // Reset it so Magisk can show the prompt again on retry.
@@ -2272,7 +2146,7 @@ fi""".trimIndent()
     launchIO {
       _backup.update { it.copy(loading = true, error = null) }
       runCatching {
-        controlExecSh("mkdir -p ${shQuote(backupDirPath)} 2>/dev/null || true")
+        root.execRootSh("mkdir -p ${shQuote(backupDirPath)} 2>/dev/null || true")
         val script = buildString {
           append("cd ")
           append(shQuote(backupDirPath))
@@ -2283,7 +2157,7 @@ fi""".trimIndent()
           append("echo \"${'$'}f|${'$'}sz\"; ")
           append("done")
         }
-        val r = controlExecSh(script)
+        val r = root.execRootSh(script)
         val lines = r.out.joinToString("\n")
           .lineSequence()
           .map { it.trim() }
@@ -2329,7 +2203,7 @@ fi""".trimIndent()
       return@launchIO
     }
 
-    controlExecSh("mkdir -p ${shQuote(backupDirPath)} 2>/dev/null || true")
+    root.execRootSh("mkdir -p ${shQuote(backupDirPath)} 2>/dev/null || true")
 
     val tsForFile = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
     val createdAt = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
@@ -2343,18 +2217,18 @@ fi""".trimIndent()
     val warnings = mutableListOf<String>()
 
     // Prepare temp locations.
-    controlExecSh("rm -rf ${shQuote(tmpStage)} 2>/dev/null || true; rm -f ${shQuote(tmpTar)} 2>/dev/null || true; mkdir -p ${shQuote(tmpStage)}")
+    root.execRootSh("rm -rf ${shQuote(tmpStage)} 2>/dev/null || true; rm -f ${shQuote(tmpTar)} 2>/dev/null || true; mkdir -p ${shQuote(tmpStage)}")
 
     // Write manifest into stage.
     val manifest = buildBackupManifest(createdAt = createdAt, dirsFull = dirsFull)
-    val wrote = runCatching { controlWriteTextFile("${tmpStage}/zdt_backup_manifest.json", manifest) }.getOrDefault(false)
+    val wrote = runCatching { root.writeTextFile("${tmpStage}/zdt_backup_manifest.json", manifest) }.getOrDefault(false)
     if (!wrote) {
-      controlExecSh("rm -rf ${shQuote(tmpStage)} 2>/dev/null || true")
+      root.execRootSh("rm -rf ${shQuote(tmpStage)} 2>/dev/null || true")
       finishBackupProgress(error = str(R.string.mv_auto_026))
       return@launchIO
     }
     // Ensure manifest stays readable across different root managers / shells.
-    controlExecSh("chmod 0644 ${shQuote(tmpStage)}/zdt_backup_manifest.json 2>/dev/null || true")
+    root.execRootSh("chmod 0644 ${shQuote(tmpStage)}/zdt_backup_manifest.json 2>/dev/null || true")
 
     // Compute weights for progress (based on source folders).
     val sizes = mutableMapOf<String, Long>()
@@ -2376,10 +2250,10 @@ fi""".trimIndent()
       val pct = ((done * 80L) / total).toInt().coerceIn(0, 80)
       _backup.update { st -> st.copy(progressText = str(R.string.mv_copying_name, name), progressPercent = pct) }
 
-      val rCopy = controlExecSh("cp -a ${shQuote(d)} ${shQuote(tmpStage)}/ 2>/dev/null || cp -r ${shQuote(d)} ${shQuote(tmpStage)}/")
+      val rCopy = root.execRootSh("cp -a ${shQuote(d)} ${shQuote(tmpStage)}/ 2>/dev/null || cp -r ${shQuote(d)} ${shQuote(tmpStage)}/")
       if (!rCopy.isSuccess) {
         val err = (rCopy.out + rCopy.err).joinToString("\n").trim()
-        controlExecSh("rm -rf ${shQuote(tmpStage)} 2>/dev/null || true")
+        root.execRootSh("rm -rf ${shQuote(tmpStage)} 2>/dev/null || true")
         val detail = if (err.isBlank()) "cp failed" else err
         finishBackupProgress(error = str(R.string.mv_copy_error_with_detail, name, detail))
         return@launchIO
@@ -2390,14 +2264,14 @@ fi""".trimIndent()
     }
 
     _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_027), progressPercent = 85) }
-    val rTar = controlExecSh("tar -cf ${shQuote(tmpTar)} -C ${shQuote(tmpStage)} .")
+    val rTar = root.execRootSh("tar -cf ${shQuote(tmpTar)} -C ${shQuote(tmpStage)} .")
     if (!rTar.isSuccess) {
       val code = runCatching { rTar.code }.getOrDefault(-1)
       val err = (rTar.out + rTar.err).joinToString("\n").trim()
       if (code == 1) {
         warnings += (if (err.isBlank()) "tar warning" else err)
       } else {
-        controlExecSh("rm -rf ${shQuote(tmpStage)} 2>/dev/null || true; rm -f ${shQuote(tmpTar)} 2>/dev/null || true")
+        root.execRootSh("rm -rf ${shQuote(tmpStage)} 2>/dev/null || true; rm -f ${shQuote(tmpTar)} 2>/dev/null || true")
         val detail = if (err.isBlank()) "tar failed (code=$code)" else err
         finishBackupProgress(error = str(R.string.mv_backup_archive_create_failed, detail))
         return@launchIO
@@ -2405,7 +2279,7 @@ fi""".trimIndent()
     }
 
     // Verify that the tar contains something besides the manifest (otherwise we produced a useless backup).
-    val rHas = controlExecSh(
+    val rHas = root.execRootSh(
       "tar -tf ${shQuote(tmpTar)} 2>/dev/null | " +
         "while IFS= read -r e; do " +
         "case \"${'$'}e\" in ''|'.'|'./'|'zdt_backup_manifest.json'|'./zdt_backup_manifest.json') ;; " +
@@ -2415,7 +2289,7 @@ fi""".trimIndent()
     val hasOther = rHas.out.joinToString("\n").trim().isNotBlank()
     if (!hasOther) {
       val err = (rTar.out + rTar.err).joinToString("\n").trim()
-      controlExecSh("rm -rf ${shQuote(tmpStage)} 2>/dev/null || true; rm -f ${shQuote(tmpTar)} 2>/dev/null || true")
+      root.execRootSh("rm -rf ${shQuote(tmpStage)} 2>/dev/null || true; rm -f ${shQuote(tmpTar)} 2>/dev/null || true")
       val detail = if (err.isBlank()) "" else err.take(200)
       val msg = if (detail.isBlank()) str(R.string.mv_backup_not_created_no_folders_short) else str(R.string.mv_backup_not_created_no_folders_detail, detail)
       finishBackupProgress(error = msg.trim())
@@ -2448,11 +2322,11 @@ fi""".trimIndent()
       append(shQuote(tmpTar))
       append(" 2>/dev/null || true")
     }
-    val rGz = controlExecSh(gzipScript)
+    val rGz = root.execRootSh(gzipScript)
     if (!rGz.isSuccess) {
       val err = (rGz.out + rGz.err).joinToString("\n").trim()
       // Cleanup stage/tar even on failure.
-      controlExecSh("rm -rf ${shQuote(tmpStage)} 2>/dev/null || true; rm -f ${shQuote(tmpTar)} 2>/dev/null || true")
+      root.execRootSh("rm -rf ${shQuote(tmpStage)} 2>/dev/null || true; rm -f ${shQuote(tmpTar)} 2>/dev/null || true")
       val detail = if (err.isBlank()) "gzip failed" else err
       finishBackupProgress(error = str(R.string.mv_backup_compress_failed, detail))
       return@launchIO
@@ -2510,21 +2384,18 @@ fi""".trimIndent()
         return@launchIO
       }
 
-      controlExecSh("mkdir -p ${shQuote(backupDirPath)} 2>/dev/null || true")
+      root.execRootSh("mkdir -p ${shQuote(backupDirPath)} 2>/dev/null || true")
       val tsForFile = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
       val name = "ZDT-D_backup_${tsForFile}_import.zdtb"
       val dest = "${backupDirPath}/${name}"
       _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_036), progressPercent = 60) }
 
-      val saved = if (currentRemoteTarget() != null) {
-        runCatching { controlWriteBytes(dest, tmp.readBytes()) }.getOrDefault(false)
-      } else {
-        val r = controlExecSh("cp -f ${shQuote(tmp.absolutePath)} ${shQuote(dest)} 2>/dev/null || cat ${shQuote(tmp.absolutePath)} > ${shQuote(dest)}; chmod 0644 ${shQuote(dest)} 2>/dev/null || true")
-        r.isSuccess
-      }
+      val r = root.execRootSh("cp -f ${shQuote(tmp.absolutePath)} ${shQuote(dest)} 2>/dev/null || cat ${shQuote(tmp.absolutePath)} > ${shQuote(dest)}; chmod 0644 ${shQuote(dest)} 2>/dev/null || true")
       runCatching { tmp.delete() }
-      if (!saved) {
-        finishBackupProgress(error = str(R.string.mv_backup_import_save_failed, "copy failed"))
+      if (!r.isSuccess) {
+        val err = (r.out + r.err).joinToString("\n").trim()
+        val detail = if (err.isBlank()) "copy failed" else err
+        finishBackupProgress(error = str(R.string.mv_backup_import_save_failed, detail))
         return@launchIO
       }
 
@@ -2580,21 +2451,18 @@ fi""".trimIndent()
         return@launchIO
       }
 
-      controlExecSh("mkdir -p ${shQuote(backupDirPath)} 2>/dev/null || true")
+      root.execRootSh("mkdir -p ${shQuote(backupDirPath)} 2>/dev/null || true")
       val tsForFile = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
       val importedName = "ZDT-D_backup_${tsForFile}_external.zdtb"
       val dest = "${backupDirPath}/${importedName}"
       _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_036), progressPercent = 70) }
-      val saved = if (currentRemoteTarget() != null) {
-        runCatching { controlWriteBytes(dest, tmp.readBytes()) }.getOrDefault(false)
-      } else {
-        val r = controlExecSh("cp -f ${shQuote(tmp.absolutePath)} ${shQuote(dest)} 2>/dev/null || cat ${shQuote(tmp.absolutePath)} > ${shQuote(dest)}; chmod 0644 ${shQuote(dest)} 2>/dev/null || true")
-        r.isSuccess
-      }
+      val r = root.execRootSh("cp -f ${shQuote(tmp.absolutePath)} ${shQuote(dest)} 2>/dev/null || cat ${shQuote(tmp.absolutePath)} > ${shQuote(dest)}; chmod 0644 ${shQuote(dest)} 2>/dev/null || true")
       runCatching { tmp.delete() }
-      if (!saved) {
+      if (!r.isSuccess) {
+        val err = (r.out + r.err).joinToString("\n").trim()
+        val detail = if (err.isBlank()) "copy failed" else err
         _backup.update { it.copy(progressVisible = false, progressFinished = false, progressError = null) }
-        toast(str(R.string.mv_backup_import_save_failed, "copy failed"))
+        toast(str(R.string.mv_backup_import_save_failed, detail))
         return@launchIO
       }
 
@@ -2641,7 +2509,7 @@ fi""".trimIndent()
     }
     if (!name.isNullOrBlank()) {
       launchIO {
-        controlExecSh("rm -f ${shQuote(backupDirPath + "/" + name)} 2>/dev/null || true")
+        root.execRootSh("rm -f ${shQuote(backupDirPath + "/" + name)} 2>/dev/null || true")
         refreshBackups()
       }
     }
@@ -2702,7 +2570,7 @@ fi""".trimIndent()
       }
 
       _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_042), progressPercent = 10) }
-      val wipe = controlExecSh("rm -rf ${shQuote(workingFolderPath)} 2>/dev/null || true; mkdir -p ${shQuote(workingFolderPath)} 2>/dev/null || true")
+      val wipe = root.execRootSh("rm -rf ${shQuote(workingFolderPath)} 2>/dev/null || true; mkdir -p ${shQuote(workingFolderPath)} 2>/dev/null || true")
       if (!wipe.isSuccess) {
         finishBackupProgress(error = str(R.string.mv_auto_043))
         return@launchIO
@@ -2711,26 +2579,26 @@ fi""".trimIndent()
       // Extract into temp dir first to avoid polluting working_folder with manifest.
       val tmpDir = "/data/local/tmp/zdt_restore_${System.currentTimeMillis()}"
       _backup.update { st -> st.copy(progressText = str(R.string.mv_auto_044), progressPercent = 20) }
-      controlExecSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true; mkdir -p ${shQuote(tmpDir)}")
-      val rExtract = controlExecSh("cd ${shQuote(tmpDir)} && tar -xzf ${shQuote(path)} 2>/dev/null")
+      root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true; mkdir -p ${shQuote(tmpDir)}")
+      val rExtract = root.execRootSh("cd ${shQuote(tmpDir)} && tar -xzf ${shQuote(path)} 2>/dev/null")
       if (!rExtract.isSuccess) {
         val err = (rExtract.out + rExtract.err).joinToString("\n").trim()
-        controlExecSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
+        root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
         val detail = if (err.isBlank()) "tar failed" else err
         finishBackupProgress(error = str(R.string.mv_backup_extract_failed, detail))
         return@launchIO
       }
-      val rMf = controlExecSh(
+      val rMf = root.execRootSh(
   "find ${shQuote(tmpDir)} -maxdepth 10 -name zdt_backup_manifest.json -type f -print -quit 2>/dev/null || true"
 )
 val mf = rMf.out.joinToString("\n").trim()
 if (mf.isNotBlank()) {
-  controlExecSh("rm -f ${shQuote(mf)} 2>/dev/null || true")
+  root.execRootSh("rm -f ${shQuote(mf)} 2>/dev/null || true")
 }
 
       val dirs = listSubdirs(tmpDir)
       if (dirs.isEmpty()) {
-        controlExecSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
+        root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
         finishBackupProgress(error = str(R.string.mv_auto_045))
         return@launchIO
       }
@@ -2752,10 +2620,10 @@ if (mf.isNotBlank()) {
         val pct = 20 + ((done * 75L) / total).toInt().coerceIn(0, 75)
         _backup.update { st -> st.copy(progressText = str(R.string.mv_copying_name, folderName), progressPercent = pct) }
 
-        val rCopy = controlExecSh("cp -a ${shQuote(d)} ${shQuote(workingFolderPath)}/ 2>/dev/null || cp -r ${shQuote(d)} ${shQuote(workingFolderPath)}/")
+        val rCopy = root.execRootSh("cp -a ${shQuote(d)} ${shQuote(workingFolderPath)}/ 2>/dev/null || cp -r ${shQuote(d)} ${shQuote(workingFolderPath)}/")
         if (!rCopy.isSuccess) {
           val err = (rCopy.out + rCopy.err).joinToString("\n").trim()
-          controlExecSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
+          root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
           val detail = if (err.isBlank()) "cp failed" else err
           finishBackupProgress(error = str(R.string.mv_copy_error_with_detail, folderName, detail))
           return@launchIO
@@ -2767,7 +2635,7 @@ if (mf.isNotBlank()) {
         _backup.update { st -> st.copy(progressText = str(R.string.mv_copied_count, i + 1, dirs.size), progressPercent = pct2) }
       }
 
-      controlExecSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
+      root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
 
       // After status becomes OFF we must allow a short cool-down window before sending start.
       // Restore work can happen inside this window.
@@ -2818,7 +2686,7 @@ if (mf.isNotBlank()) {
     if (_rootState.value != RootState.GRANTED) return
     launchIO {
       val path = "${backupDirPath}/${name}"
-      val r = controlExecSh("rm -f ${shQuote(path)} 2>/dev/null || true")
+      val r = root.execRootSh("rm -f ${shQuote(path)} 2>/dev/null || true")
       if (!r.isSuccess) toast(str(R.string.mv_auto_050))
       refreshBackups()
     }
@@ -2833,14 +2701,8 @@ if (mf.isNotBlank()) {
         return@launchIO
       }
       val outFile = File(ctx.cacheDir, "zdtb_share_${System.currentTimeMillis()}.zdtb")
-      val copied = if (currentRemoteTarget() != null) {
-        val bytes = runCatching { controlReadBytes(src) }.getOrNull()
-        if (bytes != null) runCatching { outFile.writeBytes(bytes); true }.getOrDefault(false) else false
-      } else {
-        val r = controlExecSh("cp -f ${shQuote(src)} ${shQuote(outFile.absolutePath)} 2>/dev/null || cat ${shQuote(src)} > ${shQuote(outFile.absolutePath)}; chmod 0644 ${shQuote(outFile.absolutePath)} 2>/dev/null || true")
-        r.isSuccess
-      }
-      if (!copied) {
+      val r = root.execRootSh("cp -f ${shQuote(src)} ${shQuote(outFile.absolutePath)} 2>/dev/null || cat ${shQuote(src)} > ${shQuote(outFile.absolutePath)}; chmod 0644 ${shQuote(outFile.absolutePath)} 2>/dev/null || true")
+      if (!r.isSuccess) {
         toast(str(R.string.mv_auto_052))
         return@launchIO
       }
@@ -4754,15 +4616,14 @@ if (mf.isNotBlank()) {
     val manifestText: String?,
   )
 
-  private suspend fun readBackupArchiveForValidation(path: String): BackupArchiveReadResult? {
-    val source = File(path)
-    if (currentRemoteTarget() != null && (!source.exists() || !source.canRead())) return null
+  private fun readBackupArchiveForValidation(path: String): BackupArchiveReadResult? {
     var tmpFile: File? = null
+    val source = File(path)
     val readableFile = if (source.exists() && source.canRead()) {
       source
     } else {
       val tmp = File(ctx.cacheDir, "zdtb_validate_${System.currentTimeMillis()}_${Random.nextInt(10000)}.zdtb")
-      val r = controlExecSh(
+      val r = root.execRootSh(
         "rm -f ${shQuote(tmp.absolutePath)} 2>/dev/null || true; " +
           "(cp -f ${shQuote(path)} ${shQuote(tmp.absolutePath)} 2>/dev/null || cat ${shQuote(path)} > ${shQuote(tmp.absolutePath)}) && " +
           "chmod 0644 ${shQuote(tmp.absolutePath)} 2>/dev/null || true"
@@ -4904,7 +4765,7 @@ if (mf.isNotBlank()) {
       appRead.entries
     } else {
       // Fallback only for archive listing. Manifest reading below still prefers app-side parsing.
-      val rList = controlExecSh("tar -tzf ${shQuote(path)} 2>/dev/null || true")
+      val rList = root.execRootSh("tar -tzf ${shQuote(path)} 2>/dev/null || true")
       rList.out
         .joinToString("\n")
         .lineSequence()
@@ -4952,7 +4813,7 @@ if (mf.isNotBlank()) {
         "./zdt_backup_manifest.json"
       ).distinct()
 
-      val rStdout = controlExecSh(
+      val rStdout = root.execRootSh(
         "(" + candidates.joinToString(" || ") { cand ->
           "tar -xOzf ${shQuote(path)} ${shQuote(cand)} 2>/dev/null"
         } + " || true)"
@@ -4961,30 +4822,30 @@ if (mf.isNotBlank()) {
 
       if (manifestText.isBlank()) {
         val tmpDir = "/data/local/tmp/zdtb_chk_${System.currentTimeMillis()}"
-        controlExecSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true; mkdir -p ${shQuote(tmpDir)}")
+        root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true; mkdir -p ${shQuote(tmpDir)}")
 
         for (cand in candidates) {
-          controlExecSh("cd ${shQuote(tmpDir)} && tar -xzf ${shQuote(path)} ${shQuote(cand)} 2>/dev/null || true")
+          root.execRootSh("cd ${shQuote(tmpDir)} && tar -xzf ${shQuote(path)} ${shQuote(cand)} 2>/dev/null || true")
         }
 
-        val rFind = controlExecSh(
+        val rFind = root.execRootSh(
           "find ${shQuote(tmpDir)} -maxdepth 10 -name zdt_backup_manifest.json -type f -print -quit 2>/dev/null || true"
         )
         val found = rFind.out.joinToString("\n").trim()
         if (found.isBlank()) {
-          controlExecSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
+          root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
           return BackupValidation(false, str(R.string.mv_auto_071))
         }
 
-        val rSizeOk = controlExecSh("test -s ${shQuote(found)}")
+        val rSizeOk = root.execRootSh("test -s ${shQuote(found)}")
         if (!rSizeOk.isSuccess) {
-          controlExecSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
+          root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
           return BackupValidation(false, str(R.string.mv_auto_072))
         }
 
-        val rCat = controlExecSh("cat ${shQuote(found)} 2>/dev/null || true")
+        val rCat = root.execRootSh("cat ${shQuote(found)} 2>/dev/null || true")
         manifestText = sanitizeManifestJson(rCat.out.joinToString("\n"))
-        controlExecSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
+        root.execRootSh("rm -rf ${shQuote(tmpDir)} 2>/dev/null || true")
       }
     }
 
@@ -5391,9 +5252,9 @@ private fun shQuote(s: String): String {
     }
   }
 
-  private suspend fun isNfqwsTesterLockActive(): Boolean {
+  private fun isNfqwsTesterLockActive(): Boolean {
     return runCatching {
-      controlExecSh("test -f /data/adb/modules/ZDT-D/working_folder/nfqws_tester/session.json").isSuccess
+      root.execRootSh("test -f /data/adb/modules/ZDT-D/working_folder/nfqws_tester/session.json").isSuccess
     }.getOrDefault(false)
   }
 
@@ -5615,7 +5476,7 @@ private fun shQuote(s: String): String {
           mkdir -p "${'$'}ui_dir" || exit 1
           chmod 0755 "${'$'}ui_dir" 2>/dev/null || true
         """.trimIndent()
-        runCatching { controlExecSh(script).isSuccess }.getOrDefault(false)
+        runCatching { root.execRootSh(script).isSuccess }.getOrDefault(false)
       }
       if (ok) log("OK", "mihomo/$safeProfile UI cache cleared")
       else log("ERR", "mihomo/$safeProfile UI cache clear failed")
@@ -5837,7 +5698,7 @@ private fun shQuote(s: String): String {
 
   override fun loadRootTextFile(path: String, onDone: (String?) -> Unit) {
     launchIO {
-      val content = runCatching { controlReadTextFile(path) }.getOrNull()
+      val content = runCatching { root.readTextFile(path) }.getOrNull()
       if (content == null) log("ERR", "$path: root read failed")
       withContext(Dispatchers.Main.immediate) { onDone(content) }
     }
@@ -5922,7 +5783,7 @@ private fun shQuote(s: String): String {
 
   override fun saveRootTextFile(path: String, content: String, onDone: (Boolean) -> Unit) {
     launchIO {
-      val ok = runCatching { controlWriteTextFile(path, content) }.getOrDefault(false)
+      val ok = runCatching { root.writeTextFile(path, content) }.getOrDefault(false)
       if (ok) log("OK", "$path: root saved")
       else log("ERR", "$path: root save failed")
       withContext(Dispatchers.Main.immediate) { onDone(ok) }
@@ -7114,13 +6975,13 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
 
 
   private suspend fun rootPathExists(path: String): Boolean {
-    val r = controlExecSh("test -e ${shQuote(path)}")
+    val r = root.execRootSh("test -e ${shQuote(path)}")
     return r.isSuccess
   }
 
   private suspend fun listSubdirs(parent: String): List<String> {
     val script = "find ${shQuote(parent)} -mindepth 1 -maxdepth 1 -type d 2>/dev/null || true"
-    val r = controlExecSh(script)
+    val r = root.execRootSh(script)
     val out = (r.out + r.err).joinToString("\n")
     return out.lineSequence()
       .map { it.trim() }
@@ -7130,7 +6991,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
 
   private suspend fun duKb(path: String): Long {
     val script = "set -- $(du -sk ${shQuote(path)} 2>/dev/null); echo ${'$'}{1:-0}"
-    val r = controlExecSh(script)
+    val r = root.execRootSh(script)
     val s = r.out.joinToString("\n").trim()
     return s.toLongOrNull() ?: 0L
   }

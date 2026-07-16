@@ -25,6 +25,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -32,11 +33,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -76,6 +80,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -225,23 +230,83 @@ private fun RemoteSetupHome(state: RemoteSetupUiState, onHost: () -> Unit, onCon
 @Composable
 private fun RemoteHostPage(state: RemoteSetupUiState, onStart: () -> Unit, onStop: () -> Unit) {
   val host = state.host
-  LazyColumn(contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) {
-    item {
+  BoxWithConstraints(
+    modifier = Modifier
+      .fillMaxSize()
+      .padding(14.dp),
+  ) {
+    val wide = maxWidth >= 720.dp
+    if (!host.running) {
       CardBlock {
         Text("Режим хоста", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Text("Телефон подключается к этому устройству, а все root/API/file-действия выполняет приложение ZDT-D здесь, через существующую защищённую логику.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f))
-        if (!host.running) {
-          Button(onClick = onStart, enabled = state.canHost, modifier = Modifier.fillMaxWidth()) { Text("Запустить удалённое управление") }
-        } else {
-          Text("Адрес: ${host.host}:${host.port}", fontWeight = FontWeight.SemiBold)
-          Text("Код: ${host.code}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-          host.pairedDevice.takeIf { it.isNotBlank() }?.let { Text("Подключено: $it") }
-          QrImage(host.qrPayload)
-          OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) { Text("Остановить") }
+        Text(
+          "Телефон подключается к этому устройству, а все root/API/file-действия выполняет приложение ZDT-D здесь.",
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+        )
+        Button(onClick = onStart, enabled = state.canHost, modifier = Modifier.fillMaxWidth()) {
+          Text("Запустить удалённое управление")
         }
+        StatusMessages(state)
+      }
+    } else if (wide) {
+      Row(
+        modifier = Modifier.fillMaxSize(),
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        Card(
+          modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight(),
+          shape = RoundedCornerShape(28.dp),
+          colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f)),
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.20f)),
+        ) {
+          Column(
+            modifier = Modifier
+              .fillMaxSize()
+              .padding(20.dp),
+            verticalArrangement = Arrangement.Center,
+          ) {
+            Text("Удалённое управление запущено", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(12.dp))
+            Text("Адрес", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f))
+            Text("${host.host}:${host.port}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+            Spacer(Modifier.height(14.dp))
+            Text("Код подключения", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f))
+            Text(host.code, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black)
+            host.pairedDevice.takeIf { it.isNotBlank() }?.let {
+              Spacer(Modifier.height(14.dp))
+              Text("Подключено: $it", color = Color(0xFF22C55E), fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(18.dp))
+            OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) { Text("Остановить") }
+            StatusMessages(state)
+          }
+        }
+        val qrSize = minOf(maxHeight - 28.dp, maxWidth * 0.44f)
+        QrImage(
+          payload = host.qrPayload,
+          modifier = Modifier
+            .size(qrSize)
+            .padding(2.dp),
+        )
+      }
+    } else {
+      LazyColumn(contentPadding = PaddingValues(0.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) {
+        item {
+          CardBlock {
+            Text("Удалённое управление запущено", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Адрес: ${host.host}:${host.port}", fontWeight = FontWeight.SemiBold)
+            Text("Код: ${host.code}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
+            host.pairedDevice.takeIf { it.isNotBlank() }?.let { Text("Подключено: $it") }
+            QrImage(host.qrPayload, modifier = Modifier.fillMaxWidth().aspectRatio(1f))
+            OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) { Text("Остановить") }
+          }
+        }
+        item { StatusMessages(state) }
       }
     }
-    item { StatusMessages(state) }
   }
 }
 
@@ -270,7 +335,13 @@ private fun RemoteConnectPage(
         }
       }
     }
-    item { DeviceListBlock("Найдено в сети", state.discovered, onRefresh, onConnectKnown) }
+    item {
+      DeviceListBlock("Найдено в сети", state.discovered, onRefresh) { d ->
+        host = d.host
+        port = d.port.takeIf { it > 0 }?.toString() ?: "10320"
+        code = ""
+      }
+    }
     item { StatusMessages(state) }
   }
 }
@@ -278,13 +349,17 @@ private fun RemoteConnectPage(
 @Composable
 private fun RemoteHistoryPage(state: RemoteSetupUiState, onRefresh: () -> Unit, onConnectKnown: (RemoteDeviceInfo, String) -> Unit) {
   LazyColumn(contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) {
-    item { DeviceListBlock("История и доступные устройства", state.discovered + state.history, onRefresh, onConnectKnown) }
+    item {
+      DeviceListBlock("История и доступные устройства", state.discovered + state.history, onRefresh) { d ->
+        if (d.sessionToken.isNotBlank()) onConnectKnown(d, "")
+      }
+    }
     item { StatusMessages(state) }
   }
 }
 
 @Composable
-private fun DeviceListBlock(title: String, devices: List<RemoteDeviceInfo>, onRefresh: () -> Unit, onConnectKnown: (RemoteDeviceInfo, String) -> Unit) {
+private fun DeviceListBlock(title: String, devices: List<RemoteDeviceInfo>, onRefresh: () -> Unit, onDeviceClick: (RemoteDeviceInfo) -> Unit) {
   CardBlock {
     Row(verticalAlignment = Alignment.CenterVertically) {
       Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -299,7 +374,7 @@ private fun DeviceListBlock(title: String, devices: List<RemoteDeviceInfo>, onRe
           modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(18.dp))
-            .clickable { onConnectKnown(d, "") }
+            .clickable { onDeviceClick(d) }
             .padding(10.dp),
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.spacedBy(10.dp),
@@ -369,14 +444,12 @@ private fun StatusMessages(state: RemoteSetupUiState) {
 }
 
 @Composable
-private fun QrImage(payload: String) {
+private fun QrImage(payload: String, modifier: Modifier = Modifier) {
   val bmp = remember(payload) { createQrBitmap(payload, 720) }
   Image(
     bitmap = bmp.asImageBitmap(),
     contentDescription = null,
-    modifier = Modifier
-      .fillMaxWidth()
-      .aspectRatio(1f)
+    modifier = modifier
       .clip(RoundedCornerShape(22.dp))
       .background(Color.White)
       .padding(18.dp),
@@ -393,8 +466,12 @@ private fun createQrBitmap(text: String, size: Int): Bitmap {
 @androidx.annotation.OptIn(ExperimentalGetImage::class)
 @Composable
 private fun RemoteQrScannerPage(permissionGranted: Boolean, onRequestPermission: () -> Unit, onResult: (String) -> Unit) {
+  var cameraError by remember { mutableStateOf("") }
   CardBlock {
     Text("Наведите камеру на QR-код на Android TV", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(), fontWeight = FontWeight.SemiBold)
+    if (cameraError.isNotBlank()) {
+      Text(cameraError, color = MaterialTheme.colorScheme.error, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
+    }
     if (!permissionGranted) {
       Text("Нужно разрешение камеры для сканирования QR.", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f))
       Button(onClick = onRequestPermission, modifier = Modifier.fillMaxWidth()) { Text("Разрешить камеру") }
@@ -411,28 +488,56 @@ private fun RemoteQrScannerPage(permissionGranted: Boolean, onRequestPermission:
         factory = { ctx ->
           val previewView = PreviewView(ctx).apply { scaleType = PreviewView.ScaleType.FILL_CENTER }
           val providerFuture = ProcessCameraProvider.getInstance(ctx)
+          val scanned = java.util.concurrent.atomic.AtomicBoolean(false)
           providerFuture.addListener({
-            val provider = providerFuture.get()
-            val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
-            val scanner = BarcodeScanning.getClient()
-            val analysis = ImageAnalysis.Builder()
-              .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-              .build()
-            analysis.setAnalyzer(executor) { proxy ->
-              val media = proxy.image
-              if (media != null) {
-                val image = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)
-                scanner.process(image)
-                  .addOnSuccessListener { codes ->
-                    val raw = codes.firstOrNull { it.format == Barcode.FORMAT_QR_CODE }?.rawValue
-                    if (!raw.isNullOrBlank()) onResult(raw)
-                  }
-                  .addOnCompleteListener { proxy.close() }
-              } else proxy.close()
-            }
             runCatching {
+              val provider = providerFuture.get()
+              val selector = when {
+                provider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) -> CameraSelector.DEFAULT_BACK_CAMERA
+                provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) -> CameraSelector.DEFAULT_FRONT_CAMERA
+                else -> null
+              }
+              if (selector == null) {
+                cameraError = "Камера не найдена на устройстве"
+                return@runCatching
+              }
+              val preview = Preview.Builder().build().also { it.setSurfaceProvider(previewView.surfaceProvider) }
+              val scanner = BarcodeScanning.getClient()
+              val analysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+              analysis.setAnalyzer(executor) { proxy ->
+                if (scanned.get()) {
+                  proxy.close()
+                  return@setAnalyzer
+                }
+                try {
+                  val media = proxy.image
+                  if (media == null) {
+                    proxy.close()
+                    return@setAnalyzer
+                  }
+                  val image = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)
+                  scanner.process(image)
+                    .addOnSuccessListener { codes ->
+                      val raw = codes.firstOrNull { it.format == Barcode.FORMAT_QR_CODE }?.rawValue
+                      if (!raw.isNullOrBlank() && scanned.compareAndSet(false, true)) {
+                        analysis.clearAnalyzer()
+                        onResult(raw)
+                      }
+                    }
+                    .addOnFailureListener { cameraError = it.message ?: "Ошибка сканирования QR" }
+                    .addOnCompleteListener { proxy.close() }
+                } catch (e: Throwable) {
+                  proxy.close()
+                  cameraError = e.message ?: "Ошибка камеры"
+                }
+              }
               provider.unbindAll()
-              provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+              provider.bindToLifecycle(owner, selector, preview, analysis)
+              cameraError = ""
+            }.onFailure { e ->
+              cameraError = e.message ?: "Не удалось открыть камеру"
             }
           }, ContextCompat.getMainExecutor(context))
           previewView
@@ -441,3 +546,4 @@ private fun RemoteQrScannerPage(permissionGranted: Boolean, onRequestPermission:
     }
   }
 }
+

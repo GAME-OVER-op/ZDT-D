@@ -289,7 +289,15 @@ class RemoteHostServer(
   }
 
   private suspend fun udpDiscoveryLoop(host: String, port: Int) {
-    val socket = DatagramSocket(RemoteProtocol.UDP_PORT, InetAddress.getByName("0.0.0.0")).apply { broadcast = true; soTimeout = 1000 }
+    val socket = runCatching {
+      DatagramSocket(RemoteProtocol.UDP_PORT, InetAddress.getByName("0.0.0.0")).apply {
+        broadcast = true
+        soTimeout = 1000
+      }
+    }.getOrElse {
+      logWarn("UDP discovery unavailable on ${RemoteProtocol.UDP_PORT}: ${it.message ?: it}")
+      return
+    }
     socket.use { ds ->
       val buf = ByteArray(1024)
       while (scope.isActive && _state.value.running) {

@@ -81,18 +81,21 @@ class RemoteSetupViewModel(app: Application) : AndroidViewModel(app) {
   fun startDiscovery() {
     discoveryJob?.cancel()
     discoveryJob = viewModelScope.launch(Dispatchers.IO) {
-      _state.update { it.copy(message = "Поиск устройств ZDT-D в сети…") }
+      _state.update { it.copy(message = "Поиск устройств ZDT-D в сети…", error = "") }
       val found = linkedMapOf<String, RemoteDeviceInfo>()
       fun putFound(d: RemoteDeviceInfo) {
         found[d.deviceId.ifBlank { "${d.host}:${d.port}" }] = d
         _state.update { it.copy(discovered = found.values.toList(), message = "") }
       }
-      val nsdJob = launch { discovery.discoverNsd().collect { d -> putFound(d) } }
-      discovery.discoverUdp().collect { d -> putFound(d) }
+      val nsdJob = launch {
+        runCatching { discovery.discoverNsd().collect { d -> putFound(d) } }
+      }
+      runCatching { discovery.discoverUdp().collect { d -> putFound(d) } }
       nsdJob.cancel()
       val history = store.load()
       val pinged = history.map { d -> client.ping(d) ?: d.copy(online = false) }
-      _state.update { it.copy(history = pinged, message = "") }
+      val message = if (found.isEmpty()) "Устройства не найдены. Проверьте одну Wi‑Fi/локальную сеть или используйте QR/IP-код." else ""
+      _state.update { it.copy(history = pinged, message = message) }
     }
   }
 

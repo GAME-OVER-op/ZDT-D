@@ -494,6 +494,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
           lastStatusOkAtMs = System.currentTimeMillis()
           lastStatusFetchAtMs = 0L
           lastProgramsFetchAtMs = 0L
+          programsRefreshInFlight = false
           _uiState.update {
             it.copy(
               baseUrl = target.baseUrl,
@@ -509,7 +510,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
           }
           log("OK", "remote connected: ${target.device.displayTitle()} (${target.device.host}:${target.device.port})")
           refreshStatus()
-          refreshPrograms()
+          launchIO { refreshProgramsNow(force = true) }
           refreshDaemonSettings()
           refreshEnergySaver()
           refreshProxyInfo()
@@ -5343,13 +5344,21 @@ private fun shQuote(s: String): String {
     try {
       val list = api.getPrograms()
       // Some programs (dnscrypt / operaproxy) use active.json under working_folder for enable state.
-      val patched = list.map { p ->
-        val ap = activeJsonPath(p.id)
-        if (ap != null) {
-          val en = root.readEnabledFlag(ap)
-          if (en != null) p.copy(enabled = en) else p
-        } else {
-          p
+      val remoteActive = RemoteControlCenter.target.value != null
+      if (remoteActive && list.isEmpty()) {
+        log("WARN", "remote programs returned empty list")
+      }
+      val patched = if (remoteActive) {
+        list
+      } else {
+        list.map { p ->
+          val ap = activeJsonPath(p.id)
+          if (ap != null) {
+            val en = root.readEnabledFlag(ap)
+            if (en != null) p.copy(enabled = en) else p
+          } else {
+            p
+          }
         }
       }
       lastProgramsFetchAtMs = System.currentTimeMillis()

@@ -11,9 +11,6 @@ import com.android.zdtd.service.remote.RemoteControlCenter
 import com.android.zdtd.service.remote.RemoteSetupViewModel
 import com.android.zdtd.service.ui.remote.RemoteSetupScreen
 import com.android.zdtd.service.ui.theme.ZdtdTheme
-import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
-import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
-import com.google.mlkit.vision.barcode.common.Barcode
 import kotlinx.coroutines.flow.collect
 
 class RemoteSetupActivity : AppCompatActivity() {
@@ -43,8 +40,6 @@ class RemoteSetupActivity : AppCompatActivity() {
             onStopHost = vm::stopHost,
             onRefreshDiscovery = vm::startDiscovery,
             onManualConnect = vm::connectManual,
-            onScanQr = ::scanQr,
-            onConnectKnown = vm::connectKnown,
           )
         }
       }
@@ -54,22 +49,6 @@ class RemoteSetupActivity : AppCompatActivity() {
   override fun onResume() {
     super.onResume()
     vm.refreshCapabilities()
-    vm.refreshHistory()
   }
 
-  private fun scanQr() {
-    val options = GmsBarcodeScannerOptions.Builder()
-      .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-      .enableAutoZoom()
-      .build()
-    GmsBarcodeScanning.getClient(this, options)
-      .startScan()
-      .addOnSuccessListener { barcode: Barcode ->
-        val raw = barcode.rawValue.orEmpty()
-        if (raw.isNotBlank()) vm.connectQr(raw)
-      }
-      .addOnFailureListener { e: Exception ->
-        vm.setError(e.message ?: "Не удалось открыть сканер QR")
-      }
-  }
 }

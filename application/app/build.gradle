@@ -353,9 +353,7 @@ dependencies {
   // Networking
   implementation 'com.squareup.okhttp3:okhttp:5.3.2'
 
-  // Remote setup: QR generation and Google system QR scanner
-  implementation 'com.google.zxing:core:3.5.3'
-  implementation 'com.google.android.gms:play-services-code-scanner:16.1.0'
+  // Remote setup
 
   // Offline MMDB reader for bundled DB-IP Lite City geolocation database
   implementation 'com.maxmind.db:maxmind-db:4.1.0'

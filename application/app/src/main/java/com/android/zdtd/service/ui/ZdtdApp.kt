@@ -822,14 +822,6 @@ private fun MainShell(
 
   val snackHost = remember { SnackbarHostState() }
   val uiState by uiStateFlow.collectAsStateWithLifecycle()
-  var lastRemoteTargetNameForSettings by remember { mutableStateOf(uiState.remoteTargetName) }
-  LaunchedEffect(uiState.remoteTargetName) {
-    if (lastRemoteTargetNameForSettings.isBlank() && uiState.remoteTargetName.isNotBlank()) {
-      settingsCloseRequested = false
-      showSettings = true
-    }
-    lastRemoteTargetNameForSettings = uiState.remoteTargetName
-  }
   val backup by backupFlow.collectAsStateWithLifecycle()
   val landscapeControl = rememberUseLandscapeControlLayout()
 
@@ -887,6 +879,17 @@ private fun MainShell(
   var deleteModulePrepareRequested by remember { mutableStateOf(false) }
 
   var programsPrefetched by remember { mutableStateOf(false) }
+
+  LaunchedEffect(uiState.remoteTargetName) {
+    programsPrefetched = false
+    if (uiState.remoteTargetName.isNotBlank()) {
+      showSettings = false
+      settingsCloseRequested = false
+      tab = Tab.APPS
+      appsRoute = AppsRoute.List
+      actions.refreshPrograms()
+    }
+  }
 
   // Prefetch program list once after startup so the Programs tab opens warmer and keeps route state.
   LaunchedEffect(uiState.daemonOnline, uiState.startup.visible) {
@@ -1399,10 +1402,6 @@ private fun MainShell(
           onOpenRemoteSetup = actions::openRemoteSetup,
           remoteTargetName = uiState.remoteTargetName,
           remoteTargetAddress = uiState.remoteTargetAddress,
-          onRemoteSettings = {
-            settingsCloseRequested = false
-            showSettings = true
-          },
           onRemoteDisconnect = actions::exitRemoteControl,
           appUpdate = appUpdate,
           uiStateFlow = uiStateFlow,
@@ -1491,10 +1490,6 @@ private fun MainShell(
           onOpenRemoteSetup = actions::openRemoteSetup,
           remoteTargetName = uiState.remoteTargetName,
           remoteTargetAddress = uiState.remoteTargetAddress,
-          onRemoteSettings = {
-            settingsCloseRequested = false
-            showSettings = true
-          },
           onRemoteDisconnect = actions::exitRemoteControl,
         )
 
@@ -1567,7 +1562,6 @@ private fun LandscapeShellContent(
   onOpenRemoteSetup: () -> Unit,
   remoteTargetName: String,
   remoteTargetAddress: String,
-  onRemoteSettings: () -> Unit,
   onRemoteDisconnect: () -> Unit,
   appUpdate: AppUpdateUiState,
   uiStateFlow: StateFlow<UiState>,
@@ -1637,7 +1631,6 @@ private fun LandscapeShellContent(
       onOpenRemoteSetup = onOpenRemoteSetup,
       remoteTargetName = remoteTargetName,
       remoteTargetAddress = remoteTargetAddress,
-      onRemoteSettings = onRemoteSettings,
       onRemoteDisconnect = onRemoteDisconnect,
     )
 
@@ -1876,7 +1869,6 @@ private fun FloatingSnackbarHost(
 private fun RemoteTargetTopLine(
   name: String,
   address: String,
-  onSettings: () -> Unit,
   onRemoteSetup: () -> Unit,
   onDisconnect: () -> Unit,
 ) {
@@ -1916,13 +1908,6 @@ private fun RemoteTargetTopLine(
     }
     DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
       DropdownMenuItem(
-        text = { Text("Открыть настройки") },
-        onClick = {
-          expanded = false
-          onSettings()
-        },
-      )
-      DropdownMenuItem(
         text = { Text("Удалённая настройка") },
         onClick = {
           expanded = false
@@ -1956,7 +1941,6 @@ private fun FloatingTopBarCard(
   onOpenRemoteSetup: () -> Unit,
   remoteTargetName: String,
   remoteTargetAddress: String,
-  onRemoteSettings: () -> Unit,
   onRemoteDisconnect: () -> Unit,
 ) {
   val shape = RoundedCornerShape(24.dp)
@@ -2027,7 +2011,6 @@ private fun FloatingTopBarCard(
         RemoteTargetTopLine(
           name = remoteTargetName,
           address = remoteTargetAddress,
-          onSettings = onRemoteSettings,
           onRemoteSetup = onOpenRemoteSetup,
           onDisconnect = onRemoteDisconnect,
         )
@@ -2181,7 +2164,6 @@ private fun LandscapeQuickActions(
   onOpenRemoteSetup: () -> Unit,
   remoteTargetName: String,
   remoteTargetAddress: String,
-  onRemoteSettings: () -> Unit,
   onRemoteDisconnect: () -> Unit,
 ) {
   Surface(
@@ -2221,7 +2203,6 @@ private fun LandscapeQuickActions(
       RemoteTargetTopLine(
         name = remoteTargetName,
         address = remoteTargetAddress,
-        onSettings = onRemoteSettings,
         onRemoteSetup = onOpenRemoteSetup,
         onDisconnect = onRemoteDisconnect,
       )

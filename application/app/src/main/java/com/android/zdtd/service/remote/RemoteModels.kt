@@ -3,7 +3,6 @@ package com.android.zdtd.service.remote
 import android.os.Build
 import com.android.zdtd.service.BuildConfig
 import org.json.JSONObject
-import java.net.URLEncoder
 import java.util.UUID
 
 data class RemoteDeviceInfo(
@@ -30,7 +29,6 @@ object RemoteProtocol {
   const val DISCOVER = "ZDTD_DISCOVER_V1"
   const val SERVICE = "ZDTD_REMOTE_HOST_V1"
   const val SERVICE_TYPE = "_zdtd-remote._tcp."
-  const val QR_SCHEME = "zdtd://remote-pair"
 
   fun localDeviceName(): String {
     val parts = listOf(Build.MANUFACTURER, Build.MODEL)
@@ -75,24 +73,6 @@ object RemoteProtocol {
     sessionToken = obj.optString("sessionToken", ""),
   )
 
-  fun qrPayload(host: String, port: Int, code: String, deviceId: String = localDeviceId()): String {
-    return "$QR_SCHEME?host=${enc(host)}&port=$port&code=${enc(code)}&device=${enc(deviceId)}&vc=${BuildConfig.VERSION_CODE}&pv=$PROTOCOL_VERSION"
-  }
-
-  fun parseQrPayload(raw: String): Map<String, String> {
-    val s = raw.trim()
-    if (!s.startsWith(QR_SCHEME)) return emptyMap()
-    val q = s.substringAfter('?', "")
-    return q.split('&')
-      .mapNotNull {
-        val k = it.substringBefore('=', "")
-        val v = it.substringAfter('=', "")
-        if (k.isBlank()) null else k to java.net.URLDecoder.decode(v, "UTF-8")
-      }
-      .toMap()
-  }
-
-  private fun enc(value: String): String = URLEncoder.encode(value, "UTF-8")
 }
 
 data class RemoteHostState(
@@ -100,7 +80,6 @@ data class RemoteHostState(
   val host: String = "",
   val port: Int = 0,
   val code: String = "",
-  val qrPayload: String = "",
   val pairedDevice: String = "",
   val error: String = "",
 )

@@ -1,7 +1,5 @@
 package com.android.zdtd.service.ui.remote
 
-import android.graphics.Bitmap
-import android.graphics.Color as AndroidColor
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -13,7 +11,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -24,7 +21,6 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -40,15 +36,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.CastConnected
 import androidx.compose.material.icons.outlined.Devices
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.SettingsRemote
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -67,19 +60,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.remote.RemoteDeviceInfo
 import com.android.zdtd.service.remote.RemoteProtocol
 import com.android.zdtd.service.remote.RemoteSetupUiState
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.qrcode.QRCodeWriter
 
-enum class RemoteSetupPage { HOME, HOST, CONNECT, HISTORY, SCAN }
+enum class RemoteSetupPage { HOME, HOST, CONNECT }
 
 @Composable
 fun RemoteSetupScreen(
@@ -89,8 +78,6 @@ fun RemoteSetupScreen(
   onStopHost: () -> Unit,
   onRefreshDiscovery: () -> Unit,
   onManualConnect: (String, String, String) -> Unit,
-  onScanQr: () -> Unit,
-  onConnectKnown: (RemoteDeviceInfo, String) -> Unit,
 ) {
   val backStack = remember { mutableStateListOf(RemoteSetupPage.HOME) }
   var forward by remember { mutableStateOf(true) }
@@ -120,8 +107,6 @@ fun RemoteSetupScreen(
           RemoteSetupPage.HOME -> "Удалённая настройка"
           RemoteSetupPage.HOST -> "Запустить управление"
           RemoteSetupPage.CONNECT -> "Настроить устройство"
-          RemoteSetupPage.HISTORY -> "История"
-          RemoteSetupPage.SCAN -> "Сканировать QR"
         },
         onBack = { navigateBack() },
       )
@@ -139,18 +124,13 @@ fun RemoteSetupScreen(
             state = state,
             onHost = { navigate(RemoteSetupPage.HOST) },
             onConnect = { navigate(RemoteSetupPage.CONNECT) },
-            onHistory = { navigate(RemoteSetupPage.HISTORY) },
           )
           RemoteSetupPage.HOST -> RemoteHostPage(state, onStartHost, onStopHost)
           RemoteSetupPage.CONNECT -> RemoteConnectPage(
             state = state,
-            onScan = { navigate(RemoteSetupPage.SCAN) },
             onManualConnect = onManualConnect,
             onRefresh = onRefreshDiscovery,
-            onConnectKnown = onConnectKnown,
           )
-          RemoteSetupPage.HISTORY -> RemoteHistoryPage(state, onRefreshDiscovery, onConnectKnown)
-          RemoteSetupPage.SCAN -> RemoteQrScannerPage(onScan = onScanQr)
         }
       }
     }
@@ -175,7 +155,7 @@ private fun RemoteSetupTopBar(title: String, onBack: () -> Unit) {
 }
 
 @Composable
-private fun RemoteSetupHome(state: RemoteSetupUiState, onHost: () -> Unit, onConnect: () -> Unit, onHistory: () -> Unit) {
+private fun RemoteSetupHome(state: RemoteSetupUiState, onHost: () -> Unit, onConnect: () -> Unit) {
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
     contentPadding = PaddingValues(14.dp),
@@ -201,16 +181,6 @@ private fun RemoteSetupHome(state: RemoteSetupUiState, onHost: () -> Unit, onCon
         onClick = onConnect,
       )
     }
-    item {
-      RemoteActionCard(
-        title = "История",
-        subtitle = "Прошлые устройства и устройства ZDT-D, найденные сейчас в локальной сети.",
-        icon = Icons.Outlined.History,
-        accent = MaterialTheme.colorScheme.tertiary,
-        enabled = true,
-        onClick = onHistory,
-      )
-    }
     item { StatusMessages(state) }
   }
 }
@@ -224,7 +194,6 @@ private fun RemoteHostPage(state: RemoteSetupUiState, onStart: () -> Unit, onSto
       .padding(14.dp),
   ) {
     val containerMaxWidth = maxWidth
-    val containerMaxHeight = maxHeight
     val wide = containerMaxWidth >= 720.dp
     if (!host.running) {
       CardBlock {
@@ -246,7 +215,7 @@ private fun RemoteHostPage(state: RemoteSetupUiState, onStart: () -> Unit, onSto
       ) {
         Card(
           modifier = Modifier
-            .weight(1f)
+            .fillMaxWidth()
             .fillMaxHeight(),
           shape = RoundedCornerShape(28.dp),
           colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f)),
@@ -274,13 +243,6 @@ private fun RemoteHostPage(state: RemoteSetupUiState, onStart: () -> Unit, onSto
             StatusMessages(state)
           }
         }
-        val qrSize = minOf(containerMaxHeight - 28.dp, containerMaxWidth * 0.44f)
-        QrImage(
-          payload = host.qrPayload,
-          modifier = Modifier
-            .size(qrSize)
-            .padding(2.dp),
-        )
       }
     } else {
       LazyColumn(contentPadding = PaddingValues(0.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) {
@@ -290,7 +252,6 @@ private fun RemoteHostPage(state: RemoteSetupUiState, onStart: () -> Unit, onSto
             Text("HTTP API: ${host.host}:${host.port}", fontWeight = FontWeight.SemiBold)
             Text("Код: ${host.code}", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
             host.pairedDevice.takeIf { it.isNotBlank() }?.let { Text("Подключено: $it") }
-            QrImage(host.qrPayload, modifier = Modifier.fillMaxWidth().aspectRatio(1f))
             OutlinedButton(onClick = onStop, modifier = Modifier.fillMaxWidth()) { Text("Остановить") }
           }
         }
@@ -303,10 +264,8 @@ private fun RemoteHostPage(state: RemoteSetupUiState, onStart: () -> Unit, onSto
 @Composable
 private fun RemoteConnectPage(
   state: RemoteSetupUiState,
-  onScan: () -> Unit,
   onManualConnect: (String, String, String) -> Unit,
   onRefresh: () -> Unit,
-  onConnectKnown: (RemoteDeviceInfo, String) -> Unit,
 ) {
   var host by remember { mutableStateOf("") }
   var port by remember { mutableStateOf(RemoteProtocol.DEFAULT_API_PORT.toString()) }
@@ -328,18 +287,6 @@ private fun RemoteConnectPage(
         host = d.host
         port = d.port.takeIf { it > 0 }?.toString() ?: RemoteProtocol.DEFAULT_API_PORT.toString()
         code = ""
-      }
-    }
-    item { StatusMessages(state) }
-  }
-}
-
-@Composable
-private fun RemoteHistoryPage(state: RemoteSetupUiState, onRefresh: () -> Unit, onConnectKnown: (RemoteDeviceInfo, String) -> Unit) {
-  LazyColumn(contentPadding = PaddingValues(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxSize()) {
-    item {
-      DeviceListBlock("История и доступные устройства", state.discovered + state.history, onRefresh) { d ->
-        onConnectKnown(d, "")
       }
     }
     item { StatusMessages(state) }
@@ -428,36 +375,5 @@ private fun StatusMessages(state: RemoteSetupUiState) {
         fontWeight = FontWeight.SemiBold,
       )
     }
-  }
-}
-
-@Composable
-private fun QrImage(payload: String, modifier: Modifier = Modifier) {
-  val bmp = remember(payload) { createQrBitmap(payload, 720) }
-  Image(
-    bitmap = bmp.asImageBitmap(),
-    contentDescription = null,
-    modifier = modifier
-      .clip(RoundedCornerShape(22.dp))
-      .background(Color.White)
-      .padding(18.dp),
-  )
-}
-
-private fun createQrBitmap(text: String, size: Int): Bitmap {
-  val matrix = QRCodeWriter().encode(text, BarcodeFormat.QR_CODE, size, size)
-  val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-  for (x in 0 until size) for (y in 0 until size) bmp.setPixel(x, y, if (matrix[x, y]) AndroidColor.BLACK else AndroidColor.WHITE)
-  return bmp
-}
-
-@Composable
-private fun RemoteQrScannerPage(onScan: () -> Unit) {
-  CardBlock {
-    Text("Сканирование QR временно скрыто", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(), fontWeight = FontWeight.SemiBold)
-    Text(
-      "Код сканера оставлен в приложении, но кнопка скрыта, чтобы пользователь не запускал неготовый сценарий. Используйте IP, порт и код вручную.",
-      color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-    )
   }
 }

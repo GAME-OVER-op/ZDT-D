@@ -82,7 +82,6 @@ class RemoteHostServer(
       host = host,
       port = socket.localPort,
       code = code,
-      qrPayload = RemoteProtocol.qrPayload(host, socket.localPort, code),
     )
     _state.value = running
     RemoteHostNotifier.show(context, running)

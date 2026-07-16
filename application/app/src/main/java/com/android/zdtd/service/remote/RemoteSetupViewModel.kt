@@ -17,7 +17,6 @@ data class RemoteSetupUiState(
   val canHost: Boolean = false,
   val host: RemoteHostState = RemoteHostState(),
   val discovered: List<RemoteDeviceInfo> = emptyList(),
-  val history: List<RemoteDeviceInfo> = emptyList(),
   val connecting: Boolean = false,
   val message: String = "",
   val error: String = "",
@@ -27,7 +26,6 @@ class RemoteSetupViewModel(app: Application) : AndroidViewModel(app) {
   private val ctx = app.applicationContext
   private val root = RootConfigManager(ctx)
   private val hostServer = RemoteHostManager.get(ctx)
-  private val store = RemoteDeviceStore(ctx)
   private val discovery = RemoteDiscovery(ctx)
   private val client = RemoteClient()
   private var discoveryJob: Job? = null
@@ -37,7 +35,6 @@ class RemoteSetupViewModel(app: Application) : AndroidViewModel(app) {
 
   init {
     refreshCapabilities()
-    refreshHistory()
     viewModelScope.launch { hostServer.state.collect { h -> _state.update { it.copy(host = h) } } }
     startDiscovery()
   }
@@ -47,10 +44,6 @@ class RemoteSetupViewModel(app: Application) : AndroidViewModel(app) {
       val canHost = runCatching { root.testRoot() && root.isModuleInstalled() }.getOrDefault(false)
       _state.update { it.copy(canHost = canHost) }
     }
-  }
-
-  fun refreshHistory() {
-    _state.update { it.copy(history = store.load()) }
   }
 
   fun setError(message: String) {
@@ -98,33 +91,13 @@ class RemoteSetupViewModel(app: Application) : AndroidViewModel(app) {
       val nsdJob = launch { runCatching { discovery.discoverNsd().collect { d -> putFound(d) } } }
       runCatching { discovery.discoverUdp().collect { d -> putFound(d) } }
       nsdJob.cancel()
-      val history = store.load()
-      val pinged = history.map { d -> client.ping(d) ?: d.copy(online = false) }
-      val message = if (found.isEmpty()) "Устройства не найдены. Проверьте одну Wi‑Fi/локальную сеть или используйте QR/IP-код." else ""
-      _state.update { it.copy(history = pinged, message = message) }
+      val message = if (found.isEmpty()) "Устройства не найдены. Проверьте одну Wi‑Fi/локальную сеть или введите IP, порт и код вручную." else ""
+      _state.update { it.copy(message = message) }
     }
   }
 
   fun connectManual(host: String, portText: String, code: String) {
     connect(host.trim(), portText.trim().toIntOrNull() ?: 0, code)
-  }
-
-  fun connectQr(raw: String) {
-    val map = RemoteProtocol.parseQrPayload(raw)
-    if (map.isEmpty()) {
-      _state.update { it.copy(error = "QR-код не похож на ZDT-D remote pair", message = "") }
-      return
-    }
-    connect(map["host"].orEmpty(), map["port"]?.toIntOrNull() ?: 0, map["code"].orEmpty())
-  }
-
-  fun connectKnown(device: RemoteDeviceInfo, code: String = "") {
-    if (device.sessionToken.isNotBlank() && code.isBlank()) {
-      RemoteControlCenter.enter(RemoteControlTarget(device, "h" + "ttp://" + device.host + ":" + device.port, device.sessionToken))
-      _state.update { it.copy(message = "Подключено: ${device.displayTitle()}", error = "") }
-      return
-    }
-    connect(device.host, device.port, code)
   }
 
   private fun connect(host: String, port: Int, code: String) {
@@ -136,9 +109,8 @@ class RemoteSetupViewModel(app: Application) : AndroidViewModel(app) {
       _state.update { it.copy(connecting = true, error = "", message = "Подключение…") }
       runCatching { client.pair(host, port, code) }
         .onSuccess { target ->
-          store.save(target.device)
           RemoteControlCenter.enter(target)
-          _state.update { it.copy(connecting = false, message = "Подключено: ${target.device.displayTitle()}", history = store.load()) }
+          _state.update { it.copy(connecting = false, message = "Подключено: ${target.device.displayTitle()}") }
         }
         .onFailure { e ->
           val msg = if ((e.message ?: "").startsWith("version_mismatch")) {

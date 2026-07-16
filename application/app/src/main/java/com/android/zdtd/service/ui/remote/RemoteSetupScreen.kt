@@ -235,7 +235,9 @@ private fun RemoteHostPage(state: RemoteSetupUiState, onStart: () -> Unit, onSto
       .fillMaxSize()
       .padding(14.dp),
   ) {
-    val wide = maxWidth >= 720.dp
+    val containerMaxWidth = maxWidth
+    val containerMaxHeight = maxHeight
+    val wide = containerMaxWidth >= 720.dp
     if (!host.running) {
       CardBlock {
         Text("Режим хоста", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -284,7 +286,7 @@ private fun RemoteHostPage(state: RemoteSetupUiState, onStart: () -> Unit, onSto
             StatusMessages(state)
           }
         }
-        val qrSize = minOf(maxHeight - 28.dp, maxWidth * 0.44f)
+        val qrSize = minOf(containerMaxHeight - 28.dp, containerMaxWidth * 0.44f)
         QrImage(
           payload = host.qrPayload,
           modifier = Modifier

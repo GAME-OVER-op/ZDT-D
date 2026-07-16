@@ -51,6 +51,35 @@ object ApiModels {
     val lastError: String = "",
   )
 
+
+  data class RuntimeApplyStatus(
+    val ok: Boolean = true,
+    val state: String = "idle",
+    val program: String? = null,
+    val profile: String? = null,
+    val slot: String? = null,
+    val message: String = "",
+    val error: String? = null,
+    val updatedAtUnixMs: Long = 0L,
+  ) {
+    val visible: Boolean get() = state !in setOf("idle", "")
+    val finished: Boolean get() = state in setOf("success", "failed", "deferred_until_start", "no_active_runtime")
+  }
+
+  fun parseRuntimeApplyStatus(obj: JSONObject?): RuntimeApplyStatus {
+    if (obj == null) return RuntimeApplyStatus()
+    return RuntimeApplyStatus(
+      ok = obj.optBoolean("ok", true),
+      state = obj.optString("state", "idle"),
+      program = obj.optString("program", "").takeIf { it.isNotBlank() },
+      profile = obj.optString("profile", "").takeIf { it.isNotBlank() },
+      slot = obj.optString("slot", "").takeIf { it.isNotBlank() },
+      message = obj.optString("message", ""),
+      error = obj.optString("error", "").takeIf { it.isNotBlank() },
+      updatedAtUnixMs = obj.optLong("updated_at_unix_ms", 0L),
+    )
+  }
+
   data class Profile(
     val name: String,
     val enabled: Boolean = false,

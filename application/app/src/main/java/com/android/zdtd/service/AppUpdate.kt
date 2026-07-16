@@ -73,6 +73,9 @@ data class AppUpdateUiState(
   val blockedQuicEnabled: Boolean = false,
   val blockedQuicAppsContent: String = "",
   val blockedQuicBusy: Boolean = false,
+  /** Runtime hot-apply status for app-list UID/routing changes. */
+  val runtimeApplyStatus: ApiModels.RuntimeApplyStatus = ApiModels.RuntimeApplyStatus(),
+  val runtimeApplyVisible: Boolean = false,
   /** True while the app automatically stops the daemon, removes flag.sha256 and starts it again. */
   val resettingModuleIdentifier: Boolean = false,
   // App-owned notification about daemon status (running/stopped).

@@ -3,6 +3,9 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- Needed to request installing APK updates downloaded by the app (online update). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Android 13+ runtime permission (requested only when user enables notifications). -->
@@ -93,6 +96,11 @@
             </intent-filter>
 
         </activity>
+
+
+        <activity
+            android:name=".RemoteSetupActivity"
+            android:exported="false" />
 
         <activity
             android:name=".WorldMapActivity"

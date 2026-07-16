@@ -4,8 +4,10 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -26,6 +28,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -48,6 +51,7 @@ import androidx.compose.material.icons.filled.NewReleases
 import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -63,6 +67,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -129,7 +134,7 @@ fun ZdtdApp(
   ) { setupStep ->
     when (setupStep) {
       SetupStep.WELCOME -> WelcomeScreen(onAccept = actions::acceptWelcome)
-      SetupStep.ROOT -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
+      SetupStep.ROOT -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
       SetupStep.INSTALL -> InstallModuleScreen(
         rootState = rootState,
         setup = setup,
@@ -151,7 +156,7 @@ fun ZdtdApp(
       SetupStep.REBOOT -> {
         when (rootState) {
           RootState.CHECKING -> SplashScreen()
-          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
+          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
           RootState.GRANTED -> RebootRequiredScreen(
             setup = setup,
             text = setup.rebootRequiredText,
@@ -162,7 +167,7 @@ fun ZdtdApp(
       SetupStep.DONE -> {
         when (rootState) {
           RootState.CHECKING -> SplashScreen()
-          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot)
+          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
           RootState.GRANTED -> {
             UpdatePromptDialog(setup = setup, onUpdate = actions::openModuleInstaller, onSkip = actions::dismissUpdatePrompt)
             MainShell(
@@ -815,10 +820,33 @@ private fun MainShell(
 
   val snackHost = remember { SnackbarHostState() }
   val uiState by uiStateFlow.collectAsStateWithLifecycle()
+  var showRemoteTargetDialog by remember { mutableStateOf(false) }
   val backup by backupFlow.collectAsStateWithLifecycle()
   val landscapeControl = rememberUseLandscapeControlLayout()
 
   DaemonUnavailableDialogHost(uiState = uiState)
+
+  if (showRemoteTargetDialog && uiState.remoteTargetName.isNotBlank()) {
+    AlertDialog(
+      onDismissRequest = { showRemoteTargetDialog = false },
+      title = { Text("Удалённая настройка") },
+      text = {
+        Text("Вы настраиваете: ${uiState.remoteTargetName}
+${uiState.remoteTargetAddress}
+
+Все изменения выполняются на выбранном устройстве.")
+      },
+      confirmButton = {
+        TextButton(onClick = {
+          showRemoteTargetDialog = false
+          actions.exitRemoteControl()
+        }) { Text("Выйти") }
+      },
+      dismissButton = {
+        TextButton(onClick = { showRemoteTargetDialog = false }) { Text("Остаться") }
+      },
+    )
+  }
 
   if (backup.externalRestorePromptVisible) {
     AlertDialog(
@@ -1465,6 +1493,8 @@ private fun MainShell(
             settingsCloseRequested = false
             showSettings = true
           },
+          remoteTargetName = uiState.remoteTargetName,
+          onRemoteTargetClick = { showRemoteTargetDialog = true },
         )
 
         FloatingBottomNavigationCard(
@@ -1479,16 +1509,27 @@ private fun MainShell(
         )
       }
 
+      val notificationBottomPadding = if (landscapeControl) {
+        WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 18.dp
+      } else {
+        floatingBottomBarReserve + 10.dp
+      }
+
+      RuntimeApplyStatusCard(
+        visible = appUpdate.runtimeApplyVisible,
+        status = appUpdate.runtimeApplyStatus,
+        modifier = Modifier
+          .align(Alignment.BottomCenter)
+          .zIndex(4.8f),
+        bottomPadding = notificationBottomPadding + 62.dp,
+      )
+
       FloatingSnackbarHost(
         hostState = snackHost,
         modifier = Modifier
           .align(Alignment.BottomCenter)
           .zIndex(5f),
-        bottomPadding = if (landscapeControl) {
-          WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 18.dp
-        } else {
-          floatingBottomBarReserve + 10.dp
-        },
+        bottomPadding = notificationBottomPadding,
       )
     }
 
@@ -1644,6 +1685,109 @@ private fun LandscapeContentHeader(
   }
 }
 
+
+@Composable
+private fun RuntimeApplyStatusCard(
+  visible: Boolean,
+  status: ApiModels.RuntimeApplyStatus,
+  modifier: Modifier = Modifier,
+  bottomPadding: Dp,
+) {
+  val density = LocalDensity.current.density
+
+  AnimatedVisibility(
+    visible = visible && status.visible,
+    modifier = modifier
+      .fillMaxWidth()
+      .padding(horizontal = 18.dp)
+      .padding(bottom = bottomPadding),
+    enter = slideInVertically(animationSpec = tween(260, easing = FastOutSlowInEasing)) { it / 2 } + fadeIn(tween(180)),
+    exit = slideOutVertically(animationSpec = tween(240, easing = FastOutSlowInEasing)) { it / 2 } + fadeOut(tween(180)),
+  ) {
+    val shape = RoundedCornerShape(24.dp)
+    val accent = when (status.state) {
+      "success" -> Color(0xFF22C55E)
+      "failed" -> MaterialTheme.colorScheme.error
+      "deferred_until_start", "no_active_runtime" -> Color(0xFFF59E0B)
+      else -> MaterialTheme.colorScheme.primary
+    }
+    Surface(
+      modifier = Modifier
+        .fillMaxWidth()
+        .clip(shape),
+      shape = shape,
+      color = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f),
+      tonalElevation = 0.dp,
+      shadowElevation = 8.dp,
+      border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+    ) {
+      Row(
+        modifier = Modifier
+          .fillMaxWidth()
+          .padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        Surface(
+          shape = CircleShape,
+          color = accent.copy(alpha = 0.16f),
+          border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
+        ) {
+          val icon = when (status.state) {
+            "success" -> Icons.Filled.CheckCircle
+            "failed" -> Icons.Filled.ErrorOutline
+            "deferred_until_start", "no_active_runtime" -> Icons.Filled.RadioButtonUnchecked
+            else -> Icons.Filled.Sync
+          }
+          Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier
+              .padding(7.dp)
+              .size(18.dp),
+            tint = accent,
+          )
+        }
+
+        Box(
+          modifier = Modifier
+            .weight(1f)
+            .clipToBounds(),
+        ) {
+          AnimatedContent(
+            targetState = status.state to status.message,
+            transitionSpec = {
+              val enter = slideInVertically(animationSpec = tween(260, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(160))
+              val exit = slideOutVertically(animationSpec = tween(260, easing = FastOutSlowInEasing)) { -it } + fadeOut(tween(160))
+              (enter togetherWith exit).using(SizeTransform(clip = false))
+            },
+            label = "runtime_apply_cube_bottom_to_top",
+          ) { target ->
+            val message = target.second
+            val flip by transition.animateFloat(
+              transitionSpec = { tween(durationMillis = 260, easing = FastOutSlowInEasing) },
+              label = "runtime_apply_cube_flip",
+            ) { animatedTarget -> if (animatedTarget == target) 0f else -90f }
+            Text(
+              text = message.ifBlank { "Применяю правила" },
+              modifier = Modifier.graphicsLayer {
+                transformOrigin = TransformOrigin(0.5f, 0.5f)
+                rotationX = flip
+                cameraDistance = 18f * density
+              },
+              style = MaterialTheme.typography.bodyMedium,
+              fontWeight = FontWeight.SemiBold,
+              color = MaterialTheme.colorScheme.onSurface,
+              maxLines = 2,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
 @Composable
 private fun FloatingSnackbarHost(
   hostState: SnackbarHostState,
@@ -1726,6 +1870,8 @@ private fun FloatingTopBarCard(
   onOpenBackup: () -> Unit,
   onOpenProgramUpdates: () -> Unit,
   onOpenSettings: () -> Unit,
+  remoteTargetName: String = "",
+  onRemoteTargetClick: () -> Unit = {},
 ) {
   val shape = RoundedCornerShape(24.dp)
   Box(
@@ -1778,6 +1924,24 @@ private fun FloatingTopBarCard(
             Modifier.weight(1f)
           },
         )
+        if (remoteTargetName.isNotBlank()) {
+          Surface(
+            modifier = Modifier
+              .padding(end = 6.dp)
+              .clickable(onClick = onRemoteTargetClick),
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.78f),
+          ) {
+            Text(
+              text = "Настройка: $remoteTargetName",
+              modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+              style = MaterialTheme.typography.labelMedium,
+              color = MaterialTheme.colorScheme.onSecondaryContainer,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+        }
         TopBarActionCluster(
           programLogTarget = programLogTarget,
           onOpenLogs = onOpenLogs,

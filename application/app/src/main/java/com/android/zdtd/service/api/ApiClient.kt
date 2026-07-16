@@ -62,6 +62,11 @@ class ApiClient(
     return ApiModels.parseTrafficReport(obj)
   }
 
+  fun getRuntimeApplyStatus(): ApiModels.RuntimeApplyStatus {
+    val obj = requestJson("GET", "/api/runtime-apply/status", null)
+    return ApiModels.parseRuntimeApplyStatus(obj)
+  }
+
   fun setProgramEnabled(programId: String, enabled: Boolean): Boolean {
     val path = "/api/programs/${enc(programId)}/enabled"
     val body = JSONObject().put("enabled", enabled)
@@ -521,7 +526,13 @@ private fun isOkJsonOrSuccess(text: String): Boolean {
         return parseJsonOrThrow(text)
       }
     } catch (e: Throwable) {
-      // 2) Root-proxy fallback.
+      // 2) Root-proxy fallback is valid only for the local daemon. In remote-control
+      // mode the host app already proxies /api/*, so falling back to local root would
+      // accidentally execute actions on the phone instead of the selected device.
+      val base = baseUrlProvider().trim()
+      if (!base.contains("127.0.0.1") && !base.contains("localhost")) {
+        throw e
+      }
       val raw = when (method.uppercase()) {
         "GET", "HEAD" -> rootManager.proxyGet(path)
         "POST" -> rootManager.proxyPost(path, (body ?: JSONObject()).toString())

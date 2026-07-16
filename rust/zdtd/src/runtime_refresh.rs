@@ -4,6 +4,12 @@ use std::{fs, path::{Path, PathBuf}};
 
 const ROUTING_CACHE: &str = "/data/adb/modules/ZDT-D/working_folder/runtime_refresh/routing.json";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RefreshOutcome {
+    Applied,
+    NoActiveRuntime,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct RangeSnapshot {
     pub start: u16,
@@ -203,7 +209,7 @@ pub fn register_tproxy(
     });
 }
 
-pub fn refresh_routing_by_uid_file(uid_file: &Path) -> Result<bool> {
+pub fn refresh_routing_by_uid_file(uid_file: &Path) -> Result<RefreshOutcome> {
     let key = uid_file.display().to_string();
     let snapshots = read_routing_cache()
         .into_iter()
@@ -211,7 +217,7 @@ pub fn refresh_routing_by_uid_file(uid_file: &Path) -> Result<bool> {
         .collect::<Vec<_>>();
     if snapshots.is_empty() {
         log::info!("runtime_refresh: no active routing cache for {}", uid_file.display());
-        return Ok(false);
+        return Ok(RefreshOutcome::NoActiveRuntime);
     }
 
     for snapshot in snapshots {
@@ -242,7 +248,7 @@ pub fn refresh_routing_by_uid_file(uid_file: &Path) -> Result<bool> {
             }
         }
     }
-    Ok(true)
+    Ok(RefreshOutcome::Applied)
 }
 
 fn uid_output_from_input(input: &Path) -> PathBuf {
@@ -273,38 +279,38 @@ fn rebuild_uid_file(input: &Path, output: &Path) -> Result<()> {
 /// service is running. Profile settings changed on disk (ports, interfaces,
 /// TUN/netId/CIDR/DNS, hotspot settings, program configs, etc.) are not applied
 /// here and become active only after a normal stop/start cycle.
-pub fn refresh_apps(program: &str, profile: Option<&str>, slot: &str) -> Result<()> {
+pub fn refresh_apps(program: &str, profile: Option<&str>, slot: &str) -> Result<RefreshOutcome> {
     match program {
         "openvpn" | "amneziawg" | "tun2socks" | "myvpn" | "mihomo" | "mieru" => {
             let profile = profile.ok_or_else(|| anyhow::anyhow!("profile is required for {program}"))?;
-            refresh_vpn_netd_users(program, profile)
+            refresh_vpn_netd_users(program, profile)?;
+            Ok(RefreshOutcome::Applied)
         }
         "blockedquic" => {
             let _ = crate::blockedquic::rebuild_out_program()?;
             let _ = crate::blockedquic::refresh_runtime(true)?;
-            Ok(())
+            Ok(RefreshOutcome::Applied)
         }
         "proxyinfo" => {
             let _ = crate::proxyinfo::refresh_runtime(true)?;
-            Ok(())
+            Ok(RefreshOutcome::Applied)
         }
         "nfqws" | "nfqws2" | "byedpi" | "dpitunnel" | "wireproxy" | "tor" | "operaproxy" | "myproxy" | "myprogram" => {
             let input = app_input_path(program, profile, slot)?;
             let output = uid_output_from_input(&input);
             rebuild_uid_file(&input, &output)?;
-            let _ = refresh_routing_by_uid_file(&output)?;
-            Ok(())
+            refresh_routing_by_uid_file(&output)
         }
         "sing-box" => {
             let profile = profile.ok_or_else(|| anyhow::anyhow!("profile is required for {program}"))?;
             let input = app_input_path(program, Some(profile), slot)?;
             let output = uid_output_from_input(&input);
             rebuild_uid_file(&input, &output)?;
-            let _ = refresh_routing_by_uid_file(&output)?;
+            let routing = refresh_routing_by_uid_file(&output)?;
             if slot == "common" || slot == "user" {
                 let _ = crate::vpn_netd::refresh_profile_users("singbox", profile, &input, &output)?;
             }
-            Ok(())
+            Ok(routing)
         }
         other => bail!("runtime_refresh: unsupported program {other}"),
     }

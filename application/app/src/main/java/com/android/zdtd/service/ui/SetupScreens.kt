@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.SettingsRemote
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -209,7 +210,7 @@ fun WelcomeScreen(onAccept: () -> Unit) {
 }
 
 @Composable
-fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit) {
+fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit, onRemoteSetup: () -> Unit = {}) {
   val arm64Ok = remember { isArm64OnlySupported() }
   val screenPadding = rememberAdaptiveScreenPadding()
   SetupScaffold { padding ->
@@ -246,6 +247,15 @@ fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit) {
               modifier = Modifier.fillMaxWidth(),
               text = stringResource(R.string.setup_request_root),
             )
+
+            OutlinedButton(
+              onClick = onRemoteSetup,
+              modifier = Modifier.fillMaxWidth(),
+            ) {
+              Icon(Icons.Filled.SettingsRemote, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(Modifier.size(8.dp))
+              Text("Настроить устройство ZDT-D в сети")
+            }
 
             if (!arm64Ok) {
               SetupInfoCard(

@@ -22,6 +22,8 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DownloadDone
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.Send
+import androidx.compose.material.icons.outlined.CastConnected
+import androidx.compose.material.icons.outlined.SettingsRemote
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -67,6 +69,11 @@ fun OptionalToolsScreen(
       OptionalToolsHeader()
     }
     item {
+      RemoteSetupUtilityCard(
+        onOpen = actions::openRemoteSetup,
+      )
+    }
+    item {
       TgWsProxyUtilityCard(
         state = state,
         onInstall = actions::installTgWsProxy,
@@ -101,6 +108,69 @@ private fun OptionalToolsHeader() {
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
       )
+    }
+  }
+}
+
+@Composable
+private fun RemoteSetupUtilityCard(
+  onOpen: () -> Unit,
+) {
+  val accentColor = MaterialTheme.colorScheme.secondary
+  Card(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 12.dp),
+    shape = RoundedCornerShape(22.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+    border = BorderStroke(1.dp, accentColor.copy(alpha = 0.40f)),
+  ) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .background(Brush.horizontalGradient(listOf(accentColor.copy(alpha = 0.15f), MaterialTheme.colorScheme.surface.copy(alpha = 0.68f))))
+        .padding(horizontal = 14.dp, vertical = 14.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Surface(
+          modifier = Modifier.size(58.dp),
+          color = accentColor.copy(alpha = 0.14f),
+          contentColor = accentColor,
+          shape = CircleShape,
+          border = BorderStroke(1.dp, accentColor.copy(alpha = 0.36f)),
+        ) {
+          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Icon(Icons.Outlined.SettingsRemote, contentDescription = null, modifier = Modifier.size(29.dp))
+          }
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+          Text(
+            text = "Удалённая настройка",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+          Text(
+            text = "Запустить управление на root-устройстве, подключиться по QR/IP-коду или открыть историю устройств ZDT-D в сети.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+          )
+        }
+      }
+      Button(
+        onClick = onOpen,
+        modifier = Modifier.fillMaxWidth(),
+      ) {
+        Icon(Icons.Outlined.CastConnected, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.size(8.dp))
+        Text("Открыть удалённую настройку")
+      }
     }
   }
 }

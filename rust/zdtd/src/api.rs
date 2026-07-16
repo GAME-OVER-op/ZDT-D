@@ -329,11 +329,14 @@ struct ConstructionReleaseEndpointReq {
 }
 
 fn refresh_apps_after_save_if_running(services_running: bool, program: &str, profile: Option<&str>, slot: &str) -> Result<()> {
-    if !services_running {
+    if matches!(program, "proxyinfo" | "blockedquic") {
+        if services_running {
+            let _ = crate::runtime_refresh::refresh_apps(program, profile, slot)?;
+        }
         return Ok(());
     }
-    crate::runtime_refresh::refresh_apps(program, profile, slot)
-        .map_err(|e| anyhow::anyhow!("hot-refresh app UID routing for {}/{} failed: {e:#}", program, profile.unwrap_or("common")))
+    let _ = crate::runtime_apply::schedule_after_app_save(services_running, program, profile, slot);
+    Ok(())
 }
 
 #[derive(Debug, Deserialize, Serialize, Default)]
@@ -6026,6 +6029,10 @@ fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
 match (method.as_str(), path.as_str()) {
         ("GET", "/api/system/capabilities") => {
             write_json(stream, 200, crate::capabilities::collect())
+        }
+
+        ("GET", "/api/runtime-apply/status") => {
+            write_json(stream, 200, crate::runtime_apply::status_json())
         }
 
         ("GET", "/api/status") => {

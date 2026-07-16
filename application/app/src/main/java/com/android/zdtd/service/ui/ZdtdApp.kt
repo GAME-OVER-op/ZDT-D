@@ -7,6 +7,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
@@ -1742,7 +1743,7 @@ private fun RuntimeApplyStatusCard(
             val flip by transition.animateFloat(
               transitionSpec = { tween(durationMillis = 260, easing = FastOutSlowInEasing) },
               label = "runtime_apply_cube_flip",
-            ) { animatedTarget -> if (animatedTarget == target) 0f else -90f }
+            ) { animatedTarget -> if (animatedTarget == EnterExitState.Visible) 0f else -90f }
             Text(
               text = message.ifBlank { "Применяю правила" },
               modifier = Modifier.graphicsLayer {

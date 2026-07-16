@@ -2,6 +2,7 @@ package com.android.zdtd.service.ui.remote
 
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
@@ -57,6 +58,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -90,7 +92,23 @@ fun RemoteSetupScreen(
   onScanQr: () -> Unit,
   onConnectKnown: (RemoteDeviceInfo, String) -> Unit,
 ) {
-  var page by remember { mutableStateOf(RemoteSetupPage.HOME) }
+  val backStack = remember { mutableStateListOf(RemoteSetupPage.HOME) }
+  var forward by remember { mutableStateOf(true) }
+  val page = backStack.last()
+  fun navigate(to: RemoteSetupPage) {
+    if (to == page) return
+    forward = true
+    backStack.add(to)
+  }
+  fun navigateBack() {
+    if (backStack.size > 1) {
+      forward = false
+      backStack.removeAt(backStack.lastIndex)
+    } else {
+      onBack()
+    }
+  }
+  BackHandler { navigateBack() }
   Box(
     modifier = Modifier
       .fillMaxSize()
@@ -105,13 +123,13 @@ fun RemoteSetupScreen(
           RemoteSetupPage.HISTORY -> "История"
           RemoteSetupPage.SCAN -> "Сканировать QR"
         },
-        onBack = { if (page == RemoteSetupPage.HOME) onBack() else page = RemoteSetupPage.HOME },
+        onBack = { navigateBack() },
       )
       AnimatedContent(
         targetState = page,
         transitionSpec = {
-          val enter = fadeIn(tween(160)) + slideInHorizontally(tween(220)) { it / 7 }
-          val exit = fadeOut(tween(140)) + slideOutHorizontally(tween(220)) { -it / 7 }
+          val enter = fadeIn(tween(160)) + slideInHorizontally(tween(220)) { if (forward) it / 5 else -it / 5 }
+          val exit = fadeOut(tween(140)) + slideOutHorizontally(tween(220)) { if (forward) -it / 5 else it / 5 }
           (enter togetherWith exit).using(SizeTransform(clip = false))
         },
         label = "remote_setup_page",
@@ -119,14 +137,14 @@ fun RemoteSetupScreen(
         when (p) {
           RemoteSetupPage.HOME -> RemoteSetupHome(
             state = state,
-            onHost = { page = RemoteSetupPage.HOST },
-            onConnect = { page = RemoteSetupPage.CONNECT },
-            onHistory = { page = RemoteSetupPage.HISTORY },
+            onHost = { navigate(RemoteSetupPage.HOST) },
+            onConnect = { navigate(RemoteSetupPage.CONNECT) },
+            onHistory = { navigate(RemoteSetupPage.HISTORY) },
           )
           RemoteSetupPage.HOST -> RemoteHostPage(state, onStartHost, onStopHost)
           RemoteSetupPage.CONNECT -> RemoteConnectPage(
             state = state,
-            onScan = { page = RemoteSetupPage.SCAN },
+            onScan = { navigate(RemoteSetupPage.SCAN) },
             onManualConnect = onManualConnect,
             onRefresh = onRefreshDiscovery,
             onConnectKnown = onConnectKnown,
@@ -176,7 +194,7 @@ private fun RemoteSetupHome(state: RemoteSetupUiState, onHost: () -> Unit, onCon
     item {
       RemoteActionCard(
         title = "Настроить устройство",
-        subtitle = "Найти устройство в сети, сканировать QR-код или ввести IP, порт и код вручную.",
+        subtitle = "Найти устройство в сети или ввести IP, порт и код вручную.",
         icon = Icons.Outlined.SettingsRemote,
         accent = MaterialTheme.colorScheme.secondary,
         enabled = true,
@@ -297,8 +315,6 @@ private fun RemoteConnectPage(
     item {
       CardBlock {
         Text("Подключение", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        Button(onClick = onScan, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Outlined.QrCode2, null); Spacer(Modifier.size(8.dp)); Text("Сканировать QR") }
-        Divider()
         OutlinedTextField(host, { host = it }, label = { Text("IP-адрес") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) }, label = { Text("Порт") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(code, { code = it.uppercase().filter { ch -> ch.isLetterOrDigit() }.take(8) }, label = { Text("Код из 8 символов") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -438,15 +454,10 @@ private fun createQrBitmap(text: String, size: Int): Bitmap {
 @Composable
 private fun RemoteQrScannerPage(onScan: () -> Unit) {
   CardBlock {
-    Text("Сканируйте QR-код на устройстве ZDT-D", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(), fontWeight = FontWeight.SemiBold)
+    Text("Сканирование QR временно скрыто", textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(), fontWeight = FontWeight.SemiBold)
     Text(
-      "Откроется системный сканер Google. Если он недоступен, вернитесь назад и введите IP, порт и код вручную.",
+      "Код сканера оставлен в приложении, но кнопка скрыта, чтобы пользователь не запускал неготовый сценарий. Используйте IP, порт и код вручную.",
       color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
     )
-    Button(onClick = onScan, modifier = Modifier.fillMaxWidth()) {
-      Icon(Icons.Outlined.QrCode2, null)
-      Spacer(Modifier.size(8.dp))
-      Text("Открыть сканер QR")
-    }
   }
 }

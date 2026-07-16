@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NewReleases
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
@@ -821,6 +822,14 @@ private fun MainShell(
 
   val snackHost = remember { SnackbarHostState() }
   val uiState by uiStateFlow.collectAsStateWithLifecycle()
+  var lastRemoteTargetNameForSettings by remember { mutableStateOf(uiState.remoteTargetName) }
+  LaunchedEffect(uiState.remoteTargetName) {
+    if (lastRemoteTargetNameForSettings.isBlank() && uiState.remoteTargetName.isNotBlank()) {
+      settingsCloseRequested = false
+      showSettings = true
+    }
+    lastRemoteTargetNameForSettings = uiState.remoteTargetName
+  }
   val backup by backupFlow.collectAsStateWithLifecycle()
   val landscapeControl = rememberUseLandscapeControlLayout()
 
@@ -1256,7 +1265,7 @@ private fun MainShell(
     .calculateBottomPadding() + (if (compactBottomBar) 82.dp else 94.dp)
   val floatingTopBarReserve = WindowInsets.statusBars
     .asPaddingValues()
-    .calculateTopPadding() + 74.dp
+    .calculateTopPadding() + (if (uiState.remoteTargetName.isNotBlank()) 104.dp else 74.dp)
 
   LaunchedEffect(tab) {
     actions.setActiveMainTab(tab.name)
@@ -1388,6 +1397,13 @@ private fun MainShell(
             showSettings = true
           },
           onOpenRemoteSetup = actions::openRemoteSetup,
+          remoteTargetName = uiState.remoteTargetName,
+          remoteTargetAddress = uiState.remoteTargetAddress,
+          onRemoteSettings = {
+            settingsCloseRequested = false
+            showSettings = true
+          },
+          onRemoteDisconnect = actions::exitRemoteControl,
           appUpdate = appUpdate,
           uiStateFlow = uiStateFlow,
           appsRoute = appsRoute,
@@ -1473,6 +1489,13 @@ private fun MainShell(
             showSettings = true
           },
           onOpenRemoteSetup = actions::openRemoteSetup,
+          remoteTargetName = uiState.remoteTargetName,
+          remoteTargetAddress = uiState.remoteTargetAddress,
+          onRemoteSettings = {
+            settingsCloseRequested = false
+            showSettings = true
+          },
+          onRemoteDisconnect = actions::exitRemoteControl,
         )
 
         FloatingBottomNavigationCard(
@@ -1502,16 +1525,6 @@ private fun MainShell(
         bottomPadding = notificationBottomPadding + 62.dp,
       )
 
-      RemoteTargetStatusCard(
-        name = uiState.remoteTargetName,
-        address = uiState.remoteTargetAddress,
-        onOpen = actions::openRemoteSetup,
-        onDisconnect = actions::exitRemoteControl,
-        modifier = Modifier
-          .align(Alignment.BottomCenter)
-          .zIndex(4.7f),
-        bottomPadding = notificationBottomPadding + (if (appUpdate.runtimeApplyVisible) 124.dp else 62.dp),
-      )
 
       FloatingSnackbarHost(
         hostState = snackHost,
@@ -1552,6 +1565,10 @@ private fun LandscapeShellContent(
   onOpenProgramUpdates: () -> Unit,
   onOpenSettings: () -> Unit,
   onOpenRemoteSetup: () -> Unit,
+  remoteTargetName: String,
+  remoteTargetAddress: String,
+  onRemoteSettings: () -> Unit,
+  onRemoteDisconnect: () -> Unit,
   appUpdate: AppUpdateUiState,
   uiStateFlow: StateFlow<UiState>,
   appsRoute: AppsRoute,
@@ -1618,6 +1635,10 @@ private fun LandscapeShellContent(
       onOpenProgramUpdates = onOpenProgramUpdates,
       onOpenSettings = onOpenSettings,
       onOpenRemoteSetup = onOpenRemoteSetup,
+      remoteTargetName = remoteTargetName,
+      remoteTargetAddress = remoteTargetAddress,
+      onRemoteSettings = onRemoteSettings,
+      onRemoteDisconnect = onRemoteDisconnect,
     )
 
     LandscapeRightNav(
@@ -1850,45 +1871,71 @@ private fun FloatingSnackbarHost(
 }
 
 
+
 @Composable
-private fun RemoteTargetStatusCard(
+private fun RemoteTargetTopLine(
   name: String,
   address: String,
-  onOpen: () -> Unit,
+  onSettings: () -> Unit,
+  onRemoteSetup: () -> Unit,
   onDisconnect: () -> Unit,
-  modifier: Modifier = Modifier,
-  bottomPadding: Dp,
 ) {
-  AnimatedVisibility(
-    visible = name.isNotBlank(),
-    enter = fadeIn(animationSpec = tween(durationMillis = 180)) + slideInVertically(animationSpec = tween(durationMillis = 220)) { it / 2 },
-    exit = fadeOut(animationSpec = tween(durationMillis = 160)) + slideOutVertically(animationSpec = tween(durationMillis = 180)) { it / 2 },
-    modifier = modifier,
+  if (name.isBlank()) return
+  var expanded by remember { mutableStateOf(false) }
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .height(28.dp),
   ) {
-    Surface(
-      shape = RoundedCornerShape(22.dp),
-      color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.96f),
-      tonalElevation = 4.dp,
-      shadowElevation = 10.dp,
-      border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.24f)),
+    Row(
       modifier = Modifier
-        .padding(horizontal = 14.dp)
-        .padding(bottom = bottomPadding)
-        .fillMaxWidth(),
+        .fillMaxWidth()
+        .clip(RoundedCornerShape(16.dp))
+        .clickable { expanded = true }
+        .padding(horizontal = 10.dp, vertical = 3.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-      Row(
-        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-      ) {
-        Icon(Icons.Filled.Sync, contentDescription = null, tint = MaterialTheme.colorScheme.onSecondaryContainer)
-        Column(Modifier.weight(1f)) {
-          Text("Удалённо: $name", fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-          Text(address, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.74f))
-        }
-        TextButton(onClick = onOpen) { Text("Настройка") }
-        TextButton(onClick = onDisconnect) { Text("Откл.") }
-      }
+      Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(15.dp), tint = MaterialTheme.colorScheme.primary)
+      Text(
+        text = "Настройка: $name",
+        style = MaterialTheme.typography.bodySmall,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier.weight(1f),
+      )
+      Text(
+        text = address,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+      Icon(Icons.Filled.MoreVert, contentDescription = null, modifier = Modifier.size(16.dp))
+    }
+    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+      DropdownMenuItem(
+        text = { Text("Открыть настройки") },
+        onClick = {
+          expanded = false
+          onSettings()
+        },
+      )
+      DropdownMenuItem(
+        text = { Text("Удалённая настройка") },
+        onClick = {
+          expanded = false
+          onRemoteSetup()
+        },
+      )
+      DropdownMenuItem(
+        text = { Text("Отключиться") },
+        onClick = {
+          expanded = false
+          onDisconnect()
+        },
+      )
     }
   }
 }
@@ -1907,6 +1954,10 @@ private fun FloatingTopBarCard(
   onOpenProgramUpdates: () -> Unit,
   onOpenSettings: () -> Unit,
   onOpenRemoteSetup: () -> Unit,
+  remoteTargetName: String,
+  remoteTargetAddress: String,
+  onRemoteSettings: () -> Unit,
+  onRemoteDisconnect: () -> Unit,
 ) {
   val shape = RoundedCornerShape(24.dp)
   Box(
@@ -1919,7 +1970,7 @@ private fun FloatingTopBarCard(
     Surface(
       modifier = Modifier
         .fillMaxWidth()
-        .height(58.dp)
+        .height(if (remoteTargetName.isNotBlank()) 88.dp else 58.dp)
         .clip(shape),
       shape = shape,
       color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
@@ -1927,45 +1978,58 @@ private fun FloatingTopBarCard(
       shadowElevation = 0.dp,
       border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
     ) {
-      Row(
+      Column(
         modifier = Modifier
           .fillMaxSize()
           .padding(start = if (canGoBack) 2.dp else 16.dp, end = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
       ) {
-        if (canGoBack) {
-          IconButton(
-            onClick = onBack,
-            modifier = Modifier.size(46.dp),
-          ) {
-            Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .height(58.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          if (canGoBack) {
+            IconButton(
+              onClick = onBack,
+              modifier = Modifier.size(46.dp),
+            ) {
+              Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
+            }
           }
+          Text(
+            text = title,
+            letterSpacing = 1.5.sp,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = if (isHome) {
+              Modifier
+                .weight(1f)
+                .clickable(
+                  interactionSource = remember { MutableInteractionSource() },
+                  indication = null,
+                ) { onTitleClick() }
+            } else {
+              Modifier.weight(1f)
+            },
+          )
+          TopBarActionCluster(
+            programLogTarget = programLogTarget,
+            onOpenLogs = onOpenLogs,
+            onOpenBackup = onOpenBackup,
+            onOpenProgramUpdates = onOpenProgramUpdates,
+            onOpenSettings = onOpenSettings,
+            onOpenRemoteSetup = onOpenRemoteSetup,
+          )
         }
-        Text(
-          text = title,
-          letterSpacing = 1.5.sp,
-          style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.SemiBold,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-          modifier = if (isHome) {
-            Modifier
-              .weight(1f)
-              .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-              ) { onTitleClick() }
-          } else {
-            Modifier.weight(1f)
-          },
-        )
-        TopBarActionCluster(
-          programLogTarget = programLogTarget,
-          onOpenLogs = onOpenLogs,
-          onOpenBackup = onOpenBackup,
-          onOpenProgramUpdates = onOpenProgramUpdates,
-          onOpenSettings = onOpenSettings,
-          onOpenRemoteSetup = onOpenRemoteSetup,
+        RemoteTargetTopLine(
+          name = remoteTargetName,
+          address = remoteTargetAddress,
+          onSettings = onRemoteSettings,
+          onRemoteSetup = onOpenRemoteSetup,
+          onDisconnect = onRemoteDisconnect,
         )
       }
     }
@@ -2115,6 +2179,10 @@ private fun LandscapeQuickActions(
   onOpenProgramUpdates: () -> Unit,
   onOpenSettings: () -> Unit,
   onOpenRemoteSetup: () -> Unit,
+  remoteTargetName: String,
+  remoteTargetAddress: String,
+  onRemoteSettings: () -> Unit,
+  onRemoteDisconnect: () -> Unit,
 ) {
   Surface(
     modifier = modifier,
@@ -2123,32 +2191,40 @@ private fun LandscapeQuickActions(
     tonalElevation = 3.dp,
     shadowElevation = 8.dp,
   ) {
-    Row(
-      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-      IconButton(onClick = { onOpenRemoteSetup() }, modifier = Modifier.size(44.dp)) {
-        Icon(Icons.Filled.Sync, contentDescription = "Remote", modifier = Modifier.size(26.dp))
-      }
-      IconButton(onClick = { onOpenSettings() }, modifier = Modifier.size(44.dp)) {
-        Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings), modifier = Modifier.size(26.dp))
-      }
-      if (supportsArm64ToolUpdates()) {
-        IconButton(onClick = { onOpenProgramUpdates() }, modifier = Modifier.size(44.dp)) {
-          Icon(
-            painter = painterResource(R.drawable.ic_program_updates_custom),
-            contentDescription = stringResource(R.string.cd_program_updates),
-            modifier = Modifier.size(26.dp),
-          )
+    Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+      ) {
+        IconButton(onClick = { onOpenRemoteSetup() }, modifier = Modifier.size(44.dp)) {
+          Icon(Icons.Filled.Sync, contentDescription = "Remote", modifier = Modifier.size(26.dp))
+        }
+        IconButton(onClick = { onOpenSettings() }, modifier = Modifier.size(44.dp)) {
+          Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.cd_settings), modifier = Modifier.size(26.dp))
+        }
+        if (supportsArm64ToolUpdates()) {
+          IconButton(onClick = { onOpenProgramUpdates() }, modifier = Modifier.size(44.dp)) {
+            Icon(
+              painter = painterResource(R.drawable.ic_program_updates_custom),
+              contentDescription = stringResource(R.string.cd_program_updates),
+              modifier = Modifier.size(26.dp),
+            )
+          }
+        }
+        IconButton(onClick = { onOpenBackup() }, modifier = Modifier.size(44.dp)) {
+          Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup), modifier = Modifier.size(26.dp))
+        }
+        IconButton(onClick = { onOpenLogs(programLogTarget) }, modifier = Modifier.size(44.dp)) {
+          Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs), modifier = Modifier.size(26.dp))
         }
       }
-      IconButton(onClick = { onOpenBackup() }, modifier = Modifier.size(44.dp)) {
-        Icon(Icons.Filled.CloudDownload, contentDescription = stringResource(R.string.cd_backup), modifier = Modifier.size(26.dp))
-      }
-      IconButton(onClick = { onOpenLogs(programLogTarget) }, modifier = Modifier.size(44.dp)) {
-        Icon(Icons.Filled.BugReport, contentDescription = stringResource(R.string.cd_logs), modifier = Modifier.size(26.dp))
-      }
+      RemoteTargetTopLine(
+        name = remoteTargetName,
+        address = remoteTargetAddress,
+        onSettings = onRemoteSettings,
+        onRemoteSetup = onOpenRemoteSetup,
+        onDisconnect = onRemoteDisconnect,
+      )
     }
   }
 }

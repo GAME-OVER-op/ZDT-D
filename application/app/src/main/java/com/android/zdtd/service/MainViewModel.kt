@@ -488,15 +488,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
             )
           }
         } else {
+          startupJob?.cancel()
+          startupCompleted = true
+          statusPollFailureCount = 0
+          lastStatusOkAtMs = System.currentTimeMillis()
+          lastStatusFetchAtMs = 0L
+          lastProgramsFetchAtMs = 0L
           _uiState.update {
             it.copy(
               baseUrl = target.baseUrl,
               token = target.sessionToken,
               remoteTargetName = target.device.displayTitle(),
               remoteTargetAddress = "${target.device.host}:${target.device.port}",
+              status = null,
+              programs = emptyList(),
+              daemonOnline = true,
+              daemonUnavailableVisible = false,
+              startup = StartupUiState.hidden(),
             )
           }
           log("OK", "remote connected: ${target.device.displayTitle()} (${target.device.host}:${target.device.port})")
+          refreshStatus()
+          refreshPrograms()
+          refreshDaemonSettings()
+          refreshEnergySaver()
+          refreshProxyInfo()
+          refreshBlockedQuic()
         }
       }
     }
@@ -1618,10 +1635,14 @@ private fun clearDownloadedUpdateApk() {
 
   private fun handleDaemonUnreachable() {
     _uiState.update { st ->
-      val showOverlay = startupCompleted && appVisible
-      val nextVisible = if (showOverlay) true else st.daemonUnavailableVisible
-      if (!st.daemonOnline && st.daemonUnavailableVisible == nextVisible) st
-      else st.copy(daemonOnline = false, daemonUnavailableVisible = nextVisible)
+      if (st.remoteTargetName.isNotBlank()) {
+        st.copy(daemonOnline = false, daemonUnavailableVisible = false)
+      } else {
+        val showOverlay = startupCompleted && appVisible
+        val nextVisible = if (showOverlay) true else st.daemonUnavailableVisible
+        if (!st.daemonOnline && st.daemonUnavailableVisible == nextVisible) st
+        else st.copy(daemonOnline = false, daemonUnavailableVisible = nextVisible)
+      }
     }
   }
 
@@ -6189,6 +6210,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
 
   @Suppress("DEPRECATION")
   private fun syncLsposedHidePreferences(enabled: Boolean, content: String) {
+    if (RemoteControlCenter.target.value != null) return
     val packages = content
       .lineSequence()
       .map { it.substringBefore('#').trim() }

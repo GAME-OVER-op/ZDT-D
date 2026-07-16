@@ -5,13 +5,16 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.LaunchedEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.android.zdtd.service.remote.RemoteControlCenter
 import com.android.zdtd.service.remote.RemoteSetupViewModel
 import com.android.zdtd.service.ui.remote.RemoteSetupScreen
 import com.android.zdtd.service.ui.theme.ZdtdTheme
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
+import kotlinx.coroutines.flow.collect
 
 class RemoteSetupActivity : AppCompatActivity() {
   private val vm: RemoteSetupViewModel by viewModels()
@@ -25,6 +28,14 @@ class RemoteSetupActivity : AppCompatActivity() {
       ZdtdTheme(themeMode = themeMode) {
         Surface {
           val state = vm.state.collectAsStateWithLifecycle().value
+          LaunchedEffect(Unit) {
+            var wasConnected = RemoteControlCenter.target.value != null
+            RemoteControlCenter.target.collect { target ->
+              val connected = target != null
+              if (!wasConnected && connected) finish()
+              wasConnected = connected
+            }
+          }
           RemoteSetupScreen(
             state = state,
             onBack = { finish() },

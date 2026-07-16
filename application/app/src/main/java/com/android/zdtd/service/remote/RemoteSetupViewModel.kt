@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 
 data class RemoteSetupUiState(
   val canHost: Boolean = false,
@@ -25,7 +26,7 @@ data class RemoteSetupUiState(
 class RemoteSetupViewModel(app: Application) : AndroidViewModel(app) {
   private val ctx = app.applicationContext
   private val root = RootConfigManager(ctx)
-  private val hostServer = RemoteHostServer(ctx, root)
+  private val hostServer = RemoteHostManager.get(ctx)
   private val store = RemoteDeviceStore(ctx)
   private val discovery = RemoteDiscovery(ctx)
   private val client = RemoteClient()
@@ -150,7 +151,6 @@ class RemoteSetupViewModel(app: Application) : AndroidViewModel(app) {
   }
 
   override fun onCleared() {
-    hostServer.stop()
     discoveryJob?.cancel()
     super.onCleared()
   }

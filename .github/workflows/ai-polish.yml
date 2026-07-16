@@ -1,9 +1,6 @@
 name: Copilot Polish
 
 on:
-  schedule:
-    # GitHub Actions cron uses UTC. 07:00 UTC = 10:00 MSK.
-    - cron: "0 7 * * *"
   workflow_dispatch:
     inputs:
       base_branch:

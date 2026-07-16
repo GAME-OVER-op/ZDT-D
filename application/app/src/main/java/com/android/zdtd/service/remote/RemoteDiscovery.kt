@@ -5,7 +5,6 @@ import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
 import android.net.wifi.WifiManager
 import kotlinx.coroutines.channels.awaitClose
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.flow
@@ -74,38 +73,90 @@ class RemoteDiscovery(private val context: Context) {
       close()
       return@callbackFlow
     }
+
+    // Resolve every discovered service, not just the first one. NsdManager only
+    // allows a single active resolveService() call at a time on most Android
+    // versions, so we serialize resolves through a queue and retry when the
+    // platform reports FAILURE_ALREADY_ACTIVE.
+    val lock = Any()
+    val pending = ArrayDeque<NsdServiceInfo>()
+    val queued = HashSet<String>()
+    val attempts = HashMap<String, Int>()
     var resolving = false
+
+    fun keyOf(si: NsdServiceInfo): String = si.serviceName ?: "anon-${System.identityHashCode(si)}"
+
+    fun resolveNext() {
+      val next: NsdServiceInfo
+      synchronized(lock) {
+        if (resolving) return
+        next = pending.removeFirstOrNull() ?: return
+        resolving = true
+      }
+      val advance: () -> Unit = {
+        synchronized(lock) { resolving = false }
+        resolveNext()
+      }
+      val started = runCatching {
+        nsd.resolveService(next, object : NsdManager.ResolveListener {
+          override fun onResolveFailed(serviceInfo: NsdServiceInfo?, errorCode: Int) {
+            val k = keyOf(next)
+            if (errorCode == NsdManager.FAILURE_ALREADY_ACTIVE) {
+              val n = synchronized(lock) {
+                val v = (attempts[k] ?: 0) + 1
+                attempts[k] = v
+                if (v <= 5) pending.addLast(next) else queued.remove(k)
+                v
+              }
+              if (n > 5) { /* give up on this one */ }
+            } else {
+              synchronized(lock) { queued.remove(k); attempts.remove(k) }
+            }
+            advance()
+          }
+
+          override fun onServiceResolved(resolved: NsdServiceInfo?) {
+            val info = resolved
+            val host = info?.host?.hostAddress
+            if (info != null && host != null) {
+              val attrs = info.attributes.orEmpty().mapValues { (_, v) -> if (v != null) String(v, Charsets.UTF_8) else "" }
+              trySend(RemoteDeviceInfo(
+                deviceId = attrs["deviceId"].orEmpty().ifBlank { info.serviceName ?: "$host:${info.port}" },
+                deviceName = attrs["deviceName"].orEmpty().ifBlank { info.serviceName ?: "ZDT-D" },
+                manufacturer = attrs["manufacturer"].orEmpty(),
+                model = attrs["model"].orEmpty(),
+                host = host,
+                port = info.port,
+                appVersionCode = attrs["appVersionCode"]?.toIntOrNull() ?: 0,
+                protocolVersion = attrs["protocolVersion"]?.toIntOrNull() ?: RemoteProtocol.PROTOCOL_VERSION,
+                online = true,
+                lastSeenMs = System.currentTimeMillis(),
+              ))
+            }
+            advance()
+          }
+        })
+      }.isSuccess
+      if (!started) advance()
+    }
+
     val listener = object : NsdManager.DiscoveryListener {
       override fun onStartDiscoveryFailed(serviceType: String?, errorCode: Int) { close() }
       override fun onStopDiscoveryFailed(serviceType: String?, errorCode: Int) = Unit
       override fun onDiscoveryStarted(serviceType: String?) = Unit
       override fun onDiscoveryStopped(serviceType: String?) = Unit
-      override fun onServiceLost(serviceInfo: NsdServiceInfo?) = Unit
+      override fun onServiceLost(serviceInfo: NsdServiceInfo?) {
+        if (serviceInfo == null) return
+        val k = keyOf(serviceInfo)
+        synchronized(lock) { queued.remove(k); attempts.remove(k) }
+      }
       override fun onServiceFound(serviceInfo: NsdServiceInfo?) {
-        if (serviceInfo == null || resolving) return
-        resolving = true
-        runCatching {
-          nsd.resolveService(serviceInfo, object : NsdManager.ResolveListener {
-            override fun onResolveFailed(serviceInfo: NsdServiceInfo?, errorCode: Int) { resolving = false }
-            override fun onServiceResolved(resolved: NsdServiceInfo?) {
-              resolving = false
-              val info = resolved ?: return
-              val host = info.host?.hostAddress ?: return
-              val port = info.port
-              trySend(RemoteDeviceInfo(
-                deviceId = info.serviceName ?: "$host:$port",
-                deviceName = info.serviceName ?: "ZDT-D",
-                manufacturer = "",
-                model = "",
-                host = host,
-                port = port,
-                appVersionCode = 0,
-                online = true,
-                lastSeenMs = System.currentTimeMillis(),
-              ))
-            }
-          })
-        }.onFailure { resolving = false }
+        if (serviceInfo == null) return
+        val k = keyOf(serviceInfo)
+        val enqueue = synchronized(lock) {
+          if (!queued.add(k)) false else { pending.addLast(serviceInfo); true }
+        }
+        if (enqueue) resolveNext()
       }
     }
     runCatching { nsd.discoverServices("_zdtd-remote._tcp.", NsdManager.PROTOCOL_DNS_SD, listener) }

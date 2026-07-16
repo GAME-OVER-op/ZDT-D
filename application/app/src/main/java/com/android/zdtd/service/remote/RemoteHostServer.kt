@@ -19,8 +19,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.io.OutputStream
 import java.io.File
 import java.net.DatagramPacket
@@ -47,6 +45,7 @@ class RemoteHostServer(
   private var nsdManager: NsdManager? = null
   private var nsdRegistration: NsdManager.RegistrationListener? = null
   private var acceptThread: Thread? = null
+  private var openedFirewallPort: Int = 0
   private var sessionToken: String = ""
 
   private val _state = MutableStateFlow(RemoteHostState())
@@ -59,7 +58,7 @@ class RemoteHostServer(
       runCatching {
         ServerSocket().apply {
           reuseAddress = true
-          bind(InetSocketAddress("0.0.0.0", port))
+          bind(InetSocketAddress("0.0.0.0", port), 50)
         }
       }.getOrNull()
     } ?: run {
@@ -70,6 +69,7 @@ class RemoteHostServer(
     val code = generateCode()
     sessionToken = UUID.randomUUID().toString().replace("-", "")
     serverSocket = socket
+    allowRemotePort(socket.localPort)
     val running = RemoteHostState(
       running = true,
       host = host,
@@ -86,6 +86,8 @@ class RemoteHostServer(
 
   fun stop() {
     unregisterNsd()
+    cleanupRemotePort(openedFirewallPort)
+    openedFirewallPort = 0
     runCatching { serverSocket?.close() }
     serverSocket = null
     udpJob?.cancel()
@@ -102,6 +104,14 @@ class RemoteHostServer(
       serviceName = "ZDT-D ${RemoteProtocol.localDeviceName()}"
       serviceType = "_zdtd-remote._tcp."
       setPort(port)
+      setAttribute("type", RemoteProtocol.SERVICE)
+      setAttribute("deviceId", RemoteProtocol.localDeviceId())
+      setAttribute("deviceName", RemoteProtocol.localDeviceName())
+      setAttribute("manufacturer", android.os.Build.MANUFACTURER ?: "")
+      setAttribute("model", android.os.Build.MODEL ?: "")
+      setAttribute("appVersionCode", BuildConfig.VERSION_CODE.toString())
+      setAttribute("appVersionName", BuildConfig.VERSION_NAME)
+      setAttribute("protocolVersion", RemoteProtocol.PROTOCOL_VERSION.toString())
     }
     val listener = object : NsdManager.RegistrationListener {
       override fun onServiceRegistered(serviceInfo: NsdServiceInfo?) = Unit
@@ -130,6 +140,39 @@ class RemoteHostServer(
     android.util.Log.w("ZDTD-RemoteHost", message)
   }
 
+  private fun allowRemotePort(port: Int) {
+    if (port !in 1..65535) return
+    openedFirewallPort = port
+    runCatching {
+      root.execRootSh("""
+        iptables -w -t mangle -I PREROUTING -p tcp --dport $port -j RETURN 2>/dev/null || true
+        iptables -w -t mangle -I OUTPUT -p tcp --sport $port -j RETURN 2>/dev/null || true
+        iptables -w -I INPUT -p tcp --dport $port -j ACCEPT 2>/dev/null || true
+        iptables -w -I OUTPUT -p tcp --sport $port -j ACCEPT 2>/dev/null || true
+        ip6tables -w -t mangle -I PREROUTING -p tcp --dport $port -j RETURN 2>/dev/null || true
+        ip6tables -w -t mangle -I OUTPUT -p tcp --sport $port -j RETURN 2>/dev/null || true
+        ip6tables -w -I INPUT -p tcp --dport $port -j ACCEPT 2>/dev/null || true
+        ip6tables -w -I OUTPUT -p tcp --sport $port -j ACCEPT 2>/dev/null || true
+      """.trimIndent())
+    }
+  }
+
+  private fun cleanupRemotePort(port: Int) {
+    if (port !in 1..65535) return
+    runCatching {
+      root.execRootSh("""
+        while iptables -w -t mangle -C PREROUTING -p tcp --dport $port -j RETURN 2>/dev/null; do iptables -w -t mangle -D PREROUTING -p tcp --dport $port -j RETURN 2>/dev/null || break; done
+        while iptables -w -t mangle -C OUTPUT -p tcp --sport $port -j RETURN 2>/dev/null; do iptables -w -t mangle -D OUTPUT -p tcp --sport $port -j RETURN 2>/dev/null || break; done
+        while iptables -w -C INPUT -p tcp --dport $port -j ACCEPT 2>/dev/null; do iptables -w -D INPUT -p tcp --dport $port -j ACCEPT 2>/dev/null || break; done
+        while iptables -w -C OUTPUT -p tcp --sport $port -j ACCEPT 2>/dev/null; do iptables -w -D OUTPUT -p tcp --sport $port -j ACCEPT 2>/dev/null || break; done
+        while ip6tables -w -t mangle -C PREROUTING -p tcp --dport $port -j RETURN 2>/dev/null; do ip6tables -w -t mangle -D PREROUTING -p tcp --dport $port -j RETURN 2>/dev/null || break; done
+        while ip6tables -w -t mangle -C OUTPUT -p tcp --sport $port -j RETURN 2>/dev/null; do ip6tables -w -t mangle -D OUTPUT -p tcp --sport $port -j RETURN 2>/dev/null || break; done
+        while ip6tables -w -C INPUT -p tcp --dport $port -j ACCEPT 2>/dev/null; do ip6tables -w -D INPUT -p tcp --dport $port -j ACCEPT 2>/dev/null || break; done
+        while ip6tables -w -C OUTPUT -p tcp --sport $port -j ACCEPT 2>/dev/null; do ip6tables -w -D OUTPUT -p tcp --sport $port -j ACCEPT 2>/dev/null || break; done
+      """.trimIndent())
+    }
+  }
+
   private fun acceptLoop(socket: ServerSocket, code: String) {
     while (!socket.isClosed) {
       val client = runCatching { socket.accept() }.getOrNull() ?: break
@@ -138,9 +181,10 @@ class RemoteHostServer(
   }
 
   private fun handleClient(socket: Socket, code: String) {
+    runCatching { socket.soTimeout = 8000 }
     socket.use { s ->
-      val reader = BufferedReader(InputStreamReader(s.getInputStream()))
-      val requestLine = reader.readLine() ?: return
+      val input = java.io.BufferedInputStream(s.getInputStream())
+      val requestLine = readHeaderLine(input) ?: return
       val parts = requestLine.split(" ")
       if (parts.size < 2) return
       val method = parts[0].uppercase()
@@ -148,7 +192,7 @@ class RemoteHostServer(
       var contentLength = 0
       var auth = ""
       while (true) {
-        val line = reader.readLine() ?: return
+        val line = readHeaderLine(input) ?: return
         if (line.isEmpty()) break
         val idx = line.indexOf(':')
         if (idx > 0) {
@@ -158,9 +202,15 @@ class RemoteHostServer(
           if (name == "authorization" || name == "x-api-key") auth = value.removePrefix("Bearer ").trim()
         }
       }
-      val body = if (contentLength > 0) CharArray(contentLength).let { buf ->
-        reader.read(buf, 0, contentLength)
-        String(buf)
+      val body = if (contentLength > 0) {
+        val bytes = ByteArray(contentLength)
+        var read = 0
+        while (read < contentLength) {
+          val r = runCatching { input.read(bytes, read, contentLength - read) }.getOrDefault(-1)
+          if (r < 0) break
+          read += r
+        }
+        String(bytes, 0, read, Charsets.UTF_8)
       } else ""
       val path = rawPath.substringBefore('?')
       val query = rawPath.substringAfter('?', "")
@@ -337,6 +387,19 @@ class RemoteHostServer(
   }
 
   private fun shellQuote(value: String): String = "'" + value.replace("'", "'\''") + "'"
+
+  private fun readHeaderLine(input: java.io.InputStream): String? {
+    val sb = StringBuilder()
+    var sawAny = false
+    while (true) {
+      val b = runCatching { input.read() }.getOrDefault(-1)
+      if (b < 0) return if (sawAny) sb.toString() else null
+      sawAny = true
+      if (b == '\n'.code) break
+      if (b != '\r'.code) sb.append(b.toChar())
+    }
+    return sb.toString()
+  }
 
   private fun localIpAddress(): String {
     val fromIfaces = runCatching {

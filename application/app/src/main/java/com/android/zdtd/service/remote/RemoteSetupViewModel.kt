@@ -12,7 +12,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 data class RemoteSetupUiState(
@@ -83,35 +85,41 @@ class RemoteSetupViewModel(app: Application) : AndroidViewModel(app) {
     discoveryJob = viewModelScope.launch(Dispatchers.IO) {
       _state.update { it.copy(message = "Поиск устройств ZDT-D в сети…", error = "") }
       val found = linkedMapOf<String, RemoteDeviceInfo>()
+      fun publish() {
+        val list = found.values.sortedBy { dev -> dev.displayTitle().lowercase() }
+        _state.update { it.copy(discovered = list, message = "") }
+      }
       fun putFound(d: RemoteDeviceInfo) {
         val key = d.deviceId.ifBlank { "${d.host}:${d.port}" }
+        if (d.appVersionCode == 0) {
+          launch { client.ping(d)?.let { fresh -> putFound(fresh) } }
+          return
+        }
         val current = found[key]
         val merged = when {
           current == null -> d
           current.appVersionCode == 0 && d.appVersionCode != 0 -> d.copy(sessionToken = current.sessionToken.ifBlank { d.sessionToken })
           current.appVersionCode != 0 && d.appVersionCode == 0 -> current.copy(online = true, lastSeenMs = maxOf(current.lastSeenMs, d.lastSeenMs))
-          else -> d
+          else -> d.copy(sessionToken = d.sessionToken.ifBlank { current.sessionToken })
         }
         found[key] = merged
-        _state.update { it.copy(discovered = found.values.toList(), message = "") }
-        if (merged.appVersionCode == 0) {
-          launch {
-            client.ping(merged)?.let { fresh ->
-              found[key] = fresh
-              _state.update { it.copy(discovered = found.values.toList(), message = "") }
-            }
-          }
-        }
+        publish()
       }
+      // mDNS/NSD runs continuously for the whole session and resolves every host in the queue.
       val nsdJob = launch {
         runCatching { discovery.discoverNsd().collect { d -> putFound(d) } }
       }
-      runCatching { discovery.discoverUdp().collect { d -> putFound(d) } }
+      // Repeated UDP broadcast rounds keep catching devices that join later, so
+      // discovery keeps working when there are many devices on the network.
+      while (isActive) {
+        runCatching { discovery.discoverUdp().collect { d -> putFound(d) } }
+        val history = store.load()
+        val pinged = history.map { d -> client.ping(d) ?: d.copy(online = false) }
+        val message = if (found.isEmpty()) "Устройства не найдены. Проверьте одну Wi‑Fi/локальную сеть или используйте QR/IP-код." else ""
+        _state.update { it.copy(history = pinged, message = message) }
+        if (isActive) delay(1_500)
+      }
       nsdJob.cancel()
-      val history = store.load()
-      val pinged = history.map { d -> client.ping(d) ?: d.copy(online = false) }
-      val message = if (found.isEmpty()) "Устройства не найдены. Проверьте одну Wi‑Fi/локальную сеть или используйте QR/IP-код." else ""
-      _state.update { it.copy(history = pinged, message = message) }
     }
   }
 

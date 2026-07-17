@@ -44,6 +44,7 @@ fun AppsHost(
   onOpenNfqwsTester: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  tproxyEnabled: Boolean = false,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
 ) {
@@ -58,10 +59,6 @@ fun AppsHost(
   val tgWsProxy by remember(uiStateFlow) {
     uiStateFlow.map { it.tgWsProxy }.distinctUntilChanged()
   }.collectAsStateWithLifecycle(initialValue = com.android.zdtd.service.tgwsproxy.TgWsProxyComponentState())
-
-  val tproxyEnabled by remember(uiStateFlow) {
-    uiStateFlow.map { it.tproxyEnabled }.distinctUntilChanged()
-  }.collectAsStateWithLifecycle(initialValue = false)
 
   val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
 

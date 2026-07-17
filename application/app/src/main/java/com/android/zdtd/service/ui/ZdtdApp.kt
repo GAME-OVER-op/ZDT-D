@@ -1445,6 +1445,7 @@ private fun MainShell(
               onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
               actions = actions,
               snackHost = snackHost,
+              tproxyEnabled = appUpdate.tproxyEnabled,
               landscapeControl = false,
               topContentPadding = floatingTopBarReserve,
               bottomContentPadding = floatingBottomBarReserve + 18.dp,
@@ -1618,6 +1619,7 @@ private fun LandscapeShellContent(
           onOpenNfqwsTester = onOpenNfqwsTester,
           actions = actions,
           snackHost = snackHost,
+          tproxyEnabled = appUpdate.tproxyEnabled,
           landscapeControl = true,
         )
       }
@@ -2583,6 +2585,7 @@ private fun TabBody(
   onOpenNfqwsTester: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  tproxyEnabled: Boolean = false,
   landscapeControl: Boolean = false,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
@@ -2624,6 +2627,7 @@ private fun TabBody(
             onOpenNfqwsTester = onOpenNfqwsTester,
             actions = actions,
             snackHost = snackHost,
+            tproxyEnabled = tproxyEnabled,
             topContentPadding = topContentPadding,
             bottomContentPadding = bottomContentPadding,
           )

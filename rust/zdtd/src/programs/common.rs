@@ -404,7 +404,32 @@ pub fn apply_t2s_routing(
     ifaces_raw: Option<&str>,
     opt: DpiTunnelOptions,
 ) -> Result<()> {
-    let tproxy_proto_choice = ProtoChoice::TcpUdp;
+    // Legacy entrypoint: the TPROXY path always covers TCP+UDP regardless of the
+    // requested `proto_choice` (kept for back-compat and logging). All existing
+    // callers rely on this behaviour. myproxy uses `apply_t2s_routing_ext` to
+    // honor its per-profile TCP / TCP+UDP selection.
+    apply_t2s_routing_ext(
+        uid_file,
+        dest_port,
+        ProtoChoice::TcpUdp,
+        proto_choice,
+        ifaces_raw,
+        opt,
+    )
+}
+
+/// Like `apply_t2s_routing`, but the caller chooses which protocols the TPROXY
+/// path covers via `tproxy_proto_choice`. The DNAT fallback stays TCP-only, so
+/// when TPROXY is unavailable the selection is ignored and TCP DNAT is used.
+/// `requested_proto` is used for logging only.
+pub fn apply_t2s_routing_ext(
+    uid_file: &Path,
+    dest_port: u16,
+    tproxy_proto_choice: ProtoChoice,
+    requested_proto: ProtoChoice,
+    ifaces_raw: Option<&str>,
+    opt: DpiTunnelOptions,
+) -> Result<()> {
     let dnat_fallback_proto_choice = ProtoChoice::Tcp;
 
     if t2s_tproxy_enabled() {
@@ -415,18 +440,18 @@ pub fn apply_t2s_routing(
                     uid_file.display(),
                     dest_port,
                     tproxy_proto_choice,
-                    proto_choice,
+                    requested_proto,
                 );
                 return Ok(());
             }
             Err(iptables_tproxy::TproxyApplyError::Unsupported(reason)) => {
                 warn!(
-                    "t2s routing: TPROXY tcp+udp unsupported, falling back to TCP DNAT: {reason}"
+                    "t2s routing: TPROXY unsupported, falling back to TCP DNAT: {reason}"
                 );
             }
             Err(iptables_tproxy::TproxyApplyError::Failed(err)) => {
                 warn!(
-                    "t2s routing: TPROXY tcp+udp failed, falling back to TCP DNAT: {err:#}"
+                    "t2s routing: TPROXY failed, falling back to TCP DNAT: {err:#}"
                 );
             }
         }

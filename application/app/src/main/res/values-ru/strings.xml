@@ -1088,6 +1088,10 @@ APatch: 10700+</string>
     <string name="myproxy_wrapped_pass_label">Пароль обёртки</string>
     <string name="myproxy_wrapped_hint">Оставьте хост и порт пустыми, чтобы сохранить обычный прямой режим SOCKS5 backend.</string>
     <string name="myproxy_auto_save_failed">Не удалось выполнить автосохранение</string>
+    <string name="myproxy_proto_mode_title">Протокол transparent (TPROXY)</string>
+    <string name="myproxy_proto_mode_desc">Выберите, какие протоколы TPROXY редиректит для этого профиля. Применяется после перезапуска службы.</string>
+    <string name="myproxy_proto_mode_tcp">TCP</string>
+    <string name="myproxy_proto_mode_tcp_udp">TCP + UDP</string>
 
     <string name="tab_opera_args">Аргументы</string>
     <string name="opera_args_api_proxy_title">API Прокси (-api-proxy)</string>

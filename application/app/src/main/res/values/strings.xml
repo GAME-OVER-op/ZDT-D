@@ -1090,6 +1090,10 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="myproxy_wrapped_pass_label">Wrapper password</string>
     <string name="myproxy_wrapped_hint">Leave host and port empty to keep the normal direct SOCKS5 backend mode.</string>
     <string name="myproxy_auto_save_failed">Failed to auto-save changes</string>
+    <string name="myproxy_proto_mode_title">Transparent protocol (TPROXY)</string>
+    <string name="myproxy_proto_mode_desc">Choose which protocols TPROXY redirects for this profile. Applied after restarting the service.</string>
+    <string name="myproxy_proto_mode_tcp">TCP</string>
+    <string name="myproxy_proto_mode_tcp_udp">TCP + UDP</string>
 
     <string name="tab_opera_args">Args</string>
     <string name="opera_args_api_proxy_title">API Proxy (-api-proxy)</string>

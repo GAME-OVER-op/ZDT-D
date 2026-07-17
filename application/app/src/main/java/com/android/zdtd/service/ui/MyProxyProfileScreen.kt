@@ -1,6 +1,7 @@
 package com.android.zdtd.service.ui
 
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.Switch
@@ -15,6 +16,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -93,6 +95,7 @@ private data class MyProxyUpstreamUi(
   val wrappedPort: Int?,
   val wrappedUser: String,
   val wrappedPass: String,
+  val protoMode: String = "tcp_udp",
 )
 
 private suspend fun awaitLoadJsonMyProxy(actions: ZdtdActions, path: String): JSONObject? =
@@ -162,6 +165,9 @@ private fun parseMyProxyPortValue(value: Any?): List<Int> = when (value) {
 private fun normalizeMyProxyBackendMode(raw: String?): String =
   if (raw?.trim()?.lowercase() == "priority") "priority" else "balance"
 
+private fun normalizeMyProxyProtoMode(raw: String?): String =
+  if (raw?.trim()?.lowercase() == "tcp") "tcp" else "tcp_udp"
+
 private fun sanitizeMyProxyBackendPriorityInput(raw: String): String = buildString {
   raw.forEach { ch ->
     when {
@@ -208,9 +214,11 @@ private fun buildMyProxyUpstreamJson(
   wrappedPort: Int?,
   wrappedUser: String,
   wrappedPass: String,
+  protoMode: String,
 ): JSONObject =
   JSONObject()
     .put("host", host)
+    .put("proto_mode", normalizeMyProxyProtoMode(protoMode))
     .put("backend_mode", normalizeMyProxyBackendMode(backendMode))
     .put("backend_priority", if (normalizeMyProxyBackendMode(backendMode) == "priority") backendPriority else "")
     .put("priority_speed_aware", normalizeMyProxyBackendMode(backendMode) == "priority" && prioritySpeedAware)
@@ -248,6 +256,7 @@ private fun parseMyProxyUpstreamUi(obj: JSONObject?): MyProxyUpstreamUi {
     wrappedPort = wrapped?.optInt("port", 0)?.takeIf { it in 1..65535 },
     wrappedUser = wrapped?.optString("user", "")?.trim().orEmpty(),
     wrappedPass = wrapped?.optString("pass", "") ?: "",
+    protoMode = normalizeMyProxyProtoMode(data?.optString("proto_mode", "tcp_udp")),
   )
 }
 
@@ -427,11 +436,78 @@ private fun FieldHint(text: String) {
 }
 
 @Composable
+private fun MyProxyProtoModeCard(
+  protoMode: String,
+  onSelect: (String) -> Unit,
+) {
+  val accent = Color(0xFFA855F7)
+  MyProxySectionCard(
+    title = stringResource(R.string.myproxy_proto_mode_title),
+    desc = stringResource(R.string.myproxy_proto_mode_desc),
+    accent = accent,
+    icon = { Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp)) },
+  ) {
+    val options = listOf(
+      "tcp" to stringResource(R.string.myproxy_proto_mode_tcp),
+      "tcp_udp" to stringResource(R.string.myproxy_proto_mode_tcp_udp),
+    )
+    Surface(
+      shape = RoundedCornerShape(14.dp),
+      color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f),
+      border = BorderStroke(1.dp, accent.copy(alpha = 0.18f)),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        options.forEach { (value, label) ->
+          val selected = protoMode == value
+          val bg by animateColorAsState(
+            targetValue = if (selected) accent.copy(alpha = 0.22f) else Color.Transparent,
+            animationSpec = tween(220),
+            label = "myProxyProtoBg",
+          )
+          val borderColor by animateColorAsState(
+            targetValue = if (selected) accent.copy(alpha = 0.55f) else Color.Transparent,
+            animationSpec = tween(220),
+            label = "myProxyProtoBorder",
+          )
+          val textColor by animateColorAsState(
+            targetValue = if (selected) Color(0xFFC084FC) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+            animationSpec = tween(220),
+            label = "myProxyProtoText",
+          )
+          Surface(
+            modifier = Modifier.weight(1f).clickable { onSelect(value) },
+            shape = RoundedCornerShape(11.dp),
+            color = bg,
+            contentColor = textColor,
+            border = BorderStroke(1.dp, borderColor),
+          ) {
+            Text(
+              text = label,
+              modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+              style = MaterialTheme.typography.labelLarge,
+              fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+              color = textColor,
+              maxLines = 1,
+              textAlign = TextAlign.Center,
+            )
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
 fun MyProxyProfileScreen(
   programs: List<ApiModels.Program>,
   profile: String,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  tproxyEnabled: Boolean = false,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
 ) {
@@ -462,6 +538,7 @@ fun MyProxyProfileScreen(
   var hostText by remember(profile) { mutableStateOf("") }
   var proxyPortText by remember(profile) { mutableStateOf("") }
   var backendMode by remember(profile) { mutableStateOf("balance") }
+  var protoMode by remember(profile) { mutableStateOf("tcp_udp") }
   var backendPriorityText by remember(profile) { mutableStateOf("") }
   var prioritySpeedAware by remember(profile) { mutableStateOf(false) }
   var userText by remember(profile) { mutableStateOf("") }
@@ -492,6 +569,7 @@ fun MyProxyProfileScreen(
       hostText = parsedProxy.host
       proxyPortText = parsedProxy.ports.joinToString(",")
       backendMode = parsedProxy.backendMode
+      protoMode = parsedProxy.protoMode
       backendPriorityText = parsedProxy.backendPriority
       prioritySpeedAware = parsedProxy.prioritySpeedAware
       userText = parsedProxy.user
@@ -527,7 +605,7 @@ fun MyProxyProfileScreen(
     if (ok) syncedSetting = current else showSnack(context.getString(R.string.myproxy_auto_save_failed))
   }
 
-  LaunchedEffect(hostText, proxyPortText, backendMode, backendPriorityText, prioritySpeedAware, userText, passText, wrappedHostText, wrappedPortText, wrappedUserText, wrappedPassText, proxyInitialized) {
+  LaunchedEffect(hostText, proxyPortText, backendMode, backendPriorityText, prioritySpeedAware, userText, passText, wrappedHostText, wrappedPortText, wrappedUserText, wrappedPassText, protoMode, proxyInitialized) {
     if (!proxyInitialized) return@LaunchedEffect
     delay(700)
     val host = hostText.trim()
@@ -566,13 +644,14 @@ fun MyProxyProfileScreen(
       wrappedPort = if (wrappedConfigured) wrappedPort else null,
       wrappedUser = wrappedUser,
       wrappedPass = wrappedPass,
+      protoMode = normalizeMyProxyProtoMode(protoMode),
     )
     if (current == syncedProxy) return@LaunchedEffect
     proxySaving = true
     val ok = awaitSaveJsonMyProxy(
       actions,
       "$basePath/proxy",
-      buildMyProxyUpstreamJson(host, portsForSave, mode, priorityForSave, effectivePrioritySpeedAware, user, pass, wrappedHost, if (wrappedConfigured) wrappedPort else null, wrappedUser, wrappedPass)
+      buildMyProxyUpstreamJson(host, portsForSave, mode, priorityForSave, effectivePrioritySpeedAware, user, pass, wrappedHost, if (wrappedConfigured) wrappedPort else null, wrappedUser, wrappedPass, normalizeMyProxyProtoMode(protoMode))
     )
     proxySaving = false
     if (ok) {
@@ -943,6 +1022,17 @@ fun MyProxyProfileScreen(
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
         )
       }
+    }
+
+    AnimatedVisibility(
+      visible = tproxyEnabled,
+      enter = fadeIn(tween(180)) + expandVertically(animationSpec = tween(220)),
+      exit = fadeOut(tween(140)) + shrinkVertically(animationSpec = tween(180)),
+    ) {
+      MyProxyProtoModeCard(
+        protoMode = protoMode,
+        onSelect = { protoMode = it },
+      )
     }
 
     if (loading) {

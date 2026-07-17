@@ -103,6 +103,15 @@ pub struct ProxyConfig {
     pub pass: String,
     #[serde(default)]
     pub wrapped_socks: WrappedSocksConfig,
+    /// Transparent routing protocol selection for the TPROXY path (myproxy only).
+    ///
+    /// Only affects routing when global TPROXY is enabled and supported:
+    /// - "tcp_udp" (default): TPROXY covers TCP and UDP.
+    /// - "tcp": TPROXY covers TCP only.
+    /// When TPROXY is unavailable the DNAT fallback is always TCP and this value
+    /// is ignored. Applied on service stop/start only.
+    #[serde(default = "default_proto_mode")]
+    pub proto_mode: String,
 }
 
 impl Default for ProxyConfig {
@@ -117,12 +126,14 @@ impl Default for ProxyConfig {
             user: String::new(),
             pass: String::new(),
             wrapped_socks: WrappedSocksConfig::default(),
+            proto_mode: default_proto_mode(),
         }
     }
 }
 
 fn default_proxy_port_value() -> Value { Value::from(1080u16) }
 fn default_backend_mode() -> String { "balance".to_string() }
+fn default_proto_mode() -> String { "tcp_udp".to_string() }
 
 impl ProxyConfig {
     pub fn effective_ports(&self) -> Result<Vec<u16>> {
@@ -153,6 +164,15 @@ impl ProxyConfig {
 
     pub fn is_priority_direct_only(&self) -> Result<bool> {
         Ok(self.effective_backend_mode()? == "priority" && self.effective_ports()? == vec![0])
+    }
+
+    /// TPROXY protocol coverage for this profile: "tcp" -> TCP only, anything
+    /// else (default "tcp_udp") -> TCP + UDP. Only consulted on the TPROXY path.
+    pub fn proto_choice(&self) -> ProtoChoice {
+        match self.proto_mode.trim().to_ascii_lowercase().as_str() {
+            "tcp" => ProtoChoice::Tcp,
+            _ => ProtoChoice::TcpUdp,
+        }
     }
 }
 
@@ -295,10 +315,11 @@ pub fn start_if_enabled() -> Result<()> {
         })
             .with_context(|| format!("spawn t2s profile={}", plan.name))?;
 
-        apply_t2s_routing(
+        apply_t2s_routing_ext(
             &plan.uid_out,
             plan.setting.t2s_port,
-            ProtoChoice::Tcp,
+            plan.proxy.proto_choice(),
+            plan.proxy.proto_choice(),
             None,
             DpiTunnelOptions { port_preference: 1, ..DpiTunnelOptions::default() },
         )
@@ -412,6 +433,10 @@ pub fn validate_proxy_config(proxy: &ProxyConfig) -> Result<()> {
     let wpass_empty = proxy.wrapped_socks.pass.is_empty();
     if wu_empty ^ wpass_empty {
         anyhow::bail!("wrapped_socks user and pass must both be set or both be empty");
+    }
+    match proxy.proto_mode.trim().to_ascii_lowercase().as_str() {
+        "tcp" | "tcp_udp" => {}
+        other => anyhow::bail!("invalid proto_mode: {other}; expected tcp or tcp_udp"),
     }
     Ok(())
 }

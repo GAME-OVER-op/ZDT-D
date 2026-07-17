@@ -238,9 +238,13 @@ pub fn refresh_routing_by_uid_file(uid_file: &Path) -> Result<RefreshOutcome> {
             RoutingSnapshot::Tproxy { uid_file, dest_port, proto_choice, ifaces_raw, port_preference, dpi_ports, mark: _, table: _ } => {
                 let proto_choice = crate::iptables::iptables_port::ProtoChoice::from_str(&proto_choice);
                 let opt = crate::iptables::iptables_port::DpiTunnelOptions { port_preference, dpi_ports };
-                crate::programs::common::apply_t2s_routing(
+                // Preserve the exact TPROXY protocol coverage captured in the
+                // snapshot (TCP+UDP for most tools, per-profile TCP/TCP+UDP for
+                // myproxy) when replaying on network refresh or live app changes.
+                crate::programs::common::apply_t2s_routing_ext(
                     Path::new(&uid_file),
                     dest_port,
+                    proto_choice,
                     proto_choice,
                     ifaces_raw.as_deref(),
                     opt,

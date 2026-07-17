@@ -1511,7 +1511,8 @@ fn default_myproxy_proxy_value() -> serde_json::Value {
         "priority_speed_aware": false,
         "user": "",
         "pass": "",
-        "wrapped_socks": { "host": "", "port": 0, "user": "", "pass": "" }
+        "wrapped_socks": { "host": "", "port": 0, "user": "", "pass": "" },
+        "proto_mode": "tcp_udp"
     })
 }
 

@@ -59,6 +59,10 @@ fun AppsHost(
     uiStateFlow.map { it.tgWsProxy }.distinctUntilChanged()
   }.collectAsStateWithLifecycle(initialValue = com.android.zdtd.service.tgwsproxy.TgWsProxyComponentState())
 
+  val tproxyEnabled by remember(uiStateFlow) {
+    uiStateFlow.map { it.tproxyEnabled }.distinctUntilChanged()
+  }.collectAsStateWithLifecycle(initialValue = false)
+
   val listState = rememberSaveable(saver = LazyListState.Saver) { LazyListState() }
 
   LaunchedEffect(Unit) {
@@ -213,6 +217,7 @@ fun AppsHost(
           profile = r.profile,
           actions = actions,
           snackHost = snackHost,
+          tproxyEnabled = tproxyEnabled,
           topContentPadding = topContentPadding,
           bottomContentPadding = bottomContentPadding,
         )

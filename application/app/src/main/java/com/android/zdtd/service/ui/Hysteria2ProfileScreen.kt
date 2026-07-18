@@ -157,7 +157,7 @@ private data class Hysteria2ServerUi(
 
 private data class Hysteria2JsonImportResult(val configJson: String, val detectedPort: Int?, val suggestedName: String?)
 
-private data class ServerConfigPortPlan(
+private data class Hysteria2ServerConfigPortPlan(
   val serverName: String,
   val originalConfig: String,
   val detectedPort: Int,
@@ -576,7 +576,7 @@ fun Hysteria2ProfileScreen(
   var editText by remember(profile) { mutableStateOf("") }
   var editLastLoadedText by remember(profile) { mutableStateOf("") }
   var editLoading by remember(profile) { mutableStateOf(false) }
-  var pendingConfigPlan by remember(profile) { mutableStateOf<ServerConfigPortPlan?>(null) }
+  var pendingConfigPlan by remember(profile) { mutableStateOf<Hysteria2ServerConfigPortPlan?>(null) }
   var hysteria2WebPanelChecking by remember(profile) { mutableStateOf(false) }
   var selectedApps by remember(profile) { mutableStateOf(emptySet<String>()) }
 
@@ -775,7 +775,7 @@ fun Hysteria2ProfileScreen(
     }
   }
 
-  fun applyConfigPlan(plan: ServerConfigPortPlan) {
+  fun applyConfigPlan(plan: Hysteria2ServerConfigPortPlan) {
     val encodedServer = URLEncoder.encode(plan.serverName, "UTF-8")
     val activeSetting = currentProfileSetting()
     val updatedConfig = if (activeSetting.isVpn) {
@@ -981,31 +981,31 @@ fun Hysteria2ProfileScreen(
           val normalizedText = parsed.toString(2)
           val currentServer = servers.firstOrNull { it.name == serverName }
           if (currentProfileSetting().isVpn) {
-            applyConfigPlan(ServerConfigPortPlan(serverName = serverName, originalConfig = normalizedText, detectedPort = currentServer?.port ?: 0, applyPortToServer = false))
+            applyConfigPlan(Hysteria2ServerConfigPortPlan(serverName = serverName, originalConfig = normalizedText, detectedPort = currentServer?.port ?: 0, applyPortToServer = false))
             return@Button
           }
           val detectedPort = findHysteria2ProxyInboundPort(normalizedText)
 
           if (detectedPort == null || currentServer == null) {
-            applyConfigPlan(ServerConfigPortPlan(serverName = serverName, originalConfig = normalizedText, detectedPort = currentServer?.port ?: 0, applyPortToServer = false))
+            applyConfigPlan(Hysteria2ServerConfigPortPlan(serverName = serverName, originalConfig = normalizedText, detectedPort = currentServer?.port ?: 0, applyPortToServer = false))
             return@Button
           }
 
           val currentServerLabel = hysteria2ServerPortLabel(profile, serverName)
           val conflictLabel = findHysteria2PortConflictLabel(globalPortRegistry, detectedPort, ignoredLabel = currentServerLabel)
           if (currentServer.port == detectedPort && conflictLabel == null) {
-            applyConfigPlan(ServerConfigPortPlan(serverName = serverName, originalConfig = normalizedText, detectedPort = detectedPort, applyPortToServer = false))
+            applyConfigPlan(Hysteria2ServerConfigPortPlan(serverName = serverName, originalConfig = normalizedText, detectedPort = detectedPort, applyPortToServer = false))
             return@Button
           }
           pendingConfigPlan = if (conflictLabel == null) {
-            ServerConfigPortPlan(
+            Hysteria2ServerConfigPortPlan(
               serverName = serverName,
               originalConfig = normalizedText,
               detectedPort = detectedPort,
               applyPortToServer = true,
             )
           } else {
-            ServerConfigPortPlan(
+            Hysteria2ServerConfigPortPlan(
               serverName = serverName,
               originalConfig = normalizedText,
               detectedPort = detectedPort,

@@ -389,6 +389,7 @@ fun ProxyInfoAppsDialog(
   val slotMobileLabel = stringResource(R.string.apps_conflict_slot_mobile)
   val programOperaLabel = stringResource(R.string.apps_conflict_program_operaproxy)
   val programSingboxLabel = stringResource(R.string.apps_conflict_program_singbox)
+  val programHysteria2Label = "hysteria2"
   val programDpitunnelLabel = stringResource(R.string.apps_conflict_program_dpitunnel)
   val programByedpiLabel = stringResource(R.string.apps_conflict_program_byedpi)
   val programZapretLabel = stringResource(R.string.apps_conflict_program_zapret)
@@ -412,6 +413,7 @@ fun ProxyInfoAppsDialog(
   fun programLabel(programId: String): String = when (programId) {
     "operaproxy" -> programOperaLabel
     "sing-box" -> programSingboxLabel
+    "hysteria2" -> programHysteria2Label
     "dpitunnel" -> programDpitunnelLabel
     "byedpi" -> programByedpiLabel
     "nfqws" -> programZapretLabel

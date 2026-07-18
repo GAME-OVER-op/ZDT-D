@@ -440,7 +440,7 @@ pub fn start_if_enabled() -> Result<()> {
         validate_setting(&setting, socks_port)?;
     }
 
-    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, true, false, false, false)
+    let external_used = crate::ports::collect_used_ports_for_conflict_check_excluding_programs(false, false, true, false, false, false, false)
         .unwrap_or_default();
     let mut ports_to_check = vec![socks_port];
     if needs_t2s {

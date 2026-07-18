@@ -60,7 +60,7 @@ PROJECT_CARGO_TARGET_DIR="$RUST_DIR/target"
 GRADLE_FLAGS=()
 
 AUTO_BUILT_BINS=(zdtd t2s)
-REQUIRED_EXTERNAL_BINS=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg mieru)
+REQUIRED_EXTERNAL_BINS=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box hysteria2 wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg mieru)
 
 RUSTC_BIN=""
 CARGO_BIN=""

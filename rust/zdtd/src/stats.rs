@@ -34,6 +34,7 @@ pub struct StatusReport {
     pub dnscrypt: UsageAgg,
     pub dpitunnel: UsageAgg,
     pub sing_box: UsageAgg,
+    pub hysteria2: UsageAgg,
     pub wireproxy: UsageAgg,
     pub myproxy: UsageAgg,
     pub myprogram: UsageAgg,
@@ -71,6 +72,7 @@ pub(crate) fn protected_pids() -> Vec<u32> {
     pids.extend(pidof("t2s"));
     pids.extend(pidof("opera-proxy"));
     pids.extend(singbox_pids());
+    pids.extend(hysteria2_pids());
     pids.extend(wireproxy_pids());
     pids.extend(pidof("tg-ws-proxy"));
     pids.extend(myproxy_t2s_pids());
@@ -121,6 +123,7 @@ pub fn collect_status() -> Result<StatusReport> {
     }
     let opera_proxy_pids = pidof("opera-proxy");
     let singbox_pids = singbox_pids();
+    let hysteria2_pids = hysteria2_pids();
     let wireproxy_pids = wireproxy_pids();
     let myproxy_pids = myproxy_t2s_pids();
     let myprogram_pids = myprogram_main_pids();
@@ -167,6 +170,7 @@ pub fn collect_status() -> Result<StatusReport> {
         &dnscrypt_pids,
         &dpitunnel_pids,
         &singbox_pids,
+        &hysteria2_pids,
         &wireproxy_pids,
         &myproxy_pids,
         &myprogram_pids,
@@ -198,6 +202,7 @@ pub fn collect_status() -> Result<StatusReport> {
         dnscrypt: agg_from_map(&dnscrypt_pids, &usage),
         dpitunnel: agg_from_map(&dpitunnel_pids, &usage),
         sing_box: agg_from_map(&singbox_pids, &usage),
+        hysteria2: agg_from_map(&hysteria2_pids, &usage),
         wireproxy: agg_from_map(&wireproxy_pids, &usage),
         myproxy: agg_from_map(&myproxy_pids, &usage),
         myprogram: agg_from_map(&myprogram_pids, &usage),
@@ -261,6 +266,11 @@ fn pidof_any(names: &[&str]) -> Vec<u32> {
 /// Best-effort detection of sing-box pids.
 /// Some Android builds may not report the binary name consistently for `pidof`,
 /// so we fall back to parsing `ps -A` output.
+
+
+fn hysteria2_pids() -> Vec<u32> {
+    cmdline_pids_containing("/data/adb/modules/ZDT-D/bin/hysteria2")
+}
 
 fn wireproxy_pids() -> Vec<u32> {
     let mut pids = pidof_any(&["wireproxy"]);

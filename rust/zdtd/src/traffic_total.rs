@@ -647,6 +647,7 @@ fn normalize_port_vec(ports: Vec<u16>) -> Vec<u16> {
 fn build_local_port_registry(root: &Path) -> HashMap<u16, TrafficBackendPort> {
     let mut out = HashMap::new();
     collect_singbox_ports(root, &mut out);
+    collect_hysteria2_ports(root, &mut out);
     collect_wireproxy_ports(root, &mut out);
     collect_operaproxy_ports(root, &mut out);
     collect_tor_socks_port(root, &mut out);
@@ -692,6 +693,24 @@ fn collect_singbox_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>
             if !server_dir.is_dir() { continue; }
             let server = file_name_string(&server_dir);
             collect_simple_json_port(server_dir.join("setting.json"), "singbox", Some(profile.clone()), server, &["port", "listen_port"], out);
+        }
+    }
+}
+
+fn collect_hysteria2_ports(root: &Path, out: &mut HashMap<u16, TrafficBackendPort>) {
+    let profile_root = root.join("hysteria2/profile");
+    let Ok(profiles) = fs::read_dir(&profile_root) else { return; };
+    for ent in profiles.flatten() {
+        let profile_dir = ent.path();
+        if !profile_dir.is_dir() { continue; }
+        let Some(profile) = file_name_string(&profile_dir) else { continue; };
+        let server_root = profile_dir.join("server");
+        let Ok(servers) = fs::read_dir(&server_root) else { continue; };
+        for server_ent in servers.flatten() {
+            let server_dir = server_ent.path();
+            if !server_dir.is_dir() { continue; }
+            let server = file_name_string(&server_dir);
+            collect_simple_json_port(server_dir.join("setting.json"), "hysteria2", Some(profile.clone()), server, &["socks5_port"], out);
         }
     }
 }
@@ -1409,6 +1428,7 @@ fn resolve_vpn_proxy_endpoint(owner_program: &str, profile: &str, registry: &Has
         "mihomo" => profile_setting_endpoint(root, "mihomo", profile, "mixed_port", registry),
         "mieru" => profile_setting_endpoint(root, "mieru", profile, "socks5_port", registry),
         "singbox" | "sing-box" => singbox_vpn_endpoint(root, profile, registry),
+        "hysteria2" => hysteria2_vpn_endpoint(root, profile, registry),
         _ => None,
     }
 }
@@ -1444,6 +1464,29 @@ fn singbox_vpn_endpoint(root: &Path, profile: &str, registry: &HashMap<u16, Traf
             label: format!("sing-box/{profile}:{}", port),
             host: Some("127.0.0.1".to_string()),
             program_id: Some("sing-box".to_string()),
+            profile: Some(profile.to_string()),
+            server: file_name_string(&dir),
+            ..Default::default()
+        }));
+    }
+    None
+}
+
+fn hysteria2_vpn_endpoint(root: &Path, profile: &str, registry: &HashMap<u16, TrafficBackendPort>) -> Option<TrafficBackendPort> {
+    let server_root = root.join("hysteria2/profile").join(profile).join("server");
+    let entries = fs::read_dir(server_root).ok()?;
+    for ent in entries.flatten() {
+        let dir = ent.path();
+        if !dir.is_dir() { continue; }
+        let raw = fs::read_to_string(dir.join("setting.json")).ok()?;
+        let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+        if !v.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false) { continue; }
+        let Some(port) = v.get("socks5_port").and_then(json_u16) else { continue; };
+        return Some(registry.get(&port).cloned().unwrap_or_else(|| TrafficBackendPort {
+            port,
+            label: format!("hysteria2/{profile}:{}", port),
+            host: Some("127.0.0.1".to_string()),
+            program_id: Some("hysteria2".to_string()),
             profile: Some(profile.to_string()),
             server: file_name_string(&dir),
             ..Default::default()

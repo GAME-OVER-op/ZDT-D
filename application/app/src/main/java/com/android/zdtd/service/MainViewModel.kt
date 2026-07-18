@@ -5464,6 +5464,7 @@ private fun shQuote(s: String): String {
     "byedpi",
     "dpitunnel",
     "sing-box",
+    "hysteria2",
     "wireproxy",
     "myproxy",
     "myprogram",
@@ -5654,6 +5655,36 @@ private fun shQuote(s: String): String {
         log("OK", "sing-box/$safeProfile/$safeServer deleted")
       } else {
         log("ERR", "sing-box/$safeProfile/$safeServer delete failed")
+      }
+      withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
+
+  override fun createHysteria2Server(profile: String, server: String, onDone: (String?) -> Unit) {
+    launchIO {
+      val safeProfile = profile.trim()
+      val safeServer = server.trim()
+      val ok = runCatching { api.createHysteria2Server(safeProfile, safeServer) }.getOrDefault(false)
+      if (ok) {
+        log("OK", "hysteria2/$safeProfile/$safeServer created (apply after stop/start)")
+        withContext(Dispatchers.Main.immediate) { onDone(safeServer) }
+      } else {
+        log("ERR", "hysteria2/$safeProfile/$safeServer create failed")
+        withContext(Dispatchers.Main.immediate) { onDone(null) }
+      }
+    }
+  }
+
+  override fun deleteHysteria2Server(profile: String, server: String, onDone: (Boolean) -> Unit) {
+    launchIO {
+      val safeProfile = profile.trim()
+      val safeServer = server.trim()
+      val ok = runCatching { api.deleteHysteria2Server(safeProfile, safeServer) }.getOrDefault(false)
+      if (ok) {
+        log("OK", "hysteria2/$safeProfile/$safeServer deleted")
+      } else {
+        log("ERR", "hysteria2/$safeProfile/$safeServer delete failed")
       }
       withContext(Dispatchers.Main.immediate) { onDone(ok) }
     }

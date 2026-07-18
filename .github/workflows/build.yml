@@ -44,6 +44,7 @@ env:
   TUN2SOCKS_REF: "v2.6.0"
   MIHOMO_REF: "v1.19.27"
   SING_BOX_REF: "v1.13.14"
+  HYSTERIA_REF: "v2.10.0"
   BYEDPI_REF: "v0.17.3"
   BYEDPI_ANDROID_API_LEVEL: 24
   DNSCRYPT_PROXY_REF: "2.1.16"
@@ -1937,6 +1938,99 @@ jobs:
             out/artifacts/sing-box/sing-box.version
             out/artifacts/sing-box/sing-box.commit
             out/artifacts/sing-box/sing-box.dynamic.txt
+          retention-days: 1
+
+
+  build_hysteria2:
+    name: build hysteria2 ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            artifact_suffix: arm64
+            hy_platform: android/arm64
+            hy_output: hysteria-android-arm64
+          - abi: armeabi-v7a
+            artifact_suffix: arm32
+            hy_platform: android/armv7
+            hy_output: hysteria-android-armv7
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.4'
+          cache: false
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Prepare Android NDK
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          test -x "$SDKMANAGER" || { echo "::error::sdkmanager not found"; exit 1; }
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          NDK_VERSION="29.0.13846066"
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            "$SDKMANAGER" "ndk;$NDK_VERSION"
+          fi
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
+
+      - name: Build Hysteria from official source
+        run: |
+          set -euo pipefail
+          WORK="$PWD/out/build/hysteria2-android"
+          SRC="$WORK/src"
+          ARTIFACT_DIR="$PWD/out/artifacts/hysteria2"
+          mkdir -p "$SRC" "$ARTIFACT_DIR"
+          git clone --depth 1 --branch "$HYSTERIA_REF" https://github.com/apernet/hysteria "$SRC/hysteria"
+          HYSTERIA_COMMIT="$(git -C "$SRC/hysteria" rev-parse HEAD)"
+          printf '%s\n' "$HYSTERIA_COMMIT" | tee "$ARTIFACT_DIR/hysteria2.commit"
+          pushd "$SRC/hysteria" >/dev/null
+          HY_APP_PLATFORMS="${{ matrix.hy_platform }}" uv run python hyperbole.py build -r
+          popd >/dev/null
+          cp -f "$SRC/hysteria/build/${{ matrix.hy_output }}" "$ARTIFACT_DIR/hysteria2"
+          chmod 755 "$ARTIFACT_DIR/hysteria2"
+          cat > "$ARTIFACT_DIR/hysteria2.version" <<EOF_HYSTERIA2_VERSION
+          source=https://github.com/apernet/hysteria
+          ref=$HYSTERIA_REF
+          commit=$HYSTERIA_COMMIT
+          binary=hysteria2
+          upstream_output=${{ matrix.hy_output }}
+          built_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          EOF_HYSTERIA2_VERSION
+          file "$ARTIFACT_DIR/hysteria2"
+          readelf -h "$ARTIFACT_DIR/hysteria2" | grep -E 'Class:|Machine:'
+          readelf -d "$ARTIFACT_DIR/hysteria2" | tee "$ARTIFACT_DIR/hysteria2.dynamic.txt" || true
+          "$ARTIFACT_DIR/hysteria2" version || true
+
+      - name: Upload Hysteria2 binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: hysteria2-${{ matrix.artifact_suffix }}
+          path: |
+            out/artifacts/hysteria2/hysteria2
+            out/artifacts/hysteria2/hysteria2.version
+            out/artifacts/hysteria2/hysteria2.commit
+            out/artifacts/hysteria2/hysteria2.dynamic.txt
           retention-days: 1
 
   build_byedpi:
@@ -3937,7 +4031,7 @@ jobs:
           retention-days: 1
 
   module_binaries_ready:
-    name: Module binaries ready (OpenVPN + AmneziaWG + wireproxy + tun2socks + mihomo + sing-box + byedpi + dnscrypt + mieru + opera-proxy + DPITunnel + Tor + lyrebird + nfqws + nfqws2)
+    name: Module binaries ready (OpenVPN + AmneziaWG + wireproxy + tun2socks + mihomo + sing-box + hysteria2 + byedpi + dnscrypt + mieru + opera-proxy + DPITunnel + Tor + lyrebird + nfqws + nfqws2)
     runs-on: ubuntu-latest
     needs:
       - build_openvpn
@@ -3946,6 +4040,7 @@ jobs:
       - build_tun2socks
       - build_mihomo
       - build_singbox
+      - build_hysteria2
       - build_byedpi
       - build_dnscrypt
       - build_mieru
@@ -3962,6 +4057,7 @@ jobs:
       needs.build_tun2socks.result == 'success' &&
       needs.build_mihomo.result == 'success' &&
       needs.build_singbox.result == 'success' &&
+      needs.build_hysteria2.result == 'success' &&
       needs.build_byedpi.result == 'success' &&
       needs.build_dnscrypt.result == 'success' &&
       needs.build_mieru.result == 'success' &&
@@ -4170,6 +4266,11 @@ jobs:
         with:
           name: sing-box-arm64
           path: out/artifacts/sing-box/arm64
+      - name: Download hysteria2 arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: hysteria2-arm64
+          path: out/artifacts/hysteria2/arm64
       - name: Download byedpi arm64
         uses: actions/download-artifact@v7
         with:
@@ -4260,6 +4361,11 @@ jobs:
         with:
           name: sing-box-arm32
           path: out/artifacts/sing-box/arm32
+      - name: Download hysteria2 arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: hysteria2-arm32
+          path: out/artifacts/hysteria2/arm32
       - name: Download byedpi arm32
         uses: actions/download-artifact@v7
         with:
@@ -4311,7 +4417,7 @@ jobs:
 
           MODULE_BUILD_DIR="out/module_build/module_root"
           MODULE_ZIP="out/module/zdt_module.zip"
-          BINARIES="zdtd t2s openvpn amneziawg-go awg wireproxy tun2socks mihomo sing-box byedpi dnscrypt mieru opera-proxy dpitunnel-cli torproxy lyrebird nfqws nfqws2"
+          BINARIES="zdtd t2s openvpn amneziawg-go awg wireproxy tun2socks mihomo sing-box hysteria2 byedpi dnscrypt mieru opera-proxy dpitunnel-cli torproxy lyrebird nfqws nfqws2"
 
           require_file() {
             local path="$1"
@@ -4331,6 +4437,7 @@ jobs:
               tun2socks) echo "out/artifacts/tun2socks/$arch/tun2socks" ;;
               mihomo) echo "out/artifacts/mihomo/$arch/mihomo" ;;
               sing-box) echo "out/artifacts/sing-box/$arch/sing-box" ;;
+              hysteria2) echo "out/artifacts/hysteria2/$arch/hysteria2" ;;
               byedpi) echo "out/artifacts/byedpi/$arch/byedpi" ;;
               dnscrypt) echo "out/artifacts/dnscrypt/$arch/dnscrypt" ;;
               mieru) echo "out/artifacts/mieru/$arch/mieru" ;;

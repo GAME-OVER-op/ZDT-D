@@ -186,6 +186,13 @@ interface ZdtdActions {
   /** Delete a sing-box server inside a specific profile. */
   fun deleteSingBoxServer(profile: String, server: String, onDone: (Boolean) -> Unit = {})
 
+
+  /** Create a hysteria2 server inside a specific profile. */
+  fun createHysteria2Server(profile: String, server: String, onDone: (String?) -> Unit = {})
+
+  /** Delete a hysteria2 server inside a specific profile. */
+  fun deleteHysteria2Server(profile: String, server: String, onDone: (Boolean) -> Unit = {})
+
   /** Create a wireproxy server inside a specific profile. */
   fun createWireProxyServer(profile: String, server: String, onDone: (String?) -> Unit = {})
 

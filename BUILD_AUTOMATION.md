@@ -57,7 +57,7 @@ prebuilt/bin/arm64-v8a/
 - nfqws
 - nfqws2
 - opera-proxy
-- sing-box
+- sing-box, hysteria2
 
 ## Автособираемые бинарники
 

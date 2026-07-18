@@ -202,6 +202,15 @@ fun AppsHost(
           topContentPadding = topContentPadding,
           bottomContentPadding = bottomContentPadding,
         )
+        "hysteria2" -> Hysteria2ProfileScreen(
+          programs = programs,
+          profile = r.profile,
+          actions = actions,
+          snackHost = snackHost,
+          tproxyEnabled = tproxyEnabled,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
+        )
         "wireproxy" -> WireProxyProfileScreen(
           programs = programs,
           profile = r.profile,

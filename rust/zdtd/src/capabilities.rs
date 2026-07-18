@@ -67,6 +67,7 @@ fn binary_map() -> BTreeMap<&'static str, bool> {
     out.insert("t2s", binary_available("/data/adb/modules/ZDT-D/bin/t2s"));
     out.insert("sing-box", binary_available("/data/adb/modules/ZDT-D/bin/sing-box"));
     out.insert("wireproxy", binary_available("/data/adb/modules/ZDT-D/bin/wireproxy"));
+    out.insert("hysteria2", binary_available("/data/adb/modules/ZDT-D/bin/hysteria2"));
     out.insert("tun2socks", binary_available("/data/adb/modules/ZDT-D/bin/tun2socks"));
     out.insert("openvpn", binary_available("/data/adb/modules/ZDT-D/bin/openvpn"));
     out.insert("amneziawg-go", binary_available("/data/adb/modules/ZDT-D/bin/amneziawg-go"));

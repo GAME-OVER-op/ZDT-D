@@ -400,6 +400,7 @@ ClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules
         ("nfqws", "active.json", PROFILES_DEFAULT_JSON),
         ("nfqws2", "active.json", PROFILES_DEFAULT_JSON),
         ("singbox", "active.json", PROFILES_DEFAULT_JSON),
+        ("hysteria2", "active.json", PROFILES_DEFAULT_JSON),
         ("wireproxy", "active.json", PROFILES_DEFAULT_JSON),
         ("myproxy", "active.json", PROFILES_DEFAULT_JSON),
         ("myprogram", "active.json", PROFILES_DEFAULT_JSON),
@@ -434,7 +435,7 @@ ClientTransportPlugin meek_lite,obfs4,snowflake,webtunnel exec /data/adb/modules
         // Create the root eagerly so the Android app sees the same minimal layout after daemon start
         // even before a first profile is created through the API.
         match program {
-            "openvpn" | "amneziawg" | "tun2socks" | "myvpn" | "mihomo" | "mieru" => {
+            "openvpn" | "amneziawg" | "tun2socks" | "myvpn" | "mihomo" | "mieru" | "hysteria2" => {
                 fs::create_dir_all(root.join("profile"))
                     .with_context(|| format!("mkdir {}", root.join("profile").display()))?;
             }

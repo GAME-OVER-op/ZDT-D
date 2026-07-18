@@ -12,7 +12,7 @@ use crate::{
     android::{boot, selinux::SelinuxGuard},
     iptables_backup,
     programs::{amneziawg, byedpi, dnscrypt, dpitunnel, myproxy, myprogram, nfqws, nfqws2, openvpn, operaproxy, tor, tgwsproxy, tun2socks, myvpn, mihomo, mieru},
-    programs::{singbox, wireproxy},
+    programs::{singbox, wireproxy, hysteria2},
     stats,
     settings,
     shell,
@@ -115,12 +115,14 @@ pub fn start_full() -> Result<()> {
     let dpitunnel_handle = thread::spawn(dpitunnel::start_active_profiles);
     let byedpi_handle = thread::spawn(byedpi::start_active_profiles);
     let singbox_handle = thread::spawn(singbox::start_t2s_if_enabled);
+    let hysteria2_handle = thread::spawn(hysteria2::start_t2s_if_enabled);
     wait_start_group(
         "dpi-stack",
         vec![
             ("dpitunnel", dpitunnel_handle),
             ("byedpi", byedpi_handle),
             ("sing-box", singbox_handle),
+            ("hysteria2", hysteria2_handle),
         ],
     );
 
@@ -153,6 +155,7 @@ pub fn start_full() -> Result<()> {
         || mihomo::has_profiles_requiring_netd()
         || mieru::has_profiles_requiring_netd()
         || singbox::has_enabled_vpn_profiles()
+        || hysteria2::has_enabled_vpn_profiles()
         || hotspot_vpn_selection.is_some();
     let mut vpn_profiles = Vec::new();
     match validate_vpn_claims_unique() {
@@ -211,6 +214,14 @@ pub fn start_full() -> Result<()> {
                     log::warn!("sing-box vpn startup failed, continuing: {e:#}");
                     mark_start_partial();
                     crate::logging::user_warn("sing-box: ошибка запуска, запуск продолжен");
+                }
+            }
+            match hysteria2::start_profiles_for_netd() {
+                Ok(items) => vpn_profiles.extend(items),
+                Err(e) => {
+                    log::warn!("hysteria2 vpn startup failed, continuing: {e:#}");
+                    mark_start_partial();
+                    crate::logging::user_warn("hysteria2: ошибка запуска, запуск продолжен");
                 }
             }
             if let Err(e) = crate::vpn_netd::start_profiles(vpn_profiles) {
@@ -438,7 +449,8 @@ fn can_adopt_existing_runtime() -> bool {
         || myvpn::has_enabled_profiles()
         || mihomo::has_profiles_requiring_netd()
         || mieru::has_profiles_requiring_netd()
-        || singbox::has_enabled_vpn_profiles();
+        || singbox::has_enabled_vpn_profiles()
+        || hysteria2::has_enabled_vpn_profiles();
     if vpn_expected && !crate::vpn_netd::applied_snapshot_path().is_file() {
         log::info!("runtime adoption: VPN profiles are expected but vpn_netd/applied.json is missing");
         return false;
@@ -488,6 +500,7 @@ fn enabled_runtime_processes_look_complete() -> bool {
     require_profile_program!("byedpi", r.byedpi.count);
     require_profile_program!("dpitunnel", r.dpitunnel.count);
     require_profile_program!("singbox", r.sing_box.count);
+    require_profile_program!("hysteria2", r.hysteria2.count);
     require_profile_program!("wireproxy", r.wireproxy.count);
     require_profile_program!("myproxy", r.myproxy.count);
     require_profile_program!("myprogram", r.myprogram.count);
@@ -509,6 +522,14 @@ fn enabled_runtime_processes_look_complete() -> bool {
         expected_any = true;
         if !vpn_netd_has_applied_owner("singbox") {
             log::info!("runtime adoption: enabled sing-box VPN profiles exist but vpn_netd snapshot has no singbox owner");
+            return false;
+        }
+    }
+
+    if hysteria2::has_enabled_vpn_profiles() {
+        expected_any = true;
+        if !vpn_netd_has_applied_owner("hysteria2") {
+            log::info!("runtime adoption: enabled hysteria2 VPN profiles exist but vpn_netd snapshot has no hysteria2 owner");
             return false;
         }
     }
@@ -597,6 +618,7 @@ fn actual_runtime_has_services() -> bool {
             || r.byedpi.count > 0
             || r.dpitunnel.count > 0
             || r.sing_box.count > 0
+            || r.hysteria2.count > 0
             || r.wireproxy.count > 0
             || r.myproxy.count > 0
             || r.myprogram.count > 0
@@ -618,13 +640,16 @@ fn actual_runtime_has_services() -> bool {
         || tun2socks::is_running()
         || mihomo::is_running()
         || mieru::is_running()
+        || hysteria2::is_running()
         || vpn_netd_has_applied_owner("myvpn")
+        || vpn_netd_has_applied_owner("hysteria2")
 }
 
 fn runtime_uses_iptables_paths() -> bool {
     let app_routing = (operaproxy_enabled() && operaproxy_has_routed_app_outputs())
         || profile_program_has_routed_app_outputs("wireproxy")
         || profile_program_has_routed_app_outputs("singbox")
+        || profile_program_has_routed_app_outputs("hysteria2")
         || (tor_enabled() && tor_has_routed_app_outputs());
 
     match stats::collect_status() {
@@ -882,6 +907,7 @@ fn validate_vpn_tun_claims_unique() -> Result<()> {
         .chain(mihomo::enabled_tun_claims().into_iter())
         .chain(mieru::enabled_tun_claims().into_iter())
         .chain(singbox::enabled_tun_claims().into_iter())
+        .chain(hysteria2::enabled_tun_claims().into_iter())
     {
         if let Some(other) = seen.insert(tun.clone(), label.clone()) {
             anyhow::bail!("VPN tun conflict: tun {tun} is used by {other} and {label}");
@@ -898,6 +924,7 @@ fn validate_vpn_cidr_claims_unique() -> Result<()> {
         .chain(mihomo::enabled_cidr_claims().into_iter())
         .chain(mieru::enabled_cidr_claims().into_iter())
         .chain(singbox::enabled_cidr_claims().into_iter())
+        .chain(hysteria2::enabled_cidr_claims().into_iter())
         .collect::<Vec<_>>();
     for i in 0..claims.len() {
         for j in (i + 1)..claims.len() {
@@ -958,6 +985,7 @@ fn any_main_service_running() -> bool {
     let myvpn_expected = myvpn::has_enabled_profiles();
     let mihomo_expected = mihomo::has_enabled_profiles();
     let singbox_vpn_expected = singbox::has_enabled_vpn_profiles();
+    let hysteria2_vpn_expected = hysteria2::has_enabled_vpn_profiles();
     let tgwsproxy_expected = tgwsproxy_enabled();
 
     // Give processes a short moment to initialize; some binaries may exit immediately on bad args.
@@ -982,6 +1010,7 @@ fn any_main_service_running() -> bool {
                 || (mihomo_expected && mihomo::is_running())
                 || (mieru::has_enabled_profiles() && mieru::is_running())
                 || (singbox_vpn_expected && singbox::is_running() && vpn_netd_has_applied_owner("singbox"))
+                || (hysteria2_vpn_expected && hysteria2::is_running() && vpn_netd_has_applied_owner("hysteria2"))
             {
                 return true;
             }

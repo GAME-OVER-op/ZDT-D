@@ -35,6 +35,7 @@ private fun ApiModels.StatusReport.widgetProcessCount(): Int {
     dnscrypt.count,
     dpitunnel.count,
     singBox.count,
+    hysteria2.count,
     wireProxy.count,
     tor.count,
     openVpn.count,

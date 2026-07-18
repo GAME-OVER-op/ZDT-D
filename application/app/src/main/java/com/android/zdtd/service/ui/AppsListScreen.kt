@@ -806,6 +806,7 @@ internal fun programIconRes(id: String): Int? {
     "mihomo" -> R.drawable.ic_tool_mihomo
     "mieru" -> R.drawable.ic_tool_mieru
     "sing-box" -> R.drawable.ic_tool_sing_box
+    "hysteria2" -> R.drawable.ic_tool_hysteria2
     else -> null
   }
 }
@@ -829,6 +830,7 @@ internal fun programIcon(id: String): ImageVector {
     "mihomo" -> Icons.Outlined.AltRoute
     "mieru" -> Icons.Outlined.Extension
     "sing-box" -> Icons.Outlined.Extension
+    "hysteria2" -> Icons.Outlined.Extension
     "tgwsproxy" -> Icons.Outlined.AddCircleOutline
     else -> Icons.Outlined.Extension
   }

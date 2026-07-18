@@ -107,22 +107,26 @@ fn collect_reserved_ports() -> BTreeSet<u16> {
 /// This is intended for *conflict checks* by programs that manage their own ports
 /// outside of the standard `*/port.json` profile layout (e.g. sing-box).
 pub fn collect_used_ports_for_conflict_check() -> Result<BTreeSet<u16>> {
-    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false, false, false)
+    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false, false, false, false)
 }
 
 pub fn collect_used_ports_for_conflict_check_excluding(
     exclude_singbox: bool,
     exclude_wireproxy: bool,
 ) -> Result<BTreeSet<u16>> {
-    collect_used_ports_for_conflict_check_excluding_programs(exclude_singbox, exclude_wireproxy, false, false, false, false)
+    collect_used_ports_for_conflict_check_excluding_programs(exclude_singbox, exclude_wireproxy, false, false, false, false, false)
 }
 
 pub fn collect_used_ports_for_conflict_check_excluding_mihomo() -> Result<BTreeSet<u16>> {
-    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false, true, false)
+    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false, true, false, false)
 }
 
 pub fn collect_used_ports_for_conflict_check_excluding_mieru() -> Result<BTreeSet<u16>> {
-    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false, false, true)
+    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false, false, true, false)
+}
+
+pub fn collect_used_ports_for_conflict_check_excluding_hysteria2() -> Result<BTreeSet<u16>> {
+    collect_used_ports_for_conflict_check_excluding_programs(false, false, false, false, false, false, true)
 }
 
 pub fn collect_used_ports_for_conflict_check_excluding_programs(
@@ -132,6 +136,7 @@ pub fn collect_used_ports_for_conflict_check_excluding_programs(
     exclude_myproxy: bool,
     exclude_mihomo: bool,
     exclude_mieru: bool,
+    exclude_hysteria2: bool,
 ) -> Result<BTreeSet<u16>> {
     let mut used = collect_reserved_ports();
 
@@ -146,6 +151,9 @@ pub fn collect_used_ports_for_conflict_check_excluding_programs(
     }
     if !exclude_wireproxy {
         used.extend(collect_defined_wireproxy_ports());
+    }
+    if !exclude_hysteria2 {
+        used.extend(collect_defined_hysteria2_ports());
     }
     if !exclude_tor {
         used.extend(collect_defined_tor_ports());
@@ -273,6 +281,45 @@ fn collect_defined_singbox_ports() -> BTreeSet<u16> {
 }
 
 
+
+fn collect_defined_hysteria2_ports() -> BTreeSet<u16> {
+    let mut used = BTreeSet::new();
+    let root = working_program_dir("hysteria2").join("profile");
+    if let Ok(rd) = fs::read_dir(&root) {
+        for ent in rd.flatten() {
+            let profile_dir = ent.path();
+            if !profile_dir.is_dir() { continue; }
+            if profile_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) { continue; }
+            let setting_path = profile_dir.join("setting.json");
+            if let Ok(v) = read_json_value(&setting_path) {
+                let mode = v.get("mode").and_then(|x| x.as_str()).unwrap_or("t2s").trim().to_ascii_lowercase();
+                if !singbox_mode_is_vpn(&mode) {
+                    for key in ["t2s_port", "t2s_web_port"] {
+                        if let Some(port) = v.get(key).and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
+                            if port != 0 { used.insert(port); }
+                        }
+                    }
+                }
+            }
+            let server_root = profile_dir.join("server");
+            if let Ok(server_rd) = fs::read_dir(&server_root) {
+                for server_ent in server_rd.flatten() {
+                    let server_dir = server_ent.path();
+                    if !server_dir.is_dir() { continue; }
+                    if server_dir.file_name().and_then(|s| s.to_str()).map(|s| s.starts_with('.')).unwrap_or(false) { continue; }
+                    let setting_path = server_dir.join("setting.json");
+                    if let Ok(v) = read_json_value(&setting_path) {
+                        if let Some(port) = v.get("socks5_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
+                            if port != 0 { used.insert(port); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    used
+}
+
 fn collect_defined_tor_ports() -> BTreeSet<u16> {
     let mut used = BTreeSet::new();
     let root = working_program_dir("tor");
@@ -328,6 +375,7 @@ pub fn normalize_ports() -> Result<()> {
     let reserved = collect_reserved_ports();
     let mut used = reserved.clone();
     used.extend(collect_defined_singbox_ports());
+    used.extend(collect_defined_hysteria2_ports());
     used.extend(collect_defined_wireproxy_ports());
     used.extend(collect_defined_tor_ports());
     used.extend(collect_defined_myproxy_ports());
@@ -393,6 +441,7 @@ pub fn suggest_port_for_new_profile(program: &str) -> Result<u16> {
     let mut used = collect_reserved_ports();
 
     used.extend(collect_defined_singbox_ports());
+    used.extend(collect_defined_hysteria2_ports());
     used.extend(collect_defined_wireproxy_ports());
     used.extend(collect_defined_tor_ports());
     used.extend(collect_defined_myproxy_ports());

@@ -91,7 +91,7 @@ class ApiClient(
    */
   fun createProfile(programId: String, profile: String? = null): Boolean {
     val p = profile?.trim().orEmpty()
-    if (programId == "myproxy" || programId == "myprogram" || programId == "openvpn" || programId == "tun2socks" || programId == "myvpn" || programId == "mihomo" || programId == "mieru" || programId == "amneziawg" || programId == "sing-box") {
+    if (programId == "myproxy" || programId == "myprogram" || programId == "openvpn" || programId == "tun2socks" || programId == "myvpn" || programId == "mihomo" || programId == "mieru" || programId == "hysteria2" || programId == "amneziawg" || programId == "sing-box") {
       val body = JSONObject()
       if (p.isNotEmpty()) body.put("name", p)
       return requestOk("POST", "/api/programs/${enc(programId)}/profiles", body)
@@ -111,6 +111,20 @@ class ApiClient(
 
   fun deleteSingBoxServer(profile: String, server: String): Boolean {
     val path = "/api/programs/sing-box/profiles/${enc(profile)}/servers/${enc(server)}"
+    return requestOk("DELETE", path, null)
+  }
+
+
+  fun createHysteria2Server(profile: String, server: String? = null): Boolean {
+    val path = "/api/programs/hysteria2/profiles/${enc(profile)}/servers"
+    val body = JSONObject()
+    val s = server?.trim().orEmpty()
+    if (s.isNotEmpty()) body.put("name", s)
+    return requestOk("POST", path, body)
+  }
+
+  fun deleteHysteria2Server(profile: String, server: String): Boolean {
+    val path = "/api/programs/hysteria2/profiles/${enc(profile)}/servers/${enc(server)}"
     return requestOk("DELETE", path, null)
   }
 

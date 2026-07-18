@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -153,18 +154,10 @@ private data class Hysteria2ServerUi(
   val name: String,
   val enabled: Boolean,
   val port: Int?,
+  val logLevel: String = "info",
 )
 
-private data class Hysteria2JsonImportResult(val configJson: String, val detectedPort: Int?, val suggestedName: String?)
 
-private data class Hysteria2ServerConfigPortPlan(
-  val serverName: String,
-  val originalConfig: String,
-  val detectedPort: Int,
-  val applyPortToServer: Boolean,
-  val conflictServerName: String? = null,
-  val replacementPort: Int? = null,
-)
 
 private data class Hysteria2PortRegistry(
   val labelsByPort: Map<Int, List<String>> = emptyMap(),
@@ -408,6 +401,7 @@ private fun parseHysteria2ServersUi(obj: JSONObject?): List<Hysteria2ServerUi> {
           name = name,
           enabled = setting?.optBoolean("enabled", false) ?: false,
           port = setting?.optInt("socks5_port", 0)?.takeIf { it in 1..65535 },
+          logLevel = setting?.optString("log_level", "info")?.takeIf { it.isNotBlank() } ?: "info",
         )
       )
     }
@@ -428,44 +422,6 @@ private fun normalizeHysteria2ServerName(input: String): String {
     if (c != null) sb.append(c)
   }
   return sb.toString()
-}
-
-
-private fun findHysteria2ProxyInboundPort(configText: String): Int? {
-  val root = runCatching { JSONObject(configText) }.getOrNull() ?: return null
-  val listen = root.optJSONObject("socks5")?.optString("listen", "").orEmpty()
-  return listen.substringAfterLast(':', "").toIntOrNull()?.takeIf { it in 1..65535 }
-}
-
-private fun rewriteHysteria2ConfigInboundsForT2s(configText: String, port: Int, setting: Hysteria2ProfileSettingUi): String? {
-  if (port !in 1..65535) return null
-  val root = runCatching { JSONObject(configText) }.getOrNull() ?: return null
-  normalizeHysteria2ClientConfigForSocks5(root, port)
-  return root.toString(2)
-}
-
-private fun rewriteHysteria2ConfigInboundsForVpn(configText: String, setting: Hysteria2ProfileSettingUi, port: Int): String? {
-  return rewriteHysteria2ConfigInboundsForT2s(configText, port, setting)
-}
-
-private fun normalizeHysteria2ClientConfigForSocks5(root: JSONObject, port: Int) {
-  listOf("http", "tcpForwarding", "udpForwarding", "tcpTProxy", "udpTProxy", "tcpRedirect", "tun", "inbounds", "outbounds", "route", "dns").forEach { root.remove(it) }
-  val socks5 = root.optJSONObject("socks5") ?: JSONObject()
-  socks5.put("listen", "127.0.0.1:$port").put("disableUDP", false)
-  root.put("socks5", socks5)
-}
-
-private fun rewriteHysteria2ConfigInboundsForMode(
-  configText: String,
-  setting: Hysteria2ProfileSettingUi,
-  serverPort: Int?,
-): String? {
-  val port = serverPort?.takeIf { it in 1..65535 } ?: return null
-  return if (setting.isVpn) {
-    rewriteHysteria2ConfigInboundsForVpn(configText, setting, port)
-  } else {
-    rewriteHysteria2ConfigInboundsForT2s(configText, port, setting)
-  }
 }
 
 
@@ -570,13 +526,13 @@ fun Hysteria2ProfileScreen(
   var globalPortRefreshSeq by remember(profile, program?.profiles) { mutableStateOf(0) }
 
   var showCreateServer by remember(profile) { mutableStateOf(false) }
-  var showImportServer by remember(profile) { mutableStateOf(false) }
-  var importTargetServer by remember(profile) { mutableStateOf<String?>(null) }
   var editServer by remember(profile) { mutableStateOf<String?>(null) }
   var editText by remember(profile) { mutableStateOf("") }
   var editLastLoadedText by remember(profile) { mutableStateOf("") }
+  var editSettingsServer by remember(profile) { mutableStateOf<String?>(null) }
+  var editSettingsConfig by remember(profile) { mutableStateOf("") }
+  var editSettingsLoading by remember(profile) { mutableStateOf(false) }
   var editLoading by remember(profile) { mutableStateOf(false) }
-  var pendingConfigPlan by remember(profile) { mutableStateOf<Hysteria2ServerConfigPortPlan?>(null) }
   var hysteria2WebPanelChecking by remember(profile) { mutableStateOf(false) }
   var selectedApps by remember(profile) { mutableStateOf(emptySet<String>()) }
 
@@ -677,6 +633,16 @@ fun Hysteria2ProfileScreen(
     }
   }
 
+  fun openSettingsEditor(serverName: String) {
+    editSettingsServer = serverName
+    editSettingsLoading = true
+    val encodedServer = URLEncoder.encode(serverName, "UTF-8")
+    actions.loadText("$basePath/servers/$encodedServer/config") { txt ->
+      editSettingsConfig = txt ?: ""
+      editSettingsLoading = false
+    }
+  }
+
   fun currentProfileSetting(): Hysteria2ProfileSettingUi = setting ?: defaultHysteria2ProfileSettingUi()
 
   fun saveProfileSetting(next: Hysteria2ProfileSettingUi, onDone: ((Boolean) -> Unit)? = null) {
@@ -691,27 +657,27 @@ fun Hysteria2ProfileScreen(
     )
     when {
       normalized.t2sPort !in 1..65535 -> {
-        showSnack(context.getString(R.string.singbox_fill_t2s_port))
+        showSnack("Заполни T2S port")
         onDone?.invoke(false)
         return
       }
       normalized.t2sWebPort !in 1..65535 -> {
-        showSnack(context.getString(R.string.singbox_fill_t2s_web_port))
+        showSnack("Заполни T2S web port")
         onDone?.invoke(false)
         return
       }
       normalized.t2sPort == normalized.t2sWebPort -> {
-        showSnack(context.getString(R.string.singbox_profile_ports_must_differ))
+        showSnack("Порты профиля должны отличаться")
         onDone?.invoke(false)
         return
       }
       normalized.isVpn && normalized.tun.isBlank() -> {
-        showSnack(context.getString(R.string.singbox_vpn_tun_required))
+        showSnack("Укажи TUN interface")
         onDone?.invoke(false)
         return
       }
       normalized.isVpn && normalized.dns.isEmpty() -> {
-        showSnack(context.getString(R.string.singbox_vpn_dns_required))
+        showSnack("Укажи DNS")
         onDone?.invoke(false)
         return
       }
@@ -724,7 +690,7 @@ fun Hysteria2ProfileScreen(
         setting = normalized
         refreshGlobalPortRegistry()
       } else {
-        showSnack(context.getString(R.string.singbox_auto_save_failed))
+        showSnack("Автосохранение Hysteria2 не удалось")
       }
       onDone?.invoke(ok)
     }
@@ -741,100 +707,18 @@ fun Hysteria2ProfileScreen(
     )
   }
 
-  fun rewriteCurrentServerConfigForMode(modeSetting: Hysteria2ProfileSettingUi, onDone: ((Boolean) -> Unit)? = null) {
-    val onlyServer = servers.singleOrNull()
-    if (onlyServer == null) {
-      onDone?.invoke(false)
-      return
-    }
-    val encodedServer = URLEncoder.encode(onlyServer.name, "UTF-8")
-    actions.loadText("$basePath/servers/$encodedServer/config") { txt ->
-      val source = txt?.takeIf { it.trim().isNotBlank() } ?: JSONObject().toString(2)
-      val rewritten = rewriteHysteria2ConfigInboundsForMode(source, modeSetting, onlyServer.port ?: 11590)
-      if (rewritten == null) {
-        onDone?.invoke(false)
-        return@loadText
-      }
-      actions.saveText("$basePath/servers/$encodedServer/config", rewritten) { ok ->
-        onDone?.invoke(ok)
-      }
-    }
-  }
 
   fun switchHysteria2Mode(nextMode: String) {
     val current = currentProfileSetting()
     if (nextMode == HYSTERIA2_MODE_VPN && servers.size != 1) {
-      showSnack(context.getString(R.string.singbox_vpn_single_server_required))
+      showSnack("VPN-режим Hysteria2 поддерживает только один сервер")
       return
     }
     val next = current.copy(mode = if (nextMode == HYSTERIA2_MODE_VPN) HYSTERIA2_MODE_VPN else HYSTERIA2_MODE_T2S)
-    saveProfileSetting(next) { ok ->
-      if (ok) {
-        rewriteCurrentServerConfigForMode(next)
-      }
-    }
+    saveProfileSetting(next)
   }
 
-  fun applyConfigPlan(plan: Hysteria2ServerConfigPortPlan) {
-    val encodedServer = URLEncoder.encode(plan.serverName, "UTF-8")
-    val activeSetting = currentProfileSetting()
-    val updatedConfig = if (activeSetting.isVpn) {
-      val serverPort = servers.firstOrNull { it.name == plan.serverName }?.port
-        ?: plan.detectedPort.takeIf { it in 1..65535 }
-        ?: 11590
-      rewriteHysteria2ConfigInboundsForMode(plan.originalConfig, activeSetting, serverPort)
-    } else {
-      when {
-        plan.replacementPort != null -> rewriteHysteria2ConfigInboundsForMode(plan.originalConfig, activeSetting, plan.replacementPort)
-        plan.applyPortToServer -> rewriteHysteria2ConfigInboundsForMode(plan.originalConfig, activeSetting, plan.detectedPort)
-        else -> plan.originalConfig
-      }
-    }
-    if (updatedConfig == null) {
-      showSnack(context.getString(R.string.singbox_listen_port_update_failed))
-      return
-    }
-    editLoading = true
-    actions.saveText("$basePath/servers/$encodedServer/config", updatedConfig) { ok ->
-      if (!ok) {
-        editLoading = false
-        showSnack(context.getString(R.string.save_failed))
-        return@saveText
-      }
-      val current = servers.firstOrNull { it.name == plan.serverName }
-      val finalPort = when {
-        plan.replacementPort != null -> plan.replacementPort
-        plan.applyPortToServer -> plan.detectedPort
-        else -> null
-      }
-      if (current == null || finalPort == null) {
-        editLoading = false
-        editText = updatedConfig
-        editLastLoadedText = updatedConfig
-        editServer = null
-        showSnack(context.getString(R.string.common_saved))
-        refreshServers()
-        refreshGlobalPortRegistry()
-        return@saveText
-      }
-      val payload = JSONObject()
-        .put("enabled", current.enabled)
-        .put("socks5_port", finalPort)
-      actions.saveJsonData("$basePath/servers/$encodedServer/setting", payload) { settingOk ->
-        editLoading = false
-        if (settingOk) {
-          editText = updatedConfig
-          editLastLoadedText = updatedConfig
-          editServer = null
-          showSnack(context.getString(R.string.common_saved))
-          refreshServers()
-          refreshGlobalPortRegistry()
-        } else {
-          showSnack(context.getString(R.string.singbox_config_saved_port_update_failed))
-        }
-      }
-    }
-  }
+
 
   if (showCreateServer) {
     Hysteria2CreateServerDialog(
@@ -844,7 +728,7 @@ fun Hysteria2ProfileScreen(
         showCreateServer = false
         actions.createHysteria2Server(profile, name) { created ->
           if (created != null) {
-            showSnack(context.getString(R.string.singbox_server_created_fmt, created))
+            showSnack("Сервер Hysteria2 создан: $created")
             refreshServers()
             refreshGlobalPortRegistry()
           } else {
@@ -856,107 +740,48 @@ fun Hysteria2ProfileScreen(
     )
   }
 
-  if (showImportServer) {
-    val activeSetting = currentProfileSetting()
-    val targetServer = importTargetServer
-    Hysteria2ImportToProfileDialog(
-      existing = servers.map { it.name },
-      suggestedPort = findNextAvailableHysteria2Port(globalPortRegistry, 2080),
-      lockedServerName = targetServer,
-      onDismiss = {
-        showImportServer = false
-        importTargetServer = null
-      },
-      onGenerate = generate@ { serverName, sourceText ->
-        val preferredPort = findNextAvailableHysteria2Port(globalPortRegistry, 2080)
-        val importedResult = runCatching { run { val json = JSONObject(sourceText); Hysteria2JsonImportResult(json.toString(2), preferredPort, json.optString("name", "").takeIf { it.isNotBlank() }) } }
-        val imported = importedResult.getOrNull()
-        if (imported == null) {
-          val error = importedResult.exceptionOrNull()
-          showSnack(context.getString(R.string.singbox_import_failed_fmt, error?.message ?: context.getString(R.string.singbox_parse_error)))
-          return@generate
-        }
-
-        fun prepareConfig(serverPort: Int?): Pair<String, Int> {
-          var configToSave = imported.configJson
-          val detectedPort = findHysteria2ProxyInboundPort(configToSave)
-          val resolvedPort = when {
-            activeSetting.isVpn -> serverPort ?: detectedPort ?: preferredPort
-            detectedPort == null -> preferredPort
-            findHysteria2PortConflictLabel(globalPortRegistry, detectedPort, ignoredLabel = targetServer?.let { hysteria2ServerPortLabel(profile, it) }) == null -> detectedPort
-            else -> findNextAvailableHysteria2Port(globalPortRegistry, detectedPort, ignoredLabel = targetServer?.let { hysteria2ServerPortLabel(profile, it) })
+  if (editSettingsServer != null) {
+    val serverName = editSettingsServer ?: ""
+    val server = servers.firstOrNull { it.name == serverName }
+    Hysteria2ServerSettingsDialog(
+      serverName = serverName,
+      server = server,
+      configText = editSettingsConfig,
+      loading = editSettingsLoading,
+      onDismiss = { if (!editSettingsLoading) editSettingsServer = null },
+      onSave = { nextServer, nextConfig ->
+        val encodedServer = URLEncoder.encode(serverName, "UTF-8")
+        editSettingsLoading = true
+        actions.saveText("$basePath/servers/$encodedServer/config", nextConfig) { configOk ->
+          if (!configOk) {
+            editSettingsLoading = false
+            showSnack(context.getString(R.string.save_failed))
+            return@saveText
           }
-          configToSave = rewriteHysteria2ConfigInboundsForMode(configToSave, activeSetting, resolvedPort) ?: configToSave
-          return configToSave to resolvedPort
-        }
-
-        fun saveGeneratedToServer(server: String, port: Int, configText: String, updateSetting: Boolean) {
-          val encodedServer = URLEncoder.encode(server, "UTF-8")
-          actions.saveText("$basePath/servers/$encodedServer/config", configText) { configOk ->
-            if (!configOk) {
-              showSnack(context.getString(R.string.save_failed))
-              refreshServers()
-              return@saveText
-            }
-            if (!updateSetting) {
+          val payload = JSONObject()
+            .put("enabled", nextServer.enabled)
+            .put("socks5_port", nextServer.port ?: 11590)
+            .put("log_level", nextServer.logLevel.ifBlank { "info" })
+          actions.saveJsonData("$basePath/servers/$encodedServer/setting", payload) { settingOk ->
+            editSettingsLoading = false
+            if (settingOk) {
+              editSettingsServer = null
               showSnack(context.getString(R.string.common_saved))
               refreshServers()
               refreshGlobalPortRegistry()
-              return@saveText
-            }
-            val current = servers.firstOrNull { it.name == server }
-            val payload = JSONObject()
-              .put("enabled", current?.enabled ?: true)
-              .put("socks5_port", port)
-            actions.saveJsonData("$basePath/servers/$encodedServer/setting", payload) { settingOk ->
-              if (settingOk) {
-                rememberGeneratedServer(server, port)
-                showSnack(context.getString(R.string.singbox_import_created_fmt, server, port))
-                scope.launch {
-                  delay(250)
-                  refreshServers()
-                  refreshGlobalPortRegistry()
-                }
-              } else {
-                showSnack(context.getString(R.string.singbox_config_saved_port_update_failed))
-                refreshServers()
-                refreshGlobalPortRegistry()
-              }
+            } else {
+              showSnack("JSON сохранён, но настройки сервера обновить не удалось")
             }
           }
-        }
-
-        showImportServer = false
-        importTargetServer = null
-        if (targetServer != null) {
-          val current = servers.firstOrNull { it.name == targetServer }
-          val (configToSave, resolvedPort) = prepareConfig(current?.port)
-          saveGeneratedToServer(targetServer, resolvedPort, configToSave, updateSetting = true)
-          return@generate
-        }
-
-        if (activeSetting.isVpn && servers.isNotEmpty()) {
-          showSnack(context.getString(R.string.singbox_vpn_add_server_blocked))
-          return@generate
-        }
-
-        val (configToSave, resolvedPort) = prepareConfig(null)
-        actions.createHysteria2Server(profile, serverName) { created ->
-          if (created == null) {
-            showSnack(context.getString(R.string.create_failed))
-            return@createHysteria2Server
-          }
-          saveGeneratedToServer(created, resolvedPort, configToSave, updateSetting = true)
         }
       },
-      snackHost = snackHost,
     )
   }
 
   if (editServer != null) {
     AlertDialog(
       onDismissRequest = { if (!editLoading) editServer = null },
-      title = { Text(stringResource(R.string.singbox_editor_title_fmt, editServer ?: "")) },
+      title = { Text("Hysteria2 JSON: ${editServer ?: ""}") },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
           if (editLoading) {
@@ -967,7 +792,7 @@ fun Hysteria2ProfileScreen(
             onValueChange = { editText = it },
             modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp),
             singleLine = false,
-            label = { Text(stringResource(R.string.singbox_editor_label)) },
+            label = { Text("Client config JSON") },
           )
         }
       },
@@ -975,44 +800,24 @@ fun Hysteria2ProfileScreen(
         Button(enabled = !editLoading && editText != editLastLoadedText, onClick = {
           val serverName = editServer ?: return@Button
           val parsed = runCatching { JSONObject(editText.trim()) }.getOrElse {
-            showSnack(context.getString(R.string.singbox_invalid_json_fmt, it.message ?: context.getString(R.string.singbox_parse_error)))
+            showSnack("Некорректный JSON: ${it.message ?: "parse error"}")
             return@Button
           }
           val normalizedText = parsed.toString(2)
-          val currentServer = servers.firstOrNull { it.name == serverName }
-          if (currentProfileSetting().isVpn) {
-            applyConfigPlan(Hysteria2ServerConfigPortPlan(serverName = serverName, originalConfig = normalizedText, detectedPort = currentServer?.port ?: 0, applyPortToServer = false))
-            return@Button
-          }
-          val detectedPort = findHysteria2ProxyInboundPort(normalizedText)
-
-          if (detectedPort == null || currentServer == null) {
-            applyConfigPlan(Hysteria2ServerConfigPortPlan(serverName = serverName, originalConfig = normalizedText, detectedPort = currentServer?.port ?: 0, applyPortToServer = false))
-            return@Button
-          }
-
-          val currentServerLabel = hysteria2ServerPortLabel(profile, serverName)
-          val conflictLabel = findHysteria2PortConflictLabel(globalPortRegistry, detectedPort, ignoredLabel = currentServerLabel)
-          if (currentServer.port == detectedPort && conflictLabel == null) {
-            applyConfigPlan(Hysteria2ServerConfigPortPlan(serverName = serverName, originalConfig = normalizedText, detectedPort = detectedPort, applyPortToServer = false))
-            return@Button
-          }
-          pendingConfigPlan = if (conflictLabel == null) {
-            Hysteria2ServerConfigPortPlan(
-              serverName = serverName,
-              originalConfig = normalizedText,
-              detectedPort = detectedPort,
-              applyPortToServer = true,
-            )
-          } else {
-            Hysteria2ServerConfigPortPlan(
-              serverName = serverName,
-              originalConfig = normalizedText,
-              detectedPort = detectedPort,
-              applyPortToServer = true,
-              conflictServerName = conflictLabel,
-              replacementPort = findNextAvailableHysteria2Port(globalPortRegistry, detectedPort, ignoredLabel = currentServerLabel),
-            )
+          val encodedServer = URLEncoder.encode(serverName, "UTF-8")
+          editLoading = true
+          actions.saveText("$basePath/servers/$encodedServer/config", normalizedText) { ok ->
+            editLoading = false
+            if (ok) {
+              editText = normalizedText
+              editLastLoadedText = normalizedText
+              editServer = null
+              showSnack(context.getString(R.string.common_saved))
+              refreshServers()
+              refreshGlobalPortRegistry()
+            } else {
+              showSnack(context.getString(R.string.save_failed))
+            }
           }
         }) { Text(stringResource(R.string.action_save)) }
       },
@@ -1024,51 +829,7 @@ fun Hysteria2ProfileScreen(
     )
   }
 
-  pendingConfigPlan?.let { plan ->
-    val message = if (plan.conflictServerName == null) {
-      context.getString(R.string.singbox_port_sync_found_fmt, plan.detectedPort, plan.serverName)
-    } else {
-      context.getString(
-        R.string.singbox_port_sync_conflict_fmt,
-        plan.detectedPort,
-        plan.conflictServerName,
-        plan.replacementPort ?: plan.detectedPort,
-        plan.serverName,
-      )
-    }
-    AlertDialog(
-      onDismissRequest = { pendingConfigPlan = null },
-      title = { Text(stringResource(R.string.singbox_port_sync_title)) },
-      text = { Text(message) },
-      confirmButton = {
-        Button(onClick = {
-          pendingConfigPlan = null
-          applyConfigPlan(plan)
-        }) {
-          Text(
-            if (plan.conflictServerName == null) stringResource(R.string.singbox_port_sync_apply)
-            else stringResource(R.string.singbox_port_sync_replace_and_apply)
-          )
-        }
-      },
-      dismissButton = {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          OutlinedButton(onClick = {
-            pendingConfigPlan = null
-            applyConfigPlan(plan.copy(applyPortToServer = false, replacementPort = null))
-          }) {
-            Text(
-              if (plan.conflictServerName == null) stringResource(R.string.singbox_port_sync_skip_profile)
-              else stringResource(R.string.singbox_port_sync_save_config_only)
-            )
-          }
-          OutlinedButton(onClick = { pendingConfigPlan = null }) {
-            Text(stringResource(R.string.action_cancel))
-          }
-        }
-      }
-    )
-  }
+
 
   if (program == null) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -1185,7 +946,7 @@ fun Hysteria2ProfileScreen(
     }
 
     AppListPickerCard(
-      title = stringResource(R.string.singbox_apps_title),
+      title = "Приложения Hysteria2",
       desc = stringResource(R.string.apps_common_desc),
       path = "$basePath/apps/user",
       actions = actions,
@@ -1204,17 +965,9 @@ fun Hysteria2ProfileScreen(
       snackHost = snackHost,
       onCreateServer = {
         if (activeSetting.isVpn && servers.isNotEmpty()) {
-          showSnack(context.getString(R.string.singbox_vpn_add_server_blocked))
+          showSnack("В VPN-режиме Hysteria2 разрешён только один сервер")
         } else {
           showCreateServer = true
-        }
-      },
-      onGenerateServer = {
-        if (activeSetting.isVpn && servers.isNotEmpty()) {
-          showSnack(context.getString(R.string.singbox_vpn_add_server_blocked))
-        } else {
-          importTargetServer = null
-          showImportServer = true
         }
       },
       onRefresh = { refreshServers() },
@@ -1223,6 +976,7 @@ fun Hysteria2ProfileScreen(
         refreshGlobalPortRegistry()
       },
       onEditConfig = ::openEditor,
+      onEditSettings = ::openSettingsEditor,
     )
 
     Spacer(Modifier.height(effectiveBottomContentPadding))
@@ -1255,8 +1009,8 @@ private fun Hysteria2ProfileSettingCard(
   }
 
   Hysteria2SectionCard(
-    title = stringResource(R.string.singbox_profile_settings_title),
-    desc = stringResource(R.string.singbox_profile_settings_desc),
+    title = "T2S настройки Hysteria2",
+    desc = "Локальные порты t2s/web для профиля Hysteria2",
     accent = Color(0xFF38BDF8),
     icon = {
       Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(21.dp))
@@ -1270,7 +1024,7 @@ private fun Hysteria2ProfileSettingCard(
         onValueChange = { t2sPortText = it.filter(Char::isDigit) },
         modifier = Modifier.weight(1f),
         enabled = !loading,
-        label = { Text(stringResource(R.string.singbox_t2s_port_label)) },
+        label = { Text("T2S port") },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         singleLine = true,
       )
@@ -1279,18 +1033,18 @@ private fun Hysteria2ProfileSettingCard(
         onValueChange = { t2sWebPortText = it.filter(Char::isDigit) },
         modifier = Modifier.weight(1f),
         enabled = !loading,
-        label = { Text(stringResource(R.string.singbox_t2s_web_port_label)) },
+        label = { Text("T2S web port") },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         singleLine = true,
       )
     }
 
     val footerText = when {
-      parsedT2sPort == null || parsedT2sWebPort == null -> stringResource(R.string.singbox_profile_autosave_hint)
-      parsedT2sPort == parsedT2sWebPort -> stringResource(R.string.singbox_profile_ports_must_differ)
-      parsedT2sPort !in 1..65535 || parsedT2sWebPort !in 1..65535 -> stringResource(R.string.singbox_profile_autosave_hint)
+      parsedT2sPort == null || parsedT2sWebPort == null -> "Применится после стоп/старт службы"
+      parsedT2sPort == parsedT2sWebPort -> "Порты профиля должны отличаться"
+      parsedT2sPort !in 1..65535 || parsedT2sWebPort !in 1..65535 -> "Применится после стоп/старт службы"
       saving -> stringResource(R.string.common_loading)
-      else -> stringResource(R.string.singbox_profile_autosave_hint)
+      else -> "Применится после стоп/старт службы"
     }
     Surface(
       shape = RoundedCornerShape(14.dp),
@@ -1316,15 +1070,15 @@ private fun Hysteria2ProtoModeCard(
 ) {
   val accent = Color(0xFFA855F7)
   Hysteria2SectionCard(
-    title = stringResource(R.string.singbox_proto_mode_title),
-    desc = stringResource(R.string.singbox_proto_mode_desc),
+    title = "Режим маршрутизации",
+    desc = "Для Hysteria2 backend всегда SOCKS5, ниже выбирается режим t2s",
     accent = accent,
     icon = { Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp)) },
   ) {
     StableLinearProgressIndicator(visible = loading || saving)
     val options = listOf(
-      "tcp" to stringResource(R.string.singbox_proto_mode_tcp),
-      "tcp_udp" to stringResource(R.string.singbox_proto_mode_tcp_udp),
+      "tcp" to "TCP",
+      "tcp_udp" to "TCP + UDP",
     )
     Surface(
       shape = RoundedCornerShape(14.dp),
@@ -1387,8 +1141,8 @@ private fun Hysteria2ModeSwitchCard(
 ) {
   val accent = if (setting.isVpn) Color(0xFF22C55E) else Color(0xFF38BDF8)
   Hysteria2SectionCard(
-    title = stringResource(R.string.singbox_mode_switch_title),
-    desc = stringResource(R.string.singbox_mode_switch_desc),
+    title = "Режим Hysteria2",
+    desc = "T2S для нескольких серверов или VPN/tun2proxy для одного сервера",
     accent = accent,
     icon = { Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp)) },
   ) {
@@ -1400,8 +1154,8 @@ private fun Hysteria2ModeSwitchCard(
         selected = setting.isT2s,
         enabled = !loading && !saving,
         accent = Color(0xFF38BDF8),
-        title = stringResource(R.string.singbox_mode_proxy_t2s),
-        desc = stringResource(R.string.singbox_mode_proxy_t2s_desc),
+        title = "T2S",
+        desc = "Несколько Hysteria2 серверов через SOCKS5 backend",
         onClick = { onSwitchMode(HYSTERIA2_MODE_T2S) },
       )
       Hysteria2ModeOption(
@@ -1409,8 +1163,8 @@ private fun Hysteria2ModeSwitchCard(
         selected = setting.isVpn,
         enabled = !loading && !saving,
         accent = Color(0xFF22C55E),
-        title = stringResource(R.string.singbox_mode_vpn_t2socks),
-        desc = stringResource(R.string.singbox_mode_vpn_t2socks_desc),
+        title = "VPN / tun2proxy",
+        desc = "Один Hysteria2 сервер через tun2socks",
         onClick = { onSwitchMode(HYSTERIA2_MODE_VPN) },
       )
     }
@@ -1422,11 +1176,11 @@ private fun Hysteria2ModeSwitchCard(
     ) {
       Text(
         text = if (setting.isVpn && serverCount != 1) {
-          stringResource(R.string.singbox_vpn_single_server_required)
+          "VPN-режим Hysteria2 поддерживает только один сервер"
         } else if (setting.isVpn) {
-          stringResource(R.string.singbox_vpn_pipeline)
+          "apps → tun2socks → Hysteria2 SOCKS5 → server"
         } else {
-          stringResource(R.string.singbox_profile_autosave_hint)
+          "Применится после стоп/старт службы"
         },
         modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
         style = MaterialTheme.typography.bodySmall,
@@ -1465,14 +1219,14 @@ private fun Hysteria2ModeOption(
 private fun Hysteria2VpnStructureWarningCard(onSwitchToT2s: () -> Unit) {
   Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.70f))) {
     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Text(stringResource(R.string.singbox_vpn_structure_error_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+      Text("Неверная структура VPN Hysteria2", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
       Text(
-        stringResource(R.string.singbox_vpn_structure_error_body),
+        "Для VPN/tun2proxy оставь ровно один сервер или переключись в T2S.",
         color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f),
         style = MaterialTheme.typography.bodySmall,
       )
       OutlinedButton(onClick = onSwitchToT2s, modifier = Modifier.fillMaxWidth()) {
-        Text(stringResource(R.string.singbox_switch_to_t2s))
+        Text("Переключить в T2S")
       }
     }
   }
@@ -1509,8 +1263,8 @@ private fun Hysteria2VpnProfileCard(
   }
 
   Hysteria2SectionCard(
-    title = stringResource(R.string.singbox_vpn_card_title),
-    desc = stringResource(R.string.singbox_vpn_card_desc),
+    title = "VPN / tun2proxy Hysteria2",
+    desc = "Настройки TUN, DNS и log level для tun2socks",
     accent = Color(0xFF22C55E),
     icon = { Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp)) },
   ) {
@@ -1522,7 +1276,7 @@ private fun Hysteria2VpnProfileCard(
       border = BorderStroke(1.dp, Color(0xFF22C55E).copy(alpha = 0.22f)),
     ) {
       Text(
-        stringResource(R.string.singbox_vpn_pipeline),
+        "apps → tun2socks → Hysteria2 SOCKS5 → server",
         modifier = Modifier.fillMaxWidth().padding(horizontal = 11.dp, vertical = 9.dp),
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
@@ -1535,8 +1289,8 @@ private fun Hysteria2VpnProfileCard(
       modifier = Modifier.fillMaxWidth(),
       enabled = !loading,
       singleLine = true,
-      label = { Text(stringResource(R.string.singbox_vpn_tun_label)) },
-      supportingText = { Text(stringResource(R.string.singbox_vpn_tun_hint)) },
+      label = { Text("TUN interface") },
+      supportingText = { Text("Например hytun0") },
     )
     OutlinedTextField(
       value = dnsText,
@@ -1544,12 +1298,12 @@ private fun Hysteria2VpnProfileCard(
       modifier = Modifier.fillMaxWidth().heightIn(min = 84.dp),
       enabled = !loading,
       singleLine = false,
-      label = { Text(stringResource(R.string.singbox_vpn_dns_label)) },
-      supportingText = { Text(stringResource(R.string.singbox_vpn_dns_hint)) },
+      label = { Text("DNS") },
+      supportingText = { Text("IPv4 DNS, по одному на строку") },
     )
 
     Text(
-      stringResource(R.string.singbox_vpn_log_level_label),
+      "tun2socks log level",
       style = MaterialTheme.typography.labelLarge,
       fontWeight = FontWeight.Bold,
       color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.82f),
@@ -1581,7 +1335,7 @@ private fun Hysteria2VpnProfileCard(
     }
 
     Text(
-      if (saving) stringResource(R.string.common_loading) else stringResource(R.string.singbox_vpn_autosave_hint),
+      if (saving) stringResource(R.string.common_loading) else "Сохраняется автоматически, применяется после стоп/старт",
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
     )
@@ -1598,16 +1352,16 @@ private fun Hysteria2ServersSection(
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   onCreateServer: () -> Unit,
-  onGenerateServer: () -> Unit,
   onRefresh: () -> Unit,
   onServerSaved: (Hysteria2ServerUi) -> Unit,
   onEditConfig: (String) -> Unit,
+  onEditSettings: (String) -> Unit,
 ) {
   val createEnabled = setting.isT2s || servers.isEmpty()
 
   Hysteria2SectionCard(
-    title = stringResource(R.string.singbox_servers_title),
-    desc = stringResource(if (setting.isVpn) R.string.singbox_vpn_servers_desc else R.string.singbox_servers_desc),
+    title = "Серверы Hysteria2",
+    desc = if (setting.isVpn) "VPN: должен быть ровно один сервер" else "T2S: можно добавить несколько серверов",
     accent = Color(0xFFA78BFA),
     icon = {
       Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp))
@@ -1628,45 +1382,23 @@ private fun Hysteria2ServersSection(
       }
     },
   ) {
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    Surface(
+      modifier = Modifier
+        .fillMaxWidth()
+        .clickable(enabled = createEnabled) { onCreateServer() },
+      shape = RoundedCornerShape(100.dp),
+      color = Color(0xFFA78BFA).copy(alpha = if (createEnabled) 0.18f else 0.08f),
+      contentColor = Color.White.copy(alpha = if (createEnabled) 0.92f else 0.45f),
+      border = BorderStroke(1.dp, Color(0xFFA78BFA).copy(alpha = if (createEnabled) 0.38f else 0.14f)),
     ) {
-      Surface(
-        modifier = Modifier
-          .weight(1f)
-          .clickable(enabled = createEnabled) { onCreateServer() },
-        shape = RoundedCornerShape(100.dp),
-        color = Color(0xFFA78BFA).copy(alpha = if (createEnabled) 0.18f else 0.08f),
-        contentColor = Color.White.copy(alpha = if (createEnabled) 0.92f else 0.45f),
-        border = BorderStroke(1.dp, Color(0xFFA78BFA).copy(alpha = if (createEnabled) 0.38f else 0.14f)),
+      Row(
+        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
       ) {
-        Row(
-          modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.Center,
-        ) {
-          Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(17.dp))
-          Spacer(Modifier.width(6.dp))
-          Text(stringResource(R.string.singbox_profile_add_server), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-      }
-      Surface(
-        modifier = Modifier
-          .weight(1f)
-          .clickable(enabled = createEnabled) { onGenerateServer() },
-        shape = RoundedCornerShape(100.dp),
-        color = Color(0xFFEF4444).copy(alpha = if (createEnabled) 0.16f else 0.07f),
-        contentColor = Color.White.copy(alpha = if (createEnabled) 0.92f else 0.45f),
-        border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = if (createEnabled) 0.34f else 0.13f)),
-      ) {
-        Row(
-          modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.Center,
-        ) {
-          Text(stringResource(R.string.singbox_import_action), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
+        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(17.dp))
+        Spacer(Modifier.width(6.dp))
+        Text("Добавить сервер", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
       }
     }
 
@@ -1678,7 +1410,7 @@ private fun Hysteria2ServersSection(
         border = BorderStroke(1.dp, Color(0xFFA78BFA).copy(alpha = 0.16f)),
       ) {
         Text(
-          stringResource(R.string.singbox_profile_no_servers),
+          "Серверов пока нет",
           modifier = Modifier.fillMaxWidth().padding(12.dp),
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
           style = MaterialTheme.typography.bodyMedium,
@@ -1696,6 +1428,7 @@ private fun Hysteria2ServersSection(
             onRefresh = onRefresh,
             onServerSaved = onServerSaved,
             onEditConfig = { onEditConfig(server.name) },
+            onEditSettings = { onEditSettings(server.name) },
             showPort = true,
           )
         }
@@ -1714,6 +1447,7 @@ private fun Hysteria2ServerCard(
   onRefresh: () -> Unit,
   onServerSaved: (Hysteria2ServerUi) -> Unit,
   onEditConfig: () -> Unit,
+  onEditSettings: () -> Unit,
   showPort: Boolean = true,
 ) {
   val context = LocalContext.current
@@ -1735,13 +1469,13 @@ private fun Hysteria2ServerCard(
     if (port !in 1..65535) return
     saving = true
     val encodedServer = URLEncoder.encode(server.name, "UTF-8")
-    val payload = JSONObject().put("enabled", enabled).put("socks5_port", port)
+    val payload = JSONObject().put("enabled", enabled).put("socks5_port", port).put("log_level", server.logLevel.ifBlank { "info" })
     actions.saveJsonData("$basePath/servers/$encodedServer/setting", payload) { ok ->
       saving = false
       if (ok) {
         onServerSaved(server.copy(enabled = enabled, port = port))
       } else {
-        showSnack(context.getString(R.string.singbox_auto_save_failed))
+        showSnack("Автосохранение Hysteria2 не удалось")
       }
     }
   }
@@ -1749,8 +1483,8 @@ private fun Hysteria2ServerCard(
   if (askDelete) {
     AlertDialog(
       onDismissRequest = { askDelete = false },
-      title = { Text(stringResource(R.string.singbox_delete_server_title)) },
-      text = { Text(context.getString(R.string.singbox_delete_server_message_fmt, profile, server.name)) },
+      title = { Text("Удалить сервер Hysteria2") },
+      text = { Text("Удалить Hysteria2 сервер $profile / ${server.name}?") },
       confirmButton = {
         Button(onClick = {
           askDelete = false
@@ -1817,7 +1551,7 @@ private fun Hysteria2ServerCard(
           Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(server.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-              if (saving) stringResource(R.string.common_loading) else stringResource(R.string.singbox_server_autosave_hint),
+              if (saving) stringResource(R.string.common_loading) else "SOCKS5 port сохраняется автоматически",
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
               maxLines = 1,
@@ -1838,7 +1572,7 @@ private fun Hysteria2ServerCard(
             modifier = Modifier.fillMaxWidth(),
             enabled = !saving,
             singleLine = true,
-            label = { Text(stringResource(R.string.singbox_server_port_label)) },
+            label = { Text("SOCKS5 backend port") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
           )
         }
@@ -1852,13 +1586,30 @@ private fun Hysteria2ServerCard(
             border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.28f)),
           ) {
             Row(
-              modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+              modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.Center,
             ) {
               Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-              Spacer(Modifier.width(6.dp))
-              Text(stringResource(R.string.action_edit), fontWeight = FontWeight.Bold, maxLines = 1)
+              Spacer(Modifier.width(5.dp))
+              Text("JSON", fontWeight = FontWeight.Bold, maxLines = 1)
+            }
+          }
+          Surface(
+            modifier = Modifier.weight(1f).clickable { onEditSettings() },
+            shape = RoundedCornerShape(100.dp),
+            color = Color(0xFFFFBC00).copy(alpha = 0.13f),
+            contentColor = Color(0xFFFFD166),
+            border = BorderStroke(1.dp, Color(0xFFFFBC00).copy(alpha = 0.30f)),
+          ) {
+            Row(
+              modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.Center,
+            ) {
+              Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(16.dp))
+              Spacer(Modifier.width(5.dp))
+              Text("UI", fontWeight = FontWeight.Bold, maxLines = 1)
             }
           }
           Surface(
@@ -1869,12 +1620,12 @@ private fun Hysteria2ServerCard(
             border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.30f)),
           ) {
             Row(
-              modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+              modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.Center,
             ) {
               Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-              Spacer(Modifier.width(6.dp))
+              Spacer(Modifier.width(5.dp))
               Text(stringResource(R.string.action_delete), fontWeight = FontWeight.Bold, maxLines = 1)
             }
           }
@@ -1939,14 +1690,14 @@ private fun Hysteria2CreateServerDialog(
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
               Text(
-                stringResource(R.string.singbox_create_server_title),
+                "Новый сервер Hysteria2",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
               Text(
-                stringResource(R.string.singbox_create_server_rules),
+                "Имя сервера: латиница, цифры, _, -",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
                 maxLines = 2,
@@ -1962,7 +1713,7 @@ private fun Hysteria2CreateServerDialog(
               error = null
             },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.singbox_server_name_label)) },
+            label = { Text("Имя сервера") },
             singleLine = false,
             maxLines = 2,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
@@ -1994,7 +1745,7 @@ private fun Hysteria2CreateServerDialog(
                     snack(msg)
                   }
                   existingNorm.contains(n) -> {
-                    val msg = context.getString(R.string.singbox_server_already_exists)
+                    val msg = "Сервер Hysteria2 уже существует"
                     error = msg
                     snack(msg)
                   }
@@ -2011,27 +1762,56 @@ private fun Hysteria2CreateServerDialog(
   }
 }
 
+
+private fun hysteria2ConfigString(obj: JSONObject, key: String): String = obj.optString(key, "")
+
+private fun hysteria2NestedObject(root: JSONObject, key: String): JSONObject = root.optJSONObject(key) ?: JSONObject()
+
+
+private fun normalizeHysteria2ClientConfigForUi(root: JSONObject, port: Int) {
+  listOf("http", "tcpForwarding", "udpForwarding", "tcpTProxy", "udpTProxy", "tcpRedirect", "tun", "inbounds", "outbounds", "route", "dns").forEach { root.remove(it) }
+  val socks5 = root.optJSONObject("socks5") ?: JSONObject()
+  socks5.put("listen", "127.0.0.1:$port")
+  if (!socks5.has("disableUDP")) socks5.put("disableUDP", false)
+  root.put("socks5", socks5)
+}
+
 @Composable
-private fun Hysteria2ImportToProfileDialog(
-  existing: List<String>,
-  suggestedPort: Int,
-  lockedServerName: String? = null,
+private fun Hysteria2ServerSettingsDialog(
+  serverName: String,
+  server: Hysteria2ServerUi?,
+  configText: String,
+  loading: Boolean,
   onDismiss: () -> Unit,
-  onGenerate: (String, String) -> Unit,
-  snackHost: SnackbarHostState,
+  onSave: (Hysteria2ServerUi, String) -> Unit,
 ) {
   val context = LocalContext.current
   val configuration = LocalConfiguration.current
-  val scope = rememberCoroutineScope()
-  val dialogScrollState = rememberScrollState()
   val maxDialogHeight = configuration.screenHeightDp.dp * 0.92f
-  val existingNorm = remember(existing) { existing.map { normalizeHysteria2ServerName(it) }.toSet() }
-  var raw by remember { mutableStateOf(lockedServerName.orEmpty()) }
-  var source by remember { mutableStateOf("") }
-  var error by remember { mutableStateOf<String?>(null) }
-  val name = remember(raw) { normalizeHysteria2ServerName(raw) }
+  val dialogScrollState = rememberScrollState()
+  val parsed = remember(configText) { runCatching { JSONObject(configText.takeIf { it.trim().isNotBlank() } ?: "{}") }.getOrElse { JSONObject() } }
+  val tls = remember(configText) { hysteria2NestedObject(parsed, "tls") }
+  val socks5 = remember(configText) { hysteria2NestedObject(parsed, "socks5") }
+  val obfs = remember(configText) { hysteria2NestedObject(parsed, "obfs") }
+  val salamander = remember(configText) { hysteria2NestedObject(obfs, "salamander") }
+  val bandwidth = remember(configText) { hysteria2NestedObject(parsed, "bandwidth") }
 
-  val snack = createSnackFunction(scope, snackHost)
+  var enabled by remember(serverName, server?.enabled) { mutableStateOf(server?.enabled ?: false) }
+  var portText by remember(serverName, server?.port) { mutableStateOf((server?.port ?: 11590).toString()) }
+  var logLevel by remember(serverName, server?.logLevel) { mutableStateOf(server?.logLevel?.takeIf { it.isNotBlank() } ?: "info") }
+  var remoteServer by remember(configText) { mutableStateOf(hysteria2ConfigString(parsed, "server")) }
+  var auth by remember(configText) { mutableStateOf(hysteria2ConfigString(parsed, "auth")) }
+  var sni by remember(configText) { mutableStateOf(tls.optString("sni", "")) }
+  var tlsInsecure by remember(configText) { mutableStateOf(tls.optBoolean("insecure", false)) }
+  var fastOpen by remember(configText) { mutableStateOf(parsed.optBoolean("fastOpen", false)) }
+  var lazy by remember(configText) { mutableStateOf(parsed.optBoolean("lazy", false)) }
+  var obfsType by remember(configText) { mutableStateOf(obfs.optString("type", "")) }
+  var obfsPassword by remember(configText) { mutableStateOf(salamander.optString("password", "")) }
+  var bandwidthUp by remember(configText) { mutableStateOf(bandwidth.optString("up", "")) }
+  var bandwidthDown by remember(configText) { mutableStateOf(bandwidth.optString("down", "")) }
+  var socksUsername by remember(configText) { mutableStateOf(socks5.optString("username", "")) }
+  var socksPassword by remember(configText) { mutableStateOf(socks5.optString("password", "")) }
+  var error by remember(serverName) { mutableStateOf<String?>(null) }
 
   Dialog(
     onDismissRequest = onDismiss,
@@ -2045,127 +1825,102 @@ private fun Hysteria2ImportToProfileDialog(
       shape = RoundedCornerShape(28.dp),
       color = Color(0xFF17131E).copy(alpha = 0.98f),
       contentColor = MaterialTheme.colorScheme.onSurface,
-      border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.34f)),
+      border = BorderStroke(1.dp, Color(0xFFFFBC00).copy(alpha = 0.34f)),
     ) {
-      Box(
+      Column(
         modifier = Modifier
-          .background(
-            Brush.linearGradient(
-              listOf(Color(0xFFEF4444).copy(alpha = 0.16f), Color(0xFFA78BFA).copy(alpha = 0.08f), Color.Transparent)
-            ),
-            RoundedCornerShape(28.dp),
-          )
+          .verticalScroll(dialogScrollState)
           .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
       ) {
-        Column(
-          modifier = Modifier.verticalScroll(dialogScrollState),
-          verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-          Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Surface(
-              modifier = Modifier.size(44.dp),
-              shape = CircleShape,
-              color = Color(0xFFEF4444).copy(alpha = 0.18f),
-              contentColor = Color(0xFFFCA5A5),
-              border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.36f)),
-            ) {
-              Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(23.dp))
-              }
-            }
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-              Text(
-                stringResource(R.string.singbox_import_dialog_title),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-              )
-              Text(
-                "Hysteria2: импорт принимает чистый JSON client config. При сохранении ZDT-D нормализует только socks5 listen.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-              )
-            }
-          }
-
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
           Surface(
-            shape = RoundedCornerShape(18.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
-            border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.14f)),
-          ) {
-            Text(
-              stringResource(R.string.singbox_import_dialog_desc),
-              modifier = Modifier.fillMaxWidth().padding(12.dp),
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
-            )
+            modifier = Modifier.size(44.dp),
+            shape = CircleShape,
+            color = Color(0xFFFFBC00).copy(alpha = 0.18f),
+            contentColor = Color(0xFFFFD166),
+            border = BorderStroke(1.dp, Color(0xFFFFBC00).copy(alpha = 0.36f)),
+          ) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(23.dp)) } }
+          Column(Modifier.weight(1f)) {
+            Text("Hysteria2 server UI", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(serverName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f))
           }
+        }
 
-          OutlinedTextField(
-            value = name,
-            onValueChange = {
-              if (lockedServerName == null) {
-                raw = it
-                error = null
-              }
-            },
-            enabled = lockedServerName == null,
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.singbox_server_name_label)) },
-            singleLine = false,
-            maxLines = 2,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
-            supportingText = {
-              Column {
-                Text(stringResource(if (lockedServerName == null) R.string.singbox_create_server_rules else R.string.singbox_import_replace_current_hint))
-                if (lockedServerName == null) Text(stringResource(R.string.singbox_import_auto_port_hint, suggestedPort))
-              }
-            },
-            isError = error != null,
-          )
-          if (error != null) {
-            Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-          }
-          OutlinedTextField(
-            value = source,
-            onValueChange = { source = it },
-            label = { Text(stringResource(R.string.singbox_import_source_label)) },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 150.dp, max = 260.dp),
-            singleLine = false,
-            maxLines = 10,
-            supportingText = { Text(stringResource(R.string.singbox_import_source_support_hint)) },
-          )
+        if (loading) StableLinearProgressIndicator(visible = true)
+        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
 
-          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
-              Text(stringResource(R.string.action_cancel))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+          Text("Enabled", fontWeight = FontWeight.Bold)
+          Switch(checked = enabled, onCheckedChange = { enabled = it })
+        }
+        OutlinedTextField(value = remoteServer, onValueChange = { remoteServer = it.trim(); error = null }, label = { Text("server, например example.com:443") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = auth, onValueChange = { auth = it }, label = { Text("auth") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = portText, onValueChange = { portText = it.filter(Char::isDigit).take(5); error = null }, label = { Text("Local SOCKS5 port") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = logLevel, onValueChange = { logLevel = it.trim().lowercase().take(12) }, label = { Text("Hysteria log level") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = sni, onValueChange = { sni = it.trim() }, label = { Text("TLS SNI") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+          Text("TLS insecure")
+          Switch(checked = tlsInsecure, onCheckedChange = { tlsInsecure = it })
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+          Text("fastOpen")
+          Switch(checked = fastOpen, onCheckedChange = { fastOpen = it })
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+          Text("lazy")
+          Switch(checked = lazy, onCheckedChange = { lazy = it })
+        }
+        OutlinedTextField(value = obfsType, onValueChange = { obfsType = it.trim().lowercase() }, label = { Text("obfs type, например salamander") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = obfsPassword, onValueChange = { obfsPassword = it }, label = { Text("obfs salamander password") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = bandwidthUp, onValueChange = { bandwidthUp = it.trim() }, label = { Text("bandwidth up, например 20 mbps") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = bandwidthDown, onValueChange = { bandwidthDown = it.trim() }, label = { Text("bandwidth down, например 100 mbps") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = socksUsername, onValueChange = { socksUsername = it }, label = { Text("SOCKS5 username optional") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = socksPassword, onValueChange = { socksPassword = it }, label = { Text("SOCKS5 password optional") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+          OutlinedButton(onClick = onDismiss, enabled = !loading, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.action_cancel)) }
+          Button(enabled = !loading, modifier = Modifier.weight(1f), onClick = {
+            val port = portText.toIntOrNull()
+            if (remoteServer.isBlank()) {
+              error = "server обязателен"
+              return@Button
             }
-            Button(
-              modifier = Modifier.weight(1f),
-              onClick = {
-                val n = name.trim()
-                when {
-                  n.isEmpty() -> {
-                    val msg = context.getString(R.string.enter_a_name)
-                    error = msg
-                    snack(msg)
-                  }
-                  lockedServerName == null && existingNorm.contains(n) -> {
-                    val msg = context.getString(R.string.singbox_server_already_exists)
-                    error = msg
-                    snack(msg)
-                  }
-                  source.trim().isEmpty() -> snack(context.getString(R.string.singbox_import_source_required))
-                  else -> onGenerate(n, source.trim())
-                }
-              },
-            ) {
-              Text(stringResource(R.string.singbox_import_action))
+            if (port == null || port !in 1..65535) {
+              error = "Некорректный SOCKS5 port"
+              return@Button
             }
-          }
+            val root = runCatching { JSONObject(configText.takeIf { it.trim().isNotBlank() } ?: "{}") }.getOrElse { JSONObject() }
+            root.put("server", remoteServer.trim())
+            if (auth.isBlank()) root.remove("auth") else root.put("auth", auth)
+            val nextTls = root.optJSONObject("tls") ?: JSONObject()
+            if (sni.isBlank()) nextTls.remove("sni") else nextTls.put("sni", sni)
+            nextTls.put("insecure", tlsInsecure)
+            root.put("tls", nextTls)
+            root.put("fastOpen", fastOpen)
+            root.put("lazy", lazy)
+            if (obfsType.isBlank() && obfsPassword.isBlank()) {
+              root.remove("obfs")
+            } else {
+              val nextObfs = JSONObject().put("type", obfsType.ifBlank { "salamander" })
+              if (obfsPassword.isNotBlank()) nextObfs.put("salamander", JSONObject().put("password", obfsPassword))
+              root.put("obfs", nextObfs)
+            }
+            if (bandwidthUp.isBlank() && bandwidthDown.isBlank()) {
+              root.remove("bandwidth")
+            } else {
+              val bw = JSONObject()
+              if (bandwidthUp.isNotBlank()) bw.put("up", bandwidthUp)
+              if (bandwidthDown.isNotBlank()) bw.put("down", bandwidthDown)
+              root.put("bandwidth", bw)
+            }
+            val nextSocks = root.optJSONObject("socks5") ?: JSONObject()
+            if (socksUsername.isBlank()) nextSocks.remove("username") else nextSocks.put("username", socksUsername)
+            if (socksPassword.isBlank()) nextSocks.remove("password") else nextSocks.put("password", socksPassword)
+            root.put("socks5", nextSocks)
+            normalizeHysteria2ClientConfigForUi(root, port)
+            onSave(Hysteria2ServerUi(serverName, enabled, port, logLevel.ifBlank { "info" }), root.toString(2))
+          }) { Text(stringResource(R.string.action_save)) }
         }
       }
     }

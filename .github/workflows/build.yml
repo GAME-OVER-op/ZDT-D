@@ -2001,8 +2001,27 @@ jobs:
           SRC="$WORK/src"
           ARTIFACT_DIR="$PWD/out/artifacts/hysteria2"
           mkdir -p "$SRC" "$ARTIFACT_DIR"
-          git clone --depth 1 --branch "$HYSTERIA_REF" https://github.com/apernet/hysteria "$SRC/hysteria"
-          HYSTERIA_COMMIT="$(git -C "$SRC/hysteria" rev-parse HEAD)"
+          HYSTERIA_REPO="https://github.com/apernet/hysteria"
+          HYSTERIA_DIR="$SRC/hysteria"
+          git init "$HYSTERIA_DIR"
+          git -C "$HYSTERIA_DIR" remote add origin "$HYSTERIA_REPO"
+          # Upstream Hysteria release refs may be tagged either as vX.Y.Z or app/vX.Y.Z.
+          # Try both forms before failing with a useful refs listing.
+          HYSTERIA_FETCHED_REF=""
+          for ref in "$HYSTERIA_REF" "app/$HYSTERIA_REF" "${HYSTERIA_REF#app/}" "refs/tags/$HYSTERIA_REF" "refs/tags/app/$HYSTERIA_REF"; do
+            [[ -n "$ref" ]] || continue
+            if git -C "$HYSTERIA_DIR" fetch --depth 1 origin "$ref"; then
+              HYSTERIA_FETCHED_REF="$ref"
+              break
+            fi
+          done
+          if [[ -z "$HYSTERIA_FETCHED_REF" ]]; then
+            echo "::error::Could not fetch Hysteria ref '$HYSTERIA_REF'. Upstream often uses app/vX.Y.Z tags; check https://github.com/apernet/hysteria/tags"
+            git ls-remote --heads --tags "$HYSTERIA_REPO" | grep -E 'refs/(heads|tags)/(app/)?v?[0-9]' | tail -80 || true
+            exit 1
+          fi
+          git -C "$HYSTERIA_DIR" checkout --detach FETCH_HEAD
+          HYSTERIA_COMMIT="$(git -C "$HYSTERIA_DIR" rev-parse HEAD)"
           printf '%s\n' "$HYSTERIA_COMMIT" | tee "$ARTIFACT_DIR/hysteria2.commit"
           pushd "$SRC/hysteria" >/dev/null
           HY_APP_PLATFORMS="${{ matrix.hy_platform }}" uv run python hyperbole.py build -r

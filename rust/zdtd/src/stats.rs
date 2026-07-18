@@ -269,7 +269,42 @@ fn pidof_any(names: &[&str]) -> Vec<u32> {
 
 
 fn hysteria2_pids() -> Vec<u32> {
-    cmdline_pids_containing("/data/adb/modules/ZDT-D/bin/hysteria2")
+    let mut pids = pidof_any(&["hysteria2"]);
+    if !pids.is_empty() {
+        return pids;
+    }
+
+    // Hysteria2 is launched by ZDT-D as:
+    // /data/adb/modules/ZDT-D/bin/hysteria2 --disable-update-check ... client
+    // Use a strict cmdline pattern to avoid unrelated hysteria processes.
+    if let Ok(out) = shell::capture_quiet(
+        "sh -c \"pgrep -f '/data/adb/modules/ZDT-D/bin/hysteria2 --disable-update-check' 2>/dev/null || true\"",
+    ) {
+        pids.extend(parse_pids(&out));
+        pids.sort_unstable();
+        pids.dedup();
+        if !pids.is_empty() {
+            return pids;
+        }
+    }
+
+    let out = shell::capture_quiet("ps -A").unwrap_or_default();
+    for line in out.lines() {
+        if !(line.contains("/data/adb/modules/ZDT-D/bin/hysteria2")
+            || line.contains("/bin/hysteria2"))
+        {
+            continue;
+        }
+        for tok in line.split_whitespace() {
+            if let Ok(pid) = tok.parse::<u32>() {
+                pids.push(pid);
+                break;
+            }
+        }
+    }
+    pids.sort_unstable();
+    pids.dedup();
+    pids
 }
 
 fn wireproxy_pids() -> Vec<u32> {

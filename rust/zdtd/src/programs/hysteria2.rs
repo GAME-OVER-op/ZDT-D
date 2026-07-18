@@ -9,7 +9,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use super::common::*;
@@ -17,7 +17,7 @@ use crate::{
     android::pkg_uid::{self, Mode as UidMode, Sha256Tracker},
     iptables::iptables_port::{DpiTunnelOptions, ProtoChoice},
     settings,
-    shell::{self, Capture},
+    shell,
     vpn_netd::VpnNetdProfile,
 };
 

@@ -3,6 +3,7 @@ package com.android.zdtd.service.ui
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.material3.Surface
@@ -14,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import android.content.Intent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -129,6 +131,9 @@ private fun normalizeSingBoxTun2socksLogLevel(value: String?): String {
   return if (normalized in SINGBOX_TUN2SOCKS_LOG_LEVELS) normalized else "info"
 }
 
+private fun normalizeSingBoxProtoMode(raw: String?): String =
+  if (raw?.trim()?.lowercase() == "tcp") "tcp" else "tcp_udp"
+
 private data class SingBoxProfileSettingUi(
   val mode: String = SINGBOX_MODE_T2S,
   val t2sPort: Int? = 12345,
@@ -136,6 +141,7 @@ private data class SingBoxProfileSettingUi(
   val tun: String = "sbtun0",
   val dns: List<String> = listOf("8.8.8.8"),
   val tun2socksLogLevel: String = "info",
+  val protoMode: String = "tcp_udp",
 ) {
   val isVpn: Boolean get() = mode == SINGBOX_MODE_VPN
   val isT2s: Boolean get() = mode != SINGBOX_MODE_VPN
@@ -186,6 +192,7 @@ private fun parseSingBoxProfileSettingUi(obj: JSONObject?): SingBoxProfileSettin
     tun = normalizeSingBoxTunName(obj?.optString("tun", "sbtun0")),
     dns = normalizeSingBoxDns(rawDns),
     tun2socksLogLevel = normalizeSingBoxTun2socksLogLevel(obj?.optString("tun2socks_loglevel", "info")),
+    protoMode = normalizeSingBoxProtoMode(obj?.optString("proto_mode", "tcp_udp")),
   )
 }
 
@@ -197,6 +204,7 @@ private fun SingBoxProfileSettingUi.toJson(): JSONObject {
     .put("tun", normalizeSingBoxTunName(tun))
     .put("dns", JSONArray().also { arr -> normalizeSingBoxDns(dns).forEach { arr.put(it) } })
     .put("tun2socks_loglevel", normalizeSingBoxTun2socksLogLevel(tun2socksLogLevel))
+    .put("proto_mode", normalizeSingBoxProtoMode(protoMode))
 }
 
 private fun singBoxWebPanelUrl(port: Int): String = "http://127.0.0.1:$port/"
@@ -723,6 +731,7 @@ fun SingBoxProfileScreen(
   profile: String,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  tproxyEnabled: Boolean = false,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
 ) {
@@ -870,6 +879,7 @@ fun SingBoxProfileScreen(
       tun = normalizeSingBoxTunName(next.tun),
       dns = normalizeSingBoxDns(next.dns),
       tun2socksLogLevel = normalizeSingBoxTun2socksLogLevel(next.tun2socksLogLevel),
+      protoMode = normalizeSingBoxProtoMode(next.protoMode),
     )
     when {
       normalized.t2sPort !in 1..65535 -> {
@@ -1321,14 +1331,27 @@ fun SingBoxProfileScreen(
 
     AnimatedVisibility(
       visible = activeSetting.isT2s,
-      enter = fadeIn() + expandVertically(),
-      exit = fadeOut() + shrinkVertically(),
+      enter = fadeIn(tween(180)) + expandVertically(animationSpec = tween(220)),
+      exit = fadeOut(tween(140)) + shrinkVertically(animationSpec = tween(180)),
     ) {
       SingBoxProfileSettingCard(
         setting = activeSetting,
         loading = settingLoading,
         saving = settingSaving,
         onSave = ::saveProfileSetting,
+      )
+    }
+
+    AnimatedVisibility(
+      visible = tproxyEnabled && activeSetting.isT2s,
+      enter = fadeIn(tween(180)) + expandVertically(animationSpec = tween(220)),
+      exit = fadeOut(tween(140)) + shrinkVertically(animationSpec = tween(180)),
+    ) {
+      SingBoxProtoModeCard(
+        protoMode = activeSetting.protoMode,
+        loading = settingLoading,
+        saving = settingSaving,
+        onSelect = { value -> saveProfileSetting(activeSetting.copy(protoMode = value)) },
       )
     }
 
@@ -1472,6 +1495,76 @@ private fun SingBoxProfileSettingCard(
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
       )
+    }
+  }
+}
+
+@Composable
+private fun SingBoxProtoModeCard(
+  protoMode: String,
+  loading: Boolean,
+  saving: Boolean,
+  onSelect: (String) -> Unit,
+) {
+  val accent = Color(0xFFA855F7)
+  SingBoxSectionCard(
+    title = stringResource(R.string.singbox_proto_mode_title),
+    desc = stringResource(R.string.singbox_proto_mode_desc),
+    accent = accent,
+    icon = { Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp)) },
+  ) {
+    StableLinearProgressIndicator(visible = loading || saving)
+    val options = listOf(
+      "tcp" to stringResource(R.string.singbox_proto_mode_tcp),
+      "tcp_udp" to stringResource(R.string.singbox_proto_mode_tcp_udp),
+    )
+    Surface(
+      shape = RoundedCornerShape(14.dp),
+      color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.30f),
+      border = BorderStroke(1.dp, accent.copy(alpha = 0.18f)),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        options.forEach { (value, label) ->
+          val selected = normalizeSingBoxProtoMode(protoMode) == value
+          val enabled = !loading && !saving
+          val bg by animateColorAsState(
+            targetValue = if (selected) accent.copy(alpha = 0.22f) else Color.Transparent,
+            animationSpec = tween(220),
+            label = "singBoxProtoBg",
+          )
+          val borderColor by animateColorAsState(
+            targetValue = if (selected) accent.copy(alpha = 0.55f) else Color.Transparent,
+            animationSpec = tween(220),
+            label = "singBoxProtoBorder",
+          )
+          val textColor by animateColorAsState(
+            targetValue = if (selected) Color(0xFFC084FC) else MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 0.70f else 0.42f),
+            animationSpec = tween(220),
+            label = "singBoxProtoText",
+          )
+          Surface(
+            modifier = Modifier.weight(1f).clickable(enabled = enabled && !selected) { onSelect(value) },
+            shape = RoundedCornerShape(11.dp),
+            color = bg,
+            contentColor = textColor,
+            border = BorderStroke(1.dp, borderColor),
+          ) {
+            Text(
+              text = label,
+              modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+              style = MaterialTheme.typography.labelLarge,
+              fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+              color = textColor,
+              maxLines = 1,
+              textAlign = TextAlign.Center,
+            )
+          }
+        }
+      }
     }
   }
 }

@@ -110,7 +110,7 @@ pub struct ProxyConfig {
     /// - "tcp": TPROXY covers TCP only.
     /// When TPROXY is unavailable the DNAT fallback is always TCP and this value
     /// is ignored. Applied on service stop/start only.
-    #[serde(default = "default_proto_mode")]
+    #[serde(default)]
     pub proto_mode: String,
 }
 
@@ -126,14 +126,13 @@ impl Default for ProxyConfig {
             user: String::new(),
             pass: String::new(),
             wrapped_socks: WrappedSocksConfig::default(),
-            proto_mode: default_proto_mode(),
+            proto_mode: "tcp_udp".to_string(),
         }
     }
 }
 
 fn default_proxy_port_value() -> Value { Value::from(1080u16) }
 fn default_backend_mode() -> String { "balance".to_string() }
-fn default_proto_mode() -> String { "tcp_udp".to_string() }
 
 impl ProxyConfig {
     pub fn effective_ports(&self) -> Result<Vec<u16>> {
@@ -166,6 +165,16 @@ impl ProxyConfig {
         Ok(self.effective_backend_mode()? == "priority" && self.effective_ports()? == vec![0])
     }
 
+    /// Normalize fields that may be absent from older/minimal proxy.json files.
+    pub fn normalize_defaults(&mut self) -> Result<()> {
+        self.proto_mode = match self.proto_mode.trim().to_ascii_lowercase().as_str() {
+            "" | "tcp_udp" => "tcp_udp".to_string(),
+            "tcp" => "tcp".to_string(),
+            other => anyhow::bail!("invalid proto_mode: {other}; expected tcp or tcp_udp"),
+        };
+        Ok(())
+    }
+
     /// TPROXY protocol coverage for this profile: "tcp" -> TCP only, anything
     /// else (default "tcp_udp") -> TCP + UDP. Only consulted on the TPROXY path.
     pub fn proto_choice(&self) -> ProtoChoice {
@@ -174,6 +183,11 @@ impl ProxyConfig {
             _ => ProtoChoice::TcpUdp,
         }
     }
+}
+
+pub fn normalize_proxy_config_defaults(mut proxy: ProxyConfig) -> Result<ProxyConfig> {
+    proxy.normalize_defaults()?;
+    Ok(proxy)
 }
 
 fn collect_ports_from_value(v: &Value, out: &mut Vec<u16>) -> Result<()> {
@@ -354,6 +368,7 @@ fn build_profile_plan(profile: &str, external_used: &BTreeSet<u16>, own_used: &B
     let proxy_path = profile_dir.join("proxy.json");
     let proxy: ProxyConfig = read_json(&proxy_path)
         .with_context(|| format!("read {}", proxy_path.display()))?;
+    let proxy = normalize_proxy_config_defaults(proxy)?;
 
     let tracker = Sha256Tracker::new(SHA_FLAG_FILE);
     let uid_in = profile_dir.join("app/uid/user_program");

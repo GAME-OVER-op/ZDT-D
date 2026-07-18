@@ -945,6 +945,10 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="singbox_apps_title">Apps</string>
     <string name="singbox_profile_autosave_hint">Changes are saved automatically after a short pause.</string>
     <string name="singbox_server_autosave_hint">Port and enabled state are saved automatically.</string>
+    <string name="singbox_proto_mode_title">Transparent protocol (TPROXY)</string>
+    <string name="singbox_proto_mode_desc">Choose which protocols TPROXY redirects for this sing-box profile. Applied after restarting the service.</string>
+    <string name="singbox_proto_mode_tcp">TCP</string>
+    <string name="singbox_proto_mode_tcp_udp">TCP + UDP</string>
 
     <string name="operaproxy_sni_detail_sni_fmt">SNI: %1$s</string>
     <string name="operaproxy_sni_detail_address_fmt">Address: %1$s</string>

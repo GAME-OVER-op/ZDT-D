@@ -198,6 +198,7 @@ fun AppsHost(
           profile = r.profile,
           actions = actions,
           snackHost = snackHost,
+          tproxyEnabled = tproxyEnabled,
           topContentPadding = topContentPadding,
           bottomContentPadding = bottomContentPadding,
         )

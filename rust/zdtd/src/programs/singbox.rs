@@ -114,6 +114,8 @@ pub struct ProfileSetting {
     pub dns: Vec<String>,
     #[serde(default = "default_tun2socks_loglevel")]
     pub tun2socks_loglevel: String,
+    #[serde(default)]
+    pub proto_mode: String,
 }
 
 impl Default for ProfileSetting {
@@ -125,6 +127,16 @@ impl Default for ProfileSetting {
             tun: default_tun_name(),
             dns: default_dns(),
             tun2socks_loglevel: default_tun2socks_loglevel(),
+            proto_mode: "tcp_udp".to_string(),
+        }
+    }
+}
+
+impl ProfileSetting {
+    pub fn proto_choice(&self) -> ProtoChoice {
+        match self.proto_mode.trim().to_ascii_lowercase().as_str() {
+            "tcp" => ProtoChoice::Tcp,
+            _ => ProtoChoice::TcpUdp,
         }
     }
 }
@@ -255,6 +267,11 @@ fn normalize_setting_defaults(setting: &mut ProfileSetting) -> Result<()> {
     if setting.tun2socks_loglevel.is_empty() {
         setting.tun2socks_loglevel = default_tun2socks_loglevel();
     }
+    setting.proto_mode = match setting.proto_mode.trim().to_ascii_lowercase().as_str() {
+        "" | "tcp_udp" => "tcp_udp".to_string(),
+        "tcp" => "tcp".to_string(),
+        other => bail!("invalid proto_mode: {other}; expected tcp or tcp_udp"),
+    };
     Ok(())
 }
 
@@ -382,10 +399,11 @@ pub fn start_construction_profile(profile: &str) -> Result<()> {
             })?;
         }
 
-        apply_t2s_routing(
+        apply_t2s_routing_ext(
             &plan.uid_out,
             plan.setting.t2s_port,
-            ProtoChoice::Tcp,
+            plan.setting.proto_choice(),
+            plan.setting.proto_choice(),
             None,
             DpiTunnelOptions {
                 port_preference: 1,
@@ -547,10 +565,11 @@ pub fn start_t2s_if_enabled() -> Result<()> {
                 })?;
             }
 
-            apply_t2s_routing(
+            apply_t2s_routing_ext(
                 &plan.uid_out,
                 plan.setting.t2s_port,
-                ProtoChoice::Tcp,
+                plan.setting.proto_choice(),
+                plan.setting.proto_choice(),
                 None,
                 DpiTunnelOptions {
                     port_preference: 1,

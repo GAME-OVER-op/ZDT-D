@@ -995,7 +995,8 @@ fn default_singbox_profile_setting_value(t2s_port: u16, t2s_web_port: u16) -> se
         "t2s_web_port": t2s_web_port,
         "tun": "sbtun0",
         "dns": ["8.8.8.8"],
-        "tun2socks_loglevel": "info"
+        "tun2socks_loglevel": "info",
+        "proto_mode": "tcp_udp"
     })
 }
 
@@ -1269,6 +1270,13 @@ fn normalize_and_write_singbox_profile_setting(profile: &str, v: serde_json::Val
     let p = singbox_profile_root(profile).join("setting.json");
     write_json_pretty(&p, &normalized)?;
     Ok(normalized)
+}
+
+fn normalize_myproxy_proxy_json(v: serde_json::Value) -> Result<serde_json::Value> {
+    let proxy: crate::programs::myproxy::ProxyConfig = serde_json::from_value(v)
+        .map_err(|e| anyhow::anyhow!("bad proxy.json: {e}"))?;
+    let proxy = crate::programs::myproxy::normalize_proxy_config_defaults(proxy)?;
+    Ok(serde_json::to_value(&proxy)?)
 }
 
 
@@ -3945,6 +3953,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let v: serde_json::Value = read_json(&p)?;
                 let setting = crate::programs::singbox::normalize_setting_value(v)?;
                 let normalized = serde_json::to_value(&setting)?;
+                write_json_pretty(&p, &normalized)?;
                 Ok(json!({"ok": true, "data": normalized}))
             })();
             match res {
@@ -4890,14 +4899,10 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 ensure_myproxy_profile_layout(profile)?;
                 let p = myproxy_profile_root(profile).join("proxy.json");
                 if !p.exists() { write_json_pretty(&p, &default_myproxy_proxy_value())?; }
-                let mut v: serde_json::Value = read_json(&p)?;
-                if let Some(obj) = v.as_object_mut() {
-                    if !obj.contains_key("proto_mode") {
-                        obj.insert("proto_mode".to_string(), json!("tcp_udp"));
-                        write_json_pretty(&p, &v)?;
-                    }
-                }
-                Ok(json!({"ok": true, "data": v}))
+                let v: serde_json::Value = read_json(&p)?;
+                let normalized = normalize_myproxy_proxy_json(v)?;
+                write_json_pretty(&p, &normalized)?;
+                Ok(json!({"ok": true, "data": normalized}))
             })();
             match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
         }
@@ -4906,6 +4911,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 ensure_valid_singbox_profile_name(profile)?;
                 ensure_myproxy_profile_layout(profile)?;
                 let proxy_cfg: crate::programs::myproxy::ProxyConfig = serde_json::from_slice(body).map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let proxy_cfg = crate::programs::myproxy::normalize_proxy_config_defaults(proxy_cfg)?;
                 crate::programs::myproxy::validate_proxy_config(&proxy_cfg)?;
                 let setting_path = myproxy_profile_root(profile).join("setting.json");
                 if let Ok(setting_v) = read_json::<serde_json::Value>(&setting_path) {

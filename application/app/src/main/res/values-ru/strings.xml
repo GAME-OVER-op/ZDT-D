@@ -943,6 +943,10 @@ APatch: 10700+</string>
     <string name="singbox_apps_title">Приложения</string>
     <string name="singbox_profile_autosave_hint">Изменения сохраняются автоматически после небольшой паузы.</string>
     <string name="singbox_server_autosave_hint">Порт и состояние сохраняются автоматически.</string>
+    <string name="singbox_proto_mode_title">Протокол transparent (TPROXY)</string>
+    <string name="singbox_proto_mode_desc">Выберите, какие протоколы TPROXY редиректит для этого профиля sing-box. Применяется после перезапуска службы.</string>
+    <string name="singbox_proto_mode_tcp">TCP</string>
+    <string name="singbox_proto_mode_tcp_udp">TCP + UDP</string>
 
     <string name="operaproxy_sni_detail_sni_fmt">SNI: %1$s</string>
     <string name="operaproxy_sni_detail_address_fmt">Адрес: %1$s</string>

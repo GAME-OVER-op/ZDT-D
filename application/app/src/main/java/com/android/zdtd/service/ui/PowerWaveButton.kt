@@ -52,7 +52,7 @@ internal fun PowerWaveButton(
   val fillColor = if (isRunning) COLOR_ACTIVE else COLOR_INACTIVE
 
   // Waves should match the current "active" feel:
-  // - Starting: grey waves (service not yet running)
+  // - Starting: white waves (service not yet running)
   // - Stopping: red waves (service still running while stopping)
   val waveColor = remember(state) {
     if (state == PowerUiState.Stopping) COLOR_STOPPING_WAVE else Color.White

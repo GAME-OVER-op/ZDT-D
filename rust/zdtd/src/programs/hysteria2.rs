@@ -278,7 +278,7 @@ fn normalize_hysteria2_config_for_socks5(path: &Path, port: u16) -> Result<()> {
     let mut v: Value = serde_json::from_str(&raw).with_context(|| format!("parse json {}", path.display()))?;
     let obj = v.as_object_mut().ok_or_else(|| anyhow::anyhow!("config root must be JSON object"))?;
     if obj.get("server").and_then(|x| x.as_str()).map(str::trim).unwrap_or("").is_empty() { bail!("hysteria2 config requires server"); }
-    for key in ["http", "tcpForwarding", "udpForwarding", "tcpTProxy", "udpTProxy", "tcpRedirect", "tun"] { obj.remove(key); }
+    for key in ["http", "tcpForwarding", "udpForwarding", "tcpTProxy", "udpTProxy", "tcpRedirect", "tun", "inbounds", "outbounds", "route", "dns"] { obj.remove(key); }
     let mut socks5 = obj.get("socks5").and_then(|v| v.as_object()).cloned().unwrap_or_default();
     socks5.insert("listen".to_string(), Value::String(format!("127.0.0.1:{port}")));
     socks5.insert("disableUDP".to_string(), Value::Bool(false));

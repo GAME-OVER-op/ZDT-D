@@ -316,6 +316,17 @@ pub fn refresh_apps(program: &str, profile: Option<&str>, slot: &str) -> Result<
             }
             Ok(routing)
         }
+        "hysteria2" => {
+            let profile = profile.ok_or_else(|| anyhow::anyhow!("profile is required for {program}"))?;
+            let input = app_input_path(program, Some(profile), slot)?;
+            let output = uid_output_from_input(&input);
+            rebuild_uid_file(&input, &output)?;
+            let routing = refresh_routing_by_uid_file(&output)?;
+            if slot == "common" || slot == "user" {
+                let _ = crate::vpn_netd::refresh_profile_users("hysteria2", profile, &input, &output)?;
+            }
+            Ok(routing)
+        }
         other => bail!("runtime_refresh: unsupported program {other}"),
     }
 }
@@ -334,6 +345,10 @@ fn app_input_path(program: &str, profile: Option<&str>, slot: &str) -> Result<Pa
         "sing-box" => {
             let profile = profile.ok_or_else(|| anyhow::anyhow!("profile is required for {program}"))?;
             PathBuf::from(format!("/data/adb/modules/ZDT-D/working_folder/singbox/profile/{profile}/app/uid/{file}"))
+        }
+        "hysteria2" => {
+            let profile = profile.ok_or_else(|| anyhow::anyhow!("profile is required for {program}"))?;
+            PathBuf::from(format!("/data/adb/modules/ZDT-D/working_folder/hysteria2/profile/{profile}/app/uid/{file}"))
         }
         "wireproxy" => {
             let profile = profile.ok_or_else(|| anyhow::anyhow!("profile is required for {program}"))?;

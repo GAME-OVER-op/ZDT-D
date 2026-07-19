@@ -388,7 +388,9 @@ internal fun AppPickerSheet(
     if (leftProgramId == "myvpn" || rightProgramId == "myvpn") return true
     if (leftProgramId == "mihomo" || rightProgramId == "mihomo") return true
     if (leftProgramId == "mieru" || rightProgramId == "mieru") return true
-    if (leftProgramId == "hysteria2" || rightProgramId == "hysteria2") return true
+    if (leftProgramId == "hysteria2" || rightProgramId == "hysteria2") {
+      return left != "zapret" && right != "zapret"
+    }
     if (leftProgramId == "amneziawg" || rightProgramId == "amneziawg") return true
     return left == right
   }

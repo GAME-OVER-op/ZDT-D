@@ -1303,6 +1303,17 @@ fn default_hysteria2_profile_setting_value(t2s_port: u16, t2s_web_port: u16) -> 
 fn default_hysteria2_server_setting_value(port: u16) -> serde_json::Value {
     json!({"enabled": false, "socks5_port": port, "log_level": "info"})
 }
+fn normalize_hysteria2_log_level(raw: &str) -> &'static str {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "trace" => "trace",
+        "debug" => "debug",
+        "info" => "info",
+        "warn" => "warn",
+        "error" => "error",
+        "silent" => "silent",
+        _ => "info",
+    }
+}
 fn ensure_hysteria2_profile_layout(profile: &str) -> Result<()> { crate::programs::hysteria2::ensure_profile_layout(profile) }
 fn hysteria2_profile_mode_is_vpn(profile: &str) -> bool {
     let p = hysteria2_profile_root(profile).join("setting.json");
@@ -1336,6 +1347,64 @@ fn collect_existing_hysteria2_ports() -> BTreeSet<u16> {
     }
     used
 }
+
+fn collect_existing_hysteria2_ports_excluding(current_profile: Option<&str>, current_server: Option<&str>) -> BTreeSet<u16> {
+    let mut used = BTreeSet::new();
+    if let Ok(rd) = fs::read_dir(hysteria2_profiles_root()) {
+        for ent in rd.flatten() {
+            let profile_dir = ent.path();
+            if !profile_dir.is_dir() { continue; }
+            let Some(profile_name) = profile_dir.file_name().and_then(|s| s.to_str()) else { continue; };
+            if profile_name.starts_with('.') { continue; }
+            let is_current_profile = current_profile == Some(profile_name);
+            if let Ok(v) = read_json::<serde_json::Value>(&profile_dir.join("setting.json")) {
+                let mode = v.get("mode").and_then(|x| x.as_str()).unwrap_or("t2s");
+                if !matches!(mode.trim().to_ascii_lowercase().as_str(), "vpn" | "tun2proxy" | "tun2socks") {
+                    for key in ["t2s_port", "t2s_web_port"] {
+                        if is_current_profile && current_server.is_none() { continue; }
+                        if let Some(port) = v.get(key).and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).filter(|p| *p != 0) { used.insert(port); }
+                    }
+                }
+            }
+            let server_root = profile_dir.join("server");
+            if let Ok(srd) = fs::read_dir(server_root) {
+                for sent in srd.flatten() {
+                    let server_dir = sent.path();
+                    if !server_dir.is_dir() { continue; }
+                    let Some(server_name) = server_dir.file_name().and_then(|s| s.to_str()) else { continue; };
+                    if server_name.starts_with('.') { continue; }
+                    if is_current_profile && current_server == Some(server_name) { continue; }
+                    if let Ok(v) = read_json::<serde_json::Value>(&server_dir.join("setting.json")) {
+                        if let Some(port) = v.get("socks5_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()).filter(|p| *p != 0) { used.insert(port); }
+                    }
+                }
+            }
+        }
+    }
+    used
+}
+
+fn ensure_hysteria2_port_free(port: u16, current_profile: Option<&str>, current_server: Option<&str>, label: &str) -> Result<()> {
+    if port == 0 { anyhow::bail!("invalid port"); }
+    let mut used = crate::ports::collect_used_ports_for_conflict_check_excluding_hysteria2().unwrap_or_default();
+    used.extend(collect_existing_hysteria2_ports_excluding(current_profile, current_server));
+    if used.contains(&port) {
+        anyhow::bail!("hysteria2_port_conflict: {label} port {port} уже занят");
+    }
+    Ok(())
+}
+
+fn hysteria2_enabled_server_count(profile: &str) -> Result<usize> {
+    let mut count = 0usize;
+    for name in hysteria2_server_names(profile)? {
+        let v: serde_json::Value = read_json(&hysteria2_server_root(profile, &name).join("setting.json")).unwrap_or_else(|_| default_hysteria2_server_setting_value(11590));
+        if v.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false) {
+            count += 1;
+        }
+    }
+    Ok(count)
+}
+
 fn suggest_hysteria2_profile_ports() -> Result<(u16, u16)> {
     let mut used = crate::ports::collect_used_ports_for_conflict_check_excluding_hysteria2().unwrap_or_default();
     used.extend(collect_existing_hysteria2_ports());
@@ -1371,7 +1440,15 @@ fn create_hysteria2_server_named(profile: &str, requested: &str) -> Result<Strin
 fn create_hysteria2_server_next(profile: &str) -> Result<String> { let names=hysteria2_server_names(profile)?; for i in 1..1000 { let n=i.to_string(); if !names.contains(&n) { return create_hysteria2_server_named(profile,&n); } } anyhow::bail!("no free hysteria2 server name") }
 fn normalize_and_write_hysteria2_profile_setting(profile: &str, v: serde_json::Value) -> Result<serde_json::Value> {
     let setting = crate::programs::hysteria2::normalize_setting_value(v)?;
-    if setting.mode.is_vpn() && hysteria2_server_names(profile)?.len() > 1 { anyhow::bail!("hysteria2_vpn_requires_single_server: VPN-режим hysteria2 поддерживает только один сервер."); }
+    if setting.mode.is_vpn() {
+        if hysteria2_server_names(profile)?.len() != 1 || hysteria2_enabled_server_count(profile)? != 1 {
+            anyhow::bail!("hysteria2_vpn_requires_single_server: VPN-режим hysteria2 поддерживает ровно один включённый сервер.");
+        }
+    } else {
+        ensure_hysteria2_port_free(setting.t2s_port, Some(profile), None, "t2s")?;
+        ensure_hysteria2_port_free(setting.t2s_web_port, Some(profile), None, "t2s web")?;
+        if setting.t2s_port == setting.t2s_web_port { anyhow::bail!("hysteria2_port_conflict: t2s и t2s web должны отличаться"); }
+    }
     let normalized=serde_json::to_value(&setting)?; write_json_pretty(&hysteria2_profile_root(profile).join("setting.json"), &normalized)?; Ok(normalized)
 }
 
@@ -2520,9 +2597,13 @@ fn find_program_conflicts(
         .unwrap_or_default();
     for item in lists {
         if item.path == current_api_path { continue; }
-        if item.slot != slot { continue; }
         let Some(item_domain) = app_domain(&item.program_id) else { continue; };
-        if !app_domains_conflict(domain, item_domain) { continue; }
+        let hysteria2_pair = program_id == "hysteria2" || item.program_id == "hysteria2";
+        if hysteria2_pair && (domain == "zapret" || item_domain == "zapret") { continue; }
+        let cross_slot_conflict = hysteria2_pair;
+        if !cross_slot_conflict && item.slot != slot { continue; }
+        let domains_conflict = if hysteria2_pair { true } else { app_domains_conflict(domain, item_domain) };
+        if !domains_conflict { continue; }
         for pkg in candidate.intersection(&item.packages) {
             if current_existing.contains(pkg) { continue; }
             out.entry(pkg.clone()).or_default().push(AppConflictView {
@@ -4110,6 +4191,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let p = hysteria2_profile_root(profile).join("app/uid/user_program");
                 write_text_atomic(&p, &req.content)?;
                 invalidate_assignment_cache();
+                refresh_apps_after_save_if_running(services_running, "hysteria2", Some(profile), "common")?;
                 Ok(())
             })();
             match res {
@@ -4218,19 +4300,21 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     if names.len() != 1 || names[0].as_str() != *server {
                         anyhow::bail!("hysteria2_vpn_requires_single_server: VPN-режим hysteria2 поддерживает только один сервер.");
                     }
+                    if !enabled {
+                        anyhow::bail!("hysteria2_vpn_requires_single_server: VPN-режим hysteria2 требует один включённый сервер.");
+                    }
                 }
                 let port = v.get("socks5_port")
                     .and_then(|x| x.as_u64())
                     .and_then(|x| u16::try_from(x).ok())
                     .or_else(|| existing.get("socks5_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()))
                     .unwrap_or(11590);
-                if port == 0 {
-                    anyhow::bail!("invalid port");
-                }
+                ensure_hysteria2_port_free(port, Some(profile), Some(server), "SOCKS5")?;
                 let root = hysteria2_server_root(profile, server);
                 fs::create_dir_all(root.join("log"))?;
                 let p = root.join("setting.json");
-                write_json_pretty(&p, &json!({"enabled": enabled, "socks5_port": if port == 0 { 11590 } else { port }, "log_level": v.get("log_level").and_then(|x| x.as_str()).or_else(|| existing.get("log_level").and_then(|x| x.as_str())).unwrap_or("info")}))?;
+                let log_level = normalize_hysteria2_log_level(v.get("log_level").and_then(|x| x.as_str()).or_else(|| existing.get("log_level").and_then(|x| x.as_str())).unwrap_or("info"));
+                write_json_pretty(&p, &json!({"enabled": enabled, "socks5_port": port, "log_level": log_level}))?;
                 let cfg = root.join("config.json");
                 if read_text_or_empty(&cfg).map(|t| !t.trim().is_empty()).unwrap_or(false) {
                     crate::programs::hysteria2::normalize_config_for_profile_server(profile, server)?;

@@ -347,7 +347,7 @@ private fun Hysteria2WebPanelCard(
 ) {
   Hysteria2SectionCard(
     title = "t2s",
-    desc = "Нативная панель состояния t2s",
+    desc = stringResource(R.string.hysteria2_t2s_panel_desc),
     accent = Color(0xFF38BDF8),
     icon = {
       if (checking) {
@@ -372,7 +372,7 @@ private fun Hysteria2WebPanelCard(
         border = BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.34f)),
       ) {
         Text(
-          "Панель",
+          stringResource(R.string.hysteria2_panel),
           modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
           style = MaterialTheme.typography.labelLarge,
           fontWeight = FontWeight.Bold,
@@ -657,32 +657,32 @@ fun Hysteria2ProfileScreen(
     )
     when {
       normalized.t2sPort !in 1..65535 -> {
-        showSnack("Заполни T2S port")
+        showSnack(context.getString(R.string.hysteria2_fill_t2s_port))
         onDone?.invoke(false)
         return
       }
       normalized.t2sWebPort !in 1..65535 -> {
-        showSnack("Заполни T2S web port")
+        showSnack(context.getString(R.string.hysteria2_fill_t2s_web_port))
         onDone?.invoke(false)
         return
       }
       normalized.t2sPort == normalized.t2sWebPort -> {
-        showSnack("Порты профиля должны отличаться")
+        showSnack(context.getString(R.string.hysteria2_profile_ports_must_differ))
         onDone?.invoke(false)
         return
       }
       normalized.isVpn && normalized.tun.isBlank() -> {
-        showSnack("Укажи TUN interface")
+        showSnack(context.getString(R.string.hysteria2_enter_tun_interface))
         onDone?.invoke(false)
         return
       }
       normalized.isVpn && normalized.dns.isEmpty() -> {
-        showSnack("Укажи DNS")
+        showSnack(context.getString(R.string.hysteria2_enter_dns))
         onDone?.invoke(false)
         return
       }
       normalized.isVpn && (servers.size != 1 || servers.count { it.enabled } != 1) -> {
-        showSnack("VPN-режим Hysteria2 требует ровно один включённый сервер")
+        showSnack(context.getString(R.string.hysteria2_vpn_requires_one_enabled_server))
         onDone?.invoke(false)
         return
       }
@@ -691,12 +691,12 @@ fun Hysteria2ProfileScreen(
         val webConflict = findHysteria2PortConflictLabel(globalPortRegistry, normalized.t2sWebPort ?: 0, hysteria2T2sWebPortLabel(profile))
         when {
           t2sConflict != null -> {
-            showSnack("T2S port уже занят: $t2sConflict")
+            showSnack(context.getString(R.string.hysteria2_t2s_port_busy_fmt, t2sConflict))
             onDone?.invoke(false)
             return
           }
           webConflict != null -> {
-            showSnack("T2S web port уже занят: $webConflict")
+            showSnack(context.getString(R.string.hysteria2_t2s_web_port_busy_fmt, webConflict))
             onDone?.invoke(false)
             return
           }
@@ -711,7 +711,7 @@ fun Hysteria2ProfileScreen(
         setting = normalized
         refreshGlobalPortRegistry()
       } else {
-        showSnack("Автосохранение Hysteria2 не удалось")
+        showSnack(context.getString(R.string.hysteria2_autosave_failed))
       }
       onDone?.invoke(ok)
     }
@@ -732,7 +732,7 @@ fun Hysteria2ProfileScreen(
   fun switchHysteria2Mode(nextMode: String) {
     val current = currentProfileSetting()
     if (nextMode == HYSTERIA2_MODE_VPN && (servers.size != 1 || servers.count { it.enabled } != 1)) {
-      showSnack("VPN-режим Hysteria2 требует ровно один включённый сервер")
+      showSnack(context.getString(R.string.hysteria2_vpn_requires_one_enabled_server))
       return
     }
     val next = current.copy(mode = if (nextMode == HYSTERIA2_MODE_VPN) HYSTERIA2_MODE_VPN else HYSTERIA2_MODE_T2S)
@@ -749,7 +749,7 @@ fun Hysteria2ProfileScreen(
         showCreateServer = false
         actions.createHysteria2Server(profile, name) { created ->
           if (created != null) {
-            showSnack("Сервер Hysteria2 создан: $created")
+            showSnack(context.getString(R.string.hysteria2_server_created_fmt, created))
             refreshServers()
             refreshGlobalPortRegistry()
           } else {
@@ -793,7 +793,7 @@ fun Hysteria2ProfileScreen(
               refreshServers()
               refreshGlobalPortRegistry()
             } else {
-              showSnack("JSON сохранён, но настройки сервера обновить не удалось")
+              showSnack(context.getString(R.string.hysteria2_json_saved_settings_failed))
             }
           }
         }
@@ -804,7 +804,7 @@ fun Hysteria2ProfileScreen(
   if (editServer != null) {
     AlertDialog(
       onDismissRequest = { if (!editLoading) editServer = null },
-      title = { Text("Hysteria2 JSON: ${editServer ?: ""}") },
+      title = { Text(stringResource(R.string.hysteria2_json_title_fmt, editServer ?: "")) },
       text = {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
           if (editLoading) {
@@ -815,7 +815,7 @@ fun Hysteria2ProfileScreen(
             onValueChange = { editText = it },
             modifier = Modifier.fillMaxWidth().heightIn(min = 220.dp),
             singleLine = false,
-            label = { Text("Client config JSON") },
+            label = { Text(stringResource(R.string.hysteria2_client_config_json)) },
           )
         }
       },
@@ -823,7 +823,7 @@ fun Hysteria2ProfileScreen(
         Button(enabled = !editLoading && editText != editLastLoadedText, onClick = {
           val serverName = editServer ?: return@Button
           val parsed = runCatching { JSONObject(editText.trim()) }.getOrElse {
-            showSnack("Некорректный JSON: ${it.message ?: "parse error"}")
+            showSnack(context.getString(R.string.hysteria2_invalid_json_fmt, it.message ?: context.getString(R.string.hysteria2_parse_error)))
             return@Button
           }
           val normalizedText = parsed.toString(2)
@@ -972,7 +972,7 @@ fun Hysteria2ProfileScreen(
     }
 
     AppListPickerCard(
-      title = "Приложения Hysteria2",
+      title = stringResource(R.string.hysteria2_apps_title),
       desc = stringResource(R.string.apps_common_desc),
       path = "$basePath/apps/user",
       actions = actions,
@@ -992,7 +992,7 @@ fun Hysteria2ProfileScreen(
       snackHost = snackHost,
       onCreateServer = {
         if (activeSetting.isVpn && servers.isNotEmpty()) {
-          showSnack("В VPN-режиме Hysteria2 разрешён только один включённый сервер")
+          showSnack(context.getString(R.string.hysteria2_vpn_only_one_server_allowed))
         } else {
           showCreateServer = true
         }
@@ -1036,8 +1036,8 @@ private fun Hysteria2ProfileSettingCard(
   }
 
   Hysteria2SectionCard(
-    title = "T2S настройки Hysteria2",
-    desc = "Локальные порты t2s/web для профиля Hysteria2",
+    title = stringResource(R.string.hysteria2_t2s_settings_title),
+    desc = stringResource(R.string.hysteria2_t2s_settings_desc),
     accent = Color(0xFF38BDF8),
     icon = {
       Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(21.dp))
@@ -1051,7 +1051,7 @@ private fun Hysteria2ProfileSettingCard(
         onValueChange = { t2sPortText = it.filter(Char::isDigit) },
         modifier = Modifier.weight(1f),
         enabled = !loading,
-        label = { Text("T2S port") },
+        label = { Text(stringResource(R.string.hysteria2_t2s_port_label)) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         singleLine = true,
       )
@@ -1060,18 +1060,18 @@ private fun Hysteria2ProfileSettingCard(
         onValueChange = { t2sWebPortText = it.filter(Char::isDigit) },
         modifier = Modifier.weight(1f),
         enabled = !loading,
-        label = { Text("T2S web port") },
+        label = { Text(stringResource(R.string.hysteria2_t2s_web_port_label)) },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         singleLine = true,
       )
     }
 
     val footerText = when {
-      parsedT2sPort == null || parsedT2sWebPort == null -> "Применится после стоп/старт службы"
-      parsedT2sPort == parsedT2sWebPort -> "Порты профиля должны отличаться"
-      parsedT2sPort !in 1..65535 || parsedT2sWebPort !in 1..65535 -> "Применится после стоп/старт службы"
+      parsedT2sPort == null || parsedT2sWebPort == null -> stringResource(R.string.hysteria2_apply_after_restart)
+      parsedT2sPort == parsedT2sWebPort -> stringResource(R.string.hysteria2_profile_ports_must_differ)
+      parsedT2sPort !in 1..65535 || parsedT2sWebPort !in 1..65535 -> stringResource(R.string.hysteria2_apply_after_restart)
       saving -> stringResource(R.string.common_loading)
-      else -> "Применится после стоп/старт службы"
+      else -> stringResource(R.string.hysteria2_apply_after_restart)
     }
     Surface(
       shape = RoundedCornerShape(14.dp),
@@ -1097,8 +1097,8 @@ private fun Hysteria2ProtoModeCard(
 ) {
   val accent = Color(0xFFA855F7)
   Hysteria2SectionCard(
-    title = "Режим маршрутизации",
-    desc = "Для Hysteria2 backend всегда SOCKS5, ниже выбирается режим t2s",
+    title = stringResource(R.string.hysteria2_route_mode_title),
+    desc = stringResource(R.string.hysteria2_route_mode_desc),
     accent = accent,
     icon = { Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp)) },
   ) {
@@ -1169,8 +1169,8 @@ private fun Hysteria2ModeSwitchCard(
 ) {
   val accent = if (setting.isVpn) Color(0xFF22C55E) else Color(0xFF38BDF8)
   Hysteria2SectionCard(
-    title = "Режим Hysteria2",
-    desc = "T2S для нескольких серверов или VPN/tun2proxy для одного сервера",
+    title = stringResource(R.string.hysteria2_mode_title),
+    desc = stringResource(R.string.hysteria2_mode_desc),
     accent = accent,
     icon = { Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp)) },
   ) {
@@ -1183,7 +1183,7 @@ private fun Hysteria2ModeSwitchCard(
         enabled = !loading && !saving,
         accent = Color(0xFF38BDF8),
         title = "T2S",
-        desc = "Несколько Hysteria2 серверов через SOCKS5 backend",
+        desc = stringResource(R.string.hysteria2_mode_t2s_desc),
         onClick = { onSwitchMode(HYSTERIA2_MODE_T2S) },
       )
       Hysteria2ModeOption(
@@ -1192,7 +1192,7 @@ private fun Hysteria2ModeSwitchCard(
         enabled = !loading && !saving,
         accent = Color(0xFF22C55E),
         title = "VPN / tun2proxy",
-        desc = "Один Hysteria2 сервер через tun2socks",
+        desc = stringResource(R.string.hysteria2_mode_vpn_desc),
         onClick = { onSwitchMode(HYSTERIA2_MODE_VPN) },
       )
     }
@@ -1204,11 +1204,11 @@ private fun Hysteria2ModeSwitchCard(
     ) {
       Text(
         text = if (setting.isVpn && (serverCount != 1 || enabledServerCount != 1)) {
-          "VPN-режим Hysteria2 требует ровно один включённый сервер"
+          stringResource(R.string.hysteria2_vpn_requires_one_enabled_server)
         } else if (setting.isVpn) {
           "apps → tun2socks → Hysteria2 SOCKS5 → server"
         } else {
-          "Применится после стоп/старт службы"
+          stringResource(R.string.hysteria2_apply_after_restart)
         },
         modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
         style = MaterialTheme.typography.bodySmall,
@@ -1247,14 +1247,14 @@ private fun Hysteria2ModeOption(
 private fun Hysteria2VpnStructureWarningCard(onSwitchToT2s: () -> Unit) {
   Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.70f))) {
     Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-      Text("Неверная структура VPN Hysteria2", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+      Text(stringResource(R.string.hysteria2_vpn_structure_invalid_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
       Text(
-        "Для VPN/tun2proxy оставь ровно один сервер или переключись в T2S.",
+        stringResource(R.string.hysteria2_vpn_structure_invalid_desc),
         color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f),
         style = MaterialTheme.typography.bodySmall,
       )
       OutlinedButton(onClick = onSwitchToT2s, modifier = Modifier.fillMaxWidth()) {
-        Text("Переключить в T2S")
+        Text(stringResource(R.string.hysteria2_switch_to_t2s))
       }
     }
   }
@@ -1291,8 +1291,8 @@ private fun Hysteria2VpnProfileCard(
   }
 
   Hysteria2SectionCard(
-    title = "VPN / tun2proxy Hysteria2",
-    desc = "Настройки TUN, DNS и log level для tun2socks",
+    title = stringResource(R.string.hysteria2_vpn_profile_title),
+    desc = stringResource(R.string.hysteria2_vpn_profile_desc),
     accent = Color(0xFF22C55E),
     icon = { Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp)) },
   ) {
@@ -1318,7 +1318,7 @@ private fun Hysteria2VpnProfileCard(
       enabled = !loading,
       singleLine = true,
       label = { Text("TUN interface") },
-      supportingText = { Text("Например hytun0") },
+      supportingText = { Text(stringResource(R.string.hysteria2_tun_example)) },
     )
     OutlinedTextField(
       value = dnsText,
@@ -1327,7 +1327,7 @@ private fun Hysteria2VpnProfileCard(
       enabled = !loading,
       singleLine = false,
       label = { Text("DNS") },
-      supportingText = { Text("IPv4 DNS, по одному на строку") },
+      supportingText = { Text(stringResource(R.string.hysteria2_dns_supporting)) },
     )
 
     Text(
@@ -1363,7 +1363,7 @@ private fun Hysteria2VpnProfileCard(
     }
 
     Text(
-      if (saving) stringResource(R.string.common_loading) else "Сохраняется автоматически, применяется после стоп/старт",
+      if (saving) stringResource(R.string.common_loading) else stringResource(R.string.hysteria2_auto_save_restart_hint),
       style = MaterialTheme.typography.bodySmall,
       color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
     )
@@ -1389,8 +1389,8 @@ private fun Hysteria2ServersSection(
   val createEnabled = setting.isT2s || servers.isEmpty()
 
   Hysteria2SectionCard(
-    title = "Серверы Hysteria2",
-    desc = if (setting.isVpn) "VPN: должен быть ровно один включённый сервер" else "T2S: можно добавить несколько серверов",
+    title = stringResource(R.string.hysteria2_servers_title),
+    desc = if (setting.isVpn) stringResource(R.string.hysteria2_servers_vpn_desc) else stringResource(R.string.hysteria2_servers_t2s_desc),
     accent = Color(0xFFA78BFA),
     icon = {
       Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp))
@@ -1427,7 +1427,7 @@ private fun Hysteria2ServersSection(
       ) {
         Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(17.dp))
         Spacer(Modifier.width(6.dp))
-        Text("Добавить сервер", fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(stringResource(R.string.hysteria2_add_server), fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
       }
     }
 
@@ -1439,7 +1439,7 @@ private fun Hysteria2ServersSection(
         border = BorderStroke(1.dp, Color(0xFFA78BFA).copy(alpha = 0.16f)),
       ) {
         Text(
-          "Серверов пока нет",
+          stringResource(R.string.hysteria2_no_servers),
           modifier = Modifier.fillMaxWidth().padding(12.dp),
           color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
           style = MaterialTheme.typography.bodyMedium,
@@ -1500,7 +1500,7 @@ private fun Hysteria2ServerCard(
     if (port == null || port !in 1..65535) return
     val conflict = findHysteria2PortConflictLabel(portRegistry, port, hysteria2ServerPortLabel(profile, server.name))
     if (conflict != null) {
-      showSnack("SOCKS5 port уже занят: $conflict")
+      showSnack(context.getString(R.string.hysteria2_socks5_port_busy_fmt, conflict))
       return
     }
     saving = true
@@ -1511,7 +1511,7 @@ private fun Hysteria2ServerCard(
       if (ok) {
         onServerSaved(server.copy(enabled = enabled, port = port))
       } else {
-        showSnack("Автосохранение Hysteria2 не удалось")
+        showSnack(context.getString(R.string.hysteria2_autosave_failed))
       }
     }
   }
@@ -1519,8 +1519,8 @@ private fun Hysteria2ServerCard(
   if (askDelete) {
     AlertDialog(
       onDismissRequest = { askDelete = false },
-      title = { Text("Удалить сервер Hysteria2") },
-      text = { Text("Удалить Hysteria2 сервер $profile / ${server.name}?") },
+      title = { Text(stringResource(R.string.hysteria2_delete_server_title)) },
+      text = { Text(stringResource(R.string.hysteria2_delete_server_message_fmt, profile, server.name)) },
       confirmButton = {
         Button(onClick = {
           askDelete = false
@@ -1590,7 +1590,7 @@ private fun Hysteria2ServerCard(
           Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(server.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-              if (saving) stringResource(R.string.common_loading) else "SOCKS5 port сохраняется автоматически",
+              if (saving) stringResource(R.string.common_loading) else stringResource(R.string.hysteria2_socks5_autosave_hint),
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
               maxLines = 1,
@@ -1611,9 +1611,9 @@ private fun Hysteria2ServerCard(
             modifier = Modifier.fillMaxWidth(),
             enabled = !saving,
             singleLine = true,
-            label = { Text("SOCKS5 backend port") },
+            label = { Text(stringResource(R.string.hysteria2_socks5_backend_port)) },
             isError = portConflict != null,
-            supportingText = { portConflict?.let { Text("Порт занят: $it") } },
+            supportingText = { portConflict?.let { Text(stringResource(R.string.hysteria2_port_busy_fmt, it)) } },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
           )
         }
@@ -1731,14 +1731,14 @@ private fun Hysteria2CreateServerDialog(
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
               Text(
-                "Новый сервер Hysteria2",
+                stringResource(R.string.hysteria2_new_server_title),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
               Text(
-                "Имя сервера: латиница, цифры, _, -",
+                stringResource(R.string.hysteria2_server_name_rules),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
                 maxLines = 2,
@@ -1754,7 +1754,7 @@ private fun Hysteria2CreateServerDialog(
               error = null
             },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Имя сервера") },
+            label = { Text(stringResource(R.string.hysteria2_server_name_label)) },
             singleLine = false,
             maxLines = 2,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
@@ -1786,7 +1786,7 @@ private fun Hysteria2CreateServerDialog(
                     snack(msg)
                   }
                   existingNorm.contains(n) -> {
-                    val msg = "Сервер Hysteria2 уже существует"
+                    val msg = context.getString(R.string.hysteria2_server_exists)
                     error = msg
                     snack(msg)
                   }
@@ -1899,7 +1899,7 @@ private fun Hysteria2ServerSettingsDialog(
             border = BorderStroke(1.dp, Color(0xFFFFBC00).copy(alpha = 0.36f)),
           ) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(23.dp)) } }
           Column(Modifier.weight(1f)) {
-            Text("Hysteria2 server UI", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.hysteria2_server_ui_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(serverName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f))
           }
         }
@@ -1908,18 +1908,18 @@ private fun Hysteria2ServerSettingsDialog(
         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-          Text("Enabled", fontWeight = FontWeight.Bold)
+          Text(stringResource(R.string.hysteria2_enabled), fontWeight = FontWeight.Bold)
           Switch(checked = enabled, onCheckedChange = { enabled = it })
         }
-        OutlinedTextField(value = remoteServer, onValueChange = { remoteServer = it.trim(); error = null }, label = { Text("server, например example.com:443") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = remoteServer, onValueChange = { remoteServer = it.trim(); error = null }, label = { Text(stringResource(R.string.hysteria2_server_field_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = auth, onValueChange = { auth = it }, label = { Text("auth") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(
           value = portText,
           onValueChange = { portText = it.filter(Char::isDigit).take(5); error = null },
-          label = { Text("Local SOCKS5 port") },
+          label = { Text(stringResource(R.string.hysteria2_local_socks5_port)) },
           singleLine = true,
           isError = settingsPortConflict != null,
-          supportingText = { settingsPortConflict?.let { Text("Порт занят: $it") } },
+          supportingText = { settingsPortConflict?.let { Text(stringResource(R.string.hysteria2_port_busy_fmt, it)) } },
           keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
           modifier = Modifier.fillMaxWidth(),
         )
@@ -1941,15 +1941,15 @@ private fun Hysteria2ServerSettingsDialog(
           Text("lazy")
           Switch(checked = lazy, onCheckedChange = { lazy = it })
         }
-        OutlinedTextField(value = obfsType, onValueChange = { obfsType = it.trim().lowercase() }, label = { Text("obfs type, например salamander") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = obfsType, onValueChange = { obfsType = it.trim().lowercase() }, label = { Text(stringResource(R.string.hysteria2_obfs_type_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = obfsPassword, onValueChange = { obfsPassword = it }, label = { Text("obfs salamander password") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = bandwidthUp, onValueChange = { bandwidthUp = it.trim() }, label = { Text("bandwidth up, например 20 mbps") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = bandwidthDown, onValueChange = { bandwidthDown = it.trim() }, label = { Text("bandwidth down, например 100 mbps") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = bandwidthUp, onValueChange = { bandwidthUp = it.trim() }, label = { Text(stringResource(R.string.hysteria2_bandwidth_up_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = bandwidthDown, onValueChange = { bandwidthDown = it.trim() }, label = { Text(stringResource(R.string.hysteria2_bandwidth_down_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
           Text("bandwidth.disableLossCompensation")
           Switch(checked = bandwidthDisableLossCompensation, onCheckedChange = { bandwidthDisableLossCompensation = it })
         }
-        OutlinedTextField(value = congestionType, onValueChange = { congestionType = it.trim().lowercase() }, label = { Text("congestion.type: bbr или reno") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = congestionType, onValueChange = { congestionType = it.trim().lowercase() }, label = { Text(stringResource(R.string.hysteria2_congestion_type_label)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = congestionBbrProfile, onValueChange = { congestionBbrProfile = it.trim().lowercase() }, label = { Text("congestion.bbrProfile") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = quicMaxIdleTimeout, onValueChange = { quicMaxIdleTimeout = it.trim() }, label = { Text("quic.maxIdleTimeout optional") }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(value = quicKeepAlivePeriod, onValueChange = { quicKeepAlivePeriod = it.trim() }, label = { Text("quic.keepAlivePeriod optional") }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -1957,23 +1957,23 @@ private fun Hysteria2ServerSettingsDialog(
           Text("quic.disablePathMTUDiscovery")
           Switch(checked = quicDisablePathMtuDiscovery, onCheckedChange = { quicDisablePathMtuDiscovery = it })
         }
-        OutlinedTextField(value = socksUsername, onValueChange = { socksUsername = it }, label = { Text("SOCKS5 username optional") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(value = socksPassword, onValueChange = { socksPassword = it }, label = { Text("SOCKS5 password optional") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = socksUsername, onValueChange = { socksUsername = it }, label = { Text(stringResource(R.string.hysteria2_socks5_username_optional)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        OutlinedTextField(value = socksPassword, onValueChange = { socksPassword = it }, label = { Text(stringResource(R.string.hysteria2_socks5_password_optional)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
           OutlinedButton(onClick = onDismiss, enabled = !loading, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.action_cancel)) }
           Button(enabled = !loading, modifier = Modifier.weight(1f), onClick = {
             val port = portText.toIntOrNull()
             if (remoteServer.isBlank()) {
-              error = "server обязателен"
+              error = context.getString(R.string.hysteria2_server_required)
               return@Button
             }
             if (port == null || port !in 1..65535) {
-              error = "Некорректный SOCKS5 port"
+              error = context.getString(R.string.hysteria2_invalid_socks5_port)
               return@Button
             }
             settingsPortConflict?.let {
-              error = "SOCKS5 port уже занят: $it"
+              error = context.getString(R.string.hysteria2_socks5_port_busy_fmt, it)
               return@Button
             }
             val root = runCatching { JSONObject(configText.takeIf { it.trim().isNotBlank() } ?: "{}") }.getOrElse { JSONObject() }

@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -83,6 +84,29 @@ type Config struct {
 	// CaptchaTokenFile, if set, is watched for manually-solved captcha tokens.
 	// Each new line is forwarded to the transport as CAPTCHA_RESULT|<token>.
 	CaptchaTokenFile string
+
+	// WgBringup enables the M2 WireGuard stage: once wg-turn.conf is written, the
+	// supervisor spawns amneziawg-go, applies the config via awg, and brings up
+	// the TUN. Disable it to run the transport alone (hash checks, config
+	// generation, debugging). Default true.
+	WgBringup bool
+	// Tun is the interface name amneziawg-go creates. Root-created, so it carries
+	// no Android VPN UI; ZDT-D's Zygisk layer hides it from target UIDs. Default
+	// "zdtdqw0".
+	Tun string
+	// AwgGoBinary is the amneziawg-go userspace WireGuard daemon.
+	AwgGoBinary string
+	// AwgBinary is the awg control tool (wg-compatible) used for `setconf`.
+	AwgBinary string
+	// AwgRunDir is the working directory amneziawg-go is spawned in (where it
+	// keeps its UAPI socket). Empty means StateDir/awg.
+	AwgRunDir string
+	// LinkWait bounds how long to wait for the TUN link to appear after spawning
+	// amneziawg-go. Default 15s.
+	LinkWait time.Duration
+	// TunReadyWait bounds how long to wait for the TUN to carry its address after
+	// configuration. Default 25s.
+	TunReadyWait time.Duration
 
 	// StartupDeadline bounds how long the supervisor waits for wg-turn.conf to
 	// appear after a (re)start before treating the attempt as failed. Default 90s.
@@ -147,6 +171,12 @@ func defaults() *Config {
 		StartupDeadline: 90 * time.Second,
 		MaxRestarts:     10,
 		RestartBackoff:  5 * time.Second,
+		WgBringup:       true,
+		Tun:             "zdtdqw0",
+		AwgGoBinary:     "/data/adb/modules/ZDT-D/bin/amneziawg-go",
+		AwgBinary:       "/data/adb/modules/ZDT-D/bin/awg",
+		LinkWait:        15 * time.Second,
+		TunReadyWait:    25 * time.Second,
 	}
 }
 
@@ -188,6 +218,32 @@ func (c *Config) set(key, val string) error {
 		c.SeedCaptchaFP = val
 	case "captcha_token_file":
 		c.CaptchaTokenFile = val
+	case "wg_bringup":
+		b, err := parseBool(val)
+		if err != nil {
+			return fmt.Errorf("wg_bringup: %w", err)
+		}
+		c.WgBringup = b
+	case "tun":
+		c.Tun = val
+	case "awg_go_binary":
+		c.AwgGoBinary = val
+	case "awg_binary":
+		c.AwgBinary = val
+	case "awg_run_dir":
+		c.AwgRunDir = val
+	case "link_wait":
+		d, err := time.ParseDuration(val)
+		if err != nil {
+			return fmt.Errorf("link_wait: %w", err)
+		}
+		c.LinkWait = d
+	case "tun_ready_wait":
+		d, err := time.ParseDuration(val)
+		if err != nil {
+			return fmt.Errorf("tun_ready_wait: %w", err)
+		}
+		c.TunReadyWait = d
 	case "startup_deadline":
 		d, err := time.ParseDuration(val)
 		if err != nil {
@@ -285,7 +341,47 @@ func (c *Config) Validate() error {
 	if c.Workers < 1 {
 		return fmt.Errorf("workers must be >= 1")
 	}
+	if c.WgBringup {
+		if !isValidIfname(c.Tun) {
+			return fmt.Errorf("tun %q must be 1..15 chars (letters, digits, _.-) and not empty", c.Tun)
+		}
+	}
 	return nil
+}
+
+// AwgRunDirOr returns the configured amneziawg working directory, defaulting to
+// StateDir/awg when unset.
+func (c *Config) AwgRunDirOr() string {
+	if c.AwgRunDir != "" {
+		return c.AwgRunDir
+	}
+	return filepath.Join(c.StateDir, "awg")
+}
+
+func parseBool(s string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "1", "true", "yes", "on":
+		return true, nil
+	case "0", "false", "no", "off":
+		return false, nil
+	default:
+		return false, fmt.Errorf("expected a boolean, got %q", s)
+	}
+}
+
+// isValidIfname mirrors the Linux interface-name constraints the amneziawg
+// program relies on: non-empty, <= 15 bytes, no slash/space/control chars.
+func isValidIfname(name string) bool {
+	if name == "" || len(name) > 15 {
+		return false
+	}
+	for _, r := range name {
+		if !(r == '_' || r == '.' || r == '-' || (r >= 'a' && r <= 'z') ||
+			(r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')) {
+			return false
+		}
+	}
+	return true
 }
 
 func isLoopback(host string) bool {

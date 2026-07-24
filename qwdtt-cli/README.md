@@ -10,7 +10,7 @@ this design is built on. In short: the upstream `go_client` is already a
 standalone `package main` CLI, so `qwdtt-cli` **supervises it as a child process**
 rather than linking a library.
 
-## What it does (current state — M1 scaffold)
+## What it does (current state — M1 + M2)
 
 - Loads a single gitignored config file (`qwdtt.conf`) mirroring the transport's
   flag schema; validates it before spawning anything.
@@ -21,15 +21,24 @@ rather than linking a library.
   (the "9 of 45 workers, reported healthy" failure).
 - Runs the transport under a restart loop with backoff; waits for `wg-turn.conf`
   by watching the file (language-independent), not by parsing localized logs.
+- **Brings up the WireGuard interface (M2):** once `wg-turn.conf` lands, it splits
+  the config into an `awg setconf` body plus interface settings, spawns
+  `amneziawg-go`, applies it, and configures `zdtdqw0` (`ip addr`/`ip link`) —
+  mirroring the fork's proven amneziawg driver. Installs no routes and binds no
+  UIDs (routing is ZDT-D's job); tears the interface down on every restart/stop so
+  no orphaned TUN points at a dead loopback port.
 - Feeds manually-solved captcha tokens from a watched file to the transport as
   `CAPTCHA_RESULT|<token>` — the headless fallback with no WebView.
 - Stops cleanly on SIGTERM/SIGINT (STOP → SIGTERM → SIGKILL escalation) so TURN
   allocations are released; exits non-zero when it gives up, so ZDT-D restarts the
   whole stack rather than orphaning a TUN.
 
-Not yet implemented: bringing up `amneziawg-go` against the emitted config (M2),
-and the two upstream deltas noted in the findings (atomic `wg-turn.conf` write,
-`STATS|` marker for the active-worker watchdog).
+The two upstream deltas (atomic `wg-turn.conf` write, `STATS|` marker) are
+implemented as patches in `../upstream/qwdtt/`.
+
+Not yet: the ZDT-D `myprogram`/`myvpn` profile wiring and on-device end-to-end run
+(M3). The M2 bring-up is verified by unit tests and a stubbed integration run;
+the real `ip`/`awg`/`amneziawg-go` path needs a rooted device to exercise.
 
 ## Layout
 
@@ -37,7 +46,8 @@ and the two upstream deltas noted in the findings (atomic `wg-turn.conf` write,
 cmd/qwdtt-cli/      entry point, signal handling
 internal/config/    config file loader + validation (the invariants)
 internal/transport/ argv builder + structured-stdout marker parsers (pure)
-internal/supervisor/ process orchestration: validate, run, watchdog, stop
+internal/wg/        wg-turn.conf -> setconf split (pure) + amneziawg-go bring-up
+internal/supervisor/ process orchestration: validate, run, wg bring-up, watchdog, stop
 qwdtt.example.conf  copy, fill in, keep out of git
 ```
 

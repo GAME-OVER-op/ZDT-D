@@ -37,6 +37,7 @@ import (
 
 	"github.com/andycar/zdt-d/qwdtt-cli/internal/config"
 	"github.com/andycar/zdt-d/qwdtt-cli/internal/transport"
+	"github.com/andycar/zdt-d/qwdtt-cli/internal/wg"
 )
 
 const (
@@ -232,13 +233,42 @@ func runTransport(ctx context.Context, cfg *config.Config, hashes []string, logg
 		go feedCaptchaTokens(runCtx, cfg.CaptchaTokenFile, sendLine, logger)
 	}
 
-	// watchdog: readiness gate + active-count enforcement.
+	// The WireGuard interface, brought up once wg-turn.conf lands. Guarded because
+	// it is set on the watchdog goroutine and torn down on the main path.
+	var ifaceMu sync.Mutex
+	var iface *wg.Interface
+	bringDown := func() {
+		ifaceMu.Lock()
+		defer ifaceMu.Unlock()
+		if iface != nil {
+			iface.Down()
+			iface = nil
+		}
+	}
+	defer bringDown()
+
+	// watchdog: readiness gate + WireGuard bring-up + active-count enforcement.
 	var watchdogTripped atomic.Bool
 	go func() {
 		if !awaitConfig(runCtx, cfg, logger) {
 			return // ctx cancelled or run already ending
 		}
 		logger.Printf("%s written; transport ready", configFile)
+
+		if cfg.WgBringup {
+			up, err := bringUpWireguard(cfg, logger)
+			if err != nil {
+				// The tunnel is the point; a failed bring-up means restart the
+				// whole stack rather than run a live transport with no interface.
+				logger.Printf("wg: bring-up failed, forcing restart: %v", err)
+				runCancel()
+				return
+			}
+			ifaceMu.Lock()
+			iface = up
+			ifaceMu.Unlock()
+		}
+
 		if cfg.WatchdogMinActive <= 0 {
 			return
 		}
@@ -282,6 +312,27 @@ func runTransport(ctx context.Context, cfg *config.Config, hashes []string, logg
 		gracefulStop(cmd, sendLine, waitErr, logger)
 		return runOutcome{stopped: stopped, watchdog: watchdogTripped.Load()}
 	}
+}
+
+// bringUpWireguard reads the emitted config, splits it into a setconf body plus
+// interface settings, and brings up the amneziawg-go TUN.
+func bringUpWireguard(cfg *config.Config, logger *log.Logger) (*wg.Interface, error) {
+	raw, err := os.ReadFile(filepath.Join(cfg.StateDir, configFile))
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", configFile, err)
+	}
+	split, err := wg.SplitConfig(string(raw))
+	if err != nil {
+		return nil, fmt.Errorf("split config: %w", err)
+	}
+	return wg.Up(wg.Params{
+		AwgGoBinary:  cfg.AwgGoBinary,
+		AwgBinary:    cfg.AwgBinary,
+		Tun:          cfg.Tun,
+		RunDir:       cfg.AwgRunDirOr(),
+		LinkWait:     cfg.LinkWait,
+		TunReadyWait: cfg.TunReadyWait,
+	}, split, logger)
 }
 
 // gracefulStop asks the transport to stop cleanly (STOP on stdin, then SIGTERM),

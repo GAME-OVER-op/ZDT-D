@@ -123,9 +123,12 @@ func (i *Interface) spawn(p Params) error {
 	cmd.Stdin = nil
 	cmd.Stdout = logf
 	cmd.Stderr = logf
-	// New session so the daemon is not in our controlling-terminal group and a
-	// signal to the supervisor group does not race its clean teardown.
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	// Deliberately NOT a new session: amneziawg-go stays in the supervisor's
+	// process group. ZDT-D's myprogram stops us with `kill -15 -- -<pgid>` then a
+	// 300ms-later `kill -9 -- -<pgid>` — a group kill. Keeping the daemon in-group
+	// means that group kill reaps it and its non-persistent TUN auto-removes, so
+	// no orphaned interface survives even if the supervisor is SIGKILLed before
+	// its own teardown finishes. We still signal it by PID for internal restarts.
 
 	if err := cmd.Start(); err != nil {
 		logf.Close()

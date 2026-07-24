@@ -10,7 +10,7 @@ this design is built on. In short: the upstream `go_client` is already a
 standalone `package main` CLI, so `qwdtt-cli` **supervises it as a child process**
 rather than linking a library.
 
-## What it does (current state — M1 + M2)
+## What it does (current state — M1 + M2, M3 integration ready)
 
 - Loads a single gitignored config file (`qwdtt.conf`) mirroring the transport's
   flag schema; validates it before spawning anything.
@@ -33,12 +33,19 @@ rather than linking a library.
   allocations are released; exits non-zero when it gives up, so ZDT-D restarts the
   whole stack rather than orphaning a TUN.
 
+- **ZDT-D integration (M3):** `deploy/install-zdtd-profiles.sh` provisions the
+  `myprogram` profile that launches qwdtt-cli and the `myvpn` profile that binds a
+  test app's UID to `zdtdqw0`. See `docs/M3-integration.md`. amneziawg-go is kept
+  in the supervisor's process group so ZDT-D's `kill -15 -- -<pgid>` group-stop
+  reaps it and the TUN auto-removes.
+
 The two upstream deltas (atomic `wg-turn.conf` write, `STATS|` marker) are
 implemented as patches in `../upstream/qwdtt/`.
 
-Not yet: the ZDT-D `myprogram`/`myvpn` profile wiring and on-device end-to-end run
-(M3). The M2 bring-up is verified by unit tests and a stubbed integration run;
-the real `ip`/`awg`/`amneziawg-go` path needs a rooted device to exercise.
+Not yet run: the on-device end-to-end (M3 needs the rooted device + whitelisted
+SIM). The M2 bring-up and M3 provisioning are verified by unit tests, a stubbed
+integration run, and JSON-shape checks against the ZDT-D profile structs; the real
+`ip`/`awg`/`amneziawg-go`/netd path needs the device to exercise.
 
 ## Layout
 
@@ -48,6 +55,8 @@ internal/config/    config file loader + validation (the invariants)
 internal/transport/ argv builder + structured-stdout marker parsers (pure)
 internal/wg/        wg-turn.conf -> setconf split (pure) + amneziawg-go bring-up
 internal/supervisor/ process orchestration: validate, run, wg bring-up, watchdog, stop
+deploy/            install-zdtd-profiles.sh — provision the myprogram/myvpn profiles
+docs/              M0-findings, M3-integration
 qwdtt.example.conf  copy, fill in, keep out of git
 ```
 

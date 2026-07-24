@@ -1,0 +1,107 @@
+# Build and test the headless qWDTT transport supervisor and its patched
+# transport. Runs on GitHub's runners (which can reach the Android NDK download),
+# so it produces the arm64 transport binary that the network-restricted dev
+# session cannot build itself. Also serves as the compile-check for the two
+# upstream patches in upstream/qwdtt/.
+name: qwdtt-cli
+
+on:
+  push:
+    branches: ["claude/qwdtt-cli-headless-**"]
+    paths:
+      - "qwdtt-cli/**"
+      - "upstream/qwdtt/**"
+      - ".github/workflows/qwdtt-cli.yml"
+  pull_request:
+    paths:
+      - "qwdtt-cli/**"
+      - "upstream/qwdtt/**"
+      - ".github/workflows/qwdtt-cli.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qwdtt-cli-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  supervisor:
+    name: supervisor (vet, test, arm64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Vet
+        working-directory: qwdtt-cli
+        run: go vet ./...
+
+      - name: Test
+        working-directory: qwdtt-cli
+        run: go test ./...
+
+      - name: Cross-compile (android/arm64, no cgo)
+        working-directory: qwdtt-cli
+        env:
+          GOOS: android
+          GOARCH: arm64
+          CGO_ENABLED: "0"
+        run: go build -trimpath -ldflags "-s -w" -o out/qwdtt-cli ./cmd/qwdtt-cli
+
+      - name: Upload supervisor artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: qwdtt-cli-arm64
+          path: qwdtt-cli/out/qwdtt-cli
+          if-no-files-found: error
+
+  transport:
+    name: transport (NDK arm64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Resolve Android NDK
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          if [ -n "${ANDROID_SDK_ROOT:-}" ] && [ -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]; then
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          elif [ -n "${ANDROID_NDK_LATEST_HOME:-}" ] && [ -d "$ANDROID_NDK_LATEST_HOME" ]; then
+            NDK_ROOT="$ANDROID_NDK_LATEST_HOME"
+          else
+            yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" >/dev/null
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          fi
+          test -d "$NDK_ROOT" || { echo "::error::NDK not found"; exit 1; }
+          echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
+          echo "Using NDK: $NDK_ROOT"
+
+      - name: Build patched transport (arm64-v8a)
+        run: ./upstream/qwdtt/fetch-and-build.sh arm64-v8a "$PWD/out/qwdtt-transport"
+
+      - name: Report result
+        run: |
+          set -euo pipefail
+          ls -l out/qwdtt-transport
+          file out/qwdtt-transport || true
+
+      - name: Upload transport artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: qwdtt-transport-arm64
+          path: out/qwdtt-transport
+          if-no-files-found: error

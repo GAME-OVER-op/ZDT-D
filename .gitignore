@@ -1,6 +1,10 @@
 # Local tools and downloaded build utilities
 /.tools/
 
+# qwdtt-cli captured device artifacts — contain LIVE SECRETS (WG private key,
+# encrypted tunnel password, VK call hashes). Must never be committed.
+/reference/
+
 # Local Android config
 /application/local.properties
 /application/keystore.properties

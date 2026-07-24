@@ -1,0 +1,20 @@
+diff --git a/go_client/main.go b/go_client/main.go
+index 77f3509..a617187 100644
+--- a/go_client/main.go
++++ b/go_client/main.go
+@@ -364,8 +364,14 @@ func main() {
+ 				fmt.Printf("║ %-44s ║\n", line)
+ 			}
+ 			fmt.Println("╚══════════════════════════════════════════════╝")
+-			if err := os.WriteFile("wg-turn.conf", []byte(finalConf+"\n"), 0600); err != nil {
++			// Atomic write: a WireGuard consumer watching wg-turn.conf must never
++			// observe a partial file, so write a sibling temp and rename() it into
++			// place (same-dir rename is atomic on the target filesystem).
++			tmpConf := "wg-turn.conf.tmp"
++			if err := os.WriteFile(tmpConf, []byte(finalConf+"\n"), 0600); err != nil {
+ 				log.Printf("[КОНФИГ] Ошибка сохранения: %v", err)
++			} else if err := os.Rename(tmpConf, "wg-turn.conf"); err != nil {
++				log.Printf("[КОНФИГ] Ошибка переименования: %v", err)
+ 			} else {
+ 				log.Println("[КОНФИГ] Сохранён в wg-turn.conf")
+ 			}

@@ -1,0 +1,16 @@
+# Pinned upstream for the qWDTT transport. Machine-readable: KEY=VALUE.
+# fetch-and-build.sh reads this file. Do not add secrets here.
+
+URL=https://github.com/SpaceNeuroX/proxy-turn-vk-android.git
+
+# Pinned to the newest commit whose go_client actually compiles.
+#
+# HEAD at investigation time (4791f8c, "RU IP bypass / connection pipeline")
+# does NOT build: group.go references workerErrorHint, which is defined nowhere
+# in that commit. Its parent 7b5dcec builds cleanly and predates the RU-bypass
+# feature we do not want anyway (our invariants forbid any direct/RU path).
+# Revisit the pin when upstream fixes HEAD.
+COMMIT=7b5dcec21fb5c179ef14d129ec269cd5750f9de7
+
+# The subdirectory holding the standalone transport (package main).
+SUBDIR=go_client

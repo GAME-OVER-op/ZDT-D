@@ -1,0 +1,23 @@
+diff --git a/go_client/stats.go b/go_client/stats.go
+index 01d3a21..afac22d 100644
+--- a/go_client/stats.go
++++ b/go_client/stats.go
+@@ -1,6 +1,7 @@
+ package main
+ 
+ import (
++	"fmt"
+ 	"log"
+ 	"sync/atomic"
+ 	"time"
+@@ -30,6 +31,10 @@ func (s *Stats) RunLoop(shutdown <-chan struct{}) {
+ 			down := s.TotalBytesDown.Load()
+ 			totalMB := float64(up+down) / (1024.0 * 1024.0)
+ 
++			// Machine-readable marker on stdout for the qwdtt-cli watchdog. The
++			// localized log line below is for humans and must not be parsed for
++			// supervision (it drifts across locales/versions).
++			fmt.Printf("STATS|%d|%d|%d\n", active, up, down)
+ 			log.Printf("[СТАТИСТИКА] Активных: %d | Трафик: %.2f МБ", active, totalMB)
+ 		}
+ 	}

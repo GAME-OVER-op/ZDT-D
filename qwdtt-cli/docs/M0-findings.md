@@ -8,6 +8,12 @@ they can be re-verified as upstream drifts.
 - **Commit inspected:** `4791f8c08b3bf592686f3cf443d4f17005ce87ef` (2026-07-20)
 - **Package under test:** `go_client/` (module `wg-turn-client`, Go 1.25.0)
 
+> **Build note (added after investigation):** the inspected HEAD `4791f8c` does
+> **not compile** — `go_client/group.go` references `workerErrorHint`, defined
+> nowhere in that commit. We build against its parent `7b5dcec` (the newest
+> compiling commit), pinned in `upstream/qwdtt/UPSTREAM`. The two deltas below are
+> implemented as patches in `upstream/qwdtt/patches/` and confirmed to build.
+
 ---
 
 ## Headline correction — the transport is already a standalone CLI
@@ -191,15 +197,17 @@ expected `numW` and restart if it never reaches target within a deadline.
 
 ## Deltas the supervisor needs (upstream is close but not turnkey)
 
-1. **Atomic `wg-turn.conf` write.** Upstream uses `os.WriteFile("wg-turn.conf", …)`
-   (`main.go:367`) — a single write, **not** tmp+`rename()`. A WG consumer watching
-   the file can observe a partial/empty state. Options: (a) small upstream patch to
-   write `wg-turn.conf.tmp` + `os.Rename`; or (b) the supervisor watches for the
-   file, then copies it out atomically before handing it to `amneziawg-go`. Prefer
-   (a) — one-line patch, honors the invariant at the source.
-2. **Machine-readable stats line.** `ActiveConnections` is logged in Russian only.
-   Add a `STATS|active|up|down` line to `Stats.RunLoop` (`stats.go:33`) for the
-   watchdog. Keep it additive; leave the human log intact.
+1. **Atomic `wg-turn.conf` write.** ✅ Implemented —
+   `upstream/qwdtt/patches/0001-atomic-wg-turn-conf-write.patch`. Upstream used a
+   single `os.WriteFile("wg-turn.conf", …)` (`main.go:367`), **not** tmp+`rename()`,
+   so a WG consumer could observe a partial/empty state. The patch writes
+   `wg-turn.conf.tmp` then `os.Rename`s it into place, honoring the invariant at the
+   source.
+2. **Machine-readable stats line.** ✅ Implemented —
+   `upstream/qwdtt/patches/0002-machine-readable-stats-marker.patch`. Adds a
+   `STATS|active|bytesUp|bytesDown` line to `Stats.RunLoop` (`stats.go:33`) on stdout
+   every tick, additively — the human log is untouched. The supervisor's watchdog
+   reads the marker (`internal/transport.ParseStats`), never the Russian log.
 3. **Fixed working directory.** All artifact paths are CWD-relative. The supervisor
    must `chdir` the child into a persistent state dir (holds `wg-turn.conf`,
    `vk_profile.json`, `captcha_browser_fp`).

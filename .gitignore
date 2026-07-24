@@ -5,6 +5,12 @@
 # encrypted tunnel password, VK call hashes). Must never be committed.
 /reference/
 
+# qwdtt-cli build outputs and any real (secret-bearing) config. Only
+# qwdtt.example.conf is tracked.
+/qwdtt-cli/out/
+/qwdtt-cli/qwdtt.conf
+/qwdtt-cli/**/qwdtt.conf
+
 # Local Android config
 /application/local.properties
 /application/keystore.properties

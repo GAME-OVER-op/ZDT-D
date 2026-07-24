@@ -33,7 +33,7 @@ myvpn. myvpn simply retries until the TUN appears.
 |---|---|---|
 | `qwdtt-cli` | `/data/adb/ZDT-D/bin/qwdtt-cli` | `make arm64`, or the `qwdtt-cli-arm64` CI artifact |
 | `qwdtt-transport` | `/data/adb/ZDT-D/bin/qwdtt-transport` | `upstream/qwdtt/fetch-and-build.sh`, or the `qwdtt-transport-arm64` CI artifact |
-| `amneziawg-go`, `awg` | `/data/adb/modules/ZDT-D/bin/` | shipped with ZDT-D |
+| `amneziawg-go`, `awg` | `/data/adb/modules/ZDT-D/bin/` | shipped with ZDT-D (see note) |
 | `qwdtt.conf` | `/data/adb/ZDT-D/etc/qwdtt.conf` | from `qwdtt.example.conf`, filled in, `chmod 600` |
 
 ```bash
@@ -41,6 +41,17 @@ install -m 0755 qwdtt-cli        /data/adb/ZDT-D/bin/qwdtt-cli
 install -m 0755 qwdtt-transport  /data/adb/ZDT-D/bin/qwdtt-transport
 install -m 0600 qwdtt.conf       /data/adb/ZDT-D/etc/qwdtt.conf
 ```
+
+**amneziawg-go / awg come from ZDT-D, not upstream releases.** ZDT-D's build
+compiles them from `amnezia-vpn/amneziawg-go` and `amnezia-vpn/amneziawg-tools`
+and — critically — patches the UAPI socket path: amneziawg-go uses the
+CWD-relative `run/amneziawg`, and awg is built with
+`RUNSTATEDIR=/data/adb/modules/ZDT-D/working_folder/amneziawg/run`. They only find
+each other's socket when amneziawg-go runs with cwd =
+`/data/adb/modules/ZDT-D/working_folder/amneziawg`, which is qwdtt-cli's default
+`awg_run_dir`. A stock amneziawg-go release will **not** work — use the ones ZDT-D
+installs (or rebuild them via ZDT-D's `build.yml`). Verify they exist:
+`ls -l /data/adb/modules/ZDT-D/bin/{amneziawg-go,awg}`.
 
 **SELinux:** the ZDT-D daemon execs our binary; if the device enforces a label on
 `/data/adb/.../bin`, give both binaries an exec-capable context before first run

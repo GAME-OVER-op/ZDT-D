@@ -80,6 +80,13 @@ func Up(p Params, split SetconfConfig, logger *log.Logger) (*Interface, error) {
 	if err := os.MkdirAll(p.RunDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create run dir: %w", err)
 	}
+	// amneziawg-go opens its UAPI socket at the CWD-relative "run/amneziawg"
+	// (a ZDT-D build patch) and does not create the parent dirs itself. awg's
+	// compiled-in RUNSTATEDIR points at the same absolute location, so this must
+	// exist under RunDir before spawn or setconf cannot reach the interface.
+	if err := os.MkdirAll(filepath.Join(p.RunDir, "run", "amneziawg"), 0o700); err != nil {
+		return nil, fmt.Errorf("create uapi socket dir: %w", err)
+	}
 	setconfPath := filepath.Join(p.RunDir, setconfFile)
 	if err := writeFileAtomic(setconfPath, []byte(split.Setconf), 0o600); err != nil {
 		return nil, fmt.Errorf("write setconf: %w", err)

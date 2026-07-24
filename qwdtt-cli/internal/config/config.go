@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -349,13 +348,21 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// defaultAwgRunDir is the working directory amneziawg-go must be spawned in for
+// the ZDT-D-built binaries. ZDT-D patches amneziawg-go's UAPI socket to the
+// CWD-relative "run/amneziawg" and builds awg with a matching absolute
+// RUNSTATEDIR, so the two only agree on the socket path when amneziawg-go's cwd
+// is this directory. Overridable via awg_run_dir only if you ship your own build
+// with different socket paths.
+const defaultAwgRunDir = "/data/adb/modules/ZDT-D/working_folder/amneziawg"
+
 // AwgRunDirOr returns the configured amneziawg working directory, defaulting to
-// StateDir/awg when unset.
+// the path the ZDT-D-built amneziawg-go/awg pair expect.
 func (c *Config) AwgRunDirOr() string {
 	if c.AwgRunDir != "" {
 		return c.AwgRunDir
 	}
-	return filepath.Join(c.StateDir, "awg")
+	return defaultAwgRunDir
 }
 
 func parseBool(s string) (bool, error) {

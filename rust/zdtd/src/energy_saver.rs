@@ -16,6 +16,12 @@ const MIN_FREEZE_DELAY_SECS: u64 = 10;
 const MAX_FREEZE_DELAY_SECS: u64 = 24 * 60 * 60;
 const DEFAULT_FREEZE_DELAY_SECS: u64 = 300;
 const MONITOR_POLL_SECS: u64 = 5;
+// Потолок наращивания шага опроса, пока что-то заморожено: именно этим опросом
+// ловится включение экрана, по которому идёт разморозка. Больше держать нельзя:
+// пользователь увидит замороженные программы как зависание.
+const MONITOR_POLL_MAX_SECS: u64 = 30;
+// Потолок, когда заморозок нет: терять нечего, можно спать дольше.
+const MONITOR_POLL_MAX_FREE_SECS: u64 = 120;
 const AFFINITY_REAPPLY_SECS: u64 = 20;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -267,6 +273,8 @@ pub fn stop_monitor() {
 fn stop_monitor_without_unfreeze() {
     MONITOR_TOKEN.fetch_add(1, Ordering::SeqCst);
     MONITOR_RUNNING.store(false, Ordering::SeqCst);
+    // Поднимаем спящий монитор, чтобы он увидел смену токена и вышел сразу.
+    crate::idle::wake_all();
 }
 
 pub fn refresh(services_running: bool) {
@@ -281,6 +289,11 @@ pub fn refresh(services_running: bool) {
 fn monitor_loop(probe: screen::ScreenProbe, token: u64) {
     let mut screen_off_since: Option<Instant> = None;
     let mut last_affinity = Instant::now() - Duration::from_secs(AFFINITY_REAPPLY_SECS);
+    // Шаг опроса экрана нарастает, пока ничего не меняется, и сбрасывается в базовый
+    // при смене состояния экрана или при обращении к демону.
+    let mut poll_secs = MONITOR_POLL_SECS;
+    let mut last_screen_on: Option<bool> = None;
+    let mut last_wake_epoch = crate::idle::wake_epoch();
 
     while MONITOR_TOKEN.load(Ordering::SeqCst) == token {
         let cfg = match load_settings() {
@@ -300,17 +313,51 @@ fn monitor_loop(probe: screen::ScreenProbe, token: u64) {
         }
 
         let screen_on = screen::raw_screen_on(&probe);
+        let screen_changed = last_screen_on != Some(screen_on);
+        last_screen_on = Some(screen_on);
+
+        let epoch = crate::idle::wake_epoch();
+        if screen_changed || epoch != last_wake_epoch {
+            poll_secs = MONITOR_POLL_SECS;
+        }
+        last_wake_epoch = epoch;
+
+        // Сколько осталось до дедлайна заморозки: просыпаемся точно к нему, а не
+        // по общему шагу опроса, чтобы наращивание никогда не сдвигало заморозку.
+        let mut freeze_due_in: Option<Duration> = None;
         if screen_on {
             screen_off_since = None;
-            unfreeze_all_best_effort();
+            // Разморозка нужна только если есть что размораживать: раньше вызов шёл
+            // безусловно каждые 5 секунд и всякий раз читал state.json.
+            if has_frozen_pids() {
+                unfreeze_all_best_effort();
+            }
         } else {
-            let since = screen_off_since.get_or_insert_with(Instant::now);
-            if since.elapsed() >= Duration::from_secs(cfg.freeze_delay_seconds) {
+            let since = *screen_off_since.get_or_insert_with(Instant::now);
+            let delay = Duration::from_secs(cfg.freeze_delay_seconds);
+            let elapsed = since.elapsed();
+            if elapsed >= delay {
                 freeze_selected_programs(&cfg);
+            } else {
+                freeze_due_in = Some(delay.saturating_sub(elapsed));
             }
         }
 
-        if !interruptible_sleep(crate::power_mode::medium_poll(Duration::from_secs(MONITOR_POLL_SECS)), token) {
+        let cap = if has_frozen_pids() {
+            MONITOR_POLL_MAX_SECS
+        } else {
+            MONITOR_POLL_MAX_FREE_SECS
+        };
+        let step_secs = poll_secs.min(cap);
+        let mut sleep_for = crate::power_mode::medium_poll(Duration::from_secs(step_secs));
+        if let Some(due) = freeze_due_in {
+            if due < sleep_for {
+                sleep_for = due;
+            }
+        }
+        poll_secs = poll_secs.saturating_mul(2).min(cap);
+
+        if !interruptible_sleep(sleep_for, token) {
             break;
         }
     }
@@ -319,14 +366,40 @@ fn monitor_loop(probe: screen::ScreenProbe, token: u64) {
     logging::info("energy_saver: monitor stopped");
 }
 
+/// Есть ли сейчас замороженные процессы.
+///
+/// IMPORTANT: файл состояния тоже считается признаком заморозки: после
+/// перезапуска демона список замороженных pid живёт только в нём, и без этой
+/// проверки разморозка могла бы не сработать вообще.
+fn has_frozen_pids() -> bool {
+    {
+        let st = lock_runtime_state();
+        if st.frozen.values().any(|pids| !pids.is_empty()) {
+            return true;
+        }
+    }
+    state_path().is_file()
+}
+
 fn interruptible_sleep(total: Duration, token: u64) -> bool {
+    // Спим одним сном до дедлайна вместо нарезки по секунде. Обращение к демону
+    // поднимает поток раньше (например, чтобы разморозить сразу после открытия
+    // приложения), но не чаще базового шага: иначе частые запросы статуса
+    // превратились бы в постоянное чтение настроек и sysfs.
     let start = Instant::now();
-    while start.elapsed() < total {
+    let deadline = start + total;
+    let min_tick = Duration::from_secs(MONITOR_POLL_SECS);
+    let mut seen = crate::idle::wake_epoch();
+    loop {
         if MONITOR_TOKEN.load(Ordering::SeqCst) != token {
             return false;
         }
-        let remaining = total.saturating_sub(start.elapsed());
-        thread::sleep(remaining.min(Duration::from_secs(1)));
+        if Instant::now() >= deadline {
+            break;
+        }
+        if crate::idle::sleep_until(deadline, &mut seen) && start.elapsed() >= min_tick {
+            break;
+        }
     }
     MONITOR_TOKEN.load(Ordering::SeqCst) == token
 }

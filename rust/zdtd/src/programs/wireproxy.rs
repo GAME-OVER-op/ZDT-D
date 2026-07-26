@@ -779,9 +779,7 @@ fn ensure_file_empty(p: &Path) -> Result<()> {
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    let s = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    let v = serde_json::from_str::<T>(&s).with_context(|| format!("parse json {}", path.display()))?;
-    Ok(v)
+    crate::jsonfs::read_json(path)
 }
 
 fn ensure_dir(p: &str) -> Result<()> {

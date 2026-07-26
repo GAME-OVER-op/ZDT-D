@@ -1457,7 +1457,7 @@ fn singbox_vpn_endpoint(root: &Path, profile: &str, registry: &HashMap<u16, Traf
         if !dir.is_dir() { continue; }
         let raw = fs::read_to_string(dir.join("setting.json")).ok()?;
         let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
-        if !v.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false) { continue; }
+        if !crate::jsonfs::json_enabled(v.get("enabled")) { continue; }
         let Some(port) = v.get("port").and_then(json_u16) else { continue; };
         return Some(registry.get(&port).cloned().unwrap_or_else(|| TrafficBackendPort {
             port,
@@ -1480,7 +1480,7 @@ fn hysteria2_vpn_endpoint(root: &Path, profile: &str, registry: &HashMap<u16, Tr
         if !dir.is_dir() { continue; }
         let raw = fs::read_to_string(dir.join("setting.json")).ok()?;
         let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
-        if !v.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false) { continue; }
+        if !crate::jsonfs::json_enabled(v.get("enabled")) { continue; }
         let Some(port) = v.get("socks5_port").and_then(json_u16) else { continue; };
         return Some(registry.get(&port).cloned().unwrap_or_else(|| TrafficBackendPort {
             port,

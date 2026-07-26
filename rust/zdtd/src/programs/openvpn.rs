@@ -968,19 +968,11 @@ fn ensure_file_empty(path: &Path) -> Result<()> {
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    let txt = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    serde_json::from_str(&txt).with_context(|| format!("parse {}", path.display()))
+    crate::jsonfs::read_json_short_ctx(path)
 }
 
 fn write_json_pretty<T: Serialize>(path: &Path, v: &T) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let txt = serde_json::to_string_pretty(v)?;
-    let tmp = path.with_extension("tmp");
-    fs::write(&tmp, txt)?;
-    fs::rename(&tmp, path)?;
-    Ok(())
+    crate::jsonfs::write_json_pretty_tmp_rename(path, v)
 }
 
 pub fn main_pids_exact() -> Vec<i32> {

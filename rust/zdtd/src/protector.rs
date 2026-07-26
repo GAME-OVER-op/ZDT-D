@@ -111,6 +111,9 @@ fn start_auto_monitor() {
 
 fn stop_auto_monitor() {
     AUTO_MONITOR_TOKEN.fetch_add(1, Ordering::SeqCst);
+    // Поднимаем спящий поток сразу, чтобы он увидел смену токена и вышел
+    // мгновенно, а не по истечении интервала опроса.
+    crate::idle::wake_all();
 }
 
 fn auto_monitor_loop(probe: screen::ScreenProbe, token: u64) {
@@ -190,13 +193,21 @@ fn confirm_screen_state(
 }
 
 fn interruptible_sleep(total: Duration, token: u64) -> bool {
-    let start = Instant::now();
-    while start.elapsed() < total {
+    // Спим одним сном до дедлайна вместо нарезки по секунде: интервалы здесь
+    // 5-10 минут, то есть раньше на одну проверку экрана приходилось до 600
+    // пробуждений потока. Смена токена (остановка или смена режима) будит поток
+    // мгновенно через crate::idle::wake_all(), то есть отзывчивость даже выросла.
+    let deadline = Instant::now() + total;
+    let mut seen = crate::idle::wake_epoch();
+    loop {
         if AUTO_MONITOR_TOKEN.load(Ordering::SeqCst) != token {
             return false;
         }
-        let remaining = total.saturating_sub(start.elapsed());
-        thread::sleep(remaining.min(Duration::from_secs(1)));
+        if Instant::now() >= deadline {
+            break;
+        }
+        // Пробуждение без смены токена не сокращает интервал: досыпаем остаток.
+        crate::idle::sleep_until(deadline, &mut seen);
     }
     AUTO_MONITOR_TOKEN.load(Ordering::SeqCst) == token
 }

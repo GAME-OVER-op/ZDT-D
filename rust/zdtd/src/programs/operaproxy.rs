@@ -1666,9 +1666,7 @@ fn find_bin(name: &str) -> Result<PathBuf> {
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    let s = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    let v = serde_json::from_str::<T>(&s).with_context(|| format!("parse {}", path.display()))?;
-    Ok(v)
+    crate::jsonfs::read_json_short_ctx(path)
 }
 
 fn ensure_dir<P: AsRef<Path>>(p: P) -> Result<()> {

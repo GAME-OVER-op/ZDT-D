@@ -91,24 +91,48 @@ pub(crate) fn protected_pids() -> Vec<u32> {
     pids
 }
 
-/// Collect current process usage.
+/// Collect current process usage for every program.
 pub fn collect_status() -> Result<StatusReport> {
+    collect_status_inner(None)
+}
+
+/// Collect current process usage for the listed programs only.
+///
+/// Every pid lookup below costs at least one `pidof` process, and falls back to `pgrep -f` plus
+/// `ps -A` when nothing matches, so probing all engines when only a few are enabled is the most
+/// expensive part of startup. Accepted ids are the pid-group names used below: "nfqws",
+/// "nfqws2", "byedpi", "dnscrypt", "dpitunnel", "singbox", "hysteria2", "wireproxy", "myproxy",
+/// "myprogram", "openvpn", "amneziawg", "tun2socks", "mihomo", "mieru", "tgwsproxy",
+/// "tun2proxy", "tor", "t2s", "operaproxy".
+///
+/// IMPORTANT: buckets that were not requested come back empty, which is indistinguishable from
+/// "not running". Only use this where the caller knows exactly which buckets it reads. Never use
+/// it for /api/status: the UI needs CPU and memory for every program, including ones that are
+/// running while disabled.
+pub fn collect_status_for(programs: &[&str]) -> Result<StatusReport> {
+    collect_status_inner(Some(programs))
+}
+
+fn collect_status_inner(wanted: Option<&[&str]>) -> Result<StatusReport> {
+    // None means "everything", which keeps collect_status() behavior unchanged.
+    let want = |id: &str| wanted.map_or(true, |list| list.contains(&id));
     let self_pid = std::process::id();
     let op_byedpi_port = operaproxy_byedpi_port();
 
     // Gather pids (best-effort; empty on errors).
     // Use `pidof` instead of `pgrep -f` where possible to avoid matching similarly-named processes.
     // This matters on Android where some apps/binaries can have overlapping names.
-    let dnscrypt_pids = pidof("dnscrypt");
-    let nfqws_pids = pidof("nfqws");
-    let nfqws2_pids = pidof("nfqws2");
+    let dnscrypt_pids = if want("dnscrypt") { pidof("dnscrypt") } else { Vec::new() };
+    let nfqws_pids = if want("nfqws") { pidof("nfqws") } else { Vec::new() };
+    let nfqws2_pids = if want("nfqws2") { pidof("nfqws2") } else { Vec::new() };
     // dpitunnel-cli may present a different process name (e.g. "DPITunnel-cli")
     // depending on the build. Collect both variants.
-    let dpitunnel_pids = pidof_any(&["DPITunnel-cli", "dpitunnel-cli"]);
+    let dpitunnel_pids = if want("dpitunnel") { pidof_any(&["DPITunnel-cli", "dpitunnel-cli"]) } else { Vec::new() };
     // t2s is used by multiple programs (opera-proxy and sing-box).
     // We expose a global `t2s` aggregate for UI, and keep `opera.t2s` as a legacy bucket
     // (t2s processes without "--web-port" in cmdline).
-    let mut t2s_all_pids = pidof("t2s");
+    // opera.t2s is derived from this group, so it is also needed for the operaproxy view.
+    let mut t2s_all_pids = if want("t2s") || want("operaproxy") { pidof("t2s") } else { Vec::new() };
     t2s_all_pids.sort_unstable();
     t2s_all_pids.dedup();
 
@@ -121,29 +145,31 @@ pub fn collect_status() -> Result<StatusReport> {
         }
         t2s_pids.push(*pid);
     }
-    let opera_proxy_pids = pidof("opera-proxy");
-    let singbox_pids = singbox_pids();
-    let hysteria2_pids = hysteria2_pids();
-    let wireproxy_pids = wireproxy_pids();
-    let myproxy_pids = myproxy_t2s_pids();
-    let myprogram_pids = myprogram_main_pids();
-    let openvpn_pids = openvpn_pids();
-    let amneziawg_pids = amneziawg_pids();
-    let tun2socks_pids = tun2socks_pids();
-    let mihomo_pids = mihomo_pids();
-    let mihomo_tun2socks_pids = mihomo_tun2socks_pids();
-    let mieru_pids = mieru_pids();
-    let tgwsproxy_pids = pidof("tg-ws-proxy");
-    let mieru_tun2proxy_pids = mieru_tun2proxy_pids();
+    let opera_proxy_pids = if want("operaproxy") { pidof("opera-proxy") } else { Vec::new() };
+    let singbox_pids = if want("singbox") { singbox_pids() } else { Vec::new() };
+    let hysteria2_pids = if want("hysteria2") { hysteria2_pids() } else { Vec::new() };
+    let wireproxy_pids = if want("wireproxy") { wireproxy_pids() } else { Vec::new() };
+    let myproxy_pids = if want("myproxy") { myproxy_t2s_pids() } else { Vec::new() };
+    let myprogram_pids = if want("myprogram") { myprogram_main_pids() } else { Vec::new() };
+    let openvpn_pids = if want("openvpn") { openvpn_pids() } else { Vec::new() };
+    let amneziawg_pids = if want("amneziawg") { amneziawg_pids() } else { Vec::new() };
+    // The tun2proxy aggregate is built from this group, so it is needed for either id.
+    let tun2socks_pids = if want("tun2socks") || want("tun2proxy") { tun2socks_pids() } else { Vec::new() };
+    let mihomo_pids = if want("mihomo") { mihomo_pids() } else { Vec::new() };
+    let mihomo_tun2socks_pids = if want("tun2proxy") { mihomo_tun2socks_pids() } else { Vec::new() };
+    let mieru_pids = if want("mieru") { mieru_pids() } else { Vec::new() };
+    let tgwsproxy_pids = if want("tgwsproxy") { pidof("tg-ws-proxy") } else { Vec::new() };
+    let mieru_tun2proxy_pids = if want("tun2proxy") { mieru_tun2proxy_pids() } else { Vec::new() };
     let mut tun2proxy_pids = Vec::new();
     tun2proxy_pids.extend(tun2socks_pids.iter().copied());
     tun2proxy_pids.extend(mihomo_tun2socks_pids.iter().copied());
     tun2proxy_pids.extend(mieru_tun2proxy_pids.iter().copied());
     tun2proxy_pids.sort_unstable();
     tun2proxy_pids.dedup();
-    let tor_pids = tor_pids();
+    let tor_pids = if want("tor") { tor_pids() } else { Vec::new() };
 
-    let mut byedpi_all = pidof("byedpi");
+    // opera.byedpi is split out of this group, so it is needed for the operaproxy view too.
+    let mut byedpi_all = if want("byedpi") || want("operaproxy") { pidof("byedpi") } else { Vec::new() };
     byedpi_all.sort_unstable();
     byedpi_all.dedup();
 

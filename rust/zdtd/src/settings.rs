@@ -377,8 +377,10 @@ pub fn ensure_minimal_program_layouts() -> Result<()> {
 "#;
     const ENABLED_FALSE_JSON: &str = r#"{"enabled":false}
 "#;
+    // Written as a real bool: every setting file zdtd creates uses true/false. Readers still
+    // accept the legacy 0/1 form for files created by older versions.
     const PROXYINFO_ENABLED_JSON: &str = r#"{
-  "enabled": 0
+  "enabled": false
 }
 "#;
     const TOR_SETTING_JSON: &str = r#"{

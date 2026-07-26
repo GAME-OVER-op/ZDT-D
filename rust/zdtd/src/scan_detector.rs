@@ -21,6 +21,9 @@ const POLL_ACTIVE_FAST: Duration = Duration::from_secs(30);
 const POLL_ACTIVE_MEDIUM: Duration = Duration::from_secs(60);
 const POLL_ACTIVE_SLOW: Duration = Duration::from_secs(120);
 const POLL_ACTIVE_IDLE: Duration = Duration::from_secs(180);
+// Контрольный тик, пока к демону никто не обращается. Счётчики пакетов в
+// iptables накопительные, поэтому события не теряются — только замечаются позже.
+const POLL_SLEEPING: Duration = Duration::from_secs(20 * 60);
 const MIN_WINDOW: Duration = Duration::from_secs(120);
 const SUSPICION_REMEMBER: Duration = Duration::from_secs(30 * 60);
 const SUSPICION_COOLDOWN: Duration = Duration::from_secs(30 * 60);
@@ -103,6 +106,8 @@ pub fn start() {
 
 pub fn stop() {
     should_run().store(false, Ordering::SeqCst);
+    // Поднимаем спящий детектор, иначе join() ждал бы конца интервала.
+    crate::idle::wake_all();
     let mut slot = match detector_handle().lock() {
         Ok(g) => g,
         Err(p) => p.into_inner(),
@@ -114,9 +119,19 @@ pub fn stop() {
 
 fn detector_loop() -> Result<()> {
     let mut state = DetectorState::default();
+    // Плановый интервал нужен только для первого круга.
+    let mut planned = crate::power_mode::detector_poll(next_poll_interval(&state));
+    let mut last_tick: Option<Instant> = None;
+
     while should_run().load(Ordering::SeqCst) {
-        let sleep_for = crate::power_mode::detector_poll(next_poll_interval(&state));
-        match detector_tick(&mut state, sleep_for) {
+        // IMPORTANT: в спящем режиме поток может проспать дольше запланированного:
+        // монотонные часы не идут во время глубокого сна устройства, а таймаут
+        // телефон не будит (и не должен). Поэтому окно считаем по фактически
+        // прошедшему интервалу, а не по плановому.
+        let measured = last_tick.map(|t| t.elapsed()).unwrap_or(planned);
+        last_tick = Some(Instant::now());
+
+        match detector_tick(&mut state, measured) {
             Ok(outcome) => {
                 if outcome.had_hits {
                     state.idle_rounds = 0;
@@ -127,12 +142,25 @@ fn detector_loop() -> Result<()> {
             Err(e) => logging::warn(&format!("proxyInfo detector tick failed: {e:#}")),
         }
 
-        let mut slept = Duration::from_secs(0);
-        while should_run().load(Ordering::SeqCst) && slept < sleep_for {
-            let remain = sleep_for.saturating_sub(slept);
-            let step = if remain > Duration::from_secs(1) { Duration::from_secs(1) } else { remain };
-            thread::sleep(step);
-            slept += step;
+        // Пока к демону никто не обращается, детектор паркуется: каждый тик — это
+        // запуск iptables, самая дорогая фоновая работа в демоне.
+        let base = crate::power_mode::detector_poll(next_poll_interval(&state));
+        let sleep_for = if crate::idle::is_idle() { POLL_SLEEPING.max(base) } else { base };
+        planned = sleep_for;
+
+        let sleep_start = Instant::now();
+        let deadline = sleep_start + sleep_for;
+        let mut seen = crate::idle::wake_epoch();
+        while should_run().load(Ordering::SeqCst) {
+            if Instant::now() >= deadline {
+                break;
+            }
+            if crate::idle::sleep_until(deadline, &mut seen) && sleep_start.elapsed() >= base {
+                // Обращение к демону после парковки: тикаем сразу, не досыпая.
+                // Ограничение по base не даёт частым запросам статуса превратить
+                // детектор в постоянный опрос iptables.
+                break;
+            }
         }
     }
     Ok(())

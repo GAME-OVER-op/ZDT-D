@@ -85,7 +85,13 @@ pub fn run_timeout(cmd: &str, args: &[&str], capture: Capture, timeout: Duration
     let mut child = c.spawn().map_err(|e| anyhow!("failed to spawn {cmd}: {e}"))?;
     let start = Instant::now();
     let mut poll_delay = Duration::from_millis(2);
-    const MAX_POLL_DELAY: Duration = Duration::from_millis(25);
+    // Ожидание дочернего процесса — опрос try_wait(). Начинаем с 2 мс, чтобы
+    // короткие команды (pidof, iptables -C) возвращались мгновенно. Прежний
+    // потолок 25 мс давал ~40 пробуждений в секунду на всё время работы долгой
+    // команды (у iptables таймаут 12 с). Команда, которая работает уже секунду,
+    // почти наверняка проработает ещё долго, поэтому шаг растёт до 200 мс:
+    // таймауты команд измеряются секундами, такая задержка незначима.
+    const MAX_POLL_DELAY: Duration = Duration::from_millis(200);
 
     loop {
         if let Some(st) = child.try_wait().map_err(|e| anyhow!("failed to wait {cmd}: {e}"))? {

@@ -29,7 +29,12 @@ const MAX_PATH_BYTES: usize = 256;
 const MAX_INFLIGHT: usize = 24;
 const READ_TIMEOUT: Duration = Duration::from_secs(1);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(1);
-const ACCEPT_SLEEP: Duration = Duration::from_millis(100);
+// Шаг ожидания между попытками accept на неблокирующем слушателе. Было 100 мс,
+// то есть 10 пробуждений в секунду всё время, пока портал запущен. Архитектура
+// опроса сохранена (остановка по флагу работает как раньше), увеличен только шаг:
+// задержка ответа страницы авторизации до 1 с незаметна, а пробуждений становится
+// в десять раз меньше.
+const ACCEPT_SLEEP: Duration = Duration::from_secs(1);
 const RATE_WINDOW: Duration = Duration::from_secs(10);
 const RATE_MAX_REQUESTS: u32 = 40;
 const RATE_MAX_TRACKED_IPS: usize = 256;

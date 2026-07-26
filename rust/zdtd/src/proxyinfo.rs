@@ -1583,7 +1583,7 @@ fn collect_hysteria2_ports(out: &mut BTreeSet<u16>) -> Result<()> {
                 if !server_dir.is_dir() { continue; }
                 let setting_path = server_dir.join("setting.json");
                 let Ok(v) = read_json_file::<Value>(&setting_path) else { continue; };
-                if !v.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false) { continue; }
+                if !crate::jsonfs::json_enabled(v.get("enabled")) { continue; }
                 if let Some(port) = v.get("socks5_port").and_then(|x| x.as_u64()).and_then(|x| u16::try_from(x).ok()) {
                     if port != 0 { out.insert(port); }
                 }

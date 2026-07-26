@@ -160,68 +160,28 @@ pub fn start_full() -> Result<()> {
     let mut vpn_profiles = Vec::new();
     match validate_vpn_claims_unique() {
         Ok(()) => {
-            match openvpn::start_profiles_for_netd() {
-                Ok(items) => vpn_profiles.extend(items),
-                Err(e) => {
-                    log::warn!("openvpn startup failed, continuing: {e:#}");
-                    mark_start_partial();
-                    crate::logging::user_warn("OpenVPN: ошибка запуска, запуск продолжен");
-                }
-            }
-            match amneziawg::start_profiles_for_netd() {
-                Ok(items) => vpn_profiles.extend(items),
-                Err(e) => {
-                    log::warn!("amneziawg startup failed, continuing: {e:#}");
-                    mark_start_partial();
-                    crate::logging::user_warn("AmneziaWG: ошибка запуска, запуск продолжен");
-                }
-            }
-            match tun2socks::start_profiles_for_netd() {
-                Ok(items) => vpn_profiles.extend(items),
-                Err(e) => {
-                    log::warn!("tun2socks startup failed, continuing: {e:#}");
-                    mark_start_partial();
-                    crate::logging::user_warn("tun2socks: ошибка запуска, запуск продолжен");
-                }
-            }
-            match myvpn::start_profiles_for_netd() {
-                Ok(items) => vpn_profiles.extend(items),
-                Err(e) => {
-                    log::warn!("myvpn startup failed, continuing: {e:#}");
-                    mark_start_partial();
-                    crate::logging::user_warn("myvpn: ошибка запуска, запуск продолжен");
-                }
-            }
-            match mihomo::start_profiles_for_netd() {
-                Ok(items) => vpn_profiles.extend(items),
-                Err(e) => {
-                    log::warn!("mihomo startup failed, continuing: {e:#}");
-                    mark_start_partial();
-                    crate::logging::user_warn("mihomo: ошибка запуска, запуск продолжен");
-                }
-            }
-            match mieru::start_profiles_for_netd() {
-                Ok(items) => vpn_profiles.extend(items),
-                Err(e) => {
-                    log::warn!("mieru startup failed, continuing: {e:#}");
-                    mark_start_partial();
-                    crate::logging::user_warn("mieru: ошибка запуска, запуск продолжен");
-                }
-            }
-            match singbox::start_profiles_for_netd() {
-                Ok(items) => vpn_profiles.extend(items),
-                Err(e) => {
-                    log::warn!("sing-box vpn startup failed, continuing: {e:#}");
-                    mark_start_partial();
-                    crate::logging::user_warn("sing-box: ошибка запуска, запуск продолжен");
-                }
-            }
-            match hysteria2::start_profiles_for_netd() {
-                Ok(items) => vpn_profiles.extend(items),
-                Err(e) => {
-                    log::warn!("hysteria2 vpn startup failed, continuing: {e:#}");
-                    mark_start_partial();
-                    crate::logging::user_warn("hysteria2: ошибка запуска, запуск продолжен");
+            // Table-driven start. Same engines, same order, same best-effort semantics as the
+            // eight hand-written match blocks this replaces. Order matters: vpn_netd::start_profiles()
+            // consumes the accumulated list, so engines must be started in this exact sequence.
+            // The log label and the user-facing Russian text are kept per engine, unchanged.
+            let netd_starters: [(&str, &str, fn() -> Result<Vec<crate::vpn_netd::VpnNetdProfile>>); 8] = [
+                ("openvpn", "OpenVPN: ошибка запуска, запуск продолжен", openvpn::start_profiles_for_netd),
+                ("amneziawg", "AmneziaWG: ошибка запуска, запуск продолжен", amneziawg::start_profiles_for_netd),
+                ("tun2socks", "tun2socks: ошибка запуска, запуск продолжен", tun2socks::start_profiles_for_netd),
+                ("myvpn", "myvpn: ошибка запуска, запуск продолжен", myvpn::start_profiles_for_netd),
+                ("mihomo", "mihomo: ошибка запуска, запуск продолжен", mihomo::start_profiles_for_netd),
+                ("mieru", "mieru: ошибка запуска, запуск продолжен", mieru::start_profiles_for_netd),
+                ("sing-box vpn", "sing-box: ошибка запуска, запуск продолжен", singbox::start_profiles_for_netd),
+                ("hysteria2 vpn", "hysteria2: ошибка запуска, запуск продолжен", hysteria2::start_profiles_for_netd),
+            ];
+            for (log_label, user_message, start_profiles) in netd_starters {
+                match start_profiles() {
+                    Ok(items) => vpn_profiles.extend(items),
+                    Err(e) => {
+                        log::warn!("{log_label} startup failed, continuing: {e:#}");
+                        mark_start_partial();
+                        crate::logging::user_warn(user_message);
+                    }
                 }
             }
             if let Err(e) = crate::vpn_netd::start_profiles(vpn_profiles) {
@@ -232,27 +192,24 @@ pub fn start_full() -> Result<()> {
                 }
             }
 
+            // Same four supported engines as before; the identical error arms are now shared.
+            let vpn_tether_starters: [(&str, fn(&str) -> Result<Option<crate::vpn_tether::VpnTetherProfile>>); 4] = [
+                ("openvpn", openvpn::start_profile_for_hotspot_vpn),
+                ("amneziawg", amneziawg::start_profile_for_hotspot_vpn),
+                ("mihomo", mihomo::start_profile_for_hotspot_vpn),
+                ("mieru", mieru::start_profile_for_hotspot_vpn),
+            ];
             let vpn_tether_profile = match hotspot_vpn_selection.as_ref().map(|(p, n)| (p.as_str(), n.as_str())) {
-                Some(("openvpn", profile)) => match openvpn::start_profile_for_hotspot_vpn(profile) {
-                    Ok(item) => item,
-                    Err(e) => { log::warn!("vpn_tether openvpn startup failed, continuing: {e:#}"); mark_start_partial(); None }
+                Some((program, profile)) => match vpn_tether_starters.iter().find(|(id, _)| *id == program) {
+                    Some((_, start_profile)) => match start_profile(profile) {
+                        Ok(item) => item,
+                        Err(e) => { log::warn!("vpn_tether {program} startup failed, continuing: {e:#}"); mark_start_partial(); None }
+                    },
+                    None => {
+                        log::warn!("vpn_tether unsupported selection program={} profile={}", program, profile);
+                        None
+                    }
                 },
-                Some(("amneziawg", profile)) => match amneziawg::start_profile_for_hotspot_vpn(profile) {
-                    Ok(item) => item,
-                    Err(e) => { log::warn!("vpn_tether amneziawg startup failed, continuing: {e:#}"); mark_start_partial(); None }
-                },
-                Some(("mihomo", profile)) => match mihomo::start_profile_for_hotspot_vpn(profile) {
-                    Ok(item) => item,
-                    Err(e) => { log::warn!("vpn_tether mihomo startup failed, continuing: {e:#}"); mark_start_partial(); None }
-                },
-                Some(("mieru", profile)) => match mieru::start_profile_for_hotspot_vpn(profile) {
-                    Ok(item) => item,
-                    Err(e) => { log::warn!("vpn_tether mieru startup failed, continuing: {e:#}"); mark_start_partial(); None }
-                },
-                Some((program, profile)) => {
-                    log::warn!("vpn_tether unsupported selection program={} profile={}", program, profile);
-                    None
-                }
                 None => None,
             };
             if let Err(e) = crate::vpn_tether::sync(vpn_tether_profile) {
@@ -576,11 +533,7 @@ fn active_profiles_enabled(program: &str) -> bool {
     v.get("profiles")
         .and_then(|p| p.as_object())
         .map(|m| {
-            m.values().any(|st| {
-                st.get("enabled")
-                    .and_then(|x| x.as_bool())
-                    .unwrap_or_else(|| st.get("enabled").and_then(|x| x.as_i64()).unwrap_or(0) != 0)
-            })
+            m.values().any(|st| crate::jsonfs::json_enabled(st.get("enabled")))
         })
         .unwrap_or(false)
 }
@@ -589,9 +542,7 @@ fn simple_enabled_json(program: &str, file: &str) -> bool {
     let path = settings::working_program_root_path(program).join(file);
     let Ok(raw) = std::fs::read_to_string(path) else { return false; };
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { return false; };
-    v.get("enabled")
-        .and_then(|x| x.as_bool())
-        .unwrap_or_else(|| v.get("enabled").and_then(|x| x.as_i64()).unwrap_or(0) != 0)
+    crate::jsonfs::json_enabled(v.get("enabled"))
 }
 
 fn dnscrypt_enabled() -> bool {
@@ -705,9 +656,7 @@ fn profile_program_has_routed_app_outputs(program: &str) -> bool {
 }
 
 fn profile_state_enabled(st: &serde_json::Value) -> bool {
-    st.get("enabled")
-        .and_then(|x| x.as_bool())
-        .unwrap_or_else(|| st.get("enabled").and_then(|x| x.as_i64()).unwrap_or(0) != 0)
+    crate::jsonfs::json_enabled(st.get("enabled"))
 }
 
 fn count_valid_uid_pairs_runtime(path: &Path) -> usize {
@@ -853,33 +802,23 @@ where
 fn validate_start_plan_best_effort() {
     let mut had_warning = false;
 
-    if let Err(e) = openvpn::validate_start_plan() {
-        had_warning = true;
-        log::warn!("start plan warning: openvpn: {e:#}");
-    }
-    if let Err(e) = amneziawg::validate_start_plan() {
-        had_warning = true;
-        log::warn!("start plan warning: amneziawg: {e:#}");
-    }
-    if let Err(e) = tun2socks::validate_start_plan() {
-        had_warning = true;
-        log::warn!("start plan warning: tun2socks: {e:#}");
-    }
-    if let Err(e) = myvpn::validate_start_plan() {
-        had_warning = true;
-        log::warn!("start plan warning: myvpn: {e:#}");
-    }
-    if let Err(e) = mihomo::validate_start_plan() {
-        had_warning = true;
-        log::warn!("start plan warning: mihomo: {e:#}");
-    }
-    if let Err(e) = mieru::validate_start_plan() {
-        had_warning = true;
-        log::warn!("start plan warning: mieru: {e:#}");
-    }
-    if let Err(e) = singbox::validate_start_plan() {
-        had_warning = true;
-        log::warn!("start plan warning: sing-box: {e:#}");
+    // NOTE: hysteria2::validate_start_plan() is deliberately NOT listed here. It was not
+    // called before this refactor either; the list is kept identical so behavior does not
+    // change. Pending maintainer decision on whether that omission is intentional.
+    let start_plans: [(&str, fn() -> Result<()>); 7] = [
+        ("openvpn", openvpn::validate_start_plan),
+        ("amneziawg", amneziawg::validate_start_plan),
+        ("tun2socks", tun2socks::validate_start_plan),
+        ("myvpn", myvpn::validate_start_plan),
+        ("mihomo", mihomo::validate_start_plan),
+        ("mieru", mieru::validate_start_plan),
+        ("sing-box", singbox::validate_start_plan),
+    ];
+    for (label, validate) in start_plans {
+        if let Err(e) = validate() {
+            had_warning = true;
+            log::warn!("start plan warning: {label}: {e:#}");
+        }
     }
     if let Err(e) = validate_vpn_claims_unique() {
         had_warning = true;
@@ -890,7 +829,6 @@ fn validate_start_plan_best_effort() {
         mark_start_partial();
     }
 }
-
 fn validate_vpn_claims_unique() -> Result<()> {
     validate_vpn_tun_claims_unique()?;
     validate_vpn_cidr_claims_unique()?;
@@ -899,15 +837,18 @@ fn validate_vpn_claims_unique() -> Result<()> {
 
 fn validate_vpn_tun_claims_unique() -> Result<()> {
     let mut seen = BTreeMap::<String, String>::new();
-    for (label, tun) in openvpn::enabled_tun_claims()
-        .into_iter()
-        .chain(amneziawg::enabled_tun_claims().into_iter())
-        .chain(tun2socks::enabled_tun_claims().into_iter())
-        .chain(myvpn::enabled_tun_claims().into_iter())
-        .chain(mihomo::enabled_tun_claims().into_iter())
-        .chain(mieru::enabled_tun_claims().into_iter())
-        .chain(singbox::enabled_tun_claims().into_iter())
-        .chain(hysteria2::enabled_tun_claims().into_iter())
+    // Same eight sources in the same order as the previous .chain() sequence.
+    let tun_claim_sources: [fn() -> Vec<(String, String)>; 8] = [
+        openvpn::enabled_tun_claims,
+        amneziawg::enabled_tun_claims,
+        tun2socks::enabled_tun_claims,
+        myvpn::enabled_tun_claims,
+        mihomo::enabled_tun_claims,
+        mieru::enabled_tun_claims,
+        singbox::enabled_tun_claims,
+        hysteria2::enabled_tun_claims,
+    ];
+    for (label, tun) in tun_claim_sources.into_iter().flat_map(|claims| claims())
     {
         if let Some(other) = seen.insert(tun.clone(), label.clone()) {
             anyhow::bail!("VPN tun conflict: tun {tun} is used by {other} and {label}");
@@ -917,14 +858,20 @@ fn validate_vpn_tun_claims_unique() -> Result<()> {
 }
 
 fn validate_vpn_cidr_claims_unique() -> Result<()> {
-    let claims = amneziawg::enabled_cidr_claims()
+    // Same seven sources in the same order as the previous .chain() sequence.
+    // NOTE: openvpn::enabled_cidr_claims() is intentionally absent, exactly as before.
+    let cidr_claim_sources: [fn() -> Vec<(String, String)>; 7] = [
+        amneziawg::enabled_cidr_claims,
+        tun2socks::enabled_cidr_claims,
+        myvpn::enabled_cidr_claims,
+        mihomo::enabled_cidr_claims,
+        mieru::enabled_cidr_claims,
+        singbox::enabled_cidr_claims,
+        hysteria2::enabled_cidr_claims,
+    ];
+    let claims = cidr_claim_sources
         .into_iter()
-        .chain(tun2socks::enabled_cidr_claims().into_iter())
-        .chain(myvpn::enabled_cidr_claims().into_iter())
-        .chain(mihomo::enabled_cidr_claims().into_iter())
-        .chain(mieru::enabled_cidr_claims().into_iter())
-        .chain(singbox::enabled_cidr_claims().into_iter())
-        .chain(hysteria2::enabled_cidr_claims().into_iter())
+        .flat_map(|claims| claims())
         .collect::<Vec<_>>();
     for i in 0..claims.len() {
         for j in (i + 1)..claims.len() {
@@ -988,9 +935,28 @@ fn any_main_service_running() -> bool {
     let hysteria2_vpn_expected = hysteria2::has_enabled_vpn_profiles();
     let tgwsproxy_expected = tgwsproxy_enabled();
 
+    // Probe only the buckets this check actually reads, and only the optional ones that are
+    // expected. The engines below are checked through their own is_running() helpers instead, so
+    // asking stats for them would just add pidof/pgrep/ps calls on every one of the 20 attempts.
+    let mut wait_probe: Vec<&str> = vec![
+        "nfqws",
+        "nfqws2",
+        "byedpi",
+        "dpitunnel",
+        "singbox",
+        "wireproxy",
+        "myproxy",
+        "myprogram",
+        "tor",
+        "operaproxy",
+    ];
+    if dnscrypt_expected {
+        wait_probe.push("dnscrypt");
+    }
+
     // Give processes a short moment to initialize; some binaries may exit immediately on bad args.
     for _ in 0..20 {
-        if let Ok(r) = stats::collect_status() {
+        if let Ok(r) = stats::collect_status_for(&wait_probe) {
             if r.zapret.count > 0
                 || r.zapret2.count > 0
                 || r.byedpi.count > 0

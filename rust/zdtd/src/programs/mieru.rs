@@ -979,8 +979,7 @@ fn ensure_file_empty(path: &Path) -> Result<()> {
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
-    let txt = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    serde_json::from_str(&txt).with_context(|| format!("parse {}", path.display()))
+    crate::jsonfs::read_json_short_ctx(path)
 }
 
 fn write_json_pretty<T: Serialize>(path: &Path, v: &T) -> Result<()> {

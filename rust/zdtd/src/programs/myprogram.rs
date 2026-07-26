@@ -582,9 +582,7 @@ fn truncate_file(p: &Path) -> Result<()> {
 }
 
 fn read_json<T: for<'de> Deserialize<'de>>(p: &Path) -> Result<T> {
-    let raw = fs::read_to_string(p).with_context(|| format!("read {}", p.display()))?;
-    let v: T = serde_json::from_str(&raw).with_context(|| format!("parse {}", p.display()))?;
-    Ok(v)
+    crate::jsonfs::read_json_short_ctx(p)
 }
 
 fn write_json_atomic<T: Serialize>(p: &Path, v: &T) -> Result<()> {

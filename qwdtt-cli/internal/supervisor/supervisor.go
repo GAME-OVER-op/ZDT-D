@@ -58,26 +58,33 @@ func Run(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
 	}
 
 	attempts := 0
+	var validated []string
+	revalidate := true
 	for {
 		if ctx.Err() != nil {
 			return nil // clean shutdown
 		}
 
-		// Re-validate on every attempt: a hash can die between check and launch,
-		// and a dead hash strands every worker group behind it. Cheap insurance.
-		hashes, err := validateHashes(ctx, cfg, logger)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil
+		if revalidate {
+			// A hash can die between check and launch, and a dead hash strands
+			// every worker group behind it — so validate before a fresh start.
+			hashes, err := validateHashes(ctx, cfg, logger)
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return fmt.Errorf("hash validation: %w", err)
 			}
-			return fmt.Errorf("hash validation: %w", err)
+			if len(hashes) == 0 {
+				return errors.New("no VK hashes passed validation; cannot start transport")
+			}
+			validated = hashes
+			logger.Printf("validated %d/%d hashes usable", len(validated), len(cfg.Hashes))
+		} else {
+			logger.Printf("reusing %d validated hashes (previous failure was local, not hash-related)", len(validated))
 		}
-		if len(hashes) == 0 {
-			return errors.New("no VK hashes passed validation; cannot start transport")
-		}
-		logger.Printf("validated %d/%d hashes usable", len(hashes), len(cfg.Hashes))
 
-		res := runTransport(ctx, cfg, hashes, logger)
+		res := runTransport(ctx, cfg, validated, logger)
 		if res.stopped {
 			return nil // clean shutdown requested
 		}
@@ -86,6 +93,14 @@ func Run(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
 		if cfg.MaxRestarts > 0 && attempts > cfg.MaxRestarts {
 			return fmt.Errorf("transport exceeded %d restarts; giving up", cfg.MaxRestarts)
 		}
+
+		// Skip hash re-validation when the failure was the local WireGuard
+		// bring-up: the transport and its hashes were healthy (config written,
+		// workers connected), so re-running ~30s of throttled VK auth every
+		// restart is wasted work and needless VK exposure on a whitelist SIM.
+		// Any other failure (transport exit, watchdog) may mean a dead hash, so
+		// re-validate then.
+		revalidate = !res.wgFailed
 
 		backoff := cfg.RestartBackoff
 		logger.Printf("transport ended (%s); restart %d in %s", res.reason(), attempts, backoff)
@@ -173,11 +188,14 @@ func validateHashes(ctx context.Context, cfg *config.Config, logger *log.Logger)
 type runOutcome struct {
 	stopped  bool // ended because parent ctx was cancelled (clean shutdown)
 	watchdog bool // ended because the watchdog forced a restart
+	wgFailed bool // ended because the WireGuard bring-up failed (local, not hash-related)
 	exitErr  error
 }
 
 func (r runOutcome) reason() string {
 	switch {
+	case r.wgFailed:
+		return "wg bring-up failure"
 	case r.watchdog:
 		return "watchdog"
 	case r.exitErr != nil:
@@ -249,6 +267,7 @@ func runTransport(ctx context.Context, cfg *config.Config, hashes []string, logg
 
 	// watchdog: readiness gate + WireGuard bring-up + active-count enforcement.
 	var watchdogTripped atomic.Bool
+	var wgBringupFailed atomic.Bool
 	go func() {
 		if !awaitConfig(runCtx, cfg, logger) {
 			return // ctx cancelled or run already ending
@@ -260,7 +279,10 @@ func runTransport(ctx context.Context, cfg *config.Config, hashes []string, logg
 			if err != nil {
 				// The tunnel is the point; a failed bring-up means restart the
 				// whole stack rather than run a live transport with no interface.
+				// Flag it so the restart skips hash re-validation — the transport
+				// and its hashes were healthy; the failure was local plumbing.
 				logger.Printf("wg: bring-up failed, forcing restart: %v", err)
+				wgBringupFailed.Store(true)
 				runCancel()
 				return
 			}
@@ -310,7 +332,7 @@ func runTransport(ctx context.Context, cfg *config.Config, hashes []string, logg
 		// on ctx cancel, so we must never SIGKILL first.
 		stopped := ctx.Err() != nil && !watchdogTripped.Load()
 		gracefulStop(cmd, sendLine, waitErr, logger)
-		return runOutcome{stopped: stopped, watchdog: watchdogTripped.Load()}
+		return runOutcome{stopped: stopped, watchdog: watchdogTripped.Load(), wgFailed: wgBringupFailed.Load()}
 	}
 }
 

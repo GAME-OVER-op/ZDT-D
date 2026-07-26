@@ -29,8 +29,19 @@ const ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/hysteria2";
 const PROFILE_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/hysteria2/profile";
 const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/hysteria2/active.json";
 const SHA_FLAG_FILE: &str = settings::SHARED_SHA_FLAG_FILE;
-const NETID_BASE: u32 = 26200;
-const NETID_MAX: u32 = 26999;
+const NETID_BASE: u32 = NETID_HYSTERIA2.0;
+const NETID_MAX: u32 = NETID_HYSTERIA2.1;
+
+// Стабильный netid: индекс профиля в полном списке профилей движка (включая
+// выключенные), чтобы включение/выключение одного профиля не сдвигало netid
+// и подсеть туннеля у соседей (см. programs/common.rs::stable_netid).
+fn all_netd_profile_names() -> Vec<String> {
+    read_active().map(|a| a.profiles.keys().cloned().collect()).unwrap_or_default()
+}
+
+fn stable_netid_for(profile: &str) -> Result<u32> {
+    stable_netid(NETID_BASE, NETID_MAX, &all_netd_profile_names(), profile)
+}
 const NET_BASE: u32 = 0xAC1F_E800; // 172.31.232.0/30 pool
 const PORT_WAIT: Duration = Duration::from_secs(25);
 const TUN_WAIT: Duration = Duration::from_secs(25);
@@ -248,7 +259,7 @@ fn build_vpn_plan(profile: &str, used_netids: &BTreeSet<u32>, external: &BTreeSe
     if !app_list_has_real_apps(&app_in)? { return Ok(None); }
     let enabled = enabled_servers(profile)?; if enabled.len() != 1 { bail!("vpn mode supports exactly one enabled server, found {}", enabled.len()); }
     let server = enabled.into_iter().next().unwrap(); check_port(server.setting.socks5_port, external, own_ports)?;
-    let netid = generate_netid(used_netids, NETID_BASE, NETID_MAX)?; let (tun_address, cidr, _) = generated_tun_address_for_index(netid - NETID_BASE)?;
+    let netid = stable_netid_for(profile)?; if used_netids.contains(&netid) { bail!("netid {netid} is already used by another hysteria2 profile"); } let (tun_address, cidr, _) = generated_tun_address_for_index(netid - NETID_BASE)?;
     Ok(Some(VpnPlan { name: profile.to_string(), setting, server, app_in, app_out, netid, tun_address, cidr, tun2socks_log: root.join("log/tun2socks.log") }))
 }
 
@@ -311,7 +322,7 @@ pub fn has_enabled_profiles() -> bool { read_active().map(|a| a.profiles.values(
 pub fn has_enabled_vpn_profiles() -> bool { enabled_vpn_profile_names().next().is_some() }
 fn enabled_vpn_profile_names() -> impl Iterator<Item = String> { read_active().unwrap_or_default().profiles.into_iter().filter_map(|(n, st)| { if st.enabled && read_setting(&n).map(|s| s.mode.is_vpn()).unwrap_or(false) && app_list_has_real_apps(&profile_root(&n).join("app/uid/user_program")).unwrap_or(false) { Some(n) } else { None } }) }
 pub fn enabled_tun_claims() -> Vec<(String, String)> { enabled_vpn_profile_names().filter_map(|n| read_setting(&n).ok().map(|s| (format!("hysteria2/{n}"), s.tun))).collect() }
-pub fn enabled_cidr_claims() -> Vec<(String, String)> { let mut used = BTreeSet::new(); let mut out = Vec::new(); for n in enabled_vpn_profile_names() { if let Ok(id)=generate_netid(&used, NETID_BASE, NETID_MAX) { used.insert(id); if let Ok((_, cidr, _))=generated_tun_address_for_index(id-NETID_BASE) { out.push((format!("hysteria2/{n}"), cidr)); } } } out }
+pub fn enabled_cidr_claims() -> Vec<(String, String)> { let all_names = all_netd_profile_names(); let mut out = Vec::new(); for n in enabled_vpn_profile_names() { if let Ok(id)=stable_netid(NETID_BASE, NETID_MAX, &all_names, &n) { if let Ok((_, cidr, _))=generated_tun_address_for_index(id-NETID_BASE) { out.push((format!("hysteria2/{n}"), cidr)); } } } out }
 
 pub fn is_running() -> bool { !main_pids_exact().is_empty() }
 pub fn main_pids_exact() -> Vec<i32> { pids_matching(&format!("{} --disable-update-check", HYSTERIA2_BIN)) }

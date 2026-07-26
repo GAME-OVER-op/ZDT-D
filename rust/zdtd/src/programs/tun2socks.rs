@@ -21,8 +21,19 @@ const TUN2SOCKS_BIN: &str = "/data/adb/modules/ZDT-D/bin/tun2socks";
 const TUN2SOCKS_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/tun2socks";
 const TUN2SOCKS_PROFILE_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/tun2socks/profile";
 const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/tun2socks/active.json";
-const NETID_BASE: u32 = 21200;
-const NETID_MAX: u32 = 21999;
+const NETID_BASE: u32 = NETID_TUN2SOCKS.0;
+const NETID_MAX: u32 = NETID_TUN2SOCKS.1;
+
+// Стабильный netid: индекс профиля в полном списке профилей движка (включая
+// выключенные), чтобы включение/выключение одного профиля не сдвигало netid
+// и подсеть туннеля у соседей (см. programs/common.rs::stable_netid).
+fn all_netd_profile_names() -> Vec<String> {
+    read_active().map(|a| a.profiles.keys().cloned().collect()).unwrap_or_default()
+}
+
+fn stable_netid_for(profile: &str) -> Result<u32> {
+    stable_netid(NETID_BASE, NETID_MAX, &all_netd_profile_names(), profile)
+}
 const TUN_WAIT: Duration = Duration::from_secs(15);
 const IP_TIMEOUT: Duration = Duration::from_secs(3);
 const TUN2SOCKS_NET_BASE: u32 = 0xC612_6400; // 198.18.100.0
@@ -234,13 +245,12 @@ pub fn enabled_tun_claims() -> Vec<(String, String)> {
 pub fn enabled_cidr_claims() -> Vec<(String, String)> {
     let mut out = Vec::new();
     let Ok(active) = read_active() else { return out; };
-    let mut used_netids = BTreeSet::<u32>::new();
+    let all_names: Vec<String> = active.profiles.keys().cloned().collect();
     for (name, st) in active.profiles {
         if !st.enabled { continue; }
         let Ok(setting) = read_setting(&name) else { continue; };
         if validate_setting(&setting).is_err() || enabled_app_list_empty(&profile_root(&name).join("app/uid/user_program")) { continue; }
-        let Ok(netid) = generate_netid(&used_netids, NETID_BASE, NETID_MAX) else { break; };
-        used_netids.insert(netid);
+        let Ok(netid) = stable_netid(NETID_BASE, NETID_MAX, &all_names, &name) else { continue; };
         if let Ok((_, cidr)) = generated_tun_addr_and_cidr(netid) {
             out.push((format!("tun2socks/{name}"), cidr));
         }
@@ -448,7 +458,10 @@ fn build_profile_plan(profile: &str, used_netids: &BTreeSet<u32>) -> Result<Prof
         bail!("app list is empty: {}", app_in.display());
     }
 
-    let netid = generate_netid(used_netids, NETID_BASE, NETID_MAX)?;
+    let netid = stable_netid_for(profile)?;
+    if used_netids.contains(&netid) {
+        bail!("netid {netid} is already used by another tun2socks profile");
+    }
     let (tun_addr, cidr) = generated_tun_addr_and_cidr(netid)?;
 
     Ok(ProfilePlan {

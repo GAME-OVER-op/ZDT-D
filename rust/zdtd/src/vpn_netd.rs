@@ -18,6 +18,11 @@ const WORKING_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder";
 const VPN_NETD_DIR: &str = "/data/adb/modules/ZDT-D/working_folder/vpn_netd";
 const NDC_TIMEOUT: Duration = Duration::from_secs(5);
 const IP_TIMEOUT: Duration = Duration::from_secs(3);
+const IPT_TIMEOUT: Duration = Duration::from_secs(5);
+// Цепочка ip6tables, которой временно закрывается IPv6 у приложений, привязанных
+// к VPN-профилям: netd умеет заводить в туннель только IPv4, и без этого запрета
+// IPv6-трафик выбранных приложений уходит мимо туннеля.
+const V6_CHAIN: &str = "ZDT_VPN_NETD_V6";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct VpnNetdProfile {
@@ -558,6 +563,36 @@ fn unique_endpoint_escape_ips(profile: &VpnNetdProfile) -> Vec<String> {
     ips
 }
 
+// Таблица маршрутов интерфейса. Обращение по имени (`table wg0`) работает
+// только при наличии алиаса в rt_tables, поэтому оставляем его первой попыткой,
+// но добавляем числовые резервы: netd нумерует таблицы интерфейсов как
+// ifindex + 1000, и тот же номер виден в `ip rule show`.
+fn route_table_ids(tun: &str) -> Vec<String> {
+    let mut out = vec![tun.to_string()];
+    if let Ok(raw) = fs::read_to_string(format!("/sys/class/net/{tun}/ifindex")) {
+        if let Ok(ifindex) = raw.trim().parse::<u32>() {
+            let table = (ifindex + 1000).to_string();
+            if !out.contains(&table) {
+                out.push(table);
+            }
+        }
+    }
+    if let Ok((0, rules)) = shell::run_timeout("ip", &["rule", "show"], Capture::Stdout, IP_TIMEOUT) {
+        for line in rules.lines() {
+            if !line.contains(tun) {
+                continue;
+            }
+            if let Some(rest) = line.split("lookup ").nth(1) {
+                let table = rest.split_whitespace().next().unwrap_or("").to_string();
+                if !table.is_empty() && !out.contains(&table) {
+                    out.push(table);
+                }
+            }
+        }
+    }
+    out
+}
+
 fn ensure_endpoint_escape_routes(profile: &VpnNetdProfile) {
     for ip in unique_endpoint_escape_ips(profile) {
         let dest = format!("{ip}/32");
@@ -567,28 +602,31 @@ fn ensure_endpoint_escape_routes(profile: &VpnNetdProfile) {
         // A throw route only says "not through this table"; Android will then
         // continue to the following rules and pick the current physical network
         // such as wlan0/rmnet_data*/ccmni*/wwan*.
-        let attempts: Vec<Vec<&str>> = vec![
-            vec!["-4", "route", "replace", "throw", &dest, "table", &profile.tun],
-            vec!["-4", "route", "replace", &dest, "type", "throw", "table", &profile.tun],
-        ];
         let mut applied = false;
         let mut errors = Vec::new();
-        for args in attempts {
-            match shell::run_timeout("ip", &args, Capture::Both, IP_TIMEOUT) {
-                Ok((0, out)) => {
-                    log::info!(
-                        "vpn_netd: endpoint escape route applied {}/{} tun={} ip={} out={}",
-                        profile.owner_program,
-                        profile.profile,
-                        profile.tun,
-                        ip,
-                        trim_ndc_output(&out)
-                    );
-                    applied = true;
-                    break;
+        'tables: for table in route_table_ids(&profile.tun) {
+            let attempts: Vec<Vec<&str>> = vec![
+                vec!["-4", "route", "replace", "throw", &dest, "table", &table],
+                vec!["-4", "route", "replace", &dest, "type", "throw", "table", &table],
+            ];
+            for args in attempts {
+                match shell::run_timeout("ip", &args, Capture::Both, IP_TIMEOUT) {
+                    Ok((0, out)) => {
+                        log::info!(
+                            "vpn_netd: endpoint escape route applied {}/{} tun={} table={} ip={} out={}",
+                            profile.owner_program,
+                            profile.profile,
+                            profile.tun,
+                            table,
+                            ip,
+                            trim_ndc_output(&out)
+                        );
+                        applied = true;
+                        break 'tables;
+                    }
+                    Ok((code, out)) => errors.push(format!("table={table} rc={code} out={}", trim_ndc_output(&out))),
+                    Err(e) => errors.push(format!("table={table} {e:#}")),
                 }
-                Ok((code, out)) => errors.push(format!("rc={code} out={}", trim_ndc_output(&out))),
-                Err(e) => errors.push(format!("{e:#}")),
             }
         }
         if !applied {
@@ -616,12 +654,14 @@ fn remove_endpoint_escape_routes(applied: &AppliedProfile) {
     ips.dedup();
     for ip in ips {
         let dest = format!("{ip}/32");
-        let attempts: Vec<Vec<&str>> = vec![
-            vec!["-4", "route", "del", "throw", &dest, "table", &applied.tun],
-            vec!["-4", "route", "del", &dest, "type", "throw", "table", &applied.tun],
-        ];
-        for args in attempts {
-            let _ = shell::run_timeout("ip", &args, Capture::None, IP_TIMEOUT);
+        for table in route_table_ids(&applied.tun) {
+            let attempts: Vec<Vec<&str>> = vec![
+                vec!["-4", "route", "del", "throw", &dest, "table", &table],
+                vec!["-4", "route", "del", &dest, "type", "throw", "table", &table],
+            ];
+            for args in attempts {
+                let _ = shell::run_timeout("ip", &args, Capture::None, IP_TIMEOUT);
+            }
         }
     }
 }
@@ -646,7 +686,8 @@ fn verify_post_apply(profile: &VpnNetdProfile, uid_ranges: &[String]) {
                     );
                 }
             }
-            if !uid_ranges.is_empty() && !out.contains(&format!("lookup {}", profile.tun)) {
+            let tables = route_table_ids(&profile.tun);
+            if !uid_ranges.is_empty() && !tables.iter().any(|t| out.contains(&format!("lookup {t}"))) {
                 log::warn!(
                     "vpn_netd: post-check did not see lookup {} in ip rule for {}/{} netid={}",
                     profile.tun,
@@ -679,17 +720,23 @@ fn verify_post_apply(profile: &VpnNetdProfile, uid_ranges: &[String]) {
     for ip in unique_endpoint_escape_ips(profile) {
         let dest_cidr = format!("throw {ip}/32");
         let dest_host = format!("throw {ip}");
-        match shell::run_timeout("ip", &["-4", "route", "show", "table", &profile.tun], Capture::Stdout, IP_TIMEOUT) {
-            Ok((code, out)) if code == 0 && !out.contains(&dest_cidr) && !out.contains(&dest_host) => {
-                log::warn!(
-                    "vpn_netd: post-check did not see endpoint escape route {} in table {} for {}/{}",
-                    dest_cidr,
-                    profile.tun,
-                    profile.owner_program,
-                    profile.profile
-                );
+        let mut seen = false;
+        for table in route_table_ids(&profile.tun) {
+            if let Ok((0, out)) = shell::run_timeout("ip", &["-4", "route", "show", "table", &table], Capture::Stdout, IP_TIMEOUT) {
+                if out.contains(&dest_cidr) || out.contains(&dest_host) {
+                    seen = true;
+                    break;
+                }
             }
-            _ => {}
+        }
+        if !seen {
+            log::warn!(
+                "vpn_netd: post-check did not see endpoint escape route {} in route tables of tun {} for {}/{}",
+                dest_cidr,
+                profile.tun,
+                profile.owner_program,
+                profile.profile
+            );
         }
     }
 }
@@ -781,12 +828,17 @@ pub fn refresh_profile_users(owner_program: &str, profile: &str, app_list_path: 
         new_ranges.len()
     );
 
-    remove_uid_ranges(old.netid, &old.uid_ranges);
-    if let Err(e) = add_uid_ranges(old.netid, &new_ranges, &label) {
+    // Сначала добавляем новые диапазоны, только потом снимаем ушедшие: раньше
+    // между remove и add было окно, в котором весь трафик приложений (включая
+    // не изменившиеся UID) шёл напрямую, мимо туннеля.
+    let added: Vec<String> = new_ranges.iter().filter(|r| !old.uid_ranges.contains(r)).cloned().collect();
+    let removed: Vec<String> = old.uid_ranges.iter().filter(|r| !new_ranges.contains(r)).cloned().collect();
+    if let Err(e) = add_uid_ranges(old.netid, &added, &label) {
         log::warn!("vpn_netd: hot-refresh users failed for {label}, trying rollback: {e:#}");
-        let _ = add_uid_ranges(old.netid, &old.uid_ranges, &format!("{label} rollback"));
+        remove_uid_ranges(old.netid, &added);
         bail!("vpn_netd: hot-refresh users failed for {label}: {e:#}");
     }
+    remove_uid_ranges(old.netid, &removed);
 
     let updated = AppliedProfile {
         owner_program: old.owner_program,
@@ -798,7 +850,106 @@ pub fn refresh_profile_users(owner_program: &str, profile: &str, app_list_path: 
     };
     snapshot.profiles[index] = updated.clone();
     write_json_atomic(&applied_snapshot_path(), &snapshot)?;
+    sync_ipv6_block(&snapshot.profiles);
     Ok(updated)
+}
+
+fn ip6tables_ok(args: &[&str]) -> bool {
+    matches!(
+        crate::xtables_lock::run_timeout_retry("ip6tables", args, Capture::Both, IPT_TIMEOUT),
+        Ok((0, _))
+    )
+}
+
+fn expand_uid_range(range: &str) -> Vec<String> {
+    let (Some(start), Some(end)) = (range_start(range), range_end(range)) else {
+        return Vec::new();
+    };
+    if end < start || end - start > 1024 {
+        return Vec::new();
+    }
+    (start..=end).map(|uid| uid.to_string()).collect()
+}
+
+fn add_ipv6_block_rules(uid: &str) -> bool {
+    // REJECT, а не DROP: приложение сразу получает отказ и переходит на IPv4,
+    // а не ждёт таймаута соединения. DROP остаётся крайним резервом.
+    let tcp = ip6tables_ok(&["-A", V6_CHAIN, "-p", "tcp", "-m", "owner", "--uid-owner", uid, "-j", "REJECT", "--reject-with", "tcp-reset"])
+        || ip6tables_ok(&["-A", V6_CHAIN, "-p", "tcp", "-m", "owner", "--uid-owner", uid, "-j", "REJECT"])
+        || ip6tables_ok(&["-A", V6_CHAIN, "-p", "tcp", "-m", "owner", "--uid-owner", uid, "-j", "DROP"]);
+    let rest = ip6tables_ok(&["-A", V6_CHAIN, "-m", "owner", "--uid-owner", uid, "-j", "REJECT", "--reject-with", "icmp6-adm-prohibited"])
+        || ip6tables_ok(&["-A", V6_CHAIN, "-m", "owner", "--uid-owner", uid, "-j", "REJECT"])
+        || ip6tables_ok(&["-A", V6_CHAIN, "-m", "owner", "--uid-owner", uid, "-j", "DROP"]);
+    tcp && rest
+}
+
+fn clear_ipv6_block_unlocked() {
+    while ip6tables_ok(&["-C", "OUTPUT", "-j", V6_CHAIN]) {
+        if !ip6tables_ok(&["-D", "OUTPUT", "-j", V6_CHAIN]) {
+            break;
+        }
+    }
+    let _ = ip6tables_ok(&["-F", V6_CHAIN]);
+    let _ = ip6tables_ok(&["-X", V6_CHAIN]);
+}
+
+/// Временное решение: netd заводит в туннель только IPv4, поэтому IPv6
+/// закрывается только выбранным приложениям (UID применённых профилей),
+/// иначе их IPv6-трафик уходит мимо туннеля. Всё best-effort: нет ip6tables
+/// или модуля owner — только предупреждение, запуск не рушим.
+fn sync_ipv6_block(profiles: &[AppliedProfile]) {
+    let _guard = crate::xtables_lock::lock();
+    clear_ipv6_block_unlocked();
+
+    let mut ranges: Vec<String> = profiles.iter().flat_map(|p| p.uid_ranges.iter().cloned()).collect();
+    ranges.sort();
+    ranges.dedup();
+    if ranges.is_empty() {
+        return;
+    }
+
+    if !ip6tables_ok(&["-N", V6_CHAIN]) && !ip6tables_ok(&["-L", V6_CHAIN]) {
+        log::warn!("vpn_netd: ip6tables is unavailable, IPv6 for VPN apps is not blocked");
+        return;
+    }
+
+    // Локальные соединения не рвём.
+    let _ = ip6tables_ok(&["-A", V6_CHAIN, "-o", "lo", "-j", "RETURN"]);
+    let _ = ip6tables_ok(&["-A", V6_CHAIN, "-d", "::1", "-j", "RETURN"]);
+
+    let mut blocked = 0usize;
+    let mut failed = Vec::new();
+    for range in &ranges {
+        if add_ipv6_block_rules(range) {
+            blocked += 1;
+            continue;
+        }
+        // Старый xt_owner не понимает диапазоны UID — падаем на отдельные UID.
+        let uids = expand_uid_range(range);
+        if !uids.is_empty() && uids.iter().all(|uid| add_ipv6_block_rules(uid)) {
+            blocked += 1;
+            continue;
+        }
+        failed.push(range.clone());
+    }
+
+    if blocked == 0 {
+        log::warn!("vpn_netd: IPv6 block rules were not applied (ranges: {})", ranges.join(", "));
+        clear_ipv6_block_unlocked();
+        return;
+    }
+
+    if !ip6tables_ok(&["-I", "OUTPUT", "1", "-j", V6_CHAIN]) {
+        log::warn!("vpn_netd: ip6tables OUTPUT hook failed, IPv6 for VPN apps is not blocked");
+        clear_ipv6_block_unlocked();
+        return;
+    }
+
+    if failed.is_empty() {
+        log::info!("vpn_netd: IPv6 blocked for {blocked} UID range(s) of VPN apps");
+    } else {
+        log::warn!("vpn_netd: IPv6 blocked for {blocked} UID range(s), failed: {}", failed.join(", "));
+    }
 }
 
 fn remove_netd_profile(applied: &AppliedProfile) {
@@ -846,39 +997,69 @@ fn apply_one_profile(profile: &VpnNetdProfile, uid_ranges: &[String]) -> Result<
     })
 }
 
-fn validate_no_profile_collisions(items: &[(VpnNetdProfile, Vec<String>)]) -> Result<()> {
+/// Разводит конфликты между профилями до применения. Раньше первый же
+/// конфликт валил весь VPN/netd целиком; теперь исключается только
+/// конфликтующий профиль: ресурс остаётся за тем, кто раньше в списке
+/// стартеров (см. runtime.rs::netd_starters).
+fn drop_conflicting_profiles(
+    items: Vec<(VpnNetdProfile, Vec<String>)>,
+) -> (Vec<(VpnNetdProfile, Vec<String>)>, Vec<String>) {
     let mut netids = BTreeSet::new();
     let mut tuns = BTreeMap::<String, String>::new();
     let mut cidrs: Vec<(String, String)> = Vec::new();
     let mut uid_ranges: Vec<(String, String)> = Vec::new();
+    let mut kept: Vec<(VpnNetdProfile, Vec<String>)> = Vec::new();
+    let mut rejected: Vec<String> = Vec::new();
 
     for (profile, ranges) in items {
         let label = format!("{}/{}", profile.owner_program, profile.profile);
-        if !netids.insert(profile.netid) {
-            bail!("vpn_netd: duplicate NETID {} in profile {label}", profile.netid);
+        let mut reason: Option<String> = None;
+
+        if netids.contains(&profile.netid) {
+            reason = Some(format!("duplicate NETID {}", profile.netid));
         }
-        if let Some(other_label) = tuns.insert(profile.tun.clone(), label.clone()) {
-            bail!(
-                "vpn_netd: tun {} in {label} conflicts with {other_label}",
-                profile.tun
-            );
-        }
-        for (other_label, other_cidr) in &cidrs {
-            if cidrs_overlap(&profile.cidr, other_cidr)? {
-                bail!("vpn_netd: CIDR {} in {label} overlaps with {} in {other_label}", profile.cidr, other_cidr);
+        if reason.is_none() {
+            if let Some(other_label) = tuns.get(&profile.tun) {
+                reason = Some(format!("tun {} conflicts with {other_label}", profile.tun));
             }
         }
-        cidrs.push((label.clone(), profile.cidr.clone()));
-        for r in ranges {
-            for (other_label, other_range) in &uid_ranges {
-                if ranges_overlap(r, other_range) {
-                    bail!("vpn_netd: UID range {r} in {label} overlaps with {other_range} in {other_label}");
+        if reason.is_none() {
+            for (other_label, other_cidr) in &cidrs {
+                if cidrs_overlap(&profile.cidr, other_cidr).unwrap_or(false) {
+                    reason = Some(format!("CIDR {} overlaps with {other_cidr} in {other_label}", profile.cidr));
+                    break;
                 }
             }
-            uid_ranges.push((label.clone(), r.clone()));
+        }
+        if reason.is_none() {
+            'ranges: for r in &ranges {
+                for (other_label, other_range) in &uid_ranges {
+                    if ranges_overlap(r, other_range) {
+                        reason = Some(format!("UID range {r} overlaps with {other_range} in {other_label}"));
+                        break 'ranges;
+                    }
+                }
+            }
+        }
+
+        match reason {
+            Some(reason) => {
+                log::warn!("vpn_netd: profile {label} skipped, other profiles keep working: {reason}");
+                rejected.push(label);
+            }
+            None => {
+                netids.insert(profile.netid);
+                tuns.insert(profile.tun.clone(), label.clone());
+                cidrs.push((label.clone(), profile.cidr.clone()));
+                for r in &ranges {
+                    uid_ranges.push((label.clone(), r.clone()));
+                }
+                kept.push((profile, ranges));
+            }
         }
     }
-    Ok(())
+
+    (kept, rejected)
 }
 
 fn cidrs_overlap(a: &str, b: &str) -> Result<bool> {
@@ -959,11 +1140,17 @@ pub fn start_profiles(profiles: Vec<VpnNetdProfile>) -> Result<()> {
         return Ok(());
     }
 
-    if let Err(e) = validate_no_profile_collisions(&prepared) {
-        log::warn!("vpn_netd: profile collision, skipping VPN/netd apply and continuing: {e:#}");
-        crate::logging::user_warn("VPN/netd: конфликт профилей, запуск продолжен");
+    let (prepared, rejected) = drop_conflicting_profiles(prepared);
+    if !rejected.is_empty() {
+        had_error = true;
+        log::warn!("vpn_netd: conflicting profiles skipped: {}", rejected.join(", "));
+        crate::logging::user_warn("VPN/netd: конфликт профилей, конфликтующие профили пропущены");
+    }
+
+    if prepared.is_empty() {
         let _ = fs::remove_file(applied_snapshot_path());
-        bail!("vpn_netd: profile collision: {e:#}");
+        crate::logging::user_warn("VPN/netd: все профили конфликтуют, запуск продолжен");
+        bail!("vpn_netd: all {requested_count} prepared profiles were skipped due to conflicts");
     }
 
     let mut applied = Vec::new();
@@ -997,12 +1184,16 @@ pub fn start_profiles(profiles: Vec<VpnNetdProfile>) -> Result<()> {
 
     let snapshot = AppliedSnapshot { profiles: applied };
     write_json_atomic(&applied_snapshot_path(), &snapshot)?;
+    sync_ipv6_block(&snapshot.profiles);
     log::info!("vpn_netd: applied {} profiles", snapshot.profiles.len());
     Ok(())
 }
 
 pub fn stop_applied() -> Result<()> {
     ensure_working_dir()?;
+    // Снимаем временный IPv6-запрет до разбора снимка, чтобы правила уходили
+    // даже когда снимок битый или отсутствует.
+    sync_ipv6_block(&[]);
     let path = applied_snapshot_path();
     if !path.is_file() {
         cleanup_runtime_files();

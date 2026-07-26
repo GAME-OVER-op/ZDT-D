@@ -35,8 +35,19 @@ const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/singbox/active
 // Never introduce module-specific *.flag.sha256 files here.
 const SHA_FLAG_FILE: &str = settings::SHARED_SHA_FLAG_FILE;
 
-const NETID_BASE: u32 = 22200;
-const NETID_MAX: u32 = 22999;
+const NETID_BASE: u32 = NETID_SINGBOX.0;
+const NETID_MAX: u32 = NETID_SINGBOX.1;
+
+// Стабильный netid: индекс профиля в полном списке профилей движка (включая
+// выключенные), чтобы включение/выключение одного профиля не сдвигало netid
+// и подсеть туннеля у соседей (см. programs/common.rs::stable_netid).
+fn all_netd_profile_names() -> Vec<String> {
+    read_active_profiles().map(|a| a.profiles.keys().cloned().collect()).unwrap_or_default()
+}
+
+fn stable_netid_for(profile: &str) -> Result<u32> {
+    stable_netid(NETID_BASE, NETID_MAX, &all_netd_profile_names(), profile)
+}
 const SINGBOX_NET_BASE: u32 = 0xAC1F_F000; // 172.31.240.0 (outside sing-box fakeip 198.18.0.0/15)
 const TUN_WAIT: Duration = Duration::from_secs(25);
 const PORT_WAIT: Duration = Duration::from_secs(20);
@@ -895,7 +906,10 @@ fn build_vpn_profile_plan(
     singbox_check_config_with_log(&config_path, &log_path)
         .with_context(|| format!("sing-box check {}", config_path.display()))?;
 
-    let netid = generate_netid(used_netids, NETID_BASE, NETID_MAX)?;
+    let netid = stable_netid_for(profile)?;
+    if used_netids.contains(&netid) {
+        bail!("netid {netid} is already used by another sing-box profile");
+    }
     let (tun_address, cidr, _generated_dns) = generated_tun_address_for_index(netid - NETID_BASE)?;
 
     Ok(Some(VpnProfilePlan {
@@ -1213,14 +1227,13 @@ pub fn enabled_tun_claims() -> Vec<(String, String)> {
 pub fn enabled_cidr_claims() -> Vec<(String, String)> {
     let mut out = Vec::new();
     let Ok(active) = read_active_profiles() else { return out; };
-    let mut used_netids = BTreeSet::<u32>::new();
+    let all_names: Vec<String> = active.profiles.keys().cloned().collect();
     for (name, st) in active.profiles {
         if !st.enabled { continue; }
         let Ok(setting) = read_setting(&name) else { continue; };
         if !setting.mode.is_vpn() || validate_setting(&setting).is_err() { continue; }
         if !app_list_has_real_apps(&profile_root(&name).join("app/uid/user_program")).unwrap_or(false) { continue; }
-        let Ok(netid) = generate_netid(&used_netids, NETID_BASE, NETID_MAX) else { break; };
-        used_netids.insert(netid);
+        let Ok(netid) = stable_netid(NETID_BASE, NETID_MAX, &all_names, &name) else { continue; };
         if let Ok((_, cidr, _)) = generated_tun_address_for_index(netid - NETID_BASE) {
             out.push((format!("singbox/{name}"), cidr));
         }

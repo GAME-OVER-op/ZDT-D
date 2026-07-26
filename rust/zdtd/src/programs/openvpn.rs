@@ -23,8 +23,19 @@ const OPENVPN_BIN: &str = "/data/adb/modules/ZDT-D/bin/openvpn";
 const OPENVPN_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/openvpn";
 const OPENVPN_PROFILE_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/openvpn/profile";
 const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/openvpn/active.json";
-const NETID_BASE: u32 = 20200;
-const NETID_MAX: u32 = 29999;
+const NETID_BASE: u32 = NETID_OPENVPN.0;
+const NETID_MAX: u32 = NETID_OPENVPN.1;
+
+// Стабильный netid: индекс профиля в полном списке профилей движка (включая
+// выключенные), чтобы включение/выключение одного профиля не сдвигало netid
+// и подсеть туннеля у соседей (см. programs/common.rs::stable_netid).
+fn all_netd_profile_names() -> Vec<String> {
+    read_active().map(|a| a.profiles.keys().cloned().collect()).unwrap_or_default()
+}
+
+fn stable_netid_for(profile: &str) -> Result<u32> {
+    stable_netid(NETID_BASE, NETID_MAX, &all_netd_profile_names(), profile)
+}
 const TUN_WAIT: Duration = Duration::from_secs(25);
 const IP_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -486,7 +497,10 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                     );
                 }
             }
-            let netid = generate_netid(&used_netids, NETID_BASE, NETID_MAX)?;
+            let netid = stable_netid_for(&plan.name)?;
+            if used_netids.contains(&netid) {
+                bail!("netid {netid} is already used by another openvpn profile");
+            }
             Ok(VpnNetdProfile {
                 owner_program: "openvpn".to_string(),
                 profile: plan.name.clone(),

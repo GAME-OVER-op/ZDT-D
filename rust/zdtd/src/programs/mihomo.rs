@@ -25,8 +25,19 @@ const TUN2SOCKS_BIN: &str = "/data/adb/modules/ZDT-D/bin/tun2socks";
 const MIHOMO_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/mihomo";
 const MIHOMO_PROFILE_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/mihomo/profile";
 const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/mihomo/active.json";
-const NETID_BASE: u32 = 24200;
-const NETID_MAX: u32 = 24999;
+const NETID_BASE: u32 = NETID_MIHOMO.0;
+const NETID_MAX: u32 = NETID_MIHOMO.1;
+
+// Стабильный netid: индекс профиля в полном списке профилей движка (включая
+// выключенные), чтобы включение/выключение одного профиля не сдвигало netid
+// и подсеть туннеля у соседей (см. programs/common.rs::stable_netid).
+fn all_netd_profile_names() -> Vec<String> {
+    read_active().map(|a| a.profiles.keys().cloned().collect()).unwrap_or_default()
+}
+
+fn stable_netid_for(profile: &str) -> Result<u32> {
+    stable_netid(NETID_BASE, NETID_MAX, &all_netd_profile_names(), profile)
+}
 const MIHOMO_NET_BASE: u32 = 0xC612_8C00; // 198.18.140.0
 const TUN_WAIT: Duration = Duration::from_secs(18);
 const PORT_WAIT: Duration = Duration::from_secs(20);
@@ -240,15 +251,14 @@ pub fn enabled_cidr_claims() -> Vec<(String, String)> {
     let hotspot_profile = crate::settings::load_api_settings()
         .ok()
         .and_then(|st| st.hotspot_vpn_profile_for("mihomo").map(|s| s.to_string()));
-    let mut used_netids = BTreeSet::<u32>::new();
+    let all_names: Vec<String> = active.profiles.keys().cloned().collect();
     for (name, st) in active.profiles {
         if !st.enabled { continue; }
         let Ok(setting) = read_setting(&name) else { continue; };
         if validate_setting(&setting).is_err() { continue; }
         let selected_for_hotspot = hotspot_profile.as_deref() == Some(name.as_str());
         if !selected_for_hotspot && !app_list_requires_netd(&profile_root(&name).join("app/uid/user_program")) { continue; }
-        let Ok(netid) = generate_netid(&used_netids, NETID_BASE, NETID_MAX) else { break; };
-        used_netids.insert(netid);
+        let Ok(netid) = stable_netid(NETID_BASE, NETID_MAX, &all_names, &name) else { continue; };
         if let Ok((_, cidr)) = generated_tun_addr_and_cidr(netid) {
             out.push((format!("mihomo/{name}"), cidr));
         }
@@ -819,7 +829,13 @@ fn build_profile_plan(profile: &str, used_netids: &BTreeSet<u32>, force_tun: boo
     if raw_config.trim().is_empty() { bail!("config.yaml is empty"); }
     let controller_port = parse_external_controller_port(&raw_config);
 
-    let netid = if requires_tun { generate_netid(used_netids, NETID_BASE, NETID_MAX)? } else { 0 };
+    let netid = if requires_tun {
+        let id = stable_netid_for(profile)?;
+        if used_netids.contains(&id) {
+            bail!("netid {id} is already used by another mihomo profile");
+        }
+        id
+    } else { 0 };
     let (tun_addr, cidr) = if requires_tun {
         generated_tun_addr_and_cidr(netid)?
     } else {

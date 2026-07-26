@@ -18,8 +18,19 @@ use crate::{
 const MYVPN_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/myvpn";
 const MYVPN_PROFILE_ROOT: &str = "/data/adb/modules/ZDT-D/working_folder/myvpn/profile";
 const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/myvpn/active.json";
-const NETID_BASE: u32 = 23200;
-const NETID_MAX: u32 = 23999;
+const NETID_BASE: u32 = NETID_MYVPN.0;
+const NETID_MAX: u32 = NETID_MYVPN.1;
+
+// Стабильный netid: индекс профиля в полном списке профилей движка (включая
+// выключенные), чтобы включение/выключение одного профиля не сдвигало netid
+// и подсеть туннеля у соседей (см. programs/common.rs::stable_netid).
+fn all_netd_profile_names() -> Vec<String> {
+    read_active().map(|a| a.profiles.keys().cloned().collect()).unwrap_or_default()
+}
+
+fn stable_netid_for(profile: &str) -> Result<u32> {
+    stable_netid(NETID_BASE, NETID_MAX, &all_netd_profile_names(), profile)
+}
 const TUN_WAIT: Duration = Duration::from_secs(20);
 const IP_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -410,7 +421,10 @@ fn build_profile_plan(profile: &str, used_netids: &BTreeSet<u32>) -> Result<Prof
     if apps_raw.lines().map(str::trim).all(|l| l.is_empty() || l.starts_with('#')) {
         bail!("app list is empty: {}", app_in.display());
     }
-    let netid = generate_netid(used_netids, NETID_BASE, NETID_MAX)?;
+    let netid = stable_netid_for(profile)?;
+    if used_netids.contains(&netid) {
+        bail!("netid {netid} is already used by another myvpn profile");
+    }
     Ok(ProfilePlan { name: profile.to_string(), setting, profile_dir, app_in, app_out, netid })
 }
 

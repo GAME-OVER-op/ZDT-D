@@ -19,9 +19,12 @@ PROFILE="${PROFILE:-qwdtt}"
 TUN="${TUN:-zdtdqw0}"
 DNS="${DNS:-8.8.8.8}"
 WF="${ZDTD_WORKING_FOLDER:-/data/adb/modules/ZDT-D/working_folder}"
+# Binaries and config are uploaded into the profile's bin/ dir via the ZDT-D app
+# (myprogram's per-profile file uploader, which chmod 755s them). myprogram runs
+# the command with cwd = that bin/ dir.
 QWDTT_CLI="${QWDTT_CLI:-/data/adb/modules/ZDT-D/working_folder/myprogram/profile/qwdtt/bin/qwdtt-cli}"
 QWDTT_TRANSPORT="${QWDTT_TRANSPORT:-/data/adb/modules/ZDT-D/working_folder/myprogram/profile/qwdtt/bin/qwdtt-transport}"
-QWDTT_CONF="${QWDTT_CONFT:-/data/adb/modules/ZDT-D/working_folder/myprogram/profile/qwdtt/bin/qwdtt.conf}"
+QWDTT_CONF="${QWDTT_CONF:-/data/adb/modules/ZDT-D/working_folder/myprogram/profile/qwdtt/bin/qwdtt.conf}"
 
 die() { echo "error: $*" >&2; exit 1; }
 
@@ -89,11 +92,21 @@ JSON
 enable_profile myprogram
 enable_profile myvpn
 
+# Preflight: the binaries/config are uploaded separately (via the app). Warn if
+# they are not in place yet so the first launch does not silently fail.
+for f in "$QWDTT_CLI" "$QWDTT_TRANSPORT" "$QWDTT_CONF"; do
+	[ -e "$f" ] || echo "!! not present yet (upload via the ZDT-D app): $f"
+done
+
 echo
 echo "Done. Verify:"
-echo "  1. $QWDTT_CLI and $QWDTT_CONF exist (chmod 700 the conf)."
-echo "  2. amneziawg-go + awg present under /data/adb/modules/ZDT-D/bin/."
-echo "  3. Restart ZDT-D (or toggle the profiles) so myprogram launches qwdtt-cli."
-echo "  4. ip link show $TUN          # interface up"
-echo "  5. tail $MP/log/program.log   # qwdtt-cli log: transport + wg bring-up"
-echo "  6. From the test app, confirm egress goes through the tunnel."
+echo "  1. Upload qwdtt-cli, qwdtt-transport, qwdtt.conf into the profile bin/ via the app:"
+echo "       $MP/bin/"
+echo "  2. In $QWDTT_CONF set:"
+echo "       transport_binary = $QWDTT_TRANSPORT"
+echo "     (the transport path is read from qwdtt.conf, not from this script)."
+echo "  3. amneziawg-go + awg present under /data/adb/modules/ZDT-D/bin/."
+echo "  4. Restart ZDT-D (or toggle the profiles) so myprogram launches qwdtt-cli."
+echo "  5. ip link show $TUN          # interface up"
+echo "  6. tail $MP/log/program.log   # qwdtt-cli log: transport + wg bring-up"
+echo "  7. From the test app (its real UID, not root), confirm egress via the tunnel."

@@ -36,18 +36,26 @@ myvpn. myvpn simply retries until the TUN appears.
 
 ## Prerequisites (deploy to the device)
 
+Recommended: upload the two binaries and the config into the **myprogram
+profile's `bin/` dir** using the ZDT-D app's per-profile file uploader (it stores
+them `chmod 755`, and myprogram runs the command with `cwd` = that dir).
+
 | What | Where | Source |
 |---|---|---|
-| `qwdtt-cli` | `/data/adb/ZDT-D/bin/qwdtt-cli` | `make arm64`, or the `qwdtt-cli-arm64` CI artifact |
-| `qwdtt-transport` | `/data/adb/ZDT-D/bin/qwdtt-transport` | `upstream/qwdtt/fetch-and-build.sh`, or the `qwdtt-transport-arm64` CI artifact |
+| `qwdtt-cli` | `.../myprogram/profile/qwdtt/bin/qwdtt-cli` | `make arm64`, or the `qwdtt-cli-arm64` CI artifact |
+| `qwdtt-transport` | `.../myprogram/profile/qwdtt/bin/qwdtt-transport` | `upstream/qwdtt/fetch-and-build.sh`, or the `qwdtt-transport-arm64` CI artifact |
+| `qwdtt.conf` | `.../myprogram/profile/qwdtt/bin/qwdtt.conf` | from `qwdtt.example.conf`, filled in |
 | `amneziawg-go`, `awg` | `/data/adb/modules/ZDT-D/bin/` | shipped with ZDT-D (see note) |
-| `qwdtt.conf` | `/data/adb/ZDT-D/etc/qwdtt.conf` | from `qwdtt.example.conf`, filled in, `chmod 600` |
 
-```bash
-install -m 0755 qwdtt-cli        /data/adb/ZDT-D/bin/qwdtt-cli
-install -m 0755 qwdtt-transport  /data/adb/ZDT-D/bin/qwdtt-transport
-install -m 0600 qwdtt.conf       /data/adb/ZDT-D/etc/qwdtt.conf
-```
+where `...` = `/data/adb/modules/ZDT-D/working_folder`. In `qwdtt.conf`, point
+`transport_binary` at the uploaded transport (same bin dir) and set `state_dir` to
+a persistent dir **outside** `bin/` (the example uses `.../profile/qwdtt/state`) so
+runtime artifacts don't mix with the uploaded files. The install helper below
+prints these exact paths.
+
+(Placing the binaries under `/data/adb/ZDT-D/bin/` and the config under
+`/data/adb/ZDT-D/etc/` also works — just set `QWDTT_CLI`/`QWDTT_CONF` when running
+the helper and match `transport_binary` in the config.)
 
 **amneziawg-go / awg come from ZDT-D, not upstream releases.** ZDT-D's build
 compiles them from `amnezia-vpn/amneziawg-go` and `amnezia-vpn/amneziawg-tools`

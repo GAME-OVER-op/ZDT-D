@@ -24,6 +24,7 @@ import (
 	"syscall"
 
 	"github.com/andycar/zdt-d/qwdtt-cli/internal/config"
+	"github.com/andycar/zdt-d/qwdtt-cli/internal/logging"
 	"github.com/andycar/zdt-d/qwdtt-cli/internal/supervisor"
 )
 
@@ -31,7 +32,14 @@ func main() {
 	configPath := flag.String("config", "/data/adb/ZDT-D/etc/qwdtt.conf", "path to qwdtt.conf")
 	flag.Parse()
 
-	logger := log.New(os.Stderr, "qwdtt-cli: ", log.LstdFlags|log.Lmicroseconds)
+	// Resolve the device timezone before the first timestamp is written: Go finds
+	// no zoneinfo on Android and would otherwise log everything in UTC.
+	zone := logging.SetupLocalTime()
+
+	// No prefix and second-resolution time: each line is stamped once, here. Child
+	// output arrives already timestamped and is stripped before forwarding.
+	logger := log.New(os.Stderr, "", log.LstdFlags)
+	logger.Printf("qwdtt-cli starting (timezone %s)", zone)
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {

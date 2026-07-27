@@ -36,6 +36,7 @@ import (
 	"time"
 
 	"github.com/andycar/zdt-d/qwdtt-cli/internal/config"
+	"github.com/andycar/zdt-d/qwdtt-cli/internal/logging"
 	"github.com/andycar/zdt-d/qwdtt-cli/internal/transport"
 	"github.com/andycar/zdt-d/qwdtt-cli/internal/wg"
 )
@@ -153,7 +154,7 @@ func validateHashes(ctx context.Context, cfg *config.Config, logger *log.Logger)
 	if err != nil {
 		return nil, err
 	}
-	cmd.Stderr = logWriter{logger, "check/err"}
+	cmd.Stderr = logWriter{logger, "check"}
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start check: %w", err)
 	}
@@ -226,7 +227,7 @@ func runTransport(ctx context.Context, cfg *config.Config, hashes []string, logg
 	if err != nil {
 		return runOutcome{exitErr: fmt.Errorf("stdout pipe: %w", err)}
 	}
-	cmd.Stderr = logWriter{logger, "transport/err"}
+	cmd.Stderr = logWriter{logger, "transport"}
 
 	if err := cmd.Start(); err != nil {
 		return runOutcome{exitErr: fmt.Errorf("start transport: %w", err)}
@@ -379,15 +380,33 @@ func readMarkers(r io.Reader, active *atomic.Int32, logger *log.Logger) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for sc.Scan() {
-		line := strings.TrimSpace(sc.Text())
+		line := logging.StripChildTimestamp(strings.TrimSpace(sc.Text()))
 		if line == "" {
 			continue
 		}
 		if st, ok := transport.ParseStats(line); ok {
 			active.Store(int32(st.Active))
 		}
+		// The transport pretty-prints the emitted WireGuard config in a box frame.
+		// Drop it: it is a dozen redundant lines per start, and it puts the tunnel
+		// PrivateKey in the log. The config is written to wg-turn.conf anyway, and
+		// the supervisor logs its own "wg-turn.conf written" readiness line.
+		if isConfigBoxLine(line) {
+			continue
+		}
 		logger.Printf("[transport] %s", line)
 	}
+}
+
+// isConfigBoxLine reports whether a stdout line belongs to the transport's
+// box-framed WireGuard config dump.
+func isConfigBoxLine(line string) bool {
+	for _, r := range []string{"╔", "║", "╚"} {
+		if strings.HasPrefix(line, r) {
+			return true
+		}
+	}
+	return false
 }
 
 // awaitConfig blocks until wg-turn.conf appears (non-empty) in the state dir, the
@@ -473,7 +492,9 @@ type logWriter struct {
 
 func (w logWriter) Write(p []byte) (int, error) {
 	for _, line := range strings.Split(strings.TrimRight(string(p), "\n"), "\n") {
-		if line != "" {
+		// The child stamps its own lines with a Go-logger timestamp; strip it so
+		// each line carries exactly one (local-time) timestamp, ours.
+		if line = logging.StripChildTimestamp(line); line != "" {
 			w.logger.Printf("[%s] %s", w.prefix, line)
 		}
 	}

@@ -2,7 +2,10 @@
 
 package logging
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestStripChildTimestamp(t *testing.T) {
 	cases := map[string]string{
@@ -25,9 +28,38 @@ func TestStripChildTimestamp(t *testing.T) {
 	}
 }
 
-func TestSetupLocalTimeHonoursTZ(t *testing.T) {
-	t.Setenv("TZ", "Europe/Kyiv")
-	if got := SetupLocalTime(); got != "Europe/Kyiv" {
-		t.Errorf("SetupLocalTime() = %q, want Europe/Kyiv", got)
+func TestLocation(t *testing.T) {
+	ok := map[string]struct {
+		name    string
+		seconds int
+	}{
+		"":          {"UTC", 0},
+		"UTC":       {"UTC", 0},
+		"utc+3":     {"UTC+03:00", 3 * 3600},
+		"+3":        {"UTC+03:00", 3 * 3600},
+		"+03:00":    {"UTC+03:00", 3 * 3600},
+		"+0330":     {"UTC+03:30", 3*3600 + 30*60},
+		"-5":        {"UTC-05:00", -5 * 3600},
+		"GMT-05:30": {"UTC-05:30", -(5*3600 + 30*60)},
+		"+14:00":    {"UTC+14:00", 14 * 3600},
+	}
+	for in, want := range ok {
+		loc, err := Location(in)
+		if err != nil {
+			t.Errorf("Location(%q) unexpected error: %v", in, err)
+			continue
+		}
+		if loc.String() != want.name {
+			t.Errorf("Location(%q) name = %q, want %q", in, loc.String(), want.name)
+		}
+		if _, off := time.Now().In(loc).Zone(); off != want.seconds {
+			t.Errorf("Location(%q) offset = %ds, want %ds", in, off, want.seconds)
+		}
+	}
+
+	for _, bad := range []string{"Europe/Kyiv", "+15", "-13", "abc", "+3:75", "++3"} {
+		if _, err := Location(bad); err == nil {
+			t.Errorf("Location(%q) expected an error, got nil", bad)
+		}
 	}
 }

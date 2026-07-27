@@ -32,20 +32,25 @@ func main() {
 	configPath := flag.String("config", "/data/adb/ZDT-D/etc/qwdtt.conf", "path to qwdtt.conf")
 	flag.Parse()
 
-	// Resolve the device timezone before the first timestamp is written: Go finds
-	// no zoneinfo on Android and would otherwise log everything in UTC.
-	zone := logging.SetupLocalTime()
-
 	// No prefix and second-resolution time: each line is stamped once, here. Child
 	// output arrives already timestamped and is stripped before forwarding.
 	logger := log.New(os.Stderr, "", log.LstdFlags)
-	logger.Printf("qwdtt-cli starting (timezone %s)", zone)
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		logger.Printf("config error: %v", err)
 		os.Exit(2)
 	}
+
+	// Apply the configured wall-clock offset before any further timestamps: Go
+	// finds no zoneinfo on Android and would otherwise log everything in UTC.
+	// Already validated by config.Load, so this cannot fail here.
+	zone, err := logging.SetLocal(cfg.Timezone)
+	if err != nil {
+		logger.Printf("timezone error: %v", err)
+		os.Exit(2)
+	}
+	logger.Printf("qwdtt-cli starting (timezone %s)", zone)
 
 	// SIGTERM/SIGINT drives a clean stop: the transport releases its TURN
 	// allocations on context cancel. A second signal is left to escalate through

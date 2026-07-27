@@ -25,6 +25,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/andycar/zdt-d/qwdtt-cli/internal/logging"
 )
 
 // Config is the fully-resolved supervisor configuration.
@@ -83,6 +85,12 @@ type Config struct {
 	// CaptchaTokenFile, if set, is watched for manually-solved captcha tokens.
 	// Each new line is forwarded to the transport as CAPTCHA_RESULT|<token>.
 	CaptchaTokenFile string
+
+	// Timezone is the fixed UTC offset used for log timestamps, e.g. "UTC+3" or
+	// "+03:00". Android ships no zoneinfo, so Go would otherwise log in UTC.
+	// A fixed offset has no DST transitions — update it when the clocks change.
+	// Empty means UTC.
+	Timezone string
 
 	// WgBringup enables the M2 WireGuard stage: once wg-turn.conf is written, the
 	// supervisor spawns amneziawg-go, applies the config via awg, and brings up
@@ -217,6 +225,8 @@ func (c *Config) set(key, val string) error {
 		c.SeedCaptchaFP = val
 	case "captcha_token_file":
 		c.CaptchaTokenFile = val
+	case "timezone":
+		c.Timezone = val
 	case "wg_bringup":
 		b, err := parseBool(val)
 		if err != nil {
@@ -344,6 +354,9 @@ func (c *Config) Validate() error {
 		if !isValidIfname(c.Tun) {
 			return fmt.Errorf("tun %q must be 1..15 chars (letters, digits, _.-) and not empty", c.Tun)
 		}
+	}
+	if _, err := logging.Location(c.Timezone); err != nil {
+		return fmt.Errorf("timezone: %w", err)
 	}
 	return nil
 }

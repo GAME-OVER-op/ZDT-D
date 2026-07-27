@@ -4,6 +4,13 @@ M3 wires the supervisor into ZDT-D through the two generic profiles, then runs i
 end-to-end on the whitelisted SIM with a test app. No first-class program module
 yet — that is M5.
 
+> **Status: verified on-device** (Samsung S23 Ultra, KernelSU Next, whitelisted
+> SIM). Hashes validate, the transport reaches the VPS via VK TURN, `zdtdqw0`
+> comes up, and a `myvpn`-bound app (Termux) egresses at the VPS with no manual
+> interface binding. The two things that trip first-time bring-up are the TUN
+> timing race (see "Start" below) and testing from the wrong UID (see
+> Troubleshooting).
+
 ## Architecture
 
 ```
@@ -96,6 +103,25 @@ process-group leader — see the stop semantics below.
 
 ## Start and verify
 
+### Mind the TUN timing race
+
+`myvpn` waits only ~20 s for `zdtdqw0` to appear, but a **cold** qwdtt-cli start
+validates every hash first (~6 s per hash with VK throttling) before the tunnel
+comes up — so with several hashes, starting both profiles together can time
+`myvpn` out before the interface exists, and the UID binding is silently skipped.
+Two ways to avoid it:
+
+- **Shrink cold-start for the first bring-up:** use a single known-good
+  `vk_hashes` entry so startup is well under 20 s, then restore the full set once
+  it works.
+- **Enable in sequence:** enable `myprogram` first, wait until `ip link show
+  zdtdqw0` succeeds, then enable `myvpn` (its wait then completes instantly).
+
+If `myvpn` did time out, just toggle it off/on once the tunnel is up — the binding
+applies immediately.
+
+### Start
+
 Restart the ZDT-D daemon (or toggle both profiles in the app) so myprogram
 launches qwdtt-cli.
 
@@ -139,6 +165,13 @@ myprogram stop grace or letting the M5 program module own its own stop timing.
 - **Interface up but app has no egress:** check `vpn_netd/applied.json` for the
   UID binding, and confirm the package resolved to a UID (reinstalls/clones shift
   it). Confirm the app is in the myvpn list and enabled.
+- **Bound app hangs on a plain request, but `curl --interface zdtdqw0` works:**
+  you are almost certainly testing from the **wrong UID**. `myvpn` binds the app's
+  UID; a `su`/root shell (UID 0) is not bound (and must not be), so its traffic
+  goes direct and the whitelist ISP drops it → hang. Run `id -u` — if it is `0`,
+  test from the app's real UID instead (e.g. a normal, non-root Termux shell). A
+  hang here is the exact signature of "this UID isn't on the tunnel," not a tunnel
+  fault.
 - **Immediate re-launch loops:** the transport exits non-zero (e.g. missing
   `-password`, unreachable VK). qwdtt-cli propagates that so ZDT-D restarts the
   whole stack; fix the cause in `qwdtt.conf`.

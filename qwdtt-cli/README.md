@@ -42,10 +42,12 @@ rather than linking a library.
 The two upstream deltas (atomic `wg-turn.conf` write, `STATS|` marker) are
 implemented as patches in `../upstream/qwdtt/`.
 
-Not yet run: the on-device end-to-end (M3 needs the rooted device + whitelisted
-SIM). The M2 bring-up and M3 provisioning are verified by unit tests, a stubbed
-integration run, and JSON-shape checks against the ZDT-D profile structs; the real
-`ip`/`awg`/`amneziawg-go`/netd path needs the device to exercise.
+Verified on-device (S23 Ultra, KernelSU Next, whitelisted SIM): hashes validate,
+the transport reaches the VPS via VK TURN, `zdtdqw0` comes up, and a `myvpn`-bound
+app egresses at the VPS with no manual interface binding. See
+`docs/M3-integration.md`. Remaining work is M4 hardening (throughput/MTU under
+load, energy-saver exemption, proxyInfo, Zygisk interface hiding) and the M5
+first-class program module.
 
 ## Layout
 

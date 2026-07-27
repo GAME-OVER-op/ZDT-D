@@ -19,8 +19,9 @@ PROFILE="${PROFILE:-qwdtt}"
 TUN="${TUN:-zdtdqw0}"
 DNS="${DNS:-8.8.8.8}"
 WF="${ZDTD_WORKING_FOLDER:-/data/adb/modules/ZDT-D/working_folder}"
-QWDTT_CLI="${QWDTT_CLI:-/data/adb/ZDT-D/bin/qwdtt-cli}"
-QWDTT_CONF="${QWDTT_CONF:-/data/adb/ZDT-D/etc/qwdtt.conf}"
+QWDTT_CLI="${QWDTT_CLI:-/data/adb/modules/ZDT-D/working_folder/myprogram/profile/qwdtt/bin/qwdtt-cli}"
+QWDTT_TRANSPORT="${QWDTT_TRANSPORT:-/data/adb/modules/ZDT-D/working_folder/myprogram/profile/qwdtt/bin/qwdtt-transport}"
+QWDTT_CONF="${QWDTT_CONFT:-/data/adb/modules/ZDT-D/working_folder/myprogram/profile/qwdtt/bin/qwdtt.conf}"
 
 die() { echo "error: $*" >&2; exit 1; }
 

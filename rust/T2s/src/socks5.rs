@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
-use std::{future::Future, net::{SocketAddr, ToSocketAddrs}, time::Duration};
-use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream};
+use std::{future::Future, net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs}, time::Duration};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpStream, UdpSocket}};
 
 async fn io_step<T, F>(timeout: Duration, label: &'static str, fut: F) -> Result<T>
 where
@@ -257,28 +257,170 @@ pub(crate) async fn do_userpass_auth_for_healthcheck(stream: &mut TcpStream, use
 }
 
 
-pub async fn udp_associate(backend: SocketAddr, auth: Option<(String, String)>, timeout: Duration) -> Result<(TcpStream, SocketAddr)> {
+pub async fn udp_associate(
+    backend: SocketAddr,
+    auth: Option<(String, String)>,
+    timeout: Duration,
+    client_udp_addr: SocketAddr,
+) -> Result<(TcpStream, SocketAddr)> {
     let mut stream = connect_to_socks5_server(backend, auth, timeout).await?;
     let hs_timeout = handshake_timeout(timeout);
-    let req = vec![0x05u8, 0x03u8, 0x00u8, 0x01u8, 0, 0, 0, 0, 0, 0];
+    let client_udp_addr = if client_udp_addr.ip().is_unspecified() {
+        SocketAddr::new(
+            stream.local_addr().context("read SOCKS control local address")?.ip(),
+            client_udp_addr.port(),
+        )
+    } else {
+        client_udp_addr
+    };
+
+    // Tell the SOCKS server which UDP endpoint will send datagrams for this
+    // association. Supplying the real ephemeral port avoids the ambiguous
+    // 0.0.0.0:0 association that some SOCKS5 implementations accept but do
+    // not route correctly afterwards.
+    let mut req = vec![0x05u8, 0x03u8, 0x00u8];
+    match client_udp_addr.ip() {
+        IpAddr::V4(ip) => {
+            req.push(0x01);
+            req.extend_from_slice(&ip.octets());
+        }
+        IpAddr::V6(ip) => {
+            req.push(0x04);
+            req.extend_from_slice(&ip.octets());
+        }
+    }
+    req.extend_from_slice(&client_udp_addr.port().to_be_bytes());
+
     io_step(hs_timeout, "udp associate request write", stream.write_all(&req)).await?;
     let mut hdr = [0u8; 4];
     io_step(hs_timeout, "udp associate reply head read", stream.read_exact(&mut hdr)).await?;
-    if hdr[0] != 0x05 { return Err(anyhow!("invalid SOCKS version in UDP ASSOCIATE reply {}", hdr[0])); }
-    if hdr[1] != 0x00 { return Err(anyhow!("SOCKS UDP ASSOCIATE failed, REP={:#x}", hdr[1])); }
+    if hdr[0] != 0x05 {
+        return Err(anyhow!("invalid SOCKS version in UDP ASSOCIATE reply {}", hdr[0]));
+    }
+    if hdr[1] != 0x00 {
+        return Err(anyhow!("SOCKS UDP ASSOCIATE failed, REP={:#x}", hdr[1]));
+    }
     let relay = match hdr[3] {
-        0x01 => { let mut buf=[0u8;6]; io_step(hs_timeout,"udp associate ipv4 relay read",stream.read_exact(&mut buf)).await?; SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(buf[0],buf[1],buf[2],buf[3])), u16::from_be_bytes([buf[4],buf[5]])) }
-        0x04 => { let mut buf=[0u8;18]; io_step(hs_timeout,"udp associate ipv6 relay read",stream.read_exact(&mut buf)).await?; let ip=std::net::Ipv6Addr::from(<[u8;16]>::try_from(&buf[..16]).map_err(|_| anyhow!("invalid ipv6 relay length"))?); SocketAddr::new(std::net::IpAddr::V6(ip), u16::from_be_bytes([buf[16],buf[17]])) }
-        0x03 => { let mut ln=[0u8;1]; io_step(hs_timeout,"udp associate domain relay len read",stream.read_exact(&mut ln)).await?; let l=ln[0] as usize; let mut buf=vec![0u8;l+2]; io_step(hs_timeout,"udp associate domain relay read",stream.read_exact(&mut buf)).await?; let host=std::str::from_utf8(&buf[..l]).context("UDP ASSOCIATE relay domain utf8")?; let port=u16::from_be_bytes([buf[l],buf[l+1]]); let mut addrs=(host,port).to_socket_addrs().context("resolve UDP ASSOCIATE relay domain")?; addrs.next().ok_or_else(|| anyhow!("no UDP ASSOCIATE relay address"))? }
+        0x01 => {
+            let mut buf = [0u8; 6];
+            io_step(hs_timeout, "udp associate ipv4 relay read", stream.read_exact(&mut buf)).await?;
+            SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::new(buf[0], buf[1], buf[2], buf[3])),
+                u16::from_be_bytes([buf[4], buf[5]]),
+            )
+        }
+        0x04 => {
+            let mut buf = [0u8; 18];
+            io_step(hs_timeout, "udp associate ipv6 relay read", stream.read_exact(&mut buf)).await?;
+            let ip = std::net::Ipv6Addr::from(
+                <[u8; 16]>::try_from(&buf[..16]).map_err(|_| anyhow!("invalid ipv6 relay length"))?,
+            );
+            SocketAddr::new(IpAddr::V6(ip), u16::from_be_bytes([buf[16], buf[17]]))
+        }
+        0x03 => {
+            let mut ln = [0u8; 1];
+            io_step(hs_timeout, "udp associate domain relay len read", stream.read_exact(&mut ln)).await?;
+            let l = ln[0] as usize;
+            let mut buf = vec![0u8; l + 2];
+            io_step(hs_timeout, "udp associate domain relay read", stream.read_exact(&mut buf)).await?;
+            let host = std::str::from_utf8(&buf[..l]).context("UDP ASSOCIATE relay domain utf8")?;
+            let port = u16::from_be_bytes([buf[l], buf[l + 1]]);
+            let mut addrs = (host, port).to_socket_addrs().context("resolve UDP ASSOCIATE relay domain")?;
+            addrs.next().ok_or_else(|| anyhow!("no UDP ASSOCIATE relay address"))?
+        }
         atyp => return Err(anyhow!("unknown ATYP in UDP ASSOCIATE reply {}", atyp)),
     };
-    let relay = if relay.ip().is_unspecified() { SocketAddr::new(backend.ip(), relay.port()) } else { relay };
+    let relay = if relay.ip().is_unspecified() {
+        SocketAddr::new(backend.ip(), relay.port())
+    } else {
+        relay
+    };
     Ok((stream, relay))
 }
 
-pub async fn check_udp_associate(backend: SocketAddr, auth: Option<(String, String)>, timeout: Duration) -> Option<f64> {
+fn dns_probe_query(id: u16) -> Vec<u8> {
+    let mut q = Vec::with_capacity(64);
+    q.extend_from_slice(&id.to_be_bytes());
+    q.extend_from_slice(&0x0100u16.to_be_bytes()); // recursion desired
+    q.extend_from_slice(&1u16.to_be_bytes()); // QDCOUNT
+    q.extend_from_slice(&0u16.to_be_bytes()); // ANCOUNT
+    q.extend_from_slice(&0u16.to_be_bytes()); // NSCOUNT
+    q.extend_from_slice(&0u16.to_be_bytes()); // ARCOUNT
+    for label in [b"cloudflare-dns".as_slice(), b"com".as_slice()] {
+        q.push(label.len() as u8);
+        q.extend_from_slice(label);
+    }
+    q.push(0);
+    q.extend_from_slice(&1u16.to_be_bytes()); // A
+    q.extend_from_slice(&1u16.to_be_bytes()); // IN
+    q
+}
+
+async fn check_udp_target(
+    udp: &UdpSocket,
+    relay: SocketAddr,
+    target: SocketAddr,
+    query_id: u16,
+    timeout: Duration,
+) -> Result<()> {
+    let query = dns_probe_query(query_id);
+    let packet = encode_udp_packet(TargetAddr::Ip(target), &query)?;
+    udp.send_to(&packet, relay).await.context("send SOCKS5 UDP data-plane probe")?;
+
+    let mut buf = vec![0u8; 4096];
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            return Err(anyhow!("SOCKS5 UDP data-plane probe timed out"));
+        }
+        let (n, from) = tokio::time::timeout(remaining, udp.recv_from(&mut buf))
+            .await
+            .context("SOCKS5 UDP data-plane probe timeout")?
+            .context("receive SOCKS5 UDP data-plane probe")?;
+        if from != relay {
+            continue;
+        }
+        let (src, payload) = decode_udp_packet(&buf[..n])?;
+        let src_port = match src {
+            TargetAddr::Ip(sa) => sa.port(),
+            TargetAddr::Domain(_, port) => port,
+        };
+        if src_port != target.port() || payload.len() < 2 {
+            continue;
+        }
+        if u16::from_be_bytes([payload[0], payload[1]]) == query_id {
+            return Ok(());
+        }
+    }
+}
+
+pub async fn check_udp_associate(
+    backend: SocketAddr,
+    auth: Option<(String, String)>,
+    timeout: Duration,
+) -> Option<f64> {
     let start = std::time::Instant::now();
-    match udp_associate(backend, auth, timeout).await { Ok((_control, _relay)) => Some(start.elapsed().as_secs_f64()*1000.0), Err(_) => None }
+    let bind_addr = if backend.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" };
+    let udp = UdpSocket::bind(bind_addr).await.ok()?;
+    let local_addr = udp.local_addr().ok()?;
+    let (_control, relay) = udp_associate(backend, auth, timeout, local_addr).await.ok()?;
+
+    // A successful UDP ASSOCIATE reply only proves the control handshake. Send
+    // a real request through the relay and require a response before declaring
+    // the backend UDP-capable.
+    let per_target = timeout.min(Duration::from_millis(1500)).max(Duration::from_millis(500));
+    let seed = start.elapsed().as_nanos() as u16 ^ backend.port();
+    let targets = [
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), 53),
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), 53),
+    ];
+    for (offset, target) in targets.into_iter().enumerate() {
+        if check_udp_target(&udp, relay, target, seed.wrapping_add(offset as u16), per_target).await.is_ok() {
+            return Some(start.elapsed().as_secs_f64() * 1000.0);
+        }
+    }
+    None
 }
 
 pub fn encode_udp_packet(target: TargetAddr, data: &[u8]) -> Result<Vec<u8>> {

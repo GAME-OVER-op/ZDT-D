@@ -292,6 +292,15 @@ fn ensure_base_returns(cmd: &str) {
         return;
     };
 
+    // Remove DNS/DoT/mDNS/SCTP guards emitted by older versions. Merely
+    // changing the expected prefix would leave those stale RETURN rules active
+    // after an in-place update.
+    if let Some(legacy) = legacy_dns_returns(cmd) {
+        for tail in legacy {
+            remove_return_rule(cmd, tail.as_slice());
+        }
+    }
+
     match base_returns_already_ordered(cmd, &expected) {
         Ok(true) => return,
         Ok(false) => {}
@@ -311,21 +320,37 @@ fn ensure_base_returns(cmd: &str) {
     }
 }
 
+fn legacy_dns_returns(cmd: &str) -> Option<Vec<Vec<&'static str>>> {
+    match cmd {
+        "iptables" | "ip6tables" => Some(vec![
+            vec!["-p", "sctp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"],
+            vec!["-p", "tcp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"],
+            vec!["-p", "udp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"],
+            vec!["-p", "sctp", "--dport", "53", "-j", "RETURN"],
+            vec!["-p", "sctp", "--dport", "853", "-j", "RETURN"],
+            vec!["-p", "sctp", "--dport", "5353", "-j", "RETURN"],
+            vec!["-p", "tcp", "--dport", "853", "-j", "RETURN"],
+            vec!["-p", "tcp", "--dport", "5353", "-j", "RETURN"],
+            vec!["-p", "udp", "--dport", "853", "-j", "RETURN"],
+            vec!["-p", "udp", "--dport", "5353", "-j", "RETURN"],
+        ]),
+        _ => None,
+    }
+}
+
 fn expected_base_returns(cmd: &str) -> Option<Vec<Vec<&'static str>>> {
     match cmd {
         "iptables" => Some(vec![
             vec!["-o", "lo", "-j", "RETURN"],
             vec!["-d", "127.0.0.0/8", "-j", "RETURN"],
-            vec!["-p", "sctp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"],
-            vec!["-p", "tcp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"],
-            vec!["-p", "udp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"],
+            vec!["-p", "tcp", "--dport", "53", "-j", "RETURN"],
+            vec!["-p", "udp", "--dport", "53", "-j", "RETURN"],
         ]),
         "ip6tables" => Some(vec![
             vec!["-o", "lo", "-j", "RETURN"],
             vec!["-d", "::1/128", "-j", "RETURN"],
-            vec!["-p", "sctp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"],
-            vec!["-p", "tcp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"],
-            vec!["-p", "udp", "-m", "multiport", "--dports", "53,853,5353", "-j", "RETURN"],
+            vec!["-p", "tcp", "--dport", "53", "-j", "RETURN"],
+            vec!["-p", "udp", "--dport", "53", "-j", "RETURN"],
         ]),
         _ => None,
     }

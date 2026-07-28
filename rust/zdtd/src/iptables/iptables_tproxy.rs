@@ -89,6 +89,7 @@ const OLD_ROUTE_TABLE: u32 = 1057;
 const LEGACY_ROUTE_MARK: u32 = 0x5d70_0000;
 const LEGACY_ROUTE_MASK: u32 = 0xffff_0000;
 const TPROXY_NO_FILE: &str = "tproxy_no";
+const DNSCRYPT_BYPASS_PORT_FILE: &str = "tproxy_dnscrypt_port";
 const V6_BLOCK_PREFIX: &str = "ZDTV6";
 
 #[derive(Debug)]
@@ -538,7 +539,163 @@ fn ensure_base_chains() -> Result<()> {
     // the very top of both hook chains, before any scoped TPROXY jump.
     ensure_local_bypass(OUT_CHAIN, true)?;
     ensure_local_bypass(PRE_CHAIN, false)?;
+
+    // DNSCrypt can start before or after a TPROXY profile. Reconcile the
+    // confirmed bypass every time the shared chains are prepared so startup
+    // order cannot reintroduce DNS marking/recapture.
+    let dnscrypt_port = crate::programs::dnscrypt::active_listen_port()
+        .ok()
+        .flatten();
+    sync_dnscrypt_bypass_locked(dnscrypt_port)?;
     Ok(())
+}
+
+
+/// Reconcile the DNSCrypt/TPROXY boundary while acquiring the xtables lock.
+/// Passing `None` removes stale bypass rules when DNSCrypt is disabled.
+pub fn sync_dnscrypt_bypass(listen_port: Option<u16>) -> Result<()> {
+    let _guard = xtables_lock::lock();
+    sync_dnscrypt_bypass_locked(listen_port)
+}
+
+/// Same operation for callers that already hold `xtables_lock`.
+pub(crate) fn sync_dnscrypt_bypass_locked(listen_port: Option<u16>) -> Result<()> {
+    let previous_port = load_dnscrypt_bypass_port();
+    let out_exists = chain_exists("mangle", OUT_CHAIN)?;
+    let pre_exists = chain_exists("mangle", PRE_CHAIN)?;
+
+    if out_exists {
+        for proto in ["udp", "tcp"] {
+            delete_rule_all(
+                "mangle",
+                OUT_CHAIN,
+                &["-p", proto, "--dport", "53", "-j", "RETURN"],
+            )?;
+        }
+    }
+
+    if pre_exists {
+        let mut ports = BTreeSet::new();
+        if let Some(port) = previous_port {
+            ports.insert(port);
+        }
+        if let Some(port) = listen_port {
+            ports.insert(port);
+        }
+        for port in ports {
+            let port_s = port.to_string();
+            for proto in ["udp", "tcp"] {
+                delete_rule_all(
+                    "mangle",
+                    PRE_CHAIN,
+                    &[
+                        "-d", "127.0.0.1/32", "-p", proto, "--dport",
+                        port_s.as_str(), "-j", "RETURN",
+                    ],
+                )?;
+                // Accept the equivalent spelling emitted by some iptables
+                // builds when deleting rules installed by an older test build.
+                delete_rule_all(
+                    "mangle",
+                    PRE_CHAIN,
+                    &[
+                        "-d", "127.0.0.1", "-p", proto, "--dport",
+                        port_s.as_str(), "-j", "RETURN",
+                    ],
+                )?;
+            }
+        }
+    }
+
+    let Some(port) = listen_port else {
+        clear_dnscrypt_bypass_port();
+        return Ok(());
+    };
+
+    if out_exists {
+        // These must be direct rules in the parent chain. RETURN from a nested
+        // chain would resume ZDT_TPROXY_OUT and a scoped jump could still mark
+        // the DNS packet.
+        insert_rule_at(
+            "mangle",
+            OUT_CHAIN,
+            1,
+            &["-p", "udp", "--dport", "53", "-j", "RETURN"],
+        )?;
+        insert_rule_at(
+            "mangle",
+            OUT_CHAIN,
+            2,
+            &["-p", "tcp", "--dport", "53", "-j", "RETURN"],
+        )?;
+    }
+
+    if pre_exists {
+        let port_s = port.to_string();
+        insert_rule_at(
+            "mangle",
+            PRE_CHAIN,
+            1,
+            &[
+                "-d", "127.0.0.1/32", "-p", "udp", "--dport",
+                port_s.as_str(), "-j", "RETURN",
+            ],
+        )?;
+        insert_rule_at(
+            "mangle",
+            PRE_CHAIN,
+            2,
+            &[
+                "-d", "127.0.0.1/32", "-p", "tcp", "--dport",
+                port_s.as_str(), "-j", "RETURN",
+            ],
+        )?;
+    }
+
+    save_dnscrypt_bypass_port(port)?;
+    Ok(())
+}
+
+fn chain_exists(table: &str, chain: &str) -> Result<bool> {
+    let (rc, _) = ipt_run_timeout(
+        &["-t", table, "-nL", chain],
+        Capture::None,
+        IPT_CMD_TIMEOUT,
+    )?;
+    Ok(rc == 0)
+}
+
+fn dnscrypt_bypass_port_path() -> std::path::PathBuf {
+    Path::new(settings::SETTING_DIR).join(DNSCRYPT_BYPASS_PORT_FILE)
+}
+
+fn load_dnscrypt_bypass_port() -> Option<u16> {
+    fs::read_to_string(dnscrypt_bypass_port_path())
+        .ok()
+        .and_then(|body| body.trim().parse::<u16>().ok())
+        .filter(|port| *port != 0)
+}
+
+fn save_dnscrypt_bypass_port(port: u16) -> Result<()> {
+    let path = dnscrypt_bypass_port_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("create setting dir {}", parent.display()))?;
+    }
+    fs::write(&path, format!("{port}\n"))
+        .with_context(|| format!("write {}", path.display()))
+}
+
+fn clear_dnscrypt_bypass_port() {
+    let path = dnscrypt_bypass_port_path();
+    if path.exists() {
+        if let Err(e) = fs::remove_file(&path) {
+            warn!(
+                "TPROXY: failed to remove DNSCrypt bypass state {}: {e:#}",
+                path.display()
+            );
+        }
+    }
 }
 
 fn ensure_divert_chain() -> Result<()> {

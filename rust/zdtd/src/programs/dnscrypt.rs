@@ -10,7 +10,7 @@ use std::{
 };
 use std::os::unix::process::CommandExt;
 
-use crate::{iptables::caps, shell::{self, Capture}, xtables_lock};
+use crate::{iptables::iptables_tproxy, shell::{self, Capture}, xtables_lock};
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -115,6 +115,9 @@ pub fn start_if_enabled() -> Result<()> {
 
     if !active.enabled {
         info!("dnscrypt disabled (active.json enabled=false) -> skip");
+        if let Err(e) = iptables_tproxy::sync_dnscrypt_bypass(None) {
+            warn!("dnscrypt: failed to remove stale TPROXY DNS bypass: {e:#}");
+        }
         return Ok(());
     }
 
@@ -389,6 +392,17 @@ fn parse_listen_port(toml_path: &Path) -> Result<u16> {
 const IPT_CMD_TIMEOUT: Duration = Duration::from_secs(5);
 const XT_WAIT_SECS: &str = "5";
 
+// DNSCrypt receives only classic DNS. DNS-over-TLS (853) and mDNS (5353)
+// are different protocols and must not be redirected to the plain DNS
+// listener. SCTP is not part of the DNS transport used here either.
+const DNS_PORTS: [u16; 1] = [53];
+const DNS_PROTOS: [&str; 2] = ["udp", "tcp"];
+
+// Kept only for surgical upgrade cleanup of rules created by older versions.
+const LEGACY_DNS_PORTS: [u16; 3] = [53, 853, 5353];
+const LEGACY_DNS_PROTOS: [&str; 3] = ["udp", "tcp", "sctp"];
+const LEGACY_DPORTS_MULTI: &str = "53,853,5353";
+
 fn supports_wait_fallback(out: &str) -> bool {
     let s = out.to_ascii_lowercase();
     s.contains("unknown option")
@@ -430,12 +444,64 @@ fn add_per_port_rules(iptables: &str, table: &str, chain: &str, insert_first: bo
     Ok(())
 }
 
+
+fn cleanup_legacy_dns_mangle_rules(iptables: &str) -> Result<()> {
+    for proto in LEGACY_DNS_PROTOS {
+        for dports in [LEGACY_DPORTS_MULTI, "53"] {
+            for target in ["RETURN", "REJECT", "DROP"] {
+                let rule = [
+                    "-p", proto, "-m", "multiport", "--dports", dports,
+                    "-j", target,
+                ];
+                del_rule_all(iptables, "mangle", "MANGLE_APP", &rule)?;
+            }
+        }
+        for port in LEGACY_DNS_PORTS {
+            let port_s = port.to_string();
+            for target in ["RETURN", "REJECT", "DROP"] {
+                let rule = ["-p", proto, "--dport", port_s.as_str(), "-j", target];
+                del_rule_all(iptables, "mangle", "MANGLE_APP", &rule)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn cleanup_legacy_dns_nat_rules(
+    iptables: &str,
+    to_destination: &str,
+    chains: &[&str],
+) -> Result<()> {
+    for chain in chains {
+        for proto in LEGACY_DNS_PROTOS {
+            for dports in [LEGACY_DPORTS_MULTI, "53"] {
+                let rule = [
+                    "-p", proto, "-m", "multiport", "--dports", dports,
+                    "-j", "DNAT", "--to-destination", to_destination,
+                ];
+                del_rule_all(iptables, "nat", chain, &rule)?;
+            }
+            for port in LEGACY_DNS_PORTS {
+                let port_s = port.to_string();
+                let rule = [
+                    "-p", proto, "--dport", port_s.as_str(),
+                    "-j", "DNAT", "--to-destination", to_destination,
+                ];
+                del_rule_all(iptables, "nat", chain, &rule)?;
+            }
+        }
+    }
+    Ok(())
+}
+
 fn apply_dns_iptables(listen_port: u16) -> Result<()> {
     let _xtables_guard = xtables_lock::lock();
-    let dns_ports = [53u16, 853u16, 5353u16];
-    let dports_multi = "53,853,5353";
-    let prots = ["udp", "tcp", "sctp"];
-    let use_multiport = caps::multiport_v4();
+    let dns_ports = DNS_PORTS;
+    let dports_multi = "53";
+    let prots = DNS_PROTOS;
+    // A single port does not need xt_multiport. Plain --dport rules are more
+    // portable and exactly match the intended UDP/53 + TCP/53 interception.
+    let use_multiport = false;
 
     let ipt = find_iptables();
 
@@ -446,6 +512,13 @@ fn apply_dns_iptables(listen_port: u16) -> Result<()> {
     // Ensure NAT_DPI exists and OUTPUT jumps to it (needed if no other programs created it)
     ensure_chain(&ipt, "nat", "NAT_DPI")?;
     ensure_jump(&ipt, "nat", "OUTPUT", "NAT_DPI", true)?;
+
+    // Remove every rule emitted by older builds before installing the narrow
+    // UDP/53 + TCP/53 rule set. This is required for in-place upgrades where
+    // stale 853/5353/SCTP entries would otherwise remain active.
+    let to = format!("127.0.0.1:{}", listen_port);
+    cleanup_legacy_dns_nat_rules(&ipt, &to, &["OUTPUT", "PREROUTING", "NAT_DPI"])?;
+    cleanup_legacy_dns_mangle_rules(&ipt)?;
 
     // MANGLE DNS RETURN order is asserted after all NAT insertions below.
     // NAT rules are inserted at the beginning of NAT_DPI, so loopback/DNS
@@ -528,6 +601,10 @@ fn apply_dns_iptables(listen_port: u16) -> Result<()> {
     ensure_loopback_returns(&ipt)?;
     ensure_dns_mangle_returns_ordered(&ipt, use_multiport, &dns_ports, dports_multi, &prots)?;
 
+    // DNS must bypass TPROXY marking before DNAT and must not be captured again
+    // after it is redirected to the local DNSCrypt listener.
+    iptables_tproxy::sync_dnscrypt_bypass_locked(Some(listen_port))?;
+
     // IPv6 (ip6tables) is best-effort: not all Android builds have ip6tables nat.
     if let Err(e) = apply_dns_ip6tables(listen_port) {
         warn!("dns: ip6tables rules skipped: {e:#}");
@@ -590,22 +667,25 @@ fn ip6_nat_supported(ip6t: &str) -> bool {
 }
 
 fn apply_dns_ip6tables(listen_port: u16) -> Result<()> {
-    let dns_ports = [53u16, 853u16, 5353u16];
-    let dports_multi = "53,853,5353";
-    let prots = ["udp", "tcp", "sctp"];
-    let use_multiport = caps::multiport_v6();
+    let dns_ports = DNS_PORTS;
+    let dports_multi = "53";
+    let prots = DNS_PROTOS;
+    let use_multiport = false;
 
     let ip6t = find_ip6tables();
 
     // Ensure MANGLE_APP exists and OUTPUT jumps to it
     ensure_chain(&ip6t, "mangle", "MANGLE_APP")?;
     ensure_jump(&ip6t, "mangle", "OUTPUT", "MANGLE_APP", false)?;
+    cleanup_legacy_dns_mangle_rules(&ip6t)?;
 
     let nat_ok = ip6_nat_supported(&ip6t);
     if nat_ok {
         // Ensure NAT_DPI exists and OUTPUT jumps to it
         ensure_chain(&ip6t, "nat", "NAT_DPI")?;
         ensure_jump(&ip6t, "nat", "OUTPUT", "NAT_DPI", true)?;
+        let to = format!("[::1]:{}", listen_port);
+        cleanup_legacy_dns_nat_rules(&ip6t, &to, &["OUTPUT", "PREROUTING", "NAT_DPI"])?;
     }
 
     // Keep loopback before position-3 IPv6 block rules only when the NAT table is
@@ -718,8 +798,8 @@ fn apply_dns_ip6tables(listen_port: u16) -> Result<()> {
             }
         }
     } else {
-        warn!("dns: ip6tables nat table unsupported; disabling IPv6 DNS ports (53/853/5353)");
-        crate::logging::user_warn("DNSCrypt: IPv6 NAT не поддерживается — IPv6 DNS-порты 53/853/5353 отключены");
+        warn!("dns: ip6tables nat table unsupported; disabling IPv6 DNS port 53");
+        crate::logging::user_warn("DNSCrypt: IPv6 NAT не поддерживается — IPv6 DNS-порт 53 отключён");
         set_ipv6_disabled_resetprops();
 
         // Remove RETURN exceptions for 53 (otherwise they would bypass the block).
@@ -794,7 +874,7 @@ fn ensure_dns_mangle_returns_ordered(
     dports_multi: &str,
     prots: &[&str],
 ) -> Result<()> {
-    // Keep DNS/DoT/mDNS before service/proxy UID exclusions and before NFQUEUE,
+    // Keep classic DNS before service/proxy UID exclusions and before NFQUEUE,
     // but avoid delete/reinsert work when the chain is already in the desired
     // shape. This path is called by DNSCrypt and can also run after nfqws has
     // prepared MANGLE_APP, so the check-first path keeps restarts cheap.

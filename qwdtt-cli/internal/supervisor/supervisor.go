@@ -348,6 +348,11 @@ func bringUpWireguard(cfg *config.Config, logger *log.Logger) (*wg.Interface, er
 	if err != nil {
 		return nil, fmt.Errorf("split config: %w", err)
 	}
+	// An explicit mtu in the config wins over the value the transport emitted.
+	if cfg.MTU > 0 && cfg.MTU != split.MTU {
+		logger.Printf("wg: MTU override %d (config emitted %d)", cfg.MTU, split.MTU)
+		split.MTU = cfg.MTU
+	}
 	return wg.Up(wg.Params{
 		AwgGoBinary:  cfg.AwgGoBinary,
 		AwgBinary:    cfg.AwgBinary,

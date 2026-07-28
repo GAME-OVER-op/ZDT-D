@@ -101,6 +101,11 @@ type Config struct {
 	// no Android VPN UI; ZDT-D's Zygisk layer hides it from target UIDs. Default
 	// "zdtdqw0".
 	Tun string
+	// MTU overrides the MTU the transport emits in wg-turn.conf (1280). 0 keeps
+	// the emitted value. Lower it toward 1200 if fragmentation appears under
+	// sustained load — WireGuard inside RTP inside DTLS inside a TURN relay is a
+	// deep stack. Valid range 576..9000 when set.
+	MTU int
 	// AwgGoBinary is the amneziawg-go userspace WireGuard daemon.
 	AwgGoBinary string
 	// AwgBinary is the awg control tool (wg-compatible) used for `setconf`.
@@ -235,6 +240,12 @@ func (c *Config) set(key, val string) error {
 		c.WgBringup = b
 	case "tun":
 		c.Tun = val
+	case "mtu":
+		n, err := strconv.Atoi(val)
+		if err != nil {
+			return fmt.Errorf("mtu: %w", err)
+		}
+		c.MTU = n
 	case "awg_go_binary":
 		c.AwgGoBinary = val
 	case "awg_binary":
@@ -353,6 +364,9 @@ func (c *Config) Validate() error {
 	if c.WgBringup {
 		if !isValidIfname(c.Tun) {
 			return fmt.Errorf("tun %q must be 1..15 chars (letters, digits, _.-) and not empty", c.Tun)
+		}
+		if c.MTU != 0 && (c.MTU < 576 || c.MTU > 9000) {
+			return fmt.Errorf("mtu %d must be 0 (use the emitted value) or in range 576..9000", c.MTU)
 		}
 	}
 	if _, err := logging.Location(c.Timezone); err != nil {

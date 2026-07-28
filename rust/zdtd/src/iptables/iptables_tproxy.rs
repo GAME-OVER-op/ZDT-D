@@ -59,32 +59,33 @@ const INTRANET_V4: &[&str] = &[
     "240.0.0.0/4",
     "255.255.255.255/32",
 ];
-// Dedicated routing table for ZDT-D TPROXY delivery.  Android numbers its
+// Dedicated routing table for ZDT-D TPROXY delivery. Android numbers its
 // per-interface tables as ifindex+1000 (>=1000) and reserves 253..255 for
-// local/main/default, so a value in the 256..999 gap avoids collisions on
-// every Android release.
+// local/main/default, so a value in the 256..999 gap avoids those tables.
 const ROUTE_TABLE: u32 = 787;
-// Low priority number so the ZDT-D rule sits above Android/OEM policy rules
-// (box_for_magisk uses 100 for the same reason).
+// The rule must run before Android's VPN/network rules. The priority is shared
+// only by exact, disjoint ZDT-D marks; cleanup never deletes by priority alone.
 const ROUTE_PREF: &str = "100";
 
-// Android packs netId/permission/protectedFromVpn/uidBillingDone into the low
-// fwmark bits (0..20).  ZDT-D must never touch those, so all TPROXY metadata
-// lives in bits 24..31:
-//   * bit 24      -> ROUTE_MARK: the single "divert to local t2s" marker that
-//                    the ip rule and the DIVERT chain match on (same idea as
-//                    box_for_magisk's dedicated bit).
-//   * bits 25..31 -> per-scope slot, selecting the right TPROXY --on-port.
-// Bits 21..23 are a deliberate gap between Android's range and ours.
-const ROUTE_MARK: u32 = 0x0100_0000; // bit 24
-const ROUTE_MASK: u32 = 0x0100_0000; // ip rule / DIVERT match: route bit only
-const SCOPE_MASK: u32 = 0xff00_0000; // MARK / TPROXY match: route bit + slot bits
-// Old-scheme mark/mask/table/pref from earlier ZDT-D versions.  Kept only so
-// cleanup can delete any rules they may have left behind after an upgrade.
+// Android Fwmark uses bits 0..20, reserves bits 21..28, gives bits 29..30 to
+// vendors and bit 31 to ingress wakeup accounting. Use only the eight reserved
+// bits and preserve every other bit already attached by Android/netd/OEM code.
+//
+// Slot 0 is reserved for socket DIVERT. Slots 1..127 identify scoped TPROXY
+// listeners. Policy routing matches the complete eight-bit value, never a
+// single common bit, so unrelated Android/OEM marks cannot enter table 787.
+const ROUTE_MARK: u32 = 0x0020_0000; // bit 21, slot 0 / DIVERT mark
+const SLOT_SHIFT: u32 = 22;          // bits 22..28, seven-bit scope slot
+const SCOPE_MASK: u32 = 0x1fe0_0000; // bits 21..28 only
+
+// Previous/current and older schemes are retained only for surgical upgrade
+// cleanup. Never delete rules by preference alone and never flush their whole
+// routing tables: table 1057 can be an Android ifindex+1000 table.
+const PREVIOUS_ROUTE_MARK: u32 = 0x0100_0000;
+const PREVIOUS_ROUTE_MASK: u32 = 0x0100_0000;
 const OLD_ROUTE_MARK: u32 = 0x5000_0000;
 const OLD_ROUTE_MASK: u32 = 0xf000_0000;
 const OLD_ROUTE_TABLE: u32 = 1057;
-const OLD_ROUTE_PREF: &str = "9999";
 const LEGACY_ROUTE_MARK: u32 = 0x5d70_0000;
 const LEGACY_ROUTE_MASK: u32 = 0xffff_0000;
 const TPROXY_NO_FILE: &str = "tproxy_no";
@@ -184,9 +185,9 @@ pub fn scoped_pre_chain_name(label: &str) -> String { format!("ZDTPP_{:016x}", s
 
 // Persistent, collision-free per-scope slot registry.
 //
-// The fwmark carries the per-scope identity in bits 25..31 (7 bits) on top of
-// the bit-24 route marker; the low 24 fwmark bits (all of Android's range plus
-// the 21..23 gap) must stay untouched.  Deriving that slot from a hash let two
+// The fwmark carries the per-scope identity in reserved bits 22..28 on top of
+// the bit-21 route marker. Android/netd bits 0..20 and vendor/wakeup bits 29..31
+// must stay untouched.  Deriving that slot from a hash let two
 // different scopes share a mark: PREROUTING TPROXY delivery is selected purely
 // by mark (--uid-owner is not available there), so a collision routed one
 // app's packets to another app's proxy port.  That is the "split-tunnel paths
@@ -196,7 +197,7 @@ const SLOT_REGISTRY_FILE: &str = "tproxy_slots";
 const SLOT_MIN: u32 = 1;
 const SLOT_MAX: u32 = 127;
 
-fn mark_from_slot(slot: u32) -> u32 { ROUTE_MARK | (slot << 25) }
+fn mark_from_slot(slot: u32) -> u32 { ROUTE_MARK | (slot << SLOT_SHIFT) }
 
 fn slot_registry_path() -> std::path::PathBuf {
     Path::new(settings::SETTING_DIR).join(SLOT_REGISTRY_FILE)
@@ -298,7 +299,8 @@ fn clear_slot_registry() {
 
 fn mark_hex(mark: u32) -> String { format!("0x{mark:08x}") }
 fn mark_mask_hex(mark: u32) -> String { format!("0x{mark:08x}/0x{SCOPE_MASK:08x}") }
-fn route_mask_hex() -> String { format!("0x{ROUTE_MARK:08x}/0x{ROUTE_MASK:08x}") }
+fn route_mask_hex() -> String { mark_mask_hex(ROUTE_MARK) }
+fn previous_route_mask_hex() -> String { format!("0x{PREVIOUS_ROUTE_MARK:08x}/0x{PREVIOUS_ROUTE_MASK:08x}") }
 fn old_route_mask_hex() -> String { format!("0x{OLD_ROUTE_MARK:08x}/0x{OLD_ROUTE_MASK:08x}") }
 fn legacy_route_mask_hex() -> String { format!("0x{LEGACY_ROUTE_MARK:08x}/0x{LEGACY_ROUTE_MASK:08x}") }
 
@@ -330,12 +332,9 @@ fn apply_locked(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifac
     }
 
     let scope = scope_label(uid_file, dest_port, proto_choice, ifaces_raw, opt);
+    let uids = read_uids(uid_file).map_err(failed)?;
     let slot = alloc_slot_for_scope(&scope).map_err(failed)?;
     let mark = mark_from_slot(slot);
-    let uids = read_uids(uid_file).map_err(failed)?;
-
-    ensure_policy_route().map_err(failed)?;
-    ensure_base_chains().map_err(failed)?;
 
     if uids.is_empty() {
         warn!("TPROXY: no valid UIDs in file: {} (remove scoped chains)", uid_file.display());
@@ -344,39 +343,52 @@ fn apply_locked(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifac
         return Ok(());
     }
 
-    let out_chain = prepare_scoped_chain(OUT_CHAIN, &scoped_out_chain_name(&scope)).map_err(failed)?;
-    let pre_chain = prepare_scoped_chain(PRE_CHAIN, &scoped_pre_chain_name(&scope)).map_err(failed)?;
+    let apply_result = (|| -> Result<()> {
+        ensure_policy_route(mark)?;
+        ensure_base_chains()?;
 
-    let protos = proto_choice.protos();
-    if opt.port_preference == 1 {
-        for uid in &uids {
-            for proto in protos {
-                add_mark_rule(&out_chain, uid, proto, None, &mode, &ifaces, mark).map_err(failed)?;
-                add_tproxy_rule(&pre_chain, proto, None, mark, dest_port).map_err(failed)?;
+        let out_chain = prepare_scoped_chain(OUT_CHAIN, &scoped_out_chain_name(&scope))?;
+        let pre_chain = prepare_scoped_chain(PRE_CHAIN, &scoped_pre_chain_name(&scope))?;
+
+        let protos = proto_choice.protos();
+        if opt.port_preference == 1 {
+            for uid in &uids {
+                for proto in protos {
+                    add_mark_rule(&out_chain, uid, proto, None, &mode, &ifaces, mark)?;
+                    add_tproxy_rule(&pre_chain, proto, None, mark, dest_port)?;
+                }
             }
-        }
-    } else {
-        let ports_csv = normalize_ports_csv(&opt.dpi_ports);
-        let dport_args = parse_dport_args(&ports_csv);
-        if dport_args.is_empty() {
-            return Err(failed(anyhow::anyhow!("TPROXY: no valid dpi_ports tokens")));
-        }
-        for uid in &uids {
+        } else {
+            let ports_csv = normalize_ports_csv(&opt.dpi_ports);
+            let dport_args = parse_dport_args(&ports_csv);
+            if dport_args.is_empty() {
+                anyhow::bail!("TPROXY: no valid dpi_ports tokens");
+            }
+            for uid in &uids {
+                for proto in protos {
+                    for dp in &dport_args {
+                        add_mark_rule(&out_chain, uid, proto, Some(dp.as_str()), &mode, &ifaces, mark)?;
+                    }
+                }
+            }
             for proto in protos {
                 for dp in &dport_args {
-                    add_mark_rule(&out_chain, uid, proto, Some(dp.as_str()), &mode, &ifaces, mark).map_err(failed)?;
+                    add_tproxy_rule(&pre_chain, proto, Some(dp.as_str()), mark, dest_port)?;
                 }
             }
         }
-        for proto in protos {
-            for dp in &dport_args {
-                add_tproxy_rule(&pre_chain, proto, Some(dp.as_str()), mark, dest_port).map_err(failed)?;
-            }
-        }
-    }
 
-    finish_scoped_chain(&out_chain).map_err(failed)?;
-    finish_scoped_chain(&pre_chain).map_err(failed)?;
+        finish_scoped_chain(&out_chain)?;
+        finish_scoped_chain(&pre_chain)?;
+        Ok(())
+    })();
+
+    if let Err(e) = apply_result {
+        if let Err(cleanup_err) = cleanup_scope_by_label(&scope) {
+            warn!("TPROXY: rollback failed for scope after apply error: {cleanup_err:#}");
+        }
+        return Err(failed(e));
+    }
     // TPROXY is IPv4-only.  Block IPv6 for exactly these UIDs so their traffic
     // cannot leak straight out over IPv6 and instead falls back to IPv4 (which
     // is what gets TPROXY'd).  Best-effort: never fail the whole apply on it.
@@ -387,14 +399,13 @@ fn apply_locked(uid_file: &Path, dest_port: u16, proto_choice: ProtoChoice, ifac
 }
 
 fn probe_tproxy_runtime() -> Result<()> {
-    // Android kernels vary a lot. Help text is not enough; insert real temporary
-    // rules and policy-routing entries, then remove them.
+    // Test only the xt_TPROXY target. Do not add or remove production policy
+    // rules here: apply() can be called while other scoped routes are active.
     let _ = ipt_run_timeout(&["-t", "mangle", "-F", "ZDT_TPROXY_TEST"], Capture::None, IPT_CMD_TIMEOUT);
     let _ = ipt_run_timeout(&["-t", "mangle", "-X", "ZDT_TPROXY_TEST"], Capture::None, IPT_CMD_TIMEOUT);
     let (rc, out) = ipt_run_timeout(&["-t", "mangle", "-N", "ZDT_TPROXY_TEST"], Capture::Both, IPT_CMD_TIMEOUT)?;
     if rc != 0 { anyhow::bail!("create test chain failed: {}", out.trim()); }
     let tp_mark = route_mask_hex();
-    let table = ROUTE_TABLE.to_string();
     let (rc, out) = ipt_run_timeout(&[
         "-t", "mangle", "-A", "ZDT_TPROXY_TEST",
         "-p", "tcp", "-j", "TPROXY", "--on-ip", "127.0.0.1", "--on-port", "1", "--tproxy-mark", tp_mark.as_str(),
@@ -402,34 +413,87 @@ fn probe_tproxy_runtime() -> Result<()> {
     let _ = ipt_run_timeout(&["-t", "mangle", "-F", "ZDT_TPROXY_TEST"], Capture::None, IPT_CMD_TIMEOUT);
     let _ = ipt_run_timeout(&["-t", "mangle", "-X", "ZDT_TPROXY_TEST"], Capture::None, IPT_CMD_TIMEOUT);
     if rc != 0 { anyhow::bail!("TPROXY target test failed: {}", out.trim()); }
-
-    let _ = ip_run_timeout(&["rule", "del", "fwmark", tp_mark.as_str(), "lookup", table.as_str()], Capture::None, IP_CMD_TIMEOUT);
-    let (rc, out) = ip_run_timeout(&["rule", "add", "fwmark", tp_mark.as_str(), "lookup", table.as_str()], Capture::Both, IP_CMD_TIMEOUT)?;
-    if rc != 0 { anyhow::bail!("ip rule test failed: {}", out.trim()); }
-    let (rc, out) = ip_run_timeout(&["route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", table.as_str()], Capture::Both, IP_CMD_TIMEOUT)?;
-    let _ = ip_run_timeout(&["rule", "del", "fwmark", tp_mark.as_str(), "lookup", table.as_str()], Capture::None, IP_CMD_TIMEOUT);
-    if rc != 0 { anyhow::bail!("ip local route test failed: {}", out.trim()); }
     Ok(())
 }
 
-fn ensure_policy_route() -> Result<()> {
-    let fwmark = route_mask_hex();
+#[derive(Debug, Clone, Copy)]
+struct PolicyRule {
+    pref: u32,
+    mark: u32,
+    mask: u32,
+    table: u32,
+}
+
+fn parse_u32_token(token: &str) -> Option<u32> {
+    let token = token.trim().trim_end_matches(':');
+    if let Some(hex) = token.strip_prefix("0x").or_else(|| token.strip_prefix("0X")) {
+        u32::from_str_radix(hex, 16).ok()
+    } else {
+        token.parse::<u32>().ok()
+    }
+}
+
+fn parse_policy_rule(line: &str) -> Option<PolicyRule> {
+    let tokens = line.split_whitespace().collect::<Vec<_>>();
+    let pref = parse_u32_token(tokens.first().copied()?)?;
+    let fwmark_pos = tokens.iter().position(|t| *t == "fwmark")?;
+    let mark_spec = *tokens.get(fwmark_pos + 1)?;
+    let (mark_s, mask_s) = mark_spec.split_once('/').unwrap_or((mark_spec, "0xffffffff"));
+    let mark = parse_u32_token(mark_s)?;
+    let mask = parse_u32_token(mask_s)?;
+    let table_pos = tokens.iter().position(|t| *t == "lookup" || *t == "table")?;
+    let table = parse_u32_token(tokens.get(table_pos + 1).copied()?)?;
+    Some(PolicyRule { pref, mark, mask, table })
+}
+
+fn read_policy_rules() -> Result<Vec<PolicyRule>> {
+    let (rc, out) = ip_run_timeout(&["rule", "show"], Capture::Stdout, IP_CMD_TIMEOUT)?;
+    if rc != 0 { anyhow::bail!("ip rule show failed"); }
+    Ok(out.lines().filter_map(parse_policy_rule).collect())
+}
+
+fn policy_rule_exists(mark: u32, mask: u32, table: u32) -> Result<bool> {
+    Ok(read_policy_rules()?.into_iter().any(|r| {
+        r.pref == ROUTE_PREF.parse::<u32>().unwrap_or(100)
+            && r.mark == mark
+            && r.mask == mask
+            && r.table == table
+    }))
+}
+
+fn ensure_policy_rule(mark: u32) -> Result<()> {
+    if policy_rule_exists(mark, SCOPE_MASK, ROUTE_TABLE)? {
+        return Ok(());
+    }
+    let fwmark = mark_mask_hex(mark);
+    let table = ROUTE_TABLE.to_string();
+    let (rc, out) = ip_run_timeout(
+        &["rule", "add", "pref", ROUTE_PREF, "fwmark", fwmark.as_str(), "lookup", table.as_str()],
+        Capture::Both,
+        IP_CMD_TIMEOUT,
+    )?;
+    if rc != 0 { anyhow::bail!("ip rule add failed: {}", out.trim()); }
+    Ok(())
+}
+
+fn ensure_policy_route(scope_mark: u32) -> Result<()> {
     let table = ROUTE_TABLE.to_string();
 
-    // Android ip rule allows duplicates.  Keep this idempotent: remove every
-    // old ZDT-D TPROXY rule, including the legacy 0x5d700000/0xffff0000 rule,
-    // then add exactly one rule at a stable priority.
-    cleanup_policy_rules_best_effort();
-
-    let (rc, out) = ip_run_timeout(&["rule", "add", "pref", ROUTE_PREF, "fwmark", fwmark.as_str(), "lookup", table.as_str()], Capture::Both, IP_CMD_TIMEOUT)?;
-    if rc != 0 { anyhow::bail!("ip rule add failed: {}", out.trim()); }
-
-    let (rc, out) = ip_run_timeout(&["route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", table.as_str()], Capture::Both, IP_CMD_TIMEOUT)?;
+    // Install the local route before exposing any matching policy rule, so a
+    // live packet can never observe a rule that points at an empty table.
+    let (rc, out) = ip_run_timeout(
+        &["route", "replace", "local", "0.0.0.0/0", "dev", "lo", "table", table.as_str()],
+        Capture::Both,
+        IP_CMD_TIMEOUT,
+    )?;
     if rc != 0 { anyhow::bail!("ip route local replace failed: {}", out.trim()); }
 
+    cleanup_legacy_policy_rules_best_effort();
+    ensure_policy_rule(ROUTE_MARK)?;
+    ensure_policy_rule(scope_mark)?;
+
     // Older Android releases and vendor kernels can keep stale route-cache
-    // decisions after policy-route changes.  On newer kernels this is harmless
-    // or a no-op, so keep it best-effort for Android 11..future releases.
+    // decisions after policy-route changes. On newer kernels this is harmless.
     let _ = ip_run_timeout(&["route", "flush", "cache"], Capture::None, IP_CMD_TIMEOUT);
     Ok(())
 }
@@ -439,38 +503,33 @@ fn ensure_base_chains() -> Result<()> {
     ensure_chain("mangle", PRE_CHAIN)?;
     ensure_chain("mangle", DIVERT_CHAIN)?;
 
-    // Keep hooks deterministic and aligned with the proven box_for_magisk
-    // layout that reliably delivers TPROXY traffic to the local t2s sockets:
-    //   OUTPUT      #1: selected app traffic gets only the high fwmark bits.
-    //   PREROUTING #1: socket DIVERT.  Packets that already belong to an
-    //                  established local (t2s) socket are re-marked for the
-    //                  policy route and accepted before TPROXY, so existing
-    //                  connections are delivered locally instead of being
-    //                  re-TPROXY'd.  A plain `-m socket` match (no
-    //                  `--transparent`) is used so it also catches sockets
-    //                  that are not flagged transparent.
-    //   PREROUTING #2: scoped marked packets enter ZDT-D TPROXY delivery.
-    delete_rule_all("mangle", "OUTPUT", &["-j", OUT_CHAIN])?;
-    insert_rule_at("mangle", "OUTPUT", 1, &["-j", OUT_CHAIN])?;
+    // Install hooks once and leave active hooks in place on later scope applies.
+    // Repeated delete/insert cycles created short routing gaps for every already
+    // running TPROXY profile.
+    ensure_hook("OUTPUT", OUT_CHAIN)?;
 
+    // Remove only the obsolete transparent variant. Keep the current hooks and
+    // create missing ones in deterministic DIVERT -> PRE order without first
+    // tearing down working routing.
     delete_rule_all("mangle", "PREROUTING", &["-p", "tcp", "-m", "socket", "--transparent", "-j", DIVERT_CHAIN])?;
-    delete_rule_all("mangle", "PREROUTING", &["-p", "tcp", "-m", "socket", "-j", DIVERT_CHAIN])?;
-    delete_rule_all("mangle", "PREROUTING", &["-j", PRE_CHAIN])?;
+    let divert_rule = ["-p", "tcp", "-m", "socket", "-j", DIVERT_CHAIN];
+    let pre_rule = ["-j", PRE_CHAIN];
+    let divert_exists = rule_exists("mangle", "PREROUTING", &divert_rule)?;
+    let pre_exists = rule_exists("mangle", "PREROUTING", &pre_rule)?;
 
-    // Insert PRE first, then DIVERT in front of it, so the resulting order is
-    // #1 DIVERT, #2 PRE.
-    insert_rule_at("mangle", "PREROUTING", 1, &["-j", PRE_CHAIN])?;
-    // Socket DIVERT is an optimization for already-established local sockets and
-    // relies on the xt_socket match.  It is present on all mainstream Android
-    // 11..17 kernels, but if some vendor kernel lacks it we keep scoped TPROXY
-    // working instead of failing the whole apply (which would otherwise drop
-    // t2s down to the TCP-only DNAT fallback).  Both steps are best-effort.
+    if !pre_exists {
+        insert_rule_at("mangle", "PREROUTING", if divert_exists { 2 } else { 1 }, &pre_rule)?;
+    }
+
+    // Socket DIVERT is best-effort; scoped TPROXY remains functional without
+    // xt_socket support.
     match ensure_divert_chain() {
-        Ok(()) => {
-            if let Err(e) = insert_rule_at("mangle", "PREROUTING", 1, &["-p", "tcp", "-m", "socket", "-j", DIVERT_CHAIN]) {
+        Ok(()) if !divert_exists => {
+            if let Err(e) = insert_rule_at("mangle", "PREROUTING", 1, &divert_rule) {
                 warn!("TPROXY socket DIVERT hook not installed, continuing without it: {e:#}");
             }
         }
+        Ok(()) => {}
         Err(e) => warn!("TPROXY DIVERT chain setup failed, continuing without socket divert: {e:#}"),
     }
 
@@ -483,11 +542,18 @@ fn ensure_base_chains() -> Result<()> {
 }
 
 fn ensure_divert_chain() -> Result<()> {
+    let fwmark = route_mask_hex();
+    let mark_rule = ["-j", "MARK", "--set-xmark", fwmark.as_str()];
+    let accept_rule = ["-j", "ACCEPT"];
+    if rule_exists("mangle", DIVERT_CHAIN, &mark_rule)?
+        && rule_exists("mangle", DIVERT_CHAIN, &accept_rule)?
+    {
+        return Ok(());
+    }
+
     let (rc, out) = ipt_run_timeout(&["-t", "mangle", "-F", DIVERT_CHAIN], Capture::Both, IPT_CMD_TIMEOUT)?;
     if rc != 0 { anyhow::bail!("flush {DIVERT_CHAIN} failed: {}", out.trim()); }
-    // Mark for the ZDT-D policy route (local dev lo -> t2s) and accept, so an
-    // established-socket packet is delivered locally instead of re-TPROXY'd.
-    let fwmark = route_mask_hex();
+    // Slot 0 has its own exact policy rule and cannot collide with scoped marks.
     add_rule_idempotent(DIVERT_CHAIN, vec!["-j".into(), "MARK".into(), "--set-xmark".into(), fwmark])?;
     add_rule_idempotent(DIVERT_CHAIN, vec!["-j".into(), "ACCEPT".into()])?;
     Ok(())
@@ -500,6 +566,13 @@ fn ensure_chain(table: &str, chain: &str) -> Result<()> {
         if rc != 0 { anyhow::bail!("create {chain} failed: {}", out.trim()); }
     }
     Ok(())
+}
+
+fn rule_exists(table: &str, chain: &str, rule: &[&str]) -> Result<bool> {
+    let mut args = vec!["-t", table, "-C", chain];
+    args.extend_from_slice(rule);
+    let (rc, _) = ipt_run_timeout(&args, Capture::None, IPT_CMD_TIMEOUT)?;
+    Ok(rc == 0)
 }
 
 fn ensure_hook(parent: &str, jump: &str) -> Result<()> {
@@ -523,6 +596,9 @@ fn ensure_local_bypass(chain: &str, include_loopback: bool) -> Result<()> {
     }
     for &net in INTRANET_V4 {
         rules.push(vec!["-d", net, "-j", "RETURN"]);
+    }
+    if rules.iter().all(|rule| rule_exists("mangle", chain, rule).unwrap_or(false)) {
+        return Ok(());
     }
     for rule in &rules { delete_rule_all("mangle", chain, rule)?; }
     for (idx, rule) in rules.iter().enumerate() { insert_rule_at("mangle", chain, idx + 1, rule)?; }
@@ -579,9 +655,37 @@ fn cleanup_scope_by_label(scope: &str) -> Result<()> {
     if ip6tables_available() {
         remove_v6_block_chain(&scoped_v6_chain_name(scope));
     }
-    // Release the scope's fwmark slot so it can be reused by another profile.
+    // Remove only this scope's exact policy rule, then release its slot.
+    if let Some(slot) = load_slot_registry().get(scope).copied() {
+        delete_policy_rule_exact(mark_from_slot(slot), SCOPE_MASK, ROUTE_TABLE, Some(ROUTE_PREF));
+    }
     free_slot_for_scope(scope);
+    cleanup_base_if_no_scopes();
     Ok(())
+}
+
+fn cleanup_base_if_no_scopes() {
+    // The slot registry is recovery metadata, not the source of truth. Keep the
+    // shared route while any scoped chain still exists; if iptables-save cannot
+    // be read, fail safe and leave the base routing in place.
+    let Some(scoped_chains) = try_list_mangle_chains_with_prefix("ZDTP") else {
+        return;
+    };
+    if !scoped_chains.is_empty() {
+        return;
+    }
+
+    clear_slot_registry();
+    let _ = delete_rule_all("mangle", "OUTPUT", &["-j", OUT_CHAIN]);
+    let _ = delete_rule_all("mangle", "PREROUTING", &["-p", "tcp", "-m", "socket", "-j", DIVERT_CHAIN]);
+    let _ = delete_rule_all("mangle", "PREROUTING", &["-j", PRE_CHAIN]);
+    for chain in [OUT_CHAIN, PRE_CHAIN, DIVERT_CHAIN] {
+        let _ = ipt_run_timeout(&["-t", "mangle", "-F", chain], Capture::None, IPT_CMD_TIMEOUT);
+        let _ = ipt_run_timeout(&["-t", "mangle", "-X", chain], Capture::None, IPT_CMD_TIMEOUT);
+    }
+    delete_policy_rule_exact(ROUTE_MARK, SCOPE_MASK, ROUTE_TABLE, Some(ROUTE_PREF));
+    delete_local_route_best_effort(ROUTE_TABLE);
+    let _ = ip_run_timeout(&["route", "flush", "cache"], Capture::None, IP_CMD_TIMEOUT);
 }
 
 fn remove_scoped_chain(parent: &str, chain: &str) -> Result<()> {
@@ -600,21 +704,73 @@ fn del_ip_rules_by_fwmark(fwmark: &str, table: &str) {
     }
 }
 
-fn cleanup_policy_rules_best_effort() {
-    // Current scheme: bit-24 fwmark -> ROUTE_TABLE at pref ROUTE_PREF.
-    let table = ROUTE_TABLE.to_string();
-    del_ip_rules_by_fwmark(route_mask_hex().as_str(), table.as_str());
-    let _ = ip_run_timeout(&["rule", "del", "pref", ROUTE_PREF], Capture::None, IP_CMD_TIMEOUT);
+fn delete_policy_rule_exact(mark: u32, mask: u32, table: u32, pref: Option<&str>) {
+    let fwmark = format!("0x{mark:08x}/0x{mask:08x}");
+    let table_s = table.to_string();
+    loop {
+        let result = if let Some(pref) = pref {
+            ip_run_timeout(
+                &["rule", "del", "pref", pref, "fwmark", fwmark.as_str(), "lookup", table_s.as_str()],
+                Capture::None,
+                IP_CMD_TIMEOUT,
+            )
+        } else {
+            ip_run_timeout(
+                &["rule", "del", "fwmark", fwmark.as_str(), "lookup", table_s.as_str()],
+                Capture::None,
+                IP_CMD_TIMEOUT,
+            )
+        };
+        let Ok((rc, _)) = result else { break; };
+        if rc != 0 { break; }
+    }
+}
 
-    // Old/legacy rules left by previous ZDT-D versions (0x50000000/0xf0000000
-    // and 0x5d700000/0xffff0000, pref 9999, table 1057).  Remove them from both
-    // the old and the new table so an upgrade never leaves a stale policy rule.
+fn cleanup_current_policy_rules_best_effort() {
+    let Ok(rules) = read_policy_rules() else { return; };
+    for rule in rules {
+        if rule.table == ROUTE_TABLE
+            && rule.mask == SCOPE_MASK
+            && (rule.mark & ROUTE_MARK) == ROUTE_MARK
+        {
+            let pref = rule.pref.to_string();
+            delete_policy_rule_exact(rule.mark, rule.mask, rule.table, Some(pref.as_str()));
+        }
+    }
+}
+
+fn cleanup_legacy_policy_rules_best_effort() {
+    let table = ROUTE_TABLE.to_string();
+    // Remove the immediately previous broad one-bit rule exactly. Do not touch
+    // any unrelated rule that merely shares preference 100.
+    del_ip_rules_by_fwmark(previous_route_mask_hex().as_str(), table.as_str());
+
+    // Remove older exact ZDT-D marks from both historical table 1057 and the
+    // current table. Never delete priority 9999 wholesale.
     let old_table = OLD_ROUTE_TABLE.to_string();
     for fwmark in [old_route_mask_hex(), legacy_route_mask_hex()] {
         del_ip_rules_by_fwmark(fwmark.as_str(), old_table.as_str());
         del_ip_rules_by_fwmark(fwmark.as_str(), table.as_str());
     }
-    let _ = ip_run_timeout(&["rule", "del", "pref", OLD_ROUTE_PREF], Capture::None, IP_CMD_TIMEOUT);
+}
+
+fn cleanup_policy_rules_best_effort() {
+    cleanup_current_policy_rules_best_effort();
+    cleanup_legacy_policy_rules_best_effort();
+}
+
+fn delete_local_route_best_effort(table: u32) {
+    let table_s = table.to_string();
+    loop {
+        let Ok((rc, _)) = ip_run_timeout(
+            &["route", "del", "local", "0.0.0.0/0", "dev", "lo", "table", table_s.as_str()],
+            Capture::None,
+            IP_CMD_TIMEOUT,
+        ) else {
+            break;
+        };
+        if rc != 0 { break; }
+    }
 }
 
 // --- Per-UID IPv6 leak blocking for TPROXY scopes ---------------------------
@@ -737,11 +893,11 @@ pub fn cleanup_all() -> Result<()> {
         let _ = ipt_run_timeout(&["-t", "mangle", "-X", chain], Capture::None, IPT_CMD_TIMEOUT);
     }
 
-    let table = ROUTE_TABLE.to_string();
     cleanup_policy_rules_best_effort();
-    let _ = ip_run_timeout(&["route", "flush", "table", table.as_str()], Capture::None, IP_CMD_TIMEOUT);
-    let old_table = OLD_ROUTE_TABLE.to_string();
-    let _ = ip_run_timeout(&["route", "flush", "table", old_table.as_str()], Capture::None, IP_CMD_TIMEOUT);
+    delete_local_route_best_effort(ROUTE_TABLE);
+    // Table 1057 may belong to an Android interface (ifindex+1000); remove only
+    // the exact legacy local route rather than flushing the whole table.
+    delete_local_route_best_effort(OLD_ROUTE_TABLE);
 
     // Remove every per-scope IPv6 leak-block chain and its OUTPUT hook.
     cleanup_all_ipv6_blocks();
@@ -751,16 +907,22 @@ pub fn cleanup_all() -> Result<()> {
     Ok(())
 }
 
-fn list_mangle_chains_with_prefix(prefix: &str) -> Vec<String> {
+fn try_list_mangle_chains_with_prefix(prefix: &str) -> Option<Vec<String>> {
     let Ok((0, out)) = crate::shell::run_timeout("iptables-save", &["-t", "mangle"], Capture::Stdout, IPT_SLOW_TIMEOUT) else {
-        return Vec::new();
+        return None;
     };
-    out.lines()
-        .filter_map(|line| line.strip_prefix(':'))
-        .filter_map(|line| line.split_whitespace().next())
-        .filter(|name| name.starts_with(prefix))
-        .map(|name| name.to_string())
-        .collect()
+    Some(
+        out.lines()
+            .filter_map(|line| line.strip_prefix(':'))
+            .filter_map(|line| line.split_whitespace().next())
+            .filter(|name| name.starts_with(prefix))
+            .map(|name| name.to_string())
+            .collect(),
+    )
+}
+
+fn list_mangle_chains_with_prefix(prefix: &str) -> Vec<String> {
+    try_list_mangle_chains_with_prefix(prefix).unwrap_or_default()
 }
 
 fn add_mark_rule(chain: &str, uid: &str, proto: &str, extra: Option<&str>, mode: &str, ifaces: &[String], mark: u32) -> Result<()> {
@@ -772,20 +934,18 @@ fn add_mark_rule(chain: &str, uid: &str, proto: &str, extra: Option<&str>, mode:
             matcher.push("-o".into());
             matcher.push(iface.into());
         }
+        // Match only packets that do not already carry a ZDT-D scope. This
+        // makes the first matching profile win without using ACCEPT in mangle
+        // OUTPUT; returning from our chains lets Android/OEM rules later in the
+        // hook keep processing the packet.
+        let unmarked = format!("0x00000000/0x{SCOPE_MASK:08x}");
+        matcher.extend(["-m", "mark", "--mark", unmarked.as_str()].iter().map(|s| s.to_string()));
         matcher.extend(["-p", proto, "-m", proto, "-m", "owner", "--uid-owner", uid].iter().map(|s| s.to_string()));
         matcher.extend(extra_tokens.clone());
 
-        let mut mark_rule = matcher.clone();
         let mark_mask = mark_mask_hex(mark);
-        mark_rule.extend(["-j", "MARK", "--set-xmark", mark_mask.as_str()].iter().map(|s| s.to_string()));
-        add_rule_idempotent(chain, mark_rule)?;
-
-        // MARK is non-terminating. Add a matching terminating ACCEPT directly
-        // after the MARK path so a UID present in multiple scoped TPROXY
-        // profiles is not re-marked by a later chain.
-        let mut accept_rule = matcher;
-        accept_rule.extend(["-j", "ACCEPT"].iter().map(|s| s.to_string()));
-        add_rule_idempotent(chain, accept_rule)?;
+        matcher.extend(["-j", "MARK", "--set-xmark", mark_mask.as_str()].iter().map(|s| s.to_string()));
+        add_rule_idempotent(chain, matcher)?;
     }
     Ok(())
 }

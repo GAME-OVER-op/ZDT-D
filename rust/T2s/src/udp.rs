@@ -1,4 +1,4 @@
-use crate::{rules, socks5, stats, AppState};
+use crate::{cli::PriorityZeroMode, rules, socks5, stats, AppState};
 use anyhow::{Context, Result};
 use parking_lot::Mutex;
 use socket2::{Domain, Protocol, Socket, Type};
@@ -13,13 +13,16 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::{io::unix::AsyncFd, sync::mpsc};
+use tokio::{io::unix::AsyncFd, sync::{mpsc, Mutex as AsyncMutex}};
 
 const IP_TRANSPARENT_OPT: libc::c_int = 19;
 const IP_RECVORIGDSTADDR_OPT: libc::c_int = 20;
 const IPV6_TRANSPARENT_OPT: libc::c_int = 75;
 
 const UDP_SESSION_IDLE: Duration = Duration::from_secs(60);
+const UDP_FIRST_RESPONSE_TIMEOUT: Duration = Duration::from_secs(6);
+const UDP_RESPONSE_STALL_TIMEOUT: Duration = Duration::from_secs(15);
+const UDP_BACKEND_WAIT: Duration = Duration::from_millis(3500);
 const UDP_SESSION_MAX: usize = 4096;
 const UDP_SESSION_QUEUE: usize = 256;
 const UDP_RECV_BUF_SIZE: usize = 65_535;
@@ -55,19 +58,22 @@ struct UdpSessionHandle {
 }
 
 type UdpSessions = Arc<Mutex<HashMap<UdpSessionKey, UdpSessionHandle>>>;
+type UdpCreationLocks = Arc<AsyncMutex<HashMap<UdpSessionKey, Arc<AsyncMutex<()>>>>>;
 
 pub async fn run_udp_tproxy(state: AppState) -> Result<()> {
     let addr: SocketAddr = format!("{}:{}", state.args.listen_addr, state.args.listen_port).parse().context("udp listen addr parse")?;
     let udp = Arc::new(bind_udp_tproxy(addr).context("bind udp tproxy")?);
     let sessions: UdpSessions = Arc::new(Mutex::new(HashMap::new()));
+    let creation_locks: UdpCreationLocks = Arc::new(AsyncMutex::new(HashMap::new()));
     tracing::info!("UDP TPROXY session relay listening on 0.0.0.0:{}", addr.port());
     loop {
         let pkt = recv_udp_packet(udp.clone()).await?;
         let st = state.clone();
         let udp_send = udp.clone();
         let sessions_for_pkt = sessions.clone();
+        let creation_locks_for_pkt = creation_locks.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_udp_packet(st, udp_send, sessions_for_pkt, pkt).await {
+            if let Err(e) = handle_udp_packet(st, udp_send, sessions_for_pkt, creation_locks_for_pkt, pkt).await {
                 tracing::debug!("udp packet handling failed: {:#}", e);
             }
         });
@@ -164,7 +170,13 @@ fn sockaddr_to_addr(storage: &libc::sockaddr_storage) -> Option<SocketAddr> {
     }
 }
 
-async fn handle_udp_packet(state: AppState, udp_sock: Arc<AsyncFd<AsyncUdpSocket>>, sessions: UdpSessions, pkt: UdpPacket) -> Result<()> {
+async fn handle_udp_packet(
+    state: AppState,
+    udp_sock: Arc<AsyncFd<AsyncUdpSocket>>,
+    sessions: UdpSessions,
+    creation_locks: UdpCreationLocks,
+    pkt: UdpPacket,
+) -> Result<()> {
     let key = UdpSessionKey { peer: pkt.peer, original_dst: pkt.original_dst };
     cleanup_sessions(&sessions);
 
@@ -183,27 +195,80 @@ async fn handle_udp_packet(state: AppState, udp_sock: Arc<AsyncFd<AsyncUdpSocket
         }
     }
 
-    let Some(new_handle) = create_udp_session(state, udp_sock, key).await? else {
-        return Ok(());
+    // Serialize creation only for this 4-tuple. QUIC commonly emits several
+    // Initial packets at once; without this guard each packet could create a
+    // separate UDP ASSOCIATE and close the association selected by the map.
+    let key_lock = {
+        let mut guard = creation_locks.lock().await;
+        guard.entry(key).or_insert_with(|| Arc::new(AsyncMutex::new(()))).clone()
     };
+    let create_guard = key_lock.lock().await;
 
-    let handle = {
-        let mut guard = sessions.lock();
-        if let Some(existing) = guard.get(&key).cloned() {
-            existing
-        } else if guard.len() >= UDP_SESSION_MAX {
-            tracing::warn!("udp session limit reached ({}), dropping new session peer={} dst={}", UDP_SESSION_MAX, key.peer, key.original_dst);
-            return Ok(());
-        } else {
-            guard.insert(key, new_handle.clone());
-            new_handle
+    // Another packet may have completed session creation while this packet was
+    // waiting for the per-key lock.
+    let existing_handle = {
+        let guard = sessions.lock();
+        guard.get(&key).cloned()
+    };
+    if let Some(handle) = existing_handle {
+        drop(create_guard);
+        let result = send_to_session(&handle, data).await;
+        cleanup_creation_lock(&creation_locks, key, &key_lock).await;
+        if let Err(returned_data) = result {
+            sessions.lock().remove(&key);
+            return Err(anyhow::anyhow!("newly created UDP session closed before queued packet ({} bytes)", returned_data.len()));
+        }
+        return Ok(());
+    }
+
+    let new_handle = match create_udp_session(state, udp_sock, key).await {
+        Ok(handle) => handle,
+        Err(e) => {
+            drop(create_guard);
+            cleanup_creation_lock(&creation_locks, key, &key_lock).await;
+            return Err(e);
         }
     };
+    let handle = if let Some(new_handle) = new_handle {
+        let mut guard = sessions.lock();
+        if guard.len() >= UDP_SESSION_MAX {
+            tracing::warn!(
+                "udp session limit reached ({}), dropping new session peer={} dst={}",
+                UDP_SESSION_MAX,
+                key.peer,
+                key.original_dst
+            );
+            None
+        } else {
+            guard.insert(key, new_handle.clone());
+            Some(new_handle)
+        }
+    } else {
+        None
+    };
 
-    if send_to_session(&handle, data).await.is_err() {
-        sessions.lock().remove(&key);
+    drop(create_guard);
+    cleanup_creation_lock(&creation_locks, key, &key_lock).await;
+
+    if let Some(handle) = handle {
+        if send_to_session(&handle, data).await.is_err() {
+            sessions.lock().remove(&key);
+        }
     }
     Ok(())
+}
+
+async fn cleanup_creation_lock(
+    creation_locks: &UdpCreationLocks,
+    key: UdpSessionKey,
+    key_lock: &Arc<AsyncMutex<()>>,
+) {
+    let mut guard = creation_locks.lock().await;
+    if guard.get(&key).map(|v| Arc::ptr_eq(v, key_lock)).unwrap_or(false)
+        && Arc::strong_count(key_lock) <= 2
+    {
+        guard.remove(&key);
+    }
 }
 
 fn cleanup_sessions(sessions: &UdpSessions) {
@@ -219,30 +284,110 @@ async fn send_to_session(handle: &UdpSessionHandle, data: Vec<u8>) -> std::resul
     handle.tx.send(data).await.map_err(|e| e.0)
 }
 
-async fn create_udp_session(state: AppState, udp_sock: Arc<AsyncFd<AsyncUdpSocket>>, key: UdpSessionKey) -> Result<Option<UdpSessionHandle>> {
+async fn create_udp_session(
+    state: AppState,
+    udp_sock: Arc<AsyncFd<AsyncUdpSocket>>,
+    key: UdpSessionKey,
+) -> Result<Option<UdpSessionHandle>> {
     let target = stats::Target::SockAddr(key.original_dst);
     let (target_host, target_port) = target.to_host_port_string();
     let proto = rules::classify_protocol(target_port);
-    let udp_socks_available = state.backends.lock().udp_available();
+    let mut udp_socks_available = state.backends.lock().udp_available();
     let action = state.rules.decide(&proto, &target_host, target_port, udp_socks_available, true);
 
     match action {
-        Some(rules::Action::Drop) | Some(rules::Action::Reset) | Some(rules::Action::Wait) => {
+        Some(rules::Action::Drop) | Some(rules::Action::Reset) => {
             state.stats.inc_policy_drop();
             return Ok(None);
         }
-        Some(rules::Action::Direct) => return start_direct_session(state, udp_sock, key).await.map(Some),
+        Some(rules::Action::Wait) => {
+            if !wait_for_udp_backend(&state, UDP_BACKEND_WAIT).await {
+                state.stats.inc_policy_drop();
+                return Ok(None);
+            }
+            udp_socks_available = true;
+        }
+        Some(rules::Action::Direct) => {
+            return start_direct_session(state, udp_sock, key).await.map(Some);
+        }
         Some(rules::Action::Socks) | None => {}
     }
 
-    if let Some((idx, backend, auth)) = { let mut b = state.backends.lock(); b.select_udp_with_auth(global_auth(&state), true) } {
-        match start_socks_session(state.clone(), udp_sock.clone(), key, idx, backend, auth).await {
-            Ok(handle) => return Ok(Some(handle)),
-            Err(e) => tracing::debug!("udp socks session setup failed for backend {} peer={} dst={}, falling back direct: {:#}", backend, key.peer, key.original_dst, e),
+    let priority_zero_mode = state.args.priority_zero_mode();
+    if priority_zero_mode == PriorityZeroMode::DirectOnly {
+        return start_direct_session(state, udp_sock, key).await.map(Some);
+    }
+    if priority_zero_mode == PriorityZeroMode::DirectFirst {
+        return start_direct_session(state, udp_sock, key).await.map(Some);
+    }
+
+    if !udp_socks_available {
+        udp_socks_available = wait_for_udp_backend(&state, UDP_BACKEND_WAIT).await;
+    }
+
+    if udp_socks_available {
+        // A setup error marks that backend UDP-unhealthy and retries selection,
+        // so a broken relay cannot pin a new QUIC session forever.
+        let backend_count = state.backends.lock().len().max(1);
+        for _ in 0..backend_count {
+            let selected = {
+                let mut b = state.backends.lock();
+                b.select_udp_with_auth(global_auth(&state), true)
+            };
+            let Some((idx, backend, auth)) = selected else { break; };
+            match start_socks_session(state.clone(), udp_sock.clone(), key, idx, backend, auth).await {
+                Ok(handle) => return Ok(Some(handle)),
+                Err(e) => {
+                    mark_udp_backend_failure(&state, idx, format!("UDP session setup failed: {:#}", e));
+                    tracing::debug!(
+                        "udp socks session setup failed for backend {} peer={} dst={}: {:#}",
+                        backend,
+                        key.peer,
+                        key.original_dst,
+                        e
+                    );
+                }
+            }
         }
     }
 
+    if matches!(action, Some(rules::Action::Socks) | Some(rules::Action::Wait))
+        || priority_zero_mode == PriorityZeroMode::BlockDirectFallback
+    {
+        state.stats.inc_policy_drop();
+        return Ok(None);
+    }
+
+    // Preserve the existing default fallback policy, but only after the UDP
+    // backend check has completed. This removes the startup race where the
+    // first QUIC flow was permanently assigned to DIRECT while SOCKS health
+    // was still unknown.
     start_direct_session(state, udp_sock, key).await.map(Some)
+}
+
+async fn wait_for_udp_backend(state: &AppState, timeout: Duration) -> bool {
+    if state.backends.lock().udp_available() {
+        return true;
+    }
+    state.runtime.backend_wakeup.notify_waiters();
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        if state.backends.lock().udp_available() {
+            return true;
+        }
+        let now = tokio::time::Instant::now();
+        if now >= deadline {
+            return false;
+        }
+        tokio::time::sleep(Duration::from_millis(50).min(deadline - now)).await;
+    }
+}
+
+fn mark_udp_backend_failure(state: &AppState, idx: usize, reason: String) {
+    let changed = state.backends.lock().update_udp(idx, None, Some(reason));
+    if changed {
+        state.runtime.backend_wakeup.notify_waiters();
+    }
 }
 
 fn global_auth(state: &AppState) -> Option<(String, String)> {
@@ -253,23 +398,52 @@ async fn start_socks_session(
     state: AppState,
     udp_sock: Arc<AsyncFd<AsyncUdpSocket>>,
     key: UdpSessionKey,
-    _idx: usize,
+    idx: usize,
     backend: SocketAddr,
     auth: Option<(String, String)>,
 ) -> Result<UdpSessionHandle> {
     if state.args.wrapped_socks_addr()?.is_some() {
         return Err(anyhow::anyhow!("UDP ASSOCIATE through wrapped SOCKS is unsupported"));
     }
-    let timeout = Duration::from_secs(state.args.connect_timeout as u64).min(Duration::from_secs(5)).max(Duration::from_millis(800));
-    let (control, relay) = socks5::udp_associate(backend, auth, timeout).await?;
-    let udp = tokio::net::UdpSocket::bind(if relay.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" }).await.context("bind socks udp client")?;
+    let timeout = Duration::from_secs(state.args.connect_timeout as u64)
+        .min(Duration::from_secs(5))
+        .max(Duration::from_millis(800));
+
+    // Bind first and include this real local endpoint in UDP ASSOCIATE. The old
+    // 0.0.0.0:0 request could succeed at the control layer while sing-box had
+    // no usable client endpoint for the UDP data plane.
+    let udp = tokio::net::UdpSocket::bind(if backend.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" })
+        .await
+        .context("bind socks udp client")?;
+    let client_udp_addr = udp.local_addr().context("read socks udp client address")?;
+    let (control, relay) = socks5::udp_associate(backend, auth, timeout, client_udp_addr).await?;
+    udp.connect(relay).await.context("connect socks udp relay")?;
+
     let (tx, rx) = mpsc::channel(UDP_SESSION_QUEUE);
     let last_activity_ms = Arc::new(AtomicU64::new(now_ms()));
     let handle = UdpSessionHandle { tx, last_activity_ms: last_activity_ms.clone() };
 
     tokio::spawn(async move {
-        if let Err(e) = socks_session_loop(state, udp_sock, key, backend, relay, control, udp, rx, last_activity_ms).await {
-            tracing::debug!("udp socks session ended peer={} dst={} backend={}: {:#}", key.peer, key.original_dst, backend, e);
+        if let Err(e) = socks_session_loop(
+            state.clone(),
+            udp_sock,
+            key,
+            backend,
+            control,
+            udp,
+            rx,
+            last_activity_ms,
+        )
+        .await
+        {
+            mark_udp_backend_failure(&state, idx, format!("UDP data-plane failure: {:#}", e));
+            tracing::debug!(
+                "udp socks session ended peer={} dst={} backend={}: {:#}",
+                key.peer,
+                key.original_dst,
+                backend,
+                e
+            );
         }
     });
     Ok(handle)
@@ -280,7 +454,6 @@ async fn socks_session_loop(
     udp_sock: Arc<AsyncFd<AsyncUdpSocket>>,
     key: UdpSessionKey,
     backend: SocketAddr,
-    relay: SocketAddr,
     _control: tokio::net::TcpStream,
     udp: tokio::net::UdpSocket,
     mut rx: mpsc::Receiver<Vec<u8>>,
@@ -288,23 +461,59 @@ async fn socks_session_loop(
 ) -> Result<()> {
     let mut buf = vec![0u8; UDP_RECV_BUF_SIZE];
     let mut idle_sleep = Box::pin(tokio::time::sleep(UDP_SESSION_IDLE));
+    let mut response_deadline: Option<tokio::time::Instant> = None;
+    let mut received_any = false;
+
     loop {
+        let deadline_snapshot = response_deadline;
+        let response_wait = async move {
+            if let Some(deadline) = deadline_snapshot {
+                tokio::time::sleep_until(deadline).await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        };
+        tokio::pin!(response_wait);
+
         tokio::select! {
             maybe_data = rx.recv() => {
                 let Some(data) = maybe_data else { break; };
                 let enc = socks5::encode_udp_packet(socks5::TargetAddr::Ip(key.original_dst), &data)?;
-                udp.send_to(&enc, relay).await.context("send socks udp packet")?;
+                udp.send(&enc).await.context("send socks udp packet")?;
                 state.stats.add_up(data.len() as u64);
                 state.backends.lock().add_bytes(backend, data.len() as u64);
                 touch_session(&last_activity_ms, &mut idle_sleep);
+
+                // Do not refresh this deadline on retransmissions. A stream of
+                // unanswered QUIC Initial packets must terminate instead of
+                // keeping a dead association alive forever.
+                if response_deadline.is_none() {
+                    response_deadline = Some(
+                        tokio::time::Instant::now()
+                            + if received_any { UDP_RESPONSE_STALL_TIMEOUT } else { UDP_FIRST_RESPONSE_TIMEOUT }
+                    );
+                }
             }
-            res = udp.recv_from(&mut buf) => {
-                let (n, _from) = res.context("recv socks udp response")?;
-                let (_src, payload) = socks5::decode_udp_packet(&buf[..n])?;
-                send_spoofed_udp(udp_sock.clone(), key.original_dst, key.peer, payload).await?;
+            res = udp.recv(&mut buf) => {
+                let n = res.context("recv socks udp response")?;
+                let (src, payload) = socks5::decode_udp_packet(&buf[..n])?;
+                let source = match src {
+                    socks5::TargetAddr::Ip(sa) => sa,
+                    socks5::TargetAddr::Domain(_, port) => SocketAddr::new(key.original_dst.ip(), port),
+                };
+                send_spoofed_udp(udp_sock.clone(), source, key.peer, payload).await?;
                 state.stats.add_down(payload.len() as u64);
                 state.backends.lock().add_bytes(backend, payload.len() as u64);
+                received_any = true;
+                response_deadline = None;
                 touch_session(&last_activity_ms, &mut idle_sleep);
+            }
+            _ = &mut response_wait => {
+                return Err(anyhow::anyhow!(
+                    "no UDP response from SOCKS relay within {}s (received_any={})",
+                    if received_any { UDP_RESPONSE_STALL_TIMEOUT.as_secs() } else { UDP_FIRST_RESPONSE_TIMEOUT.as_secs() },
+                    received_any
+                ));
             }
             _ = &mut idle_sleep => break,
         }
@@ -336,20 +545,48 @@ async fn direct_session_loop(
 ) -> Result<()> {
     let mut buf = vec![0u8; UDP_RECV_BUF_SIZE];
     let mut idle_sleep = Box::pin(tokio::time::sleep(UDP_SESSION_IDLE));
+    let mut response_deadline: Option<tokio::time::Instant> = None;
+    let mut received_any = false;
+
     loop {
+        let deadline_snapshot = response_deadline;
+        let response_wait = async move {
+            if let Some(deadline) = deadline_snapshot {
+                tokio::time::sleep_until(deadline).await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        };
+        tokio::pin!(response_wait);
+
         tokio::select! {
             maybe_data = rx.recv() => {
                 let Some(data) = maybe_data else { break; };
                 outbound.send_to(&data, key.original_dst).await.context("send direct udp")?;
                 state.stats.add_up(data.len() as u64);
                 touch_session(&last_activity_ms, &mut idle_sleep);
+                if response_deadline.is_none() {
+                    response_deadline = Some(
+                        tokio::time::Instant::now()
+                            + if received_any { UDP_RESPONSE_STALL_TIMEOUT } else { UDP_FIRST_RESPONSE_TIMEOUT }
+                    );
+                }
             }
             res = outbound.recv_from(&mut buf) => {
                 let (n, from) = res.context("recv direct udp response")?;
                 let source = if from.port() == key.original_dst.port() { from } else { key.original_dst };
                 send_spoofed_udp(udp_sock.clone(), source, key.peer, &buf[..n]).await?;
                 state.stats.add_down(n as u64);
+                received_any = true;
+                response_deadline = None;
                 touch_session(&last_activity_ms, &mut idle_sleep);
+            }
+            _ = &mut response_wait => {
+                state.runtime.note_direct_failure(20);
+                return Err(anyhow::anyhow!(
+                    "no direct UDP response within {}s",
+                    if received_any { UDP_RESPONSE_STALL_TIMEOUT.as_secs() } else { UDP_FIRST_RESPONSE_TIMEOUT.as_secs() }
+                ));
             }
             _ = &mut idle_sleep => break,
         }

@@ -233,7 +233,7 @@ async fn refresh_backend_index_once(
     let udp_err = if state.tproxy_enabled && state.args.wrapped_socks_addr().ok().flatten().is_some() {
         Some("UDP ASSOCIATE through wrapped SOCKS is unsupported; UDP will use direct fallback".to_string())
     } else if udp_probe_supported && socks_ping_ms.is_some() && udp_ping_ms.is_none() {
-        Some("UDP ASSOCIATE failed or unsupported".to_string())
+        Some("SOCKS5 UDP data-plane probe failed or unsupported".to_string())
     } else { None };
 
     let mut b = state.backends.lock();

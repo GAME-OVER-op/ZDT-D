@@ -4049,8 +4049,60 @@ jobs:
             out/artifacts/lyrebird/lyrebird.dynamic.txt
           retention-days: 1
 
+  build_qwdtt:
+    name: build qwdtt arm64
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.4'
+          cache: false
+
+      - name: Resolve Android NDK
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          if [ -n "${ANDROID_SDK_ROOT:-}" ] && [ -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]; then
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          elif [ -n "${ANDROID_NDK_LATEST_HOME:-}" ] && [ -d "$ANDROID_NDK_LATEST_HOME" ]; then
+            NDK_ROOT="$ANDROID_NDK_LATEST_HOME"
+          else
+            yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;$NDK_VERSION" >/dev/null
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          fi
+          test -d "$NDK_ROOT" || { echo "::error::NDK not found"; exit 1; }
+          echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
+          echo "Using NDK: $NDK_ROOT"
+
+      - name: Build qwdtt tools (arm64-v8a)
+        run: bash scripts/build-qwdtt-bins.sh arm64-v8a "$PWD/out/artifacts/qwdtt/arm64"
+
+      - name: Report
+        run: |
+          set -euo pipefail
+          ls -l out/artifacts/qwdtt/arm64
+          file out/artifacts/qwdtt/arm64/qwdtt-cli out/artifacts/qwdtt/arm64/qwdtt-transport || true
+
+      - name: Upload qwdtt arm64
+        uses: actions/upload-artifact@v7
+        with:
+          name: qwdtt-arm64
+          path: |
+            out/artifacts/qwdtt/arm64/qwdtt-cli
+            out/artifacts/qwdtt/arm64/qwdtt-transport
+          retention-days: 1
+
   module_binaries_ready:
-    name: Module binaries ready (OpenVPN + AmneziaWG + wireproxy + tun2socks + mihomo + sing-box + hysteria2 + byedpi + dnscrypt + mieru + opera-proxy + DPITunnel + Tor + lyrebird + nfqws + nfqws2)
+    name: Module binaries ready (OpenVPN + AmneziaWG + wireproxy + tun2socks + mihomo + sing-box + hysteria2 + byedpi + dnscrypt + mieru + opera-proxy + DPITunnel + Tor + lyrebird + nfqws + nfqws2 + qwdtt)
     runs-on: ubuntu-latest
     needs:
       - build_openvpn
@@ -4069,6 +4121,7 @@ jobs:
       - build_lyrebird
       - build_nfqws
       - build_nfqws2
+      - build_qwdtt
     if: >-
       needs.build_openvpn.result == 'success' &&
       needs.build_amneziawg.result == 'success' &&
@@ -4085,7 +4138,8 @@ jobs:
       needs.build_torproxy.result == 'success' &&
       needs.build_lyrebird.result == 'success' &&
       needs.build_nfqws.result == 'success' &&
-      needs.build_nfqws2.result == 'success'
+      needs.build_nfqws2.result == 'success' &&
+      needs.build_qwdtt.result == 'success'
 
     steps:
       - name: Mark module binaries ready
@@ -4245,6 +4299,11 @@ jobs:
         with:
           name: zdtd-arm64
           path: out/artifacts/zdtd/arm64
+      - name: Download qwdtt arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: qwdtt-arm64
+          path: out/artifacts/qwdtt/arm64
       - name: Download t2s arm64
         uses: actions/download-artifact@v7
         with:
@@ -4516,6 +4575,16 @@ jobs:
               cp -f "$src" "$MODULE_BUILD_DIR/prebuilt/bin/$module_arch/$bin"
               chmod 755 "$MODULE_BUILD_DIR/prebuilt/bin/$module_arch/$bin"
             done
+          done
+
+          # qwdtt tools are arm64-only: android/arm needs cgo, and the supervisor
+          # is pure Go. Copy them into the arm64 module bin only, outside the
+          # two-arch loop above.
+          for bin in qwdtt-cli qwdtt-transport; do
+            src="out/artifacts/qwdtt/arm64/$bin"
+            require_file "$src"
+            cp -f "$src" "$MODULE_BUILD_DIR/prebuilt/bin/arm64-v8a/$bin"
+            chmod 755 "$MODULE_BUILD_DIR/prebuilt/bin/arm64-v8a/$bin"
           done
 
           rm -rf "$MODULE_BUILD_DIR/verify_sum"

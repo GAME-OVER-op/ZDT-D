@@ -18,6 +18,13 @@ set -eu
 PROFILE="${PROFILE:-qwdtt}"
 TUN="${TUN:-zdtdqw0}"
 DNS="${DNS:-8.8.8.8}"
+# Tunnel CIDR for the myvpn profile. When set (the default), the profile uses
+# cidr_mode=manual, which avoids myvpn's auto-detect path entirely. The address
+# is assigned by the VPS, so verify it once with
+#   ip -o -4 addr show dev <tun>
+# and override with CIDR=... if your server hands out a different one. Set
+# CIDR="" to fall back to cidr_mode=auto.
+CIDR="${CIDR-10.66.0.2/32}"
 WF="${ZDTD_WORKING_FOLDER:-/data/adb/modules/ZDT-D/working_folder}"
 # Binaries and config are uploaded into the profile's bin/ dir via the ZDT-D app
 # (myprogram's per-profile file uploader, which chmod 755s them). myprogram runs
@@ -64,10 +71,21 @@ CMD
 echo ">> provisioning myvpn profile '$PROFILE' (tun=$TUN)"
 MV="$WF/myvpn/profile/$PROFILE"
 mkdir -p "$MV/app/uid" "$MV/app/out"
-# cidr_mode=auto: myvpn learns 10.66.0.1/32 from the interface qwdtt-cli brings up.
-atomic_write "$MV/setting.json" <<JSON
+# cidr_mode: prefer manual. With auto, myvpn learns the CIDR by inspecting the
+# interface — but the link exists for a moment before qwdtt-cli assigns its
+# address, so auto can lose that race and skip the profile, leaving the app UIDs
+# unbound (the tunnel is up, yet the app has no route). Manual sidesteps it.
+if [ -n "$CIDR" ]; then
+	echo "   cidr_mode=manual cidr=$CIDR"
+	atomic_write "$MV/setting.json" <<JSON
+{"tun": "$TUN", "dns": ["$DNS"], "cidr_mode": "manual", "cidr": "$CIDR"}
+JSON
+else
+	echo "   cidr_mode=auto (requires a ZDT-D build with the myvpn CIDR-wait fix)"
+	atomic_write "$MV/setting.json" <<JSON
 {"tun": "$TUN", "dns": ["$DNS"], "cidr_mode": "auto", "cidr": ""}
 JSON
+fi
 # App list: packages to route through the tunnel, one per line. Do NOT add the
 # 34 excluded_apps (banking/gov/Yandex) here — they must stay direct.
 { for pkg in "$@"; do echo "$pkg"; done; } | atomic_write "$MV/app/uid/user_program"
@@ -109,4 +127,11 @@ echo "  3. amneziawg-go + awg present under /data/adb/modules/ZDT-D/bin/."
 echo "  4. Restart ZDT-D (or toggle the profiles) so myprogram launches qwdtt-cli."
 echo "  5. ip link show $TUN          # interface up"
 echo "  6. tail $MP/log/program.log   # qwdtt-cli log: transport + wg bring-up"
-echo "  7. From the test app (its real UID, not root), confirm egress via the tunnel."
+echo "  7. cat $MV/app/out/user_program   # must list <package>=<uid>; empty means"
+echo "     myvpn skipped the profile (check zdtd.log for 'myvpn: profile ... failed')."
+echo "  8. From the test app (its real UID, not root), confirm egress via the tunnel."
+if [ -n "$CIDR" ]; then
+	echo
+	echo "Note: cidr=$CIDR is assumed. Verify with 'ip -o -4 addr show dev $TUN'"
+	echo "and re-run with CIDR=<actual> if the VPS assigns a different address."
+fi

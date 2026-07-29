@@ -365,7 +365,11 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                 .with_context(|| format!("myvpn profile={} wait tun={}", plan.name, plan.setting.tun))?;
             let cidr = match plan.setting.cidr_mode.as_str() {
                 "manual" => normalize_cidr_network(plan.setting.cidr.trim())?,
-                _ => inspect_tun(&plan.setting.tun)
+                // cidr_mode=auto learns the CIDR from the interface, but the owner
+                // program creates the link before it assigns an address, so a
+                // single inspect right after wait_tun_link can lose that race and
+                // fail the whole profile. Retry until the address appears.
+                _ => wait_tun_cidr(&plan.setting.tun, TUN_WAIT)
                     .with_context(|| format!("myvpn profile={} inspect tun={}", plan.name, plan.setting.tun))?
                     .cidr,
             };
@@ -426,6 +430,27 @@ fn build_profile_plan(profile: &str, used_netids: &BTreeSet<u32>) -> Result<Prof
         bail!("netid {netid} is already used by another myvpn profile");
     }
     Ok(ProfilePlan { name: profile.to_string(), setting, profile_dir, app_in, app_out, netid })
+}
+
+/// Wait until the TUN carries an IPv4 address and return its CIDR.
+///
+/// `wait_tun_link` only waits for the link to exist. The program that owns the
+/// interface (myprogram, a custom TUN tool) creates the link first and assigns
+/// the address a moment later, so inspecting once right after the link appears
+/// is a race: it fails with "no IPv4 CIDR" and takes the whole profile down,
+/// leaving the app UIDs unbound. Poll instead, like the amneziawg program does.
+fn wait_tun_cidr(tun: &str, timeout: Duration) -> Result<TunInfo> {
+    let start = Instant::now();
+    loop {
+        let last_err = match inspect_tun(tun) {
+            Ok(info) => return Ok(info),
+            Err(e) => e,
+        };
+        if start.elapsed() >= timeout {
+            bail!("tun {tun} has no IPv4 CIDR after {timeout:?}: {last_err:#}");
+        }
+        thread::sleep(Duration::from_millis(400));
+    }
 }
 
 fn inspect_tun(tun: &str) -> Result<TunInfo> {

@@ -173,6 +173,16 @@ myprogram stop grace or letting the M5 program module own its own stop timing.
 - **Interface up but app has no egress:** check `vpn_netd/applied.json` for the
   UID binding, and confirm the package resolved to a UID (reinstalls/clones shift
   it). Confirm the app is in the myvpn list and enabled.
+- **`app/out/user_program` is empty and `zdtd.log` says "myvpn: some profiles were
+  not applied":** myvpn skipped the profile *before* UID resolution ran, so the
+  empty file is a symptom, not the cause. The usual reason is the **CIDR
+  auto-detect race**: `wait_tun_link` returns as soon as the link exists, but
+  qwdtt-cli assigns the address a moment later (link → `awg setconf` → `ip addr
+  add`), and `cidr_mode=auto` used to inspect only once. Fixes: use
+  `cidr_mode=manual` with the tunnel address (what the installer now writes by
+  default), and/or run a ZDT-D build containing the myvpn CIDR-wait fix, which
+  retries the inspect until the address appears. Look for the real reason with
+  `grep -i "myvpn: profile" /data/adb/modules/ZDT-D/log/zdtd.log`.
 - **Bound app hangs on a plain request, but `curl --interface zdtdqw0` works:**
   you are almost certainly testing from the **wrong UID**. `myvpn` binds the app's
   UID; a `su`/root shell (UID 0) is not bound (and must not be), so its traffic

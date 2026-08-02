@@ -2161,4 +2161,10 @@ APatch: 10700+</string>
     <string name="vps_traffic_since_boot_unknown">Трафик с момента запуска · всего %1$s</string>
     <string name="vps_show_full_log">Показать полный журнал</string>
     <string name="vps_hide_full_log">Скрыть полный журнал</string>
+    <string name="vps_loading_services">Проверяем установленные инструменты…</string>
+    <string name="vps_loading_service">Загружаем состояние инструмента…</string>
+    <string name="vps_loading_profiles">Загружаем профили…</string>
+    <string name="vps_loading_profile">Загружаем профиль и клиентов…</string>
+    <string name="vps_profile_not_found">Профиль не найден</string>
+    <string name="vps_load_failed">Не удалось загрузить данные</string>
 </resources>

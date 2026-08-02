@@ -2163,4 +2163,10 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="vps_traffic_since_boot_unknown">Datenverkehr seit dem Start · gesamt %1$s</string>
     <string name="vps_show_full_log">Vollständiges Protokoll anzeigen</string>
     <string name="vps_hide_full_log">Vollständiges Protokoll ausblenden</string>
+    <string name="vps_loading_services">Installierte Dienste werden geprüft…</string>
+    <string name="vps_loading_service">Dienststatus wird geladen…</string>
+    <string name="vps_loading_profiles">Profile werden geladen…</string>
+    <string name="vps_loading_profile">Profil und Clients werden geladen…</string>
+    <string name="vps_profile_not_found">Profil nicht gefunden</string>
+    <string name="vps_load_failed">Daten konnten nicht geladen werden</string>
 </resources>

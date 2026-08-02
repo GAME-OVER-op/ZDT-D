@@ -189,11 +189,11 @@ rollback_certificates() {
 
 certificate_in_use() {
   local domain=$1 p
-  for p in "$ZDT_STATE/profiles/xray"/* "$ZDT_STATE/profiles/hysteria2"/*; do
+  for p in "$ZDT_STATE/profiles/xray"/*; do
     [[ -f $p/meta.env ]] || continue
     unset DOMAIN MODE
     source "$p/meta.env"
-    [[ ${DOMAIN:-} == "$domain" ]] && return 0
+    [[ ${MODE:-} == ws && ${DOMAIN:-} == "$domain" ]] && return 0
   done
   return 1
 }
@@ -978,7 +978,7 @@ delete_xray_client() {
 install_hysteria2() {
   external_service_warning hysteria2
   stage 'Installing Hysteria2 dependencies'
-  apt_install curl ca-certificates python3 openssl certbot
+  apt_install curl ca-certificates python3 openssl
   ensure_dirs
   curl -fL --retry 3 https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -o "$ZDT_ROOT/bin/hysteria"
   chmod 0755 "$ZDT_ROOT/bin/hysteria"
@@ -986,13 +986,36 @@ install_hysteria2() {
   mkdir -p "$ZDT_STATE/profiles/hysteria2"
   refresh_firewall
 }
+ensure_hysteria2_local_certificate() {
+  local dir=$1 tls_name=$2 san
+  [[ -n $tls_name ]] || tls_name='zdt-hysteria.local'
+  if [[ $tls_name =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+    san="IP:$tls_name"
+  elif [[ $tls_name =~ ^([A-Za-z0-9-]+\.)*[A-Za-z0-9-]+$ ]]; then
+    san="DNS:$tls_name"
+  else
+    die 'Invalid Hysteria2 SNI name'
+  fi
+  stage 'Generating local TLS certificate for Hysteria2'
+  openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 3650 \
+    -keyout "$dir/tls.key" -out "$dir/tls.crt" \
+    -subj "/CN=$tls_name" \
+    -addext "subjectAltName=$san" \
+    -addext 'keyUsage=digitalSignature,keyEncipherment' \
+    -addext 'extendedKeyUsage=serverAuth' >/dev/null 2>&1
+  chmod 600 "$dir/tls.key"
+  chmod 644 "$dir/tls.crt"
+  openssl x509 -in "$dir/tls.crt" -noout -checkend 86400 >/dev/null 2>&1 || die 'Generated Hysteria2 certificate is invalid'
+}
+
 rebuild_hysteria2() {
   local profile=$1 dir; dir=$(profile_dir hysteria2 "$profile"); load_meta hysteria2 "$profile"
+  [[ -s $dir/tls.crt && -s $dir/tls.key ]] || ensure_hysteria2_local_certificate "$dir" "${SNI:-zdt-hysteria.local}"
   cat > "$dir/server.yaml" <<YAML
 listen: :$PORT
 tls:
-  cert: /etc/letsencrypt/live/$DOMAIN/fullchain.pem
-  key: /etc/letsencrypt/live/$DOMAIN/privkey.pem
+  cert: $dir/tls.crt
+  key: $dir/tls.key
 auth:
   type: userpass
 YAML
@@ -1033,22 +1056,23 @@ UNIT
   unit_is_active "zdt-hysteria2-$profile.service" || { journalctl -u "zdt-hysteria2-$profile.service" -n 100 --no-pager >&2 || true; die 'Hysteria2 profile failed to start'; }
 }
 create_hysteria2_profile() {
-  local id=$1 name=$2 port=$3 host=$4 domain=$5 email=$6
+  local id=$1 name=$2 port=$3 host=$4 domain=${5:-} email=${6:-} requested_sni=${7:-}
+  local tls_name=${requested_sni:-${domain:-zdt-hysteria.local}}
   service_installed hysteria2 || die 'Hysteria2 is not installed'
   valid_id "$id" || die 'Invalid profile identifier'
   [[ ! -e $(profile_dir hysteria2 "$id") ]] || die 'A profile with this identifier already exists'
   require_free_port udp "$port"
-  ensure_certificate "$domain" "$email"
   local dir; dir=$(profile_dir hysteria2 "$id"); mkdir -p "$dir/clients"
+  ensure_hysteria2_local_certificate "$dir" "$tls_name"
   cat > "$dir/meta.env" <<META
 ID=$(q "$id")
 NAME=$(q "$name")
 PORT=$port
 PROTOCOL=udp
-HOST=$(q "$domain")
-MODE=tls
-DOMAIN=$(q "$domain")
-SNI=$(q "$domain")
+HOST=$(q "$host")
+MODE=local-tls
+DOMAIN=$(q "$tls_name")
+SNI=$(q "$tls_name")
 META
   refresh_firewall
   rebuild_hysteria2 "$id"
@@ -1156,20 +1180,23 @@ PY
       file="$cdir/client.txt"; printf '%s\n' "$link" > "$file" ;;
     hysteria2)
       load_meta hysteria2 "$profile"
-      local pass; pass=$(cat "$cdir/password")
-      link=$(python3 - "$client" "$pass" "$HOST" "$PORT" "$DOMAIN" "$name" <<'PY'
+      local pass pin; pass=$(cat "$cdir/password")
+      pin=$(openssl x509 -in "$dir/tls.crt" -noout -fingerprint -sha256 | sed 's/^[^=]*=//')
+      [[ -n $pin ]] || die 'Unable to calculate Hysteria2 certificate fingerprint'
+      link=$(python3 - "$client" "$pass" "$HOST" "$PORT" "$SNI" "$pin" "$name" <<'PY'
 import sys,urllib.parse
-user,pwd,host,port,sni,name=sys.argv[1:]
+user,pwd,host,port,sni,pin,name=sys.argv[1:]
 auth=urllib.parse.quote(user,safe='')+':'+urllib.parse.quote(pwd,safe='')
-q=urllib.parse.urlencode({'sni':sni})
+q=urllib.parse.urlencode({'sni':sni,'insecure':'1','pinSHA256':pin})
 print('hysteria2://'+auth+'@'+host+':'+port+'/?'+q+'#'+urllib.parse.quote(name,safe=''))
 PY
 )
       file="$cdir/client.json"
-      python3 - "$file" "$HOST" "$PORT" "$client" "$pass" "$DOMAIN" <<'PY'
+      python3 - "$file" "$HOST" "$PORT" "$client" "$pass" "$SNI" "$pin" <<'PY'
 import json,sys
-file,host,port,user,pwd,sni=sys.argv[1:]
-with open(file,'w',encoding='utf-8') as h: json.dump({'server':host+':'+port,'auth':user+':'+pwd,'tls':{'sni':sni,'insecure':False}},h,indent=2)
+file,host,port,user,pwd,sni,pin=sys.argv[1:]
+with open(file,'w',encoding='utf-8') as h:
+    json.dump({'server':host+':'+port,'auth':user+':'+pwd,'tls':{'sni':sni,'insecure':True,'pinSHA256':pin}},h,indent=2)
 PY
       mime='application/json' ;;
     *) die 'Configurations are not supported for this service' ;;
@@ -1187,7 +1214,6 @@ delete_profile() {
   dir=$(profile_dir "$kind" "$profile"); [[ -d $dir && -f $dir/meta.env ]] || die 'Profile not found'
   source "$dir/meta.env"
   [[ $kind == xray && ${MODE:-} == ws ]] && certificate_domain=${DOMAIN:-}
-  [[ $kind == hysteria2 ]] && certificate_domain=${DOMAIN:-}
   case "$kind" in
     openvpn)
       systemctl disable --now "zdt-openvpn-net-$profile.service" "openvpn-server@zdt-$profile.service" >/dev/null 2>&1 || true
@@ -1231,8 +1257,7 @@ remove_service() {
   esac
   restore_ip_forward_if_unused
   refresh_firewall
-  if [[ ! -d $ZDT_STATE/profiles/xray || -z $(find "$ZDT_STATE/profiles/xray" -mindepth 1 -maxdepth 1 -type d -print -quit 2>/dev/null) ]] && \
-     [[ ! -d $ZDT_STATE/profiles/hysteria2 || -z $(find "$ZDT_STATE/profiles/hysteria2" -mindepth 1 -maxdepth 1 -type d -print -quit 2>/dev/null) ]]; then
+  if [[ ! -d $ZDT_STATE/profiles/xray || -z $(find "$ZDT_STATE/profiles/xray" -mindepth 1 -maxdepth 1 -type d -print -quit 2>/dev/null) ]]; then
     rm -f /etc/letsencrypt/renewal-hooks/deploy/zdt-vps-reload
   fi
   systemctl daemon-reload
@@ -1287,7 +1312,7 @@ main() {
         openvpn) with_tx create_openvpn_profile "$id" "$name" "$port" "$mode" "$host" ;;
         wireproxy) with_tx create_wireproxy_profile "$id" "$name" "$port" "$host" ;;
         xray) with_tx create_xray_profile "$id" "$name" "$port" "$mode" "$host" "$domain" "$email" "$sni" ;;
-        hysteria2) with_tx create_hysteria2_profile "$id" "$name" "$port" "$host" "$domain" "$email" ;;
+        hysteria2) with_tx create_hysteria2_profile "$id" "$name" "$port" "$host" "$domain" "$email" "$sni" ;;
         *) die 'Profiles are not supported for this service' ;;
       esac ;;
     delete-profile) with_tx delete_profile "$1" "$2" ;;

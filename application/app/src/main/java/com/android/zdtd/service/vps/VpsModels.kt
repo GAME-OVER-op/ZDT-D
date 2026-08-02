@@ -111,6 +111,12 @@ data class VpsCommandResult(
   val successful: Boolean get() = exitCode == 0
 }
 
+data class VpsLoadState(
+  val loaded: Boolean = false,
+  val loading: Boolean = false,
+  val error: String? = null,
+)
+
 data class VpsOperationState(
   val running: Boolean = false,
   val title: String = "",

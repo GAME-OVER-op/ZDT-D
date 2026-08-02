@@ -2167,4 +2167,10 @@ APatch: ‏10700+</string>
     <string name="vps_traffic_since_boot_unknown">حركة المرور منذ الإقلاع · الإجمالي %1$s</string>
     <string name="vps_show_full_log">عرض السجل الكامل</string>
     <string name="vps_hide_full_log">إخفاء السجل الكامل</string>
+    <string name="vps_loading_services">جارٍ التحقق من الخدمات المثبتة…</string>
+    <string name="vps_loading_service">جارٍ تحميل حالة الخدمة…</string>
+    <string name="vps_loading_profiles">جارٍ تحميل الملفات الشخصية…</string>
+    <string name="vps_loading_profile">جارٍ تحميل الملف الشخصي والعملاء…</string>
+    <string name="vps_profile_not_found">لم يتم العثور على الملف الشخصي</string>
+    <string name="vps_load_failed">تعذر تحميل البيانات</string>
 </resources>

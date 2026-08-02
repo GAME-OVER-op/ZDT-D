@@ -2163,4 +2163,10 @@ APatch: 10700+</string>
     <string name="vps_traffic_since_boot_unknown">ترافیک از زمان راه‌اندازی · مجموع %1$s</string>
     <string name="vps_show_full_log">نمایش گزارش کامل</string>
     <string name="vps_hide_full_log">پنهان کردن گزارش کامل</string>
+    <string name="vps_loading_services">در حال بررسی سرویس‌های نصب‌شده…</string>
+    <string name="vps_loading_service">در حال بارگذاری وضعیت سرویس…</string>
+    <string name="vps_loading_profiles">در حال بارگذاری پروفایل‌ها…</string>
+    <string name="vps_loading_profile">در حال بارگذاری پروفایل و کلاینت‌ها…</string>
+    <string name="vps_profile_not_found">پروفایل پیدا نشد</string>
+    <string name="vps_load_failed">بارگذاری داده‌ها ممکن نشد</string>
 </resources>

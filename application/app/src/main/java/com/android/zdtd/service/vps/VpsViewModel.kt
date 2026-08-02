@@ -43,6 +43,15 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
   private val _clients = MutableStateFlow<Map<String, List<VpsClientConfig>>>(emptyMap())
   val clients: StateFlow<Map<String, List<VpsClientConfig>>> = _clients.asStateFlow()
 
+  private val _serviceLoads = MutableStateFlow<Map<String, VpsLoadState>>(emptyMap())
+  val serviceLoads: StateFlow<Map<String, VpsLoadState>> = _serviceLoads.asStateFlow()
+
+  private val _profileLoads = MutableStateFlow<Map<String, VpsLoadState>>(emptyMap())
+  val profileLoads: StateFlow<Map<String, VpsLoadState>> = _profileLoads.asStateFlow()
+
+  private val _clientLoads = MutableStateFlow<Map<String, VpsLoadState>>(emptyMap())
+  val clientLoads: StateFlow<Map<String, VpsLoadState>> = _clientLoads.asStateFlow()
+
   private val _pendingProbe = MutableStateFlow<PendingServerProbe?>(null)
   val pendingProbe: StateFlow<PendingServerProbe?> = _pendingProbe.asStateFlow()
 
@@ -56,6 +65,9 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
   private var lastServerStatePersistAt = 0L
   private val monitorSemaphore = Semaphore(3)
   private val activeMetricRefreshes = ConcurrentHashMap.newKeySet<String>()
+  private val activeServiceRefreshes = ConcurrentHashMap.newKeySet<String>()
+  private val activeProfileRefreshes = ConcurrentHashMap.newKeySet<String>()
+  private val activeClientRefreshes = ConcurrentHashMap.newKeySet<String>()
 
   data class PendingServerProbe(
     val name: String,
@@ -109,6 +121,11 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     _servers.value = _servers.value.filterNot { it.id == serverId }
     _metrics.value = _metrics.value - serverId
     _serviceStates.value = _serviceStates.value - serverId
+    _serviceLoads.value = _serviceLoads.value - serverId
+    _profiles.value = _profiles.value.filterKeys { !it.startsWith("$serverId:") }
+    _profileLoads.value = _profileLoads.value.filterKeys { !it.startsWith("$serverId:") }
+    _clients.value = _clients.value.filterKeys { !it.startsWith("$serverId:") }
+    _clientLoads.value = _clientLoads.value.filterKeys { !it.startsWith("$serverId:") }
     store.saveServers(_servers.value)
     lastServerStatePersistAt = System.currentTimeMillis()
   }
@@ -209,10 +226,23 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
 
   fun loadServices(serverId: String, silent: Boolean = false) {
     val server = server(serverId) ?: return
+    if (!activeServiceRefreshes.add(serverId)) return
+    markLoadStarted(_serviceLoads, serverId)
     viewModelScope.launch {
-      runCatching { controller.inventory(server) }
-        .onSuccess { _serviceStates.value = _serviceStates.value + (serverId to it) }
-        .onFailure { if (!silent) failOperation(it.message ?: "Unable to read services") }
+      try {
+        runCatching { controller.inventory(server) }
+          .onSuccess { states ->
+            _serviceStates.value = _serviceStates.value + (serverId to states)
+            markLoadSucceeded(_serviceLoads, serverId)
+          }
+          .onFailure { error ->
+            val message = error.message ?: "Unable to read services"
+            markLoadFailed(_serviceLoads, serverId, message)
+            if (!silent) failOperation(message)
+          }
+      } finally {
+        activeServiceRefreshes.remove(serverId)
+      }
     }
   }
 
@@ -232,17 +262,35 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
       block = { onLine -> controller.remove(server, kind, onLine) },
       onSuccess = {
         loadServices(serverId)
-        _profiles.value = _profiles.value - profileKey(serverId, kind)
+        val key = profileKey(serverId, kind)
+        _profiles.value = _profiles.value - key
+        _profileLoads.value = _profileLoads.value - key
+        _clients.value = _clients.value.filterKeys { !it.startsWith("$key:") }
+        _clientLoads.value = _clientLoads.value.filterKeys { !it.startsWith("$key:") }
       },
     )
   }
 
   fun loadProfiles(serverId: String, kind: VpsServiceKind, silent: Boolean = false) {
     val server = server(serverId) ?: return
+    val key = profileKey(serverId, kind)
+    if (!activeProfileRefreshes.add(key)) return
+    markLoadStarted(_profileLoads, key)
     viewModelScope.launch {
-      runCatching { controller.listProfiles(server, kind) }
-        .onSuccess { _profiles.value = _profiles.value + (profileKey(serverId, kind) to it) }
-        .onFailure { if (!silent) failOperation(it.message ?: "Unable to read profiles") }
+      try {
+        runCatching { controller.listProfiles(server, kind) }
+          .onSuccess { profiles ->
+            _profiles.value = _profiles.value + (key to profiles)
+            markLoadSucceeded(_profileLoads, key)
+          }
+          .onFailure { error ->
+            val message = error.message ?: "Unable to read profiles"
+            markLoadFailed(_profileLoads, key, message)
+            if (!silent) failOperation(message)
+          }
+      } finally {
+        activeProfileRefreshes.remove(key)
+      }
     }
   }
 
@@ -272,16 +320,35 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     runRemoteOperation(
       title = "Deleting profile",
       block = { controller.deleteProfile(server, kind, profileId) },
-      onSuccess = { loadProfiles(serverId, kind) },
+      onSuccess = {
+        loadProfiles(serverId, kind)
+        val key = clientKey(serverId, kind, profileId)
+        _clients.value = _clients.value - key
+        _clientLoads.value = _clientLoads.value - key
+      },
     )
   }
 
   fun loadClients(serverId: String, kind: VpsServiceKind, profileId: String, silent: Boolean = false) {
     val server = server(serverId) ?: return
+    val key = clientKey(serverId, kind, profileId)
+    if (!activeClientRefreshes.add(key)) return
+    markLoadStarted(_clientLoads, key)
     viewModelScope.launch {
-      runCatching { controller.listClients(server, kind, profileId) }
-        .onSuccess { _clients.value = _clients.value + (clientKey(serverId, kind, profileId) to it) }
-        .onFailure { if (!silent) failOperation(it.message ?: "Unable to read client configurations") }
+      try {
+        runCatching { controller.listClients(server, kind, profileId) }
+          .onSuccess { clients ->
+            _clients.value = _clients.value + (key to clients)
+            markLoadSucceeded(_clientLoads, key)
+          }
+          .onFailure { error ->
+            val message = error.message ?: "Unable to read client configurations"
+            markLoadFailed(_clientLoads, key, message)
+            if (!silent) failOperation(message)
+          }
+      } finally {
+        activeClientRefreshes.remove(key)
+      }
     }
   }
 
@@ -394,6 +461,34 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
         val failedStage = result.output.lineSequence().firstOrNull { it.startsWith("ZDT_FAILED_STAGE=") }?.substringAfter('=')
         failOperation(result.output.lineSequence().firstOrNull { it.startsWith("ZDT_ERROR=") }?.substringAfter('=') ?: result.output.ifBlank { "Operation failed" }, failedStage)
       }
+    }
+  }
+
+  private fun markLoadStarted(flow: MutableStateFlow<Map<String, VpsLoadState>>, key: String) {
+    flow.update { current ->
+      val previous = current[key] ?: VpsLoadState()
+      val next = if (!previous.loaded || previous.error != null) {
+        VpsLoadState(loaded = false, loading = true)
+      } else {
+        previous
+      }
+      current + (key to next)
+    }
+  }
+
+  private fun markLoadSucceeded(flow: MutableStateFlow<Map<String, VpsLoadState>>, key: String) {
+    flow.update { it + (key to VpsLoadState(loaded = true, loading = false)) }
+  }
+
+  private fun markLoadFailed(flow: MutableStateFlow<Map<String, VpsLoadState>>, key: String, message: String) {
+    flow.update { current ->
+      val previous = current[key] ?: VpsLoadState()
+      val next = if (previous.loaded && previous.error == null) {
+        previous.copy(loading = false)
+      } else {
+        VpsLoadState(loaded = true, loading = false, error = message)
+      }
+      current + (key to next)
     }
   }
 

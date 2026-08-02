@@ -2163,4 +2163,10 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="vps_traffic_since_boot_unknown">बूट के बाद का ट्रैफ़िक · कुल %1$s</string>
     <string name="vps_show_full_log">पूरा लॉग दिखाएँ</string>
     <string name="vps_hide_full_log">पूरा लॉग छिपाएँ</string>
+    <string name="vps_loading_services">इंस्टॉल की गई सेवाओं की जाँच हो रही है…</string>
+    <string name="vps_loading_service">सेवा की स्थिति लोड हो रही है…</string>
+    <string name="vps_loading_profiles">प्रोफ़ाइल लोड हो रही हैं…</string>
+    <string name="vps_loading_profile">प्रोफ़ाइल और क्लाइंट लोड हो रहे हैं…</string>
+    <string name="vps_profile_not_found">प्रोफ़ाइल नहीं मिली</string>
+    <string name="vps_load_failed">डेटा लोड नहीं किया जा सका</string>
 </resources>

@@ -1464,7 +1464,14 @@ private fun SingBoxSection(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SingBoxImportCard(onClick: () -> Unit) {
-  Card(onClick = onClick) {
+  Card(
+    onClick = onClick,
+    colors = CardDefaults.cardColors(
+      containerColor = MaterialTheme.colorScheme.surfaceContainerLowest,
+      contentColor = MaterialTheme.colorScheme.onSurface,
+    ),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.7f)),
+  ) {
     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
       Text(stringResource(R.string.singbox_import_card_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
       Text(

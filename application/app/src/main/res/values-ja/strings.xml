@@ -2162,4 +2162,10 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="vps_traffic_since_boot_unknown">起動後の通信量 · 合計 %1$s</string>
     <string name="vps_show_full_log">完全なログを表示</string>
     <string name="vps_hide_full_log">完全なログを隠す</string>
+    <string name="vps_loading_services">インストール済みサービスを確認しています…</string>
+    <string name="vps_loading_service">サービスの状態を読み込んでいます…</string>
+    <string name="vps_loading_profiles">プロファイルを読み込んでいます…</string>
+    <string name="vps_loading_profile">プロファイルとクライアントを読み込んでいます…</string>
+    <string name="vps_profile_not_found">プロファイルが見つかりません</string>
+    <string name="vps_load_failed">データを読み込めませんでした</string>
 </resources>

@@ -242,7 +242,7 @@ private fun SingBoxSectionCard(
   Surface(
     modifier = modifier.fillMaxWidth(),
     shape = shape,
-    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.64f),
+    color = MaterialTheme.colorScheme.surfaceContainerLowest,
     contentColor = MaterialTheme.colorScheme.onSurface,
     border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
     tonalElevation = 0.dp,
@@ -1829,9 +1829,9 @@ private fun SingBoxServersSection(
           .weight(1f)
           .clickable(enabled = createEnabled) { onCreateServer() },
         shape = RoundedCornerShape(100.dp),
-        color = Color(0xFFA78BFA).copy(alpha = if (createEnabled) 0.18f else 0.08f),
-        contentColor = Color.White.copy(alpha = if (createEnabled) 0.92f else 0.45f),
-        border = BorderStroke(1.dp, Color(0xFFA78BFA).copy(alpha = if (createEnabled) 0.38f else 0.14f)),
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        contentColor = if (createEnabled) Color(0xFF7C3AED) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+        border = BorderStroke(1.dp, Color(0xFFA78BFA).copy(alpha = if (createEnabled) 0.48f else 0.18f)),
       ) {
         Row(
           modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
@@ -1848,9 +1848,9 @@ private fun SingBoxServersSection(
           .weight(1f)
           .clickable(enabled = createEnabled) { onGenerateServer() },
         shape = RoundedCornerShape(100.dp),
-        color = Color(0xFFEF4444).copy(alpha = if (createEnabled) 0.16f else 0.07f),
-        contentColor = Color.White.copy(alpha = if (createEnabled) 0.92f else 0.45f),
-        border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = if (createEnabled) 0.34f else 0.13f)),
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        contentColor = if (createEnabled) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = if (createEnabled) 0.46f else 0.18f)),
       ) {
         Row(
           modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),

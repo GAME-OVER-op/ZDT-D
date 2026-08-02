@@ -2161,4 +2161,10 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="vps_traffic_since_boot_unknown">Traffic since boot · total %1$s</string>
     <string name="vps_show_full_log">Show full log</string>
     <string name="vps_hide_full_log">Hide full log</string>
+    <string name="vps_loading_services">Checking installed services…</string>
+    <string name="vps_loading_service">Loading service state…</string>
+    <string name="vps_loading_profiles">Loading profiles…</string>
+    <string name="vps_loading_profile">Loading profile and clients…</string>
+    <string name="vps_profile_not_found">Profile not found</string>
+    <string name="vps_load_failed">Could not load data</string>
 </resources>

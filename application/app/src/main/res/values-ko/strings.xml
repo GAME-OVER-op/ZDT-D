@@ -2156,4 +2156,10 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="action_refresh">새로고침</string>
     <string name="action_share">공유</string>
     <string name="copied">복사됨</string>
+
+    <string name="vps_letsencrypt_email_optional">Let’s Encrypt 이메일(선택 사항)</string>
+    <string name="vps_traffic_since_boot">부팅 후 트래픽 · %1$s · 합계 %2$s</string>
+    <string name="vps_traffic_since_boot_unknown">부팅 후 트래픽 · 합계 %1$s</string>
+    <string name="vps_show_full_log">전체 로그 표시</string>
+    <string name="vps_hide_full_log">전체 로그 숨기기</string>
 </resources>

@@ -199,6 +199,9 @@ class VpsSshClient {
     diskUsedBytes = map["disk_used"]?.toLongOrNull() ?: 0L,
     diskTotalBytes = map["disk_total"]?.toLongOrNull() ?: 0L,
     uptimeSeconds = map["uptime"]?.toDoubleOrNull()?.toLong() ?: 0L,
+    networkInterface = map["net_iface"].orEmpty(),
+    networkRxBytes = map["net_rx"]?.toLongOrNull() ?: 0L,
+    networkTxBytes = map["net_tx"]?.toLongOrNull() ?: 0L,
   )
 
   private fun metricsCommand(): String = """
@@ -216,6 +219,14 @@ class VpsSshClient {
     mem_total=§(awk '/^MemTotal:/ {print §2*1024}' /proc/meminfo)
     mem_avail=§(awk '/^MemAvailable:/ {print §2*1024}' /proc/meminfo)
     disk=§(df -B1 / | awk 'NR==2 {print §3" "§2}')
+    net_iface=§(ip -4 route show default 2>/dev/null | awk '/default/ {for (i=1;i<=NF;i++) if (§i=="dev") {print §(i+1); exit}}')
+    if [ -n "§net_iface" ] && [ -r "/sys/class/net/§net_iface/statistics/rx_bytes" ]; then
+      net_rx=§(cat "/sys/class/net/§net_iface/statistics/rx_bytes")
+      net_tx=§(cat "/sys/class/net/§net_iface/statistics/tx_bytes")
+    else
+      net_rx=0
+      net_tx=0
+    fi
     printf 'os_name=%s\n' "§{PRETTY_NAME:-unknown}"
     printf 'os_id=%s\n' "§{ID:-unknown}"
     printf 'os_version=%s\n' "§{VERSION_ID:-unknown}"
@@ -228,6 +239,9 @@ class VpsSshClient {
     printf 'disk_used=%s\n' "§{disk%% *}"
     printf 'disk_total=%s\n' "§{disk##* }"
     printf 'uptime=%s\n' "§(cut -d. -f1 /proc/uptime)"
+    printf 'net_iface=%s\n' "§net_iface"
+    printf 'net_rx=%s\n' "§net_rx"
+    printf 'net_tx=%s\n' "§net_tx"
   """.trimIndent().replace('§', '$')
 
   private fun probeCommand(): String = metricsCommand() + "\n" + """

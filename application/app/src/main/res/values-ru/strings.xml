@@ -2155,4 +2155,10 @@ APatch: 10700+</string>
     <string name="vps_dnscrypt_summary">DNSCrypt · TCP/UDP 53</string>
     <string name="vps_dnscrypt_behavior">DNS-запросы VPS и VPN-сетей ZDT-D обрабатываются через защищённые внешние DNSCrypt/DoH-серверы. Публичный доступ к порту 53 блокируется.</string>
 
+
+    <string name="vps_letsencrypt_email_optional">Email для Let’s Encrypt (необязательно)</string>
+    <string name="vps_traffic_since_boot">Трафик с момента запуска · %1$s · всего %2$s</string>
+    <string name="vps_traffic_since_boot_unknown">Трафик с момента запуска · всего %1$s</string>
+    <string name="vps_show_full_log">Показать полный журнал</string>
+    <string name="vps_hide_full_log">Скрыть полный журнал</string>
 </resources>

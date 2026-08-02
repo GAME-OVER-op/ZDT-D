@@ -2161,4 +2161,10 @@ APatch: ‏10700+</string>
     <string name="action_refresh">تحديث</string>
     <string name="action_share">مشاركة</string>
     <string name="copied">تم النسخ</string>
+
+    <string name="vps_letsencrypt_email_optional">البريد الإلكتروني لـ Let’s Encrypt (اختياري)</string>
+    <string name="vps_traffic_since_boot">حركة المرور منذ الإقلاع · %1$s · الإجمالي %2$s</string>
+    <string name="vps_traffic_since_boot_unknown">حركة المرور منذ الإقلاع · الإجمالي %1$s</string>
+    <string name="vps_show_full_log">عرض السجل الكامل</string>
+    <string name="vps_hide_full_log">إخفاء السجل الكامل</string>
 </resources>

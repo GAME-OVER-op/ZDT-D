@@ -2156,4 +2156,10 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="action_refresh">更新</string>
     <string name="action_share">共有</string>
     <string name="copied">コピーしました</string>
+
+    <string name="vps_letsencrypt_email_optional">Let’s Encrypt メール（任意）</string>
+    <string name="vps_traffic_since_boot">起動後の通信量 · %1$s · 合計 %2$s</string>
+    <string name="vps_traffic_since_boot_unknown">起動後の通信量 · 合計 %1$s</string>
+    <string name="vps_show_full_log">完全なログを表示</string>
+    <string name="vps_hide_full_log">完全なログを隠す</string>
 </resources>

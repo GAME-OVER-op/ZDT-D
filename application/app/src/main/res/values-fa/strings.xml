@@ -2157,4 +2157,10 @@ APatch: 10700+</string>
     <string name="action_refresh">به‌روزرسانی</string>
     <string name="action_share">اشتراک‌گذاری</string>
     <string name="copied">کپی شد</string>
+
+    <string name="vps_letsencrypt_email_optional">ایمیل Let’s Encrypt (اختیاری)</string>
+    <string name="vps_traffic_since_boot">ترافیک از زمان راه‌اندازی · %1$s · مجموع %2$s</string>
+    <string name="vps_traffic_since_boot_unknown">ترافیک از زمان راه‌اندازی · مجموع %1$s</string>
+    <string name="vps_show_full_log">نمایش گزارش کامل</string>
+    <string name="vps_hide_full_log">پنهان کردن گزارش کامل</string>
 </resources>

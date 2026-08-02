@@ -1,6 +1,7 @@
 package com.android.zdtd.service.vps
 
 import android.app.Application
+import android.media.MediaScannerConnection
 import android.util.Base64
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
@@ -10,6 +11,7 @@ import com.android.zdtd.service.RootConfigManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -50,7 +52,7 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
   private val _configResult = MutableStateFlow<VpsConfigResult?>(null)
   val configResult: StateFlow<VpsConfigResult?> = _configResult.asStateFlow()
 
-  private var monitorJob: Job? = null
+  private val monitorJobs = ConcurrentHashMap<String, Job>()
   private var lastServerStatePersistAt = 0L
   private val monitorSemaphore = Semaphore(3)
   private val activeMetricRefreshes = ConcurrentHashMap.newKeySet<String>()
@@ -103,6 +105,7 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun deleteServer(serverId: String) {
+    monitorJobs.keys.filter { it.contains(serverId) }.forEach(::stopMonitor)
     _servers.value = _servers.value.filterNot { it.id == serverId }
     _metrics.value = _metrics.value - serverId
     _serviceStates.value = _serviceStates.value - serverId
@@ -110,19 +113,50 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     lastServerStatePersistAt = System.currentTimeMillis()
   }
 
-  fun startListMonitoring() {
-    if (monitorJob?.isActive == true) return
-    monitorJob = viewModelScope.launch {
-      while (true) {
-        refreshAllServers()
-        delay(15_000L)
+  fun startListMonitoring() = startMonitor(MONITOR_LIST_KEY) {
+    refreshAllServers()
+  }
+
+  fun stopListMonitoring() = stopMonitor(MONITOR_LIST_KEY)
+
+  fun startServerDetailsMonitoring(serverId: String) = startMonitor("details:$serverId") {
+    refreshServer(serverId)
+    loadServices(serverId, silent = true)
+  }
+
+  fun stopServerDetailsMonitoring(serverId: String) = stopMonitor("details:$serverId")
+
+  fun startServiceMonitoring(serverId: String, kind: VpsServiceKind) = startMonitor("service:$serverId:${kind.wireId}") {
+    refreshServer(serverId)
+    loadServices(serverId, silent = true)
+    if (kind != VpsServiceKind.DNSCRYPT) loadProfiles(serverId, kind, silent = true)
+    if (kind == VpsServiceKind.HYSTERIA2) loadProfiles(serverId, VpsServiceKind.XRAY, silent = true)
+  }
+
+  fun stopServiceMonitoring(serverId: String, kind: VpsServiceKind) = stopMonitor("service:$serverId:${kind.wireId}")
+
+  fun startProfileMonitoring(serverId: String, kind: VpsServiceKind, profileId: String) =
+    startMonitor("profile:$serverId:${kind.wireId}:$profileId") {
+      refreshServer(serverId)
+      loadProfiles(serverId, kind, silent = true)
+      loadClients(serverId, kind, profileId, silent = true)
+    }
+
+  fun stopProfileMonitoring(serverId: String, kind: VpsServiceKind, profileId: String) =
+    stopMonitor("profile:$serverId:${kind.wireId}:$profileId")
+
+  private fun startMonitor(key: String, refresh: () -> Unit) {
+    if (monitorJobs[key]?.isActive == true) return
+    monitorJobs[key] = viewModelScope.launch {
+      while (isActive) {
+        if (!_operation.value.running) refresh()
+        delay(MONITOR_INTERVAL_MS)
       }
     }
   }
 
-  fun stopListMonitoring() {
-    monitorJob?.cancel()
-    monitorJob = null
+  private fun stopMonitor(key: String) {
+    monitorJobs.remove(key)?.cancel()
   }
 
   fun refreshAllServers() {
@@ -133,7 +167,12 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     val server = server(serverId) ?: return
     if (!activeMetricRefreshes.add(serverId)) return
     _metrics.update { current ->
-      current + (serverId to ((current[serverId] ?: VpsMetrics()).copy(reachability = VpsReachability.CHECKING, error = null)))
+      val previous = current[serverId] ?: VpsMetrics()
+      current + (serverId to previous.copy(
+        reachability = if (previous.reachability == VpsReachability.UNKNOWN) VpsReachability.CHECKING else previous.reachability,
+        refreshing = true,
+        error = if (previous.reachability == VpsReachability.OFFLINE) previous.error else null,
+      ))
     }
     viewModelScope.launch {
       try {
@@ -141,22 +180,21 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
           runCatching { ssh.collectMetrics(server) }
             .onSuccess { value ->
               val now = System.currentTimeMillis()
-              _metrics.update { it + (serverId to value) }
+              _metrics.update { it + (serverId to value.copy(refreshing = false, error = null)) }
               _servers.update { current ->
                 current.map { item -> if (item.id == serverId) item.copy(lastSuccessfulCheck = now) else item }
               }
-              // Metrics are refreshed every 15 seconds while the list is visible. Persisting
-              // encrypted server data on every tick causes unnecessary flash writes, so only
-              // checkpoint the informational timestamp periodically.
               if (now - lastServerStatePersistAt >= SERVER_STATE_PERSIST_INTERVAL_MS) {
                 store.saveServers(_servers.value)
                 lastServerStatePersistAt = now
               }
             }
             .onFailure { error ->
-              _metrics.update {
-                it + (serverId to VpsMetrics(
+              _metrics.update { current ->
+                val previous = current[serverId] ?: VpsMetrics()
+                current + (serverId to previous.copy(
                   reachability = VpsReachability.OFFLINE,
+                  refreshing = false,
                   lastUpdatedAt = System.currentTimeMillis(),
                   error = error.message ?: "Connection failed",
                 ))
@@ -169,12 +207,12 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
-  fun loadServices(serverId: String) {
+  fun loadServices(serverId: String, silent: Boolean = false) {
     val server = server(serverId) ?: return
     viewModelScope.launch {
       runCatching { controller.inventory(server) }
         .onSuccess { _serviceStates.value = _serviceStates.value + (serverId to it) }
-        .onFailure { failOperation(it.message ?: "Unable to read services") }
+        .onFailure { if (!silent) failOperation(it.message ?: "Unable to read services") }
     }
   }
 
@@ -199,12 +237,12 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     )
   }
 
-  fun loadProfiles(serverId: String, kind: VpsServiceKind) {
+  fun loadProfiles(serverId: String, kind: VpsServiceKind, silent: Boolean = false) {
     val server = server(serverId) ?: return
     viewModelScope.launch {
       runCatching { controller.listProfiles(server, kind) }
         .onSuccess { _profiles.value = _profiles.value + (profileKey(serverId, kind) to it) }
-        .onFailure { failOperation(it.message ?: "Unable to read profiles") }
+        .onFailure { if (!silent) failOperation(it.message ?: "Unable to read profiles") }
     }
   }
 
@@ -238,12 +276,12 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     )
   }
 
-  fun loadClients(serverId: String, kind: VpsServiceKind, profileId: String) {
+  fun loadClients(serverId: String, kind: VpsServiceKind, profileId: String, silent: Boolean = false) {
     val server = server(serverId) ?: return
     viewModelScope.launch {
       runCatching { controller.listClients(server, kind, profileId) }
         .onSuccess { _clients.value = _clients.value + (clientKey(serverId, kind, profileId) to it) }
-        .onFailure { failOperation(it.message ?: "Unable to read client configurations") }
+        .onFailure { if (!silent) failOperation(it.message ?: "Unable to read client configurations") }
     }
   }
 
@@ -319,6 +357,9 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
           path
         }
       }
+      outcome.getOrNull()?.let { path ->
+        MediaScannerConnection.scanFile(getApplication(), arrayOf(path), null, null)
+      }
       onDone(outcome)
     }
   }
@@ -369,6 +410,8 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
   fun clearOperation() { if (!_operation.value.running) _operation.value = VpsOperationState() }
 
   companion object {
+    private const val MONITOR_LIST_KEY = "list"
+    private const val MONITOR_INTERVAL_MS = 15_000L
     private const val SERVER_STATE_PERSIST_INTERVAL_MS = 5 * 60_000L
     fun profileKey(serverId: String, kind: VpsServiceKind) = "$serverId:${kind.wireId}"
     fun clientKey(serverId: String, kind: VpsServiceKind, profileId: String) = "$serverId:${kind.wireId}:$profileId"

@@ -115,6 +115,11 @@ cleanup_managed_files() {
   while iptables -w 5 -D INPUT -j "$FIREWALL_CHAIN" 2>/dev/null; do :; done
   iptables -w 5 -F "$FIREWALL_CHAIN" 2>/dev/null || true
   iptables -w 5 -X "$FIREWALL_CHAIN" 2>/dev/null || true
+  for iface in 'zdtun+' 'zdtwg+'; do
+    while iptables -w 5 -t nat -D PREROUTING -i "$iface" -j ZDT_VPS_DNS 2>/dev/null; do :; done
+  done
+  iptables -w 5 -t nat -F ZDT_VPS_DNS 2>/dev/null || true
+  iptables -w 5 -t nat -X ZDT_VPS_DNS 2>/dev/null || true
 }
 
 rollback() {
@@ -300,19 +305,28 @@ set -Eeuo pipefail
 shopt -s nullglob
 STATE=/var/lib/zdt-vps
 CHAIN=ZDT_VPS_INPUT
+DNS_CHAIN=ZDT_VPS_DNS
 iptables -w 5 -N "$CHAIN" 2>/dev/null || true
 iptables -w 5 -F "$CHAIN"
+iptables -w 5 -t nat -N "$DNS_CHAIN" 2>/dev/null || true
+iptables -w 5 -t nat -F "$DNS_CHAIN"
+for iface in 'zdtun+' 'zdtwg+'; do
+  while iptables -w 5 -t nat -D PREROUTING -i "$iface" -j "$DNS_CHAIN" 2>/dev/null; do :; done
+done
 if [[ -f $STATE/services/dnscrypt.version ]]; then
   for proto in udp tcp; do
     iptables -w 5 -A "$CHAIN" -i lo -p "$proto" --dport 53 -j ACCEPT
     iptables -w 5 -A "$CHAIN" -i 'tun+' -p "$proto" --dport 53 -j ACCEPT
     iptables -w 5 -A "$CHAIN" -i 'zdt+' -p "$proto" --dport 53 -j ACCEPT
+    iptables -w 5 -t nat -A "$DNS_CHAIN" -p "$proto" --dport 53 -j REDIRECT --to-ports 53
     if [[ $proto == udp ]]; then
       iptables -w 5 -A "$CHAIN" -p udp --dport 53 -j REJECT --reject-with icmp-port-unreachable
     else
       iptables -w 5 -A "$CHAIN" -p tcp --dport 53 -j REJECT --reject-with tcp-reset
     fi
   done
+  iptables -w 5 -t nat -I PREROUTING 1 -i 'zdtwg+' -j "$DNS_CHAIN"
+  iptables -w 5 -t nat -I PREROUTING 1 -i 'zdtun+' -j "$DNS_CHAIN"
 fi
 for meta in "$STATE"/profiles/{openvpn,xray,hysteria2,wireproxy}/*/meta.env; do
   [[ -f $meta ]] || continue
@@ -350,6 +364,9 @@ refresh_firewall() {
     while iptables -w 5 -D INPUT -j "$FIREWALL_CHAIN" 2>/dev/null; do :; done
     iptables -w 5 -F "$FIREWALL_CHAIN" 2>/dev/null || true
     iptables -w 5 -X "$FIREWALL_CHAIN" 2>/dev/null || true
+    for iface in 'zdtun+' 'zdtwg+'; do while iptables -w 5 -t nat -D PREROUTING -i "$iface" -j ZDT_VPS_DNS 2>/dev/null; do :; done; done
+    iptables -w 5 -t nat -F ZDT_VPS_DNS 2>/dev/null || true
+    iptables -w 5 -t nat -X ZDT_VPS_DNS 2>/dev/null || true
     rm -f "$SYSTEMD_DIR/zdt-vps-firewall.service" "$ZDT_ROOT/bin/rebuild-firewall"
     systemctl daemon-reload
   fi
@@ -362,15 +379,38 @@ persist_dns_original_state() {
   cp -f "$TX_BACKUP/external-units.env" "$dir/external-units.env"
   cp -f "$TX_BACKUP/resolv.tar.gz" "$dir/resolv.tar.gz" 2>/dev/null || true
 }
+write_temporary_resolv() {
+  rm -f /etc/resolv.conf
+  cat > /etc/resolv.conf <<'RESOLV'
+nameserver 1.1.1.1
+nameserver 1.0.0.1
+nameserver 9.9.9.9
+options edns0 timeout:2 attempts:2
+RESOLV
+}
+ensure_download_dns() {
+  local host
+  for host in github.com raw.githubusercontent.com; do
+    if ! getent ahostsv4 "$host" >/dev/null 2>&1; then
+      stage 'Preparing temporary DNS for downloads'
+      warn "System DNS cannot resolve $host; using temporary bootstrap resolvers"
+      persist_dns_original_state
+      write_temporary_resolv
+      for host in github.com raw.githubusercontent.com; do
+        getent ahostsv4 "$host" >/dev/null 2>&1 || die "Unable to resolve $host even with temporary bootstrap DNS"
+      done
+      return 0
+    fi
+  done
+}
 prepare_dns_port() {
   persist_dns_original_state
   systemctl stop zdt-dnscrypt.service >/dev/null 2>&1 || true
-  if ss -H -lntup 2>/dev/null | grep -qE '(^|[[:space:]])[^[:space:]]+[[:space:]].*:53([[:space:]]|$)'; then
-    for unit in systemd-resolved.service dnscrypt-proxy.socket dnscrypt-proxy-resolvconf.service dnscrypt-proxy.service; do
-      systemctl disable --now "$unit" >/dev/null 2>&1 || true
-    done
-    sleep 1
-  fi
+  for unit in systemd-resolved.service dnscrypt-proxy.socket dnscrypt-proxy-resolvconf.service dnscrypt-proxy.service; do
+    systemctl disable --now "$unit" >/dev/null 2>&1 || true
+  done
+  sleep 1
+  write_temporary_resolv
   if ss -H -lntup 2>/dev/null | grep -qE '(^|[[:space:]])[^[:space:]]+[[:space:]].*:53([[:space:]]|$)'; then
     ss -lntup | grep ':53' >&2 || true
     die 'Port 53 is occupied by a service that ZDT-D cannot safely replace'
@@ -386,30 +426,75 @@ restore_dns_original_state() {
 }
 install_dnscrypt() {
   external_service_warning dnscrypt
+  ensure_download_dns
   stage 'Installing DNSCrypt packages'
-  apt_install curl ca-certificates tar iptables iproute2 dnsutils
+  apt_install curl ca-certificates tar iptables iproute2 dnsutils python3
   ensure_dirs
-  prepare_dns_port
-  local version=2.1.15 archive=dnscrypt-proxy-linux_x86_64-2.1.15.tar.gz tmp
+
+  local version=2.1.15 archive=dnscrypt-proxy-linux_x86_64-2.1.15.tar.gz tmp config_template
   tmp=$(mktemp -d)
-  curl -fL --retry 3 "https://github.com/DNSCrypt/dnscrypt-proxy/releases/download/${version}/${archive}" -o "$tmp/$archive"
+  config_template="$tmp/example-dnscrypt-proxy.toml"
+  stage 'Downloading DNSCrypt files'
+  curl -fL --retry 4 --retry-delay 2 --connect-timeout 15 \
+    "https://github.com/DNSCrypt/dnscrypt-proxy/releases/download/${version}/${archive}" -o "$tmp/$archive"
+  curl -fL --retry 4 --retry-delay 2 --connect-timeout 15 \
+    "https://raw.githubusercontent.com/DNSCrypt/dnscrypt-proxy/${version}/dnscrypt-proxy/example-dnscrypt-proxy.toml" -o "$config_template"
   tar -xzf "$tmp/$archive" -C "$tmp"
+  [[ -x $tmp/linux-x86_64/dnscrypt-proxy ]] || die 'The DNSCrypt archive does not contain the expected x86_64 binary'
+
+  stage 'Preparing local DNS port'
+  prepare_dns_port
   install -m 0755 "$tmp/linux-x86_64/dnscrypt-proxy" "$ZDT_ROOT/bin/dnscrypt-proxy"
-  rm -rf "$tmp"
 
   stage 'Configuring DNSCrypt on TCP/UDP 53'
   mkdir -p "$ZDT_ETC/dnscrypt" "$ZDT_STATE/dnscrypt-cache"
-  curl -fsSL "https://raw.githubusercontent.com/DNSCrypt/dnscrypt-proxy/${version}/dnscrypt-proxy/example-dnscrypt-proxy.toml" -o "$ZDT_ETC/dnscrypt/dnscrypt-proxy.toml"
-  sed -ri "s|^listen_addresses = .*|listen_addresses = ['0.0.0.0:53']|" "$ZDT_ETC/dnscrypt/dnscrypt-proxy.toml"
-  sed -ri 's|^require_nolog = .*|require_nolog = true|' "$ZDT_ETC/dnscrypt/dnscrypt-proxy.toml"
-  sed -ri 's|^require_nofilter = .*|require_nofilter = true|' "$ZDT_ETC/dnscrypt/dnscrypt-proxy.toml"
-  sed -ri 's|^ipv6_servers = .*|ipv6_servers = false|' "$ZDT_ETC/dnscrypt/dnscrypt-proxy.toml"
-  sed -ri 's|^dnscrypt_servers = .*|dnscrypt_servers = true|' "$ZDT_ETC/dnscrypt/dnscrypt-proxy.toml"
-  sed -ri 's|^doh_servers = .*|doh_servers = true|' "$ZDT_ETC/dnscrypt/dnscrypt-proxy.toml"
-  sed -ri 's|^cache = .*|cache = true|' "$ZDT_ETC/dnscrypt/dnscrypt-proxy.toml"
-  sed -ri 's|^ignore_system_dns = .*|ignore_system_dns = true|' "$ZDT_ETC/dnscrypt/dnscrypt-proxy.toml"
-  sed -ri 's|^http3 = .*|http3 = false|' "$ZDT_ETC/dnscrypt/dnscrypt-proxy.toml" || true
-  sed -ri 's|^http3_probe = .*|http3_probe = false|' "$ZDT_ETC/dnscrypt/dnscrypt-proxy.toml" || true
+  cp -f "$config_template" "$ZDT_ETC/dnscrypt/dnscrypt-proxy.toml"
+  python3 - "$ZDT_ETC/dnscrypt/dnscrypt-proxy.toml" <<'PYCONF'
+import re,sys
+path=sys.argv[1]
+with open(path,encoding='utf-8') as f: lines=f.readlines()
+values={
+ 'listen_addresses': "['0.0.0.0:53']",
+ 'max_clients': '250',
+ 'ipv4_servers': 'true',
+ 'ipv6_servers': 'false',
+ 'dnscrypt_servers': 'true',
+ 'doh_servers': 'true',
+ 'odoh_servers': 'false',
+ 'require_dnssec': 'false',
+ 'require_nolog': 'true',
+ 'require_nofilter': 'true',
+ 'force_tcp': 'false',
+ 'timeout': '5000',
+ 'keepalive': '30',
+ 'cert_refresh_delay': '240',
+ 'bootstrap_resolvers': "['1.1.1.1:53', '1.0.0.1:53', '9.9.9.9:53']",
+ 'ignore_system_dns': 'true',
+ 'netprobe_address': "'1.1.1.1:53'",
+ 'cache': 'true',
+ 'cache_size': '4096',
+ 'cache_min_ttl': '60',
+ 'cache_max_ttl': '86400',
+ 'cache_neg_min_ttl': '60',
+ 'cache_neg_max_ttl': '600',
+ 'http3': 'false',
+ 'http3_probe': 'false',
+}
+append_if_missing={'listen_addresses','bootstrap_resolvers','netprobe_address'}
+for key,value in values.items():
+    pattern=re.compile(r'^\s*#?\s*'+re.escape(key)+r'\s*=')
+    for i,line in enumerate(lines):
+        if pattern.match(line):
+            lines[i]=f'{key} = {value}\n'
+            break
+    else:
+        if key in append_if_missing:
+            insert=next((i for i,line in enumerate(lines) if line.lstrip().startswith('[')),len(lines))
+            lines.insert(insert,f'{key} = {value}\n')
+with open(path,'w',encoding='utf-8') as f: f.writelines(lines)
+PYCONF
+  "$ZDT_ROOT/bin/dnscrypt-proxy" -check -config "$ZDT_ETC/dnscrypt/dnscrypt-proxy.toml" || die 'DNSCrypt configuration validation failed'
+
   cat > "$SYSTEMD_DIR/zdt-dnscrypt.service" <<UNIT
 [Unit]
 Description=ZDT-D managed DNSCrypt
@@ -418,6 +503,7 @@ Wants=network-online.target
 Requires=zdt-vps-firewall.service
 [Service]
 Type=simple
+WorkingDirectory=$ZDT_ETC/dnscrypt
 ExecStart=$ZDT_ROOT/bin/dnscrypt-proxy -config $ZDT_ETC/dnscrypt/dnscrypt-proxy.toml
 Restart=on-failure
 RestartSec=3
@@ -431,22 +517,41 @@ UNIT
   stage 'Starting and verifying DNSCrypt'
   systemctl daemon-reload
   systemctl enable --now zdt-dnscrypt.service
-  local ok=0
+
+  local listener_ok=0 dns_udp_ok=0 dns_tcp_ok=0 host
+  for _ in $(seq 1 30); do
+    if unit_is_active zdt-dnscrypt.service && \
+       ss -H -lnu 'sport = :53' 2>/dev/null | grep -q . && \
+       ss -H -lnt 'sport = :53' 2>/dev/null | grep -q .; then listener_ok=1; break; fi
+    sleep 1
+  done
+  (( listener_ok == 1 )) || {
+    systemctl status zdt-dnscrypt.service --no-pager >&2 || true
+    journalctl -u zdt-dnscrypt.service -n 160 --no-pager >&2 || true
+    die 'DNSCrypt did not start listening on TCP and UDP port 53'
+  }
   for _ in $(seq 1 24); do
-    if unit_is_active zdt-dnscrypt.service && timeout 8 dig @127.0.0.1 example.com +short | grep -q .; then ok=1; break; fi
+    for host in example.com cloudflare.com github.com; do
+      timeout 8 dig @127.0.0.1 "$host" +time=4 +tries=1 +short 2>/dev/null | grep -q . && dns_udp_ok=1 || true
+      timeout 8 dig @127.0.0.1 "$host" +tcp +time=4 +tries=1 +short 2>/dev/null | grep -q . && dns_tcp_ok=1 || true
+      (( dns_udp_ok == 1 && dns_tcp_ok == 1 )) && break 2
+    done
     sleep 2
   done
-  if (( ok == 0 )); then journalctl -u zdt-dnscrypt.service -n 120 --no-pager >&2 || true; die 'DNSCrypt started but did not resolve test domains'; fi
+  if (( dns_udp_ok == 0 || dns_tcp_ok == 0 )); then
+    "$ZDT_ROOT/bin/dnscrypt-proxy" -check -config "$ZDT_ETC/dnscrypt/dnscrypt-proxy.toml" >&2 || true
+    systemctl status zdt-dnscrypt.service --no-pager >&2 || true
+    journalctl -u zdt-dnscrypt.service -n 180 --no-pager >&2 || true
+    die "DNSCrypt is listening, but DNS verification failed (UDP=$dns_udp_ok TCP=$dns_tcp_ok)"
+  fi
   rm -f /etc/resolv.conf
   cat > /etc/resolv.conf <<'RESOLV'
 nameserver 127.0.0.1
-options edns0
+options edns0 timeout:3 attempts:2
 RESOLV
+  rm -rf "$tmp"
 }
 
-ensure_dns_for_vpn() {
-  service_installed dnscrypt && unit_is_active zdt-dnscrypt.service || die 'Install and start DNSCrypt before creating OpenVPN or WireProxy profiles'
-}
 enable_ip_forward() {
   if [[ ! -f $ZDT_STATE/original-ip-forward ]]; then cat /proc/sys/net/ipv4/ip_forward > "$ZDT_STATE/original-ip-forward"; fi
   printf 'net.ipv4.ip_forward=1\n' > "$SYSCTL_FILE"
@@ -463,6 +568,21 @@ restore_ip_forward_if_unused() {
   fi
 }
 
+openvpn_cipher_config() {
+  if openvpn --help 2>&1 | grep -q -- '--data-ciphers'; then
+    printf '%s\n' 'data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305' 'data-ciphers-fallback AES-256-GCM'
+  else
+    printf '%s\n' 'ncp-ciphers AES-256-GCM:AES-128-GCM' 'cipher AES-256-GCM'
+  fi
+}
+generate_openvpn_tls_key() {
+  local path=$1
+  rm -f "$path"
+  if openvpn --genkey tls-crypt "$path" >/dev/null 2>&1; then return 0; fi
+  rm -f "$path"
+  openvpn --genkey --secret "$path"
+}
+
 install_openvpn() {
   external_service_warning openvpn
   stage 'Installing OpenVPN and Easy-RSA'
@@ -474,7 +594,6 @@ install_openvpn() {
 create_openvpn_profile() {
   local id=$1 name=$2 port=$3 proto=$4 host=$5
   service_installed openvpn || die 'OpenVPN is not installed'
-  ensure_dns_for_vpn
   valid_id "$id" || die 'Invalid profile identifier'
   [[ $proto == udp || $proto == tcp ]] || die 'OpenVPN protocol must be tcp or udp'
   [[ ! -e $(profile_dir openvpn "$id") ]] || die 'A profile with this identifier already exists'
@@ -486,7 +605,7 @@ create_openvpn_profile() {
   stage 'Creating an isolated OpenVPN PKI'
   make-cadir "$pki"
   (cd "$pki"; EASYRSA_BATCH=1 EASYRSA_REQ_CN="zdt-$id-ca" ./easyrsa init-pki; EASYRSA_BATCH=1 EASYRSA_REQ_CN="zdt-$id-ca" ./easyrsa build-ca nopass; EASYRSA_BATCH=1 ./easyrsa gen-req "$server_cn" nopass; EASYRSA_BATCH=1 ./easyrsa sign-req server "$server_cn"; EASYRSA_BATCH=1 ./easyrsa gen-crl)
-  openvpn --genkey secret "$dir/ta.key"
+  generate_openvpn_tls_key "$dir/ta.key"
   cp "$pki/pki/ca.crt" "$dir/ca.crt"
   cp "$pki/pki/issued/$server_cn.crt" "$dir/server.crt"
   cp "$pki/pki/private/$server_cn.key" "$dir/server.key"
@@ -510,6 +629,7 @@ META
   cat > "$OPENVPN_DIR/zdt-$id.conf" <<CONF
 port $port
 proto $server_proto
+dev-type tun
 dev $tun
 topology subnet
 server $subnet 255.255.255.0
@@ -521,14 +641,15 @@ ecdh-curve prime256v1
 tls-crypt $dir/ta.key
 crl-verify $dir/crl.pem
 auth SHA256
-data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305
+$(openvpn_cipher_config)
 keepalive 10 60
 persist-key
 persist-tun
 user nobody
 group nogroup
 push "redirect-gateway def1 bypass-dhcp"
-push "dhcp-option DNS $gateway"
+push "dhcp-option DNS 1.1.1.1"
+push "dhcp-option DNS 1.0.0.1"
 status $dir/status.log
 verb 3
 CONF
@@ -550,7 +671,9 @@ UNIT
   stage 'Starting and verifying OpenVPN profile'
   systemctl daemon-reload
   systemctl enable --now "openvpn-server@zdt-$id.service" "zdt-openvpn-net-$id.service"
-  unit_is_active "openvpn-server@zdt-$id.service" || { journalctl -u "openvpn-server@zdt-$id.service" -n 100 --no-pager >&2 || true; die 'OpenVPN profile failed to start'; }
+  unit_is_active "openvpn-server@zdt-$id.service" || { journalctl -u "openvpn-server@zdt-$id.service" -n 120 --no-pager >&2 || true; die 'OpenVPN profile failed to start'; }
+  ip link show "$tun" >/dev/null 2>&1 || { journalctl -u "openvpn-server@zdt-$id.service" -n 120 --no-pager >&2 || true; die "OpenVPN started without creating interface $tun"; }
+  if [[ $proto == tcp ]]; then ss -H -lnt "sport = :$port" | grep -q . || die "OpenVPN is not listening on TCP port $port"; else ss -H -lnu "sport = :$port" | grep -q . || die "OpenVPN is not listening on UDP port $port"; fi
 }
 create_openvpn_client() {
   local profile=$1 client=$2 display=${3:-$2}
@@ -574,7 +697,7 @@ persist-key
 persist-tun
 remote-cert-tls server
 auth SHA256
-data-ciphers AES-256-GCM:AES-128-GCM:CHACHA20-POLY1305
+$(openvpn_cipher_config)
 verb 3
 <ca>
 $(cat "$dir/ca.crt")
@@ -643,7 +766,6 @@ CONF
 create_wireproxy_profile() {
   local id=$1 name=$2 port=$3 host=$4
   service_installed wireproxy || die 'WireProxy server tools are not installed'
-  ensure_dns_for_vpn
   valid_id "$id" || die 'Invalid profile identifier'
   [[ ! -e $(profile_dir wireproxy "$id") ]] || die 'A profile with this identifier already exists'
   require_free_port udp "$port"
@@ -680,7 +802,7 @@ create_wireproxy_client() {
 [Interface]
 Address = $(cat "$cdir/ip")/32
 PrivateKey = $(cat "$cdir/private")
-DNS = $GATEWAY
+DNS = 1.1.1.1, 1.0.0.1
 
 [Peer]
 PublicKey = $(cat "$dir/server_public")
@@ -713,7 +835,7 @@ HOOK
 ensure_certificate() {
   local domain=$1 email=$2 state owned=0 had_certificate=0
   [[ $domain =~ ^([A-Za-z0-9-]+\.)+[A-Za-z]{2,63}$ ]] || die 'A valid public domain is required for automatic TLS'
-  [[ $email == *@*.* ]] || die 'A valid email address is required for Let’s Encrypt'
+  if [[ -n $email && $email != *@*.* ]]; then die 'The optional Let’s Encrypt email address is invalid'; fi
   mkdir -p "$ZDT_STATE/certificates"
   state="$ZDT_STATE/certificates/$domain.env"
   if [[ -f $state ]]; then unset OWNED; source "$state"; owned=${OWNED:-0}; fi
@@ -731,7 +853,9 @@ ensure_certificate() {
   write_firewall_script; systemctl daemon-reload; systemctl enable --now zdt-vps-firewall.service >/dev/null 2>&1 || true
   iptables -w 5 -I "$FIREWALL_CHAIN" 1 -p tcp --dport 80 -j ACCEPT
   local rc=0
-  certbot certonly --standalone --non-interactive --agree-tos --keep-until-expiring --email "$email" -d "$domain" || rc=$?
+  local contact_args=()
+  if [[ -n $email ]]; then contact_args=(--email "$email"); else contact_args=(--register-unsafely-without-email); fi
+  certbot certonly --standalone --non-interactive --agree-tos --keep-until-expiring "${contact_args[@]}" -d "$domain" || rc=$?
   iptables -w 5 -D "$FIREWALL_CHAIN" -p tcp --dport 80 -j ACCEPT 2>/dev/null || true
   (( rc == 0 )) || die 'Let’s Encrypt certificate request failed'
   [[ -s /etc/letsencrypt/live/$domain/fullchain.pem && -s /etc/letsencrypt/live/$domain/privkey.pem ]] || die 'Let’s Encrypt did not create the expected certificate files'
@@ -1090,9 +1214,6 @@ remove_service() {
   fi
   case "$kind" in
     dnscrypt)
-      if find "$ZDT_STATE/profiles/openvpn" "$ZDT_STATE/profiles/wireproxy" -mindepth 1 -maxdepth 1 -type d -print -quit 2>/dev/null | grep -q .; then
-        die 'Remove all ZDT-D OpenVPN and WireProxy profiles before removing DNSCrypt'
-      fi
       systemctl disable --now zdt-dnscrypt.service >/dev/null 2>&1 || true
       rm -f "$SYSTEMD_DIR/zdt-dnscrypt.service" "$ZDT_ROOT/bin/dnscrypt-proxy"
       rm -rf "$ZDT_ETC/dnscrypt" "$ZDT_STATE/dnscrypt-cache"

@@ -2155,4 +2155,10 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="vps_dnscrypt_summary">DNSCrypt · TCP/UDP 53</string>
     <string name="vps_dnscrypt_behavior">DNS requests from the VPS and ZDT-D-managed VPN networks are resolved through protected external DNSCrypt/DoH servers. Public access to port 53 is blocked.</string>
 
+
+    <string name="vps_letsencrypt_email_optional">Let’s Encrypt email (optional)</string>
+    <string name="vps_traffic_since_boot">Traffic since boot · %1$s · total %2$s</string>
+    <string name="vps_traffic_since_boot_unknown">Traffic since boot · total %1$s</string>
+    <string name="vps_show_full_log">Show full log</string>
+    <string name="vps_hide_full_log">Hide full log</string>
 </resources>

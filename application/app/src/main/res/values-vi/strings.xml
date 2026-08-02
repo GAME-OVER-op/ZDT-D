@@ -2156,4 +2156,10 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="action_refresh">Làm mới</string>
     <string name="action_share">Chia sẻ</string>
     <string name="copied">Đã sao chép</string>
+
+    <string name="vps_letsencrypt_email_optional">Email Let’s Encrypt (không bắt buộc)</string>
+    <string name="vps_traffic_since_boot">Lưu lượng từ lúc khởi động · %1$s · tổng %2$s</string>
+    <string name="vps_traffic_since_boot_unknown">Lưu lượng từ lúc khởi động · tổng %1$s</string>
+    <string name="vps_show_full_log">Hiện nhật ký đầy đủ</string>
+    <string name="vps_hide_full_log">Ẩn nhật ký đầy đủ</string>
 </resources>

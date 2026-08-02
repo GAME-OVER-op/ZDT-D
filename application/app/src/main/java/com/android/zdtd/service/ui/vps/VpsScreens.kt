@@ -5,6 +5,14 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -65,7 +73,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -76,6 +83,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -87,6 +95,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
+import androidx.lifecycle.compose.LifecycleStartEffect
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.singbox.importer.SingBoxOneLineImporter
@@ -120,9 +129,9 @@ fun VpsServersScreen(
   var showAdd by remember { mutableStateOf(false) }
   var deleteTarget by remember { mutableStateOf<VpsServer?>(null) }
 
-  DisposableEffect(Unit) {
+  LifecycleStartEffect(Unit) {
     viewModel.startListMonitoring()
-    onDispose { viewModel.stopListMonitoring() }
+    onStopOrDispose { viewModel.stopListMonitoring() }
   }
 
   if (showAdd && pending == null) {
@@ -225,9 +234,9 @@ fun VpsServerDetailsScreen(
   var removeTarget by remember { mutableStateOf<VpsServiceKind?>(null) }
   var logs by remember { mutableStateOf<String?>(null) }
 
-  LaunchedEffect(serverId) {
-    viewModel.refreshServer(serverId)
-    viewModel.loadServices(serverId)
+  LifecycleStartEffect(serverId) {
+    viewModel.startServerDetailsMonitoring(serverId)
+    onStopOrDispose { viewModel.stopServerDetailsMonitoring(serverId) }
   }
 
   VpsOperationDialog(operation = operation, onDismiss = viewModel::clearOperation)
@@ -298,17 +307,18 @@ fun VpsServiceScreen(
 ) {
   val profilesMap by viewModel.profiles.collectAsState()
   val services by viewModel.serviceStates.collectAsState()
+  val metricsMap by viewModel.metrics.collectAsState()
   val operation by viewModel.operation.collectAsState()
   val profiles = profilesMap[VpsViewModel.profileKey(serverId, kind)].orEmpty()
   val state = services[serverId].orEmpty().firstOrNull { it.kind == kind }
+  val serverOnline = metricsMap[serverId]?.reachability == VpsReachability.ONLINE
   var showCreate by remember { mutableStateOf(false) }
   var deleteTarget by remember { mutableStateOf<VpsServiceProfile?>(null) }
   var logs by remember { mutableStateOf<String?>(null) }
 
-  LaunchedEffect(serverId, kind) {
-    viewModel.loadServices(serverId)
-    if (kind != VpsServiceKind.DNSCRYPT) viewModel.loadProfiles(serverId, kind)
-    if (kind == VpsServiceKind.HYSTERIA2) viewModel.loadProfiles(serverId, VpsServiceKind.XRAY)
+  LifecycleStartEffect("$serverId:${kind.wireId}") {
+    viewModel.startServiceMonitoring(serverId, kind)
+    onStopOrDispose { viewModel.stopServiceMonitoring(serverId, kind) }
   }
 
   VpsOperationDialog(operation = operation, onDismiss = viewModel::clearOperation)
@@ -318,7 +328,7 @@ fun VpsServiceScreen(
     CreateVpsProfileDialog(
       kind = kind,
       suggestedHysteriaPort = profilesMap[VpsViewModel.profileKey(serverId, VpsServiceKind.XRAY)]?.firstOrNull()?.port,
-      busy = operation.running,
+      busy = operation.running || !serverOnline,
       onDismiss = { showCreate = false },
       onCreate = { name, port, mode, domain, email, sni ->
         showCreate = false
@@ -333,7 +343,7 @@ fun VpsServiceScreen(
       title = { Text(stringResource(R.string.vps_delete_profile_title)) },
       text = { Text(stringResource(R.string.vps_delete_profile_message, profile.name)) },
       confirmButton = {
-        Button(onClick = { viewModel.deleteProfile(serverId, kind, profile.id); deleteTarget = null }) { Text(stringResource(R.string.action_delete)) }
+        Button(enabled = serverOnline, onClick = { viewModel.deleteProfile(serverId, kind, profile.id); deleteTarget = null }) { Text(stringResource(R.string.action_delete)) }
       },
       dismissButton = { OutlinedButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.action_cancel)) } },
     )
@@ -349,6 +359,7 @@ fun VpsServiceScreen(
         title = serviceTitle(kind),
         description = serviceDescription(kind),
         actionText = if (kind == VpsServiceKind.DNSCRYPT) null else stringResource(R.string.vps_create_profile),
+        actionEnabled = serverOnline,
         onAction = { showCreate = true },
       )
     }
@@ -356,6 +367,7 @@ fun VpsServiceScreen(
       item {
         ManagedDnscryptCard(
           state = state,
+          enabled = serverOnline,
           onRestart = { viewModel.restartService(serverId, kind) },
           onLogs = { viewModel.loadLogs(serverId, kind, null) { logs = it } },
         )
@@ -366,6 +378,7 @@ fun VpsServiceScreen(
       items(profiles, key = { it.id }) { profile ->
         VpsProfileCard(
           profile = profile,
+          enabled = serverOnline,
           onClick = { onOpenProfile(profile.id) },
           onRestart = { viewModel.restartService(serverId, kind, profile.id) },
           onLogs = { viewModel.loadLogs(serverId, kind, profile.id) { logs = it } },
@@ -390,18 +403,20 @@ fun VpsProfileScreen(
   val server = viewModel.server(serverId)
   val profilesMap by viewModel.profiles.collectAsState()
   val clientsMap by viewModel.clients.collectAsState()
+  val metricsMap by viewModel.metrics.collectAsState()
   val operation by viewModel.operation.collectAsState()
   val configResult by viewModel.configResult.collectAsState()
   val profile = profilesMap[VpsViewModel.profileKey(serverId, kind)].orEmpty().firstOrNull { it.id == profileId }
   val clients = clientsMap[VpsViewModel.clientKey(serverId, kind, profileId)].orEmpty()
+  val serverOnline = metricsMap[serverId]?.reachability == VpsReachability.ONLINE
   var showCreateClient by remember { mutableStateOf(false) }
   var deleteTarget by remember { mutableStateOf<VpsClientConfig?>(null) }
   var snack by remember { mutableStateOf<String?>(null) }
 
-  LaunchedEffect(serverId, kind, profileId) {
-    viewModel.clearConfigResult()
-    viewModel.loadProfiles(serverId, kind)
-    viewModel.loadClients(serverId, kind, profileId)
+  LaunchedEffect(serverId, kind, profileId) { viewModel.clearConfigResult() }
+  LifecycleStartEffect("$serverId:${kind.wireId}:$profileId") {
+    viewModel.startProfileMonitoring(serverId, kind, profileId)
+    onStopOrDispose { viewModel.stopProfileMonitoring(serverId, kind, profileId) }
   }
 
   VpsOperationDialog(operation = operation, onDismiss = viewModel::clearOperation)
@@ -409,7 +424,7 @@ fun VpsProfileScreen(
   if (showCreateClient) {
     CreateClientDialog(
       existing = clients.map { it.name }.toSet(),
-      busy = operation.running,
+      busy = operation.running || !serverOnline,
       onDismiss = { showCreateClient = false },
       onCreate = { name -> showCreateClient = false; viewModel.createClient(serverId, kind, profileId, name) },
     )
@@ -421,7 +436,7 @@ fun VpsProfileScreen(
       title = { Text(stringResource(R.string.vps_revoke_client_title)) },
       text = { Text(stringResource(R.string.vps_revoke_client_message, client.name)) },
       confirmButton = {
-        Button(onClick = { viewModel.deleteClient(serverId, kind, profileId, client.id); deleteTarget = null }) { Text(stringResource(R.string.vps_revoke_access)) }
+        Button(enabled = serverOnline, onClick = { viewModel.deleteClient(serverId, kind, profileId, client.id); deleteTarget = null }) { Text(stringResource(R.string.vps_revoke_access)) }
       },
       dismissButton = { OutlinedButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.action_cancel)) } },
     )
@@ -434,7 +449,7 @@ fun VpsProfileScreen(
       onCopy = {
         val value = result.shareLink ?: result.content
         (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText(result.fileName, value))
-        snack = context.getString(R.string.copied)
+        Toast.makeText(context, R.string.copied, Toast.LENGTH_SHORT).show()
       },
       onSave = {
         val serverName = server?.name ?: "server"
@@ -472,6 +487,7 @@ fun VpsProfileScreen(
         title = profile?.name ?: profileId,
         description = profile?.let { "${it.mode.uppercase(Locale.ROOT)} · ${it.protocol.uppercase(Locale.ROOT)} ${it.port}" }.orEmpty(),
         actionText = stringResource(R.string.vps_create_client),
+        actionEnabled = serverOnline,
         onAction = { showCreateClient = true },
       )
     }
@@ -481,6 +497,7 @@ fun VpsProfileScreen(
       items(clients, key = { it.id }) { client ->
         VpsClientCard(
           client = client,
+          enabled = serverOnline,
           onGenerate = { viewModel.requestConfig(serverId, kind, profileId, client.id) },
           onDelete = { deleteTarget = client },
         )
@@ -551,7 +568,7 @@ private fun CreateVpsProfileDialog(
   var sni by remember { mutableStateOf("www.microsoft.com") }
   var menu by remember { mutableStateOf(false) }
   val requiresTls = kind == VpsServiceKind.HYSTERIA2 || (kind == VpsServiceKind.XRAY && mode == "ws")
-  val valid = name.isNotBlank() && port.toIntOrNull() in 1..65535 && (!requiresTls || (domain.isNotBlank() && email.isNotBlank())) && !(kind == VpsServiceKind.XRAY && mode == "reality" && sni.isBlank())
+  val valid = name.isNotBlank() && port.toIntOrNull() in 1..65535 && (!requiresTls || domain.isNotBlank()) && !(kind == VpsServiceKind.XRAY && mode == "reality" && sni.isBlank())
   val modes = when (kind) {
     VpsServiceKind.OPENVPN -> listOf("udp", "tcp")
     VpsServiceKind.XRAY -> listOf("reality", "ws")
@@ -578,7 +595,7 @@ private fun CreateVpsProfileDialog(
         }
         if (requiresTls) {
           OutlinedTextField(domain, { domain = it.trim() }, label = { Text(stringResource(R.string.vps_domain)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-          OutlinedTextField(email, { email = it.trim() }, label = { Text(stringResource(R.string.vps_letsencrypt_email)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+          OutlinedTextField(email, { email = it.trim() }, label = { Text(stringResource(R.string.vps_letsencrypt_email_optional)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
           Text(stringResource(R.string.vps_automatic_tls_hint), style = MaterialTheme.typography.bodySmall)
         }
         if (kind == VpsServiceKind.HYSTERIA2 && suggestedHysteriaPort != null) {
@@ -613,7 +630,7 @@ private fun CreateClientDialog(existing: Set<String>, busy: Boolean, onDismiss: 
 }
 
 @Composable
-private fun VpsHeaderCard(title: String, description: String, actionText: String?, onAction: () -> Unit) {
+private fun VpsHeaderCard(title: String, description: String, actionText: String?, actionEnabled: Boolean = true, onAction: () -> Unit) {
   Surface(
     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
     shape = RoundedCornerShape(22.dp),
@@ -626,7 +643,7 @@ private fun VpsHeaderCard(title: String, description: String, actionText: String
         if (description.isNotBlank()) Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
       }
       actionText?.let {
-        FilledTonalButton(onClick = onAction) { Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(it) }
+        FilledTonalButton(enabled = actionEnabled, onClick = onAction) { Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(it) }
       }
     }
   }
@@ -634,72 +651,129 @@ private fun VpsHeaderCard(title: String, description: String, actionText: String
 
 @Composable
 private fun VpsServerCard(server: VpsServer, metrics: VpsMetrics, onClick: () -> Unit, onRefresh: () -> Unit, onDelete: () -> Unit) {
-  val accent = when (metrics.reachability) {
+  val targetAccent = when (metrics.reachability) {
     VpsReachability.ONLINE -> Color(0xFF22C55E)
     VpsReachability.OFFLINE -> MaterialTheme.colorScheme.error
     VpsReachability.CHECKING -> Color(0xFFF59E0B)
     VpsReachability.UNKNOWN -> MaterialTheme.colorScheme.outline
   }
+  val accent by animateColorAsState(targetAccent, animationSpec = tween(350), label = "vpsServerAccent")
+  val online = metrics.reachability == VpsReachability.ONLINE
+  val hasSnapshot = metrics.osName.isNotBlank() || metrics.ramTotalBytes > 0L
+  val metricAlpha = if (metrics.reachability == VpsReachability.OFFLINE && hasSnapshot) 0.62f else 1f
+
   Card(
-    onClick = onClick,
-    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).heightIn(min = 194.dp),
     shape = RoundedCornerShape(22.dp),
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
     border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
   ) {
-    Column(modifier = Modifier.background(Brush.horizontalGradient(listOf(accent.copy(alpha = 0.14f), MaterialTheme.colorScheme.surface.copy(alpha = 0.66f)))).padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(
+      modifier = Modifier
+        .fillMaxWidth()
+        .background(Brush.horizontalGradient(listOf(accent.copy(alpha = 0.14f), MaterialTheme.colorScheme.surface.copy(alpha = 0.66f))))
+        .padding(14.dp),
+      verticalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
       Row(verticalAlignment = Alignment.CenterVertically) {
-        Surface(modifier = Modifier.size(52.dp), shape = CircleShape, color = accent.copy(alpha = 0.15f), contentColor = accent, border = BorderStroke(1.dp, accent.copy(alpha = 0.38f))) {
-          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Storage, contentDescription = null, modifier = Modifier.size(27.dp)) }
+        Row(
+          modifier = Modifier.weight(1f).clickable(enabled = online, onClick = onClick),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Surface(modifier = Modifier.size(52.dp), shape = CircleShape, color = accent.copy(alpha = 0.15f), contentColor = accent, border = BorderStroke(1.dp, accent.copy(alpha = 0.38f))) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Storage, contentDescription = null, modifier = Modifier.size(27.dp)) }
+          }
+          Spacer(Modifier.width(12.dp))
+          Column(Modifier.weight(1f)) {
+            Text(server.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("${server.host}:${server.port}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
+            Text(serverStatusText(metrics), style = MaterialTheme.typography.labelMedium, color = accent, fontWeight = FontWeight.SemiBold)
+          }
         }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-          Text(server.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-          Text("${server.host}:${server.port}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f))
-          Text(serverStatusText(metrics), style = MaterialTheme.typography.labelMedium, color = accent, fontWeight = FontWeight.SemiBold)
-        }
-        IconButton(onClick = onRefresh) { Icon(Icons.Outlined.Refresh, contentDescription = stringResource(R.string.action_refresh)) }
+        VpsRefreshIcon(refreshing = metrics.refreshing, onClick = onRefresh)
         IconButton(onClick = onDelete) { Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.action_delete)) }
       }
-      if (metrics.reachability == VpsReachability.ONLINE) {
-        Text("${metrics.osName} · ${metrics.architecture}", style = MaterialTheme.typography.bodySmall)
+
+      Column(modifier = Modifier.graphicsLayer(alpha = metricAlpha), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+          text = if (hasSnapshot) "${metrics.osName.ifBlank { "—" }} · ${metrics.architecture.ifBlank { "—" }}" else "— · —",
+          style = MaterialTheme.typography.bodySmall,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          MetricPill(Icons.Outlined.Speed, "CPU ${formatPercent(metrics.cpuPercent)}", Modifier.weight(1f))
+          MetricPill(Icons.Outlined.Speed, "CPU ${if (hasSnapshot) formatPercent(metrics.cpuPercent) else "—"}", Modifier.weight(1f))
           MetricPill(Icons.Outlined.Memory, "RAM ${formatBytes(metrics.ramUsedBytes)} / ${formatBytes(metrics.ramTotalBytes)}", Modifier.weight(1f))
         }
-      } else if (!metrics.error.isNullOrBlank()) {
-        Text(metrics.error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          MetricPill(Icons.Outlined.Download, "↓ ${formatBytes(metrics.networkRxBytes)} · ↑ ${formatBytes(metrics.networkTxBytes)}", Modifier.weight(1f))
+          MetricPill(Icons.Outlined.Refresh, formatUptime(metrics.uptimeSeconds), Modifier.weight(1f))
+        }
       }
+
+      Text(
+        text = when {
+          metrics.reachability == VpsReachability.OFFLINE -> metrics.error ?: stringResource(R.string.vps_offline)
+          metrics.networkInterface.isNotBlank() -> stringResource(R.string.vps_traffic_since_boot, metrics.networkInterface, formatBytes(metrics.networkRxBytes + metrics.networkTxBytes))
+          else -> stringResource(R.string.vps_traffic_since_boot_unknown, formatBytes(metrics.networkRxBytes + metrics.networkTxBytes))
+        },
+        style = MaterialTheme.typography.labelSmall,
+        color = if (metrics.reachability == VpsReachability.OFFLINE) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
     }
   }
 }
 
 @Composable
 private fun VpsServerSummaryCard(server: VpsServer, metrics: VpsMetrics, onRefresh: () -> Unit) {
-  val online = metrics.reachability == VpsReachability.ONLINE
-  val accent = if (online) Color(0xFF22C55E) else MaterialTheme.colorScheme.error
-  Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp), shape = RoundedCornerShape(22.dp), border = BorderStroke(1.dp, accent.copy(alpha = 0.4f)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f))) {
-    Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+  val targetAccent = when (metrics.reachability) {
+    VpsReachability.ONLINE -> Color(0xFF22C55E)
+    VpsReachability.OFFLINE -> MaterialTheme.colorScheme.error
+    VpsReachability.CHECKING -> Color(0xFFF59E0B)
+    VpsReachability.UNKNOWN -> MaterialTheme.colorScheme.outline
+  }
+  val accent by animateColorAsState(targetAccent, animationSpec = tween(350), label = "vpsSummaryAccent")
+  val hasSnapshot = metrics.osName.isNotBlank() || metrics.ramTotalBytes > 0L
+  val metricAlpha = if (metrics.reachability == VpsReachability.OFFLINE && hasSnapshot) 0.62f else 1f
+
+  Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).heightIn(min = 216.dp), shape = RoundedCornerShape(22.dp), border = BorderStroke(1.dp, accent.copy(alpha = 0.4f)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f))) {
+    Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
       Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.Outlined.Router, contentDescription = null, tint = accent, modifier = Modifier.size(30.dp)); Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
           Text(server.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
           Text("${server.username}@${server.host}:${server.port}", style = MaterialTheme.typography.bodySmall)
         }
-        IconButton(onClick = onRefresh) { Icon(Icons.Outlined.Refresh, contentDescription = stringResource(R.string.action_refresh)) }
+        VpsRefreshIcon(refreshing = metrics.refreshing, onClick = onRefresh)
       }
       Text(serverStatusText(metrics), color = accent, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-      if (online) {
-        Text("${metrics.osName} · ${metrics.architecture} · ${metrics.cpuCores} CPU", style = MaterialTheme.typography.bodySmall)
+      Column(modifier = Modifier.graphicsLayer(alpha = metricAlpha), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+          if (hasSnapshot) "${metrics.osName.ifBlank { "—" }} · ${metrics.architecture.ifBlank { "—" }} · ${metrics.cpuCores.takeIf { it > 0 } ?: "—"} CPU" else "— · — · — CPU",
+          style = MaterialTheme.typography.bodySmall,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          MetricPill(Icons.Outlined.Speed, "CPU ${formatPercent(metrics.cpuPercent)}", Modifier.weight(1f))
-          MetricPill(Icons.Outlined.Memory, "RAM ${formatBytes(metrics.ramUsedBytes)}", Modifier.weight(1f))
+          MetricPill(Icons.Outlined.Speed, "CPU ${if (hasSnapshot) formatPercent(metrics.cpuPercent) else "—"}", Modifier.weight(1f))
+          MetricPill(Icons.Outlined.Memory, "RAM ${formatBytes(metrics.ramUsedBytes)} / ${formatBytes(metrics.ramTotalBytes)}", Modifier.weight(1f))
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           MetricPill(Icons.Outlined.Storage, "Disk ${formatBytes(metrics.diskUsedBytes)} / ${formatBytes(metrics.diskTotalBytes)}", Modifier.weight(1f))
           MetricPill(Icons.Outlined.Refresh, formatUptime(metrics.uptimeSeconds), Modifier.weight(1f))
         }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          MetricPill(Icons.Outlined.Download, "↓ ${formatBytes(metrics.networkRxBytes)}", Modifier.weight(1f))
+          MetricPill(Icons.Outlined.Share, "↑ ${formatBytes(metrics.networkTxBytes)}", Modifier.weight(1f))
+        }
       }
+      Text(
+        if (metrics.networkInterface.isNotBlank()) stringResource(R.string.vps_traffic_since_boot, metrics.networkInterface, formatBytes(metrics.networkRxBytes + metrics.networkTxBytes)) else stringResource(R.string.vps_traffic_since_boot_unknown, formatBytes(metrics.networkRxBytes + metrics.networkTxBytes)),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+      )
     }
   }
 }
@@ -739,11 +813,12 @@ private fun VpsServiceCard(kind: VpsServiceKind, state: VpsServiceState, enabled
 }
 
 @Composable
-private fun VpsProfileCard(profile: VpsServiceProfile, onClick: () -> Unit, onRestart: () -> Unit, onLogs: () -> Unit, onDelete: () -> Unit) {
+private fun VpsProfileCard(profile: VpsServiceProfile, enabled: Boolean, onClick: () -> Unit, onRestart: () -> Unit, onLogs: () -> Unit, onDelete: () -> Unit) {
   var menu by remember { mutableStateOf(false) }
-  val accent = if (profile.active) Color(0xFF22C55E) else Color(0xFFF59E0B)
-  Card(onClick = onClick, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp), shape = RoundedCornerShape(19.dp), border = BorderStroke(1.dp, accent.copy(alpha = 0.36f)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f))) {
-    Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
+  val targetAccent = if (profile.active) Color(0xFF22C55E) else Color(0xFFF59E0B)
+  val accent by animateColorAsState(targetAccent, animationSpec = tween(300), label = "vpsProfileAccent")
+  Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp), shape = RoundedCornerShape(19.dp), border = BorderStroke(1.dp, accent.copy(alpha = 0.36f)), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f))) {
+    Row(Modifier.clickable(enabled = enabled, onClick = onClick).padding(13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(11.dp)) {
       Surface(Modifier.size(46.dp), shape = CircleShape, color = accent.copy(alpha = 0.14f), contentColor = accent) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Security, contentDescription = null) } }
       Column(Modifier.weight(1f)) {
         Text(profile.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -751,11 +826,11 @@ private fun VpsProfileCard(profile: VpsServiceProfile, onClick: () -> Unit, onRe
         Text(stringResource(R.string.vps_clients_count, profile.clientCount), style = MaterialTheme.typography.labelMedium, color = accent)
       }
       Box {
-        IconButton(onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = null) }
+        IconButton(enabled = enabled, onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = null) }
         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-          DropdownMenuItem(text = { Text(stringResource(R.string.vps_restart)) }, onClick = { menu = false; onRestart() })
-          DropdownMenuItem(text = { Text(stringResource(R.string.vps_logs_title)) }, onClick = { menu = false; onLogs() })
-          DropdownMenuItem(text = { Text(stringResource(R.string.action_delete)) }, onClick = { menu = false; onDelete() })
+          DropdownMenuItem(enabled = enabled, text = { Text(stringResource(R.string.vps_restart)) }, onClick = { menu = false; onRestart() })
+          DropdownMenuItem(enabled = enabled, text = { Text(stringResource(R.string.vps_logs_title)) }, onClick = { menu = false; onLogs() })
+          DropdownMenuItem(enabled = enabled, text = { Text(stringResource(R.string.action_delete)) }, onClick = { menu = false; onDelete() })
         }
       }
     }
@@ -763,7 +838,7 @@ private fun VpsProfileCard(profile: VpsServiceProfile, onClick: () -> Unit, onRe
 }
 
 @Composable
-private fun VpsClientCard(client: VpsClientConfig, onGenerate: () -> Unit, onDelete: () -> Unit) {
+private fun VpsClientCard(client: VpsClientConfig, enabled: Boolean, onGenerate: () -> Unit, onDelete: () -> Unit) {
   Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f)), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))) {
     Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
       Surface(Modifier.size(43.dp), shape = CircleShape, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.13f), contentColor = MaterialTheme.colorScheme.primary) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Icon(Icons.Outlined.Key, contentDescription = null) } }
@@ -771,22 +846,22 @@ private fun VpsClientCard(client: VpsClientConfig, onGenerate: () -> Unit, onDel
         Text(client.name, fontWeight = FontWeight.Bold)
         if (client.createdAt > 0) Text(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(client.createdAt * 1000)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
       }
-      FilledTonalButton(onClick = onGenerate) { Text(stringResource(R.string.vps_get_config)) }
-      IconButton(onClick = onDelete) { Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.action_delete)) }
+      FilledTonalButton(enabled = enabled, onClick = onGenerate) { Text(stringResource(R.string.vps_get_config)) }
+      IconButton(enabled = enabled, onClick = onDelete) { Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.action_delete)) }
     }
   }
 }
 
 @Composable
-private fun ManagedDnscryptCard(state: VpsServiceState?, onRestart: () -> Unit, onLogs: () -> Unit) {
+private fun ManagedDnscryptCard(state: VpsServiceState?, enabled: Boolean, onRestart: () -> Unit, onLogs: () -> Unit) {
   Card(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp), shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f))) {
     Column(Modifier.padding(15.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
       Row(verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.Dns, contentDescription = null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(9.dp)); Text(stringResource(R.string.vps_dnscrypt_summary), fontWeight = FontWeight.Bold) }
       Text(stringResource(R.string.vps_dnscrypt_behavior), style = MaterialTheme.typography.bodySmall)
       Text(if (state?.active == true) stringResource(R.string.vps_running) else stringResource(R.string.vps_stopped), color = if (state?.active == true) Color(0xFF22C55E) else MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(onClick = onRestart, modifier = Modifier.weight(1f)) { Icon(Icons.Outlined.Refresh, contentDescription = null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.vps_restart)) }
-        OutlinedButton(onClick = onLogs, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.vps_logs_title)) }
+        Button(enabled = enabled, onClick = onRestart, modifier = Modifier.weight(1f)) { Icon(Icons.Outlined.Refresh, contentDescription = null); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.vps_restart)) }
+        OutlinedButton(enabled = enabled, onClick = onLogs, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.vps_logs_title)) }
       }
     }
   }
@@ -822,6 +897,9 @@ private fun VpsConfigResultDialog(result: VpsConfigResult, onDismiss: () -> Unit
 @Composable
 private fun VpsOperationDialog(operation: VpsOperationState, onDismiss: () -> Unit) {
   if (!operation.running && operation.error == null && operation.log.isEmpty()) return
+  val context = LocalContext.current
+  var showFullLog by remember(operation.title, operation.running) { mutableStateOf(false) }
+  val visibleLog = if (showFullLog) operation.log else operation.log.takeLast(12)
   AlertDialog(
     onDismissRequest = { if (!operation.running) onDismiss() },
     icon = {
@@ -837,7 +915,25 @@ private fun VpsOperationDialog(operation: VpsOperationState, onDismiss: () -> Un
         if (operation.rolledBack) Text(stringResource(R.string.vps_rollback_completed), color = Color(0xFF22C55E), fontWeight = FontWeight.SemiBold)
         if (operation.log.isNotEmpty()) {
           Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)) {
-            Text(operation.log.takeLast(12).joinToString("\n"), modifier = Modifier.padding(10.dp).heightIn(max = 190.dp).verticalScroll(rememberScrollState()), style = MaterialTheme.typography.bodySmall)
+            Text(
+              visibleLog.joinToString("\n"),
+              modifier = Modifier.padding(10.dp).heightIn(max = if (showFullLog) 380.dp else 190.dp).verticalScroll(rememberScrollState()),
+              style = MaterialTheme.typography.bodySmall,
+            )
+          }
+          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            TextButton(onClick = { showFullLog = !showFullLog }) {
+              Text(stringResource(if (showFullLog) R.string.vps_hide_full_log else R.string.vps_show_full_log))
+            }
+            TextButton(onClick = {
+              (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                .setPrimaryClip(ClipData.newPlainText("VPS log", operation.log.joinToString("\n")))
+              Toast.makeText(context, R.string.copied, Toast.LENGTH_SHORT).show()
+            }) {
+              Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(17.dp))
+              Spacer(Modifier.width(5.dp))
+              Text(stringResource(R.string.action_copy))
+            }
           }
         }
       }
@@ -871,6 +967,24 @@ private fun VpsEmptyState(title: String, hint: String) {
 private fun WarningCard(text: String) {
   Surface(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp), shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.64f)) {
     Row(Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically) { Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error); Spacer(Modifier.width(9.dp)); Text(text, style = MaterialTheme.typography.bodySmall) }
+  }
+}
+
+@Composable
+private fun VpsRefreshIcon(refreshing: Boolean, onClick: () -> Unit, enabled: Boolean = true) {
+  val transition = rememberInfiniteTransition(label = "vpsRefresh")
+  val rotation by transition.animateFloat(
+    initialValue = 0f,
+    targetValue = if (refreshing) 360f else 0f,
+    animationSpec = infiniteRepeatable(animation = tween(900, easing = LinearEasing), repeatMode = RepeatMode.Restart),
+    label = "vpsRefreshRotation",
+  )
+  IconButton(enabled = enabled, onClick = onClick) {
+    Icon(
+      Icons.Outlined.Refresh,
+      contentDescription = stringResource(R.string.action_refresh),
+      modifier = Modifier.graphicsLayer(rotationZ = if (refreshing) rotation else 0f),
+    )
   }
 }
 

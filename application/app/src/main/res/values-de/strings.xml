@@ -2157,4 +2157,10 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="action_refresh">Aktualisieren</string>
     <string name="action_share">Teilen</string>
     <string name="copied">Kopiert</string>
+
+    <string name="vps_letsencrypt_email_optional">Let’s-Encrypt-E-Mail (optional)</string>
+    <string name="vps_traffic_since_boot">Datenverkehr seit dem Start · %1$s · gesamt %2$s</string>
+    <string name="vps_traffic_since_boot_unknown">Datenverkehr seit dem Start · gesamt %1$s</string>
+    <string name="vps_show_full_log">Vollständiges Protokoll anzeigen</string>
+    <string name="vps_hide_full_log">Vollständiges Protokoll ausblenden</string>
 </resources>

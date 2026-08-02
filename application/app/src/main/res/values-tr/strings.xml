@@ -2156,4 +2156,10 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="action_refresh">Yenile</string>
     <string name="action_share">Paylaş</string>
     <string name="copied">Kopyalandı</string>
+
+    <string name="vps_letsencrypt_email_optional">Let’s Encrypt e-postası (isteğe bağlı)</string>
+    <string name="vps_traffic_since_boot">Başlatmadan beri trafik · %1$s · toplam %2$s</string>
+    <string name="vps_traffic_since_boot_unknown">Başlatmadan beri trafik · toplam %1$s</string>
+    <string name="vps_show_full_log">Tam günlüğü göster</string>
+    <string name="vps_hide_full_log">Tam günlüğü gizle</string>
 </resources>

@@ -43,6 +43,10 @@ data class VpsMetrics(
   val diskUsedBytes: Long = 0L,
   val diskTotalBytes: Long = 0L,
   val uptimeSeconds: Long = 0L,
+  val networkInterface: String = "",
+  val networkRxBytes: Long = 0L,
+  val networkTxBytes: Long = 0L,
+  val refreshing: Boolean = false,
   val lastUpdatedAt: Long = 0L,
   val error: String? = null,
 ) {

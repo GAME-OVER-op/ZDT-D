@@ -2159,4 +2159,10 @@ APatch: 10700+</string>
     <string name="action_refresh">Оновити</string>
     <string name="action_share">Поділитися</string>
     <string name="copied">Скопійовано</string>
+
+    <string name="vps_letsencrypt_email_optional">Email для Let’s Encrypt (необов’язково)</string>
+    <string name="vps_traffic_since_boot">Трафік із моменту запуску · %1$s · усього %2$s</string>
+    <string name="vps_traffic_since_boot_unknown">Трафік із моменту запуску · усього %1$s</string>
+    <string name="vps_show_full_log">Показати повний журнал</string>
+    <string name="vps_hide_full_log">Приховати повний журнал</string>
 </resources>

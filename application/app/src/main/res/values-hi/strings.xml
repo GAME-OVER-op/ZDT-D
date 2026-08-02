@@ -2157,4 +2157,10 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="action_refresh">रीफ़्रेश करें</string>
     <string name="action_share">साझा करें</string>
     <string name="copied">कॉपी किया गया</string>
+
+    <string name="vps_letsencrypt_email_optional">Let’s Encrypt ईमेल (वैकल्पिक)</string>
+    <string name="vps_traffic_since_boot">बूट के बाद का ट्रैफ़िक · %1$s · कुल %2$s</string>
+    <string name="vps_traffic_since_boot_unknown">बूट के बाद का ट्रैफ़िक · कुल %1$s</string>
+    <string name="vps_show_full_log">पूरा लॉग दिखाएँ</string>
+    <string name="vps_hide_full_log">पूरा लॉग छिपाएँ</string>
 </resources>

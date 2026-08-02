@@ -2157,4 +2157,10 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="action_refresh">Atualizar</string>
     <string name="action_share">Compartilhar</string>
     <string name="copied">Copiado</string>
+
+    <string name="vps_letsencrypt_email_optional">E-mail do Let’s Encrypt (opcional)</string>
+    <string name="vps_traffic_since_boot">Tráfego desde a inicialização · %1$s · total %2$s</string>
+    <string name="vps_traffic_since_boot_unknown">Tráfego desde a inicialização · total %1$s</string>
+    <string name="vps_show_full_log">Mostrar log completo</string>
+    <string name="vps_hide_full_log">Ocultar log completo</string>
 </resources>

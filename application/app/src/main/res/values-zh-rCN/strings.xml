@@ -2156,4 +2156,10 @@ APatch：10700+</string>
     <string name="action_refresh">刷新</string>
     <string name="action_share">分享</string>
     <string name="copied">已复制</string>
+
+    <string name="vps_letsencrypt_email_optional">Let’s Encrypt 电子邮箱（可选）</string>
+    <string name="vps_traffic_since_boot">启动后的流量 · %1$s · 总计 %2$s</string>
+    <string name="vps_traffic_since_boot_unknown">启动后的流量 · 总计 %1$s</string>
+    <string name="vps_show_full_log">显示完整日志</string>
+    <string name="vps_hide_full_log">隐藏完整日志</string>
 </resources>

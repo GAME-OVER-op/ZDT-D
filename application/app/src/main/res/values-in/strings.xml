@@ -2156,4 +2156,10 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="action_refresh">Segarkan</string>
     <string name="action_share">Bagikan</string>
     <string name="copied">Disalin</string>
+
+    <string name="vps_letsencrypt_email_optional">Email Let’s Encrypt (opsional)</string>
+    <string name="vps_traffic_since_boot">Lalu lintas sejak boot · %1$s · total %2$s</string>
+    <string name="vps_traffic_since_boot_unknown">Lalu lintas sejak boot · total %1$s</string>
+    <string name="vps_show_full_log">Tampilkan log lengkap</string>
+    <string name="vps_hide_full_log">Sembunyikan log lengkap</string>
 </resources>

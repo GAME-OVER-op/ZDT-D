@@ -729,6 +729,10 @@ private fun parentAppsRoute(route: AppsRoute): AppsRoute = when (route) {
   AppsRoute.List -> AppsRoute.List
   AppsRoute.AnalysisTools -> AppsRoute.List
   AppsRoute.OptionalTools -> AppsRoute.List
+  AppsRoute.VpsServers -> AppsRoute.List
+  is AppsRoute.VpsServer -> AppsRoute.VpsServers
+  is AppsRoute.VpsService -> AppsRoute.VpsServer(route.serverId)
+  is AppsRoute.VpsProfile -> AppsRoute.VpsService(route.serverId, route.serviceId)
   AppsRoute.ConstructionStudio -> AppsRoute.AnalysisTools
   AppsRoute.DpiDetector -> AppsRoute.AnalysisTools
   AppsRoute.NfqwsTester -> AppsRoute.AnalysisTools
@@ -1286,6 +1290,10 @@ private fun MainShell(
     tab == Tab.APPS && appsRoute == AppsRoute.List -> stringResource(R.string.nav_programs)
     tab == Tab.APPS && appsRoute == AppsRoute.AnalysisTools -> stringResource(R.string.analysis_tools_title)
     tab == Tab.APPS && appsRoute == AppsRoute.OptionalTools -> stringResource(R.string.optional_tools_title)
+    tab == Tab.APPS && appsRoute == AppsRoute.VpsServers -> stringResource(R.string.vps_servers_title)
+    tab == Tab.APPS && appsRoute is AppsRoute.VpsServer -> stringResource(R.string.vps_server_title)
+    tab == Tab.APPS && appsRoute is AppsRoute.VpsService -> stringResource(R.string.vps_service_title)
+    tab == Tab.APPS && appsRoute is AppsRoute.VpsProfile -> stringResource(R.string.vps_profile_title)
     tab == Tab.APPS && appsRoute == AppsRoute.ConstructionStudio -> stringResource(R.string.construction_studio_title)
     tab == Tab.APPS && appsRoute == AppsRoute.DpiDetector -> stringResource(R.string.dpi_detector_title)
     tab == Tab.APPS && appsRoute == AppsRoute.NfqwsTester -> stringResource(R.string.nfqws_tester_title)
@@ -1309,6 +1317,10 @@ private fun MainShell(
         AppsRoute.List -> null
         AppsRoute.AnalysisTools -> null
         AppsRoute.OptionalTools -> null
+        AppsRoute.VpsServers -> null
+        is AppsRoute.VpsServer -> null
+        is AppsRoute.VpsService -> null
+        is AppsRoute.VpsProfile -> null
         AppsRoute.ConstructionStudio -> null
         AppsRoute.DpiDetector -> null
         AppsRoute.NfqwsTester -> null
@@ -1414,6 +1426,10 @@ private fun MainShell(
           onOpenProfile = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) },
           onOpenAnalysisTools = { appsRoute = AppsRoute.AnalysisTools },
           onOpenOptionalTools = { appsRoute = AppsRoute.OptionalTools },
+          onOpenVpsServers = { appsRoute = AppsRoute.VpsServers },
+          onOpenVpsServer = { serverId -> appsRoute = AppsRoute.VpsServer(serverId) },
+          onOpenVpsService = { serverId, serviceId -> appsRoute = AppsRoute.VpsService(serverId, serviceId) },
+          onOpenVpsProfile = { serverId, serviceId, profileId -> appsRoute = AppsRoute.VpsProfile(serverId, serviceId, profileId) },
           onOpenConstructionStudio = { appsRoute = AppsRoute.ConstructionStudio },
           onOpenDpiDetector = { appsRoute = AppsRoute.DpiDetector },
           onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
@@ -1440,6 +1456,10 @@ private fun MainShell(
               onOpenProfile = { pid, pr -> appsRoute = AppsRoute.Profile(pid, pr) },
               onOpenAnalysisTools = { appsRoute = AppsRoute.AnalysisTools },
               onOpenOptionalTools = { appsRoute = AppsRoute.OptionalTools },
+              onOpenVpsServers = { appsRoute = AppsRoute.VpsServers },
+              onOpenVpsServer = { serverId -> appsRoute = AppsRoute.VpsServer(serverId) },
+              onOpenVpsService = { serverId, serviceId -> appsRoute = AppsRoute.VpsService(serverId, serviceId) },
+              onOpenVpsProfile = { serverId, serviceId, profileId -> appsRoute = AppsRoute.VpsProfile(serverId, serviceId, profileId) },
               onOpenConstructionStudio = { appsRoute = AppsRoute.ConstructionStudio },
               onOpenDpiDetector = { appsRoute = AppsRoute.DpiDetector },
               onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
@@ -1575,6 +1595,10 @@ private fun LandscapeShellContent(
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
   onOpenOptionalTools: () -> Unit,
+  onOpenVpsServers: () -> Unit,
+  onOpenVpsServer: (String) -> Unit,
+  onOpenVpsService: (String, String) -> Unit,
+  onOpenVpsProfile: (String, String, String) -> Unit,
   onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
@@ -1614,6 +1638,10 @@ private fun LandscapeShellContent(
           onOpenProfile = onOpenProfile,
           onOpenAnalysisTools = onOpenAnalysisTools,
           onOpenOptionalTools = onOpenOptionalTools,
+          onOpenVpsServers = onOpenVpsServers,
+          onOpenVpsServer = onOpenVpsServer,
+          onOpenVpsService = onOpenVpsService,
+          onOpenVpsProfile = onOpenVpsProfile,
           onOpenConstructionStudio = onOpenConstructionStudio,
           onOpenDpiDetector = onOpenDpiDetector,
           onOpenNfqwsTester = onOpenNfqwsTester,
@@ -2582,6 +2610,10 @@ private fun TabBody(
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
   onOpenOptionalTools: () -> Unit,
+  onOpenVpsServers: () -> Unit,
+  onOpenVpsServer: (String) -> Unit,
+  onOpenVpsService: (String, String) -> Unit,
+  onOpenVpsProfile: (String, String, String) -> Unit,
   onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
@@ -2624,6 +2656,10 @@ private fun TabBody(
             onOpenProfile = onOpenProfile,
             onOpenAnalysisTools = onOpenAnalysisTools,
             onOpenOptionalTools = onOpenOptionalTools,
+            onOpenVpsServers = onOpenVpsServers,
+            onOpenVpsServer = onOpenVpsServer,
+            onOpenVpsService = onOpenVpsService,
+            onOpenVpsProfile = onOpenVpsProfile,
             onOpenConstructionStudio = onOpenConstructionStudio,
             onOpenDpiDetector = onOpenDpiDetector,
             onOpenNfqwsTester = onOpenNfqwsTester,

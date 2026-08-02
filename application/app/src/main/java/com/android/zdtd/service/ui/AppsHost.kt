@@ -19,14 +19,23 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.android.zdtd.service.R
 import com.android.zdtd.service.UiState
 import com.android.zdtd.service.ZdtdActions
+import com.android.zdtd.service.ui.vps.VpsProfileScreen
+import com.android.zdtd.service.ui.vps.VpsServerDetailsScreen
+import com.android.zdtd.service.ui.vps.VpsServersScreen
+import com.android.zdtd.service.ui.vps.VpsServiceScreen
+import com.android.zdtd.service.vps.VpsServiceKind
+import com.android.zdtd.service.vps.VpsViewModel
+import com.android.zdtd.service.vps.VpsViewModelFactory
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -39,6 +48,10 @@ fun AppsHost(
   onOpenProfile: (String, String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
   onOpenOptionalTools: () -> Unit,
+  onOpenVpsServers: () -> Unit,
+  onOpenVpsServer: (String) -> Unit,
+  onOpenVpsService: (String, String) -> Unit,
+  onOpenVpsProfile: (String, String, String) -> Unit,
   onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
@@ -48,6 +61,10 @@ fun AppsHost(
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
 ) {
+  val context = LocalContext.current
+  val application = context.applicationContext as android.app.Application
+  val vpsViewModel: VpsViewModel = viewModel(factory = remember(application) { VpsViewModelFactory(application) })
+
   val programs by remember(uiStateFlow) {
     uiStateFlow.map { it.programs }.distinctUntilChanged()
   }.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -70,6 +87,10 @@ fun AppsHost(
     AppsRoute.List -> 0
     AppsRoute.AnalysisTools -> 1
     AppsRoute.OptionalTools -> 1
+    AppsRoute.VpsServers -> 1
+    is AppsRoute.VpsServer -> 2
+    is AppsRoute.VpsService -> 3
+    is AppsRoute.VpsProfile -> 4
     AppsRoute.ConstructionStudio -> 2
     AppsRoute.DpiDetector -> 2
     AppsRoute.NfqwsTester -> 2
@@ -101,10 +122,55 @@ fun AppsHost(
         onOpenProgram = onOpenProgram,
         onOpenAnalysisTools = onOpenAnalysisTools,
         onOpenOptionalTools = onOpenOptionalTools,
+        onOpenVpsServers = onOpenVpsServers,
         listState = listState,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
       )
+      AppsRoute.VpsServers -> VpsServersScreen(
+        viewModel = vpsViewModel,
+        onOpenServer = onOpenVpsServer,
+        topContentPadding = topContentPadding,
+        bottomContentPadding = bottomContentPadding,
+      )
+      is AppsRoute.VpsServer -> VpsServerDetailsScreen(
+        serverId = r.serverId,
+        viewModel = vpsViewModel,
+        onOpenService = { onOpenVpsService(r.serverId, it.wireId) },
+        topContentPadding = topContentPadding,
+        bottomContentPadding = bottomContentPadding,
+      )
+      is AppsRoute.VpsService -> {
+        val kind = VpsServiceKind.fromWireId(r.serviceId)
+        if (kind == null) {
+          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(stringResource(R.string.vps_unknown_service)) }
+        } else {
+          VpsServiceScreen(
+            serverId = r.serverId,
+            kind = kind,
+            viewModel = vpsViewModel,
+            onOpenProfile = { onOpenVpsProfile(r.serverId, r.serviceId, it) },
+            topContentPadding = topContentPadding,
+            bottomContentPadding = bottomContentPadding,
+          )
+        }
+      }
+      is AppsRoute.VpsProfile -> {
+        val kind = VpsServiceKind.fromWireId(r.serviceId)
+        if (kind == null) {
+          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(stringResource(R.string.vps_unknown_service)) }
+        } else {
+          VpsProfileScreen(
+            serverId = r.serverId,
+            kind = kind,
+            profileId = r.profileId,
+            viewModel = vpsViewModel,
+            actions = actions,
+            topContentPadding = topContentPadding,
+            bottomContentPadding = bottomContentPadding,
+          )
+        }
+      }
       AppsRoute.OptionalTools -> OptionalToolsScreen(
         state = tgWsProxy,
         actions = actions,

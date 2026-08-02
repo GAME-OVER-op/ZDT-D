@@ -352,6 +352,8 @@ dependencies {
 
   // Networking
   implementation 'com.squareup.okhttp3:okhttp:5.3.2'
+  implementation 'com.github.mwiede:jsch:2.28.4'
+  implementation 'org.bouncycastle:bcprov-jdk18on:1.84'
 
   // Remote setup
 

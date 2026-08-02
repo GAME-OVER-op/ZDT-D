@@ -29,6 +29,7 @@ import androidx.compose.material.icons.outlined.Extension
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.SwapHoriz
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -69,6 +70,7 @@ fun AppsListScreen(
   onOpenProgram: (String) -> Unit,
   onOpenAnalysisTools: () -> Unit,
   onOpenOptionalTools: () -> Unit,
+  onOpenVpsServers: () -> Unit,
   listState: LazyListState,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
@@ -153,6 +155,13 @@ fun AppsListScreen(
         compact = compactCards,
         installedCount = if (tgWsProxy.installed) 1 else 0,
         onClick = onOpenOptionalTools,
+      )
+    }
+
+    item(key = "vps_servers_entry") {
+      VpsServersEntryCard(
+        compact = compactCards,
+        onClick = onOpenVpsServers,
       )
     }
 
@@ -319,6 +328,66 @@ private fun OptionalToolsEntryCard(
         )
         ProgramBadgeRow(
           label = if (installedCount > 0) stringResource(R.string.optional_tools_installed_count, installedCount) else stringResource(R.string.optional_tools_available),
+          containerColor = accentColor.copy(alpha = 0.14f),
+          contentColor = accentColor,
+        )
+      }
+      Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f), modifier = Modifier.size(22.dp))
+    }
+  }
+}
+
+@Composable
+private fun VpsServersEntryCard(
+  compact: Boolean,
+  onClick: () -> Unit,
+) {
+  val accentColor = MaterialTheme.colorScheme.tertiary
+  Card(
+    onClick = onClick,
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp),
+    shape = RoundedCornerShape(18.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)),
+    border = BorderStroke(1.dp, accentColor.copy(alpha = 0.34f)),
+  ) {
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .background(Brush.horizontalGradient(listOf(accentColor.copy(alpha = 0.16f), MaterialTheme.colorScheme.surface.copy(alpha = 0.64f))))
+        .padding(horizontal = if (compact) 11.dp else 13.dp, vertical = if (compact) 10.dp else 12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Surface(
+        modifier = Modifier.size(if (compact) 48.dp else 54.dp),
+        shape = CircleShape,
+        color = accentColor.copy(alpha = 0.14f),
+        contentColor = accentColor,
+        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.36f)),
+      ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+          Icon(Icons.Outlined.Storage, contentDescription = null, modifier = Modifier.size(if (compact) 24.dp else 27.dp))
+        }
+      }
+      Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+          stringResource(R.string.vps_servers_title),
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.Bold,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          stringResource(R.string.vps_servers_entry_desc),
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+          style = MaterialTheme.typography.bodySmall,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
+        )
+        ProgramBadgeRow(
+          label = stringResource(R.string.vps_servers_badge),
           containerColor = accentColor.copy(alpha = 0.14f),
           contentColor = accentColor,
         )

@@ -2167,4 +2167,12 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="vps_loading_profile">Loading profile and clients…</string>
     <string name="vps_profile_not_found">Profile not found</string>
     <string name="vps_load_failed">Could not load data</string>
+
+    <!-- DPI Detector report export -->
+    <string name="dpi_detector_export_title">Test report</string>
+    <string name="dpi_detector_export_desc">Save all results and technical details or share them as a ZIP archive.</string>
+    <string name="dpi_detector_export_path">Save location: /storage/emulated/0/ZDT-D_Files/Dpi_detector/</string>
+    <string name="dpi_detector_save_success">Report saved to %1$s</string>
+    <string name="dpi_detector_save_failed">Could not save report: %1$s</string>
+    <string name="dpi_detector_share_failed">Could not share the report archive.</string>
 </resources>

@@ -2169,4 +2169,12 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="vps_loading_profile">प्रोफ़ाइल और क्लाइंट लोड हो रहे हैं…</string>
     <string name="vps_profile_not_found">प्रोफ़ाइल नहीं मिली</string>
     <string name="vps_load_failed">डेटा लोड नहीं किया जा सका</string>
+
+    <!-- DPI Detector report export -->
+    <string name="dpi_detector_export_title">परीक्षण रिपोर्ट</string>
+    <string name="dpi_detector_export_desc">सभी परिणाम और तकनीकी विवरण सहेजें या ZIP संग्रह के रूप में साझा करें।</string>
+    <string name="dpi_detector_export_path">सहेजने का स्थान: /storage/emulated/0/ZDT-D_Files/Dpi_detector/</string>
+    <string name="dpi_detector_save_success">रिपोर्ट %1$s में सहेजी गई</string>
+    <string name="dpi_detector_save_failed">रिपोर्ट सहेजी नहीं जा सकी: %1$s</string>
+    <string name="dpi_detector_share_failed">रिपोर्ट संग्रह साझा नहीं किया जा सका।</string>
 </resources>

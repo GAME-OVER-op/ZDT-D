@@ -1,5 +1,6 @@
 package com.android.zdtd.service.ui
 
+import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -41,6 +42,8 @@ import androidx.compose.material.icons.outlined.KeyboardArrowDown
 import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.PlayArrow
 import androidx.compose.material.icons.outlined.RadioButtonUnchecked
+import androidx.compose.material.icons.outlined.Save
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Public
 import androidx.compose.material.icons.outlined.StopCircle
 import androidx.compose.material.icons.outlined.Tune
@@ -78,10 +81,19 @@ import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.R
 import com.android.zdtd.service.diagnostics.dpi.DpiDetectorEvent
 import com.android.zdtd.service.diagnostics.dpi.DpiDetectorRunner
+import com.android.zdtd.service.diagnostics.dpi.DpiDetectorReportBundle
+import com.android.zdtd.service.diagnostics.dpi.DpiDetectorReportCheck
+import com.android.zdtd.service.diagnostics.dpi.DpiDetectorReportData
+import com.android.zdtd.service.diagnostics.dpi.DpiDetectorReportExporter
+import com.android.zdtd.service.diagnostics.dpi.DpiDetectorReportProbe
+import com.android.zdtd.service.diagnostics.dpi.DpiDetectorReportStage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.util.Collections
 
 private data class DpiPlannedTest(
   val stageId: String,
@@ -143,6 +155,12 @@ fun DpiDetectorScreen(
   var summaryDetail by remember { mutableStateOf("") }
   var runnerJob by remember { mutableStateOf<Job?>(null) }
   var runningTick by remember { mutableStateOf(0) }
+  var completedRun by remember { mutableStateOf(false) }
+  var runStartedAtMs by remember { mutableStateOf(0L) }
+  var runFinishedAtMs by remember { mutableStateOf(0L) }
+  var exportBusy by remember { mutableStateOf(false) }
+  var reportBundle by remember { mutableStateOf<DpiDetectorReportBundle?>(null) }
+  val rawEventLines = remember { Collections.synchronizedList(mutableListOf<String>()) }
 
   LaunchedEffect(running) {
     if (!running) {
@@ -164,6 +182,11 @@ fun DpiDetectorScreen(
     showAllStageIds = emptySet()
     summaryStatus = null
     summaryDetail = ""
+    completedRun = false
+    runStartedAtMs = 0L
+    runFinishedAtMs = 0L
+    reportBundle = null
+    rawEventLines.clear()
   }
 
   fun startScan() {
@@ -171,13 +194,17 @@ fun DpiDetectorScreen(
     resetRunState()
     hasRun = true
     running = true
+    runStartedAtMs = System.currentTimeMillis()
     scope.launch {
       delay(180)
       screenListState.animateScrollToItem(3)
     }
     runnerJob = scope.launch {
       DpiDetectorRunner(context)
-        .runNdjsonStream(quick = false)
+        .runNdjsonStream(
+          quick = false,
+          onRawLine = { line -> rawEventLines.add(line) },
+        )
         .collect { event ->
           when (event) {
             is DpiDetectorEvent.Meta -> {
@@ -216,12 +243,20 @@ fun DpiDetectorScreen(
                 summaryDetail = event.data
                 currentStageId = null
                 currentProbe = ""
+                runFinishedAtMs = System.currentTimeMillis()
+                completedRun = true
                 running = false
+                scope.launch {
+                  delay(180)
+                  screenListState.animateScrollToItem(4)
+                }
               }
             }
             is DpiDetectorEvent.Error -> {
               summaryStatus = "error"
               summaryDetail = event.message
+              completedRun = false
+              runFinishedAtMs = System.currentTimeMillis()
               running = false
               stages.replaceAllStages { stage -> stage.stopCheckingProbes("Stopped after error") }
             }
@@ -238,10 +273,51 @@ fun DpiDetectorScreen(
     running = false
     summaryStatus = "stopped"
     summaryDetail = "Stopped by user"
+    completedRun = false
+    runFinishedAtMs = System.currentTimeMillis()
     stages.replaceAllStages { stage ->
       stage.stopCheckingProbes("Stopped by user")
     }
   }
+
+  fun buildReportData(): DpiDetectorReportData = DpiDetectorReportData(
+    startedAtMs = runStartedAtMs,
+    finishedAtMs = runFinishedAtMs.coerceAtLeast(System.currentTimeMillis()),
+    summaryStatus = summaryStatus.orEmpty(),
+    summaryDetail = summaryDetail,
+    stages = stages.map { stage ->
+      DpiDetectorReportStage(
+        id = stage.id,
+        title = context.getString(stage.titleRes),
+        description = context.getString(stage.descRes),
+        status = stage.status,
+        detail = stage.detail,
+        plannedTotal = stage.plannedTotal,
+        diagnosis = stage.diagnosis,
+        probes = stage.probes.map { probe ->
+          DpiDetectorReportProbe(
+            key = probe.key,
+            title = probe.title,
+            target = probe.target,
+            sizeLabel = probe.sizeLabel,
+            technical = probe.technical,
+            checks = probe.checks.map { check ->
+              DpiDetectorReportCheck(
+                name = check.name,
+                status = check.status,
+                detail = check.detail,
+                value = check.value,
+                sizeLabel = check.sizeLabel,
+              )
+            },
+            diagnosis = probe.diagnosis,
+            status = probe.status,
+            detail = probe.detail,
+          )
+        },
+      )
+    },
+  )
 
   LazyColumn(
     state = screenListState,
@@ -310,6 +386,140 @@ fun DpiDetectorScreen(
           },
         )
       }
+    }
+    item {
+      AnimatedVisibility(
+        visible = completedRun && !running,
+        enter = fadeIn() + expandVertically(expandFrom = Alignment.Top),
+        exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Top),
+      ) {
+        DpiDetectorExportCard(
+          busy = exportBusy,
+          onSave = {
+            if (!exportBusy) scope.launch {
+              exportBusy = true
+              val result = runCatching {
+                val bundle = reportBundle ?: run {
+                  val reportData = buildReportData()
+                  val rawLines = synchronized(rawEventLines) { rawEventLines.toList() }
+                  withContext(Dispatchers.IO) {
+                    DpiDetectorReportExporter.createBundle(context, reportData, rawLines)
+                  }.also { reportBundle = it }
+                }
+                withContext(Dispatchers.IO) { DpiDetectorReportExporter.saveToSharedStorage(context, bundle).getOrThrow() }
+              }
+              exportBusy = false
+              result.onSuccess { path ->
+                Toast.makeText(context, context.getString(R.string.dpi_detector_save_success, path), Toast.LENGTH_LONG).show()
+              }.onFailure { error ->
+                Toast.makeText(context, context.getString(R.string.dpi_detector_save_failed, error.message ?: "Unknown error"), Toast.LENGTH_LONG).show()
+              }
+            }
+          },
+          onShare = {
+            if (!exportBusy) scope.launch {
+              exportBusy = true
+              val result = runCatching {
+                val bundle = reportBundle ?: run {
+                  val reportData = buildReportData()
+                  val rawLines = synchronized(rawEventLines) { rawEventLines.toList() }
+                  withContext(Dispatchers.IO) {
+                    DpiDetectorReportExporter.createBundle(context, reportData, rawLines)
+                  }.also { reportBundle = it }
+                }
+                DpiDetectorReportExporter.shareArchive(context, bundle).getOrThrow()
+              }
+              exportBusy = false
+              result.onFailure {
+                Toast.makeText(context, context.getString(R.string.dpi_detector_share_failed), Toast.LENGTH_SHORT).show()
+              }
+            }
+          },
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun DpiDetectorExportCard(
+  busy: Boolean,
+  onSave: () -> Unit,
+  onShare: () -> Unit,
+) {
+  Card(
+    modifier = Modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(22.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
+  ) {
+    Column(
+      modifier = Modifier.padding(14.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        Surface(
+          shape = CircleShape,
+          color = MaterialTheme.colorScheme.primary.copy(alpha = 0.13f),
+          contentColor = MaterialTheme.colorScheme.primary,
+        ) {
+          if (busy) {
+            CircularProgressIndicator(
+              modifier = Modifier.padding(9.dp).size(20.dp),
+              strokeWidth = 2.dp,
+            )
+          } else {
+            Icon(
+              imageVector = Icons.Outlined.Save,
+              contentDescription = null,
+              modifier = Modifier.padding(9.dp).size(20.dp),
+            )
+          }
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+          Text(
+            text = stringResource(R.string.dpi_detector_export_title),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+          )
+          Text(
+            text = stringResource(R.string.dpi_detector_export_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+          )
+        }
+      }
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        Button(
+          onClick = onSave,
+          enabled = !busy,
+          modifier = Modifier.weight(1f),
+        ) {
+          Icon(Icons.Outlined.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(modifier = Modifier.width(6.dp))
+          Text(stringResource(R.string.action_save))
+        }
+        OutlinedButton(
+          onClick = onShare,
+          enabled = !busy,
+          modifier = Modifier.weight(1f),
+        ) {
+          Icon(Icons.Outlined.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(modifier = Modifier.width(6.dp))
+          Text(stringResource(R.string.action_share))
+        }
+      }
+      Text(
+        text = stringResource(R.string.dpi_detector_export_path),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.54f),
+      )
     }
   }
 }

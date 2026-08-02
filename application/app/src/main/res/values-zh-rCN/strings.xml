@@ -2168,4 +2168,12 @@ APatch：10700+</string>
     <string name="vps_loading_profile">正在加载配置文件和客户端…</string>
     <string name="vps_profile_not_found">未找到配置文件</string>
     <string name="vps_load_failed">无法加载数据</string>
+
+    <!-- DPI Detector report export -->
+    <string name="dpi_detector_export_title">测试报告</string>
+    <string name="dpi_detector_export_desc">保存全部结果和技术信息，或以 ZIP 压缩包分享。</string>
+    <string name="dpi_detector_export_path">保存位置：/storage/emulated/0/ZDT-D_Files/Dpi_detector/</string>
+    <string name="dpi_detector_save_success">报告已保存到 %1$s</string>
+    <string name="dpi_detector_save_failed">无法保存报告：%1$s</string>
+    <string name="dpi_detector_share_failed">无法分享报告压缩包。</string>
 </resources>

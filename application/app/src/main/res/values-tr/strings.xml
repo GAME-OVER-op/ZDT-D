@@ -2168,4 +2168,12 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="vps_loading_profile">Profil ve istemciler yükleniyor…</string>
     <string name="vps_profile_not_found">Profil bulunamadı</string>
     <string name="vps_load_failed">Veriler yüklenemedi</string>
+
+    <!-- DPI Detector report export -->
+    <string name="dpi_detector_export_title">Test raporu</string>
+    <string name="dpi_detector_export_desc">Tüm sonuçları ve teknik ayrıntıları kaydedin veya ZIP arşivi olarak paylaşın.</string>
+    <string name="dpi_detector_export_path">Kayıt konumu: /storage/emulated/0/ZDT-D_Files/Dpi_detector/</string>
+    <string name="dpi_detector_save_success">Rapor %1$s konumuna kaydedildi</string>
+    <string name="dpi_detector_save_failed">Rapor kaydedilemedi: %1$s</string>
+    <string name="dpi_detector_share_failed">Rapor arşivi paylaşılamadı.</string>
 </resources>

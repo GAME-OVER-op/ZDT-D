@@ -36,6 +36,7 @@ class DpiDetectorRunner(
         tests: List<String> = emptyList(),
         quick: Boolean = false,
         timeoutMs: Int = 5000,
+        onRawLine: ((String) -> Unit)? = null,
     ): Flow<DpiDetectorEvent> = channelFlow {
         val plannedTests = resolveRequestedTests(tests)
         val firstTest = plannedTests.firstOrNull() ?: "dns_integrity"
@@ -96,6 +97,7 @@ class DpiDetectorRunner(
                 BufferedReader(InputStreamReader(process.inputStream)).use { reader ->
                     while (isActive) {
                         val line = reader.readLine() ?: break
+                        runCatching { onRawLine?.invoke(line) }
                         val event = parseEventLine(line)
                         when (event) {
                             is DpiDetectorEvent.Started -> {

@@ -2169,4 +2169,12 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="vps_loading_profile">Carregando o perfil e os clientes…</string>
     <string name="vps_profile_not_found">Perfil não encontrado</string>
     <string name="vps_load_failed">Não foi possível carregar os dados</string>
+
+    <!-- DPI Detector report export -->
+    <string name="dpi_detector_export_title">Relatório de testes</string>
+    <string name="dpi_detector_export_desc">Salve todos os resultados e detalhes técnicos ou compartilhe como arquivo ZIP.</string>
+    <string name="dpi_detector_export_path">Local de salvamento: /storage/emulated/0/ZDT-D_Files/Dpi_detector/</string>
+    <string name="dpi_detector_save_success">Relatório salvo em %1$s</string>
+    <string name="dpi_detector_save_failed">Não foi possível salvar o relatório: %1$s</string>
+    <string name="dpi_detector_share_failed">Não foi possível compartilhar o arquivo do relatório.</string>
 </resources>

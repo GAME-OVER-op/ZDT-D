@@ -2168,4 +2168,12 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="vps_loading_profile">프로필과 클라이언트를 불러오는 중…</string>
     <string name="vps_profile_not_found">프로필을 찾을 수 없음</string>
     <string name="vps_load_failed">데이터를 불러올 수 없음</string>
+
+    <!-- DPI Detector report export -->
+    <string name="dpi_detector_export_title">테스트 보고서</string>
+    <string name="dpi_detector_export_desc">모든 결과와 기술 정보를 저장하거나 ZIP 압축 파일로 공유합니다.</string>
+    <string name="dpi_detector_export_path">저장 위치: /storage/emulated/0/ZDT-D_Files/Dpi_detector/</string>
+    <string name="dpi_detector_save_success">보고서를 %1$s에 저장했습니다</string>
+    <string name="dpi_detector_save_failed">보고서를 저장할 수 없습니다: %1$s</string>
+    <string name="dpi_detector_share_failed">보고서 압축 파일을 공유할 수 없습니다.</string>
 </resources>

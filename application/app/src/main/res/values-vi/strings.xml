@@ -2168,4 +2168,12 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="vps_loading_profile">Đang tải hồ sơ và máy khách…</string>
     <string name="vps_profile_not_found">Không tìm thấy hồ sơ</string>
     <string name="vps_load_failed">Không thể tải dữ liệu</string>
+
+    <!-- DPI Detector report export -->
+    <string name="dpi_detector_export_title">Báo cáo kiểm tra</string>
+    <string name="dpi_detector_export_desc">Lưu toàn bộ kết quả và thông tin kỹ thuật hoặc chia sẻ dưới dạng tệp ZIP.</string>
+    <string name="dpi_detector_export_path">Vị trí lưu: /storage/emulated/0/ZDT-D_Files/Dpi_detector/</string>
+    <string name="dpi_detector_save_success">Đã lưu báo cáo vào %1$s</string>
+    <string name="dpi_detector_save_failed">Không thể lưu báo cáo: %1$s</string>
+    <string name="dpi_detector_share_failed">Không thể chia sẻ tệp báo cáo.</string>
 </resources>

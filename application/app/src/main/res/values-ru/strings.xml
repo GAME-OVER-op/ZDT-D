@@ -2167,4 +2167,12 @@ APatch: 10700+</string>
     <string name="vps_loading_profile">Загружаем профиль и клиентов…</string>
     <string name="vps_profile_not_found">Профиль не найден</string>
     <string name="vps_load_failed">Не удалось загрузить данные</string>
+
+    <!-- DPI Detector report export -->
+    <string name="dpi_detector_export_title">Отчёт о тестировании</string>
+    <string name="dpi_detector_export_desc">Сохраните все результаты и технические данные или поделитесь ими в ZIP-архиве.</string>
+    <string name="dpi_detector_export_path">Папка сохранения: /storage/emulated/0/ZDT-D_Files/Dpi_detector/</string>
+    <string name="dpi_detector_save_success">Отчёт сохранён в %1$s</string>
+    <string name="dpi_detector_save_failed">Не удалось сохранить отчёт: %1$s</string>
+    <string name="dpi_detector_share_failed">Не удалось поделиться архивом отчёта.</string>
 </resources>

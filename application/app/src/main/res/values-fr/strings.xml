@@ -2169,4 +2169,12 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="vps_loading_profile">Chargement du profil et des clients…</string>
     <string name="vps_profile_not_found">Profil introuvable</string>
     <string name="vps_load_failed">Impossible de charger les données</string>
+
+    <!-- DPI Detector report export -->
+    <string name="dpi_detector_export_title">Rapport de test</string>
+    <string name="dpi_detector_export_desc">Enregistrez tous les résultats et détails techniques ou partagez-les dans une archive ZIP.</string>
+    <string name="dpi_detector_export_path">Emplacement : /storage/emulated/0/ZDT-D_Files/Dpi_detector/</string>
+    <string name="dpi_detector_save_success">Rapport enregistré dans %1$s</string>
+    <string name="dpi_detector_save_failed">Impossible d’enregistrer le rapport : %1$s</string>
+    <string name="dpi_detector_share_failed">Impossible de partager l’archive du rapport.</string>
 </resources>

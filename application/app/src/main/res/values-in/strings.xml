@@ -2168,4 +2168,12 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="vps_loading_profile">Memuat profil dan klien…</string>
     <string name="vps_profile_not_found">Profil tidak ditemukan</string>
     <string name="vps_load_failed">Data tidak dapat dimuat</string>
+
+    <!-- DPI Detector report export -->
+    <string name="dpi_detector_export_title">Laporan pengujian</string>
+    <string name="dpi_detector_export_desc">Simpan semua hasil dan detail teknis atau bagikan sebagai arsip ZIP.</string>
+    <string name="dpi_detector_export_path">Lokasi penyimpanan: /storage/emulated/0/ZDT-D_Files/Dpi_detector/</string>
+    <string name="dpi_detector_save_success">Laporan disimpan di %1$s</string>
+    <string name="dpi_detector_save_failed">Laporan tidak dapat disimpan: %1$s</string>
+    <string name="dpi_detector_share_failed">Arsip laporan tidak dapat dibagikan.</string>
 </resources>

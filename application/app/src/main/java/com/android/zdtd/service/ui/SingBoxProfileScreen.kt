@@ -2102,7 +2102,7 @@ private fun SingBoxCreateServerDialog(
     Surface(
       modifier = Modifier.fillMaxWidth(0.92f),
       shape = RoundedCornerShape(28.dp),
-      color = Color(0xFF17131E).copy(alpha = 0.98f),
+      color = MaterialTheme.colorScheme.surfaceContainerLowest,
       contentColor = MaterialTheme.colorScheme.onSurface,
       border = BorderStroke(1.dp, Color(0xFFA78BFA).copy(alpha = 0.34f)),
     ) {
@@ -2235,7 +2235,7 @@ private fun SingBoxImportToProfileDialog(
         .heightIn(max = maxDialogHeight)
         .navigationBarsPadding(),
       shape = RoundedCornerShape(28.dp),
-      color = Color(0xFF17131E).copy(alpha = 0.98f),
+      color = MaterialTheme.colorScheme.surfaceContainerLowest,
       contentColor = MaterialTheme.colorScheme.onSurface,
       border = BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.34f)),
     ) {

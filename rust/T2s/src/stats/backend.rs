@@ -119,7 +119,7 @@ impl SocksBackends {
         }
     }
 
-    pub fn new(args: &Args) -> Result<Self> {
+    pub async fn new(args: &Args) -> Result<Self> {
         let hosts = args.socks_hosts();
         let ports = args.socks_ports();
         if ports.is_empty() && args.priority_zero_mode() == crate::cli::PriorityZeroMode::DirectOnly {
@@ -131,26 +131,10 @@ impl SocksBackends {
         let mut addrs = vec![];
         for h in hosts {
             for p in &ports {
-                let it = (h.as_str(), *p)
-                    .to_socket_addrs()
+                let sa = crate::net_utils::resolve_prefer_ipv4(h.as_str(), *p)
+                    .await
                     .with_context(|| format!("resolve socks backend {}:{}", h, p))?;
-                let mut first: Option<SocketAddr> = None;
-                let mut chosen: Option<SocketAddr> = None;
-                for sa in it {
-                    if first.is_none() {
-                        first = Some(sa);
-                    }
-                    if sa.is_ipv4() {
-                        chosen = Some(sa);
-                        break;
-                    }
-                }
-                if chosen.is_none() {
-                    chosen = first;
-                }
-                if let Some(sa) = chosen {
-                    addrs.push(sa);
-                }
+                addrs.push(sa);
             }
         }
         if addrs.is_empty() {

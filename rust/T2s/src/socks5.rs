@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context, Result};
-use std::{future::Future, net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs}, time::Duration};
+use std::{future::Future, net::{IpAddr, Ipv4Addr, SocketAddr}, time::Duration};
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpStream, UdpSocket}};
 
 async fn io_step<T, F>(timeout: Duration, label: &'static str, fut: F) -> Result<T>
@@ -325,8 +325,9 @@ pub async fn udp_associate(
             io_step(hs_timeout, "udp associate domain relay read", stream.read_exact(&mut buf)).await?;
             let host = std::str::from_utf8(&buf[..l]).context("UDP ASSOCIATE relay domain utf8")?;
             let port = u16::from_be_bytes([buf[l], buf[l + 1]]);
-            let mut addrs = (host, port).to_socket_addrs().context("resolve UDP ASSOCIATE relay domain")?;
-            addrs.next().ok_or_else(|| anyhow!("no UDP ASSOCIATE relay address"))?
+            crate::net_utils::resolve_first(host, port)
+                .await
+                .context("resolve UDP ASSOCIATE relay domain")?
         }
         atyp => return Err(anyhow!("unknown ATYP in UDP ASSOCIATE reply {}", atyp)),
     };
@@ -423,13 +424,43 @@ pub async fn check_udp_associate(
     None
 }
 
-pub fn encode_udp_packet(target: TargetAddr, data: &[u8]) -> Result<Vec<u8>> {
-    let mut out=vec![0u8,0u8,0u8];
+pub fn encode_udp_packet_into(out: &mut Vec<u8>, target: TargetAddr, data: &[u8]) -> Result<()> {
+    out.clear();
+    out.reserve(data.len().saturating_add(22));
+    out.extend_from_slice(&[0u8, 0u8, 0u8]);
     match target {
-        TargetAddr::Ip(sa)=>{ match sa.ip(){ std::net::IpAddr::V4(v4)=>{out.push(0x01); out.extend_from_slice(&v4.octets());} std::net::IpAddr::V6(v6)=>{out.push(0x04); out.extend_from_slice(&v6.octets());} } out.extend_from_slice(&sa.port().to_be_bytes()); }
-        TargetAddr::Domain(host,port)=>{ let hb=host.as_bytes(); if hb.len()>255 { return Err(anyhow!("domain too long for SOCKS5 UDP")); } out.push(0x03); out.push(hb.len() as u8); out.extend_from_slice(hb); out.extend_from_slice(&port.to_be_bytes()); }
+        TargetAddr::Ip(sa) => {
+            match sa.ip() {
+                std::net::IpAddr::V4(v4) => {
+                    out.push(0x01);
+                    out.extend_from_slice(&v4.octets());
+                }
+                std::net::IpAddr::V6(v6) => {
+                    out.push(0x04);
+                    out.extend_from_slice(&v6.octets());
+                }
+            }
+            out.extend_from_slice(&sa.port().to_be_bytes());
+        }
+        TargetAddr::Domain(host, port) => {
+            let hb = host.as_bytes();
+            if hb.len() > 255 {
+                return Err(anyhow!("domain too long for SOCKS5 UDP"));
+            }
+            out.push(0x03);
+            out.push(hb.len() as u8);
+            out.extend_from_slice(hb);
+            out.extend_from_slice(&port.to_be_bytes());
+        }
     }
-    out.extend_from_slice(data); Ok(out)
+    out.extend_from_slice(data);
+    Ok(())
+}
+
+pub fn encode_udp_packet(target: TargetAddr, data: &[u8]) -> Result<Vec<u8>> {
+    let mut out = Vec::with_capacity(data.len().saturating_add(22));
+    encode_udp_packet_into(&mut out, target, data)?;
+    Ok(out)
 }
 
 pub fn decode_udp_packet(buf: &[u8]) -> Result<(TargetAddr, &[u8])> {

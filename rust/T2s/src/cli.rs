@@ -1,6 +1,5 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use clap::{Parser, ValueEnum};
-use std::net::{SocketAddr, ToSocketAddrs};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum BackendMode {
@@ -49,7 +48,8 @@ NOTES
   * Domain in Connections is best-effort from HTTP Host / CONNECT / TLS SNI.
   * Power save: when there are no active connections and no UI clients, background checks go to sleep
     and poll backends every 1-3 minutes (wakes instantly on new connection).
-  * This build is TCP-only (no UDP and no DNS handling inside t2s).
+  * TCP is always available. UDP TPROXY is started when ZDT-D setting tproxy_enabled=true.
+  * t2s does not implement a DNS resolver; DNS policy is managed externally.
 "#,
     arg_required_else_help = true
 )]
@@ -94,7 +94,7 @@ pub struct Args {
     #[arg(long)]
     pub target_port: Option<u16>,
 
-    #[arg(long, default_value_t=131072)]
+    #[arg(long, default_value_t=65536)]
     pub buffer_size: u32,
 
     #[arg(long, default_value_t=600, help="Idle timeout seconds (0 disables)")]
@@ -225,22 +225,6 @@ impl Args {
             .filter_map(|p| p.trim().parse::<u16>().ok())
             .filter(|p| *p != 0)
             .collect()
-    }
-
-    pub fn wrapped_socks_addr(&self) -> Result<Option<SocketAddr>> {
-        let host = self.wrapped_socks_host.trim();
-        if host.is_empty() || self.wrapped_socks_port == 0 {
-            return Ok(None);
-        }
-        let mut first: Option<SocketAddr> = None;
-        for sa in (host, self.wrapped_socks_port)
-            .to_socket_addrs()
-            .with_context(|| format!("resolve wrapped SOCKS5 {}:{}", host, self.wrapped_socks_port))?
-        {
-            if first.is_none() { first = Some(sa); }
-            if sa.is_ipv4() { return Ok(Some(sa)); }
-        }
-        first.map(Some).ok_or_else(|| anyhow!("no addr for wrapped SOCKS5 {}:{}", host, self.wrapped_socks_port))
     }
 
     pub fn wrapped_socks_auth(&self) -> Option<(String, String)> {

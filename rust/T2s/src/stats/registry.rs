@@ -33,6 +33,7 @@ pub struct ConnRegistry {
     mode_pending: AtomicU64,
     mode_wait_backend: AtomicU64,
     mode_socks_connecting: AtomicU64,
+    track_recent_down: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -90,6 +91,13 @@ fn stable_low_downstream_window(samples: &VecDeque<(u64, u64)>, now: u64) -> Opt
 }
 
 impl ConnRegistry {
+    pub fn new(track_recent_down: bool) -> Self {
+        Self {
+            track_recent_down,
+            ..Self::default()
+        }
+    }
+
     fn inc_ingress(&self, ingress: Ingress) {
         match ingress {
             Ingress::Internal => { self.active_internal.fetch_add(1, Ordering::Relaxed); }
@@ -310,18 +318,20 @@ impl ConnRegistry {
             let now = now_ts();
             info.bytes_down = info.bytes_down.saturating_add(n);
             info.last_progress_ts = now;
-            if let Some((ts, bytes)) = info.recent_down.back_mut() {
-                if *ts == now {
-                    *bytes = bytes.saturating_add(n);
+            if self.track_recent_down {
+                if let Some((ts, bytes)) = info.recent_down.back_mut() {
+                    if *ts == now {
+                        *bytes = bytes.saturating_add(n);
+                    } else {
+                        info.recent_down.push_back((now, n));
+                    }
                 } else {
                     info.recent_down.push_back((now, n));
                 }
-            } else {
-                info.recent_down.push_back((now, n));
-            }
-            let cutoff = now.saturating_sub(PRIORITY_STREAM_DEGRADED_WINDOW_SECS.saturating_mul(3));
-            while info.recent_down.front().map(|(ts, _)| *ts < cutoff).unwrap_or(false) {
-                info.recent_down.pop_front();
+                let cutoff = now.saturating_sub(PRIORITY_STREAM_DEGRADED_WINDOW_SECS.saturating_mul(3));
+                while info.recent_down.front().map(|(ts, _)| *ts < cutoff).unwrap_or(false) {
+                    info.recent_down.pop_front();
+                }
             }
         }
     }
@@ -378,6 +388,9 @@ impl ConnRegistry {
         backend: SocketAddr,
         max_count: usize,
     ) -> Vec<StableLowStream> {
+        if !self.track_recent_down {
+            return Vec::new();
+        }
         let backend = backend.to_string();
         let now = now_ts();
         let mut candidates = Vec::new();

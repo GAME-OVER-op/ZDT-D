@@ -16,20 +16,9 @@ impl Target {
         match self {
             Target::SockAddr(sa) => Ok(*sa),
             Target::HostPort(host, port) => {
-                // Prefer IPv4 (many users disable IPv6 on-device).
-                let addrs = (host.as_str(), *port)
-                    .to_socket_addrs()
-                    .context("resolve target")?;
-                let mut first: Option<SocketAddr> = None;
-                for sa in addrs {
-                    if first.is_none() {
-                        first = Some(sa);
-                    }
-                    if sa.is_ipv4() {
-                        return Ok(sa);
-                    }
-                }
-                first.ok_or_else(|| anyhow!("no addr for target"))
+                crate::net_utils::resolve_prefer_ipv4(host, *port)
+                    .await
+                    .context("resolve target")
             }
         }
     }

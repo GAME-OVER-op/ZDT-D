@@ -117,11 +117,19 @@ impl ApiRuntime {
     }
 
     pub fn write_metadata(&self) -> Result<()> {
+        self.write_metadata_inner(true)
+    }
+
+    pub fn refresh_metadata(&self) -> Result<()> {
+        self.write_metadata_inner(false)
+    }
+
+    fn write_metadata_inner(&self, durable: bool) -> Result<()> {
         fs::create_dir_all(self.instances_dir()).with_context(|| format!("mkdir {}", self.instances_dir().display()))?;
         fs::create_dir_all(self.ports_dir()).with_context(|| format!("mkdir {}", self.ports_dir().display()))?;
         let meta = self.refreshed_instance();
         let instance_path = self.instance_file();
-        write_json_atomic_struct(&instance_path, &meta)?;
+        write_json_atomic_struct(&instance_path, &meta, durable)?;
         let port_index = serde_json::json!({
             "schema_version": 1,
             "api_name": "t2s",
@@ -137,7 +145,7 @@ impl ApiRuntime {
             "updated_at": meta.updated_at,
             "token_file": SHARED_TOKEN_FILE,
         });
-        write_json_atomic(&self.port_file(), &port_index)?;
+        write_json_atomic(&self.port_file(), &port_index, durable)?;
         let info = serde_json::json!({
             "schema_version": 1,
             "api_name": "t2s",
@@ -150,7 +158,7 @@ impl ApiRuntime {
             "ports_dir": self.ports_dir().to_string_lossy(),
             "updated_at": meta.updated_at,
         });
-        write_json_atomic(&self.api_dir.join("info.json"), &info)?;
+        write_json_atomic(&self.api_dir.join("info.json"), &info, durable)?;
         Ok(())
     }
 
@@ -188,23 +196,29 @@ fn unique_tmp_path(target: &Path) -> PathBuf {
     target.with_file_name(format!(".{name}.{pid}.{ts}.tmp"))
 }
 
-fn write_json_atomic(path: &Path, value: &serde_json::Value) -> Result<()> {
+fn write_json_atomic(path: &Path, value: &serde_json::Value, durable: bool) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
     }
     let tmp = unique_tmp_path(path);
-    let txt = serde_json::to_string_pretty(value)?;
+    let bytes = if durable {
+        serde_json::to_vec_pretty(value)?
+    } else {
+        serde_json::to_vec(value)?
+    };
     {
         use std::io::Write;
         let mut f = fs::File::create(&tmp).with_context(|| format!("create {}", tmp.display()))?;
-        f.write_all(txt.as_bytes()).with_context(|| format!("write {}", tmp.display()))?;
-        let _ = f.sync_all();
+        f.write_all(&bytes).with_context(|| format!("write {}", tmp.display()))?;
+        if durable {
+            f.sync_all().with_context(|| format!("sync {}", tmp.display()))?;
+        }
     }
     fs::rename(&tmp, path).with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))?;
     Ok(())
 }
 
-fn write_json_atomic_struct<T: Serialize>(path: &Path, value: &T) -> Result<()> {
+fn write_json_atomic_struct<T: Serialize>(path: &Path, value: &T, durable: bool) -> Result<()> {
     let json = serde_json::to_value(value)?;
-    write_json_atomic(path, &json)
+    write_json_atomic(path, &json, durable)
 }

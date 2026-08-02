@@ -8,11 +8,11 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, hash::{Hash, Hasher}, net::{SocketAddr, ToSocketAddrs}, time::Duration};
+use std::{collections::HashMap, hash::{Hash, Hasher}, net::SocketAddr, time::Duration};
 use tokio::time::Instant;
 
 const INDEX_HTML: &str = include_str!("web_ui.html");
-const BUILD_TAG: &str = "tcp-only-green-only-smart-energy-v3";
+const BUILD_TAG: &str = "tcp-udp-tproxy-green-only-smart-energy-v4";
 
 #[derive(Clone, Debug, Deserialize)]
 struct DownloadLimitReq {
@@ -203,20 +203,10 @@ fn normalize_backend_auth(req: &BackendReq) -> std::result::Result<Option<(Strin
     }
 }
 
-fn resolve_backend_addr(host: &str, port: u16) -> std::result::Result<SocketAddr, String> {
-    let it = (host, port)
-        .to_socket_addrs()
-        .map_err(|_| "invalid host:port".to_string())?;
-    let mut first: Option<SocketAddr> = None;
-    for sa in it {
-        if first.is_none() {
-            first = Some(sa);
-        }
-        if sa.is_ipv4() {
-            return Ok(sa);
-        }
-    }
-    first.ok_or_else(|| "invalid host:port".to_string())
+async fn resolve_backend_addr(host: &str, port: u16) -> std::result::Result<SocketAddr, String> {
+    crate::net_utils::resolve_prefer_ipv4(host, port)
+        .await
+        .map_err(|_| "invalid host:port".to_string())
 }
 
 fn empty_404() -> Response {
@@ -234,13 +224,13 @@ fn set_download_limit(state: &AppState, req: &DownloadLimitReq) -> f64 {
     mbit
 }
 
-fn backend_add_impl(state: &AppState, req: &BackendReq) -> Response {
+async fn backend_add_impl(state: &AppState, req: &BackendReq) -> Response {
     let auth = match normalize_backend_auth(req) {
         Ok(v) => v,
         Err(e) => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({"error": e})),
     };
 
-    match resolve_backend_addr(&req.host, req.port) {
+    match resolve_backend_addr(&req.host, req.port).await {
         Ok(sa) => {
             if sa.port() == state.args.listen_port {
                 return json_response(StatusCode::BAD_REQUEST, serde_json::json!({"error":"t2s backend points to its own listen port"}));
@@ -256,8 +246,8 @@ fn backend_add_impl(state: &AppState, req: &BackendReq) -> Response {
     }
 }
 
-fn backend_remove_impl(state: &AppState, req: &BackendReq) -> Response {
-    match resolve_backend_addr(&req.host, req.port) {
+async fn backend_remove_impl(state: &AppState, req: &BackendReq) -> Response {
+    match resolve_backend_addr(&req.host, req.port).await {
         Ok(sa) => {
             state.backends.lock().remove(sa);
             let killed = state.conns.kill_backend_socks_and_connecting(sa);
@@ -282,12 +272,12 @@ fn kill_connection_impl(state: &AppState, cid_raw: &str) -> Response {
 
 async fn api_backend_add(headers: HeaderMap, State(state): State<AppState>, Json(req): Json<BackendReq>) -> Response {
     if !authorize_legacy_http(&state, &headers) { return legacy_unauthorized(); }
-    backend_add_impl(&state, &req)
+    backend_add_impl(&state, &req).await
 }
 
 async fn api_backend_remove(headers: HeaderMap, State(state): State<AppState>, Json(req): Json<BackendReq>) -> Response {
     if !authorize_legacy_http(&state, &headers) { return legacy_unauthorized(); }
-    backend_remove_impl(&state, &req)
+    backend_remove_impl(&state, &req).await
 }
 
 async fn api_kill_get(headers: HeaderMap, State(state): State<AppState>, Query(q): Query<KillReq>) -> Response {
@@ -446,12 +436,12 @@ async fn api_v1_kill_connection(headers: HeaderMap, State(state): State<AppState
 
 async fn api_v1_backend_add(headers: HeaderMap, State(state): State<AppState>, Json(req): Json<BackendReq>) -> Response {
     if !state.api.is_authorized(&headers) { return empty_404(); }
-    backend_add_impl(&state, &req)
+    backend_add_impl(&state, &req).await
 }
 
 async fn api_v1_backend_remove(headers: HeaderMap, State(state): State<AppState>, Json(req): Json<BackendReq>) -> Response {
     if !state.api.is_authorized(&headers) { return empty_404(); }
-    backend_remove_impl(&state, &req)
+    backend_remove_impl(&state, &req).await
 }
 
 async fn api_v1_backends_recheck(headers: HeaderMap, State(state): State<AppState>) -> Response {

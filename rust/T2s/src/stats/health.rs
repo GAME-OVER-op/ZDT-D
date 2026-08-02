@@ -221,16 +221,16 @@ async fn refresh_backend_index_once(
 
     let Some(backend) = backend else { return false; };
 
-    let wrapper = state.args.wrapped_socks_addr().ok().flatten();
+    let wrapper = state.wrapped_socks_addr;
     let wrapper_auth = state.args.wrapped_socks_auth();
     let (err, socks_ping_ms, internet_ping_ms, ttl) =
         probe_backend_once(backend, timeout, auth.clone(), internet_ttl, probe_mode, wrapper, wrapper_auth).await;
 
-    let udp_probe_supported = state.tproxy_enabled && state.args.wrapped_socks_addr().ok().flatten().is_none();
+    let udp_probe_supported = state.tproxy_enabled && state.wrapped_socks_addr.is_none();
     let udp_ping_ms = if udp_probe_supported && socks_ping_ms.is_some() {
         crate::socks5::check_udp_associate(backend, auth.clone(), timeout.min(Duration::from_secs(3))).await
     } else { None };
-    let udp_err = if state.tproxy_enabled && state.args.wrapped_socks_addr().ok().flatten().is_some() {
+    let udp_err = if state.tproxy_enabled && state.wrapped_socks_addr.is_some() {
         Some("UDP ASSOCIATE through wrapped SOCKS is unsupported; UDP will use direct fallback".to_string())
     } else if udp_probe_supported && socks_ping_ms.is_some() && udp_ping_ms.is_none() {
         Some("SOCKS5 UDP data-plane probe failed or unsupported".to_string())

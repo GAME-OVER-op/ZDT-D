@@ -22,4 +22,4 @@ socket2 = "0.5"
 libc = "0.2"
 futures = "0.3"
 once_cell = "1"
-# TCP-only build: no built-in DoH client.
+# No built-in DNS/DoH client; UDP relay is enabled by ZDT-D TPROXY settings.

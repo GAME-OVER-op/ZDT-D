@@ -19,6 +19,27 @@ app egresses at the VPS through VK TURN with no manual interface binding.
 
 ---
 
+## SOCKS5 mode (upstream v1.3.7+) — experimental alternative
+
+Upstream added a client mode that runs WireGuard in a **userspace netstack inside
+the transport process** and serves SOCKS5, so no TUN, `amneziawg-go` or `awg` is
+involved. qwdtt-cli exposes it as `mode = socks` (+ `socks_addr`); the supervisor
+then skips the whole WireGuard stage and treats "SOCKS port accepting" as
+readiness. Apps are routed with ZDT-D's **myproxy** (`UID → iptables redirect →
+t2s → SOCKS5`) instead of `myvpn`.
+
+Attractions: no TUN, no amneziawg-go/awg dependency, no `myvpn` CIDR race, no
+netd network lifecycle.
+
+**Blocking question before adopting it:** the upstream SOCKS server is **TCP
+CONNECT only** — no UDP ASSOCIATE, IPv6 rejected. Hostnames passed through SOCKS
+resolve inside the tunnel, but app UDP (QUIC, direct DNS) is not carried and goes
+direct, which the whitelist ISP drops. Whether that is acceptable depends on how
+`t2s` handles DNS/UDP for redirected apps — test on the SIM before switching.
+
+Until that is answered, `mode = vpn` stays the default and the supported path;
+`socks` is for A/B testing only.
+
 ## M4 — hardening (stays on the myprogram/myvpn deployment)
 
 Ordered by value. Each is independent.

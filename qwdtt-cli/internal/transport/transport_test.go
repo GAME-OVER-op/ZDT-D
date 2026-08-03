@@ -97,6 +97,20 @@ func TestArgs(t *testing.T) {
 	if !hasFlag(check, "-check-hashes") {
 		t.Errorf("Args(checkHashes=true) missing -check-hashes: %v", check)
 	}
+
+	// vpn mode must not emit -mode/-socks: those flags only exist in newer
+	// transport builds, and an unknown flag is fatal to Go's flag package.
+	cfg.Mode = "vpn"
+	if hasFlag(Args(cfg, []string{"h1"}, false), "-mode") {
+		t.Error("Args in vpn mode should not pass -mode")
+	}
+
+	cfg.Mode = "socks"
+	cfg.SocksAddr = "127.0.0.1:1080"
+	socks := Args(cfg, []string{"h1"}, false)
+	if !contains(socks, "-mode", "socks") || !contains(socks, "-socks", "127.0.0.1:1080") {
+		t.Errorf("Args in socks mode missing -mode/-socks: %v", socks)
+	}
 }
 
 func contains(args []string, flag, val string) bool {

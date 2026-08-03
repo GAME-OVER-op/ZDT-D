@@ -30,16 +30,31 @@ links C via CGO.
 
 ## The pin
 
-Pinned to `7b5dcec` (see `UPSTREAM` for the full SHA). This is the newest upstream
-commit whose `go_client` **compiles**. Upstream HEAD at investigation time
-(`4791f8c`) does not build — `go_client/group.go` references `workerErrorHint`,
-which is defined nowhere in that commit (it shipped the caller of a "worker error
-hint" helper without the helper). `7b5dcec` is its parent, builds cleanly, and
-predates the "RU IP bypass" feature that HEAD adds — a feature our invariants
-forbid anyway (no direct or RU-direct path is ever allowed).
+Pinned to `2dd5d37` (see `UPSTREAM` for the full SHA) — upstream HEAD, tagged
+`v1.3.8`, `v1.3.9`, `v1.4.0` and `v1.4.0-beta` (all the same commit). Verified:
+`go_client` compiles and both patches below apply cleanly.
 
-Re-evaluate the pin when upstream fixes HEAD; the patches target stable code paths
-(config write, stats loop) and should re-apply across minor upstream movement.
+We were previously pinned to `7b5dcec` because the then-HEAD `4791f8c` did not
+build: `go_client/group.go` called `workerErrorHint`, which was defined nowhere in
+that commit. Upstream has since added the helper (`go_client/errhint.go`), so the
+pin moves forward.
+
+What the newer code brings us:
+
+- **SOCKS5 client mode** (`-mode socks`, `-socks host:port`): the transport runs
+  WireGuard in a userspace netstack inside its own process and serves SOCKS5, so
+  no TUN, `amneziawg-go` or `awg` is involved at all. qwdtt-cli exposes this as
+  the `mode` config key. Caveat: it is **TCP CONNECT only** (no UDP ASSOCIATE,
+  IPv6 rejected), so app UDP traffic — QUIC, direct DNS — is not carried; names
+  passed through SOCKS are resolved inside the tunnel.
+- Clearer worker/WRAP error hints.
+
+Note the "RU IP bypass" that landed in `4791f8c` is present in this commit too. We
+never enable it: our invariants forbid any direct or RU-direct path, and nothing in
+qwdtt-cli passes such a flag.
+
+The patches target stable code paths (config write, stats loop) and should
+re-apply across minor upstream movement.
 
 ## The patches
 

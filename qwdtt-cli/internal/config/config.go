@@ -92,6 +92,24 @@ type Config struct {
 	// Empty means UTC.
 	Timezone string
 
+	// Mode selects how tunnelled traffic is exposed:
+	//
+	//   "vpn"   (default) the transport listens on Listen and qwdtt-cli brings up
+	//           a WireGuard TUN against the emitted config. ZDT-D routes apps to
+	//           the TUN via myvpn. This is the verified-on-device path.
+	//   "socks" the transport runs WireGuard in a userspace netstack and serves
+	//           SOCKS5 on SocksAddr — no TUN, no amneziawg-go, no awg. Route apps
+	//           with ZDT-D's myproxy instead. Requires an upstream build with
+	//           -mode support (our pin has it).
+	//
+	// SOCKS is TCP CONNECT only: app UDP traffic (QUIC, direct DNS) is NOT
+	// carried and will go direct — which a whitelist ISP drops. Prefer "vpn"
+	// unless you have verified this is acceptable.
+	Mode string
+	// SocksAddr is the local SOCKS5 listen address used when Mode is "socks".
+	// Must be loopback. Default 127.0.0.1:1080.
+	SocksAddr string
+
 	// WgBringup enables the M2 WireGuard stage: once wg-turn.conf is written, the
 	// supervisor spawns amneziawg-go, applies the config via awg, and brings up
 	// the TUN. Disable it to run the transport alone (hash checks, config
@@ -184,6 +202,8 @@ func defaults() *Config {
 		MaxRestarts:     10,
 		RestartBackoff:  5 * time.Second,
 		WgBringup:       true,
+		Mode:            "vpn",
+		SocksAddr:       "127.0.0.1:1080",
 		Tun:             "zdtdqw0",
 		AwgGoBinary:     "/data/adb/modules/ZDT-D/bin/amneziawg-go",
 		AwgBinary:       "/data/adb/modules/ZDT-D/bin/awg",
@@ -232,6 +252,10 @@ func (c *Config) set(key, val string) error {
 		c.CaptchaTokenFile = val
 	case "timezone":
 		c.Timezone = val
+	case "mode":
+		c.Mode = strings.ToLower(strings.TrimSpace(val))
+	case "socks_addr", "socks":
+		c.SocksAddr = val
 	case "wg_bringup":
 		b, err := parseBool(val)
 		if err != nil {
@@ -361,7 +385,21 @@ func (c *Config) Validate() error {
 	if c.Workers < 1 {
 		return fmt.Errorf("workers must be >= 1")
 	}
-	if c.WgBringup {
+	switch c.Mode {
+	case "vpn":
+	case "socks":
+		host, _, err := net.SplitHostPort(c.SocksAddr)
+		if err != nil {
+			return fmt.Errorf("socks_addr %q must be host:port: %w", c.SocksAddr, err)
+		}
+		if !isLoopback(host) {
+			// A non-loopback SOCKS bind would expose the tunnel to the network.
+			return fmt.Errorf("socks_addr host %q must be loopback (127.0.0.1 or ::1)", host)
+		}
+	default:
+		return fmt.Errorf("mode %q must be vpn or socks", c.Mode)
+	}
+	if c.WgBringup && c.Mode == "vpn" {
 		if !isValidIfname(c.Tun) {
 			return fmt.Errorf("tun %q must be 1..15 chars (letters, digits, _.-) and not empty", c.Tun)
 		}
@@ -382,6 +420,15 @@ func (c *Config) Validate() error {
 // is this directory. Overridable via awg_run_dir only if you ship your own build
 // with different socket paths.
 const defaultAwgRunDir = "/data/adb/modules/ZDT-D/working_folder/amneziawg"
+
+// SocksMode reports whether the transport should expose a local SOCKS5 proxy
+// instead of a WireGuard endpoint.
+func (c *Config) SocksMode() bool { return c.Mode == "socks" }
+
+// ShouldBringUpWireguard reports whether the supervisor owns a WireGuard TUN.
+// SOCKS mode keeps WireGuard inside the transport's userspace netstack, so there
+// is no interface for us to create.
+func (c *Config) ShouldBringUpWireguard() bool { return c.WgBringup && !c.SocksMode() }
 
 // AwgRunDirOr returns the configured amneziawg working directory, defaulting to
 // the path the ZDT-D-built amneziawg-go/awg pair expect.

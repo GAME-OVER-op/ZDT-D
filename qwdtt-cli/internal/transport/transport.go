@@ -46,6 +46,12 @@ func Args(cfg *config.Config, hashes []string, checkHashes bool) []string {
 	if checkHashes {
 		args = append(args, "-check-hashes")
 	}
+	// Only emitted for SOCKS mode: -mode/-socks exist from upstream v1.3.7 on, so
+	// leaving them off keeps a plain "vpn" run working with an older transport
+	// binary (an unknown flag is fatal to Go's flag package).
+	if cfg.SocksMode() {
+		args = append(args, "-mode", "socks", "-socks", cfg.SocksAddr)
+	}
 	return args
 }
 

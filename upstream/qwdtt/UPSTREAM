@@ -3,14 +3,16 @@
 
 URL=https://github.com/SpaceNeuroX/proxy-turn-vk-android.git
 
-# Pinned to the newest commit whose go_client actually compiles.
+# Pinned to upstream HEAD (tagged v1.3.8 / v1.3.9 / v1.4.0 / v1.4.0-beta -- all
+# the same commit). Verified: go_client compiles and both of our patches apply.
 #
-# HEAD at investigation time (4791f8c, "RU IP bypass / connection pipeline")
-# does NOT build: group.go references workerErrorHint, which is defined nowhere
-# in that commit. Its parent 7b5dcec builds cleanly and predates the RU-bypass
-# feature we do not want anyway (our invariants forbid any direct/RU path).
-# Revisit the pin when upstream fixes HEAD.
-COMMIT=7b5dcec21fb5c179ef14d129ec269cd5750f9de7
+# History: we were previously pinned to 7b5dcec because the then-HEAD 4791f8c did
+# not build (group.go referenced workerErrorHint, defined nowhere). That is fixed
+# upstream -- the helper now lives in go_client/errhint.go -- so the pin moves
+# forward. This commit also adds the SOCKS5 client mode (-mode socks / -socks),
+# which runs WireGuard in userspace netstack and needs no TUN, amneziawg-go or
+# awg; qwdtt-cli exposes it via the `mode` config key.
+COMMIT=2dd5d37f18a0475a786a90d69feb7c503e33bdf3
 
 # The subdirectory holding the standalone transport (package main).
 SUBDIR=go_client

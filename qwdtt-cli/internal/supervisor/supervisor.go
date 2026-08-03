@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -275,7 +276,18 @@ func runTransport(ctx context.Context, cfg *config.Config, hashes []string, logg
 		}
 		logger.Printf("%s written; transport ready", configFile)
 
-		if cfg.WgBringup {
+		if cfg.SocksMode() {
+			// WireGuard lives in the transport's userspace netstack; there is no
+			// interface to create. Readiness is the SOCKS port accepting.
+			if err := awaitSocks(runCtx, cfg, logger); err != nil {
+				logger.Printf("socks: not ready, forcing restart: %v", err)
+				runCancel()
+				return
+			}
+			logger.Printf("socks: listening on %s", cfg.SocksAddr)
+		}
+
+		if cfg.ShouldBringUpWireguard() {
 			up, err := bringUpWireguard(cfg, logger)
 			if err != nil {
 				// The tunnel is the point; a failed bring-up means restart the
@@ -334,6 +346,30 @@ func runTransport(ctx context.Context, cfg *config.Config, hashes []string, logg
 		stopped := ctx.Err() != nil && !watchdogTripped.Load()
 		gracefulStop(cmd, sendLine, waitErr, logger)
 		return runOutcome{stopped: stopped, watchdog: watchdogTripped.Load(), wgFailed: wgBringupFailed.Load()}
+	}
+}
+
+// awaitSocks waits until the transport's SOCKS5 port accepts a connection, which
+// is the readiness signal in SOCKS mode (there is no interface to inspect).
+func awaitSocks(ctx context.Context, cfg *config.Config, logger *log.Logger) error {
+	deadline := time.Now().Add(cfg.StartupDeadline)
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		conn, err := net.DialTimeout("tcp", cfg.SocksAddr, 2*time.Second)
+		if err == nil {
+			_ = conn.Close()
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("socks %s did not accept within %s: %w", cfg.SocksAddr, cfg.StartupDeadline, err)
+		}
+		select {
+		case <-time.After(configPollEvery):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 }
 

@@ -179,6 +179,7 @@ having framework/app PLT originals overwrite the same `orig_*` slots.
 
 ```text
 getifaddrs
+freeifaddrs
 if_nametoindex
 if_indextoname
 ioctl
@@ -244,7 +245,7 @@ separately.
 
 The built-in profile enables interface hiding for selected target UIDs:
 
-- `getifaddrs` filtering;
+- `getifaddrs` filtering with paired `freeifaddrs` restoration;
 - interface name/index filtering;
 - interface `ioctl` guarding;
 - `/proc/net` interface and route filtering;
@@ -300,7 +301,8 @@ Runtime validation should cover at least:
 - install with the marker: `zygisk/arm64-v8a.so` remains installed;
 - non-target app: module unloads and app behavior is unchanged;
 - target app: hidden interfaces disappear from `getifaddrs`, `/proc/net`,
-  `/sys/class/net`, and netlink route probes;
+  `/sys/class/net`, and netlink route probes; repeated `getifaddrs`/`freeifaddrs`
+  cycles remain leak-free;
 - target app with late JNI library: late native probe is also filtered;
 - KernelSU/APatch environment without compatible Zygisk layer: installer/user
   flow reports that the external layer is required.

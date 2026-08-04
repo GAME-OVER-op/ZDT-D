@@ -132,6 +132,7 @@ struct dirent_like {
 
 int open(const char *pathname, int flags, ...);
 int openat(int dirfd, const char *pathname, int flags, ...);
+void freeifaddrs(struct ifaddrs *ifa);
 int close(int fd);
 ssize_t read(int fd, void *buf, size_t count);
 ssize_t write(int fd, const void *buf, size_t count);
@@ -197,6 +198,12 @@ int *__errno(void);
 #endif
 #ifndef O_CLOEXEC
 #define O_CLOEXEC 02000000
+#endif
+#ifndef O_DIRECTORY
+#define O_DIRECTORY 00200000
+#endif
+#ifndef O_TMPFILE
+#define O_TMPFILE (020000000 | O_DIRECTORY)
 #endif
 #ifndef O_NONBLOCK
 #define O_NONBLOCK 04000
@@ -312,6 +319,9 @@ constexpr int IFACE_LEN = 32;
 constexpr int READ_LIMIT = 65536;
 constexpr int MODULE_FD_NONE = -1;
 constexpr int MAX_TRACKED_DIRS = 16;
+constexpr int MAX_TRACKED_IFADDRS_LISTS = 16;
+constexpr int MAX_TRACKED_IFADDRS_NODES = 64;
+constexpr int MAX_IOVEC_COUNT = 1024;
 constexpr int MAX_HIDDEN_INDICES = 32;
 constexpr int MAX_LATE_PATCHED_LIBS = 256;
 constexpr int INLINE_STUB_SIZE = 16;
@@ -320,6 +330,7 @@ constexpr int INLINE_BRANCH_FOLLOW_LIMIT = 6;
 constexpr int PAGE_SIZE = 4096;
 
 using GetIfAddrsFn = int (*)(ifaddrs **);
+using FreeIfAddrsFn = void (*)(ifaddrs *);
 using OpenFn = int (*)(const char *, int, ...);
 using OpenAtFn = int (*)(int, const char *, int, ...);
 using IoctlFn = int (*)(int, unsigned long, ...);
@@ -348,6 +359,7 @@ using AndroidDlopenExtFn = void *(*)(const char *, int, const void *);
 using RegisterNativesFn = int (*)(JNIEnv *, jobject, const JNINativeMethod *, int);
 
 static GetIfAddrsFn orig_getifaddrs = nullptr;
+static FreeIfAddrsFn orig_freeifaddrs = nullptr;
 static OpenFn orig_open = nullptr;
 static OpenAtFn orig_openat = nullptr;
 static IoctlFn orig_ioctl = nullptr;
@@ -403,6 +415,16 @@ static bool g_libdl_inline_ready = false;
 static bool g_jni_register_natives_hooked = false;
 static DIR *g_tracked_dirs[MAX_TRACKED_DIRS] = {};
 static int g_tracked_dir_count = 0;
+struct TrackedIfAddrsList {
+  bool used;
+  ifaddrs *visible_head;
+  ifaddrs *original_head;
+  int node_count;
+  ifaddrs *nodes[MAX_TRACKED_IFADDRS_NODES];
+  ifaddrs *next[MAX_TRACKED_IFADDRS_NODES];
+};
+static TrackedIfAddrsList g_tracked_ifaddrs[MAX_TRACKED_IFADDRS_LISTS] = {};
+static volatile int g_tracked_ifaddrs_lock = 0;
 static int g_maps_elf_count = 0;
 static int g_registered_hooks = 0;
 static int g_commit_ok = 0;
@@ -451,9 +473,10 @@ constexpr const char *ABS_PROXYINFO_DIR = "/data/adb/modules/ZDT-D/working_folde
 constexpr const char *ABS_VPN_NETD_DIR = "/data/adb/modules/ZDT-D/working_folder/vpn_netd";
 
 int hooked_getifaddrs(ifaddrs **out);
+void hooked_freeifaddrs(ifaddrs *addr);
 int hooked_open(const char *pathname, int flags, ...);
 int hooked_openat(int dirfd, const char *pathname, int flags, ...);
-int hooked_ioctl(int fd, unsigned long request, ...);
+int hooked_ioctl(int fd, unsigned long request, uintptr_t arg_value);
 ssize_t hooked_recvmsg(int sockfd, msghdr *msg, int flags);
 ssize_t hooked_recv(int sockfd, void *buf, size_t len, int flags);
 ssize_t hooked_recvfrom(int sockfd, void *buf, size_t len, int flags, sockaddr *src_addr, socklen_t *addrlen);
@@ -486,7 +509,12 @@ bool install_jni_register_natives_hook(JNIEnv *env);
 int install_libdl_inline_hooks();
 
 int *errno_ptr() { return (&__errno) ? __errno() : nullptr; }
+int get_errno_value() { int *e = errno_ptr(); return e ? *e : 0; }
 void set_errno_value(int value) { int *e = errno_ptr(); if (e) *e = value; }
+
+bool open_flags_need_mode(int flags) {
+  return (flags & O_CREAT) != 0 || (flags & O_TMPFILE) == O_TMPFILE;
+}
 
 bool is_space(char c) { return c == ' ' || c == '\t' || c == '\r' || c == '\n'; }
 
@@ -1329,6 +1357,71 @@ bool should_hide_sys_class_net_path_at(int dirfd, const char *path) {
   return relative_path_is_hidden_sys_class_net_member(dirfd, path);
 }
 
+void lock_tracked_ifaddrs() {
+  while (__sync_lock_test_and_set(&g_tracked_ifaddrs_lock, 1) != 0) {}
+}
+
+void unlock_tracked_ifaddrs() {
+  __sync_lock_release(&g_tracked_ifaddrs_lock);
+}
+
+void restore_ifaddrs_links(ifaddrs **nodes, ifaddrs **next, int count) {
+  if (!nodes || !next || count <= 0) return;
+  for (int i = 0; i < count; ++i) {
+    if (nodes[i]) nodes[i]->ifa_next = next[i];
+  }
+}
+
+bool track_filtered_ifaddrs(ifaddrs *visible_head,
+                            ifaddrs *original_head,
+                            ifaddrs **nodes,
+                            ifaddrs **next,
+                            int count) {
+  if (!visible_head || !original_head || !nodes || !next || count <= 0 ||
+      count > MAX_TRACKED_IFADDRS_NODES) return false;
+  lock_tracked_ifaddrs();
+  int slot = -1;
+  for (int i = 0; i < MAX_TRACKED_IFADDRS_LISTS; ++i) {
+    if (!g_tracked_ifaddrs[i].used) { slot = i; break; }
+  }
+  if (slot >= 0) {
+    TrackedIfAddrsList &record = g_tracked_ifaddrs[slot];
+    record.used = true;
+    record.visible_head = visible_head;
+    record.original_head = original_head;
+    record.node_count = count;
+    for (int i = 0; i < count; ++i) {
+      record.nodes[i] = nodes[i];
+      record.next[i] = next[i];
+    }
+  }
+  unlock_tracked_ifaddrs();
+  return slot >= 0;
+}
+
+bool take_tracked_ifaddrs(ifaddrs *visible_head, ifaddrs **original_head) {
+  if (!visible_head || !original_head) return false;
+  bool found = false;
+  lock_tracked_ifaddrs();
+  for (int i = 0; i < MAX_TRACKED_IFADDRS_LISTS; ++i) {
+    TrackedIfAddrsList &record = g_tracked_ifaddrs[i];
+    if (!record.used || record.visible_head != visible_head) continue;
+    restore_ifaddrs_links(record.nodes, record.next, record.node_count);
+    *original_head = record.original_head;
+    memset(&record, 0, sizeof(record));
+    found = true;
+    break;
+  }
+  unlock_tracked_ifaddrs();
+  return found;
+}
+
+void reset_tracked_ifaddrs() {
+  lock_tracked_ifaddrs();
+  memset(g_tracked_ifaddrs, 0, sizeof(g_tracked_ifaddrs));
+  unlock_tracked_ifaddrs();
+}
+
 void track_dir(DIR *dir) {
   if (!dir) return;
   for (int i = 0; i < g_tracked_dir_count; ++i) if (g_tracked_dirs[i] == dir) return;
@@ -1516,33 +1609,107 @@ ssize_t filter_received_netlink_payload(int sockfd, void *data, ssize_t rc, size
 
 int hooked_getifaddrs(ifaddrs **out) {
   if (!orig_getifaddrs) return -1;
-  if (!enter_hook_guard()) return orig_getifaddrs(out);
+  const int entry_errno = get_errno_value();
+  if (!enter_hook_guard()) {
+    set_errno_value(entry_errno);
+    return orig_getifaddrs(out);
+  }
   g_inside_getifaddrs = true;
+  set_errno_value(entry_errno);
   int rc = orig_getifaddrs(out);
+  const int call_errno = get_errno_value();
   g_inside_getifaddrs = false;
   leave_hook_guard();
-  if (rc != 0 || !out || !*out || !runtime_hiding_enabled() || !g_feature_hide_getifaddrs) return rc;
-  g_getifaddrs_hits++;
-  ifaddrs *head = *out;
+  if (rc != 0 || !out || !*out || !runtime_hiding_enabled() ||
+      !g_feature_hide_getifaddrs || !orig_freeifaddrs) {
+    set_errno_value(call_errno);
+    return rc;
+  }
+
+  ifaddrs *nodes[MAX_TRACKED_IFADDRS_NODES];
+  ifaddrs *next[MAX_TRACKED_IFADDRS_NODES];
+  int count = 0;
+  ifaddrs *cur = *out;
+  while (cur && count < MAX_TRACKED_IFADDRS_NODES) {
+    nodes[count] = cur;
+    next[count] = cur->ifa_next;
+    count++;
+    cur = cur->ifa_next;
+  }
+  // Never mutate a list that cannot be restored exactly.
+  if (cur || count <= 0) {
+    set_errno_value(call_errno);
+    return rc;
+  }
+
+  ifaddrs *original_head = *out;
+  ifaddrs *head = original_head;
   ifaddrs *prev = nullptr;
-  ifaddrs *cur = head;
+  cur = head;
+  bool removed = false;
   while (cur) {
-    ifaddrs *next = cur->ifa_next;
+    ifaddrs *following = cur->ifa_next;
     if (is_hidden_interface(cur->ifa_name)) {
-      if (prev) prev->ifa_next = next;
-      else head = next;
+      removed = true;
+      if (prev) prev->ifa_next = following;
+      else head = following;
     } else {
       prev = cur;
     }
-    cur = next;
+    cur = following;
+  }
+
+  if (!removed) {
+    set_errno_value(call_errno);
+    return rc;
+  }
+  g_getifaddrs_hits++;
+
+  if (!head) {
+    restore_ifaddrs_links(nodes, next, count);
+    orig_freeifaddrs(original_head);
+    *out = nullptr;
+    set_errno_value(call_errno);
+    return rc;
+  }
+
+  if (!track_filtered_ifaddrs(head, original_head, nodes, next, count)) {
+    restore_ifaddrs_links(nodes, next, count);
+    set_errno_value(call_errno);
+    return rc;
   }
   *out = head;
+  set_errno_value(call_errno);
   return rc;
 }
 
+void hooked_freeifaddrs(ifaddrs *addr) {
+  if (!orig_freeifaddrs) return;
+  const int entry_errno = get_errno_value();
+  ifaddrs *original = addr;
+  take_tracked_ifaddrs(addr, &original);
+  if (!enter_hook_guard()) {
+    set_errno_value(entry_errno);
+    orig_freeifaddrs(original);
+    set_errno_value(entry_errno);
+    return;
+  }
+  set_errno_value(entry_errno);
+  orig_freeifaddrs(original);
+  leave_hook_guard();
+  set_errno_value(entry_errno);
+}
+
 int hooked_open(const char *pathname, int flags, ...) {
+  const bool has_mode = open_flags_need_mode(flags);
   mode_t mode = 0;
-  if (flags & O_CREAT) { va_list ap; va_start(ap, flags); mode = va_arg(ap, mode_t); va_end(ap); }
+  if (has_mode) {
+    va_list ap;
+    va_start(ap, flags);
+    mode = va_arg(ap, mode_t);
+    va_end(ap);
+  }
+  const int entry_errno = get_errno_value();
   if (g_hook_depth == 0 && runtime_hiding_enabled()) {
     if (path_is_hidden_sys_class_net_member(pathname)) {
       set_errno_value(ENOENT);
@@ -1552,34 +1719,51 @@ int hooked_open(const char *pathname, int flags, ...) {
       ProcKind kind = classify_proc_path(pathname);
       if (kind != PROC_NONE) {
         int fd = make_filtered_proc_fd(pathname, kind);
-        if (fd >= 0) { g_proc_hits++; return fd; }
+        if (fd >= 0) {
+          g_proc_hits++;
+          set_errno_value(entry_errno);
+          return fd;
+        }
       }
     }
   }
-  if (!orig_open) return -1;
-  if (!enter_hook_guard()) {
-    if (flags & O_CREAT) return orig_open(pathname, flags, mode);
-    return orig_open(pathname, flags);
+  if (!orig_open) {
+    set_errno_value(entry_errno);
+    return -1;
   }
-  int rc = (flags & O_CREAT) ? orig_open(pathname, flags, mode) : orig_open(pathname, flags);
+  set_errno_value(entry_errno);
+  if (!enter_hook_guard()) {
+    return has_mode ? orig_open(pathname, flags, mode) : orig_open(pathname, flags);
+  }
+  int rc = has_mode ? orig_open(pathname, flags, mode) : orig_open(pathname, flags);
+  const int call_errno = get_errno_value();
   leave_hook_guard();
+  set_errno_value(call_errno);
   return rc;
 }
 
 int hooked_openat(int dirfd, const char *pathname, int flags, ...) {
+  const bool has_mode = open_flags_need_mode(flags);
   mode_t mode = 0;
-  if (flags & O_CREAT) { va_list ap; va_start(ap, flags); mode = va_arg(ap, mode_t); va_end(ap); }
+  if (has_mode) {
+    va_list ap;
+    va_start(ap, flags);
+    mode = va_arg(ap, mode_t);
+    va_end(ap);
+  }
+  const int entry_errno = get_errno_value();
   if (g_hook_depth == 0 && runtime_hiding_enabled()) {
-    if ((dirfd == AT_FDCWD && path_is_hidden_sys_class_net_member(pathname)) ||
-        (dirfd != AT_FDCWD && relative_path_is_hidden_sys_class_net_member(dirfd, pathname))) {
+    if (should_hide_sys_class_net_path_at(dirfd, pathname)) {
       set_errno_value(ENOENT);
       return -1;
     }
     if ((flags & O_ACCMODE) == O_RDONLY) {
       ProcKind kind = PROC_NONE;
       int open_dirfd = AT_FDCWD;
-      const char *open_path = pathname;
-      if (dirfd == AT_FDCWD) {
+      if (pathname && pathname[0] == '/') {
+        // POSIX openat() ignores dirfd for absolute paths.
+        kind = classify_proc_path(pathname);
+      } else if (dirfd == AT_FDCWD) {
         kind = classify_proc_path(pathname);
       } else {
         kind = classify_proc_relative_name(pathname);
@@ -1587,34 +1771,44 @@ int hooked_openat(int dirfd, const char *pathname, int flags, ...) {
         else kind = PROC_NONE;
       }
       if (kind != PROC_NONE) {
-        int fd = make_filtered_proc_fd_at(open_dirfd, open_path, kind);
-        if (fd >= 0) { g_proc_hits++; return fd; }
+        int fd = make_filtered_proc_fd_at(open_dirfd, pathname, kind);
+        if (fd >= 0) {
+          g_proc_hits++;
+          set_errno_value(entry_errno);
+          return fd;
+        }
       }
     }
   }
-  if (!orig_openat) return -1;
-  if (!enter_hook_guard()) {
-    if (flags & O_CREAT) return orig_openat(dirfd, pathname, flags, mode);
-    return orig_openat(dirfd, pathname, flags);
+  if (!orig_openat) {
+    set_errno_value(entry_errno);
+    return -1;
   }
-  int rc = (flags & O_CREAT) ? orig_openat(dirfd, pathname, flags, mode) : orig_openat(dirfd, pathname, flags);
+  set_errno_value(entry_errno);
+  if (!enter_hook_guard()) {
+    return has_mode ? orig_openat(dirfd, pathname, flags, mode)
+                    : orig_openat(dirfd, pathname, flags);
+  }
+  int rc = has_mode ? orig_openat(dirfd, pathname, flags, mode)
+                    : orig_openat(dirfd, pathname, flags);
+  const int call_errno = get_errno_value();
   leave_hook_guard();
+  set_errno_value(call_errno);
   return rc;
 }
 
-int hooked_ioctl(int fd, unsigned long request, ...) {
-  va_list ap;
-  va_start(ap, request);
-  void *arg = va_arg(ap, void *);
-  va_end(ap);
+int hooked_ioctl(int fd, unsigned long request, uintptr_t arg_value) {
   if (!orig_ioctl) return -1;
+  void *arg = reinterpret_cast<void *>(arg_value);
+  const int entry_errno = get_errno_value();
 
   // The real getifaddrs() may call ioctl(SIOCGIFFLAGS/...) internally while
   // building its list. Filtering those internal probes can break libc's own
   // construction and make callers hang or receive a failed getifaddrs result.
-  // The getifaddrs hook filters the final list after the real call succeeds,
-  // so internal ioctls must pass through unchanged.
-  if (g_inside_getifaddrs) return orig_ioctl(fd, request, arg);
+  if (g_inside_getifaddrs) {
+    set_errno_value(entry_errno);
+    return orig_ioctl(fd, request, arg_value);
+  }
 
   bool hiding = runtime_hiding_enabled() && g_feature_hide_ioctl;
   if (hiding && arg && request != SIOCGIFCONF) {
@@ -1632,13 +1826,19 @@ int hooked_ioctl(int fd, unsigned long request, ...) {
     }
   }
 
-  if (!enter_hook_guard()) return orig_ioctl(fd, request, arg);
-  int rc = orig_ioctl(fd, request, arg);
+  set_errno_value(entry_errno);
+  if (!enter_hook_guard()) return orig_ioctl(fd, request, arg_value);
+  int rc = orig_ioctl(fd, request, arg_value);
+  const int call_errno = get_errno_value();
   leave_hook_guard();
-  if (!hiding || !arg || rc != 0) return rc;
+  if (!hiding || !arg || rc != 0) {
+    set_errno_value(call_errno);
+    return rc;
+  }
   if (request == SIOCGIFCONF) {
     g_ioctl_hits++;
     filter_ifconf(reinterpret_cast<ifconf *>(arg));
+    set_errno_value(call_errno);
     return rc;
   }
   if (request == SIOCGIFNAME) {
@@ -1650,52 +1850,137 @@ int hooked_ioctl(int fd, unsigned long request, ...) {
       return -1;
     }
   }
+  set_errno_value(call_errno);
   return rc;
+}
+
+ssize_t filter_received_netlink_iov(int fd,
+                                      const iovec *iov,
+                                      size_t iovcnt,
+                                      ssize_t rc,
+                                      int msg_flags) {
+  if (rc <= 0 || !iov || iovcnt == 0 || iovcnt > MAX_IOVEC_COUNT) return rc;
+  if ((msg_flags & MSG_TRUNC) != 0 || rc > READ_LIMIT) return rc;
+  if (!runtime_hiding_enabled() || !any_netlink_feature_enabled()) return rc;
+  if (!is_netlink_socket_fd(fd)) return rc;
+
+  if (static_cast<size_t>(rc) <= iov[0].iov_len) {
+    return filter_received_netlink_payload(fd, iov[0].iov_base, rc, iov[0].iov_len, msg_flags);
+  }
+
+  long mapped = syscall(__NR_mmap,
+                        nullptr,
+                        static_cast<size_t>(READ_LIMIT),
+                        PROT_READ | PROT_WRITE,
+                        MAP_PRIVATE | MAP_ANONYMOUS,
+                        -1,
+                        0);
+  if (mapped <= 0 || mapped == -1) return rc;
+  char *gathered = reinterpret_cast<char *>(static_cast<uintptr_t>(mapped));
+
+  size_t remaining = static_cast<size_t>(rc);
+  size_t offset = 0;
+  for (size_t i = 0; i < iovcnt && remaining > 0; ++i) {
+    size_t take = iov[i].iov_len < remaining ? iov[i].iov_len : remaining;
+    if (take > 0 && !iov[i].iov_base) {
+      syscall(__NR_munmap, gathered, static_cast<size_t>(READ_LIMIT));
+      return rc;
+    }
+    if (take > 0) memcpy(gathered + offset, iov[i].iov_base, take);
+    offset += take;
+    remaining -= take;
+  }
+  if (remaining != 0 || !looks_like_complete_netlink_buffer(gathered, rc)) {
+    syscall(__NR_munmap, gathered, static_cast<size_t>(READ_LIMIT));
+    return rc;
+  }
+
+  ssize_t filtered = filter_netlink_buffer(gathered, rc);
+  if (filtered == rc) {
+    syscall(__NR_munmap, gathered, static_cast<size_t>(READ_LIMIT));
+    return rc;
+  }
+
+  remaining = static_cast<size_t>(filtered);
+  offset = 0;
+  for (size_t i = 0; i < iovcnt && remaining > 0; ++i) {
+    size_t take = iov[i].iov_len < remaining ? iov[i].iov_len : remaining;
+    if (take > 0) memcpy(iov[i].iov_base, gathered + offset, take);
+    offset += take;
+    remaining -= take;
+  }
+  syscall(__NR_munmap, gathered, static_cast<size_t>(READ_LIMIT));
+  if (remaining != 0) return rc;
+  g_netlink_hits++;
+  return filtered;
 }
 
 ssize_t hooked_recvmsg(int sockfd, msghdr *msg, int flags) {
   if (!orig_recvmsg) return -1;
+  const int entry_errno = get_errno_value();
+  set_errno_value(entry_errno);
   if (!enter_hook_guard()) return orig_recvmsg(sockfd, msg, flags);
   ssize_t rc = orig_recvmsg(sockfd, msg, flags);
+  const int call_errno = get_errno_value();
   leave_hook_guard();
-  if (!msg || !msg->msg_iov || msg->msg_iovlen < 1) return rc;
-  iovec *iov = &msg->msg_iov[0];
-  return filter_received_netlink_payload(sockfd, iov ? iov->iov_base : nullptr, rc, iov ? iov->iov_len : 0, msg->msg_flags);
+  if (msg && msg->msg_iov && msg->msg_iovlen > 0) {
+    rc = filter_received_netlink_iov(sockfd, msg->msg_iov, msg->msg_iovlen, rc, msg->msg_flags);
+  }
+  set_errno_value(call_errno);
+  return rc;
 }
 
 ssize_t hooked_recv(int sockfd, void *buf, size_t len, int flags) {
   if (!orig_recv) return -1;
+  const int entry_errno = get_errno_value();
+  set_errno_value(entry_errno);
   if (!enter_hook_guard()) return orig_recv(sockfd, buf, len, flags);
   ssize_t rc = orig_recv(sockfd, buf, len, flags);
+  const int call_errno = get_errno_value();
   leave_hook_guard();
-  return filter_received_netlink_payload(sockfd, buf, rc, len, flags);
+  rc = filter_received_netlink_payload(sockfd, buf, rc, len, flags);
+  set_errno_value(call_errno);
+  return rc;
 }
 
 ssize_t hooked_recvfrom(int sockfd, void *buf, size_t len, int flags, sockaddr *src_addr, socklen_t *addrlen) {
   if (!orig_recvfrom) return -1;
+  const int entry_errno = get_errno_value();
+  set_errno_value(entry_errno);
   if (!enter_hook_guard()) return orig_recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
   ssize_t rc = orig_recvfrom(sockfd, buf, len, flags, src_addr, addrlen);
+  const int call_errno = get_errno_value();
   leave_hook_guard();
-  return filter_received_netlink_payload(sockfd, buf, rc, len, flags);
+  rc = filter_received_netlink_payload(sockfd, buf, rc, len, flags);
+  set_errno_value(call_errno);
+  return rc;
 }
 
 ssize_t hooked_read(int fd, void *buf, size_t count) {
   if (!orig_read) return -1;
+  const int entry_errno = get_errno_value();
+  set_errno_value(entry_errno);
   if (!enter_hook_guard()) return orig_read(fd, buf, count);
   ssize_t rc = orig_read(fd, buf, count);
+  const int call_errno = get_errno_value();
   leave_hook_guard();
-  return filter_received_netlink_payload(fd, buf, rc, count, 0);
+  rc = filter_received_netlink_payload(fd, buf, rc, count, 0);
+  set_errno_value(call_errno);
+  return rc;
 }
 
 ssize_t hooked_readv(int fd, const iovec *iov, int iovcnt) {
   if (!orig_readv) return -1;
+  const int entry_errno = get_errno_value();
+  set_errno_value(entry_errno);
   if (!enter_hook_guard()) return orig_readv(fd, iov, iovcnt);
   ssize_t rc = orig_readv(fd, iov, iovcnt);
+  const int call_errno = get_errno_value();
   leave_hook_guard();
-  if (rc <= 0 || !iov || iovcnt <= 0) return rc;
-  if (static_cast<size_t>(rc) <= iov[0].iov_len) {
-    return filter_received_netlink_payload(fd, iov[0].iov_base, rc, iov[0].iov_len, 0);
+  if (iov && iovcnt > 0) {
+    rc = filter_received_netlink_iov(fd, iov, static_cast<size_t>(iovcnt), rc, 0);
   }
+  set_errno_value(call_errno);
   return rc;
 }
 
@@ -2246,7 +2531,7 @@ struct HookSpec {
 
 bool hook_symbol_enabled(const char *name) {
   if (!name) return false;
-  if (streq(name, "getifaddrs")) return g_feature_hide_getifaddrs;
+  if (streq(name, "getifaddrs") || streq(name, "freeifaddrs")) return g_feature_hide_getifaddrs;
   if (streq(name, "if_nametoindex") || streq(name, "if_indextoname")) return g_feature_hide_ifindex;
   if (streq(name, "ioctl")) return g_feature_hide_ioctl;
   if (streq(name, "recv") || streq(name, "recvmsg") || streq(name, "recvfrom") ||
@@ -2274,6 +2559,7 @@ bool hook_symbol_enabled(const char *name) {
 bool symbol_has_inline_libc_trampoline(const char *name) {
   if (!name || !g_libc_inline_ready) return false;
   if (streq(name, "getifaddrs")) return orig_getifaddrs != nullptr;
+  if (streq(name, "freeifaddrs")) return orig_freeifaddrs != nullptr;
   if (streq(name, "ioctl")) return orig_ioctl != nullptr;
   if (streq(name, "open")) return orig_open != nullptr;
   if (streq(name, "openat")) return orig_openat != nullptr;
@@ -2298,6 +2584,7 @@ bool should_register_plt_symbol(const char *name) {
 HookSpec *hook_spec_for_symbol(const char *name) {
   static HookSpec specs[] = {
       {"getifaddrs", reinterpret_cast<void *>(hooked_getifaddrs), reinterpret_cast<void **>(&orig_getifaddrs)},
+      {"freeifaddrs", reinterpret_cast<void *>(hooked_freeifaddrs), reinterpret_cast<void **>(&orig_freeifaddrs)},
       {"open", reinterpret_cast<void *>(hooked_open), reinterpret_cast<void **>(&orig_open)},
       {"openat", reinterpret_cast<void *>(hooked_openat), reinterpret_cast<void **>(&orig_openat)},
       {"ioctl", reinterpret_cast<void *>(hooked_ioctl), reinterpret_cast<void **>(&orig_ioctl)},
@@ -2730,6 +3017,7 @@ int install_libc_inline_hooks() {
   } while (0)
 
   ZDT_INLINE_HOOK("getifaddrs", hooked_getifaddrs, &orig_getifaddrs);
+  ZDT_INLINE_HOOK("freeifaddrs", hooked_freeifaddrs, &orig_freeifaddrs);
   ZDT_INLINE_HOOK("ioctl", hooked_ioctl, &orig_ioctl);
   ZDT_INLINE_HOOK("open", hooked_open, &orig_open);
   ZDT_INLINE_HOOK("openat", hooked_openat, &orig_openat);
@@ -2930,6 +3218,7 @@ int register_hooks_from_maps(zygisk::Api *api) {
               } \
             } while (0)
             ZDT_REGISTER_PLT("getifaddrs", hooked_getifaddrs, &orig_getifaddrs);
+            ZDT_REGISTER_PLT("freeifaddrs", hooked_freeifaddrs, &orig_freeifaddrs);
             ZDT_REGISTER_PLT("open", hooked_open, &orig_open);
             ZDT_REGISTER_PLT("openat", hooked_openat, &orig_openat);
             ZDT_REGISTER_PLT("ioctl", hooked_ioctl, &orig_ioctl);
@@ -2994,6 +3283,7 @@ public:
     g_libdl_inline_ready = false;
     g_jni_register_natives_hooked = false;
     g_tracked_dir_count = 0;
+    reset_tracked_ifaddrs();
     g_maps_elf_count = 0;
     g_registered_hooks = 0;
     g_commit_ok = 0;

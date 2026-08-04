@@ -1,21 +1,36 @@
 #!/system/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
-# Provision the ZDT-D myprogram + myvpn profiles that run qwdtt-cli and route a
-# test app through the qWDTT tunnel (M3). Run as root on the device.
+# Provision the ZDT-D profiles that run qwdtt-cli and route a test app through
+# the qWDTT tunnel (M3). Run as root on the device.
 #
 #   sh install-zdtd-profiles.sh <test.app.package> [more.packages ...]
 #
-# It writes:
-#   - a myprogram profile "qwdtt" whose command launches qwdtt-cli (it creates
-#     the zdtdqw0 TUN),
-#   - a myvpn profile "qwdtt" that binds the given app package(s) to zdtdqw0.
+# It always writes a myprogram profile "qwdtt" whose command launches qwdtt-cli.
+# How the app is routed depends on MODE, which must match `mode` in qwdtt.conf:
+#
+#   MODE=vpn   (default) qwdtt-cli creates the zdtdqw0 TUN; a myvpn profile binds
+#              the app UIDs to it.
+#   MODE=socks the transport serves SOCKS5 from its own userspace WireGuard (no
+#              TUN, no amneziawg-go/awg); a myproxy profile redirects the app
+#              UIDs through t2s to that SOCKS5 port.
+#
+# NOTE for MODE=socks: the upstream SOCKS server is TCP CONNECT only, so app UDP
+# (QUIC, direct DNS) is not carried and goes direct -- which a whitelist ISP
+# drops. Treat it as experimental until tested on your SIM.
 #
 # Toybox/ash-compatible; no jq or bash-isms. Paths are overridable via env.
 
 set -eu
 
 PROFILE="${PROFILE:-qwdtt}"
+MODE="${MODE:-vpn}"
+# MODE=socks only: must match socks_addr in qwdtt.conf.
+SOCKS_HOST="${SOCKS_HOST:-127.0.0.1}"
+SOCKS_PORT="${SOCKS_PORT:-1080}"
+# t2s listener ports for the myproxy profile (myproxy's own defaults).
+T2S_PORT="${T2S_PORT:-12348}"
+T2S_WEB_PORT="${T2S_WEB_PORT:-8004}"
 TUN="${TUN:-zdtdqw0}"
 DNS="${DNS:-8.8.8.8}"
 # Tunnel CIDR for the myvpn profile. When set (the default), the profile uses
@@ -36,6 +51,11 @@ QWDTT_CONF="${QWDTT_CONF:-/data/adb/modules/ZDT-D/working_folder/myprogram/profi
 die() { echo "error: $*" >&2; exit 1; }
 
 [ "$#" -ge 1 ] || die "usage: $0 <test.app.package> [more.packages ...]"
+
+case "$MODE" in
+	vpn|socks) ;;
+	*) die "MODE must be vpn or socks, got '$MODE'" ;;
+esac
 
 # Refuse UID 0 / system entries in the routed set: root in the bound range makes
 # the transport tunnel itself and the stack deadlocks (project invariant).
@@ -58,7 +78,8 @@ atomic_write() { # atomic_write <path> <<heredoc content on stdin>
 echo ">> provisioning myprogram profile '$PROFILE'"
 MP="$WF/myprogram/profile/$PROFILE"
 mkdir -p "$MP/bin" "$MP/log" "$MP/app/uid" "$MP/app/out"
-# apps_mode=false: myprogram only launches qwdtt-cli; routing is myvpn's job.
+# apps_mode=false: myprogram only launches qwdtt-cli; routing belongs to the
+# myvpn (MODE=vpn) or myproxy (MODE=socks) profile below.
 atomic_write "$MP/setting.json" <<JSON
 {"apps_mode": false}
 JSON
@@ -67,6 +88,27 @@ JSON
 atomic_write "$MP/command.txt" <<CMD
 exec $QWDTT_CLI -config $QWDTT_CONF
 CMD
+
+# Routing profile: myvpn binds UIDs to the TUN; myproxy redirects UIDs through
+# t2s into the transport's SOCKS5 port. Exactly one is provisioned.
+if [ "$MODE" = "socks" ]; then
+	echo ">> provisioning myproxy profile '$PROFILE' (socks=$SOCKS_HOST:$SOCKS_PORT)"
+	MX="$WF/myproxy/profile/$PROFILE"
+	mkdir -p "$MX/app/uid" "$MX/app/out" "$MX/log"
+	# t2s listens locally and forwards to the transport's SOCKS5 server.
+	atomic_write "$MX/setting.json" <<JSON
+{"t2s_port": $T2S_PORT, "t2s_web_port": $T2S_WEB_PORT}
+JSON
+	atomic_write "$MX/proxy.json" <<JSON
+{"host": "$SOCKS_HOST", "port": $SOCKS_PORT, "user": "", "pass": ""}
+JSON
+	# App list: packages to route through the tunnel, one per line. Do NOT add the
+	# 34 excluded_apps (banking/gov/Yandex) here — they must stay direct.
+	{ for pkg in "$@"; do echo "$pkg"; done; } | atomic_write "$MX/app/uid/user_program"
+
+	ROUTING_PROGRAM=myproxy
+	ROUTING_DIR="$MX"
+else
 
 echo ">> provisioning myvpn profile '$PROFILE' (tun=$TUN)"
 MV="$WF/myvpn/profile/$PROFILE"
@@ -90,6 +132,10 @@ fi
 # 34 excluded_apps (banking/gov/Yandex) here — they must stay direct.
 { for pkg in "$@"; do echo "$pkg"; done; } | atomic_write "$MV/app/uid/user_program"
 
+ROUTING_PROGRAM=myvpn
+ROUTING_DIR="$MV"
+fi
+
 # active.json: enable the profile for each program. Only written when absent or
 # empty, so an existing enabled set for other profiles is never clobbered.
 enable_profile() {
@@ -108,7 +154,7 @@ JSON
 	echo ">> enabled $prog profile '$PROFILE'"
 }
 enable_profile myprogram
-enable_profile myvpn
+enable_profile "$ROUTING_PROGRAM"
 
 # Preflight: the binaries/config are uploaded separately (via the app). Warn if
 # they are not in place yet so the first launch does not silently fail.
@@ -122,15 +168,33 @@ echo "  1. Upload qwdtt-cli, qwdtt-transport, qwdtt.conf into the profile bin/ v
 echo "       $MP/bin/"
 echo "  2. In $QWDTT_CONF set:"
 echo "       transport_binary = $QWDTT_TRANSPORT"
-echo "     (the transport path is read from qwdtt.conf, not from this script)."
-echo "  3. amneziawg-go + awg present under /data/adb/modules/ZDT-D/bin/."
+echo "       mode = $MODE"
+if [ "$MODE" = "socks" ]; then
+	echo "       socks_addr = $SOCKS_HOST:$SOCKS_PORT"
+fi
+echo "     (the transport path and mode are read from qwdtt.conf, not this script;"
+echo "      MODE here only selects which routing profile is provisioned)."
+if [ "$MODE" = "socks" ]; then
+	echo "  3. (no amneziawg-go/awg needed in socks mode)"
+else
+	echo "  3. amneziawg-go + awg present under /data/adb/modules/ZDT-D/bin/."
+fi
 echo "  4. Restart ZDT-D (or toggle the profiles) so myprogram launches qwdtt-cli."
-echo "  5. ip link show $TUN          # interface up"
-echo "  6. tail $MP/log/program.log   # qwdtt-cli log: transport + wg bring-up"
-echo "  7. cat $MV/app/out/user_program   # must list <package>=<uid>; empty means"
-echo "     myvpn skipped the profile (check zdtd.log for 'myvpn: profile ... failed')."
+if [ "$MODE" = "socks" ]; then
+	echo "  5. grep 'socks: listening' $MP/log/program.log"
+else
+	echo "  5. ip link show $TUN          # interface up"
+fi
+echo "  6. tail $MP/log/program.log   # qwdtt-cli log"
+echo "  7. cat $ROUTING_DIR/app/out/user_program   # must list <package>=<uid>; empty"
+echo "     means $ROUTING_PROGRAM skipped the profile (check zdtd.log)."
 echo "  8. From the test app (its real UID, not root), confirm egress via the tunnel."
-if [ -n "$CIDR" ]; then
+if [ "$MODE" = "socks" ]; then
+	echo
+	echo "socks mode is TCP CONNECT only: app UDP (QUIC, direct DNS) is not carried"
+	echo "and goes direct, which a whitelist ISP drops. Verify before relying on it."
+fi
+if [ "$MODE" = "vpn" ] && [ -n "$CIDR" ]; then
 	echo
 	echo "Note: cidr=$CIDR is assumed. Verify with 'ip -o -4 addr show dev $TUN'"
 	echo "and re-run with CIDR=<actual> if the VPS assigns a different address."

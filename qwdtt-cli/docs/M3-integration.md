@@ -73,12 +73,26 @@ installs (or rebuild them via ZDT-D's `build.yml`). Verify they exist:
 (e.g. `chcon u:object_r:magisk_file:s0 <binary>`, or the label ZDT-D uses for its
 own `bin/`). Confirm with `ls -Z`. This is device/root-manager specific.
 
+## Two routing models
+
+| | `mode = vpn` (default, verified) | `mode = socks` (experimental) |
+|---|---|---|
+| Tunnel exposure | TUN `zdtdqw0` created by qwdtt-cli | SOCKS5 on `127.0.0.1:1080`, WireGuard inside the transport's userspace netstack |
+| Needs amneziawg-go/awg | yes | **no** |
+| Routing profile | `myvpn` (UID → netd network) | `myproxy` (UID → iptables → t2s → SOCKS5) |
+| Carries app UDP (QUIC, DNS) | yes | **no** — TCP CONNECT only |
+
+`mode` in `qwdtt.conf` and `MODE` passed to the installer must agree: the config
+decides what the transport does, the installer only picks which routing profile
+is provisioned.
+
 ## Provision the profiles
 
 Use the helper (root shell on the device):
 
 ```bash
-sh install-zdtd-profiles.sh org.telegram.messenger      # your test app package
+sh install-zdtd-profiles.sh org.telegram.messenger              # vpn (default)
+MODE=socks sh install-zdtd-profiles.sh org.telegram.messenger   # socks + myproxy
 ```
 
 It writes, under `/data/adb/modules/ZDT-D/working_folder/`:

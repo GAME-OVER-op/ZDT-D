@@ -106,6 +106,14 @@ pub fn active_listen_port() -> Result<Option<u16>> {
     Ok(Some(port))
 }
 
+pub fn configured_d2s_listen_addr() -> Result<Option<SocketAddr>> {
+    let toml_path = Path::new(DNSCRYPT_TOML);
+    if !toml_path.is_file() {
+        return Ok(None);
+    }
+    parse_active_d2s_listener(toml_path)
+}
+
 pub fn active_d2s_listen_addr() -> Result<Option<SocketAddr>> {
     let active_path = Path::new(ACTIVE_JSON);
     let active: ActiveJson = read_json(active_path)
@@ -114,11 +122,7 @@ pub fn active_d2s_listen_addr() -> Result<Option<SocketAddr>> {
         return Ok(None);
     }
 
-    let toml_path = Path::new(DNSCRYPT_TOML);
-    if !toml_path.is_file() {
-        return Ok(None);
-    }
-    parse_active_d2s_listener(toml_path)
+    configured_d2s_listen_addr()
 }
 
 pub fn active_d2s_listen_port() -> Result<Option<u16>> {

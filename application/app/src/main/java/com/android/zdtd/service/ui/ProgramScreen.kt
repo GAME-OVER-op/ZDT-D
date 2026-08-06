@@ -319,10 +319,7 @@ isProfileProgramType(program.type) -> {
           }
         } else {
           item {
-            TextEditorCard(
-              title = "d2s.toml",
-              desc = stringResource(R.string.d2s_main_config_desc),
-              path = "/api/programs/dnscrypt/d2s-config",
+            D2sSettingsSection(
               actions = actions,
               snackHost = snackHost,
             )
@@ -367,10 +364,12 @@ isProfileProgramType(program.type) -> {
 }
 
 private val D2S_PROXY_LINE = Regex(
-  pattern = "(?m)^\\s*proxy\\s*=\\s*(['\"])socks5://(?:127\\.0\\.0\\.1|localhost|\\[::1\\]):[1-9][0-9]*\\1\\s*(?:#.*)?$",
+  pattern = "(?m)^\\s*proxy\\s*=\\s*(['\"])socks5://(?:127\\.0\\.0\\.1|localhost|\\[::1\\]):([1-9][0-9]{0,4})\\1\\s*(?:#.*)?$",
 )
 
-private fun hasActiveLocalD2sProxy(content: String): Boolean = D2S_PROXY_LINE.containsMatchIn(content)
+private fun hasActiveLocalD2sProxy(content: String): Boolean = D2S_PROXY_LINE.findAll(content).any { match ->
+  match.groupValues.getOrNull(2)?.toIntOrNull() in 1..65535
+}
 
 @Composable
 private fun ProgramHeroHeader(program: ApiModels.Program) {

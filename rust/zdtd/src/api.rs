@@ -7,7 +7,7 @@ use std::{
     collections::{HashMap, BTreeMap, BTreeSet},
     fs,
     io::{Read, Write},
-    net::{TcpListener, TcpStream},
+    net::{SocketAddr, TcpListener, TcpStream},
     path::{Component, Path, PathBuf},
     sync::{Arc, OnceLock, Mutex, atomic::{AtomicBool, AtomicUsize, Ordering}},
     thread,
@@ -293,6 +293,240 @@ struct EnabledReq {
 #[derive(Debug, Deserialize)]
 struct ContentReq {
     content: String,
+}
+
+fn d2s_default_true() -> bool { true }
+fn d2s_default_connect_timeout_ms() -> u64 { 500 }
+fn d2s_default_upstream_handshake_timeout_ms() -> u64 { 1_000 }
+fn d2s_default_backend_attempt_timeout_ms() -> u64 { 1_200 }
+fn d2s_default_direct_connect_timeout_ms() -> u64 { 2_000 }
+fn d2s_default_client_handshake_timeout_ms() -> u64 { 3_000 }
+fn d2s_default_probe_timeout_ms() -> u64 { 1_200 }
+fn d2s_default_healthy_probe_interval_secs() -> u64 { 30 }
+fn d2s_default_recovery_probe_interval_secs() -> u64 { 5 }
+fn d2s_default_failure_threshold() -> u32 { 3 }
+fn d2s_default_runtime_cooldown_ms() -> u64 { 2_000 }
+fn d2s_default_probe_targets() -> Vec<String> {
+    vec!["1.1.1.1:443".to_string(), "8.8.8.8:443".to_string()]
+}
+fn d2s_default_max_connections() -> usize { 1_024 }
+fn d2s_default_log_level() -> String { "info".to_string() }
+fn d2s_default_status_interval_secs() -> u64 { 5 }
+fn d2s_status_interval_is_default(value: &u64) -> bool { *value == d2s_default_status_interval_secs() }
+fn d2s_default_shutdown_grace_period_ms() -> u64 { 5_000 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct D2sFileConfig {
+    backends: Vec<String>,
+    direct_fallback: bool,
+    connect_timeout_ms: u64,
+    upstream_handshake_timeout_ms: u64,
+    backend_attempt_timeout_ms: u64,
+    direct_connect_timeout_ms: u64,
+    client_handshake_timeout_ms: u64,
+    probe_timeout_ms: u64,
+    healthy_probe_interval_secs: u64,
+    recovery_probe_interval_secs: u64,
+    failure_threshold: u32,
+    runtime_cooldown_ms: u64,
+    probe_targets: Vec<String>,
+    max_connections: usize,
+    tcp_nodelay: bool,
+    log_level: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    status_file: Option<PathBuf>,
+    #[serde(skip_serializing_if = "d2s_status_interval_is_default")]
+    status_interval_secs: u64,
+    shutdown_grace_period_ms: u64,
+}
+
+impl Default for D2sFileConfig {
+    fn default() -> Self {
+        Self {
+            backends: Vec::new(),
+            direct_fallback: d2s_default_true(),
+            connect_timeout_ms: d2s_default_connect_timeout_ms(),
+            upstream_handshake_timeout_ms: d2s_default_upstream_handshake_timeout_ms(),
+            backend_attempt_timeout_ms: d2s_default_backend_attempt_timeout_ms(),
+            direct_connect_timeout_ms: d2s_default_direct_connect_timeout_ms(),
+            client_handshake_timeout_ms: d2s_default_client_handshake_timeout_ms(),
+            probe_timeout_ms: d2s_default_probe_timeout_ms(),
+            healthy_probe_interval_secs: d2s_default_healthy_probe_interval_secs(),
+            recovery_probe_interval_secs: d2s_default_recovery_probe_interval_secs(),
+            failure_threshold: d2s_default_failure_threshold(),
+            runtime_cooldown_ms: d2s_default_runtime_cooldown_ms(),
+            probe_targets: d2s_default_probe_targets(),
+            max_connections: d2s_default_max_connections(),
+            tcp_nodelay: d2s_default_true(),
+            log_level: d2s_default_log_level(),
+            status_file: None,
+            status_interval_secs: d2s_default_status_interval_secs(),
+            shutdown_grace_period_ms: d2s_default_shutdown_grace_period_ms(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct D2sConfigReq {
+    backends: Vec<String>,
+    direct_fallback: bool,
+    connect_timeout_ms: u64,
+    upstream_handshake_timeout_ms: u64,
+    backend_attempt_timeout_ms: u64,
+    direct_connect_timeout_ms: u64,
+    client_handshake_timeout_ms: u64,
+    probe_timeout_ms: u64,
+    healthy_probe_interval_secs: u64,
+    recovery_probe_interval_secs: u64,
+    failure_threshold: u32,
+    runtime_cooldown_ms: u64,
+    probe_targets: Vec<String>,
+    max_connections: usize,
+    tcp_nodelay: bool,
+    log_level: String,
+    shutdown_grace_period_ms: u64,
+}
+
+impl From<&D2sFileConfig> for D2sConfigReq {
+    fn from(value: &D2sFileConfig) -> Self {
+        Self {
+            backends: value.backends.clone(),
+            direct_fallback: value.direct_fallback,
+            connect_timeout_ms: value.connect_timeout_ms,
+            upstream_handshake_timeout_ms: value.upstream_handshake_timeout_ms,
+            backend_attempt_timeout_ms: value.backend_attempt_timeout_ms,
+            direct_connect_timeout_ms: value.direct_connect_timeout_ms,
+            client_handshake_timeout_ms: value.client_handshake_timeout_ms,
+            probe_timeout_ms: value.probe_timeout_ms,
+            healthy_probe_interval_secs: value.healthy_probe_interval_secs,
+            recovery_probe_interval_secs: value.recovery_probe_interval_secs,
+            failure_threshold: value.failure_threshold,
+            runtime_cooldown_ms: value.runtime_cooldown_ms,
+            probe_targets: value.probe_targets.clone(),
+            max_connections: value.max_connections,
+            tcp_nodelay: value.tcp_nodelay,
+            log_level: value.log_level.clone(),
+            shutdown_grace_period_ms: value.shutdown_grace_period_ms,
+        }
+    }
+}
+
+impl D2sFileConfig {
+    fn apply_request(&mut self, req: D2sConfigReq) {
+        self.backends = req.backends;
+        self.direct_fallback = req.direct_fallback;
+        self.connect_timeout_ms = req.connect_timeout_ms;
+        self.upstream_handshake_timeout_ms = req.upstream_handshake_timeout_ms;
+        self.backend_attempt_timeout_ms = req.backend_attempt_timeout_ms;
+        self.direct_connect_timeout_ms = req.direct_connect_timeout_ms;
+        self.client_handshake_timeout_ms = req.client_handshake_timeout_ms;
+        self.probe_timeout_ms = req.probe_timeout_ms;
+        self.healthy_probe_interval_secs = req.healthy_probe_interval_secs;
+        self.recovery_probe_interval_secs = req.recovery_probe_interval_secs;
+        self.failure_threshold = req.failure_threshold;
+        self.runtime_cooldown_ms = req.runtime_cooldown_ms;
+        self.probe_targets = req.probe_targets;
+        self.max_connections = req.max_connections;
+        self.tcp_nodelay = req.tcp_nodelay;
+        self.log_level = req.log_level;
+        self.shutdown_grace_period_ms = req.shutdown_grace_period_ms;
+    }
+}
+
+fn read_d2s_file_config(path: &Path) -> Result<D2sFileConfig> {
+    let raw = read_text(path)?;
+    toml::from_str(&raw).map_err(|e| anyhow::anyhow!("bad D2S TOML {}: {e}", path.display()))
+}
+
+fn write_d2s_file_config(path: &Path, config: &D2sFileConfig) -> Result<()> {
+    let raw = toml::to_string_pretty(config)
+        .map_err(|e| anyhow::anyhow!("serialize D2S TOML {}: {e}", path.display()))?;
+    write_text_atomic(path, &raw)
+}
+
+fn validate_d2s_host_port(value: &str, field: &str) -> Result<()> {
+    let value = value.trim();
+    if value.is_empty() || value.chars().any(char::is_whitespace) {
+        anyhow::bail!("{field} must be HOST:PORT");
+    }
+    if let Ok(addr) = value.parse::<SocketAddr>() {
+        if addr.port() == 0 {
+            anyhow::bail!("{field} port must be greater than zero");
+        }
+        return Ok(());
+    }
+    let (host, port) = value
+        .rsplit_once(':')
+        .ok_or_else(|| anyhow::anyhow!("{field} must be HOST:PORT"))?;
+    if host.is_empty() || host.contains('/') || host.contains('@') {
+        anyhow::bail!("{field} must be HOST:PORT");
+    }
+    let port = port.parse::<u16>()
+        .map_err(|_| anyhow::anyhow!("{field} has an invalid port"))?;
+    if port == 0 {
+        anyhow::bail!("{field} port must be greater than zero");
+    }
+    Ok(())
+}
+
+fn validate_d2s_file_config(config: &D2sFileConfig, listener: Option<SocketAddr>) -> Result<()> {
+    if config.backends.is_empty() && !config.direct_fallback {
+        anyhow::bail!("direct_fallback must be enabled when no SOCKS5 backends are configured");
+    }
+
+    let mut seen_backends = BTreeSet::new();
+    for backend in &config.backends {
+        let addr: SocketAddr = backend.trim().parse()
+            .map_err(|_| anyhow::anyhow!("invalid D2S backend: {backend}"))?;
+        if !addr.ip().is_loopback() || addr.port() == 0 {
+            anyhow::bail!("D2S backends must use a loopback HOST:PORT: {backend}");
+        }
+        if Some(addr) == listener {
+            anyhow::bail!("D2S backend points to its listener: {backend}");
+        }
+        if !seen_backends.insert(addr) {
+            anyhow::bail!("duplicate D2S backend: {backend}");
+        }
+    }
+
+    for (name, value) in [
+        ("connect_timeout_ms", config.connect_timeout_ms),
+        ("upstream_handshake_timeout_ms", config.upstream_handshake_timeout_ms),
+        ("backend_attempt_timeout_ms", config.backend_attempt_timeout_ms),
+        ("direct_connect_timeout_ms", config.direct_connect_timeout_ms),
+        ("client_handshake_timeout_ms", config.client_handshake_timeout_ms),
+        ("probe_timeout_ms", config.probe_timeout_ms),
+        ("healthy_probe_interval_secs", config.healthy_probe_interval_secs),
+        ("recovery_probe_interval_secs", config.recovery_probe_interval_secs),
+        ("runtime_cooldown_ms", config.runtime_cooldown_ms),
+        ("shutdown_grace_period_ms", config.shutdown_grace_period_ms),
+    ] {
+        if value == 0 {
+            anyhow::bail!("{name} must be greater than zero");
+        }
+    }
+    if config.failure_threshold == 0 {
+        anyhow::bail!("failure_threshold must be greater than zero");
+    }
+    if config.max_connections == 0 {
+        anyhow::bail!("max_connections must be greater than zero");
+    }
+    if config.status_interval_secs == 0 {
+        anyhow::bail!("status_interval_secs must be greater than zero");
+    }
+    if !config.backends.is_empty() && config.probe_targets.is_empty() {
+        anyhow::bail!("probe_targets must not be empty when SOCKS5 backends are configured");
+    }
+    for target in &config.probe_targets {
+        validate_d2s_host_port(target, "probe target")?;
+    }
+    let level = config.log_level.trim();
+    if level.is_empty() || level.len() > 128 || level.chars().any(char::is_control) {
+        anyhow::bail!("log_level must be a non-empty logging filter");
+    }
+    Ok(())
 }
 
 
@@ -5154,21 +5388,36 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
 
         ("GET", ["api", "programs", "dnscrypt", "d2s-config"]) => {
             let p = program_root("dnscrypt").join("d2set/d2s.toml");
-            let res = read_text(&p);
+            let res = (|| -> Result<serde_json::Value> {
+                let config = read_d2s_file_config(&p)?;
+                let listener = crate::programs::dnscrypt::configured_d2s_listen_addr()?
+                    .map(|addr| addr.to_string());
+                let visible = D2sConfigReq::from(&config);
+                let mut value = serde_json::to_value(visible)?;
+                let object = value.as_object_mut()
+                    .ok_or_else(|| anyhow::anyhow!("serialize D2S API response"))?;
+                object.insert("ok".to_string(), json!(true));
+                object.insert("listener".to_string(), json!(listener));
+                Ok(value)
+            })();
             match res {
-                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Ok(value) => write_json(stream, 200, value),
                 Err(e) => write_err(stream, e),
             }
         }
         ("PUT", ["api", "programs", "dnscrypt", "d2s-config"]) => {
             let res = (|| -> Result<()> {
-                let req: ContentReq = serde_json::from_slice(body)
-                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let req: D2sConfigReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad D2S JSON body: {e}"))?;
                 let p = program_root("dnscrypt").join("d2set/d2s.toml");
                 if !p.is_file() {
                     anyhow::bail!("D2S configuration file not found");
                 }
-                write_text_atomic(&p, &req.content)?;
+                let mut config = read_d2s_file_config(&p)?;
+                config.apply_request(req);
+                let listener = crate::programs::dnscrypt::configured_d2s_listen_addr()?;
+                validate_d2s_file_config(&config, listener)?;
+                write_d2s_file_config(&p, &config)?;
                 Ok(())
             })();
             match res {

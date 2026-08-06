@@ -1,5 +1,30 @@
-# Local SOCKS5 backend servers used by D2S.
-# Leave empty to route encrypted DNS traffic through DIRECT fallback only.
+# D2S reads its listener address from the active `proxy` entry in
+# dnscrypt-proxy.toml. The listener is not configured in this file.
+
+# Local SOCKS5 servers. NO AUTH only.
+# Leave the list empty to use DIRECT fallback only.
 backends = []
 
 direct_fallback = true
+
+connect_timeout_ms = 500
+upstream_handshake_timeout_ms = 1000
+backend_attempt_timeout_ms = 1200
+direct_connect_timeout_ms = 2000
+client_handshake_timeout_ms = 3000
+probe_timeout_ms = 1200
+
+healthy_probe_interval_secs = 30
+recovery_probe_interval_secs = 5
+failure_threshold = 3
+runtime_cooldown_ms = 2000
+
+probe_targets = [
+  "1.1.1.1:443",
+  "8.8.8.8:443",
+]
+
+max_connections = 1024
+tcp_nodelay = true
+log_level = "info"
+shutdown_grace_period_ms = 5000

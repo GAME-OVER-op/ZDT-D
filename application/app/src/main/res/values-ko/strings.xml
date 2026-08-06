@@ -2176,4 +2176,9 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="dpi_detector_save_success">보고서를 %1$s에 저장했습니다</string>
     <string name="dpi_detector_save_failed">보고서를 저장할 수 없습니다: %1$s</string>
     <string name="dpi_detector_share_failed">보고서 압축 파일을 공유할 수 없습니다.</string>
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">DNSCrypt에서 사용할 SOCKS5 서버 풀, 상태 확인 및 DIRECT 대체 연결을 설정합니다.</string>
+
 </resources>

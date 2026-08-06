@@ -2181,4 +2181,9 @@ APatch: ‏10700+</string>
     <string name="dpi_detector_save_success">تم حفظ التقرير في %1$s</string>
     <string name="dpi_detector_save_failed">تعذر حفظ التقرير: %1$s</string>
     <string name="dpi_detector_share_failed">تعذرت مشاركة أرشيف التقرير.</string>
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">إعداد مجموعة خوادم SOCKS5 وفحوصات التوفر والاتصال المباشر الاحتياطي الذي يستخدمه DNSCrypt.</string>
+
 </resources>

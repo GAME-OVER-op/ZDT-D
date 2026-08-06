@@ -2,6 +2,7 @@
 members = [
   "zdtd",
   "T2s",
+  "d2s",
   "dpi-detector",
   "nfqws-tester",
 ]

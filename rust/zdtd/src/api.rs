@@ -5152,6 +5152,31 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
             }
         }
 
+        ("GET", ["api", "programs", "dnscrypt", "d2s-config"]) => {
+            let p = program_root("dnscrypt").join("d2set/d2s.toml");
+            let res = read_text(&p);
+            match res {
+                Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "programs", "dnscrypt", "d2s-config"]) => {
+            let res = (|| -> Result<()> {
+                let req: ContentReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let p = program_root("dnscrypt").join("d2set/d2s.toml");
+                if !p.is_file() {
+                    anyhow::bail!("D2S configuration file not found");
+                }
+                write_text_atomic(&p, &req.content)?;
+                Ok(())
+            })();
+            match res {
+                Ok(_) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
         // --- dnscrypt extra setting files (read/write only; no create/delete)
         ("GET", ["api", "programs", "dnscrypt", "setting-files"]) => {
             let dir = program_root("dnscrypt").join("setting");

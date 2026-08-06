@@ -3,10 +3,10 @@ use log::{info, warn};
 use serde::Deserialize;
 use std::{
     fs,
-    net::{IpAddr, SocketAddr, UdpSocket},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket},
     path::Path,
-    process::{Command, Stdio},
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    process::{Child, Command, ExitStatus, Stdio},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use std::os::unix::process::CommandExt;
 
@@ -62,6 +62,10 @@ const BIN_DIR: &str = "/data/adb/modules/ZDT-D/bin";
 const ACTIVE_JSON: &str = "/data/adb/modules/ZDT-D/working_folder/dnscrypt/active.json";
 const DNSCRYPT_TOML: &str =
     "/data/adb/modules/ZDT-D/working_folder/dnscrypt/setting/dnscrypt-proxy.toml";
+const D2S_TOML: &str =
+    "/data/adb/modules/ZDT-D/working_folder/dnscrypt/d2set/d2s.toml";
+const D2S_LOG: &str =
+    "/data/adb/modules/ZDT-D/working_folder/dnscrypt/log/d2s.log";
 
 const IPV6_RESETPROP_KEYS: [&str; 4] = [
     "net.ipv6.conf.all.accept_redirects",
@@ -102,9 +106,28 @@ pub fn active_listen_port() -> Result<Option<u16>> {
     Ok(Some(port))
 }
 
+pub fn active_d2s_listen_addr() -> Result<Option<SocketAddr>> {
+    let active_path = Path::new(ACTIVE_JSON);
+    let active: ActiveJson = read_json(active_path)
+        .with_context(|| format!("read {}", active_path.display()))?;
+    if !active.enabled {
+        return Ok(None);
+    }
+
+    let toml_path = Path::new(DNSCRYPT_TOML);
+    if !toml_path.is_file() {
+        return Ok(None);
+    }
+    parse_active_d2s_listener(toml_path)
+}
+
+pub fn active_d2s_listen_port() -> Result<Option<u16>> {
+    Ok(active_d2s_listen_addr()?.map(|addr| addr.port()))
+}
+
 pub fn start_if_enabled() -> Result<()> {
     reset_stop();
-    
+
     ensure_dir(MODULE_DIR)?;
     ensure_dir(WORKING_DIR)?;
     ensure_dir(DNSCRYPT_ROOT)?;
@@ -132,23 +155,64 @@ pub fn start_if_enabled() -> Result<()> {
         return Ok(());
     }
 
-    // start before other programs
-    spawn_dnscrypt(toml_path, listen_port)?;
+    let mut d2s_child = match parse_active_d2s_listener(toml_path) {
+        Ok(Some(listener)) => match spawn_d2s(toml_path, listener) {
+            Ok(child) => Some(child),
+            Err(error) => {
+                warn!("d2s start failed: {error:#}");
+                crate::logging::user_warn("D2S: ошибка запуска — запуск DNSCrypt продолжен");
+                None
+            }
+        },
+        Ok(None) => None,
+        Err(error) => {
+            warn!("d2s proxy detection failed: {error:#}");
+            None
+        }
+    };
+
+    let mut dnscrypt_child = match spawn_dnscrypt(toml_path, listen_port) {
+        Ok(Some(child)) => child,
+        Ok(None) => {
+            crate::logging::user_error("DNSCrypt: ошибка запуска — ожидание готовности прекращено");
+            stop_started_d2s(&mut d2s_child);
+            return Ok(());
+        }
+        Err(error) => {
+            warn!("dnscrypt spawn failed: {error:#}");
+            crate::logging::user_error("DNSCrypt: ошибка запуска — ожидание готовности прекращено");
+            stop_started_d2s(&mut d2s_child);
+            return Ok(());
+        }
+    };
 
     if stop_requested() {
         warn!("dnscrypt start aborted after spawn (stop requested)");
+        stop_started_d2s(&mut d2s_child);
         return Ok(());
     }
 
-    wait_dnscrypt_ready(listen_port)?;
-    
+    match wait_dnscrypt_ready(listen_port, &mut dnscrypt_child)? {
+        DnscryptWaitResult::Ready => {}
+        DnscryptWaitResult::Exited(status) => {
+            warn!("dnscrypt exited during startup with status {status}");
+            crate::logging::user_error("DNSCrypt: ошибка запуска — ожидание готовности прекращено");
+            stop_started_d2s(&mut d2s_child);
+            return Ok(());
+        }
+        DnscryptWaitResult::StopRequested => {
+            stop_started_d2s(&mut d2s_child);
+            return Ok(());
+        }
+    }
+
     if stop_requested() {
         warn!("dnscrypt start aborted before iptables (stop requested)");
+        stop_started_d2s(&mut d2s_child);
         return Ok(());
     }
-    
+
     crate::logging::user_info("DNSCrypt: правила iptables");
-    
     apply_dns_iptables(listen_port)?;
 
     if stop_requested() {
@@ -160,14 +224,58 @@ pub fn start_if_enabled() -> Result<()> {
     Ok(())
 }
 
-fn spawn_dnscrypt(toml_path: &Path, listen_port: u16) -> Result<()> {
+fn spawn_d2s(dnscrypt_toml: &Path, listener: SocketAddr) -> Result<Child> {
+    let bin = Path::new(BIN_DIR).join("d2s");
+    if !bin.is_file() {
+        anyhow::bail!("D2S binary not found: {}", bin.display());
+    }
+
+    let d2s_config = Path::new(D2S_TOML);
+    let log_path = Path::new(D2S_LOG);
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("create D2S log directory {}", parent.display()))?;
+    }
+    let log_file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+        .with_context(|| format!("open D2S log {}", log_path.display()))?;
+    let log_stderr = log_file
+        .try_clone()
+        .with_context(|| format!("clone D2S log {}", log_path.display()))?;
+
+    let mut cmd = Command::new(&bin);
+    cmd.arg("--config")
+        .arg(d2s_config)
+        .arg("--dnscrypt-config")
+        .arg(dnscrypt_toml)
+        .arg("run")
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(log_file))
+        .stderr(Stdio::from(log_stderr));
+
+    unsafe {
+        cmd.pre_exec(|| {
+            unsafe {
+                let _ = libc::setsid();
+            }
+            Ok(())
+        });
+    }
+
+    let child = cmd.spawn().with_context(|| format!("spawn {}", bin.display()))?;
+    info!("spawned d2s pid={} (listen={})", child.id(), listener);
+    Ok(child)
+}
+
+fn spawn_dnscrypt(toml_path: &Path, listen_port: u16) -> Result<Option<Child>> {
     let bin = Path::new(BIN_DIR).join("dnscrypt");
     if !bin.is_file() {
         warn!("dnscrypt enabled but binary not found: {} -> skip", bin.display());
-        return Ok(());
+        return Ok(None);
     }
 
-    // no logs: redirect to /dev/null
     let mut cmd = Command::new(&bin);
     cmd.arg("-config")
         .arg(toml_path)
@@ -185,27 +293,38 @@ fn spawn_dnscrypt(toml_path: &Path, listen_port: u16) -> Result<()> {
     }
 
     let child = cmd.spawn().with_context(|| format!("spawn {}", bin.display()))?;
-    let pid = child.id();
-    info!("spawned dnscrypt pid={} (listen port={})", pid, listen_port);
-
-    std::thread::sleep(Duration::from_millis(120));
-    Ok(())
+    info!("spawned dnscrypt pid={} (listen port={})", child.id(), listen_port);
+    Ok(Some(child))
 }
 
-fn wait_dnscrypt_ready(listen_port: u16) -> Result<()> {
+#[derive(Debug)]
+enum DnscryptWaitResult {
+    Ready,
+    Exited(ExitStatus),
+    StopRequested,
+}
+
+fn wait_dnscrypt_ready(listen_port: u16, child: &mut Child) -> Result<DnscryptWaitResult> {
     let mut delay = Duration::from_secs(5);
 
     loop {
-        // stop check 
         if stop_requested() {
-           warn!("dnscrypt start aborted (stop requested)");
-            return Ok(());
+            warn!("dnscrypt start aborted (stop requested)");
+            return Ok(DnscryptWaitResult::StopRequested);
         }
-        
-        match dnscrypt_ready_once(listen_port) {
+        if let Some(status) = child.try_wait().context("check dnscrypt startup process")? {
+            return Ok(DnscryptWaitResult::Exited(status));
+        }
+
+        let probe = dnscrypt_ready_once(listen_port);
+        if let Some(status) = child.try_wait().context("check dnscrypt process after readiness probe")? {
+            return Ok(DnscryptWaitResult::Exited(status));
+        }
+
+        match probe {
             Ok(true) => {
                 info!("dnscrypt readiness confirmed on port {}", listen_port);
-                return Ok(());
+                return Ok(DnscryptWaitResult::Ready);
             }
             Ok(false) => {
                 warn!(
@@ -217,9 +336,9 @@ fn wait_dnscrypt_ready(listen_port: u16) -> Result<()> {
                     delay
                 ));
             }
-            Err(e) => {
+            Err(error) => {
                 warn!(
-                    "dnscrypt readiness probe failed on port {}: {e:#} -> retry in {:?}",
+                    "dnscrypt readiness probe failed on port {}: {error:#} -> retry in {:?}",
                     listen_port, delay
                 );
                 crate::logging::user_warn(&format!(
@@ -229,9 +348,92 @@ fn wait_dnscrypt_ready(listen_port: u16) -> Result<()> {
             }
         }
 
-        std::thread::sleep(delay);
+        if let Some(status) = sleep_while_dnscrypt_running(child, delay)? {
+            return Ok(DnscryptWaitResult::Exited(status));
+        }
         delay += Duration::from_secs(10);
     }
+}
+
+fn sleep_while_dnscrypt_running(child: &mut Child, delay: Duration) -> Result<Option<ExitStatus>> {
+    let deadline = Instant::now() + delay;
+    while Instant::now() < deadline {
+        if stop_requested() {
+            return Ok(None);
+        }
+        if let Some(status) = child.try_wait().context("check dnscrypt process during readiness delay")? {
+            return Ok(Some(status));
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        std::thread::sleep(remaining.min(Duration::from_millis(250)));
+    }
+    Ok(None)
+}
+
+fn stop_started_d2s(child: &mut Option<Child>) {
+    let Some(mut process) = child.take() else { return; };
+    let pid = process.id();
+    match process.try_wait() {
+        Ok(Some(status)) => {
+            info!("d2s already exited with status {status}");
+        }
+        Ok(None) => {
+            unsafe {
+                let _ = libc::kill(pid as i32, libc::SIGTERM);
+            }
+            info!("stopping d2s pid={} because dnscrypt is not running", pid);
+            crate::logging::user_warn("D2S: остановлен — DNSCrypt не запущен");
+        }
+        Err(error) => warn!("failed to inspect d2s pid={pid}: {error}"),
+    }
+}
+
+fn parse_active_d2s_listener(toml_path: &Path) -> Result<Option<SocketAddr>> {
+    let raw = fs::read_to_string(toml_path)
+        .with_context(|| format!("read {}", toml_path.display()))?;
+    let value: toml::Value = toml::from_str(&raw)
+        .with_context(|| format!("parse {}", toml_path.display()))?;
+    let Some(proxy) = value.get("proxy").and_then(toml::Value::as_str) else {
+        return Ok(None);
+    };
+    let proxy = proxy.trim();
+    if proxy.is_empty() {
+        return Ok(None);
+    }
+    parse_local_socks5_listener(proxy)
+}
+
+fn parse_local_socks5_listener(proxy: &str) -> Result<Option<SocketAddr>> {
+    let Some(endpoint) = proxy.strip_prefix("socks5://") else {
+        return Ok(None);
+    };
+    if endpoint.is_empty()
+        || endpoint.contains('@')
+        || endpoint.contains('/')
+        || endpoint.contains('?')
+        || endpoint.contains('#')
+    {
+        anyhow::bail!("D2S proxy must be an unauthenticated SOCKS5 host:port");
+    }
+
+    let addr = if let Some(port) = endpoint.strip_prefix("localhost:") {
+        let port = port.parse::<u16>().context("parse D2S localhost port")?;
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port)
+    } else {
+        endpoint
+            .parse::<SocketAddr>()
+            .with_context(|| format!("parse D2S SOCKS5 endpoint {endpoint}"))?
+    };
+
+    if addr.port() == 0 {
+        anyhow::bail!("D2S proxy port must be greater than zero");
+    }
+    let loopback = matches!(addr.ip(), IpAddr::V4(ip) if ip == Ipv4Addr::LOCALHOST)
+        || matches!(addr.ip(), IpAddr::V6(ip) if ip == Ipv6Addr::LOCALHOST);
+    if !loopback {
+        return Ok(None);
+    }
+    Ok(Some(addr))
 }
 
 fn dnscrypt_ready_once(listen_port: u16) -> Result<bool> {

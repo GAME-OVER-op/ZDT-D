@@ -2175,4 +2175,9 @@ APatch: 10700+</string>
     <string name="dpi_detector_save_success">Отчёт сохранён в %1$s</string>
     <string name="dpi_detector_save_failed">Не удалось сохранить отчёт: %1$s</string>
     <string name="dpi_detector_share_failed">Не удалось поделиться архивом отчёта.</string>
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">Настройка пула SOCKS5-серверов, проверок доступности и DIRECT-резерва для DNSCrypt.</string>
+
 </resources>

@@ -33,6 +33,7 @@ private fun ApiModels.StatusReport.widgetProcessCount(): Int {
     zapret2.count,
     byedpi.count,
     dnscrypt.count,
+    d2s.count,
     dpitunnel.count,
     singBox.count,
     hysteria2.count,

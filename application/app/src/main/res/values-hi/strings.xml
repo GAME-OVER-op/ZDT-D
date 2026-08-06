@@ -2177,4 +2177,9 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="dpi_detector_save_success">रिपोर्ट %1$s में सहेजी गई</string>
     <string name="dpi_detector_save_failed">रिपोर्ट सहेजी नहीं जा सकी: %1$s</string>
     <string name="dpi_detector_share_failed">रिपोर्ट संग्रह साझा नहीं किया जा सका।</string>
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">DNSCrypt के लिए SOCKS5 सर्वर पूल, उपलब्धता जाँच और DIRECT फ़ॉलबैक कॉन्फ़िगर करें।</string>
+
 </resources>

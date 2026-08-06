@@ -1,0 +1,37 @@
+# D2S reads the listener address from the active `proxy` entry in
+# dnscrypt-proxy.toml. It never edits either configuration file.
+
+# Upstream SOCKS5 servers. NO AUTH only.
+# Leave the list empty to use DIRECT fallback only.
+backends = [
+  # "127.0.0.1:2084",
+  # "127.0.0.1:11590",
+  # "127.0.0.1:1167",
+]
+
+# If no GREEN backend exists, or all selected backends fail for the current
+# connection, connect to the requested encrypted-DNS endpoint directly.
+direct_fallback = true
+
+connect_timeout_ms = 500
+upstream_handshake_timeout_ms = 1000
+backend_attempt_timeout_ms = 1200
+direct_connect_timeout_ms = 2000
+client_handshake_timeout_ms = 3000
+probe_timeout_ms = 1200
+
+healthy_probe_interval_secs = 30
+recovery_probe_interval_secs = 5
+failure_threshold = 3
+runtime_cooldown_ms = 2000
+
+probe_targets = [
+  "1.1.1.1:443",
+  "8.8.8.8:443",
+]
+
+max_connections = 1024
+tcp_nodelay = true
+log_level = "info"
+status_interval_secs = 5
+shutdown_grace_period_ms = 5000

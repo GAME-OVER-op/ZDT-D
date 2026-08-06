@@ -40,6 +40,8 @@ fun TextEditorCard(
   path: String,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
+  onContentLoaded: ((String) -> Unit)? = null,
+  onSaveSuccess: ((String) -> Unit)? = null,
 ) {
   val compactWidth = rememberIsCompactWidth()
   val shortHeight = rememberIsShortHeight()
@@ -58,6 +60,7 @@ fun TextEditorCard(
       text = content ?: ""
       lastLoaded = text
       loading = false
+      onContentLoaded?.invoke(text)
     }
   }
 
@@ -65,7 +68,10 @@ fun TextEditorCard(
     saving = true
     actions.saveText(path, text) { ok ->
       saving = false
-      if (ok) lastLoaded = text
+      if (ok) {
+        lastLoaded = text
+        onSaveSuccess?.invoke(text)
+      }
       scope.launch { snackHost.showSnackbar(if (ok) msgSavedApplyRestart else msgSaveFailed) }
     }
   }

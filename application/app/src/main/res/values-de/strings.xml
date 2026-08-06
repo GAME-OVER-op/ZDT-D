@@ -2177,4 +2177,9 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="dpi_detector_save_success">Bericht gespeichert unter %1$s</string>
     <string name="dpi_detector_save_failed">Bericht konnte nicht gespeichert werden: %1$s</string>
     <string name="dpi_detector_share_failed">Das Berichtsarchiv konnte nicht geteilt werden.</string>
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">SOCKS5-Backend-Pool, Verfügbarkeitsprüfungen und DIRECT-Fallback für DNSCrypt konfigurieren.</string>
+
 </resources>

@@ -184,6 +184,15 @@ fn user_localize_en(msg: &str) -> String {
         "Применение BlockedQUIC" => return "BlockedQUIC: applying rules".to_string(),
         "DNSCrypt: запуск" => return "DNSCrypt: start".to_string(),
         "DNSCrypt: правила iptables" => return "DNSCrypt: iptables rules".to_string(),
+        "DNSCrypt: ошибка запуска — ожидание готовности прекращено" => {
+            return "DNSCrypt: startup failed — readiness wait stopped".to_string();
+        }
+        "D2S: ошибка запуска — запуск DNSCrypt продолжен" => {
+            return "D2S: startup failed — DNSCrypt startup continued".to_string();
+        }
+        "D2S: остановлен — DNSCrypt не запущен" => {
+            return "D2S: stopped — DNSCrypt did not start".to_string();
+        }
         "DNSCrypt: IPv6 NAT не поддерживается — IPv6 DNS-порты 53/853/5353 отключены" => {
             return "DNSCrypt: IPv6 NAT is not supported — IPv6 DNS ports 53/853/5353 disabled".to_string();
         }
@@ -263,6 +272,9 @@ fn user_localize_ru(msg: &str) -> String {
         "tun2socks: start" => "tun2socks: запуск".to_string(),
         "Tor: start" => "Tor: запуск".to_string(),
         "DNSCrypt: start" => "DNSCrypt: запуск".to_string(),
+        "DNSCrypt: startup failed — readiness wait stopped" => "DNSCrypt: ошибка запуска — ожидание готовности прекращено".to_string(),
+        "D2S: startup failed — DNSCrypt startup continued" => "D2S: ошибка запуска — запуск DNSCrypt продолжен".to_string(),
+        "D2S: stopped — DNSCrypt did not start" => "D2S: остановлен — DNSCrypt не запущен".to_string(),
         _ => msg.to_string(),
     }
 }

@@ -2176,4 +2176,9 @@ APatch：10700+</string>
     <string name="dpi_detector_save_success">报告已保存到 %1$s</string>
     <string name="dpi_detector_save_failed">无法保存报告：%1$s</string>
     <string name="dpi_detector_share_failed">无法分享报告压缩包。</string>
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">配置 DNSCrypt 使用的 SOCKS5 服务器池、可用性检查和 DIRECT 直连回退。</string>
+
 </resources>

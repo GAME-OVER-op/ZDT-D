@@ -216,7 +216,7 @@ private fun StrategicProfileEnabledCard(
 }
 
 @Composable
-private fun StrategicProfileTabs(
+internal fun StrategicProfileTabs(
   tabs: List<Pair<Int, String>>,
   selected: Int,
   onSelect: (Int) -> Unit,

@@ -637,19 +637,206 @@ jobs:
           path: out/artifacts/t2s/t2s
           retention-days: 1
 
+  build_d2s:
+    name: build D2S ${{ matrix.abi }}
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            module_arch: arm64-v8a
+            artifact_suffix: arm64
+            rust_target: aarch64-linux-android
+            clang_prefix: aarch64-linux-android
+            clang_target_api21: aarch64-linux-android21
+            goarch: arm64
+            goarm: "7"
+            cgo_enabled: "0"
+            android_abi: arm64-v8a
+            openssl_target: android-arm64
+            tor_host: aarch64-linux-android
+          - abi: armeabi-v7a
+            module_arch: arm-v7a
+            artifact_suffix: arm32
+            rust_target: armv7-linux-androideabi
+            clang_prefix: armv7a-linux-androideabi
+            clang_target_api21: armv7a-linux-androideabi21
+            goarch: arm
+            goarm: "7"
+            cgo_enabled: "1"
+            android_abi: armeabi-v7a
+            openssl_target: android-arm
+            tor_host: arm-linux-androideabi
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
+            exit 1
+          fi
+          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
+          } >> "$GITHUB_ENV"
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Install Android NDK cross-linker
+        run: |
+          set -euo pipefail
+          NDK_VERSION="27.2.12479018"
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          install_sdk_package() {
+            local pkg="$1"
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              echo "sdkmanager install $pkg: attempt $attempt/5"
+              if "$SDKMANAGER" "$pkg"; then
+                return 0
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            echo "::error::Unable to install Android SDK package: $pkg"
+            return 1
+          }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NDK_VERSION"
+          fi
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
+          if [[ ! -d "$NDK_ROOT" ]]; then
+            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
+            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
+          fi
+          NDK_BIN="$NDK_ROOT/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          ANDROID_CC="$NDK_BIN/${{ matrix.clang_prefix }}21-clang"
+          ANDROID_CXX="$NDK_BIN/${{ matrix.clang_prefix }}21-clang++"
+          ANDROID_AR="$NDK_BIN/llvm-ar"
+          ANDROID_RANLIB="$NDK_BIN/llvm-ranlib"
+
+          test -x "$ANDROID_CC" || { echo "::error::Android C compiler not found: $ANDROID_CC"; exit 1; }
+          test -x "$ANDROID_CXX" || { echo "::error::Android C++ compiler not found: $ANDROID_CXX"; exit 1; }
+          test -x "$ANDROID_AR" || { echo "::error::Android archiver not found: $ANDROID_AR"; exit 1; }
+          test -x "$ANDROID_RANLIB" || { echo "::error::Android ranlib not found: $ANDROID_RANLIB"; exit 1; }
+
+          {
+            echo "NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+            echo "PATH=$NDK_BIN:$PATH"
+            echo "CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER=$ANDROID_CC"
+            echo "CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$ANDROID_CC"
+            echo "CC_aarch64_linux_android=$ANDROID_CC"
+            echo "CXX_aarch64_linux_android=$ANDROID_CXX"
+            echo "AR_aarch64_linux_android=$ANDROID_AR"
+            echo "RANLIB_aarch64_linux_android=$ANDROID_RANLIB"
+            echo "CC_armv7_linux_androideabi=$ANDROID_CC"
+            echo "CXX_armv7_linux_androideabi=$ANDROID_CXX"
+            echo "AR_armv7_linux_androideabi=$ANDROID_AR"
+            echo "RANLIB_armv7_linux_androideabi=$ANDROID_RANLIB"
+          } >> "$GITHUB_ENV"
+
+          mkdir -p ~/.cargo
+          cat >> ~/.cargo/config.toml <<EOF2
+          [target.aarch64-linux-android]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
+          [target.armv7-linux-androideabi]
+          linker = "$ANDROID_CC"
+          ar = "$ANDROID_AR"
+          EOF2
+
+      - name: Cache Cargo registry and d2s target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/target
+          key: cargo-d2s-${{ matrix.rust_target }}-${{ hashFiles('rust/Cargo.lock', 'rust/d2s/Cargo.toml') }}
+          restore-keys: |
+            cargo-d2s-${{ matrix.rust_target }}-
+            cargo-${{ matrix.rust_target }}-
+
+      - name: Verify Android Rust cross toolchain
+        run: |
+          set -euo pipefail
+          echo "NDK_ROOT=$NDK_ROOT"
+          "$CC_aarch64_linux_android" --version | head -1
+          "$AR_aarch64_linux_android" --version | head -1
+          rustc --print target-list | grep -qx '${{ matrix.rust_target }}'
+          cargo -V
+          rustc -V
+
+      - name: Build d2s
+        env:
+          CARGO_TARGET_DIR: ${{ github.workspace }}/rust/target
+          RUSTUP_HOME: ""
+          RUSTUP_TOOLCHAIN: ""
+          RUSTFLAGS: ""
+          CARGO_ENCODED_RUSTFLAGS: ""
+          RUSTC_WRAPPER: ""
+        run: |
+          set -euo pipefail
+          cargo build --manifest-path rust/d2s/Cargo.toml --profile "${{ env.CARGO_PROFILE }}" --target "${{ matrix.rust_target }}"
+
+      - name: Collect d2s
+        run: |
+          set -euo pipefail
+          SRC="rust/target/${{ matrix.rust_target }}/${{ env.CARGO_PROFILE }}/d2s"
+          DST="out/artifacts/d2s"
+          test -s "$SRC" || { echo "::error::d2s artifact missing after build: $SRC"; exit 1; }
+          mkdir -p "$DST"
+          cp -f "$SRC" "$DST/d2s"
+          chmod 755 "$DST/d2s"
+          ls -lh "$DST/d2s"
+
+      - name: Upload d2s binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: d2s-${{ matrix.artifact_suffix }}
+          path: out/artifacts/d2s/d2s
+          retention-days: 1
+
   module_core_ready:
-    name: 1 Core ready (zdtd + T2S)
+    name: 1 Core ready (zdtd + T2S + D2S)
     runs-on: ubuntu-latest
     needs:
       - build_zdtd
       - build_t2s
+      - build_d2s
     if: >-
       needs.build_zdtd.result == 'success' &&
-      needs.build_t2s.result == 'success'
+      needs.build_t2s.result == 'success' &&
+      needs.build_d2s.result == 'success'
 
     steps:
       - name: Mark core binaries ready
-        run: echo "zdtd and T2S artifacts are ready for module packaging"
+        run: echo "zdtd, T2S and D2S artifacts are ready for module packaging"
 
   build_openvpn:
     name: build OpenVPN ${{ matrix.abi }}
@@ -4250,6 +4437,11 @@ jobs:
         with:
           name: t2s-arm64
           path: out/artifacts/t2s/arm64
+      - name: Download d2s arm64
+        uses: actions/download-artifact@v7
+        with:
+          name: d2s-arm64
+          path: out/artifacts/d2s/arm64
       - name: Download zygisk arm64
         uses: actions/download-artifact@v7
         with:
@@ -4345,6 +4537,11 @@ jobs:
         with:
           name: t2s-arm32
           path: out/artifacts/t2s/arm32
+      - name: Download d2s arm32
+        uses: actions/download-artifact@v7
+        with:
+          name: d2s-arm32
+          path: out/artifacts/d2s/arm32
       - name: Download zygisk arm32
         uses: actions/download-artifact@v7
         with:
@@ -4436,7 +4633,7 @@ jobs:
 
           MODULE_BUILD_DIR="out/module_build/module_root"
           MODULE_ZIP="out/module/zdt_module.zip"
-          BINARIES="zdtd t2s openvpn amneziawg-go awg wireproxy tun2socks mihomo sing-box hysteria2 byedpi dnscrypt mieru opera-proxy dpitunnel-cli torproxy lyrebird nfqws nfqws2"
+          BINARIES="zdtd t2s d2s openvpn amneziawg-go awg wireproxy tun2socks mihomo sing-box hysteria2 byedpi dnscrypt mieru opera-proxy dpitunnel-cli torproxy lyrebird nfqws nfqws2"
 
           require_file() {
             local path="$1"
@@ -4449,6 +4646,7 @@ jobs:
             case "$bin" in
               zdtd) echo "out/artifacts/zdtd/$arch/zdtd" ;;
               t2s) echo "out/artifacts/t2s/$arch/t2s" ;;
+              d2s) echo "out/artifacts/d2s/$arch/d2s" ;;
               openvpn) echo "out/artifacts/openvpn/$arch/openvpn" ;;
               amneziawg-go) echo "out/artifacts/amneziawg/$arch/amneziawg-go" ;;
               awg) echo "out/artifacts/amneziawg/$arch/awg" ;;

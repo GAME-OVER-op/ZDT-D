@@ -32,6 +32,7 @@ pub struct StatusReport {
     pub zapret2: UsageAgg,  // nfqws2
     pub byedpi: UsageAgg,   // non-opera byedpi
     pub dnscrypt: UsageAgg,
+    pub d2s: UsageAgg,
     pub dpitunnel: UsageAgg,
     pub sing_box: UsageAgg,
     pub hysteria2: UsageAgg,
@@ -66,6 +67,7 @@ pub(crate) fn protected_pids() -> Vec<u32> {
     let mut pids = Vec::new();
     pids.push(std::process::id());
     pids.extend(pidof("dnscrypt"));
+    pids.extend(pidof("d2s"));
     pids.extend(pidof("nfqws"));
     pids.extend(pidof("nfqws2"));
     pids.extend(pidof_any(&["DPITunnel-cli", "dpitunnel-cli"]));
@@ -101,7 +103,7 @@ pub fn collect_status() -> Result<StatusReport> {
 /// Every pid lookup below costs at least one `pidof` process, and falls back to `pgrep -f` plus
 /// `ps -A` when nothing matches, so probing all engines when only a few are enabled is the most
 /// expensive part of startup. Accepted ids are the pid-group names used below: "nfqws",
-/// "nfqws2", "byedpi", "dnscrypt", "dpitunnel", "singbox", "hysteria2", "wireproxy", "myproxy",
+/// "nfqws2", "byedpi", "dnscrypt", "d2s", "dpitunnel", "singbox", "hysteria2", "wireproxy", "myproxy",
 /// "myprogram", "openvpn", "amneziawg", "tun2socks", "mihomo", "mieru", "tgwsproxy",
 /// "tun2proxy", "tor", "t2s", "operaproxy".
 ///
@@ -123,6 +125,7 @@ fn collect_status_inner(wanted: Option<&[&str]>) -> Result<StatusReport> {
     // Use `pidof` instead of `pgrep -f` where possible to avoid matching similarly-named processes.
     // This matters on Android where some apps/binaries can have overlapping names.
     let dnscrypt_pids = if want("dnscrypt") { pidof("dnscrypt") } else { Vec::new() };
+    let d2s_pids = if want("d2s") { pidof("d2s") } else { Vec::new() };
     let nfqws_pids = if want("nfqws") { pidof("nfqws") } else { Vec::new() };
     let nfqws2_pids = if want("nfqws2") { pidof("nfqws2") } else { Vec::new() };
     // dpitunnel-cli may present a different process name (e.g. "DPITunnel-cli")
@@ -194,6 +197,7 @@ fn collect_status_inner(wanted: Option<&[&str]>) -> Result<StatusReport> {
         &nfqws2_pids,
         &byedpi_pids,
         &dnscrypt_pids,
+        &d2s_pids,
         &dpitunnel_pids,
         &singbox_pids,
         &hysteria2_pids,
@@ -226,6 +230,7 @@ fn collect_status_inner(wanted: Option<&[&str]>) -> Result<StatusReport> {
         zapret2: agg_from_map(&nfqws2_pids, &usage),
         byedpi: agg_from_map(&byedpi_pids, &usage),
         dnscrypt: agg_from_map(&dnscrypt_pids, &usage),
+        d2s: agg_from_map(&d2s_pids, &usage),
         dpitunnel: agg_from_map(&dpitunnel_pids, &usage),
         sing_box: agg_from_map(&singbox_pids, &usage),
         hysteria2: agg_from_map(&hysteria2_pids, &usage),

@@ -2176,4 +2176,9 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="dpi_detector_save_success">Laporan disimpan di %1$s</string>
     <string name="dpi_detector_save_failed">Laporan tidak dapat disimpan: %1$s</string>
     <string name="dpi_detector_share_failed">Arsip laporan tidak dapat dibagikan.</string>
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">Atur kumpulan server SOCKS5, pemeriksaan ketersediaan, dan fallback DIRECT yang digunakan DNSCrypt.</string>
+
 </resources>

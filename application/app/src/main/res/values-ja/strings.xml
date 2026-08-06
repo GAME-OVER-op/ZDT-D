@@ -2176,4 +2176,9 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="dpi_detector_save_success">レポートを %1$s に保存しました</string>
     <string name="dpi_detector_save_failed">レポートを保存できませんでした: %1$s</string>
     <string name="dpi_detector_share_failed">レポートのアーカイブを共有できませんでした。</string>
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">DNSCrypt が使用する SOCKS5 サーバープール、稼働確認、DIRECT フォールバックを設定します。</string>
+
 </resources>

@@ -59,7 +59,7 @@ PROJECT_CARGO_HOME="$TOOLS_DIR/cargo-home"
 PROJECT_CARGO_TARGET_DIR="$RUST_DIR/target"
 GRADLE_FLAGS=()
 
-AUTO_BUILT_BINS=(zdtd t2s)
+AUTO_BUILT_BINS=(zdtd t2s d2s)
 REQUIRED_EXTERNAL_BINS=(byedpi dnscrypt dpitunnel-cli nfqws nfqws2 opera-proxy sing-box hysteria2 wireproxy torproxy lyrebird tun2socks openvpn mihomo amneziawg-go awg mieru)
 
 RUSTC_BIN=""
@@ -77,13 +77,14 @@ DASHBOARD_REFRESH_INTERVAL="${DASHBOARD_REFRESH_INTERVAL:-0.25}"
 declare -a DASHBOARD_LAST_LINES=()
 DASHBOARD_REFRESH_INTERVAL="${DASHBOARD_REFRESH_INTERVAL:-0.25}"
 declare -a DASHBOARD_LAST_LINES=()
-STAGE_KEYS=(env keystore rustcheck zdtd t2s dpidetector nfqwstester extbin zygisk modulezip busybox assets android apk final)
+STAGE_KEYS=(env keystore rustcheck zdtd t2s d2s dpidetector nfqwstester extbin zygisk modulezip busybox assets android apk final)
 STAGE_NAMES=(
   "Environment checks"
   "Keystore check"
   "Rust toolchain check"
   "Build zdtd"
   "Build t2s"
+  "Build d2s"
   "Build dpi-detector"
   "Build nfqws_tester"
   "External binaries"
@@ -1413,10 +1414,11 @@ build_rust_outputs() {
   local triple
   triple="$(resolve_target)"
 
-  # Build every Rust component first. Only zdtd/t2s are copied into the
+  # Build every Rust component first. Only zdtd/t2s/d2s are copied into the
   # Magisk module; dpi-detector is copied into generated APK assets.
   run_cargo_stage zdtd 'Build Rust: zdtd daemon' "$RUST_DIR/zdtd" 'zdtd' "$triple"
   run_cargo_stage t2s 'Build Rust: t2s proxy' "$RUST_DIR/T2s" 't2s' "$triple"
+  run_cargo_stage d2s 'Build Rust: d2s DNS transport' "$RUST_DIR/d2s" 'd2s' "$triple"
   run_cargo_app_asset_stage dpidetector 'Build Rust: dpi-detector APK asset' "$RUST_DIR/dpi-detector" 'dpi-detector' "$triple" "$DPI_DETECTOR_APK_ASSET"
   [[ -s "$DPI_DETECTOR_APK_ASSET" ]] || fail "Не создан APK asset dpi-detector: $DPI_DETECTOR_APK_ASSET"
   run_cargo_app_asset_stage nfqwstester 'Build Rust: nfqws_tester APK asset' "$RUST_DIR/nfqws-tester" 'nfqws-tester' "$triple" "$NFQWS_TESTER_APK_ASSET"

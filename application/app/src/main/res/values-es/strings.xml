@@ -2177,4 +2177,9 @@ La causa restante probablemente está en el daemon/API. Revisa los registros del
     <string name="dpi_detector_save_success">Informe guardado en %1$s</string>
     <string name="dpi_detector_save_failed">No se pudo guardar el informe: %1$s</string>
     <string name="dpi_detector_share_failed">No se pudo compartir el archivo del informe.</string>
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">Configura el grupo de servidores SOCKS5, las comprobaciones de disponibilidad y la conexión DIRECT de respaldo de DNSCrypt.</string>
+
 </resources>

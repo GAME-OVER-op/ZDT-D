@@ -2177,4 +2177,9 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="dpi_detector_save_success">Rapport enregistré dans %1$s</string>
     <string name="dpi_detector_save_failed">Impossible d’enregistrer le rapport : %1$s</string>
     <string name="dpi_detector_share_failed">Impossible de partager l’archive du rapport.</string>
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">Configurez le pool de serveurs SOCKS5, les contrôles de disponibilité et le repli DIRECT utilisés par DNSCrypt.</string>
+
 </resources>

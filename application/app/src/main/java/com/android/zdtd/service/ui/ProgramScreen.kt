@@ -90,6 +90,13 @@ fun ProgramScreen(
 
   val hasStrategicFiles = program.id == "nfqws" || program.id == "nfqws2"
   var programTab by remember(program.id) { mutableStateOf(0) }
+  var dnscryptTab by remember(program.id) { mutableStateOf(0) }
+  var dnscryptD2sConfigured by remember(program.id) { mutableStateOf(false) }
+
+  fun updateDnscryptD2sVisibility(content: String) {
+    dnscryptD2sConfigured = hasActiveLocalD2sProxy(content)
+    if (!dnscryptD2sConfigured) dnscryptTab = 0
+  }
 
   var showCreateProfile by remember { mutableStateOf(false) }
   var operaWebPanelChecking by remember(program.id) { mutableStateOf(false) }
@@ -185,6 +192,22 @@ fun ProgramScreen(
           onCheckedChange = { v -> actions.setProgramEnabled(program.id, v) },
         )
       }
+      item {
+        AnimatedVisibility(
+          visible = dnscryptD2sConfigured,
+          enter = fadeIn(tween(180)) + expandVertically(animationSpec = tween(220)),
+          exit = fadeOut(tween(140)) + shrinkVertically(animationSpec = tween(180)),
+        ) {
+          StrategicProfileTabs(
+            tabs = listOf(
+              0 to stringResource(R.string.dnscrypt_tab_dnscrypt),
+              1 to stringResource(R.string.dnscrypt_tab_d2s),
+            ),
+            selected = dnscryptTab,
+            onSelect = { dnscryptTab = it },
+          )
+        }
+      }
     } else if (program.id == "operaproxy") {
       item(key = "operaproxy_global_controls", contentType = "operaproxy_global_controls") {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -278,18 +301,32 @@ isProfileProgramType(program.type) -> {
       }
 
       program.id == "dnscrypt" -> {
-        item {
-          TextEditorCard(
-            title = "dnscrypt-proxy.toml",
-            desc = stringResource(R.string.dnscrypt_main_config_desc),
-            path = "/api/programs/dnscrypt/config",
-            actions = actions,
-            snackHost = snackHost,
-          )
-        }
-        item {
-          Spacer(Modifier.height(10.dp))
-          DnscryptSettingFilesSection(actions = actions, snackHost = snackHost)
+        if (dnscryptTab == 0) {
+          item {
+            TextEditorCard(
+              title = "dnscrypt-proxy.toml",
+              desc = stringResource(R.string.dnscrypt_main_config_desc),
+              path = "/api/programs/dnscrypt/config",
+              actions = actions,
+              snackHost = snackHost,
+              onContentLoaded = { updateDnscryptD2sVisibility(it) },
+              onSaveSuccess = { updateDnscryptD2sVisibility(it) },
+            )
+          }
+          item {
+            Spacer(Modifier.height(10.dp))
+            DnscryptSettingFilesSection(actions = actions, snackHost = snackHost)
+          }
+        } else {
+          item {
+            TextEditorCard(
+              title = "d2s.toml",
+              desc = stringResource(R.string.d2s_main_config_desc),
+              path = "/api/programs/dnscrypt/d2s-config",
+              actions = actions,
+              snackHost = snackHost,
+            )
+          }
         }
       }
 
@@ -328,6 +365,12 @@ isProfileProgramType(program.type) -> {
     item { Spacer(Modifier.height(64.dp)) }
   }
 }
+
+private val D2S_PROXY_LINE = Regex(
+  pattern = "(?m)^\\s*proxy\\s*=\\s*(['\"])socks5://(?:127\\.0\\.0\\.1|localhost|\\[::1\\]):[1-9][0-9]*\\1\\s*(?:#.*)?$",
+)
+
+private fun hasActiveLocalD2sProxy(content: String): Boolean = D2S_PROXY_LINE.containsMatchIn(content)
 
 @Composable
 private fun ProgramHeroHeader(program: ApiModels.Program) {

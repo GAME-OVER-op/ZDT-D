@@ -2176,4 +2176,9 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="dpi_detector_save_success">Rapor %1$s konumuna kaydedildi</string>
     <string name="dpi_detector_save_failed">Rapor kaydedilemedi: %1$s</string>
     <string name="dpi_detector_share_failed">Rapor arşivi paylaşılamadı.</string>
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">DNSCrypt tarafından kullanılan SOCKS5 sunucu havuzunu, erişilebilirlik kontrollerini ve DIRECT yedek bağlantısını yapılandırın.</string>
+
 </resources>

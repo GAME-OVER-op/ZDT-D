@@ -1200,6 +1200,7 @@ pub fn collect_protected_port_sets() -> Result<(BTreeSet<u16>, BTreeSet<u16>)> {
     collect_byedpi_ports(&mut local)?;
     collect_dpitunnel_ports(&mut local)?;
     collect_operaproxy_ports(&mut local)?;
+    collect_dnscrypt_d2s_ports(&mut local)?;
     collect_singbox_ports(&mut local)?;
     collect_hysteria2_ports(&mut local)?;
     collect_wireproxy_ports(&mut local)?;
@@ -1223,6 +1224,18 @@ pub fn collect_protected_ports() -> Result<BTreeSet<u16>> {
 
 fn working_program_dir(program: &str) -> PathBuf {
     Path::new(settings::MODULE_DIR).join("working_folder").join(program)
+}
+
+
+fn collect_dnscrypt_d2s_ports(out: &mut BTreeSet<u16>) -> Result<()> {
+    match crate::programs::dnscrypt::active_d2s_listen_port() {
+        Ok(Some(port)) if port > 0 => {
+            out.insert(port);
+        }
+        Ok(_) => {}
+        Err(error) => log::warn!("proxyInfo: failed to read D2S listener: {error:#}"),
+    }
+    Ok(())
 }
 
 fn collect_tgwsproxy_ports(out: &mut BTreeSet<u16>) -> Result<()> {

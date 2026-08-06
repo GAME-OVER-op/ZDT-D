@@ -27,6 +27,7 @@ object ApiModels {
     val zapret2: ProcAgg = ProcAgg(),
     val byedpi: ProcAgg = ProcAgg(),
     val dnscrypt: ProcAgg = ProcAgg(),
+    val d2s: ProcAgg = ProcAgg(),
     val dpitunnel: ProcAgg = ProcAgg(),
     val singBox: ProcAgg = ProcAgg(),
     val hysteria2: ProcAgg = ProcAgg(),
@@ -415,6 +416,7 @@ object ApiModels {
       zapret2 = parseProcAgg(o.optJSONObject("zapret2")),
       byedpi = parseProcAgg(o.optJSONObject("byedpi")),
       dnscrypt = parseProcAgg(o.optJSONObject("dnscrypt")),
+      d2s = parseProcAgg(o.optJSONObject("d2s")),
       dpitunnel = parseProcAgg(o.optJSONObject("dpitunnel")),
       singBox = parseProcAgg(o.optJSONObject("sing_box")),
       hysteria2 = parseProcAgg(o.optJSONObject("hysteria2")),
@@ -479,7 +481,7 @@ object ApiModels {
       "off", "error" -> return false
     }
     val opera = r.opera
-    val sum = r.zapret.count + r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.dpitunnel.count + r.singBox.count + r.hysteria2.count + r.wireProxy.count + r.tor.count + r.openVpn.count + r.mihomo.count + r.mieru.count + r.tgwsproxy.count + r.tun2Proxy.count + r.amneziaWg.count +
+    val sum = r.zapret.count + r.zapret2.count + r.byedpi.count + r.dnscrypt.count + r.d2s.count + r.dpitunnel.count + r.singBox.count + r.hysteria2.count + r.wireProxy.count + r.tor.count + r.openVpn.count + r.mihomo.count + r.mieru.count + r.tgwsproxy.count + r.tun2Proxy.count + r.amneziaWg.count +
       (opera?.opera?.count ?: 0) + r.t2s.count + (opera?.byedpi?.count ?: 0)
     return sum > 0
   }
@@ -513,6 +515,7 @@ object ApiModels {
       add(r.zapret2)
       add(r.byedpi)
       add(r.dnscrypt)
+      add(r.d2s)
       add(r.dpitunnel)
       add(r.singBox)
       add(r.hysteria2)

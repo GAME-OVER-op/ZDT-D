@@ -1,0 +1,63 @@
+# D2S — DNS to SOCKS transport helper
+
+`D2S` is an autonomous Rust service designed to sit between `dnscrypt-proxy`
+and a pool of local passwordless SOCKS5 transports.
+
+```text
+dnscrypt-proxy -> D2S local SOCKS5 -> next healthy SOCKS5 backend
+                                      -> DIRECT if all backends are unavailable
+```
+
+D2S does not parse or modify DNS packets. It does not use `t2s`, does not touch
+`iptables`, routing tables, TUN interfaces, or Android DNS settings. It reads
+the active local SOCKS5 listener from `dnscrypt-proxy.toml` and never rewrites
+that file or its own configuration.
+
+## Features
+
+- local SOCKS5 server with `NO AUTH` and `CONNECT` only;
+- listener address taken from the active `proxy = 'socks5://127.0.0.1:PORT'`
+  entry in `dnscrypt-proxy.toml`;
+- IPv4, IPv6, and domain destinations;
+- round-robin balancing across healthy SOCKS5 backends;
+- immediate retry through the next backend on failure;
+- active and passive backend health tracking;
+- automatic recovery of previously failed backends;
+- DIRECT fallback when every SOCKS5 backend is unavailable or the pool is empty;
+- graceful SIGTERM/SIGINT shutdown;
+- optional atomic JSON status file.
+
+## Build
+
+```bash
+cargo build --release
+```
+
+The binary is written to `target/release/d2s`.
+
+## Usage
+
+```bash
+# Validate both configurations
+d2s --config ./d2s.toml --dnscrypt-config ./dnscrypt-proxy.toml check
+
+# Probe configured backends once
+d2s --config ./d2s.toml --dnscrypt-config ./dnscrypt-proxy.toml probe
+
+# Run D2S
+d2s --config ./d2s.toml --dnscrypt-config ./dnscrypt-proxy.toml run
+
+# Print an example D2S configuration to stdout
+d2s example-config
+```
+
+Copy `d2s.example.toml` manually and edit the SOCKS5 backend list. An empty
+`backends = []` list is valid when `direct_fallback = true`.
+
+## Tests
+
+```bash
+cargo test --all-targets
+cargo clippy --all-targets --all-features
+cargo fmt --all -- --check
+```

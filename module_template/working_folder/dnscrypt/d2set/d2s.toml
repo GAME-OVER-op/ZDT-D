@@ -1,0 +1,5 @@
+# Local SOCKS5 backend servers used by D2S.
+# Leave empty to route encrypted DNS traffic through DIRECT fallback only.
+backends = []
+
+direct_fallback = true

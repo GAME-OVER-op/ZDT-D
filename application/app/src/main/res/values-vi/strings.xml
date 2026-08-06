@@ -2176,4 +2176,9 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="dpi_detector_save_success">Đã lưu báo cáo vào %1$s</string>
     <string name="dpi_detector_save_failed">Không thể lưu báo cáo: %1$s</string>
     <string name="dpi_detector_share_failed">Không thể chia sẻ tệp báo cáo.</string>
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">Cấu hình nhóm máy chủ SOCKS5, kiểm tra khả dụng và đường dự phòng DIRECT cho DNSCrypt.</string>
+
 </resources>

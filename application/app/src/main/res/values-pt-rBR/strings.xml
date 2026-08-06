@@ -2177,4 +2177,9 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="dpi_detector_save_success">Relatório salvo em %1$s</string>
     <string name="dpi_detector_save_failed">Não foi possível salvar o relatório: %1$s</string>
     <string name="dpi_detector_share_failed">Não foi possível compartilhar o arquivo do relatório.</string>
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">Configure o conjunto de servidores SOCKS5, as verificações de disponibilidade e o fallback DIRECT usado pelo DNSCrypt.</string>
+
 </resources>

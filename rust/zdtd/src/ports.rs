@@ -67,6 +67,13 @@ fn collect_reserved_ports() -> BTreeSet<u16> {
         }
     }
 
+    // D2S listener declared by the active dnscrypt proxy entry.
+    if let Ok(Some(p)) = dnscrypt::active_d2s_listen_port() {
+        if p != 0 {
+            used.insert(p);
+        }
+    }
+
     // operaproxy pipeline ports (t2s, byedpi, and the opera socks pool).
     let op = working_program_dir("operaproxy").join("port.json");
     if let Ok(v) = read_json_value(&op) {

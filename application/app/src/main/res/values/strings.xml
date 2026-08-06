@@ -2175,4 +2175,9 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="dpi_detector_save_success">Report saved to %1$s</string>
     <string name="dpi_detector_save_failed">Could not save report: %1$s</string>
     <string name="dpi_detector_share_failed">Could not share the report archive.</string>
+    <!-- DNSCrypt / D2S -->
+    <string name="dnscrypt_tab_dnscrypt">DNSCrypt</string>
+    <string name="dnscrypt_tab_d2s">D2S</string>
+    <string name="d2s_main_config_desc">Configure the SOCKS5 backend pool, health checks, and DIRECT fallback used by DNSCrypt.</string>
+
 </resources>

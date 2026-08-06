@@ -74,7 +74,7 @@ fn init_logging(level: &str) -> Result<()> {
         .with_target(false)
         .compact()
         .try_init()
-        .context("initialize logging")?;
+        .map_err(|error| anyhow::anyhow!("initialize logging: {error}"))?;
     Ok(())
 }
 

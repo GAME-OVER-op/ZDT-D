@@ -217,14 +217,35 @@ async fn handle_client(
         }
     };
 
-    debug!(%peer, %target, route = ?routed.route, "D2S route established");
+    debug!(%peer, %target, route = ?routed.route, backend = ?routed.backend, "D2S route established");
     send_success(&mut client).await?;
-    let (client_to_remote, remote_to_client) = copy_bidirectional(&mut client, &mut routed.stream)
-        .await
-        .with_context(|| format!("relay traffic for {target}"))?;
-    stats.client_to_remote_bytes.fetch_add(client_to_remote, Ordering::Relaxed);
-    stats.remote_to_client_bytes.fetch_add(remote_to_client, Ordering::Relaxed);
-    Ok(())
+    let relay = copy_bidirectional(&mut client, &mut routed.stream).await;
+    match relay {
+        Ok((client_to_remote, remote_to_client)) => {
+            stats.client_to_remote_bytes.fetch_add(client_to_remote, Ordering::Relaxed);
+            stats.remote_to_client_bytes.fetch_add(remote_to_client, Ordering::Relaxed);
+
+            // DNSCrypt/DoH traffic always expects a response. If the client sent
+            // bytes through an established route but the remote side returned
+            // nothing before the relay closed, treat this as a suspect data-plane
+            // event. As in T2S, this only triggers a strict Full recheck; it does
+            // not directly rewrite backend health.
+            if client_to_remote > 0 && remote_to_client == 0 {
+                let message = format!(
+                    "relay closed after {client_to_remote} upstream bytes with zero downstream bytes for {target}"
+                );
+                router.report_relay_failure(routed.route, routed.backend, &message).await;
+            } else {
+                router.report_relay_success(routed.route, routed.backend, remote_to_client);
+            }
+            Ok(())
+        }
+        Err(error) => {
+            let message = format!("relay traffic for {target}: {error}");
+            router.report_relay_failure(routed.route, routed.backend, &message).await;
+            Err(anyhow::Error::new(error).context(format!("relay traffic for {target}")))
+        }
+    }
 }
 
 async fn health_loop(
@@ -247,6 +268,9 @@ async fn health_loop(
                     _ = activity.wake.notified() => {
                         debug!("health probes woke on new client activity");
                     }
+                    _ = pool.wait_for_health_wake() => {
+                        debug!("health probes woke for forced backend recheck");
+                    }
                     changed = shutdown.changed() => {
                         if changed.is_err() || *shutdown.borrow() {
                             break;
@@ -258,17 +282,22 @@ async fn health_loop(
         }
 
         tokio::select! {
-            _ = ticker.tick() => {
-                let due = pool.due_backends().await;
-                if !due.is_empty() {
-                    pool.probe_many(due).await;
-                }
+            _ = ticker.tick() => {}
+            _ = pool.wait_for_health_wake() => {
+                // Runtime/relay failures schedule a forced Full probe and wake
+                // the loop immediately instead of waiting for the 1s ticker.
             }
             changed = shutdown.changed() => {
                 if changed.is_err() || *shutdown.borrow() {
                     break;
                 }
+                continue;
             }
+        }
+
+        let due = pool.due_probes().await;
+        if !due.is_empty() {
+            pool.probe_many(due).await;
         }
     }
 }

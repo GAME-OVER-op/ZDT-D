@@ -1,122 +1,164 @@
 # D2S — DNS to SOCKS transport helper
 
-`D2S` is an autonomous Rust service designed to sit between `dnscrypt-proxy`
-and a pool of local passwordless SOCKS5 transports.
+`D2S` is a local SOCKS5 transport helper between `dnscrypt-proxy` and a pool of
+local passwordless SOCKS5 transports.
 
 ```text
-dnscrypt-proxy -> D2S local SOCKS5 -> next healthy SOCKS5 backend
-                                      -> DIRECT if all backends are unavailable
+dnscrypt-proxy -> D2S local SOCKS5 -> verified GREEN SOCKS5 backend
+                                      -> next GREEN backend on connect failure
+                                      -> DIRECT fallback when allowed
 ```
 
-D2S does not parse or modify DNS packets. It does not use `t2s`, does not touch
-`iptables`, routing tables, TUN interfaces, or Android DNS settings. It reads
-the active local SOCKS5 listener from `dnscrypt-proxy.toml` and never rewrites
-that file or its own configuration.
+D2S does not parse DNS packets. It does not modify resolver answers, DNSSEC,
+cache, routing tables, TUN state, iptables, or Android DNS settings. The D2S
+listener is read from the active local `proxy = 'socks5://127.0.0.1:PORT'`
+entry in `dnscrypt-proxy.toml`.
 
-## Features
+## Health model adapted from T2S
 
-- local SOCKS5 server with `NO AUTH` and `CONNECT` only;
-- listener address taken from the active `proxy = 'socks5://127.0.0.1:PORT'`
-  entry in `dnscrypt-proxy.toml`;
-- IPv4, IPv6, and domain destinations;
-- round-robin balancing across healthy SOCKS5 backends;
-- immediate retry through the next backend on failure;
-- active and passive backend health tracking;
-- automatic recovery of previously failed backends;
-- DIRECT fallback when every SOCKS5 backend is unavailable or the pool is empty;
-- graceful SIGTERM/SIGINT shutdown;
-- optional atomic JSON status file.
+A local SOCKS listener being alive is not enough to become GREEN. D2S uses two
+health stages:
 
-## Build
+1. **Light / SOCKS reachability** — TCP connect to the local backend and a full
+   SOCKS5 NO-AUTH greeting.
+2. **Full / Internet data-plane** — SOCKS reachability plus SOCKS CONNECT to a
+   dedicated TLS-capable `probe_targets` endpoint, then a real TLS ClientHello
+   and at least one byte returned from the remote side.
 
-```bash
-cargo build --release
+States mean:
+
+- **GREEN** — a Full probe has confirmed real Internet data-plane through the
+  SOCKS backend.
+- **YELLOW** — the SOCKS server is reachable, but a Full Internet probe did not
+  confirm the data-plane.
+- **RED** — the local SOCKS listener/greeting itself is unavailable or invalid.
+- **UNKNOWN** — not yet checked.
+
+Only GREEN backends receive DNSCrypt traffic.
+
+A successful normal DNSCrypt SOCKS CONNECT does **not** promote YELLOW/RED to
+GREEN. GREEN is granted only by the strict Full probe. A normal successful
+connection can keep runtime counters healthy, but health authority remains the
+probe state machine.
+
+### Runtime errors and suspect rechecks
+
+Runtime errors are treated as signals rather than immediate final health
+verdicts:
+
+- SOCKS reply `0x02..0x06` is treated as target/path-specific and triggers an
+  immediate coalesced Full recheck without directly evicting a verified GREEN
+  backend.
+- transient handshake/attempt timeouts use wider soft hysteresis;
+- hard listener/protocol failures use `failure_threshold` as the hysteresis
+  baseline;
+- relay I/O errors after an already successful CONNECT mark the backend
+  *suspect* and trigger a Full recheck;
+- because D2S only carries DNSCrypt/DoH traffic, a closed relay that sent client
+  bytes but received zero bytes from upstream is also treated as a suspect
+  data-plane event and forces a Full recheck.
+
+Forced suspect rechecks are coalesced by `runtime_cooldown_ms` and are
+single-flight per backend so a DNS burst cannot create a probe storm.
+
+Soft/hard runtime failures also apply a short T2S-style selection cooldown (3s
+for soft, 6s for hard). When other GREEN backends exist they are preferred
+during this window. If the cooling backend is the only GREEN route, it remains
+selectable so cooldown can never manufacture a DNS outage. Target/path-specific
+failures do not apply this global backend cooldown.
+
+### Recovery when no GREEN backend exists
+
+When the last GREEN backend is lost, D2S automatically uses an accelerated Full
+probe ladder inspired by T2S:
+
+```text
+first 30 seconds       -> about every 2 seconds
+next 60 seconds        -> about every 5 seconds
+after that             -> about every 15 seconds
 ```
 
-The binary is written to `target/release/d2s`.
+YELLOW and RED can both recover directly to GREEN only after a successful Full
+Internet data-plane probe.
 
-## Usage
+When at least one GREEN backend exists, healthy backends receive cheap Light
+checks at `healthy_probe_interval_secs`. A GREEN backend also receives a Full
+Internet verification approximately every 15 minutes. Non-GREEN backends use
+`recovery_probe_interval_secs` outside the no-GREEN recovery ladder.
 
-```bash
-# Validate both configurations
-d2s --config ./d2s.toml --dnscrypt-config ./dnscrypt-proxy.toml check
-
-# Probe configured backends once
-d2s --config ./d2s.toml --dnscrypt-config ./dnscrypt-proxy.toml probe
-
-# Run D2S
-d2s --config ./d2s.toml --dnscrypt-config ./dnscrypt-proxy.toml run
-
-# Print an example D2S configuration to stdout
-d2s example-config
-```
-
-Copy `d2s.example.toml` manually and edit the SOCKS5 backend list. An empty
-`backends = []` list is valid when `direct_fallback = true`.
-
-## ZDT-D configuration compatibility
-
-The ZDT-D integration keeps the stable transport behaviour unchanged. The
-listener is read from the active local `socks5://` proxy in
-`dnscrypt-proxy.toml`. A missing `d2s.toml` may be created by `zdtd` with the
-minimal valid configuration:
-
-```toml
-backends = []
-direct_fallback = true
-```
-
-Older experimental configurations may still contain `idle_after_secs`,
-`route_timeout_ms`, `max_backend_attempts`, or `max_connecting`. These keys are
-accepted only for upgrade compatibility and do not affect the stable routing or
-health state machine.
-
-## Tests
-
-```bash
-cargo test --all-targets
-cargo clippy --all-targets --all-features
-cargo fmt --all -- --check
-```
-
-## DNSCrypt-aware reliability
-
-When `proxy = 'socks5://127.0.0.1:PORT'` is enabled, dnscrypt-proxy switches its
-main upstream protocol to TCP. DNSCrypt protocol queries commonly create a new
-SOCKS5 CONNECT per query, while DoH can keep HTTP/1.1 or HTTP/2 connections
-alive. D2S therefore keeps the relay itself timeout-free and only bounds route
-establishment.
-
-D2S reads the `timeout` value from `dnscrypt-proxy.toml` (5000 ms when omitted,
-matching dnscrypt-proxy's default) and keeps SOCKS/backend/DIRECT route setup
-inside that deadline with a 500 ms safety margin. This is important because the
-SOCKS dialer used by dnscrypt-proxy can perform a plain `Dial()` that is not
-always cancelled by the HTTP/request context.
-
-SOCKS5 CONNECT reply codes `0x02` through `0x06` are treated as target/path
-failures. A single such error no longer removes a GREEN backend immediately;
-`failure_threshold` must actually be reached. Hard local backend failures
-(connection refused, SOCKS handshake timeout/protocol failure, unsupported
-SOCKS behavior) still remove the backend immediately.
-
-After D2S has successfully routed real DNSCrypt traffic, health probes prefer a
-small in-memory set of recently successful DNSCrypt targets. The static
-`probe_targets` list is used for startup, before any real target is known. This
-avoids declaring a working backend dead just because an unrelated public probe
-address is unreachable through that transport.
-
+Repeated failed Full Internet probes use the T2S backoff `30s -> 60s -> 120s ->
+300s -> 600s -> 900s`; cheap Light SOCKS reachability checks may continue in
+between. Forced suspect rechecks and the no-GREEN recovery ladder bypass this
+backoff so actual DNS failure/recovery remains responsive.
 
 ### Idle health sleep
 
-Synthetic health probes run only while D2S is active. After `idle_after_secs`
-(default 60 seconds) with no active client connections and no new accepts, the
-health scheduler sleeps on a notification instead of polling. A new DNSCrypt
-connection wakes it immediately; routing itself never waits for a health probe.
-If no backend is GREEN, recovery probes remain active even during client idle so
-D2S can recover before the next DNS request. Set `idle_after_secs = 0` to disable
-this optimization.
+After `idle_after_secs` with no active DNSCrypt clients, the health scheduler can
+sleep instead of polling. A new client wakes it immediately. Forced suspect
+rechecks also wake it immediately. D2S never sleeps while no GREEN backend
+exists, so recovery continues even without client traffic.
 
-Health probes are single-flight per backend. If connecting to the local SOCKS5
-listener itself fails before the handshake (for example `Connection refused`),
-D2S stops that probe immediately because trying additional external targets
-cannot change the result.
+Routing never waits for an idle wake/probe; the current verified state is used
+immediately.
+
+### DIRECT health
+
+DIRECT is tracked independently from SOCKS health. Repeated DIRECT connection or
+relay failures trigger a short cooldown so a restricted mobile network cannot
+make every DNS query repeatedly spend time on a known-bad DIRECT path. Actual
+payload received through DIRECT clears this cooldown.
+
+D2S intentionally does not run extra periodic DIRECT TLS probes because DNS is
+the only client and actual DNSCrypt traffic provides a more representative
+signal without additional background traffic.
+
+## DNSCrypt-specific routing behavior
+
+`dnscrypt-proxy` can create many short TCP/SOCKS CONNECTs for native DNSCrypt
+and long-lived HTTP/1.1 or HTTP/2 connections for DoH. D2S therefore limits
+route establishment but does **not** impose an artificial idle timeout on an
+established relay.
+
+D2S reads the DNSCrypt `timeout` value and keeps backend/DIRECT route setup
+inside that deadline with a small safety margin.
+
+In single-backend mode, a short one-shot retry remains enabled for SOCKS reply
+`0x03`/`0x04` to absorb brief Wi-Fi/mobile route transitions. This only retries
+the current DNSCrypt CONNECT; it does not decide backend health.
+
+## Probe targets
+
+`probe_targets` are dedicated TLS-capable health endpoints, not DNSCrypt resolver
+targets. Full health tries them in configured order and stops at the first
+endpoint that proves real TLS data-plane. Default:
+
+```toml
+probe_targets = [
+  "1.1.1.1:443",
+  "8.8.8.8:443",
+]
+```
+
+Do not replace these with native DNSCrypt-only endpoints merely because they use
+port 443/8443. Full health sends a TLS ClientHello and expects real TLS data.
+Trying more than one dedicated target prevents a single operator-blocked probe
+endpoint from falsely making an otherwise working SOCKS backend YELLOW.
+
+## Build and usage
+
+```bash
+cargo build --release
+cargo test --all-targets
+
+d2s --config ./d2s.toml --dnscrypt-config ./dnscrypt-proxy.toml check
+d2s --config ./d2s.toml --dnscrypt-config ./dnscrypt-proxy.toml probe
+d2s --config ./d2s.toml --dnscrypt-config ./dnscrypt-proxy.toml run
+```
+
+An empty backend list is valid only with `direct_fallback = true`.
+
+## Compatibility
+
+Legacy experimental keys `route_timeout_ms`, `max_backend_attempts`, and
+`max_connecting` remain accepted only so an old `d2s.toml` does not break after
+an upgrade. They do not control the current routing state machine.

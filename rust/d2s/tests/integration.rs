@@ -56,6 +56,7 @@ struct MockSocks {
     addr: SocketAddr,
     fail: Arc<AtomicBool>,
     fail_once: Arc<AtomicBool>,
+    blackhole: Arc<AtomicBool>,
     connects: Arc<AtomicUsize>,
     shutdown: watch::Sender<bool>,
     task: JoinHandle<()>,
@@ -67,10 +68,12 @@ impl MockSocks {
         let addr = listener.local_addr().unwrap();
         let fail = Arc::new(AtomicBool::new(initially_failing));
         let fail_once = Arc::new(AtomicBool::new(false));
+        let blackhole = Arc::new(AtomicBool::new(false));
         let connects = Arc::new(AtomicUsize::new(0));
         let (shutdown, mut rx) = watch::channel(false);
         let fail_task = fail.clone();
         let fail_once_task = fail_once.clone();
+        let blackhole_task = blackhole.clone();
         let connects_task = connects.clone();
         let task = tokio::spawn(async move {
             loop {
@@ -80,15 +83,16 @@ impl MockSocks {
                         let Ok((stream, _)) = accepted else { continue; };
                         let fail = fail_task.clone();
                         let fail_once = fail_once_task.clone();
+                        let blackhole = blackhole_task.clone();
                         let connects = connects_task.clone();
                         tokio::spawn(async move {
-                            let _ = handle_mock_socks(stream, fail, fail_once, connects).await;
+                            let _ = handle_mock_socks(stream, fail, fail_once, blackhole, connects).await;
                         });
                     }
                 }
             }
         });
-        Self { addr, fail, fail_once, connects, shutdown, task }
+        Self { addr, fail, fail_once, blackhole, connects, shutdown, task }
     }
 
     fn set_failing(&self, value: bool) {
@@ -97,6 +101,10 @@ impl MockSocks {
 
     fn fail_next(&self) {
         self.fail_once.store(true, Ordering::Relaxed);
+    }
+
+    fn set_blackhole(&self, value: bool) {
+        self.blackhole.store(value, Ordering::Relaxed);
     }
 
     fn reset_count(&self) {
@@ -117,6 +125,7 @@ async fn handle_mock_socks(
     mut client: TcpStream,
     fail: Arc<AtomicBool>,
     fail_once: Arc<AtomicBool>,
+    blackhole: Arc<AtomicBool>,
     connects: Arc<AtomicUsize>,
 ) -> std::io::Result<()> {
     let mut greeting = [0u8; 2];
@@ -132,6 +141,12 @@ async fn handle_mock_socks(
 
     if fail.load(Ordering::Relaxed) || fail_once.swap(false, Ordering::Relaxed) {
         client.write_all(&[0x05, 0x04, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+        return Ok(());
+    }
+
+    if blackhole.load(Ordering::Relaxed) {
+        client.write_all(&[0x05, 0x00, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+        tokio::time::sleep(Duration::from_secs(2)).await;
         return Ok(());
     }
 
@@ -223,6 +238,23 @@ async fn wait_for_green(server: &d2s::RunningServer, expected: usize) {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     panic!("timed out waiting for {expected} GREEN backend(s)");
+}
+
+async fn wait_for_state(server: &d2s::RunningServer, addr: SocketAddr, expected: BackendState) {
+    for _ in 0..80 {
+        let state = server
+            .pool
+            .snapshots()
+            .await
+            .into_iter()
+            .find(|entry| entry.address == addr.to_string())
+            .map(|entry| entry.state);
+        if state == Some(expected) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("timed out waiting for {addr} to become {expected:?}");
 }
 
 async fn roundtrip(proxy: SocketAddr, target: SocketAddr, payload: &[u8]) {
@@ -327,8 +359,9 @@ async fn failed_backend_is_skipped_within_the_same_request() {
     assert!(first.count() >= 1);
     assert!(second.count() >= 1);
     assert_eq!(server.stats.direct_connections.load(Ordering::Relaxed), 0);
-    let states = server.pool.snapshots().await;
-    assert_ne!(states[0].state, BackendState::Green);
+    // Runtime failure only marks the backend suspect; the forced Full probe
+    // is the authority that confirms Internet loss and moves it to YELLOW.
+    wait_for_state(&server, first.addr, BackendState::Yellow).await;
 
     server.shutdown().await.unwrap();
     first.stop().await;
@@ -363,7 +396,11 @@ async fn recovered_backend_returns_to_green_pool() {
     wait_for_green(&server, 1).await;
 
     first.set_failing(false);
-    tokio::time::sleep(Duration::from_millis(2200)).await;
+    // A failed Full Internet probe uses T2S-style backoff while another GREEN
+    // backend is available. A forced suspect/recovery event deliberately bypasses
+    // that background backoff and must be able to restore the backend immediately.
+    server.pool.request_full_probe(first.addr, "integration recovery").await;
+    wait_for_state(&server, first.addr, BackendState::Green).await;
 
     let states = server.pool.snapshots().await;
     assert_eq!(states[0].state, BackendState::Green);
@@ -413,31 +450,21 @@ async fn single_backend_retries_one_transient_network_reply() {
 }
 
 #[tokio::test]
-async fn one_transient_target_failure_does_not_evict_the_only_backend() {
+async fn target_failure_triggers_full_recheck_and_recovery() {
     let echo = EchoServer::start().await;
     let backend = MockSocks::start(false).await;
     let mut cfg = config(vec![backend.addr], echo.addr);
     cfg.failure_threshold = 3;
     let server = start(cfg).await.unwrap();
     wait_for_green(&server, 1).await;
-    backend.reset_count();
 
-    // Simulate a resolver/path-specific SOCKS failure. The current query is
-    // still served by DIRECT fallback, but the sole backend must stay GREEN
-    // until the configured threshold is actually reached.
     backend.set_failing(true);
-    roundtrip(server.listen_addr, echo.addr, b"soft-failure-direct").await;
-    let state = server.pool.snapshots().await.into_iter().next().unwrap();
-    assert_eq!(state.state, BackendState::Green);
-    assert_eq!(state.consecutive_failures, 1);
+    roundtrip(server.listen_addr, echo.addr, b"target-failure-direct").await;
+    wait_for_state(&server, backend.addr, BackendState::Yellow).await;
 
-    // Once the path recovers, the very next DNSCrypt connection can use the
-    // backend again and resets the transient failure counter.
     backend.set_failing(false);
-    roundtrip(server.listen_addr, echo.addr, b"soft-failure-recovered").await;
-    let state = server.pool.snapshots().await.into_iter().next().unwrap();
-    assert_eq!(state.state, BackendState::Green);
-    assert_eq!(state.consecutive_failures, 0);
+    wait_for_green(&server, 1).await;
+    roundtrip(server.listen_addr, echo.addr, b"target-failure-recovered").await;
     assert!(server.stats.upstream_connections.load(Ordering::Relaxed) >= 1);
 
     server.shutdown().await.unwrap();
@@ -445,3 +472,22 @@ async fn one_transient_target_failure_does_not_evict_the_only_backend() {
     echo.stop().await;
 }
 
+#[tokio::test]
+async fn socks_connect_success_without_data_plane_never_becomes_green() {
+    let echo = EchoServer::start().await;
+    let backend = MockSocks::start(false).await;
+    backend.set_blackhole(true);
+    let server = start(config(vec![backend.addr], echo.addr)).await.unwrap();
+
+    wait_for_state(&server, backend.addr, BackendState::Yellow).await;
+    let snapshot = server.pool.snapshots().await.into_iter().next().unwrap();
+    assert_eq!(snapshot.state, BackendState::Yellow);
+    assert!(snapshot.internet_latency_ms.is_none());
+
+    backend.set_blackhole(false);
+    wait_for_green(&server, 1).await;
+
+    server.shutdown().await.unwrap();
+    backend.stop().await;
+    echo.stop().await;
+}

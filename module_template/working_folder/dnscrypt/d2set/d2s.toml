@@ -14,7 +14,9 @@ probe_timeout_ms = 1200
 
 healthy_probe_interval_secs = 30
 recovery_probe_interval_secs = 5
-# Consecutive target/path failures required before a healthy backend is quarantined.
+# Runtime hard-failure hysteresis baseline. Target/path errors do not directly
+# decide health; they trigger a strict Full probe. Soft timeout hysteresis is
+# automatically wider (T2S-style).
 failure_threshold = 3
 runtime_cooldown_ms = 2000
 
@@ -22,7 +24,9 @@ runtime_cooldown_ms = 2000
 # New DNSCrypt activity wakes health checks immediately. Set to 0 to disable.
 idle_after_secs = 60
 
-# Startup probes only. After real DNSCrypt traffic succeeds, D2S probes recent real targets.
+# Full Internet health probes. Targets are tried in order until one proves
+# TCP -> SOCKS greeting -> CONNECT -> TLS ClientHello -> real response.
+# Do not put a native DNSCrypt-only endpoint here.
 probe_targets = [
   "1.1.1.1:443",
   "8.8.8.8:443",

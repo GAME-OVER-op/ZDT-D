@@ -1,8 +1,19 @@
 use crate::target::TargetAddr;
 use anyhow::{anyhow, Context, Result};
-use std::{future::Future, net::{IpAddr, Ipv4Addr, SocketAddr}, time::Duration};
+use std::{future::Future, net::{IpAddr, Ipv4Addr, SocketAddr}, time::{Duration, SystemTime, UNIX_EPOCH}};
 use thiserror::Error;
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::TcpStream};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeFailureClass {
+    /// The SOCKS server answered, but this particular destination/path failed.
+    TargetPath,
+    /// Timeouts and transient I/O pressure. Keep a verified GREEN backend until
+    /// hysteresis or a forced Full probe proves that the route is unhealthy.
+    Soft,
+    /// Local listener/protocol failures that strongly suggest a backend problem.
+    Hard,
+}
 
 #[derive(Debug, Error)]
 pub enum SocksClientError {
@@ -19,11 +30,27 @@ pub enum SocksClientError {
 }
 
 impl SocksClientError {
-    /// RFC 1928 reply codes 0x02..=0x06 describe a target/path outcome,
-    /// not necessarily a dead local SOCKS service. Treat them with hysteresis
-    /// so one resolver-specific failure cannot evict the only healthy backend.
+    /// Classify runtime failures using the same separation as T2S: target/path
+    /// errors are not backend-health proof, transient timeouts are soft, and
+    /// listener/protocol failures are hard. A forced Full probe remains the
+    /// authority for confirmed Internet health.
+    pub fn runtime_failure_class(&self) -> RuntimeFailureClass {
+        use std::io::ErrorKind;
+        match self {
+            Self::ConnectReply(code) if (0x02..=0x06).contains(code) => RuntimeFailureClass::TargetPath,
+            Self::Timeout(_) => RuntimeFailureClass::Soft,
+            Self::BackendConnect(error) | Self::Io(_, error)
+                if matches!(error.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock | ErrorKind::Interrupted) =>
+            {
+                RuntimeFailureClass::Soft
+            }
+            Self::BackendConnect(_) | Self::Io(_, _) | Self::Protocol(_) | Self::ConnectReply(_) =>
+                RuntimeFailureClass::Hard,
+        }
+    }
+
     pub fn is_target_path_failure(&self) -> bool {
-        matches!(self, Self::ConnectReply(code) if (0x02..=0x06).contains(code))
+        self.runtime_failure_class() == RuntimeFailureClass::TargetPath
     }
 
     /// A single reconnect is worthwhile for network/host unreachable replies:
@@ -96,6 +123,143 @@ pub async fn connect_via_socks5(
     }
     consume_address(&mut stream, header[3], handshake_timeout).await?;
     Ok(stream)
+}
+
+/// Stage-1 health check: prove that the local SOCKS listener accepts TCP and
+/// completes a NO-AUTH greeting, without making an Internet connection.
+pub async fn connect_to_socks5_server(
+    backend: SocketAddr,
+    connect_timeout: Duration,
+    handshake_timeout: Duration,
+    tcp_nodelay: bool,
+) -> std::result::Result<TcpStream, SocksClientError> {
+    let mut stream = match tokio::time::timeout(connect_timeout, TcpStream::connect(backend)).await {
+        Ok(Ok(stream)) => stream,
+        Ok(Err(error)) => return Err(SocksClientError::BackendConnect(error)),
+        Err(_) => return Err(SocksClientError::Timeout("backend TCP connect")),
+    };
+    let _ = stream.set_nodelay(tcp_nodelay);
+    io_step(handshake_timeout, "greeting write", stream.write_all(&[0x05, 0x01, 0x00])).await?;
+    let mut greeting = [0u8; 2];
+    io_step(handshake_timeout, "greeting read", stream.read_exact(&mut greeting)).await?;
+    if greeting != [0x05, 0x00] {
+        return Err(SocksClientError::Protocol(format!(
+            "expected [05,00], got [{:02x},{:02x}]", greeting[0], greeting[1]
+        )));
+    }
+    Ok(stream)
+}
+
+/// Stage-2 health check copied in spirit from T2S. SOCKS CONNECT success alone
+/// is insufficient: send real TLS data through the established tunnel and
+/// require at least one byte from the remote side. This catches local proxy
+/// processes whose listener is alive while their upstream route is dead.
+pub async fn verify_tls_data_plane(
+    stream: &mut TcpStream,
+    target: &TargetAddr,
+    timeout: Duration,
+) -> bool {
+    let probe_timeout = timeout
+        .min(Duration::from_millis(1500))
+        .max(Duration::from_millis(700));
+    let sni = match target {
+        TargetAddr::Domain(host, _) => Some(host.as_str()),
+        TargetAddr::Ip(_) => None,
+    };
+    let hello = build_tls_client_hello(sni);
+
+    match tokio::time::timeout(probe_timeout, stream.write_all(&hello)).await {
+        Ok(Ok(())) => {}
+        _ => return false,
+    }
+
+    let mut first = [0u8; 1];
+    matches!(
+        tokio::time::timeout(probe_timeout, stream.read_exact(&mut first)).await,
+        Ok(Ok(_))
+    )
+}
+
+fn build_tls_client_hello(sni: Option<&str>) -> Vec<u8> {
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+    let mut x = seed ^ 0x9e37_79b9_7f4a_7c15;
+    let mut random = [0u8; 32];
+    for chunk in random.chunks_mut(8) {
+        // xorshift64* is sufficient here; TLS Random only needs unpredictable-ish
+        // bytes for a probe, not cryptographic key material.
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        let bytes = x.wrapping_mul(0x2545_f491_4f6c_dd1d).to_be_bytes();
+        chunk.copy_from_slice(&bytes[..chunk.len()]);
+    }
+
+    let mut extensions = Vec::new();
+    if let Some(host) = sni.map(str::trim).filter(|h| !h.is_empty() && h.len() <= 253) {
+        let host_bytes = host.as_bytes();
+        if host_bytes.len() <= 255 {
+            let server_name_len = 1 + 2 + host_bytes.len();
+            let list_len = server_name_len;
+            let ext_len = 2 + list_len;
+            extensions.extend_from_slice(&0x0000u16.to_be_bytes());
+            extensions.extend_from_slice(&(ext_len as u16).to_be_bytes());
+            extensions.extend_from_slice(&(list_len as u16).to_be_bytes());
+            extensions.push(0x00);
+            extensions.extend_from_slice(&(host_bytes.len() as u16).to_be_bytes());
+            extensions.extend_from_slice(host_bytes);
+        }
+    }
+
+    extensions.extend_from_slice(&0x000au16.to_be_bytes());
+    extensions.extend_from_slice(&6u16.to_be_bytes());
+    extensions.extend_from_slice(&4u16.to_be_bytes());
+    extensions.extend_from_slice(&0x001du16.to_be_bytes());
+    extensions.extend_from_slice(&0x0017u16.to_be_bytes());
+
+    extensions.extend_from_slice(&0x000du16.to_be_bytes());
+    extensions.extend_from_slice(&8u16.to_be_bytes());
+    extensions.extend_from_slice(&6u16.to_be_bytes());
+    extensions.extend_from_slice(&0x0804u16.to_be_bytes());
+    extensions.extend_from_slice(&0x0403u16.to_be_bytes());
+    extensions.extend_from_slice(&0x0401u16.to_be_bytes());
+
+    extensions.extend_from_slice(&0x002bu16.to_be_bytes());
+    extensions.extend_from_slice(&5u16.to_be_bytes());
+    extensions.push(4);
+    extensions.extend_from_slice(&0x0304u16.to_be_bytes());
+    extensions.extend_from_slice(&0x0303u16.to_be_bytes());
+
+    let cipher_suites: [u16; 6] = [0x1301, 0x1302, 0x1303, 0xc02f, 0xc02b, 0x009c];
+    let mut body = Vec::new();
+    body.extend_from_slice(&0x0303u16.to_be_bytes());
+    body.extend_from_slice(&random);
+    body.push(0);
+    body.extend_from_slice(&((cipher_suites.len() * 2) as u16).to_be_bytes());
+    for cs in cipher_suites {
+        body.extend_from_slice(&cs.to_be_bytes());
+    }
+    body.push(1);
+    body.push(0);
+    body.extend_from_slice(&(extensions.len() as u16).to_be_bytes());
+    body.extend_from_slice(&extensions);
+
+    let mut handshake = Vec::new();
+    handshake.push(0x01);
+    let body_len = body.len() as u32;
+    handshake.push(((body_len >> 16) & 0xff) as u8);
+    handshake.push(((body_len >> 8) & 0xff) as u8);
+    handshake.push((body_len & 0xff) as u8);
+    handshake.extend_from_slice(&body);
+
+    let mut record = Vec::new();
+    record.push(0x16);
+    record.extend_from_slice(&0x0301u16.to_be_bytes());
+    record.extend_from_slice(&(handshake.len() as u16).to_be_bytes());
+    record.extend_from_slice(&handshake);
+    record
 }
 
 async fn consume_address(

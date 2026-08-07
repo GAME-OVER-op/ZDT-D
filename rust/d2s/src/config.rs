@@ -14,12 +14,16 @@ fn default_connect_timeout_ms() -> u64 { 500 }
 fn default_handshake_timeout_ms() -> u64 { 1_000 }
 fn default_backend_attempt_timeout_ms() -> u64 { 1_200 }
 fn default_direct_connect_timeout_ms() -> u64 { 2_000 }
+fn default_route_timeout_ms() -> u64 { 2_500 }
+fn default_max_backend_attempts() -> usize { 3 }
+fn default_max_connecting() -> usize { 32 }
 fn default_client_handshake_timeout_ms() -> u64 { 3_000 }
 fn default_probe_timeout_ms() -> u64 { 1_200 }
 fn default_healthy_probe_interval_secs() -> u64 { 30 }
 fn default_recovery_probe_interval_secs() -> u64 { 5 }
 fn default_failure_threshold() -> u32 { 3 }
 fn default_runtime_cooldown_ms() -> u64 { 2_000 }
+fn default_idle_after_secs() -> u64 { 60 }
 fn default_max_connections() -> usize { 1_024 }
 fn default_status_interval_secs() -> u64 { 5 }
 fn default_shutdown_grace_period_ms() -> u64 { 5_000 }
@@ -54,6 +58,18 @@ pub struct Config {
     #[serde(default = "default_direct_connect_timeout_ms")]
     pub direct_connect_timeout_ms: u64,
 
+    /// Total time budget for SOCKS5 failover before DIRECT/failure.
+    #[serde(default = "default_route_timeout_ms")]
+    pub route_timeout_ms: u64,
+
+    /// Maximum SOCKS5 backends attempted for one client CONNECT.
+    #[serde(default = "default_max_backend_attempts")]
+    pub max_backend_attempts: usize,
+
+    /// Maximum concurrent outbound connect/handshake operations.
+    #[serde(default = "default_max_connecting")]
+    pub max_connecting: usize,
+
     #[serde(default = "default_client_handshake_timeout_ms")]
     pub client_handshake_timeout_ms: u64,
 
@@ -71,6 +87,11 @@ pub struct Config {
 
     #[serde(default = "default_runtime_cooldown_ms")]
     pub runtime_cooldown_ms: u64,
+
+    /// Enter health-check sleep after this many seconds without clients.
+    /// 0 disables idle sleep.
+    #[serde(default = "default_idle_after_secs")]
+    pub idle_after_secs: u64,
 
     #[serde(default = "default_probe_targets")]
     pub probe_targets: Vec<String>,
@@ -133,6 +154,7 @@ impl Config {
             || self.upstream_handshake_timeout_ms == 0
             || self.backend_attempt_timeout_ms == 0
             || self.direct_connect_timeout_ms == 0
+            || self.route_timeout_ms == 0
             || self.client_handshake_timeout_ms == 0
             || self.probe_timeout_ms == 0
         {
@@ -140,6 +162,12 @@ impl Config {
         }
         if self.healthy_probe_interval_secs == 0 || self.recovery_probe_interval_secs == 0 {
             return Err(anyhow!("probe intervals must be greater than zero"));
+        }
+        if self.max_backend_attempts == 0 {
+            return Err(anyhow!("max_backend_attempts must be greater than zero"));
+        }
+        if self.max_connecting == 0 {
+            return Err(anyhow!("max_connecting must be greater than zero"));
         }
         if self.failure_threshold == 0 {
             return Err(anyhow!("failure_threshold must be greater than zero"));
@@ -171,11 +199,15 @@ impl Config {
     pub fn upstream_handshake_timeout(&self) -> Duration { Duration::from_millis(self.upstream_handshake_timeout_ms) }
     pub fn backend_attempt_timeout(&self) -> Duration { Duration::from_millis(self.backend_attempt_timeout_ms) }
     pub fn direct_connect_timeout(&self) -> Duration { Duration::from_millis(self.direct_connect_timeout_ms) }
+    pub fn route_timeout(&self) -> Duration { Duration::from_millis(self.route_timeout_ms) }
     pub fn client_handshake_timeout(&self) -> Duration { Duration::from_millis(self.client_handshake_timeout_ms) }
     pub fn probe_timeout(&self) -> Duration { Duration::from_millis(self.probe_timeout_ms) }
     pub fn healthy_probe_interval(&self) -> Duration { Duration::from_secs(self.healthy_probe_interval_secs) }
     pub fn recovery_probe_interval(&self) -> Duration { Duration::from_secs(self.recovery_probe_interval_secs) }
     pub fn runtime_cooldown(&self) -> Duration { Duration::from_millis(self.runtime_cooldown_ms) }
+    pub fn idle_after(&self) -> Option<Duration> {
+        (self.idle_after_secs != 0).then(|| Duration::from_secs(self.idle_after_secs))
+    }
     pub fn shutdown_grace_period(&self) -> Duration { Duration::from_millis(self.shutdown_grace_period_ms) }
 
     pub fn parsed_probe_targets(&self) -> Result<Vec<TargetAddr>> {

@@ -1,7 +1,7 @@
-use d2s::{backend::BackendState, start, Config};
+use d2s::{backend::{BackendPool, BackendState}, start, Config};
 use std::{
     net::{IpAddr, SocketAddr},
-    sync::{Arc, atomic::{AtomicBool, AtomicUsize, Ordering}},
+    sync::{Arc, atomic::{AtomicUsize, Ordering}},
     time::Duration,
 };
 use tokio::{
@@ -54,7 +54,7 @@ impl EchoServer {
 
 struct MockSocks {
     addr: SocketAddr,
-    fail: Arc<AtomicBool>,
+    reply_code: Arc<AtomicUsize>,
     connects: Arc<AtomicUsize>,
     shutdown: watch::Sender<bool>,
     task: JoinHandle<()>,
@@ -64,10 +64,10 @@ impl MockSocks {
     async fn start(initially_failing: bool) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let fail = Arc::new(AtomicBool::new(initially_failing));
+        let reply_code = Arc::new(AtomicUsize::new(if initially_failing { 0x01 } else { 0x00 }));
         let connects = Arc::new(AtomicUsize::new(0));
         let (shutdown, mut rx) = watch::channel(false);
-        let fail_task = fail.clone();
+        let reply_code_task = reply_code.clone();
         let connects_task = connects.clone();
         let task = tokio::spawn(async move {
             loop {
@@ -75,20 +75,25 @@ impl MockSocks {
                     _ = rx.changed() => break,
                     accepted = listener.accept() => {
                         let Ok((stream, _)) = accepted else { continue; };
-                        let fail = fail_task.clone();
+                        let reply_code = reply_code_task.clone();
                         let connects = connects_task.clone();
                         tokio::spawn(async move {
-                            let _ = handle_mock_socks(stream, fail, connects).await;
+                            let _ = handle_mock_socks(stream, reply_code, connects).await;
                         });
                     }
                 }
             }
         });
-        Self { addr, fail, connects, shutdown, task }
+        Self { addr, reply_code, connects, shutdown, task }
     }
 
     fn set_failing(&self, value: bool) {
-        self.fail.store(value, Ordering::Relaxed);
+        self.reply_code.store(if value { 0x01 } else { 0x00 }, Ordering::Relaxed);
+    }
+
+
+    fn set_reply_code(&self, code: u8) {
+        self.reply_code.store(code as usize, Ordering::Relaxed);
     }
 
     fn reset_count(&self) {
@@ -107,7 +112,7 @@ impl MockSocks {
 
 async fn handle_mock_socks(
     mut client: TcpStream,
-    fail: Arc<AtomicBool>,
+    reply_code: Arc<AtomicUsize>,
     connects: Arc<AtomicUsize>,
 ) -> std::io::Result<()> {
     let mut greeting = [0u8; 2];
@@ -121,8 +126,9 @@ async fn handle_mock_socks(
     let target = read_target(&mut client, request[3]).await?;
     connects.fetch_add(1, Ordering::Relaxed);
 
-    if fail.load(Ordering::Relaxed) {
-        client.write_all(&[0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+    let reply_code = reply_code.load(Ordering::Relaxed) as u8;
+    if reply_code != 0 {
+        client.write_all(&[0x05, reply_code, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
         return Ok(());
     }
 
@@ -178,12 +184,16 @@ fn config(backends: Vec<SocketAddr>, probe_target: SocketAddr) -> Config {
         upstream_handshake_timeout_ms: 500,
         backend_attempt_timeout_ms: 700,
         direct_connect_timeout_ms: 700,
+        route_timeout_ms: 1500,
+        max_backend_attempts: 3,
+        max_connecting: 16,
         client_handshake_timeout_ms: 500,
         probe_timeout_ms: 500,
         healthy_probe_interval_secs: 60,
         recovery_probe_interval_secs: 1,
         failure_threshold: 1,
         runtime_cooldown_ms: 100,
+        idle_after_secs: 60,
         probe_targets: vec![probe_target.to_string()],
         max_connections: 64,
         tcp_nodelay: true,
@@ -257,6 +267,48 @@ async fn roundtrip_domain(proxy: SocketAddr, host: &str, port: u16, payload: &[u
     let mut echoed = vec![0u8; payload.len()];
     stream.read_exact(&mut echoed).await.unwrap();
     assert_eq!(echoed, payload);
+}
+
+#[tokio::test]
+async fn unchecked_backends_are_immediately_available_for_routing() {
+    let probe: SocketAddr = "127.0.0.1:9".parse().unwrap();
+    let first: SocketAddr = "127.0.0.1:10001".parse().unwrap();
+    let second: SocketAddr = "127.0.0.1:10002".parse().unwrap();
+    let pool = BackendPool::new(Arc::new(config(vec![first, second], probe))).unwrap();
+
+    let candidates = pool.candidate_order().await;
+    assert_eq!(candidates.len(), 2);
+    assert!(candidates.contains(&first));
+    assert!(candidates.contains(&second));
+    assert!(pool
+        .snapshots()
+        .await
+        .iter()
+        .all(|entry| entry.state == BackendState::Unknown));
+}
+
+#[tokio::test]
+async fn target_unreachable_reply_does_not_degrade_healthy_backend() {
+    let echo = EchoServer::start().await;
+    let first = MockSocks::start(false).await;
+    let second = MockSocks::start(false).await;
+    let server = start(config(vec![first.addr, second.addr], echo.addr)).await.unwrap();
+    wait_for_green(&server, 2).await;
+
+    first.reset_count();
+    second.reset_count();
+    first.set_reply_code(0x04);
+    roundtrip(server.listen_addr, echo.addr, b"soft-failover").await;
+
+    assert!(first.count() >= 1);
+    assert!(second.count() >= 1);
+    let states = server.pool.snapshots().await;
+    assert_eq!(states[0].state, BackendState::Green);
+
+    server.shutdown().await.unwrap();
+    first.stop().await;
+    second.stop().await;
+    echo.stop().await;
 }
 
 #[tokio::test]

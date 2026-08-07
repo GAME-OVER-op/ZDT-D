@@ -18,6 +18,18 @@ pub enum SocksClientError {
     ConnectReply(u8),
 }
 
+impl SocksClientError {
+    /// Whether this error says something about the SOCKS transport itself.
+    /// RFC 1928 reply codes 0x02..=0x06 are destination/path-specific and
+    /// must not evict an otherwise responsive backend from the global pool.
+    pub fn affects_backend_health(&self) -> bool {
+        match self {
+            Self::ConnectReply(code) => !matches!(*code, 0x02..=0x06),
+            Self::BackendConnect(_) | Self::Timeout(_) | Self::Io(_, _) | Self::Protocol(_) => true,
+        }
+    }
+}
+
 async fn io_step<T, F>(timeout: Duration, label: &'static str, future: F) -> std::result::Result<T, SocksClientError>
 where
     F: Future<Output = std::io::Result<T>>,

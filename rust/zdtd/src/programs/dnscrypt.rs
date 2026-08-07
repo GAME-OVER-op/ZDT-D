@@ -3,6 +3,7 @@ use log::{info, warn};
 use serde::Deserialize;
 use std::{
     fs,
+    io::Write,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket},
     path::Path,
     process::{Child, Command, ExitStatus, Stdio},
@@ -66,6 +67,7 @@ const D2S_TOML: &str =
     "/data/adb/modules/ZDT-D/working_folder/dnscrypt/d2set/d2s.toml";
 const D2S_LOG: &str =
     "/data/adb/modules/ZDT-D/working_folder/dnscrypt/log/d2s.log";
+const D2S_MINIMAL_CONFIG: &str = "backends = []\ndirect_fallback = true\n";
 
 const IPV6_RESETPROP_KEYS: [&str; 4] = [
     "net.ipv6.conf.all.accept_redirects",
@@ -80,6 +82,30 @@ struct ActiveJson {
 }
 
 
+
+pub fn ensure_d2s_config_exists() -> Result<()> {
+    let path = Path::new(D2S_TOML);
+    if path.is_file() {
+        return Ok(());
+    }
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("create D2S config directory {}", parent.display()))?;
+    }
+
+    match fs::OpenOptions::new().write(true).create_new(true).open(path) {
+        Ok(mut file) => {
+            file.write_all(D2S_MINIMAL_CONFIG.as_bytes())
+                .with_context(|| format!("write minimal D2S config {}", path.display()))?;
+            info!("created minimal D2S config: {}", path.display());
+            Ok(())
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists && path.is_file() => Ok(()),
+        Err(error) => Err(error)
+            .with_context(|| format!("create minimal D2S config {}", path.display())),
+    }
+}
 
 pub fn active_listen_port() -> Result<Option<u16>> {
     ensure_dir(MODULE_DIR)?;
@@ -229,6 +255,8 @@ pub fn start_if_enabled() -> Result<()> {
 }
 
 fn spawn_d2s(dnscrypt_toml: &Path, listener: SocketAddr) -> Result<Child> {
+    ensure_d2s_config_exists()?;
+
     let bin = Path::new(BIN_DIR).join("d2s");
     if !bin.is_file() {
         anyhow::bail!("D2S binary not found: {}", bin.display());

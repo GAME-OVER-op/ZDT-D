@@ -5425,6 +5425,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
         ("GET", ["api", "programs", "dnscrypt", "d2s-config"]) => {
             let p = program_root("dnscrypt").join("d2set/d2s.toml");
             let res = (|| -> Result<serde_json::Value> {
+                crate::programs::dnscrypt::ensure_d2s_config_exists()?;
                 let config = read_d2s_file_config(&p)?;
                 let listener = crate::programs::dnscrypt::configured_d2s_listen_addr()?
                     .map(|addr| addr.to_string());
@@ -5446,9 +5447,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let req: D2sConfigReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad D2S JSON body: {e}"))?;
                 let p = program_root("dnscrypt").join("d2set/d2s.toml");
-                if !p.is_file() {
-                    anyhow::bail!("D2S configuration file not found");
-                }
+                crate::programs::dnscrypt::ensure_d2s_config_exists()?;
                 let mut config = read_d2s_file_config(&p)?;
                 config.apply_request(req);
                 let listener = crate::programs::dnscrypt::configured_d2s_listen_addr()?;

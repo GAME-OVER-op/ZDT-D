@@ -7,7 +7,7 @@ use crate::{
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     net::SocketAddr,
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -108,56 +108,27 @@ impl BackendPool {
         self.probe_many(claims).await;
     }
 
-    /// Primary routing candidates. Healthy backends are preferred, but
-    /// unchecked backends are immediately usable so D2S never blocks DNSCrypt
-    /// startup waiting for synthetic probes.
+    /// Only verified healthy backends are used for real DNSCrypt traffic.
+    /// Unknown backends are probed in the background; until then DIRECT
+    /// fallback keeps DNSCrypt startup non-blocking.
     pub async fn candidate_order(&self) -> Vec<SocketAddr> {
         let mut inner = self.inner.lock().await;
-        let seed = inner.rr;
-        inner.rr = inner.rr.wrapping_add(1);
-
-        let mut ordered = rotated_state(&inner.entries, BackendState::Green, seed);
-        ordered.extend(rotated_state(
-            &inner.entries,
-            BackendState::Unknown,
-            seed,
-        ));
-        ordered
-    }
-
-    /// Claim one degraded backend for a single half-open recovery attempt.
-    /// Yellow is preferred over Red. A claimed backend cannot simultaneously
-    /// be probed or claimed by another recovery attempt.
-    pub async fn claim_degraded_candidate(
-        &self,
-        excluded: &HashSet<SocketAddr>,
-    ) -> Option<SocketAddr> {
-        let mut inner = self.inner.lock().await;
-        let now = Instant::now();
-        let seed = inner.rr;
-        inner.rr = inner.rr.wrapping_add(1);
-
-        for wanted in [BackendState::Yellow, BackendState::Red] {
-            let candidates: Vec<usize> = inner
-                .entries
-                .iter()
-                .enumerate()
-                .filter(|(_, entry)| {
-                    entry.state == wanted
-                        && !entry.probe_in_flight
-                        && entry.next_probe <= now
-                        && !excluded.contains(&entry.addr)
-                })
-                .map(|(index, _)| index)
-                .collect();
-            if candidates.is_empty() {
-                continue;
-            }
-            let selected = candidates[seed % candidates.len()];
-            inner.entries[selected].probe_in_flight = true;
-            return Some(inner.entries[selected].addr);
+        let healthy: Vec<_> = inner
+            .entries
+            .iter()
+            .filter(|entry| entry.state == BackendState::Green)
+            .map(|entry| entry.addr)
+            .collect();
+        if healthy.is_empty() {
+            return Vec::new();
         }
-        None
+        let start = inner.rr % healthy.len();
+        inner.rr = inner.rr.wrapping_add(1);
+        let mut ordered = Vec::with_capacity(healthy.len());
+        for offset in 0..healthy.len() {
+            ordered.push(healthy[(start + offset) % healthy.len()]);
+        }
+        ordered
     }
 
     pub async fn mark_attempt(&self, addr: SocketAddr) {
@@ -185,7 +156,6 @@ impl BackendPool {
         entry.last_success_unix = Some(now_unix);
         entry.last_latency_ms = Some(latency.as_secs_f64() * 1000.0);
         entry.next_probe = Instant::now() + self.config.healthy_probe_interval();
-        entry.probe_in_flight = false;
         entry.successful_connections = entry.successful_connections.saturating_add(1);
         entry.revision = entry.revision.wrapping_add(1);
         if old != BackendState::Green {
@@ -210,14 +180,8 @@ impl BackendPool {
         entry.last_error = Some(error.to_string());
         entry.last_check_unix = Some(unix_now());
         entry.last_latency_ms = None;
-        entry.probe_in_flight = false;
         entry.failed_connections = entry.failed_connections.saturating_add(1);
-        entry.next_probe = Instant::now()
-            + if entry.state == BackendState::Red {
-                recovery_delay(&self.config, entry.consecutive_failures)
-            } else {
-                self.config.runtime_cooldown()
-            };
+        entry.next_probe = Instant::now() + self.config.runtime_cooldown();
         entry.revision = entry.revision.wrapping_add(1);
 
         if old != entry.state {
@@ -249,22 +213,11 @@ impl BackendPool {
             return;
         };
         let entry = &mut inner.entries[index];
-        entry.probe_in_flight = false;
         entry.failed_connections = entry.failed_connections.saturating_add(1);
         if matches!(entry.state, BackendState::Yellow | BackendState::Red) {
             entry.next_probe = Instant::now() + self.config.recovery_probe_interval();
         }
         debug!(backend = %addr, state = ?entry.state, error = %error, "backend rejected or could not reach this target; health unchanged");
-    }
-
-    pub async fn next_probe_deadline(&self) -> Option<Instant> {
-        let inner = self.inner.lock().await;
-        inner
-            .entries
-            .iter()
-            .filter(|entry| !entry.probe_in_flight)
-            .map(|entry| entry.next_probe)
-            .min()
     }
 
     pub(crate) async fn claim_due_backends(&self) -> Vec<ProbeClaim> {
@@ -314,6 +267,7 @@ impl BackendPool {
     async fn probe_one(&self, claim: ProbeClaim) {
         let started = Instant::now();
         let mut errors = Vec::new();
+        let mut hard_failure = false;
         for target in self.probe_targets.iter() {
             let probe = tokio::time::timeout(
                 self.config.probe_timeout(),
@@ -333,15 +287,17 @@ impl BackendPool {
                     return;
                 }
                 Ok(Err(error)) => {
-                    let hard_failure = error.affects_backend_health();
+                    let affects_health = error.affects_backend_health();
                     errors.push(format!("{target}: {error}"));
-                    // A dead/broken local SOCKS transport will fail every
-                    // target in the same way; avoid redundant probe traffic.
-                    if hard_failure {
+                    if affects_health {
+                        hard_failure = true;
+                        // A dead/broken local SOCKS transport will fail every
+                        // target in the same way; avoid redundant probe traffic.
                         break;
                     }
                 }
                 Err(_) => {
+                    hard_failure = true;
                     errors.push(format!(
                         "{target}: probe exceeded {} ms",
                         self.config.probe_timeout_ms
@@ -350,7 +306,39 @@ impl BackendPool {
                 }
             }
         }
-        self.mark_probe_failure(claim, errors.join("; ")).await;
+        let error = errors.join("; ");
+        if hard_failure {
+            self.mark_probe_failure(claim, error).await;
+        } else {
+            self.mark_probe_target_failure(claim, error).await;
+        }
+    }
+
+    async fn mark_probe_target_failure(&self, claim: ProbeClaim, error: String) {
+        let mut inner = self.inner.lock().await;
+        let Some(index) = inner.index.get(&claim.addr).copied() else {
+            return;
+        };
+        let entry = &mut inner.entries[index];
+        entry.probe_in_flight = false;
+        if entry.revision != claim.revision {
+            return;
+        }
+        entry.last_error = Some(error.clone());
+        entry.last_check_unix = Some(unix_now());
+        entry.last_latency_ms = None;
+        entry.next_probe = Instant::now()
+            + if entry.state == BackendState::Green {
+                self.config.healthy_probe_interval()
+            } else {
+                self.config.recovery_probe_interval()
+            };
+        debug!(
+            backend = %claim.addr,
+            state = ?entry.state,
+            %error,
+            "health probe reached SOCKS5 but probe destination was unavailable; backend state unchanged"
+        );
     }
 
     async fn mark_probe_success(&self, claim: ProbeClaim, latency: Duration) {
@@ -412,12 +400,7 @@ impl BackendPool {
         entry.last_error = Some(error.clone());
         entry.last_check_unix = Some(unix_now());
         entry.last_latency_ms = None;
-        entry.next_probe = Instant::now()
-            + if entry.state == BackendState::Red {
-                recovery_delay(&self.config, entry.consecutive_failures)
-            } else {
-                self.config.recovery_probe_interval()
-            };
+        entry.next_probe = Instant::now() + self.config.recovery_probe_interval();
         entry.revision = entry.revision.wrapping_add(1);
         if old != entry.state || old == BackendState::Unknown {
             warn!(
@@ -458,31 +441,6 @@ impl BackendPool {
             })
             .collect()
     }
-}
-
-fn rotated_state(entries: &[BackendEntry], state: BackendState, seed: usize) -> Vec<SocketAddr> {
-    let candidates: Vec<_> = entries
-        .iter()
-        .filter(|entry| entry.state == state)
-        .map(|entry| entry.addr)
-        .collect();
-    if candidates.is_empty() {
-        return Vec::new();
-    }
-    let start = seed % candidates.len();
-    (0..candidates.len())
-        .map(|offset| candidates[(start + offset) % candidates.len()])
-        .collect()
-}
-
-fn recovery_delay(config: &Config, failures: u32) -> Duration {
-    let base = config.recovery_probe_interval();
-    let exponent = failures
-        .saturating_sub(config.failure_threshold)
-        .min(6);
-    let factor = 1u32 << exponent;
-    let cap = config.healthy_probe_interval().max(base);
-    base.saturating_mul(factor).min(cap)
 }
 
 fn unix_now() -> u64 {

@@ -270,16 +270,14 @@ async fn roundtrip_domain(proxy: SocketAddr, host: &str, port: u16, payload: &[u
 }
 
 #[tokio::test]
-async fn unchecked_backends_are_immediately_available_for_routing() {
+async fn unchecked_backends_are_not_used_before_health_probe() {
     let probe: SocketAddr = "127.0.0.1:9".parse().unwrap();
     let first: SocketAddr = "127.0.0.1:10001".parse().unwrap();
     let second: SocketAddr = "127.0.0.1:10002".parse().unwrap();
     let pool = BackendPool::new(Arc::new(config(vec![first, second], probe))).unwrap();
 
     let candidates = pool.candidate_order().await;
-    assert_eq!(candidates.len(), 2);
-    assert!(candidates.contains(&first));
-    assert!(candidates.contains(&second));
+    assert!(candidates.is_empty());
     assert!(pool
         .snapshots()
         .await
@@ -423,5 +421,63 @@ async fn empty_backend_pool_uses_direct_fallback() {
     assert_eq!(server.stats.upstream_connections.load(Ordering::Relaxed), 0);
 
     server.shutdown().await.unwrap();
+    echo.stop().await;
+}
+
+#[tokio::test]
+async fn failover_tries_all_green_backends_without_global_attempt_cap() {
+    let echo = EchoServer::start().await;
+    let first = MockSocks::start(false).await;
+    let second = MockSocks::start(false).await;
+    let third = MockSocks::start(false).await;
+    let fourth = MockSocks::start(false).await;
+    let server = start(config(
+        vec![first.addr, second.addr, third.addr, fourth.addr],
+        echo.addr,
+    ))
+    .await
+    .unwrap();
+    wait_for_green(&server, 4).await;
+
+    first.reset_count();
+    second.reset_count();
+    third.reset_count();
+    fourth.reset_count();
+    first.set_failing(true);
+    second.set_failing(true);
+    third.set_failing(true);
+
+    roundtrip(server.listen_addr, echo.addr, b"fourth-backend").await;
+
+    assert!(first.count() >= 1);
+    assert!(second.count() >= 1);
+    assert!(third.count() >= 1);
+    assert!(fourth.count() >= 1);
+    assert_eq!(server.stats.upstream_connections.load(Ordering::Relaxed), 1);
+    assert_eq!(server.stats.direct_connections.load(Ordering::Relaxed), 0);
+
+    server.shutdown().await.unwrap();
+    first.stop().await;
+    second.stop().await;
+    third.stop().await;
+    fourth.stop().await;
+    echo.stop().await;
+}
+
+#[tokio::test]
+async fn target_specific_health_probe_failure_keeps_green_backend() {
+    let echo = EchoServer::start().await;
+    let backend = MockSocks::start(false).await;
+    let server = start(config(vec![backend.addr], echo.addr)).await.unwrap();
+    wait_for_green(&server, 1).await;
+
+    backend.set_reply_code(0x04);
+    server.pool.initial_probe().await;
+
+    let states = server.pool.snapshots().await;
+    assert_eq!(states[0].state, BackendState::Green);
+
+    server.shutdown().await.unwrap();
+    backend.stop().await;
     echo.stop().await;
 }

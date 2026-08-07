@@ -58,15 +58,16 @@ pub struct Config {
     #[serde(default = "default_direct_connect_timeout_ms")]
     pub direct_connect_timeout_ms: u64,
 
-    /// Total time budget for SOCKS5 failover before DIRECT/failure.
+    /// Legacy compatibility fields from the experimental reliability build.
+    /// They are accepted so existing d2s.toml files keep working, but routing
+    /// no longer uses them because global budgets/limiters caused DNS stalls
+    /// under DNSCrypt connection bursts.
     #[serde(default = "default_route_timeout_ms")]
     pub route_timeout_ms: u64,
 
-    /// Maximum SOCKS5 backends attempted for one client CONNECT.
     #[serde(default = "default_max_backend_attempts")]
     pub max_backend_attempts: usize,
 
-    /// Maximum concurrent outbound connect/handshake operations.
     #[serde(default = "default_max_connecting")]
     pub max_connecting: usize,
 
@@ -154,7 +155,6 @@ impl Config {
             || self.upstream_handshake_timeout_ms == 0
             || self.backend_attempt_timeout_ms == 0
             || self.direct_connect_timeout_ms == 0
-            || self.route_timeout_ms == 0
             || self.client_handshake_timeout_ms == 0
             || self.probe_timeout_ms == 0
         {
@@ -162,12 +162,6 @@ impl Config {
         }
         if self.healthy_probe_interval_secs == 0 || self.recovery_probe_interval_secs == 0 {
             return Err(anyhow!("probe intervals must be greater than zero"));
-        }
-        if self.max_backend_attempts == 0 {
-            return Err(anyhow!("max_backend_attempts must be greater than zero"));
-        }
-        if self.max_connecting == 0 {
-            return Err(anyhow!("max_connecting must be greater than zero"));
         }
         if self.failure_threshold == 0 {
             return Err(anyhow!("failure_threshold must be greater than zero"));
@@ -199,7 +193,6 @@ impl Config {
     pub fn upstream_handshake_timeout(&self) -> Duration { Duration::from_millis(self.upstream_handshake_timeout_ms) }
     pub fn backend_attempt_timeout(&self) -> Duration { Duration::from_millis(self.backend_attempt_timeout_ms) }
     pub fn direct_connect_timeout(&self) -> Duration { Duration::from_millis(self.direct_connect_timeout_ms) }
-    pub fn route_timeout(&self) -> Duration { Duration::from_millis(self.route_timeout_ms) }
     pub fn client_handshake_timeout(&self) -> Duration { Duration::from_millis(self.client_handshake_timeout_ms) }
     pub fn probe_timeout(&self) -> Duration { Duration::from_millis(self.probe_timeout_ms) }
     pub fn healthy_probe_interval(&self) -> Duration { Duration::from_secs(self.healthy_probe_interval_secs) }

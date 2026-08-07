@@ -17,21 +17,22 @@ that file or its own configuration.
 ## Reliability model
 
 - D2S accepts traffic immediately; startup never waits for backend probes.
-- Routing preference is `GREEN -> UNKNOWN -> degraded half-open -> DIRECT`.
-- A failed backend is skipped immediately inside the same client request.
-- `failure_threshold` controls transition from `YELLOW` to `RED`.
-- `YELLOW`/`RED` recovery is single-flight: only one recovery attempt is active
-  for a degraded backend at a time.
+- Only `GREEN` backends carry DNSCrypt traffic. Until the first probe succeeds,
+  D2S uses DIRECT fallback when it is enabled.
+- Every GREEN backend is tried with its own bounded attempt timeout; there is no
+  second global route deadline and no global outbound-connect semaphore.
+- A failed GREEN backend is skipped immediately inside the same client request,
+  so the next GREEN backend can be tried before DIRECT fallback.
 - SOCKS5 destination-specific replies (`0x02..=0x06`) do not poison global
   backend health; transport/protocol failures still do.
-- SOCKS failover is bounded by `route_timeout_ms` and
-  `max_backend_attempts`, preventing long DNS stalls when many backends fail.
-- `max_connecting` limits simultaneous outbound connect/handshake work after a
-  network change or reconnect burst.
-- RED recovery uses bounded exponential backoff while the service is active.
-- Health checks use deadlines rather than one-second polling.
-- After `idle_after_secs` without client traffic, synthetic health checks sleep;
-  the SOCKS listener remains ready and real traffic continues to work instantly.
+- `failure_threshold` distinguishes degraded (`YELLOW`) from unavailable (`RED`)
+  state; recovery is performed by background health probes.
+- RED recovery uses bounded backoff while health checks are active.
+- Active health checks use a lightweight one-second scheduler with missed ticks skipped;
+  after the idle threshold the scheduler stops polling completely.
+- After `idle_after_secs` without active client connections, synthetic probes
+  sleep. A newly accepted DNSCrypt connection wakes the scheduler immediately;
+  routing itself never waits for a probe.
 - Repeated DIRECT fallback messages are collapsed to state transitions instead
   of being logged once per DNSCrypt connection.
 
@@ -42,7 +43,7 @@ that file or its own configuration.
   entry in `dnscrypt-proxy.toml`;
 - IPv4, IPv6, and domain destinations;
 - round-robin balancing across healthy backends;
-- startup use of unchecked backends to avoid unnecessary DIRECT traffic;
+- non-blocking startup with DIRECT fallback until backend health is known;
 - active and passive backend health tracking;
 - automatic recovery of previously failed backends;
 - DIRECT fallback when allowed and no SOCKS route succeeds;

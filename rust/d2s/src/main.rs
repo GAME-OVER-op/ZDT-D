@@ -20,13 +20,6 @@ upstream_handshake_timeout_ms = 1000
 backend_attempt_timeout_ms = 1200
 direct_connect_timeout_ms = 2000
 
-# Bound the total SOCKS failover cost for one DNSCrypt connection.
-route_timeout_ms = 2500
-max_backend_attempts = 3
-
-# Protect the phone from connect storms after network changes.
-max_connecting = 32
-
 client_handshake_timeout_ms = 3000
 probe_timeout_ms = 1200
 

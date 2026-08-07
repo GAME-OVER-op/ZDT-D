@@ -57,6 +57,9 @@ impl ActivityTracker {
             .last_client
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = Instant::now();
+        // A new DNSCrypt connection must wake the idle health scheduler now,
+        // not only after that client connection eventually closes.
+        self.notify.notify_one();
     }
 
     fn wake(&self) {
@@ -259,10 +262,11 @@ async fn handle_client(
     Ok(())
 }
 
-/// Event-driven health scheduler. With no clients D2S sleeps completely: no
-/// one-second polling and no synthetic probes. A new connection wakes the
-/// scheduler immediately, while the connection itself is routed without
-/// waiting for health checks.
+/// Traffic-aware health scheduler. While D2S is active it keeps the proven
+/// one-second scheduler with MissedTickBehavior::Skip. After the configured
+/// idle period and with no active clients it sleeps on Notify with no polling.
+/// A newly accepted DNSCrypt connection wakes it immediately; routing itself
+/// never waits for a health probe.
 async fn health_loop(
     config: Arc<Config>,
     pool: BackendPool,
@@ -277,29 +281,31 @@ async fn health_loop(
         return;
     }
 
-    let mut was_idle = false;
+    let mut ticker = tokio::time::interval(Duration::from_secs(1));
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut idle_logged = false;
+
     loop {
         if *shutdown.borrow() {
             break;
         }
 
-        let now = Instant::now();
         let active = stats.active_connections.load(Ordering::Relaxed);
-        let idle_deadline = config.idle_after().map(|idle| activity.last_client() + idle);
         let should_idle = active == 0
-            && idle_deadline
-                .map(|deadline| now >= deadline)
+            && config
+                .idle_after()
+                .map(|idle| Instant::now() >= activity.last_client() + idle)
                 .unwrap_or(false);
 
         if should_idle {
-            if !was_idle {
+            if !idle_logged {
                 debug!("D2S health scheduler entered idle sleep");
-                was_idle = true;
+                idle_logged = true;
             }
             tokio::select! {
                 _ = activity.notify.notified() => {
-                    debug!("D2S health scheduler woke for state re-evaluation");
-                    was_idle = false;
+                    idle_logged = false;
+                    ticker.reset();
                     continue;
                 }
                 changed = shutdown.changed() => {
@@ -310,52 +316,21 @@ async fn health_loop(
             }
             continue;
         }
-        was_idle = false;
 
-        let next_probe = pool.next_probe_deadline().await;
-        let wake_at = match (next_probe, if active == 0 { idle_deadline } else { None }) {
-            (Some(probe), Some(idle)) => Some(probe.min(idle)),
-            (Some(probe), None) => Some(probe),
-            (None, Some(idle)) => Some(idle),
-            (None, None) => None,
-        };
-
-        match wake_at {
-            Some(deadline) => {
-                tokio::select! {
-                    _ = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => {
-                        let now = Instant::now();
-                        let active = stats.active_connections.load(Ordering::Relaxed);
-                        if active == 0 {
-                            if let Some(idle) = config.idle_after() {
-                                if now >= activity.last_client() + idle {
-                                    continue;
-                                }
-                            }
-                        }
-                        let due = pool.claim_due_backends().await;
-                        if !due.is_empty() {
-                            pool.probe_many(due).await;
-                        }
-                    }
-                    _ = activity.notify.notified() => {
-                        continue;
-                    }
-                    changed = shutdown.changed() => {
-                        if changed.is_err() || *shutdown.borrow() {
-                            break;
-                        }
-                    }
+        idle_logged = false;
+        tokio::select! {
+            _ = ticker.tick() => {
+                let due = pool.claim_due_backends().await;
+                if !due.is_empty() {
+                    pool.probe_many(due).await;
                 }
             }
-            None => {
-                tokio::select! {
-                    _ = activity.notify.notified() => {}
-                    changed = shutdown.changed() => {
-                        if changed.is_err() || *shutdown.borrow() {
-                            break;
-                        }
-                    }
+            _ = activity.notify.notified() => {
+                // New client activity can change the idle state immediately.
+            }
+            changed = shutdown.changed() => {
+                if changed.is_err() || *shutdown.borrow() {
+                    break;
                 }
             }
         }

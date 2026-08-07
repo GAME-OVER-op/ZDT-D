@@ -18,6 +18,23 @@ pub enum SocksClientError {
     ConnectReply(u8),
 }
 
+impl SocksClientError {
+    /// RFC 1928 reply codes 0x02..=0x06 describe a target/path outcome,
+    /// not necessarily a dead local SOCKS service. Treat them with hysteresis
+    /// so one resolver-specific failure cannot evict the only healthy backend.
+    pub fn is_target_path_failure(&self) -> bool {
+        matches!(self, Self::ConnectReply(code) if (0x02..=0x06).contains(code))
+    }
+
+    /// A single reconnect is worthwhile for network/host unreachable replies:
+    /// local proxy stacks can return these briefly while Android is switching
+    /// the active network. Other failures are either target-specific or too
+    /// expensive to repeat in the DNS query path.
+    pub fn should_retry_once_on_single_backend(&self) -> bool {
+        matches!(self, Self::ConnectReply(0x03 | 0x04))
+    }
+}
+
 async fn io_step<T, F>(timeout: Duration, label: &'static str, future: F) -> std::result::Result<T, SocksClientError>
 where
     F: Future<Output = std::io::Result<T>>,
@@ -190,4 +207,22 @@ async fn send_reply(stream: &mut TcpStream, reply: u8) -> Result<()> {
     response.extend_from_slice(&Ipv4Addr::UNSPECIFIED.octets());
     response.extend_from_slice(&0u16.to_be_bytes());
     stream.write_all(&response).await.context("write SOCKS5 reply")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SocksClientError;
+
+    #[test]
+    fn classifies_target_path_reply_codes() {
+        for code in 0x02..=0x06 {
+            assert!(SocksClientError::ConnectReply(code).is_target_path_failure());
+        }
+        for code in [0x01, 0x07, 0x08] {
+            assert!(!SocksClientError::ConnectReply(code).is_target_path_failure());
+        }
+        assert!(SocksClientError::ConnectReply(0x03).should_retry_once_on_single_backend());
+        assert!(SocksClientError::ConnectReply(0x04).should_retry_once_on_single_backend());
+        assert!(!SocksClientError::ConnectReply(0x05).should_retry_once_on_single_backend());
+    }
 }

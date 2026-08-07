@@ -1,7 +1,7 @@
 use crate::{config::Config, socks5::connect_via_socks5, status::BackendSnapshot, target::TargetAddr};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
+use std::{collections::{HashMap, VecDeque}, net::SocketAddr, sync::Arc, time::{Duration, Instant, SystemTime, UNIX_EPOCH}};
 use tokio::{sync::Mutex, task::JoinSet};
 use tracing::{debug, info, warn};
 
@@ -35,6 +35,7 @@ struct PoolInner {
     entries: Vec<BackendEntry>,
     index: HashMap<SocketAddr, usize>,
     rr: usize,
+    recent_targets: VecDeque<TargetAddr>,
 }
 
 #[derive(Clone)]
@@ -69,7 +70,12 @@ impl BackendPool {
             .collect();
         let index = entries.iter().enumerate().map(|(i, entry)| (entry.addr, i)).collect();
         Ok(Self {
-            inner: Arc::new(Mutex::new(PoolInner { entries, index, rr: 0 })),
+            inner: Arc::new(Mutex::new(PoolInner {
+                entries,
+                index,
+                rr: 0,
+                recent_targets: VecDeque::new(),
+            })),
             config,
             probe_targets,
         })
@@ -104,6 +110,21 @@ impl BackendPool {
         let mut inner = self.inner.lock().await;
         let Some(index) = inner.index.get(&addr).copied() else { return; };
         inner.entries[index].selected_connections = inner.entries[index].selected_connections.saturating_add(1);
+    }
+
+    /// Remember targets that DNSCrypt actually reached successfully. Recovery
+    /// probes prefer these over generic public probe addresses, making health
+    /// checks representative of the real resolver set in use.
+    pub async fn record_recent_target(&self, target: &TargetAddr) {
+        const MAX_RECENT_TARGETS: usize = 4;
+        let mut inner = self.inner.lock().await;
+        if let Some(pos) = inner.recent_targets.iter().position(|item| item == target) {
+            inner.recent_targets.remove(pos);
+        }
+        inner.recent_targets.push_front(target.clone());
+        while inner.recent_targets.len() > MAX_RECENT_TARGETS {
+            inner.recent_targets.pop_back();
+        }
     }
 
     pub async fn mark_runtime_success(&self, addr: SocketAddr, latency: Duration) {
@@ -145,6 +166,45 @@ impl BackendPool {
         warn!(backend = %addr, old_state = ?old, new_state = ?entry.state, error = %error, "backend failed during real traffic and was removed from balancing");
     }
 
+    /// Target/path failures (SOCKS REP 0x02..=0x06) can be specific to one
+    /// resolver address. Keep a GREEN backend eligible until the configured
+    /// failure threshold is actually reached. This is critical when there is
+    /// only one SOCKS backend: one transient resolver failure must not create a
+    /// multi-query DNS outage.
+    pub async fn mark_runtime_target_failure(&self, addr: SocketAddr, error: &str) {
+        let mut inner = self.inner.lock().await;
+        let Some(index) = inner.index.get(&addr).copied() else { return; };
+        let entry = &mut inner.entries[index];
+        let old = entry.state;
+        entry.consecutive_failures = entry.consecutive_failures.saturating_add(1);
+        let threshold_reached = entry.consecutive_failures >= self.config.failure_threshold;
+        entry.state = if threshold_reached { BackendState::Red } else { BackendState::Green };
+        entry.last_error = Some(error.to_string());
+        entry.last_check_unix = Some(unix_now());
+        entry.last_latency_ms = None;
+        entry.next_probe = Instant::now() + self.config.runtime_cooldown();
+        entry.failed_connections = entry.failed_connections.saturating_add(1);
+        entry.revision = entry.revision.wrapping_add(1);
+        if threshold_reached {
+            warn!(
+                backend = %addr,
+                old_state = ?old,
+                new_state = ?entry.state,
+                failures = entry.consecutive_failures,
+                error = %error,
+                "backend reached target-failure threshold and was removed from balancing"
+            );
+        } else {
+            debug!(
+                backend = %addr,
+                failures = entry.consecutive_failures,
+                threshold = self.config.failure_threshold,
+                error = %error,
+                "target-specific SOCKS failure; keeping backend GREEN"
+            );
+        }
+    }
+
     pub async fn due_backends(&self) -> Vec<SocketAddr> {
         let mut inner = self.inner.lock().await;
         let now = Instant::now();
@@ -180,7 +240,8 @@ impl BackendPool {
         let Some(revision) = self.revision_of(addr).await else { return; };
         let started = Instant::now();
         let mut errors = Vec::new();
-        for target in self.probe_targets.iter() {
+        let probe_targets = self.health_probe_targets().await;
+        for target in &probe_targets {
             let probe = tokio::time::timeout(
                 self.config.probe_timeout(),
                 connect_via_socks5(
@@ -206,6 +267,17 @@ impl BackendPool {
             }
         }
         self.mark_probe_failure(addr, revision, errors.join("; ")).await;
+    }
+
+    async fn health_probe_targets(&self) -> Vec<TargetAddr> {
+        let recent = {
+            let inner = self.inner.lock().await;
+            inner.recent_targets.iter().cloned().collect::<Vec<_>>()
+        };
+        if !recent.is_empty() {
+            return recent;
+        }
+        self.probe_targets.as_ref().clone()
     }
 
     async fn mark_probe_success(&self, addr: SocketAddr, expected_revision: u64, latency: Duration) {
@@ -242,20 +314,37 @@ impl BackendPool {
         }
         let old = entry.state;
         entry.consecutive_failures = entry.consecutive_failures.saturating_add(1);
-        entry.state = if entry.consecutive_failures >= self.config.failure_threshold {
-            BackendState::Red
+
+        // For a backend that is already carrying real DNSCrypt traffic, one
+        // failed synthetic probe is not enough evidence to evict it. Honour
+        // failure_threshold while probing GREEN backends. UNKNOWN/YELLOW/RED
+        // still require an actual successful probe before becoming GREEN.
+        if old == BackendState::Green && entry.consecutive_failures < self.config.failure_threshold {
+            entry.state = BackendState::Green;
         } else {
-            BackendState::Yellow
-        };
+            entry.state = if entry.consecutive_failures >= self.config.failure_threshold {
+                BackendState::Red
+            } else {
+                BackendState::Yellow
+            };
+        }
         entry.last_error = Some(error.clone());
         entry.last_check_unix = Some(unix_now());
         entry.last_latency_ms = None;
-        entry.next_probe = Instant::now() + self.config.recovery_probe_interval();
+        let never_succeeded = entry.last_success_unix.is_none();
+        entry.next_probe = if never_succeeded {
+            // Local SOCKS processes often start just after D2S. Until the first
+            // confirmed success, retry readiness on the short cooldown instead
+            // of forcing long DIRECT-only windows during service startup.
+            Instant::now() + self.config.runtime_cooldown()
+        } else {
+            Instant::now() + self.config.recovery_probe_interval()
+        };
         entry.revision = entry.revision.wrapping_add(1);
         if old != entry.state || old == BackendState::Unknown {
             warn!(backend = %addr, old_state = ?old, new_state = ?entry.state, failures = entry.consecutive_failures, %error, "backend health probe failed");
         } else {
-            debug!(backend = %addr, state = ?entry.state, failures = entry.consecutive_failures, %error, "backend is still unavailable");
+            debug!(backend = %addr, state = ?entry.state, failures = entry.consecutive_failures, %error, "backend health probe failed without crossing threshold");
         }
     }
 
@@ -302,4 +391,57 @@ fn unix_now() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_config(backends: Vec<SocketAddr>) -> Arc<Config> {
+        let mut config: Config = toml::from_str(
+            r#"
+direct_fallback = true
+failure_threshold = 3
+probe_targets = ["1.1.1.1:443", "8.8.8.8:443"]
+"#,
+        )
+        .unwrap();
+        config.listen = "127.0.0.1:11990".parse().unwrap();
+        config.dnscrypt_timeout_ms = 5_000;
+        config.backends = backends;
+        Arc::new(config)
+    }
+
+    #[tokio::test]
+    async fn target_failures_honour_failure_threshold() {
+        let backend: SocketAddr = "127.0.0.1:11590".parse().unwrap();
+        let pool = BackendPool::new(test_config(vec![backend])).unwrap();
+        pool.mark_runtime_success(backend, Duration::from_millis(10)).await;
+
+        pool.mark_runtime_target_failure(backend, "SOCKS5 CONNECT failed with reply code 0x04").await;
+        let first = pool.snapshots().await.into_iter().next().unwrap();
+        assert_eq!(first.state, BackendState::Green);
+        assert_eq!(first.consecutive_failures, 1);
+
+        pool.mark_runtime_target_failure(backend, "SOCKS5 CONNECT failed with reply code 0x04").await;
+        let second = pool.snapshots().await.into_iter().next().unwrap();
+        assert_eq!(second.state, BackendState::Green);
+        assert_eq!(second.consecutive_failures, 2);
+
+        pool.mark_runtime_target_failure(backend, "SOCKS5 CONNECT failed with reply code 0x04").await;
+        let third = pool.snapshots().await.into_iter().next().unwrap();
+        assert_eq!(third.state, BackendState::Red);
+        assert_eq!(third.consecutive_failures, 3);
+    }
+
+    #[tokio::test]
+    async fn recent_dnscrypt_targets_are_probed_before_static_targets() {
+        let backend: SocketAddr = "127.0.0.1:11590".parse().unwrap();
+        let pool = BackendPool::new(test_config(vec![backend])).unwrap();
+        let actual: TargetAddr = "149.112.112.9:8443".parse().unwrap();
+        pool.record_recent_target(&actual).await;
+
+        let targets = pool.health_probe_targets().await;
+        assert_eq!(targets, vec![actual]);
+    }
 }

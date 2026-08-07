@@ -78,3 +78,29 @@ cargo test --all-targets
 cargo clippy --all-targets --all-features
 cargo fmt --all -- --check
 ```
+
+## DNSCrypt-aware reliability
+
+When `proxy = 'socks5://127.0.0.1:PORT'` is enabled, dnscrypt-proxy switches its
+main upstream protocol to TCP. DNSCrypt protocol queries commonly create a new
+SOCKS5 CONNECT per query, while DoH can keep HTTP/1.1 or HTTP/2 connections
+alive. D2S therefore keeps the relay itself timeout-free and only bounds route
+establishment.
+
+D2S reads the `timeout` value from `dnscrypt-proxy.toml` (5000 ms when omitted,
+matching dnscrypt-proxy's default) and keeps SOCKS/backend/DIRECT route setup
+inside that deadline with a 500 ms safety margin. This is important because the
+SOCKS dialer used by dnscrypt-proxy can perform a plain `Dial()` that is not
+always cancelled by the HTTP/request context.
+
+SOCKS5 CONNECT reply codes `0x02` through `0x06` are treated as target/path
+failures. A single such error no longer removes a GREEN backend immediately;
+`failure_threshold` must actually be reached. Hard local backend failures
+(connection refused, SOCKS handshake timeout/protocol failure, unsupported
+SOCKS behavior) still remove the backend immediately.
+
+After D2S has successfully routed real DNSCrypt traffic, health probes prefer a
+small in-memory set of recently successful DNSCrypt targets. The static
+`probe_targets` list is used for startup, before any real target is known. This
+avoids declaring a working backend dead just because an unrelated public probe
+address is unreachable through that transport.

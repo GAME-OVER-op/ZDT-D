@@ -31,9 +31,18 @@ pub async fn start(mut config: Config) -> Result<RunningServer> {
 
     let pool = BackendPool::new(config.clone())?;
     if config.backends.is_empty() {
-        info!("no SOCKS5 backends configured; D2S will use DIRECT fallback");
+        info!(
+            dnscrypt_timeout_ms = config.dnscrypt_timeout_ms,
+            route_budget_ms = config.route_budget().as_millis() as u64,
+            "no SOCKS5 backends configured; D2S will use DIRECT fallback"
+        );
     } else {
-        info!(backends = config.backends.len(), "SOCKS5 backend probes scheduled");
+        info!(
+            backends = config.backends.len(),
+            dnscrypt_timeout_ms = config.dnscrypt_timeout_ms,
+            route_budget_ms = config.route_budget().as_millis() as u64,
+            "SOCKS5 backend probes scheduled"
+        );
     }
 
     let stats = Arc::new(RuntimeStats::default());

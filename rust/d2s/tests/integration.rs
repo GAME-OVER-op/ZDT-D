@@ -55,6 +55,7 @@ impl EchoServer {
 struct MockSocks {
     addr: SocketAddr,
     fail: Arc<AtomicBool>,
+    fail_once: Arc<AtomicBool>,
     connects: Arc<AtomicUsize>,
     shutdown: watch::Sender<bool>,
     task: JoinHandle<()>,
@@ -65,9 +66,11 @@ impl MockSocks {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let fail = Arc::new(AtomicBool::new(initially_failing));
+        let fail_once = Arc::new(AtomicBool::new(false));
         let connects = Arc::new(AtomicUsize::new(0));
         let (shutdown, mut rx) = watch::channel(false);
         let fail_task = fail.clone();
+        let fail_once_task = fail_once.clone();
         let connects_task = connects.clone();
         let task = tokio::spawn(async move {
             loop {
@@ -76,19 +79,24 @@ impl MockSocks {
                     accepted = listener.accept() => {
                         let Ok((stream, _)) = accepted else { continue; };
                         let fail = fail_task.clone();
+                        let fail_once = fail_once_task.clone();
                         let connects = connects_task.clone();
                         tokio::spawn(async move {
-                            let _ = handle_mock_socks(stream, fail, connects).await;
+                            let _ = handle_mock_socks(stream, fail, fail_once, connects).await;
                         });
                     }
                 }
             }
         });
-        Self { addr, fail, connects, shutdown, task }
+        Self { addr, fail, fail_once, connects, shutdown, task }
     }
 
     fn set_failing(&self, value: bool) {
         self.fail.store(value, Ordering::Relaxed);
+    }
+
+    fn fail_next(&self) {
+        self.fail_once.store(true, Ordering::Relaxed);
     }
 
     fn reset_count(&self) {
@@ -108,6 +116,7 @@ impl MockSocks {
 async fn handle_mock_socks(
     mut client: TcpStream,
     fail: Arc<AtomicBool>,
+    fail_once: Arc<AtomicBool>,
     connects: Arc<AtomicUsize>,
 ) -> std::io::Result<()> {
     let mut greeting = [0u8; 2];
@@ -121,8 +130,8 @@ async fn handle_mock_socks(
     let target = read_target(&mut client, request[3]).await?;
     connects.fetch_add(1, Ordering::Relaxed);
 
-    if fail.load(Ordering::Relaxed) {
-        client.write_all(&[0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+    if fail.load(Ordering::Relaxed) || fail_once.swap(false, Ordering::Relaxed) {
+        client.write_all(&[0x05, 0x04, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
         return Ok(());
     }
 
@@ -172,18 +181,23 @@ async fn read_port(stream: &mut TcpStream) -> std::io::Result<u16> {
 fn config(backends: Vec<SocketAddr>, probe_target: SocketAddr) -> Config {
     Config {
         listen: "127.0.0.1:0".parse().unwrap(),
+        dnscrypt_timeout_ms: 5_000,
         backends,
         direct_fallback: true,
         connect_timeout_ms: 500,
         upstream_handshake_timeout_ms: 500,
         backend_attempt_timeout_ms: 700,
         direct_connect_timeout_ms: 700,
+        route_timeout_ms: None,
+        max_backend_attempts: None,
+        max_connecting: None,
         client_handshake_timeout_ms: 500,
         probe_timeout_ms: 500,
         healthy_probe_interval_secs: 60,
         recovery_probe_interval_secs: 1,
         failure_threshold: 1,
         runtime_cooldown_ms: 100,
+        idle_after_secs: None,
         probe_targets: vec![probe_target.to_string()],
         max_connections: 64,
         tcp_nodelay: true,
@@ -373,3 +387,61 @@ async fn empty_backend_pool_uses_direct_fallback() {
     server.shutdown().await.unwrap();
     echo.stop().await;
 }
+
+#[tokio::test]
+async fn single_backend_retries_one_transient_network_reply() {
+    let echo = EchoServer::start().await;
+    let backend = MockSocks::start(false).await;
+    let mut cfg = config(vec![backend.addr], echo.addr);
+    cfg.failure_threshold = 3;
+    let server = start(cfg).await.unwrap();
+    wait_for_green(&server, 1).await;
+    backend.reset_count();
+    backend.fail_next();
+
+    roundtrip(server.listen_addr, echo.addr, b"retry-once").await;
+
+    assert_eq!(backend.count(), 2);
+    assert_eq!(server.stats.direct_connections.load(Ordering::Relaxed), 0);
+    let state = server.pool.snapshots().await.into_iter().next().unwrap();
+    assert_eq!(state.state, BackendState::Green);
+    assert_eq!(state.consecutive_failures, 0);
+
+    server.shutdown().await.unwrap();
+    backend.stop().await;
+    echo.stop().await;
+}
+
+#[tokio::test]
+async fn one_transient_target_failure_does_not_evict_the_only_backend() {
+    let echo = EchoServer::start().await;
+    let backend = MockSocks::start(false).await;
+    let mut cfg = config(vec![backend.addr], echo.addr);
+    cfg.failure_threshold = 3;
+    let server = start(cfg).await.unwrap();
+    wait_for_green(&server, 1).await;
+    backend.reset_count();
+
+    // Simulate a resolver/path-specific SOCKS failure. The current query is
+    // still served by DIRECT fallback, but the sole backend must stay GREEN
+    // until the configured threshold is actually reached.
+    backend.set_failing(true);
+    roundtrip(server.listen_addr, echo.addr, b"soft-failure-direct").await;
+    let state = server.pool.snapshots().await.into_iter().next().unwrap();
+    assert_eq!(state.state, BackendState::Green);
+    assert_eq!(state.consecutive_failures, 1);
+
+    // Once the path recovers, the very next DNSCrypt connection can use the
+    // backend again and resets the transient failure counter.
+    backend.set_failing(false);
+    roundtrip(server.listen_addr, echo.addr, b"soft-failure-recovered").await;
+    let state = server.pool.snapshots().await.into_iter().next().unwrap();
+    assert_eq!(state.state, BackendState::Green);
+    assert_eq!(state.consecutive_failures, 0);
+    assert!(server.stats.upstream_connections.load(Ordering::Relaxed) >= 1);
+
+    server.shutdown().await.unwrap();
+    backend.stop().await;
+    echo.stop().await;
+}
+

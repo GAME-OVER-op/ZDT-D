@@ -9,6 +9,7 @@ use std::{
 };
 
 fn default_listen() -> SocketAddr { "127.0.0.1:11990".parse().unwrap() }
+fn default_dnscrypt_timeout_ms() -> u64 { 5_000 }
 fn default_true() -> bool { true }
 fn default_connect_timeout_ms() -> u64 { 500 }
 fn default_handshake_timeout_ms() -> u64 { 1_000 }
@@ -35,6 +36,12 @@ pub struct Config {
     /// comes from the active `proxy` entry in dnscrypt-proxy.toml.
     #[serde(skip, default = "default_listen")]
     pub listen: SocketAddr,
+
+    /// Runtime-only DNSCrypt query timeout, loaded from dnscrypt-proxy.toml.
+    /// D2S uses it as an upper bound for route establishment because
+    /// dnscrypt-proxy's SOCKS dialer can otherwise outlive the query timeout.
+    #[serde(skip, default = "default_dnscrypt_timeout_ms")]
+    pub dnscrypt_timeout_ms: u64,
 
     #[serde(default)]
     pub backends: Vec<SocketAddr>,
@@ -114,6 +121,13 @@ pub struct Config {
 #[derive(Debug, Deserialize)]
 struct DnscryptConfig {
     proxy: Option<String>,
+    timeout: Option<u64>,
+}
+
+#[derive(Debug)]
+struct DnscryptRuntime {
+    listen: SocketAddr,
+    timeout_ms: u64,
 }
 
 impl Config {
@@ -123,7 +137,9 @@ impl Config {
             .with_context(|| format!("read configuration {}", path.display()))?;
         let mut config: Self = toml::from_str(&raw)
             .with_context(|| format!("parse configuration {}", path.display()))?;
-        config.listen = read_dnscrypt_proxy_listener(dnscrypt_path)?;
+        let dnscrypt = read_dnscrypt_runtime(dnscrypt_path)?;
+        config.listen = dnscrypt.listen;
+        config.dnscrypt_timeout_ms = dnscrypt.timeout_ms;
         config.validate()?;
         Ok(config)
     }
@@ -195,6 +211,18 @@ impl Config {
     pub fn runtime_cooldown(&self) -> Duration { Duration::from_millis(self.runtime_cooldown_ms) }
     pub fn shutdown_grace_period(&self) -> Duration { Duration::from_millis(self.shutdown_grace_period_ms) }
 
+    /// Keep D2S route establishment inside dnscrypt-proxy's own query timeout.
+    /// A small margin leaves time for DNSCrypt to process the SOCKS result.
+    pub fn route_budget(&self) -> Duration {
+        const SAFETY_MARGIN_MS: u64 = 500;
+        const MIN_ROUTE_BUDGET_MS: u64 = 1_000;
+        let budget_ms = self
+            .dnscrypt_timeout_ms
+            .saturating_sub(SAFETY_MARGIN_MS)
+            .max(MIN_ROUTE_BUDGET_MS);
+        Duration::from_millis(budget_ms)
+    }
+
     pub fn parsed_probe_targets(&self) -> Result<Vec<TargetAddr>> {
         self.probe_targets
             .iter()
@@ -203,7 +231,7 @@ impl Config {
     }
 }
 
-pub fn read_dnscrypt_proxy_listener(path: impl AsRef<Path>) -> Result<SocketAddr> {
+fn read_dnscrypt_runtime(path: impl AsRef<Path>) -> Result<DnscryptRuntime> {
     let path = path.as_ref();
     let raw = std::fs::read_to_string(path)
         .with_context(|| format!("read dnscrypt configuration {}", path.display()))?;
@@ -215,8 +243,17 @@ pub fn read_dnscrypt_proxy_listener(path: impl AsRef<Path>) -> Result<SocketAddr
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| anyhow!("dnscrypt configuration has no active proxy entry"))?;
-    parse_local_socks5_proxy(proxy)
-        .with_context(|| format!("invalid dnscrypt proxy entry in {}", path.display()))
+    let listen = parse_local_socks5_proxy(proxy)
+        .with_context(|| format!("invalid dnscrypt proxy entry in {}", path.display()))?;
+    let timeout_ms = config.timeout.unwrap_or_else(default_dnscrypt_timeout_ms);
+    if timeout_ms == 0 {
+        return Err(anyhow!("dnscrypt timeout must be greater than zero"));
+    }
+    Ok(DnscryptRuntime { listen, timeout_ms })
+}
+
+pub fn read_dnscrypt_proxy_listener(path: impl AsRef<Path>) -> Result<SocketAddr> {
+    Ok(read_dnscrypt_runtime(path)?.listen)
 }
 
 pub fn parse_local_socks5_proxy(proxy: &str) -> Result<SocketAddr> {
@@ -313,4 +350,39 @@ idle_after_secs = 60
         assert_eq!(config.max_connecting, Some(32));
         assert_eq!(config.idle_after_secs, Some(60));
     }
+
+    #[test]
+    fn reads_dnscrypt_timeout_with_default_and_explicit_value() {
+        let dir = std::env::temp_dir();
+        let explicit = dir.join(format!("d2s-dnscrypt-explicit-{}.toml", std::process::id()));
+        std::fs::write(
+            &explicit,
+            "proxy = 'socks5://127.0.0.1:11990'\ntimeout = 7000\n",
+        )
+        .unwrap();
+        let runtime = read_dnscrypt_runtime(&explicit).unwrap();
+        assert_eq!(runtime.listen, "127.0.0.1:11990".parse().unwrap());
+        assert_eq!(runtime.timeout_ms, 7000);
+        let _ = std::fs::remove_file(&explicit);
+
+        let defaulted = dir.join(format!("d2s-dnscrypt-default-{}.toml", std::process::id()));
+        std::fs::write(
+            &defaulted,
+            "proxy = 'socks5://127.0.0.1:11990'\n",
+        )
+        .unwrap();
+        let runtime = read_dnscrypt_runtime(&defaulted).unwrap();
+        assert_eq!(runtime.timeout_ms, 5000);
+        let _ = std::fs::remove_file(&defaulted);
+    }
+
+    #[test]
+    fn route_budget_tracks_dnscrypt_timeout_with_margin() {
+        let mut config: Config = toml::from_str("backends = []\ndirect_fallback = true\n").unwrap();
+        config.dnscrypt_timeout_ms = 7000;
+        assert_eq!(config.route_budget(), Duration::from_millis(6500));
+        config.dnscrypt_timeout_ms = 1200;
+        assert_eq!(config.route_budget(), Duration::from_millis(1000));
+    }
+
 }

@@ -14,9 +14,11 @@ probe_timeout_ms = 1200
 
 healthy_probe_interval_secs = 30
 recovery_probe_interval_secs = 5
+# Consecutive target/path failures required before a healthy backend is quarantined.
 failure_threshold = 3
 runtime_cooldown_ms = 2000
 
+# Startup probes only. After real DNSCrypt traffic succeeds, D2S probes recent real targets.
 probe_targets = [
   "1.1.1.1:443",
   "8.8.8.8:443",

@@ -23,18 +23,15 @@ that file or its own configuration.
   second global route deadline and no global outbound-connect semaphore.
 - A failed GREEN backend is skipped immediately inside the same client request,
   so the next GREEN backend can be tried before DIRECT fallback.
-- SOCKS5 destination-specific replies (`0x02..=0x06`) do not poison global
-  backend health; transport/protocol failures still do.
+- Any failed SOCKS5 CONNECT attempt, including an upstream `REP=0x04`,
+  temporarily removes that backend from new-connection balancing. This is
+  intentional for local transports: after an Android network change, a SOCKS5
+  process can still accept connections while its upstream route is stale.
 - `failure_threshold` distinguishes degraded (`YELLOW`) from unavailable (`RED`)
-  state; recovery is performed by background health probes.
-- RED recovery uses bounded backoff while health checks are active.
-- Active health checks use a lightweight one-second scheduler with missed ticks skipped;
-  after the idle threshold the scheduler stops polling completely.
-- After `idle_after_secs` without active client connections, synthetic probes
-  sleep. A newly accepted DNSCrypt connection wakes the scheduler immediately;
-  routing itself never waits for a probe.
-- Repeated DIRECT fallback messages are collapsed to state transitions instead
-  of being logged once per DNSCrypt connection.
+  state; recovery is performed by background health probes. A successful probe
+  returns the backend to `GREEN`.
+- Active health checks use the proven one-second scheduler with missed ticks
+  skipped. No probe is awaited before serving a DNSCrypt connection.
 
 ## Features
 

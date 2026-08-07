@@ -221,6 +221,40 @@ async fn wait_for_green(server: &d2s::RunningServer, expected: usize) {
     panic!("timed out waiting for {expected} GREEN backend(s)");
 }
 
+async fn roundtrip_result(
+    d2s: SocketAddr,
+    target: SocketAddr,
+    payload: &[u8],
+) -> std::io::Result<()> {
+    let mut stream = TcpStream::connect(d2s).await?;
+    stream.write_all(&[0x05, 0x01, 0x00]).await?;
+    let mut greeting = [0u8; 2];
+    stream.read_exact(&mut greeting).await?;
+    if greeting != [0x05, 0x00] {
+        return Err(std::io::Error::new(std::io::ErrorKind::Other, "SOCKS greeting failed"));
+    }
+    let ip = match target.ip() {
+        IpAddr::V4(ip) => ip,
+        IpAddr::V6(_) => return Err(std::io::Error::new(std::io::ErrorKind::Other, "test uses IPv4")),
+    };
+    let mut req = vec![0x05, 0x01, 0x00, 0x01];
+    req.extend_from_slice(&ip.octets());
+    req.extend_from_slice(&target.port().to_be_bytes());
+    stream.write_all(&req).await?;
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply).await?;
+    if reply[1] != 0x00 {
+        return Err(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, format!("D2S reply 0x{:02x}", reply[1])));
+    }
+    stream.write_all(payload).await?;
+    let mut out = vec![0u8; payload.len()];
+    stream.read_exact(&mut out).await?;
+    if out != payload {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "echo mismatch"));
+    }
+    Ok(())
+}
+
 async fn roundtrip(proxy: SocketAddr, target: SocketAddr, payload: &[u8]) {
     let mut stream = TcpStream::connect(proxy).await.unwrap();
     stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
@@ -283,30 +317,6 @@ async fn unchecked_backends_are_not_used_before_health_probe() {
         .await
         .iter()
         .all(|entry| entry.state == BackendState::Unknown));
-}
-
-#[tokio::test]
-async fn target_unreachable_reply_does_not_degrade_healthy_backend() {
-    let echo = EchoServer::start().await;
-    let first = MockSocks::start(false).await;
-    let second = MockSocks::start(false).await;
-    let server = start(config(vec![first.addr, second.addr], echo.addr)).await.unwrap();
-    wait_for_green(&server, 2).await;
-
-    first.reset_count();
-    second.reset_count();
-    first.set_reply_code(0x04);
-    roundtrip(server.listen_addr, echo.addr, b"soft-failover").await;
-
-    assert!(first.count() >= 1);
-    assert!(second.count() >= 1);
-    let states = server.pool.snapshots().await;
-    assert_eq!(states[0].state, BackendState::Green);
-
-    server.shutdown().await.unwrap();
-    first.stop().await;
-    second.stop().await;
-    echo.stop().await;
 }
 
 #[tokio::test]
@@ -464,18 +474,24 @@ async fn failover_tries_all_green_backends_without_global_attempt_cap() {
     echo.stop().await;
 }
 
+
 #[tokio::test]
-async fn target_specific_health_probe_failure_keeps_green_backend() {
+async fn socks_host_unreachable_temporarily_quarantines_backend() {
     let echo = EchoServer::start().await;
     let backend = MockSocks::start(false).await;
     let server = start(config(vec![backend.addr], echo.addr)).await.unwrap();
     wait_for_green(&server, 1).await;
 
     backend.set_reply_code(0x04);
-    server.pool.initial_probe().await;
+    roundtrip_result(server.listen_addr, echo.addr, b"route-change").await.unwrap();
 
     let states = server.pool.snapshots().await;
-    assert_eq!(states[0].state, BackendState::Green);
+    assert_ne!(states[0].state, BackendState::Green);
+    assert_eq!(server.stats.direct_connections.load(Ordering::Relaxed), 1);
+
+    backend.set_reply_code(0x00);
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    wait_for_green(&server, 1).await;
 
     server.shutdown().await.unwrap();
     backend.stop().await;

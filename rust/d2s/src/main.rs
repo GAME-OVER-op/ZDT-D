@@ -31,8 +31,8 @@ failure_threshold = 3
 runtime_cooldown_ms = 2000
 
 # With no client traffic, synthetic health checks stop after this delay.
-# Set to 0 to disable idle sleep.
-idle_after_secs = 60
+# Compatibility field from the experimental power-save build. Runtime health polling currently uses the proven scheduler.
+idle_after_secs = 0
 
 probe_targets = [
   "1.1.1.1:443",

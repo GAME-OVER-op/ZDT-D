@@ -2248,4 +2248,14 @@ APatch：10700+</string>
     <string name="d2s_log_level_info">信息</string>
     <string name="d2s_log_level_debug">调试</string>
     <string name="d2s_log_level_trace">跟踪</string>
+
+    <string name="d2s_route_timeout">SOCKS5 故障切换总超时</string>
+    <string name="d2s_route_timeout_desc">回退前尝试 SOCKS5 后端所允许的最大总时间（毫秒）。</string>
+    <string name="d2s_max_backend_attempts">最大后端尝试次数</string>
+    <string name="d2s_max_backend_attempts_desc">单个客户端连接最多尝试的 SOCKS5 服务器数量。</string>
+    <string name="d2s_max_connecting">最大并发连接尝试</string>
+    <string name="d2s_max_connecting_desc">限制同时进行的出站连接和 SOCKS5 握手数量。</string>
+    <string name="d2s_idle_after">空闲时暂停健康检查</string>
+    <string name="d2s_idle_after_desc">无客户端流量多少秒后暂停后台检查。0 表示禁用休眠。</string>
+    <string name="d2s_error_non_negative_number">空闲时间必须为 0 或更大。</string>
 </resources>

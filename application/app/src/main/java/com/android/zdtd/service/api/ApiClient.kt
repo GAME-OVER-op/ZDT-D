@@ -398,8 +398,15 @@ class ApiClient(
   }
 
   fun putJsonData(path: String, data: JSONObject): Boolean {
-    // This endpoint expects object directly (like {port:..}) or wrapper? In the HTML UI it sends the object as-is.
-    return requestOk("PUT", path, data)
+    // Preserve the server-side validation error instead of collapsing every
+    // rejected save into a generic false result. MainViewModel logs it.
+    val obj = requestJson("PUT", path, data)
+    val ok = jsonBool(obj, "ok", true)
+    if (!ok) {
+      val error = obj?.optString("error", "")?.trim().orEmpty()
+      throw IOException(error.ifBlank { "API rejected save" })
+    }
+    return true
   }
 
   fun postJsonData(path: String, data: JSONObject): Boolean {

@@ -2249,4 +2249,14 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="d2s_log_level_info">Informação</string>
     <string name="d2s_log_level_debug">Depuração</string>
     <string name="d2s_log_level_trace">Rastreamento</string>
+
+    <string name="d2s_route_timeout">Tempo total de failover SOCKS5</string>
+    <string name="d2s_route_timeout_desc">Tempo total máximo em milissegundos para tentar servidores SOCKS5 antes do fallback.</string>
+    <string name="d2s_max_backend_attempts">Máximo de tentativas de servidor</string>
+    <string name="d2s_max_backend_attempts_desc">Número máximo de servidores SOCKS5 tentados por conexão do cliente.</string>
+    <string name="d2s_max_connecting">Máximo de tentativas simultâneas de conexão</string>
+    <string name="d2s_max_connecting_desc">Limita conexões de saída e handshakes SOCKS5 simultâneos.</string>
+    <string name="d2s_idle_after">Suspender verificações por inatividade</string>
+    <string name="d2s_idle_after_desc">Segundos sem tráfego do cliente antes de suspender as verificações. 0 desativa a suspensão.</string>
+    <string name="d2s_error_non_negative_number">O tempo de inatividade deve ser zero ou maior.</string>
 </resources>

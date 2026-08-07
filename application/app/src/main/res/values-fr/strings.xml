@@ -2249,4 +2249,14 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="d2s_log_level_info">Informations</string>
     <string name="d2s_log_level_debug">Débogage</string>
     <string name="d2s_log_level_trace">Traçage</string>
+
+    <string name="d2s_route_timeout">Délai total de basculement SOCKS5</string>
+    <string name="d2s_route_timeout_desc">Temps total maximal en millisecondes consacré aux serveurs SOCKS5 avant le repli.</string>
+    <string name="d2s_max_backend_attempts">Nombre maximal de tentatives serveur</string>
+    <string name="d2s_max_backend_attempts_desc">Nombre maximal de serveurs SOCKS5 essayés pour une connexion cliente.</string>
+    <string name="d2s_max_connecting">Tentatives de connexion simultanées maximales</string>
+    <string name="d2s_max_connecting_desc">Limite les connexions sortantes et négociations SOCKS5 simultanées.</string>
+    <string name="d2s_idle_after">Mettre les vérifications en veille</string>
+    <string name="d2s_idle_after_desc">Secondes sans trafic client avant la mise en veille des vérifications. 0 désactive la veille.</string>
+    <string name="d2s_error_non_negative_number">Le délai d’inactivité doit être supérieur ou égal à zéro.</string>
 </resources>

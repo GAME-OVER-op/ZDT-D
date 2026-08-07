@@ -2247,4 +2247,14 @@ APatch: 10700+</string>
     <string name="d2s_log_level_info">Информация</string>
     <string name="d2s_log_level_debug">Отладка</string>
     <string name="d2s_log_level_trace">Трассировка</string>
+
+    <string name="d2s_route_timeout">Общий таймаут переключения SOCKS5</string>
+    <string name="d2s_route_timeout_desc">Максимальное общее время в миллисекундах на попытки через SOCKS5 перед резервным маршрутом.</string>
+    <string name="d2s_max_backend_attempts">Максимум попыток через серверы</string>
+    <string name="d2s_max_backend_attempts_desc">Максимальное число SOCKS5-серверов для одного подключения клиента.</string>
+    <string name="d2s_max_connecting">Максимум одновременных попыток подключения</string>
+    <string name="d2s_max_connecting_desc">Ограничивает одновременные подключения и согласования SOCKS5.</string>
+    <string name="d2s_idle_after">Сон проверок при простое</string>
+    <string name="d2s_idle_after_desc">Секунды без клиентского трафика до остановки фоновых проверок. 0 отключает сон.</string>
+    <string name="d2s_error_non_negative_number">Время простоя должно быть равно нулю или больше.</string>
 </resources>

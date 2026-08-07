@@ -66,12 +66,16 @@ private data class D2sSettingsUi(
   val upstreamHandshakeTimeoutMs: String = "1000",
   val backendAttemptTimeoutMs: String = "1200",
   val directConnectTimeoutMs: String = "2000",
+  val routeTimeoutMs: String = "2500",
+  val maxBackendAttempts: String = "3",
+  val maxConnecting: String = "32",
   val clientHandshakeTimeoutMs: String = "3000",
   val probeTimeoutMs: String = "1200",
   val healthyProbeIntervalSecs: String = "30",
   val recoveryProbeIntervalSecs: String = "5",
   val failureThreshold: String = "3",
   val runtimeCooldownMs: String = "2000",
+  val idleAfterSecs: String = "60",
   val probeTargets: List<String> = listOf("1.1.1.1:443", "8.8.8.8:443"),
   val maxConnections: String = "1024",
   val tcpNodelay: Boolean = true,
@@ -221,6 +225,7 @@ fun D2sSettingsSection(
           D2sNumberField(settings.recoveryProbeIntervalSecs, { update(settings.copy(recoveryProbeIntervalSecs = it)) }, R.string.d2s_recovery_interval, R.string.d2s_seconds_desc)
           D2sNumberField(settings.failureThreshold, { update(settings.copy(failureThreshold = it)) }, R.string.d2s_failure_threshold, R.string.d2s_failure_threshold_desc)
           D2sNumberField(settings.runtimeCooldownMs, { update(settings.copy(runtimeCooldownMs = it)) }, R.string.d2s_runtime_cooldown, R.string.d2s_milliseconds_desc)
+          D2sNumberField(settings.idleAfterSecs, { update(settings.copy(idleAfterSecs = it)) }, R.string.d2s_idle_after, R.string.d2s_idle_after_desc)
           HorizontalDivider()
           Text(stringResource(R.string.d2s_probe_targets_label), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
           Text(stringResource(R.string.d2s_probe_targets_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -267,6 +272,8 @@ fun D2sSettingsSection(
           D2sNumberField(settings.upstreamHandshakeTimeoutMs, { update(settings.copy(upstreamHandshakeTimeoutMs = it)) }, R.string.d2s_upstream_handshake_timeout, R.string.d2s_milliseconds_desc)
           D2sNumberField(settings.backendAttemptTimeoutMs, { update(settings.copy(backendAttemptTimeoutMs = it)) }, R.string.d2s_backend_attempt_timeout, R.string.d2s_milliseconds_desc)
           D2sNumberField(settings.directConnectTimeoutMs, { update(settings.copy(directConnectTimeoutMs = it)) }, R.string.d2s_direct_connect_timeout, R.string.d2s_milliseconds_desc)
+          D2sNumberField(settings.routeTimeoutMs, { update(settings.copy(routeTimeoutMs = it)) }, R.string.d2s_route_timeout, R.string.d2s_route_timeout_desc)
+          D2sNumberField(settings.maxBackendAttempts, { update(settings.copy(maxBackendAttempts = it)) }, R.string.d2s_max_backend_attempts, R.string.d2s_max_backend_attempts_desc)
           D2sNumberField(settings.clientHandshakeTimeoutMs, { update(settings.copy(clientHandshakeTimeoutMs = it)) }, R.string.d2s_client_handshake_timeout, R.string.d2s_milliseconds_desc)
           D2sNumberField(settings.probeTimeoutMs, { update(settings.copy(probeTimeoutMs = it)) }, R.string.d2s_probe_timeout, R.string.d2s_milliseconds_desc)
         }
@@ -277,6 +284,7 @@ fun D2sSettingsSection(
           icon = { Icon(Icons.Outlined.Memory, contentDescription = null, modifier = Modifier.size(22.dp)) },
         ) {
           D2sNumberField(settings.maxConnections, { update(settings.copy(maxConnections = it)) }, R.string.d2s_max_connections, R.string.d2s_max_connections_desc)
+          D2sNumberField(settings.maxConnecting, { update(settings.copy(maxConnecting = it)) }, R.string.d2s_max_connecting, R.string.d2s_max_connecting_desc)
           D2sSwitchRow(
             title = stringResource(R.string.d2s_tcp_nodelay_title),
             description = stringResource(R.string.d2s_tcp_nodelay_desc),
@@ -454,12 +462,16 @@ private fun parseD2sSettings(obj: JSONObject): D2sSettingsUi {
     upstreamHandshakeTimeoutMs = obj.optLong("upstream_handshake_timeout_ms", 1000L).toString(),
     backendAttemptTimeoutMs = obj.optLong("backend_attempt_timeout_ms", 1200L).toString(),
     directConnectTimeoutMs = obj.optLong("direct_connect_timeout_ms", 2000L).toString(),
+    routeTimeoutMs = obj.optLong("route_timeout_ms", 2500L).toString(),
+    maxBackendAttempts = obj.optLong("max_backend_attempts", 3L).toString(),
+    maxConnecting = obj.optLong("max_connecting", 32L).toString(),
     clientHandshakeTimeoutMs = obj.optLong("client_handshake_timeout_ms", 3000L).toString(),
     probeTimeoutMs = obj.optLong("probe_timeout_ms", 1200L).toString(),
     healthyProbeIntervalSecs = obj.optLong("healthy_probe_interval_secs", 30L).toString(),
     recoveryProbeIntervalSecs = obj.optLong("recovery_probe_interval_secs", 5L).toString(),
     failureThreshold = obj.optInt("failure_threshold", 3).toString(),
     runtimeCooldownMs = obj.optLong("runtime_cooldown_ms", 2000L).toString(),
+    idleAfterSecs = obj.optLong("idle_after_secs", 60L).toString(),
     probeTargets = obj.optJSONArray("probe_targets")?.toStringList()
       ?: listOf("1.1.1.1:443", "8.8.8.8:443"),
     maxConnections = obj.optLong("max_connections", 1024L).toString(),
@@ -476,12 +488,16 @@ private fun D2sSettingsUi.toJson(): JSONObject = JSONObject()
   .put("upstream_handshake_timeout_ms", upstreamHandshakeTimeoutMs.toLong())
   .put("backend_attempt_timeout_ms", backendAttemptTimeoutMs.toLong())
   .put("direct_connect_timeout_ms", directConnectTimeoutMs.toLong())
+  .put("route_timeout_ms", routeTimeoutMs.toLong())
+  .put("max_backend_attempts", maxBackendAttempts.toLong())
+  .put("max_connecting", maxConnecting.toLong())
   .put("client_handshake_timeout_ms", clientHandshakeTimeoutMs.toLong())
   .put("probe_timeout_ms", probeTimeoutMs.toLong())
   .put("healthy_probe_interval_secs", healthyProbeIntervalSecs.toLong())
   .put("recovery_probe_interval_secs", recoveryProbeIntervalSecs.toLong())
   .put("failure_threshold", failureThreshold.toLong())
   .put("runtime_cooldown_ms", runtimeCooldownMs.toLong())
+  .put("idle_after_secs", idleAfterSecs.toLong())
   .put("probe_targets", JSONArray(probeTargets.map { it.trim() }))
   .put("max_connections", maxConnections.toLong())
   .put("tcp_nodelay", tcpNodelay)
@@ -504,6 +520,9 @@ private fun validateD2sSettings(settings: D2sSettingsUi, context: Context): Stri
     settings.upstreamHandshakeTimeoutMs,
     settings.backendAttemptTimeoutMs,
     settings.directConnectTimeoutMs,
+    settings.routeTimeoutMs,
+    settings.maxBackendAttempts,
+    settings.maxConnecting,
     settings.clientHandshakeTimeoutMs,
     settings.probeTimeoutMs,
     settings.healthyProbeIntervalSecs,
@@ -515,6 +534,9 @@ private fun validateD2sSettings(settings: D2sSettingsUi, context: Context): Stri
   )
   if (positive.any { it.toLongOrNull()?.let { value -> value <= 0 } != false }) {
     return context.getString(R.string.d2s_error_positive_number)
+  }
+  if (settings.idleAfterSecs.toLongOrNull()?.let { it < 0 } != false) {
+    return context.getString(R.string.d2s_error_non_negative_number)
   }
   if (ports.isNotEmpty() && settings.probeTargets.isEmpty()) return context.getString(R.string.d2s_error_probe_required)
   if (settings.probeTargets.any { !isHostPort(it) }) return context.getString(R.string.d2s_error_probe_target)

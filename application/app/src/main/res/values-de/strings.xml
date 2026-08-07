@@ -2249,4 +2249,14 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="d2s_log_level_info">Information</string>
     <string name="d2s_log_level_debug">Debug</string>
     <string name="d2s_log_level_trace">Ablaufverfolgung</string>
+
+    <string name="d2s_route_timeout">Gesamtzeitlimit für SOCKS5-Failover</string>
+    <string name="d2s_route_timeout_desc">Maximale Gesamtzeit in Millisekunden für SOCKS5-Versuche vor dem Fallback.</string>
+    <string name="d2s_max_backend_attempts">Maximale Backend-Versuche</string>
+    <string name="d2s_max_backend_attempts_desc">Maximale Anzahl von SOCKS5-Servern pro Clientverbindung.</string>
+    <string name="d2s_max_connecting">Maximale gleichzeitige Verbindungsversuche</string>
+    <string name="d2s_max_connecting_desc">Begrenzt gleichzeitige ausgehende Verbindungen und SOCKS5-Handshakes.</string>
+    <string name="d2s_idle_after">Prüfungen bei Inaktivität schlafen lassen</string>
+    <string name="d2s_idle_after_desc">Sekunden ohne Clientverkehr, bevor Hintergrundprüfungen schlafen. 0 deaktiviert den Schlafmodus.</string>
+    <string name="d2s_error_non_negative_number">Das Inaktivitätslimit muss null oder größer sein.</string>
 </resources>

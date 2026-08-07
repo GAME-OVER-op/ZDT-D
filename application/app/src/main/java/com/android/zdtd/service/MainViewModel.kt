@@ -5948,9 +5948,14 @@ private fun shQuote(s: String): String {
 
   override fun saveJsonData(path: String, obj: JSONObject, onDone: (Boolean) -> Unit) {
     launchIO {
-      val ok = runCatching { api.putJsonData(path, obj) }.getOrDefault(false)
-      if (ok) log("OK", "$path: saved (apply after stop/start)")
-      else log("ERR", "$path: save failed")
+      val result = runCatching { api.putJsonData(path, obj) }
+      val ok = result.getOrDefault(false)
+      if (ok) {
+        log("OK", "$path: saved (apply after stop/start)")
+      } else {
+        val detail = result.exceptionOrNull()?.message?.trim().orEmpty()
+        log("ERR", if (detail.isBlank()) "$path: save failed" else "$path: save failed — $detail")
+      }
       withContext(Dispatchers.Main.immediate) { onDone(ok) }
     }
   }

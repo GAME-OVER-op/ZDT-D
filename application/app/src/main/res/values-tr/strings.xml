@@ -2248,4 +2248,14 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="d2s_log_level_info">Bilgi</string>
     <string name="d2s_log_level_debug">Hata ayıklama</string>
     <string name="d2s_log_level_trace">İzleme</string>
+
+    <string name="d2s_route_timeout">Toplam SOCKS5 geçiş zaman aşımı</string>
+    <string name="d2s_route_timeout_desc">Yedek yola geçmeden önce SOCKS5 sunucularını denemek için toplam azami süre (ms).</string>
+    <string name="d2s_max_backend_attempts">Azami sunucu denemesi</string>
+    <string name="d2s_max_backend_attempts_desc">Bir istemci bağlantısı için denenecek azami SOCKS5 sunucusu sayısı.</string>
+    <string name="d2s_max_connecting">Azami eşzamanlı bağlantı denemesi</string>
+    <string name="d2s_max_connecting_desc">Eşzamanlı giden bağlantıları ve SOCKS5 el sıkışmalarını sınırlar.</string>
+    <string name="d2s_idle_after">Boşta sağlık kontrollerini uyut</string>
+    <string name="d2s_idle_after_desc">İstemci trafiği olmadan kontrollerin uykuya geçeceği saniye. 0 uyku modunu kapatır.</string>
+    <string name="d2s_error_non_negative_number">Boşta kalma süresi sıfır veya daha büyük olmalıdır.</string>
 </resources>

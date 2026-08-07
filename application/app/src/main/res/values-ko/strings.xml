@@ -2248,4 +2248,14 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="d2s_log_level_info">정보</string>
     <string name="d2s_log_level_debug">디버그</string>
     <string name="d2s_log_level_trace">추적</string>
+
+    <string name="d2s_route_timeout">전체 SOCKS5 장애 조치 시간 제한</string>
+    <string name="d2s_route_timeout_desc">대체 경로로 전환하기 전 SOCKS5 서버 시도에 사용할 최대 총 시간(밀리초).</string>
+    <string name="d2s_max_backend_attempts">최대 백엔드 시도 횟수</string>
+    <string name="d2s_max_backend_attempts_desc">클라이언트 연결 하나에서 시도할 SOCKS5 서버의 최대 수.</string>
+    <string name="d2s_max_connecting">최대 동시 연결 시도</string>
+    <string name="d2s_max_connecting_desc">동시에 수행되는 외부 연결 및 SOCKS5 핸드셰이크를 제한합니다.</string>
+    <string name="d2s_idle_after">유휴 시 상태 확인 절전</string>
+    <string name="d2s_idle_after_desc">클라이언트 트래픽이 없을 때 상태 확인을 중지하기까지의 초. 0은 절전을 비활성화합니다.</string>
+    <string name="d2s_error_non_negative_number">유휴 시간은 0 이상이어야 합니다.</string>
 </resources>

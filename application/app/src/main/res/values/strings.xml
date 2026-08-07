@@ -2247,4 +2247,14 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="d2s_log_level_info">Information</string>
     <string name="d2s_log_level_debug">Debug</string>
     <string name="d2s_log_level_trace">Trace</string>
+
+    <string name="d2s_route_timeout">Total SOCKS5 failover timeout</string>
+    <string name="d2s_route_timeout_desc">Maximum total time in milliseconds spent trying SOCKS5 backends before fallback.</string>
+    <string name="d2s_max_backend_attempts">Maximum backend attempts</string>
+    <string name="d2s_max_backend_attempts_desc">Maximum SOCKS5 servers tried for one client connection.</string>
+    <string name="d2s_max_connecting">Maximum simultaneous connection attempts</string>
+    <string name="d2s_max_connecting_desc">Limits concurrent outbound connect and SOCKS5 handshake operations.</string>
+    <string name="d2s_idle_after">Sleep health checks after inactivity</string>
+    <string name="d2s_idle_after_desc">Seconds without client traffic before synthetic checks sleep. 0 disables sleep.</string>
+    <string name="d2s_error_non_negative_number">Idle timeout must be zero or greater.</string>
 </resources>

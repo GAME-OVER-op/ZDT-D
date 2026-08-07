@@ -2248,4 +2248,14 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="d2s_log_level_info">Thông tin</string>
     <string name="d2s_log_level_debug">Gỡ lỗi</string>
     <string name="d2s_log_level_trace">Theo dõi</string>
+
+    <string name="d2s_route_timeout">Thời gian chờ chuyển dự phòng SOCKS5 tổng</string>
+    <string name="d2s_route_timeout_desc">Tổng thời gian tối đa tính bằng mili giây để thử các máy chủ SOCKS5 trước khi dùng đường dự phòng.</string>
+    <string name="d2s_max_backend_attempts">Số lần thử máy chủ tối đa</string>
+    <string name="d2s_max_backend_attempts_desc">Số máy chủ SOCKS5 tối đa được thử cho một kết nối máy khách.</string>
+    <string name="d2s_max_connecting">Số lần kết nối đồng thời tối đa</string>
+    <string name="d2s_max_connecting_desc">Giới hạn kết nối ra ngoài và bắt tay SOCKS5 đồng thời.</string>
+    <string name="d2s_idle_after">Cho kiểm tra sức khỏe ngủ khi rảnh</string>
+    <string name="d2s_idle_after_desc">Số giây không có lưu lượng máy khách trước khi dừng kiểm tra nền. 0 tắt chế độ ngủ.</string>
+    <string name="d2s_error_non_negative_number">Thời gian rảnh phải bằng hoặc lớn hơn 0.</string>
 </resources>

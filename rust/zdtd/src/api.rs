@@ -300,12 +300,16 @@ fn d2s_default_connect_timeout_ms() -> u64 { 500 }
 fn d2s_default_upstream_handshake_timeout_ms() -> u64 { 1_000 }
 fn d2s_default_backend_attempt_timeout_ms() -> u64 { 1_200 }
 fn d2s_default_direct_connect_timeout_ms() -> u64 { 2_000 }
+fn d2s_default_route_timeout_ms() -> u64 { 2_500 }
+fn d2s_default_max_backend_attempts() -> usize { 3 }
+fn d2s_default_max_connecting() -> usize { 32 }
 fn d2s_default_client_handshake_timeout_ms() -> u64 { 3_000 }
 fn d2s_default_probe_timeout_ms() -> u64 { 1_200 }
 fn d2s_default_healthy_probe_interval_secs() -> u64 { 30 }
 fn d2s_default_recovery_probe_interval_secs() -> u64 { 5 }
 fn d2s_default_failure_threshold() -> u32 { 3 }
 fn d2s_default_runtime_cooldown_ms() -> u64 { 2_000 }
+fn d2s_default_idle_after_secs() -> u64 { 60 }
 fn d2s_default_probe_targets() -> Vec<String> {
     vec!["1.1.1.1:443".to_string(), "8.8.8.8:443".to_string()]
 }
@@ -316,7 +320,7 @@ fn d2s_status_interval_is_default(value: &u64) -> bool { *value == d2s_default_s
 fn d2s_default_shutdown_grace_period_ms() -> u64 { 5_000 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(default)]
 struct D2sFileConfig {
     backends: Vec<String>,
     direct_fallback: bool,
@@ -324,12 +328,16 @@ struct D2sFileConfig {
     upstream_handshake_timeout_ms: u64,
     backend_attempt_timeout_ms: u64,
     direct_connect_timeout_ms: u64,
+    route_timeout_ms: u64,
+    max_backend_attempts: usize,
+    max_connecting: usize,
     client_handshake_timeout_ms: u64,
     probe_timeout_ms: u64,
     healthy_probe_interval_secs: u64,
     recovery_probe_interval_secs: u64,
     failure_threshold: u32,
     runtime_cooldown_ms: u64,
+    idle_after_secs: u64,
     probe_targets: Vec<String>,
     max_connections: usize,
     tcp_nodelay: bool,
@@ -339,6 +347,10 @@ struct D2sFileConfig {
     #[serde(skip_serializing_if = "d2s_status_interval_is_default")]
     status_interval_secs: u64,
     shutdown_grace_period_ms: u64,
+    // Preserve settings introduced by newer D2S versions instead of rejecting
+    // or silently deleting them when this API rewrites d2s.toml.
+    #[serde(flatten)]
+    extra: BTreeMap<String, toml::Value>,
 }
 
 impl Default for D2sFileConfig {
@@ -350,12 +362,16 @@ impl Default for D2sFileConfig {
             upstream_handshake_timeout_ms: d2s_default_upstream_handshake_timeout_ms(),
             backend_attempt_timeout_ms: d2s_default_backend_attempt_timeout_ms(),
             direct_connect_timeout_ms: d2s_default_direct_connect_timeout_ms(),
+            route_timeout_ms: d2s_default_route_timeout_ms(),
+            max_backend_attempts: d2s_default_max_backend_attempts(),
+            max_connecting: d2s_default_max_connecting(),
             client_handshake_timeout_ms: d2s_default_client_handshake_timeout_ms(),
             probe_timeout_ms: d2s_default_probe_timeout_ms(),
             healthy_probe_interval_secs: d2s_default_healthy_probe_interval_secs(),
             recovery_probe_interval_secs: d2s_default_recovery_probe_interval_secs(),
             failure_threshold: d2s_default_failure_threshold(),
             runtime_cooldown_ms: d2s_default_runtime_cooldown_ms(),
+            idle_after_secs: d2s_default_idle_after_secs(),
             probe_targets: d2s_default_probe_targets(),
             max_connections: d2s_default_max_connections(),
             tcp_nodelay: d2s_default_true(),
@@ -363,6 +379,7 @@ impl Default for D2sFileConfig {
             status_file: None,
             status_interval_secs: d2s_default_status_interval_secs(),
             shutdown_grace_period_ms: d2s_default_shutdown_grace_period_ms(),
+            extra: BTreeMap::new(),
         }
     }
 }
@@ -376,12 +393,16 @@ struct D2sConfigReq {
     upstream_handshake_timeout_ms: u64,
     backend_attempt_timeout_ms: u64,
     direct_connect_timeout_ms: u64,
+    route_timeout_ms: u64,
+    max_backend_attempts: usize,
+    max_connecting: usize,
     client_handshake_timeout_ms: u64,
     probe_timeout_ms: u64,
     healthy_probe_interval_secs: u64,
     recovery_probe_interval_secs: u64,
     failure_threshold: u32,
     runtime_cooldown_ms: u64,
+    idle_after_secs: u64,
     probe_targets: Vec<String>,
     max_connections: usize,
     tcp_nodelay: bool,
@@ -398,12 +419,16 @@ impl From<&D2sFileConfig> for D2sConfigReq {
             upstream_handshake_timeout_ms: value.upstream_handshake_timeout_ms,
             backend_attempt_timeout_ms: value.backend_attempt_timeout_ms,
             direct_connect_timeout_ms: value.direct_connect_timeout_ms,
+            route_timeout_ms: value.route_timeout_ms,
+            max_backend_attempts: value.max_backend_attempts,
+            max_connecting: value.max_connecting,
             client_handshake_timeout_ms: value.client_handshake_timeout_ms,
             probe_timeout_ms: value.probe_timeout_ms,
             healthy_probe_interval_secs: value.healthy_probe_interval_secs,
             recovery_probe_interval_secs: value.recovery_probe_interval_secs,
             failure_threshold: value.failure_threshold,
             runtime_cooldown_ms: value.runtime_cooldown_ms,
+            idle_after_secs: value.idle_after_secs,
             probe_targets: value.probe_targets.clone(),
             max_connections: value.max_connections,
             tcp_nodelay: value.tcp_nodelay,
@@ -421,12 +446,16 @@ impl D2sFileConfig {
         self.upstream_handshake_timeout_ms = req.upstream_handshake_timeout_ms;
         self.backend_attempt_timeout_ms = req.backend_attempt_timeout_ms;
         self.direct_connect_timeout_ms = req.direct_connect_timeout_ms;
+        self.route_timeout_ms = req.route_timeout_ms;
+        self.max_backend_attempts = req.max_backend_attempts;
+        self.max_connecting = req.max_connecting;
         self.client_handshake_timeout_ms = req.client_handshake_timeout_ms;
         self.probe_timeout_ms = req.probe_timeout_ms;
         self.healthy_probe_interval_secs = req.healthy_probe_interval_secs;
         self.recovery_probe_interval_secs = req.recovery_probe_interval_secs;
         self.failure_threshold = req.failure_threshold;
         self.runtime_cooldown_ms = req.runtime_cooldown_ms;
+        self.idle_after_secs = req.idle_after_secs;
         self.probe_targets = req.probe_targets;
         self.max_connections = req.max_connections;
         self.tcp_nodelay = req.tcp_nodelay;
@@ -496,6 +525,7 @@ fn validate_d2s_file_config(config: &D2sFileConfig, listener: Option<SocketAddr>
         ("upstream_handshake_timeout_ms", config.upstream_handshake_timeout_ms),
         ("backend_attempt_timeout_ms", config.backend_attempt_timeout_ms),
         ("direct_connect_timeout_ms", config.direct_connect_timeout_ms),
+        ("route_timeout_ms", config.route_timeout_ms),
         ("client_handshake_timeout_ms", config.client_handshake_timeout_ms),
         ("probe_timeout_ms", config.probe_timeout_ms),
         ("healthy_probe_interval_secs", config.healthy_probe_interval_secs),
@@ -506,6 +536,12 @@ fn validate_d2s_file_config(config: &D2sFileConfig, listener: Option<SocketAddr>
         if value == 0 {
             anyhow::bail!("{name} must be greater than zero");
         }
+    }
+    if config.max_backend_attempts == 0 {
+        anyhow::bail!("max_backend_attempts must be greater than zero");
+    }
+    if config.max_connecting == 0 {
+        anyhow::bail!("max_connecting must be greater than zero");
     }
     if config.failure_threshold == 0 {
         anyhow::bail!("failure_threshold must be greater than zero");

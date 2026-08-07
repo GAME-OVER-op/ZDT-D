@@ -2249,4 +2249,14 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="d2s_log_level_info">जानकारी</string>
     <string name="d2s_log_level_debug">डीबग</string>
     <string name="d2s_log_level_trace">ट्रेस</string>
+
+    <string name="d2s_route_timeout">कुल SOCKS5 फ़ेलओवर टाइमआउट</string>
+    <string name="d2s_route_timeout_desc">फ़ॉलबैक से पहले SOCKS5 सर्वरों को आज़माने का अधिकतम कुल समय, मिलीसेकंड में।</string>
+    <string name="d2s_max_backend_attempts">अधिकतम सर्वर प्रयास</string>
+    <string name="d2s_max_backend_attempts_desc">एक क्लाइंट कनेक्शन के लिए आज़माए जाने वाले SOCKS5 सर्वरों की अधिकतम संख्या।</string>
+    <string name="d2s_max_connecting">अधिकतम समकालिक कनेक्शन प्रयास</string>
+    <string name="d2s_max_connecting_desc">समकालिक आउटबाउंड कनेक्शन और SOCKS5 हैंडशेक सीमित करता है।</string>
+    <string name="d2s_idle_after">निष्क्रियता पर स्वास्थ्य जाँच सुलाएँ</string>
+    <string name="d2s_idle_after_desc">क्लाइंट ट्रैफ़िक न होने के सेकंड, जिसके बाद जाँच सुला दी जाती है। 0 स्लीप बंद करता है।</string>
+    <string name="d2s_error_non_negative_number">निष्क्रियता समय शून्य या अधिक होना चाहिए।</string>
 </resources>

@@ -2249,4 +2249,14 @@ APatch: 10700+</string>
     <string name="d2s_log_level_info">اطلاعات</string>
     <string name="d2s_log_level_debug">اشکال‌زدایی</string>
     <string name="d2s_log_level_trace">ردیابی</string>
+
+    <string name="d2s_route_timeout">مهلت کلی جابه‌جایی SOCKS5</string>
+    <string name="d2s_route_timeout_desc">حداکثر زمان کل بر حسب میلی‌ثانیه برای تلاش با سرورهای SOCKS5 پیش از مسیر جایگزین.</string>
+    <string name="d2s_max_backend_attempts">حداکثر تلاش برای سرورها</string>
+    <string name="d2s_max_backend_attempts_desc">حداکثر تعداد سرورهای SOCKS5 برای یک اتصال کلاینت.</string>
+    <string name="d2s_max_connecting">حداکثر تلاش اتصال هم‌زمان</string>
+    <string name="d2s_max_connecting_desc">تعداد اتصال‌های خروجی و دست‌دهی‌های SOCKS5 هم‌زمان را محدود می‌کند.</string>
+    <string name="d2s_idle_after">خواب بررسی‌ها در حالت بیکار</string>
+    <string name="d2s_idle_after_desc">ثانیه بدون ترافیک کلاینت تا توقف بررسی‌های پس‌زمینه. 0 خواب را غیرفعال می‌کند.</string>
+    <string name="d2s_error_non_negative_number">زمان بیکاری باید صفر یا بیشتر باشد.</string>
 </resources>

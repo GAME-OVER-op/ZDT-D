@@ -2248,4 +2248,14 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="d2s_log_level_info">情報</string>
     <string name="d2s_log_level_debug">デバッグ</string>
     <string name="d2s_log_level_trace">トレース</string>
+
+    <string name="d2s_route_timeout">SOCKS5 フェイルオーバー全体のタイムアウト</string>
+    <string name="d2s_route_timeout_desc">フォールバック前に SOCKS5 サーバーを試行する合計最大時間（ミリ秒）。</string>
+    <string name="d2s_max_backend_attempts">バックエンドの最大試行回数</string>
+    <string name="d2s_max_backend_attempts_desc">1つのクライアント接続で試行する SOCKS5 サーバーの最大数。</string>
+    <string name="d2s_max_connecting">同時接続試行の上限</string>
+    <string name="d2s_max_connecting_desc">同時に行う外向き接続と SOCKS5 ハンドシェイクを制限します。</string>
+    <string name="d2s_idle_after">アイドル時にヘルスチェックを休止</string>
+    <string name="d2s_idle_after_desc">クライアント通信がない状態でチェックを休止するまでの秒数。0 で休止を無効化。</string>
+    <string name="d2s_error_non_negative_number">アイドル時間は 0 以上である必要があります。</string>
 </resources>

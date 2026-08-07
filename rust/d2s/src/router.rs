@@ -2,8 +2,6 @@ use crate::{backend::BackendPool, config::Config, socks5::connect_via_socks5, st
 use anyhow::{anyhow, Context, Result};
 use std::{sync::Arc, time::Instant};
 use tokio::net::TcpStream;
-#[cfg(test)]
-use tokio::net::TcpListener;
 use tracing::{debug, info, warn};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -78,22 +76,12 @@ impl Router {
             ));
         }
 
-        let stream = match connect_direct(target, &self.config).await {
-            Ok(stream) => stream,
-            Err(error) => {
-                if failures.is_empty() {
-                    warn!(%target, %error, "DIRECT fallback failed with no GREEN SOCKS5 backends");
-                } else {
-                    warn!(%target, failures = %failures.join(" | "), %error, "SOCKS5 backends failed and DIRECT fallback also failed");
-                }
-                return Err(error);
-            }
-        };
         if failures.is_empty() {
-            info!(%target, "no GREEN SOCKS5 backends; DIRECT fallback established");
+            info!(%target, "no GREEN SOCKS5 backends; using DIRECT fallback");
         } else {
-            warn!(%target, failures = %failures.join(" | "), "all selected SOCKS5 backends failed; DIRECT fallback established");
+            warn!(%target, failures = %failures.join(" | "), "all selected SOCKS5 backends failed; using DIRECT fallback");
         }
+        let stream = connect_direct(target, &self.config).await?;
         self.stats.direct_connections.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Ok(RoutedStream { stream, route: RouteKind::Direct })
     }
@@ -121,62 +109,18 @@ impl Router {
 }
 
 async fn connect_direct(target: &TargetAddr, config: &Config) -> Result<TcpStream> {
-    let addr = match target {
-        TargetAddr::Ip(addr) => *addr,
-        TargetAddr::Domain(host, port) => {
-            return Err(anyhow!(
-                "DIRECT fallback refused for domain target {host}:{port}: resolving it through the system DNS can recurse back into DNSCrypt/D2S"
-            ));
+    let addresses = target.resolve().await?;
+    let mut errors = Vec::new();
+    for addr in addresses {
+        match tokio::time::timeout(config.direct_connect_timeout(), TcpStream::connect(addr)).await {
+            Ok(Ok(stream)) => {
+                let _ = stream.set_nodelay(config.tcp_nodelay);
+                return Ok(stream);
+            }
+            Ok(Err(error)) => errors.push(format!("{addr}: {error}")),
+            Err(_) => errors.push(format!("{addr}: timeout")),
         }
-    };
-
-    match tokio::time::timeout(config.direct_connect_timeout(), TcpStream::connect(addr)).await {
-        Ok(Ok(stream)) => {
-            let _ = stream.set_nodelay(config.tcp_nodelay);
-            Ok(stream)
-        }
-        Ok(Err(error)) => Err(anyhow!("DIRECT connect to {addr} failed: {error}"))
-            .with_context(|| format!("direct fallback failed for {target}")),
-        Err(_) => Err(anyhow!(
-            "DIRECT connect to {addr} timed out after {} ms",
-            config.direct_connect_timeout_ms
-        ))
-        .with_context(|| format!("direct fallback failed for {target}")),
     }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn test_config() -> Config {
-        toml::from_str(
-            r#"
-backends = []
-direct_fallback = true
-"#,
-        )
-        .expect("test config")
-    }
-
-    #[tokio::test]
-    async fn direct_fallback_rejects_domain_without_system_dns_resolution() {
-        let config = test_config();
-        let target = TargetAddr::Domain("dns.example".to_string(), 443);
-        let error = connect_direct(&target, &config).await.expect_err("domain DIRECT must fail fast");
-        assert!(error.to_string().contains("DIRECT fallback refused for domain target"));
-    }
-
-    #[tokio::test]
-    async fn direct_fallback_connects_ip_target() {
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind test listener");
-        let addr = listener.local_addr().expect("test listener address");
-        let accept = tokio::spawn(async move { listener.accept().await.expect("accept test connection") });
-
-        let config = test_config();
-        let target = TargetAddr::Ip(addr);
-        let stream = connect_direct(&target, &config).await.expect("IP DIRECT should connect");
-        drop(stream);
-        let _ = accept.await.expect("accept task");
-    }
+    Err(anyhow!("DIRECT connect to {target} failed: {}", errors.join(" | ")))
+        .with_context(|| format!("direct fallback failed for {target}"))
 }

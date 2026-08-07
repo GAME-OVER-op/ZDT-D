@@ -5,46 +5,6 @@ use std::{path::PathBuf, sync::Arc};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
-const EXAMPLE_CONFIG: &str = r#"# D2S reads its listener address from the active `proxy` entry in
-# dnscrypt-proxy.toml. The listener is not configured in this file.
-
-# Local SOCKS5 servers. NO AUTH only.
-# Leave the list empty to use DIRECT fallback only.
-backends = []
-
-direct_fallback = true
-
-# Connection timeouts.
-connect_timeout_ms = 500
-upstream_handshake_timeout_ms = 1000
-backend_attempt_timeout_ms = 1200
-direct_connect_timeout_ms = 2000
-
-client_handshake_timeout_ms = 3000
-probe_timeout_ms = 1200
-
-# Health checks are traffic-aware. GREEN backends are checked less often;
-# degraded backends recover faster while D2S is active.
-healthy_probe_interval_secs = 30
-recovery_probe_interval_secs = 5
-failure_threshold = 3
-runtime_cooldown_ms = 2000
-
-# With no client traffic, synthetic health checks stop after this delay.
-# Compatibility field from the experimental power-save build. Runtime health polling currently uses the proven scheduler.
-idle_after_secs = 0
-
-probe_targets = [
-  "1.1.1.1:443",
-  "8.8.8.8:443",
-]
-
-max_connections = 1024
-tcp_nodelay = true
-log_level = "info"
-shutdown_grace_period_ms = 5000
-"#;
-
 #[derive(Debug, Parser)]
 #[command(name = "d2s", version, about = "DNS-to-SOCKS balancer with failover and DIRECT fallback")]
 struct Cli {
@@ -75,7 +35,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command.unwrap_or(Command::Run) {
         Command::ExampleConfig => {
-            print!("{}", EXAMPLE_CONFIG);
+            print!("{}", include_str!("../d2s.example.toml"));
             Ok(())
         }
         Command::Check => {

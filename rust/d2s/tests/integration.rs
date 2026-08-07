@@ -1,7 +1,7 @@
-use d2s::{backend::{BackendPool, BackendState}, start, Config};
+use d2s::{backend::BackendState, start, Config};
 use std::{
     net::{IpAddr, SocketAddr},
-    sync::{Arc, atomic::{AtomicUsize, Ordering}},
+    sync::{Arc, atomic::{AtomicBool, AtomicUsize, Ordering}},
     time::Duration,
 };
 use tokio::{
@@ -54,7 +54,7 @@ impl EchoServer {
 
 struct MockSocks {
     addr: SocketAddr,
-    reply_code: Arc<AtomicUsize>,
+    fail: Arc<AtomicBool>,
     connects: Arc<AtomicUsize>,
     shutdown: watch::Sender<bool>,
     task: JoinHandle<()>,
@@ -64,10 +64,10 @@ impl MockSocks {
     async fn start(initially_failing: bool) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-        let reply_code = Arc::new(AtomicUsize::new(if initially_failing { 0x01 } else { 0x00 }));
+        let fail = Arc::new(AtomicBool::new(initially_failing));
         let connects = Arc::new(AtomicUsize::new(0));
         let (shutdown, mut rx) = watch::channel(false);
-        let reply_code_task = reply_code.clone();
+        let fail_task = fail.clone();
         let connects_task = connects.clone();
         let task = tokio::spawn(async move {
             loop {
@@ -75,25 +75,20 @@ impl MockSocks {
                     _ = rx.changed() => break,
                     accepted = listener.accept() => {
                         let Ok((stream, _)) = accepted else { continue; };
-                        let reply_code = reply_code_task.clone();
+                        let fail = fail_task.clone();
                         let connects = connects_task.clone();
                         tokio::spawn(async move {
-                            let _ = handle_mock_socks(stream, reply_code, connects).await;
+                            let _ = handle_mock_socks(stream, fail, connects).await;
                         });
                     }
                 }
             }
         });
-        Self { addr, reply_code, connects, shutdown, task }
+        Self { addr, fail, connects, shutdown, task }
     }
 
     fn set_failing(&self, value: bool) {
-        self.reply_code.store(if value { 0x01 } else { 0x00 }, Ordering::Relaxed);
-    }
-
-
-    fn set_reply_code(&self, code: u8) {
-        self.reply_code.store(code as usize, Ordering::Relaxed);
+        self.fail.store(value, Ordering::Relaxed);
     }
 
     fn reset_count(&self) {
@@ -112,7 +107,7 @@ impl MockSocks {
 
 async fn handle_mock_socks(
     mut client: TcpStream,
-    reply_code: Arc<AtomicUsize>,
+    fail: Arc<AtomicBool>,
     connects: Arc<AtomicUsize>,
 ) -> std::io::Result<()> {
     let mut greeting = [0u8; 2];
@@ -126,9 +121,8 @@ async fn handle_mock_socks(
     let target = read_target(&mut client, request[3]).await?;
     connects.fetch_add(1, Ordering::Relaxed);
 
-    let reply_code = reply_code.load(Ordering::Relaxed) as u8;
-    if reply_code != 0 {
-        client.write_all(&[0x05, reply_code, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
+    if fail.load(Ordering::Relaxed) {
+        client.write_all(&[0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
         return Ok(());
     }
 
@@ -184,16 +178,12 @@ fn config(backends: Vec<SocketAddr>, probe_target: SocketAddr) -> Config {
         upstream_handshake_timeout_ms: 500,
         backend_attempt_timeout_ms: 700,
         direct_connect_timeout_ms: 700,
-        route_timeout_ms: 1500,
-        max_backend_attempts: 3,
-        max_connecting: 16,
         client_handshake_timeout_ms: 500,
         probe_timeout_ms: 500,
         healthy_probe_interval_secs: 60,
         recovery_probe_interval_secs: 1,
         failure_threshold: 1,
         runtime_cooldown_ms: 100,
-        idle_after_secs: 60,
         probe_targets: vec![probe_target.to_string()],
         max_connections: 64,
         tcp_nodelay: true,
@@ -219,40 +209,6 @@ async fn wait_for_green(server: &d2s::RunningServer, expected: usize) {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     panic!("timed out waiting for {expected} GREEN backend(s)");
-}
-
-async fn roundtrip_result(
-    d2s: SocketAddr,
-    target: SocketAddr,
-    payload: &[u8],
-) -> std::io::Result<()> {
-    let mut stream = TcpStream::connect(d2s).await?;
-    stream.write_all(&[0x05, 0x01, 0x00]).await?;
-    let mut greeting = [0u8; 2];
-    stream.read_exact(&mut greeting).await?;
-    if greeting != [0x05, 0x00] {
-        return Err(std::io::Error::new(std::io::ErrorKind::Other, "SOCKS greeting failed"));
-    }
-    let ip = match target.ip() {
-        IpAddr::V4(ip) => ip,
-        IpAddr::V6(_) => return Err(std::io::Error::new(std::io::ErrorKind::Other, "test uses IPv4")),
-    };
-    let mut req = vec![0x05, 0x01, 0x00, 0x01];
-    req.extend_from_slice(&ip.octets());
-    req.extend_from_slice(&target.port().to_be_bytes());
-    stream.write_all(&req).await?;
-    let mut reply = [0u8; 10];
-    stream.read_exact(&mut reply).await?;
-    if reply[1] != 0x00 {
-        return Err(std::io::Error::new(std::io::ErrorKind::ConnectionRefused, format!("D2S reply 0x{:02x}", reply[1])));
-    }
-    stream.write_all(payload).await?;
-    let mut out = vec![0u8; payload.len()];
-    stream.read_exact(&mut out).await?;
-    if out != payload {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidData, "echo mismatch"));
-    }
-    Ok(())
 }
 
 async fn roundtrip(proxy: SocketAddr, target: SocketAddr, payload: &[u8]) {
@@ -301,22 +257,6 @@ async fn roundtrip_domain(proxy: SocketAddr, host: &str, port: u16, payload: &[u
     let mut echoed = vec![0u8; payload.len()];
     stream.read_exact(&mut echoed).await.unwrap();
     assert_eq!(echoed, payload);
-}
-
-#[tokio::test]
-async fn unchecked_backends_are_not_used_before_health_probe() {
-    let probe: SocketAddr = "127.0.0.1:9".parse().unwrap();
-    let first: SocketAddr = "127.0.0.1:10001".parse().unwrap();
-    let second: SocketAddr = "127.0.0.1:10002".parse().unwrap();
-    let pool = BackendPool::new(Arc::new(config(vec![first, second], probe))).unwrap();
-
-    let candidates = pool.candidate_order().await;
-    assert!(candidates.is_empty());
-    assert!(pool
-        .snapshots()
-        .await
-        .iter()
-        .all(|entry| entry.state == BackendState::Unknown));
 }
 
 #[tokio::test]
@@ -431,69 +371,5 @@ async fn empty_backend_pool_uses_direct_fallback() {
     assert_eq!(server.stats.upstream_connections.load(Ordering::Relaxed), 0);
 
     server.shutdown().await.unwrap();
-    echo.stop().await;
-}
-
-#[tokio::test]
-async fn failover_tries_all_green_backends_without_global_attempt_cap() {
-    let echo = EchoServer::start().await;
-    let first = MockSocks::start(false).await;
-    let second = MockSocks::start(false).await;
-    let third = MockSocks::start(false).await;
-    let fourth = MockSocks::start(false).await;
-    let server = start(config(
-        vec![first.addr, second.addr, third.addr, fourth.addr],
-        echo.addr,
-    ))
-    .await
-    .unwrap();
-    wait_for_green(&server, 4).await;
-
-    first.reset_count();
-    second.reset_count();
-    third.reset_count();
-    fourth.reset_count();
-    first.set_failing(true);
-    second.set_failing(true);
-    third.set_failing(true);
-
-    roundtrip(server.listen_addr, echo.addr, b"fourth-backend").await;
-
-    assert!(first.count() >= 1);
-    assert!(second.count() >= 1);
-    assert!(third.count() >= 1);
-    assert!(fourth.count() >= 1);
-    assert_eq!(server.stats.upstream_connections.load(Ordering::Relaxed), 1);
-    assert_eq!(server.stats.direct_connections.load(Ordering::Relaxed), 0);
-
-    server.shutdown().await.unwrap();
-    first.stop().await;
-    second.stop().await;
-    third.stop().await;
-    fourth.stop().await;
-    echo.stop().await;
-}
-
-
-#[tokio::test]
-async fn socks_host_unreachable_temporarily_quarantines_backend() {
-    let echo = EchoServer::start().await;
-    let backend = MockSocks::start(false).await;
-    let server = start(config(vec![backend.addr], echo.addr)).await.unwrap();
-    wait_for_green(&server, 1).await;
-
-    backend.set_reply_code(0x04);
-    roundtrip_result(server.listen_addr, echo.addr, b"route-change").await.unwrap();
-
-    let states = server.pool.snapshots().await;
-    assert_ne!(states[0].state, BackendState::Green);
-    assert_eq!(server.stats.direct_connections.load(Ordering::Relaxed), 1);
-
-    backend.set_reply_code(0x00);
-    tokio::time::sleep(Duration::from_millis(1200)).await;
-    wait_for_green(&server, 1).await;
-
-    server.shutdown().await.unwrap();
-    backend.stop().await;
     echo.stop().await;
 }

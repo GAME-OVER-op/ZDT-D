@@ -14,16 +14,12 @@ fn default_connect_timeout_ms() -> u64 { 500 }
 fn default_handshake_timeout_ms() -> u64 { 1_000 }
 fn default_backend_attempt_timeout_ms() -> u64 { 1_200 }
 fn default_direct_connect_timeout_ms() -> u64 { 2_000 }
-fn default_route_timeout_ms() -> u64 { 2_500 }
-fn default_max_backend_attempts() -> usize { 3 }
-fn default_max_connecting() -> usize { 32 }
 fn default_client_handshake_timeout_ms() -> u64 { 3_000 }
 fn default_probe_timeout_ms() -> u64 { 1_200 }
 fn default_healthy_probe_interval_secs() -> u64 { 30 }
 fn default_recovery_probe_interval_secs() -> u64 { 5 }
 fn default_failure_threshold() -> u32 { 3 }
 fn default_runtime_cooldown_ms() -> u64 { 2_000 }
-fn default_idle_after_secs() -> u64 { 60 }
 fn default_max_connections() -> usize { 1_024 }
 fn default_status_interval_secs() -> u64 { 5 }
 fn default_shutdown_grace_period_ms() -> u64 { 5_000 }
@@ -58,18 +54,17 @@ pub struct Config {
     #[serde(default = "default_direct_connect_timeout_ms")]
     pub direct_connect_timeout_ms: u64,
 
-    /// Legacy compatibility fields from the experimental reliability build.
-    /// They are accepted so existing d2s.toml files keep working, but routing
-    /// no longer uses them because global budgets/limiters caused DNS stalls
-    /// under DNSCrypt connection bursts.
-    #[serde(default = "default_route_timeout_ms")]
-    pub route_timeout_ms: u64,
+    // Compatibility-only fields written by short-lived experimental builds.
+    // The stable transport does not use them; accepting them keeps upgrades
+    // from failing on an existing d2s.toml.
+    #[serde(default)]
+    pub route_timeout_ms: Option<u64>,
 
-    #[serde(default = "default_max_backend_attempts")]
-    pub max_backend_attempts: usize,
+    #[serde(default)]
+    pub max_backend_attempts: Option<usize>,
 
-    #[serde(default = "default_max_connecting")]
-    pub max_connecting: usize,
+    #[serde(default)]
+    pub max_connecting: Option<usize>,
 
     #[serde(default = "default_client_handshake_timeout_ms")]
     pub client_handshake_timeout_ms: u64,
@@ -89,10 +84,10 @@ pub struct Config {
     #[serde(default = "default_runtime_cooldown_ms")]
     pub runtime_cooldown_ms: u64,
 
-    /// Enter health-check sleep after this many seconds without clients.
-    /// 0 disables idle sleep.
-    #[serde(default = "default_idle_after_secs")]
-    pub idle_after_secs: u64,
+    // Compatibility-only; idle health sleeping is intentionally disabled in
+    // the stable baseline because it changed network-switch behaviour.
+    #[serde(default)]
+    pub idle_after_secs: Option<u64>,
 
     #[serde(default = "default_probe_targets")]
     pub probe_targets: Vec<String>,
@@ -198,9 +193,6 @@ impl Config {
     pub fn healthy_probe_interval(&self) -> Duration { Duration::from_secs(self.healthy_probe_interval_secs) }
     pub fn recovery_probe_interval(&self) -> Duration { Duration::from_secs(self.recovery_probe_interval_secs) }
     pub fn runtime_cooldown(&self) -> Duration { Duration::from_millis(self.runtime_cooldown_ms) }
-    pub fn idle_after(&self) -> Option<Duration> {
-        (self.idle_after_secs != 0).then(|| Duration::from_secs(self.idle_after_secs))
-    }
     pub fn shutdown_grace_period(&self) -> Duration { Duration::from_millis(self.shutdown_grace_period_ms) }
 
     pub fn parsed_probe_targets(&self) -> Result<Vec<TargetAddr>> {
@@ -300,5 +292,25 @@ mod tests {
     fn rejects_remote_or_authenticated_proxy() {
         assert!(parse_local_socks5_proxy("socks5://10.0.0.1:1080").is_err());
         assert!(parse_local_socks5_proxy("socks5://user:pass@127.0.0.1:1080").is_err());
+    }
+
+    #[test]
+    fn accepts_legacy_experimental_fields_as_noop_compatibility() {
+        let config: Config = toml::from_str(
+            r#"
+backends = []
+direct_fallback = true
+route_timeout_ms = 2500
+max_backend_attempts = 3
+max_connecting = 32
+idle_after_secs = 60
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(config.route_timeout_ms, Some(2500));
+        assert_eq!(config.max_backend_attempts, Some(3));
+        assert_eq!(config.max_connecting, Some(32));
+        assert_eq!(config.idle_after_secs, Some(60));
     }
 }

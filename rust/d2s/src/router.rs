@@ -6,7 +6,7 @@ use crate::{
     target::TargetAddr,
 };
 use anyhow::{anyhow, Context, Result};
-use std::{sync::Arc, time::{Duration, Instant}};
+use std::{sync::{Arc, atomic::{AtomicBool, Ordering}}, time::{Duration, Instant}};
 use tokio::{net::TcpStream, time::Instant as TokioInstant};
 use tracing::{debug, info, warn};
 
@@ -26,11 +26,17 @@ pub struct Router {
     config: Arc<Config>,
     pool: BackendPool,
     stats: Arc<RuntimeStats>,
+    direct_fallback_active: Arc<AtomicBool>,
 }
 
 impl Router {
     pub fn new(config: Arc<Config>, pool: BackendPool, stats: Arc<RuntimeStats>) -> Self {
-        Self { config, pool, stats }
+        Self {
+            config,
+            pool,
+            stats,
+            direct_fallback_active: Arc::new(AtomicBool::new(false)),
+        }
     }
 
     pub async fn connect(&self, target: &TargetAddr) -> Result<RoutedStream> {
@@ -74,6 +80,7 @@ impl Router {
                     self.stats
                         .upstream_connections
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    self.note_socks_restored();
                     debug!(%backend, %target, "routed connection through SOCKS5 backend");
                     return Ok(RoutedStream { stream, route: RouteKind::Socks });
                 }
@@ -110,6 +117,7 @@ impl Router {
                                         self.stats
                                             .upstream_connections
                                             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                        self.note_socks_restored();
                                         debug!(%backend, %target, "single-backend transient retry succeeded");
                                         return Ok(RoutedStream { stream, route: RouteKind::Socks });
                                     }
@@ -156,11 +164,7 @@ impl Router {
             ));
         }
 
-        if failures.is_empty() {
-            info!(%target, "no GREEN SOCKS5 backends; using DIRECT fallback");
-        } else {
-            warn!(%target, failures = %failures.join(" | "), "all selected SOCKS5 backends failed; using DIRECT fallback");
-        }
+        self.note_direct_fallback(target, &failures);
         let stream = connect_direct(target, &self.config, deadline).await?;
         // A target that DNSCrypt reached successfully through DIRECT is also a
         // valuable recovery probe for the SOCKS backend. This lets D2S learn
@@ -170,6 +174,24 @@ impl Router {
             .direct_connections
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         Ok(RoutedStream { stream, route: RouteKind::Direct })
+    }
+
+    fn note_direct_fallback(&self, target: &TargetAddr, failures: &[String]) {
+        if !self.direct_fallback_active.swap(true, Ordering::Relaxed) {
+            if failures.is_empty() {
+                info!(%target, "no GREEN SOCKS5 backends; entering DIRECT fallback");
+            } else {
+                warn!(%target, failures = %failures.join(" | "), "SOCKS5 backends failed; entering DIRECT fallback");
+            }
+        } else {
+            debug!(%target, "using DIRECT fallback");
+        }
+    }
+
+    fn note_socks_restored(&self) {
+        if self.direct_fallback_active.swap(false, Ordering::Relaxed) {
+            info!("SOCKS5 routing restored; leaving DIRECT fallback");
+        }
     }
 
     fn reject_recursive_target(&self, target: &TargetAddr) -> Result<()> {

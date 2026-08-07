@@ -28,6 +28,7 @@ struct BackendEntry {
     successful_connections: u64,
     failed_connections: u64,
     revision: u64,
+    probe_in_flight: bool,
 }
 
 #[derive(Debug)]
@@ -66,6 +67,7 @@ impl BackendPool {
                 successful_connections: 0,
                 failed_connections: 0,
                 revision: 0,
+                probe_in_flight: false,
             })
             .collect();
         let index = entries.iter().enumerate().map(|(i, entry)| (entry.addr, i)).collect();
@@ -237,7 +239,10 @@ impl BackendPool {
     }
 
     pub async fn probe_one(&self, addr: SocketAddr) {
-        let Some(revision) = self.revision_of(addr).await else { return; };
+        let Some(revision) = self.begin_probe(addr).await else {
+            debug!(backend = %addr, "health probe already in flight; skipping duplicate");
+            return;
+        };
         let started = Instant::now();
         let mut errors = Vec::new();
         let probe_targets = self.health_probe_targets().await;
@@ -259,7 +264,13 @@ impl BackendPool {
                     self.mark_probe_success(addr, revision, started.elapsed()).await;
                     return;
                 }
-                Ok(Err(error)) => errors.push(format!("{target}: {error}")),
+                Ok(Err(error)) => {
+                    let backend_unavailable = error.backend_unavailable_before_handshake();
+                    errors.push(format!("{target}: {error}"));
+                    if backend_unavailable {
+                        break;
+                    }
+                }
                 Err(_) => errors.push(format!(
                     "{target}: probe exceeded {} ms",
                     self.config.probe_timeout_ms
@@ -284,6 +295,7 @@ impl BackendPool {
         let mut inner = self.inner.lock().await;
         let Some(index) = inner.index.get(&addr).copied() else { return; };
         let entry = &mut inner.entries[index];
+        entry.probe_in_flight = false;
         if entry.revision != expected_revision {
             debug!(backend = %addr, expected_revision = expected_revision, current_revision = entry.revision, "discarding stale successful health probe");
             return;
@@ -308,6 +320,7 @@ impl BackendPool {
         let mut inner = self.inner.lock().await;
         let Some(index) = inner.index.get(&addr).copied() else { return; };
         let entry = &mut inner.entries[index];
+        entry.probe_in_flight = false;
         if entry.revision != expected_revision {
             debug!(backend = %addr, expected_revision = expected_revision, current_revision = entry.revision, "discarding stale failed health probe");
             return;
@@ -348,9 +361,15 @@ impl BackendPool {
         }
     }
 
-    async fn revision_of(&self, addr: SocketAddr) -> Option<u64> {
-        let inner = self.inner.lock().await;
-        inner.index.get(&addr).map(|index| inner.entries[*index].revision)
+    async fn begin_probe(&self, addr: SocketAddr) -> Option<u64> {
+        let mut inner = self.inner.lock().await;
+        let index = inner.index.get(&addr).copied()?;
+        let entry = &mut inner.entries[index];
+        if entry.probe_in_flight {
+            return None;
+        }
+        entry.probe_in_flight = true;
+        Some(entry.revision)
     }
 
     pub async fn addresses(&self) -> Vec<SocketAddr> {
@@ -444,4 +463,14 @@ probe_targets = ["1.1.1.1:443", "8.8.8.8:443"]
         let targets = pool.health_probe_targets().await;
         assert_eq!(targets, vec![actual]);
     }
+    #[tokio::test]
+    async fn health_probe_claim_is_single_flight() {
+        let backend: SocketAddr = "127.0.0.1:11590".parse().unwrap();
+        let pool = BackendPool::new(test_config(vec![backend])).unwrap();
+        let first = pool.begin_probe(backend).await;
+        let second = pool.begin_probe(backend).await;
+        assert!(first.is_some());
+        assert!(second.is_none());
+    }
+
 }

@@ -104,3 +104,19 @@ small in-memory set of recently successful DNSCrypt targets. The static
 `probe_targets` list is used for startup, before any real target is known. This
 avoids declaring a working backend dead just because an unrelated public probe
 address is unreachable through that transport.
+
+
+### Idle health sleep
+
+Synthetic health probes run only while D2S is active. After `idle_after_secs`
+(default 60 seconds) with no active client connections and no new accepts, the
+health scheduler sleeps on a notification instead of polling. A new DNSCrypt
+connection wakes it immediately; routing itself never waits for a health probe.
+If no backend is GREEN, recovery probes remain active even during client idle so
+D2S can recover before the next DNS request. Set `idle_after_secs = 0` to disable
+this optimization.
+
+Health probes are single-flight per backend. If connecting to the local SOCKS5
+listener itself fails before the handshake (for example `Connection refused`),
+D2S stops that probe immediately because trying additional external targets
+cannot change the result.

@@ -18,6 +18,10 @@ recovery_probe_interval_secs = 5
 failure_threshold = 3
 runtime_cooldown_ms = 2000
 
+# Stop synthetic health probes after this many seconds without client traffic.
+# New DNSCrypt activity wakes health checks immediately. Set to 0 to disable.
+idle_after_secs = 60
+
 # Startup probes only. After real DNSCrypt traffic succeeds, D2S probes recent real targets.
 probe_targets = [
   "1.1.1.1:443",

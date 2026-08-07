@@ -33,6 +33,16 @@ impl SocksClientError {
     pub fn should_retry_once_on_single_backend(&self) -> bool {
         matches!(self, Self::ConnectReply(0x03 | 0x04))
     }
+
+    /// Failures before the SOCKS handshake starts are properties of the local
+    /// backend listener, not of the external probe target. Trying more probe
+    /// targets cannot change the result and only wastes time and wakeups.
+    pub fn backend_unavailable_before_handshake(&self) -> bool {
+        matches!(
+            self,
+            Self::BackendConnect(_) | Self::Timeout("backend TCP connect")
+        )
+    }
 }
 
 async fn io_step<T, F>(timeout: Duration, label: &'static str, future: F) -> std::result::Result<T, SocksClientError>
@@ -224,5 +234,9 @@ mod tests {
         assert!(SocksClientError::ConnectReply(0x03).should_retry_once_on_single_backend());
         assert!(SocksClientError::ConnectReply(0x04).should_retry_once_on_single_backend());
         assert!(!SocksClientError::ConnectReply(0x05).should_retry_once_on_single_backend());
+        assert!(SocksClientError::BackendConnect(std::io::Error::from(std::io::ErrorKind::ConnectionRefused))
+            .backend_unavailable_before_handshake());
+        assert!(SocksClientError::Timeout("backend TCP connect").backend_unavailable_before_handshake());
+        assert!(!SocksClientError::Timeout("CONNECT reply header read").backend_unavailable_before_handshake());
     }
 }

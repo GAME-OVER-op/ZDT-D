@@ -21,6 +21,7 @@ fn default_healthy_probe_interval_secs() -> u64 { 30 }
 fn default_recovery_probe_interval_secs() -> u64 { 5 }
 fn default_failure_threshold() -> u32 { 3 }
 fn default_runtime_cooldown_ms() -> u64 { 2_000 }
+fn default_idle_after_secs() -> u64 { 60 }
 fn default_max_connections() -> usize { 1_024 }
 fn default_status_interval_secs() -> u64 { 5 }
 fn default_shutdown_grace_period_ms() -> u64 { 5_000 }
@@ -91,8 +92,9 @@ pub struct Config {
     #[serde(default = "default_runtime_cooldown_ms")]
     pub runtime_cooldown_ms: u64,
 
-    // Compatibility-only; idle health sleeping is intentionally disabled in
-    // the stable baseline because it changed network-switch behaviour.
+    // Health probes sleep after sustained client inactivity. Keep this as an
+    // optional compatibility field so older configs without it automatically
+    // receive the safe default. Set to 0 to disable idle sleeping.
     #[serde(default)]
     pub idle_after_secs: Option<u64>,
 
@@ -209,6 +211,10 @@ impl Config {
     pub fn healthy_probe_interval(&self) -> Duration { Duration::from_secs(self.healthy_probe_interval_secs) }
     pub fn recovery_probe_interval(&self) -> Duration { Duration::from_secs(self.recovery_probe_interval_secs) }
     pub fn runtime_cooldown(&self) -> Duration { Duration::from_millis(self.runtime_cooldown_ms) }
+    pub fn idle_after(&self) -> Option<Duration> {
+        let secs = self.idle_after_secs.unwrap_or_else(default_idle_after_secs);
+        (secs > 0).then(|| Duration::from_secs(secs))
+    }
     pub fn shutdown_grace_period(&self) -> Duration { Duration::from_millis(self.shutdown_grace_period_ms) }
 
     /// Keep D2S route establishment inside dnscrypt-proxy's own query timeout.
@@ -332,7 +338,7 @@ mod tests {
     }
 
     #[test]
-    fn accepts_legacy_experimental_fields_as_noop_compatibility() {
+    fn accepts_legacy_experimental_fields_and_idle_sleep_compatibility() {
         let config: Config = toml::from_str(
             r#"
 backends = []
@@ -349,6 +355,18 @@ idle_after_secs = 60
         assert_eq!(config.max_backend_attempts, Some(3));
         assert_eq!(config.max_connecting, Some(32));
         assert_eq!(config.idle_after_secs, Some(60));
+    }
+
+    #[test]
+    fn idle_sleep_defaults_to_sixty_seconds_and_zero_disables_it() {
+        let config: Config = toml::from_str("backends = []\ndirect_fallback = true\n").unwrap();
+        assert_eq!(config.idle_after(), Some(Duration::from_secs(60)));
+
+        let config: Config = toml::from_str(
+            "backends = []\ndirect_fallback = true\nidle_after_secs = 0\n",
+        )
+        .unwrap();
+        assert_eq!(config.idle_after(), None);
     }
 
     #[test]

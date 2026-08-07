@@ -1,8 +1,37 @@
 use crate::{backend::BackendPool, config::Config, router::Router, socks5::{read_client_request, send_failure, send_success}, status::{status_writer, RuntimeStats}};
 use anyhow::{Context, Result};
-use std::{net::SocketAddr, sync::{Arc, atomic::Ordering}};
-use tokio::{io::copy_bidirectional, net::{TcpListener, TcpStream}, sync::{Semaphore, watch}, task::{JoinHandle, JoinSet}};
+use std::{net::SocketAddr, sync::{Arc, Mutex as StdMutex, atomic::Ordering}, time::{Duration, Instant}};
+use tokio::{io::copy_bidirectional, net::{TcpListener, TcpStream}, sync::{Notify, Semaphore, watch}, task::{JoinHandle, JoinSet}};
 use tracing::{debug, error, info, warn};
+
+#[derive(Clone)]
+struct ActivityTracker {
+    last_client: Arc<StdMutex<Instant>>,
+    wake: Arc<Notify>,
+}
+
+impl ActivityTracker {
+    fn new() -> Self {
+        Self {
+            last_client: Arc::new(StdMutex::new(Instant::now())),
+            wake: Arc::new(Notify::new()),
+        }
+    }
+
+    fn touch(&self) {
+        if let Ok(mut last) = self.last_client.lock() {
+            *last = Instant::now();
+        }
+        self.wake.notify_one();
+    }
+
+    fn idle_for(&self) -> Duration {
+        self.last_client
+            .lock()
+            .map(|last| last.elapsed())
+            .unwrap_or_default()
+    }
+}
 
 pub struct RunningServer {
     pub listen_addr: SocketAddr,
@@ -70,10 +99,16 @@ async fn run_loop(
 ) -> Result<()> {
     let semaphore = Arc::new(Semaphore::new(config.max_connections));
     let mut clients = JoinSet::new();
+    let activity = ActivityTracker::new();
 
     let health_pool = pool.clone();
+    let health_config = config.clone();
+    let health_stats = stats.clone();
+    let health_activity = activity.clone();
     let health_shutdown = shutdown.clone();
-    let health_task = tokio::spawn(async move { health_loop(health_pool, health_shutdown).await });
+    let health_task = tokio::spawn(async move {
+        health_loop(health_pool, health_config, health_stats, health_activity, health_shutdown).await
+    });
 
     let status_task = tokio::spawn(status_writer(
         config.clone(),
@@ -99,6 +134,7 @@ async fn run_loop(
             accepted = listener.accept() => {
                 match accepted {
                     Ok((stream, peer)) => {
+                        activity.touch();
                         stats.accepted_connections.fetch_add(1, Ordering::Relaxed);
                         let permit = match semaphore.clone().try_acquire_owned() {
                             Ok(permit) => permit,
@@ -191,10 +227,36 @@ async fn handle_client(
     Ok(())
 }
 
-async fn health_loop(pool: BackendPool, mut shutdown: watch::Receiver<bool>) {
-    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
+async fn health_loop(
+    pool: BackendPool,
+    config: Arc<Config>,
+    stats: Arc<RuntimeStats>,
+    activity: ActivityTracker,
+    mut shutdown: watch::Receiver<bool>,
+) {
+    let mut ticker = tokio::time::interval(Duration::from_secs(1));
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
     loop {
+        if let Some(idle_after) = config.idle_after() {
+            let active = stats.active_connections.load(Ordering::Relaxed);
+            let has_routable_backend = config.backends.is_empty() || pool.any_green().await;
+            if active == 0 && has_routable_backend && activity.idle_for() >= idle_after {
+                debug!(idle_secs = idle_after.as_secs(), "health probes sleeping while D2S is idle");
+                tokio::select! {
+                    _ = activity.wake.notified() => {
+                        debug!("health probes woke on new client activity");
+                    }
+                    changed = shutdown.changed() => {
+                        if changed.is_err() || *shutdown.borrow() {
+                            break;
+                        }
+                    }
+                }
+                continue;
+            }
+        }
+
         tokio::select! {
             _ = ticker.tick() => {
                 let due = pool.due_backends().await;

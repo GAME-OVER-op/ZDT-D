@@ -81,3 +81,8 @@ cargo test --all-targets
 cargo clippy --all-targets --all-features
 cargo fmt --all -- --check
 ```
+
+
+### DIRECT fallback and domain targets
+
+DIRECT fallback is intentionally limited to IP targets. If DNSCrypt sends a SOCKS5 CONNECT with a domain name while every SOCKS5 backend is unavailable, D2S fails that connection immediately instead of resolving the domain through Android/system DNS. Resolving it locally can recurse back into DNSCrypt -> D2S during a backend outage and cause a DNS deadlock after network changes. DNSCrypt can then retry another configured resolver whose endpoint is an IP address.

@@ -69,25 +69,28 @@ failures do not apply this global backend cooldown.
 
 ### Warm runtime selection
 
-Health and traffic selection are separate. GREEN only means that the strict Full
-probe has proved the route usable. D2S additionally learns an EWMA latency from
-real successful DNSCrypt SOCKS CONNECTs and marks recently measured GREEN
-backends as runtime-warm.
+Health and traffic selection are separate. GREEN means that the strict Full
+probe has proved the route usable. A successful Full Internet probe seeds a
+latency estimate for a new or recovered backend, and real DNSCrypt SOCKS
+CONNECTs continuously refine that value with an EWMA.
 
-Normal requests are balanced only across the fast warm band instead of pure
-round-robin across every GREEN backend. The hot band contains warm backends close
-to the best observed runtime latency, so several genuinely fast transports share
-traffic while a much slower GREEN transport does not delay normal DNS requests.
+Normal requests use smooth weighted round-robin across measured GREEN backends.
+Weight is based on inverse squared latency, so the fastest route receives most
+new DNS connections, the next-fastest receives fewer, and slower healthy peers
+are still exercised occasionally instead of being starved. A small minimum
+weight keeps backup routes warm and lets their runtime EWMA recover naturally if
+network conditions improve.
 
-A soft/hard backend runtime failure immediately clears that backend's warm score
-and applies the existing cooldown, while GREEN/YELLOW/RED remains controlled by
-the health state machine. At startup, each verified GREEN backend gets one runtime
-sample so the warm pool is learned quickly. A previously sampled backend that
-recovers later re-enters as cold; when a warm pool already exists, D2S gives it
-only a sparse exploration request (about one selection in 32) so it can prove
-current real-world latency and rejoin without putting every request through
-discovery. Runtime warmth expires after two minutes without a successful real
-connection, allowing an old slow measurement to be periodically re-evaluated.
+Cold exploration has been removed from the user DNS path. A backend that was
+RED/YELLOW is checked by the existing background health loop; once a Full probe
+proves the Internet data plane again, that probe latency is enough to return the
+backend to weighted selection. Runtime latency does not expire merely because a
+fixed timer elapsed: health probes continue to prove reachability, while actual
+runtime failures immediately clear the stale warm score and apply the existing
+selection cooldown.
+
+For failover within one request, remaining GREEN backends are ordered from the
+best known latency to the worst, with unmeasured routes last.
 
 ### Recovery when no GREEN backend exists
 

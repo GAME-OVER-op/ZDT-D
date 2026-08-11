@@ -1,4 +1,4 @@
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SniffResult {
     /// Plain HTTP request with a Host header.
     HttpHost(String),
@@ -8,204 +8,429 @@ pub enum SniffResult {
     TlsSni(String),
 }
 
-/// Best-effort extraction of a destination host/domain from the first bytes of a TCP stream.
-///
-/// - HTTP: parses `Host:`
-/// - CONNECT: parses `CONNECT host:port`
-/// - TLS: parses ClientHello SNI
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SniffProgress {
+    Found(SniffResult),
+    /// The prefix is recognized, but more bytes are required to make a safe decision.
+    NeedMoreData,
+    /// The current bytes do not look like a supported sniffable protocol.
+    NotRecognized,
+    /// The prefix claims to be a supported protocol, but its framing is malformed.
+    Invalid,
+}
+
+/// Compatibility helper for callers that only need a best-effort result.
 pub fn sniff_host(buf: &[u8]) -> Option<SniffResult> {
+    match sniff_host_progressive(buf) {
+        SniffProgress::Found(result) => Some(result),
+        SniffProgress::NeedMoreData | SniffProgress::NotRecognized | SniffProgress::Invalid => None,
+    }
+}
+
+/// Progressive host extraction from the first bytes of a TCP stream.
+///
+/// Unlike the old Option-only parser, this function distinguishes an incomplete
+/// but recognizable HTTP/TLS prefix from unsupported/invalid data. That lets the
+/// caller wait briefly for the rest of a fragmented ClientHello without adding
+/// delay to arbitrary non-HTTP/TLS traffic.
+pub fn sniff_host_progressive(buf: &[u8]) -> SniffProgress {
     if buf.is_empty() {
-        return None;
+        return SniffProgress::NeedMoreData;
     }
 
-    if let Some(h) = sniff_connect(buf) {
-        return Some(SniffResult::ConnectHost(h));
+    match sniff_connect_progressive(buf) {
+        SniffProgress::NotRecognized => {}
+        other => return other,
     }
 
-    if let Some(h) = sniff_http_host(buf) {
-        return Some(SniffResult::HttpHost(h));
+    match sniff_http_host_progressive(buf) {
+        SniffProgress::NotRecognized => {}
+        other => return other,
     }
 
-    if let Some(sni) = sniff_tls_sni(buf) {
-        return Some(SniffResult::TlsSni(sni));
-    }
-
-    None
+    sniff_tls_sni_progressive(buf)
 }
 
-fn sniff_connect(buf: &[u8]) -> Option<String> {
-    // CONNECT host:port HTTP/1.1\r\n...
-    let line = first_line_ascii(buf)?;
-    if !line.starts_with("CONNECT ") {
-        return None;
+fn sniff_connect_progressive(buf: &[u8]) -> SniffProgress {
+    const PREFIX: &[u8] = b"CONNECT ";
+    if is_partial_prefix(buf, PREFIX) {
+        return SniffProgress::NeedMoreData;
     }
-    let rest = line.trim_start_matches("CONNECT ");
-    let target = rest.split_whitespace().next()?;
-    let host = target.rsplit_once(':').map(|(h, _)| h).unwrap_or(target);
-    let host = host.trim_matches('[').trim_matches(']');
-    let host = host.trim().to_ascii_lowercase();
-    if host.is_empty() {
-        return None;
+    if !buf.starts_with(PREFIX) {
+        return SniffProgress::NotRecognized;
     }
-    Some(host)
+
+    let Some(line_end) = find_crlf(buf) else {
+        return if buf.len() < 512 {
+            SniffProgress::NeedMoreData
+        } else {
+            SniffProgress::Invalid
+        };
+    };
+    let line = &buf[..line_end];
+    if !is_http_ascii(line) {
+        return SniffProgress::Invalid;
+    }
+    let Ok(line) = std::str::from_utf8(line) else {
+        return SniffProgress::Invalid;
+    };
+    let target = line
+        .strip_prefix("CONNECT ")
+        .and_then(|rest| rest.split_whitespace().next());
+    let Some(target) = target else {
+        return SniffProgress::Invalid;
+    };
+    let Some(host) = normalize_authority_host(target) else {
+        return SniffProgress::Invalid;
+    };
+    SniffProgress::Found(SniffResult::ConnectHost(host))
 }
 
-fn sniff_http_host(buf: &[u8]) -> Option<String> {
-    // Very cheap check: starts with an uppercase method.
-    let line = first_line_ascii(buf)?;
-    if !(line.starts_with("GET ")
-        || line.starts_with("POST ")
-        || line.starts_with("HEAD ")
-        || line.starts_with("PUT ")
-        || line.starts_with("DELETE ")
-        || line.starts_with("OPTIONS ")
-        || line.starts_with("PATCH "))
-    {
-        return None;
+fn sniff_http_host_progressive(buf: &[u8]) -> SniffProgress {
+    const METHODS: [&[u8]; 7] = [
+        b"GET ",
+        b"POST ",
+        b"HEAD ",
+        b"PUT ",
+        b"DELETE ",
+        b"OPTIONS ",
+        b"PATCH ",
+    ];
+
+    if METHODS.iter().any(|prefix| is_partial_prefix(buf, prefix)) {
+        return SniffProgress::NeedMoreData;
+    }
+    if !METHODS.iter().any(|prefix| buf.starts_with(prefix)) {
+        return SniffProgress::NotRecognized;
     }
 
-    // Parse headers up to the first blank line or a small cap.
-    let text = std::str::from_utf8(buf).ok()?;
-    let mut lines = text.split("\r\n");
-    let _req = lines.next()?;
-    for _ in 0..64 {
-        let l = lines.next()?;
-        if l.is_empty() {
-            break;
+    // We do not need the entire HTTP header block once a complete Host line
+    // is already present. Scan only CRLF-terminated lines so normal HTTP keeps
+    // the old fast behavior while fragmented headers can continue.
+    let complete_headers = find_double_crlf(buf).is_some();
+    let scan_end = if let Some(pos) = find_double_crlf(buf) {
+        pos
+    } else if let Some(pos) = buf.windows(2).rposition(|w| w == b"\r\n") {
+        pos
+    } else {
+        return if buf.len() < 16 * 1024 {
+            SniffProgress::NeedMoreData
+        } else {
+            SniffProgress::Invalid
+        };
+    };
+    let scan = &buf[..scan_end];
+    if !scan.iter().all(|b| b.is_ascii() && (*b == b'\r' || *b == b'\n' || *b == b'\t' || !b.is_ascii_control())) {
+        return SniffProgress::Invalid;
+    }
+    let Ok(text) = std::str::from_utf8(scan) else {
+        return SniffProgress::Invalid;
+    };
+
+    for line in text.split("\r\n").skip(1) {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        if !name.eq_ignore_ascii_case("host") {
+            continue;
         }
-        if let Some(v) = l.strip_prefix("Host:") {
-            let host = v.trim().to_ascii_lowercase();
-            if host.is_empty() {
-                return None;
-            }
-            // Strip optional port
-            let host = match host.rsplit_once(':') {
-                Some((h, p)) if p.chars().all(|c| c.is_ascii_digit()) => h.to_string(),
-                _ => host,
+        let Some(host) = normalize_authority_host(value.trim()) else {
+            return SniffProgress::Invalid;
+        };
+        return SniffProgress::Found(SniffResult::HttpHost(host));
+    }
+
+    if complete_headers {
+        SniffProgress::NotRecognized
+    } else if buf.len() < 16 * 1024 {
+        SniffProgress::NeedMoreData
+    } else {
+        SniffProgress::Invalid
+    }
+}
+
+fn sniff_tls_sni_progressive(buf: &[u8]) -> SniffProgress {
+    // TLS handshake messages may span multiple TLS records. Collect complete
+    // handshake-record payloads from the current peek window until the complete
+    // ClientHello is available; TCP or TLS-record fragmentation therefore does
+    // not turn a valid modified stream into an immediate sniff failure.
+    let mut pos = 0usize;
+    let mut handshake = Vec::with_capacity(buf.len().min(16 * 1024));
+
+    loop {
+        if buf.len().saturating_sub(pos) < 1 {
+            return SniffProgress::NeedMoreData;
+        }
+        if buf[pos] != 0x16 {
+            return if pos == 0 {
+                SniffProgress::NotRecognized
+            } else {
+                SniffProgress::Invalid
             };
-            return Some(host);
+        }
+        if buf.len().saturating_sub(pos) < 3 {
+            return SniffProgress::NeedMoreData;
+        }
+        if buf[pos + 1] != 0x03 {
+            return if pos == 0 {
+                SniffProgress::NotRecognized
+            } else {
+                SniffProgress::Invalid
+            };
+        }
+        if buf.len().saturating_sub(pos) < 5 {
+            return SniffProgress::NeedMoreData;
+        }
+
+        let rec_len = u16::from_be_bytes([buf[pos + 3], buf[pos + 4]]) as usize;
+        if rec_len > 18 * 1024 {
+            return SniffProgress::Invalid;
+        }
+        let record_end = pos.saturating_add(5).saturating_add(rec_len);
+        if buf.len() < record_end {
+            return SniffProgress::NeedMoreData;
+        }
+        handshake.extend_from_slice(&buf[pos + 5..record_end]);
+
+        if handshake.len() >= 4 {
+            if handshake[0] != 0x01 {
+                return SniffProgress::NotRecognized;
+            }
+            let hs_len = ((handshake[1] as usize) << 16)
+                | ((handshake[2] as usize) << 8)
+                | handshake[3] as usize;
+            let total = 4usize.saturating_add(hs_len);
+            if handshake.len() >= total {
+                return parse_client_hello_sni(&handshake[4..total]);
+            }
+        }
+
+        pos = record_end;
+        if pos >= buf.len() {
+            return SniffProgress::NeedMoreData;
         }
     }
-    None
 }
 
-fn first_line_ascii(buf: &[u8]) -> Option<String> {
-    let end = buf.windows(2).position(|w| w == b"\r\n").unwrap_or_else(|| buf.len().min(512));
-    let line = &buf[..end];
-    if line.is_empty() {
-        return None;
-    }
-    // Avoid allocating on non-ASCII
-    if !line.iter().all(|b| b.is_ascii_graphic() || *b == b' ' || *b == b'\t') {
-        return None;
-    }
-    Some(String::from_utf8_lossy(line).to_string())
-}
+fn parse_client_hello_sni(body: &[u8]) -> SniffProgress {
+    let mut i = 0usize;
 
-fn sniff_tls_sni(buf: &[u8]) -> Option<String> {
-    // TLS record header: type(1)=0x16, version(2)=0x03xx, len(2)
-    if buf.len() < 5 {
-        return None;
-    }
-    if buf[0] != 0x16 {
-        return None;
-    }
-    if buf[1] != 0x03 {
-        return None;
-    }
-    let rec_len = u16::from_be_bytes([buf[3], buf[4]]) as usize;
-    if buf.len() < 5 + rec_len {
-        // Not enough bytes yet.
-        return None;
-    }
-    let mut i = 5;
-    if i + 4 > buf.len() {
-        return None;
-    }
-    // Handshake: msg_type(1)=1, len(3)
-    if buf[i] != 0x01 {
-        return None;
-    }
-    let hs_len = ((buf[i + 1] as usize) << 16) | ((buf[i + 2] as usize) << 8) | (buf[i + 3] as usize);
-    i += 4;
-    if i + hs_len > buf.len() {
-        return None;
-    }
     // client_version(2) + random(32)
-    if i + 34 > buf.len() {
-        return None;
+    if i + 34 > body.len() {
+        return SniffProgress::Invalid;
     }
     i += 34;
 
     // session id
-    if i + 1 > buf.len() {
-        return None;
+    if i + 1 > body.len() {
+        return SniffProgress::Invalid;
     }
-    let sid_len = buf[i] as usize;
-    i += 1 + sid_len;
-    if i + 2 > buf.len() {
-        return None;
+    let sid_len = body[i] as usize;
+    i += 1;
+    if i + sid_len > body.len() {
+        return SniffProgress::Invalid;
     }
+    i += sid_len;
 
     // cipher suites
-    let cs_len = u16::from_be_bytes([buf[i], buf[i + 1]]) as usize;
-    i += 2 + cs_len;
-    if i + 1 > buf.len() {
-        return None;
+    if i + 2 > body.len() {
+        return SniffProgress::Invalid;
     }
+    let cs_len = u16::from_be_bytes([body[i], body[i + 1]]) as usize;
+    i += 2;
+    if i + cs_len > body.len() {
+        return SniffProgress::Invalid;
+    }
+    i += cs_len;
 
     // compression methods
-    let comp_len = buf[i] as usize;
-    i += 1 + comp_len;
-    if i + 2 > buf.len() {
-        return None;
+    if i + 1 > body.len() {
+        return SniffProgress::Invalid;
     }
+    let comp_len = body[i] as usize;
+    i += 1;
+    if i + comp_len > body.len() {
+        return SniffProgress::Invalid;
+    }
+    i += comp_len;
 
-    // extensions
-    let ext_len = u16::from_be_bytes([buf[i], buf[i + 1]]) as usize;
+    // Extensions are optional in old TLS ClientHello forms.
+    if i == body.len() {
+        return SniffProgress::NotRecognized;
+    }
+    if i + 2 > body.len() {
+        return SniffProgress::Invalid;
+    }
+    let ext_len = u16::from_be_bytes([body[i], body[i + 1]]) as usize;
     i += 2;
-    if i + ext_len > buf.len() {
-        return None;
+    if i + ext_len > body.len() {
+        return SniffProgress::Invalid;
     }
     let end = i + ext_len;
 
     while i + 4 <= end {
-        let et = u16::from_be_bytes([buf[i], buf[i + 1]]);
-        let el = u16::from_be_bytes([buf[i + 2], buf[i + 3]]) as usize;
+        let et = u16::from_be_bytes([body[i], body[i + 1]]);
+        let el = u16::from_be_bytes([body[i + 2], body[i + 3]]) as usize;
         i += 4;
         if i + el > end {
-            break;
+            return SniffProgress::Invalid;
         }
         if et == 0x0000 {
-            // server_name
             if el < 2 {
-                return None;
+                return SniffProgress::Invalid;
             }
             let mut j = i;
-            let list_len = u16::from_be_bytes([buf[j], buf[j + 1]]) as usize;
+            let list_len = u16::from_be_bytes([body[j], body[j + 1]]) as usize;
             j += 2;
-            let list_end = (j + list_len).min(i + el);
+            if j + list_len > i + el {
+                return SniffProgress::Invalid;
+            }
+            let list_end = j + list_len;
             while j + 3 <= list_end {
-                let name_type = buf[j];
-                let name_len = u16::from_be_bytes([buf[j + 1], buf[j + 2]]) as usize;
+                let name_type = body[j];
+                let name_len = u16::from_be_bytes([body[j + 1], body[j + 2]]) as usize;
                 j += 3;
                 if j + name_len > list_end {
-                    break;
+                    return SniffProgress::Invalid;
                 }
                 if name_type == 0x00 {
-                    let name_bytes = &buf[j..j + name_len];
-                    if let Ok(name) = std::str::from_utf8(name_bytes) {
-                        let host = name.trim().trim_end_matches('.').to_ascii_lowercase();
-                        if !host.is_empty() {
-                            return Some(host);
-                        }
+                    let name_bytes = &body[j..j + name_len];
+                    let Ok(name) = std::str::from_utf8(name_bytes) else {
+                        return SniffProgress::Invalid;
+                    };
+                    let host = name.trim().trim_end_matches('.').to_ascii_lowercase();
+                    if host.is_empty() {
+                        return SniffProgress::Invalid;
                     }
+                    return SniffProgress::Found(SniffResult::TlsSni(host));
                 }
                 j += name_len;
             }
+            return SniffProgress::NotRecognized;
         }
         i += el;
     }
 
-    None
+    SniffProgress::NotRecognized
+}
+
+fn normalize_authority_host(authority: &str) -> Option<String> {
+    let authority = authority.trim();
+    if authority.is_empty() {
+        return None;
+    }
+
+    let host = if let Some(rest) = authority.strip_prefix('[') {
+        let end = rest.find(']')?;
+        &rest[..end]
+    } else if let Some((h, p)) = authority.rsplit_once(':') {
+        if !h.contains(':') && !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()) {
+            h
+        } else {
+            authority
+        }
+    } else {
+        authority
+    };
+
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    if host.is_empty() {
+        None
+    } else {
+        Some(host)
+    }
+}
+
+fn is_partial_prefix(buf: &[u8], prefix: &[u8]) -> bool {
+    buf.len() < prefix.len() && prefix.starts_with(buf)
+}
+
+fn find_crlf(buf: &[u8]) -> Option<usize> {
+    buf.windows(2).position(|w| w == b"\r\n")
+}
+
+fn find_double_crlf(buf: &[u8]) -> Option<usize> {
+    buf.windows(4).position(|w| w == b"\r\n\r\n")
+}
+
+fn is_http_ascii(line: &[u8]) -> bool {
+    !line.is_empty() && line.iter().all(|b| b.is_ascii_graphic() || *b == b' ' || *b == b'\t')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn partial_http_waits_for_more_data() {
+        assert_eq!(sniff_host_progressive(b"GET / HTTP/1.1\r\nHo"), SniffProgress::NeedMoreData);
+    }
+
+    #[test]
+    fn complete_http_extracts_host_case_insensitively() {
+        assert_eq!(
+            sniff_host_progressive(b"GET / HTTP/1.1\r\nhOsT: Example.COM:443\r\n\r\n"),
+            SniffProgress::Found(SniffResult::HttpHost("example.com".into()))
+        );
+    }
+
+    #[test]
+    fn partial_tls_record_waits_for_more_data() {
+        assert_eq!(
+            sniff_host_progressive(&[0x16, 0x03, 0x01, 0x00, 0x20, 0x01, 0x00]),
+            SniffProgress::NeedMoreData
+        );
+    }
+
+    #[test]
+    fn tls_client_hello_split_across_records_is_supported() {
+        let host = b"video.example";
+        let mut extensions = Vec::new();
+        let list_len = 1 + 2 + host.len();
+        let sni_len = 2 + list_len;
+        extensions.extend_from_slice(&0u16.to_be_bytes());
+        extensions.extend_from_slice(&(sni_len as u16).to_be_bytes());
+        extensions.extend_from_slice(&(list_len as u16).to_be_bytes());
+        extensions.push(0);
+        extensions.extend_from_slice(&(host.len() as u16).to_be_bytes());
+        extensions.extend_from_slice(host);
+
+        let mut body = Vec::new();
+        body.extend_from_slice(&[0x03, 0x03]);
+        body.extend_from_slice(&[0u8; 32]);
+        body.push(0);
+        body.extend_from_slice(&2u16.to_be_bytes());
+        body.extend_from_slice(&0x1301u16.to_be_bytes());
+        body.push(1);
+        body.push(0);
+        body.extend_from_slice(&(extensions.len() as u16).to_be_bytes());
+        body.extend_from_slice(&extensions);
+
+        let mut handshake = Vec::new();
+        handshake.push(1);
+        let len = body.len() as u32;
+        handshake.extend_from_slice(&[((len >> 16) & 0xff) as u8, ((len >> 8) & 0xff) as u8, (len & 0xff) as u8]);
+        handshake.extend_from_slice(&body);
+
+        let split = 20;
+        let mut first = vec![0x16, 0x03, 0x01];
+        first.extend_from_slice(&(split as u16).to_be_bytes());
+        first.extend_from_slice(&handshake[..split]);
+        assert_eq!(sniff_host_progressive(&first), SniffProgress::NeedMoreData);
+
+        let rest = &handshake[split..];
+        let mut both = first;
+        both.extend_from_slice(&[0x16, 0x03, 0x01]);
+        both.extend_from_slice(&(rest.len() as u16).to_be_bytes());
+        both.extend_from_slice(rest);
+        assert_eq!(
+            sniff_host_progressive(&both),
+            SniffProgress::Found(SniffResult::TlsSni("video.example".into()))
+        );
+    }
+
+    #[test]
+    fn arbitrary_binary_is_not_delayed() {
+        assert_eq!(sniff_host_progressive(&[0x01, 0x02, 0x03, 0x04]), SniffProgress::NotRecognized);
+    }
 }

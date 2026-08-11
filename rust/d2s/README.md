@@ -67,6 +67,28 @@ during this window. If the cooling backend is the only GREEN route, it remains
 selectable so cooldown can never manufacture a DNS outage. Target/path-specific
 failures do not apply this global backend cooldown.
 
+### Warm runtime selection
+
+Health and traffic selection are separate. GREEN only means that the strict Full
+probe has proved the route usable. D2S additionally learns an EWMA latency from
+real successful DNSCrypt SOCKS CONNECTs and marks recently measured GREEN
+backends as runtime-warm.
+
+Normal requests are balanced only across the fast warm band instead of pure
+round-robin across every GREEN backend. The hot band contains warm backends close
+to the best observed runtime latency, so several genuinely fast transports share
+traffic while a much slower GREEN transport does not delay normal DNS requests.
+
+A soft/hard backend runtime failure immediately clears that backend's warm score
+and applies the existing cooldown, while GREEN/YELLOW/RED remains controlled by
+the health state machine. At startup, each verified GREEN backend gets one runtime
+sample so the warm pool is learned quickly. A previously sampled backend that
+recovers later re-enters as cold; when a warm pool already exists, D2S gives it
+only a sparse exploration request (about one selection in 32) so it can prove
+current real-world latency and rejoin without putting every request through
+discovery. Runtime warmth expires after two minutes without a successful real
+connection, allowing an old slow measurement to be periodically re-evaluated.
+
 ### Recovery when no GREEN backend exists
 
 When the last GREEN backend is lost, D2S automatically uses an accelerated Full

@@ -29,6 +29,8 @@ pub struct BackendSnapshot {
     pub last_full_probe_unix: Option<u64>,
     pub latency_ms: Option<f64>,
     pub internet_latency_ms: Option<f64>,
+    pub runtime_latency_ewma_ms: Option<f64>,
+    pub runtime_warm: bool,
     pub selected_connections: u64,
     pub successful_connections: u64,
     pub failed_connections: u64,

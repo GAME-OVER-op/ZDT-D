@@ -18,6 +18,9 @@ impl Event {
     pub fn conn_target(cid: u64, host: String, port: u16, mode: String) -> Self {
         Self{ ts: now_ts(), kind: "conn_target".into(), cid: Some(cid), peer: None, target: Some(format!("{}:{}", host, port)), mode: Some(mode) }
     }
+    pub fn metadata_refresh() -> Self {
+        Self{ ts: now_ts(), kind: "metadata_refresh".into(), cid: None, peer: None, target: None, mode: None }
+    }
 }
 
 

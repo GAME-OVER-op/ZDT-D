@@ -102,6 +102,16 @@ pub struct RuntimeConfig {
     /// because recent direct attempts failed with timeouts or unreachable errors.
     pub direct_cooldown_until_ts: AtomicU64,
 
+    /// UDP DirectFirst needs its own recent-failure memory. Backend health updates
+    /// may legitimately clear the TCP/direct cooldown, but must not immediately
+    /// forget that a QUIC/UDP direct path just failed.
+    pub udp_direct_cooldown_until_ts: AtomicU64,
+
+    /// Lazy DNS enrichment used only by Web/API views. Cache entries are
+    /// (expires_at_ms, resolved_ip); None is a short-lived negative cache.
+    pub dns_enrichment_cache: Mutex<HashMap<String, (u64, Option<String>)>>,
+    pub dns_enrichment_inflight: Mutex<HashSet<String>>,
+
     /// Health of the direct Internet path used by priority port 0.  It is
     /// checked by the same detailed data-plane probe style as SOCKS5 backend
     /// Internet health, but without the SOCKS hop.
@@ -160,6 +170,9 @@ impl Default for RuntimeConfig {
             ui_wakeup: tokio::sync::Notify::new(),
             backend_wakeup: tokio::sync::Notify::new(),
             direct_cooldown_until_ts: AtomicU64::new(0),
+            udp_direct_cooldown_until_ts: AtomicU64::new(0),
+            dns_enrichment_cache: Mutex::new(HashMap::new()),
+            dns_enrichment_inflight: Mutex::new(HashSet::new()),
             direct_internet: Mutex::new(DirectInternetStatus::default()),
             refresh_lock: tokio::sync::Mutex::new(()),
             last_ttl_ping_ts: AtomicU64::new(0),
@@ -275,6 +288,58 @@ impl RuntimeConfig {
 
     pub fn clear_direct_cooldown(&self) {
         self.direct_cooldown_until_ts.store(0, Ordering::Relaxed);
+    }
+
+    pub fn udp_direct_allowed(&self) -> bool {
+        now_ts() >= self.udp_direct_cooldown_until_ts.load(Ordering::Relaxed)
+    }
+
+    pub fn note_udp_direct_failure(&self, seconds: u64) {
+        self.udp_direct_cooldown_until_ts
+            .store(now_ts().saturating_add(seconds.max(1)), Ordering::Relaxed);
+    }
+
+    pub fn clear_udp_direct_cooldown(&self) {
+        self.udp_direct_cooldown_until_ts.store(0, Ordering::Relaxed);
+    }
+
+    /// Returns Some(cached_result) for a fresh cache entry. `Some(None)` is a
+    /// negative cache hit; outer None means there is no fresh entry.
+    pub fn dns_enrichment_cached(&self, host: &str) -> Option<Option<String>> {
+        let key = host.trim().trim_end_matches('.').to_ascii_lowercase();
+        if key.is_empty() {
+            return Some(None);
+        }
+        let now = now_ms();
+        let mut cache = self.dns_enrichment_cache.lock();
+        match cache.get(&key) {
+            Some((expires_at, value)) if *expires_at > now => Some(value.clone()),
+            Some(_) => {
+                cache.remove(&key);
+                None
+            }
+            None => None,
+        }
+    }
+
+    pub fn try_begin_dns_enrichment(&self, host: &str) -> bool {
+        let key = host.trim().trim_end_matches('.').to_ascii_lowercase();
+        if key.is_empty() {
+            return false;
+        }
+        self.dns_enrichment_inflight.lock().insert(key)
+    }
+
+    pub fn finish_dns_enrichment(&self, host: &str, value: Option<String>) {
+        let key = host.trim().trim_end_matches('.').to_ascii_lowercase();
+        if key.is_empty() {
+            return;
+        }
+        let ttl_ms = if value.is_some() { 60_000 } else { 10_000 };
+        self.dns_enrichment_cache
+            .lock()
+            .insert(key.clone(), (now_ms().saturating_add(ttl_ms), value));
+        self.dns_enrichment_inflight.lock().remove(&key);
     }
 
     pub fn try_begin_forced_refresh(&self, min_interval_ms: u64) -> bool {

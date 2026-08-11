@@ -120,37 +120,52 @@ fn is_proxy_zero_down_suspect(info: &stats::ConnInfo) -> bool {
 }
 
 async fn sniff_client_host(client: &tokio::net::TcpStream, mode: SniffMode) -> Option<crate::sniff::SniffResult> {
+    use crate::sniff::SniffProgress;
     use tokio::time::{Duration, Instant};
 
-    let budgets_ms: &[u64] = match mode {
-        SniffMode::Progressive => &[80, 120, 160, 200],
-        SniffMode::Quick80 => &[80],
-        SniffMode::Skip => &[],
+    let max_budget = match mode {
+        SniffMode::Progressive => Duration::from_millis(200),
+        SniffMode::Quick80 => Duration::from_millis(80),
+        SniffMode::Skip => return None,
     };
 
-    if budgets_ms.is_empty() {
-        return None;
-    }
-
+    // Start small and only grow when a recognized fragmented prefix fills the
+    // current peek buffer. This keeps the normal hot path cheap while allowing
+    // larger/fragmented ClientHello records to finish within the sniff budget.
     let mut buf = vec![0u8; 4096];
     let started = Instant::now();
 
-    for budget_ms in budgets_ms {
-        let budget = Duration::from_millis(*budget_ms);
+    loop {
         let elapsed = started.elapsed();
-        if elapsed >= budget {
-            continue;
+        if elapsed >= max_budget {
+            return None;
         }
-        let remaining = budget - elapsed;
-        match tokio::time::timeout(remaining, client.peek(&mut buf)).await {
-            Ok(Ok(sz)) if sz > 0 => return crate::sniff::sniff_host(&buf[..sz]),
-            Ok(Ok(_)) => return None,
-            Ok(Err(_)) => return None,
-            Err(_) => continue,
+        let remaining = max_budget - elapsed;
+
+        let sz = match tokio::time::timeout(remaining, client.peek(&mut buf)).await {
+            Ok(Ok(sz)) if sz > 0 => sz,
+            Ok(Ok(_)) | Ok(Err(_)) | Err(_) => return None,
+        };
+
+        match crate::sniff::sniff_host_progressive(&buf[..sz]) {
+            SniffProgress::Found(result) => return Some(result),
+            SniffProgress::NotRecognized | SniffProgress::Invalid => return None,
+            SniffProgress::NeedMoreData => {
+                if sz == buf.len() && buf.len() < 16 * 1024 {
+                    buf.resize((buf.len() * 2).min(16 * 1024), 0);
+                }
+
+                // peek() remains immediately readable while the same prefix is
+                // buffered, so yield briefly instead of spinning on identical
+                // bytes. Only recognized incomplete HTTP/TLS prefixes pay this.
+                let left = max_budget.saturating_sub(started.elapsed());
+                if left.is_zero() {
+                    return None;
+                }
+                tokio::time::sleep(Duration::from_millis(10).min(left)).await;
+            }
         }
     }
-
-    None
 }
 
 fn main() -> Result<()> {
@@ -478,38 +493,18 @@ async fn proxy_tcp(
     // Expose best-effort domain to the UI (SNI/Host/CONNECT). If absent -> UI will show fallback.
     state.conns.set_domain(cid, sniff_host.clone());
 
-    // Best-effort destination IP (used by the UI). For transparent mode we always know it.
-    // For HostPort targets (explicit mode) we try resolving quickly, but never fail the connection.
-    let dst_ip_hint: Option<String> = match &target {
+    // Destination IP is transport metadata, not a prerequisite for routing.
+    // Transparent traffic already has the authoritative kernel destination.
+    // HostPort DNS enrichment is intentionally deferred to Web/API access so a
+    // UI-only lookup can never add up to 250 ms to the connection hot path.
+    let dst_ip_hint = match &target {
         stats::Target::SockAddr(sa) => Some(sa.ip().to_string()),
-        stats::Target::HostPort(host, port) => {
-            let r = tokio::time::timeout(
-                Duration::from_millis(250),
-                tokio::net::lookup_host((host.as_str(), *port)),
-            )
-            .await;
-            match r {
-                Ok(Ok(it)) => {
-                    // Prefer IPv4 when IPv6 is disabled on-device.
-                    let mut first: Option<std::net::SocketAddr> = None;
-                    let mut chosen: Option<std::net::SocketAddr> = None;
-                    for sa in it {
-                        if first.is_none() {
-                            first = Some(sa);
-                        }
-                        if sa.is_ipv4() {
-                            chosen = Some(sa);
-                            break;
-                        }
-                    }
-                    chosen.or(first).map(|sa| sa.ip().to_string())
-                }
-                _ => None,
-            }
-        }
+        stats::Target::HostPort(host, _) => host.parse::<std::net::IpAddr>().ok().map(|ip| ip.to_string()),
     };
     state.conns.set_dst_ip(cid, dst_ip_hint);
 
+    // Sniffed host is policy/observability metadata only. It may select a host
+    // rule when structurally valid, but it never replaces the transport target.
     let host_for_rules = sniff_host.clone().unwrap_or_else(|| target_host.clone());
 
     let proto = rules::classify_protocol(target_port);
@@ -589,8 +584,16 @@ async fn proxy_tcp(
             }
         }
     } else if priority_zero_mode == PriorityZeroMode::DirectFirst {
+        // Sniffed SNI/Host is observational/policy metadata only. For an
+        // authoritative transparent SockAddr it must not influence transport
+        // validation either; explicit HostPort targets already carry their real
+        // hostname in `target`.
+        let direct_probe_host = match &target {
+            stats::Target::HostPort(host, _) if host.parse::<std::net::IpAddr>().is_err() => Some(host.as_str()),
+            _ => None,
+        };
         if ensure_direct_path_ready(&state, Duration::from_millis(1200)).await
-            && ensure_direct_target_ready(&state, &target, sniff_host.as_deref()).await
+            && ensure_direct_target_ready(&state, &target, direct_probe_host).await
         {
             match connect_direct(&target, state.args.connect_timeout).await {
                 Ok(s) => {
@@ -1063,11 +1066,6 @@ async fn ensure_direct_target_ready(
     stats::check_direct_target_data_plane(target, domain_hint, timeout).await
 }
 
-fn looks_like_ip(host: &str) -> bool {
-    // Fast checks only; we don't want to depend on DNS here.
-    host.parse::<std::net::IpAddr>().is_ok()
-}
-
 fn per_backend_connect_limit(state: &AppState) -> u32 {
     let max_conns = state.args.max_conns.max(1);
     let backend_count = {
@@ -1145,7 +1143,7 @@ fn is_proxy_backend_suspect_error(err: &str) -> bool {
 
 async fn connect_socks(
     target: &stats::Target,
-    domain_hint: Option<&str>,
+    _observed_domain: Option<&str>,
     state: AppState,
     cid: u64,
 ) -> Result<(tokio::net::TcpStream, SocketAddr)> {
@@ -1162,15 +1160,11 @@ async fn connect_socks(
         _ => None,
     };
 
-    // IMPORTANT: in transparent mode the target is usually an IP (SO_ORIGINAL_DST).
-    // If we managed to sniff a domain (HTTP Host / CONNECT / TLS SNI), prefer sending it
-    // to the upstream SOCKS5 as a DOMAIN address to get "socks5h"-like remote DNS.
-    let taddr = match (target, domain_hint) {
-        (stats::Target::SockAddr(sa), Some(h)) if !h.is_empty() && !looks_like_ip(h) => {
-            socks5::TargetAddr::Domain(h.to_string(), sa.port())
-        }
-        _ => target.to_socks_target().await?,
-    };
+    // Transport target is authoritative. In transparent mode SockAddr comes
+    // from SO_ORIGINAL_DST/TPROXY and must never be replaced by sniffed SNI/Host:
+    // DPI/desync tools may deliberately fragment or forge those bytes. The
+    // observed domain remains available to policy/UI code but is not a SOCKS target.
+    let taddr = target.to_socks_target().await?;
 
     // Try multiple GREEN backends before giving up.
     let max_tries = state.backends.lock().len().max(1);

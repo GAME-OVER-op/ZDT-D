@@ -604,7 +604,73 @@ async fn ws_handle(mut socket: WebSocket, state: AppState) {
     }
 }
 
+fn request_connection_dns_enrichment(state: &AppState) {
+    // This function is called exclusively while serving Web/API state. It may
+    // schedule a 250 ms best-effort DNS lookup, but never runs from proxy_tcp.
+    let unresolved = state.conns.unresolved_domain_targets();
+    if unresolved.is_empty() {
+        return;
+    }
+
+    let mut by_host: HashMap<String, (u16, Vec<u64>)> = HashMap::new();
+    for (cid, host, port) in unresolved {
+        let key = host.trim().trim_end_matches('.').to_ascii_lowercase();
+        if key.is_empty() {
+            continue;
+        }
+        if let Some(cached) = state.runtime.dns_enrichment_cached(&key) {
+            if let Some(ip) = cached {
+                state.conns.set_dst_ip(cid, Some(ip));
+            }
+            continue;
+        }
+        by_host.entry(key).or_insert_with(|| (port, Vec::new())).1.push(cid);
+    }
+
+    for (host, (port, cids)) in by_host {
+        if !state.runtime.try_begin_dns_enrichment(&host) {
+            continue;
+        }
+        let st = state.clone();
+        tokio::spawn(async move {
+            let resolved = match tokio::time::timeout(
+                Duration::from_millis(250),
+                tokio::net::lookup_host((host.as_str(), port)),
+            )
+            .await
+            {
+                Ok(Ok(addrs)) => {
+                    let mut first: Option<SocketAddr> = None;
+                    let mut ipv4: Option<SocketAddr> = None;
+                    for addr in addrs {
+                        if first.is_none() {
+                            first = Some(addr);
+                        }
+                        if addr.is_ipv4() {
+                            ipv4 = Some(addr);
+                            break;
+                        }
+                    }
+                    ipv4.or(first).map(|addr| addr.ip().to_string())
+                }
+                _ => None,
+            };
+
+            st.runtime.finish_dns_enrichment(&host, resolved.clone());
+            if let Some(ip) = resolved {
+                for cid in cids {
+                    st.conns.set_dst_ip(cid, Some(ip.clone()));
+                }
+                if st.runtime.ui_clients.load(std::sync::atomic::Ordering::Relaxed) > 0 {
+                    let _ = st.events.send(stats::Event::metadata_refresh());
+                }
+            }
+        });
+    }
+}
+
 fn build_state(state: &AppState) -> ApiState {
+    request_connection_dns_enrichment(state);
     let stats = state.stats.snapshot();
     let total_active = state.conns.len();
     let (int_active, ext_active) = state.conns.ingress_counts();

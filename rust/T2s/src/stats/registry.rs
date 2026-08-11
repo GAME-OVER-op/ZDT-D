@@ -301,6 +301,31 @@ impl ConnRegistry {
         }
     }
 
+    /// HostPort targets that still lack an IP hint. This is intentionally read
+    /// by Web/API code only; proxy setup itself never waits for UI DNS enrichment.
+    pub fn unresolved_domain_targets(&self) -> Vec<(u64, String, u16)> {
+        let guard = self.inner.lock();
+        guard
+            .values()
+            .filter_map(|(info, _)| {
+                if info.dst_ip.is_some() {
+                    return None;
+                }
+                let target = info.target.as_deref()?;
+                if target.parse::<SocketAddr>().is_ok() {
+                    return None;
+                }
+                let (raw_host, raw_port) = target.rsplit_once(':')?;
+                let port = raw_port.parse::<u16>().ok()?;
+                let host = raw_host.trim().trim_matches('[').trim_matches(']').trim().to_string();
+                if host.is_empty() || host.parse::<IpAddr>().is_ok() {
+                    return None;
+                }
+                Some((info.cid, host, port))
+            })
+            .collect()
+    }
+
     pub fn set_backend(&self, cid: u64, backend: Option<SocketAddr>) {
         if let Some((info, _)) = self.inner.lock().get_mut(&cid) {
             info.backend = backend.map(|b| b.to_string());

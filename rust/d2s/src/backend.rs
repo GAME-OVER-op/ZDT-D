@@ -24,6 +24,16 @@ const NO_GREEN_FAST_RECOVERY: Duration = Duration::from_secs(2);
 const NO_GREEN_MEDIUM_RECOVERY: Duration = Duration::from_secs(5);
 const NO_GREEN_SLOW_RECOVERY: Duration = Duration::from_secs(15);
 
+// Runtime selection is intentionally separate from health. GREEN means that a
+// strict Full probe has proved the backend usable; WARM means that recent real
+// DNSCrypt traffic also proved it fast. Keep the hot band deliberately broad so
+// multiple good backends share load instead of pinning everything to one proxy.
+const RUNTIME_EWMA_ALPHA: f64 = 0.25;
+const WARM_RUNTIME_TTL: Duration = Duration::from_secs(120);
+const HOT_LATENCY_MULTIPLIER: f64 = 2.0;
+const HOT_LATENCY_SLACK_MS: f64 = 100.0;
+const COLD_EXPLORATION_EVERY: u64 = 32;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum BackendState {
@@ -52,6 +62,9 @@ struct BackendEntry {
     last_full_probe_unix: Option<u64>,
     last_latency_ms: Option<f64>,
     internet_latency_ms: Option<f64>,
+    runtime_latency_ewma_ms: Option<f64>,
+    last_runtime_success: Option<Instant>,
+    last_preferred_pick_seq: u64,
     internet_probe_fail_streak: u8,
     next_internet_probe_after: Instant,
     next_probe: Instant,
@@ -69,7 +82,7 @@ struct BackendEntry {
 struct PoolInner {
     entries: Vec<BackendEntry>,
     index: HashMap<SocketAddr, usize>,
-    rr: usize,
+    selection_seq: u64,
     no_green_since: Option<Instant>,
 }
 
@@ -109,6 +122,9 @@ impl BackendPool {
                 last_full_probe_unix: None,
                 last_latency_ms: None,
                 internet_latency_ms: None,
+                runtime_latency_ewma_ms: None,
+                last_runtime_success: None,
+                last_preferred_pick_seq: 0,
                 internet_probe_fail_streak: 0,
                 next_internet_probe_after: now,
                 next_probe: now,
@@ -132,7 +148,7 @@ impl BackendPool {
             inner: Arc::new(Mutex::new(PoolInner {
                 entries,
                 index,
-                rr: 0,
+                selection_seq: 0,
                 no_green_since,
             })),
             config,
@@ -150,34 +166,153 @@ impl BackendPool {
     pub async fn candidate_order(&self) -> Vec<SocketAddr> {
         let mut inner = self.inner.lock().await;
         let now = Instant::now();
-        let all_green: Vec<_> = inner
+
+        let all_green: Vec<usize> = inner
             .entries
             .iter()
-            .filter(|entry| entry.state == BackendState::Green)
-            .map(|entry| entry.addr)
+            .enumerate()
+            .filter(|(_, entry)| entry.state == BackendState::Green)
+            .map(|(index, _)| index)
             .collect();
         if all_green.is_empty() {
             return Vec::new();
         }
 
-        // T2S-style runtime cooldown: temporarily prefer other verified GREEN
-        // backends after a suspicious runtime error. If every GREEN backend is
-        // cooling down (especially the single-backend case), fall back to the
-        // full GREEN set instead of manufacturing an outage.
-        let ready_green: Vec<_> = inner
-            .entries
+        // Runtime failures temporarily remove a backend from the hot path. If
+        // every GREEN backend is cooling down, keep the old single-backend-safe
+        // behavior and use the complete GREEN set rather than invent an outage.
+        let ready_green: Vec<usize> = all_green
             .iter()
-            .filter(|entry| entry.state == BackendState::Green && entry.runtime_cooldown_until <= now)
-            .map(|entry| entry.addr)
+            .copied()
+            .filter(|&index| inner.entries[index].runtime_cooldown_until <= now)
             .collect();
-        let healthy = if ready_green.is_empty() { all_green } else { ready_green };
-        let start = inner.rr % healthy.len();
-        inner.rr = inner.rr.wrapping_add(1);
-        let mut ordered = Vec::with_capacity(healthy.len());
-        for offset in 0..healthy.len() {
-            ordered.push(healthy[(start + offset) % healthy.len()]);
-        }
-        ordered
+        let eligible = if ready_green.is_empty() { all_green } else { ready_green };
+
+        inner.selection_seq = inner.selection_seq.wrapping_add(1);
+        let selection_seq = inner.selection_seq;
+
+        let mut warm: Vec<usize> = eligible
+            .iter()
+            .copied()
+            .filter(|&index| {
+                let entry = &inner.entries[index];
+                entry.runtime_latency_ewma_ms.is_some()
+                    && entry
+                        .last_runtime_success
+                        .map(|last| now.duration_since(last) <= WARM_RUNTIME_TTL)
+                        .unwrap_or(false)
+            })
+            .collect();
+
+        // A recovered/new GREEN backend must not immediately steal normal
+        // traffic just because its health probe passed. Give cold backends a
+        // sparse real request so they can prove current runtime latency and join
+        // the warm pool without making every request pay the discovery cost.
+        let mut cold: Vec<usize> = eligible
+            .iter()
+            .copied()
+            .filter(|index| !warm.contains(index))
+            .collect();
+
+        let mut unseen_cold: Vec<usize> = cold
+            .iter()
+            .copied()
+            .filter(|&index| inner.entries[index].last_preferred_pick_seq == 0)
+            .collect();
+        unseen_cold.sort_unstable();
+
+        let explore_cold = unseen_cold.is_empty()
+            && !cold.is_empty()
+            && !warm.is_empty()
+            && selection_seq % COLD_EXPLORATION_EVERY == 0;
+
+        let preferred = if !unseen_cold.is_empty() {
+            // Bootstrap every verified GREEN backend exactly once before the
+            // learned warm pool is allowed to dominate selection. This avoids
+            // the first successful backend monopolising traffic before peers
+            // have any real runtime sample at all.
+            unseen_cold[0]
+        } else if explore_cold {
+            cold.sort_by_key(|&index| inner.entries[index].last_preferred_pick_seq);
+            cold[0]
+        } else if warm.is_empty() {
+            // Bootstrap: until real traffic has measured anything, distribute
+            // first attempts fairly across all verified GREEN backends.
+            let mut bootstrap = eligible.clone();
+            bootstrap.sort_by_key(|&index| inner.entries[index].last_preferred_pick_seq);
+            bootstrap[0]
+        } else {
+            let best_latency = warm
+                .iter()
+                .filter_map(|&index| inner.entries[index].runtime_latency_ewma_ms)
+                .fold(f64::INFINITY, f64::min);
+            let hot_limit = (best_latency * HOT_LATENCY_MULTIPLIER)
+                .max(best_latency + HOT_LATENCY_SLACK_MS);
+
+            warm.retain(|&index| {
+                inner.entries[index]
+                    .runtime_latency_ewma_ms
+                    .map(|latency| latency <= hot_limit)
+                    .unwrap_or(false)
+            });
+            // Balance only inside the genuinely fast band. Least-recently-picked
+            // wins; latency breaks ties during bootstrap/re-entry.
+            warm.sort_by(|&a, &b| {
+                inner.entries[a]
+                    .last_preferred_pick_seq
+                    .cmp(&inner.entries[b].last_preferred_pick_seq)
+                    .then_with(|| {
+                        inner.entries[a]
+                            .runtime_latency_ewma_ms
+                            .unwrap_or(f64::INFINITY)
+                            .total_cmp(
+                                &inner.entries[b]
+                                    .runtime_latency_ewma_ms
+                                    .unwrap_or(f64::INFINITY),
+                            )
+                    })
+            });
+            warm[0]
+        };
+
+        inner.entries[preferred].last_preferred_pick_seq = selection_seq;
+
+        // The router still needs fallback candidates for this same request. Put
+        // the preferred backend first, then other warm/fast peers, and only then
+        // cold GREEN candidates. A slow or newly recovered backend therefore does
+        // not delay normal traffic unless it is the sparse exploration request.
+        let mut rest: Vec<usize> = eligible
+            .iter()
+            .copied()
+            .filter(|&index| index != preferred)
+            .collect();
+        rest.sort_by(|&a, &b| {
+            let a_warm = inner.entries[a]
+                .last_runtime_success
+                .map(|last| now.duration_since(last) <= WARM_RUNTIME_TTL)
+                .unwrap_or(false)
+                && inner.entries[a].runtime_latency_ewma_ms.is_some();
+            let b_warm = inner.entries[b]
+                .last_runtime_success
+                .map(|last| now.duration_since(last) <= WARM_RUNTIME_TTL)
+                .unwrap_or(false)
+                && inner.entries[b].runtime_latency_ewma_ms.is_some();
+            b_warm.cmp(&a_warm).then_with(|| {
+                inner.entries[a]
+                    .runtime_latency_ewma_ms
+                    .unwrap_or(f64::INFINITY)
+                    .total_cmp(
+                        &inner.entries[b]
+                            .runtime_latency_ewma_ms
+                            .unwrap_or(f64::INFINITY),
+                    )
+            })
+        });
+
+        std::iter::once(preferred)
+            .chain(rest)
+            .map(|index| inner.entries[index].addr)
+            .collect()
     }
 
     pub async fn mark_attempt(&self, addr: SocketAddr) {
@@ -202,7 +337,16 @@ impl BackendPool {
             entry.last_error = None;
             entry.last_check_unix = Some(unix_now());
             entry.last_success_unix = Some(unix_now());
-            entry.last_latency_ms = Some(latency.as_secs_f64() * 1000.0);
+            let runtime_latency_ms = latency.as_secs_f64() * 1000.0;
+            entry.last_latency_ms = Some(runtime_latency_ms);
+            entry.runtime_latency_ewma_ms = Some(match entry.runtime_latency_ewma_ms {
+                Some(previous) => {
+                    previous * (1.0 - RUNTIME_EWMA_ALPHA)
+                        + runtime_latency_ms * RUNTIME_EWMA_ALPHA
+                }
+                None => runtime_latency_ms,
+            });
+            entry.last_runtime_success = Some(Instant::now());
             entry.successful_connections = entry.successful_connections.saturating_add(1);
             if entry.state == BackendState::Green {
                 entry.next_probe = entry.next_probe.max(Instant::now() + Duration::from_secs(1));
@@ -252,6 +396,14 @@ impl BackendPool {
             }
 
             if class != RuntimeFailureClass::TargetPath {
+                // A transport/backend failure must immediately remove stale
+                // runtime warmth so this backend cannot return to the preferred
+                // set as soon as the short cooldown expires. Full health remains
+                // the authority for GREEN/YELLOW/RED; later sparse exploration
+                // can warm it again after recovery.
+                entry.runtime_latency_ewma_ms = None;
+                entry.last_runtime_success = None;
+
                 // Mirror T2S selection cooldowns without removing the backend
                 // from GREEN. Multiple backends will prefer a clean peer; a
                 // single GREEN backend remains selectable by candidate_order().
@@ -583,6 +735,8 @@ impl BackendPool {
                     entry.last_error = Some(error);
                     entry.last_latency_ms = None;
                     entry.internet_latency_ms = None;
+                    entry.runtime_latency_ewma_ms = None;
+                    entry.last_runtime_success = None;
                     // The local SOCKS itself is down; Internet-probe backoff is
                     // irrelevant until Stage 1 becomes reachable again.
                     entry.internet_probe_fail_streak = 0;
@@ -606,12 +760,18 @@ impl BackendPool {
                     entry.last_error = Some(error);
                     entry.last_latency_ms = Some(socks_latency.as_secs_f64() * 1000.0);
                     entry.internet_latency_ms = None;
+                    entry.runtime_latency_ewma_ms = None;
+                    entry.last_runtime_success = None;
                     entry.internet_probe_fail_streak = entry.internet_probe_fail_streak.saturating_add(1);
                     entry.next_internet_probe_after =
                         Instant::now() + internet_probe_backoff(entry.internet_probe_fail_streak);
                 }
                 ProbeOutcome::InternetVerified { latency } => {
                     entry.state = BackendState::Green;
+                    if old != BackendState::Green {
+                        entry.runtime_latency_ewma_ms = None;
+                        entry.last_runtime_success = None;
+                    }
                     entry.consecutive_failures = 0;
                     entry.internet_probe_fail_streak = 0;
                     entry.next_internet_probe_after = Instant::now();
@@ -695,6 +855,14 @@ impl BackendPool {
                 last_full_probe_unix: entry.last_full_probe_unix,
                 latency_ms: entry.last_latency_ms,
                 internet_latency_ms: entry.internet_latency_ms,
+                runtime_latency_ewma_ms: entry.runtime_latency_ewma_ms,
+                runtime_warm: entry.state == BackendState::Green
+                    && entry.runtime_cooldown_until <= Instant::now()
+                    && entry.runtime_latency_ewma_ms.is_some()
+                    && entry
+                        .last_runtime_success
+                        .map(|last| Instant::now().duration_since(last) <= WARM_RUNTIME_TTL)
+                        .unwrap_or(false),
                 selected_connections: entry.selected_connections,
                 successful_connections: entry.successful_connections,
                 failed_connections: entry.failed_connections,
@@ -805,6 +973,121 @@ probe_targets = ["1.1.1.1:443", "8.8.8.8:443"]
         assert_eq!(snapshot.state, BackendState::Unknown);
     }
 
+
+
+    #[tokio::test]
+    async fn bootstrap_samples_each_verified_green_before_warm_pool_dominates() {
+        let a: SocketAddr = "127.0.0.1:11590".parse().unwrap();
+        let b: SocketAddr = "127.0.0.1:11591".parse().unwrap();
+        let c: SocketAddr = "127.0.0.1:11592".parse().unwrap();
+        let pool = BackendPool::new(test_config(vec![a, b, c])).unwrap();
+        {
+            let mut inner = pool.inner.lock().await;
+            for entry in &mut inner.entries {
+                entry.state = BackendState::Green;
+                entry.force_full_probe = false;
+            }
+        }
+
+        assert_eq!(pool.candidate_order().await[0], a);
+        pool.mark_runtime_success(a, Duration::from_millis(30)).await;
+        assert_eq!(pool.candidate_order().await[0], b);
+        pool.mark_runtime_success(b, Duration::from_millis(40)).await;
+        assert_eq!(pool.candidate_order().await[0], c);
+    }
+
+    #[tokio::test]
+    async fn warm_fast_backends_are_balanced_and_slow_warm_backend_is_not_preferred() {
+        let a: SocketAddr = "127.0.0.1:11590".parse().unwrap();
+        let b: SocketAddr = "127.0.0.1:11591".parse().unwrap();
+        let c: SocketAddr = "127.0.0.1:11592".parse().unwrap();
+        let pool = BackendPool::new(test_config(vec![a, b, c])).unwrap();
+        {
+            let mut inner = pool.inner.lock().await;
+            let now = Instant::now();
+            for entry in &mut inner.entries {
+                entry.state = BackendState::Green;
+                entry.force_full_probe = false;
+                entry.last_runtime_success = Some(now);
+            }
+            inner.entries[0].runtime_latency_ewma_ms = Some(40.0);
+            inner.entries[1].runtime_latency_ewma_ms = Some(75.0);
+            inner.entries[2].runtime_latency_ewma_ms = Some(450.0);
+        }
+
+        let first = pool.candidate_order().await[0];
+        let second = pool.candidate_order().await[0];
+        let third = pool.candidate_order().await[0];
+        let fourth = pool.candidate_order().await[0];
+
+        assert_eq!([first, second, third, fourth], [a, b, a, b]);
+    }
+
+    #[tokio::test]
+    async fn cold_green_backend_is_only_sparse_exploration_while_warm_peer_exists() {
+        let warm: SocketAddr = "127.0.0.1:11590".parse().unwrap();
+        let recovered: SocketAddr = "127.0.0.1:11591".parse().unwrap();
+        let pool = BackendPool::new(test_config(vec![warm, recovered])).unwrap();
+        {
+            let mut inner = pool.inner.lock().await;
+            let now = Instant::now();
+            for entry in &mut inner.entries {
+                entry.state = BackendState::Green;
+                entry.force_full_probe = false;
+            }
+            inner.entries[0].runtime_latency_ewma_ms = Some(35.0);
+            inner.entries[0].last_runtime_success = Some(now);
+            // Simulate a backend that was sampled earlier, later lost warmth,
+            // and has now recovered to GREEN via health probing.
+            inner.entries[1].last_preferred_pick_seq = 7;
+        }
+
+        for _ in 0..(COLD_EXPLORATION_EVERY - 1) {
+            assert_eq!(pool.candidate_order().await[0], warm);
+        }
+        assert_eq!(pool.candidate_order().await[0], recovered);
+    }
+
+    #[tokio::test]
+    async fn runtime_backend_failure_removes_backend_from_warm_pool_immediately() {
+        let first: SocketAddr = "127.0.0.1:11590".parse().unwrap();
+        let second: SocketAddr = "127.0.0.1:11591".parse().unwrap();
+        let pool = BackendPool::new(test_config(vec![first, second])).unwrap();
+        {
+            let mut inner = pool.inner.lock().await;
+            let now = Instant::now();
+            for entry in &mut inner.entries {
+                entry.state = BackendState::Green;
+                entry.force_full_probe = false;
+                entry.runtime_latency_ewma_ms = Some(30.0);
+                entry.last_runtime_success = Some(now);
+            }
+        }
+
+        pool.mark_runtime_failure(first, RuntimeFailureClass::Soft, "timeout").await;
+        assert_eq!(pool.candidate_order().await[0], second);
+        let inner = pool.inner.lock().await;
+        assert!(inner.entries[0].runtime_latency_ewma_ms.is_none());
+        assert!(inner.entries[0].last_runtime_success.is_none());
+    }
+
+    #[tokio::test]
+    async fn runtime_latency_uses_ewma_instead_of_last_sample_only() {
+        let backend: SocketAddr = "127.0.0.1:11590".parse().unwrap();
+        let pool = BackendPool::new(test_config(vec![backend])).unwrap();
+        {
+            let mut inner = pool.inner.lock().await;
+            inner.entries[0].state = BackendState::Green;
+            inner.entries[0].force_full_probe = false;
+        }
+
+        pool.mark_runtime_success(backend, Duration::from_millis(40)).await;
+        pool.mark_runtime_success(backend, Duration::from_millis(120)).await;
+
+        let inner = pool.inner.lock().await;
+        let ewma = inner.entries[0].runtime_latency_ewma_ms.unwrap();
+        assert!((ewma - 60.0).abs() < 0.001);
+    }
     #[tokio::test]
     async fn runtime_cooldown_prefers_other_green_but_never_hides_the_only_green() {
         let first: SocketAddr = "127.0.0.1:11590".parse().unwrap();

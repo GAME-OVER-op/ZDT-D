@@ -940,7 +940,13 @@ async fn create_udp_session(
         return prepare_direct_session(state, key, id).await.map(Some);
     }
     if priority_zero_mode == PriorityZeroMode::DirectFirst {
-        return prepare_direct_session(state, key, id).await.map(Some);
+        // Port 0 means DIRECT is preferred, not that UDP must be pinned to
+        // DIRECT forever. Only choose it immediately when the general direct
+        // path is healthy and UDP has not failed recently. Otherwise continue
+        // into the normal GREEN SOCKS selection below.
+        if state.runtime.udp_direct_allowed() && state.runtime.direct_path_available() {
+            return prepare_direct_session(state, key, id).await.map(Some);
+        }
     }
 
     if !udp_socks_available {
@@ -998,9 +1004,13 @@ async fn create_udp_session(
     }
 
     // Preserve the existing default fallback policy, but only after the UDP
-    // backend check has completed. This removes the startup race where the
-    // first QUIC flow was permanently assigned to DIRECT while SOCKS health
-    // was still unknown.
+    // backend check has completed. In DirectFirst mode, however, a recently
+    // proven-bad UDP direct path must stay out of selection until its short
+    // UDP-specific cooldown expires; otherwise every new QUIC flow would hit
+    // DIRECT again and never reach the SOCKS ports after `0`.
+    if priority_zero_mode == PriorityZeroMode::DirectFirst && !state.runtime.udp_direct_allowed() {
+        return Ok(None);
+    }
     prepare_direct_session(state, key, id).await.map(Some)
 }
 
@@ -1215,7 +1225,10 @@ async fn direct_session_loop(
         tokio::select! {
             maybe_data = queue.recv() => {
                 let Some(data) = maybe_data else { break; };
-                outbound.send_to(data.as_slice(), key.original_dst).await.context("send direct udp")?;
+                if let Err(e) = outbound.send_to(data.as_slice(), key.original_dst).await {
+                    state.runtime.note_udp_direct_failure(20);
+                    return Err(e).context("send direct udp");
+                }
                 state.stats.add_up(data.len() as u64);
                 touch_session(&mut idle_sleep);
                 if response_deadline.is_none() {
@@ -1226,16 +1239,23 @@ async fn direct_session_loop(
                 }
             }
             res = outbound.recv_from(&mut buf) => {
-                let (n, from) = res.context("recv direct udp response")?;
+                let (n, from) = match res {
+                    Ok(value) => value,
+                    Err(e) => {
+                        state.runtime.note_udp_direct_failure(20);
+                        return Err(e).context("recv direct udp response");
+                    }
+                };
                 let source = if from.port() == key.original_dst.port() { from } else { key.original_dst };
                 send_spoofed_udp(&spoof_cache, source, key.peer, &buf[..n]).await?;
                 state.stats.add_down(n as u64);
                 received_any = true;
+                state.runtime.clear_udp_direct_cooldown();
                 response_deadline = None;
                 touch_session(&mut idle_sleep);
             }
             _ = &mut response_wait => {
-                state.runtime.note_direct_failure(20);
+                state.runtime.note_udp_direct_failure(20);
                 return Err(anyhow::anyhow!(
                     "no direct UDP response within {}s",
                     if received_any { UDP_RESPONSE_STALL_TIMEOUT.as_secs() } else { UDP_FIRST_RESPONSE_TIMEOUT.as_secs() }

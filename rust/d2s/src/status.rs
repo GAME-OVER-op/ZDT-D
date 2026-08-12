@@ -1,7 +1,15 @@
 use crate::{backend::BackendState, config::Config};
 use anyhow::{Context, Result};
 use serde::Serialize;
-use std::{path::Path, sync::{Arc, atomic::{AtomicU64, Ordering}}, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    collections::HashMap,
+    path::Path,
+    sync::{
+        Arc, Mutex as StdMutex,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{Instant, SystemTime, UNIX_EPOCH},
+};
 use tokio::sync::watch;
 use tracing::warn;
 
@@ -11,10 +19,35 @@ pub struct RuntimeStats {
     pub active_connections: AtomicU64,
     pub completed_connections: AtomicU64,
     pub failed_connections: AtomicU64,
+    pub connection_limit_drops: AtomicU64,
+    pub peak_active_connections: AtomicU64,
     pub upstream_connections: AtomicU64,
     pub direct_connections: AtomicU64,
     pub client_to_remote_bytes: AtomicU64,
     pub remote_to_client_bytes: AtomicU64,
+    pub relay_stalled: AtomicU64,
+    pub relay_half_close_timeouts: AtomicU64,
+    pub relay_forced_closes: AtomicU64,
+    pub relay_client_eof: AtomicU64,
+    pub relay_remote_eof: AtomicU64,
+    pub relay_client_io_errors: AtomicU64,
+    pub relay_remote_io_errors: AtomicU64,
+    next_connection_id: AtomicU64,
+    active_started: StdMutex<HashMap<u64, Instant>>,
+}
+
+pub struct ActiveConnectionGuard {
+    stats: Arc<RuntimeStats>,
+    id: u64,
+}
+
+impl Drop for ActiveConnectionGuard {
+    fn drop(&mut self) {
+        if let Ok(mut active) = self.stats.active_started.lock() {
+            active.remove(&self.id);
+        }
+        self.stats.active_connections.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -46,16 +79,48 @@ pub struct StatusSnapshot {
     pub direct_fallback: bool,
     pub accepted_connections: u64,
     pub active_connections: u64,
+    pub oldest_active_connection_ms: Option<u64>,
+    pub peak_active_connections: u64,
     pub completed_connections: u64,
     pub failed_connections: u64,
+    pub connection_limit_drops: u64,
     pub upstream_connections: u64,
     pub direct_connections: u64,
     pub client_to_remote_bytes: u64,
     pub remote_to_client_bytes: u64,
+    pub relay_stalled: u64,
+    pub relay_half_close_timeouts: u64,
+    pub relay_forced_closes: u64,
+    pub relay_client_eof: u64,
+    pub relay_remote_eof: u64,
+    pub relay_client_io_errors: u64,
+    pub relay_remote_io_errors: u64,
     pub backends: Vec<BackendSnapshot>,
 }
 
 impl RuntimeStats {
+    pub fn begin_connection(self: &Arc<Self>) -> ActiveConnectionGuard {
+        let id = self.next_connection_id.fetch_add(1, Ordering::Relaxed);
+        let active = self.active_connections.fetch_add(1, Ordering::Relaxed) + 1;
+        update_max(&self.peak_active_connections, active);
+        if let Ok(mut started) = self.active_started.lock() {
+            started.insert(id, Instant::now());
+        }
+        ActiveConnectionGuard { stats: self.clone(), id }
+    }
+
+    fn oldest_active_connection_ms(&self) -> Option<u64> {
+        self.active_started
+            .lock()
+            .ok()
+            .and_then(|active| {
+                active
+                    .values()
+                    .map(|started| started.elapsed().as_millis() as u64)
+                    .max()
+            })
+    }
+
     pub fn snapshot(&self, config: &Config, backends: Vec<BackendSnapshot>, running: bool) -> StatusSnapshot {
         StatusSnapshot {
             name: "D2S",
@@ -66,13 +131,33 @@ impl RuntimeStats {
             direct_fallback: config.direct_fallback,
             accepted_connections: self.accepted_connections.load(Ordering::Relaxed),
             active_connections: self.active_connections.load(Ordering::Relaxed),
+            oldest_active_connection_ms: self.oldest_active_connection_ms(),
+            peak_active_connections: self.peak_active_connections.load(Ordering::Relaxed),
             completed_connections: self.completed_connections.load(Ordering::Relaxed),
             failed_connections: self.failed_connections.load(Ordering::Relaxed),
+            connection_limit_drops: self.connection_limit_drops.load(Ordering::Relaxed),
             upstream_connections: self.upstream_connections.load(Ordering::Relaxed),
             direct_connections: self.direct_connections.load(Ordering::Relaxed),
             client_to_remote_bytes: self.client_to_remote_bytes.load(Ordering::Relaxed),
             remote_to_client_bytes: self.remote_to_client_bytes.load(Ordering::Relaxed),
+            relay_stalled: self.relay_stalled.load(Ordering::Relaxed),
+            relay_half_close_timeouts: self.relay_half_close_timeouts.load(Ordering::Relaxed),
+            relay_forced_closes: self.relay_forced_closes.load(Ordering::Relaxed),
+            relay_client_eof: self.relay_client_eof.load(Ordering::Relaxed),
+            relay_remote_eof: self.relay_remote_eof.load(Ordering::Relaxed),
+            relay_client_io_errors: self.relay_client_io_errors.load(Ordering::Relaxed),
+            relay_remote_io_errors: self.relay_remote_io_errors.load(Ordering::Relaxed),
             backends,
+        }
+    }
+}
+
+fn update_max(target: &AtomicU64, value: u64) {
+    let mut current = target.load(Ordering::Relaxed);
+    while value > current {
+        match target.compare_exchange_weak(current, value, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => break,
+            Err(observed) => current = observed,
         }
     }
 }

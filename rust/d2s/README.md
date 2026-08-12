@@ -144,12 +144,36 @@ and long-lived HTTP/1.1 or HTTP/2 connections for DoH. D2S therefore limits
 route establishment but does **not** impose an artificial idle timeout on an
 established relay.
 
+Established tunnels use a supervised bidirectional relay instead of an
+unbounded `copy_bidirectional()` call:
+
+- an idle keep-alive is never closed merely for being idle;
+- after the client forwards the first real payload bytes, the remote side must
+  prove the data-plane within the active DNSCrypt query timeout;
+- after the client write half reaches EOF, the remote read half gets the
+  DNSCrypt timeout plus a small drain margin to finish a final response; a
+  remote EOF closes the relay immediately because no further DNS/DoH response
+  can arrive;
+- relay copies are child futures of the client task, not detached tasks, so task
+  cancellation/shutdown cannot leave orphan relay workers behind;
+- client-side reset/read/write errors are treated as client cancellation and do
+  not falsely mark a SOCKS backend suspect; remote-side I/O errors still trigger
+  the existing strict Full recheck.
+
 D2S reads the DNSCrypt `timeout` value and keeps backend/DIRECT route setup
-inside that deadline with a small safety margin.
+inside that deadline with a small safety margin. The same runtime value is used
+for the first-response and half-close safety windows, so no independent relay
+knob can silently drift away from DNSCrypt's own timeout policy.
 
 In single-backend mode, a short one-shot retry remains enabled for SOCKS reply
 `0x03`/`0x04` to absorb brief Wi-Fi/mobile route transitions. This only retries
 the current DNSCrypt CONNECT; it does not decide backend health.
+
+The optional status JSON also exposes relay-lifecycle counters including active
+and peak connections, oldest active connection age, connection-limit drops,
+first-response stalls, half-close timeouts, forced closes, EOF counts, and
+client-vs-remote I/O errors. These counters make leaked or repeatedly stalled
+DNS transports visible without changing backend selection behavior.
 
 ## Probe targets
 

@@ -305,6 +305,38 @@ async fn roundtrip_domain(proxy: SocketAddr, host: &str, port: u16, payload: &[u
     assert_eq!(echoed, payload);
 }
 
+async fn open_tunnel(proxy: SocketAddr, target: SocketAddr) -> TcpStream {
+    let mut stream = TcpStream::connect(proxy).await.unwrap();
+    stream.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+    let mut greeting = [0u8; 2];
+    stream.read_exact(&mut greeting).await.unwrap();
+    assert_eq!(greeting, [0x05, 0x00]);
+
+    let mut request = vec![0x05, 0x01, 0x00, 0x01];
+    let IpAddr::V4(ip) = target.ip() else { panic!("test target must be IPv4") };
+    request.extend_from_slice(&ip.octets());
+    request.extend_from_slice(&target.port().to_be_bytes());
+    stream.write_all(&request).await.unwrap();
+
+    let mut reply = [0u8; 10];
+    stream.read_exact(&mut reply).await.unwrap();
+    assert_eq!(reply[1], 0x00);
+    stream
+}
+
+async fn wait_for_active_connections(server: &d2s::RunningServer, expected: u64) {
+    for _ in 0..80 {
+        if server.stats.active_connections.load(Ordering::Relaxed) == expected {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    panic!(
+        "timed out waiting for active_connections={expected}; got {}",
+        server.stats.active_connections.load(Ordering::Relaxed)
+    );
+}
+
 #[tokio::test]
 async fn balances_only_green_backends_round_robin() {
     let echo = EchoServer::start().await;
@@ -488,6 +520,121 @@ async fn socks_connect_success_without_data_plane_never_becomes_green() {
     wait_for_green(&server, 1).await;
 
     server.shutdown().await.unwrap();
+    backend.stop().await;
+    echo.stop().await;
+}
+
+
+#[tokio::test]
+async fn established_blackhole_is_forced_closed_and_releases_connection_slot() {
+    let echo = EchoServer::start().await;
+    let backend = MockSocks::start(false).await;
+    let mut cfg = config(vec![backend.addr], echo.addr);
+    cfg.dnscrypt_timeout_ms = 1_000;
+    let server = start(cfg).await.unwrap();
+    wait_for_green(&server, 1).await;
+
+    backend.set_blackhole(true);
+    let mut stream = open_tunnel(server.listen_addr, echo.addr).await;
+    wait_for_active_connections(&server, 1).await;
+    stream.write_all(b"will-stall").await.unwrap();
+
+    let mut byte = [0u8; 1];
+    let closed = tokio::time::timeout(Duration::from_millis(1_500), stream.read(&mut byte)).await;
+    assert!(closed.is_ok(), "stalled relay was not closed within its response deadline");
+    wait_for_active_connections(&server, 0).await;
+
+    assert_eq!(server.stats.relay_stalled.load(Ordering::Relaxed), 1);
+    assert_eq!(server.stats.relay_forced_closes.load(Ordering::Relaxed), 1);
+
+    server.shutdown().await.unwrap();
+    backend.stop().await;
+    echo.stop().await;
+}
+
+#[tokio::test]
+async fn idle_keepalive_is_not_closed_before_or_after_first_response() {
+    let echo = EchoServer::start().await;
+    let backend = MockSocks::start(false).await;
+    let mut cfg = config(vec![backend.addr], echo.addr);
+    cfg.dnscrypt_timeout_ms = 600;
+    let server = start(cfg).await.unwrap();
+    wait_for_green(&server, 1).await;
+
+    let mut stream = open_tunnel(server.listen_addr, echo.addr).await;
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    assert_eq!(server.stats.active_connections.load(Ordering::Relaxed), 1);
+
+    stream.write_all(b"first").await.unwrap();
+    let mut first = [0u8; 5];
+    stream.read_exact(&mut first).await.unwrap();
+    assert_eq!(&first, b"first");
+
+    tokio::time::sleep(Duration::from_millis(800)).await;
+    assert_eq!(server.stats.active_connections.load(Ordering::Relaxed), 1);
+
+    stream.write_all(b"second").await.unwrap();
+    let mut second = [0u8; 6];
+    stream.read_exact(&mut second).await.unwrap();
+    assert_eq!(&second, b"second");
+    drop(stream);
+    wait_for_active_connections(&server, 0).await;
+
+    assert_eq!(server.stats.relay_stalled.load(Ordering::Relaxed), 0);
+
+    server.shutdown().await.unwrap();
+    backend.stop().await;
+    echo.stop().await;
+}
+
+#[tokio::test]
+async fn half_closed_client_cannot_leave_a_relay_task_stuck_forever() {
+    let echo = EchoServer::start().await;
+    let backend = MockSocks::start(false).await;
+    let mut cfg = config(vec![backend.addr], echo.addr);
+    cfg.dnscrypt_timeout_ms = 700;
+    let server = start(cfg).await.unwrap();
+    wait_for_green(&server, 1).await;
+
+    backend.set_blackhole(true);
+    let mut stream = open_tunnel(server.listen_addr, echo.addr).await;
+    wait_for_active_connections(&server, 1).await;
+    stream.shutdown().await.unwrap();
+
+    let mut byte = [0u8; 1];
+    let closed = tokio::time::timeout(Duration::from_millis(1_700), stream.read(&mut byte)).await;
+    assert!(closed.is_ok(), "half-closed relay did not finish within the bounded drain window");
+    wait_for_active_connections(&server, 0).await;
+
+    assert_eq!(
+        server.stats.relay_half_close_timeouts.load(Ordering::Relaxed),
+        1
+    );
+    assert_eq!(server.stats.relay_stalled.load(Ordering::Relaxed), 0);
+
+    server.shutdown().await.unwrap();
+    backend.stop().await;
+    echo.stop().await;
+}
+
+#[tokio::test]
+async fn shutdown_abort_releases_active_connection_accounting() {
+    let echo = EchoServer::start().await;
+    let backend = MockSocks::start(false).await;
+    let mut cfg = config(vec![backend.addr], echo.addr);
+    cfg.shutdown_grace_period_ms = 100;
+    let server = start(cfg).await.unwrap();
+    wait_for_green(&server, 1).await;
+
+    let stream = open_tunnel(server.listen_addr, echo.addr).await;
+    wait_for_active_connections(&server, 1).await;
+    let stats = server.stats.clone();
+
+    server.shutdown().await.unwrap();
+    assert_eq!(stats.active_connections.load(Ordering::Relaxed), 0);
+    assert_eq!(stats.peak_active_connections.load(Ordering::Relaxed), 1);
+
+    drop(stream);
     backend.stop().await;
     echo.stop().await;
 }

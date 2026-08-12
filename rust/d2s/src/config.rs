@@ -217,6 +217,22 @@ impl Config {
     }
     pub fn shutdown_grace_period(&self) -> Duration { Duration::from_millis(self.shutdown_grace_period_ms) }
 
+    /// Maximum time after the client has sent the first relay payload for the
+    /// remote side to prove that the established tunnel actually carries data.
+    /// This intentionally follows dnscrypt-proxy's own query timeout and is not
+    /// a generic idle timeout for long-lived DoH connections.
+    pub fn relay_first_response_timeout(&self) -> Duration {
+        Duration::from_millis(self.dnscrypt_timeout_ms)
+    }
+
+    /// Once one TCP half is closed, keep the opposite half only long enough to
+    /// drain a final DNS/DoH response. A small margin avoids racing DNSCrypt's
+    /// own timeout while still guaranteeing eventual resource release.
+    pub fn relay_half_close_timeout(&self) -> Duration {
+        const DRAIN_MARGIN_MS: u64 = 500;
+        Duration::from_millis(self.dnscrypt_timeout_ms.saturating_add(DRAIN_MARGIN_MS))
+    }
+
     /// Keep D2S route establishment inside dnscrypt-proxy's own query timeout.
     /// A small margin leaves time for DNSCrypt to process the SOCKS result.
     pub fn route_budget(&self) -> Duration {
@@ -225,7 +241,8 @@ impl Config {
         let budget_ms = self
             .dnscrypt_timeout_ms
             .saturating_sub(SAFETY_MARGIN_MS)
-            .max(MIN_ROUTE_BUDGET_MS);
+            .max(MIN_ROUTE_BUDGET_MS)
+            .min(self.dnscrypt_timeout_ms);
         Duration::from_millis(budget_ms)
     }
 
@@ -401,6 +418,8 @@ idle_after_secs = 60
         assert_eq!(config.route_budget(), Duration::from_millis(6500));
         config.dnscrypt_timeout_ms = 1200;
         assert_eq!(config.route_budget(), Duration::from_millis(1000));
+        config.dnscrypt_timeout_ms = 600;
+        assert_eq!(config.route_budget(), Duration::from_millis(600));
     }
 
 }

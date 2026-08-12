@@ -1,7 +1,18 @@
-use crate::{backend::BackendPool, config::Config, router::Router, socks5::{read_client_request, send_failure, send_success}, status::{status_writer, RuntimeStats}};
+use crate::{
+    backend::BackendPool,
+    config::Config,
+    relay::{relay_bidirectional, RelayEndpoint, RelayTermination},
+    router::Router,
+    socks5::{read_client_request, send_failure, send_success},
+    status::{status_writer, RuntimeStats},
+};
 use anyhow::{Context, Result};
 use std::{net::SocketAddr, sync::{Arc, Mutex as StdMutex, atomic::Ordering}, time::{Duration, Instant}};
-use tokio::{io::copy_bidirectional, net::{TcpListener, TcpStream}, sync::{Notify, Semaphore, watch}, task::{JoinHandle, JoinSet}};
+use tokio::{
+    net::{TcpListener, TcpStream},
+    sync::{watch, Notify, Semaphore},
+    task::{JoinHandle, JoinSet},
+};
 use tracing::{debug, error, info, warn};
 
 #[derive(Clone)]
@@ -110,14 +121,18 @@ async fn run_loop(
         health_loop(health_pool, health_config, health_stats, health_activity, health_shutdown).await
     });
 
+    // Keep status lifetime separate from the external shutdown signal. The
+    // final `running=false` snapshot is written only after client tasks have
+    // drained/been aborted, so active connection diagnostics cannot be stale.
+    let (status_shutdown_tx, status_shutdown_rx) = watch::channel(false);
     let status_task = tokio::spawn(status_writer(
         config.clone(),
         pool.clone(),
         stats.clone(),
-        shutdown.clone(),
+        status_shutdown_rx,
     ));
 
-    info!(listen = %listener.local_addr()?, "D2S SOCKS5 listener is ready");
+    info!(listen = %config.listen, "D2S SOCKS5 listener is ready");
 
     loop {
         tokio::select! {
@@ -139,6 +154,7 @@ async fn run_loop(
                         let permit = match semaphore.clone().try_acquire_owned() {
                             Ok(permit) => permit,
                             Err(_) => {
+                                stats.connection_limit_drops.fetch_add(1, Ordering::Relaxed);
                                 warn!(%peer, max_connections = config.max_connections, "connection limit reached; dropping client");
                                 drop(stream);
                                 continue;
@@ -149,9 +165,8 @@ async fn run_loop(
                         let stats = stats.clone();
                         clients.spawn(async move {
                             let _permit = permit;
-                            stats.active_connections.fetch_add(1, Ordering::Relaxed);
+                            let _active = stats.begin_connection();
                             let result = handle_client(stream, peer, config, router, stats.clone()).await;
-                            stats.active_connections.fetch_sub(1, Ordering::Relaxed);
                             match result {
                                 Ok(()) => { stats.completed_connections.fetch_add(1, Ordering::Relaxed); }
                                 Err(error) => {
@@ -189,6 +204,7 @@ async fn run_loop(
         }
     }
     let _ = health_task.await;
+    let _ = status_shutdown_tx.send(true);
     let _ = status_task.await;
     Ok(())
 }
@@ -209,41 +225,157 @@ async fn handle_client(
         }
     };
 
-    let mut routed = match router.connect(&target).await {
+    let routed = match router.connect(&target).await {
         Ok(routed) => routed,
         Err(error) => {
-            send_failure(&mut client, 0x04).await.ok();
+            let _ = tokio::time::timeout(
+                config.client_handshake_timeout(),
+                send_failure(&mut client, 0x04),
+            )
+            .await;
             return Err(error);
         }
     };
 
     debug!(%peer, %target, route = ?routed.route, backend = ?routed.backend, "D2S route established");
-    send_success(&mut client).await?;
-    let relay = copy_bidirectional(&mut client, &mut routed.stream).await;
-    match relay {
-        Ok((client_to_remote, remote_to_client)) => {
-            stats.client_to_remote_bytes.fetch_add(client_to_remote, Ordering::Relaxed);
-            stats.remote_to_client_bytes.fetch_add(remote_to_client, Ordering::Relaxed);
+    tokio::time::timeout(config.client_handshake_timeout(), send_success(&mut client))
+        .await
+        .map_err(|_| anyhow::anyhow!("SOCKS5 success reply to {peer} timed out"))??;
 
-            // DNSCrypt/DoH traffic always expects a response. If the client sent
-            // bytes through an established route but the remote side returned
-            // nothing before the relay closed, treat this as a suspect data-plane
-            // event. As in T2S, this only triggers a strict Full recheck; it does
-            // not directly rewrite backend health.
-            if client_to_remote > 0 && remote_to_client == 0 {
+    let report = relay_bidirectional(
+        client,
+        routed.stream,
+        config.relay_first_response_timeout(),
+        config.relay_half_close_timeout(),
+    )
+    .await;
+
+    stats
+        .client_to_remote_bytes
+        .fetch_add(report.client_to_remote, Ordering::Relaxed);
+    stats
+        .remote_to_client_bytes
+        .fetch_add(report.remote_to_client, Ordering::Relaxed);
+    if report.client_eof {
+        stats.relay_client_eof.fetch_add(1, Ordering::Relaxed);
+    }
+    if report.remote_eof {
+        stats.relay_remote_eof.fetch_add(1, Ordering::Relaxed);
+    }
+
+    let no_downstream_after_request =
+        report.client_to_remote > 0 && report.remote_to_client == 0;
+
+    match report.termination {
+        RelayTermination::Clean => {
+            if no_downstream_after_request {
                 let message = format!(
-                    "relay closed after {client_to_remote} upstream bytes with zero downstream bytes for {target}"
+                    "relay closed after {} upstream bytes with zero downstream bytes for {target}",
+                    report.client_to_remote
                 );
-                router.report_relay_failure(routed.route, routed.backend, &message).await;
+                router
+                    .report_relay_failure(routed.route, routed.backend, &message)
+                    .await;
             } else {
-                router.report_relay_success(routed.route, routed.backend, remote_to_client);
+                router.report_relay_success(
+                    routed.route,
+                    routed.backend,
+                    report.remote_to_client,
+                );
             }
             Ok(())
         }
-        Err(error) => {
-            let message = format!("relay traffic for {target}: {error}");
-            router.report_relay_failure(routed.route, routed.backend, &message).await;
-            Err(anyhow::Error::new(error).context(format!("relay traffic for {target}")))
+        RelayTermination::FirstResponseTimeout => {
+            stats.relay_stalled.fetch_add(1, Ordering::Relaxed);
+            stats.relay_forced_closes.fetch_add(1, Ordering::Relaxed);
+            let message = format!(
+                "relay data-plane stalled for {target}: {} upstream bytes, zero downstream bytes within {} ms",
+                report.client_to_remote,
+                config.relay_first_response_timeout().as_millis()
+            );
+            router
+                .report_relay_failure(routed.route, routed.backend, &message)
+                .await;
+            Err(anyhow::anyhow!(message))
+        }
+        RelayTermination::HalfCloseTimeout { first_closed } => {
+            stats
+                .relay_half_close_timeouts
+                .fetch_add(1, Ordering::Relaxed);
+            stats.relay_forced_closes.fetch_add(1, Ordering::Relaxed);
+
+            // A half-closed TCP connection with no request payload is usually a
+            // cancelled/empty client and is not evidence against the backend.
+            // If DNSCrypt did send a request and received nothing, however, the
+            // remote data-plane is suspect and should receive the existing Full
+            // recheck without changing the backend selection policy directly.
+            if no_downstream_after_request {
+                let message = format!(
+                    "relay half-close drain timed out for {target} after {:?}: {} upstream bytes, zero downstream bytes",
+                    first_closed,
+                    report.client_to_remote
+                );
+                router
+                    .report_relay_failure(routed.route, routed.backend, &message)
+                    .await;
+                return Err(anyhow::anyhow!(message));
+            }
+
+            router.report_relay_success(
+                routed.route,
+                routed.backend,
+                report.remote_to_client,
+            );
+            debug!(
+                %peer,
+                %target,
+                ?first_closed,
+                client_to_remote = report.client_to_remote,
+                remote_to_client = report.remote_to_client,
+                "forced close of lingering half-closed relay"
+            );
+            Ok(())
+        }
+        RelayTermination::IoError {
+            endpoint,
+            operation,
+            error,
+        } => {
+            match endpoint {
+                RelayEndpoint::Client => {
+                    stats
+                        .relay_client_io_errors
+                        .fetch_add(1, Ordering::Relaxed);
+                    // Client-side resets/cancellations are not backend failures.
+                    // Preserve any positive DIRECT evidence but do not trigger a
+                    // backend Full probe solely because DNSCrypt went away.
+                    router.report_relay_success(
+                        routed.route,
+                        routed.backend,
+                        report.remote_to_client,
+                    );
+                    debug!(
+                        %peer,
+                        %target,
+                        ?operation,
+                        %error,
+                        "client side of relay closed with I/O error"
+                    );
+                    Ok(())
+                }
+                RelayEndpoint::Remote => {
+                    stats
+                        .relay_remote_io_errors
+                        .fetch_add(1, Ordering::Relaxed);
+                    let message = format!(
+                        "remote relay {operation:?} error for {target}: {error}"
+                    );
+                    router
+                        .report_relay_failure(routed.route, routed.backend, &message)
+                        .await;
+                    Err(anyhow::Error::new(error).context(message))
+                }
+            }
         }
     }
 }

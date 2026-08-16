@@ -2257,4 +2257,13 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="d2s_idle_after">Sleep health checks after inactivity</string>
     <string name="d2s_idle_after_desc">Seconds without client traffic before synthetic checks sleep. 0 disables sleep.</string>
     <string name="d2s_error_non_negative_number">Idle timeout must be zero or greater.</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">Module ZIP compatibility patch failed: %1$s</string>
+    <string name="module_zip_patch_oom_warning">Warning: the in-memory ZIP compatibility patch ran out of application memory: %1$s. Switching to low-memory ZIP patch mode.</string>
+    <string name="module_zip_patch_low_memory_normalized">Low-memory ZIP compatibility patch completed: cleared the encrypted flag in %1$d Central Directory entries. Continuing.</string>
+    <string name="module_zip_patch_low_memory_compatible">Low-memory ZIP compatibility check completed: the archive is already compatible with strict installers. Continuing.</string>
+    <string name="module_zip_patch_normalized">Module ZIP normalized for strict installer: cleared the encrypted flag in %1$d Central Directory entries.</string>
+    <string name="module_zip_patch_compatible">Module ZIP is already compatible with strict installers.</string>
+    <string name="module_zip_patch_protection_kept_magisk">Module ZIP protection kept for the Magisk installer.</string>
 </resources>

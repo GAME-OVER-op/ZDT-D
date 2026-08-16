@@ -2261,4 +2261,13 @@ APatch: 10700+</string>
     <string name="d2s_idle_after">Сон перевірок під час простою</string>
     <string name="d2s_idle_after_desc">Секунди без клієнтського трафіку до зупинки фонових перевірок. 0 вимикає сон.</string>
     <string name="d2s_error_non_negative_number">Час простою має дорівнювати нулю або бути більшим.</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">Не вдалося застосувати виправлення сумісності ZIP модуля: %1$s</string>
+    <string name="module_zip_patch_oom_warning">Попередження: для виправлення сумісності ZIP у пам’яті не вистачило пам’яті застосунку: %1$s. Перемикання на режим обробки ZIP з низьким споживанням пам’яті.</string>
+    <string name="module_zip_patch_low_memory_normalized">Виправлення сумісності ZIP у режимі низького споживання пам’яті завершено: прапорець шифрування знято у %1$d записах Central Directory. Продовжуємо.</string>
+    <string name="module_zip_patch_low_memory_compatible">Перевірку сумісності ZIP у режимі низького споживання пам’яті завершено: архів уже сумісний зі строгими інсталяторами. Продовжуємо.</string>
+    <string name="module_zip_patch_normalized">ZIP модуля нормалізовано для строгого інсталятора: прапорець шифрування знято у %1$d записах Central Directory.</string>
+    <string name="module_zip_patch_compatible">ZIP модуля вже сумісний зі строгими інсталяторами.</string>
+    <string name="module_zip_patch_protection_kept_magisk">Захист ZIP модуля збережено для інсталятора Magisk.</string>
 </resources>

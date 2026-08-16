@@ -2258,4 +2258,13 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="d2s_idle_after">アイドル時にヘルスチェックを休止</string>
     <string name="d2s_idle_after_desc">クライアント通信がない状態でチェックを休止するまでの秒数。0 で休止を無効化。</string>
     <string name="d2s_error_non_negative_number">アイドル時間は 0 以上である必要があります。</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">モジュール ZIP の互換性パッチに失敗しました: %1$s</string>
+    <string name="module_zip_patch_oom_warning">警告: メモリ内 ZIP 互換性パッチでアプリのメモリが不足しました: %1$s。低メモリ ZIP パッチモードに切り替えます。</string>
+    <string name="module_zip_patch_low_memory_normalized">低メモリ ZIP 互換性パッチが完了しました: %1$d 件の Central Directory エントリから暗号化フラグを解除しました。続行します。</string>
+    <string name="module_zip_patch_low_memory_compatible">低メモリ ZIP 互換性チェックが完了しました: アーカイブはすでに厳格なインストーラーと互換性があります。続行します。</string>
+    <string name="module_zip_patch_normalized">厳格なインストーラー向けにモジュール ZIP を正規化しました: %1$d 件の Central Directory エントリから暗号化フラグを解除しました。</string>
+    <string name="module_zip_patch_compatible">モジュール ZIP はすでに厳格なインストーラーと互換性があります。</string>
+    <string name="module_zip_patch_protection_kept_magisk">Magisk インストーラー向けにモジュール ZIP の保護を維持しました。</string>
 </resources>

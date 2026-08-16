@@ -2259,4 +2259,13 @@ La causa restante probablemente está en el daemon/API. Revisa los registros del
     <string name="d2s_idle_after">Suspender comprobaciones por inactividad</string>
     <string name="d2s_idle_after_desc">Segundos sin tráfico del cliente antes de suspender las comprobaciones. 0 desactiva la suspensión.</string>
     <string name="d2s_error_non_negative_number">El tiempo de inactividad debe ser cero o mayor.</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">Falló el ajuste de compatibilidad del ZIP del módulo: %1$s</string>
+    <string name="module_zip_patch_oom_warning">Advertencia: el ajuste de compatibilidad del ZIP en memoria se quedó sin memoria de la aplicación: %1$s. Cambiando al modo de parcheo ZIP de bajo consumo de memoria.</string>
+    <string name="module_zip_patch_low_memory_normalized">Ajuste de compatibilidad ZIP de bajo consumo completado: se quitó el indicador de cifrado en %1$d entradas del Central Directory. Continuando.</string>
+    <string name="module_zip_patch_low_memory_compatible">Comprobación de compatibilidad ZIP de bajo consumo completada: el archivo ya es compatible con instaladores estrictos. Continuando.</string>
+    <string name="module_zip_patch_normalized">ZIP del módulo normalizado para un instalador estricto: se quitó el indicador de cifrado en %1$d entradas del Central Directory.</string>
+    <string name="module_zip_patch_compatible">El ZIP del módulo ya es compatible con instaladores estrictos.</string>
+    <string name="module_zip_patch_protection_kept_magisk">Se mantiene la protección del ZIP del módulo para el instalador Magisk.</string>
 </resources>

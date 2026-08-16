@@ -2258,4 +2258,13 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="d2s_idle_after">Boşta sağlık kontrollerini uyut</string>
     <string name="d2s_idle_after_desc">İstemci trafiği olmadan kontrollerin uykuya geçeceği saniye. 0 uyku modunu kapatır.</string>
     <string name="d2s_error_non_negative_number">Boşta kalma süresi sıfır veya daha büyük olmalıdır.</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">Modül ZIP uyumluluk düzeltmesi başarısız oldu: %1$s</string>
+    <string name="module_zip_patch_oom_warning">Uyarı: Bellek içi ZIP uyumluluk düzeltmesi için uygulama belleği yetersiz kaldı: %1$s. Düşük bellek kullanan ZIP düzeltme moduna geçiliyor.</string>
+    <string name="module_zip_patch_low_memory_normalized">Düşük bellek kullanan ZIP uyumluluk düzeltmesi tamamlandı: %1$d Central Directory kaydındaki şifreleme bayrağı kaldırıldı. Devam ediliyor.</string>
+    <string name="module_zip_patch_low_memory_compatible">Düşük bellek kullanan ZIP uyumluluk denetimi tamamlandı: arşiv zaten katı yükleyicilerle uyumlu. Devam ediliyor.</string>
+    <string name="module_zip_patch_normalized">Modül ZIP’i katı yükleyici için normalleştirildi: %1$d Central Directory kaydındaki şifreleme bayrağı kaldırıldı.</string>
+    <string name="module_zip_patch_compatible">Modül ZIP’i zaten katı yükleyicilerle uyumlu.</string>
+    <string name="module_zip_patch_protection_kept_magisk">Modül ZIP koruması Magisk yükleyicisi için korundu.</string>
 </resources>

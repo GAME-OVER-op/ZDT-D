@@ -2259,4 +2259,13 @@ APatch: 10700+</string>
     <string name="d2s_idle_after">خواب بررسی‌ها در حالت بیکار</string>
     <string name="d2s_idle_after_desc">ثانیه بدون ترافیک کلاینت تا توقف بررسی‌های پس‌زمینه. 0 خواب را غیرفعال می‌کند.</string>
     <string name="d2s_error_non_negative_number">زمان بیکاری باید صفر یا بیشتر باشد.</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">اصلاح سازگاری ZIP ماژول ناموفق بود: %1$s</string>
+    <string name="module_zip_patch_oom_warning">هشدار: حافظهٔ برنامه برای اصلاح سازگاری ZIP در حافظه کافی نبود: %1$s. در حال تغییر به حالت اصلاح ZIP با مصرف کم حافظه.</string>
+    <string name="module_zip_patch_low_memory_normalized">اصلاح سازگاری ZIP با مصرف کم حافظه تکمیل شد: پرچم رمزگذاری از %1$d ورودی Central Directory پاک شد. ادامه می‌دهیم.</string>
+    <string name="module_zip_patch_low_memory_compatible">بررسی سازگاری ZIP با مصرف کم حافظه تکمیل شد: آرشیو از قبل با نصب‌کننده‌های سخت‌گیر سازگار است. ادامه می‌دهیم.</string>
+    <string name="module_zip_patch_normalized">ZIP ماژول برای نصب‌کنندهٔ سخت‌گیر نرمال‌سازی شد: پرچم رمزگذاری از %1$d ورودی Central Directory پاک شد.</string>
+    <string name="module_zip_patch_compatible">ZIP ماژول از قبل با نصب‌کننده‌های سخت‌گیر سازگار است.</string>
+    <string name="module_zip_patch_protection_kept_magisk">محافظت ZIP ماژول برای نصب‌کنندهٔ Magisk حفظ شد.</string>
 </resources>

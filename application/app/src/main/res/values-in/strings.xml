@@ -2258,4 +2258,13 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="d2s_idle_after">Tidurkan pemeriksaan saat tidak aktif</string>
     <string name="d2s_idle_after_desc">Detik tanpa trafik klien sebelum pemeriksaan latar tidur. 0 menonaktifkan tidur.</string>
     <string name="d2s_error_non_negative_number">Waktu tidak aktif harus nol atau lebih.</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">Patch kompatibilitas ZIP modul gagal: %1$s</string>
+    <string name="module_zip_patch_oom_warning">Peringatan: patch kompatibilitas ZIP di memori kehabisan memori aplikasi: %1$s. Beralih ke mode patch ZIP hemat memori.</string>
+    <string name="module_zip_patch_low_memory_normalized">Patch kompatibilitas ZIP hemat memori selesai: flag enkripsi dihapus dari %1$d entri Central Directory. Melanjutkan.</string>
+    <string name="module_zip_patch_low_memory_compatible">Pemeriksaan kompatibilitas ZIP hemat memori selesai: arsip sudah kompatibel dengan penginstal ketat. Melanjutkan.</string>
+    <string name="module_zip_patch_normalized">ZIP modul dinormalisasi untuk penginstal ketat: flag enkripsi dihapus dari %1$d entri Central Directory.</string>
+    <string name="module_zip_patch_compatible">ZIP modul sudah kompatibel dengan penginstal ketat.</string>
+    <string name="module_zip_patch_protection_kept_magisk">Perlindungan ZIP modul dipertahankan untuk penginstal Magisk.</string>
 </resources>

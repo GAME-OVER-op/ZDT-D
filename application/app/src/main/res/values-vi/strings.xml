@@ -2258,4 +2258,13 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="d2s_idle_after">Cho kiểm tra sức khỏe ngủ khi rảnh</string>
     <string name="d2s_idle_after_desc">Số giây không có lưu lượng máy khách trước khi dừng kiểm tra nền. 0 tắt chế độ ngủ.</string>
     <string name="d2s_error_non_negative_number">Thời gian rảnh phải bằng hoặc lớn hơn 0.</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">Không thể vá tương thích ZIP của mô-đun: %1$s</string>
+    <string name="module_zip_patch_oom_warning">Cảnh báo: bản vá tương thích ZIP trong bộ nhớ đã hết bộ nhớ ứng dụng: %1$s. Đang chuyển sang chế độ vá ZIP dùng ít bộ nhớ.</string>
+    <string name="module_zip_patch_low_memory_normalized">Đã hoàn tất vá tương thích ZIP dùng ít bộ nhớ: đã xóa cờ mã hóa khỏi %1$d mục Central Directory. Tiếp tục.</string>
+    <string name="module_zip_patch_low_memory_compatible">Đã hoàn tất kiểm tra tương thích ZIP dùng ít bộ nhớ: kho lưu trữ đã tương thích với trình cài đặt nghiêm ngặt. Tiếp tục.</string>
+    <string name="module_zip_patch_normalized">Đã chuẩn hóa ZIP mô-đun cho trình cài đặt nghiêm ngặt: đã xóa cờ mã hóa khỏi %1$d mục Central Directory.</string>
+    <string name="module_zip_patch_compatible">ZIP mô-đun đã tương thích với trình cài đặt nghiêm ngặt.</string>
+    <string name="module_zip_patch_protection_kept_magisk">Giữ nguyên bảo vệ ZIP mô-đun cho trình cài đặt Magisk.</string>
 </resources>

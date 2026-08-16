@@ -2259,4 +2259,13 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="d2s_idle_after">निष्क्रियता पर स्वास्थ्य जाँच सुलाएँ</string>
     <string name="d2s_idle_after_desc">क्लाइंट ट्रैफ़िक न होने के सेकंड, जिसके बाद जाँच सुला दी जाती है। 0 स्लीप बंद करता है।</string>
     <string name="d2s_error_non_negative_number">निष्क्रियता समय शून्य या अधिक होना चाहिए।</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">मॉड्यूल ZIP संगतता पैच विफल हुआ: %1$s</string>
+    <string name="module_zip_patch_oom_warning">चेतावनी: मेमोरी में ZIP संगतता पैच के लिए ऐप मेमोरी कम पड़ गई: %1$s। कम-मेमोरी ZIP पैच मोड पर स्विच किया जा रहा है।</string>
+    <string name="module_zip_patch_low_memory_normalized">कम-मेमोरी ZIP संगतता पैच पूरा हुआ: %1$d Central Directory प्रविष्टियों से एन्क्रिप्शन फ़्लैग हटाया गया। जारी रखा जा रहा है।</string>
+    <string name="module_zip_patch_low_memory_compatible">कम-मेमोरी ZIP संगतता जाँच पूरी हुई: आर्काइव पहले से सख्त इंस्टॉलर के साथ संगत है। जारी रखा जा रहा है।</string>
+    <string name="module_zip_patch_normalized">मॉड्यूल ZIP को सख्त इंस्टॉलर के लिए सामान्यीकृत किया गया: %1$d Central Directory प्रविष्टियों से एन्क्रिप्शन फ़्लैग हटाया गया।</string>
+    <string name="module_zip_patch_compatible">मॉड्यूल ZIP पहले से सख्त इंस्टॉलर के साथ संगत है।</string>
+    <string name="module_zip_patch_protection_kept_magisk">Magisk इंस्टॉलर के लिए मॉड्यूल ZIP सुरक्षा बरकरार रखी गई।</string>
 </resources>

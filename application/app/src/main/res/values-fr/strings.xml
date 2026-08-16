@@ -2259,4 +2259,13 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="d2s_idle_after">Mettre les vérifications en veille</string>
     <string name="d2s_idle_after_desc">Secondes sans trafic client avant la mise en veille des vérifications. 0 désactive la veille.</string>
     <string name="d2s_error_non_negative_number">Le délai d’inactivité doit être supérieur ou égal à zéro.</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">Échec du correctif de compatibilité du ZIP du module : %1$s</string>
+    <string name="module_zip_patch_oom_warning">Avertissement : le correctif de compatibilité ZIP en mémoire a manqué de mémoire d’application : %1$s. Passage au mode de correction ZIP à faible consommation mémoire.</string>
+    <string name="module_zip_patch_low_memory_normalized">Correctif de compatibilité ZIP à faible consommation mémoire terminé : indicateur de chiffrement supprimé dans %1$d entrées du Central Directory. Poursuite de l’opération.</string>
+    <string name="module_zip_patch_low_memory_compatible">Vérification de compatibilité ZIP à faible consommation mémoire terminée : l’archive est déjà compatible avec les installateurs stricts. Poursuite de l’opération.</string>
+    <string name="module_zip_patch_normalized">ZIP du module normalisé pour un installateur strict : indicateur de chiffrement supprimé dans %1$d entrées du Central Directory.</string>
+    <string name="module_zip_patch_compatible">Le ZIP du module est déjà compatible avec les installateurs stricts.</string>
+    <string name="module_zip_patch_protection_kept_magisk">La protection du ZIP du module est conservée pour l’installateur Magisk.</string>
 </resources>

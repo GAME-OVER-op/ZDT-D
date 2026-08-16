@@ -2259,4 +2259,13 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="d2s_idle_after">Prüfungen bei Inaktivität schlafen lassen</string>
     <string name="d2s_idle_after_desc">Sekunden ohne Clientverkehr, bevor Hintergrundprüfungen schlafen. 0 deaktiviert den Schlafmodus.</string>
     <string name="d2s_error_non_negative_number">Das Inaktivitätslimit muss null oder größer sein.</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">Kompatibilitätskorrektur für das Modul-ZIP fehlgeschlagen: %1$s</string>
+    <string name="module_zip_patch_oom_warning">Warnung: Für die ZIP-Kompatibilitätskorrektur im Arbeitsspeicher war nicht genügend App-Speicher verfügbar: %1$s. Wechsel in den speichersparenden ZIP-Patch-Modus.</string>
+    <string name="module_zip_patch_low_memory_normalized">Speichersparende ZIP-Kompatibilitätskorrektur abgeschlossen: Verschlüsselungsflag in %1$d Central-Directory-Einträgen entfernt. Vorgang wird fortgesetzt.</string>
+    <string name="module_zip_patch_low_memory_compatible">Speichersparende ZIP-Kompatibilitätsprüfung abgeschlossen: Das Archiv ist bereits mit strikten Installern kompatibel. Vorgang wird fortgesetzt.</string>
+    <string name="module_zip_patch_normalized">Modul-ZIP für strikten Installer normalisiert: Verschlüsselungsflag in %1$d Central-Directory-Einträgen entfernt.</string>
+    <string name="module_zip_patch_compatible">Das Modul-ZIP ist bereits mit strikten Installern kompatibel.</string>
+    <string name="module_zip_patch_protection_kept_magisk">Der Schutz des Modul-ZIP bleibt für den Magisk-Installer erhalten.</string>
 </resources>

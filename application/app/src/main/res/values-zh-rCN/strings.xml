@@ -2258,4 +2258,13 @@ APatch：10700+</string>
     <string name="d2s_idle_after">空闲时暂停健康检查</string>
     <string name="d2s_idle_after_desc">无客户端流量多少秒后暂停后台检查。0 表示禁用休眠。</string>
     <string name="d2s_error_non_negative_number">空闲时间必须为 0 或更大。</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">模块 ZIP 兼容性修补失败：%1$s</string>
+    <string name="module_zip_patch_oom_warning">警告：内存中的 ZIP 兼容性修补耗尽了应用可用内存：%1$s。正在切换到低内存 ZIP 修补模式。</string>
+    <string name="module_zip_patch_low_memory_normalized">低内存 ZIP 兼容性修补已完成：已清除 %1$d 个 Central Directory 条目的加密标志。继续执行。</string>
+    <string name="module_zip_patch_low_memory_compatible">低内存 ZIP 兼容性检查已完成：归档已兼容严格的安装程序。继续执行。</string>
+    <string name="module_zip_patch_normalized">模块 ZIP 已针对严格安装程序完成规范化：已清除 %1$d 个 Central Directory 条目的加密标志。</string>
+    <string name="module_zip_patch_compatible">模块 ZIP 已兼容严格的安装程序。</string>
+    <string name="module_zip_patch_protection_kept_magisk">已为 Magisk 安装程序保留模块 ZIP 保护。</string>
 </resources>

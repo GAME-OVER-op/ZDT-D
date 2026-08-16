@@ -2263,4 +2263,13 @@ APatch: ‏10700+</string>
     <string name="d2s_idle_after">إيقاف فحوصات الصحة عند الخمول</string>
     <string name="d2s_idle_after_desc">ثوانٍ بدون حركة عميل قبل إيقاف الفحوصات الخلفية. القيمة 0 تعطل وضع السكون.</string>
     <string name="d2s_error_non_negative_number">يجب أن تكون مهلة الخمول صفرًا أو أكبر.</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">فشل تصحيح توافق ZIP للوحدة: %1$s</string>
+    <string name="module_zip_patch_oom_warning">تحذير: نفدت ذاكرة التطبيق أثناء تصحيح توافق ZIP داخل الذاكرة: %1$s. جارٍ التبديل إلى وضع تصحيح ZIP منخفض استهلاك الذاكرة.</string>
+    <string name="module_zip_patch_low_memory_normalized">اكتمل تصحيح توافق ZIP منخفض استهلاك الذاكرة: تمت إزالة علامة التشفير من %1$d من إدخالات Central Directory. جارٍ المتابعة.</string>
+    <string name="module_zip_patch_low_memory_compatible">اكتمل فحص توافق ZIP منخفض استهلاك الذاكرة: الأرشيف متوافق بالفعل مع أدوات التثبيت الصارمة. جارٍ المتابعة.</string>
+    <string name="module_zip_patch_normalized">تمت تهيئة ZIP للوحدة لأداة تثبيت صارمة: أزيلت علامة التشفير من %1$d من إدخالات Central Directory.</string>
+    <string name="module_zip_patch_compatible">ZIP للوحدة متوافق بالفعل مع أدوات التثبيت الصارمة.</string>
+    <string name="module_zip_patch_protection_kept_magisk">تم الإبقاء على حماية ZIP للوحدة من أجل أداة تثبيت Magisk.</string>
 </resources>

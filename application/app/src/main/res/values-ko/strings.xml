@@ -2258,4 +2258,13 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="d2s_idle_after">유휴 시 상태 확인 절전</string>
     <string name="d2s_idle_after_desc">클라이언트 트래픽이 없을 때 상태 확인을 중지하기까지의 초. 0은 절전을 비활성화합니다.</string>
     <string name="d2s_error_non_negative_number">유휴 시간은 0 이상이어야 합니다.</string>
+
+    <!-- Module ZIP compatibility fallback -->
+    <string name="module_zip_patch_failed">모듈 ZIP 호환성 패치 실패: %1$s</string>
+    <string name="module_zip_patch_oom_warning">경고: 메모리 내 ZIP 호환성 패치 중 앱 메모리가 부족해졌습니다: %1$s. 저메모리 ZIP 패치 모드로 전환합니다.</string>
+    <string name="module_zip_patch_low_memory_normalized">저메모리 ZIP 호환성 패치 완료: %1$d개의 Central Directory 항목에서 암호화 플래그를 제거했습니다. 계속합니다.</string>
+    <string name="module_zip_patch_low_memory_compatible">저메모리 ZIP 호환성 검사 완료: 아카이브가 이미 엄격한 설치 프로그램과 호환됩니다. 계속합니다.</string>
+    <string name="module_zip_patch_normalized">엄격한 설치 프로그램용으로 모듈 ZIP을 정규화했습니다: %1$d개의 Central Directory 항목에서 암호화 플래그를 제거했습니다.</string>
+    <string name="module_zip_patch_compatible">모듈 ZIP이 이미 엄격한 설치 프로그램과 호환됩니다.</string>
+    <string name="module_zip_patch_protection_kept_magisk">Magisk 설치 프로그램을 위해 모듈 ZIP 보호를 유지했습니다.</string>
 </resources>

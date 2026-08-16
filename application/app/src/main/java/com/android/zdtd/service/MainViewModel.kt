@@ -53,6 +53,7 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
+import java.io.RandomAccessFile
 import java.util.zip.GZIPInputStream
 import java.nio.charset.StandardCharsets
 import java.util.Locale
@@ -4472,7 +4473,7 @@ if (mf.isNotBlank()) {
     if (!verify.ok) return Triple(false, verify.message, "")
 
     val normalizeLog = runCatching { clearFakeEncryptedCentralDirectoryFlagsInPlace(cacheZip) }.getOrElse {
-      return Triple(false, "module zip compatibility patch failed: ${it.message ?: it}", "")
+      return Triple(false, str(R.string.module_zip_patch_failed, it.message ?: it.toString()), "")
     }
 
     val src = cacheZip.absolutePath
@@ -4503,10 +4504,10 @@ if (mf.isNotBlank()) {
 
     val normalizeLog = if (normalizeForStrictZipInstaller) {
       runCatching { clearFakeEncryptedCentralDirectoryFlagsInPlace(cacheZip) }.getOrElse {
-        return false to "module zip compatibility patch failed: ${it.message ?: it}"
+        return false to str(R.string.module_zip_patch_failed, it.message ?: it.toString())
       }
     } else {
-      "module zip protection kept for Magisk installer"
+      str(R.string.module_zip_patch_protection_kept_magisk)
     }
 
     val (busyBoxOk, busyBoxLog) = stageBundledBusyBoxToTmp()
@@ -5013,6 +5014,20 @@ private fun shQuote(s: String): String {
   }
 
   private fun clearFakeEncryptedCentralDirectoryFlagsInPlace(zipFile: File): String {
+    return try {
+      clearFakeEncryptedCentralDirectoryFlagsInMemory(zipFile)
+    } catch (oom: OutOfMemoryError) {
+      val detail = oom.message ?: oom.toString()
+      val warning = str(R.string.module_zip_patch_oom_warning, detail)
+      log("WARN", warning)
+
+      val fallbackResult = clearFakeEncryptedCentralDirectoryFlagsLowMemory(zipFile)
+      log("OK", fallbackResult)
+      listOf(warning, fallbackResult).joinToString("\n")
+    }
+  }
+
+  private fun clearFakeEncryptedCentralDirectoryFlagsInMemory(zipFile: File): String {
     val data = zipFile.readBytes()
     val eocd = findZipEocdOffset(data)
     val diskNo = readLe16(data, eocd + 4)
@@ -5061,9 +5076,88 @@ private fun shQuote(s: String): String {
     }
 
     return if (patched > 0) {
-      "module zip normalized for strict installer: cleared encrypted flag in $patched Central Directory entries"
+      str(R.string.module_zip_patch_normalized, patched)
     } else {
-      "module zip already compatible with strict installer"
+      str(R.string.module_zip_patch_compatible)
+    }
+  }
+
+  private fun clearFakeEncryptedCentralDirectoryFlagsLowMemory(zipFile: File): String {
+    return RandomAccessFile(zipFile, "rw").use { raf ->
+      val fileSize = raf.length()
+      require(fileSize >= ZIP_EOCD_MIN_SIZE.toLong()) { "ZIP file is too small" }
+
+      val tailSize = minOf(fileSize, ZIP_EOCD_MAX_SEARCH.toLong()).toInt()
+      val tailOffset = fileSize - tailSize
+      val tail = ByteArray(tailSize)
+      raf.seek(tailOffset)
+      raf.readFully(tail)
+
+      val eocdInTail = findZipEocdOffset(tail)
+      val diskNo = readLe16(tail, eocdInTail + 4)
+      val cdDisk = readLe16(tail, eocdInTail + 6)
+      val entriesOnDisk = readLe16(tail, eocdInTail + 8)
+      val entriesTotal = readLe16(tail, eocdInTail + 10)
+      val cdSize = readLe32(tail, eocdInTail + 12)
+      val cdOffset = readLe32(tail, eocdInTail + 16)
+
+      require(diskNo == 0 && cdDisk == 0) { "multi-disk ZIP is not supported" }
+      require(entriesOnDisk == entriesTotal) { "split Central Directory is not supported" }
+      require(entriesTotal != 0xFFFF && cdSize != 0xFFFFFFFFL && cdOffset != 0xFFFFFFFFL) {
+        "ZIP64 Central Directory is not supported"
+      }
+      require(cdOffset >= 0 && cdSize >= 0 && cdOffset + cdSize <= fileSize) {
+        "invalid Central Directory bounds"
+      }
+
+      var pos = cdOffset
+      val end = cdOffset + cdSize
+      var entries = 0
+      var patched = 0
+      val header = ByteArray(46)
+
+      while (pos < end) {
+        require(pos + header.size <= end) {
+          "Central Directory entry header exceeds directory bounds at offset $pos"
+        }
+
+        raf.seek(pos)
+        raf.readFully(header)
+        require(hasZipSignature(header, 0, 0x02014b50)) {
+          "Central Directory entry signature not found at offset $pos"
+        }
+
+        val flags = readLe16(header, 8)
+        if ((flags and ZIP_GENERAL_PURPOSE_ENCRYPTED_FLAG) != 0) {
+          val normalizedFlags = flags and ZIP_GENERAL_PURPOSE_ENCRYPTED_FLAG.inv()
+          raf.seek(pos + 8)
+          raf.write(normalizedFlags and 0xff)
+          raf.write((normalizedFlags shr 8) and 0xff)
+          patched++
+        }
+
+        val nameLen = readLe16(header, 28)
+        val extraLen = readLe16(header, 30)
+        val commentLen = readLe16(header, 32)
+        val next = pos + 46L + nameLen + extraLen + commentLen
+        require(next > pos && next <= end) {
+          "Central Directory entry exceeds directory bounds at offset $pos"
+        }
+        pos = next
+        entries++
+      }
+
+      require(pos == end) { "Central Directory walk ended at unexpected offset" }
+      require(entries == entriesTotal) {
+        "Central Directory entry count mismatch: expected=$entriesTotal actual=$entries"
+      }
+
+      if (patched > 0) {
+        raf.fd.sync()
+        str(R.string.module_zip_patch_low_memory_normalized, patched)
+      } else {
+        str(R.string.module_zip_patch_low_memory_compatible)
+      }
     }
   }
 

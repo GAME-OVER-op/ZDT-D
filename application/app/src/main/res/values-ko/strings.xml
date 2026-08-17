@@ -539,6 +539,15 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="program_updates_title">ZDT-D 모듈 도구/구성 요소 업데이트</string>
     <string name="program_updates_reset_cd">초기화</string>
     <string name="program_updates_desc">ZDT-D 모듈 도구와 구성 요소를 GitHub 릴리스에서 직접 업데이트합니다. 확인은 버튼을 탭할 때만 수행됩니다.</string>
+    <string name="program_updates_bulk_title">모든 도구 업데이트</string>
+    <string name="program_updates_bulk_desc">실행 중인 서비스를 중지하지 않고 모든 도구를 확인하고 사용 가능한 업데이트를 설치합니다.</string>
+    <string name="program_updates_check_all">모두 확인</string>
+    <string name="program_updates_checking_all">모두 확인 중…</string>
+    <string name="program_updates_update_all">모두 업데이트</string>
+    <string name="program_updates_updating_all">모두 업데이트 중…</string>
+    <string name="program_updates_all_current">모두 최신 상태입니다</string>
+    <string name="program_updates_retry_check">다시 확인</string>
+    <string name="program_updates_available_count_fmt">업데이트 %1$d개 사용 가능</string>
     <string name="program_updates_service_running_title">서비스 실행 중</string>
     <string name="program_updates_service_running_desc">확인/업데이트 전에 서비스를 중지하세요. 교체 중 규칙과 프로세스가 파일을 사용하지 않도록 하기 위해 필요합니다.</string>
     <string name="program_updates_stopping">중지 중…</string>
@@ -649,7 +658,7 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="program_updates_err_service_running">서비스가 아직 실행 중입니다. 중지한 후 다시 시도하세요.</string>
     <string name="program_updates_err_detect_installed">설치된 버전 감지 실패</string>
     <string name="program_updates_warn_installed_unknown">설치된 버전을 감지하지 못했습니다. 선택한 릴리스는 계속 설치할 수 있습니다.</string>
-    <string name="program_updates_err_check_latest">최신 릴리스 확인 실패</string>
+    <string name="program_updates_err_check_latest">정보를 가져오지 못했습니다</string>
     <string name="program_updates_err_no_internet">인터넷에 연결되어 있지 않습니다</string>
     <string name="program_updates_err_load_releases">릴리스 불러오기 실패</string>
     <!-- App logs (internal app events shown in UI) -->

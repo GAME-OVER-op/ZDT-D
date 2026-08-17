@@ -9,6 +9,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.clickable
@@ -923,9 +924,7 @@ private fun AmneziaWgConfigEditorDialog(
   onDismiss: () -> Unit,
 ) {
   val compactWidth = rememberIsCompactWidth()
-  val narrowWidth = rememberIsNarrowWidth()
   val shortHeight = rememberIsShortHeight()
-  val useCompactHeader = shortHeight || narrowWidth
 
   Dialog(
     onDismissRequest = onDismiss,
@@ -945,96 +944,122 @@ private fun AmneziaWgConfigEditorDialog(
       tonalElevation = 6.dp,
       shadowElevation = 10.dp,
     ) {
-      Column(
-        modifier = Modifier
-          .fillMaxSize()
-          .padding(horizontal = if (compactWidth) 12.dp else 18.dp, vertical = if (shortHeight) 10.dp else 16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-      ) {
-        if (useCompactHeader) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-          ) {
-            Column(Modifier.weight(1f)) {
-              Text(
-                stringResource(R.string.amneziawg_config_editor_title_fmt, profile),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-              )
-              Text(
-                stringResource(R.string.amneziawg_config_autosave_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-              )
-            }
-            Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)) {
-              IconButton(onClick = onUpload, modifier = Modifier.size(40.dp), enabled = !saving) {
-                Icon(Icons.Default.CloudUpload, contentDescription = stringResource(R.string.common_upload_cd))
-              }
-            }
-            Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f)) {
-              IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
-                Icon(Icons.Default.Close, contentDescription = stringResource(R.string.common_close))
-              }
-            }
-          }
-        } else {
-          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-              Text(stringResource(R.string.amneziawg_config_editor_title_fmt, profile), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-              Text(
-                stringResource(R.string.amneziawg_config_autosave_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-              )
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-              OutlinedButton(onClick = onUpload, enabled = !saving) {
-                Icon(Icons.Default.CloudUpload, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text(stringResource(R.string.common_upload_cd))
-              }
-              FilledTonalButton(onClick = onDismiss) {
-                Icon(Icons.Default.Close, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text(stringResource(R.string.common_close))
-              }
-            }
-          }
-        }
+      BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        // Base the editor header layout on the dialog's real content width rather than
+        // on screenWidthDp. On small dialogs the action buttons get their own row,
+        // so the title/editor can never collapse to a one-character-wide column.
+        val stackHeaderActions = maxWidth < 520.dp
 
-        StableLinearProgressIndicator(visible = loading)
-
-        Text(
-          stringResource(R.string.amneziawg_config_desc),
-          style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-        )
-        if (isEmpty) {
-          Text(stringResource(R.string.amneziawg_config_empty), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-        }
-        warnings.forEach { warning ->
-          Text(warning, color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.bodySmall)
-        }
-        OutlinedTextField(
-          value = text,
-          onValueChange = onTextChange,
+        Column(
           modifier = Modifier
-            .fillMaxWidth()
-            .weight(1f, fill = true),
-          enabled = !loading,
-          label = { Text("client.conf") },
-          singleLine = false,
-          minLines = if (shortHeight) 10 else 14,
-          keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
-          isError = isEmpty,
-        )
+            .fillMaxSize()
+            .padding(horizontal = if (compactWidth) 12.dp else 18.dp, vertical = if (shortHeight) 10.dp else 16.dp),
+          verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+          if (stackHeaderActions) {
+            Column(
+              modifier = Modifier.fillMaxWidth(),
+              verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+              Column(Modifier.fillMaxWidth()) {
+                Text(
+                  stringResource(R.string.amneziawg_config_editor_title_fmt, profile),
+                  style = MaterialTheme.typography.titleMedium,
+                  fontWeight = FontWeight.SemiBold,
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                  stringResource(R.string.amneziawg_config_autosave_hint),
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                  maxLines = 2,
+                  overflow = TextOverflow.Ellipsis,
+                )
+              }
+
+              Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+              ) {
+                Row(
+                  modifier = Modifier.fillMaxWidth().padding(6.dp),
+                  horizontalArrangement = Arrangement.spacedBy(8.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  OutlinedButton(
+                    onClick = onUpload,
+                    enabled = !saving,
+                    modifier = Modifier.weight(1f),
+                  ) {
+                    Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.common_upload_cd), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                  }
+                  FilledTonalButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                  ) {
+                    Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(stringResource(R.string.common_close), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                  }
+                }
+              }
+            }
+          } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+              Column(Modifier.weight(1f)) {
+                Text(stringResource(R.string.amneziawg_config_editor_title_fmt, profile), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(
+                  stringResource(R.string.amneziawg_config_autosave_hint),
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                )
+              }
+              Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onUpload, enabled = !saving) {
+                  Icon(Icons.Default.CloudUpload, contentDescription = null)
+                  Spacer(Modifier.width(6.dp))
+                  Text(stringResource(R.string.common_upload_cd))
+                }
+                FilledTonalButton(onClick = onDismiss) {
+                  Icon(Icons.Default.Close, contentDescription = null)
+                  Spacer(Modifier.width(6.dp))
+                  Text(stringResource(R.string.common_close))
+                }
+              }
+            }
+          }
+
+          StableLinearProgressIndicator(visible = loading)
+
+          Text(
+            stringResource(R.string.amneziawg_config_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+          )
+          if (isEmpty) {
+            Text(stringResource(R.string.amneziawg_config_empty), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+          }
+          warnings.forEach { warning ->
+            Text(warning, color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.bodySmall)
+          }
+          OutlinedTextField(
+            value = text,
+            onValueChange = onTextChange,
+            modifier = Modifier
+              .fillMaxWidth()
+              .weight(1f, fill = true),
+            enabled = !loading,
+            label = { Text("client.conf") },
+            singleLine = false,
+            minLines = if (shortHeight) 10 else 14,
+            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None),
+            isError = isEmpty,
+          )
+        }
       }
     }
   }

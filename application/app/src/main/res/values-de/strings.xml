@@ -539,6 +539,15 @@ Die aktuellen Einstellungen werden vollständig ersetzt, und der Dienst wird wä
     <string name="program_updates_title">Updates für ZDT-D-Modultools/-komponenten</string>
     <string name="program_updates_reset_cd">Zurücksetzen</string>
     <string name="program_updates_desc">Aktualisiert Tools und Komponenten des ZDT-D-Moduls direkt aus GitHub-Releases. Prüfungen erfolgen nur beim Tippen auf die Schaltfläche.</string>
+    <string name="program_updates_bulk_title">Alle Tools aktualisieren</string>
+    <string name="program_updates_bulk_desc">Prüft alle Tools und installiert verfügbare Updates, ohne den laufenden Dienst zu stoppen.</string>
+    <string name="program_updates_check_all">Alle prüfen</string>
+    <string name="program_updates_checking_all">Alle werden geprüft…</string>
+    <string name="program_updates_update_all">Alle aktualisieren</string>
+    <string name="program_updates_updating_all">Alle werden aktualisiert…</string>
+    <string name="program_updates_all_current">Alles ist aktuell</string>
+    <string name="program_updates_retry_check">Prüfung wiederholen</string>
+    <string name="program_updates_available_count_fmt">%1$d Updates verfügbar</string>
     <string name="program_updates_service_running_title">Dienst wird ausgeführt</string>
     <string name="program_updates_service_running_desc">Stoppen Sie den Dienst vor der Prüfung/Aktualisierung. Dies ist erforderlich, damit Regeln und Prozesse die Dateien während des Austauschs nicht verwenden.</string>
     <string name="program_updates_stopping">Wird beendet…</string>
@@ -649,7 +658,7 @@ Verwenden Sie zum Bearbeiten einen anderen Editor.</string>
     <string name="program_updates_err_service_running">Der Dienst läuft noch. Stoppen Sie ihn und versuchen Sie es erneut.</string>
     <string name="program_updates_err_detect_installed">Installierte Version konnte nicht erkannt werden</string>
     <string name="program_updates_warn_installed_unknown">Die installierte Version konnte nicht erkannt werden. Sie können die ausgewählte Version trotzdem installieren.</string>
-    <string name="program_updates_err_check_latest">Prüfung der neuesten Version fehlgeschlagen</string>
+    <string name="program_updates_err_check_latest">Informationen konnten nicht abgerufen werden</string>
     <string name="program_updates_err_no_internet">Keine Internetverbindung</string>
     <string name="program_updates_err_load_releases">Releases konnten nicht geladen werden</string>
     <!-- App logs (internal app events shown in UI) -->

@@ -539,6 +539,15 @@ APatch: 10700+</string>
     <string name="program_updates_title">Оновлення інструментів/компонентів модуля ZDT-D</string>
     <string name="program_updates_reset_cd">Скинути</string>
     <string name="program_updates_desc">Оновлює інструменти й компоненти модуля ZDT-D безпосередньо з випусків GitHub. Перевірка виконується лише після натискання кнопки.</string>
+    <string name="program_updates_bulk_title">Оновлення всіх інструментів</string>
+    <string name="program_updates_bulk_desc">Перевіряє всі інструменти та встановлює доступні оновлення без зупинки запущеної служби.</string>
+    <string name="program_updates_check_all">Перевірити все</string>
+    <string name="program_updates_checking_all">Перевіряю все…</string>
+    <string name="program_updates_update_all">Оновити все</string>
+    <string name="program_updates_updating_all">Оновлюю все…</string>
+    <string name="program_updates_all_current">Усе актуально</string>
+    <string name="program_updates_retry_check">Повторити перевірку</string>
+    <string name="program_updates_available_count_fmt">Доступно оновлень: %1$d</string>
     <string name="program_updates_service_running_title">Служба працює</string>
     <string name="program_updates_service_running_desc">Зупиніть службу перед перевіркою/оновленням. Це потрібно, щоб правила й процеси не використовували файли під час заміни.</string>
     <string name="program_updates_stopping">Зупинення…</string>
@@ -649,7 +658,7 @@ APatch: 10700+</string>
     <string name="program_updates_err_service_running">Служба все ще працює. Зупиніть її та повторіть спробу.</string>
     <string name="program_updates_err_detect_installed">Не вдалося визначити встановлену версію</string>
     <string name="program_updates_warn_installed_unknown">Не вдалося визначити встановлену версію. Вибраний випуск усе одно можна встановити.</string>
-    <string name="program_updates_err_check_latest">Не вдалося перевірити найновіший випуск</string>
+    <string name="program_updates_err_check_latest">Не вдалося отримати інформацію</string>
     <string name="program_updates_err_no_internet">Немає підключення до інтернету</string>
     <string name="program_updates_err_load_releases">Не вдалося завантажити випуски</string>
     <!-- App logs (internal app events shown in UI) -->

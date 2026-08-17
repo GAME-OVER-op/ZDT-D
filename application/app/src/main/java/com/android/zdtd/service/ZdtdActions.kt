@@ -65,38 +65,41 @@ interface ZdtdActions {
 
 
   // ----- Program updates (zapret / zapret2 / mihomo / mieru / opera-proxy via GitHub) -----
-  /** Check zapret (nfqws) installed/latest versions. Requires the service to be stopped. */
+  /** Check zapret (nfqws) installed/latest versions. Safe while the service is running. */
   fun checkZapretNow()
 
-  /** Download and install latest zapret (nfqws). Requires the service to be stopped. */
+  /** Download and atomically install selected/latest zapret (nfqws). */
   fun updateZapretNow()
 
-  /** Check zapret2 (nfqws2 + lua) installed/latest versions. Requires the service to be stopped. */
+  /** Check zapret2 (nfqws2 + lua) installed/latest versions. Safe while the service is running. */
   fun checkZapret2Now()
 
-  /** Download and install latest zapret2 (nfqws2 + lua). Requires the service to be stopped. */
+  /** Download and install selected/latest zapret2 (nfqws2 + lua). */
   fun updateZapret2Now()
 
-  /** Check mihomo installed/latest versions. Requires the service to be stopped. */
+  /** Check mihomo installed/latest versions. Safe while the service is running. */
   fun checkMihomoNow()
 
-  /** Download and install selected/latest mihomo. Requires the service to be stopped. */
+  /** Download and atomically install selected/latest mihomo. */
   fun updateMihomoNow()
 
-  /** Check mieru installed/latest versions. Requires the service to be stopped. */
+  /** Check mieru installed/latest versions. Safe while the service is running. */
   fun checkMieruNow()
 
-  /** Download and install selected/latest mieru. Requires the service to be stopped. */
+  /** Download and atomically install selected/latest mieru. */
   fun updateMieruNow()
 
-  /** Check opera-proxy installed/latest versions. Requires the service to be stopped. */
+  /** Check opera-proxy installed/latest versions. Safe while the service is running. */
   fun checkOperaProxyNow()
 
-  /** Download and install selected/latest opera-proxy. Requires the service to be stopped. */
+  /** Download and atomically install selected/latest opera-proxy. */
   fun updateOperaProxyNow()
 
-  /** Stop the daemon once and auto-run check for supported program updates when it becomes OFF. */
-  fun stopServiceForProgramUpdatesAndCheck()
+  /** Check every supported tool. Failures stay local to their cards. */
+  fun checkAllProgramUpdates()
+
+  /** Update every tool whose update was successfully discovered. */
+  fun updateAllProgramUpdates()
 
   /** Load the full list of zapret releases (for selecting a specific version). */
   fun loadZapretReleases()

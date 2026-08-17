@@ -539,6 +539,15 @@ As configurações atuais serão totalmente substituídas e o serviço será int
     <string name="program_updates_title">Atualizações de ferramentas/componentes do módulo ZDT-D</string>
     <string name="program_updates_reset_cd">Redefinir</string>
     <string name="program_updates_desc">Atualiza as ferramentas e os componentes do módulo ZDT-D diretamente das versões do GitHub. As verificações são realizadas apenas ao tocar no botão.</string>
+    <string name="program_updates_bulk_title">Atualizar todas as ferramentas</string>
+    <string name="program_updates_bulk_desc">Verifica todas as ferramentas e instala as atualizações disponíveis sem interromper o serviço em execução.</string>
+    <string name="program_updates_check_all">Verificar tudo</string>
+    <string name="program_updates_checking_all">Verificando tudo…</string>
+    <string name="program_updates_update_all">Atualizar tudo</string>
+    <string name="program_updates_updating_all">Atualizando tudo…</string>
+    <string name="program_updates_all_current">Tudo está atualizado</string>
+    <string name="program_updates_retry_check">Verificar novamente</string>
+    <string name="program_updates_available_count_fmt">%1$d atualizações disponíveis</string>
     <string name="program_updates_service_running_title">O serviço está em execução</string>
     <string name="program_updates_service_running_desc">Interrompa o serviço antes de verificar/atualizar. Isso é necessário para que regras e processos não usem os arquivos durante a substituição.</string>
     <string name="program_updates_stopping">Parando…</string>
@@ -649,7 +658,7 @@ Use outro editor para modificá-lo.</string>
     <string name="program_updates_err_service_running">O serviço ainda está em execução. Pare-o e tente novamente.</string>
     <string name="program_updates_err_detect_installed">Falha ao detectar a versão instalada</string>
     <string name="program_updates_warn_installed_unknown">Não foi possível detectar a versão instalada. Você ainda pode instalar a versão selecionada.</string>
-    <string name="program_updates_err_check_latest">Falha ao verificar a versão mais recente</string>
+    <string name="program_updates_err_check_latest">Não foi possível obter as informações</string>
     <string name="program_updates_err_no_internet">Sem conexão com a internet</string>
     <string name="program_updates_err_load_releases">Falha ao carregar as versões</string>
     <!-- App logs (internal app events shown in UI) -->

@@ -952,7 +952,6 @@ private fun MainShell(
     val pu by programUpdatesFlow.collectAsStateWithLifecycle()
     ProgramUpdatesDialog(
       state = pu,
-      serviceRunning = ApiModels.isServiceOn(uiState.status),
       onDismiss = { showProgramUpdates = false },
       actions = actions,
     )

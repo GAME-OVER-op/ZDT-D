@@ -539,6 +539,15 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="program_updates_title">ZDT-D मॉड्यूल टूल/घटक अपडेट</string>
     <string name="program_updates_reset_cd">रीसेट</string>
     <string name="program_updates_desc">ZDT-D मॉड्यूल के टूल और घटक सीधे GitHub रिलीज़ से अपडेट करता है। जाँच केवल बटन टैप करने पर होती है।</string>
+    <string name="program_updates_bulk_title">सभी टूल अपडेट करें</string>
+    <string name="program_updates_bulk_desc">सभी टूल की जाँच करता है और चल रही सेवा को रोके बिना उपलब्ध अपडेट इंस्टॉल करता है।</string>
+    <string name="program_updates_check_all">सभी जाँचें</string>
+    <string name="program_updates_checking_all">सभी की जाँच हो रही है…</string>
+    <string name="program_updates_update_all">सभी अपडेट करें</string>
+    <string name="program_updates_updating_all">सभी अपडेट हो रहे हैं…</string>
+    <string name="program_updates_all_current">सब कुछ नवीनतम है</string>
+    <string name="program_updates_retry_check">फिर से जाँचें</string>
+    <string name="program_updates_available_count_fmt">%1$d अपडेट उपलब्ध</string>
     <string name="program_updates_service_running_title">सेवा चल रही है</string>
     <string name="program_updates_service_running_desc">जाँच/अपडेट से पहले सेवा रोकें। यह आवश्यक है ताकि बदलने के दौरान नियम और प्रोसेस फ़ाइलों का उपयोग न करें।</string>
     <string name="program_updates_stopping">रोकी जा रही है…</string>
@@ -649,7 +658,7 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="program_updates_err_service_running">सेवा अभी भी चल रही है। इसे रोककर फिर प्रयास करें।</string>
     <string name="program_updates_err_detect_installed">इंस्टॉल किया गया संस्करण नहीं पता चला</string>
     <string name="program_updates_warn_installed_unknown">इंस्टॉल किया गया संस्करण पता नहीं चला। फिर भी चुनी गई रिलीज़ इंस्टॉल की जा सकती है।</string>
-    <string name="program_updates_err_check_latest">नवीनतम रिलीज़ की जाँच विफल रही</string>
+    <string name="program_updates_err_check_latest">जानकारी प्राप्त नहीं हो सकी</string>
     <string name="program_updates_err_no_internet">कोई इंटरनेट कनेक्शन नहीं</string>
     <string name="program_updates_err_load_releases">रिलीज़ लोड नहीं हो सकीं</string>
     <!-- App logs (internal app events shown in UI) -->

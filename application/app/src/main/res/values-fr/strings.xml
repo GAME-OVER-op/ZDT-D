@@ -539,6 +539,15 @@ Les paramètres actuels seront entièrement remplacés et le service sera arrêt
     <string name="program_updates_title">Mises à jour des outils/composants du module ZDT-D</string>
     <string name="program_updates_reset_cd">Réinitialiser</string>
     <string name="program_updates_desc">Met à jour les outils et composants du module ZDT-D directement depuis les versions GitHub. Les vérifications ne sont effectuées que lorsque vous touchez le bouton.</string>
+    <string name="program_updates_bulk_title">Mettre à jour tous les outils</string>
+    <string name="program_updates_bulk_desc">Vérifie tous les outils et installe les mises à jour disponibles sans arrêter le service en cours d’exécution.</string>
+    <string name="program_updates_check_all">Tout vérifier</string>
+    <string name="program_updates_checking_all">Vérification de tout…</string>
+    <string name="program_updates_update_all">Tout mettre à jour</string>
+    <string name="program_updates_updating_all">Mise à jour de tout…</string>
+    <string name="program_updates_all_current">Tout est à jour</string>
+    <string name="program_updates_retry_check">Répéter la vérification</string>
+    <string name="program_updates_available_count_fmt">%1$d mises à jour disponibles</string>
     <string name="program_updates_service_running_title">Le service est en cours d’exécution</string>
     <string name="program_updates_service_running_desc">Arrêtez le service avant la vérification/mise à jour. Cela évite que les règles et processus utilisent les fichiers pendant leur remplacement.</string>
     <string name="program_updates_stopping">Arrêt…</string>
@@ -649,7 +658,7 @@ Utilisez un autre éditeur pour le modifier.</string>
     <string name="program_updates_err_service_running">Le service est toujours en cours. Arrêtez-le et réessayez.</string>
     <string name="program_updates_err_detect_installed">Impossible de détecter la version installée</string>
     <string name="program_updates_warn_installed_unknown">La version installée n’a pas pu être détectée. Vous pouvez tout de même installer la version sélectionnée.</string>
-    <string name="program_updates_err_check_latest">Échec de la vérification de la dernière version</string>
+    <string name="program_updates_err_check_latest">Impossible d’obtenir les informations</string>
     <string name="program_updates_err_no_internet">Aucune connexion Internet</string>
     <string name="program_updates_err_load_releases">Échec du chargement des versions</string>
     <!-- App logs (internal app events shown in UI) -->

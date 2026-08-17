@@ -539,6 +539,15 @@ Cài đặt hiện tại sẽ được thay thế hoàn toàn và dịch vụ s�
     <string name="program_updates_title">Cập nhật công cụ/thành phần mô-đun ZDT-D</string>
     <string name="program_updates_reset_cd">Đặt lại</string>
     <string name="program_updates_desc">Cập nhật trực tiếp các công cụ và thành phần của mô-đun ZDT-D từ bản phát hành GitHub. Chỉ kiểm tra khi bạn nhấn nút.</string>
+    <string name="program_updates_bulk_title">Cập nhật tất cả công cụ</string>
+    <string name="program_updates_bulk_desc">Kiểm tra tất cả công cụ và cài đặt các bản cập nhật có sẵn mà không dừng dịch vụ đang chạy.</string>
+    <string name="program_updates_check_all">Kiểm tra tất cả</string>
+    <string name="program_updates_checking_all">Đang kiểm tra tất cả…</string>
+    <string name="program_updates_update_all">Cập nhật tất cả</string>
+    <string name="program_updates_updating_all">Đang cập nhật tất cả…</string>
+    <string name="program_updates_all_current">Mọi thứ đều đã cập nhật</string>
+    <string name="program_updates_retry_check">Kiểm tra lại</string>
+    <string name="program_updates_available_count_fmt">Có %1$d bản cập nhật</string>
     <string name="program_updates_service_running_title">Dịch vụ đang chạy</string>
     <string name="program_updates_service_running_desc">Dừng dịch vụ trước khi kiểm tra/cập nhật. Điều này cần thiết để quy tắc và tiến trình không dùng tệp trong lúc thay thế.</string>
     <string name="program_updates_stopping">Đang dừng…</string>
@@ -649,7 +658,7 @@ Dùng trình chỉnh sửa khác để sửa đổi.</string>
     <string name="program_updates_err_service_running">Dịch vụ vẫn đang chạy. Hãy dừng rồi thử lại.</string>
     <string name="program_updates_err_detect_installed">Không thể phát hiện phiên bản đã cài</string>
     <string name="program_updates_warn_installed_unknown">Không thể phát hiện phiên bản đã cài. Bạn vẫn có thể cài bản phát hành đã chọn.</string>
-    <string name="program_updates_err_check_latest">Không thể kiểm tra bản phát hành mới nhất</string>
+    <string name="program_updates_err_check_latest">Không thể lấy thông tin</string>
     <string name="program_updates_err_no_internet">Không có kết nối Internet</string>
     <string name="program_updates_err_load_releases">Không thể tải các bản phát hành</string>
     <!-- App logs (internal app events shown in UI) -->

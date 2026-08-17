@@ -539,6 +539,15 @@ Los ajustes actuales se reemplazarán por completo y el servicio se detendrá du
     <string name="program_updates_title">Actualizaciones de herramientas/componentes del módulo ZDT-D</string>
     <string name="program_updates_reset_cd">Restablecer</string>
     <string name="program_updates_desc">Actualiza las herramientas y componentes del módulo ZDT-D directamente desde las versiones de GitHub. Las comprobaciones solo se realizan al tocar el botón.</string>
+    <string name="program_updates_bulk_title">Actualizar todas las herramientas</string>
+    <string name="program_updates_bulk_desc">Comprueba todas las herramientas e instala las actualizaciones disponibles sin detener el servicio en ejecución.</string>
+    <string name="program_updates_check_all">Comprobar todo</string>
+    <string name="program_updates_checking_all">Comprobando todo…</string>
+    <string name="program_updates_update_all">Actualizar todo</string>
+    <string name="program_updates_updating_all">Actualizando todo…</string>
+    <string name="program_updates_all_current">Todo está actualizado</string>
+    <string name="program_updates_retry_check">Repetir comprobación</string>
+    <string name="program_updates_available_count_fmt">%1$d actualizaciones disponibles</string>
     <string name="program_updates_service_running_title">El servicio está en ejecución</string>
     <string name="program_updates_service_running_desc">Detén el servicio antes de comprobar/actualizar. Es necesario para que las reglas y procesos no usen los archivos durante el reemplazo.</string>
     <string name="program_updates_stopping">Deteniendo…</string>
@@ -649,7 +658,7 @@ Usa otro editor para modificarlo.</string>
     <string name="program_updates_err_service_running">El servicio sigue en ejecución. Deténlo e inténtalo de nuevo.</string>
     <string name="program_updates_err_detect_installed">No se pudo detectar la versión instalada</string>
     <string name="program_updates_warn_installed_unknown">No se pudo detectar la versión instalada. Aun así puedes instalar la versión seleccionada.</string>
-    <string name="program_updates_err_check_latest">No se pudo comprobar la última versión</string>
+    <string name="program_updates_err_check_latest">No se pudo obtener la información</string>
     <string name="program_updates_err_no_internet">Sin conexión a internet</string>
     <string name="program_updates_err_load_releases">No se pudieron cargar las versiones</string>
     <!-- App logs (internal app events shown in UI) -->

@@ -539,6 +539,15 @@ APatch: 10700+</string>
     <string name="program_updates_title">به‌روزرسانی ابزارها/اجزای ماژول ZDT-D</string>
     <string name="program_updates_reset_cd">بازنشانی</string>
     <string name="program_updates_desc">ابزارها و اجزای ماژول ZDT-D را مستقیماً از نسخه‌های GitHub به‌روزرسانی می‌کند. بررسی فقط هنگام فشردن دکمه انجام می‌شود.</string>
+    <string name="program_updates_bulk_title">به‌روزرسانی همه ابزارها</string>
+    <string name="program_updates_bulk_desc">همه ابزارها را بررسی می‌کند و به‌روزرسانی‌های موجود را بدون توقف سرویس در حال اجرا نصب می‌کند.</string>
+    <string name="program_updates_check_all">بررسی همه</string>
+    <string name="program_updates_checking_all">در حال بررسی همه…</string>
+    <string name="program_updates_update_all">به‌روزرسانی همه</string>
+    <string name="program_updates_updating_all">در حال به‌روزرسانی همه…</string>
+    <string name="program_updates_all_current">همه‌چیز به‌روز است</string>
+    <string name="program_updates_retry_check">بررسی دوباره</string>
+    <string name="program_updates_available_count_fmt">%1$d به‌روزرسانی موجود است</string>
     <string name="program_updates_service_running_title">سرویس در حال اجرا است</string>
     <string name="program_updates_service_running_desc">پیش از بررسی/به‌روزرسانی سرویس را متوقف کنید. این کار لازم است تا قوانین و فرایندها هنگام جایگزینی از فایل‌ها استفاده نکنند.</string>
     <string name="program_updates_stopping">در حال توقف…</string>
@@ -649,7 +658,7 @@ APatch: 10700+</string>
     <string name="program_updates_err_service_running">سرویس هنوز در حال اجراست. آن را متوقف کنید و دوباره امتحان کنید.</string>
     <string name="program_updates_err_detect_installed">تشخیص نسخه نصب‌شده ناموفق بود</string>
     <string name="program_updates_warn_installed_unknown">نسخه نصب‌شده قابل تشخیص نبود. همچنان می‌توانید نسخه انتخاب‌شده را نصب کنید.</string>
-    <string name="program_updates_err_check_latest">بررسی جدیدترین نسخه ناموفق بود</string>
+    <string name="program_updates_err_check_latest">دریافت اطلاعات ممکن نشد</string>
     <string name="program_updates_err_no_internet">اتصال اینترنت وجود ندارد</string>
     <string name="program_updates_err_load_releases">بارگیری نسخه‌ها ناموفق بود</string>
     <!-- App logs (internal app events shown in UI) -->

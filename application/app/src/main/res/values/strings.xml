@@ -539,6 +539,15 @@ Current settings will be completely replaced, and the service will be stopped du
     <string name="program_updates_title">ZDT-D module tools/components updates</string>
     <string name="program_updates_reset_cd">Reset</string>
     <string name="program_updates_desc">Updates ZDT-D module tools and components directly from GitHub releases. Checks are performed only when you tap the button.</string>
+    <string name="program_updates_bulk_title">Update all tools</string>
+    <string name="program_updates_bulk_desc">Checks all tools and installs available updates without stopping the running service.</string>
+    <string name="program_updates_check_all">Check all</string>
+    <string name="program_updates_checking_all">Checking all…</string>
+    <string name="program_updates_update_all">Update all</string>
+    <string name="program_updates_updating_all">Updating all…</string>
+    <string name="program_updates_all_current">Everything is up to date</string>
+    <string name="program_updates_retry_check">Retry check</string>
+    <string name="program_updates_available_count_fmt">%1$d updates available</string>
     <string name="program_updates_service_running_title">Service is running</string>
     <string name="program_updates_service_running_desc">Stop the service before checking/updating. This is required so rules and processes don’t use the files during replacement.</string>
     <string name="program_updates_stopping">Stopping…</string>
@@ -649,7 +658,7 @@ Use another editor to modify it.</string>
     <string name="program_updates_err_service_running">Service is still running. Stop it and try again.</string>
     <string name="program_updates_err_detect_installed">Failed to detect installed version</string>
     <string name="program_updates_warn_installed_unknown">Installed version could not be detected. You can still install the selected release.</string>
-    <string name="program_updates_err_check_latest">Failed to check latest release</string>
+    <string name="program_updates_err_check_latest">Could not get update information</string>
     <string name="program_updates_err_no_internet">No internet connection</string>
     <string name="program_updates_err_load_releases">Failed to load releases</string>
     <!-- App logs (internal app events shown in UI) -->

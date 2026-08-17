@@ -539,6 +539,15 @@ APatch: ‏10700+</string>
     <string name="program_updates_title">تحديثات أدوات/مكوّنات وحدة ZDT-D</string>
     <string name="program_updates_reset_cd">إعادة ضبط</string>
     <string name="program_updates_desc">يحدّث أدوات ومكوّنات وحدة ZDT-D مباشرةً من إصدارات GitHub. لا يُجرى التحقق إلا عند الضغط على الزر.</string>
+    <string name="program_updates_bulk_title">تحديث جميع الأدوات</string>
+    <string name="program_updates_bulk_desc">يفحص جميع الأدوات ويثبّت التحديثات المتاحة دون إيقاف الخدمة قيد التشغيل.</string>
+    <string name="program_updates_check_all">فحص الكل</string>
+    <string name="program_updates_checking_all">جارٍ فحص الكل…</string>
+    <string name="program_updates_update_all">تحديث الكل</string>
+    <string name="program_updates_updating_all">جارٍ تحديث الكل…</string>
+    <string name="program_updates_all_current">كل شيء محدّث</string>
+    <string name="program_updates_retry_check">إعادة الفحص</string>
+    <string name="program_updates_available_count_fmt">يتوفر %1$d من التحديثات</string>
     <string name="program_updates_service_running_title">الخدمة قيد التشغيل</string>
     <string name="program_updates_service_running_desc">أوقف الخدمة قبل التحقق/التحديث. هذا مطلوب كي لا تستخدم القواعد والعمليات الملفات أثناء الاستبدال.</string>
     <string name="program_updates_stopping">جارٍ الإيقاف…</string>
@@ -649,7 +658,7 @@ APatch: ‏10700+</string>
     <string name="program_updates_err_service_running">لا تزال الخدمة قيد التشغيل. أوقفها وحاول مجددًا.</string>
     <string name="program_updates_err_detect_installed">فشل اكتشاف الإصدار المثبّت</string>
     <string name="program_updates_warn_installed_unknown">تعذّر اكتشاف الإصدار المثبّت. لا يزال بإمكانك تثبيت الإصدار المحدّد.</string>
-    <string name="program_updates_err_check_latest">فشل التحقق من أحدث إصدار</string>
+    <string name="program_updates_err_check_latest">تعذر الحصول على المعلومات</string>
     <string name="program_updates_err_no_internet">لا يوجد اتصال بالإنترنت</string>
     <string name="program_updates_err_load_releases">فشل تحميل الإصدارات</string>
     <!-- App logs (internal app events shown in UI) -->

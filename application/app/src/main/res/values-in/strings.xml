@@ -539,6 +539,15 @@ Pengaturan saat ini akan sepenuhnya diganti dan layanan akan dihentikan selama p
     <string name="program_updates_title">Pembaruan alat/komponen modul ZDT-D</string>
     <string name="program_updates_reset_cd">Atur ulang</string>
     <string name="program_updates_desc">Memperbarui alat dan komponen modul ZDT-D langsung dari rilis GitHub. Pemeriksaan hanya dilakukan saat Anda mengetuk tombol.</string>
+    <string name="program_updates_bulk_title">Perbarui semua alat</string>
+    <string name="program_updates_bulk_desc">Memeriksa semua alat dan memasang pembaruan yang tersedia tanpa menghentikan layanan yang sedang berjalan.</string>
+    <string name="program_updates_check_all">Periksa semua</string>
+    <string name="program_updates_checking_all">Memeriksa semua…</string>
+    <string name="program_updates_update_all">Perbarui semua</string>
+    <string name="program_updates_updating_all">Memperbarui semua…</string>
+    <string name="program_updates_all_current">Semuanya sudah terbaru</string>
+    <string name="program_updates_retry_check">Ulangi pemeriksaan</string>
+    <string name="program_updates_available_count_fmt">%1$d pembaruan tersedia</string>
     <string name="program_updates_service_running_title">Layanan sedang berjalan</string>
     <string name="program_updates_service_running_desc">Hentikan layanan sebelum memeriksa/memperbarui. Ini diperlukan agar aturan dan proses tidak menggunakan file selama penggantian.</string>
     <string name="program_updates_stopping">Menghentikan…</string>
@@ -649,7 +658,7 @@ Gunakan editor lain untuk mengubahnya.</string>
     <string name="program_updates_err_service_running">Layanan masih berjalan. Hentikan lalu coba lagi.</string>
     <string name="program_updates_err_detect_installed">Gagal mendeteksi versi terpasang</string>
     <string name="program_updates_warn_installed_unknown">Versi terpasang tidak dapat dideteksi. Anda tetap dapat memasang rilis yang dipilih.</string>
-    <string name="program_updates_err_check_latest">Gagal memeriksa rilis terbaru</string>
+    <string name="program_updates_err_check_latest">Tidak dapat memperoleh informasi</string>
     <string name="program_updates_err_no_internet">Tidak ada koneksi internet</string>
     <string name="program_updates_err_load_releases">Gagal memuat rilis</string>
     <!-- App logs (internal app events shown in UI) -->

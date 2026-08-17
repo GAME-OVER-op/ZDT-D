@@ -539,6 +539,15 @@ Geçerli ayarlar tamamen değiştirilecek ve geri yükleme sırasında hizmet du
     <string name="program_updates_title">ZDT-D modül araçları/bileşenleri güncellemeleri</string>
     <string name="program_updates_reset_cd">Sıfırla</string>
     <string name="program_updates_desc">ZDT-D modül araçlarını ve bileşenlerini doğrudan GitHub sürümlerinden günceller. Kontroller yalnızca düğmeye dokunduğunuzda yapılır.</string>
+    <string name="program_updates_bulk_title">Tüm araçları güncelle</string>
+    <string name="program_updates_bulk_desc">Tüm araçları kontrol eder ve çalışan hizmeti durdurmadan kullanılabilir güncellemeleri yükler.</string>
+    <string name="program_updates_check_all">Tümünü kontrol et</string>
+    <string name="program_updates_checking_all">Tümü kontrol ediliyor…</string>
+    <string name="program_updates_update_all">Tümünü güncelle</string>
+    <string name="program_updates_updating_all">Tümü güncelleniyor…</string>
+    <string name="program_updates_all_current">Her şey güncel</string>
+    <string name="program_updates_retry_check">Kontrolü tekrarla</string>
+    <string name="program_updates_available_count_fmt">%1$d güncelleme mevcut</string>
     <string name="program_updates_service_running_title">Hizmet çalışıyor</string>
     <string name="program_updates_service_running_desc">Kontrol/güncelleme öncesinde hizmeti durdurun. Değiştirme sırasında kuralların ve işlemlerin dosyaları kullanmaması için bu gereklidir.</string>
     <string name="program_updates_stopping">Durduruluyor…</string>
@@ -649,7 +658,7 @@ Değiştirmek için başka bir düzenleyici kullanın.</string>
     <string name="program_updates_err_service_running">Hizmet hâlâ çalışıyor. Durdurup yeniden deneyin.</string>
     <string name="program_updates_err_detect_installed">Yüklü sürüm algılanamadı</string>
     <string name="program_updates_warn_installed_unknown">Yüklü sürüm algılanamadı. Seçilen sürümü yine de yükleyebilirsiniz.</string>
-    <string name="program_updates_err_check_latest">En son sürüm kontrol edilemedi</string>
+    <string name="program_updates_err_check_latest">Bilgi alınamadı</string>
     <string name="program_updates_err_no_internet">İnternet bağlantısı yok</string>
     <string name="program_updates_err_load_releases">Sürümler yüklenemedi</string>
     <!-- App logs (internal app events shown in UI) -->

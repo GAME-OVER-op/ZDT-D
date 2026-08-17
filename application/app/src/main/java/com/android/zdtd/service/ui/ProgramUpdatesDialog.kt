@@ -1,5 +1,6 @@
 package com.android.zdtd.service.ui
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -12,7 +13,6 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,7 +27,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -62,7 +61,6 @@ import com.android.zdtd.service.ZdtdActions
 @Composable
 fun ProgramUpdatesDialog(
   state: ProgramUpdatesUiState,
-  serviceRunning: Boolean,
   onDismiss: () -> Unit,
   actions: ZdtdActions,
 ) {
@@ -72,7 +70,7 @@ fun ProgramUpdatesDialog(
   var picking by remember { mutableStateOf<String?>(null) }
 
   fun enabledFor(item: ProgramUpdateItemUi): Boolean {
-    return !serviceRunning && !item.updating && !item.checking && !state.stoppingService
+    return !item.updating && !item.checking && !state.bulkChecking && !state.bulkUpdating
   }
 
   Dialog(
@@ -128,7 +126,7 @@ fun ProgramUpdatesDialog(
               .padding(contentPadding),
             verticalArrangement = Arrangement.spacedBy(12.dp),
           ) {
-            ProgramUpdatesHeader(onRefresh = actions::resetProgramUpdatesUi)
+            ProgramUpdatesHeader()
 
             LazyColumn(
               modifier = Modifier
@@ -136,13 +134,12 @@ fun ProgramUpdatesDialog(
                 .weight(1f),
               verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-              if (serviceRunning) {
-                item(key = "service_running") {
-                  ServiceRunningUpdateCard(
-                    stopping = state.stoppingService,
-                    onStopAndCheck = actions::stopServiceForProgramUpdatesAndCheck,
-                  )
-                }
+              item(key = "bulk_action") {
+                ProgramUpdatesBulkActionCard(
+                  state = state,
+                  onCheckAll = actions::checkAllProgramUpdates,
+                  onUpdateAll = actions::updateAllProgramUpdates,
+                )
               }
 
               if (landscape) {
@@ -365,8 +362,9 @@ fun ProgramUpdatesDialog(
   }
 }
 
+
 @Composable
-private fun ProgramUpdatesHeader(onRefresh: () -> Unit) {
+private fun ProgramUpdatesHeader() {
   Row(
     modifier = Modifier.fillMaxWidth(),
     verticalAlignment = Alignment.CenterVertically,
@@ -398,18 +396,36 @@ private fun ProgramUpdatesHeader(onRefresh: () -> Unit) {
         overflow = TextOverflow.Ellipsis,
       )
     }
-    IconButton(onClick = onRefresh) {
-      Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.program_updates_reset_cd))
-    }
   }
 }
 
 @Composable
-private fun ServiceRunningUpdateCard(
-  stopping: Boolean,
-  onStopAndCheck: () -> Unit,
+private fun ProgramUpdatesBulkActionCard(
+  state: ProgramUpdatesUiState,
+  onCheckAll: () -> Unit,
+  onUpdateAll: () -> Unit,
 ) {
-  val accent = Color(0xFFF59E0B)
+  val items = listOf(state.zapret, state.zapret2, state.mihomo, state.mieru, state.operaProxy)
+  val availableCount = items.count { it.updateAvailable }
+  val anyItemBusy = items.any { it.checking || it.updating }
+  val allKnownAndCurrent = state.bulkCheckCompleted && !state.bulkCheckHadFailures && availableCount == 0
+  val retryCheck = state.bulkCheckCompleted && state.bulkCheckHadFailures && availableCount == 0
+  val actionIsUpdate = state.bulkCheckCompleted && availableCount > 0
+  val busy = state.bulkChecking || state.bulkUpdating || anyItemBusy
+  val labelRes = when {
+    state.bulkChecking -> R.string.program_updates_checking_all
+    state.bulkUpdating -> R.string.program_updates_updating_all
+    actionIsUpdate -> R.string.program_updates_update_all
+    allKnownAndCurrent -> R.string.program_updates_all_current
+    retryCheck -> R.string.program_updates_retry_check
+    else -> R.string.program_updates_check_all
+  }
+  val accent = when {
+    actionIsUpdate -> Color(0xFF22C55E)
+    retryCheck -> Color(0xFFF59E0B)
+    else -> Color(0xFF38BDF8)
+  }
+
   Surface(
     modifier = Modifier.fillMaxWidth(),
     shape = RoundedCornerShape(24.dp),
@@ -421,21 +437,31 @@ private fun ServiceRunningUpdateCard(
       verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
       Text(
-        stringResource(R.string.program_updates_service_running_title),
+        stringResource(R.string.program_updates_bulk_title),
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.SemiBold,
       )
       Text(
-        stringResource(R.string.program_updates_service_running_desc),
+        if (actionIsUpdate) {
+          stringResource(R.string.program_updates_available_count_fmt, availableCount)
+        } else {
+          stringResource(R.string.program_updates_bulk_desc)
+        },
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
       )
       Button(
-        onClick = onStopAndCheck,
-        enabled = !stopping,
+        onClick = if (actionIsUpdate) onUpdateAll else onCheckAll,
+        enabled = !busy && !allKnownAndCurrent,
         shape = RoundedCornerShape(18.dp),
       ) {
-        Text(if (stopping) stringResource(R.string.program_updates_stopping) else stringResource(R.string.program_updates_stop_and_check))
+        if (state.bulkChecking || state.bulkUpdating) {
+          CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+          Spacer(Modifier.width(8.dp))
+        }
+        AnimatedContent(targetState = labelRes, label = "programUpdatesBulkAction") { resId ->
+          Text(stringResource(resId))
+        }
       }
     }
   }

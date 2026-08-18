@@ -228,6 +228,8 @@
     <string name="home_power_stopped">已停止</string>
     <string name="home_power_starting">正在启动…</string>
     <string name="home_power_stopping">正在停止…</string>
+    <string name="home_action_start_service">启动服务</string>
+    <string name="home_action_stop_service">停止服务</string>
     <string name="home_service_active_hint">服务正在运行。点按按钮即可停止。</string>
     <string name="home_service_stopped_hint">服务已停止。点按按钮即可启动。</string>
     <string name="home_no_log_data">（无日志数据）</string>

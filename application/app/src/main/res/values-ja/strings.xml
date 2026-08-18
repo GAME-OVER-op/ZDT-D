@@ -228,6 +228,8 @@ Magisk が変更を適用できるよう、端末を再起動してください�
     <string name="home_power_stopped">停止</string>
     <string name="home_power_starting">開始中…</string>
     <string name="home_power_stopping">停止中…</string>
+    <string name="home_action_start_service">サービスを開始</string>
+    <string name="home_action_stop_service">サービスを停止</string>
     <string name="home_service_active_hint">サービスは実行中です。停止するにはボタンをタップしてください。</string>
     <string name="home_service_stopped_hint">サービスは停止しています。開始するにはボタンをタップしてください。</string>
     <string name="home_no_log_data">（ログデータなし）</string>

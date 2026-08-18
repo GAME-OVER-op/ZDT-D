@@ -228,6 +228,8 @@ Magisk가 변경 사항을 적용할 수 있도록 기기를 재부팅하세요.
     <string name="home_power_stopped">중지됨</string>
     <string name="home_power_starting">시작 중…</string>
     <string name="home_power_stopping">중지 중…</string>
+    <string name="home_action_start_service">서비스 시작</string>
+    <string name="home_action_stop_service">서비스 중지</string>
     <string name="home_service_active_hint">서비스가 실행 중입니다. 중지하려면 버튼을 누르세요.</string>
     <string name="home_service_stopped_hint">서비스가 중지되었습니다. 시작하려면 버튼을 누르세요.</string>
     <string name="home_no_log_data">(로그 데이터 없음)</string>

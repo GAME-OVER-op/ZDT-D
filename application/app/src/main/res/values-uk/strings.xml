@@ -228,6 +228,8 @@
     <string name="home_power_stopped">Зупинено</string>
     <string name="home_power_starting">Запуск…</string>
     <string name="home_power_stopping">Зупинення…</string>
+    <string name="home_action_start_service">Запустити службу</string>
+    <string name="home_action_stop_service">Зупинити службу</string>
     <string name="home_service_active_hint">Служба працює. Натисніть кнопку, щоб зупинити її.</string>
     <string name="home_service_stopped_hint">Службу зупинено. Натисніть кнопку, щоб запустити її.</string>
     <string name="home_no_log_data">(немає даних журналу)</string>

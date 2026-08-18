@@ -228,6 +228,8 @@ Se recomienda actualizar para obtener la mejor compatibilidad. Puedes omitirlo, 
     <string name="home_power_stopped">Detenido</string>
     <string name="home_power_starting">Iniciando…</string>
     <string name="home_power_stopping">Deteniendo…</string>
+    <string name="home_action_start_service">Iniciar servicio</string>
+    <string name="home_action_stop_service">Detener servicio</string>
     <string name="home_service_active_hint">El servicio está en ejecución. Toca el botón para detenerlo.</string>
     <string name="home_service_stopped_hint">El servicio está detenido. Toca el botón para iniciarlo.</string>
     <string name="home_no_log_data">(sin datos de registro)</string>

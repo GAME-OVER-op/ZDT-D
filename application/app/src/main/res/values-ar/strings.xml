@@ -228,6 +228,8 @@
     <string name="home_power_stopped">متوقفة</string>
     <string name="home_power_starting">جارٍ البدء…</string>
     <string name="home_power_stopping">جارٍ الإيقاف…</string>
+    <string name="home_action_start_service">تشغيل الخدمة</string>
+    <string name="home_action_stop_service">إيقاف الخدمة</string>
     <string name="home_service_active_hint">الخدمة قيد التشغيل. اضغط على الزر لإيقافها.</string>
     <string name="home_service_stopped_hint">الخدمة متوقفة. اضغط على الزر لبدئها.</string>
     <string name="home_no_log_data">(لا توجد بيانات سجل)</string>

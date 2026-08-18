@@ -228,6 +228,8 @@
     <string name="home_power_stopped">متوقف</string>
     <string name="home_power_starting">در حال شروع…</string>
     <string name="home_power_stopping">در حال توقف…</string>
+    <string name="home_action_start_service">شروع سرویس</string>
+    <string name="home_action_stop_service">توقف سرویس</string>
     <string name="home_service_active_hint">سرویس در حال اجراست. برای توقف روی دکمه بزنید.</string>
     <string name="home_service_stopped_hint">سرویس متوقف است. برای شروع روی دکمه بزنید.</string>
     <string name="home_no_log_data">(داده‌ای در گزارش نیست)</string>

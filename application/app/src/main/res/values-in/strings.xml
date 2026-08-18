@@ -228,6 +228,8 @@ Pembaruan disarankan untuk kompatibilitas terbaik. Anda dapat melewatinya, tetap
     <string name="home_power_stopped">Berhenti</string>
     <string name="home_power_starting">Memulai…</string>
     <string name="home_power_stopping">Menghentikan…</string>
+    <string name="home_action_start_service">Mulai layanan</string>
+    <string name="home_action_stop_service">Hentikan layanan</string>
     <string name="home_service_active_hint">Layanan sedang berjalan. Ketuk tombol untuk menghentikannya.</string>
     <string name="home_service_stopped_hint">Layanan berhenti. Ketuk tombol untuk memulainya.</string>
     <string name="home_no_log_data">(tidak ada data log)</string>

@@ -228,6 +228,8 @@ Für bestmögliche Kompatibilität wird ein Update empfohlen. Sie können es üb
     <string name="home_power_stopped">Gestoppt</string>
     <string name="home_power_starting">Wird gestartet…</string>
     <string name="home_power_stopping">Wird beendet…</string>
+    <string name="home_action_start_service">Dienst starten</string>
+    <string name="home_action_stop_service">Dienst stoppen</string>
     <string name="home_service_active_hint">Der Dienst läuft. Tippen Sie auf die Schaltfläche, um ihn zu beenden.</string>
     <string name="home_service_stopped_hint">Der Dienst ist gestoppt. Tippen Sie auf die Schaltfläche, um ihn zu starten.</string>
     <string name="home_no_log_data">(keine Protokolldaten)</string>

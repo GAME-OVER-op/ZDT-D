@@ -228,6 +228,8 @@ En iyi uyumluluk için güncelleme önerilir. Atlayabilirsiniz, ancak bazı öze
     <string name="home_power_stopped">Durduruldu</string>
     <string name="home_power_starting">Başlatılıyor…</string>
     <string name="home_power_stopping">Durduruluyor…</string>
+    <string name="home_action_start_service">Hizmeti başlat</string>
+    <string name="home_action_stop_service">Hizmeti durdur</string>
     <string name="home_service_active_hint">Hizmet çalışıyor. Durdurmak için düğmeye dokunun.</string>
     <string name="home_service_stopped_hint">Hizmet durduruldu. Başlatmak için düğmeye dokunun.</string>
     <string name="home_no_log_data">(günlük verisi yok)</string>

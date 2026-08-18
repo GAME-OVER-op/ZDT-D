@@ -228,6 +228,8 @@ Recomenda-se atualizar para obter a melhor compatibilidade. Você pode ignorar, 
     <string name="home_power_stopped">Parado</string>
     <string name="home_power_starting">Iniciando…</string>
     <string name="home_power_stopping">Parando…</string>
+    <string name="home_action_start_service">Iniciar serviço</string>
+    <string name="home_action_stop_service">Parar serviço</string>
     <string name="home_service_active_hint">O serviço está em execução. Toque no botão para pará-lo.</string>
     <string name="home_service_stopped_hint">O serviço está parado. Toque no botão para iniciá-lo.</string>
     <string name="home_no_log_data">(sem dados de log)</string>

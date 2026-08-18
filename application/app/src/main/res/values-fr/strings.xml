@@ -228,6 +228,8 @@ La mise à jour est recommandée pour une compatibilité optimale. Vous pouvez l
     <string name="home_power_stopped">Arrêté</string>
     <string name="home_power_starting">Démarrage…</string>
     <string name="home_power_stopping">Arrêt…</string>
+    <string name="home_action_start_service">Démarrer le service</string>
+    <string name="home_action_stop_service">Arrêter le service</string>
     <string name="home_service_active_hint">Le service est en cours d’exécution. Appuyez sur le bouton pour l’arrêter.</string>
     <string name="home_service_stopped_hint">Le service est arrêté. Appuyez sur le bouton pour le démarrer.</string>
     <string name="home_no_log_data">(aucune donnée de journal)</string>

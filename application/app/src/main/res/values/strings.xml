@@ -228,6 +228,8 @@ Updating is recommended for best compatibility. You may skip, but some features 
     <string name="home_power_stopped">Stopped</string>
     <string name="home_power_starting">Starting…</string>
     <string name="home_power_stopping">Stopping…</string>
+    <string name="home_action_start_service">Start service</string>
+    <string name="home_action_stop_service">Stop service</string>
     <string name="home_service_active_hint">Service is running. Tap the button to stop it.</string>
     <string name="home_service_stopped_hint">Service is stopped. Tap the button to start it.</string>
     <string name="home_no_log_data">(no log data)</string>

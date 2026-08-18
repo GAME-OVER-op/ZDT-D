@@ -543,6 +543,8 @@
     <string name="home_power_stopped">Остановлено</string>
     <string name="home_power_starting">Запуск…</string>
     <string name="home_power_stopping">Остановка…</string>
+    <string name="home_action_start_service">Запустить службу</string>
+    <string name="home_action_stop_service">Остановить службу</string>
     <string name="home_service_active_hint">Служба работает. Нажмите кнопку, чтобы остановить.</string>
     <string name="home_service_stopped_hint">Служба остановлена. Нажмите кнопку, чтобы запустить.</string>
     <string name="home_no_log_data">(нет данных лога)</string>

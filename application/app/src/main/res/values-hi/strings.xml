@@ -228,6 +228,8 @@ Magisk द्वारा बदलाव लागू करने के ल�
     <string name="home_power_stopped">रुकी हुई</string>
     <string name="home_power_starting">शुरू हो रही है…</string>
     <string name="home_power_stopping">रोकी जा रही है…</string>
+    <string name="home_action_start_service">सेवा शुरू करें</string>
+    <string name="home_action_stop_service">सेवा रोकें</string>
     <string name="home_service_active_hint">सेवा चल रही है। इसे रोकने के लिए बटन पर टैप करें।</string>
     <string name="home_service_stopped_hint">सेवा रुकी हुई है। इसे शुरू करने के लिए बटन पर टैप करें।</string>
     <string name="home_no_log_data">(कोई लॉग डेटा नहीं)</string>

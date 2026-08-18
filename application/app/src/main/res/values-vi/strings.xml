@@ -228,6 +228,8 @@ Nên cập nhật để có khả năng tương thích tốt nhất. Bạn có t
     <string name="home_power_stopped">Đã dừng</string>
     <string name="home_power_starting">Đang khởi động…</string>
     <string name="home_power_stopping">Đang dừng…</string>
+    <string name="home_action_start_service">Khởi động dịch vụ</string>
+    <string name="home_action_stop_service">Dừng dịch vụ</string>
     <string name="home_service_active_hint">Dịch vụ đang chạy. Nhấn nút để dừng.</string>
     <string name="home_service_stopped_hint">Dịch vụ đã dừng. Nhấn nút để khởi động.</string>
     <string name="home_no_log_data">(không có dữ liệu nhật ký)</string>

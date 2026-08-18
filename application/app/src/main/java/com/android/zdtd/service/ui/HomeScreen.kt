@@ -5,18 +5,18 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -536,45 +536,40 @@ private fun AnimatedPowerDial(
     label = "dialStateProgress",
   )
 
-  // One animation clock drives all moving dial parts. It exists only while Home
-  // is composed, so the decorative motion consumes no UI work on other tabs.
+  // A single long phase drives every decorative element. All derived rotations
+  // complete an integer number of turns during the 60 s phase, so phase 1 -> 0
+  // is geometrically identical and there is no visible end/start seam.
+  // The pulse is sinusoidal as well, avoiding the stop-and-reverse feel of a
+  // repeated tween at its endpoints.
   val motion = rememberInfiniteTransition(label = "powerDialMotion")
-  val outerRotation by motion.animateFloat(
-    initialValue = 0f,
-    targetValue = 360f,
-    animationSpec = infiniteRepeatable(
-      animation = tween(18_000, easing = LinearEasing),
-      repeatMode = RepeatMode.Restart,
-    ),
-    label = "outerRotation",
-  )
-  val innerRotation by motion.animateFloat(
-    initialValue = 0f,
-    targetValue = -360f,
-    animationSpec = infiniteRepeatable(
-      animation = tween(12_500, easing = LinearEasing),
-      repeatMode = RepeatMode.Restart,
-    ),
-    label = "innerRotation",
-  )
-  val orbitRotation by motion.animateFloat(
-    initialValue = 0f,
-    targetValue = 360f,
-    animationSpec = infiniteRepeatable(
-      animation = tween(if (busy) 2_100 else 5_600, easing = LinearEasing),
-      repeatMode = RepeatMode.Restart,
-    ),
-    label = "orbitRotation",
-  )
-  val pulse by motion.animateFloat(
+  val motionPhase by motion.animateFloat(
     initialValue = 0f,
     targetValue = 1f,
     animationSpec = infiniteRepeatable(
-      animation = tween(if (busy) 700 else 1_900, easing = FastOutSlowInEasing),
-      repeatMode = RepeatMode.Reverse,
+      animation = tween(60_000, easing = LinearEasing),
+      repeatMode = RepeatMode.Restart,
     ),
-    label = "dialPulse",
+    label = "powerDialPhase",
   )
+  val outerRotation = motionPhase * (360f * 4f)   // 15 s / turn
+  val innerRotation = -motionPhase * (360f * 5f) // 12 s / turn
+  val orbitRotation = motionPhase * (360f * 12f) // 5 s / turn
+  val busyRotation = motionPhase * (360f * 30f)  // 2 s / turn, same seamless phase
+  val pulsePhase = motionPhase * 24f * 2f * PI.toFloat()
+  val pulse = (sin(pulsePhase - PI.toFloat() / 2f) + 1f) * 0.5f
+
+  // Touch-down feedback is independent from the service state transition: one
+  // expanding wave starts immediately when the finger presses the dial.
+  val pressWave = remember { Animatable(1f) }
+  LaunchedEffect(pressed) {
+    if (pressed) {
+      pressWave.snapTo(0f)
+      pressWave.animateTo(
+        targetValue = 1f,
+        animationSpec = tween(540, easing = FastOutSlowInEasing),
+      )
+    }
+  }
 
   val red = if (light) Color(0xFFCB1728) else Color(0xFFFF2A3D)
   val green = if (light) Color(0xFF159447) else Color(0xFF28E07A)
@@ -732,6 +727,30 @@ private fun AnimatedPowerDial(
     )
     drawCircle(color = centerAccent.copy(alpha = 0.92f), radius = 1.7f * px, center = secondPoint)
 
+    // Press ripple: two vector waves expand from the center and fade away.
+    // This is drawn on the Canvas, so there is no Material ripple bitmap or
+    // additional drawable resource involved.
+    val wave = pressWave.value.coerceIn(0f, 1f)
+    if (wave < 0.999f) {
+      val waveAlpha = (1f - wave) * if (light) 0.34f else 0.52f
+      val waveRadius = centerR * (1.02f + wave * 0.80f)
+      drawCircle(
+        color = centerAccent.copy(alpha = waveAlpha),
+        radius = waveRadius,
+        center = c,
+        style = Stroke(width = (3.4f - wave * 1.8f) * px, cap = StrokeCap.Round),
+      )
+      val secondWave = ((wave - 0.18f) / 0.82f).coerceIn(0f, 1f)
+      if (wave > 0.18f && secondWave < 0.999f) {
+        drawCircle(
+          color = outerAccent.copy(alpha = (1f - secondWave) * if (light) 0.20f else 0.30f),
+          radius = centerR * (1.04f + secondWave * 0.68f),
+          center = c,
+          style = Stroke(width = (2.4f - secondWave * 1.1f) * px, cap = StrokeCap.Round),
+        )
+      }
+    }
+
     // Central button body and state ring.
     val centerSurface = if (light) scheme.surfaceContainerLowest else Color(0xFF171B20)
     drawCircle(
@@ -785,7 +804,7 @@ private fun AnimatedPowerDial(
     if (busy) {
       drawArc(
         color = accent.copy(alpha = 0.95f),
-        startAngle = orbitRotation - 24f,
+        startAngle = busyRotation - 24f,
         sweepAngle = 48f,
         useCenter = false,
         topLeft = Offset(c.x - ringR * 0.82f, c.y - ringR * 0.82f),
@@ -940,27 +959,25 @@ private fun HomeLogsCard(
       )
     )
   }
+  var freshLogIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
   var logRevealInitialized by remember { mutableStateOf(false) }
-  val logRevealDelayMs = 28L
   val newestLogRenderId = displayedLogLines.lastOrNull()?.id ?: -1L
   val listState = rememberLazyListState()
   var followNewestLogLine by remember { mutableStateOf(true) }
-  var userScrolledAwayDuringGesture by remember { mutableStateOf(false) }
-  var manualScrollIdleNonce by remember { mutableLongStateOf(0L) }
-  val autoReleaseToBottomDelayMs = 5_000L
 
   fun isLogListNearBottom(): Boolean =
     listState.firstVisibleItemIndex <= 1 && listState.firstVisibleItemScrollOffset < 96
 
   LaunchedEffect(selectedLogSource) {
     followNewestLogLine = true
-    userScrolledAwayDuringGesture = false
+    freshLogIds = emptySet()
     logRevealInitialized = false
   }
 
   LaunchedEffect(selectedLogSource, logLines) {
     if (!logRevealInitialized) {
       displayedLogLines = renderize(logLines)
+      freshLogIds = emptySet()
       logRevealInitialized = true
       pendingImmediateTailSnapNonce = if (logSourceSwitchNonce > 0L) logSourceSwitchNonce else 1L
     } else if (rawMatches(logLines, displayedLogLines)) {
@@ -970,18 +987,41 @@ private fun HomeLogsCard(
       if (appended.isEmpty()) {
         displayedLogLines = displayedLogLines.takeLast(logLines.size)
       } else {
-        for (line in appended) {
-          displayedLogLines = (
-            displayedLogLines + DaemonLogRenderLine(id = nextLogRenderId++, line = line)
-            ).takeLast(100)
-          delay(logRevealDelayMs)
+        // Add a backend batch atomically. Previously each line was inserted with
+        // a delay, which made one update look like it was multiplying into many
+        // rows and interacted badly with fast reverse-layout scrolling.
+        val newRows = appended.map { line ->
+          DaemonLogRenderLine(id = nextLogRenderId++, line = line)
         }
+        displayedLogLines = (displayedLogLines + newRows).takeLast(100)
+        freshLogIds = newRows.mapTo(linkedSetOf<Long>()) { it.id }
       }
     } else {
-      displayedLogLines = mergeSlidingTail(logLines, displayedLogLines) ?: renderize(logLines)
+      val previousIds = displayedLogLines.mapTo(hashSetOf<Long>()) { it.id }
+      val merged = mergeSlidingTail(logLines, displayedLogLines)
+      if (merged != null) {
+        displayedLogLines = merged
+        freshLogIds = merged.asSequence()
+          .filter { it.id !in previousIds }
+          .map { it.id }
+          .toCollection(linkedSetOf<Long>())
+      } else {
+        displayedLogLines = renderize(logLines)
+        freshLogIds = emptySet()
+      }
     }
   }
 
+  LaunchedEffect(freshLogIds) {
+    if (freshLogIds.isNotEmpty()) {
+      delay(420L)
+      freshLogIds = emptySet()
+    }
+  }
+
+  // Autoscroll follows new logs only while the user is already at the tail.
+  // Once the user scrolls away we never pull the list back after a timeout;
+  // following resumes naturally when they manually return to the bottom.
   LaunchedEffect(listState) {
     snapshotFlow {
       Triple(
@@ -993,23 +1033,8 @@ private fun HomeLogsCard(
       val nearBottom = isLogListNearBottom()
       if (nearBottom) {
         followNewestLogLine = true
-        userScrolledAwayDuringGesture = false
       } else if (scrolling) {
         followNewestLogLine = false
-        userScrolledAwayDuringGesture = true
-      } else if (userScrolledAwayDuringGesture) {
-        userScrolledAwayDuringGesture = false
-        manualScrollIdleNonce++
-      }
-    }
-  }
-
-  LaunchedEffect(manualScrollIdleNonce, selectedLogSource) {
-    if (manualScrollIdleNonce > 0L && !followNewestLogLine) {
-      delay(autoReleaseToBottomDelayMs)
-      if (!listState.isScrollInProgress && !isLogListNearBottom()) {
-        followNewestLogLine = true
-        listState.animateScrollToItem(0)
       }
     }
   }
@@ -1023,11 +1048,11 @@ private fun HomeLogsCard(
   }
 
   LaunchedEffect(selectedLogSource, newestLogRenderId) {
-    if ((followNewestLogLine || isLogListNearBottom()) && !listState.isScrollInProgress) {
-      followNewestLogLine = true
-      if (listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 8) {
-        listState.animateScrollToItem(0)
-      } else {
+    if (followNewestLogLine && !listState.isScrollInProgress) {
+      // reverseLayout keeps item 0 at the visual bottom. A direct tail snap is
+      // deliberately used here: placement animation plus animateScrollToItem
+      // caused a visible rebound when a fast fling ended at the bottom.
+      if (!isLogListNearBottom()) {
         listState.scrollToItem(0, 0)
       }
     }
@@ -1177,11 +1202,7 @@ private fun HomeLogsCard(
             HomeLogRow(
               item = item,
               compact = compact,
-              modifier = Modifier.animateItem(
-                fadeInSpec = tween(250, easing = FastOutSlowInEasing),
-                placementSpec = tween(300, easing = FastOutSlowInEasing),
-                fadeOutSpec = tween(130),
-              ),
+              animateEntry = item.id in freshLogIds,
             )
           }
         }
@@ -1194,28 +1215,31 @@ private fun HomeLogsCard(
 private fun HomeLogRow(
   item: DaemonLogRenderLine,
   compact: Boolean,
+  animateEntry: Boolean,
   modifier: Modifier = Modifier,
 ) {
   val line = item.line
   val scheme = MaterialTheme.colorScheme
   val light = isLightColorScheme()
   val accent = daemonLogAccent(line.level)
-  val rowVisibleState = remember(item.id) {
-    MutableTransitionState(false).apply { targetState = true }
+  val entry = remember(item.id) { Animatable(if (animateEntry) 0f else 1f) }
+
+  LaunchedEffect(item.id, animateEntry) {
+    if (animateEntry && entry.value < 1f) {
+      entry.animateTo(
+        targetValue = 1f,
+        animationSpec = tween(240, easing = FastOutSlowInEasing),
+      )
+    } else if (!animateEntry && entry.value < 1f) {
+      entry.snapTo(1f)
+    }
   }
 
-  AnimatedVisibility(
-    visibleState = rowVisibleState,
-    modifier = modifier,
-    enter = fadeIn(tween(280, easing = FastOutSlowInEasing)) +
-      slideInVertically(
-        initialOffsetY = { maxOf(it / 4, 14) },
-        animationSpec = tween(300, easing = FastOutSlowInEasing),
-      ) +
-      expandVertically(tween(260, easing = FastOutSlowInEasing)),
-    exit = fadeOut(tween(120)),
-  ) {
-    Surface(
+  Surface(
+      modifier = modifier.graphicsLayer {
+        alpha = entry.value
+        translationY = (1f - entry.value) * 10.dp.toPx()
+      },
       color = if (light) scheme.surfaceContainerLowest.copy(alpha = 0.96f)
       else scheme.surfaceContainerLow.copy(alpha = 0.72f),
       shape = RoundedCornerShape(if (compact) 10.dp else 11.dp),
@@ -1263,7 +1287,6 @@ private fun HomeLogRow(
       }
     }
   }
-}
 
 @Composable
 private fun LandscapeHomeContent(

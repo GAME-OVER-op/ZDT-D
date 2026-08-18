@@ -20,10 +20,9 @@ recovery_probe_interval_secs = 5
 failure_threshold = 3
 runtime_cooldown_ms = 2000
 
-# Deprecated compatibility option. Current D2S keeps health scheduling active
-# even without DNS traffic so the first request after a long pause never starts
-# from a stale GREEN snapshot. The value is accepted but ignored.
-idle_after_secs = 0
+# Stop synthetic health probes after this many seconds without client traffic.
+# New DNSCrypt activity wakes health checks immediately. Set to 0 to disable.
+idle_after_secs = 60
 
 # Full Internet health probes. Targets are tried in order until one proves
 # TCP -> SOCKS greeting -> CONNECT -> TLS ClientHello -> real response.

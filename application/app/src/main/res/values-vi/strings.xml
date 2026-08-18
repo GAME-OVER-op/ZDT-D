@@ -426,6 +426,7 @@ Vì vậy, trình quản lý mô-đun đã chặn cài đặt ZDT-D.
     <string name="stats_unknown_cpu">CPU không xác định</string>
     <string name="stats_clamped_from">Đã giới hạn từ %1$s%%</string>
     <string name="stats_memory_title">Bộ nhớ</string>
+    <string name="stats_power_title">Mức tiêu thụ</string>
     <string name="stats_total_fmt">Tổng: %1$s</string>
     <string name="stats_total_unknown">Tổng: —</string>
     <string name="stats_free_fmt">Trống: %1$s</string>

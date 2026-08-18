@@ -426,6 +426,7 @@ APatch：10700+</string>
     <string name="stats_unknown_cpu">未知 CPU</string>
     <string name="stats_clamped_from">已从 %1$s%% 限制</string>
     <string name="stats_memory_title">内存</string>
+    <string name="stats_power_title">功耗</string>
     <string name="stats_total_fmt">总计：%1$s</string>
     <string name="stats_total_unknown">总计：—</string>
     <string name="stats_free_fmt">可用：%1$s</string>

@@ -8,6 +8,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
+import android.os.BatteryManager
 import android.util.Base64
 import android.content.pm.PackageManager
 import androidx.appcompat.app.AppCompatDelegate
@@ -174,12 +175,19 @@ data class StartupUiState(
   }
 }
 
+data class StatsPowerUiState(
+  val loading: Boolean = false,
+  val resolved: Boolean = false,
+  val milliAmps: Double? = null,
+)
+
 data class UiState(
   val baseUrl: String = "http://127.0.0.1:1006",
   val token: String = "",
   val remoteTargetName: String = "",
   val remoteTargetAddress: String = "",
   val device: DeviceInfo = DeviceInfo(),
+  val statsPower: StatsPowerUiState = StatsPowerUiState(),
   val status: ApiModels.StatusReport? = null,
   // True when the daemon API responds successfully (e.g., /api/status returns 2xx).
   val daemonOnline: Boolean = false,
@@ -199,6 +207,11 @@ private data class StartupTimingPlan(
 ) {
   val loadingDurationMs: Long get() = (totalMs - completeMs - connectingEndMs).coerceAtLeast(0L)
 }
+
+private data class StatsDeviceCpuSnapshot(
+  val totalTicks: Long,
+  val idleTicks: Long,
+)
 
 
 data class LogLine(
@@ -455,6 +468,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   private val moduleIdentifierFlagPath = "/data/adb/modules/ZDT-D/working_folder/flag.sha256"
 
   private var statusJob: Job? = null
+  private var statsPowerJob: Job? = null
+  private var statsPowerCalibrationMa: Double? = null
+  private var statsDeviceCpuPrevious: StatsDeviceCpuSnapshot? = null
+  @Volatile private var statsPowerStartedAtMs: Long = 0L
+  @Volatile private var statsPowerReady: Boolean = false
   private var daemonLogJob: Job? = null
   private var startupJob: Job? = null
   private var proxyInfoApplyJob: Job? = null
@@ -499,7 +517,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
               remoteTargetAddress = "",
             )
           }
+          if (activeMainTabHint == "STATS") startStatsPowerSampling()
         } else {
+          stopStatsPowerSampling()
           startupJob?.cancel()
           startupCompleted = true
           statusPollFailureCount = 0
@@ -1515,6 +1535,7 @@ private fun clearDownloadedUpdateApk() {
     if (!visible) {
       startupJob?.cancel(); startupJob = null
       statusJob?.cancel(); statusJob = null
+      stopStatsPowerSampling()
       daemonLogJob?.cancel(); daemonLogJob = null
       return
     }
@@ -1531,6 +1552,7 @@ private fun clearDownloadedUpdateApk() {
     maybeCheckAppUpdate(force = false)
 
     if (startupCompleted) {
+      if (activeMainTabHint == "STATS") startStatsPowerSampling()
       startStatusPolling()
       startDaemonLogPolling()
       refreshPrograms()
@@ -1542,8 +1564,10 @@ private fun clearDownloadedUpdateApk() {
   }
 
   override fun setActiveMainTab(tab: String) {
-    val wasHome = activeMainTabHint == "HOME"
+    val previousTab = activeMainTabHint
+    val wasHome = previousTab == "HOME"
     activeMainTabHint = tab
+
     if (!wasHome && tab == "HOME") {
       refreshDaemonLog()
       if (appVisible && _rootState.value == RootState.GRANTED && isSetupDone()) {
@@ -1552,11 +1576,23 @@ private fun clearDownloadedUpdateApk() {
         startDaemonLogPolling()
       }
     }
+
+    if (tab == "STATS") {
+      if (previousTab != "STATS") startStatsPowerSampling()
+    } else if (previousTab == "STATS") {
+      stopStatsPowerSampling()
+    }
+
+    // Apply the new screen-aware status cadence immediately instead of waiting for
+    // the previous tab's delay to expire. Statistics gets a fresh sample on entry.
+    if (previousTab != tab && startupCompleted && appVisible && _rootState.value == RootState.GRANTED && isSetupDone()) {
+      startStatusPolling()
+    }
   }
 
   private fun currentStatusPollDelayMs(): Long = when (activeMainTabHint) {
     "HOME" -> 5_800L
-    "STATS" -> 7_500L
+    "STATS" -> 5_000L
     "APPS" -> 9_500L
     else -> 10_500L
   }
@@ -1635,6 +1671,7 @@ private fun clearDownloadedUpdateApk() {
         daemonUnavailableVisible = false,
       )
     }
+    if (activeMainTabHint == "STATS") startStatsPowerSampling()
     startStatusPolling()
     startDaemonLogPolling()
     refreshPrograms()
@@ -5459,6 +5496,169 @@ private fun shQuote(s: String): String {
   }
 
 
+
+  private fun startStatsPowerSampling() {
+    if (activeMainTabHint != "STATS" || !appVisible || !startupCompleted || _rootState.value != RootState.GRANTED || !isSetupDone()) return
+    if (_uiState.value.remoteTargetAddress.isNotBlank()) {
+      stopStatsPowerSampling()
+      _uiState.update { state -> state.copy(statsPower = StatsPowerUiState(loading = false, resolved = true, milliAmps = null)) }
+      return
+    }
+
+    statsPowerJob?.cancel()
+    statsPowerReady = false
+    statsPowerStartedAtMs = System.currentTimeMillis()
+    statsDeviceCpuPrevious = null
+    _uiState.update { it.copy(statsPower = StatsPowerUiState(loading = true, resolved = false, milliAmps = null)) }
+
+    statsPowerJob = launchIO {
+      val startedAt = System.currentTimeMillis()
+      if (statsPowerCalibrationMa == null) {
+        statsPowerCalibrationMa = loadStatsCpuCalibrationMa()
+      }
+
+      val remaining = 5_000L - (System.currentTimeMillis() - startedAt)
+      if (remaining > 0L) delay(remaining)
+      ensureActive()
+      if (activeMainTabHint != "STATS" || !appVisible) return@launchIO
+
+      statsPowerReady = true
+      if (!_uiState.value.daemonOnline || _uiState.value.status == null) {
+        _uiState.update { state -> state.copy(statsPower = StatsPowerUiState(loading = false, resolved = true, milliAmps = null)) }
+      }
+    }
+  }
+
+  private fun stopStatsPowerSampling() {
+    statsPowerJob?.cancel()
+    statsPowerJob = null
+    statsPowerReady = false
+    statsPowerStartedAtMs = 0L
+    statsDeviceCpuPrevious = null
+    _uiState.update { state ->
+      if (state.statsPower == StatsPowerUiState()) state
+      else state.copy(statsPower = StatsPowerUiState())
+    }
+  }
+
+  private fun updateStatsPowerFromReport(report: ApiModels.StatusReport?) {
+    if (activeMainTabHint != "STATS" || !appVisible || statsPowerStartedAtMs <= 0L || report == null) return
+
+    // /proc/stat is read directly by the Android app (no root process is spawned). The snapshot
+    // cadence matches /api/status, so daemon process CPU and whole-device busy CPU refer to the
+    // same ~5 second interval. Nothing here runs while the Statistics tab is closed.
+    val cpuNow = readStatsDeviceCpuSnapshot()
+    val cpuPrevious = statsDeviceCpuPrevious
+    if (cpuNow != null) statsDeviceCpuPrevious = cpuNow
+
+    val elapsedMs = System.currentTimeMillis() - statsPowerStartedAtMs
+    if (!statsPowerReady && elapsedMs >= 4_500L) statsPowerReady = true
+    if (!statsPowerReady) return
+
+    val zdtCpuPercent = ApiModels.computeTotals(report).cpuPercent.coerceIn(0.0, 100.0)
+    val busyCpuPercent = if (cpuPrevious != null && cpuNow != null) {
+      val totalDelta = cpuNow.totalTicks - cpuPrevious.totalTicks
+      val idleDelta = cpuNow.idleTicks - cpuPrevious.idleTicks
+      if (totalDelta > 0L) {
+        (((totalDelta - idleDelta).coerceAtLeast(0L).toDouble() / totalDelta.toDouble()) * 100.0)
+          .coerceIn(0.0, 100.0)
+      } else null
+    } else null
+
+    val cpuWorkShare = when {
+      busyCpuPercent != null && busyCpuPercent > 0.01 -> (zdtCpuPercent / busyCpuPercent).coerceIn(0.0, 1.0)
+      zdtCpuPercent <= 0.0 -> 0.0
+      else -> (zdtCpuPercent / 100.0).coerceIn(0.0, 1.0)
+    }
+
+    val calibrationMa = statsPowerCalibrationMa
+    val rawMa = when {
+      calibrationMa != null && calibrationMa.isFinite() && calibrationMa > 0.0 -> {
+        calibrationMa * cpuWorkShare
+      }
+      else -> {
+        val deviceCurrentMa = readDeviceBatteryCurrentMa()
+        if (deviceCurrentMa == null) {
+          _uiState.update { state -> state.copy(statsPower = StatsPowerUiState(loading = false, resolved = true, milliAmps = null)) }
+          return
+        }
+        deviceCurrentMa * cpuWorkShare
+      }
+    }.coerceIn(0.0, 10_000.0)
+
+    _uiState.update { state ->
+      val previous = state.statsPower.milliAmps
+      val smoothed = if (previous == null || !previous.isFinite()) rawMa else (previous * 0.70) + (rawMa * 0.30)
+      state.copy(statsPower = StatsPowerUiState(loading = false, resolved = true, milliAmps = smoothed))
+    }
+  }
+
+  private fun readStatsDeviceCpuSnapshot(): StatsDeviceCpuSnapshot? {
+    val line = runCatching {
+      File("/proc/stat").bufferedReader().use { reader -> reader.readLine() }
+    }.getOrNull()?.takeIf { it.startsWith("cpu ") } ?: return null
+
+    val values = line.trim().split(Regex("\\s+")).drop(1).mapNotNull { it.toLongOrNull() }
+    if (values.size < 5) return null
+    // Keep total accounting aligned with rust/zdtd/src/stats.rs, which sums every exposed field.
+    val total = values.fold(0L) { acc, value -> acc + value }
+    val idle = values.getOrElse(3) { 0L } + values.getOrElse(4) { 0L }
+    return StatsDeviceCpuSnapshot(totalTicks = total, idleTicks = idle)
+  }
+
+  private fun readDeviceBatteryCurrentMa(): Double? {
+    val manager = getApplication<Application>().getSystemService(Context.BATTERY_SERVICE) as? BatteryManager ?: return null
+    val microAmps = runCatching { manager.getLongProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW) }.getOrNull() ?: return null
+    if (microAmps == Long.MIN_VALUE || microAmps == 0L) return null
+    return kotlin.math.abs(microAmps.toDouble()) / 1000.0
+  }
+
+  private fun loadStatsCpuCalibrationMa(): Double? {
+    val result = runCatching { root.execRoot("dumpsys batterystats --charged") }.getOrNull() ?: return null
+    if (!result.isSuccess) return null
+    return parseStatsCpuCalibration(result.out.joinToString("\n"))
+  }
+
+  private fun parseStatsCpuCalibration(text: String): Double? {
+    var inEstimatedPower = false
+    var inGlobal = false
+    val cpuLineRegex = Regex("""^cpu:\s*([0-9.eE+\-]+).*duration:\s*(.+)$""", RegexOption.IGNORE_CASE)
+    val durationTokenRegex = Regex("""([0-9]+(?:\.[0-9]+)?)(ms|h|m|s)""", RegexOption.IGNORE_CASE)
+
+    for (rawLine in text.lineSequence()) {
+      val line = rawLine.trim()
+      if (line.startsWith("Estimated power use (mAh):", ignoreCase = true)) {
+        inEstimatedPower = true
+        inGlobal = false
+        continue
+      }
+      if (!inEstimatedPower) continue
+      if (line.equals("Global", ignoreCase = true)) {
+        inGlobal = true
+        continue
+      }
+      if (inGlobal && line.startsWith("UID ", ignoreCase = true)) break
+      if (!inGlobal) continue
+
+      val match = cpuLineRegex.find(line) ?: continue
+      val energyMah = match.groupValues[1].toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 } ?: return null
+      var durationSeconds = 0.0
+      for (token in durationTokenRegex.findAll(match.groupValues[2])) {
+        val value = token.groupValues[1].toDoubleOrNull() ?: continue
+        durationSeconds += when (token.groupValues[2].lowercase(Locale.ROOT)) {
+          "h" -> value * 3600.0
+          "m" -> value * 60.0
+          "s" -> value
+          "ms" -> value / 1000.0
+          else -> 0.0
+        }
+      }
+      if (durationSeconds < 60.0) return null
+      return (energyMah / (durationSeconds / 3600.0)).takeIf { it.isFinite() && it in 0.1..10_000.0 }
+    }
+    return null
+  }
+
   private fun startStatusPolling() {
     statusJob?.cancel()
     statusJob = launchIO {
@@ -5542,6 +5742,7 @@ private fun shQuote(s: String): String {
       lastStatusFetchAtMs = okAt
       noteStatusPollSuccess(okAt)
       _uiState.update { it.copy(status = rep, daemonOnline = true, daemonUnavailableVisible = false) }
+      updateStatsPowerFromReport(rep)
       // Cache last-known state for the Quick Settings tile.
       root.setCachedServiceOn(ApiModels.isServiceOn(rep))
     } finally {

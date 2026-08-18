@@ -57,7 +57,6 @@ struct MockSocks {
     fail: Arc<AtomicBool>,
     fail_once: Arc<AtomicBool>,
     blackhole: Arc<AtomicBool>,
-    accepts: Arc<AtomicUsize>,
     connects: Arc<AtomicUsize>,
     shutdown: watch::Sender<bool>,
     task: JoinHandle<()>,
@@ -70,13 +69,11 @@ impl MockSocks {
         let fail = Arc::new(AtomicBool::new(initially_failing));
         let fail_once = Arc::new(AtomicBool::new(false));
         let blackhole = Arc::new(AtomicBool::new(false));
-        let accepts = Arc::new(AtomicUsize::new(0));
         let connects = Arc::new(AtomicUsize::new(0));
         let (shutdown, mut rx) = watch::channel(false);
         let fail_task = fail.clone();
         let fail_once_task = fail_once.clone();
         let blackhole_task = blackhole.clone();
-        let accepts_task = accepts.clone();
         let connects_task = connects.clone();
         let task = tokio::spawn(async move {
             loop {
@@ -84,7 +81,6 @@ impl MockSocks {
                     _ = rx.changed() => break,
                     accepted = listener.accept() => {
                         let Ok((stream, _)) = accepted else { continue; };
-                        accepts_task.fetch_add(1, Ordering::Relaxed);
                         let fail = fail_task.clone();
                         let fail_once = fail_once_task.clone();
                         let blackhole = blackhole_task.clone();
@@ -96,7 +92,7 @@ impl MockSocks {
                 }
             }
         });
-        Self { addr, fail, fail_once, blackhole, accepts, connects, shutdown, task }
+        Self { addr, fail, fail_once, blackhole, connects, shutdown, task }
     }
 
     fn set_failing(&self, value: bool) {
@@ -117,14 +113,6 @@ impl MockSocks {
 
     fn count(&self) -> usize {
         self.connects.load(Ordering::Relaxed)
-    }
-
-    fn reset_accept_count(&self) {
-        self.accepts.store(0, Ordering::Relaxed);
-    }
-
-    fn accept_count(&self) -> usize {
-        self.accepts.load(Ordering::Relaxed)
     }
 
     async fn stop(self) {
@@ -536,31 +524,6 @@ async fn socks_connect_success_without_data_plane_never_becomes_green() {
     echo.stop().await;
 }
 
-
-#[tokio::test]
-async fn legacy_idle_setting_does_not_suspend_backend_health_checks() {
-    let echo = EchoServer::start().await;
-    let backend = MockSocks::start(false).await;
-    let mut cfg = config(vec![backend.addr], echo.addr);
-    cfg.idle_after_secs = Some(1);
-    cfg.healthy_probe_interval_secs = 1;
-    let server = start(cfg).await.unwrap();
-    wait_for_green(&server, 1).await;
-
-    // Once GREEN, no DNS client is connected. Older builds stopped the health
-    // scheduler after one idle second, so no later Light SOCKS handshake could
-    // reach the backend. The compatibility field must no longer suspend probes.
-    backend.reset_accept_count();
-    tokio::time::sleep(Duration::from_millis(3_200)).await;
-    assert!(
-        backend.accept_count() > 0,
-        "backend health checks stopped after the legacy idle_after_secs threshold"
-    );
-
-    server.shutdown().await.unwrap();
-    backend.stop().await;
-    echo.stop().await;
-}
 
 #[tokio::test]
 async fn established_blackhole_is_forced_closed_and_releases_connection_slot() {

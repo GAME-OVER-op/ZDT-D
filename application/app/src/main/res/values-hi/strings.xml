@@ -426,6 +426,7 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="stats_unknown_cpu">अज्ञात CPU</string>
     <string name="stats_clamped_from">%1$s%% से सीमित किया गया</string>
     <string name="stats_memory_title">मेमोरी</string>
+    <string name="stats_power_title">खपत</string>
     <string name="stats_total_fmt">कुल: %1$s</string>
     <string name="stats_total_unknown">कुल: —</string>
     <string name="stats_free_fmt">खाली: %1$s</string>

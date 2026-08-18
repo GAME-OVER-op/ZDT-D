@@ -426,6 +426,7 @@ Agar ZDT-D dapat diinstal dengan benar, metamodule harus berfungsi dengan baik a
     <string name="stats_unknown_cpu">CPU tidak dikenal</string>
     <string name="stats_clamped_from">Dibatasi dari %1$s%%</string>
     <string name="stats_memory_title">Memori</string>
+    <string name="stats_power_title">Konsumsi</string>
     <string name="stats_total_fmt">Total: %1$s</string>
     <string name="stats_total_unknown">Total: —</string>
     <string name="stats_free_fmt">Bebas: %1$s</string>

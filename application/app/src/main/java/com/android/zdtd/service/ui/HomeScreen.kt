@@ -8,6 +8,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
@@ -959,7 +960,6 @@ private fun HomeLogsCard(
       )
     )
   }
-  var freshLogIds by remember { mutableStateOf<Set<Long>>(emptySet()) }
   var logRevealInitialized by remember { mutableStateOf(false) }
   val newestLogRenderId = displayedLogLines.lastOrNull()?.id ?: -1L
   val listState = rememberLazyListState()
@@ -970,14 +970,12 @@ private fun HomeLogsCard(
 
   LaunchedEffect(selectedLogSource) {
     followNewestLogLine = true
-    freshLogIds = emptySet()
     logRevealInitialized = false
   }
 
   LaunchedEffect(selectedLogSource, logLines) {
     if (!logRevealInitialized) {
       displayedLogLines = renderize(logLines)
-      freshLogIds = emptySet()
       logRevealInitialized = true
       pendingImmediateTailSnapNonce = if (logSourceSwitchNonce > 0L) logSourceSwitchNonce else 1L
     } else if (rawMatches(logLines, displayedLogLines)) {
@@ -987,35 +985,15 @@ private fun HomeLogsCard(
       if (appended.isEmpty()) {
         displayedLogLines = displayedLogLines.takeLast(logLines.size)
       } else {
-        // Add a backend batch atomically. Previously each line was inserted with
-        // a delay, which made one update look like it was multiplying into many
-        // rows and interacted badly with fast reverse-layout scrolling.
+        // Keep backend updates atomic. The viewport animation below is only a
+        // visual reveal and does not drip-feed a batch line by line.
         val newRows = appended.map { line ->
           DaemonLogRenderLine(id = nextLogRenderId++, line = line)
         }
         displayedLogLines = (displayedLogLines + newRows).takeLast(100)
-        freshLogIds = newRows.mapTo(linkedSetOf<Long>()) { it.id }
       }
     } else {
-      val previousIds = displayedLogLines.mapTo(hashSetOf<Long>()) { it.id }
-      val merged = mergeSlidingTail(logLines, displayedLogLines)
-      if (merged != null) {
-        displayedLogLines = merged
-        freshLogIds = merged.asSequence()
-          .filter { it.id !in previousIds }
-          .map { it.id }
-          .toCollection(linkedSetOf<Long>())
-      } else {
-        displayedLogLines = renderize(logLines)
-        freshLogIds = emptySet()
-      }
-    }
-  }
-
-  LaunchedEffect(freshLogIds) {
-    if (freshLogIds.isNotEmpty()) {
-      delay(420L)
-      freshLogIds = emptySet()
+      displayedLogLines = mergeSlidingTail(logLines, displayedLogLines) ?: renderize(logLines)
     }
   }
 
@@ -1202,7 +1180,6 @@ private fun HomeLogsCard(
             HomeLogRow(
               item = item,
               compact = compact,
-              animateEntry = item.id in freshLogIds,
             )
           }
         }
@@ -1215,31 +1192,31 @@ private fun HomeLogsCard(
 private fun HomeLogRow(
   item: DaemonLogRenderLine,
   compact: Boolean,
-  animateEntry: Boolean,
   modifier: Modifier = Modifier,
 ) {
   val line = item.line
   val scheme = MaterialTheme.colorScheme
   val light = isLightColorScheme()
   val accent = daemonLogAccent(line.level)
-  val entry = remember(item.id) { Animatable(if (animateEntry) 0f else 1f) }
 
-  LaunchedEffect(item.id, animateEntry) {
-    if (animateEntry && entry.value < 1f) {
-      entry.animateTo(
-        targetValue = 1f,
-        animationSpec = tween(240, easing = FastOutSlowInEasing),
-      )
-    } else if (!animateEntry && entry.value < 1f) {
-      entry.snapTo(1f)
-    }
+  // Same reveal behavior as the original Home log viewer: whenever a keyed
+  // LazyColumn row enters composition it fades in and rises from below.
+  // Placement itself is not animated, so fast scrolling stays stable.
+  val rowVisibleState = remember(item.id) {
+    MutableTransitionState(false).apply { targetState = true }
   }
 
-  Surface(
-      modifier = modifier.graphicsLayer {
-        alpha = entry.value
-        translationY = (1f - entry.value) * 10.dp.toPx()
-      },
+  AnimatedVisibility(
+    visibleState = rowVisibleState,
+    enter = fadeIn(animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)) +
+      slideInVertically(
+        initialOffsetY = { maxOf(it / 6, 18) },
+        animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+      ),
+    exit = fadeOut(animationSpec = tween(durationMillis = 140)),
+  ) {
+    Surface(
+      modifier = modifier,
       color = if (light) scheme.surfaceContainerLowest.copy(alpha = 0.96f)
       else scheme.surfaceContainerLow.copy(alpha = 0.72f),
       shape = RoundedCornerShape(if (compact) 10.dp else 11.dp),
@@ -1287,6 +1264,7 @@ private fun HomeLogRow(
       }
     }
   }
+}
 
 @Composable
 private fun LandscapeHomeContent(

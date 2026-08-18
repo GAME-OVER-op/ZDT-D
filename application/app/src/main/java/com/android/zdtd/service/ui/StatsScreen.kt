@@ -657,7 +657,7 @@ private fun PowerConsumptionCard(
         )
       } else {
         Text(
-          text = milliAmps?.let { "≈ ${fmtPowerMah(it)} mA-h" } ?: "—",
+          text = milliAmps?.let { fmtPowerCurrent(it) } ?: "—",
           style = if (large) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
           fontWeight = FontWeight.Bold,
           maxLines = 1,
@@ -1166,11 +1166,11 @@ private fun fmtPct(v: Double): String {
   return String.format(Locale.getDefault(), "%.1f", v.coerceAtLeast(0.0))
 }
 
-private fun fmtPowerMah(v: Double): String {
-  if (!v.isFinite()) return "0"
-  // The live sampler stores the fractional value; Statistics presents it in thousandths
-  // as a whole mA-h number (0.238 -> 238, 1.238 -> 1238) to avoid decimal noise.
-  return (v.coerceAtLeast(0.0) * 1000.0).roundToInt().toString()
+private fun fmtPowerCurrent(v: Double): String {
+  if (!v.isFinite()) return "—"
+  val milliAmps = v.coerceAtLeast(0.0)
+  val microAmps = (milliAmps * 1000.0).roundToInt()
+  return String.format(Locale.getDefault(), "≈ %.3f mA / %d µA", milliAmps, microAmps)
 }
 
 private fun mbToHuman(mb: Double): String {

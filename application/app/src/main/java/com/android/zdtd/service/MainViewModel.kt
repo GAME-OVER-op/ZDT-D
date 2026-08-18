@@ -5556,19 +5556,27 @@ private fun shQuote(s: String): String {
     if (!statsPowerReady) return
 
     val zdtCpuPercent = ApiModels.computeTotals(report).cpuPercent.coerceIn(0.0, 100.0)
-    val busyCpuPercent = if (cpuPrevious != null && cpuNow != null) {
+    val cpuWorkShare = if (cpuPrevious != null && cpuNow != null) {
       val totalDelta = cpuNow.totalTicks - cpuPrevious.totalTicks
       val idleDelta = cpuNow.idleTicks - cpuPrevious.idleTicks
-      if (totalDelta > 0L) {
-        (((totalDelta - idleDelta).coerceAtLeast(0L).toDouble() / totalDelta.toDouble()) * 100.0)
-          .coerceIn(0.0, 100.0)
-      } else null
-    } else null
-
-    val cpuWorkShare = when {
-      busyCpuPercent != null && busyCpuPercent > 0.01 -> (zdtCpuPercent / busyCpuPercent).coerceIn(0.0, 1.0)
-      zdtCpuPercent <= 0.0 -> 0.0
-      else -> (zdtCpuPercent / 100.0).coerceIn(0.0, 1.0)
+      val busyDelta = (totalDelta - idleDelta).coerceAtLeast(0L)
+      if (totalDelta > 0L && busyDelta > 0L) {
+        // zdtd reports process CPU normalized to the same whole-device /proc/stat scale:
+        //   cpuPercent = processDeltaTicks / totalDeltaTicks * 100.
+        // Reconstruct that process work for this interval and divide it by busy CPU ticks.
+        // This is the same quantity validated by the standalone probe:
+        //   Δticks(ZDT-D) / ΔbusyTicks(device).
+        val zdtDeltaTicks = (zdtCpuPercent / 100.0) * totalDelta.toDouble()
+        (zdtDeltaTicks / busyDelta.toDouble()).coerceIn(0.0, 1.0)
+      } else if (zdtCpuPercent <= 0.0) {
+        0.0
+      } else {
+        (zdtCpuPercent / 100.0).coerceIn(0.0, 1.0)
+      }
+    } else if (zdtCpuPercent <= 0.0) {
+      0.0
+    } else {
+      (zdtCpuPercent / 100.0).coerceIn(0.0, 1.0)
     }
 
     val calibrationMa = statsPowerCalibrationMa

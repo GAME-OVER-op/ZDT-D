@@ -426,7 +426,7 @@ Damit ZDT-D korrekt installiert werden kann, muss das Metamodul ordnungsgemäß 
     <string name="stats_unknown_cpu">Unbekannte CPU</string>
     <string name="stats_clamped_from">Von %1$s%% begrenzt</string>
     <string name="stats_memory_title">Arbeitsspeicher</string>
-    <string name="stats_power_title">Verbrauch</string>
+    <string name="stats_power_title">Batterie</string>
     <string name="stats_total_fmt">Gesamt: %1$s</string>
     <string name="stats_total_unknown">Gesamt: —</string>
     <string name="stats_free_fmt">Frei: %1$s</string>

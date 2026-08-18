@@ -426,7 +426,7 @@ To install ZDT-D correctly, the metamodule must be working properly or be comple
     <string name="stats_unknown_cpu">Unknown CPU</string>
     <string name="stats_clamped_from">Clamped from %1$s%%</string>
     <string name="stats_memory_title">Memory</string>
-    <string name="stats_power_title">Power consumption</string>
+    <string name="stats_power_title">Battery</string>
     <string name="stats_total_fmt">Total: %1$s</string>
     <string name="stats_total_unknown">Total: —</string>
     <string name="stats_free_fmt">Free: %1$s</string>

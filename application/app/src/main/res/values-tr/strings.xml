@@ -426,7 +426,7 @@ ZDT-D’nin doğru kurulması için metamodule düzgün çalışmalı veya tamam
     <string name="stats_unknown_cpu">Bilinmeyen CPU</string>
     <string name="stats_clamped_from">%1$s%% değerinden sınırlandı</string>
     <string name="stats_memory_title">Bellek</string>
-    <string name="stats_power_title">Tüketim</string>
+    <string name="stats_power_title">Pil</string>
     <string name="stats_total_fmt">Toplam: %1$s</string>
     <string name="stats_total_unknown">Toplam: —</string>
     <string name="stats_free_fmt">Boş: %1$s</string>

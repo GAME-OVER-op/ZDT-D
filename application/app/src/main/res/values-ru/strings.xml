@@ -243,7 +243,7 @@
     <string name="stats_unknown_cpu">Неизвестный процессор</string>
     <string name="stats_clamped_from">Ограничено с %1$s%%</string>
     <string name="stats_memory_title">Память</string>
-    <string name="stats_power_title">Потребление</string>
+    <string name="stats_power_title">Батарея</string>
     <string name="stats_total_fmt">Всего: %1$s</string>
     <string name="stats_total_unknown">Всего: —</string>
     <string name="stats_free_fmt">Свободно: %1$s</string>

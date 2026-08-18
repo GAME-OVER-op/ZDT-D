@@ -30,7 +30,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BatteryChargingFull
+import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.outlined.Dns
 import androidx.compose.material.icons.outlined.Memory
@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -142,7 +143,6 @@ fun StatsScreen(
   val totalRamMb = device.totalRamMb?.toDouble()?.takeIf { it > 0.0 }
   val usedMb = totals.rssMb.coerceAtLeast(0.0)
   val usedFrac = totalRamMb?.let { (usedMb / it).toFloat().coerceIn(0f, 1f) }
-  val freeMb = totalRamMb?.let { (it - usedMb).coerceAtLeast(0.0) }
 
   val enabledByProgramId = remember(programs) {
     programs.associate { program ->
@@ -236,12 +236,24 @@ fun StatsScreen(
   }
   val serviceRunning = daemonOnline && ApiModels.isServiceOn(rep)
 
-  val isNarrowWidth = rememberIsNarrowWidth()
-  val isShortHeight = rememberIsShortHeight()
-  val landscapeControl = rememberUseLandscapeControlLayout()
-  val compactScreen = isNarrowWidth || (isShortHeight && !landscapeControl)
-  val sidePadding = if (compactScreen) 12.dp else 16.dp
-  val sectionGap = if (compactScreen) 10.dp else 12.dp
+  // Statistics uses the real available Android dp size instead of assuming one phone density.
+  // Small phones and landscape stay dense; tablets get a little more breathing room, but sizes
+  // are capped so cards never become oversized.
+  val configuration = LocalConfiguration.current
+  val screenWidthDp = configuration.screenWidthDp
+  val screenHeightDp = configuration.screenHeightDp
+  val compactScreen = screenWidthDp < 380 || screenHeightDp < 600
+  val largeScreen = screenWidthDp >= 600 && screenHeightDp >= 480
+  val sidePadding = when {
+    compactScreen -> 10.dp
+    largeScreen -> 18.dp
+    else -> 12.dp
+  }
+  val sectionGap = when {
+    compactScreen -> 8.dp
+    largeScreen -> 12.dp
+    else -> 10.dp
+  }
 
   val cpuTitle = stringResource(R.string.stats_cpu_title)
   val cpuUnknown = stringResource(R.string.stats_unknown_cpu)
@@ -277,9 +289,9 @@ fun StatsScreen(
     state = listState,
     contentPadding = PaddingValues(
       start = sidePadding,
-      top = topContentPadding + if (compactScreen) 12.dp else 16.dp,
+      top = topContentPadding + if (compactScreen) 8.dp else if (largeScreen) 14.dp else 10.dp,
       end = sidePadding,
-      bottom = bottomContentPadding + 16.dp,
+      bottom = bottomContentPadding + if (compactScreen) 10.dp else 14.dp,
     ),
     verticalArrangement = Arrangement.spacedBy(sectionGap),
   ) {
@@ -290,16 +302,17 @@ fun StatsScreen(
         activeComponents = runningTools,
         loading = initialLoading,
         compact = compactScreen,
+        large = largeScreen,
       )
     }
 
     item(key = "cpu_ram") {
       BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val twoColumns = maxWidth >= 340.dp
+        val twoColumns = maxWidth >= 330.dp
         if (twoColumns) {
           Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (compactScreen) 8.dp else if (largeScreen) 12.dp else 10.dp),
           ) {
             DashboardMetricCard(
               modifier = Modifier.weight(1f),
@@ -307,10 +320,10 @@ fun StatsScreen(
               subtitle = device.cpuName?.takeIf { it.isNotBlank() } ?: cpuUnknown,
               value = "${fmtPct(cpuTotalShown)}%",
               progress = cpuProgress,
-              footnote = if (cpuTotalRaw > 100.0) stringResource(R.string.stats_clamped_from, fmtPct(cpuTotalRaw)) else null,
               icon = { Icon(Icons.Outlined.Speed, contentDescription = null) },
               loading = initialLoading,
               compact = compactScreen,
+              large = largeScreen,
             )
             DashboardMetricCard(
               modifier = Modifier.weight(1f),
@@ -319,24 +332,24 @@ fun StatsScreen(
                 ?: stringResource(R.string.stats_total_unknown),
               value = mbToHuman(usedMb),
               progress = usedFrac,
-              footnote = totalRamMb?.let { stringResource(R.string.stats_free_fmt, mbToHuman(freeMb ?: 0.0)) },
               icon = { Icon(Icons.Outlined.Memory, contentDescription = null) },
               loading = initialLoading,
               compact = compactScreen,
+              large = largeScreen,
             )
           }
         } else {
-          Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             DashboardMetricCard(
               modifier = Modifier.fillMaxWidth(),
               title = cpuTitle,
               subtitle = device.cpuName?.takeIf { it.isNotBlank() } ?: cpuUnknown,
               value = "${fmtPct(cpuTotalShown)}%",
               progress = cpuProgress,
-              footnote = if (cpuTotalRaw > 100.0) stringResource(R.string.stats_clamped_from, fmtPct(cpuTotalRaw)) else null,
               icon = { Icon(Icons.Outlined.Speed, contentDescription = null) },
               loading = initialLoading,
               compact = true,
+              large = false,
             )
             DashboardMetricCard(
               modifier = Modifier.fillMaxWidth(),
@@ -345,10 +358,10 @@ fun StatsScreen(
                 ?: stringResource(R.string.stats_total_unknown),
               value = mbToHuman(usedMb),
               progress = usedFrac,
-              footnote = totalRamMb?.let { stringResource(R.string.stats_free_fmt, mbToHuman(freeMb ?: 0.0)) },
               icon = { Icon(Icons.Outlined.Memory, contentDescription = null) },
               loading = initialLoading,
               compact = true,
+              large = false,
             )
           }
         }
@@ -360,6 +373,7 @@ fun StatsScreen(
         milliAmps = power.milliAmps,
         loading = power.loading || !power.resolved,
         compact = compactScreen,
+        large = largeScreen,
       )
     }
 
@@ -389,6 +403,7 @@ fun StatsScreen(
         stoppedLower = stoppedLower,
         loading = initialLoading,
         compact = compactScreen,
+        large = largeScreen,
       )
     }
 
@@ -404,8 +419,9 @@ private fun ServiceStatusCard(
   activeComponents: Int,
   loading: Boolean,
   compact: Boolean,
+  large: Boolean,
 ) {
-  val shape = RoundedCornerShape(if (compact) 26.dp else 30.dp)
+  val shape = RoundedCornerShape(when { compact -> 20.dp; large -> 24.dp; else -> 22.dp })
   val primary = MaterialTheme.colorScheme.primary
   val inactive = MaterialTheme.colorScheme.onSurface
   val visualRunning = running || loading
@@ -434,36 +450,39 @@ private fun ServiceStatusCard(
         color = if (visualRunning) primary.copy(alpha = 0.72f) else inactive.copy(alpha = 0.16f),
         shape = shape,
       )
-      .padding(horizontal = if (compact) 16.dp else 20.dp, vertical = if (compact) 16.dp else 20.dp),
+      .padding(
+        horizontal = when { compact -> 11.dp; large -> 15.dp; else -> 13.dp },
+        vertical = when { compact -> 10.dp; large -> 13.dp; else -> 11.dp },
+      ),
   ) {
     Row(
       modifier = Modifier.fillMaxWidth(),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 16.dp),
+      horizontalArrangement = Arrangement.spacedBy(when { compact -> 9.dp; large -> 13.dp; else -> 11.dp }),
     ) {
       Box(
         modifier = Modifier
-          .size(if (compact) 54.dp else 62.dp)
-          .clip(RoundedCornerShape(if (compact) 18.dp else 21.dp))
+          .size(when { compact -> 44.dp; large -> 52.dp; else -> 48.dp })
+          .clip(RoundedCornerShape(when { compact -> 14.dp; large -> 17.dp; else -> 15.dp }))
           .background(primary.copy(alpha = 0.18f))
-          .border(1.dp, primary.copy(alpha = 0.30f), RoundedCornerShape(if (compact) 18.dp else 21.dp)),
+          .border(1.dp, primary.copy(alpha = 0.30f), RoundedCornerShape(when { compact -> 14.dp; large -> 17.dp; else -> 15.dp })),
         contentAlignment = Alignment.Center,
       ) {
         Icon(
           Icons.Outlined.Dns,
           contentDescription = null,
-          modifier = Modifier.size(if (compact) 28.dp else 32.dp),
+          modifier = Modifier.size(when { compact -> 23.dp; large -> 28.dp; else -> 25.dp }),
           tint = primary,
         )
       }
 
       Column(
         modifier = Modifier.weight(1f),
-        verticalArrangement = Arrangement.spacedBy(5.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
       ) {
         Text(
           text = stringResource(R.string.stats_daemon_title),
-          style = if (compact) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
+          style = if (large) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
           fontWeight = FontWeight.Bold,
           maxLines = 1,
         )
@@ -481,7 +500,7 @@ private fun ServiceStatusCard(
       }
 
       if (loading) {
-        AnimatedLoadingLine(width = if (compact) 92.dp else 108.dp, height = 32.dp, radius = 999.dp, phaseDelayMs = 220)
+        AnimatedLoadingLine(width = if (compact) 78.dp else 88.dp, height = 28.dp, radius = 999.dp, phaseDelayMs = 220)
       } else {
         StatusPill(text = statusText, good = running, accent = accent)
       }
@@ -496,100 +515,78 @@ private fun DashboardMetricCard(
   subtitle: String,
   value: String,
   progress: Float?,
-  footnote: String?,
   icon: @Composable () -> Unit,
   loading: Boolean,
   compact: Boolean,
+  large: Boolean,
 ) {
   val blue = MaterialTheme.colorScheme.secondary
-  val shape = RoundedCornerShape(if (compact) 24.dp else 28.dp)
+  val shape = RoundedCornerShape(when { compact -> 16.dp; large -> 20.dp; else -> 18.dp })
+  val gaugeSize = when { compact -> 48.dp; large -> 58.dp; else -> 52.dp }
 
   Box(
     modifier = modifier
-      .height(if (compact) 182.dp else 198.dp)
+      .height(when { compact -> 70.dp; large -> 84.dp; else -> 76.dp })
       .clip(shape)
       .background(
         Brush.linearGradient(
           listOf(
-            blue.copy(alpha = 0.16f),
+            blue.copy(alpha = 0.14f),
             MaterialTheme.colorScheme.surface.copy(alpha = 0.82f),
-            MaterialTheme.colorScheme.surface.copy(alpha = 0.58f),
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.60f),
           )
         )
       )
-      .border(1.dp, blue.copy(alpha = 0.48f), shape)
-      .padding(if (compact) 13.dp else 15.dp),
+      .border(1.dp, blue.copy(alpha = 0.42f), shape)
+      .padding(horizontal = when { compact -> 8.dp; large -> 12.dp; else -> 10.dp }, vertical = if (compact) 7.dp else 8.dp),
   ) {
-    Column(
+    Row(
       modifier = Modifier.fillMaxSize(),
-      verticalArrangement = Arrangement.spacedBy(if (compact) 7.dp else 8.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(if (compact) 7.dp else 9.dp),
     ) {
-      Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(9.dp),
+      Box(
+        modifier = Modifier
+          .size(when { compact -> 30.dp; large -> 36.dp; else -> 32.dp })
+          .clip(RoundedCornerShape(if (compact) 10.dp else 11.dp))
+          .background(blue.copy(alpha = 0.13f))
+          .border(1.dp, blue.copy(alpha = 0.26f), RoundedCornerShape(if (compact) 10.dp else 11.dp)),
+        contentAlignment = Alignment.Center,
       ) {
         Box(
-          modifier = Modifier
-            .size(if (compact) 38.dp else 42.dp)
-            .clip(RoundedCornerShape(13.dp))
-            .background(blue.copy(alpha = 0.15f))
-            .border(1.dp, blue.copy(alpha = 0.30f), RoundedCornerShape(13.dp)),
+          Modifier.size(when { compact -> 17.dp; large -> 21.dp; else -> 19.dp }),
           contentAlignment = Alignment.Center,
-        ) {
-          Box(Modifier.size(if (compact) 21.dp else 23.dp), contentAlignment = Alignment.Center) { icon() }
-        }
-        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-          Text(
-            text = title,
-            style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-          )
-          Text(
-            text = subtitle,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-          )
-        }
+        ) { icon() }
       }
 
-      Spacer(Modifier.height(1.dp))
-
-      Row(
-        modifier = Modifier.fillMaxWidth().weight(1f),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+      Column(
+        modifier = Modifier.weight(1f),
+        verticalArrangement = Arrangement.spacedBy(1.dp),
       ) {
-        CircularValueGauge(
-          modifier = Modifier.size(if (compact) 88.dp else 96.dp),
-          progress = if (loading) null else progress,
-          accent = blue,
-          loading = loading,
-          value = value,
-          phaseDelayMs = 50,
+        Text(
+          text = title,
+          style = if (large) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.Bold,
+          maxLines = 1,
         )
-
-        Column(
-          modifier = Modifier.weight(1f),
-          verticalArrangement = Arrangement.Center,
-        ) {
-          if (loading) {
-            AnimatedLoadingLine(width = 72.dp, height = 13.dp, phaseDelayMs = 170)
-            Spacer(Modifier.height(8.dp))
-            AnimatedLoadingLine(width = 58.dp, height = 18.dp, phaseDelayMs = 260)
-          } else if (!footnote.isNullOrBlank()) {
-            Text(
-              text = footnote,
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
-              maxLines = 2,
-              overflow = TextOverflow.Ellipsis,
-            )
-          }
-        }
+        Text(
+          text = subtitle,
+          style = MaterialTheme.typography.labelSmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
       }
+
+      CircularValueGauge(
+        modifier = Modifier.size(gaugeSize),
+        progress = if (loading) null else progress,
+        accent = blue,
+        loading = loading,
+        value = value,
+        phaseDelayMs = 50,
+        compact = compact,
+      )
     }
   }
 }
@@ -599,9 +596,10 @@ private fun PowerConsumptionCard(
   milliAmps: Double?,
   loading: Boolean,
   compact: Boolean,
+  large: Boolean,
 ) {
   val blue = MaterialTheme.colorScheme.secondary
-  val shape = RoundedCornerShape(if (compact) 24.dp else 28.dp)
+  val shape = RoundedCornerShape(when { compact -> 16.dp; large -> 20.dp; else -> 18.dp })
 
   Box(
     modifier = Modifier
@@ -610,56 +608,60 @@ private fun PowerConsumptionCard(
       .background(
         Brush.linearGradient(
           listOf(
-            blue.copy(alpha = 0.14f),
+            blue.copy(alpha = 0.12f),
             MaterialTheme.colorScheme.surface.copy(alpha = 0.84f),
-            MaterialTheme.colorScheme.surface.copy(alpha = 0.60f),
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.62f),
           )
         )
       )
-      .border(1.dp, blue.copy(alpha = 0.44f), shape)
-      .padding(horizontal = if (compact) 14.dp else 18.dp, vertical = if (compact) 13.dp else 16.dp),
+      .border(1.dp, blue.copy(alpha = 0.38f), shape)
+      .padding(
+        horizontal = when { compact -> 10.dp; large -> 15.dp; else -> 12.dp },
+        vertical = when { compact -> 9.dp; large -> 12.dp; else -> 10.dp },
+      ),
   ) {
     Row(
       modifier = Modifier.fillMaxWidth(),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(if (compact) 13.dp else 16.dp),
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
       Box(
         modifier = Modifier
-          .size(if (compact) 52.dp else 58.dp)
-          .clip(RoundedCornerShape(if (compact) 17.dp else 19.dp))
-          .background(blue.copy(alpha = 0.14f))
-          .border(1.dp, blue.copy(alpha = 0.32f), RoundedCornerShape(if (compact) 17.dp else 19.dp)),
+          .size(when { compact -> 30.dp; large -> 36.dp; else -> 32.dp })
+          .clip(RoundedCornerShape(if (compact) 10.dp else 11.dp))
+          .background(blue.copy(alpha = 0.13f))
+          .border(1.dp, blue.copy(alpha = 0.26f), RoundedCornerShape(if (compact) 10.dp else 11.dp)),
         contentAlignment = Alignment.Center,
       ) {
         Icon(
-          Icons.Filled.BatteryChargingFull,
+          Icons.Filled.BatteryFull,
           contentDescription = null,
-          modifier = Modifier.size(if (compact) 29.dp else 32.dp),
+          modifier = Modifier.size(when { compact -> 18.dp; large -> 22.dp; else -> 20.dp }),
           tint = blue,
         )
       }
 
-      Column(
+      Text(
+        text = stringResource(R.string.stats_power_title),
         modifier = Modifier.weight(1f),
-        verticalArrangement = Arrangement.spacedBy(5.dp),
-      ) {
+        style = if (large) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Bold,
+        maxLines = 1,
+      )
+
+      if (loading) {
+        AnimatedLoadingLine(
+          width = when { compact -> 72.dp; large -> 96.dp; else -> 84.dp },
+          height = if (compact) 19.dp else 21.dp,
+          phaseDelayMs = 130,
+        )
+      } else {
         Text(
-          text = stringResource(R.string.stats_power_title),
-          style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+          text = milliAmps?.let { "≈ ${fmtPowerMah(it)} mA-h" } ?: "—",
+          style = if (large) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium,
           fontWeight = FontWeight.Bold,
           maxLines = 1,
         )
-        if (loading) {
-          AnimatedLoadingLine(width = if (compact) 104.dp else 126.dp, height = if (compact) 25.dp else 30.dp, phaseDelayMs = 130)
-        } else {
-          Text(
-            text = milliAmps?.let { "≈ ${fmtMa(it)} mA" } ?: "—",
-            style = if (compact) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-          )
-        }
       }
     }
   }
@@ -684,13 +686,13 @@ private fun SectionHeader(
       Box(
         modifier = Modifier
           .width(4.dp)
-          .height(if (compact) 28.dp else 32.dp)
+          .height(if (compact) 24.dp else 28.dp)
           .clip(RoundedCornerShape(999.dp))
           .background(MaterialTheme.colorScheme.primary)
       )
       Text(
         text = title,
-        style = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
+        style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
         fontWeight = FontWeight.Bold,
         maxLines = 1,
       )
@@ -706,8 +708,8 @@ private fun SectionHeader(
       ) {
         Text(
           text = trailing,
-          modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
-          style = MaterialTheme.typography.labelLarge,
+          modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+          style = MaterialTheme.typography.labelMedium,
           color = MaterialTheme.colorScheme.primary,
           fontWeight = FontWeight.SemiBold,
           maxLines = 1,
@@ -727,6 +729,7 @@ private fun ProcessStatusCard(
   stoppedLower: String,
   loading: Boolean,
   compact: Boolean,
+  large: Boolean,
 ) {
   val running = row.running
   val visualActive = running || (loading && (row.configuredEnabled || row.daemon))
@@ -734,7 +737,7 @@ private fun ProcessStatusCard(
   val blue = MaterialTheme.colorScheme.secondary
   val inactive = MaterialTheme.colorScheme.onSurface
   val accent = if (visualActive) primary else inactive
-  val shape = RoundedCornerShape(if (compact) 20.dp else 23.dp)
+  val shape = RoundedCornerShape(when { compact -> 14.dp; large -> 18.dp; else -> 16.dp })
   val cpuProgress = (row.agg.cpuPercent / 100.0).toFloat().coerceIn(0f, 1f)
   val ramProgress = totalRamMb?.let { (row.agg.rssMb / it).toFloat().coerceIn(0f, 1f) }
 
@@ -766,27 +769,32 @@ private fun ProcessStatusCard(
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(start = if (compact) 12.dp else 14.dp, end = if (compact) 10.dp else 12.dp, top = if (compact) 11.dp else 12.dp, bottom = if (compact) 11.dp else 12.dp),
+        .padding(
+          start = when { compact -> 9.dp; large -> 12.dp; else -> 10.dp },
+          end = when { compact -> 7.dp; large -> 10.dp; else -> 8.dp },
+          top = when { compact -> 7.dp; large -> 9.dp; else -> 8.dp },
+          bottom = when { compact -> 7.dp; large -> 9.dp; else -> 8.dp },
+        ),
       verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(if (compact) 9.dp else 11.dp),
+      horizontalArrangement = Arrangement.spacedBy(when { compact -> 7.dp; large -> 10.dp; else -> 8.dp }),
     ) {
-      ProcessIcon(row = row, running = visualActive, compact = compact)
+      ProcessIcon(row = row, running = visualActive, compact = compact, large = large)
 
       Column(
         modifier = Modifier.weight(1f),
-        verticalArrangement = Arrangement.spacedBy(5.dp),
+        verticalArrangement = Arrangement.spacedBy(3.dp),
       ) {
         Text(
           text = row.name,
-          style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMedium,
+          style = if (large) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
           fontWeight = FontWeight.Bold,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
         if (loading) {
           Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            AnimatedLoadingLine(width = 76.dp, height = 22.dp, radius = 999.dp, phaseDelayMs = 80)
-            AnimatedLoadingLine(width = 38.dp, height = 22.dp, radius = 999.dp, phaseDelayMs = 190)
+            AnimatedLoadingLine(width = 68.dp, height = 19.dp, radius = 999.dp, phaseDelayMs = 80)
+            AnimatedLoadingLine(width = 34.dp, height = 19.dp, radius = 999.dp, phaseDelayMs = 190)
           }
         } else {
           Row(
@@ -813,6 +821,7 @@ private fun ProcessStatusCard(
         accent = blue,
         loading = loading,
         compact = compact,
+        large = large,
         icon = { Icon(Icons.Outlined.Speed, contentDescription = null) },
         phaseDelayMs = 150,
       )
@@ -820,7 +829,7 @@ private fun ProcessStatusCard(
       Box(
         modifier = Modifier
           .width(1.dp)
-          .height(if (compact) 48.dp else 54.dp)
+          .height(when { compact -> 40.dp; large -> 48.dp; else -> 44.dp })
           .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.08f))
       )
 
@@ -831,6 +840,7 @@ private fun ProcessStatusCard(
         accent = blue,
         loading = loading,
         compact = compact,
+        large = large,
         icon = { Icon(Icons.Outlined.Memory, contentDescription = null) },
         phaseDelayMs = 260,
       )
@@ -843,6 +853,7 @@ private fun ProcessIcon(
   row: ProcRow,
   running: Boolean,
   compact: Boolean,
+  large: Boolean,
 ) {
   val primary = MaterialTheme.colorScheme.primary
   val blue = MaterialTheme.colorScheme.secondary
@@ -850,8 +861,8 @@ private fun ProcessIcon(
     StatsProcIcon.T2S, StatsProcIcon.D2S -> if (running) blue else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f)
     else -> if (running) primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.42f)
   }
-  val size = if (compact) 48.dp else 54.dp
-  val shape = RoundedCornerShape(if (compact) 15.dp else 17.dp)
+  val size = when { compact -> 40.dp; large -> 48.dp; else -> 44.dp }
+  val shape = RoundedCornerShape(when { compact -> 12.dp; large -> 15.dp; else -> 13.dp })
 
   Box(
     modifier = Modifier
@@ -865,19 +876,19 @@ private fun ProcessIcon(
       StatsProcIcon.DAEMON -> Icon(
         Icons.Outlined.Terminal,
         contentDescription = null,
-        modifier = Modifier.size(if (compact) 26.dp else 29.dp),
+        modifier = Modifier.size(when { compact -> 21.dp; large -> 26.dp; else -> 23.dp }),
         tint = tint,
       )
       StatsProcIcon.D2S -> Icon(
         Icons.Outlined.SyncAlt,
         contentDescription = null,
-        modifier = Modifier.size(if (compact) 26.dp else 29.dp),
+        modifier = Modifier.size(when { compact -> 21.dp; large -> 26.dp; else -> 23.dp }),
         tint = tint,
       )
       StatsProcIcon.T2S -> Icon(
         Icons.Filled.Hub,
         contentDescription = null,
-        modifier = Modifier.size(if (compact) 26.dp else 29.dp),
+        modifier = Modifier.size(when { compact -> 21.dp; large -> 26.dp; else -> 23.dp }),
         tint = tint,
       )
       StatsProcIcon.PROGRAM -> {
@@ -887,14 +898,14 @@ private fun ProcessIcon(
           Icon(
             painter = painterResource(res),
             contentDescription = null,
-            modifier = Modifier.size(if (compact) 28.dp else 31.dp),
+            modifier = Modifier.size(when { compact -> 23.dp; large -> 28.dp; else -> 25.dp }),
             tint = tint,
           )
         } else {
           Icon(
             imageVector = programIcon(iconId),
             contentDescription = null,
-            modifier = Modifier.size(if (compact) 26.dp else 29.dp),
+            modifier = Modifier.size(when { compact -> 21.dp; large -> 26.dp; else -> 23.dp }),
             tint = tint,
           )
         }
@@ -911,23 +922,24 @@ private fun MiniProcessMetric(
   accent: Color,
   loading: Boolean,
   compact: Boolean,
+  large: Boolean,
   icon: @Composable () -> Unit,
   phaseDelayMs: Int,
 ) {
   Column(
-    modifier = Modifier.width(if (compact) 60.dp else 66.dp),
+    modifier = Modifier.width(when { compact -> 46.dp; large -> 60.dp; else -> 54.dp }),
     horizontalAlignment = Alignment.CenterHorizontally,
-    verticalArrangement = Arrangement.spacedBy(4.dp),
+    verticalArrangement = Arrangement.spacedBy(2.dp),
   ) {
     Row(
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
       Box(
-        modifier = Modifier.size(14.dp),
+        modifier = Modifier.size(if (compact) 12.dp else 13.dp),
         contentAlignment = Alignment.Center,
       ) {
-        Box(Modifier.size(13.dp), contentAlignment = Alignment.Center) { icon() }
+        Box(Modifier.size(if (compact) 11.dp else 12.dp), contentAlignment = Alignment.Center) { icon() }
       }
       Text(
         text = label,
@@ -942,7 +954,7 @@ private fun MiniProcessMetric(
       progress = if (loading) null else progress,
       accent = accent,
       loading = loading,
-      size = if (compact) 47.dp else 51.dp,
+      size = when { compact -> 36.dp; large -> 46.dp; else -> 42.dp },
       phaseDelayMs = phaseDelayMs,
     )
   }
@@ -956,15 +968,20 @@ private fun CircularValueGauge(
   loading: Boolean,
   value: String,
   phaseDelayMs: Int,
+  compact: Boolean,
 ) {
   Box(modifier = modifier, contentAlignment = Alignment.Center) {
-    GaugeCanvas(progress = if (loading) 0f else progress ?: 0f, accent = accent, strokeWidth = 8.dp)
+    GaugeCanvas(progress = if (loading) 0f else progress ?: 0f, accent = accent, strokeWidth = if (compact) 4.dp else 5.dp)
     if (loading) {
-      AnimatedLoadingLine(width = 58.dp, height = 22.dp, phaseDelayMs = phaseDelayMs)
+      AnimatedLoadingLine(width = if (compact) 27.dp else 31.dp, height = if (compact) 12.dp else 14.dp, phaseDelayMs = phaseDelayMs)
     } else {
       Text(
         text = value,
-        style = MaterialTheme.typography.titleLarge,
+        fontSize = when {
+          value.length >= 7 -> if (compact) 8.sp else 9.sp
+          value.length >= 6 -> if (compact) 9.sp else 10.sp
+          else -> if (compact) 10.sp else 11.sp
+        },
         fontWeight = FontWeight.Bold,
         maxLines = 1,
       )
@@ -988,7 +1005,7 @@ private fun MiniCircularGauge(
     } else {
       Text(
         text = value,
-        fontSize = if (value.length > 6) 10.sp else 11.sp,
+        fontSize = if (value.length > 6) 9.sp else 10.sp,
         fontWeight = FontWeight.SemiBold,
         maxLines = 1,
       )
@@ -1049,14 +1066,14 @@ private fun StatusPill(
     shadowElevation = 0.dp,
   ) {
     Row(
-      modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp),
+      modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(7.dp),
     ) {
       Box(Modifier.size(7.dp).clip(CircleShape).background(base.copy(alpha = if (good) 1f else 0.42f)))
       Text(
         text = text,
-        style = MaterialTheme.typography.labelLarge,
+        style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.Bold,
         color = base.copy(alpha = if (good) 1f else 0.68f),
         maxLines = 1,
@@ -1086,7 +1103,7 @@ private fun TinyPill(
     shadowElevation = 0.dp,
   ) {
     Row(
-      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+      modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(5.dp),
     ) {
@@ -1149,14 +1166,11 @@ private fun fmtPct(v: Double): String {
   return String.format(Locale.getDefault(), "%.1f", v.coerceAtLeast(0.0))
 }
 
-private fun fmtMa(v: Double): String {
-  if (!v.isFinite()) return "0.0"
-  val safe = v.coerceAtLeast(0.0)
-  return when {
-    safe >= 100.0 -> String.format(Locale.getDefault(), "%.0f", safe)
-    safe >= 10.0 -> String.format(Locale.getDefault(), "%.1f", safe)
-    else -> String.format(Locale.getDefault(), "%.1f", safe)
-  }
+private fun fmtPowerMah(v: Double): String {
+  if (!v.isFinite()) return "0"
+  // The live sampler stores the fractional value; Statistics presents it in thousandths
+  // as a whole mA-h number (0.238 -> 238, 1.238 -> 1238) to avoid decimal noise.
+  return (v.coerceAtLeast(0.0) * 1000.0).roundToInt().toString()
 }
 
 private fun mbToHuman(mb: Double): String {

@@ -426,7 +426,7 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="stats_unknown_cpu">알 수 없는 CPU</string>
     <string name="stats_clamped_from">%1$s%%에서 제한됨</string>
     <string name="stats_memory_title">메모리</string>
-    <string name="stats_power_title">전력 소비</string>
+    <string name="stats_power_title">배터리</string>
     <string name="stats_total_fmt">전체: %1$s</string>
     <string name="stats_total_unknown">전체: —</string>
     <string name="stats_free_fmt">사용 가능: %1$s</string>

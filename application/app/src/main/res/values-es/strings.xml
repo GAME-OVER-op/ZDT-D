@@ -426,7 +426,7 @@ Para instalar ZDT-D correctamente, el metamódulo debe funcionar bien o eliminar
     <string name="stats_unknown_cpu">CPU desconocida</string>
     <string name="stats_clamped_from">Limitado desde %1$s%%</string>
     <string name="stats_memory_title">Memoria</string>
-    <string name="stats_power_title">Consumo</string>
+    <string name="stats_power_title">Batería</string>
     <string name="stats_total_fmt">Total: %1$s</string>
     <string name="stats_total_unknown">Total: —</string>
     <string name="stats_free_fmt">Libre: %1$s</string>

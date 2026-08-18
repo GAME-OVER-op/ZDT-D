@@ -426,7 +426,7 @@ APatch: 10700+</string>
     <string name="stats_unknown_cpu">CPU ناشناخته</string>
     <string name="stats_clamped_from">از %1$s%% محدود شد</string>
     <string name="stats_memory_title">حافظه</string>
-    <string name="stats_power_title">مصرف</string>
+    <string name="stats_power_title">باتری</string>
     <string name="stats_total_fmt">کل: %1$s</string>
     <string name="stats_total_unknown">کل: —</string>
     <string name="stats_free_fmt">آزاد: %1$s</string>

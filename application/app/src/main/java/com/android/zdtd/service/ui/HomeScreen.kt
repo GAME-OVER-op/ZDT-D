@@ -40,7 +40,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
@@ -82,6 +81,7 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -1308,7 +1308,10 @@ private fun LandscapeHomeContent(
       visible = logsVisible,
       modifier = Modifier.weight(0.56f).fillMaxHeight(),
       enter = fadeIn(tween(450, easing = FastOutSlowInEasing)) +
-        slideInVertically({ it / 14 }, tween(450, easing = FastOutSlowInEasing)),
+        slideInVertically(
+          initialOffsetY = { it / 14 },
+          animationSpec = tween(450, easing = FastOutSlowInEasing),
+        ),
       exit = fadeOut(tween(150)),
     ) {
       HomeLogsCard(

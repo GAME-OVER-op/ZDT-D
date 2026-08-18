@@ -486,16 +486,18 @@ private fun ServiceActionButton(
         modifier = Modifier.size(if (compact) 16.dp else 18.dp),
         contentAlignment = Alignment.Center,
       ) {
-        AnimatedVisibility(
-          visible = busy,
-          enter = fadeIn(tween(140)),
-          exit = fadeOut(tween(110)),
-        ) {
-          CircularProgressIndicator(
-            modifier = Modifier.size(if (compact) 14.dp else 16.dp),
-            color = accent,
-            strokeWidth = 2.dp,
-          )
+        Crossfade(
+          targetState = busy,
+          animationSpec = tween(140, easing = FastOutSlowInEasing),
+          label = "actionBusy",
+        ) { isBusy ->
+          if (isBusy) {
+            CircularProgressIndicator(
+              modifier = Modifier.size(if (compact) 14.dp else 16.dp),
+              color = accent,
+              strokeWidth = 2.dp,
+            )
+          }
         }
       }
       Spacer(Modifier.size(if (compact) 7.dp else 9.dp))

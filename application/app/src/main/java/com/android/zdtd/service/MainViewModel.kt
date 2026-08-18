@@ -5742,7 +5742,17 @@ private fun shQuote(s: String): String {
     val now = System.currentTimeMillis()
     val cached = _uiState.value.status
     if (!force && cached != null && (now - lastStatusFetchAtMs) < statusFreshMs) return
-    if (statusRefreshInFlight) return
+    if (statusRefreshInFlight) {
+      if (!force) return
+      // A manual/toggle refresh must not silently reuse stale pre-operation
+      // state. Wait briefly for the current poll to finish, then fetch again.
+      var waitedMs = 0L
+      while (statusRefreshInFlight && waitedMs < 1_500L) {
+        delay(25L)
+        waitedMs += 25L
+      }
+      if (statusRefreshInFlight) return
+    }
     statusRefreshInFlight = true
     try {
       val rep = api.getStatus()
@@ -5759,29 +5769,42 @@ private fun shQuote(s: String): String {
   }
 
   override fun toggleService() {
-    if (_uiState.value.busy) return
+    val snapshot = _uiState.value
+    if (snapshot.busy) return
+    val wasOn = ApiModels.isServiceOn(snapshot.status)
+
+    // Publish the transition synchronously, before the IO coroutine is
+    // scheduled. Home can immediately animate STARTING/STOPPING on touch.
+    _uiState.update { it.copy(busy = true) }
+
     launchIO {
-      _uiState.update { it.copy(busy = true) }
       try {
-        val on = ApiModels.isServiceOn(_uiState.value.status)
-        if (!on && isNfqwsTesterLockActive()) {
+        if (!wasOn && isNfqwsTesterLockActive()) {
           withContext(Dispatchers.Main.immediate) {
             toast(str(R.string.nfqws_tester_service_blocked_start))
           }
           log("ERR", "start blocked: nfqws tester session is active")
           return@launchIO
         }
-        val ok = if (on) api.stopService() else api.startService()
-        if (ok) root.setCachedServiceOn(!on)
+        val ok = if (wasOn) api.stopService() else api.startService()
+        if (ok) root.setCachedServiceOn(!wasOn)
         if (ok) {
-          log("OK", str(if (on) R.string.log_service_stopped else R.string.log_service_started))
+          log("OK", str(if (wasOn) R.string.log_service_stopped else R.string.log_service_started))
+        } else {
+          log("ERR", if (wasOn) "/api/stop failed" else "/api/start failed")
         }
-        else log("ERR", if (on) "/api/stop failed" else "/api/start failed")
       } catch (e: Throwable) {
         log("ERR", "toggle failed: ${e.message ?: e}")
       } finally {
+        // Keep busy=true until an authoritative post-operation status has been
+        // read. This prevents STOPPING -> RUNNING -> STOPPED flicker caused by
+        // clearing busy while the old status report is still cached.
+        try {
+          fetchAndUpdateStatus(force = true)
+        } catch (e: Throwable) {
+          handleStatusPollFailure("toggle status refresh", e)
+        }
         _uiState.update { it.copy(busy = false) }
-        refreshStatus()
       }
     }
   }

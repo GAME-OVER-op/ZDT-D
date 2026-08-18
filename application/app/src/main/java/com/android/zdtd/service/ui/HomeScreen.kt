@@ -4,7 +4,6 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -20,7 +19,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -28,6 +26,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -68,6 +67,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -231,9 +231,16 @@ private fun ServiceHeroCard(
   modifier: Modifier = Modifier,
   fillHeight: Boolean = false,
 ) {
-  val visualState = remember(online, on, busy) {
+  // Keep the operation direction stable for the full async call. During a
+  // stop, the fresh status can become OFF a moment before busy is cleared;
+  // without this latch the UI would briefly mislabel STOPPING as STARTING.
+  var operationStartedOn by remember { mutableStateOf(on) }
+  LaunchedEffect(busy, on) {
+    if (!busy) operationStartedOn = on
+  }
+  val visualState = remember(online, on, busy, operationStartedOn) {
     when {
-      busy && on -> HomeServiceVisualState.STOPPING
+      busy && operationStartedOn -> HomeServiceVisualState.STOPPING
       busy -> HomeServiceVisualState.STARTING
       !online -> HomeServiceVisualState.UNAVAILABLE
       on -> HomeServiceVisualState.RUNNING
@@ -262,11 +269,11 @@ private fun ServiceHeroCard(
     HomeServiceVisualState.STOPPED -> stringResource(R.string.home_power_stopped)
     HomeServiceVisualState.UNAVAILABLE -> stringResource(R.string.home_offline)
   }
-  val actionText = when {
-    busy && on -> stringResource(R.string.home_power_stopping)
-    busy -> stringResource(R.string.home_power_starting)
-    on -> stringResource(R.string.home_action_stop_service)
-    else -> stringResource(R.string.home_action_start_service)
+  val actionText = when (visualState) {
+    HomeServiceVisualState.STOPPING -> stringResource(R.string.home_power_stopping)
+    HomeServiceVisualState.STARTING -> stringResource(R.string.home_power_starting)
+    HomeServiceVisualState.RUNNING -> stringResource(R.string.home_action_stop_service)
+    HomeServiceVisualState.STOPPED, HomeServiceVisualState.UNAVAILABLE -> stringResource(R.string.home_action_start_service)
   }
   val hintText = if (on) {
     stringResource(R.string.home_service_active_hint)
@@ -284,8 +291,7 @@ private fun ServiceHeroCard(
   Card(
     modifier = modifier
       .fillMaxWidth()
-      .then(if (fillHeight) Modifier.fillMaxHeight() else Modifier)
-      .animateContentSize(animationSpec = tween(320, easing = FastOutSlowInEasing)),
+      .then(if (fillHeight) Modifier.fillMaxHeight() else Modifier),
     colors = CardDefaults.cardColors(containerColor = cardBackground),
     shape = RoundedCornerShape(if (compact) 22.dp else 28.dp),
     border = BorderStroke(1.dp, borderColor),
@@ -330,7 +336,7 @@ private fun ServiceHeroCard(
         Spacer(Modifier.height(if (compact) 8.dp else 13.dp))
 
         AnimatedPowerDial(
-          on = on,
+          visualState = visualState,
           busy = busy,
           accent = accent,
           size = dialSize,
@@ -352,23 +358,12 @@ private fun ServiceHeroCard(
 
         Spacer(Modifier.height(if (compact) 7.dp else 9.dp))
 
-        AnimatedContent(
-          targetState = hintText,
-          transitionSpec = {
-            (fadeIn(tween(220)) + slideInVertically { it / 5 }) togetherWith
-              (fadeOut(tween(160)) + slideOutVertically { -it / 5 })
-          },
-          label = "homeHint",
-        ) { text ->
-          Text(
-            text = text,
-            style = if (compact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
-            color = scheme.onSurface.copy(alpha = if (light) 0.68f else 0.72f),
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-          )
-        }
+        StableServiceHintLine(
+          text = hintText,
+          busy = busy,
+          accent = accent,
+          compact = compact,
+        )
       }
     }
   }
@@ -395,16 +390,18 @@ private fun ServiceStatusPill(
   )
 
   Surface(
-    modifier = Modifier.clickable(onClick = onRefresh),
+    modifier = Modifier
+      .fillMaxWidth(if (compact) 0.74f else 0.64f)
+      .height(if (compact) 34.dp else 38.dp)
+      .clickable(onClick = onRefresh),
     shape = RoundedCornerShape(999.dp),
     color = if (light) accent.copy(alpha = 0.075f) else accent.copy(alpha = 0.10f),
     border = BorderStroke(1.dp, accent.copy(alpha = 0.42f)),
   ) {
     Row(
-      modifier = Modifier.padding(
-        horizontal = if (compact) 11.dp else 14.dp,
-        vertical = if (compact) 6.dp else 7.dp,
-      ),
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(horizontal = if (compact) 10.dp else 12.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(if (compact) 7.dp else 9.dp),
     ) {
@@ -420,17 +417,25 @@ private fun ServiceStatusPill(
           .background(accent)
           .border(1.dp, scheme.surface.copy(alpha = 0.45f), CircleShape),
       )
-      Crossfade(
-        targetState = text,
-        animationSpec = tween(220, easing = FastOutSlowInEasing),
-        label = "serviceStatusText",
-      ) { value ->
-        Text(
-          text = value,
-          style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
-          fontWeight = FontWeight.SemiBold,
-          color = scheme.onSurface.copy(alpha = 0.92f),
-        )
+      Box(
+        modifier = Modifier.weight(1f),
+        contentAlignment = Alignment.Center,
+      ) {
+        Crossfade(
+          targetState = text,
+          animationSpec = tween(240, easing = FastOutSlowInEasing),
+          label = "serviceStatusText",
+        ) { value ->
+          Text(
+            text = value,
+            style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = scheme.onSurface.copy(alpha = 0.92f),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
       }
     }
   }
@@ -445,18 +450,19 @@ private fun ServiceActionButton(
   compact: Boolean,
   onClick: () -> Unit,
 ) {
-  val scheme = MaterialTheme.colorScheme
   val light = isLightColorScheme()
   val interaction = remember { MutableInteractionSource() }
   val pressed by interaction.collectIsPressedAsState()
   val scale by animateFloatAsState(
-    targetValue = if (pressed) 0.975f else 1f,
-    animationSpec = tween(120, easing = FastOutSlowInEasing),
+    targetValue = if (pressed) 0.965f else 1f,
+    animationSpec = tween(110, easing = FastOutSlowInEasing),
     label = "actionPress",
   )
 
   Surface(
     modifier = Modifier
+      .fillMaxWidth(if (compact) 0.76f else 0.66f)
+      .height(if (compact) 40.dp else 44.dp)
       .scale(scale)
       .clickable(
         enabled = enabled,
@@ -470,38 +476,86 @@ private fun ServiceActionButton(
     border = BorderStroke(1.dp, accent.copy(alpha = 0.48f)),
   ) {
     Row(
-      modifier = Modifier.padding(
-        horizontal = if (compact) 16.dp else 22.dp,
-        vertical = if (compact) 8.dp else 10.dp,
-      ),
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(horizontal = if (compact) 12.dp else 16.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.Center,
     ) {
-      AnimatedVisibility(
-        visible = busy,
-        enter = fadeIn(tween(160)) + expandVertically(tween(180)),
-        exit = fadeOut(tween(120)),
+      Box(
+        modifier = Modifier.size(if (compact) 16.dp else 18.dp),
+        contentAlignment = Alignment.Center,
       ) {
-        Row {
+        AnimatedVisibility(
+          visible = busy,
+          enter = fadeIn(tween(140)),
+          exit = fadeOut(tween(110)),
+        ) {
           CircularProgressIndicator(
             modifier = Modifier.size(if (compact) 14.dp else 16.dp),
             color = accent,
             strokeWidth = 2.dp,
           )
-          Spacer(Modifier.size(8.dp))
         }
       }
-      Crossfade(
-        targetState = text,
-        animationSpec = tween(180, easing = FastOutSlowInEasing),
-        label = "actionText",
-      ) { value ->
+      Spacer(Modifier.size(if (compact) 7.dp else 9.dp))
+      Box(
+        modifier = Modifier.weight(1f),
+        contentAlignment = Alignment.Center,
+      ) {
+        Crossfade(
+          targetState = text,
+          animationSpec = tween(220, easing = FastOutSlowInEasing),
+          label = "actionText",
+        ) { value ->
+          Text(
+            text = value,
+            style = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = accent,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+      }
+      Spacer(Modifier.size(if (compact) 23.dp else 27.dp))
+    }
+  }
+}
+
+@Composable
+private fun StableServiceHintLine(
+  text: String,
+  busy: Boolean,
+  accent: Color,
+  compact: Boolean,
+) {
+  val scheme = MaterialTheme.colorScheme
+  val light = isLightColorScheme()
+  val targetText: String? = if (busy) null else text
+
+  Box(
+    modifier = Modifier
+      .fillMaxWidth()
+      .height(if (compact) 34.dp else 40.dp),
+    contentAlignment = Alignment.Center,
+  ) {
+    Crossfade(
+      targetState = targetText,
+      animationSpec = tween(220, easing = FastOutSlowInEasing),
+      label = "homeHintStable",
+    ) { value ->
+      if (value == null) {
+        TransitionDash(accent = accent, compact = compact)
+      } else {
         Text(
           text = value,
-          style = if (compact) MaterialTheme.typography.labelLarge else MaterialTheme.typography.titleSmall,
-          fontWeight = FontWeight.Bold,
-          color = accent,
+          style = if (compact) MaterialTheme.typography.bodySmall else MaterialTheme.typography.bodyMedium,
+          color = scheme.onSurface.copy(alpha = if (light) 0.68f else 0.72f),
           textAlign = TextAlign.Center,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
         )
       }
     }
@@ -509,8 +563,49 @@ private fun ServiceActionButton(
 }
 
 @Composable
+private fun TransitionDash(
+  accent: Color,
+  compact: Boolean,
+) {
+  val motion = rememberInfiniteTransition(label = "homeTransitionDash")
+  val phase by motion.animateFloat(
+    initialValue = 0f,
+    targetValue = 1f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(900, easing = LinearEasing),
+      repeatMode = RepeatMode.Restart,
+    ),
+    label = "homeTransitionDashPhase",
+  )
+  Canvas(modifier = Modifier.size(width = if (compact) 74.dp else 90.dp, height = 8.dp)) {
+    val y = size.height / 2f
+    val stroke = if (compact) 2.2.dp.toPx() else 2.5.dp.toPx()
+    drawLine(
+      color = accent.copy(alpha = 0.18f),
+      start = Offset(0f, y),
+      end = Offset(size.width, y),
+      strokeWidth = stroke,
+      cap = StrokeCap.Round,
+    )
+    val segment = size.width * 0.28f
+    val x = (size.width + segment) * phase - segment
+    val startX = x.coerceAtLeast(0f)
+    val endX = (x + segment).coerceAtMost(size.width)
+    if (endX > startX) {
+      drawLine(
+        color = accent.copy(alpha = 0.82f),
+        start = Offset(startX, y),
+        end = Offset(endX, y),
+        strokeWidth = stroke,
+        cap = StrokeCap.Round,
+      )
+    }
+  }
+}
+
+@Composable
 private fun AnimatedPowerDial(
-  on: Boolean,
+  visualState: HomeServiceVisualState,
   busy: Boolean,
   accent: Color,
   size: Dp,
@@ -524,64 +619,86 @@ private fun AnimatedPowerDial(
   val pressed by interaction.collectIsPressedAsState()
   val pressScale by animateFloatAsState(
     targetValue = when {
-      pressed -> 0.955f
-      busy -> 0.985f
+      pressed -> 0.945f
+      busy -> 0.982f
       else -> 1f
     },
-    animationSpec = tween(150, easing = FastOutSlowInEasing),
+    animationSpec = tween(120, easing = FastOutSlowInEasing),
     label = "dialPressScale",
   )
   val stateProgress by animateFloatAsState(
-    targetValue = if (on) 1f else 0f,
+    targetValue = when (visualState) {
+      HomeServiceVisualState.RUNNING -> 1f
+      HomeServiceVisualState.STARTING -> 0.72f
+      HomeServiceVisualState.STOPPING -> 0.28f
+      HomeServiceVisualState.STOPPED, HomeServiceVisualState.UNAVAILABLE -> 0f
+    },
     animationSpec = tween(520, easing = FastOutSlowInEasing),
     label = "dialStateProgress",
   )
 
-  // A single long phase drives every decorative element. All derived rotations
-  // complete an integer number of turns during the 60 s phase, so phase 1 -> 0
-  // is geometrically identical and there is no visible end/start seam.
-  // The pulse is sinusoidal as well, avoiding the stop-and-reverse feel of a
-  // repeated tween at its endpoints.
-  val motion = rememberInfiniteTransition(label = "powerDialMotion")
-  val motionPhase by motion.animateFloat(
-    initialValue = 0f,
-    targetValue = 1f,
-    animationSpec = infiniteRepeatable(
-      animation = tween(60_000, easing = LinearEasing),
-      repeatMode = RepeatMode.Restart,
-    ),
-    label = "powerDialPhase",
-  )
-  val outerRotation = motionPhase * (360f * 4f)   // 15 s / turn
-  val innerRotation = -motionPhase * (360f * 5f) // 12 s / turn
-  val orbitRotation = motionPhase * (360f * 12f) // 5 s / turn
-  val busyRotation = motionPhase * (360f * 30f)  // 2 s / turn, same seamless phase
-  val pulsePhase = motionPhase * 24f * 2f * PI.toFloat()
-  val pulse = (sin(pulsePhase - PI.toFloat() / 2f) + 1f) * 0.5f
+  // Drive the dial directly from the Compose frame clock. There is no finite
+  // tween that reaches an endpoint and restarts, so the background motion has
+  // no visible "last frame -> first frame" seam.
+  var firstFrameNanos by remember { mutableLongStateOf(0L) }
+  var frameNanos by remember { mutableLongStateOf(0L) }
+  LaunchedEffect(Unit) {
+    while (true) {
+      withFrameNanos { now ->
+        if (firstFrameNanos == 0L) firstFrameNanos = now
+        frameNanos = now
+      }
+    }
+  }
+  val elapsedSeconds = if (firstFrameNanos == 0L || frameNanos < firstFrameNanos) {
+    0f
+  } else {
+    (frameNanos - firstFrameNanos).toDouble().div(1_000_000_000.0).toFloat()
+  }
+  val outerRotation = (elapsedSeconds * 24f) % 360f   // 15 s / turn
+  val innerRotation = -((elapsedSeconds * 30f) % 360f) // 12 s / turn
+  val orbitRotation = (elapsedSeconds * 72f) % 360f    // 5 s / turn
+  val busyRotation = (elapsedSeconds * 180f) % 360f    // 2 s / turn
+  val pulse = (sin(elapsedSeconds * (2f * PI.toFloat() / 2.5f) - PI.toFloat() / 2f) + 1f) * 0.5f
 
-  // Touch-down feedback is independent from the service state transition: one
-  // expanding wave starts immediately when the finger presses the dial.
+  // Run the touch wave from PressInteraction.Press rather than from the
+  // boolean pressed state. Releasing the finger must not cancel the wave.
   val pressWave = remember { Animatable(1f) }
-  LaunchedEffect(pressed) {
-    if (pressed) {
-      pressWave.snapTo(0f)
-      pressWave.animateTo(
-        targetValue = 1f,
-        animationSpec = tween(540, easing = FastOutSlowInEasing),
-      )
+  LaunchedEffect(interaction) {
+    interaction.interactions.collect { event ->
+      if (event is PressInteraction.Press) {
+        pressWave.stop()
+        pressWave.snapTo(0f)
+        pressWave.animateTo(
+          targetValue = 1f,
+          animationSpec = tween(650, easing = FastOutSlowInEasing),
+        )
+      }
     }
   }
 
   val red = if (light) Color(0xFFCB1728) else Color(0xFFFF2A3D)
   val green = if (light) Color(0xFF159447) else Color(0xFF28E07A)
+  val centerTarget = when (visualState) {
+    HomeServiceVisualState.RUNNING, HomeServiceVisualState.STARTING -> green
+    HomeServiceVisualState.STOPPING, HomeServiceVisualState.STOPPED -> red
+    HomeServiceVisualState.UNAVAILABLE -> scheme.outline
+  }
+  val outerTarget = when (visualState) {
+    HomeServiceVisualState.RUNNING -> red
+    HomeServiceVisualState.STARTING -> green
+    HomeServiceVisualState.STOPPING -> red
+    HomeServiceVisualState.STOPPED -> accent
+    HomeServiceVisualState.UNAVAILABLE -> scheme.outline
+  }
   val centerAccent by animateColorAsState(
-    targetValue = if (on) green else red,
-    animationSpec = tween(520, easing = FastOutSlowInEasing),
+    targetValue = centerTarget,
+    animationSpec = tween(460, easing = FastOutSlowInEasing),
     label = "centerAccent",
   )
   val outerAccent by animateColorAsState(
-    targetValue = if (on) red else accent,
-    animationSpec = tween(520, easing = FastOutSlowInEasing),
+    targetValue = outerTarget,
+    animationSpec = tween(460, easing = FastOutSlowInEasing),
     label = "outerAccent",
   )
 
@@ -728,30 +845,6 @@ private fun AnimatedPowerDial(
     )
     drawCircle(color = centerAccent.copy(alpha = 0.92f), radius = 1.7f * px, center = secondPoint)
 
-    // Press ripple: two vector waves expand from the center and fade away.
-    // This is drawn on the Canvas, so there is no Material ripple bitmap or
-    // additional drawable resource involved.
-    val wave = pressWave.value.coerceIn(0f, 1f)
-    if (wave < 0.999f) {
-      val waveAlpha = (1f - wave) * if (light) 0.34f else 0.52f
-      val waveRadius = centerR * (1.02f + wave * 0.80f)
-      drawCircle(
-        color = centerAccent.copy(alpha = waveAlpha),
-        radius = waveRadius,
-        center = c,
-        style = Stroke(width = (3.4f - wave * 1.8f) * px, cap = StrokeCap.Round),
-      )
-      val secondWave = ((wave - 0.18f) / 0.82f).coerceIn(0f, 1f)
-      if (wave > 0.18f && secondWave < 0.999f) {
-        drawCircle(
-          color = outerAccent.copy(alpha = (1f - secondWave) * if (light) 0.20f else 0.30f),
-          radius = centerR * (1.04f + secondWave * 0.68f),
-          center = c,
-          style = Stroke(width = (2.4f - secondWave * 1.1f) * px, cap = StrokeCap.Round),
-        )
-      }
-    }
-
     // Central button body and state ring.
     val centerSurface = if (light) scheme.surfaceContainerLowest else Color(0xFF171B20)
     drawCircle(
@@ -768,17 +861,28 @@ private fun AnimatedPowerDial(
       center = c,
     )
     drawCircle(
-      color = centerAccent.copy(alpha = if (light) 0.12f else 0.18f + pulse * 0.05f),
+      color = centerAccent.copy(alpha = if (light) 0.10f else 0.14f + pulse * 0.04f),
       radius = centerR * 1.02f,
       center = c,
       style = Stroke(width = 7f * px),
     )
     drawCircle(
-      color = centerAccent.copy(alpha = 0.90f),
+      color = centerAccent.copy(alpha = 0.28f),
       radius = centerR,
       center = c,
       style = Stroke(width = 2f * px),
     )
+    if (stateProgress > 0.001f) {
+      drawArc(
+        color = centerAccent.copy(alpha = 0.96f),
+        startAngle = -90f,
+        sweepAngle = 360f * stateProgress,
+        useCenter = false,
+        topLeft = Offset(c.x - centerR, c.y - centerR),
+        size = Size(centerR * 2f, centerR * 2f),
+        style = Stroke(width = 2.4f * px, cap = StrokeCap.Round),
+      )
+    }
 
     // Power glyph drawn as vector primitives — no raster resource is involved.
     val glyphR = centerR * 0.39f
@@ -800,26 +904,52 @@ private fun AnimatedPowerDial(
       cap = StrokeCap.Round,
     )
 
-    // Busy state adds one fast-looking bright segment without allocating a
-    // second animation clock.
+    // Start/stop operation: several moving segments and a soft breathing ring
+    // make the transition visible for the whole duration of the daemon call.
     if (busy) {
-      drawArc(
-        color = accent.copy(alpha = 0.95f),
-        startAngle = busyRotation - 24f,
-        sweepAngle = 48f,
-        useCenter = false,
-        topLeft = Offset(c.x - ringR * 0.82f, c.y - ringR * 0.82f),
-        size = Size(ringR * 1.64f, ringR * 1.64f),
-        style = Stroke(width = 2.5f * px, cap = StrokeCap.Round),
+      for (i in 0 until 3) {
+        drawArc(
+          color = accent.copy(alpha = 0.92f - i * 0.20f),
+          startAngle = busyRotation + i * 120f - 20f,
+          sweepAngle = 40f,
+          useCenter = false,
+          topLeft = Offset(c.x - ringR * 0.82f, c.y - ringR * 0.82f),
+          size = Size(ringR * 1.64f, ringR * 1.64f),
+          style = Stroke(width = (2.8f - i * 0.35f) * px, cap = StrokeCap.Round),
+        )
+      }
+      drawCircle(
+        color = accent.copy(alpha = 0.08f + pulse * 0.08f),
+        radius = ringR * (0.88f + pulse * 0.025f),
+        center = c,
+        style = Stroke(width = 4f * px),
       )
     }
 
-    // stateProgress intentionally participates in drawing so the Canvas is
-    // smoothly invalidated across on/off transitions in addition to color.
-    if (stateProgress in 0.001f..0.999f) {
+    // Touch feedback is intentionally drawn last, above the button body and
+    // glyph. A quick tap still completes the whole wave after finger-up.
+    val wave = pressWave.value.coerceIn(0f, 1f)
+    if (wave < 0.999f) {
+      val waveAlpha = (1f - wave) * if (light) 0.52f else 0.76f
+      val waveRadius = centerR * (0.92f + wave * 1.18f)
       drawCircle(
-        color = centerAccent.copy(alpha = 0.04f + 0.05f * stateProgress),
-        radius = centerR * (1.12f + 0.04f * stateProgress),
+        color = centerAccent.copy(alpha = waveAlpha),
+        radius = waveRadius,
+        center = c,
+        style = Stroke(width = (4.6f - wave * 2.4f) * px, cap = StrokeCap.Round),
+      )
+      val secondWave = ((wave - 0.16f) / 0.84f).coerceIn(0f, 1f)
+      if (wave > 0.16f && secondWave < 0.999f) {
+        drawCircle(
+          color = outerAccent.copy(alpha = (1f - secondWave) * if (light) 0.30f else 0.46f),
+          radius = centerR * (1.00f + secondWave * 1.28f),
+          center = c,
+          style = Stroke(width = (3.2f - secondWave * 1.5f) * px, cap = StrokeCap.Round),
+        )
+      }
+      drawCircle(
+        color = centerAccent.copy(alpha = (1f - wave) * if (light) 0.08f else 0.14f),
+        radius = centerR * (0.82f + wave * 0.20f),
         center = c,
       )
     }
@@ -961,15 +1091,20 @@ private fun HomeLogsCard(
     )
   }
   var logRevealInitialized by remember { mutableStateOf(false) }
+  val logRevealDelayMs = 32L
   val newestLogRenderId = displayedLogLines.lastOrNull()?.id ?: -1L
   val listState = rememberLazyListState()
   var followNewestLogLine by remember { mutableStateOf(true) }
+  var userScrolledAwayDuringGesture by remember { mutableStateOf(false) }
+  var manualScrollIdleNonce by remember { mutableLongStateOf(0L) }
+  val autoReleaseToBottomDelayMs = 5_000L
 
   fun isLogListNearBottom(): Boolean =
     listState.firstVisibleItemIndex <= 1 && listState.firstVisibleItemScrollOffset < 96
 
   LaunchedEffect(selectedLogSource) {
     followNewestLogLine = true
+    userScrolledAwayDuringGesture = false
     logRevealInitialized = false
   }
 
@@ -985,21 +1120,24 @@ private fun HomeLogsCard(
       if (appended.isEmpty()) {
         displayedLogLines = displayedLogLines.takeLast(logLines.size)
       } else {
-        // Keep backend updates atomic. The viewport animation below is only a
-        // visual reveal and does not drip-feed a batch line by line.
-        val newRows = appended.map { line ->
-          DaemonLogRenderLine(id = nextLogRenderId++, line = line)
+        // Preserve the original Home behavior: reveal a backend batch in a
+        // very short cadence. Combined with the row enter animation this makes
+        // new lines rise naturally from the bottom instead of one big jump.
+        for (line in appended) {
+          displayedLogLines = (
+            displayedLogLines + DaemonLogRenderLine(id = nextLogRenderId++, line = line)
+          ).takeLast(100)
+          delay(logRevealDelayMs)
         }
-        displayedLogLines = (displayedLogLines + newRows).takeLast(100)
       }
     } else {
       displayedLogLines = mergeSlidingTail(logLines, displayedLogLines) ?: renderize(logLines)
     }
   }
 
-  // Autoscroll follows new logs only while the user is already at the tail.
-  // Once the user scrolls away we never pull the list back after a timeout;
-  // following resumes naturally when they manually return to the bottom.
+  // Restore the original tail-follow behavior. While the user is reading the
+  // tail, every new line stays pinned to the visual bottom. Scrolling upward
+  // temporarily releases the tail; after five idle seconds it gently returns.
   LaunchedEffect(listState) {
     snapshotFlow {
       Triple(
@@ -1011,8 +1149,23 @@ private fun HomeLogsCard(
       val nearBottom = isLogListNearBottom()
       if (nearBottom) {
         followNewestLogLine = true
+        userScrolledAwayDuringGesture = false
       } else if (scrolling) {
         followNewestLogLine = false
+        userScrolledAwayDuringGesture = true
+      } else if (userScrolledAwayDuringGesture) {
+        userScrolledAwayDuringGesture = false
+        manualScrollIdleNonce++
+      }
+    }
+  }
+
+  LaunchedEffect(manualScrollIdleNonce, selectedLogSource) {
+    if (manualScrollIdleNonce > 0L && !followNewestLogLine) {
+      delay(autoReleaseToBottomDelayMs)
+      if (!listState.isScrollInProgress && !isLogListNearBottom()) {
+        followNewestLogLine = true
+        listState.animateScrollToItem(0)
       }
     }
   }
@@ -1026,21 +1179,16 @@ private fun HomeLogsCard(
   }
 
   LaunchedEffect(selectedLogSource, newestLogRenderId) {
-    if (followNewestLogLine && !listState.isScrollInProgress) {
-      // reverseLayout keeps item 0 at the visual bottom. A direct tail snap is
-      // deliberately used here: placement animation plus animateScrollToItem
-      // caused a visible rebound when a fast fling ended at the bottom.
-      if (!isLogListNearBottom()) {
-        listState.scrollToItem(0, 0)
-      }
+    if ((followNewestLogLine || isLogListNearBottom()) && !listState.isScrollInProgress) {
+      followNewestLogLine = true
+      listState.scrollToItem(0, 0)
     }
   }
 
   Card(
     modifier = modifier
       .fillMaxWidth()
-      .then(if (fillHeight) Modifier.fillMaxHeight() else Modifier)
-      .animateContentSize(animationSpec = tween(320, easing = FastOutSlowInEasing)),
+      .then(if (fillHeight) Modifier.fillMaxHeight() else Modifier),
     colors = CardDefaults.cardColors(
       containerColor = if (light) scheme.surfaceContainerLowest.copy(alpha = 0.98f)
       else scheme.surface.copy(alpha = 0.80f),
@@ -1202,7 +1350,7 @@ private fun HomeLogRow(
   // Same reveal behavior as the original Home log viewer: whenever a keyed
   // LazyColumn row enters composition it fades in and rises from below.
   // Placement itself is not animated, so fast scrolling stays stable.
-  val rowVisibleState = remember(item.id) {
+  val rowVisibleState = remember {
     MutableTransitionState(false).apply { targetState = true }
   }
 

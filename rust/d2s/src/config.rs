@@ -21,7 +21,6 @@ fn default_healthy_probe_interval_secs() -> u64 { 30 }
 fn default_recovery_probe_interval_secs() -> u64 { 5 }
 fn default_failure_threshold() -> u32 { 3 }
 fn default_runtime_cooldown_ms() -> u64 { 2_000 }
-fn default_idle_after_secs() -> u64 { 60 }
 fn default_max_connections() -> usize { 1_024 }
 fn default_status_interval_secs() -> u64 { 5 }
 fn default_shutdown_grace_period_ms() -> u64 { 5_000 }
@@ -92,9 +91,10 @@ pub struct Config {
     #[serde(default = "default_runtime_cooldown_ms")]
     pub runtime_cooldown_ms: u64,
 
-    // Health probes sleep after sustained client inactivity. Keep this as an
-    // optional compatibility field so older configs without it automatically
-    // receive the safe default. Set to 0 to disable idle sleeping.
+    // Compatibility-only field accepted from older d2s.toml files. Earlier
+    // builds suspended health probes after this idle period; that could leave a
+    // stale GREEN route selected for the first DNS request after a long pause.
+    // Current builds intentionally keep health scheduling active and ignore it.
     #[serde(default)]
     pub idle_after_secs: Option<u64>,
 
@@ -211,10 +211,6 @@ impl Config {
     pub fn healthy_probe_interval(&self) -> Duration { Duration::from_secs(self.healthy_probe_interval_secs) }
     pub fn recovery_probe_interval(&self) -> Duration { Duration::from_secs(self.recovery_probe_interval_secs) }
     pub fn runtime_cooldown(&self) -> Duration { Duration::from_millis(self.runtime_cooldown_ms) }
-    pub fn idle_after(&self) -> Option<Duration> {
-        let secs = self.idle_after_secs.unwrap_or_else(default_idle_after_secs);
-        (secs > 0).then(|| Duration::from_secs(secs))
-    }
     pub fn shutdown_grace_period(&self) -> Duration { Duration::from_millis(self.shutdown_grace_period_ms) }
 
     /// Maximum time after the client has sent the first relay payload for the
@@ -375,15 +371,18 @@ idle_after_secs = 60
     }
 
     #[test]
-    fn idle_sleep_defaults_to_sixty_seconds_and_zero_disables_it() {
-        let config: Config = toml::from_str("backends = []\ndirect_fallback = true\n").unwrap();
-        assert_eq!(config.idle_after(), Some(Duration::from_secs(60)));
+    fn accepts_legacy_idle_sleep_field_without_affecting_runtime_policy() {
+        let config: Config = toml::from_str(
+            "backends = []\ndirect_fallback = true\nidle_after_secs = 60\n",
+        )
+        .unwrap();
+        assert_eq!(config.idle_after_secs, Some(60));
 
         let config: Config = toml::from_str(
             "backends = []\ndirect_fallback = true\nidle_after_secs = 0\n",
         )
         .unwrap();
-        assert_eq!(config.idle_after(), None);
+        assert_eq!(config.idle_after_secs, Some(0));
     }
 
     #[test]

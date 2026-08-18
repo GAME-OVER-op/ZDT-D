@@ -116,15 +116,19 @@ Repeated failed Full Internet probes use the T2S backoff `30s -> 60s -> 120s ->
 between. Forced suspect rechecks and the no-GREEN recovery ladder bypass this
 backoff so actual DNS failure/recovery remains responsive.
 
-### Idle health sleep
+### Idle health freshness
 
-After `idle_after_secs` with no active DNSCrypt clients, the health scheduler can
-sleep instead of polling. A new client wakes it immediately. Forced suspect
-rechecks also wake it immediately. D2S never sleeps while no GREEN backend
-exists, so recovery continues even without client traffic.
+Health scheduling stays active even when DNSCrypt has no client traffic. Older
+builds stopped probes after `idle_after_secs`; that allowed a previously GREEN
+backend to become stale while D2S slept, so the first DNS request after a long
+quiet period could spend a full backend timeout discovering that the route had
+disappeared. Current builds keep the normal low-cost scheduler running: healthy
+routes receive Light checks at `healthy_probe_interval_secs`, while Full Internet
+verification keeps its existing long cadence.
 
-Routing never waits for an idle wake/probe; the current verified state is used
-immediately.
+`idle_after_secs` is still accepted in `d2s.toml` for upgrade compatibility but
+is no longer used to suspend health checks. No configuration migration is
+required.
 
 ### DIRECT health
 

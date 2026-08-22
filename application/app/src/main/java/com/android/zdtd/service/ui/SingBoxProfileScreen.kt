@@ -1963,13 +1963,13 @@ private fun SingBoxServerCard(
 
   fun autoSave() {
     val port = if (showPort) portText.trim().toIntOrNull() else (server.port ?: 1080)
-    if (port !in 1..65535) return
+    val validPort = port?.takeIf { it in 1..65535 } ?: return
     saving = true
     val encodedServer = URLEncoder.encode(server.name, "UTF-8")
-    actions.saveJsonData("$basePath/servers/$encodedServer/setting", buildSettingPayload(port)) { ok ->
+    actions.saveJsonData("$basePath/servers/$encodedServer/setting", buildSettingPayload(validPort)) { ok ->
       saving = false
       if (ok) {
-        onServerSaved(server.copy(enabled = enabled, port = port, selectedSni = selectedSni))
+        onServerSaved(server.copy(enabled = enabled, port = validPort, selectedSni = selectedSni))
       } else {
         showSnack(context.getString(R.string.singbox_auto_save_failed))
       }
@@ -1983,7 +1983,8 @@ private fun SingBoxServerCard(
       return
     }
     val port = if (showPort) portText.trim().toIntOrNull() else (server.port ?: 1080)
-    if (port !in 1..65535) {
+    val validPort = port?.takeIf { it in 1..65535 }
+    if (validPort == null) {
       sniMenu = false
       showSnack(context.getString(R.string.singbox_auto_save_failed))
       return
@@ -2006,11 +2007,11 @@ private fun SingBoxServerCard(
           showSnack(context.getString(R.string.singbox_auto_save_failed))
           return@configSave
         }
-        actions.saveJsonData("$basePath/servers/$encodedServer/setting", buildSettingPayload(port, next)) { settingOk ->
+        actions.saveJsonData("$basePath/servers/$encodedServer/setting", buildSettingPayload(validPort, next)) { settingOk ->
           if (settingOk) {
             selectedSni = next
             saving = false
-            onServerSaved(server.copy(enabled = enabled, port = port, selectedSni = next))
+            onServerSaved(server.copy(enabled = enabled, port = validPort, selectedSni = next))
           } else {
             // Keep config.json and setting.json consistent if metadata saving fails.
             actions.saveText(configPath, source) {

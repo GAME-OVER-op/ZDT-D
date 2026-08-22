@@ -7,6 +7,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.android.zdtd.service.R
 import com.android.zdtd.service.RootConfigManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -302,14 +303,17 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     mode: String,
     domain: String,
     email: String,
-    sni: String,
+    snis: List<String>,
   ) {
     val server = server(serverId) ?: return
     val id = VpsRemoteController.normalizeId(displayName)
     runRemoteOperation(
       title = "Creating $displayName",
       block = { onLine ->
-        controller.createProfile(server, kind, id, displayName.trim(), port, mode, domain.trim(), email.trim(), sni.trim(), onLine)
+        controller.createProfile(
+          server, kind, id, displayName.trim(), port, mode, domain.trim(), email.trim(),
+          snis.map(String::trim).filter(String::isNotBlank).distinct(), onLine,
+        )
       },
       onSuccess = { loadProfiles(serverId, kind) },
     )
@@ -388,6 +392,64 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun clearConfigResult() { _configResult.value = null }
+
+  fun rebootServer(serverId: String) {
+    if (_operation.value.running) return
+    val server = server(serverId) ?: return
+    val app = getApplication<Application>()
+    viewModelScope.launch {
+      startOperation(app.getString(R.string.vps_rebooting))
+      updateStage(app.getString(R.string.vps_rebooting))
+      val scheduled = runCatching { controller.reboot(server) }.getOrElse { error ->
+        failOperation(error.message ?: app.getString(R.string.vps_reboot_failed))
+        return@launch
+      }
+      if (!scheduled.successful) {
+        failOperation(scheduled.output.ifBlank { app.getString(R.string.vps_reboot_failed) })
+        return@launch
+      }
+
+      appendLine(app.getString(R.string.vps_reboot_scheduled))
+      updateStage(app.getString(R.string.vps_waiting_for_server))
+      val startedAt = System.currentTimeMillis()
+      val deadline = startedAt + REBOOT_WAIT_TIMEOUT_MS
+      var observedOffline = false
+      delay(REBOOT_INITIAL_DELAY_MS)
+
+      while (isActive && System.currentTimeMillis() < deadline) {
+        val probe = runCatching { ssh.collectMetrics(server) }
+        val value = probe.getOrNull()
+        if (value != null && (observedOffline || System.currentTimeMillis() - startedAt >= REBOOT_MIN_RETURN_MS)) {
+          val now = System.currentTimeMillis()
+          _metrics.update { it + (serverId to value.copy(refreshing = false, error = null)) }
+          _servers.update { current ->
+            current.map { item -> if (item.id == serverId) item.copy(lastSuccessfulCheck = now) else item }
+          }
+          store.saveServers(_servers.value)
+          lastServerStatePersistAt = now
+          appendLine(app.getString(R.string.vps_server_online_again))
+          finishOperation()
+          loadServices(serverId, silent = true)
+          return@launch
+        }
+
+        if (value == null) {
+          observedOffline = true
+          _metrics.update { current ->
+            val previous = current[serverId] ?: VpsMetrics()
+            current + (serverId to previous.copy(
+              reachability = VpsReachability.OFFLINE,
+              refreshing = false,
+              lastUpdatedAt = System.currentTimeMillis(),
+              error = null,
+            ))
+          }
+        }
+        delay(REBOOT_POLL_INTERVAL_MS)
+      }
+      failOperation(app.getString(R.string.vps_reboot_timeout))
+    }
+  }
 
   fun restartService(serverId: String, kind: VpsServiceKind, profileId: String? = null) {
     val server = server(serverId) ?: return
@@ -508,6 +570,10 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     private const val MONITOR_LIST_KEY = "list"
     private const val MONITOR_INTERVAL_MS = 15_000L
     private const val SERVER_STATE_PERSIST_INTERVAL_MS = 5 * 60_000L
+    private const val REBOOT_INITIAL_DELAY_MS = 4_000L
+    private const val REBOOT_POLL_INTERVAL_MS = 3_000L
+    private const val REBOOT_MIN_RETURN_MS = 12_000L
+    private const val REBOOT_WAIT_TIMEOUT_MS = 3 * 60_000L
     fun profileKey(serverId: String, kind: VpsServiceKind) = "$serverId:${kind.wireId}"
     fun clientKey(serverId: String, kind: VpsServiceKind, profileId: String) = "$serverId:${kind.wireId}:$profileId"
     private fun sanitizePath(value: String) = value.replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().take(60).ifBlank { "server" }

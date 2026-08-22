@@ -158,6 +158,13 @@ pub struct ServerSetting {
     pub enabled: bool,
     #[serde(default)]
     pub port: u16,
+    // Optional UI metadata for VPS-imported REALITY servers. Runtime sing-box
+    // behavior still comes from config.json; these fields only preserve the
+    // allowed SNI choices for the Android server card.
+    #[serde(default)]
+    pub sni: Option<String>,
+    #[serde(default)]
+    pub sni_options: Vec<String>,
 }
 
 impl Default for ServerSetting {
@@ -165,6 +172,8 @@ impl Default for ServerSetting {
         Self {
             enabled: false,
             port: 1080,
+            sni: None,
+            sni_options: Vec::new(),
         }
     }
 }

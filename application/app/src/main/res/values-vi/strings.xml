@@ -1347,6 +1347,8 @@ Tính năng bảo vệ không hoạt động trong chế độ điểm phát só
     <string name="openvpn_dns_label">Máy chủ DNS</string>
     <string name="openvpn_dns_hint">Nhập 1–8 máy chủ DNS IPv4, phân tách bằng dấu cách hoặc dấu phẩy. Không cho phép IPv6, tên miền và URL https/tls.</string>
     <string name="openvpn_dns_invalid">Chỉ nhập 1–8 địa chỉ IPv4 hợp lệ.</string>
+    <string name="openvpn_endpoint_resolve_label">Phân giải miền remote</string>
+    <string name="openvpn_endpoint_resolve_hint">Phân giải tên miền trong chỉ thị remote trước khi khởi động OpenVPN.</string>
     <string name="openvpn_config_title">Cấu hình OpenVPN</string>
     <string name="openvpn_config_desc">Dán nội dung client.ovpn hoặc tải từ tệp. Tệp được lưu dưới dạng profile/name/client.ovpn.</string>
     <string name="openvpn_config_empty">client.ovpn không được để trống.</string>
@@ -2279,4 +2281,17 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="module_zip_patch_normalized">Đã chuẩn hóa ZIP mô-đun cho trình cài đặt nghiêm ngặt: đã xóa cờ mã hóa khỏi %1$d mục Central Directory.</string>
     <string name="module_zip_patch_compatible">ZIP mô-đun đã tương thích với trình cài đặt nghiêm ngặt.</string>
     <string name="module_zip_patch_protection_kept_magisk">Giữ nguyên bảo vệ ZIP mô-đun cho trình cài đặt Magisk.</string>
+
+    <string name="vps_reboot_server">Khởi động lại máy chủ</string>
+    <string name="vps_reboot_confirm_title">Khởi động lại máy chủ?</string>
+    <string name="vps_reboot_confirm_message">Khởi động lại %1$s? Kết nối SSH sẽ tạm thời bị ngắt trong khi máy chủ khởi động lại.</string>
+    <string name="vps_rebooting">Đang khởi động lại máy chủ…</string>
+    <string name="vps_reboot_failed">Không thể lên lịch khởi động lại máy chủ</string>
+    <string name="vps_reboot_scheduled">Đã lên lịch khởi động lại</string>
+    <string name="vps_waiting_for_server">Đang chờ máy chủ hoạt động trở lại…</string>
+    <string name="vps_server_online_again">Máy chủ đã trực tuyến trở lại</string>
+    <string name="vps_reboot_timeout">Máy chủ không hoạt động trở lại trước khi hết thời gian chờ</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">Thêm SNI</string>
+    <string name="singbox_server_sni_label">SNI</string>
 </resources>

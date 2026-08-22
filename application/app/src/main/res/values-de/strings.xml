@@ -1348,6 +1348,8 @@ Der Schutz funktioniert nicht im Hotspot-Modus. Wenn der Hotspot aktiviert und s
     <string name="openvpn_dns_label">DNS-Server</string>
     <string name="openvpn_dns_hint">Gib 1 bis 8 IPv4-DNS-Server ein, getrennt durch Leerzeichen oder Kommas. IPv6, Domains und https/tls-URLs sind nicht erlaubt.</string>
     <string name="openvpn_dns_invalid">Gib nur 1 bis 8 gültige IPv4-Adressen ein.</string>
+    <string name="openvpn_endpoint_resolve_label">Remote-Domains auflösen</string>
+    <string name="openvpn_endpoint_resolve_hint">Domainnamen in remote-Direktiven vor dem Start von OpenVPN auflösen.</string>
     <string name="openvpn_config_title">OpenVPN-Konfiguration</string>
     <string name="openvpn_config_desc">Füge den Inhalt von client.ovpn ein oder lade ihn aus einer Datei. Er wird als profile/name/client.ovpn gespeichert.</string>
     <string name="openvpn_config_empty">client.ovpn darf nicht leer sein.</string>
@@ -2280,4 +2282,17 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="module_zip_patch_normalized">Modul-ZIP für strikten Installer normalisiert: Verschlüsselungsflag in %1$d Central-Directory-Einträgen entfernt.</string>
     <string name="module_zip_patch_compatible">Das Modul-ZIP ist bereits mit strikten Installern kompatibel.</string>
     <string name="module_zip_patch_protection_kept_magisk">Der Schutz des Modul-ZIP bleibt für den Magisk-Installer erhalten.</string>
+
+    <string name="vps_reboot_server">Server neu starten</string>
+    <string name="vps_reboot_confirm_title">Server neu starten?</string>
+    <string name="vps_reboot_confirm_message">%1$s neu starten? Die SSH-Verbindung wird während des Neustarts kurz getrennt.</string>
+    <string name="vps_rebooting">Server wird neu gestartet…</string>
+    <string name="vps_reboot_failed">Serverneustart konnte nicht geplant werden</string>
+    <string name="vps_reboot_scheduled">Neustart geplant</string>
+    <string name="vps_waiting_for_server">Warte auf die Rückkehr des Servers…</string>
+    <string name="vps_server_online_again">Server ist wieder online</string>
+    <string name="vps_reboot_timeout">Server ist vor Ablauf des Zeitlimits nicht zurückgekehrt</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">SNI hinzufügen</string>
+    <string name="singbox_server_sni_label">SNI</string>
 </resources>

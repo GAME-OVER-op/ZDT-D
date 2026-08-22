@@ -75,6 +75,9 @@ data class VpsServiceProfile(
   val domain: String = "",
   val clientCount: Int = 0,
   val active: Boolean = false,
+  val uploadBytes: Long = 0L,
+  val downloadBytes: Long = 0L,
+  val sniOptions: List<String> = emptyList(),
 )
 
 data class VpsClientConfig(
@@ -84,6 +87,8 @@ data class VpsClientConfig(
   val kind: VpsServiceKind,
   val createdAt: Long = 0L,
   val active: Boolean = true,
+  val uploadBytes: Long = 0L,
+  val downloadBytes: Long = 0L,
 )
 
 data class VpsConfigResult(
@@ -95,6 +100,7 @@ data class VpsConfigResult(
   val mimeType: String,
   val content: String,
   val shareLink: String? = null,
+  val sniOptions: List<String> = emptyList(),
 )
 
 data class VpsProbeResult(

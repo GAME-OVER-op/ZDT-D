@@ -1347,6 +1347,8 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="openvpn_dns_label">DNSサーバー</string>
     <string name="openvpn_dns_hint">1～8個のIPv4 DNSサーバーを空白またはカンマ区切りで入力します。IPv6、ドメイン、https/tls URLは使用できません。</string>
     <string name="openvpn_dns_invalid">有効なIPv4アドレスを1～8個だけ入力してください。</string>
+    <string name="openvpn_endpoint_resolve_label">remote ドメインを解決</string>
+    <string name="openvpn_endpoint_resolve_hint">OpenVPN の起動前に remote ディレクティブのドメイン名を解決します。</string>
     <string name="openvpn_config_title">OpenVPN設定</string>
     <string name="openvpn_config_desc">client.ovpnの内容を貼り付けるか、ファイルから読み込みます。profile/name/client.ovpnとして保存されます。</string>
     <string name="openvpn_config_empty">client.ovpnを空にすることはできません。</string>
@@ -2279,4 +2281,17 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="module_zip_patch_normalized">厳格なインストーラー向けにモジュール ZIP を正規化しました: %1$d 件の Central Directory エントリから暗号化フラグを解除しました。</string>
     <string name="module_zip_patch_compatible">モジュール ZIP はすでに厳格なインストーラーと互換性があります。</string>
     <string name="module_zip_patch_protection_kept_magisk">Magisk インストーラー向けにモジュール ZIP の保護を維持しました。</string>
+
+    <string name="vps_reboot_server">サーバーを再起動</string>
+    <string name="vps_reboot_confirm_title">サーバーを再起動しますか？</string>
+    <string name="vps_reboot_confirm_message">%1$s を再起動しますか？再起動中は SSH 接続が一時的に切断されます。</string>
+    <string name="vps_rebooting">サーバーを再起動しています…</string>
+    <string name="vps_reboot_failed">サーバーの再起動を予約できませんでした</string>
+    <string name="vps_reboot_scheduled">再起動を予約しました</string>
+    <string name="vps_waiting_for_server">サーバーの復帰を待っています…</string>
+    <string name="vps_server_online_again">サーバーが再びオンラインになりました</string>
+    <string name="vps_reboot_timeout">タイムアウトまでにサーバーが復帰しませんでした</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">SNI を追加</string>
+    <string name="singbox_server_sni_label">SNI</string>
 </resources>

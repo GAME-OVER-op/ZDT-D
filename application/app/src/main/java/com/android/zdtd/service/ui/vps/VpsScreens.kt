@@ -86,6 +86,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -116,6 +117,8 @@ import java.net.URLEncoder
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+import org.json.JSONArray
+import org.json.JSONObject
 
 @Composable
 fun VpsServersScreen(
@@ -236,6 +239,7 @@ fun VpsServerDetailsScreen(
   val operation by viewModel.operation.collectAsState()
   var removeTarget by remember { mutableStateOf<VpsServiceKind?>(null) }
   var logs by remember { mutableStateOf<String?>(null) }
+  var showRebootConfirm by remember { mutableStateOf(false) }
 
   LifecycleStartEffect(serverId) {
     viewModel.startServerDetailsMonitoring(serverId)
@@ -244,6 +248,27 @@ fun VpsServerDetailsScreen(
 
   VpsOperationDialog(operation = operation, onDismiss = viewModel::clearOperation)
   logs?.let { text -> VpsTextDialog(stringResource(R.string.vps_logs_title), text, onDismiss = { logs = null }) }
+  if (showRebootConfirm && server != null) {
+    AlertDialog(
+      onDismissRequest = { if (!operation.running) showRebootConfirm = false },
+      title = { Text(stringResource(R.string.vps_reboot_confirm_title)) },
+      text = { Text(stringResource(R.string.vps_reboot_confirm_message, server.name)) },
+      confirmButton = {
+        Button(
+          enabled = !operation.running,
+          onClick = {
+            showRebootConfirm = false
+            viewModel.rebootServer(serverId)
+          },
+        ) { Text(stringResource(R.string.vps_reboot_server)) }
+      },
+      dismissButton = {
+        OutlinedButton(enabled = !operation.running, onClick = { showRebootConfirm = false }) {
+          Text(stringResource(R.string.action_cancel))
+        }
+      },
+    )
+  }
   removeTarget?.let { kind ->
     AlertDialog(
       onDismissRequest = { removeTarget = null },
@@ -270,7 +295,15 @@ fun VpsServerDetailsScreen(
     contentPadding = PaddingValues(top = topContentPadding + 8.dp, bottom = bottomContentPadding + 14.dp),
     verticalArrangement = Arrangement.spacedBy(10.dp),
   ) {
-    item { VpsServerSummaryCard(server, currentMetrics, onRefresh = { viewModel.refreshServer(serverId); viewModel.loadServices(serverId) }) }
+    item {
+      VpsServerSummaryCard(
+        server = server,
+        metrics = currentMetrics,
+        rebootEnabled = currentMetrics.reachability == VpsReachability.ONLINE && !operation.running,
+        onRefresh = { viewModel.refreshServer(serverId); viewModel.loadServices(serverId) },
+        onReboot = { showRebootConfirm = true },
+      )
+    }
     item {
       Text(
         text = stringResource(R.string.vps_services_title),
@@ -352,9 +385,9 @@ fun VpsServiceScreen(
       suggestedHysteriaPort = profilesMap[VpsViewModel.profileKey(serverId, VpsServiceKind.XRAY)]?.firstOrNull()?.port,
       busy = operation.running || !serverOnline,
       onDismiss = { showCreate = false },
-      onCreate = { name, port, mode, domain, email, sni ->
+      onCreate = { name, port, mode, domain, email, snis ->
         showCreate = false
-        viewModel.createProfile(serverId, kind, name, port, mode, domain, email, sni)
+        viewModel.createProfile(serverId, kind, name, port, mode, domain, email, snis)
       },
     )
   }
@@ -623,7 +656,7 @@ private fun CreateVpsProfileDialog(
   suggestedHysteriaPort: Int?,
   busy: Boolean,
   onDismiss: () -> Unit,
-  onCreate: (String, Int, String, String, String, String) -> Unit,
+  onCreate: (String, Int, String, String, String, List<String>) -> Unit,
 ) {
   var name by remember { mutableStateOf("") }
   val defaultPort = when (kind) {
@@ -637,22 +670,48 @@ private fun CreateVpsProfileDialog(
   var mode by remember { mutableStateOf(if (kind == VpsServiceKind.XRAY) "reality" else if (kind == VpsServiceKind.OPENVPN) "udp" else "default") }
   var domain by remember { mutableStateOf("") }
   var email by remember { mutableStateOf("") }
-  var sni by remember(kind) { mutableStateOf(if (kind == VpsServiceKind.HYSTERIA2) "zdt-hysteria.local" else "www.microsoft.com") }
+  var hysteriaSni by remember(kind) { mutableStateOf("zdt-hysteria.local") }
+  var xraySnis by remember(kind) { mutableStateOf(listOf("www.microsoft.com")) }
   var menu by remember { mutableStateOf(false) }
+  val configuration = LocalConfiguration.current
   val requiresPublicTls = kind == VpsServiceKind.XRAY && mode == "ws"
+  val normalizedXraySnis = xraySnis.map(String::trim).filter(String::isNotBlank).distinct()
   val requiresSni = (kind == VpsServiceKind.XRAY && mode == "reality") || kind == VpsServiceKind.HYSTERIA2
-  val valid = name.isNotBlank() && port.toIntOrNull() in 1..65535 && (!requiresPublicTls || domain.isNotBlank()) && (!requiresSni || sni.isNotBlank())
+  val hasRequiredSni = when {
+    kind == VpsServiceKind.XRAY && mode == "reality" -> normalizedXraySnis.isNotEmpty()
+    kind == VpsServiceKind.HYSTERIA2 -> hysteriaSni.isNotBlank()
+    else -> true
+  }
+  val valid = name.isNotBlank() && port.toIntOrNull() in 1..65535 && (!requiresPublicTls || domain.isNotBlank()) && (!requiresSni || hasRequiredSni)
   val modes = when (kind) {
     VpsServiceKind.OPENVPN -> listOf("udp", "tcp")
     VpsServiceKind.XRAY -> listOf("reality", "ws")
     else -> listOf(mode)
   }
 
+  fun updateXraySni(index: Int, raw: String) {
+    val hasSeparator = raw.any { it == ',' || it == '\n' || it == ';' }
+    if (!hasSeparator) {
+      xraySnis = xraySnis.toMutableList().also { list -> list[index] = raw.trim() }
+      return
+    }
+    val parts = raw.split(',', '\n', ';').map(String::trim).filter(String::isNotBlank)
+    val next = xraySnis.toMutableList()
+    next.removeAt(index)
+    next.addAll(index, parts.ifEmpty { listOf("") })
+    xraySnis = next.distinct()
+  }
+
   AlertDialog(
     onDismissRequest = onDismiss,
     title = { Text(stringResource(R.string.vps_create_profile)) },
     text = {
-      Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Column(
+        modifier = Modifier
+          .heightIn(max = configuration.screenHeightDp.dp * 0.62f)
+          .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
         OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.vps_profile_name)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) }, label = { Text(stringResource(R.string.vps_port)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
         if (modes.size > 1) {
@@ -663,8 +722,40 @@ private fun CreateVpsProfileDialog(
             }
           }
         }
-        if ((kind == VpsServiceKind.XRAY && mode == "reality") || kind == VpsServiceKind.HYSTERIA2) {
-          OutlinedTextField(sni, { sni = it.trim() }, label = { Text(stringResource(R.string.vps_sni)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+        if (kind == VpsServiceKind.XRAY && mode == "reality") {
+          xraySnis.forEachIndexed { index, value ->
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+              OutlinedTextField(
+                value = value,
+                onValueChange = { updateXraySni(index, it) },
+                label = { Text(stringResource(R.string.vps_sni)) },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+              )
+              if (xraySnis.size > 1) {
+                IconButton(
+                  enabled = !busy,
+                  onClick = { xraySnis = xraySnis.toMutableList().also { it.removeAt(index) } },
+                ) {
+                  Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.action_delete))
+                }
+              }
+            }
+          }
+          TextButton(
+            enabled = !busy,
+            onClick = { xraySnis = xraySnis + "" },
+          ) {
+            Icon(Icons.Outlined.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(stringResource(R.string.vps_add_sni))
+          }
+        } else if (kind == VpsServiceKind.HYSTERIA2) {
+          OutlinedTextField(hysteriaSni, { hysteriaSni = it.trim() }, label = { Text(stringResource(R.string.vps_sni)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         }
         if (requiresPublicTls) {
           OutlinedTextField(domain, { domain = it.trim() }, label = { Text(stringResource(R.string.vps_domain)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
@@ -677,7 +768,17 @@ private fun CreateVpsProfileDialog(
       }
     },
     confirmButton = {
-      Button(enabled = valid && !busy, onClick = { onCreate(name, port.toInt(), mode, domain, email, sni) }) { Text(stringResource(R.string.action_create)) }
+      Button(
+        enabled = valid && !busy,
+        onClick = {
+          val snis = when {
+            kind == VpsServiceKind.XRAY && mode == "reality" -> normalizedXraySnis
+            kind == VpsServiceKind.HYSTERIA2 -> listOf(hysteriaSni.trim())
+            else -> emptyList()
+          }
+          onCreate(name, port.toInt(), mode, domain, email, snis)
+        },
+      ) { Text(stringResource(R.string.action_create)) }
     },
     dismissButton = { OutlinedButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )
@@ -807,7 +908,13 @@ private fun VpsServerCard(server: VpsServer, metrics: VpsMetrics, onClick: () ->
 }
 
 @Composable
-private fun VpsServerSummaryCard(server: VpsServer, metrics: VpsMetrics, onRefresh: () -> Unit) {
+private fun VpsServerSummaryCard(
+  server: VpsServer,
+  metrics: VpsMetrics,
+  rebootEnabled: Boolean,
+  onRefresh: () -> Unit,
+  onReboot: () -> Unit,
+) {
   val targetAccent = when (metrics.reachability) {
     VpsReachability.ONLINE -> Color(0xFF22C55E)
     VpsReachability.OFFLINE -> MaterialTheme.colorScheme.error
@@ -854,6 +961,15 @@ private fun VpsServerSummaryCard(server: VpsServer, metrics: VpsMetrics, onRefre
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
       )
+      OutlinedButton(
+        enabled = rebootEnabled,
+        onClick = onReboot,
+        modifier = Modifier.fillMaxWidth(),
+      ) {
+        Icon(Icons.Outlined.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(7.dp))
+        Text(stringResource(R.string.vps_reboot_server))
+      }
     }
   }
 }
@@ -912,6 +1028,11 @@ private fun VpsProfileCard(
         Text(profile.name, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text("${profile.mode.uppercase(Locale.ROOT)} · ${profile.protocol.uppercase(Locale.ROOT)} ${profile.port}", style = MaterialTheme.typography.bodySmall)
         Text(stringResource(R.string.vps_clients_count, profile.clientCount), style = MaterialTheme.typography.labelMedium, color = accent)
+        Text(
+          stringResource(R.string.vps_traffic_values, formatTrafficBytes(profile.uploadBytes), formatTrafficBytes(profile.downloadBytes)),
+          style = MaterialTheme.typography.labelSmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+        )
       }
       Box {
         IconButton(enabled = enabled, onClick = { menu = true }) { Icon(Icons.Outlined.MoreVert, contentDescription = null) }
@@ -939,6 +1060,11 @@ private fun VpsClientCard(
       Column(Modifier.weight(1f)) {
         Text(client.name, fontWeight = FontWeight.Bold)
         if (client.createdAt > 0) Text(DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(client.createdAt * 1000)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+        Text(
+          stringResource(R.string.vps_traffic_values, formatTrafficBytes(client.uploadBytes), formatTrafficBytes(client.downloadBytes)),
+          style = MaterialTheme.typography.labelSmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+        )
       }
       FilledTonalButton(enabled = enabled, onClick = onGenerate) { Text(stringResource(R.string.vps_get_config)) }
       IconButton(enabled = enabled, onClick = onDelete) { Icon(Icons.Outlined.Delete, contentDescription = stringResource(R.string.action_delete)) }
@@ -1263,6 +1389,7 @@ private fun formatBytes(value: Long): String {
   while (v >= 1024 && i < units.lastIndex) { v /= 1024; i++ }
   return if (i <= 1) String.format(Locale.US, "%.0f %s", v, units[i]) else String.format(Locale.US, "%.1f %s", v, units[i])
 }
+private fun formatTrafficBytes(value: Long): String = if (value <= 0L) "0 B" else formatBytes(value)
 private fun formatPercent(value: Double) = String.format(Locale.US, "%.1f%%", value.coerceIn(0.0, 100.0))
 private fun formatUptime(seconds: Long): String {
   if (seconds <= 0) return "—"
@@ -1331,8 +1458,21 @@ private fun importConfigIntoZdtd(
         if (created == null) return@createNamedProfile onDone(context.getString(R.string.create_failed))
         actions.createSingBoxServer(created, "server") { serverName ->
           if (serverName == null) return@createSingBoxServer onDone(context.getString(R.string.vps_import_failed))
-          val path = "/api/programs/sing-box/profiles/${url(created)}/servers/${url(serverName)}/config"
-          actions.saveText(path, imported.configJson) { ok -> onDone(context.getString(if (ok) R.string.vps_import_success else R.string.vps_import_failed)) }
+          val serverBase = "/api/programs/sing-box/profiles/${url(created)}/servers/${url(serverName)}"
+          actions.saveText("$serverBase/config", imported.configJson) { configOk ->
+            if (!configOk || result.sniOptions.isEmpty()) {
+              onDone(context.getString(if (configOk) R.string.vps_import_success else R.string.vps_import_failed))
+              return@saveText
+            }
+            actions.loadJsonData("$serverBase/setting") { current ->
+              val setting = current ?: JSONObject()
+              setting.put("sni", result.sniOptions.first())
+              setting.put("sni_options", JSONArray().also { array -> result.sniOptions.forEach { option -> array.put(option) } })
+              actions.saveJsonData("$serverBase/setting", setting) { settingOk ->
+                onDone(context.getString(if (settingOk) R.string.vps_import_success else R.string.vps_import_failed))
+              }
+            }
+          }
         }
       }
     }

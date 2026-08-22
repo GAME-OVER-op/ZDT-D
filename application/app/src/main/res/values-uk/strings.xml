@@ -1350,6 +1350,8 @@ APatch: 10700+</string>
     <string name="openvpn_dns_label">DNS-сервери</string>
     <string name="openvpn_dns_hint">Введіть від 1 до 8 DNS-серверів IPv4, розділених пробілами або комами. IPv6, домени й URL-адреси https/tls не дозволені.</string>
     <string name="openvpn_dns_invalid">Введіть лише від 1 до 8 коректних IPv4-адрес.</string>
+    <string name="openvpn_endpoint_resolve_label">Розв’язання доменів</string>
+    <string name="openvpn_endpoint_resolve_hint">Розв’язувати доменні імена в директивах remote перед запуском OpenVPN.</string>
     <string name="openvpn_config_title">Конфігурація OpenVPN</string>
     <string name="openvpn_config_desc">Вставте вміст client.ovpn або завантажте його з файлу. Він зберігається як profile/name/client.ovpn.</string>
     <string name="openvpn_config_empty">client.ovpn не може бути порожнім.</string>
@@ -2282,4 +2284,17 @@ APatch: 10700+</string>
     <string name="module_zip_patch_normalized">ZIP модуля нормалізовано для строгого інсталятора: прапорець шифрування знято у %1$d записах Central Directory.</string>
     <string name="module_zip_patch_compatible">ZIP модуля вже сумісний зі строгими інсталяторами.</string>
     <string name="module_zip_patch_protection_kept_magisk">Захист ZIP модуля збережено для інсталятора Magisk.</string>
+
+    <string name="vps_reboot_server">Перезавантажити сервер</string>
+    <string name="vps_reboot_confirm_title">Перезавантажити сервер?</string>
+    <string name="vps_reboot_confirm_message">Перезавантажити %1$s? SSH-з’єднання тимчасово перерветься на час перезапуску сервера.</string>
+    <string name="vps_rebooting">Перезавантаження сервера…</string>
+    <string name="vps_reboot_failed">Не вдалося запланувати перезавантаження сервера</string>
+    <string name="vps_reboot_scheduled">Перезавантаження заплановано</string>
+    <string name="vps_waiting_for_server">Очікування повернення сервера…</string>
+    <string name="vps_server_online_again">Сервер знову доступний</string>
+    <string name="vps_reboot_timeout">Сервер не повернувся до завершення часу очікування</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">Додати SNI</string>
+    <string name="singbox_server_sni_label">SNI</string>
 </resources>

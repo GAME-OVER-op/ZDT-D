@@ -16,6 +16,7 @@ use std::{
 
 use crate::{
     android::pkg_uid,
+    android_dns,
     shell::{self, Capture},
     vpn_netd::VpnNetdProfile,
     vpn_tether::VpnTetherProfile,
@@ -44,7 +45,6 @@ const LINK_WAIT: Duration = Duration::from_secs(15);
 const TUN_WAIT: Duration = Duration::from_secs(25);
 const IP_TIMEOUT: Duration = Duration::from_secs(3);
 const AWG_TIMEOUT: Duration = Duration::from_secs(10);
-const DNS_TIMEOUT: Duration = Duration::from_secs(4);
 const HEALTH_IDLE_SLEEP: Duration = Duration::from_secs(2);
 const HEALTH_INTERVAL_SEC: u64 = 30;
 const HEALTH_LIFETIME_SEC: u64 = 180;
@@ -1106,7 +1106,7 @@ fn resolve_endpoint_lines(raw: &str) -> Result<String> {
                     out.push(line.to_string());
                     continue;
                 }
-                let ip = resolve_host_ipv4(&host)
+                let ip = android_dns::resolve_ipv4(&host)
                     .ok_or_else(|| anyhow::anyhow!("cannot resolve Endpoint host {host} to IPv4"))?;
                 out.push(format!("Endpoint = {ip}:{port}"));
                 continue;
@@ -1150,7 +1150,7 @@ fn collect_endpoint_escape_ips(plan: &ProfilePlan) -> Vec<String> {
         if is_ipv4(&host) {
             ips.push(host);
         } else if plan.setting.endpoint_resolve {
-            match resolve_host_ipv4(&host) {
+            match android_dns::resolve_ipv4(&host) {
                 Some(ip) => ips.push(ip),
                 None => warn!(
                     "amneziawg: profile={} cannot resolve Endpoint host for endpoint escape: {}",
@@ -1195,48 +1195,6 @@ fn parse_host_port(s: &str) -> Option<(String, String)> {
     Some((host.to_string(), port.to_string()))
 }
 
-fn resolve_host_ipv4(host: &str) -> Option<String> {
-    let attempts: [(&str, Vec<&str>); 4] = [
-        ("toybox", vec!["nslookup", host, "1.1.1.1"]),
-        ("nslookup", vec![host, "1.1.1.1"]),
-        ("toybox", vec!["nslookup", host]),
-        ("nslookup", vec![host]),
-    ];
-    for (cmd, args) in attempts {
-        let Ok((code, out)) = shell::run_timeout(cmd, &args, Capture::Both, DNS_TIMEOUT) else { continue; };
-        if code != 0 { continue; }
-        if let Some(ip) = first_resolved_ipv4_from_text(&out) {
-            return Some(ip);
-        }
-    }
-
-    if let Ok((code, out)) = shell::run_timeout("ping", &["-c", "1", "-W", "2", host], Capture::Both, DNS_TIMEOUT) {
-        if code == 0 {
-            return first_ipv4_from_text(&out);
-        }
-    }
-    None
-}
-
-fn first_ipv4_from_text(text: &str) -> Option<String> {
-    for raw in text.split(|c: char| c.is_ascii_whitespace() || matches!(c, ',' | ';' | '(' | ')' | '[' | ']' | '#')) {
-        let token = raw.trim();
-        if is_ipv4(token) {
-            return Some(token.to_string());
-        }
-    }
-    None
-}
-
-fn first_resolved_ipv4_from_text(text: &str) -> Option<String> {
-    for raw in text.split(|c: char| c.is_ascii_whitespace() || matches!(c, ',' | ';' | '(' | ')' | '[' | ']' | '#')) {
-        let token = raw.trim();
-        if is_ipv4(token) && !matches!(token, "0.0.0.0" | "1.1.1.1" | "8.8.8.8" | "127.0.0.1") {
-            return Some(token.to_string());
-        }
-    }
-    None
-}
 
 fn run_command_timeout_with_env(
     cmd: &str,

@@ -1348,6 +1348,8 @@ APatch: 10700+</string>
     <string name="openvpn_dns_label">DNS-серверы</string>
     <string name="openvpn_dns_hint">Введите 1..8 IPv4 DNS через пробел или запятую. IPv6, домены и https/tls URL запрещены.</string>
     <string name="openvpn_dns_invalid">Введите только 1..8 корректных IPv4-адресов.</string>
+    <string name="openvpn_endpoint_resolve_label">Разрешение доменов</string>
+    <string name="openvpn_endpoint_resolve_hint">Разрешать доменные имена в директивах remote перед запуском OpenVPN.</string>
     <string name="openvpn_config_title">Конфиг OpenVPN</string>
     <string name="openvpn_config_desc">Вставьте содержимое client.ovpn или загрузите его из файла. Он сохраняется как profile/name/client.ovpn.</string>
     <string name="openvpn_config_empty">client.ovpn не должен быть пустым.</string>
@@ -2278,4 +2280,17 @@ APatch: 10700+</string>
     <string name="module_zip_patch_normalized">ZIP модуля нормализован для строгого установщика: флаг шифрования снят у %1$d записей Central Directory.</string>
     <string name="module_zip_patch_compatible">ZIP модуля уже совместим со строгими установщиками.</string>
     <string name="module_zip_patch_protection_kept_magisk">Защита ZIP модуля сохранена для установщика Magisk.</string>
+
+    <string name="vps_reboot_server">Перезагрузить сервер</string>
+    <string name="vps_reboot_confirm_title">Перезагрузить сервер?</string>
+    <string name="vps_reboot_confirm_message">Перезагрузить %1$s? SSH-соединение временно прервётся на время перезапуска сервера.</string>
+    <string name="vps_rebooting">Перезагрузка сервера…</string>
+    <string name="vps_reboot_failed">Не удалось запланировать перезагрузку сервера</string>
+    <string name="vps_reboot_scheduled">Перезагрузка запланирована</string>
+    <string name="vps_waiting_for_server">Ожидание возвращения сервера…</string>
+    <string name="vps_server_online_again">Сервер снова доступен</string>
+    <string name="vps_reboot_timeout">Сервер не вернулся до истечения времени ожидания</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">Добавить SNI</string>
+    <string name="singbox_server_sni_label">SNI</string>
 </resources>

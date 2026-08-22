@@ -3357,9 +3357,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
             let res = (|| -> Result<serde_json::Value> {
                 crate::programs::openvpn::ensure_valid_profile_name(profile)?;
                 ensure_openvpn_profile_layout(profile)?;
-                let p = openvpn_profile_root(profile).join("setting.json");
-                let v: serde_json::Value = read_json(&p)?;
-                Ok(json!({"ok": true, "data": v}))
+                let setting = crate::programs::openvpn::read_setting(profile)?;
+                Ok(json!({"ok": true, "data": setting}))
             })();
             match res {
                 Ok(v) => write_json(stream, 200, v),
@@ -4839,10 +4838,47 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 if !mode_vpn && port == 0 {
                     anyhow::bail!("invalid port");
                 }
+                let selected_sni = v.get("sni")
+                    .and_then(|x| x.as_str())
+                    .map(str::trim)
+                    .filter(|x| !x.is_empty())
+                    .map(str::to_string)
+                    .or_else(|| existing.get("sni")
+                        .and_then(|x| x.as_str())
+                        .map(str::trim)
+                        .filter(|x| !x.is_empty())
+                        .map(str::to_string));
+                let source_options = if v.get("sni_options").is_some() {
+                    v.get("sni_options")
+                } else {
+                    existing.get("sni_options")
+                };
+                let mut sni_options = Vec::<String>::new();
+                if let Some(values) = source_options.and_then(|x| x.as_array()) {
+                    for value in values {
+                        let Some(value) = value.as_str().map(str::trim).filter(|x| !x.is_empty()) else { continue; };
+                        if !sni_options.iter().any(|existing| existing.as_str() == value) {
+                            sni_options.push(value.to_string());
+                        }
+                    }
+                }
+                let selected_sni = match (selected_sni, sni_options.is_empty()) {
+                    (Some(value), false) if sni_options.iter().any(|item| item == &value) => Some(value),
+                    (_, false) => sni_options.first().cloned(),
+                    (value, true) => value,
+                };
+
                 let root = singbox_server_root(profile, server);
                 fs::create_dir_all(root.join("log"))?;
                 let p = root.join("setting.json");
-                write_json_pretty(&p, &json!({"enabled": enabled, "port": if port == 0 { 1080 } else { port }}))?;
+                let mut normalized = json!({"enabled": enabled, "port": if port == 0 { 1080 } else { port }});
+                if let Some(value) = selected_sni {
+                    normalized["sni"] = json!(value);
+                }
+                if !sni_options.is_empty() {
+                    normalized["sni_options"] = json!(sni_options);
+                }
+                write_json_pretty(&p, &normalized)?;
                 crate::programs::singbox::normalize_config_for_profile_server(profile, server)?;
                 Ok(())
             })();

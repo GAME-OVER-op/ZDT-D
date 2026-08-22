@@ -29,6 +29,26 @@ profile_dir() { printf '%s/profiles/%s/%s' "$ZDT_STATE" "$1" "$2"; }
 load_meta() { source "$(profile_dir "$1" "$2")/meta.env"; }
 ensure_dirs() { mkdir -p "$ZDT_ROOT/bin" "$ZDT_ETC" "$ZDT_STATE/services" "$ZDT_STATE/profiles" "$ZDT_LOG" "$ZDT_BACKUP"; }
 
+
+stats_port_reserved() {
+  local port=$1 meta
+  for meta in "$ZDT_STATE"/profiles/{xray,hysteria2}/*/meta.env; do
+    [[ -f $meta ]] || continue
+    grep -Eq "^STATS_PORT=${port}$" "$meta" && return 0
+  done
+  ss -H -lnt "sport = :$port" 2>/dev/null | grep -q .
+}
+next_stats_port() {
+  local port
+  for port in $(seq 29000 29999); do
+    if ! stats_port_reserved "$port"; then
+      printf '%s\n' "$port"
+      return 0
+    fi
+  done
+  die 'No free local statistics port is available'
+}
+
 unit_is_active() { systemctl is-active --quiet "$1" 2>/dev/null; }
 unit_is_enabled() { systemctl is-enabled --quiet "$1" 2>/dev/null; }
 record_unit_state() {
@@ -94,7 +114,7 @@ begin_tx() {
     "$ZDT_STATE/dnscrypt-original" "$ZDT_STATE/dnscrypt-cache" \
     "$SYSCTL_FILE" "$SYSTEMD_DIR"/zdt-vps-firewall.service "$SYSTEMD_DIR"/zdt-dnscrypt.service \
     "$SYSTEMD_DIR"/zdt-openvpn-net-*.service "$SYSTEMD_DIR"/zdt-xray-*.service \
-    "$SYSTEMD_DIR"/zdt-hysteria2-*.service "$OPENVPN_DIR"/zdt-*.conf \
+    "$SYSTEMD_DIR"/zdt-hysteria2-*.service "$SYSTEMD_DIR"/openvpn-server@zdt-*.service.d "$OPENVPN_DIR"/zdt-*.conf \
     "$WIREGUARD_DIR"/zdtwg*.conf /etc/letsencrypt/renewal-hooks/deploy/zdt-vps-reload; do
     [[ -e $p || -L $p ]] && paths+=("$p")
   done
@@ -111,6 +131,7 @@ cleanup_managed_files() {
     "$SYSTEMD_DIR"/zdt-openvpn-net-*.service "$SYSTEMD_DIR"/zdt-xray-*.service \
     "$SYSTEMD_DIR"/zdt-hysteria2-*.service "$OPENVPN_DIR"/zdt-*.conf \
     "$WIREGUARD_DIR"/zdtwg*.conf "$SYSCTL_FILE"
+  rm -rf "$SYSTEMD_DIR"/openvpn-server@zdt-*.service.d 2>/dev/null || true
   rm -f /etc/letsencrypt/renewal-hooks/deploy/zdt-vps-reload
   while iptables -w 5 -D INPUT -j "$FIREWALL_CHAIN" 2>/dev/null; do :; done
   iptables -w 5 -F "$FIREWALL_CHAIN" 2>/dev/null || true
@@ -583,11 +604,97 @@ generate_openvpn_tls_key() {
   openvpn --genkey --secret "$path"
 }
 
+
+install_openvpn_traffic_helpers() {
+  ensure_dirs
+  cat > "$ZDT_ROOT/bin/openvpn-traffic-reset" <<'SCRIPT'
+#!/usr/bin/env bash
+set -eu
+profile=${1:?profile required}
+[[ $profile =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$ ]] || exit 1
+state="/var/lib/zdt-vps/profiles/openvpn/$profile"
+runtime="/run/zdt-vps/openvpn/$profile"
+rm -rf "$runtime"
+mkdir -p "$runtime"
+# The status file belongs to the daemon lifetime as well.  Clear it before
+# OpenVPN starts so a restart cannot briefly expose counters from the previous
+# process while the new daemon has not written its first status snapshot yet.
+: > "$state/status.log"
+: > "$runtime/cn.map"
+for c in "$state"/clients/*; do
+  [[ -d $c && -f $c/cn ]] || continue
+  printf '%s|%s\n' "$(cat "$c/cn")" "$(basename "$c")" >> "$runtime/cn.map"
+done
+chown -R nobody:nogroup "$runtime" 2>/dev/null || true
+chmod 0770 "$runtime"
+chmod 0660 "$runtime/cn.map" 2>/dev/null || true
+SCRIPT
+  cat > "$ZDT_ROOT/bin/openvpn-traffic-disconnect" <<'SCRIPT'
+#!/usr/bin/env bash
+set -eu
+profile=${1:?profile required}
+[[ $profile =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$ ]] || exit 0
+runtime="/run/zdt-vps/openvpn/$profile"
+map="$runtime/cn.map"
+cn=${common_name:-}
+received=${bytes_received:-0}
+sent=${bytes_sent:-0}
+[[ -d $runtime && -f $map && -n $cn ]] || exit 0
+[[ $received =~ ^[0-9]+$ ]] || received=0
+[[ $sent =~ ^[0-9]+$ ]] || sent=0
+client=$(awk -F '|' -v cn="$cn" '$1==cn {print $2; exit}' "$map" 2>/dev/null || true)
+[[ -n $client ]] || exit 0
+lock="$runtime/.lock"
+locked=0
+for _ in $(seq 1 50); do
+  if mkdir "$lock" 2>/dev/null; then locked=1; break; fi
+  sleep 0.02
+done
+(( locked == 1 )) || exit 0
+trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+file="$runtime/$client"
+old_received=0; old_sent=0
+if [[ -f $file ]]; then read -r old_received old_sent < "$file" || true; fi
+[[ ${old_received:-} =~ ^[0-9]+$ ]] || old_received=0
+[[ ${old_sent:-} =~ ^[0-9]+$ ]] || old_sent=0
+printf '%s %s\n' "$((old_received + received))" "$((old_sent + sent))" > "$file"
+chown nobody:nogroup "$file" 2>/dev/null || true
+chmod 0660 "$file" 2>/dev/null || true
+SCRIPT
+  chmod 0755 "$ZDT_ROOT/bin/openvpn-traffic-reset" "$ZDT_ROOT/bin/openvpn-traffic-disconnect"
+}
+
+write_openvpn_traffic_dropin() {
+  local profile=$1 dropin="$SYSTEMD_DIR/openvpn-server@zdt-$profile.service.d"
+  mkdir -p "$dropin"
+  cat > "$dropin/zdt-traffic.conf" <<UNIT
+[Service]
+ExecStartPre=$ZDT_ROOT/bin/openvpn-traffic-reset $profile
+UNIT
+}
+
+ensure_openvpn_traffic_config() {
+  local profile=$1 dir conf
+  install_openvpn_traffic_helpers
+  dir=$(profile_dir openvpn "$profile")
+  conf="$OPENVPN_DIR/zdt-$profile.conf"
+  [[ -f $conf ]] || die 'OpenVPN profile configuration is missing'
+  sed -i -E '/^status[[:space:]]+/d;/^status-version[[:space:]]+/d;/^script-security[[:space:]]+/d;/^client-disconnect[[:space:]]+/d' "$conf"
+  cat >> "$conf" <<CONF
+status $dir/status.log 5
+status-version 3
+script-security 2
+client-disconnect "$ZDT_ROOT/bin/openvpn-traffic-disconnect $profile"
+CONF
+  write_openvpn_traffic_dropin "$profile"
+}
+
 install_openvpn() {
   external_service_warning openvpn
   stage 'Installing OpenVPN and Easy-RSA'
-  apt_install openvpn easy-rsa openssl iptables iproute2
+  apt_install openvpn easy-rsa openssl iptables iproute2 python3
   ensure_dirs; mkdir -p "$ZDT_STATE/profiles/openvpn" "$OPENVPN_DIR"
+  install_openvpn_traffic_helpers
   openvpn --version | head -1 > "$ZDT_STATE/services/openvpn.version" || echo managed > "$ZDT_STATE/services/openvpn.version"
   refresh_firewall
 }
@@ -650,9 +757,13 @@ group nogroup
 push "redirect-gateway def1 bypass-dhcp"
 push "dhcp-option DNS 1.1.1.1"
 push "dhcp-option DNS 1.0.0.1"
-status $dir/status.log
+status $dir/status.log 5
+status-version 3
+script-security 2
+client-disconnect "$ZDT_ROOT/bin/openvpn-traffic-disconnect $id"
 verb 3
 CONF
+  write_openvpn_traffic_dropin "$id"
   cat > "$SYSTEMD_DIR/zdt-openvpn-net-$id.service" <<UNIT
 [Unit]
 Description=ZDT-D OpenVPN network rules $id
@@ -713,6 +824,14 @@ $(cat "$dir/ta.key")
 </tls-crypt>
 CONF
   chmod 600 "$cdir/client.ovpn"
+  # Creating a certificate does not restart OpenVPN, so keep the runtime CN map
+  # in sync without resetting the daemon-lifetime traffic counters.
+  local runtime="/run/zdt-vps/openvpn/$profile"
+  if [[ -d $runtime && -f $runtime/cn.map ]]; then
+    printf '%s|%s\n' "$cn" "$client" >> "$runtime/cn.map"
+    chown nobody:nogroup "$runtime/cn.map" 2>/dev/null || true
+    chmod 0660 "$runtime/cn.map" 2>/dev/null || true
+  fi
 }
 delete_openvpn_client() {
   local profile=$1 client=$2
@@ -880,28 +999,52 @@ install_xray() {
   refresh_firewall
 }
 rebuild_xray() {
-  local profile=$1 dir; dir=$(profile_dir xray "$profile"); load_meta xray "$profile"
-  python3 - "$dir" "$MODE" "$PORT" "$DOMAIN" "$SNI" <<'PY'
+  local profile=$1 dir stats_port snis
+  dir=$(profile_dir xray "$profile")
+  unset STATS_PORT SNIS
+  load_meta xray "$profile"
+  if [[ -z ${STATS_PORT:-} ]]; then
+    STATS_PORT=$(next_stats_port)
+    printf 'STATS_PORT=%s\n' "$STATS_PORT" >> "$dir/meta.env"
+  fi
+  stats_port=$STATS_PORT
+  snis=${SNIS:-${SNI:-}}
+  python3 - "$dir" "$MODE" "$PORT" "$DOMAIN" "$snis" "$stats_port" <<'PY'
 import glob,json,os,sys
-root,mode,port,domain,sni=sys.argv[1:]
+root,mode,port,domain,snis_raw,stats_port=sys.argv[1:]
+snis=[]
+for value in snis_raw.split(','):
+    value=value.strip()
+    if value and value not in snis: snis.append(value)
 clients=[]
 for f in sorted(glob.glob(root+'/clients/*/client.json')):
-    with open(f,encoding='utf-8') as h: clients.append(json.load(h))
+    with open(f,encoding='utf-8') as h:
+        item=json.load(h)
+    item['_client_id']=os.path.basename(os.path.dirname(f))
+    clients.append(item)
 client_items=[]
 for c in clients:
-    item={'id':c['uuid'],'email':c['name']}
+    item={'id':c['uuid'],'email':c['_client_id']}
     if mode=='reality': item['flow']='xtls-rprx-vision'
     client_items.append(item)
 settings={'clients':client_items,'decryption':'none'}
 if mode=='reality':
+    if not snis: raise SystemExit('Reality SNI list is empty')
     meta={}
     with open(root+'/reality.env',encoding='utf-8') as h:
         for line in h:
             k,v=line.rstrip().split('=',1); meta[k]=v
-    stream={'network':'tcp','security':'reality','realitySettings':{'show':False,'target':sni+':443','xver':0,'serverNames':[sni],'privateKey':meta['PRIVATE'],'shortIds':[meta['SHORT']]}}
+    stream={'network':'tcp','security':'reality','realitySettings':{'show':False,'target':snis[0]+':443','xver':0,'serverNames':snis,'privateKey':meta['PRIVATE'],'shortIds':[meta['SHORT']]}}
 else:
     stream={'network':'ws','security':'tls','tlsSettings':{'certificates':[{'certificateFile':'/etc/letsencrypt/live/'+domain+'/fullchain.pem','keyFile':'/etc/letsencrypt/live/'+domain+'/privkey.pem'}]},'wsSettings':{'path':'/zdt-'+os.path.basename(root)}}
-config={'log':{'loglevel':'warning'},'inbounds':[{'listen':'0.0.0.0','port':int(port),'protocol':'vless','settings':settings,'streamSettings':stream}],'outbounds':[{'protocol':'freedom','tag':'direct'},{'protocol':'blackhole','tag':'blocked'}]}
+config={
+    'log':{'loglevel':'warning'},
+    'stats':{},
+    'policy':{'levels':{'0':{'statsUserUplink':True,'statsUserDownlink':True}}},
+    'metrics':{'listen':'127.0.0.1:'+stats_port},
+    'inbounds':[{'listen':'0.0.0.0','port':int(port),'protocol':'vless','settings':settings,'streamSettings':stream}],
+    'outbounds':[{'protocol':'freedom','tag':'direct'},{'protocol':'blackhole','tag':'blocked'}],
+}
 with open(root+'/server.json','w',encoding='utf-8') as h: json.dump(config,h,indent=2)
 PY
   cat > "$SYSTEMD_DIR/zdt-xray-$profile.service" <<UNIT
@@ -923,14 +1066,28 @@ UNIT
   unit_is_active "zdt-xray-$profile.service" || { journalctl -u "zdt-xray-$profile.service" -n 100 --no-pager >&2 || true; die 'Xray profile failed to start'; }
 }
 create_xray_profile() {
-  local id=$1 name=$2 port=$3 mode=$4 host=$5 domain=$6 email=$7 sni=$8
+  local id=$1 name=$2 port=$3 mode=$4 host=$5 domain=$6 email=$7 snis_raw=$8
   service_installed xray || die 'Xray is not installed'
   valid_id "$id" || die 'Invalid profile identifier'
   [[ ! -e $(profile_dir xray "$id") ]] || die 'A profile with this identifier already exists'
   [[ $mode == reality || $mode == ws ]] || die 'Unsupported Xray mode'
   require_free_port tcp "$port"
-  local dir endpoint=$host; dir=$(profile_dir xray "$id"); mkdir -p "$dir/clients"
+  local dir endpoint=$host sni='' snis='' stats_port
+  dir=$(profile_dir xray "$id"); mkdir -p "$dir/clients"
+  stats_port=$(next_stats_port)
   if [[ $mode == reality ]]; then
+    local candidate
+    IFS=',' read -r -a _zdt_sni_values <<< "$snis_raw"
+    for candidate in "${_zdt_sni_values[@]}"; do
+      candidate=$(printf '%s' "$candidate" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')
+      [[ -n $candidate ]] || continue
+      [[ $candidate =~ ^([A-Za-z0-9-]+\.)*[A-Za-z0-9-]+$ ]] || die "Invalid Reality SNI: $candidate"
+      if [[ ",$snis," != *",$candidate,"* ]]; then
+        [[ -n $snis ]] && snis+=','
+        snis+=$candidate
+      fi
+    done
+    sni=${snis%%,*}
     [[ -n $sni ]] || die 'SNI is required for VLESS Reality'
     local keys private public short
     keys=$($ZDT_ROOT/bin/xray x25519)
@@ -952,6 +1109,8 @@ HOST=$(q "$endpoint")
 MODE=$mode
 DOMAIN=$(q "$domain")
 SNI=$(q "$sni")
+SNIS=$(q "$snis")
+STATS_PORT=$stats_port
 META
   refresh_firewall
   rebuild_xray "$id"
@@ -1009,13 +1168,28 @@ ensure_hysteria2_local_certificate() {
 }
 
 rebuild_hysteria2() {
-  local profile=$1 dir; dir=$(profile_dir hysteria2 "$profile"); load_meta hysteria2 "$profile"
+  local profile=$1 dir stats_port stats_secret
+  dir=$(profile_dir hysteria2 "$profile")
+  unset STATS_PORT STATS_SECRET
+  load_meta hysteria2 "$profile"
+  if [[ -z ${STATS_PORT:-} ]]; then
+    STATS_PORT=$(next_stats_port)
+    printf 'STATS_PORT=%s\n' "$STATS_PORT" >> "$dir/meta.env"
+  fi
+  if [[ -z ${STATS_SECRET:-} ]]; then
+    STATS_SECRET=$(openssl rand -hex 16)
+    printf 'STATS_SECRET=%s\n' "$STATS_SECRET" >> "$dir/meta.env"
+  fi
+  stats_port=$STATS_PORT; stats_secret=$STATS_SECRET
   [[ -s $dir/tls.crt && -s $dir/tls.key ]] || ensure_hysteria2_local_certificate "$dir" "${SNI:-zdt-hysteria.local}"
   cat > "$dir/server.yaml" <<YAML
 listen: :$PORT
 tls:
   cert: $dir/tls.crt
   key: $dir/tls.key
+trafficStats:
+  listen: 127.0.0.1:$stats_port
+  secret: $stats_secret
 auth:
   type: userpass
 YAML
@@ -1062,7 +1236,9 @@ create_hysteria2_profile() {
   valid_id "$id" || die 'Invalid profile identifier'
   [[ ! -e $(profile_dir hysteria2 "$id") ]] || die 'A profile with this identifier already exists'
   require_free_port udp "$port"
-  local dir; dir=$(profile_dir hysteria2 "$id"); mkdir -p "$dir/clients"
+  local dir stats_port stats_secret
+  dir=$(profile_dir hysteria2 "$id"); mkdir -p "$dir/clients"
+  stats_port=$(next_stats_port); stats_secret=$(openssl rand -hex 16)
   ensure_hysteria2_local_certificate "$dir" "$tls_name"
   cat > "$dir/meta.env" <<META
 ID=$(q "$id")
@@ -1073,6 +1249,8 @@ HOST=$(q "$host")
 MODE=local-tls
 DOMAIN=$(q "$tls_name")
 SNI=$(q "$tls_name")
+STATS_PORT=$stats_port
+STATS_SECRET=$stats_secret
 META
   refresh_firewall
   rebuild_hysteria2 "$id"
@@ -1117,12 +1295,138 @@ inventory() {
     printf 'ZDT_SERVICE|%s|%s|%s|%s\n' "$k" "$installed" "$active" "$(b64 "$version")"
   done
 }
+openvpn_traffic_lines() {
+  local profile=$1 dir runtime
+  dir=$(profile_dir openvpn "$profile")
+  runtime="/run/zdt-vps/openvpn/$profile"
+  python3 - "$dir" "$runtime" <<'PY'
+import csv,glob,os,sys
+root,runtime=sys.argv[1:]
+cn_to_id={}
+for c in glob.glob(root+'/clients/*'):
+    if not os.path.isdir(c): continue
+    try:
+        with open(c+'/cn',encoding='utf-8') as h: cn=h.read().strip()
+    except OSError: continue
+    if cn: cn_to_id[cn]=os.path.basename(c)
+totals={cid:[0,0] for cid in cn_to_id.values()}
+if os.path.isdir(runtime):
+    for cid in list(totals):
+        try:
+            with open(os.path.join(runtime,cid),encoding='utf-8') as h:
+                a,b=h.read().split()[:2]
+            totals[cid][0]+=int(a); totals[cid][1]+=int(b)
+        except (OSError,ValueError,IndexError): pass
+status=os.path.join(root,'status.log')
+try:
+    with open(status,encoding='utf-8',errors='replace') as h: lines=h.read().splitlines()
+except OSError:
+    lines=[]
+header=None; delim='\t' if any(line.startswith('HEADER\tCLIENT_LIST') for line in lines) else ','
+for line in lines:
+    try: row=next(csv.reader([line],delimiter=delim))
+    except Exception: continue
+    if len(row)>=3 and row[0]=='HEADER' and row[1]=='CLIENT_LIST':
+        header=row[2:]
+        continue
+    if not header or len(row)<2 or row[0]!='CLIENT_LIST': continue
+    values=row[1:]
+    record={header[i]:values[i] for i in range(min(len(header),len(values)))}
+    cid=cn_to_id.get(record.get('Common Name',''))
+    if not cid: continue
+    try: totals[cid][0]+=int(record.get('Bytes Received','0') or 0)
+    except ValueError: pass
+    try: totals[cid][1]+=int(record.get('Bytes Sent','0') or 0)
+    except ValueError: pass
+for cid in sorted(totals): print(f'{cid}|{totals[cid][0]}|{totals[cid][1]}')
+PY
+}
+
+wireproxy_traffic_lines() {
+  local profile=$1 dir dump c pub line rx tx
+  unset IFACE
+  load_meta wireproxy "$profile"
+  dir=$(profile_dir wireproxy "$profile")
+  dump=$(wg show "$IFACE" dump 2>/dev/null || true)
+  for c in "$dir"/clients/*; do
+    [[ -d $c && -f $c/public ]] || continue
+    pub=$(cat "$c/public")
+    line=$(printf '%s\n' "$dump" | awk -F '\t' -v key="$pub" '$1==key {print $6 "|" $7; exit}')
+    rx=${line%%|*}; tx=${line#*|}
+    [[ $rx =~ ^[0-9]+$ ]] || rx=0
+    [[ $tx =~ ^[0-9]+$ ]] || tx=0
+    printf '%s|%s|%s\n' "$(basename "$c")" "$rx" "$tx"
+  done
+}
+
+xray_traffic_lines() {
+  local profile=$1 dir payload
+  dir=$(profile_dir xray "$profile")
+  unset STATS_PORT
+  load_meta xray "$profile"
+  [[ -n ${STATS_PORT:-} ]] || return 0
+  payload=$(curl -fsS --max-time 2 "http://127.0.0.1:$STATS_PORT/debug/vars" 2>/dev/null || true)
+  XRAY_STATS_PAYLOAD=$payload python3 - "$dir" <<'PY'
+import glob,json,os,sys
+root=sys.argv[1]
+try: data=json.loads(os.environ.get('XRAY_STATS_PAYLOAD',''))
+except Exception: data={}
+users=data.get('stats',{}).get('user',{}) if isinstance(data,dict) else {}
+for c in sorted(glob.glob(root+'/clients/*')):
+    if not os.path.isdir(c): continue
+    cid=os.path.basename(c); stat=users.get(cid,{}) if isinstance(users,dict) else {}
+    try: up=int(stat.get('uplink',0) or 0)
+    except Exception: up=0
+    try: down=int(stat.get('downlink',0) or 0)
+    except Exception: down=0
+    print(f'{cid}|{up}|{down}')
+PY
+}
+
+hysteria2_traffic_lines() {
+  local profile=$1 dir payload
+  dir=$(profile_dir hysteria2 "$profile")
+  unset STATS_PORT STATS_SECRET
+  load_meta hysteria2 "$profile"
+  [[ -n ${STATS_PORT:-} && -n ${STATS_SECRET:-} ]] || return 0
+  payload=$(curl -fsS --max-time 2 -H "Authorization: $STATS_SECRET" "http://127.0.0.1:$STATS_PORT/traffic" 2>/dev/null || true)
+  HYSTERIA_STATS_PAYLOAD=$payload python3 - "$dir" <<'PY'
+import glob,json,os,sys
+root=sys.argv[1]
+try: data=json.loads(os.environ.get('HYSTERIA_STATS_PAYLOAD',''))
+except Exception: data={}
+for c in sorted(glob.glob(root+'/clients/*')):
+    if not os.path.isdir(c): continue
+    cid=os.path.basename(c); stat=data.get(cid,{}) if isinstance(data,dict) else {}
+    # Hysteria reports tx/rx from the server point of view.  Present traffic
+    # consistently from the client point of view: client upload = server rx,
+    # client download = server tx.
+    try: up=int(stat.get('rx',0) or 0)
+    except Exception: up=0
+    try: down=int(stat.get('tx',0) or 0)
+    except Exception: down=0
+    print(f'{cid}|{up}|{down}')
+PY
+}
+
+client_traffic_lines() {
+  local kind=$1 profile=$2
+  case "$kind" in
+    openvpn) openvpn_traffic_lines "$profile" || true ;;
+    wireproxy) wireproxy_traffic_lines "$profile" || true ;;
+    xray) xray_traffic_lines "$profile" || true ;;
+    hysteria2) hysteria2_traffic_lines "$profile" || true ;;
+  esac
+}
+
 list_profiles() {
-  local kind=$1 dir p count active unit
+  local kind=$1 dir p count active unit upload download sni_b64 _cid _up _down snis_value
   dir="$ZDT_STATE/profiles/$kind"; [[ -d $dir ]] || return 0
   for p in "$dir"/*; do
     [[ -d $p && -f $p/meta.env ]] || continue
-    source "$p/meta.env"; count=$(find "$p/clients" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l); active=0
+    unset SNIS STATS_PORT STATS_SECRET IFACE
+    source "$p/meta.env"
+    count=$(find "$p/clients" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l); active=0
     case "$kind" in
       openvpn) unit="openvpn-server@zdt-$ID.service" ;;
       xray) unit="zdt-xray-$ID.service" ;;
@@ -1131,7 +1435,19 @@ list_profiles() {
       *) continue ;;
     esac
     unit_is_active "$unit" && active=1 || true
-    printf 'ZDT_PROFILE|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "$kind" "$ID" "$(b64 "$NAME")" "$MODE" "$PROTOCOL" "$PORT" "$(b64 "${HOST:-}")" "$(b64 "${DOMAIN:-}")" "$count" "$active"
+    upload=0; download=0
+    while IFS='|' read -r _cid _up _down; do
+      [[ ${_up:-} =~ ^[0-9]+$ ]] || _up=0
+      [[ ${_down:-} =~ ^[0-9]+$ ]] || _down=0
+      upload=$((upload + _up)); download=$((download + _down))
+    done < <(client_traffic_lines "$kind" "$ID")
+    sni_b64=''
+    if [[ $kind == xray && ${MODE:-} == reality ]]; then
+      snis_value=${SNIS:-${SNI:-}}
+      sni_b64=$(b64 "$snis_value")
+    fi
+    printf 'ZDT_PROFILE|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
+      "$kind" "$ID" "$(b64 "$NAME")" "$MODE" "$PROTOCOL" "$PORT" "$(b64 "${HOST:-}")" "$(b64 "${DOMAIN:-}")" "$count" "$active" "$upload" "$download" "$sni_b64"
   done
 }
 client_display_name() {
@@ -1139,27 +1455,35 @@ client_display_name() {
   if [[ -f $dir/name ]]; then cat "$dir/name"; elif [[ -f $dir/client.json ]]; then python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("name", ""))' "$dir/client.json"; else basename "$dir"; fi
 }
 list_clients() {
-  local kind=$1 profile=$2 dir c created name
+  local kind=$1 profile=$2 dir c created name cid up down
   dir=$(profile_dir "$kind" "$profile"); [[ -d $dir/clients ]] || return 0
+  declare -A traffic_up=() traffic_down=()
+  while IFS='|' read -r cid up down; do
+    [[ -n ${cid:-} ]] || continue
+    traffic_up["$cid"]=${up:-0}; traffic_down["$cid"]=${down:-0}
+  done < <(client_traffic_lines "$kind" "$profile")
   for c in "$dir"/clients/*; do
-    [[ -d $c ]] || continue; created=0
+    [[ -d $c ]] || continue; created=0; cid=$(basename "$c")
     [[ -f $c/created_at ]] && created=$(cat "$c/created_at")
     [[ -f $c/client.json ]] && created=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("created_at",0))' "$c/client.json")
     name=$(client_display_name "$c")
-    printf 'ZDT_CLIENT|%s|%s|%s|%s|%s\n' "$kind" "$profile" "$(basename "$c")" "$(b64 "$name")" "$created"
+    up=${traffic_up[$cid]:-0}; down=${traffic_down[$cid]:-0}
+    printf 'ZDT_CLIENT|%s|%s|%s|%s|%s|%s|%s\n' "$kind" "$profile" "$cid" "$(b64 "$name")" "$created" "$up" "$down"
   done
 }
 get_config() {
-  local kind=$1 profile=$2 client=$3 dir cdir file link='' mime='text/plain' name
+  local kind=$1 profile=$2 client=$3 dir cdir file link='' mime='text/plain' name sni_options='' 
   dir=$(profile_dir "$kind" "$profile"); cdir=$dir/clients/$client; [[ -d $cdir ]] || die 'Client not found'
   name=$(client_display_name "$cdir")
   case "$kind" in
     openvpn) file="$cdir/client.ovpn"; mime='application/x-openvpn-profile' ;;
     wireproxy) file="$cdir/client.conf"; mime='text/plain' ;;
     xray)
+      unset SNIS
       load_meta xray "$profile"
       local uuid; uuid=$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["uuid"])' "$cdir/client.json")
       if [[ $MODE == reality ]]; then
+        sni_options=${SNIS:-${SNI:-}}
         source "$dir/reality.env"
         link=$(python3 - "$uuid" "$HOST" "$PORT" "$SNI" "$PUBLIC" "$SHORT" "$name" <<'PY'
 import sys,urllib.parse
@@ -1206,6 +1530,7 @@ PY
   printf 'ZDT_MIME=%s\n' "$(b64 "$mime")"
   printf 'ZDT_CLIENT_NAME=%s\n' "$(b64 "$name")"
   [[ -n $link ]] && printf 'ZDT_LINK=%s\n' "$(b64 "$link")"
+  [[ -n $sni_options ]] && printf 'ZDT_SNI_OPTIONS=%s\n' "$(b64 "$sni_options")"
   printf 'ZDT_CONFIG_BEGIN\n'; cat "$file"; printf '\nZDT_CONFIG_END\n'
 }
 
@@ -1217,7 +1542,8 @@ delete_profile() {
   case "$kind" in
     openvpn)
       systemctl disable --now "zdt-openvpn-net-$profile.service" "openvpn-server@zdt-$profile.service" >/dev/null 2>&1 || true
-      rm -f "$SYSTEMD_DIR/zdt-openvpn-net-$profile.service" "$OPENVPN_DIR/zdt-$profile.conf" ;;
+      rm -f "$SYSTEMD_DIR/zdt-openvpn-net-$profile.service" "$OPENVPN_DIR/zdt-$profile.conf"
+      rm -rf "$SYSTEMD_DIR/openvpn-server@zdt-$profile.service.d" "/run/zdt-vps/openvpn/$profile" ;;
     xray)
       systemctl disable --now "zdt-xray-$profile.service" >/dev/null 2>&1 || true; rm -f "$SYSTEMD_DIR/zdt-xray-$profile.service" ;;
     hysteria2)
@@ -1267,13 +1593,20 @@ restart_service() {
   local kind=$1 profile=${2:-}
   case "$kind" in
     dnscrypt) systemctl restart zdt-dnscrypt.service ;;
-    openvpn) [[ -n $profile ]] || die 'Profile is required'; systemctl restart "openvpn-server@zdt-$profile.service" "zdt-openvpn-net-$profile.service" ;;
-    xray) [[ -n $profile ]] || die 'Profile is required'; systemctl restart "zdt-xray-$profile.service" ;;
-    hysteria2) [[ -n $profile ]] || die 'Profile is required'; systemctl restart "zdt-hysteria2-$profile.service" ;;
+    openvpn) [[ -n $profile ]] || die 'Profile is required'; ensure_openvpn_traffic_config "$profile"; systemctl daemon-reload; systemctl restart "openvpn-server@zdt-$profile.service" "zdt-openvpn-net-$profile.service" ;;
+    xray) [[ -n $profile ]] || die 'Profile is required'; rebuild_xray "$profile" ;;
+    hysteria2) [[ -n $profile ]] || die 'Profile is required'; rebuild_hysteria2 "$profile" ;;
     wireproxy) [[ -n $profile ]] || die 'Profile is required'; load_meta wireproxy "$profile"; systemctl restart "wg-quick@$IFACE.service" ;;
     *) die 'Unknown service' ;;
   esac
 }
+reboot_server() {
+  stage 'Scheduling server reboot'
+  command -v systemctl >/dev/null 2>&1 || die 'systemd is required to reboot the server'
+  nohup sh -c 'sleep 2; systemctl reboot' </dev/null >/dev/null 2>&1 &
+  info 'Server reboot scheduled'
+}
+
 show_logs() {
   local kind=$1 profile=${2:-} unit
   case "$kind" in
@@ -1335,6 +1668,7 @@ main() {
       esac ;;
     get-config) get_config "$1" "$2" "$3" ;;
     restart) restart_service "$1" "${2:-}" ;;
+    reboot) reboot_server ;;
     logs) show_logs "$1" "${2:-}" ;;
     *) die 'Unknown action' ;;
   esac

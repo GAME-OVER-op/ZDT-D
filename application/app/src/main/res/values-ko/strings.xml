@@ -1347,6 +1347,8 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="openvpn_dns_label">DNS 서버</string>
     <string name="openvpn_dns_hint">공백이나 쉼표로 구분된 IPv4 DNS 서버 1~8개를 입력하세요. IPv6, 도메인 및 https/tls URL은 허용되지 않습니다.</string>
     <string name="openvpn_dns_invalid">유효한 IPv4 주소 1~8개만 입력하세요.</string>
+    <string name="openvpn_endpoint_resolve_label">remote 도메인 확인</string>
+    <string name="openvpn_endpoint_resolve_hint">OpenVPN을 시작하기 전에 remote 지시문의 도메인 이름을 확인합니다.</string>
     <string name="openvpn_config_title">OpenVPN 구성</string>
     <string name="openvpn_config_desc">client.ovpn 내용을 붙여넣거나 파일에서 불러오세요. profile/name/client.ovpn으로 저장됩니다.</string>
     <string name="openvpn_config_empty">client.ovpn은 비워 둘 수 없습니다.</string>
@@ -2279,4 +2281,17 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="module_zip_patch_normalized">엄격한 설치 프로그램용으로 모듈 ZIP을 정규화했습니다: %1$d개의 Central Directory 항목에서 암호화 플래그를 제거했습니다.</string>
     <string name="module_zip_patch_compatible">모듈 ZIP이 이미 엄격한 설치 프로그램과 호환됩니다.</string>
     <string name="module_zip_patch_protection_kept_magisk">Magisk 설치 프로그램을 위해 모듈 ZIP 보호를 유지했습니다.</string>
+
+    <string name="vps_reboot_server">서버 재부팅</string>
+    <string name="vps_reboot_confirm_title">서버를 재부팅할까요?</string>
+    <string name="vps_reboot_confirm_message">%1$s을(를) 재부팅할까요? 재부팅 중 SSH 연결이 잠시 끊어집니다.</string>
+    <string name="vps_rebooting">서버 재부팅 중…</string>
+    <string name="vps_reboot_failed">서버 재부팅을 예약하지 못했습니다</string>
+    <string name="vps_reboot_scheduled">재부팅이 예약되었습니다</string>
+    <string name="vps_waiting_for_server">서버가 다시 연결되기를 기다리는 중…</string>
+    <string name="vps_server_online_again">서버가 다시 온라인 상태입니다</string>
+    <string name="vps_reboot_timeout">시간 제한 내에 서버가 돌아오지 않았습니다</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">SNI 추가</string>
+    <string name="singbox_server_sni_label">SNI</string>
 </resources>

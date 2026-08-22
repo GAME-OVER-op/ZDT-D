@@ -1347,6 +1347,8 @@ Koruma erişim noktası modunda çalışmaz. Erişim noktası etkin ve sing-box 
     <string name="openvpn_dns_label">DNS sunucuları</string>
     <string name="openvpn_dns_hint">Boşluk veya virgülle ayrılmış 1–8 IPv4 DNS sunucusu girin. IPv6, alan adları ve https/tls URL’lerine izin verilmez.</string>
     <string name="openvpn_dns_invalid">Yalnızca 1–8 geçerli IPv4 adresi girin.</string>
+    <string name="openvpn_endpoint_resolve_label">Uzak alan adlarını çöz</string>
+    <string name="openvpn_endpoint_resolve_hint">OpenVPN başlatılmadan önce remote yönergelerindeki alan adlarını çözümle.</string>
     <string name="openvpn_config_title">OpenVPN yapılandırması</string>
     <string name="openvpn_config_desc">client.ovpn içeriğini yapıştırın veya bir dosyadan yükleyin. profile/name/client.ovpn olarak kaydedilir.</string>
     <string name="openvpn_config_empty">client.ovpn boş olamaz.</string>
@@ -2279,4 +2281,17 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="module_zip_patch_normalized">Modül ZIP’i katı yükleyici için normalleştirildi: %1$d Central Directory kaydındaki şifreleme bayrağı kaldırıldı.</string>
     <string name="module_zip_patch_compatible">Modül ZIP’i zaten katı yükleyicilerle uyumlu.</string>
     <string name="module_zip_patch_protection_kept_magisk">Modül ZIP koruması Magisk yükleyicisi için korundu.</string>
+
+    <string name="vps_reboot_server">Sunucuyu yeniden başlat</string>
+    <string name="vps_reboot_confirm_title">Sunucu yeniden başlatılsın mı?</string>
+    <string name="vps_reboot_confirm_message">%1$s yeniden başlatılsın mı? Yeniden başlatma sırasında SSH bağlantısı kısa süreliğine kesilir.</string>
+    <string name="vps_rebooting">Sunucu yeniden başlatılıyor…</string>
+    <string name="vps_reboot_failed">Sunucu yeniden başlatması planlanamadı</string>
+    <string name="vps_reboot_scheduled">Yeniden başlatma planlandı</string>
+    <string name="vps_waiting_for_server">Sunucunun geri dönmesi bekleniyor…</string>
+    <string name="vps_server_online_again">Sunucu yeniden çevrimiçi</string>
+    <string name="vps_reboot_timeout">Sunucu zaman aşımından önce geri dönmedi</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">SNI ekle</string>
+    <string name="singbox_server_sni_label">SNI</string>
 </resources>

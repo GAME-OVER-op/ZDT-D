@@ -1352,6 +1352,8 @@ APatch: ‏10700+</string>
     <string name="openvpn_dns_label">خوادم DNS</string>
     <string name="openvpn_dns_hint">أدخل من 1 إلى 8 خوادم DNS بنظام IPv4 مفصولة بمسافات أو فواصل. لا يُسمح بـ IPv6 أو النطاقات أو عناوين https/tls.</string>
     <string name="openvpn_dns_invalid">أدخل من 1 إلى 8 عناوين IPv4 صالحة فقط.</string>
+    <string name="openvpn_endpoint_resolve_label">حل نطاقات remote</string>
+    <string name="openvpn_endpoint_resolve_hint">حل أسماء النطاقات في توجيهات remote قبل تشغيل OpenVPN.</string>
     <string name="openvpn_config_title">إعداد OpenVPN</string>
     <string name="openvpn_config_desc">الصق محتوى client.ovpn أو حمّله من ملف. يُحفظ باسم profile/name/client.ovpn.</string>
     <string name="openvpn_config_empty">لا يمكن أن يكون client.ovpn فارغًا.</string>
@@ -2284,4 +2286,17 @@ APatch: ‏10700+</string>
     <string name="module_zip_patch_normalized">تمت تهيئة ZIP للوحدة لأداة تثبيت صارمة: أزيلت علامة التشفير من %1$d من إدخالات Central Directory.</string>
     <string name="module_zip_patch_compatible">ZIP للوحدة متوافق بالفعل مع أدوات التثبيت الصارمة.</string>
     <string name="module_zip_patch_protection_kept_magisk">تم الإبقاء على حماية ZIP للوحدة من أجل أداة تثبيت Magisk.</string>
+
+    <string name="vps_reboot_server">إعادة تشغيل الخادم</string>
+    <string name="vps_reboot_confirm_title">إعادة تشغيل الخادم؟</string>
+    <string name="vps_reboot_confirm_message">هل تريد إعادة تشغيل %1$s؟ سينقطع اتصال SSH مؤقتًا أثناء إعادة تشغيل الخادم.</string>
+    <string name="vps_rebooting">جارٍ إعادة تشغيل الخادم…</string>
+    <string name="vps_reboot_failed">تعذر جدولة إعادة تشغيل الخادم</string>
+    <string name="vps_reboot_scheduled">تمت جدولة إعادة التشغيل</string>
+    <string name="vps_waiting_for_server">بانتظار عودة الخادم…</string>
+    <string name="vps_server_online_again">الخادم متصل مجددًا</string>
+    <string name="vps_reboot_timeout">لم يعد الخادم قبل انتهاء المهلة</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">إضافة SNI</string>
+    <string name="singbox_server_sni_label">SNI</string>
 </resources>

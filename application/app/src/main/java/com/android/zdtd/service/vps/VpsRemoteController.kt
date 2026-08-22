@@ -54,6 +54,9 @@ class VpsRemoteController(
         domain = decode(p[8]),
         clientCount = p[9].toIntOrNull() ?: 0,
         active = p[10] == "1",
+        uploadBytes = p.getOrNull(11)?.toLongOrNull() ?: 0L,
+        downloadBytes = p.getOrNull(12)?.toLongOrNull() ?: 0L,
+        sniOptions = p.getOrNull(13)?.let(::decode)?.split(',')?.map(String::trim)?.filter(String::isNotBlank)?.distinct().orEmpty(),
       )
     }.toList()
   }
@@ -67,11 +70,11 @@ class VpsRemoteController(
     mode: String,
     domain: String,
     email: String,
-    sni: String,
+    snis: List<String>,
     onLine: (String) -> Unit,
   ): VpsCommandResult = run(
     server,
-    listOf("create-profile", kind.wireId, id, name, port.toString(), mode, server.host, domain, email, sni),
+    listOf("create-profile", kind.wireId, id, name, port.toString(), mode, server.host, domain, email, snis.joinToString(",")),
     onLine = onLine,
     timeoutMs = 10 * 60_000L,
   )
@@ -92,6 +95,8 @@ class VpsRemoteController(
         profileId = p[2],
         kind = parsedKind,
         createdAt = p[5].toLongOrNull() ?: 0L,
+        uploadBytes = p.getOrNull(6)?.toLongOrNull() ?: 0L,
+        downloadBytes = p.getOrNull(7)?.toLongOrNull() ?: 0L,
       )
     }.toList()
   }
@@ -124,6 +129,14 @@ class VpsRemoteController(
     val mime = lines.firstOrNull { it.startsWith("ZDT_MIME=") }?.substringAfter('=')?.let(::decode).orEmpty().ifBlank { "text/plain" }
     val link = lines.firstOrNull { it.startsWith("ZDT_LINK=") }?.substringAfter('=')?.let(::decode)?.takeIf { it.isNotBlank() }
     val clientName = lines.firstOrNull { it.startsWith("ZDT_CLIENT_NAME=") }?.substringAfter('=')?.let(::decode).orEmpty().ifBlank { clientId }
+    val sniOptions = lines.firstOrNull { it.startsWith("ZDT_SNI_OPTIONS=") }
+      ?.substringAfter('=')
+      ?.let(::decode)
+      ?.split(',')
+      ?.map(String::trim)
+      ?.filter(String::isNotBlank)
+      ?.distinct()
+      .orEmpty()
     return VpsConfigResult(
       kind = kind,
       profileId = profileId,
@@ -133,8 +146,13 @@ class VpsRemoteController(
       mimeType = mime,
       content = lines.subList(begin + 1, end).joinToString("\n").trimEnd(),
       shareLink = link,
+      sniOptions = sniOptions,
     )
   }
+
+
+  suspend fun reboot(server: VpsServer): VpsCommandResult =
+    run(server, listOf("reboot"), timeoutMs = 30_000L)
 
   suspend fun restart(server: VpsServer, kind: VpsServiceKind, profileId: String?): VpsCommandResult {
     val args = mutableListOf("restart", kind.wireId)

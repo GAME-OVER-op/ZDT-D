@@ -87,6 +87,7 @@ internal fun defaultOpenVpnSettingJson(tun: String): JSONObject {
   return JSONObject()
     .put("tun", tun.trim())
     .put("dns", dns)
+    .put("endpoint_resolve", true)
 }
 
 internal fun defaultTun2SocksSettingJson(tun: String): JSONObject = JSONObject()

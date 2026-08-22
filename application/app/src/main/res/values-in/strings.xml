@@ -1347,6 +1347,8 @@ Perlindungan tidak berfungsi dalam mode hotspot. Jika hotspot diaktifkan dan sin
     <string name="openvpn_dns_label">Server DNS</string>
     <string name="openvpn_dns_hint">Masukkan 1–8 server DNS IPv4 yang dipisahkan dengan spasi atau koma. IPv6, domain, dan URL https/tls tidak diizinkan.</string>
     <string name="openvpn_dns_invalid">Masukkan hanya 1–8 alamat IPv4 yang valid.</string>
+    <string name="openvpn_endpoint_resolve_label">Resolusi domain remote</string>
+    <string name="openvpn_endpoint_resolve_hint">Resolusikan nama domain pada direktif remote sebelum memulai OpenVPN.</string>
     <string name="openvpn_config_title">Konfigurasi OpenVPN</string>
     <string name="openvpn_config_desc">Tempel isi client.ovpn atau muat dari file. File disimpan sebagai profile/name/client.ovpn.</string>
     <string name="openvpn_config_empty">client.ovpn tidak boleh kosong.</string>
@@ -2279,4 +2281,17 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="module_zip_patch_normalized">ZIP modul dinormalisasi untuk penginstal ketat: flag enkripsi dihapus dari %1$d entri Central Directory.</string>
     <string name="module_zip_patch_compatible">ZIP modul sudah kompatibel dengan penginstal ketat.</string>
     <string name="module_zip_patch_protection_kept_magisk">Perlindungan ZIP modul dipertahankan untuk penginstal Magisk.</string>
+
+    <string name="vps_reboot_server">Mulai ulang server</string>
+    <string name="vps_reboot_confirm_title">Mulai ulang server?</string>
+    <string name="vps_reboot_confirm_message">Mulai ulang %1$s? Koneksi SSH akan terputus sebentar selama server dimulai ulang.</string>
+    <string name="vps_rebooting">Memulai ulang server…</string>
+    <string name="vps_reboot_failed">Tidak dapat menjadwalkan mulai ulang server</string>
+    <string name="vps_reboot_scheduled">Mulai ulang dijadwalkan</string>
+    <string name="vps_waiting_for_server">Menunggu server kembali…</string>
+    <string name="vps_server_online_again">Server kembali online</string>
+    <string name="vps_reboot_timeout">Server tidak kembali sebelum batas waktu</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">Tambah SNI</string>
+    <string name="singbox_server_sni_label">SNI</string>
 </resources>

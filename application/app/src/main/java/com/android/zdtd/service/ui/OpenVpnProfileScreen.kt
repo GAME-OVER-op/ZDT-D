@@ -91,6 +91,7 @@ private data class OpenVpnProfileInfo(
 private data class OpenVpnSettingUi(
   val tun: String = "tun1",
   val dns: List<String> = listOf("94.140.14.14", "94.140.15.15"),
+  val endpointResolve: Boolean = true,
 )
 
 private val openVpnProfileNameRegex = Regex("^[A-Za-z0-9_-]{1,10}$")
@@ -128,15 +129,17 @@ private fun parseOpenVpnSetting(obj: JSONObject?): OpenVpnSettingUi {
   return OpenVpnSettingUi(
     tun = data?.optString("tun", "tun1")?.trim().orEmpty().ifBlank { "tun1" },
     dns = dns.takeIf { it.isNotEmpty() } ?: listOf("94.140.14.14", "94.140.15.15"),
+    endpointResolve = data?.optBoolean("endpoint_resolve", true) ?: true,
   )
 }
 
-private fun buildOpenVpnSettingJson(tun: String, dns: List<String>): JSONObject {
+private fun buildOpenVpnSettingJson(tun: String, dns: List<String>, endpointResolve: Boolean): JSONObject {
   val arr = JSONArray()
   dns.forEach { arr.put(it) }
   return JSONObject()
     .put("tun", tun.trim())
     .put("dns", arr)
+    .put("endpoint_resolve", endpointResolve)
 }
 
 private fun parseOpenVpnDnsInput(raw: String): List<String>? {
@@ -373,6 +376,7 @@ fun OpenVpnProfileScreen(
   var uploading by remember(profile) { mutableStateOf(false) }
   var tunText by remember(profile) { mutableStateOf("tun1") }
   var dnsText by remember(profile) { mutableStateOf("94.140.14.14 94.140.15.15") }
+  var endpointResolve by remember(profile) { mutableStateOf(true) }
   var configText by remember(profile) { mutableStateOf("") }
   var syncedSetting by remember(profile) { mutableStateOf(OpenVpnSettingUi()) }
   var syncedConfig by remember(profile) { mutableStateOf("") }
@@ -402,6 +406,7 @@ fun OpenVpnProfileScreen(
       syncedSetting = loaded
       tunText = setting.tun
       dnsText = setting.dns.joinToString(" ")
+      endpointResolve = setting.endpointResolve
       settingInitialized = true
 
       syncedConfig = loadedConfig
@@ -452,14 +457,18 @@ fun OpenVpnProfileScreen(
   val configWarnings = remember(configText) { if (configBlank) emptyList() else openVpnConfigWarnings(configText) }
   val configLineCount = remember(configText) { configText.lines().count { it.isNotBlank() } }
 
-  LaunchedEffect(tunText, dnsText, settingInitialized) {
+  LaunchedEffect(tunText, dnsText, endpointResolve, settingInitialized) {
     if (!settingInitialized || loading) return@LaunchedEffect
     delay(OPENVPN_AUTOSAVE_DELAY_MS)
     val dns = parseOpenVpnDnsInput(dnsText) ?: return@LaunchedEffect
     if (!isValidOpenVpnTun(tunText) || isVpnTunNameUsed(tunText, usedVpnTuns)) return@LaunchedEffect
-    val current = OpenVpnSettingUi(tun = tunText.trim(), dns = dns)
+    val current = OpenVpnSettingUi(tun = tunText.trim(), dns = dns, endpointResolve = endpointResolve)
     if (current == syncedSetting) return@LaunchedEffect
-    val ok = awaitSaveJsonOpenVpn(actions, "$basePath/setting", buildOpenVpnSettingJson(current.tun, current.dns))
+    val ok = awaitSaveJsonOpenVpn(
+      actions,
+      "$basePath/setting",
+      buildOpenVpnSettingJson(current.tun, current.dns, current.endpointResolve),
+    )
     if (ok) {
       syncedSetting = current
     } else {
@@ -570,6 +579,21 @@ fun OpenVpnProfileScreen(
         )
         if (dnsText.isNotBlank() && dnsParsed == null) {
           Text(stringResource(R.string.openvpn_dns_invalid), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        }
+        Row(
+          Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.openvpn_endpoint_resolve_label), fontWeight = FontWeight.SemiBold)
+            Text(
+              stringResource(R.string.openvpn_endpoint_resolve_hint),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+            )
+          }
+          Switch(checked = endpointResolve, onCheckedChange = { endpointResolve = it })
         }
     }
 

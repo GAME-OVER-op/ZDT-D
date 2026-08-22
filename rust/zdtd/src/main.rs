@@ -1,4 +1,5 @@
 mod android;
+mod android_dns;
 mod blockedquic;
 mod capabilities;
 mod captive_portal;

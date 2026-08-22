@@ -51,6 +51,8 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -153,6 +155,8 @@ private data class SingBoxServerUi(
   val name: String,
   val enabled: Boolean,
   val port: Int?,
+  val selectedSni: String? = null,
+  val sniOptions: List<String> = emptyList(),
 )
 
 private data class ServerConfigPortPlan(
@@ -401,15 +405,42 @@ private fun parseSingBoxServersUi(obj: JSONObject?): List<SingBoxServerUi> {
       val name = item.optString("name", "").trim()
       if (name.isBlank()) continue
       val setting = item.optJSONObject("setting")
+      val sniOptions = buildList {
+        val values = setting?.optJSONArray("sni_options") ?: JSONArray()
+        for (index in 0 until values.length()) {
+          val value = values.optString(index, "").trim()
+          if (value.isNotBlank() && value !in this) add(value)
+        }
+      }
+      val selectedSni = setting?.optString("sni", "")?.trim()?.takeIf { it.isNotBlank() && (sniOptions.isEmpty() || it in sniOptions) }
+        ?: sniOptions.firstOrNull()
       add(
         SingBoxServerUi(
           name = name,
           enabled = setting?.optBoolean("enabled", false) ?: false,
           port = setting?.optInt("port", 0)?.takeIf { it in 1..65535 },
+          selectedSni = selectedSni,
+          sniOptions = sniOptions,
         )
       )
     }
   }.sortedBy { it.name.lowercase() }
+}
+
+private fun rewriteSingBoxRealityServerName(configText: String, sni: String): String? {
+  val selected = sni.trim()
+  if (selected.isBlank()) return null
+  val root = runCatching { JSONObject(configText) }.getOrNull() ?: return null
+  val outbounds = root.optJSONArray("outbounds") ?: return null
+  for (index in 0 until outbounds.length()) {
+    val outbound = outbounds.optJSONObject(index) ?: continue
+    val tls = outbound.optJSONObject("tls") ?: continue
+    val reality = tls.optJSONObject("reality") ?: continue
+    if (!reality.optBoolean("enabled", true)) continue
+    tls.put("server_name", selected)
+    return root.toString(2)
+  }
+  return null
 }
 
 private fun normalizeSingBoxServerName(input: String): String {
@@ -1909,12 +1940,11 @@ private fun SingBoxServerCard(
   showPort: Boolean = true,
 ) {
   val context = LocalContext.current
-  val configuration = LocalConfiguration.current
   val scope = rememberCoroutineScope()
-  val dialogScrollState = rememberScrollState()
-  val maxDialogHeight = configuration.screenHeightDp.dp * 0.92f
   var enabled by remember(server.name, server.enabled) { mutableStateOf(server.enabled) }
   var portText by remember(server.name, server.port) { mutableStateOf((server.port ?: 0).toString()) }
+  var selectedSni by remember(server.name, server.selectedSni, server.sniOptions) { mutableStateOf(server.selectedSni ?: server.sniOptions.firstOrNull()) }
+  var sniMenu by remember(server.name) { mutableStateOf(false) }
   var saving by remember(server.name) { mutableStateOf(false) }
   var askDelete by remember(server.name) { mutableStateOf(false) }
 
@@ -1922,18 +1952,73 @@ private fun SingBoxServerCard(
     scope.launch { snackHost.showSnackbar(msg) }
   }
 
+  fun buildSettingPayload(port: Int, sni: String? = selectedSni): JSONObject {
+    val payload = JSONObject().put("enabled", enabled).put("port", port)
+    if (server.sniOptions.isNotEmpty()) {
+      payload.put("sni_options", JSONArray().also { array -> server.sniOptions.forEach { option -> array.put(option) } })
+      sni?.takeIf(String::isNotBlank)?.let { payload.put("sni", it) }
+    }
+    return payload
+  }
+
   fun autoSave() {
     val port = if (showPort) portText.trim().toIntOrNull() else (server.port ?: 1080)
     if (port !in 1..65535) return
     saving = true
     val encodedServer = URLEncoder.encode(server.name, "UTF-8")
-    val payload = JSONObject().put("enabled", enabled).put("port", port)
-    actions.saveJsonData("$basePath/servers/$encodedServer/setting", payload) { ok ->
+    actions.saveJsonData("$basePath/servers/$encodedServer/setting", buildSettingPayload(port)) { ok ->
       saving = false
       if (ok) {
-        onServerSaved(server.copy(enabled = enabled, port = port))
+        onServerSaved(server.copy(enabled = enabled, port = port, selectedSni = selectedSni))
       } else {
         showSnack(context.getString(R.string.singbox_auto_save_failed))
+      }
+    }
+  }
+
+  fun saveSelectedSni(nextSni: String) {
+    val next = nextSni.trim()
+    if (next.isBlank() || next == selectedSni || next !in server.sniOptions) {
+      sniMenu = false
+      return
+    }
+    val port = if (showPort) portText.trim().toIntOrNull() else (server.port ?: 1080)
+    if (port !in 1..65535) {
+      sniMenu = false
+      showSnack(context.getString(R.string.singbox_auto_save_failed))
+      return
+    }
+    val encodedServer = URLEncoder.encode(server.name, "UTF-8")
+    val configPath = "$basePath/servers/$encodedServer/config"
+    sniMenu = false
+    saving = true
+    actions.loadText(configPath) load@ { original ->
+      val source = original?.takeIf { it.trim().isNotBlank() }
+      val rewritten = source?.let { rewriteSingBoxRealityServerName(it, next) }
+      if (source == null || rewritten == null) {
+        saving = false
+        showSnack(context.getString(R.string.singbox_auto_save_failed))
+        return@load
+      }
+      actions.saveText(configPath, rewritten) configSave@ { configOk ->
+        if (!configOk) {
+          saving = false
+          showSnack(context.getString(R.string.singbox_auto_save_failed))
+          return@configSave
+        }
+        actions.saveJsonData("$basePath/servers/$encodedServer/setting", buildSettingPayload(port, next)) { settingOk ->
+          if (settingOk) {
+            selectedSni = next
+            saving = false
+            onServerSaved(server.copy(enabled = enabled, port = port, selectedSni = next))
+          } else {
+            // Keep config.json and setting.json consistent if metadata saving fails.
+            actions.saveText(configPath, source) {
+              saving = false
+              showSnack(context.getString(R.string.singbox_auto_save_failed))
+            }
+          }
+        }
       }
     }
   }
@@ -2033,6 +2118,42 @@ private fun SingBoxServerCard(
             label = { Text(stringResource(R.string.singbox_server_port_label)) },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
           )
+        }
+
+        if (server.sniOptions.size > 1) {
+          Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Text(
+              stringResource(R.string.singbox_server_sni_label),
+              style = MaterialTheme.typography.labelMedium,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+            )
+            Box(Modifier.fillMaxWidth()) {
+              OutlinedButton(
+                enabled = !saving,
+                onClick = { sniMenu = true },
+                modifier = Modifier.fillMaxWidth(),
+              ) {
+                Text(
+                  selectedSni ?: server.sniOptions.first(),
+                  modifier = Modifier.weight(1f),
+                  maxLines = 1,
+                  overflow = TextOverflow.Ellipsis,
+                )
+              }
+              DropdownMenu(
+                expanded = sniMenu,
+                onDismissRequest = { sniMenu = false },
+                modifier = Modifier.heightIn(max = 280.dp),
+              ) {
+                server.sniOptions.forEach { option ->
+                  DropdownMenuItem(
+                    text = { Text(option, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                    onClick = { saveSelectedSni(option) },
+                  )
+                }
+              }
+            }
+          }
         }
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

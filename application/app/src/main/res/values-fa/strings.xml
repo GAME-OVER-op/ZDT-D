@@ -1348,6 +1348,8 @@ APatch: 10700+</string>
     <string name="openvpn_dns_label">سرورهای DNS</string>
     <string name="openvpn_dns_hint">از 1 تا 8 سرور DNS با IPv4 وارد کنید که با فاصله یا ویرگول جدا شده‌اند. IPv6، دامنه و نشانی‌های https/tls مجاز نیستند.</string>
     <string name="openvpn_dns_invalid">فقط از 1 تا 8 نشانی IPv4 معتبر وارد کنید.</string>
+    <string name="openvpn_endpoint_resolve_label">تفکیک دامنه‌های remote</string>
+    <string name="openvpn_endpoint_resolve_hint">نام دامنه‌ها را در دستورهای remote پیش از اجرای OpenVPN تفکیک کن.</string>
     <string name="openvpn_config_title">پیکربندی OpenVPN</string>
     <string name="openvpn_config_desc">محتوای client.ovpn را جای‌گذاری یا از فایل بارگذاری کنید. با نام profile/name/client.ovpn ذخیره می‌شود.</string>
     <string name="openvpn_config_empty">client.ovpn نمی‌تواند خالی باشد.</string>
@@ -2280,4 +2282,17 @@ APatch: 10700+</string>
     <string name="module_zip_patch_normalized">ZIP ماژول برای نصب‌کنندهٔ سخت‌گیر نرمال‌سازی شد: پرچم رمزگذاری از %1$d ورودی Central Directory پاک شد.</string>
     <string name="module_zip_patch_compatible">ZIP ماژول از قبل با نصب‌کننده‌های سخت‌گیر سازگار است.</string>
     <string name="module_zip_patch_protection_kept_magisk">محافظت ZIP ماژول برای نصب‌کنندهٔ Magisk حفظ شد.</string>
+
+    <string name="vps_reboot_server">راه‌اندازی مجدد سرور</string>
+    <string name="vps_reboot_confirm_title">سرور راه‌اندازی مجدد شود؟</string>
+    <string name="vps_reboot_confirm_message">%1$s راه‌اندازی مجدد شود؟ اتصال SSH هنگام راه‌اندازی مجدد سرور برای مدت کوتاهی قطع می‌شود.</string>
+    <string name="vps_rebooting">در حال راه‌اندازی مجدد سرور…</string>
+    <string name="vps_reboot_failed">زمان‌بندی راه‌اندازی مجدد سرور ممکن نشد</string>
+    <string name="vps_reboot_scheduled">راه‌اندازی مجدد زمان‌بندی شد</string>
+    <string name="vps_waiting_for_server">در انتظار بازگشت سرور…</string>
+    <string name="vps_server_online_again">سرور دوباره آنلاین است</string>
+    <string name="vps_reboot_timeout">سرور پیش از پایان مهلت بازنگشت</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">افزودن SNI</string>
+    <string name="singbox_server_sni_label">SNI</string>
 </resources>

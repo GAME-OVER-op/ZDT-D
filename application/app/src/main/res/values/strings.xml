@@ -1348,6 +1348,8 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="openvpn_dns_label">DNS servers</string>
     <string name="openvpn_dns_hint">Enter 1..8 IPv4 DNS servers separated by spaces or commas. IPv6, domains and https/tls URLs are not allowed.</string>
     <string name="openvpn_dns_invalid">Enter 1..8 valid IPv4 addresses only.</string>
+    <string name="openvpn_endpoint_resolve_label">Resolve remote domains</string>
+    <string name="openvpn_endpoint_resolve_hint">Resolve domain names in remote directives before starting OpenVPN.</string>
     <string name="openvpn_config_title">OpenVPN config</string>
     <string name="openvpn_config_desc">Paste client.ovpn content or load it from a file. It is saved as profile/name/client.ovpn.</string>
     <string name="openvpn_config_empty">client.ovpn cannot be empty.</string>
@@ -2278,4 +2280,17 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="module_zip_patch_normalized">Module ZIP normalized for strict installer: cleared the encrypted flag in %1$d Central Directory entries.</string>
     <string name="module_zip_patch_compatible">Module ZIP is already compatible with strict installers.</string>
     <string name="module_zip_patch_protection_kept_magisk">Module ZIP protection kept for the Magisk installer.</string>
+
+    <string name="vps_reboot_server">Reboot server</string>
+    <string name="vps_reboot_confirm_title">Reboot server?</string>
+    <string name="vps_reboot_confirm_message">Reboot %1$s? SSH will disconnect briefly while the server restarts.</string>
+    <string name="vps_rebooting">Rebooting server…</string>
+    <string name="vps_reboot_failed">Unable to schedule server reboot</string>
+    <string name="vps_reboot_scheduled">Reboot scheduled</string>
+    <string name="vps_waiting_for_server">Waiting for server to return…</string>
+    <string name="vps_server_online_again">Server is online again</string>
+    <string name="vps_reboot_timeout">Server did not return before the timeout</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">Add SNI</string>
+    <string name="singbox_server_sni_label">SNI</string>
 </resources>

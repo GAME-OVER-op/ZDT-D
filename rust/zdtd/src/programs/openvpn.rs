@@ -14,6 +14,7 @@ use std::{
 
 use crate::{
     android::pkg_uid,
+    android_dns,
     shell::{self, Capture},
     vpn_netd::VpnNetdProfile,
     vpn_tether::VpnTetherProfile,
@@ -56,13 +57,18 @@ pub struct ProfileSetting {
     pub tun: String,
     #[serde(default, deserialize_with = "deserialize_dns")]
     pub dns: Vec<String>,
+    #[serde(default = "default_endpoint_resolve")]
+    pub endpoint_resolve: bool,
 }
+
+fn default_endpoint_resolve() -> bool { true }
 
 impl Default for ProfileSetting {
     fn default() -> Self {
         Self {
             tun: "tun1".to_string(),
             dns: vec!["94.140.14.14".to_string(), "94.140.15.15".to_string()],
+            endpoint_resolve: default_endpoint_resolve(),
         }
     }
 }
@@ -73,6 +79,8 @@ struct ProfilePlan {
     setting: ProfileSetting,
     profile_dir: PathBuf,
     config_path: PathBuf,
+    runtime_config_path: PathBuf,
+    endpoint_escape_ips: Vec<String>,
     app_in: PathBuf,
     app_out: PathBuf,
     log_path: PathBuf,
@@ -191,14 +199,22 @@ pub fn write_active(active: &ActiveProfiles) -> Result<()> {
 
 pub fn read_setting(profile: &str) -> Result<ProfileSetting> {
     ensure_valid_profile_name(profile)?;
-    read_json(&profile_root(profile).join("setting.json"))
+    ensure_profile_layout(profile)?;
+    let path = profile_root(profile).join("setting.json");
+    let raw: serde_json::Value = read_json(&path)?;
+    let setting = normalize_setting_value(raw.clone())?;
+    let normalized = serde_json::to_value(&setting).context("serialize normalized openvpn setting.json")?;
+    if normalized != raw {
+        write_json_pretty(&path, &setting)?;
+    }
+    Ok(setting)
 }
 
 pub fn write_setting(profile: &str, setting: &ProfileSetting) -> Result<()> {
     ensure_valid_profile_name(profile)?;
-    validate_setting(setting)?;
     ensure_profile_layout(profile)?;
-    write_json_pretty(&profile_root(profile).join("setting.json"), setting)
+    let normalized = normalize_setting(setting.clone())?;
+    write_json_pretty(&profile_root(profile).join("setting.json"), &normalized)
 }
 
 pub fn validate_setting(setting: &ProfileSetting) -> Result<()> {
@@ -219,10 +235,22 @@ pub fn validate_setting(setting: &ProfileSetting) -> Result<()> {
     Ok(())
 }
 
-pub fn normalize_setting_value(value: serde_json::Value) -> Result<ProfileSetting> {
-    let setting: ProfileSetting = serde_json::from_value(value).context("bad openvpn setting.json")?;
+fn normalize_setting(mut setting: ProfileSetting) -> Result<ProfileSetting> {
+    setting.tun = setting.tun.trim().to_string();
+    setting.dns = setting
+        .dns
+        .iter()
+        .flat_map(|value| split_dns_text(value))
+        .collect();
+    setting.dns.sort();
+    setting.dns.dedup();
     validate_setting(&setting)?;
     Ok(setting)
+}
+
+pub fn normalize_setting_value(value: serde_json::Value) -> Result<ProfileSetting> {
+    let setting: ProfileSetting = serde_json::from_value(value).context("bad openvpn setting.json")?;
+    normalize_setting(setting)
 }
 
 pub fn validate_enabled_tun_uniqueness_with_override(
@@ -511,7 +539,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                 dns: plan.setting.dns.clone(),
                 app_list_path: plan.app_in.clone(),
                 app_out_path: plan.app_out.clone(),
-                endpoint_escape_ips: collect_remote_escape_ips(plan),
+                endpoint_escape_ips: plan.endpoint_escape_ips.clone(),
             })
         })();
 
@@ -590,6 +618,12 @@ fn build_profile_plan(profile: &str, allow_empty_apps: bool) -> Result<ProfilePl
         .with_context(|| format!("create openvpn tmp dir {}", tmp_dir.display()))?;
     normalize_client_config_in_place(&config_path, &setting.tun, &tmp_dir)
         .with_context(|| format!("normalize {}", config_path.display()))?;
+    let (runtime_config_path, endpoint_escape_ips) = prepare_runtime_config(
+        profile,
+        &profile_dir,
+        &config_path,
+        setting.endpoint_resolve,
+    )?;
 
     let app_in = profile_dir.join("app/uid/user_program");
     let app_out = profile_dir.join("app/out/user_program");
@@ -604,6 +638,8 @@ fn build_profile_plan(profile: &str, allow_empty_apps: bool) -> Result<ProfilePl
         setting,
         profile_dir: profile_dir.clone(),
         config_path,
+        runtime_config_path,
+        endpoint_escape_ips,
         app_in,
         app_out,
         log_path: profile_dir.join("log/openvpn.log"),
@@ -770,11 +806,10 @@ fn is_openvpn_line_managed_by_zdtd(trimmed: &str) -> bool {
 }
 
 fn spawn_openvpn(plan: &ProfilePlan) -> Result<()> {
-    if openvpn_profile_process_running(&plan.config_path) {
+    if openvpn_profile_process_running(plan) {
         info!(
-            "openvpn: profile={} already running for config={}, skip spawn",
+            "openvpn: profile={} already running, skip spawn",
             plan.name,
-            plan.config_path.display()
         );
         return Ok(());
     }
@@ -790,7 +825,7 @@ fn spawn_openvpn(plan: &ProfilePlan) -> Result<()> {
 
     let mut cmd = Command::new(OPENVPN_BIN);
     cmd.arg("--config")
-        .arg(&plan.config_path)
+        .arg(&plan.runtime_config_path)
         .current_dir(&plan.profile_dir)
         .stdin(Stdio::null())
         .stdout(Stdio::from(logf))
@@ -808,7 +843,7 @@ fn spawn_openvpn(plan: &ProfilePlan) -> Result<()> {
         "openvpn: spawned profile={} pid={} config={} log={}",
         plan.name,
         child.id(),
-        plan.config_path.display(),
+        plan.runtime_config_path.display(),
         plan.log_path.display()
     );
 
@@ -820,13 +855,18 @@ fn spawn_openvpn(plan: &ProfilePlan) -> Result<()> {
     Ok(())
 }
 
-fn openvpn_profile_process_running(config_path: &Path) -> bool {
-    let pattern = format!("{} --config {}", OPENVPN_BIN, config_path.display());
-    let cmd = format!(
-        "ps -ef 2>/dev/null | grep -F {} | grep -v grep >/dev/null 2>&1",
-        shell_quote_for_sh(&pattern)
-    );
-    shell::ok_sh(&cmd).is_ok()
+fn openvpn_profile_process_running(plan: &ProfilePlan) -> bool {
+    let mut paths = vec![plan.config_path.as_path(), plan.runtime_config_path.as_path()];
+    paths.sort();
+    paths.dedup();
+    paths.into_iter().any(|config_path| {
+        let pattern = format!("{} --config {}", OPENVPN_BIN, config_path.display());
+        let cmd = format!(
+            "ps -ef 2>/dev/null | grep -F {} | grep -v grep >/dev/null 2>&1",
+            shell_quote_for_sh(&pattern)
+        );
+        shell::ok_sh(&cmd).is_ok()
+    })
 }
 
 fn wait_tun_ready(tun: &str) -> Result<()> {
@@ -924,32 +964,173 @@ fn cidrs_overlap(a: &str, b: &str) -> Result<bool> {
     Ok(a_start <= b_end && b_start <= a_end)
 }
 
-fn collect_remote_escape_ips(plan: &ProfilePlan) -> Vec<String> {
-    let raw = fs::read_to_string(&plan.config_path).unwrap_or_default();
-    let mut ips = Vec::new();
+fn prepare_runtime_config(
+    profile: &str,
+    profile_dir: &Path,
+    config_path: &Path,
+    endpoint_resolve: bool,
+) -> Result<(PathBuf, Vec<String>)> {
+    let raw = fs::read_to_string(config_path)
+        .with_context(|| format!("read {}", config_path.display()))?;
+    let (runtime, ips, skipped_domains, resolved_domain) = resolve_remote_lines(&raw, endpoint_resolve)?;
+
+    if !skipped_domains.is_empty() {
+        warn!(
+            "openvpn: profile={} endpoint_resolve=false; domain remote left unchanged and endpoint escape skipped for {}",
+            profile,
+            skipped_domains.into_iter().collect::<Vec<_>>().join(",")
+        );
+    }
+
+    if !ips.is_empty() {
+        info!(
+            "openvpn: profile={} endpoint escape ips={}",
+            profile,
+            ips.join(",")
+        );
+    }
+
+    if !endpoint_resolve || !resolved_domain {
+        return Ok((config_path.to_path_buf(), ips));
+    }
+
+    let runtime_path = profile_dir.join("tmp/client.resolved.ovpn");
+    write_text_atomic(&runtime_path, &runtime)?;
+    info!(
+        "openvpn: profile={} endpoint_resolve enabled; runtime config={}",
+        profile,
+        runtime_path.display()
+    );
+    Ok((runtime_path, ips))
+}
+
+fn resolve_remote_lines(raw: &str, endpoint_resolve: bool) -> Result<(String, Vec<String>, BTreeSet<String>, bool)> {
+    let mut out = Vec::<String>::new();
+    let mut ips = BTreeSet::<String>::new();
+    let mut skipped_domains = BTreeSet::<String>::new();
+    let mut cache = BTreeMap::<String, Vec<String>>::new();
+    let mut resolved_domain = false;
+    let mut in_inline_block = false;
+
     for line in raw.lines() {
-        let trimmed = line
-            .split(|c| c == '#' || c == ';')
-            .next()
-            .unwrap_or("")
-            .trim();
-        if trimmed.is_empty() {
+        let trimmed = line.trim();
+        if starts_openvpn_inline_block(trimmed) {
+            in_inline_block = true;
+            out.push(line.to_string());
             continue;
         }
-        let parts = trimmed.split_whitespace().collect::<Vec<_>>();
-        if parts.first().map(|s| s.eq_ignore_ascii_case("remote")).unwrap_or(false) && parts.len() >= 2 {
-            let host = parts[1].trim().trim_matches('"').trim_matches('\'').trim_end_matches('.');
-            if is_ipv4(host) {
-                ips.push(host.to_string());
+        if in_inline_block {
+            out.push(line.to_string());
+            if ends_openvpn_inline_block(trimmed) {
+                in_inline_block = false;
             }
+            continue;
+        }
+
+        let (code, comment) = split_openvpn_inline_comment(line);
+        let parts = code.split_whitespace().collect::<Vec<_>>();
+        if parts.len() < 2 || !parts[0].eq_ignore_ascii_case("remote") {
+            out.push(line.to_string());
+            continue;
+        }
+
+        let host = parts[1]
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'')
+            .trim_end_matches('.')
+            .to_string();
+        if host.is_empty() {
+            out.push(line.to_string());
+            continue;
+        }
+
+        if is_ipv4(&host) {
+            ips.insert(host);
+            out.push(line.to_string());
+            continue;
+        }
+
+        if !endpoint_resolve {
+            skipped_domains.insert(host);
+            out.push(line.to_string());
+            continue;
+        }
+
+        let resolved = if let Some(cached) = cache.get(&host) {
+            cached.clone()
+        } else {
+            let values = android_dns::resolve_ipv4_all(&host);
+            cache.insert(host.clone(), values.clone());
+            values
+        };
+        if resolved.is_empty() {
+            bail!("cannot resolve OpenVPN remote host {host} to IPv4");
+        }
+        resolved_domain = true;
+
+        let indent_len = code.len() - code.trim_start().len();
+        let indent = &code[..indent_len];
+        let directive = parts[0];
+        let tail = if parts.len() > 2 {
+            format!(" {}", parts[2..].join(" "))
+        } else {
+            String::new()
+        };
+        let comment_suffix = if comment.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", comment)
+        };
+
+        for ip in resolved {
+            ips.insert(ip.clone());
+            out.push(format!("{indent}{directive} {ip}{tail}{comment_suffix}"));
         }
     }
-    ips.sort();
-    ips.dedup();
-    if !ips.is_empty() {
-        info!("openvpn: profile={} endpoint escape ips={}", plan.name, ips.join(","));
+
+    Ok((
+        format!("{}\n", out.join("\n")),
+        ips.into_iter().collect(),
+        skipped_domains,
+        resolved_domain,
+    ))
+}
+
+fn split_openvpn_inline_comment(line: &str) -> (&str, &str) {
+    let mut quote = None::<char>;
+    let mut escaped = false;
+    for (idx, ch) in line.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        match quote {
+            Some(q) if ch == q => quote = None,
+            Some(_) => continue,
+            None if ch == '"' || ch == '\'' => quote = Some(ch),
+            None if ch == '#' || ch == ';' => {
+                return (line[..idx].trim_end(), line[idx..].trim_start());
+            }
+            None => {}
+        }
     }
-    ips
+    (line.trim_end(), "")
+}
+
+fn write_text_atomic(path: &Path, content: &str) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, content).with_context(|| format!("write {}", tmp.display()))?;
+    fs::rename(&tmp, path)
+        .with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))?;
+    Ok(())
 }
 
 fn is_forbidden_tun_name(s: &str) -> bool {
@@ -991,12 +1172,17 @@ fn write_json_pretty<T: Serialize>(path: &Path, v: &T) -> Result<()> {
 
 pub fn main_pids_exact() -> Vec<i32> {
     let mut pids = Vec::new();
-    let cmd = r#"sh -c "pgrep -f '^/data/adb/modules/ZDT-D/bin/openvpn --config /data/adb/modules/ZDT-D/working_folder/openvpn/profile/.*/client\.ovpn$' 2>/dev/null || true""#;
-    if let Ok(out) = shell::capture_quiet(cmd) {
-        pids.extend(parse_pid_lines(&out));
+    let commands = [
+        r#"sh -c "pgrep -f '^/data/adb/modules/ZDT-D/bin/openvpn --config /data/adb/modules/ZDT-D/working_folder/openvpn/profile/.*/client\.ovpn$' 2>/dev/null || true""#,
+        r#"sh -c "pgrep -f '^/data/adb/modules/ZDT-D/bin/openvpn --config /data/adb/modules/ZDT-D/working_folder/openvpn/profile/.*/tmp/client\.resolved\.ovpn$' 2>/dev/null || true""#,
+    ];
+    for cmd in commands {
+        if let Ok(out) = shell::capture_quiet(cmd) {
+            pids.extend(parse_pid_lines(&out));
+        }
     }
     if pids.is_empty() {
-        let ps_cmd = r#"sh -c "ps -ef 2>/dev/null | grep -F '/data/adb/modules/ZDT-D/bin/openvpn --config /data/adb/modules/ZDT-D/working_folder/openvpn/profile/' | grep -F '/client.ovpn' | grep -v grep || true""#;
+        let ps_cmd = r#"sh -c "ps -ef 2>/dev/null | grep -F '/data/adb/modules/ZDT-D/bin/openvpn --config /data/adb/modules/ZDT-D/working_folder/openvpn/profile/' | grep -E '/client\.ovpn$|/tmp/client\.resolved\.ovpn$' | grep -v grep || true""#;
         if let Ok(out) = shell::capture_quiet(ps_cmd) {
             for line in out.lines() {
                 let cols: Vec<&str> = line.split_whitespace().collect();
@@ -1013,4 +1199,46 @@ pub fn main_pids_exact() -> Vec<i32> {
     pids.sort_unstable();
     pids.dedup();
     pids
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_setting_defaults_endpoint_resolution_on() {
+        let setting = normalize_setting_value(serde_json::json!({
+            "tun": "tun1",
+            "dns": ["94.140.14.14", "94.140.15.15"]
+        }))
+        .unwrap();
+        assert!(setting.endpoint_resolve);
+    }
+
+    #[test]
+    fn remote_domain_is_left_unchanged_when_resolution_is_disabled() {
+        let raw = "client\nremote example.com 1194 udp # main\n";
+        let (runtime, ips, skipped, resolved_domain) = resolve_remote_lines(raw, false).unwrap();
+        assert_eq!(runtime, raw);
+        assert!(ips.is_empty());
+        assert!(skipped.contains("example.com"));
+        assert!(!resolved_domain);
+    }
+
+    #[test]
+    fn literal_remote_ip_is_preserved_and_collected() {
+        let raw = "client\nremote 203.0.113.7 1194 udp\n";
+        let (runtime, ips, skipped, resolved_domain) = resolve_remote_lines(raw, true).unwrap();
+        assert_eq!(runtime, raw);
+        assert_eq!(ips, vec!["203.0.113.7"]);
+        assert!(skipped.is_empty());
+        assert!(!resolved_domain);
+    }
+
+    #[test]
+    fn inline_comment_split_respects_quotes() {
+        let (code, comment) = split_openvpn_inline_comment("remote \"example.com\" 1194 # primary");
+        assert_eq!(code, "remote \"example.com\" 1194");
+        assert_eq!(comment, "# primary");
+    }
 }

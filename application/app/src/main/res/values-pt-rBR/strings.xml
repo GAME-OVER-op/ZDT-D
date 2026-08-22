@@ -1348,6 +1348,8 @@ A proteção não funciona no modo ponto de acesso. Se o ponto de acesso estiver
     <string name="openvpn_dns_label">Servidores DNS</string>
     <string name="openvpn_dns_hint">Insira de 1 a 8 servidores DNS IPv4 separados por espaços ou vírgulas. IPv6, domínios e URLs https/tls não são permitidos.</string>
     <string name="openvpn_dns_invalid">Insira apenas de 1 a 8 endereços IPv4 válidos.</string>
+    <string name="openvpn_endpoint_resolve_label">Resolver domínios remotos</string>
+    <string name="openvpn_endpoint_resolve_hint">Resolver nomes de domínio nas diretivas remote antes de iniciar o OpenVPN.</string>
     <string name="openvpn_config_title">Configuração do OpenVPN</string>
     <string name="openvpn_config_desc">Cole o conteúdo de client.ovpn ou carregue-o de um arquivo. Ele é salvo como profile/name/client.ovpn.</string>
     <string name="openvpn_config_empty">O client.ovpn não pode ficar vazio.</string>
@@ -2280,4 +2282,17 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="module_zip_patch_normalized">ZIP do módulo normalizado para instalador estrito: o sinalizador de criptografia foi removido de %1$d entradas do Central Directory.</string>
     <string name="module_zip_patch_compatible">O ZIP do módulo já é compatível com instaladores estritos.</string>
     <string name="module_zip_patch_protection_kept_magisk">A proteção do ZIP do módulo foi mantida para o instalador Magisk.</string>
+
+    <string name="vps_reboot_server">Reiniciar servidor</string>
+    <string name="vps_reboot_confirm_title">Reiniciar servidor?</string>
+    <string name="vps_reboot_confirm_message">Reiniciar %1$s? A conexão SSH será interrompida brevemente durante a reinicialização.</string>
+    <string name="vps_rebooting">Reiniciando servidor…</string>
+    <string name="vps_reboot_failed">Não foi possível agendar a reinicialização do servidor</string>
+    <string name="vps_reboot_scheduled">Reinicialização agendada</string>
+    <string name="vps_waiting_for_server">Aguardando o servidor voltar…</string>
+    <string name="vps_server_online_again">O servidor está online novamente</string>
+    <string name="vps_reboot_timeout">O servidor não voltou antes do tempo limite</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">Adicionar SNI</string>
+    <string name="singbox_server_sni_label">SNI</string>
 </resources>

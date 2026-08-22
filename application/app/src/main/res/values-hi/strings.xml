@@ -1348,6 +1348,8 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="openvpn_dns_label">DNS सर्वर</string>
     <string name="openvpn_dns_hint">स्पेस या अल्पविराम से अलग 1..8 IPv4 DNS सर्वर दर्ज करें। IPv6, डोमेन और https/tls URL की अनुमति नहीं है।</string>
     <string name="openvpn_dns_invalid">केवल 1..8 मान्य IPv4 पते दर्ज करें।</string>
+    <string name="openvpn_endpoint_resolve_label">remote डोमेन हल करें</string>
+    <string name="openvpn_endpoint_resolve_hint">OpenVPN शुरू करने से पहले remote निर्देशों में डोमेन नामों को हल करें।</string>
     <string name="openvpn_config_title">OpenVPN कॉन्फ़िगरेशन</string>
     <string name="openvpn_config_desc">client.ovpn की सामग्री चिपकाएँ या फ़ाइल से लोड करें। इसे profile/name/client.ovpn के रूप में सहेजा जाता है।</string>
     <string name="openvpn_config_empty">client.ovpn खाली नहीं हो सकता।</string>
@@ -2280,4 +2282,17 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="module_zip_patch_normalized">मॉड्यूल ZIP को सख्त इंस्टॉलर के लिए सामान्यीकृत किया गया: %1$d Central Directory प्रविष्टियों से एन्क्रिप्शन फ़्लैग हटाया गया।</string>
     <string name="module_zip_patch_compatible">मॉड्यूल ZIP पहले से सख्त इंस्टॉलर के साथ संगत है।</string>
     <string name="module_zip_patch_protection_kept_magisk">Magisk इंस्टॉलर के लिए मॉड्यूल ZIP सुरक्षा बरकरार रखी गई।</string>
+
+    <string name="vps_reboot_server">सर्वर रीबूट करें</string>
+    <string name="vps_reboot_confirm_title">सर्वर रीबूट करें?</string>
+    <string name="vps_reboot_confirm_message">%1$s को रीबूट करें? सर्वर के पुनः शुरू होने के दौरान SSH कनेक्शन थोड़ी देर के लिए टूटेगा।</string>
+    <string name="vps_rebooting">सर्वर रीबूट हो रहा है…</string>
+    <string name="vps_reboot_failed">सर्वर रीबूट निर्धारित नहीं किया जा सका</string>
+    <string name="vps_reboot_scheduled">रीबूट निर्धारित किया गया</string>
+    <string name="vps_waiting_for_server">सर्वर के वापस आने की प्रतीक्षा…</string>
+    <string name="vps_server_online_again">सर्वर फिर से ऑनलाइन है</string>
+    <string name="vps_reboot_timeout">समय सीमा से पहले सर्वर वापस नहीं आया</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">SNI जोड़ें</string>
+    <string name="singbox_server_sni_label">SNI</string>
 </resources>

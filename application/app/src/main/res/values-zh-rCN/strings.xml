@@ -1347,6 +1347,8 @@ APatch：10700+</string>
     <string name="openvpn_dns_label">DNS 服务器</string>
     <string name="openvpn_dns_hint">输入 1 到 8 个 IPv4 DNS 服务器，以空格或逗号分隔。不允许 IPv6、域名和 https/tls URL。</string>
     <string name="openvpn_dns_invalid">仅输入 1 到 8 个有效的 IPv4 地址。</string>
+    <string name="openvpn_endpoint_resolve_label">解析 remote 域名</string>
+    <string name="openvpn_endpoint_resolve_hint">在启动 OpenVPN 前解析 remote 指令中的域名。</string>
     <string name="openvpn_config_title">OpenVPN 配置</string>
     <string name="openvpn_config_desc">粘贴 client.ovpn 内容或从文件加载。它将保存为 profile/name/client.ovpn。</string>
     <string name="openvpn_config_empty">client.ovpn 不能为空。</string>
@@ -2279,4 +2281,17 @@ APatch：10700+</string>
     <string name="module_zip_patch_normalized">模块 ZIP 已针对严格安装程序完成规范化：已清除 %1$d 个 Central Directory 条目的加密标志。</string>
     <string name="module_zip_patch_compatible">模块 ZIP 已兼容严格的安装程序。</string>
     <string name="module_zip_patch_protection_kept_magisk">已为 Magisk 安装程序保留模块 ZIP 保护。</string>
+
+    <string name="vps_reboot_server">重启服务器</string>
+    <string name="vps_reboot_confirm_title">重启服务器？</string>
+    <string name="vps_reboot_confirm_message">要重启 %1$s 吗？服务器重启期间 SSH 连接会短暂中断。</string>
+    <string name="vps_rebooting">正在重启服务器…</string>
+    <string name="vps_reboot_failed">无法安排服务器重启</string>
+    <string name="vps_reboot_scheduled">已安排重启</string>
+    <string name="vps_waiting_for_server">正在等待服务器恢复…</string>
+    <string name="vps_server_online_again">服务器已重新上线</string>
+    <string name="vps_reboot_timeout">服务器未在超时前恢复</string>
+    <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
+    <string name="vps_add_sni">添加 SNI</string>
+    <string name="singbox_server_sni_label">SNI</string>
 </resources>

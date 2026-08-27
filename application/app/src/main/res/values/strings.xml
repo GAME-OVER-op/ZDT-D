@@ -946,6 +946,8 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="action_edit">Edit</string>
     <string name="singbox_profile_settings_title">Profile settings</string>
     <string name="singbox_profile_settings_desc">Each sing-box profile has its own t2s ports, apps list, and server set.</string>
+    <string name="singbox_endpoint_resolve_label">Resolve server domains</string>
+    <string name="singbox_endpoint_resolve_hint">Resolve domain names in outbound server fields to IPv4 before starting sing-box.</string>
     <string name="singbox_profile_add_server">Create</string>
     <string name="singbox_profile_no_servers">No servers created for this profile yet.</string>
     <string name="singbox_profile_ports_must_differ">t2s_port and t2s_web_port must be different</string>

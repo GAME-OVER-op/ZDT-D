@@ -946,6 +946,8 @@ APatch: ‏10700+</string>
     <string name="action_edit">تحرير</string>
     <string name="singbox_profile_settings_title">إعدادات الملف الشخصي</string>
     <string name="singbox_profile_settings_desc">لكل ملف sing-box شخصي منافذ t2s وقائمة تطبيقات ومجموعة خوادم خاصة به.</string>
+    <string name="singbox_endpoint_resolve_label">حل نطاقات الخوادم</string>
+    <string name="singbox_endpoint_resolve_hint">حل أسماء النطاقات في حقول server للاتصالات الصادرة إلى IPv4 قبل تشغيل sing-box.</string>
     <string name="singbox_profile_add_server">إنشاء</string>
     <string name="singbox_profile_no_servers">لم تُنشأ خوادم لهذا الملف الشخصي بعد.</string>
     <string name="singbox_profile_ports_must_differ">يجب أن يختلف t2s_port عن t2s_web_port</string>

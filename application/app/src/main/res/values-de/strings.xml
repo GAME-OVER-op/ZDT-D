@@ -946,6 +946,8 @@ Der Schutz funktioniert nicht im Hotspot-Modus. Wenn der Hotspot aktiviert und s
     <string name="action_edit">Bearbeiten</string>
     <string name="singbox_profile_settings_title">Profileinstellungen</string>
     <string name="singbox_profile_settings_desc">Jedes sing-box-Profil hat eigene t2s-Ports, eine App-Liste und einen Serversatz.</string>
+    <string name="singbox_endpoint_resolve_label">Server-Domains auflösen</string>
+    <string name="singbox_endpoint_resolve_hint">Domainnamen in den server-Feldern der Outbounds vor dem Start von sing-box in IPv4 auflösen.</string>
     <string name="singbox_profile_add_server">Erstellen</string>
     <string name="singbox_profile_no_servers">Für dieses Profil wurden noch keine Server erstellt.</string>
     <string name="singbox_profile_ports_must_differ">t2s_port und t2s_web_port müssen unterschiedlich sein</string>

@@ -1250,7 +1250,8 @@ fn default_singbox_profile_setting_value(t2s_port: u16, t2s_web_port: u16) -> se
         "tun": "sbtun0",
         "dns": ["8.8.8.8"],
         "tun2socks_loglevel": "info",
-        "proto_mode": "tcp_udp"
+        "proto_mode": "tcp_udp",
+        "endpoint_resolve": true
     })
 }
 

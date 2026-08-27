@@ -946,6 +946,8 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="action_edit">편집</string>
     <string name="singbox_profile_settings_title">프로필 설정</string>
     <string name="singbox_profile_settings_desc">각 sing-box 프로필에는 자체 t2s 포트, 앱 목록 및 서버 세트가 있습니다.</string>
+    <string name="singbox_endpoint_resolve_label">서버 도메인 확인</string>
+    <string name="singbox_endpoint_resolve_hint">sing-box를 시작하기 전에 outbound의 server 필드 도메인 이름을 IPv4로 확인합니다.</string>
     <string name="singbox_profile_add_server">만들기</string>
     <string name="singbox_profile_no_servers">이 프로필에는 아직 생성된 서버가 없습니다.</string>
     <string name="singbox_profile_ports_must_differ">t2s_port와 t2s_web_port는 달라야 합니다</string>

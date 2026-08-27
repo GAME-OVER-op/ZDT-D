@@ -946,6 +946,8 @@ Perlindungan tidak berfungsi dalam mode hotspot. Jika hotspot diaktifkan dan sin
     <string name="action_edit">Edit</string>
     <string name="singbox_profile_settings_title">Pengaturan profil</string>
     <string name="singbox_profile_settings_desc">Setiap profil sing-box memiliki port t2s, daftar aplikasi, dan kumpulan server sendiri.</string>
+    <string name="singbox_endpoint_resolve_label">Resolusi domain server</string>
+    <string name="singbox_endpoint_resolve_hint">Resolusikan nama domain pada kolom server outbound ke IPv4 sebelum memulai sing-box.</string>
     <string name="singbox_profile_add_server">Buat</string>
     <string name="singbox_profile_no_servers">Belum ada server yang dibuat untuk profil ini.</string>
     <string name="singbox_profile_ports_must_differ">t2s_port dan t2s_web_port harus berbeda</string>

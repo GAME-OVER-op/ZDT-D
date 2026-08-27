@@ -946,6 +946,8 @@ Tính năng bảo vệ không hoạt động trong chế độ điểm phát só
     <string name="action_edit">Chỉnh sửa</string>
     <string name="singbox_profile_settings_title">Cài đặt hồ sơ</string>
     <string name="singbox_profile_settings_desc">Mỗi hồ sơ sing-box có các cổng t2s, danh sách ứng dụng và bộ máy chủ riêng.</string>
+    <string name="singbox_endpoint_resolve_label">Phân giải miền máy chủ</string>
+    <string name="singbox_endpoint_resolve_hint">Phân giải tên miền trong trường server của outbound sang IPv4 trước khi khởi động sing-box.</string>
     <string name="singbox_profile_add_server">Tạo</string>
     <string name="singbox_profile_no_servers">Chưa tạo máy chủ nào cho hồ sơ này.</string>
     <string name="singbox_profile_ports_must_differ">t2s_port và t2s_web_port phải khác nhau</string>

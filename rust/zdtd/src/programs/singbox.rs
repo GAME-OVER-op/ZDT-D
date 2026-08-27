@@ -127,6 +127,8 @@ pub struct ProfileSetting {
     pub tun2socks_loglevel: String,
     #[serde(default)]
     pub proto_mode: String,
+    #[serde(default = "default_endpoint_resolve")]
+    pub endpoint_resolve: bool,
 }
 
 impl Default for ProfileSetting {
@@ -139,6 +141,7 @@ impl Default for ProfileSetting {
             dns: default_dns(),
             tun2socks_loglevel: default_tun2socks_loglevel(),
             proto_mode: "tcp_udp".to_string(),
+            endpoint_resolve: default_endpoint_resolve(),
         }
     }
 }
@@ -212,6 +215,7 @@ struct VpnProfilePlan {
     tun: String,
     tun_address: String,
     cidr: String,
+    endpoint_escape_ips: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -224,6 +228,7 @@ fn default_t2s_web_port() -> u16 { 8001 }
 fn default_tun_name() -> String { "sbtun0".to_string() }
 fn default_dns() -> Vec<String> { vec!["8.8.8.8".to_string()] }
 fn default_tun2socks_loglevel() -> String { "info".to_string() }
+fn default_endpoint_resolve() -> bool { true }
 
 fn deserialize_dns<'de, D>(deserializer: D) -> std::result::Result<Vec<String>, D::Error>
 where
@@ -737,7 +742,7 @@ pub fn start_profiles_for_netd() -> Result<Vec<VpnNetdProfile>> {
                 dns: plan.setting.dns.clone(),
                 app_list_path: plan.app_in.clone(),
                 app_out_path: plan.app_out.clone(),
-                endpoint_escape_ips: Vec::new(),
+                endpoint_escape_ips: plan.endpoint_escape_ips.clone(),
             })
         })();
 
@@ -912,8 +917,10 @@ fn build_vpn_profile_plan(
 
     normalize_singbox_config_for_t2s(&config_path, server_setting.port, &setting.dns)
         .with_context(|| format!("normalize vpn/tun2socks backend config {}", config_path.display()))?;
-    singbox_check_config_with_log(&config_path, &log_path)
-        .with_context(|| format!("sing-box check {}", config_path.display()))?;
+    let (runtime_config_path, endpoint_escape_ips) = prepare_runtime_config(&config_path, setting.endpoint_resolve)
+        .with_context(|| format!("prepare resolved sing-box config {}", config_path.display()))?;
+    singbox_check_config_with_log(&runtime_config_path, &log_path)
+        .with_context(|| format!("sing-box check {}", runtime_config_path.display()))?;
 
     let netid = stable_netid_for(profile)?;
     if used_netids.contains(&netid) {
@@ -926,7 +933,7 @@ fn build_vpn_profile_plan(
         setting: setting.clone(),
         server_name: server_name.clone(),
         server_port: server_setting.port,
-        config_path,
+        config_path: runtime_config_path,
         app_in,
         app_out,
         log_path,
@@ -935,6 +942,7 @@ fn build_vpn_profile_plan(
         tun: setting.tun.clone(),
         tun_address,
         cidr,
+        endpoint_escape_ips,
     }))
 }
 
@@ -1052,7 +1060,18 @@ fn collect_t2s_profile_servers(
             );
             continue;
         }
-        if let Err(e) = singbox_check_config_with_log(&cfg, &dir.join("log/sing-box.log"))
+        let runtime_cfg = match prepare_runtime_config(&cfg, profile_setting.endpoint_resolve) {
+            Ok((path, _)) => path,
+            Err(e) => {
+                warn!(
+                    "sing-box: skip profile='{}' server='{}' (endpoint resolve failed): {e:#}",
+                    profile,
+                    name
+                );
+                continue;
+            }
+        };
+        if let Err(e) = singbox_check_config_with_log(&runtime_cfg, &dir.join("log/sing-box.log"))
         {
             warn!(
                 "sing-box: skip profile='{}' server='{}' (bad t2s config): {e:#}",
@@ -1065,7 +1084,7 @@ fn collect_t2s_profile_servers(
         out.push(ServerPlan {
             name,
             port: setting.port,
-            config_path: cfg,
+            config_path: runtime_cfg,
             log_path: dir.join("log/sing-box.log"),
         });
     }
@@ -1381,6 +1400,106 @@ fn normalize_singbox_config_for_vpn(config_path: &Path, setting: &ProfileSetting
 
     write_json_value_if_changed(config_path, &original, &value)?;
     Ok(effective_tun)
+}
+
+fn prepare_runtime_config(config_path: &Path, endpoint_resolve: bool) -> Result<(PathBuf, Vec<String>)> {
+    let original = fs::read_to_string(config_path)
+        .with_context(|| format!("read {}", config_path.display()))?;
+    let mut value: Value = serde_json::from_str(&original)
+        .with_context(|| format!("parse json {}", config_path.display()))?;
+
+    if !endpoint_resolve {
+        return Ok((config_path.to_path_buf(), collect_singbox_outbound_ipv4s(&value)));
+    }
+
+    let endpoint_escape_ips = resolve_singbox_outbound_servers(&mut value)?;
+    let runtime_path = config_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("tmp/config.resolved.json");
+    write_json_atomic(&runtime_path, &value)
+        .with_context(|| format!("write resolved sing-box config {}", runtime_path.display()))?;
+    Ok((runtime_path, endpoint_escape_ips))
+}
+
+fn resolve_singbox_outbound_servers(value: &mut Value) -> Result<Vec<String>> {
+    let Some(outbounds) = value
+        .as_object_mut()
+        .and_then(|obj| obj.get_mut("outbounds"))
+        .and_then(Value::as_array_mut)
+    else {
+        return Ok(Vec::new());
+    };
+
+    let mut cache = BTreeMap::<String, Vec<String>>::new();
+    let mut endpoint_ips = BTreeSet::<String>::new();
+
+    for outbound in outbounds {
+        let Some(obj) = outbound.as_object_mut() else { continue };
+        let Some(server) = obj
+            .get("server")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToOwned::to_owned)
+        else {
+            continue;
+        };
+
+        if server.parse::<Ipv4Addr>().is_ok() {
+            endpoint_ips.insert(server);
+            continue;
+        }
+        if server.parse::<IpAddr>().is_ok() || server.contains(':') {
+            continue;
+        }
+
+        let lookup_host = server.trim_end_matches('.').to_string();
+        let ips = if let Some(cached) = cache.get(&lookup_host) {
+            cached.clone()
+        } else {
+            let resolved = crate::android_dns::resolve_ipv4_all(&lookup_host);
+            if resolved.is_empty() {
+                bail!("cannot resolve sing-box outbound server host '{}' to IPv4", server);
+            }
+            cache.insert(lookup_host.clone(), resolved.clone());
+            resolved
+        };
+
+        let selected = ips
+            .first()
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("empty IPv4 result for sing-box outbound server host '{}'", server))?;
+        obj.insert("server".to_string(), Value::String(selected.clone()));
+        for ip in ips {
+            if ip.parse::<Ipv4Addr>().is_ok() {
+                endpoint_ips.insert(ip);
+            }
+        }
+        info!("sing-box: resolved outbound server {} -> {}", server, selected);
+    }
+
+    Ok(endpoint_ips.into_iter().collect())
+}
+
+fn collect_singbox_outbound_ipv4s(value: &Value) -> Vec<String> {
+    let mut out = BTreeSet::<String>::new();
+    if let Some(outbounds) = value.get("outbounds").and_then(Value::as_array) {
+        for outbound in outbounds {
+            let Some(server) = outbound
+                .as_object()
+                .and_then(|obj| obj.get("server"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+            else {
+                continue;
+            };
+            if server.parse::<Ipv4Addr>().is_ok() {
+                out.insert(server.to_string());
+            }
+        }
+    }
+    out.into_iter().collect()
 }
 
 fn normalize_singbox_common(obj: &mut Map<String, Value>, dns_servers: &[String]) {

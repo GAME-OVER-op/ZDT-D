@@ -61,8 +61,6 @@ apply net.ipv4.tcp_max_syn_backlog 4096
 apply net.ipv4.tcp_mtu_probing 1
 apply net.ipv4.tcp_slow_start_after_idle 0
 
-# forwarding baseline (zdtd may still adjust this later from settings)
-apply net.ipv4.ip_forward 1
 
 # security / sane defaults
 apply net.ipv4.conf.all.accept_redirects 0

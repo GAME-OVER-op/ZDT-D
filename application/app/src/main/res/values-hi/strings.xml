@@ -946,6 +946,8 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="action_edit">संपादित करें</string>
     <string name="singbox_profile_settings_title">प्रोफ़ाइल सेटिंग</string>
     <string name="singbox_profile_settings_desc">हर sing-box प्रोफ़ाइल के अपने t2s पोर्ट, ऐप सूची और सर्वर सेट होते हैं।</string>
+    <string name="singbox_endpoint_resolve_label">सर्वर डोमेन हल करें</string>
+    <string name="singbox_endpoint_resolve_hint">sing-box शुरू करने से पहले outbound के server फ़ील्ड में डोमेन नामों को IPv4 में हल करें।</string>
     <string name="singbox_profile_add_server">बनाएँ</string>
     <string name="singbox_profile_no_servers">इस प्रोफ़ाइल के लिए अभी कोई सर्वर नहीं बनाया गया है।</string>
     <string name="singbox_profile_ports_must_differ">t2s_port और t2s_web_port अलग होने चाहिए</string>

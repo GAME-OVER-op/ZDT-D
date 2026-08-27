@@ -946,6 +946,8 @@ APatch: 10700+</string>
     <string name="action_edit">Редагувати</string>
     <string name="singbox_profile_settings_title">Налаштування профілю</string>
     <string name="singbox_profile_settings_desc">Кожен профіль sing-box має власні порти t2s, список програм і набір серверів.</string>
+    <string name="singbox_endpoint_resolve_label">Розв’язання доменів серверів</string>
+    <string name="singbox_endpoint_resolve_hint">Розв’язувати доменні імена в полях server вихідних підключень у IPv4 перед запуском sing-box.</string>
     <string name="singbox_profile_add_server">Створити</string>
     <string name="singbox_profile_no_servers">Для цього профілю ще не створено серверів.</string>
     <string name="singbox_profile_ports_must_differ">t2s_port і t2s_web_port мають відрізнятися</string>

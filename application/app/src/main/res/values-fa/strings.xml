@@ -946,6 +946,8 @@ APatch: 10700+</string>
     <string name="action_edit">ویرایش</string>
     <string name="singbox_profile_settings_title">تنظیمات پروفایل</string>
     <string name="singbox_profile_settings_desc">هر پروفایل sing-box پورت‌های t2s، فهرست برنامه‌ها و مجموعه سرورهای خاص خود را دارد.</string>
+    <string name="singbox_endpoint_resolve_label">حل دامنه‌های سرور</string>
+    <string name="singbox_endpoint_resolve_hint">نام دامنه‌های فیلد server در outboundها را پیش از اجرای sing-box به IPv4 تبدیل کن.</string>
     <string name="singbox_profile_add_server">ایجاد</string>
     <string name="singbox_profile_no_servers">هنوز هیچ سروری برای این پروفایل ایجاد نشده است.</string>
     <string name="singbox_profile_ports_must_differ">t2s_port و t2s_web_port باید متفاوت باشند</string>

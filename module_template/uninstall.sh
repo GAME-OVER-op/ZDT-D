@@ -1,21 +1,25 @@
 #!/system/bin/sh
 (
-while [ "$(getprop sys.boot_completed)" != "1" ]; do
-  sleep 5
-done
-
+until [ "$(getprop sys.boot_completed)" = 1 ]; do sleep 5; done
 sleep 5
 
 settings put global http_proxy :0
-settings delete global global_http_proxy_host
-settings delete global global_http_proxy_port
-settings delete global global_http_proxy_exclusion_list
-settings delete global global_proxy_pac_url
 
-settings delete global captive_portal_detection_enabled
-settings delete global captive_portal_server
-settings delete global captive_portal_mode
+for k in \
+  global_http_proxy_host \
+  global_http_proxy_port \
+  global_http_proxy_exclusion_list \
+  global_proxy_pac_url \
+  captive_portal_detection_enabled \
+  captive_portal_server \
+  captive_portal_mode
+do
+  settings delete global "$k"
+done
 
-# Remove only ZDT-D external installer markers. Do not touch /data/adb itself.
-rm -rf /data/adb/ZDT-D 2>/dev/null || true
+echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null \
+  || sysctl -w net.ipv4.ip_forward=1 >/dev/null 2>&1
+
+rm -rf /data/adb/ZDT-D 2>/dev/null
+exit 0
 )&

@@ -946,6 +946,8 @@ La protección no funciona en modo punto de acceso. Si el punto de acceso está 
     <string name="action_edit">Editar</string>
     <string name="singbox_profile_settings_title">Ajustes del perfil</string>
     <string name="singbox_profile_settings_desc">Cada perfil de sing-box tiene sus propios puertos t2s, lista de aplicaciones y conjunto de servidores.</string>
+    <string name="singbox_endpoint_resolve_label">Resolver dominios de servidor</string>
+    <string name="singbox_endpoint_resolve_hint">Resolver a IPv4 los nombres de dominio de los campos server de los outbounds antes de iniciar sing-box.</string>
     <string name="singbox_profile_add_server">Crear</string>
     <string name="singbox_profile_no_servers">Aún no se han creado servidores para este perfil.</string>
     <string name="singbox_profile_ports_must_differ">t2s_port y t2s_web_port deben ser diferentes</string>

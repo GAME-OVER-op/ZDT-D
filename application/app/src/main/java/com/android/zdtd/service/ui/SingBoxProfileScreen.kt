@@ -144,6 +144,7 @@ private data class SingBoxProfileSettingUi(
   val dns: List<String> = listOf("8.8.8.8"),
   val tun2socksLogLevel: String = "info",
   val protoMode: String = "tcp_udp",
+  val endpointResolve: Boolean = true,
 ) {
   val isVpn: Boolean get() = mode == SINGBOX_MODE_VPN
   val isT2s: Boolean get() = mode != SINGBOX_MODE_VPN
@@ -197,6 +198,7 @@ private fun parseSingBoxProfileSettingUi(obj: JSONObject?): SingBoxProfileSettin
     dns = normalizeSingBoxDns(rawDns),
     tun2socksLogLevel = normalizeSingBoxTun2socksLogLevel(obj?.optString("tun2socks_loglevel", "info")),
     protoMode = normalizeSingBoxProtoMode(obj?.optString("proto_mode", "tcp_udp")),
+    endpointResolve = obj?.optBoolean("endpoint_resolve", true) ?: true,
   )
 }
 
@@ -209,6 +211,7 @@ private fun SingBoxProfileSettingUi.toJson(): JSONObject {
     .put("dns", JSONArray().also { arr -> normalizeSingBoxDns(dns).forEach { arr.put(it) } })
     .put("tun2socks_loglevel", normalizeSingBoxTun2socksLogLevel(tun2socksLogLevel))
     .put("proto_mode", normalizeSingBoxProtoMode(protoMode))
+    .put("endpoint_resolve", endpointResolve)
 }
 
 private fun singBoxWebPanelUrl(port: Int): String = "http://127.0.0.1:$port/"
@@ -1360,6 +1363,13 @@ fun SingBoxProfileScreen(
       onSwitchMode = ::switchSingBoxMode,
     )
 
+    SingBoxEndpointResolveCard(
+      enabled = activeSetting.endpointResolve,
+      loading = settingLoading,
+      saving = settingSaving,
+      onToggle = { value -> saveProfileSetting(activeSetting.copy(endpointResolve = value)) },
+    )
+
     AnimatedVisibility(
       visible = activeSetting.isT2s,
       enter = fadeIn(tween(180)) + expandVertically(animationSpec = tween(220)),
@@ -1449,6 +1459,41 @@ fun SingBoxProfileScreen(
     )
 
     Spacer(Modifier.height(effectiveBottomContentPadding))
+  }
+}
+
+@Composable
+private fun SingBoxEndpointResolveCard(
+  enabled: Boolean,
+  loading: Boolean,
+  saving: Boolean,
+  onToggle: (Boolean) -> Unit,
+) {
+  val accent = Color(0xFF0EA5E9)
+  SingBoxSectionCard(
+    title = stringResource(R.string.singbox_endpoint_resolve_label),
+    desc = stringResource(R.string.singbox_endpoint_resolve_hint),
+    accent = accent,
+    icon = { Icon(Icons.Filled.Public, contentDescription = null, modifier = Modifier.size(21.dp)) },
+  ) {
+    StableLinearProgressIndicator(visible = loading || saving)
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.SpaceBetween,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Text(
+        text = "IPv4",
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
+      )
+      Switch(
+        checked = enabled,
+        enabled = !loading && !saving,
+        onCheckedChange = onToggle,
+      )
+    }
   }
 }
 

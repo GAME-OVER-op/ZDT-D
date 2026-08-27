@@ -946,6 +946,8 @@ Koruma erişim noktası modunda çalışmaz. Erişim noktası etkin ve sing-box 
     <string name="action_edit">Düzenle</string>
     <string name="singbox_profile_settings_title">Profil ayarları</string>
     <string name="singbox_profile_settings_desc">Her sing-box profilinin kendi t2s bağlantı noktaları, uygulama listesi ve sunucu kümesi vardır.</string>
+    <string name="singbox_endpoint_resolve_label">Sunucu alan adlarını çöz</string>
+    <string name="singbox_endpoint_resolve_hint">sing-box başlatılmadan önce outbound server alanlarındaki alan adlarını IPv4 olarak çözümle.</string>
     <string name="singbox_profile_add_server">Oluştur</string>
     <string name="singbox_profile_no_servers">Bu profil için henüz sunucu oluşturulmadı.</string>
     <string name="singbox_profile_ports_must_differ">t2s_port ve t2s_web_port farklı olmalıdır</string>

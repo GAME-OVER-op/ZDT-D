@@ -946,6 +946,8 @@ APatch：10700+</string>
     <string name="action_edit">编辑</string>
     <string name="singbox_profile_settings_title">配置文件设置</string>
     <string name="singbox_profile_settings_desc">每个 sing-box 配置文件都有自己的 t2s 端口、应用列表和服务器集。</string>
+    <string name="singbox_endpoint_resolve_label">解析服务器域名</string>
+    <string name="singbox_endpoint_resolve_hint">在启动 sing-box 前，将 outbound 的 server 字段中的域名解析为 IPv4。</string>
     <string name="singbox_profile_add_server">创建</string>
     <string name="singbox_profile_no_servers">尚未为此配置文件创建服务器。</string>
     <string name="singbox_profile_ports_must_differ">t2s_port 和 t2s_web_port 必须不同</string>

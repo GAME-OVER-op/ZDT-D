@@ -34,8 +34,8 @@ env:
   LZO_VERSION: "2.10"
   LZ4_VERSION: "1.10.0"
   OPENVPN_ANDROID_API_LEVEL: 24
-  AMNEZIAWG_GO_REF: "master"
-  AMNEZIAWG_TOOLS_REF: "v1.0.20260223"
+  AMNEZIAWG_GO_REF: "v3.1.20260814"
+  AMNEZIAWG_TOOLS_REF: "v3.1.20260812"
   AMNEZIAWG_ANDROID_API_LEVEL: 24
   AMNEZIAWG_UAPI_RUN_DIR: "/data/adb/modules/ZDT-D/working_folder/amneziawg/run"
   AMNEZIAWG_UAPI_SOCKET_DIR: "/data/adb/modules/ZDT-D/working_folder/amneziawg/run/amneziawg"

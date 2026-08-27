@@ -5460,6 +5460,63 @@ jobs:
           echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
           echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
 
+      - name: Download BusyBox source with fallback mirrors
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          VERSION="1.37.0"
+          TARBALL="busybox-${VERSION}.tar.bz2"
+          EXPECTED_SHA256="3311dff32e746499f4df0d5df04d7eb396382d7e108bb9250e7b519b837043a4"
+          DOWNLOAD_DIR=".tools/busybox/downloads"
+          DEST="$DOWNLOAD_DIR/$TARBALL"
+          TMP="$DEST.tmp"
+          mkdir -p "$DOWNLOAD_DIR"
+
+          sha256_file() {
+            sha256sum "$1" | awk '{print $1}'
+          }
+
+          if [[ -s "$DEST" ]] && [[ "$(sha256_file "$DEST")" == "$EXPECTED_SHA256" ]]; then
+            echo "[ZDT-D][BusyBox] cached source sha256 OK"
+            exit 0
+          fi
+          rm -f "$DEST" "$TMP"
+
+          URLS=(
+            "https://busybox.net/downloads/$TARBALL"
+            "https://mirror.slackbuilds.org/slackware/slackware64-current/source/a/mkinitrd/$TARBALL"
+            "https://plug-mirror.rcac.purdue.edu/slackware/slackware64-current/source/a/mkinitrd/$TARBALL"
+          )
+
+          for url in "${URLS[@]}"; do
+            echo "[ZDT-D][BusyBox] trying source: $url"
+            rm -f "$TMP"
+            if curl -fL --http1.1 \
+              --connect-timeout 10 \
+              --max-time 75 \
+              --speed-limit 1024 \
+              --speed-time 20 \
+              --retry 2 \
+              --retry-delay 2 \
+              --retry-all-errors \
+              -o "$TMP" "$url"; then
+              actual="$(sha256_file "$TMP")"
+              if [[ "$actual" == "$EXPECTED_SHA256" ]]; then
+                mv -f "$TMP" "$DEST"
+                echo "ZDT_BUSYBOX_SOURCE_URL=$url" >> "$GITHUB_ENV"
+                echo "[ZDT-D][BusyBox] source downloaded and verified: $actual"
+                exit 0
+              fi
+              echo "::warning::BusyBox SHA-256 mismatch from $url: expected=$EXPECTED_SHA256 actual=$actual"
+            else
+              echo "::warning::BusyBox download failed or timed out: $url"
+            fi
+          done
+
+          rm -f "$TMP"
+          echo "::error::Unable to download verified BusyBox $VERSION source from all configured mirrors"
+          exit 1
+
       - name: Build BusyBox ${{ matrix.abi }} from source
         run: |
           set -euo pipefail

@@ -54,6 +54,7 @@ import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -86,6 +87,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.android.zdtd.service.LogLine
 import com.android.zdtd.service.AppUpdateUiState
@@ -105,8 +108,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import com.android.zdtd.service.ui.AppUpdateBanner
 import com.android.zdtd.service.ui.AppUpdateSettings
 import com.android.zdtd.service.ui.settings.SettingsScreen
@@ -175,8 +176,8 @@ fun ZdtdApp(
           RootState.CHECKING -> SplashScreen()
           RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
           RootState.GRANTED -> {
-            UpdatePromptDialog(setup = setup, onUpdate = actions::openModuleInstaller, onSkip = actions::dismissUpdatePrompt)
             MainShell(
+              setup = setup,
               uiStateFlow = uiStateFlow,
               logsFlow = logsFlow,
               appUpdateFlow = appUpdateFlow,
@@ -204,8 +205,12 @@ private fun SplashScreen() {
 @Composable
 private fun StartupDialogHost(
   uiState: UiState,
+  setup: SetupUiState,
   onRetry: () -> Unit,
   onReinstall: () -> Unit,
+  onExpandUpdate: () -> Unit,
+  onUpdate: () -> Unit,
+  onSkipUpdate: () -> Unit,
   onFullyHidden: () -> Unit,
 ) {
   val startup = uiState.startup
@@ -217,16 +222,18 @@ private fun StartupDialogHost(
     }
   }
 
-  val exiting = !startup.visible && renderedStartup.visible
+  // If the release update question is expanded (or the user opens it on a
+  // service build), keep the startup surface alive until they decide.
+  val exiting = !startup.visible && renderedStartup.visible && !setup.showUpdatePrompt
   val cardAlpha by animateFloatAsState(
     targetValue = if (exiting) 0f else 1f,
-    animationSpec = tween(durationMillis = 260),
+    animationSpec = tween(durationMillis = 360),
     label = "startup_card_alpha",
   )
 
   LaunchedEffect(exiting) {
     if (exiting) {
-      delay(260)
+      delay(380)
       renderedStartup = StartupUiState.hidden()
       onFullyHidden()
     }
@@ -236,8 +243,12 @@ private fun StartupDialogHost(
 
   StartupFullscreenContent(
     startup = renderedStartup,
+    setup = setup,
     onRetry = onRetry,
     onReinstall = onReinstall,
+    onExpandUpdate = onExpandUpdate,
+    onUpdate = onUpdate,
+    onSkipUpdate = onSkipUpdate,
     contentAlpha = cardAlpha,
   )
 }
@@ -245,8 +256,12 @@ private fun StartupDialogHost(
 @Composable
 private fun StartupFullscreenContent(
   startup: com.android.zdtd.service.StartupUiState,
+  setup: SetupUiState,
   onRetry: () -> Unit,
   onReinstall: () -> Unit,
+  onExpandUpdate: () -> Unit,
+  onUpdate: () -> Unit,
+  onSkipUpdate: () -> Unit,
   contentAlpha: Float,
 ) {
   val pulseAlpha by rememberInfiniteTransition(label = "startup_stage_pulse").animateFloat(
@@ -317,6 +332,17 @@ private fun StartupFullscreenContent(
         .padding(horizontal = 24.dp, vertical = 20.dp),
       contentAlignment = Alignment.Center,
     ) {
+      StartupBuildUpdateCard(
+        setup = setup,
+        onExpand = onExpandUpdate,
+        onUpdate = onUpdate,
+        onSkip = onSkipUpdate,
+        modifier = Modifier
+          .align(Alignment.TopEnd)
+          .alpha(contentAlpha)
+          .zIndex(2f),
+      )
+
       Card(
         modifier = Modifier
           .fillMaxWidth()
@@ -610,111 +636,146 @@ private fun DaemonUnavailableDialogHost(uiState: UiState) {
 }
 
 @Composable
-private fun UpdatePromptDialog(setup: SetupUiState, onUpdate: () -> Unit, onSkip: () -> Unit) {
-  var renderDialog by rememberSaveable { mutableStateOf(false) }
-  var contentVisible by remember { mutableStateOf(false) }
-  var dismissRequested by remember { mutableStateOf(false) }
-  val scope = rememberCoroutineScope()
+private fun StartupBuildUpdateCard(
+  setup: SetupUiState,
+  onExpand: () -> Unit,
+  onUpdate: () -> Unit,
+  onSkip: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val hasIdentity = setup.buildVersionName.isNotBlank() || setup.buildNumber != null
+  if (!hasIdentity) return
 
-  LaunchedEffect(setup.showUpdatePrompt) {
-    dismissRequested = false
+  var cardExpanded by remember { mutableStateOf(false) }
+  var questionVisible by remember { mutableStateOf(false) }
+  var updateIconVisible by remember { mutableStateOf(setup.buildUpdateAvailable) }
+
+  LaunchedEffect(setup.showUpdatePrompt, setup.updatePromptAutoExpand, setup.buildUpdateAvailable) {
     if (setup.showUpdatePrompt) {
-      contentVisible = false
-      renderDialog = false
-      delay(760)
-      renderDialog = true
-      withFrameNanos { }
-      contentVisible = true
+      if (setup.updatePromptAutoExpand) delay(620)
+      updateIconVisible = false
+      delay(90)
+      cardExpanded = true
+      delay(170)
+      questionVisible = true
     } else {
-      contentVisible = false
-      delay(240)
-      renderDialog = false
+      questionVisible = false
+      delay(140)
+      cardExpanded = false
+      delay(170)
+      updateIconVisible = setup.buildUpdateAvailable
     }
   }
 
-  if (!renderDialog) return
-
-  val mandatory = setup.updatePromptMandatory
-  fun requestSkip() {
-    if (mandatory || dismissRequested) return
-    dismissRequested = true
-    contentVisible = false
-    scope.launch {
-      delay(240)
-      onSkip()
-    }
-  }
-
-  Dialog(
-    onDismissRequest = { requestSkip() },
-    properties = DialogProperties(
-      dismissOnBackPress = !mandatory,
-      dismissOnClickOutside = !mandatory,
-    )
+  AnimatedVisibility(
+    visible = hasIdentity,
+    enter = slideInVertically(
+      initialOffsetY = { -it },
+      animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing),
+    ) + fadeIn(animationSpec = tween(260)),
+    exit = slideOutVertically(
+      targetOffsetY = { -it },
+      animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+    ) + fadeOut(animationSpec = tween(160)),
+    modifier = modifier,
   ) {
-    AnimatedVisibility(
-      visible = contentVisible,
-      enter = fadeIn(
-        animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
-      ) + scaleIn(
-        initialScale = 0.94f,
-        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
-      ) + slideInVertically(
-        initialOffsetY = { it / 7 },
-        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
-      ),
-      exit = fadeOut(
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
-      ) + scaleOut(
-        targetScale = 0.98f,
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
-      ) + slideOutVertically(
-        targetOffsetY = { it / 12 },
-        animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing)
-      ),
-    ) {
+    BoxWithConstraints(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.TopEnd) {
+      val compactWidth = 250.dp.coerceAtMost(maxWidth)
+      val expandedWidth = 390.dp.coerceAtMost(maxWidth)
+      val targetWidth by animateDpAsState(
+        targetValue = if (cardExpanded) expandedWidth else compactWidth,
+        animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+        label = "startup_build_card_width",
+      )
+
       Surface(
         modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 24.dp),
-        shape = MaterialTheme.shapes.extraLarge,
-        tonalElevation = 6.dp,
-        shadowElevation = 12.dp,
-        color = MaterialTheme.colorScheme.surface,
+          .width(targetWidth)
+          .animateContentSize(animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)),
+        shape = RoundedCornerShape(if (cardExpanded) 24.dp else 18.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        tonalElevation = 7.dp,
+        shadowElevation = 10.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
       ) {
         Column(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 22.dp),
-          verticalArrangement = Arrangement.spacedBy(16.dp),
+          modifier = Modifier.padding(
+            horizontal = if (cardExpanded) 18.dp else 14.dp,
+            vertical = if (cardExpanded) 16.dp else 10.dp,
+          ),
+          verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-          Text(
-            text = if (setup.updatePromptTitle.isBlank()) {
-              stringResource(R.string.update_prompt_title_default)
-            } else {
-              setup.updatePromptTitle
-            },
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.SemiBold,
-          )
-          Text(
-            text = setup.updatePromptText,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
           Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
           ) {
-            if (!mandatory) {
-              TextButton(onClick = { requestSkip() }) {
-                Text(stringResource(R.string.update_prompt_skip))
+            val type = setup.buildType.ifBlank { "service" }
+            val numberSuffix = setup.buildNumber?.let { " #$it" }.orEmpty()
+            Text(
+              text = "Build $type v${setup.buildVersionName}$numberSuffix",
+              style = MaterialTheme.typography.labelLarge,
+              fontWeight = FontWeight.SemiBold,
+              color = MaterialTheme.colorScheme.onSurface,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+              modifier = Modifier.weight(1f, fill = false),
+            )
+
+            AnimatedVisibility(
+              visible = updateIconVisible && !cardExpanded,
+              enter = fadeIn(tween(160)) + scaleIn(initialScale = 0.82f, animationSpec = tween(180)),
+              exit = fadeOut(tween(90)) + scaleOut(targetScale = 0.78f, animationSpec = tween(100)),
+            ) {
+              FilledTonalIconButton(
+                onClick = onExpand,
+                modifier = Modifier.size(36.dp),
+                shape = CircleShape,
+              ) {
+                Icon(
+                  imageVector = Icons.Filled.SystemUpdateAlt,
+                  contentDescription = stringResource(R.string.update_prompt_update),
+                  modifier = Modifier.size(19.dp),
+                )
               }
-              Spacer(Modifier.width(8.dp))
             }
-            TextButton(onClick = onUpdate) {
-              Text(stringResource(R.string.update_prompt_update))
+          }
+
+          AnimatedVisibility(
+            visible = questionVisible,
+            enter = fadeIn(animationSpec = tween(durationMillis = 220)) +
+              expandVertically(animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)),
+            exit = fadeOut(animationSpec = tween(durationMillis = 110)) +
+              shrinkVertically(animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing)),
+          ) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+              Text(
+                text = if (setup.updatePromptTitle.isBlank()) {
+                  stringResource(R.string.update_prompt_title_default)
+                } else {
+                  setup.updatePromptTitle
+                },
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+              )
+              Text(
+                text = setup.updatePromptText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+              ) {
+                TextButton(onClick = onSkip) {
+                  Text(stringResource(R.string.update_prompt_skip))
+                }
+                Spacer(Modifier.width(8.dp))
+                TextButton(onClick = onUpdate) {
+                  Text(stringResource(R.string.update_prompt_update))
+                }
+              }
             }
           }
         }
@@ -743,6 +804,7 @@ private fun parentAppsRoute(route: AppsRoute): AppsRoute = when (route) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun MainShell(
+  setup: SetupUiState,
   uiStateFlow: StateFlow<UiState>,
   logsFlow: StateFlow<List<LogLine>>,
   appUpdateFlow: StateFlow<AppUpdateUiState>,
@@ -1557,8 +1619,12 @@ private fun MainShell(
     if (startupHostVisible) {
       StartupDialogHost(
         uiState = uiState,
+        setup = setup,
         onRetry = actions::retryDaemonStartup,
         onReinstall = actions::openModuleInstaller,
+        onExpandUpdate = actions::showUpdatePrompt,
+        onUpdate = actions::openModuleInstaller,
+        onSkipUpdate = actions::dismissUpdatePrompt,
         onFullyHidden = { startupHostVisible = false },
       )
     }

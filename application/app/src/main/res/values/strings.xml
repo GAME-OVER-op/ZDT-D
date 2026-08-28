@@ -52,6 +52,10 @@ Reboot the device so Magisk can apply the changes.</string>
 Bundled with app: versionCode=%2$d.
 
 Updating is recommended for best compatibility. You may skip, but some features may be unavailable and API mismatch errors are possible.</string>
+    <string name="mv_module_build_update_prompt_text">Installed module: v%1$s (versionCode=%2$s, build #%3$s).
+Available build: %4$s v%5$s (versionCode=%6$s, build #%7$s).
+
+Update the module to the build bundled with this app?</string>
     <string name="mv_module_version_unsupported">The installed module version is no longer supported (versionCode=%1$d). To continue using ZDT-D, update the module.</string>
     <string name="mv_backup_list_read_error">Couldn’t read backup list: %1$s</string>
     <string name="mv_backup_settings_folder_missing">Settings folder not found: %1$s.</string>

@@ -52,6 +52,10 @@ Hãy khởi động lại thiết bị để Magisk áp dụng thay đổi.</str
 Phiên bản đi kèm ứng dụng: versionCode=%2$d.
 
 Nên cập nhật để có khả năng tương thích tốt nhất. Bạn có thể bỏ qua, nhưng một số tính năng có thể không khả dụng và có thể xảy ra lỗi không khớp API.</string>
+    <string name="mv_module_build_update_prompt_text">Mô-đun đã cài: v%1$s (versionCode=%2$s, bản dựng #%3$s).
+Bản dựng khả dụng: %4$s v%5$s (versionCode=%6$s, bản dựng #%7$s).
+
+Cập nhật mô-đun lên bản dựng đi kèm ứng dụng này?</string>
     <string name="mv_module_version_unsupported">Phiên bản mô-đun đã cài không còn được hỗ trợ (versionCode=%1$d). Để tiếp tục sử dụng ZDT-D, hãy cập nhật mô-đun.</string>
     <string name="mv_backup_list_read_error">Không thể đọc danh sách bản sao lưu: %1$s</string>
     <string name="mv_backup_settings_folder_missing">Không tìm thấy thư mục cài đặt: %1$s.</string>

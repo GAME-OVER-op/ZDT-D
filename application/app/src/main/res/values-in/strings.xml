@@ -52,6 +52,10 @@ Mulai ulang perangkat agar Magisk dapat menerapkan perubahan.</string>
 Disertakan dalam aplikasi: versionCode=%2$d.
 
 Pembaruan disarankan untuk kompatibilitas terbaik. Anda dapat melewatinya, tetapi beberapa fitur mungkin tidak tersedia dan dapat terjadi kesalahan ketidakcocokan API.</string>
+    <string name="mv_module_build_update_prompt_text">Modul terpasang: v%1$s (versionCode=%2$s, build #%3$s).
+Build tersedia: %4$s v%5$s (versionCode=%6$s, build #%7$s).
+
+Perbarui modul ke build yang disertakan dalam aplikasi ini?</string>
     <string name="mv_module_version_unsupported">Versi modul yang terpasang tidak lagi didukung (versionCode=%1$d). Untuk terus menggunakan ZDT-D, perbarui modul.</string>
     <string name="mv_backup_list_read_error">Daftar cadangan tidak dapat dibaca: %1$s</string>
     <string name="mv_backup_settings_folder_missing">Folder pengaturan tidak ditemukan: %1$s.</string>

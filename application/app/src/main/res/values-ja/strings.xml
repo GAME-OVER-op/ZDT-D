@@ -52,6 +52,10 @@ Magisk が変更を適用できるよう、端末を再起動してください�
 アプリに同梱: versionCode=%2$d。
 
 最適な互換性のため更新を推奨します。スキップすることもできますが、一部の機能が利用できなかったり、API の不一致エラーが発生したりする可能性があります。</string>
+    <string name="mv_module_build_update_prompt_text">インストール済みモジュール: v%1$s (versionCode=%2$s、ビルド #%3$s)。
+利用可能なビルド: %4$s v%5$s (versionCode=%6$s、ビルド #%7$s)。
+
+モジュールをこのアプリに同梱されたビルドへ更新しますか？</string>
     <string name="mv_module_version_unsupported">インストールされているモジュールのバージョンはサポートされなくなりました（versionCode=%1$d）。ZDT-D を引き続き使用するにはモジュールを更新してください。</string>
     <string name="mv_backup_list_read_error">バックアップ一覧を読み取れませんでした: %1$s</string>
     <string name="mv_backup_settings_folder_missing">設定フォルダーが見つかりません: %1$s。</string>

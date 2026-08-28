@@ -1,5 +1,9 @@
 package com.android.zdtd.service.ui.theme
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -7,8 +11,11 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 
 /**
  * App-wide theme mode selectable by the user in Settings.
@@ -168,10 +175,31 @@ fun ZdtdTheme(
     ZdtdThemeMode.LIGHT -> false
     ZdtdThemeMode.DARK -> true
   }
+
+  // Keep system status-bar icons in sync with the app theme. Do not paint
+  // the status bar itself: ZDT-D stays transparent/edge-to-edge, without
+  // adding a light-theme scrim or background behind the system bar.
+  val view = LocalView.current
+  if (!view.isInEditMode) {
+    SideEffect {
+      val window = view.context.findActivity()?.window ?: return@SideEffect
+      WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !useDark
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        window.isStatusBarContrastEnforced = false
+      }
+    }
+  }
+
   MaterialTheme(
     colorScheme = if (useDark) DarkScheme else LightScheme,
     typography = MaterialTheme.typography,
     shapes = ZdtdShapes,
     content = content,
   )
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+  is Activity -> this
+  is ContextWrapper -> baseContext.findActivity()
+  else -> null
 }

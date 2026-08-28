@@ -141,7 +141,10 @@ interface ZdtdActions {
    */
   fun openModuleInstaller()
 
-  /** Dismiss the optional "Update available" prompt (shown again on next cold start). */
+  /** Expand the bundled module update question from the compact startup build card. */
+  fun showUpdatePrompt()
+
+  /** Collapse the optional update question back into the compact startup build card. */
   fun dismissUpdatePrompt()
 
   /** Retry the daemon startup handshake shown after app launch. */

@@ -52,6 +52,10 @@
 نسخه همراه برنامه: versionCode=%2$d.
 
 برای بهترین سازگاری، به‌روزرسانی توصیه می‌شود. می‌توانید رد کنید، اما ممکن است برخی قابلیت‌ها در دسترس نباشند و خطاهای عدم تطابق API رخ دهند.</string>
+    <string name="mv_module_build_update_prompt_text">ماژول نصب‌شده: v%1$s (versionCode=%2$s، بیلد #%3$s).
+بیلد موجود: %4$s v%5$s (versionCode=%6$s، بیلد #%7$s).
+
+ماژول به بیلد همراه این برنامه به‌روزرسانی شود؟</string>
     <string name="mv_module_version_unsupported">نسخه ماژول نصب‌شده دیگر پشتیبانی نمی‌شود (versionCode=%1$d). برای ادامه استفاده از ZDT-D، ماژول را به‌روزرسانی کنید.</string>
     <string name="mv_backup_list_read_error">فهرست نسخه‌های پشتیبان خوانده نشد: %1$s</string>
     <string name="mv_backup_settings_folder_missing">پوشه تنظیمات پیدا نشد: %1$s.</string>

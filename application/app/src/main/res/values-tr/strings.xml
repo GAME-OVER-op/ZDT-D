@@ -52,6 +52,10 @@ Magisk’in değişiklikleri uygulayabilmesi için cihazı yeniden başlatın.</
 Uygulamayla birlikte gelen: versionCode=%2$d.
 
 En iyi uyumluluk için güncelleme önerilir. Atlayabilirsiniz, ancak bazı özellikler kullanılamayabilir ve API uyumsuzluğu hataları oluşabilir.</string>
+    <string name="mv_module_build_update_prompt_text">Yüklü modül: v%1$s (versionCode=%2$s, derleme #%3$s).
+Kullanılabilir derleme: %4$s v%5$s (versionCode=%6$s, derleme #%7$s).
+
+Modül bu uygulamayla birlikte gelen derlemeye güncellensin mi?</string>
     <string name="mv_module_version_unsupported">Yüklü modül sürümü artık desteklenmiyor (versionCode=%1$d). ZDT-D’yi kullanmaya devam etmek için modülü güncelleyin.</string>
     <string name="mv_backup_list_read_error">Yedek listesi okunamadı: %1$s</string>
     <string name="mv_backup_settings_folder_missing">Ayarlar klasörü bulunamadı: %1$s.</string>

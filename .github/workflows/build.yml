@@ -4427,6 +4427,57 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Resolve build identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          VERSION_CODE="$(grep -m1 '^versionCode=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')"
+          VERSION_NAME="$(grep -m1 '^version=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')"
+          [[ "$VERSION_CODE" =~ ^[0-9]+$ ]] || { echo "::error::Numeric versionCode not found in module.prop"; exit 1; }
+          [[ -n "$VERSION_NAME" ]] || { echo "::error::version not found in module.prop"; exit 1; }
+
+          BUILD_CHANNEL="service"
+          STABLE_TAG="V${VERSION_NAME}"
+          stable_version_shape=false
+          version_code_matches_version=false
+
+          if [[ "$VERSION_NAME" =~ ^([0-9]+)\.([0-9]+)\.0$ ]]; then
+            stable_version_shape=true
+            major="${BASH_REMATCH[1]}"
+            minor="${BASH_REMATCH[2]}"
+            code_prefix="${major}${minor}"
+            code_min=$((code_prefix * 1000))
+            code_max=$((code_min + 999))
+            if (( VERSION_CODE >= code_min && VERSION_CODE <= code_max )); then
+              version_code_matches_version=true
+            fi
+          fi
+
+          parse_version_code_from_body() {
+            sed -nE 's/^\|[[:space:]]*(Version code|Код версии)[[:space:]]*\|[[:space:]]*`?([0-9]+)`?[[:space:]]*\|[[:space:]]*$/\2/p' | head -1
+          }
+
+          if [[ "$stable_version_shape" == "true" && "$version_code_matches_version" == "true" ]]; then
+            if gh release view "$STABLE_TAG" >/dev/null 2>&1; then
+              STABLE_BODY="$(gh release view "$STABLE_TAG" --json body --jq '.body // ""')"
+              PUBLISHED_CODE="$(printf '%s\n' "$STABLE_BODY" | parse_version_code_from_body || true)"
+              if [[ -z "$PUBLISHED_CODE" || ! "$PUBLISHED_CODE" =~ ^[0-9]+$ ]] || (( VERSION_CODE > PUBLISHED_CODE )); then
+                BUILD_CHANNEL="release"
+              fi
+            else
+              BUILD_CHANNEL="release"
+            fi
+          fi
+
+          {
+            echo "ZDT_BUILD_TYPE=$BUILD_CHANNEL"
+            echo "ZDT_BUILD_NUMBER=${GITHUB_RUN_NUMBER}"
+          } >> "$GITHUB_ENV"
+
+          echo "[ZDT-D] Build identity: ${BUILD_CHANNEL} v${VERSION_NAME} #${GITHUB_RUN_NUMBER} (versionCode=${VERSION_CODE})"
+
       - name: Download zdtd arm64
         uses: actions/download-artifact@v7
         with:
@@ -4672,6 +4723,14 @@ jobs:
           mkdir -p "$MODULE_BUILD_DIR" out/module
           cp -a module_template/. "$MODULE_BUILD_DIR/"
           cp -f module.prop "$MODULE_BUILD_DIR/module.prop"
+          sed -i '/^buildType=/d; /^buildNumber=/d' "$MODULE_BUILD_DIR/module.prop"
+          {
+            echo "buildType=${ZDT_BUILD_TYPE:-service}"
+            echo "buildNumber=${ZDT_BUILD_NUMBER:-${GITHUB_RUN_NUMBER}}"
+          } >> "$MODULE_BUILD_DIR/module.prop"
+          echo "[ZDT-D] module.prop build identity:"
+          grep -E '^(version|versionCode|buildType|buildNumber)=' "$MODULE_BUILD_DIR/module.prop" || true
+          cp -f "$MODULE_BUILD_DIR/module.prop" out/module/module.prop
 
           [[ -d "$MODULE_BUILD_DIR/META-INF" ]] || { echo "::error::META-INF doesnt exist in module_template"; exit 1; }
           find "$MODULE_BUILD_DIR" -name .gitkeep -type f -delete 2>/dev/null || true
@@ -4760,7 +4819,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: zdt-module-zip
-          path: out/module/zdt_module.zip
+          path: |
+            out/module/zdt_module.zip
+            out/module/module.prop
           retention-days: 1
 
 
@@ -5809,6 +5870,10 @@ jobs:
           done
           printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/busybox/zdt_module.sha256' >/dev/null || { echo "::error::module SHA-256 APK asset missing"; exit 1; }
           printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/busybox/zdt_module.cache' >/dev/null || { echo "::error::module cache APK asset missing"; exit 1; }
+          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/module.prop' >/dev/null || { echo "::error::module.prop APK asset missing"; exit 1; }
+          APK_MODULE_PROP="$(unzip -p "$APK" assets/module.prop)"
+          printf '%s\n' "$APK_MODULE_PROP" | grep -Eq '^buildType=(release|service)$' || { echo "::error::buildType missing from APK module.prop"; exit 1; }
+          printf '%s\n' "$APK_MODULE_PROP" | grep -Eq '^buildNumber=[0-9]+$' || { echo "::error::buildNumber missing from APK module.prop"; exit 1; }
 
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${{ env.ANDROID_BUILD_TOOLS_VERSION }}/apksigner"
           [[ -x "$APKSIGNER" ]] || { echo "::error::apksigner not found: $APKSIGNER"; exit 1; }

@@ -52,6 +52,10 @@
 应用内置版本：versionCode=%2$d。
 
 建议更新以获得最佳兼容性。你可以跳过，但部分功能可能不可用，并且可能出现 API 不匹配错误。</string>
+    <string name="mv_module_build_update_prompt_text">已安装模块：v%1$s（versionCode=%2$s，构建 #%3$s）。
+可用构建：%4$s v%5$s（versionCode=%6$s，构建 #%7$s）。
+
+将模块更新到此应用内置的构建吗？</string>
     <string name="mv_module_version_unsupported">已安装的模块版本不再受支持（versionCode=%1$d）。要继续使用 ZDT-D，请更新模块。</string>
     <string name="mv_backup_list_read_error">无法读取备份列表：%1$s</string>
     <string name="mv_backup_settings_folder_missing">未找到设置文件夹：%1$s。</string>

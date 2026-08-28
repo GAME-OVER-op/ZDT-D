@@ -52,6 +52,10 @@ Reinicia el dispositivo para que Magisk aplique los cambios.</string>
 Incluida con la aplicación: versionCode=%2$d.
 
 Se recomienda actualizar para obtener la mejor compatibilidad. Puedes omitirlo, pero algunas funciones podrían no estar disponibles y pueden producirse errores por incompatibilidad de API.</string>
+    <string name="mv_module_build_update_prompt_text">Módulo instalado: v%1$s (versionCode=%2$s, compilación #%3$s).
+Compilación disponible: %4$s v%5$s (versionCode=%6$s, compilación #%7$s).
+
+¿Actualizar el módulo a la compilación incluida con esta aplicación?</string>
     <string name="mv_module_version_unsupported">La versión instalada del módulo ya no es compatible (versionCode=%1$d). Para seguir usando ZDT-D, actualiza el módulo.</string>
     <string name="mv_backup_list_read_error">No se pudo leer la lista de copias de seguridad: %1$s</string>
     <string name="mv_backup_settings_folder_missing">No se encontró la carpeta de ajustes: %1$s.</string>

@@ -52,6 +52,10 @@
 Вбудована в програму: versionCode=%2$d.
 
 Для найкращої сумісності рекомендовано оновити модуль. Оновлення можна пропустити, але деякі функції можуть бути недоступні, а також можливі помилки через невідповідність API.</string>
+    <string name="mv_module_build_update_prompt_text">Встановлений модуль: v%1$s (versionCode=%2$s, збірка #%3$s).
+Доступна збірка: %4$s v%5$s (versionCode=%6$s, збірка #%7$s).
+
+Оновити модуль до збірки, вбудованої в цей застосунок?</string>
     <string name="mv_module_version_unsupported">Встановлена версія модуля більше не підтримується (versionCode=%1$d). Щоб продовжити користуватися ZDT-D, оновіть модуль.</string>
     <string name="mv_backup_list_read_error">Не вдалося прочитати список резервних копій: %1$s</string>
     <string name="mv_backup_settings_folder_missing">Папку налаштувань не знайдено: %1$s.</string>

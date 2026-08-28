@@ -52,6 +52,10 @@ Magisk द्वारा बदलाव लागू करने के ल�
 ऐप के साथ शामिल: versionCode=%2$d।
 
 बेहतर संगतता के लिए अपडेट करने की सलाह दी जाती है। आप इसे छोड़ सकते हैं, लेकिन कुछ सुविधाएँ उपलब्ध नहीं हो सकतीं और API असंगति त्रुटियाँ हो सकती हैं।</string>
+    <string name="mv_module_build_update_prompt_text">इंस्टॉल किया गया मॉड्यूल: v%1$s (versionCode=%2$s, बिल्ड #%3$s)।
+उपलब्ध बिल्ड: %4$s v%5$s (versionCode=%6$s, बिल्ड #%7$s)।
+
+मॉड्यूल को इस ऐप के साथ शामिल बिल्ड में अपडेट करें?</string>
     <string name="mv_module_version_unsupported">इंस्टॉल किया गया मॉड्यूल संस्करण अब समर्थित नहीं है (versionCode=%1$d)। ZDT-D का उपयोग जारी रखने के लिए मॉड्यूल अपडेट करें।</string>
     <string name="mv_backup_list_read_error">बैकअप सूची पढ़ी नहीं जा सकी: %1$s</string>
     <string name="mv_backup_settings_folder_missing">सेटिंग फ़ोल्डर नहीं मिला: %1$s।</string>

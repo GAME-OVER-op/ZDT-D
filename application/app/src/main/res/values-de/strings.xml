@@ -52,6 +52,10 @@ Starten Sie das Gerät neu, damit Magisk die Änderungen anwenden kann.</string>
 In der App enthalten: versionCode=%2$d.
 
 Für bestmögliche Kompatibilität wird ein Update empfohlen. Sie können es überspringen, aber einige Funktionen sind möglicherweise nicht verfügbar und Fehler durch eine nicht übereinstimmende API sind möglich.</string>
+    <string name="mv_module_build_update_prompt_text">Installiertes Modul: v%1$s (versionCode=%2$s, Build #%3$s).
+Verfügbarer Build: %4$s v%5$s (versionCode=%6$s, Build #%7$s).
+
+Modul auf den in dieser App enthaltenen Build aktualisieren?</string>
     <string name="mv_module_version_unsupported">Die installierte Modulversion wird nicht mehr unterstützt (versionCode=%1$d). Aktualisieren Sie das Modul, um ZDT-D weiter zu verwenden.</string>
     <string name="mv_backup_list_read_error">Sicherungsliste konnte nicht gelesen werden: %1$s</string>
     <string name="mv_backup_settings_folder_missing">Einstellungsordner nicht gefunden: %1$s.</string>

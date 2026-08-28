@@ -119,6 +119,15 @@ data class SetupUiState(
   val updatePromptMandatory: Boolean = false,
   val updatePromptTitle: String = "",
   val updatePromptText: String = "",
+  /** Build identity embedded into the APK/module pair by GitHub Actions. */
+  val buildType: String = "",
+  val buildNumber: Long? = null,
+  val buildVersionName: String = "",
+  val buildVersionCode: Int? = null,
+  /** Bundled module build is newer than the currently installed module. */
+  val buildUpdateAvailable: Boolean = false,
+  /** Release builds expand the update question automatically on launcher cold start. */
+  val updatePromptAutoExpand: Boolean = false,
 
   // Pre-install warnings (forced update / tamper / unsupported)
   val preInstallWarning: String? = null,
@@ -584,6 +593,56 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       ?.substringAfter("version=")
       ?.trim()
       ?.takeIf { it.isNotBlank() }
+  }
+
+  private fun parseBuildType(modulePropText: String): String? {
+    val raw = modulePropText.lineSequence()
+      .map { it.trim() }
+      .firstOrNull { it.startsWith("buildType=") }
+      ?.substringAfter("buildType=")
+      ?.trim()
+      ?.lowercase()
+    return raw?.takeIf { it == "release" || it == "service" }
+  }
+
+  private fun parseBuildNumber(modulePropText: String): Long? {
+    return modulePropText.lineSequence()
+      .map { it.trim() }
+      .firstOrNull { it.startsWith("buildNumber=") }
+      ?.substringAfter("buildNumber=")
+      ?.trim()
+      ?.toLongOrNull()
+  }
+
+  private data class ModuleBuildInfo(
+    val versionName: String?,
+    val versionCode: Int?,
+    val buildType: String?,
+    val buildNumber: Long?,
+  )
+
+  private fun parseModuleBuildInfo(modulePropText: String): ModuleBuildInfo = ModuleBuildInfo(
+    versionName = parseVersion(modulePropText),
+    versionCode = parseVersionCode(modulePropText),
+    buildType = parseBuildType(modulePropText),
+    buildNumber = parseBuildNumber(modulePropText),
+  )
+
+  private fun readBundledModuleBuildInfo(): ModuleBuildInfo? {
+    val text = runCatching {
+      ctx.assets.open("module.prop").bufferedReader().use { it.readText() }
+    }.getOrNull() ?: return null
+    return parseModuleBuildInfo(text)
+  }
+
+  private fun isBundledModuleBuildNewer(installed: ModuleBuildInfo, bundled: ModuleBuildInfo): Boolean {
+    val installedCode = installed.versionCode ?: return false
+    val bundledCode = bundled.versionCode ?: return false
+    if (bundledCode != installedCode) return bundledCode > installedCode
+
+    val bundledBuild = bundled.buildNumber ?: return false
+    val installedBuild = installed.buildNumber
+    return installedBuild == null || bundledBuild > installedBuild
   }
 
   private fun readBundledModuleVersionCode(): Int? {
@@ -1499,9 +1558,34 @@ private fun clearDownloadedUpdateApk() {
       }
       val stickyTamperPending = runCatching { root.isTamperReinstallPendingReboot() }.getOrDefault(false)
 
-      // 5) Optional update prompt (shown only on a cold start from launcher).
-      val bundledCode = readBundledModuleVersionCode()
-      val showOptional = startedFromLauncher && installedCode != null && bundledCode != null && installedCode >= minSupported && installedCode < bundledCode
+      // 5) Build identity + optional bundled-module update prompt.
+      // Release runs auto-expand on a launcher cold start. Service runs expose the same
+      // update action only through the compact build card.
+      val installedBuild = parseModuleBuildInfo(installedText)
+      val bundledBuild = readBundledModuleBuildInfo()
+      val buildUpdateAvailable = bundledBuild != null &&
+        installedCode != null &&
+        installedCode >= minSupported &&
+        isBundledModuleBuildNewer(installedBuild, bundledBuild)
+      val buildType = bundledBuild?.buildType ?: "service"
+      val autoExpandUpdate = startedFromLauncher && buildUpdateAvailable && buildType == "release"
+      val bundledVersionName = bundledBuild?.versionName ?: BuildConfig.VERSION_NAME
+      val bundledVersionCode = bundledBuild?.versionCode ?: BuildConfig.VERSION_CODE
+      val installedVersionName = installedBuild.versionName ?: "?"
+      val installedBuildNumber = installedBuild.buildNumber?.toString() ?: "?"
+      val bundledBuildNumber = bundledBuild?.buildNumber?.toString() ?: "?"
+      val promptText = if (buildUpdateAvailable) {
+        str(
+          R.string.mv_module_build_update_prompt_text,
+          installedVersionName,
+          installedCode?.toString() ?: "?",
+          installedBuildNumber,
+          buildType,
+          bundledVersionName,
+          bundledVersionCode.toString(),
+          bundledBuildNumber,
+        )
+      } else ""
 
       _setup.update { st ->
         st.copy(
@@ -1509,15 +1593,19 @@ private fun clearDownloadedUpdateApk() {
           oldVersionDetected = oldVer,
           preInstallWarning = null,
           rebootRequiredText = "",
-          showUpdatePrompt = showOptional,
+          showUpdatePrompt = autoExpandUpdate,
           explicitReinstallRequested = false,
           updatePromptMandatory = false,
-          updatePromptTitle = if (showOptional) str(R.string.mv_module_update_available) else "",
+          updatePromptTitle = if (buildUpdateAvailable) str(R.string.mv_module_update_available) else "",
+          updatePromptText = promptText,
+          buildType = buildType,
+          buildNumber = bundledBuild?.buildNumber,
+          buildVersionName = bundledVersionName,
+          buildVersionCode = bundledVersionCode,
+          buildUpdateAvailable = buildUpdateAvailable,
+          updatePromptAutoExpand = autoExpandUpdate,
           moduleReinstallRequired = false,
           tamperReinstallPendingReboot = stickyTamperPending,
-          updatePromptText = if (showOptional) {
-            str(R.string.mv_module_update_prompt_text, installedCode ?: -1, bundledCode ?: -1)
-          } else "",
         )
       }
 
@@ -4479,13 +4567,18 @@ if (mf.isNotBlank()) {
     }
   }
 
+  override fun showUpdatePrompt() {
+    _setup.update { st ->
+      if (!st.buildUpdateAvailable) st else st.copy(showUpdatePrompt = true)
+    }
+  }
+
   override fun dismissUpdatePrompt() {
     _setup.update { st ->
       st.copy(
         showUpdatePrompt = false,
         updatePromptMandatory = false,
-        updatePromptTitle = "",
-        updatePromptText = "",
+        updatePromptAutoExpand = false,
       )
     }
   }

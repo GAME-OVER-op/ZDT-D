@@ -2,6 +2,7 @@ package com.android.zdtd.service
 
 import android.os.Bundle
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
@@ -18,8 +19,10 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
+import androidx.core.view.WindowCompat
 import com.android.zdtd.service.ui.ZdtdApp
 import com.android.zdtd.service.ui.theme.ZdtdTheme
+import com.android.zdtd.service.ui.theme.ZdtdThemeMode
 import java.io.File
 import kotlinx.coroutines.launch
 
@@ -48,6 +51,12 @@ class MainActivity : AppCompatActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+
+    // Apply the persisted ZDT-D theme to status-bar icon appearance before
+    // the first Compose frame. This prevents a light-theme launch from briefly
+    // inheriting white icons from a dark system/AppCompat theme. The bar itself
+    // is not colored, so edge-to-edge remains transparent with no extra scrim.
+    applyInitialStatusBarAppearance()
 
     // Apply persisted app language before composing UI.
     runCatching {
@@ -124,6 +133,26 @@ class MainActivity : AppCompatActivity() {
           )
         }
       }
+    }
+  }
+
+  private fun applyInitialStatusBarAppearance() {
+    val mode = ZdtdThemeMode.fromStorage(
+      RootConfigManager(applicationContext).getThemeMode()
+    )
+    val useDark = when (mode) {
+      ZdtdThemeMode.LIGHT -> false
+      ZdtdThemeMode.DARK -> true
+      ZdtdThemeMode.SYSTEM -> {
+        val nightMode = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
+        nightMode == Configuration.UI_MODE_NIGHT_YES
+      }
+    }
+
+    WindowCompat.getInsetsController(window, window.decorView)
+      .isAppearanceLightStatusBars = !useDark
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+      window.isStatusBarContrastEnforced = false
     }
   }
 

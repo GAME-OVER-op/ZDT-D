@@ -27,6 +27,7 @@ def moduleVersionName = (moduleProps.getProperty('version') ?: '1.0').trim()
 def generatedAssetsDir = file("$buildDir/generated/zdt-assets/main")
 def zdtCompileSdk = (findProperty('zdtCompileSdk') ?: System.getenv('ZDT_COMPILE_SDK') ?: '36').toString().trim().toInteger()
 def generatedModuleZip = file('../../out/module/zdt_module.zip')
+def generatedModuleProp = file('../../out/module/module.prop')
 def zdtModuleZip = file("$generatedAssetsDir/zdt_module.zip")
 def bundledModuleProp = file("$generatedAssetsDir/module.prop")
 def bundledDpiDetectorAssets = [
@@ -182,6 +183,7 @@ android {
 tasks.register('prepareZdtGeneratedAssets') {
   inputs.file(rootModuleProp).withPathSensitivity(PathSensitivity.RELATIVE)
   inputs.file(generatedModuleZip).optional().withPathSensitivity(PathSensitivity.RELATIVE)
+  inputs.file(generatedModuleProp).optional().withPathSensitivity(PathSensitivity.RELATIVE)
   prebuiltBusyBoxes.values().each { inputs.file(it).optional().withPathSensitivity(PathSensitivity.RELATIVE) }
   inputs.file(busyBoxBuildScript).withPathSensitivity(PathSensitivity.RELATIVE)
   outputs.file(zdtModuleZip)
@@ -219,12 +221,21 @@ tasks.register('prepareZdtGeneratedAssets') {
       println("[ZDT-D] created placeholder module zip: ${zdtModuleZip}")
     }
 
-    java.nio.file.Files.copy(
-        rootModuleProp.toPath(),
-        bundledModuleProp.toPath(),
-        java.nio.file.StandardCopyOption.REPLACE_EXISTING
-    )
-    println("[ZDT-D] synced module.prop from root: ${rootModuleProp}")
+    if (generatedModuleProp.exists()) {
+      java.nio.file.Files.copy(
+          generatedModuleProp.toPath(),
+          bundledModuleProp.toPath(),
+          java.nio.file.StandardCopyOption.REPLACE_EXISTING
+      )
+      println("[ZDT-D] synced generated build module.prop: ${generatedModuleProp}")
+    } else {
+      java.nio.file.Files.copy(
+          rootModuleProp.toPath(),
+          bundledModuleProp.toPath(),
+          java.nio.file.StandardCopyOption.REPLACE_EXISTING
+      )
+      println("[ZDT-D] synced module.prop from root: ${rootModuleProp}")
+    }
 
     def busyBoxMeta = [:]
     prebuiltBusyBoxes.each { arch, prebuiltBusyBox ->

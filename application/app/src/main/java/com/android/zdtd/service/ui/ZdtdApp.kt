@@ -737,30 +737,33 @@ private fun StartupBuildUpdateCard(
           .animateContentSize(animationSpec = tween(durationMillis = 330, easing = FastOutSlowInEasing)),
         shape = RoundedCornerShape(if (cardExpanded) 24.dp else 18.dp),
         colors = CardDefaults.cardColors(
-          containerColor = MaterialTheme.colorScheme.surface.copy(alpha = if (lightTheme) 0.985f else 0.95f),
+          // Keep the light card fully opaque and flat. Material elevation shadows are
+          // visibly darker around rounded corners on a white startup background.
+          containerColor = if (lightTheme) {
+            MaterialTheme.colorScheme.surface
+          } else {
+            MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+          },
         ),
         elevation = CardDefaults.cardElevation(
-          defaultElevation = if (lightTheme) 5.dp else 10.dp,
+          defaultElevation = if (lightTheme) 0.dp else 10.dp,
         ),
       ) {
         Box(
-          modifier = Modifier
-            .fillMaxWidth()
-            .background(
-              Brush.horizontalGradient(
-                colors = if (lightTheme) {
-                  listOf(
-                    MaterialTheme.colorScheme.primary.copy(alpha = 0.025f),
-                    Color.Transparent,
-                  )
-                } else {
-                  listOf(
+          modifier = if (lightTheme) {
+            Modifier.fillMaxWidth()
+          } else {
+            Modifier
+              .fillMaxWidth()
+              .background(
+                Brush.horizontalGradient(
+                  colors = listOf(
                     MaterialTheme.colorScheme.primary.copy(alpha = 0.07f),
                     Color.Transparent,
-                  )
-                },
-              ),
-            ),
+                  ),
+                ),
+              )
+          },
         ) {
           Column(
             modifier = Modifier.padding(

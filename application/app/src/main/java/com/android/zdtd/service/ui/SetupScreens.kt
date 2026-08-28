@@ -1128,7 +1128,7 @@ private fun ZdtdSetupMascot(
       modifier = Modifier
         .matchParentSize()
         .graphicsLayer {
-          alpha = if (lightTheme) 0.22f + breath * 0.14f else 0.32f + breath * 0.22f
+          alpha = if (lightTheme) 0.16f + breath * 0.08f else 0.32f + breath * 0.22f
           scaleX = 1.02f
           scaleY = 1.02f
           translationX = stateShift + hairDrift * 2.2f
@@ -1146,7 +1146,7 @@ private fun ZdtdSetupMascot(
               listOf(
                 Color.Transparent,
                 Color.Transparent,
-                MaterialTheme.colorScheme.surface.copy(alpha = 0.13f),
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.04f),
               )
             } else {
               listOf(
@@ -1165,9 +1165,10 @@ private fun ZdtdSetupMascot(
           Brush.horizontalGradient(
             if (lightTheme) {
               listOf(
-                MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
-                MaterialTheme.colorScheme.surface.copy(alpha = 0.10f),
-                accent.copy(alpha = 0.025f + breath * 0.02f),
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.42f),
+                MaterialTheme.colorScheme.surface.copy(alpha = 0.06f),
+                Color(0xFF141821).copy(alpha = 0.12f),
+                accent.copy(alpha = 0.085f + breath * 0.03f),
               )
             } else {
               listOf(

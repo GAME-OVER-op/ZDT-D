@@ -1,6 +1,7 @@
 package com.android.zdtd.service.ui
 
 import android.os.Build
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.slideInVertically
@@ -16,7 +17,9 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -43,11 +46,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -104,7 +110,10 @@ private fun setupPanelAccentWash(accent: androidx.compose.ui.graphics.Color, alp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SetupScaffold(content: @Composable (PaddingValues) -> Unit) {
+private fun SetupScaffold(
+  title: String? = null,
+  content: @Composable (PaddingValues) -> Unit,
+) {
   val scheme = MaterialTheme.colorScheme
   Scaffold(
     containerColor = scheme.background,
@@ -117,8 +126,8 @@ private fun SetupScaffold(content: @Composable (PaddingValues) -> Unit) {
         ),
         title = {
           Text(
-            stringResource(R.string.app_name),
-            letterSpacing = 2.sp,
+            title ?: stringResource(R.string.app_name),
+            letterSpacing = if (title == null) 2.sp else 0.sp,
             fontWeight = FontWeight.SemiBold,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
@@ -361,25 +370,41 @@ fun InstallModuleScreen(
   val arm64Ok = remember { isArm64OnlySupported() }
   val compact = rememberIsCompactWidth()
   val screenPadding = rememberAdaptiveScreenPadding()
-  var showInstallLog by rememberSaveable(setup.installing, setup.installLog, setup.installOk, setup.installError, setup.manualZipSaved) { androidx.compose.runtime.mutableStateOf(false) }
+  var showInstallLog by rememberSaveable(setup.installing, setup.installOk, setup.manualZipSaved) { mutableStateOf(false) }
   var showUnofficialAndroidWarning by rememberSaveable { mutableStateOf(false) }
   val osInstallOk = remember { isModuleInstallOsSupported() }
   val needsAndroidWarning = remember { needsUnofficialAndroidInstallWarning() }
   val canShowInstallLog = !setup.installing && setup.installLog.isNotBlank()
   val animatedInstallProgress by animateFloatAsState(
-    targetValue = (setup.installProgressPercent.coerceIn(0, 100) / 100f),
-    animationSpec = tween(durationMillis = 950, easing = FastOutSlowInEasing),
+    targetValue = setup.installProgressPercent.coerceIn(0, 100) / 100f,
+    animationSpec = tween(durationMillis = 760, easing = FastOutSlowInEasing),
     label = "install_progress_float",
   )
   val animatedInstallPercent by animateIntAsState(
     targetValue = setup.installProgressPercent.coerceIn(0, 100),
-    animationSpec = tween(durationMillis = 950, easing = FastOutSlowInEasing),
+    animationSpec = tween(durationMillis = 760, easing = FastOutSlowInEasing),
     label = "install_progress_int",
   )
+  val visualState = when {
+    setup.installOk -> InstallerVisualState.SUCCESS
+    !setup.installError.isNullOrBlank() -> InstallerVisualState.ERROR
+    setup.installing -> InstallerVisualState.INSTALLING
+    else -> InstallerVisualState.READY
+  }
+  val canInstall = arm64Ok && osInstallOk && rootState == RootState.GRANTED && !setup.installing && !setup.installOk
+  val requestInstall: () -> Unit = {
+    if (needsAndroidWarning) {
+      showUnofficialAndroidWarning = true
+    } else {
+      onInstall()
+    }
+  }
+
   LaunchedEffect(Unit) {
     onRefreshConflicts()
     onRefreshZygiskInstallMarker()
   }
+
   if (arm64Ok && setup.showManualDialog) {
     val extra = if (setup.oldVersionDetected) {
       "\n\n" + stringResource(R.string.setup_manual_old_version_extra)
@@ -424,7 +449,6 @@ fun InstallModuleScreen(
     )
   }
 
-
   if (setup.showZygiskInstallRecoveryDialog) {
     SetupAlertDialog(
       onDismissRequest = onDismissZygiskInstallRecovery,
@@ -447,110 +471,53 @@ fun InstallModuleScreen(
     )
   }
 
-  SetupScaffold { padding ->
-    SetupScreenBackground(padding = padding) {
+  SetupScaffold(title = stringResource(R.string.setup_install_title)) { padding ->
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(padding)
+        .background(MaterialTheme.colorScheme.background),
+    ) {
+      Box(
+        modifier = Modifier
+          .matchParentSize()
+          .background(
+            Brush.verticalGradient(
+              listOf(
+                MaterialTheme.colorScheme.primary.copy(alpha = if (setupIsLightTheme()) 0.035f else 0.075f),
+                Color.Transparent,
+                MaterialTheme.colorScheme.secondary.copy(alpha = if (setupIsLightTheme()) 0.025f else 0.045f),
+              ),
+            ),
+          ),
+      )
+
       Column(
         modifier = Modifier
-          .padding(screenPadding)
-          .widthIn(max = 620.dp)
+          .align(Alignment.TopCenter)
+          .padding(horizontal = screenPadding, vertical = 10.dp)
+          .widthIn(max = 720.dp)
           .fillMaxWidth()
           .verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
       ) {
-        SetupStepHeader(currentStep = 3)
-        Spacer(Modifier.height(4.dp))
-        SetupHeroCard(
-          icon = Icons.Filled.SystemUpdateAlt,
-          stepLabel = "03 / 03",
-          title = stringResource(R.string.setup_install_title),
-          body = stringResource(R.string.setup_install_body),
-          accent = MaterialTheme.colorScheme.primary,
+        InstallerHeroCard(
+          setup = setup,
+          state = visualState,
+          compact = compact,
         )
 
-        if (setup.installerLabel.isNotBlank()) {
-          Spacer(Modifier.height(12.dp))
-          Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = setupPanelColor(0.92f)),
-          ) {
-            if (compact) {
-              Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(
-                  text = stringResource(R.string.setup_install_method),
-                  style = MaterialTheme.typography.bodyMedium,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                )
-                Text(
-                  text = setup.installerLabel,
-                  style = MaterialTheme.typography.bodyMedium,
-                  fontWeight = FontWeight.SemiBold,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-            } else {
-              Row(
-                modifier = Modifier.padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-              ) {
-                Text(
-                  text = stringResource(R.string.setup_install_method),
-                  style = MaterialTheme.typography.bodyMedium,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                  text = setup.installerLabel,
-                  style = MaterialTheme.typography.bodyMedium,
-                  fontWeight = FontWeight.SemiBold,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-            }
-          }
-        }
+        InstallerInfoTiles(
+          installer = setup.installerLabel,
+          arm64Ok = arm64Ok,
+          osInstallOk = osInstallOk,
+        )
 
-        AnimatedVisibility(
-          visible = setup.installConflicts.isNotEmpty(),
-          enter = fadeIn(animationSpec = tween(220)) + expandVertically(animationSpec = tween(260)),
-          exit = fadeOut(animationSpec = tween(180)) + shrinkVertically(animationSpec = tween(180)),
-        ) {
-          Column {
-            Spacer(Modifier.height(12.dp))
-            setup.installConflicts.forEachIndexed { index, conflict ->
-              key(conflict.modulePath) {
-                AnimatedVisibility(
-                  visible = true,
-                  enter = fadeIn(animationSpec = tween(durationMillis = 260, delayMillis = index * 55)) +
-                    expandVertically(
-                      animationSpec = tween(
-                        durationMillis = 320,
-                        delayMillis = index * 55,
-                        easing = FastOutSlowInEasing,
-                      ),
-                    ) +
-                    slideInVertically(
-                      initialOffsetY = { it / 5 },
-                      animationSpec = tween(
-                        durationMillis = 320,
-                        delayMillis = index * 55,
-                        easing = FastOutSlowInEasing,
-                      ),
-                    ),
-                ) {
-                  Column {
-                    InstallConflictCard(
-                      conflict = conflict,
-                      onToggleRemove = { checked -> onToggleConflictRemove(conflict.modulePath, checked) },
-                    )
-                    Spacer(Modifier.height(10.dp))
-                  }
-                }
-              }
-            }
-          }
-        }
-
-        Spacer(Modifier.height(12.dp))
+        InstallerSectionHeader(
+          title = stringResource(R.string.settings_title),
+          trailing = null,
+          accent = MaterialTheme.colorScheme.primary,
+        )
         OptionalZygiskInstallCard(
           enabled = setup.installZygiskRequested,
           onToggle = onToggleZygiskInstall,
@@ -558,234 +525,681 @@ fun InstallModuleScreen(
 
         AnimatedVisibility(
           visible = setup.showKsuApatchZygiskWarning,
-          enter = fadeIn(animationSpec = tween(280)) +
-            expandVertically(animationSpec = tween(360, easing = FastOutSlowInEasing)) +
-            slideInVertically(
-              initialOffsetY = { fullHeight -> fullHeight / 6 },
-              animationSpec = tween(360, easing = FastOutSlowInEasing),
-            ),
-          exit = fadeOut(animationSpec = tween(180)) + shrinkVertically(animationSpec = tween(180)),
+          enter = fadeIn(tween(220)) + expandVertically(tween(280, easing = FastOutSlowInEasing)),
+          exit = fadeOut(tween(150)) + shrinkVertically(tween(180)),
         ) {
-          Column(modifier = Modifier.fillMaxWidth()) {
-            Spacer(Modifier.height(10.dp))
-            KsuApatchZygiskWarningCard()
-          }
+          KsuApatchZygiskWarningCard()
         }
 
-        Spacer(Modifier.height(18.dp))
+        AnimatedVisibility(
+          visible = setup.installConflicts.isNotEmpty(),
+          enter = fadeIn(tween(220)) + expandVertically(tween(300, easing = FastOutSlowInEasing)),
+          exit = fadeOut(tween(160)) + shrinkVertically(tween(200)),
+        ) {
+          Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            InstallerSectionHeader(
+              title = stringResource(R.string.setup_install_conflict_details),
+              trailing = setup.installConflicts.size.toString(),
+              accent = MaterialTheme.colorScheme.error,
+            )
+            setup.installConflicts.forEach { conflict ->
+              key(conflict.modulePath) {
+                InstallConflictCard(
+                  conflict = conflict,
+                  onToggleRemove = { checked -> onToggleConflictRemove(conflict.modulePath, checked) },
+                )
+              }
+            }
+          }
+        }
 
         if (!setup.preInstallWarning.isNullOrBlank()) {
-          Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-          ) {
-            Text(
-              text = setup.preInstallWarning ?: "",
-              modifier = Modifier.padding(14.dp),
-              style = MaterialTheme.typography.bodyMedium,
-              color = MaterialTheme.colorScheme.onErrorContainer,
-            )
-          }
-          Spacer(Modifier.height(18.dp))
+          InstallerNoticeCard(
+            text = setup.preInstallWarning.orEmpty(),
+            accent = MaterialTheme.colorScheme.error,
+          )
         }
 
-        val canInstall = arm64Ok && osInstallOk && rootState == RootState.GRANTED && !setup.installing && !setup.installOk
-        SetupPrimaryButton(
-          onClick = {
-            if (needsAndroidWarning) {
-              showUnofficialAndroidWarning = true
-            } else {
-              onInstall()
-            }
-          },
-          enabled = canInstall,
-          modifier = Modifier.fillMaxWidth(),
-          text = if (setup.installing) stringResource(R.string.common_installing) else stringResource(R.string.common_install),
-        )
-
         if (!osInstallOk) {
-          Spacer(Modifier.height(10.dp))
-          Text(
+          InstallerNoticeCard(
             text = stringResource(R.string.setup_android_unsupported_fmt, Build.VERSION.RELEASE.ifBlank { "unknown" }),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
+            accent = MaterialTheme.colorScheme.error,
           )
         } else if (needsAndroidWarning && !setup.installing && !setup.installOk) {
-          Spacer(Modifier.height(10.dp))
-          Text(
+          InstallerNoticeCard(
             text = stringResource(R.string.setup_android_unofficial_hint),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-            textAlign = TextAlign.Center,
+            accent = MaterialTheme.colorScheme.tertiary,
           )
         }
 
         if (!arm64Ok) {
-          Spacer(Modifier.height(10.dp))
-          Text(
+          InstallerNoticeCard(
             text = stringResource(
               R.string.setup_arch_unsupported_fmt,
               Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown",
             ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.error,
+            accent = MaterialTheme.colorScheme.error,
           )
         }
 
-        val showProgressCard = setup.installing || setup.installProgressPercent > 0
-        AnimatedVisibility(
-          visible = showProgressCard,
-          enter = fadeIn(animationSpec = tween(280)) + expandVertically(animationSpec = tween(280)),
-          exit = fadeOut(animationSpec = tween(220)) + shrinkVertically(animationSpec = tween(220)),
-        ) {
-          Column {
-            Spacer(Modifier.height(14.dp))
-            Card(
-              modifier = Modifier.fillMaxWidth(),
-              colors = CardDefaults.cardColors(containerColor = setupPanelColor(0.92f)),
-            ) {
-              Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(
-                  modifier = Modifier.fillMaxWidth(),
-                  horizontalArrangement = Arrangement.SpaceBetween,
-                  verticalAlignment = Alignment.CenterVertically,
-                ) {
-                  Text(
-                    text = setup.installProgressLabel.ifBlank { stringResource(R.string.setup_install_progress_preparing) },
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  )
-                  Text(
-                    text = stringResource(R.string.setup_install_progress_percent_fmt, animatedInstallPercent),
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                  )
-                }
-                LinearProgressIndicator(
-                  progress = animatedInstallProgress,
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(MaterialTheme.shapes.extraLarge),
-                )
-              }
-            }
-          }
-        }
-
-        AnimatedVisibility(
-          visible = setup.installOk,
-          enter = fadeIn(animationSpec = tween(durationMillis = 520, delayMillis = 120)) +
-            expandVertically(animationSpec = tween(durationMillis = 520, delayMillis = 120, easing = FastOutSlowInEasing)) +
-            slideInVertically(
-              initialOffsetY = { fullHeight -> fullHeight / 5 },
-              animationSpec = tween(durationMillis = 520, delayMillis = 120, easing = FastOutSlowInEasing),
-            ),
-          exit = fadeOut(animationSpec = tween(durationMillis = 220)) +
-            shrinkVertically(animationSpec = tween(durationMillis = 220)),
-        ) {
-          Column(modifier = Modifier.fillMaxWidth()) {
-            Spacer(Modifier.height(18.dp))
-            Card(Modifier.fillMaxWidth()) {
-              Column(Modifier.padding(14.dp)) {
-                Text(stringResource(R.string.setup_module_installed_title), fontWeight = FontWeight.SemiBold)
-                Spacer(Modifier.height(6.dp))
-                Text(
-                  stringResource(R.string.setup_module_installed_body),
-                  style = MaterialTheme.typography.bodyMedium,
-                  color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.78f),
-                )
-                Spacer(Modifier.height(12.dp))
-
-                CooldownRebootButton(
-                  activeKey = setup.installOk,
-                  onReboot = onReboot,
-                  modifier = Modifier.fillMaxWidth(),
-                )
-              }
-            }
-          }
-        }
+        InstallerActionCard(
+          state = visualState,
+          setup = setup,
+          animatedProgress = animatedInstallProgress,
+          animatedPercent = animatedInstallPercent,
+          canInstall = canInstall,
+          onInstall = requestInstall,
+          onReboot = onReboot,
+          onShowLog = { showInstallLog = true },
+          canShowLog = canShowInstallLog,
+        )
 
         if (setup.manualZipSaved) {
-          Spacer(Modifier.height(18.dp))
-          Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = setupPanelColor(0.92f)),
-          ) {
-            Column(Modifier.padding(14.dp)) {
-              Text(stringResource(R.string.setup_zip_saved_title), fontWeight = FontWeight.SemiBold)
-              Spacer(Modifier.height(6.dp))
-              Text(
-                stringResource(R.string.setup_zip_saved_path_fmt, setup.manualZipPath),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-              Spacer(Modifier.height(6.dp))
-              Text(
-                stringResource(R.string.setup_zip_saved_body),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-              )
-            }
-          }
-        }
-
-        if (!setup.installError.isNullOrBlank()) {
-          Spacer(Modifier.height(12.dp))
-          Text(
-            text = setup.installError ?: stringResource(R.string.common_error),
-            color = MaterialTheme.colorScheme.error,
-            style = MaterialTheme.typography.bodyMedium,
+          InstallerNoticeCard(
+            title = stringResource(R.string.setup_zip_saved_title),
+            text = stringResource(R.string.setup_zip_saved_path_fmt, setup.manualZipPath) + "\n" +
+              stringResource(R.string.setup_zip_saved_body),
+            accent = MaterialTheme.colorScheme.tertiary,
           )
         }
 
         AnimatedVisibility(
           visible = canShowInstallLog,
-          enter = fadeIn(animationSpec = tween(320)) + expandVertically(animationSpec = tween(320)),
-          exit = fadeOut(animationSpec = tween(220)) + shrinkVertically(animationSpec = tween(220)),
+          enter = fadeIn(tween(220)) + expandVertically(tween(240)),
+          exit = fadeOut(tween(150)) + shrinkVertically(tween(180)),
         ) {
-          Column(modifier = Modifier.fillMaxWidth()) {
-            Spacer(Modifier.height(18.dp))
-            OutlinedButton(
-              onClick = { showInstallLog = !showInstallLog },
-              modifier = Modifier.fillMaxWidth(),
-            ) {
-              Icon(
-                imageVector = if (showInstallLog) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                contentDescription = null,
+          InstallerLogCard(
+            expanded = showInstallLog,
+            log = setup.installLog,
+            onToggle = { showInstallLog = !showInstallLog },
+          )
+        }
+
+        Spacer(Modifier.height(18.dp))
+      }
+    }
+  }
+}
+
+private enum class InstallerVisualState {
+  READY,
+  INSTALLING,
+  SUCCESS,
+  ERROR,
+}
+
+@Composable
+private fun InstallerHeroCard(
+  setup: SetupUiState,
+  state: InstallerVisualState,
+  compact: Boolean,
+) {
+  val accent = when (state) {
+    InstallerVisualState.SUCCESS -> Color(0xFF2ECC71)
+    InstallerVisualState.ERROR -> MaterialTheme.colorScheme.error
+    InstallerVisualState.INSTALLING -> MaterialTheme.colorScheme.primary
+    InstallerVisualState.READY -> MaterialTheme.colorScheme.primary
+  }
+  val operationLabel = when {
+    setup.buildUpdateAvailable -> stringResource(R.string.mv_module_update_available)
+    setup.moduleReinstallRequired || setup.explicitReinstallRequested -> stringResource(R.string.startup_reinstall_module)
+    else -> stringResource(R.string.setup_install_title)
+  }
+  val targetBuild = listOfNotNull(
+    setup.buildVersionName.takeIf { it.isNotBlank() }?.let { "v$it" },
+    setup.buildNumber?.let { "#$it" },
+  ).joinToString(" ")
+  val installedBuild = listOfNotNull(
+    setup.installedVersionName.takeIf { it.isNotBlank() }?.let { "v$it" },
+    setup.installedBuildNumber?.let { "#$it" },
+  ).joinToString(" ")
+  val buildLine = when {
+    setup.buildUpdateAvailable && installedBuild.isNotBlank() && targetBuild.isNotBlank() -> "$installedBuild  →  $targetBuild"
+    targetBuild.isNotBlank() && setup.buildType.isNotBlank() -> "$targetBuild  ·  ${setup.buildType}"
+    else -> targetBuild
+  }
+
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .height(if (compact) 214.dp else 230.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = if (setupIsLightTheme()) 0.90f else 0.72f),
+    shape = RoundedCornerShape(26.dp),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
+    tonalElevation = 0.dp,
+    shadowElevation = if (setupIsLightTheme()) 0.dp else 2.dp,
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxSize()
+        .background(
+          Brush.horizontalGradient(
+            listOf(
+              setupPanelAccentWash(accent, 0.13f),
+              Color.Transparent,
+              Color.Transparent,
+            ),
+          ),
+        ),
+    ) {
+      Column(
+        modifier = Modifier
+          .align(Alignment.CenterStart)
+          .fillMaxWidth(if (compact) 0.60f else 0.62f)
+          .padding(start = 18.dp, top = 18.dp, bottom = 18.dp, end = 8.dp),
+        verticalArrangement = Arrangement.Center,
+      ) {
+        Surface(
+          shape = RoundedCornerShape(999.dp),
+          color = accent.copy(alpha = 0.13f),
+          border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+        ) {
+          Text(
+            text = operationLabel,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = accent,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+        Spacer(Modifier.height(11.dp))
+        Text(
+          text = "ZDT-D Module",
+          style = if (compact) MaterialTheme.typography.titleLarge else MaterialTheme.typography.headlineSmall,
+          fontWeight = FontWeight.Bold,
+          color = MaterialTheme.colorScheme.onSurface,
+          maxLines = 2,
+        )
+        if (buildLine.isNotBlank()) {
+          Spacer(Modifier.height(6.dp))
+          Text(
+            text = buildLine,
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+          text = when (state) {
+            InstallerVisualState.INSTALLING -> setup.installProgressLabel.ifBlank { stringResource(R.string.setup_install_progress_preparing) }
+            InstallerVisualState.SUCCESS -> stringResource(R.string.setup_module_installed_body)
+            InstallerVisualState.ERROR -> setup.installError ?: stringResource(R.string.common_error)
+            InstallerVisualState.READY -> stringResource(R.string.setup_install_body)
+          },
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+          maxLines = if (compact) 3 else 4,
+          overflow = TextOverflow.Ellipsis,
+        )
+      }
+
+      ZdtdInstallerMascot(
+        state = state,
+        modifier = Modifier
+          .align(Alignment.CenterEnd)
+          .width(if (compact) 142.dp else 174.dp)
+          .fillMaxHeight(),
+      )
+    }
+  }
+}
+
+@Composable
+private fun ZdtdInstallerMascot(
+  state: InstallerVisualState,
+  modifier: Modifier = Modifier,
+) {
+  val loop = rememberInfiniteTransition(label = "installer_mascot_motion")
+  val breath by loop.animateFloat(
+    initialValue = 0f,
+    targetValue = 1f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(durationMillis = 3000, easing = FastOutSlowInEasing),
+      repeatMode = RepeatMode.Reverse,
+    ),
+    label = "installer_mascot_breath",
+  )
+  val hairDrift by loop.animateFloat(
+    initialValue = -1f,
+    targetValue = 1f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(durationMillis = 2200, easing = FastOutSlowInEasing),
+      repeatMode = RepeatMode.Reverse,
+    ),
+    label = "installer_mascot_hair",
+  )
+  val stateShift by animateFloatAsState(
+    targetValue = when (state) {
+      InstallerVisualState.READY -> 0f
+      InstallerVisualState.INSTALLING -> -4f
+      InstallerVisualState.SUCCESS -> 3f
+      InstallerVisualState.ERROR -> -2f
+    },
+    animationSpec = tween(520, easing = FastOutSlowInEasing),
+    label = "installer_mascot_state_shift",
+  )
+  val stateTilt by animateFloatAsState(
+    targetValue = when (state) {
+      InstallerVisualState.READY -> 0f
+      InstallerVisualState.INSTALLING -> -0.8f
+      InstallerVisualState.SUCCESS -> 0.65f
+      InstallerVisualState.ERROR -> -0.45f
+    },
+    animationSpec = tween(520, easing = FastOutSlowInEasing),
+    label = "installer_mascot_state_tilt",
+  )
+  val accent = when (state) {
+    InstallerVisualState.SUCCESS -> Color(0xFF2ECC71)
+    InstallerVisualState.ERROR -> MaterialTheme.colorScheme.error
+    else -> MaterialTheme.colorScheme.primary
+  }
+
+  Box(
+    modifier = modifier
+      .clip(RoundedCornerShape(topStart = 22.dp, bottomStart = 22.dp))
+      .background(Color(0xFF070A12)),
+  ) {
+    Image(
+      painter = painterResource(R.drawable.zdtd_installer_mascot),
+      contentDescription = null,
+      contentScale = ContentScale.Crop,
+      alignment = Alignment.TopCenter,
+      modifier = Modifier
+        .matchParentSize()
+        .graphicsLayer {
+          scaleX = 1.018f + breath * 0.008f
+          scaleY = 1.018f + breath * 0.014f
+          translationX = stateShift + hairDrift * 0.55f
+          translationY = breath * 1.6f
+          rotationZ = stateTilt + hairDrift * 0.12f
+        },
+    )
+    Image(
+      painter = painterResource(R.drawable.zdtd_installer_mascot_highlights),
+      contentDescription = null,
+      contentScale = ContentScale.Crop,
+      alignment = Alignment.TopCenter,
+      modifier = Modifier
+        .matchParentSize()
+        .graphicsLayer {
+          alpha = 0.32f + breath * 0.22f
+          scaleX = 1.02f
+          scaleY = 1.02f
+          translationX = stateShift + hairDrift * 2.2f
+          translationY = -breath * 0.8f
+          rotationZ = stateTilt + hairDrift * 0.24f
+        },
+    )
+    Box(
+      modifier = Modifier
+        .matchParentSize()
+        .background(
+          Brush.verticalGradient(
+            listOf(
+              Color.Transparent,
+              Color.Transparent,
+              Color(0xFF070A12).copy(alpha = 0.22f),
+            ),
+          ),
+        ),
+    )
+    Box(
+      modifier = Modifier
+        .matchParentSize()
+        .background(
+          Brush.horizontalGradient(
+            listOf(
+              Color(0xFF070A12).copy(alpha = 0.90f),
+              Color.Transparent,
+              accent.copy(alpha = 0.08f + breath * 0.05f),
+            ),
+          ),
+        ),
+    )
+    Surface(
+      modifier = Modifier
+        .align(Alignment.BottomEnd)
+        .padding(10.dp),
+      color = Color.Black.copy(alpha = 0.42f),
+      shape = RoundedCornerShape(999.dp),
+      border = BorderStroke(1.dp, accent.copy(alpha = 0.42f)),
+    ) {
+      Text(
+        text = "ZDT-D",
+        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+        style = MaterialTheme.typography.labelSmall,
+        fontWeight = FontWeight.Bold,
+        color = Color.White,
+      )
+    }
+  }
+}
+
+@Composable
+private fun InstallerInfoTiles(
+  installer: String,
+  arm64Ok: Boolean,
+  osInstallOk: Boolean,
+) {
+  Row(
+    modifier = Modifier.fillMaxWidth(),
+    horizontalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    InstallerInfoTile(
+      modifier = Modifier.weight(1f),
+      label = stringResource(R.string.setup_install_method).trimEnd(':').trim(),
+      value = installer.ifBlank { "—" },
+      ok = installer.isNotBlank(),
+    )
+    InstallerInfoTile(
+      modifier = Modifier.weight(1f),
+      label = "ABI",
+      value = Build.SUPPORTED_ABIS.firstOrNull() ?: "unknown",
+      ok = arm64Ok,
+    )
+    InstallerInfoTile(
+      modifier = Modifier.weight(1f),
+      label = "Android",
+      value = "${Build.VERSION.RELEASE} · ${Build.VERSION.SDK_INT}",
+      ok = osInstallOk,
+    )
+  }
+}
+
+@Composable
+private fun InstallerInfoTile(
+  label: String,
+  value: String,
+  ok: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  val accent = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+  Surface(
+    modifier = modifier,
+    shape = RoundedCornerShape(18.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = if (setupIsLightTheme()) 0.86f else 0.58f),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.20f)),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
+  ) {
+    Column(
+      modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+      verticalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+      Text(
+        text = label,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+      Text(
+        text = value,
+        style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+    }
+  }
+}
+
+@Composable
+private fun InstallerSectionHeader(
+  title: String,
+  trailing: String?,
+  accent: Color,
+) {
+  Row(
+    modifier = Modifier
+      .fillMaxWidth()
+      .padding(horizontal = 4.dp, vertical = 1.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(9.dp),
+  ) {
+    Box(
+      modifier = Modifier
+        .width(4.dp)
+        .height(24.dp)
+        .clip(RoundedCornerShape(999.dp))
+        .background(accent),
+    )
+    Text(
+      text = title,
+      modifier = Modifier.weight(1f),
+      style = MaterialTheme.typography.titleMedium,
+      fontWeight = FontWeight.Bold,
+      maxLines = 1,
+      overflow = TextOverflow.Ellipsis,
+    )
+    if (!trailing.isNullOrBlank()) {
+      Surface(
+        shape = RoundedCornerShape(999.dp),
+        color = accent.copy(alpha = 0.12f),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.24f)),
+      ) {
+        Text(
+          text = trailing,
+          modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+          style = MaterialTheme.typography.labelSmall,
+          fontWeight = FontWeight.Bold,
+          color = accent,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun InstallerNoticeCard(
+  text: String,
+  accent: Color,
+  title: String? = null,
+) {
+  Surface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(18.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = if (setupIsLightTheme()) 0.86f else 0.58f),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.24f)),
+  ) {
+    Row(
+      modifier = Modifier
+        .background(
+          Brush.horizontalGradient(
+            listOf(accent.copy(alpha = if (setupIsLightTheme()) 0.045f else 0.10f), Color.Transparent),
+          ),
+        )
+        .padding(12.dp),
+      verticalAlignment = Alignment.Top,
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      Surface(
+        shape = CircleShape,
+        color = accent.copy(alpha = 0.14f),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
+      ) {
+        Icon(
+          imageVector = Icons.Filled.ErrorOutline,
+          contentDescription = null,
+          tint = accent,
+          modifier = Modifier.padding(7.dp).size(18.dp),
+        )
+      }
+      Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        if (!title.isNullOrBlank()) {
+          Text(
+            text = title,
+            style = MaterialTheme.typography.bodyMedium,
+            fontWeight = FontWeight.SemiBold,
+          )
+        }
+        Text(
+          text = text,
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun InstallerActionCard(
+  state: InstallerVisualState,
+  setup: SetupUiState,
+  animatedProgress: Float,
+  animatedPercent: Int,
+  canInstall: Boolean,
+  onInstall: () -> Unit,
+  onReboot: () -> Unit,
+  onShowLog: () -> Unit,
+  canShowLog: Boolean,
+) {
+  val accent = when (state) {
+    InstallerVisualState.SUCCESS -> Color(0xFF2ECC71)
+    InstallerVisualState.ERROR -> MaterialTheme.colorScheme.error
+    else -> MaterialTheme.colorScheme.primary
+  }
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .animateContentSize(animationSpec = tween(380, easing = FastOutSlowInEasing)),
+    shape = RoundedCornerShape(24.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = if (setupIsLightTheme()) 0.92f else 0.68f),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
+    shadowElevation = if (setupIsLightTheme()) 0.dp else 2.dp,
+  ) {
+    Box(
+      modifier = Modifier
+        .fillMaxWidth()
+        .background(
+          Brush.linearGradient(
+            listOf(
+              accent.copy(alpha = if (setupIsLightTheme()) 0.055f else 0.14f),
+              Color.Transparent,
+              MaterialTheme.colorScheme.secondary.copy(alpha = if (setupIsLightTheme()) 0.02f else 0.055f),
+            ),
+          ),
+        )
+        .padding(16.dp),
+    ) {
+      AnimatedContent(
+        targetState = state,
+        transitionSpec = {
+          fadeIn(tween(220, easing = FastOutSlowInEasing)) togetherWith
+            fadeOut(tween(140, easing = FastOutSlowInEasing))
+        },
+        label = "installer_state_content",
+      ) { target ->
+        when (target) {
+          InstallerVisualState.READY -> {
+            Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
+              InstallerStateHeader(
+                icon = Icons.Filled.SystemUpdateAlt,
+                accent = accent,
+                title = stringResource(R.string.setup_install_title),
+                body = stringResource(R.string.setup_install_progress_preparing),
               )
-              Spacer(Modifier.width(8.dp))
-              Text(
-                if (showInstallLog) stringResource(R.string.setup_install_log_hide)
-                else stringResource(R.string.setup_install_log_show),
+              Button(
+                onClick = onInstall,
+                enabled = canInstall,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+              ) {
+                Icon(Icons.Filled.SystemUpdateAlt, contentDescription = null, modifier = Modifier.size(19.dp))
+                Spacer(Modifier.width(8.dp))
+                Text(stringResource(R.string.common_install), fontWeight = FontWeight.Bold)
+              }
+            }
+          }
+
+          InstallerVisualState.INSTALLING -> {
+            Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+              ) {
+                InstallerRoundIcon(Icons.Filled.SystemUpdateAlt, accent)
+                Column(modifier = Modifier.weight(1f)) {
+                  Text(
+                    text = stringResource(R.string.common_installing),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                  )
+                  Text(
+                    text = setup.installProgressLabel.ifBlank { stringResource(R.string.setup_install_progress_preparing) },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+                  )
+                }
+                Text(
+                  text = stringResource(R.string.setup_install_progress_percent_fmt, animatedPercent),
+                  style = MaterialTheme.typography.titleMedium,
+                  fontWeight = FontWeight.Bold,
+                  color = accent,
+                )
+              }
+              LinearProgressIndicator(
+                progress = animatedProgress,
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .height(7.dp)
+                  .clip(RoundedCornerShape(999.dp)),
               )
             }
           }
-        }
 
-        AnimatedVisibility(
-          visible = canShowInstallLog && showInstallLog,
-          enter = fadeIn(animationSpec = tween(320)) + expandVertically(animationSpec = tween(320)),
-          exit = fadeOut(animationSpec = tween(220)) + shrinkVertically(animationSpec = tween(220)),
-        ) {
-          Column(modifier = Modifier.fillMaxWidth()) {
-            Spacer(Modifier.height(10.dp))
-            Card(Modifier.fillMaxWidth()) {
-              Column(Modifier.padding(12.dp)) {
-                Text(stringResource(R.string.setup_install_log_title), style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.height(8.dp))
-                Box(
-                  modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(max = 240.dp)
-                    .verticalScroll(rememberScrollState()),
+          InstallerVisualState.SUCCESS -> {
+            Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
+              InstallerStateHeader(
+                icon = Icons.Filled.CheckCircle,
+                accent = accent,
+                title = stringResource(R.string.setup_module_installed_title),
+                body = stringResource(R.string.setup_module_installed_body),
+              )
+              CooldownRebootButton(
+                activeKey = setup.installOk,
+                onReboot = onReboot,
+                modifier = Modifier.fillMaxWidth(),
+              )
+            }
+          }
+
+          InstallerVisualState.ERROR -> {
+            Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
+              InstallerStateHeader(
+                icon = Icons.Filled.ErrorOutline,
+                accent = accent,
+                title = stringResource(R.string.setup_install_progress_failed),
+                body = setup.installError ?: stringResource(R.string.common_error),
+              )
+              Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+              ) {
+                Button(
+                  onClick = onInstall,
+                  enabled = canInstall,
+                  modifier = Modifier.weight(1f),
+                  shape = RoundedCornerShape(15.dp),
                 ) {
-                  Text(
-                    text = setup.installLog,
-                    style = MaterialTheme.typography.bodySmall,
-                  )
+                  Text(stringResource(R.string.common_retry), fontWeight = FontWeight.Bold)
+                }
+                if (canShowLog) {
+                  OutlinedButton(
+                    onClick = onShowLog,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(15.dp),
+                  ) {
+                    Text(stringResource(R.string.setup_install_log_show))
+                  }
                 }
               }
             }
@@ -796,6 +1210,102 @@ fun InstallModuleScreen(
   }
 }
 
+@Composable
+private fun InstallerStateHeader(
+  icon: ImageVector,
+  accent: Color,
+  title: String,
+  body: String,
+) {
+  Row(
+    modifier = Modifier.fillMaxWidth(),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(12.dp),
+  ) {
+    InstallerRoundIcon(icon, accent)
+    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+      Text(
+        text = title,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+      )
+      Text(
+        text = body,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+      )
+    }
+  }
+}
+
+@Composable
+private fun InstallerRoundIcon(icon: ImageVector, accent: Color) {
+  Surface(
+    shape = CircleShape,
+    color = accent.copy(alpha = 0.13f),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.32f)),
+  ) {
+    Icon(
+      imageVector = icon,
+      contentDescription = null,
+      tint = accent,
+      modifier = Modifier.padding(10.dp).size(22.dp),
+    )
+  }
+}
+
+@Composable
+private fun InstallerLogCard(
+  expanded: Boolean,
+  log: String,
+  onToggle: () -> Unit,
+) {
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .animateContentSize(animationSpec = tween(300, easing = FastOutSlowInEasing)),
+    shape = RoundedCornerShape(18.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = if (setupIsLightTheme()) 0.88f else 0.60f),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
+  ) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+      TextButton(
+        onClick = onToggle,
+        modifier = Modifier.fillMaxWidth(),
+      ) {
+        Icon(
+          imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+          contentDescription = null,
+        )
+        Spacer(Modifier.width(7.dp))
+        Text(
+          if (expanded) stringResource(R.string.setup_install_log_hide)
+          else stringResource(R.string.setup_install_log_show),
+          fontWeight = FontWeight.SemiBold,
+        )
+      }
+      AnimatedVisibility(
+        visible = expanded,
+        enter = fadeIn(tween(200)) + expandVertically(tween(260)),
+        exit = fadeOut(tween(130)) + shrinkVertically(tween(180)),
+      ) {
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 250.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .verticalScroll(rememberScrollState()),
+        ) {
+          Text(
+            text = log,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.76f),
+          )
+        }
+      }
+    }
+  }
+}
 
 @Composable
 private fun SetupScreenBackground(
@@ -1120,50 +1630,48 @@ private fun CooldownRebootButton(
 
 @Composable
 private fun KsuApatchZygiskWarningCard() {
-  val pulse = rememberInfiniteTransition(label = "zygisk_compat_warning_pulse")
-  val scale by pulse.animateFloat(
-    initialValue = 1f,
-    targetValue = 1.018f,
-    animationSpec = infiniteRepeatable(
-      animation = tween(durationMillis = 1150, easing = FastOutSlowInEasing),
-      repeatMode = RepeatMode.Reverse,
-    ),
-    label = "zygisk_compat_warning_scale",
-  )
-  Card(
-    modifier = Modifier
-      .fillMaxWidth()
-      .graphicsLayer {
-        scaleX = scale
-        scaleY = scale
-      },
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer),
-    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+  val accent = MaterialTheme.colorScheme.tertiary
+  Surface(
+    modifier = Modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(18.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = if (setupIsLightTheme()) 0.88f else 0.60f),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.26f)),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
   ) {
     Row(
       modifier = Modifier
-        .fillMaxWidth()
-        .padding(14.dp),
+        .background(
+          Brush.horizontalGradient(
+            listOf(accent.copy(alpha = if (setupIsLightTheme()) 0.045f else 0.11f), Color.Transparent),
+          ),
+        )
+        .padding(12.dp),
       verticalAlignment = Alignment.Top,
+      horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-      Icon(
-        imageVector = Icons.Filled.ErrorOutline,
-        contentDescription = null,
-        tint = MaterialTheme.colorScheme.onTertiaryContainer,
-        modifier = Modifier.size(22.dp),
-      )
-      Spacer(Modifier.width(10.dp))
-      Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+      Surface(
+        shape = CircleShape,
+        color = accent.copy(alpha = 0.13f),
+        border = BorderStroke(1.dp, accent.copy(alpha = 0.28f)),
+      ) {
+        Icon(
+          imageVector = Icons.Filled.ErrorOutline,
+          contentDescription = null,
+          tint = accent,
+          modifier = Modifier.padding(7.dp).size(18.dp),
+        )
+      }
+      Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
           text = stringResource(R.string.setup_zygisk_ksu_apatch_warning_title),
           style = MaterialTheme.typography.bodyMedium,
           fontWeight = FontWeight.SemiBold,
-          color = MaterialTheme.colorScheme.onTertiaryContainer,
         )
         Text(
           text = stringResource(R.string.setup_zygisk_ksu_apatch_warning_body),
           style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.92f),
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
         )
       }
     }
@@ -1176,69 +1684,90 @@ private fun OptionalZygiskInstallCard(
   onToggle: (Boolean) -> Unit,
 ) {
   var expanded by rememberSaveable { mutableStateOf(false) }
-  val compactLayout = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 420
-  Card(
-    modifier = Modifier.fillMaxWidth(),
-    colors = CardDefaults.cardColors(containerColor = setupPanelColor(0.92f)),
+  val accent = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .animateContentSize(animationSpec = tween(280, easing = FastOutSlowInEasing)),
+    shape = RoundedCornerShape(20.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = if (setupIsLightTheme()) 0.90f else 0.62f),
+    border = BorderStroke(1.dp, accent.copy(alpha = if (enabled) 0.30f else 0.16f)),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
   ) {
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 10.dp, vertical = 8.dp)
-        .animateContentSize(),
-      verticalArrangement = Arrangement.spacedBy(6.dp),
+        .background(
+          Brush.horizontalGradient(
+            listOf(
+              MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 0.075f else 0.025f),
+              Color.Transparent,
+            ),
+          ),
+        )
+        .padding(horizontal = 12.dp, vertical = 10.dp),
+      verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
       Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
       ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Surface(
+          shape = RoundedCornerShape(14.dp),
+          color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
+        ) {
+          Icon(
+            imageVector = Icons.Filled.Security,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(9.dp).size(20.dp),
+          )
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
           Text(
             text = stringResource(R.string.setup_zygisk_install_title),
             style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontWeight = FontWeight.Bold,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
           )
-          if (!compactLayout) {
-            Spacer(Modifier.height(2.dp))
-            Text(
-              text = stringResource(R.string.setup_zygisk_install_short),
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f),
-              maxLines = 2,
-              overflow = TextOverflow.Ellipsis,
-            )
-          }
+          Text(
+            text = stringResource(R.string.setup_zygisk_install_short),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+          )
         }
-        Spacer(Modifier.width(8.dp))
-        Checkbox(
+        Switch(
           checked = enabled,
           onCheckedChange = onToggle,
-          modifier = Modifier.size(36.dp),
         )
         IconButton(
           onClick = { expanded = !expanded },
           modifier = Modifier.size(34.dp),
         ) {
           Icon(
-            imageVector = Icons.Filled.ErrorOutline,
+            imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
             contentDescription = stringResource(R.string.setup_zygisk_install_details_cd),
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(19.dp),
           )
         }
       }
       AnimatedVisibility(
         visible = expanded,
-        enter = fadeIn(animationSpec = tween(220)) + expandVertically(animationSpec = tween(220)),
-        exit = fadeOut(animationSpec = tween(180)) + shrinkVertically(animationSpec = tween(180)),
+        enter = fadeIn(tween(190)) + expandVertically(tween(240)),
+        exit = fadeOut(tween(130)) + shrinkVertically(tween(170)),
       ) {
         Text(
           text = stringResource(R.string.setup_zygisk_install_details),
           style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.92f),
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+          modifier = Modifier.padding(start = 50.dp, end = 4.dp, bottom = 3.dp),
         )
       }
     }
@@ -1251,108 +1780,88 @@ private fun InstallConflictCard(
   onToggleRemove: (Boolean) -> Unit,
 ) {
   var expanded by rememberSaveable(conflict.modulePath) { mutableStateOf(false) }
-  val compactLayout = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 420
-  Card(
-    modifier = Modifier.fillMaxWidth(),
-    colors = CardDefaults.cardColors(containerColor = setupPanelColor(0.92f)),
+  val accent = MaterialTheme.colorScheme.error
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth()
+      .animateContentSize(animationSpec = tween(280, easing = FastOutSlowInEasing)),
+    shape = RoundedCornerShape(18.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = if (setupIsLightTheme()) 0.90f else 0.60f),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.25f)),
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
   ) {
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 10.dp, vertical = 8.dp)
-        .animateContentSize(),
+        .background(
+          Brush.horizontalGradient(
+            listOf(accent.copy(alpha = if (setupIsLightTheme()) 0.04f else 0.085f), Color.Transparent),
+          ),
+        )
+        .padding(horizontal = 12.dp, vertical = 9.dp),
       verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-      if (compactLayout) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically,
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+      ) {
+        Surface(
+          shape = CircleShape,
+          color = accent.copy(alpha = 0.12f),
+          border = BorderStroke(1.dp, accent.copy(alpha = 0.25f)),
         ) {
-          Text(
-            text = stringResource(R.string.setup_install_conflict_module_fmt, conflict.moduleName),
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
-            maxLines = 2,
+          Icon(
+            imageVector = Icons.Filled.ErrorOutline,
+            contentDescription = null,
+            tint = accent,
+            modifier = Modifier.padding(7.dp).size(17.dp),
           )
-          IconButton(
-            onClick = { expanded = !expanded },
-            modifier = Modifier.size(34.dp),
-          ) {
-            Icon(
-              imageVector = Icons.Filled.ErrorOutline,
-              contentDescription = stringResource(R.string.setup_install_conflict_details),
-              tint = MaterialTheme.colorScheme.error,
-              modifier = Modifier.size(20.dp),
-            )
-          }
         }
-      } else {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Text(
-            text = stringResource(R.string.setup_install_conflict_module_fmt, conflict.moduleName),
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.weight(1f),
-            maxLines = 2,
-          )
-          Spacer(Modifier.width(8.dp))
+        Text(
+          text = stringResource(R.string.setup_install_conflict_module_fmt, conflict.moduleName),
+          style = MaterialTheme.typography.bodyMedium,
+          fontWeight = FontWeight.SemiBold,
+          modifier = Modifier.weight(1f),
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
           Text(
             text = stringResource(R.string.setup_install_conflict_remove),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.64f),
           )
           Checkbox(
             checked = conflict.markedForRemove,
-            onCheckedChange = { checked -> onToggleRemove(checked) },
+            onCheckedChange = onToggleRemove,
             modifier = Modifier.size(36.dp),
           )
-          IconButton(
-            onClick = { expanded = !expanded },
-            modifier = Modifier.size(34.dp),
-          ) {
-            Icon(
-              imageVector = Icons.Filled.ErrorOutline,
-              contentDescription = stringResource(R.string.setup_install_conflict_details),
-              tint = MaterialTheme.colorScheme.error,
-              modifier = Modifier.size(20.dp),
-            )
-          }
+        }
+        IconButton(
+          onClick = { expanded = !expanded },
+          modifier = Modifier.size(32.dp),
+        ) {
+          Icon(
+            imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+            contentDescription = stringResource(R.string.setup_install_conflict_details),
+            tint = accent,
+            modifier = Modifier.size(18.dp),
+          )
         }
       }
       AnimatedVisibility(
         visible = expanded,
-        enter = fadeIn(animationSpec = tween(220)) + expandVertically(animationSpec = tween(220)),
-        exit = fadeOut(animationSpec = tween(180)) + shrinkVertically(animationSpec = tween(180)),
+        enter = fadeIn(tween(190)) + expandVertically(tween(230)),
+        exit = fadeOut(tween(130)) + shrinkVertically(tween(170)),
       ) {
         Text(
           text = conflict.message,
           style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.92f),
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+          modifier = Modifier.padding(start = 42.dp, end = 4.dp, bottom = 3.dp),
         )
-      }
-      if (compactLayout) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.End,
-        ) {
-          Text(
-            text = stringResource(R.string.setup_install_conflict_remove),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-          Checkbox(
-            checked = conflict.markedForRemove,
-            onCheckedChange = { checked -> onToggleRemove(checked) },
-            modifier = Modifier.size(36.dp),
-          )
-        }
       }
     }
   }

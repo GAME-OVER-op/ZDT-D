@@ -124,6 +124,10 @@ data class SetupUiState(
   val buildNumber: Long? = null,
   val buildVersionName: String = "",
   val buildVersionCode: Int? = null,
+  /** Active module identity read from /data/adb/modules/ZDT-D/module.prop. */
+  val installedVersionName: String = "",
+  val installedVersionCode: Int? = null,
+  val installedBuildNumber: Long? = null,
   /** Bundled module build is newer than the currently installed module. */
   val buildUpdateAvailable: Boolean = false,
   /** Release builds expand the update question automatically on launcher cold start. */
@@ -1496,11 +1500,19 @@ private fun clearDownloadedUpdateApk() {
       val oldVer = runCatching { root.hasOldModuleVersionWebroot() }.getOrDefault(false)
 
       if (!installed) {
+        val bundledBuild = readBundledModuleBuildInfo()
         _setup.update { st ->
           st.copy(
             step = SetupStep.INSTALL,
             oldVersionDetected = oldVer,
             showUpdatePrompt = false,
+            buildType = bundledBuild?.buildType ?: "service",
+            buildNumber = bundledBuild?.buildNumber,
+            buildVersionName = bundledBuild?.versionName ?: BuildConfig.VERSION_NAME,
+            buildVersionCode = bundledBuild?.versionCode ?: BuildConfig.VERSION_CODE,
+            installedVersionName = "",
+            installedVersionCode = null,
+            installedBuildNumber = null,
             moduleReinstallRequired = false,
             tamperReinstallPendingReboot = runCatching { root.isTamperReinstallPendingReboot() }.getOrDefault(false),
             explicitReinstallRequested = false,
@@ -1602,6 +1614,9 @@ private fun clearDownloadedUpdateApk() {
           buildNumber = bundledBuild?.buildNumber,
           buildVersionName = bundledVersionName,
           buildVersionCode = bundledVersionCode,
+          installedVersionName = installedBuild.versionName.orEmpty(),
+          installedVersionCode = installedBuild.versionCode,
+          installedBuildNumber = installedBuild.buildNumber,
           buildUpdateAvailable = buildUpdateAvailable,
           updatePromptAutoExpand = autoExpandUpdate,
           moduleReinstallRequired = false,

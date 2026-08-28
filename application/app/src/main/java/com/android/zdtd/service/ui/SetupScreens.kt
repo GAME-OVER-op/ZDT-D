@@ -1103,7 +1103,8 @@ private fun TabletInstallLayout(
   onToggleInstallLog: () -> Unit,
 ) {
   BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-    val dense = maxHeight < 720.dp || maxWidth < 760.dp
+    val availableWidth = maxWidth
+    val dense = maxHeight < 720.dp || availableWidth < 760.dp
     val outerPadding = if (dense) 10.dp else 16.dp
     val gap = if (dense) 8.dp else 12.dp
 
@@ -1191,7 +1192,7 @@ private fun TabletInstallLayout(
           if (setup.installConflicts.isNotEmpty()) {
             TabletInstallConflictGrid(
               conflicts = setup.installConflicts,
-              columns = if (maxWidth < 780.dp) 1 else 2,
+              columns = if (availableWidth < 780.dp) 1 else 2,
               onToggleConflictRemove = onToggleConflictRemove,
             )
           }

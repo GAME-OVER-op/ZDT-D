@@ -170,6 +170,7 @@ fun WelcomeScreen(onAccept: () -> Unit) {
   val arm64Ok = remember { isArm64OnlySupported() }
   val compact = rememberIsCompactWidth()
   val tablet = rememberIsTabletLayout()
+  val shortSetupHeight = rememberIsShortHeight()
   val screenPadding = rememberAdaptiveScreenPadding()
 
   SetupScaffold { padding ->
@@ -200,8 +201,11 @@ fun WelcomeScreen(onAccept: () -> Unit) {
             .widthIn(max = 1180.dp)
             .fillMaxWidth()
             .fillMaxHeight()
-            .padding(horizontal = 22.dp, vertical = 18.dp),
-          horizontalArrangement = Arrangement.spacedBy(18.dp),
+            .padding(
+              horizontal = if (shortSetupHeight) 12.dp else 22.dp,
+              vertical = if (shortSetupHeight) 8.dp else 18.dp,
+            ),
+          horizontalArrangement = Arrangement.spacedBy(if (shortSetupHeight) 12.dp else 18.dp),
         ) {
           ModernSetupHeroCard(
             title = stringResource(R.string.setup_welcome_title),
@@ -218,7 +222,7 @@ fun WelcomeScreen(onAccept: () -> Unit) {
             modifier = Modifier
               .weight(0.88f)
               .fillMaxHeight(),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(if (shortSetupHeight) 8.dp else 12.dp),
           ) {
             TabletSetupPanel(
               title = stringResource(R.string.setup_features_title),
@@ -319,6 +323,7 @@ fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit, onRemoteSetup: (
   val arm64Ok = remember { isArm64OnlySupported() }
   val compact = rememberIsCompactWidth()
   val tablet = rememberIsTabletLayout()
+  val shortSetupHeight = rememberIsShortHeight()
   val screenPadding = rememberAdaptiveScreenPadding()
   val rootDescription = stringResource(R.string.setup_root_body)
   val rootHeroBody = rootDescription.substringBefore("\n\n")
@@ -352,8 +357,11 @@ fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit, onRemoteSetup: (
             .widthIn(max = 1180.dp)
             .fillMaxWidth()
             .fillMaxHeight()
-            .padding(horizontal = 22.dp, vertical = 18.dp),
-          horizontalArrangement = Arrangement.spacedBy(18.dp),
+            .padding(
+              horizontal = if (shortSetupHeight) 12.dp else 22.dp,
+              vertical = if (shortSetupHeight) 8.dp else 18.dp,
+            ),
+          horizontalArrangement = Arrangement.spacedBy(if (shortSetupHeight) 12.dp else 18.dp),
         ) {
           ModernSetupHeroCard(
             title = stringResource(R.string.setup_root_title),
@@ -371,7 +379,7 @@ fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit, onRemoteSetup: (
               .weight(0.88f)
               .fillMaxHeight()
               .animateContentSize(animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing)),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(if (shortSetupHeight) 8.dp else 12.dp),
           ) {
             TabletSetupPanel(
               title = stringResource(R.string.setup_root_title),

@@ -68,6 +68,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
@@ -76,6 +77,7 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -136,10 +138,25 @@ fun ZdtdApp(
 ) {
   val setup by setupFlow.collectAsStateWithLifecycle()
 
-  Crossfade(
+  AnimatedContent(
     targetState = setup.step,
-    animationSpec = tween(durationMillis = 340, easing = FastOutSlowInEasing),
-    label = "setup_step_crossfade",
+    transitionSpec = {
+      val forward = targetState.ordinal >= initialState.ordinal
+      (
+        fadeIn(tween(durationMillis = 300)) +
+          slideInHorizontally(
+            initialOffsetX = { width -> if (forward) width / 10 else -width / 10 },
+            animationSpec = tween(durationMillis = 460, easing = FastOutSlowInEasing),
+          )
+        ) togetherWith (
+          fadeOut(tween(durationMillis = 240)) +
+            slideOutHorizontally(
+              targetOffsetX = { width -> if (forward) -width / 12 else width / 12 },
+              animationSpec = tween(durationMillis = 380, easing = FastOutSlowInEasing),
+            )
+        )
+    },
+    label = "setup_step_transition",
   ) { setupStep ->
     when (setupStep) {
       SetupStep.WELCOME -> WelcomeScreen(onAccept = actions::acceptWelcome)
@@ -224,18 +241,29 @@ private fun StartupDialogHost(
     }
   }
 
-  // If the release update question is expanded (or the user opens it on a
-  // service build), keep the startup surface alive until they decide.
+  // Keep the startup scene on top while the release/service prompt is open.
+  // When it finally closes, dissolve the whole scene instead of hiding only
+  // the cards and abruptly dropping the opaque background.
   val exiting = !startup.visible && renderedStartup.visible && !setup.showUpdatePrompt
-  val cardAlpha by animateFloatAsState(
+  val sceneAlpha by animateFloatAsState(
     targetValue = if (exiting) 0f else 1f,
-    animationSpec = tween(durationMillis = 360),
-    label = "startup_card_alpha",
+    animationSpec = tween(durationMillis = 620, easing = FastOutSlowInEasing),
+    label = "startup_scene_alpha",
+  )
+  val sceneScale by animateFloatAsState(
+    targetValue = if (exiting) 0.985f else 1f,
+    animationSpec = tween(durationMillis = 620, easing = FastOutSlowInEasing),
+    label = "startup_scene_scale",
+  )
+  val sceneBlur by animateDpAsState(
+    targetValue = if (exiting) 14.dp else 0.dp,
+    animationSpec = tween(durationMillis = 620, easing = FastOutSlowInEasing),
+    label = "startup_scene_blur",
   )
 
   LaunchedEffect(exiting) {
     if (exiting) {
-      delay(380)
+      delay(650)
       renderedStartup = StartupUiState.hidden()
       onFullyHidden()
     }
@@ -251,7 +279,9 @@ private fun StartupDialogHost(
     onExpandUpdate = onExpandUpdate,
     onUpdate = onUpdate,
     onSkipUpdate = onSkipUpdate,
-    contentAlpha = cardAlpha,
+    sceneAlpha = sceneAlpha,
+    sceneScale = sceneScale,
+    sceneBlur = sceneBlur,
   )
 }
 
@@ -264,7 +294,9 @@ private fun StartupFullscreenContent(
   onExpandUpdate: () -> Unit,
   onUpdate: () -> Unit,
   onSkipUpdate: () -> Unit,
-  contentAlpha: Float,
+  sceneAlpha: Float,
+  sceneScale: Float,
+  sceneBlur: Dp,
 ) {
   val pulseAlpha by rememberInfiniteTransition(label = "startup_stage_pulse").animateFloat(
     initialValue = 0.58f,
@@ -306,6 +338,13 @@ private fun StartupFullscreenContent(
   Box(
     modifier = Modifier
       .fillMaxSize()
+      .graphicsLayer {
+        alpha = sceneAlpha
+        scaleX = sceneScale
+        scaleY = sceneScale
+        translationY = (1f - sceneAlpha) * -8f
+      }
+      .blur(sceneBlur)
       .zIndex(20f)
       .pointerInput(startup.stage) {
         awaitPointerEventScope {
@@ -340,16 +379,14 @@ private fun StartupFullscreenContent(
         onUpdate = onUpdate,
         onSkip = onSkipUpdate,
         modifier = Modifier
-          .align(Alignment.TopEnd)
-          .alpha(contentAlpha)
+          .align(Alignment.BottomEnd)
           .zIndex(2f),
       )
 
       Card(
         modifier = Modifier
           .fillMaxWidth()
-          .widthIn(max = 440.dp)
-          .alpha(contentAlpha),
+          .widthIn(max = 440.dp),
         shape = MaterialTheme.shapes.extraLarge,
         colors = CardDefaults.cardColors(
           containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
@@ -432,10 +469,10 @@ private fun StartupFullscreenContent(
                 contentAlignment = Alignment.Center,
               ) {
                 Icon(
-                  imageVector = Icons.Filled.Power,
+                  painter = painterResource(R.drawable.ic_update_gear),
                   contentDescription = null,
                   tint = MaterialTheme.colorScheme.primary,
-                  modifier = Modifier.size(36.dp),
+                  modifier = Modifier.size(46.dp),
                 )
               }
 
@@ -648,6 +685,7 @@ private fun StartupBuildUpdateCard(
   val hasIdentity = setup.buildVersionName.isNotBlank() || setup.buildNumber != null
   if (!hasIdentity) return
 
+  val lightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
   var cardExpanded by remember { mutableStateOf(false) }
   var questionVisible by remember { mutableStateOf(false) }
   var updateIconVisible by remember { mutableStateOf(setup.buildUpdateAvailable) }
@@ -672,110 +710,135 @@ private fun StartupBuildUpdateCard(
   AnimatedVisibility(
     visible = hasIdentity,
     enter = slideInVertically(
-      initialOffsetY = { -it },
-      animationSpec = tween(durationMillis = 360, easing = FastOutSlowInEasing),
-    ) + fadeIn(animationSpec = tween(260)),
+      initialOffsetY = { it },
+      animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+    ) + fadeIn(animationSpec = tween(300)),
     exit = slideOutVertically(
-      targetOffsetY = { -it },
-      animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
-    ) + fadeOut(animationSpec = tween(160)),
+      targetOffsetY = { it },
+      animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
+    ) + fadeOut(animationSpec = tween(220)),
     modifier = modifier,
   ) {
-    BoxWithConstraints(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.TopEnd) {
+    BoxWithConstraints(
+      modifier = Modifier.fillMaxWidth(),
+      contentAlignment = Alignment.BottomEnd,
+    ) {
       val compactWidth = 250.dp.coerceAtMost(maxWidth)
       val expandedWidth = 390.dp.coerceAtMost(maxWidth)
       val targetWidth by animateDpAsState(
         targetValue = if (cardExpanded) expandedWidth else compactWidth,
-        animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+        animationSpec = tween(durationMillis = 340, easing = FastOutSlowInEasing),
         label = "startup_build_card_width",
       )
 
-      Surface(
+      Card(
         modifier = Modifier
           .width(targetWidth)
-          .animateContentSize(animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)),
+          .animateContentSize(animationSpec = tween(durationMillis = 330, easing = FastOutSlowInEasing)),
         shape = RoundedCornerShape(if (cardExpanded) 24.dp else 18.dp),
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-        tonalElevation = 7.dp,
-        shadowElevation = 10.dp,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)),
+        colors = CardDefaults.cardColors(
+          containerColor = MaterialTheme.colorScheme.surface.copy(alpha = if (lightTheme) 0.985f else 0.95f),
+        ),
+        elevation = CardDefaults.cardElevation(
+          defaultElevation = if (lightTheme) 5.dp else 10.dp,
+        ),
       ) {
-        Column(
-          modifier = Modifier.padding(
-            horizontal = if (cardExpanded) 18.dp else 14.dp,
-            vertical = if (cardExpanded) 16.dp else 10.dp,
-          ),
-          verticalArrangement = Arrangement.spacedBy(10.dp),
+        Box(
+          modifier = Modifier
+            .fillMaxWidth()
+            .background(
+              Brush.horizontalGradient(
+                colors = if (lightTheme) {
+                  listOf(
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.025f),
+                    Color.Transparent,
+                  )
+                } else {
+                  listOf(
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.07f),
+                    Color.Transparent,
+                  )
+                },
+              ),
+            ),
         ) {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+          Column(
+            modifier = Modifier.padding(
+              horizontal = if (cardExpanded) 18.dp else 14.dp,
+              vertical = if (cardExpanded) 16.dp else 10.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
           ) {
-            val type = setup.buildType.ifBlank { "service" }
-            val numberSuffix = setup.buildNumber?.let { " #$it" }.orEmpty()
-            Text(
-              text = "Build $type v${setup.buildVersionName}$numberSuffix",
-              style = MaterialTheme.typography.labelLarge,
-              fontWeight = FontWeight.SemiBold,
-              color = MaterialTheme.colorScheme.onSurface,
-              maxLines = 1,
-              overflow = TextOverflow.Ellipsis,
-              modifier = Modifier.weight(1f, fill = false),
-            )
-
-            AnimatedVisibility(
-              visible = updateIconVisible && !cardExpanded,
-              enter = fadeIn(tween(160)) + scaleIn(initialScale = 0.82f, animationSpec = tween(180)),
-              exit = fadeOut(tween(90)) + scaleOut(targetScale = 0.78f, animationSpec = tween(100)),
+            Row(
+              modifier = Modifier.fillMaxWidth(),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.SpaceBetween,
             ) {
-              FilledTonalIconButton(
-                onClick = onExpand,
-                modifier = Modifier.size(36.dp),
-                shape = CircleShape,
+              val type = setup.buildType.ifBlank { "service" }
+              val numberSuffix = setup.buildNumber?.let { " #$it" }.orEmpty()
+              Text(
+                text = "Build $type v${setup.buildVersionName}$numberSuffix",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
+              )
+
+              AnimatedVisibility(
+                visible = updateIconVisible && !cardExpanded,
+                enter = fadeIn(tween(180)) + scaleIn(initialScale = 0.82f, animationSpec = tween(220)),
+                exit = fadeOut(tween(110)) + scaleOut(targetScale = 0.78f, animationSpec = tween(120)),
               ) {
-                Icon(
-                  imageVector = Icons.Filled.SystemUpdateAlt,
-                  contentDescription = stringResource(R.string.update_prompt_update),
-                  modifier = Modifier.size(19.dp),
-                )
+                FilledTonalIconButton(
+                  onClick = onExpand,
+                  modifier = Modifier.size(38.dp),
+                  shape = CircleShape,
+                ) {
+                  Icon(
+                    painter = painterResource(R.drawable.ic_update_gear),
+                    contentDescription = stringResource(R.string.update_prompt_update),
+                    modifier = Modifier.size(23.dp),
+                  )
+                }
               }
             }
-          }
 
-          AnimatedVisibility(
-            visible = questionVisible,
-            enter = fadeIn(animationSpec = tween(durationMillis = 220)) +
-              expandVertically(animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing)),
-            exit = fadeOut(animationSpec = tween(durationMillis = 110)) +
-              shrinkVertically(animationSpec = tween(durationMillis = 150, easing = FastOutSlowInEasing)),
-          ) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-              Text(
-                text = if (setup.updatePromptTitle.isBlank()) {
-                  stringResource(R.string.update_prompt_title_default)
-                } else {
-                  setup.updatePromptTitle
-                },
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-              )
-              Text(
-                text = setup.updatePromptText,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-              Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-                verticalAlignment = Alignment.CenterVertically,
-              ) {
-                TextButton(onClick = onSkip) {
-                  Text(stringResource(R.string.update_prompt_skip))
-                }
-                Spacer(Modifier.width(8.dp))
-                TextButton(onClick = onUpdate) {
-                  Text(stringResource(R.string.update_prompt_update))
+            AnimatedVisibility(
+              visible = questionVisible,
+              enter = fadeIn(animationSpec = tween(durationMillis = 240)) +
+                expandVertically(animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)),
+              exit = fadeOut(animationSpec = tween(durationMillis = 150)) +
+                shrinkVertically(animationSpec = tween(durationMillis = 210, easing = FastOutSlowInEasing)),
+            ) {
+              Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                  text = if (setup.updatePromptTitle.isBlank()) {
+                    stringResource(R.string.update_prompt_title_default)
+                  } else {
+                    setup.updatePromptTitle
+                  },
+                  style = MaterialTheme.typography.titleMedium,
+                  fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                  text = setup.updatePromptText,
+                  style = MaterialTheme.typography.bodyMedium,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(
+                  modifier = Modifier.fillMaxWidth(),
+                  horizontalArrangement = Arrangement.End,
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  TextButton(onClick = onSkip) {
+                    Text(stringResource(R.string.update_prompt_skip))
+                  }
+                  Spacer(Modifier.width(8.dp))
+                  TextButton(onClick = onUpdate) {
+                    Text(stringResource(R.string.update_prompt_update))
+                  }
                 }
               }
             }
@@ -785,7 +848,6 @@ private fun StartupBuildUpdateCard(
     }
   }
 }
-
 
 
 private fun parentAppsRoute(route: AppsRoute): AppsRoute = when (route) {

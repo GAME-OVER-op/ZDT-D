@@ -1571,8 +1571,9 @@ private fun clearDownloadedUpdateApk() {
       val stickyTamperPending = runCatching { root.isTamperReinstallPendingReboot() }.getOrDefault(false)
 
       // 5) Build identity + optional bundled-module update prompt.
-      // Release runs auto-expand on a launcher cold start. Service runs expose the same
-      // update action only through the compact build card.
+      // A real module versionCode upgrade must always auto-expand on a launcher cold start,
+      // regardless of whether this workflow run is labelled release or service. A service-only
+      // buildNumber update within the same versionCode stays available through the compact card.
       val installedBuild = parseModuleBuildInfo(installedText)
       val bundledBuild = readBundledModuleBuildInfo()
       val buildUpdateAvailable = bundledBuild != null &&
@@ -1580,7 +1581,11 @@ private fun clearDownloadedUpdateApk() {
         installedCode >= minSupported &&
         isBundledModuleBuildNewer(installedBuild, bundledBuild)
       val buildType = bundledBuild?.buildType ?: "service"
-      val autoExpandUpdate = startedFromLauncher && buildUpdateAvailable && buildType == "release"
+      val bundledCodeForPrompt = bundledBuild?.versionCode
+      val isVersionCodeUpgrade = installedCode != null &&
+        bundledCodeForPrompt != null &&
+        bundledCodeForPrompt > installedCode
+      val autoExpandUpdate = startedFromLauncher && buildUpdateAvailable && isVersionCodeUpgrade
       val bundledVersionName = bundledBuild?.versionName ?: BuildConfig.VERSION_NAME
       val bundledVersionCode = bundledBuild?.versionCode ?: BuildConfig.VERSION_CODE
       val installedVersionName = installedBuild.versionName ?: "?"

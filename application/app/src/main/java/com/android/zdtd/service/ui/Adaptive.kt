@@ -27,6 +27,14 @@ internal fun rememberIsNarrowWidth(): Boolean {
 }
 
 @Composable
+internal fun rememberIsTabletLayout(): Boolean {
+  val configuration = LocalConfiguration.current
+  return remember(configuration.smallestScreenWidthDp) {
+    configuration.smallestScreenWidthDp >= 600
+  }
+}
+
+@Composable
 internal fun rememberIsShortHeight(): Boolean {
   val configuration = LocalConfiguration.current
   return remember(configuration.screenHeightDp) { configuration.screenHeightDp < 760 }

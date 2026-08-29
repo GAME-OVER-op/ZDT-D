@@ -33,6 +33,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -74,11 +75,14 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -111,7 +115,13 @@ import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.roundToInt
+import kotlin.math.sin
+import kotlin.random.Random
+import java.util.Calendar
 import com.android.zdtd.service.ui.AppUpdateBanner
 import com.android.zdtd.service.ui.AppUpdateSettings
 import com.android.zdtd.service.ui.settings.SettingsScreen
@@ -853,6 +863,202 @@ private fun StartupBuildUpdateCard(
 }
 
 
+
+private data class ChristmasSnowflake(
+  val x: Float,
+  val startY: Float,
+  val radius: Float,
+  val speed: Float,
+  val drift: Float,
+  val driftSpeed: Float,
+  val phase: Float,
+  val rotationSpeed: Float,
+  val depth: Float,
+  val alpha: Float,
+)
+
+@Composable
+private fun rememberChristmasSeasonActive(): Boolean {
+  var clock by remember { mutableLongStateOf(System.currentTimeMillis()) }
+  LaunchedEffect(Unit) {
+    while (true) {
+      delay(15 * 60 * 1000L)
+      clock = System.currentTimeMillis()
+    }
+  }
+  return remember(clock) {
+    val calendar = Calendar.getInstance().apply { timeInMillis = clock }
+    val month = calendar.get(Calendar.MONTH)
+    val day = calendar.get(Calendar.DAY_OF_MONTH)
+    (month == Calendar.DECEMBER && day >= 26) ||
+      (month == Calendar.JANUARY && day <= 3)
+  }
+}
+
+@Composable
+private fun ChristmasSnowLayer(
+  visible: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  val configuration = LocalConfiguration.current
+  val particleCount = if (configuration.screenWidthDp >= 600) 38 else 26
+  val particles = remember(particleCount) {
+    val random = Random(0x5A445444)
+    List(particleCount) { index ->
+      val depth = when (index % 3) {
+        0 -> 0.42f
+        1 -> 0.70f
+        else -> 1.0f
+      }
+      ChristmasSnowflake(
+        x = random.nextFloat(),
+        startY = random.nextFloat() * 1.18f - 0.16f,
+        radius = (3.0f + random.nextFloat() * 5.8f) * depth,
+        speed = (0.035f + random.nextFloat() * 0.055f) * (0.72f + depth * 0.45f),
+        drift = (0.010f + random.nextFloat() * 0.030f) * depth,
+        driftSpeed = 0.32f + random.nextFloat() * 0.72f,
+        phase = random.nextFloat() * (2f * PI.toFloat()),
+        rotationSpeed = (10f + random.nextFloat() * 28f) * if (random.nextBoolean()) 1f else -1f,
+        depth = depth,
+        alpha = 0.36f + random.nextFloat() * 0.46f,
+      )
+    }
+  }
+
+  val layerAlpha by animateFloatAsState(
+    targetValue = if (visible) 1f else 0f,
+    animationSpec = tween(durationMillis = 520, easing = FastOutSlowInEasing),
+    label = "christmas_snow_visibility",
+  )
+  val lightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
+  val farColor = if (lightTheme) Color(0xFF5D86B7) else Color(0xFFCFE7FF)
+  val nearColor = if (lightTheme) Color(0xFF2F6FAF) else Color.White
+  var elapsedNanos by remember { mutableLongStateOf(0L) }
+
+  LaunchedEffect(visible) {
+    var previousFrame = 0L
+    val fadeOutDeadline = if (visible) Long.MAX_VALUE else System.nanoTime() + 620_000_000L
+    while (visible || System.nanoTime() < fadeOutDeadline) {
+      withFrameNanos { frame ->
+        if (previousFrame != 0L) {
+          elapsedNanos += frame - previousFrame
+        }
+        previousFrame = frame
+      }
+    }
+  }
+
+  Canvas(
+    modifier = modifier
+      .graphicsLayer { alpha = layerAlpha },
+  ) {
+    if (layerAlpha <= 0.001f) return@Canvas
+    val seconds = elapsedNanos / 1_000_000_000f
+    val travelHeight = size.height * 1.22f
+
+    particles.forEach { snow ->
+      val yNorm = ((snow.startY + seconds * snow.speed) % 1.22f + 1.22f) % 1.22f - 0.11f
+      val sway = sin(seconds * snow.driftSpeed + snow.phase) * snow.drift
+      var xNorm = snow.x + sway + seconds * 0.0035f * (snow.depth - 0.55f)
+      xNorm = ((xNorm % 1f) + 1f) % 1f
+      val center = Offset(xNorm * size.width, yNorm * travelHeight)
+      val rotation = snow.phase * 57.29578f + seconds * snow.rotationSpeed
+      val tilt = 0.38f + 0.62f * abs(cos(seconds * 0.76f + snow.phase))
+      val base = if (snow.depth < 0.7f) farColor else nearColor
+      val color = base.copy(alpha = snow.alpha)
+      drawChristmasSnowflake(
+        center = center,
+        radius = snow.radius * density,
+        rotationDegrees = rotation,
+        tilt = tilt,
+        color = color,
+        strokeWidth = (0.70f + snow.depth * 0.72f) * density,
+      )
+    }
+  }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawChristmasSnowflake(
+  center: Offset,
+  radius: Float,
+  rotationDegrees: Float,
+  tilt: Float,
+  color: Color,
+  strokeWidth: Float,
+) {
+  val rotation = rotationDegrees * PI.toFloat() / 180f
+  repeat(6) { arm ->
+    val theta = rotation + arm * PI.toFloat() / 3f
+    val dx = cos(theta)
+    val dy = sin(theta) * tilt
+    val end = Offset(center.x + dx * radius, center.y + dy * radius)
+    drawLine(color, center, end, strokeWidth = strokeWidth, cap = StrokeCap.Round)
+
+    val branchBase = 0.58f
+    val branchLength = radius * 0.28f
+    val bx = center.x + dx * radius * branchBase
+    val by = center.y + dy * radius * branchBase
+    val branchAngleA = theta + PI.toFloat() / 4f
+    val branchAngleB = theta - PI.toFloat() / 4f
+    val a = Offset(
+      bx + cos(branchAngleA) * branchLength,
+      by + sin(branchAngleA) * tilt * branchLength,
+    )
+    val b = Offset(
+      bx + cos(branchAngleB) * branchLength,
+      by + sin(branchAngleB) * tilt * branchLength,
+    )
+    drawLine(color, Offset(bx, by), a, strokeWidth = strokeWidth * 0.78f, cap = StrokeCap.Round)
+    drawLine(color, Offset(bx, by), b, strokeWidth = strokeWidth * 0.78f, cap = StrokeCap.Round)
+  }
+}
+
+@Composable
+private fun SeasonalAppTitle(
+  title: String,
+  isHome: Boolean,
+  onTitleClick: () -> Unit,
+  compact: Boolean,
+  modifier: Modifier = Modifier,
+) {
+  val christmasActive = rememberChristmasSeasonActive()
+  val clickableModifier = if (isHome) {
+    Modifier.clickable(
+      interactionSource = remember { MutableInteractionSource() },
+      indication = null,
+    ) { onTitleClick() }
+  } else {
+    Modifier
+  }
+
+  Box(
+    modifier = modifier.then(clickableModifier),
+    contentAlignment = Alignment.CenterStart,
+  ) {
+    Box(modifier = Modifier.wrapContentSize()) {
+      Text(
+        text = title,
+        letterSpacing = if (compact) 1.5.sp else 1.6.sp,
+        style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+      if (isHome && christmasActive) {
+        Image(
+          painter = painterResource(R.drawable.ic_christmas_hat),
+          contentDescription = null,
+          modifier = Modifier
+            .align(Alignment.TopEnd)
+            .offset(x = 8.dp, y = if (compact) (-8).dp else (-9).dp)
+            .size(if (compact) 24.dp else 27.dp)
+            .graphicsLayer { rotationZ = -11f },
+        )
+      }
+    }
+  }
+}
+
 private fun parentAppsRoute(route: AppsRoute): AppsRoute = when (route) {
   AppsRoute.List -> AppsRoute.List
   AppsRoute.AnalysisTools -> AppsRoute.List
@@ -961,6 +1167,20 @@ private fun MainShell(
   val uiState by uiStateFlow.collectAsStateWithLifecycle()
   val backup by backupFlow.collectAsStateWithLifecycle()
   val landscapeControl = rememberUseLandscapeControlLayout()
+  val christmasSeasonActive = rememberChristmasSeasonActive()
+  val christmasBaseScreen =
+    tab == Tab.HOME ||
+      tab == Tab.STATS ||
+      tab == Tab.SUPPORT ||
+      (tab == Tab.APPS && appsRoute == AppsRoute.List)
+  val christmasScreenVisible = christmasBaseScreen &&
+    !showLogs &&
+    !showBackup &&
+    !showProgramUpdates &&
+    !showSettings &&
+    !showDeleteModule &&
+    !showDeleteModuleNext &&
+    programLogsTarget == null
 
   DaemonUnavailableDialogHost(uiState = uiState)
 
@@ -1516,6 +1736,20 @@ private fun MainShell(
           translationX = mainContentSlidePx
         }
     ) {
+      if (christmasSeasonActive) {
+        ChristmasSnowLayer(
+          visible = christmasScreenVisible,
+          modifier = Modifier
+            .fillMaxSize()
+            .zIndex(0f),
+        )
+      }
+
+      Box(
+        modifier = Modifier
+          .fillMaxSize()
+          .zIndex(1f),
+      ) {
       if (landscapeControl) {
         LandscapeShellContent(
           tab = tab,
@@ -1683,6 +1917,8 @@ private fun MainShell(
       )
     }
 
+    }
+
     if (startupHostVisible) {
       StartupDialogHost(
         uiState = uiState,
@@ -1835,23 +2071,12 @@ private fun LandscapeContentHeader(
         Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
       }
     }
-    Text(
-      text = title,
-      letterSpacing = 1.6.sp,
-      style = MaterialTheme.typography.titleLarge,
-      fontWeight = FontWeight.SemiBold,
-      maxLines = 1,
-      overflow = TextOverflow.Ellipsis,
-      modifier = if (isHome) {
-        Modifier
-          .weight(1f)
-          .clickable(
-            interactionSource = remember { MutableInteractionSource() },
-            indication = null,
-          ) { onTitleClick() }
-      } else {
-        Modifier.weight(1f)
-      },
+    SeasonalAppTitle(
+      title = title,
+      isHome = isHome,
+      onTitleClick = onTitleClick,
+      compact = false,
+      modifier = Modifier.weight(1f),
     )
   }
 }
@@ -2148,23 +2373,12 @@ private fun FloatingTopBarCard(
               Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
             }
           }
-          Text(
-            text = title,
-            letterSpacing = 1.5.sp,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = if (isHome) {
-              Modifier
-                .weight(1f)
-                .clickable(
-                  interactionSource = remember { MutableInteractionSource() },
-                  indication = null,
-                ) { onTitleClick() }
-            } else {
-              Modifier.weight(1f)
-            },
+          SeasonalAppTitle(
+            title = title,
+            isHome = isHome,
+            onTitleClick = onTitleClick,
+            compact = true,
+            modifier = Modifier.weight(1f),
           )
           TopBarActionCluster(
             programLogTarget = programLogTarget,

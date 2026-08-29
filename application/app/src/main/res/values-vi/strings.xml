@@ -2300,4 +2300,16 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
     <string name="vps_add_sni">Thêm SNI</string>
     <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">Xác thực</string>
+    <string name="vps_auth_password">Mật khẩu</string>
+    <string name="vps_auth_private_key">Khóa SSH</string>
+    <string name="vps_private_key">Khóa SSH riêng tư</string>
+    <string name="vps_choose_private_key_file">Chọn tệp khóa riêng tư</string>
+    <string name="vps_private_key_file_selected">Tệp khóa: %1$s</string>
+    <string name="vps_private_key_passphrase">Mật khẩu khóa (không bắt buộc)</string>
+    <string name="vps_private_key_storage_hint">Khóa riêng tư và mật khẩu khóa được mã hóa bằng Android Keystore và chỉ lưu trong dữ liệu ứng dụng.</string>
+    <string name="vps_private_key_read_error">Không thể đọc tệp khóa riêng tư đã chọn.</string>
+    <string name="vps_private_key_too_large">Tệp đã chọn quá lớn. Hãy chọn khóa SSH nhỏ hơn 512 KB.</string>
+    <string name="vps_public_key_error">Đây có vẻ là khóa SSH công khai. Cần khóa riêng tư để xác thực.</string>
 </resources>

@@ -19,11 +19,11 @@ class VpsSshClient {
   private val connectTimeoutMs = 12_000
   private val commandTimeoutMs = 120_000L
 
-  suspend fun probe(host: String, port: Int, username: String, password: String): VpsProbeResult = withContext(Dispatchers.IO) {
+  suspend fun probe(host: String, port: Int, username: String, auth: VpsSshAuth): VpsProbeResult = withContext(Dispatchers.IO) {
     require(host.isNotBlank()) { "Host is empty" }
     require(username.isNotBlank()) { "Username is empty" }
-    require(password.isNotEmpty()) { "Password is empty" }
-    val session = openSession(host, port, username, password, pinnedHostKey = null)
+    validateAuth(auth)
+    val session = openSession(host, port, username, auth, pinnedHostKey = null)
     try {
       val hostKey = session.hostKey ?: error("SSH server did not provide a host key")
       val keyBase64 = hostKey.key
@@ -45,7 +45,7 @@ class VpsSshClient {
   }
 
   suspend fun collectMetrics(server: VpsServer): VpsMetrics = withContext(Dispatchers.IO) {
-    val session = openSession(server.host, server.port, server.username, server.password, server.pinnedHostKey)
+    val session = openSession(server.host, server.port, server.username, server.sshAuth(), server.pinnedHostKey)
     try {
       val result = executeOnSession(session, metricsCommand(), timeoutMs = 20_000L)
       check(result.successful) { result.output.ifBlank { "Unable to read server state" } }
@@ -64,7 +64,7 @@ class VpsSshClient {
     timeoutMs: Long = commandTimeoutMs,
     onLine: ((String) -> Unit)? = null,
   ): VpsCommandResult = withContext(Dispatchers.IO) {
-    val session = openSession(server.host, server.port, server.username, server.password, server.pinnedHostKey)
+    val session = openSession(server.host, server.port, server.username, server.sshAuth(), server.pinnedHostKey)
     try {
       executeOnSession(session, command, timeoutMs, onLine)
     } finally {
@@ -73,7 +73,7 @@ class VpsSshClient {
   }
 
   suspend fun uploadText(server: VpsServer, remotePath: String, content: String): VpsCommandResult = withContext(Dispatchers.IO) {
-    val session = openSession(server.host, server.port, server.username, server.password, server.pinnedHostKey)
+    val session = openSession(server.host, server.port, server.username, server.sshAuth(), server.pinnedHostKey)
     try {
       val channel = session.openChannel("exec") as ChannelExec
       channel.setCommand("umask 077; cat > ${shellQuote(remotePath)} && chmod 700 ${shellQuote(remotePath)}")
@@ -108,17 +108,32 @@ class VpsSshClient {
     host: String,
     port: Int,
     username: String,
-    password: String,
+    auth: VpsSshAuth,
     pinnedHostKey: String?,
   ): Session {
+    validateAuth(auth)
     val jsch = JSch()
     if (!pinnedHostKey.isNullOrBlank()) {
       jsch.hostKeyRepository = PinnedHostKeyRepository(host, pinnedHostKey)
     }
+    if (auth.type == VpsAuthType.PRIVATE_KEY) {
+      val keyBytes = normalizePrivateKey(auth.privateKey).toByteArray(Charsets.UTF_8)
+      val passphrase = auth.privateKeyPassphrase.takeIf { it.isNotEmpty() }?.toByteArray(Charsets.UTF_8)
+      try {
+        jsch.addIdentity(
+          auth.privateKeyName.ifBlank { "zdt-d-vps-key" },
+          keyBytes,
+          null,
+          passphrase,
+        )
+      } catch (error: JSchException) {
+        throw JSchException("Unable to read SSH private key: ${error.message ?: "unsupported or invalid key"}", error)
+      }
+    }
     val session = jsch.getSession(username, host, port)
-    session.setPassword(password)
+    if (auth.type == VpsAuthType.PASSWORD) session.setPassword(auth.password)
     val config = Properties().apply {
-      put("PreferredAuthentications", "password,keyboard-interactive")
+      put("PreferredAuthentications", if (auth.type == VpsAuthType.PRIVATE_KEY) "publickey" else "password,keyboard-interactive")
       put("StrictHostKeyChecking", if (pinnedHostKey.isNullOrBlank()) "no" else "yes")
       put("ServerAliveInterval", "10000")
       put("ServerAliveCountMax", "2")
@@ -128,6 +143,24 @@ class VpsSshClient {
     session.connect(connectTimeoutMs)
     return session
   }
+
+  private fun validateAuth(auth: VpsSshAuth) {
+    when (auth.type) {
+      VpsAuthType.PASSWORD -> require(auth.password.isNotEmpty()) { "Password is empty" }
+      VpsAuthType.PRIVATE_KEY -> {
+        val key = auth.privateKey.trim()
+        require(key.isNotEmpty()) { "SSH private key is empty" }
+        require(!looksLikePublicKey(key)) { "A public SSH key was provided; a private key is required" }
+      }
+    }
+  }
+
+  private fun looksLikePublicKey(value: String): Boolean {
+    val first = value.lineSequence().firstOrNull()?.trim().orEmpty()
+    return first.startsWith("ssh-") || first.startsWith("ecdsa-") || first.startsWith("sk-")
+  }
+
+  private fun normalizePrivateKey(value: String): String = value.trim().replace("\r\n", "\n") + "\n"
 
   private fun executeOnSession(
     session: Session,

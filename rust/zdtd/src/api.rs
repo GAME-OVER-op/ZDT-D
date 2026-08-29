@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use serde::de::DeserializeOwned;
 use serde_json::json;
@@ -638,16 +638,15 @@ fn ensure_safe_segment(s: &str, what: &str) -> Result<()> {
 }
 
 fn is_safe_filename(s: &str) -> bool {
-    if s.is_empty() || s.len() > 128 {
+    // File names from Android's document picker are UTF-8 display names. Keep
+    // international names intact, but never allow them to become paths.
+    if s.trim().is_empty() || s.as_bytes().len() > 240 {
         return false;
     }
-    // Disallow dot segments and any path separators.
-    if s == "." || s == ".." || s.contains('/') || s.contains('\\') {
+    if s == "." || s == ".." || s.contains('/') || s.contains('\\') || s.contains('\0') {
         return false;
     }
-    // Conservative ASCII allowlist.
-    s.chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.' || c == '+')
+    s.chars().all(|c| !c.is_control())
 }
 
 fn ensure_safe_filename(s: &str) -> Result<()> {
@@ -655,6 +654,40 @@ fn ensure_safe_filename(s: &str) -> Result<()> {
         anyhow::bail!("invalid filename");
     }
     Ok(())
+}
+
+fn decode_url_component(raw: &str) -> Result<String> {
+    let bytes = raw.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'%' => {
+                if i + 2 >= bytes.len() {
+                    anyhow::bail!("bad percent-encoding");
+                }
+                let hi = (bytes[i + 1] as char)
+                    .to_digit(16)
+                    .ok_or_else(|| anyhow::anyhow!("bad percent-encoding"))?;
+                let lo = (bytes[i + 2] as char)
+                    .to_digit(16)
+                    .ok_or_else(|| anyhow::anyhow!("bad percent-encoding"))?;
+                out.push(((hi << 4) | lo) as u8);
+                i += 3;
+            }
+            // Android currently builds path segments with URLEncoder, where a
+            // space is represented as '+'. Literal plus signs are encoded as %2B.
+            b'+' => {
+                out.push(b' ');
+                i += 1;
+            }
+            b => {
+                out.push(b);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8(out).map_err(|e| anyhow::anyhow!("path segment is not UTF-8: {e}"))
 }
 
 fn working_root() -> PathBuf {
@@ -710,6 +743,54 @@ fn sha256_hex_bytes(data: &[u8]) -> String {
 struct MultipartFile {
     filename: String,
     data: Vec<u8>,
+}
+
+fn extract_multipart_filename(content_disposition: &str) -> Result<Option<String>> {
+    // OkHttp sends filename="...". Parse the quoted value directly instead of
+    // splitting on ';', because a legal display name may itself contain ';'.
+    if let Some(start) = content_disposition.find("filename=\"") {
+        let rest = &content_disposition[start + "filename=\"".len()..];
+        let mut escaped = false;
+        let mut out = String::new();
+        for ch in rest.chars() {
+            if escaped {
+                out.push(ch);
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == '"' {
+                return Ok((!out.is_empty()).then_some(out));
+            }
+            out.push(ch);
+        }
+        anyhow::bail!("unterminated multipart filename");
+    }
+
+    // RFC 5987 fallback: filename*=UTF-8''percent-encoded-name
+    if let Some(part) = content_disposition
+        .split(';')
+        .map(str::trim)
+        .find(|p| p.starts_with("filename*="))
+    {
+        let raw = part.trim_start_matches("filename*=").trim_matches('"');
+        let encoded = raw.split_once("''").map(|(_, value)| value).unwrap_or(raw);
+        let decoded = decode_url_component(encoded)?;
+        return Ok((!decoded.is_empty()).then_some(decoded));
+    }
+
+    // Legacy unquoted filename=value.
+    let value = content_disposition
+        .split(';')
+        .map(str::trim)
+        .find_map(|p| p.strip_prefix("filename="))
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_string);
+    Ok(value)
 }
 
 fn parse_multipart_file(headers: &HashMap<String, String>, body: &[u8]) -> Result<MultipartFile> {
@@ -789,15 +870,7 @@ fn parse_multipart_file(headers: &HashMap<String, String>, body: &[u8]) -> Resul
 
         // We accept the first *file* part we see. If a part has no filename (regular form field),
         // skip it.
-        let filename_opt = cd
-            .split(';')
-            .find_map(|p| {
-                let p = p.trim();
-                p.strip_prefix("filename=")
-            })
-            .map(|v| v.trim().trim_matches('"'))
-            .filter(|v| !v.is_empty())
-            .map(|v| v.to_string());
+        let filename_opt = extract_multipart_filename(&cd)?;
 
         if let Some(filename) = filename_opt {
             ensure_safe_filename(&filename)?;
@@ -889,18 +962,23 @@ fn handle_strategic(stream: TcpStream, method: &str, path: &str, headers: &HashM
                 Ok(json!({"ok": true, "files": files, "sizes": sizes, "limit": STRATEGIC_TEXT_LIMIT}))
             }
             ("POST", ["api", "strategic", _, "upload"]) => {
-                // Upload a file. Filename comes from multipart Content-Disposition.
+                // Upload a file. International display names are allowed, but
+                // path separators/control characters are still rejected by the
+                // multipart parser. Text assets are converted to canonical UTF-8
+                // so later editing/saving never depends on the source encoding.
                 let f = parse_multipart_file(headers, body)?;
                 let dst = base.join(&f.filename);
-                // Ensure destination is within base.
                 if dst.parent() != Some(base.as_path()) {
                     anyhow::bail!("invalid destination");
                 }
-                write_bytes_atomic(&dst, &f.data)?;
-                // Apply default permissions.
-                match kind {
-                    "bin" => chmod_best_effort(&dst, 0o755),
-                    _ => chmod_best_effort(&dst, 0o644),
+                if kind == "bin" {
+                    write_bytes_atomic(&dst, &f.data)?;
+                    chmod_best_effort(&dst, 0o755);
+                } else {
+                    let content = crate::external_text::decode_external_text(&f.data)
+                        .with_context(|| format!("decode imported strategic file {}", f.filename))?;
+                    write_text_atomic(&dst, &content)?;
+                    chmod_best_effort(&dst, 0o644);
                 }
                 Ok(json!({"ok": true, "filename": f.filename}))
             }
@@ -911,8 +989,9 @@ fn handle_strategic(stream: TcpStream, method: &str, path: &str, headers: &HashM
                 if kind == "bin" {
                     anyhow::bail!("bin files are not text-readable via API");
                 }
-                ensure_safe_filename(name)?;
-                let p = base.join(name);
+                let name = decode_url_component(name)?;
+                ensure_safe_filename(&name)?;
+                let p = base.join(&name);
                 if !p.is_file() {
                     anyhow::bail!("file not found");
                 }
@@ -928,21 +1007,24 @@ fn handle_strategic(stream: TcpStream, method: &str, path: &str, headers: &HashM
                 if kind == "bin" {
                     anyhow::bail!("bin files cannot be edited as text");
                 }
-                ensure_safe_filename(name)?;
+                let name = decode_url_component(name)?;
+                ensure_safe_filename(&name)?;
                 let req: ContentReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                let content_len = req.content.as_bytes().len() as u64;
+                let content = crate::external_text::normalize_text(&req.content)?;
+                let content_len = content.as_bytes().len() as u64;
                 if content_len > STRATEGIC_TEXT_LIMIT {
                     return Ok(json!({"ok": false, "error": "too_large", "size": content_len, "limit": STRATEGIC_TEXT_LIMIT}));
                 }
-                let p = base.join(name);
-                write_text_atomic(&p, &req.content)?;
+                let p = base.join(&name);
+                write_text_atomic(&p, &content)?;
                 chmod_best_effort(&p, 0o644);
                 Ok(json!({"ok": true}))
             }
             ("DELETE", ["api", "strategic", _, name]) => {
-                ensure_safe_filename(name)?;
-                let p = base.join(name);
+                let name = decode_url_component(name)?;
+                ensure_safe_filename(&name)?;
+                let p = base.join(&name);
                 if p.exists() {
                     fs::remove_file(&p)
                         .map_err(|e| anyhow::anyhow!("remove failed {}: {e}", p.display()))?;
@@ -2369,12 +2451,15 @@ fn create_next_profile(program_id: &str) -> Result<String> {
 }
 
 fn read_text(p: &Path) -> Result<String> {
-    fs::read_to_string(p).map_err(|e| anyhow::anyhow!("read failed {}: {e}", p.display()))
+    let data = fs::read(p).map_err(|e| anyhow::anyhow!("read failed {}: {e}", p.display()))?;
+    crate::external_text::decode_external_text(&data)
+        .with_context(|| format!("decode text {}", p.display()))
 }
 
 fn read_text_or_empty(p: &Path) -> Result<String> {
-    match fs::read_to_string(p) {
-        Ok(s) => Ok(s),
+    match fs::read(p) {
+        Ok(data) => crate::external_text::decode_external_text(&data)
+            .with_context(|| format!("decode text {}", p.display())),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
         Err(e) => Err(anyhow::anyhow!("read failed {}: {e}", p.display())),
     }
@@ -3438,8 +3523,9 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 ensure_openvpn_profile_layout(profile)?;
                 let req: ContentReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let content = crate::external_text::normalize_text(&req.content)?;
                 let p = openvpn_profile_root(profile).join("client.ovpn");
-                write_text_atomic(&p, &req.content)?;
+                write_text_atomic(&p, &content)?;
                 Ok(())
             })();
             match res {
@@ -3452,11 +3538,15 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 crate::programs::openvpn::ensure_valid_profile_name(profile)?;
                 ensure_openvpn_profile_layout(profile)?;
                 let f = parse_multipart_file(headers, body)?;
-                if !f.filename.ends_with(".ovpn") {
-                    anyhow::bail!("only .ovpn files are accepted");
+                // The external document name is only presentation metadata. The
+                // profile always stores one canonical client.ovpn file.
+                let content = crate::external_text::decode_external_text(&f.data)
+                    .with_context(|| format!("decode imported OpenVPN config {}", f.filename))?;
+                if content.trim().is_empty() {
+                    anyhow::bail!("client.ovpn is empty");
                 }
                 let p = openvpn_profile_root(profile).join("client.ovpn");
-                write_bytes_atomic(&p, &f.data)?;
+                write_text_atomic(&p, &content)?;
                 Ok(())
             })();
             match res {
@@ -3647,7 +3737,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 ensure_amneziawg_profile_layout(profile)?;
                 let req: ContentReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                crate::programs::amneziawg::import_config(profile, &req.content)?;
+                let content = crate::external_text::normalize_text(&req.content)?;
+                crate::programs::amneziawg::import_config(profile, &content)?;
                 Ok(())
             })();
             match res {
@@ -3660,10 +3751,10 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 crate::programs::amneziawg::ensure_valid_profile_name(profile)?;
                 ensure_amneziawg_profile_layout(profile)?;
                 let f = parse_multipart_file(headers, body)?;
-                if !f.filename.ends_with(".conf") {
-                    anyhow::bail!("only .conf files are accepted");
-                }
-                let content = String::from_utf8(f.data).map_err(|e| anyhow::anyhow!("config is not UTF-8: {e}"))?;
+                // Like OpenVPN, AWG stores a canonical client.conf regardless of
+                // the external document's language, extension case or display name.
+                let content = crate::external_text::decode_external_text(&f.data)
+                    .with_context(|| format!("decode imported AmneziaWG config {}", f.filename))?;
                 crate::programs::amneziawg::import_config(profile, &content)?;
                 Ok(())
             })();
@@ -5902,8 +5993,9 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
         ("DELETE", ["api", "programs", "myprogram", "profiles", profile, "bin", filename]) => {
             let res = (|| -> Result<()> {
                 ensure_valid_singbox_profile_name(profile)?;
-                ensure_safe_filename(filename)?;
-                crate::programs::myprogram::delete_bin_file(profile, filename)?;
+                let filename = decode_url_component(filename)?;
+                ensure_safe_filename(&filename)?;
+                crate::programs::myprogram::delete_bin_file(profile, &filename)?;
                 Ok(())
             })();
             match res { Ok(_) => write_ok(stream), Err(e) => write_err(stream, e) }

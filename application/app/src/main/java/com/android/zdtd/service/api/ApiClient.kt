@@ -418,14 +418,15 @@ class ApiClient(
     return requestOk("DELETE", path, null)
   }
 
-  fun uploadOpenVpnConfig(profile: String, filename: String, file: File): Boolean {
+  fun uploadOpenVpnConfig(profile: String, _filename: String, file: File): Boolean {
     val safeProfile = enc(profile.trim())
-    return uploadMultipart("/api/programs/openvpn/profiles/$safeProfile/upload-config", filename, file)
+    // External display names never become internal profile file names.
+    return uploadMultipart("/api/programs/openvpn/profiles/$safeProfile/upload-config", "client.ovpn", file)
   }
 
-  fun uploadAmneziaWgConfig(profile: String, filename: String, file: File): Boolean {
+  fun uploadAmneziaWgConfig(profile: String, _filename: String, file: File): Boolean {
     val safeProfile = enc(profile.trim())
-    return uploadMultipart("/api/programs/amneziawg/profiles/$safeProfile/upload-config", filename, file)
+    return uploadMultipart("/api/programs/amneziawg/profiles/$safeProfile/upload-config", "client.conf", file)
   }
 
 

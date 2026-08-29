@@ -2,7 +2,6 @@ package com.android.zdtd.service.ui
 
 import android.content.Context
 import android.net.Uri
-import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -72,6 +71,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
+import com.android.zdtd.service.io.ExternalTextImport
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -177,17 +177,8 @@ private fun openVpnConfigWarnings(config: String): List<String> {
   return if (missing.isEmpty()) emptyList() else listOf("client.ovpn: ${missing.joinToString(", ")} not found")
 }
 
-private fun openVpnUriDisplayName(context: Context, uri: Uri): String? = runCatching {
-  context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-    if (c.moveToFirst()) c.getString(0) else null
-  }
-}.getOrNull()
-
-private fun readOpenVpnTextFromUri(context: Context, uri: Uri): String? = runCatching {
-  context.contentResolver.openInputStream(uri)?.use { input ->
-    input.bufferedReader(Charsets.UTF_8).use { it.readText() }
-  }
-}.getOrNull()
+private fun readOpenVpnTextFromUri(context: Context, uri: Uri): String? =
+  ExternalTextImport.readText(context, uri).getOrNull()
 
 private fun openVpnProfileIndex(name: String): Int {
   val n = name.trim()
@@ -196,20 +187,6 @@ private fun openVpnProfileIndex(name: String): Int {
     return n.drop(7).toIntOrNull() ?: Int.MIN_VALUE
   }
   return Int.MIN_VALUE
-}
-
-private fun copyOpenVpnUriToTempFile(context: Context, uri: Uri, displayName: String): File? {
-  val suffix = displayName.substringAfterLast('.', "ovpn").let { ".${it.take(16).ifBlank { "ovpn" }}" }
-  val tmp = runCatching { File.createTempFile("openvpn_config_", suffix, context.cacheDir) }.getOrNull() ?: return null
-  return try {
-    context.contentResolver.openInputStream(uri)?.use { input ->
-      tmp.outputStream().use { output -> input.copyTo(output, 1024 * 1024) }
-    } ?: return null
-    tmp
-  } catch (_: Throwable) {
-    runCatching { tmp.delete() }
-    null
-  }
 }
 
 @Composable
@@ -424,9 +401,10 @@ fun OpenVpnProfileScreen(
     contract = ActivityResultContracts.OpenDocument(),
     onResult = { uri ->
       if (uri == null) return@rememberLauncherForActivityResult
-      val fileName = openVpnUriDisplayName(context, uri) ?: "client.ovpn"
       val localText = readOpenVpnTextFromUri(context, uri)
-      val tmp = copyOpenVpnUriToTempFile(context, uri, fileName)
+      val tmp = localText?.let {
+        ExternalTextImport.writeUtf8Temp(context, "openvpn_config_", ".ovpn", it).getOrNull()
+      }
       if (localText == null || tmp == null) {
         showSnack(context.getString(R.string.common_upload_failed))
         return@rememberLauncherForActivityResult
@@ -435,7 +413,7 @@ fun OpenVpnProfileScreen(
       uploading = true
       scope.launch {
         val ok = try {
-          awaitUploadOpenVpnConfig(actions, profile, fileName, tmp)
+          awaitUploadOpenVpnConfig(actions, profile, "client.ovpn", tmp)
         } finally {
           runCatching { tmp.delete() }
         }

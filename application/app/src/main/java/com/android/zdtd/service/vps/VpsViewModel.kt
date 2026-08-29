@@ -75,21 +75,21 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     val host: String,
     val port: Int,
     val username: String,
-    val password: String,
+    val auth: VpsSshAuth,
     val result: VpsProbeResult,
   )
 
   fun server(id: String): VpsServer? = _servers.value.firstOrNull { it.id == id }
 
-  fun probeNewServer(name: String, host: String, port: Int, username: String, password: String) {
+  fun probeNewServer(name: String, host: String, port: Int, username: String, auth: VpsSshAuth) {
     if (_operation.value.running) return
     viewModelScope.launch {
       startOperation("Checking SSH connection")
-      runCatching { ssh.probe(host.trim(), port, username.trim(), password) }
+      runCatching { ssh.probe(host.trim(), port, username.trim(), auth) }
         .onSuccess { probe ->
           appendLine("SSH connection established")
           appendLine("Host key: ${probe.fingerprint}")
-          _pendingProbe.value = PendingServerProbe(name.trim().ifBlank { host.trim() }, host.trim(), port, username.trim(), password, probe)
+          _pendingProbe.value = PendingServerProbe(name.trim().ifBlank { host.trim() }, host.trim(), port, username.trim(), auth, probe)
           _operation.value = VpsOperationState()
         }
         .onFailure { failOperation(it.message ?: "SSH connection failed") }
@@ -105,7 +105,11 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
       host = pending.host,
       port = pending.port,
       username = pending.username,
-      password = pending.password,
+      password = pending.auth.password,
+      authType = pending.auth.type,
+      privateKey = pending.auth.privateKey,
+      privateKeyName = pending.auth.privateKeyName,
+      privateKeyPassphrase = pending.auth.privateKeyPassphrase,
       pinnedHostKey = pending.result.hostKeyBase64,
       fingerprint = pending.result.fingerprint,
       lastSuccessfulCheck = System.currentTimeMillis(),

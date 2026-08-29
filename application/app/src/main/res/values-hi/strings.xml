@@ -2301,4 +2301,16 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
     <string name="vps_add_sni">SNI जोड़ें</string>
     <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">प्रमाणीकरण</string>
+    <string name="vps_auth_password">पासवर्ड</string>
+    <string name="vps_auth_private_key">SSH कुंजी</string>
+    <string name="vps_private_key">निजी SSH कुंजी</string>
+    <string name="vps_choose_private_key_file">निजी कुंजी फ़ाइल चुनें</string>
+    <string name="vps_private_key_file_selected">कुंजी फ़ाइल: %1$s</string>
+    <string name="vps_private_key_passphrase">कुंजी पासफ्रेज़ (वैकल्पिक)</string>
+    <string name="vps_private_key_storage_hint">निजी कुंजी और उसका पासफ्रेज़ Android Keystore से एन्क्रिप्ट होते हैं और केवल ऐप डेटा में रहते हैं।</string>
+    <string name="vps_private_key_read_error">चुनी गई निजी कुंजी फ़ाइल पढ़ी नहीं जा सकी।</string>
+    <string name="vps_private_key_too_large">चुनी गई फ़ाइल बहुत बड़ी है। 512 KB से छोटी SSH कुंजी चुनें।</string>
+    <string name="vps_public_key_error">यह सार्वजनिक SSH कुंजी लगती है। प्रमाणीकरण के लिए निजी कुंजी आवश्यक है।</string>
 </resources>

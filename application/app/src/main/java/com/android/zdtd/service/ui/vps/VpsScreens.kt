@@ -5,7 +5,10 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
@@ -101,6 +104,7 @@ import androidx.lifecycle.compose.LifecycleStartEffect
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.singbox.importer.SingBoxOneLineImporter
+import com.android.zdtd.service.vps.VpsAuthType
 import com.android.zdtd.service.vps.VpsClientConfig
 import com.android.zdtd.service.vps.VpsConfigResult
 import com.android.zdtd.service.vps.VpsLoadState
@@ -111,6 +115,7 @@ import com.android.zdtd.service.vps.VpsServer
 import com.android.zdtd.service.vps.VpsServiceKind
 import com.android.zdtd.service.vps.VpsServiceProfile
 import com.android.zdtd.service.vps.VpsServiceState
+import com.android.zdtd.service.vps.VpsSshAuth
 import com.android.zdtd.service.vps.VpsViewModel
 import java.io.File
 import java.net.URLEncoder
@@ -615,14 +620,49 @@ fun VpsProfileScreen(
 private fun AddVpsServerDialog(
   busy: Boolean,
   onDismiss: () -> Unit,
-  onSubmit: (String, String, Int, String, String) -> Unit,
+  onSubmit: (String, String, Int, String, VpsSshAuth) -> Unit,
 ) {
+  val context = LocalContext.current
   var name by remember { mutableStateOf("") }
   var host by remember { mutableStateOf("") }
   var port by remember { mutableStateOf("22") }
   var username by remember { mutableStateOf("root") }
+  var authType by remember { mutableStateOf(VpsAuthType.PASSWORD) }
   var password by remember { mutableStateOf("") }
-  val valid = host.isNotBlank() && username.isNotBlank() && password.isNotEmpty() && port.toIntOrNull() in 1..65535
+  var privateKey by remember { mutableStateOf("") }
+  var privateKeyName by remember { mutableStateOf("") }
+  var privateKeyPassphrase by remember { mutableStateOf("") }
+  var keyError by remember { mutableStateOf<String?>(null) }
+
+  val keyReadError = stringResource(R.string.vps_private_key_read_error)
+  val keyTooLarge = stringResource(R.string.vps_private_key_too_large)
+  val publicKeyError = stringResource(R.string.vps_public_key_error)
+
+  val keyPicker = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.OpenDocument(),
+    onResult = { uri ->
+      if (uri == null) return@rememberLauncherForActivityResult
+      runCatching { readVpsPrivateKeyFromUri(context, uri) }
+        .onSuccess { imported ->
+          privateKey = imported.text
+          privateKeyName = imported.name
+          keyError = if (looksLikeVpsPublicKey(imported.text)) publicKeyError else null
+        }
+        .onFailure { error ->
+          privateKey = ""
+          privateKeyName = ""
+          keyError = if (error is VpsPrivateKeyTooLargeException) keyTooLarge else keyReadError
+        }
+    },
+  )
+
+  val portValid = port.toIntOrNull() in 1..65535
+  val authValid = when (authType) {
+    VpsAuthType.PASSWORD -> password.isNotEmpty()
+    VpsAuthType.PRIVATE_KEY -> privateKey.isNotBlank() && keyError == null && !looksLikeVpsPublicKey(privateKey)
+  }
+  val valid = host.isNotBlank() && username.isNotBlank() && portValid && authValid
+
   AlertDialog(
     onDismissRequest = onDismiss,
     icon = { Icon(Icons.Outlined.Cloud, contentDescription = null) },
@@ -636,19 +676,164 @@ private fun AddVpsServerDialog(
         OutlinedTextField(host, { host = it.trim() }, label = { Text(stringResource(R.string.vps_host)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
         OutlinedTextField(port, { port = it.filter(Char::isDigit).take(5) }, label = { Text(stringResource(R.string.vps_ssh_port)) }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
         OutlinedTextField(username, { username = it.trim() }, label = { Text(stringResource(R.string.vps_username)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(password, { password = it }, label = { Text(stringResource(R.string.vps_password)) }, singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-        Text(stringResource(R.string.vps_password_storage_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f))
+
+        Text(
+          stringResource(R.string.vps_auth_method),
+          style = MaterialTheme.typography.labelLarge,
+          fontWeight = FontWeight.SemiBold,
+        )
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          if (authType == VpsAuthType.PASSWORD) {
+            FilledTonalButton(onClick = { authType = VpsAuthType.PASSWORD }, modifier = Modifier.weight(1f)) {
+              Text(stringResource(R.string.vps_auth_password))
+            }
+          } else {
+            OutlinedButton(onClick = { authType = VpsAuthType.PASSWORD; keyError = null }, modifier = Modifier.weight(1f)) {
+              Text(stringResource(R.string.vps_auth_password))
+            }
+          }
+          if (authType == VpsAuthType.PRIVATE_KEY) {
+            FilledTonalButton(onClick = { authType = VpsAuthType.PRIVATE_KEY }, modifier = Modifier.weight(1f)) {
+              Icon(Icons.Outlined.Key, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(Modifier.width(6.dp))
+              Text(stringResource(R.string.vps_auth_private_key))
+            }
+          } else {
+            OutlinedButton(onClick = { authType = VpsAuthType.PRIVATE_KEY }, modifier = Modifier.weight(1f)) {
+              Icon(Icons.Outlined.Key, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(Modifier.width(6.dp))
+              Text(stringResource(R.string.vps_auth_private_key))
+            }
+          }
+        }
+
+        if (authType == VpsAuthType.PASSWORD) {
+          OutlinedTextField(
+            password,
+            { password = it },
+            label = { Text(stringResource(R.string.vps_password)) },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(),
+          )
+          Text(
+            stringResource(R.string.vps_password_storage_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+          )
+        } else {
+          OutlinedButton(
+            enabled = !busy,
+            onClick = { keyPicker.launch(arrayOf("*/*")) },
+            modifier = Modifier.fillMaxWidth(),
+          ) {
+            Icon(Icons.Outlined.Key, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(7.dp))
+            Text(
+              if (privateKeyName.isBlank()) stringResource(R.string.vps_choose_private_key_file)
+              else stringResource(R.string.vps_private_key_file_selected, privateKeyName),
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis,
+            )
+          }
+          OutlinedTextField(
+            value = privateKey,
+            onValueChange = { value ->
+              privateKey = value
+              if (privateKeyName.isNotBlank()) privateKeyName = ""
+              keyError = when {
+                value.isBlank() -> null
+                looksLikeVpsPublicKey(value) -> publicKeyError
+                else -> null
+              }
+            },
+            label = { Text(stringResource(R.string.vps_private_key)) },
+            placeholder = { Text("-----BEGIN OPENSSH PRIVATE KEY-----") },
+            minLines = 4,
+            maxLines = 8,
+            isError = keyError != null,
+            supportingText = keyError?.let { message -> { Text(message) } },
+            modifier = Modifier.fillMaxWidth(),
+          )
+          OutlinedTextField(
+            value = privateKeyPassphrase,
+            onValueChange = { privateKeyPassphrase = it },
+            label = { Text(stringResource(R.string.vps_private_key_passphrase)) },
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation(),
+            modifier = Modifier.fillMaxWidth(),
+          )
+          Text(
+            stringResource(R.string.vps_private_key_storage_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.66f),
+          )
+        }
       }
     },
     confirmButton = {
-      Button(enabled = valid && !busy, onClick = { onSubmit(name, host, port.toInt(), username, password) }) {
-        if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp) else Icon(Icons.Outlined.Security, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(7.dp)); Text(stringResource(R.string.vps_check_and_add))
+      Button(
+        enabled = valid && !busy,
+        onClick = {
+          onSubmit(
+            name,
+            host,
+            port.toInt(),
+            username,
+            VpsSshAuth(
+              type = authType,
+              password = if (authType == VpsAuthType.PASSWORD) password else "",
+              privateKey = if (authType == VpsAuthType.PRIVATE_KEY) privateKey else "",
+              privateKeyName = if (authType == VpsAuthType.PRIVATE_KEY) privateKeyName else "",
+              privateKeyPassphrase = if (authType == VpsAuthType.PRIVATE_KEY) privateKeyPassphrase else "",
+            ),
+          )
+        },
+      ) {
+        if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+        else Icon(Icons.Outlined.Security, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(7.dp))
+        Text(stringResource(R.string.vps_check_and_add))
       }
     },
     dismissButton = { OutlinedButton(enabled = !busy, onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
   )
 }
+
+private data class ImportedVpsPrivateKey(val name: String, val text: String)
+private class VpsPrivateKeyTooLargeException : IllegalArgumentException()
+
+private fun readVpsPrivateKeyFromUri(context: Context, uri: Uri): ImportedVpsPrivateKey {
+  val name = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+    if (cursor.moveToFirst()) cursor.getString(0) else null
+  }.orEmpty().ifBlank { "ssh_private_key" }
+  val input = context.contentResolver.openInputStream(uri) ?: error("Unable to open selected key")
+  val bytes = input.use { stream ->
+    val output = java.io.ByteArrayOutputStream()
+    val buffer = ByteArray(8 * 1024)
+    var total = 0
+    while (true) {
+      val count = stream.read(buffer)
+      if (count < 0) break
+      total += count
+      if (total > VPS_PRIVATE_KEY_MAX_BYTES) throw VpsPrivateKeyTooLargeException()
+      output.write(buffer, 0, count)
+    }
+    output.toByteArray()
+  }
+  require(bytes.isNotEmpty()) { "Selected key is empty" }
+  return ImportedVpsPrivateKey(name, bytes.toString(Charsets.UTF_8).trim())
+}
+
+private fun looksLikeVpsPublicKey(value: String): Boolean {
+  val first = value.lineSequence().firstOrNull()?.trim().orEmpty()
+  return first.startsWith("ssh-") || first.startsWith("ecdsa-") || first.startsWith("sk-")
+}
+
+private const val VPS_PRIVATE_KEY_MAX_BYTES = 512 * 1024
 
 @Composable
 private fun CreateVpsProfileDialog(

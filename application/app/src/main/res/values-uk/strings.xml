@@ -2303,4 +2303,16 @@ APatch: 10700+</string>
     <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
     <string name="vps_add_sni">Додати SNI</string>
     <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">Авторизація</string>
+    <string name="vps_auth_password">Пароль</string>
+    <string name="vps_auth_private_key">SSH-ключ</string>
+    <string name="vps_private_key">Приватний SSH-ключ</string>
+    <string name="vps_choose_private_key_file">Вибрати файл приватного ключа</string>
+    <string name="vps_private_key_file_selected">Файл ключа: %1$s</string>
+    <string name="vps_private_key_passphrase">Пароль ключа (необов’язково)</string>
+    <string name="vps_private_key_storage_hint">Приватний ключ і пароль ключа шифруються через Android Keystore та зберігаються лише в даних застосунку.</string>
+    <string name="vps_private_key_read_error">Не вдалося прочитати вибраний файл приватного ключа.</string>
+    <string name="vps_private_key_too_large">Вибраний файл завеликий. Виберіть SSH-ключ розміром менше 512 КБ.</string>
+    <string name="vps_public_key_error">Схоже, вибрано публічний SSH-ключ. Для авторизації потрібен приватний ключ.</string>
 </resources>

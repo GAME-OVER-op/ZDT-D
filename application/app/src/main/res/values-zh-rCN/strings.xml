@@ -2300,4 +2300,16 @@ APatch：10700+</string>
     <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
     <string name="vps_add_sni">添加 SNI</string>
     <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">身份验证</string>
+    <string name="vps_auth_password">密码</string>
+    <string name="vps_auth_private_key">SSH 密钥</string>
+    <string name="vps_private_key">SSH 私钥</string>
+    <string name="vps_choose_private_key_file">选择私钥文件</string>
+    <string name="vps_private_key_file_selected">密钥文件：%1$s</string>
+    <string name="vps_private_key_passphrase">密钥口令（可选）</string>
+    <string name="vps_private_key_storage_hint">私钥和密钥口令使用 Android Keystore 加密，并且仅保存在应用数据中。</string>
+    <string name="vps_private_key_read_error">无法读取所选私钥文件。</string>
+    <string name="vps_private_key_too_large">所选文件过大。请选择小于 512 KB 的 SSH 密钥。</string>
+    <string name="vps_public_key_error">这看起来是 SSH 公钥。身份验证需要私钥。</string>
 </resources>

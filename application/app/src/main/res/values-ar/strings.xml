@@ -2305,4 +2305,16 @@ APatch: ‏10700+</string>
     <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
     <string name="vps_add_sni">إضافة SNI</string>
     <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">المصادقة</string>
+    <string name="vps_auth_password">كلمة المرور</string>
+    <string name="vps_auth_private_key">مفتاح SSH</string>
+    <string name="vps_private_key">مفتاح SSH خاص</string>
+    <string name="vps_choose_private_key_file">اختيار ملف المفتاح الخاص</string>
+    <string name="vps_private_key_file_selected">ملف المفتاح: %1$s</string>
+    <string name="vps_private_key_passphrase">عبارة مرور المفتاح (اختياري)</string>
+    <string name="vps_private_key_storage_hint">يتم تشفير المفتاح الخاص وعبارة مروره باستخدام Android Keystore ويظلان ضمن بيانات التطبيق فقط.</string>
+    <string name="vps_private_key_read_error">تعذرت قراءة ملف المفتاح الخاص المحدد.</string>
+    <string name="vps_private_key_too_large">الملف المحدد كبير جدًا. اختر مفتاح SSH أصغر من 512 كيلوبايت.</string>
+    <string name="vps_public_key_error">يبدو أن هذا مفتاح SSH عام. يلزم مفتاح خاص للمصادقة.</string>
 </resources>

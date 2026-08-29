@@ -313,8 +313,7 @@ pub fn import_config(profile: &str, raw: &str) -> Result<()> {
         Some(&imported.setting),
         None,
     )?;
-    write_text_atomic(&root.join("client.conf"), &imported.config)?;
-    write_json_pretty(&root.join("setting.json"), &imported.setting)?;
+    write_import_pair(&root, &imported.config, &imported.setting)?;
     Ok(())
 }
 
@@ -323,8 +322,7 @@ pub fn normalize_config_in_place(profile: &str) -> Result<()> {
     ensure_profile_layout(profile)?;
     let root = profile_root(profile);
     let config_path = root.join("client.conf");
-    let raw = fs::read_to_string(&config_path)
-        .with_context(|| format!("read {}", config_path.display()))?;
+    let raw = read_amneziawg_config_text(&config_path)?;
     if raw.trim().is_empty() {
         bail!("client.conf is empty: {}", config_path.display());
     }
@@ -552,8 +550,7 @@ pub fn validate_start_plan() -> Result<()> {
                 seen_cidrs.push((name.clone(), cidr));
             }
             let config_path = profile_dir.join("client.conf");
-            let cfg = fs::read_to_string(&config_path)
-                .with_context(|| format!("read {}", config_path.display()))?;
+            let cfg = read_amneziawg_config_text(&config_path)?;
             if cfg.trim().is_empty() {
                 bail!("client.conf is empty: {}", config_path.display());
             }
@@ -823,7 +820,7 @@ fn build_profile_plan(profile: &str, allow_empty_apps: bool) -> Result<ProfilePl
     if !config_path.is_file() {
         bail!("client.conf missing: {}", config_path.display());
     }
-    let cfg = fs::read_to_string(&config_path).unwrap_or_default();
+    let cfg = read_amneziawg_config_text(&config_path)?;
     if cfg.trim().is_empty() {
         bail!("client.conf is empty: {}", config_path.display());
     }
@@ -1080,8 +1077,7 @@ fn prepare_setconf_config(plan: &ProfilePlan) -> Result<PathBuf> {
     if !plan.setting.endpoint_resolve {
         return Ok(plan.config_path.clone());
     }
-    let raw = fs::read_to_string(&plan.config_path)
-        .with_context(|| format!("read {}", plan.config_path.display()))?;
+    let raw = read_amneziawg_config_text(&plan.config_path)?;
     let resolved = resolve_endpoint_lines(&raw)
         .with_context(|| format!("resolve Endpoint for {}", plan.config_path.display()))?;
     let tmp = plan.profile_dir.join("tmp/client.resolved.conf");
@@ -1121,7 +1117,7 @@ fn resolve_endpoint_lines(raw: &str) -> Result<String> {
 }
 
 fn collect_endpoint_escape_ips(plan: &ProfilePlan) -> Vec<String> {
-    let raw = match fs::read_to_string(&plan.config_path) {
+    let raw = match read_amneziawg_config_text(&plan.config_path) {
         Ok(raw) => raw,
         Err(e) => {
             warn!(
@@ -1461,6 +1457,92 @@ fn ensure_file_empty(path: &Path) -> Result<()> {
 
 fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
     crate::jsonfs::read_json_short_ctx(path)
+}
+
+fn read_amneziawg_config_text(path: &Path) -> Result<String> {
+    let data = fs::read(path).with_context(|| format!("read {}", path.display()))?;
+    let text = crate::external_text::decode_external_text(&data)
+        .with_context(|| format!("decode {}", path.display()))?;
+    if data.as_slice() != text.as_bytes() {
+        let tmp = path.with_file_name("client.conf.encoding.tmp");
+        fs::write(&tmp, text.as_bytes())
+            .with_context(|| format!("write {}", tmp.display()))?;
+        fs::rename(&tmp, path)
+            .with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))?;
+    }
+    Ok(text)
+}
+
+fn write_import_pair(root: &Path, config: &str, setting: &ProfileSetting) -> Result<()> {
+    let config_path = root.join("client.conf");
+    let setting_path = root.join("setting.json");
+    let config_tmp = root.join("client.conf.import.tmp");
+    let setting_tmp = root.join("setting.json.import.tmp");
+    let config_backup = root.join("client.conf.import.bak");
+    let setting_backup = root.join("setting.json.import.bak");
+
+    let setting_text = serde_json::to_string_pretty(setting)?;
+    fs::write(&config_tmp, config.as_bytes())
+        .with_context(|| format!("write {}", config_tmp.display()))?;
+    if let Err(e) = fs::write(&setting_tmp, setting_text.as_bytes()) {
+        let _ = fs::remove_file(&config_tmp);
+        return Err(anyhow::anyhow!("write {}: {e}", setting_tmp.display()));
+    }
+
+    // Recover a pair left in backup state by an interrupted older import.
+    if config_backup.exists() {
+        if !config_path.exists() {
+            fs::rename(&config_backup, &config_path)
+                .with_context(|| format!("recover {}", config_path.display()))?;
+        } else {
+            let _ = fs::remove_file(&config_backup);
+        }
+    }
+    if setting_backup.exists() {
+        if !setting_path.exists() {
+            fs::rename(&setting_backup, &setting_path)
+                .with_context(|| format!("recover {}", setting_path.display()))?;
+        } else {
+            let _ = fs::remove_file(&setting_backup);
+        }
+    }
+
+    let had_config = config_path.exists();
+    let had_setting = setting_path.exists();
+    if had_config {
+        fs::rename(&config_path, &config_backup)
+            .with_context(|| format!("backup {}", config_path.display()))?;
+    }
+    if had_setting {
+        if let Err(e) = fs::rename(&setting_path, &setting_backup) {
+            if had_config { let _ = fs::rename(&config_backup, &config_path); }
+            let _ = fs::remove_file(&config_tmp);
+            let _ = fs::remove_file(&setting_tmp);
+            return Err(anyhow::anyhow!("backup {}: {e}", setting_path.display()));
+        }
+    }
+
+    let install_result = (|| -> Result<()> {
+        fs::rename(&config_tmp, &config_path)
+            .with_context(|| format!("install {}", config_path.display()))?;
+        fs::rename(&setting_tmp, &setting_path)
+            .with_context(|| format!("install {}", setting_path.display()))?;
+        Ok(())
+    })();
+
+    if let Err(e) = install_result {
+        let _ = fs::remove_file(&config_path);
+        let _ = fs::remove_file(&setting_path);
+        if had_config { let _ = fs::rename(&config_backup, &config_path); }
+        if had_setting { let _ = fs::rename(&setting_backup, &setting_path); }
+        let _ = fs::remove_file(&config_tmp);
+        let _ = fs::remove_file(&setting_tmp);
+        return Err(e);
+    }
+
+    let _ = fs::remove_file(&config_backup);
+    let _ = fs::remove_file(&setting_backup);
+    Ok(())
 }
 
 fn write_json_pretty<T: Serialize>(path: &Path, v: &T) -> Result<()> {

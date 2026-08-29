@@ -24,6 +24,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import com.android.zdtd.service.io.ExternalTextImport
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
 import kotlinx.coroutines.launch
@@ -145,11 +146,12 @@ private fun StrategicTextDirSection(
     onResult = { uri ->
       if (uri == null) return@rememberLauncherForActivityResult
       val name = uriDisplayName(ctx, uri) ?: "file.txt"
-      val bytes = runCatching { ctx.contentResolver.openInputStream(uri)?.use { it.readBytes() } }.getOrNull()
-      if (bytes == null) {
+      val text = ExternalTextImport.readText(ctx, uri, maxBytes = limitBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()).getOrNull()
+      if (text == null) {
         showSnack(msgCantReadFile)
         return@rememberLauncherForActivityResult
       }
+      val bytes = text.toByteArray(Charsets.UTF_8)
       actions.uploadStrategicFile(dir, name, bytes) { ok ->
         showSnack(if (ok) msgUploaded else msgUploadFailed)
         if (ok) refresh()

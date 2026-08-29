@@ -35,6 +35,12 @@ class VpsSecureStore(context: Context) {
             port = obj.optInt("port", 22).coerceIn(1, 65535),
             username = user,
             password = obj.optString("password"),
+            authType = runCatching {
+              VpsAuthType.valueOf(obj.optString("authType", VpsAuthType.PASSWORD.name))
+            }.getOrDefault(VpsAuthType.PASSWORD),
+            privateKey = obj.optString("privateKey"),
+            privateKeyName = obj.optString("privateKeyName"),
+            privateKeyPassphrase = obj.optString("privateKeyPassphrase"),
             pinnedHostKey = obj.optString("hostKey"),
             fingerprint = obj.optString("fingerprint"),
             createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
@@ -57,6 +63,10 @@ class VpsSecureStore(context: Context) {
           .put("port", server.port)
           .put("username", server.username)
           .put("password", server.password)
+          .put("authType", server.authType.name)
+          .put("privateKey", server.privateKey)
+          .put("privateKeyName", server.privateKeyName)
+          .put("privateKeyPassphrase", server.privateKeyPassphrase)
           .put("hostKey", server.pinnedHostKey)
           .put("fingerprint", server.fingerprint)
           .put("createdAt", server.createdAt)

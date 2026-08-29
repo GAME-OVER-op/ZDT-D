@@ -2301,4 +2301,16 @@ APatch: 10700+</string>
     <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
     <string name="vps_add_sni">افزودن SNI</string>
     <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">احراز هویت</string>
+    <string name="vps_auth_password">رمز عبور</string>
+    <string name="vps_auth_private_key">کلید SSH</string>
+    <string name="vps_private_key">کلید خصوصی SSH</string>
+    <string name="vps_choose_private_key_file">انتخاب فایل کلید خصوصی</string>
+    <string name="vps_private_key_file_selected">فایل کلید: %1$s</string>
+    <string name="vps_private_key_passphrase">عبارت عبور کلید (اختیاری)</string>
+    <string name="vps_private_key_storage_hint">کلید خصوصی و عبارت عبور آن با Android Keystore رمزگذاری می‌شوند و فقط در داده‌های برنامه باقی می‌مانند.</string>
+    <string name="vps_private_key_read_error">خواندن فایل کلید خصوصی انتخاب‌شده ممکن نبود.</string>
+    <string name="vps_private_key_too_large">فایل انتخاب‌شده بیش از حد بزرگ است. یک کلید SSH کوچک‌تر از 512 کیلوبایت انتخاب کنید.</string>
+    <string name="vps_public_key_error">این مورد شبیه کلید عمومی SSH است. برای احراز هویت کلید خصوصی لازم است.</string>
 </resources>

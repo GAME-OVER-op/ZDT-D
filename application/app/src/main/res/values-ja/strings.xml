@@ -2300,4 +2300,16 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
     <string name="vps_add_sni">SNI を追加</string>
     <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">認証</string>
+    <string name="vps_auth_password">パスワード</string>
+    <string name="vps_auth_private_key">SSHキー</string>
+    <string name="vps_private_key">SSH秘密鍵</string>
+    <string name="vps_choose_private_key_file">秘密鍵ファイルを選択</string>
+    <string name="vps_private_key_file_selected">鍵ファイル: %1$s</string>
+    <string name="vps_private_key_passphrase">鍵のパスフレーズ（任意）</string>
+    <string name="vps_private_key_storage_hint">秘密鍵とパスフレーズは Android Keystore で暗号化され、アプリデータ内にのみ保存されます。</string>
+    <string name="vps_private_key_read_error">選択した秘密鍵ファイルを読み取れませんでした。</string>
+    <string name="vps_private_key_too_large">選択したファイルが大きすぎます。512 KB 未満の SSH キーを選択してください。</string>
+    <string name="vps_public_key_error">これは公開 SSH キーのようです。認証には秘密鍵が必要です。</string>
 </resources>

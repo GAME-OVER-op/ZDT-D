@@ -2299,4 +2299,16 @@ APatch: 10700+</string>
     <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
     <string name="vps_add_sni">Добавить SNI</string>
     <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">Авторизация</string>
+    <string name="vps_auth_password">Пароль</string>
+    <string name="vps_auth_private_key">SSH-ключ</string>
+    <string name="vps_private_key">Приватный SSH-ключ</string>
+    <string name="vps_choose_private_key_file">Выбрать файл приватного ключа</string>
+    <string name="vps_private_key_file_selected">Файл ключа: %1$s</string>
+    <string name="vps_private_key_passphrase">Пароль ключа (необязательно)</string>
+    <string name="vps_private_key_storage_hint">Приватный ключ и пароль ключа шифруются через Android Keystore и остаются только в данных приложения.</string>
+    <string name="vps_private_key_read_error">Не удалось прочитать выбранный файл приватного ключа.</string>
+    <string name="vps_private_key_too_large">Выбранный файл слишком большой. Выберите SSH-ключ размером менее 512 КБ.</string>
+    <string name="vps_public_key_error">Похоже, выбран публичный SSH-ключ. Для авторизации требуется приватный ключ.</string>
 </resources>

@@ -2,7 +2,6 @@ package com.android.zdtd.service.ui
 
 import android.content.Context
 import android.net.Uri
-import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -70,6 +69,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ZdtdActions
+import com.android.zdtd.service.io.ExternalTextImport
 import com.android.zdtd.service.api.ApiModels
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -229,31 +229,8 @@ private fun amneziaWgConfigWarnings(config: String): List<String> {
   }
 }
 
-private fun amneziaWgUriDisplayName(context: Context, uri: Uri): String? = runCatching {
-  context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
-    if (c.moveToFirst()) c.getString(0) else null
-  }
-}.getOrNull()
-
-private fun readAmneziaWgTextFromUri(context: Context, uri: Uri): String? = runCatching {
-  context.contentResolver.openInputStream(uri)?.use { input ->
-    input.bufferedReader(Charsets.UTF_8).use { it.readText() }
-  }
-}.getOrNull()
-
-private fun copyAmneziaWgUriToTempFile(context: Context, uri: Uri, displayName: String): File? {
-  val suffix = displayName.substringAfterLast('.', "conf").let { ".${it.take(16).ifBlank { "conf" }}" }
-  val tmp = runCatching { File.createTempFile("amneziawg_config_", suffix, context.cacheDir) }.getOrNull() ?: return null
-  return try {
-    context.contentResolver.openInputStream(uri)?.use { input ->
-      tmp.outputStream().use { output -> input.copyTo(output, 1024 * 1024) }
-    } ?: return null
-    tmp
-  } catch (_: Throwable) {
-    runCatching { tmp.delete() }
-    null
-  }
-}
+private fun readAmneziaWgTextFromUri(context: Context, uri: Uri): String? =
+  ExternalTextImport.readText(context, uri).getOrNull()
 
 private fun amneziaWgProfileIndex(name: String): Int {
   val n = name.trim()
@@ -589,13 +566,10 @@ fun AmneziaWgProfileScreen(
     contract = ActivityResultContracts.OpenDocument(),
     onResult = { uri ->
       if (uri == null) return@rememberLauncherForActivityResult
-      val fileName = amneziaWgUriDisplayName(context, uri) ?: "client.conf"
-      if (!fileName.lowercase(Locale.ROOT).endsWith(".conf")) {
-        showSnack(context.getString(R.string.amneziawg_upload_ext_error))
-        return@rememberLauncherForActivityResult
-      }
       val localText = readAmneziaWgTextFromUri(context, uri)
-      val tmp = copyAmneziaWgUriToTempFile(context, uri, fileName)
+      val tmp = localText?.let {
+        ExternalTextImport.writeUtf8Temp(context, "amneziawg_config_", ".conf", it).getOrNull()
+      }
       if (localText == null || tmp == null) {
         showSnack(context.getString(R.string.common_upload_failed))
         return@rememberLauncherForActivityResult
@@ -604,7 +578,7 @@ fun AmneziaWgProfileScreen(
       uploading = true
       scope.launch {
         val ok = try {
-          awaitUploadAmneziaWgConfig(actions, profile, fileName, tmp)
+          awaitUploadAmneziaWgConfig(actions, profile, "client.conf", tmp)
         } finally {
           runCatching { tmp.delete() }
         }

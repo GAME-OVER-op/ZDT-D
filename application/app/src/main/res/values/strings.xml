@@ -2299,4 +2299,16 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
     <string name="vps_add_sni">Add SNI</string>
     <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">Authentication</string>
+    <string name="vps_auth_password">Password</string>
+    <string name="vps_auth_private_key">SSH key</string>
+    <string name="vps_private_key">Private SSH key</string>
+    <string name="vps_choose_private_key_file">Choose private key file</string>
+    <string name="vps_private_key_file_selected">Key file: %1$s</string>
+    <string name="vps_private_key_passphrase">Key passphrase (optional)</string>
+    <string name="vps_private_key_storage_hint">The private key and passphrase are encrypted with Android Keystore and remain only in the app data.</string>
+    <string name="vps_private_key_read_error">Could not read the selected private key file.</string>
+    <string name="vps_private_key_too_large">The selected file is too large. Choose an SSH key smaller than 512 KB.</string>
+    <string name="vps_public_key_error">This looks like a public SSH key. A private key is required for authentication.</string>
 </resources>

@@ -2300,4 +2300,16 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
     <string name="vps_add_sni">Tambah SNI</string>
     <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">Autentikasi</string>
+    <string name="vps_auth_password">Kata sandi</string>
+    <string name="vps_auth_private_key">Kunci SSH</string>
+    <string name="vps_private_key">Kunci SSH privat</string>
+    <string name="vps_choose_private_key_file">Pilih file kunci privat</string>
+    <string name="vps_private_key_file_selected">File kunci: %1$s</string>
+    <string name="vps_private_key_passphrase">Frasa sandi kunci (opsional)</string>
+    <string name="vps_private_key_storage_hint">Kunci privat dan frasa sandinya dienkripsi dengan Android Keystore dan hanya disimpan dalam data aplikasi.</string>
+    <string name="vps_private_key_read_error">Tidak dapat membaca file kunci privat yang dipilih.</string>
+    <string name="vps_private_key_too_large">File yang dipilih terlalu besar. Pilih kunci SSH yang lebih kecil dari 512 KB.</string>
+    <string name="vps_public_key_error">Ini tampaknya kunci SSH publik. Kunci privat diperlukan untuk autentikasi.</string>
 </resources>

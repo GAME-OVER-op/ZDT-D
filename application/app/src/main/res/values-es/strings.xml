@@ -2301,4 +2301,16 @@ La causa restante probablemente está en el daemon/API. Revisa los registros del
     <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
     <string name="vps_add_sni">Añadir SNI</string>
     <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">Autenticación</string>
+    <string name="vps_auth_password">Contraseña</string>
+    <string name="vps_auth_private_key">Clave SSH</string>
+    <string name="vps_private_key">Clave SSH privada</string>
+    <string name="vps_choose_private_key_file">Elegir archivo de clave privada</string>
+    <string name="vps_private_key_file_selected">Archivo de clave: %1$s</string>
+    <string name="vps_private_key_passphrase">Frase de contraseña de la clave (opcional)</string>
+    <string name="vps_private_key_storage_hint">La clave privada y su frase de contraseña se cifran con Android Keystore y permanecen solo en los datos de la aplicación.</string>
+    <string name="vps_private_key_read_error">No se pudo leer el archivo de clave privada seleccionado.</string>
+    <string name="vps_private_key_too_large">El archivo seleccionado es demasiado grande. Elige una clave SSH menor de 512 KB.</string>
+    <string name="vps_public_key_error">Parece una clave SSH pública. Se requiere una clave privada para la autenticación.</string>
 </resources>

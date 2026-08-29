@@ -350,8 +350,7 @@ pub fn validate_start_plan() -> Result<()> {
             }
 
             let config_path = profile_dir.join("client.ovpn");
-            let cfg = fs::read_to_string(&config_path)
-                .with_context(|| format!("read {}", config_path.display()))?;
+            let cfg = read_openvpn_config_text(&config_path)?;
             if cfg.trim().is_empty() {
                 bail!("client.ovpn is empty: {}", config_path.display());
             }
@@ -609,7 +608,7 @@ fn build_profile_plan(profile: &str, allow_empty_apps: bool) -> Result<ProfilePl
     if !config_path.is_file() {
         bail!("client.ovpn missing: {}", config_path.display());
     }
-    let cfg = fs::read_to_string(&config_path).unwrap_or_default();
+    let cfg = read_openvpn_config_text(&config_path)?;
     if cfg.trim().is_empty() {
         bail!("client.ovpn is empty: {}", config_path.display());
     }
@@ -650,9 +649,26 @@ fn build_profile_plan(profile: &str, allow_empty_apps: bool) -> Result<ProfilePl
 const ZDTD_OPENVPN_BLOCK_BEGIN: &str = "# ZDT-D Android CLI UID-only mode BEGIN";
 const ZDTD_OPENVPN_BLOCK_END: &str = "# ZDT-D Android CLI UID-only mode END";
 
+fn read_openvpn_config_text(path: &Path) -> Result<String> {
+    let data = fs::read(path).with_context(|| format!("read {}", path.display()))?;
+    let text = crate::external_text::decode_external_text(&data)
+        .with_context(|| format!("decode {}", path.display()))?;
+
+    // Heal configs imported by older app versions. From this point on the
+    // profile is guaranteed to be UTF-8/LF, so all later OpenVPN parsing and
+    // runtime normalization sees the same bytes as the editor.
+    if data.as_slice() != text.as_bytes() {
+        let tmp = path.with_file_name("client.ovpn.encoding.tmp");
+        fs::write(&tmp, text.as_bytes())
+            .with_context(|| format!("write {}", tmp.display()))?;
+        fs::rename(&tmp, path)
+            .with_context(|| format!("rename {} -> {}", tmp.display(), path.display()))?;
+    }
+    Ok(text)
+}
+
 fn normalize_client_config_in_place(config_path: &Path, tun: &str, tmp_dir: &Path) -> Result<()> {
-    let original = fs::read_to_string(config_path)
-        .with_context(|| format!("read {}", config_path.display()))?;
+    let original = read_openvpn_config_text(config_path)?;
     let original_lines: Vec<&str> = original.lines().collect();
     let mut kept = Vec::<String>::new();
     let mut in_inline_block = false;
@@ -970,8 +986,7 @@ fn prepare_runtime_config(
     config_path: &Path,
     endpoint_resolve: bool,
 ) -> Result<(PathBuf, Vec<String>)> {
-    let raw = fs::read_to_string(config_path)
-        .with_context(|| format!("read {}", config_path.display()))?;
+    let raw = read_openvpn_config_text(config_path)?;
     let (runtime, ips, skipped_domains, resolved_domain) = resolve_remote_lines(&raw, endpoint_resolve)?;
 
     if !skipped_domains.is_empty() {

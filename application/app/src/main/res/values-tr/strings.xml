@@ -2300,4 +2300,16 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="vps_traffic_values">↑ %1$s · ↓ %2$s</string>
     <string name="vps_add_sni">SNI ekle</string>
     <string name="singbox_server_sni_label">SNI</string>
+
+    <string name="vps_auth_method">Kimlik doğrulama</string>
+    <string name="vps_auth_password">Parola</string>
+    <string name="vps_auth_private_key">SSH anahtarı</string>
+    <string name="vps_private_key">Özel SSH anahtarı</string>
+    <string name="vps_choose_private_key_file">Özel anahtar dosyası seç</string>
+    <string name="vps_private_key_file_selected">Anahtar dosyası: %1$s</string>
+    <string name="vps_private_key_passphrase">Anahtar parolası (isteğe bağlı)</string>
+    <string name="vps_private_key_storage_hint">Özel anahtar ve parolası Android Keystore ile şifrelenir ve yalnızca uygulama verilerinde tutulur.</string>
+    <string name="vps_private_key_read_error">Seçilen özel anahtar dosyası okunamadı.</string>
+    <string name="vps_private_key_too_large">Seçilen dosya çok büyük. 512 KB’tan küçük bir SSH anahtarı seçin.</string>
+    <string name="vps_public_key_error">Bu bir genel SSH anahtarı gibi görünüyor. Kimlik doğrulama için özel anahtar gerekir.</string>
 </resources>

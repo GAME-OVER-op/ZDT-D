@@ -8,6 +8,7 @@ mod api_status;
 mod config;
 mod daemon;
 mod energy_saver;
+mod external_text;
 mod iptables;
 mod iptables_backup;
 mod idle;

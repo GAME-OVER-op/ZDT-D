@@ -2312,4 +2312,13 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="vps_private_key_read_error">Tidak dapat membaca file kunci privat yang dipilih.</string>
     <string name="vps_private_key_too_large">File yang dipilih terlalu besar. Pilih kunci SSH yang lebih kecil dari 512 KB.</string>
     <string name="vps_public_key_error">Ini tampaknya kunci SSH publik. Kunci privat diperlukan untuk autentikasi.</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S belum terhubung</string>
+    <string name="d2s_not_connected_desc">Program ini belum terhubung untuk digunakan dengan DNSCrypt. Ingin menghubungkannya?</string>
+    <string name="d2s_not_connected_port_desc">ZDT-D akan memilih port SOCKS5 lokal kosong pertama mulai dari 11990 dan menyimpannya ke dnscrypt-proxy.toml.</string>
+    <string name="d2s_connect">Hubungkan</string>
+    <string name="d2s_connecting">Menghubungkan…</string>
+    <string name="d2s_connect_failed">Gagal menghubungkan D2S</string>
+    <string name="d2s_connected_fmt">D2S terhubung: %1$s</string>
 </resources>

@@ -2312,4 +2312,13 @@ APatch：10700+</string>
     <string name="vps_private_key_read_error">无法读取所选私钥文件。</string>
     <string name="vps_private_key_too_large">所选文件过大。请选择小于 512 KB 的 SSH 密钥。</string>
     <string name="vps_public_key_error">这看起来是 SSH 公钥。身份验证需要私钥。</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S 未连接</string>
+    <string name="d2s_not_connected_desc">此程序尚未连接以供 DNSCrypt 使用。是否要连接？</string>
+    <string name="d2s_not_connected_port_desc">ZDT-D 将从 11990 开始选择第一个可用的本地 SOCKS5 端口，并保存到 dnscrypt-proxy.toml。</string>
+    <string name="d2s_connect">连接</string>
+    <string name="d2s_connecting">正在连接…</string>
+    <string name="d2s_connect_failed">无法连接 D2S</string>
+    <string name="d2s_connected_fmt">D2S 已连接：%1$s</string>
 </resources>

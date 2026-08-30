@@ -2317,4 +2317,13 @@ APatch: ‏10700+</string>
     <string name="vps_private_key_read_error">تعذرت قراءة ملف المفتاح الخاص المحدد.</string>
     <string name="vps_private_key_too_large">الملف المحدد كبير جدًا. اختر مفتاح SSH أصغر من 512 كيلوبايت.</string>
     <string name="vps_public_key_error">يبدو أن هذا مفتاح SSH عام. يلزم مفتاح خاص للمصادقة.</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S غير متصل</string>
+    <string name="d2s_not_connected_desc">هذا البرنامج غير متصل للاستخدام مع DNSCrypt. هل تريد توصيله؟</string>
+    <string name="d2s_not_connected_port_desc">سيختار ZDT-D أول منفذ SOCKS5 محلي متاح بدءًا من 11990 ويحفظه في dnscrypt-proxy.toml.</string>
+    <string name="d2s_connect">اتصال</string>
+    <string name="d2s_connecting">جارٍ الاتصال…</string>
+    <string name="d2s_connect_failed">تعذر توصيل D2S</string>
+    <string name="d2s_connected_fmt">تم توصيل D2S: %1$s</string>
 </resources>

@@ -2312,4 +2312,13 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="vps_private_key_read_error">Seçilen özel anahtar dosyası okunamadı.</string>
     <string name="vps_private_key_too_large">Seçilen dosya çok büyük. 512 KB’tan küçük bir SSH anahtarı seçin.</string>
     <string name="vps_public_key_error">Bu bir genel SSH anahtarı gibi görünüyor. Kimlik doğrulama için özel anahtar gerekir.</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S bağlı değil</string>
+    <string name="d2s_not_connected_desc">Bu program DNSCrypt ile kullanılmak üzere bağlı değil. Bağlamak ister misiniz?</string>
+    <string name="d2s_not_connected_port_desc">ZDT-D, 11990’dan başlayarak ilk boş yerel SOCKS5 bağlantı noktasını seçip dnscrypt-proxy.toml dosyasına kaydeder.</string>
+    <string name="d2s_connect">Bağla</string>
+    <string name="d2s_connecting">Bağlanıyor…</string>
+    <string name="d2s_connect_failed">D2S bağlanamadı</string>
+    <string name="d2s_connected_fmt">D2S bağlandı: %1$s</string>
 </resources>

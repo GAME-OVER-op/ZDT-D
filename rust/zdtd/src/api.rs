@@ -5527,12 +5527,29 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
             }
         }
 
+        ("PUT", ["api", "programs", "dnscrypt", "d2s-connect"]) => {
+            let res = crate::programs::dnscrypt::connect_d2s_proxy();
+            match res {
+                Ok(listener) => write_json(
+                    stream,
+                    200,
+                    json!({"ok": true, "listener": listener.to_string()}),
+                ),
+                Err(e) => write_err(stream, e),
+            }
+        }
+
         ("GET", ["api", "programs", "dnscrypt", "d2s-config"]) => {
             let p = program_root("dnscrypt").join("d2set/d2s.toml");
             let res = (|| -> Result<serde_json::Value> {
                 crate::programs::dnscrypt::ensure_d2s_config_exists()?;
                 let config = read_d2s_file_config(&p)?;
-                let listener = crate::programs::dnscrypt::configured_d2s_listen_addr()?
+                // For the UI, an unsupported/external proxy simply means
+                // D2S is not connected. Runtime startup keeps the stricter
+                // parser and still logs malformed local D2S endpoints.
+                let listener = crate::programs::dnscrypt::configured_d2s_listen_addr()
+                    .ok()
+                    .flatten()
                     .map(|addr| addr.to_string());
                 let visible = D2sConfigReq::from(&config);
                 let mut value = serde_json::to_value(visible)?;

@@ -2312,4 +2312,13 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="vps_private_key_read_error">Không thể đọc tệp khóa riêng tư đã chọn.</string>
     <string name="vps_private_key_too_large">Tệp đã chọn quá lớn. Hãy chọn khóa SSH nhỏ hơn 512 KB.</string>
     <string name="vps_public_key_error">Đây có vẻ là khóa SSH công khai. Cần khóa riêng tư để xác thực.</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S chưa được kết nối</string>
+    <string name="d2s_not_connected_desc">Chương trình này chưa được kết nối để sử dụng với DNSCrypt. Bạn có muốn kết nối không?</string>
+    <string name="d2s_not_connected_port_desc">ZDT-D sẽ chọn cổng SOCKS5 cục bộ còn trống đầu tiên từ 11990 trở lên và lưu vào dnscrypt-proxy.toml.</string>
+    <string name="d2s_connect">Kết nối</string>
+    <string name="d2s_connecting">Đang kết nối…</string>
+    <string name="d2s_connect_failed">Không thể kết nối D2S</string>
+    <string name="d2s_connected_fmt">D2S đã kết nối: %1$s</string>
 </resources>

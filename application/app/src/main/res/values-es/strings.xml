@@ -2313,4 +2313,13 @@ La causa restante probablemente está en el daemon/API. Revisa los registros del
     <string name="vps_private_key_read_error">No se pudo leer el archivo de clave privada seleccionado.</string>
     <string name="vps_private_key_too_large">El archivo seleccionado es demasiado grande. Elige una clave SSH menor de 512 KB.</string>
     <string name="vps_public_key_error">Parece una clave SSH pública. Se requiere una clave privada para la autenticación.</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S no está conectado</string>
+    <string name="d2s_not_connected_desc">Este programa no está conectado para usarse con DNSCrypt. ¿Deseas conectarlo?</string>
+    <string name="d2s_not_connected_port_desc">ZDT-D seleccionará el primer puerto SOCKS5 local libre a partir de 11990 y lo guardará en dnscrypt-proxy.toml.</string>
+    <string name="d2s_connect">Conectar</string>
+    <string name="d2s_connecting">Conectando…</string>
+    <string name="d2s_connect_failed">No se pudo conectar D2S</string>
+    <string name="d2s_connected_fmt">D2S conectado: %1$s</string>
 </resources>

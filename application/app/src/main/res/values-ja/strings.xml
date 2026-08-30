@@ -2312,4 +2312,13 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="vps_private_key_read_error">選択した秘密鍵ファイルを読み取れませんでした。</string>
     <string name="vps_private_key_too_large">選択したファイルが大きすぎます。512 KB 未満の SSH キーを選択してください。</string>
     <string name="vps_public_key_error">これは公開 SSH キーのようです。認証には秘密鍵が必要です。</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S は接続されていません</string>
+    <string name="d2s_not_connected_desc">このプログラムは DNSCrypt で使用するために接続されていません。接続しますか？</string>
+    <string name="d2s_not_connected_port_desc">ZDT-D は 11990 以降で最初に空いているローカル SOCKS5 ポートを選び、dnscrypt-proxy.toml に保存します。</string>
+    <string name="d2s_connect">接続</string>
+    <string name="d2s_connecting">接続中…</string>
+    <string name="d2s_connect_failed">D2S に接続できませんでした</string>
+    <string name="d2s_connected_fmt">D2S 接続済み: %1$s</string>
 </resources>

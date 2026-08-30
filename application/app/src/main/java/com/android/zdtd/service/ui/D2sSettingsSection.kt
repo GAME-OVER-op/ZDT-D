@@ -1,6 +1,8 @@
 package com.android.zdtd.service.ui
 
 import android.content.Context
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -57,6 +59,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 private const val D2S_CONFIG_API = "/api/programs/dnscrypt/d2s-config"
+private const val D2S_CONNECT_API = "/api/programs/dnscrypt/d2s-connect"
 
 private data class D2sSettingsUi(
   val listener: String = "",
@@ -90,6 +93,7 @@ fun D2sSettingsSection(
   var savedSettings by remember { mutableStateOf<D2sSettingsUi?>(null) }
   var loading by remember { mutableStateOf(true) }
   var saving by remember { mutableStateOf(false) }
+  var connecting by remember { mutableStateOf(false) }
   var loadFailed by remember { mutableStateOf(false) }
   var validationError by remember { mutableStateOf<String?>(null) }
 
@@ -98,13 +102,14 @@ fun D2sSettingsSection(
     validationError = null
   }
 
-  fun load() {
-    loading = true
+  fun load(showLoading: Boolean = true, announceConnection: Boolean = false) {
+    if (showLoading) loading = true
     loadFailed = false
     actions.loadJsonData(D2S_CONFIG_API) { obj ->
       if (obj == null) {
         loadFailed = true
         loading = false
+        connecting = false
       } else {
         val parsed = parseD2sSettings(obj)
         val normalized = if (parsed.backendPorts.isEmpty() && !parsed.directFallback) {
@@ -115,33 +120,91 @@ fun D2sSettingsSection(
         settings = normalized
         savedSettings = parsed
         loading = false
+        connecting = false
+        if (announceConnection && parsed.listener.isNotBlank()) {
+          scope.launch {
+            snackHost.showSnackbar(context.getString(R.string.d2s_connected_fmt, parsed.listener))
+          }
+        }
       }
     }
   }
 
   LaunchedEffect(Unit) { load() }
 
-  when {
-    loading -> {
-      D2sSectionCard(
-        title = stringResource(R.string.d2s_loading_title),
-        description = stringResource(R.string.d2s_loading_desc),
-        icon = { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) },
-      ) {}
-    }
-    loadFailed -> {
-      D2sSectionCard(
-        title = stringResource(R.string.d2s_load_failed_title),
-        description = stringResource(R.string.d2s_load_failed_desc),
-        icon = { Icon(Icons.Outlined.Dns, contentDescription = null, modifier = Modifier.size(22.dp)) },
-      ) {
-        OutlinedButton(onClick = { load() }, modifier = Modifier.fillMaxWidth()) {
-          Text(stringResource(R.string.dnscrypt_setting_files_refresh))
+  val viewState = when {
+    loading -> "loading"
+    loadFailed -> "failed"
+    settings.listener.isBlank() -> "disconnected"
+    else -> "settings"
+  }
+
+  Crossfade(
+    targetState = viewState,
+    animationSpec = tween(durationMillis = 320),
+    label = "d2s_connection_state",
+  ) { state ->
+    when (state) {
+      "loading" -> {
+        D2sSectionCard(
+          title = stringResource(R.string.d2s_loading_title),
+          description = stringResource(R.string.d2s_loading_desc),
+          icon = { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) },
+        ) {}
+      }
+      "failed" -> {
+        D2sSectionCard(
+          title = stringResource(R.string.d2s_load_failed_title),
+          description = stringResource(R.string.d2s_load_failed_desc),
+          icon = { Icon(Icons.Outlined.Dns, contentDescription = null, modifier = Modifier.size(22.dp)) },
+        ) {
+          OutlinedButton(onClick = { load() }, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.dnscrypt_setting_files_refresh))
+          }
         }
       }
-    }
-    else -> {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      "disconnected" -> {
+        D2sSectionCard(
+          title = stringResource(R.string.d2s_not_connected_title),
+          description = stringResource(R.string.d2s_not_connected_desc),
+          icon = { Icon(Icons.Outlined.Dns, contentDescription = null, modifier = Modifier.size(22.dp)) },
+        ) {
+          Text(
+            text = stringResource(R.string.d2s_not_connected_port_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          Button(
+            enabled = !connecting,
+            onClick = {
+              if (connecting) return@Button
+              connecting = true
+              actions.saveJsonData(D2S_CONNECT_API, JSONObject()) { ok ->
+                if (ok) {
+                  load(showLoading = false, announceConnection = true)
+                } else {
+                  connecting = false
+                  scope.launch { snackHost.showSnackbar(context.getString(R.string.d2s_connect_failed)) }
+                }
+              }
+            },
+            modifier = Modifier.fillMaxWidth(),
+          ) {
+            if (connecting) {
+              CircularProgressIndicator(
+                modifier = Modifier.size(18.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.onPrimary,
+              )
+              Text(stringResource(R.string.d2s_connecting), modifier = Modifier.padding(start = 8.dp))
+            } else {
+              Text(stringResource(R.string.d2s_connect))
+            }
+          }
+        }
+      }
+      else -> {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         D2sSectionCard(
           title = stringResource(R.string.d2s_overview_title),
           description = stringResource(R.string.d2s_overview_desc),
@@ -319,6 +382,7 @@ fun D2sSettingsSection(
           modifier = Modifier.fillMaxWidth(),
         ) {
           Text(stringResource(if (saving) R.string.d2s_saving else R.string.d2s_save))
+        }
         }
       }
     }

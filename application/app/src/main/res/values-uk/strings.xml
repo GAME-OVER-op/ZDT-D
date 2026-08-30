@@ -2315,4 +2315,13 @@ APatch: 10700+</string>
     <string name="vps_private_key_read_error">Не вдалося прочитати вибраний файл приватного ключа.</string>
     <string name="vps_private_key_too_large">Вибраний файл завеликий. Виберіть SSH-ключ розміром менше 512 КБ.</string>
     <string name="vps_public_key_error">Схоже, вибрано публічний SSH-ключ. Для авторизації потрібен приватний ключ.</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S не підключено</string>
+    <string name="d2s_not_connected_desc">Цю програму не підключено для використання з DNSCrypt. Бажаєте підключити?</string>
+    <string name="d2s_not_connected_port_desc">ZDT-D вибере перший вільний локальний порт SOCKS5 починаючи з 11990 і збереже його в dnscrypt-proxy.toml.</string>
+    <string name="d2s_connect">Підключити</string>
+    <string name="d2s_connecting">Підключення…</string>
+    <string name="d2s_connect_failed">Не вдалося підключити D2S</string>
+    <string name="d2s_connected_fmt">D2S підключено: %1$s</string>
 </resources>

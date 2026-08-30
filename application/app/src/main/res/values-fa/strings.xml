@@ -2313,4 +2313,13 @@ APatch: 10700+</string>
     <string name="vps_private_key_read_error">خواندن فایل کلید خصوصی انتخاب‌شده ممکن نبود.</string>
     <string name="vps_private_key_too_large">فایل انتخاب‌شده بیش از حد بزرگ است. یک کلید SSH کوچک‌تر از 512 کیلوبایت انتخاب کنید.</string>
     <string name="vps_public_key_error">این مورد شبیه کلید عمومی SSH است. برای احراز هویت کلید خصوصی لازم است.</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S متصل نیست</string>
+    <string name="d2s_not_connected_desc">این برنامه برای استفاده با DNSCrypt متصل نشده است. آیا می‌خواهید آن را متصل کنید؟</string>
+    <string name="d2s_not_connected_port_desc">ZDT-D اولین درگاه محلی SOCKS5 آزاد را از 11990 به بعد انتخاب کرده و آن را در dnscrypt-proxy.toml ذخیره می‌کند.</string>
+    <string name="d2s_connect">اتصال</string>
+    <string name="d2s_connecting">در حال اتصال…</string>
+    <string name="d2s_connect_failed">اتصال D2S ناموفق بود</string>
+    <string name="d2s_connected_fmt">D2S متصل شد: %1$s</string>
 </resources>

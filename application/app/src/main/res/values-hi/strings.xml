@@ -2313,4 +2313,13 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="vps_private_key_read_error">चुनी गई निजी कुंजी फ़ाइल पढ़ी नहीं जा सकी।</string>
     <string name="vps_private_key_too_large">चुनी गई फ़ाइल बहुत बड़ी है। 512 KB से छोटी SSH कुंजी चुनें।</string>
     <string name="vps_public_key_error">यह सार्वजनिक SSH कुंजी लगती है। प्रमाणीकरण के लिए निजी कुंजी आवश्यक है।</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S कनेक्ट नहीं है</string>
+    <string name="d2s_not_connected_desc">यह प्रोग्राम DNSCrypt के साथ उपयोग के लिए कनेक्ट नहीं है। क्या आप इसे कनेक्ट करना चाहते हैं?</string>
+    <string name="d2s_not_connected_port_desc">ZDT-D 11990 से शुरू होने वाला पहला खाली स्थानीय SOCKS5 पोर्ट चुनेगा और उसे dnscrypt-proxy.toml में सहेजेगा।</string>
+    <string name="d2s_connect">कनेक्ट करें</string>
+    <string name="d2s_connecting">कनेक्ट हो रहा है…</string>
+    <string name="d2s_connect_failed">D2S कनेक्ट नहीं हो सका</string>
+    <string name="d2s_connected_fmt">D2S कनेक्ट हुआ: %1$s</string>
 </resources>

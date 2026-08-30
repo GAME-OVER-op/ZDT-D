@@ -72,7 +72,7 @@ force_tcp = true
 http3 = false
 http3_probe = false
 
-#proxy = 'socks5://127.0.0.1:2080'
+#proxy = 'socks5://127.0.0.1:11990'
 
 timeout = 7000
 keepalive = 30

@@ -91,12 +91,6 @@ fun ProgramScreen(
   val hasStrategicFiles = program.id == "nfqws" || program.id == "nfqws2"
   var programTab by remember(program.id) { mutableStateOf(0) }
   var dnscryptTab by remember(program.id) { mutableStateOf(0) }
-  var dnscryptD2sConfigured by remember(program.id) { mutableStateOf(false) }
-
-  fun updateDnscryptD2sVisibility(content: String) {
-    dnscryptD2sConfigured = hasActiveLocalD2sProxy(content)
-    if (!dnscryptD2sConfigured) dnscryptTab = 0
-  }
 
   var showCreateProfile by remember { mutableStateOf(false) }
   var operaWebPanelChecking by remember(program.id) { mutableStateOf(false) }
@@ -193,20 +187,14 @@ fun ProgramScreen(
         )
       }
       item {
-        AnimatedVisibility(
-          visible = dnscryptD2sConfigured,
-          enter = fadeIn(tween(180)) + expandVertically(animationSpec = tween(220)),
-          exit = fadeOut(tween(140)) + shrinkVertically(animationSpec = tween(180)),
-        ) {
-          StrategicProfileTabs(
-            tabs = listOf(
-              0 to stringResource(R.string.dnscrypt_tab_dnscrypt),
-              1 to stringResource(R.string.dnscrypt_tab_d2s),
-            ),
-            selected = dnscryptTab,
-            onSelect = { dnscryptTab = it },
-          )
-        }
+        StrategicProfileTabs(
+          tabs = listOf(
+            0 to stringResource(R.string.dnscrypt_tab_dnscrypt),
+            1 to stringResource(R.string.dnscrypt_tab_d2s),
+          ),
+          selected = dnscryptTab,
+          onSelect = { dnscryptTab = it },
+        )
       }
     } else if (program.id == "operaproxy") {
       item(key = "operaproxy_global_controls", contentType = "operaproxy_global_controls") {
@@ -309,8 +297,6 @@ isProfileProgramType(program.type) -> {
               path = "/api/programs/dnscrypt/config",
               actions = actions,
               snackHost = snackHost,
-              onContentLoaded = { updateDnscryptD2sVisibility(it) },
-              onSaveSuccess = { updateDnscryptD2sVisibility(it) },
             )
           }
           item {
@@ -361,14 +347,6 @@ isProfileProgramType(program.type) -> {
 
     item { Spacer(Modifier.height(64.dp)) }
   }
-}
-
-private val D2S_PROXY_LINE = Regex(
-  pattern = "(?m)^\\s*proxy\\s*=\\s*(['\"])socks5://(?:127\\.0\\.0\\.1|localhost|\\[::1\\]):([1-9][0-9]{0,4})\\1\\s*(?:#.*)?$",
-)
-
-private fun hasActiveLocalD2sProxy(content: String): Boolean = D2S_PROXY_LINE.findAll(content).any { match ->
-  match.groupValues.getOrNull(2)?.toIntOrNull() in 1..65535
 }
 
 @Composable

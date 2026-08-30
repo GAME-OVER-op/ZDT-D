@@ -2311,4 +2311,13 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="vps_private_key_read_error">Could not read the selected private key file.</string>
     <string name="vps_private_key_too_large">The selected file is too large. Choose an SSH key smaller than 512 KB.</string>
     <string name="vps_public_key_error">This looks like a public SSH key. A private key is required for authentication.</string>
+
+    <!-- D2S DNSCrypt connection -->
+    <string name="d2s_not_connected_title">D2S is not connected</string>
+    <string name="d2s_not_connected_desc">This program is not connected for use with DNSCrypt. Would you like to connect it?</string>
+    <string name="d2s_not_connected_port_desc">ZDT-D will select the first free local SOCKS5 port starting from 11990 and save it to dnscrypt-proxy.toml.</string>
+    <string name="d2s_connect">Connect</string>
+    <string name="d2s_connecting">Connecting…</string>
+    <string name="d2s_connect_failed">Failed to connect D2S</string>
+    <string name="d2s_connected_fmt">D2S connected: %1$s</string>
 </resources>

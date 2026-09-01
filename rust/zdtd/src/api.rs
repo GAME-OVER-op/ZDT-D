@@ -3295,6 +3295,105 @@ fn handle_get_programs(stream: TcpStream) -> Result<()> {
     write_json(stream, 200, json!({"ok": true, "data": out}))
 }
 
+/// Handles the global subscription library API.
+///
+/// These routes deliberately live outside `/api/programs/*`: subscriptions are
+/// shared by Mihomo, sing-box, Hysteria2 and WireProxy.
+fn handle_subscriptions_subroutes(stream: TcpStream, method: &str, path: &str, body: &[u8]) -> Result<()> {
+    let seg: Vec<&str> = path.trim_start_matches('/').split('/').collect();
+
+    match (method, seg.as_slice()) {
+        ("GET", ["api", "subscriptions"]) => {
+            match crate::programs::mihomo_subscription::list_view() {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "subscriptions"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: crate::programs::mihomo_subscription::SubscriptionInput = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let item = crate::programs::mihomo_subscription::create(req)?;
+                Ok(json!({"ok": true, "subscription": item}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("POST", ["api", "subscriptions", "refresh-all"]) => {
+            match crate::programs::mihomo_subscription::enqueue_refresh_all() {
+                Ok(queued) => write_json(stream, 200, json!({"ok": true, "queued": queued})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "subscriptions", id]) => {
+            match crate::programs::mihomo_subscription::full_view(id) {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "subscriptions", id]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: crate::programs::mihomo_subscription::SubscriptionInput = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let item = crate::programs::mihomo_subscription::update(id, req)?;
+                Ok(json!({"ok": true, "subscription": item}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("DELETE", ["api", "subscriptions", id]) => {
+            match crate::programs::mihomo_subscription::delete(id) {
+                Ok(()) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "subscriptions", id, "refresh"]) => {
+            match crate::programs::mihomo_subscription::enqueue_refresh(id) {
+                Ok(queued) => write_json(stream, 200, json!({"ok": true, "queued": queued})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("PUT", ["api", "subscriptions", id, "enabled"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: EnabledReq = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let item = crate::programs::mihomo_subscription::set_enabled(id, req.enabled)?;
+                Ok(json!({"ok": true, "subscription": item}))
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("GET", ["api", "subscriptions", id, "nodes"]) => {
+            match crate::programs::mihomo_subscription::nodes_view(id) {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "subscriptions", id, "nodes", node_id, "import"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: crate::programs::mihomo_subscription::ImportNodeRequest = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let link = crate::programs::mihomo_subscription::import_node(id, node_id, req)?;
+                Ok(json!({"ok": true, "link": link}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "subscription-links"]) => {
+            match crate::programs::mihomo_subscription::links_view(None, None) {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("DELETE", ["api", "subscription-links", link_id]) => {
+            match crate::programs::mihomo_subscription::detach_link(link_id) {
+                Ok(()) => write_ok(stream),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        _ => write_empty_404(stream),
+    }
+}
+
 /// Handles subroutes under /api/programs/*
 fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, headers: &HashMap<String, String>, body: &[u8], services_running: bool) -> Result<()> {
     let seg: Vec<&str> = path.trim_start_matches('/').split('/').collect();
@@ -4072,66 +4171,6 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
             }
         }
 
-
-        // --- Global subscription library (shared by Mihomo/sing-box/Hysteria2/WireProxy)
-        ("GET", ["api", "subscriptions"]) => {
-            match crate::programs::mihomo_subscription::list_view() {
-                Ok(v) => write_json(stream, 200, v),
-                Err(e) => write_err(stream, e),
-            }
-        }
-        ("POST", ["api", "subscriptions"]) => {
-            let res = (|| -> Result<serde_json::Value> {
-                let req: crate::programs::mihomo_subscription::SubscriptionInput = serde_json::from_slice(body)
-                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                let item = crate::programs::mihomo_subscription::create(req)?;
-                Ok(json!({"ok": true, "subscription": item}))
-            })();
-            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
-        }
-        ("POST", ["api", "subscriptions", "refresh-all"]) => {
-            match crate::programs::mihomo_subscription::enqueue_refresh_all() {
-                Ok(queued) => write_json(stream, 200, json!({"ok": true, "queued": queued})),
-                Err(e) => write_err(stream, e),
-            }
-        }
-        ("GET", ["api", "subscriptions", id]) => {
-            match crate::programs::mihomo_subscription::full_view(id) {
-                Ok(v) => write_json(stream, 200, v),
-                Err(e) => write_err(stream, e),
-            }
-        }
-        ("PUT", ["api", "subscriptions", id]) => {
-            let res = (|| -> Result<serde_json::Value> {
-                let req: crate::programs::mihomo_subscription::SubscriptionInput = serde_json::from_slice(body)
-                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                let item = crate::programs::mihomo_subscription::update(id, req)?;
-                Ok(json!({"ok": true, "subscription": item}))
-            })();
-            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
-        }
-        ("DELETE", ["api", "subscriptions", id]) => {
-            match crate::programs::mihomo_subscription::delete(id) {
-                Ok(()) => write_ok(stream),
-                Err(e) => write_err(stream, e),
-            }
-        }
-        ("POST", ["api", "subscriptions", id, "refresh"]) => {
-            match crate::programs::mihomo_subscription::enqueue_refresh(id) {
-                Ok(queued) => write_json(stream, 200, json!({"ok": true, "queued": queued})),
-                Err(e) => write_err(stream, e),
-            }
-        }
-        ("PUT", ["api", "subscriptions", id, "enabled"]) => {
-            let res = (|| -> Result<serde_json::Value> {
-                let req: EnabledReq = serde_json::from_slice(body)
-                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                let item = crate::programs::mihomo_subscription::set_enabled(id, req.enabled)?;
-                Ok(json!({"ok": true, "subscription": item}))
-            })();
-            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
-        }
-
         // --- mihomo profile API
         ("GET", ["api", "programs", "mihomo", "profiles"]) => {
             let res = (|| -> Result<serde_json::Value> {
@@ -4237,36 +4276,6 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
             })();
             match res {
                 Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
-                Err(e) => write_err(stream, e),
-            }
-        }
-        ("GET", ["api", "subscriptions", id, "nodes"]) => {
-            match crate::programs::mihomo_subscription::nodes_view(id) {
-                Ok(v) => write_json(stream, 200, v),
-                Err(e) => write_err(stream, e),
-            }
-        }
-        ("POST", ["api", "subscriptions", id, "nodes", node_id, "import"]) => {
-            let res = (|| -> Result<serde_json::Value> {
-                let req: crate::programs::mihomo_subscription::ImportNodeRequest = serde_json::from_slice(body)
-                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
-                let link = crate::programs::mihomo_subscription::import_node(id, node_id, req)?;
-                Ok(json!({"ok": true, "link": link}))
-            })();
-            match res {
-                Ok(v) => write_json(stream, 200, v),
-                Err(e) => write_err(stream, e),
-            }
-        }
-        ("GET", ["api", "subscription-links"]) => {
-            match crate::programs::mihomo_subscription::links_view(None, None) {
-                Ok(v) => write_json(stream, 200, v),
-                Err(e) => write_err(stream, e),
-            }
-        }
-        ("DELETE", ["api", "subscription-links", link_id]) => {
-            match crate::programs::mihomo_subscription::detach_link(link_id) {
-                Ok(()) => write_ok(stream),
                 Err(e) => write_err(stream, e),
             }
         }
@@ -7047,6 +7056,16 @@ fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
     if !is_authorized(&headers, &token) {
         // Hide API from unauthenticated clients: empty 404.
         return write_empty_404(stream);
+    }
+
+    // Global subscription library API. Keep this dispatch before `/api/programs/*`:
+    // subscriptions are shared resources, not Mihomo program subroutes.
+    if path == "/api/subscriptions"
+        || path.starts_with("/api/subscriptions/")
+        || path == "/api/subscription-links"
+        || path.starts_with("/api/subscription-links/")
+    {
+        return handle_subscriptions_subroutes(stream, method.as_str(), path.as_str(), &body);
     }
 
     

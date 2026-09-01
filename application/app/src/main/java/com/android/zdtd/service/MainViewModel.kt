@@ -6507,8 +6507,12 @@ private fun shQuote(s: String): String {
 
   override fun loadJsonData(path: String, onDone: (JSONObject?) -> Unit) {
     launchIO {
-      val obj = runCatching { api.getJsonData(path) }.getOrNull()
-      if (obj == null) log("ERR", "$path: load failed")
+      val result = runCatching { api.getJsonData(path) }
+      val obj = result.getOrNull()
+      if (obj == null) {
+        val detail = result.exceptionOrNull()?.message?.trim().orEmpty()
+        log("ERR", if (detail.isBlank()) "$path: load failed" else "$path: load failed — $detail")
+      }
       withContext(Dispatchers.Main.immediate) { onDone(obj) }
     }
   }
@@ -6559,7 +6563,10 @@ private fun shQuote(s: String): String {
     launchIO {
       val result = runCatching { api.postJsonData(path, obj) }
       val ok = result.getOrDefault(false)
-      if (!ok) log("ERR", "$path: POST failed")
+      if (!ok) {
+        val detail = result.exceptionOrNull()?.message?.trim().orEmpty()
+        log("ERR", if (detail.isBlank()) "$path: POST failed" else "$path: POST failed — $detail")
+      }
       withContext(Dispatchers.Main.immediate) { onDone(ok) }
     }
   }
@@ -6568,7 +6575,10 @@ private fun shQuote(s: String): String {
     launchIO {
       val result = runCatching { api.deletePath(path) }
       val ok = result.getOrDefault(false)
-      if (!ok) log("ERR", "$path: DELETE failed")
+      if (!ok) {
+        val detail = result.exceptionOrNull()?.message?.trim().orEmpty()
+        log("ERR", if (detail.isBlank()) "$path: DELETE failed" else "$path: DELETE failed — $detail")
+      }
       withContext(Dispatchers.Main.immediate) { onDone(ok) }
     }
   }

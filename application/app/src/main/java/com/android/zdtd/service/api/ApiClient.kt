@@ -410,12 +410,24 @@ class ApiClient(
   }
 
   fun postJsonData(path: String, data: JSONObject): Boolean {
-    return requestOk("POST", path, data)
+    val obj = requestJson("POST", path, data)
+    val ok = jsonBool(obj, "ok", true)
+    if (!ok) {
+      val error = obj?.optString("error", "")?.trim().orEmpty()
+      throw IOException(error.ifBlank { "API rejected POST" })
+    }
+    return true
   }
 
 
   fun deletePath(path: String): Boolean {
-    return requestOk("DELETE", path, null)
+    val obj = requestJson("DELETE", path, null)
+    val ok = jsonBool(obj, "ok", true)
+    if (!ok) {
+      val error = obj?.optString("error", "")?.trim().orEmpty()
+      throw IOException(error.ifBlank { "API rejected DELETE" })
+    }
+    return true
   }
 
   fun uploadOpenVpnConfig(profile: String, _filename: String, file: File): Boolean {

@@ -2178,7 +2178,6 @@ private fun mihomoProxyTemplate(type: String): String = when (type) {
 fun MihomoProgramScreen(
   programs: List<ApiModels.Program>,
   onOpenProfile: (String, String) -> Unit,
-  onOpenSubscriptions: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   topContentPadding: Dp = 0.dp,
@@ -2192,11 +2191,6 @@ fun MihomoProgramScreen(
   val effectiveTopContentPadding = topContentPadding + 12.dp
   val effectiveBottomContentPadding = bottomContentPadding + if (compact) 12.dp else 16.dp
   var showCreate by remember { mutableStateOf(false) }
-  var subscriptionItems by remember { mutableStateOf(emptyList<MihomoSubscriptionItemUi>()) }
-
-  LaunchedEffect(Unit) {
-    loadMihomoSubscriptionItems(actions)?.let { subscriptionItems = it }
-  }
 
   fun showSnack(msg: String) {
     scope.launch { snackHost.showSnackbar(msg) }
@@ -2262,20 +2256,6 @@ fun MihomoProgramScreen(
       programId = "mihomo",
       description = stringResource(R.string.mihomo_program_hint),
       isProfiles = true,
-    )
-
-    val activeSubscriptions = subscriptionItems.count { it.enabled }
-    val subscriptionServers = subscriptionItems.filter { it.enabled }.sumOf { it.status.serverCount }
-    MihomoSectionCard(
-      title = stringResource(R.string.mihomo_subscriptions_title),
-      desc = stringResource(R.string.mihomo_subscriptions_summary, subscriptionItems.size, activeSubscriptions, subscriptionServers),
-      accent = MaterialTheme.colorScheme.tertiary,
-      icon = { Icon(Icons.Filled.CloudDownload, contentDescription = null) },
-      trailing = {
-        FilledTonalButton(onClick = onOpenSubscriptions) {
-          Text(stringResource(R.string.support_open))
-        }
-      },
     )
 
     CreateProfileCard(onAdd = { showCreate = true })

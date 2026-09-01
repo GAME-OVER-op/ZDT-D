@@ -2379,4 +2379,26 @@ APatch: 10700+</string>
     <string name="mihomo_profile_subscriptions_empty_desc">ابتدا از صفحه اشتراک‌های Mihomo یک اشتراک ایجاد کنید.</string>
     <string name="mihomo_profile_subscription_servers">%1$d سرور</string>
     <string name="mihomo_profile_subscription_disabled_hint">این اشتراک به‌صورت سراسری غیرفعال است.</string>
+    <string name="subscriptions_title">اشتراک‌ها</string>
+    <string name="subscriptions_entry_desc">مدیریت منابع مشترک و وارد کردن سرورهای جداگانه.</string>
+    <string name="subscriptions_badge">کتابخانه</string>
+    <string name="subscription_view_servers">مشاهده سرورها</string>
+    <string name="subscription_servers_count">%1$d سرور</string>
+    <string name="subscription_missing_title">سرور دیگر در اشتراک وجود ندارد</string>
+    <string name="subscription_local_copy_saved">نسخه محلی نگه داشته شد.</string>
+    <string name="subscription_detach">جدا کردن از اشتراک</string>
+    <string name="subscription_nodes_empty">هنوز سروری تجزیه نشده است. اشتراک را تازه‌سازی کنید.</string>
+    <string name="subscription_linked_to">متصل به %1$s · %2$s / %3$s</string>
+    <string name="subscription_add_to_target">افزودن به %1$s</string>
+    <string name="subscription_unsupported_node">این نوع سرور هنوز برای وارد کردن پشتیبانی نمی‌شود.</string>
+    <string name="subscription_import_title">وارد کردن به %1$s</string>
+    <string name="subscription_choose_profile">یک نمایه انتخاب کنید</string>
+    <string name="subscription_no_target_profiles">ابتدا یک نمایه مقصد بسازید.</string>
+    <string name="subscription_local_server_name">نام سرور محلی</string>
+    <string name="subscription_server_name_hint">حروف انگلیسی، عدد، زیرخط و خط تیره</string>
+    <string name="subscription_import_action">وارد کردن</string>
+    <string name="subscription_import_success">سرور وارد و به اشتراک متصل شد</string>
+    <string name="subscription_import_failed">وارد کردن سرور ممکن نشد</string>
+    <string name="subscription_detach_failed">جدا کردن سرور ممکن نشد</string>
+    <string name="subscription_link_active">به اشتراک متصل است و خودکار همگام می‌شود</string>
 </resources>

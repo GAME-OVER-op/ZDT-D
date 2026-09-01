@@ -2377,4 +2377,27 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="mihomo_profile_subscriptions_empty_desc">Create subscriptions from the Mihomo subscriptions screen first.</string>
     <string name="mihomo_profile_subscription_servers">%1$d servers</string>
     <string name="mihomo_profile_subscription_disabled_hint">This subscription is globally disabled.</string>
+    <!-- Global subscription library -->
+    <string name="subscriptions_title">Subscriptions</string>
+    <string name="subscriptions_entry_desc">Manage shared subscription sources and import individual servers.</string>
+    <string name="subscriptions_badge">Library</string>
+    <string name="subscription_view_servers">View servers</string>
+    <string name="subscription_servers_count">%1$d servers</string>
+    <string name="subscription_missing_title">Server is no longer present in the subscription</string>
+    <string name="subscription_local_copy_saved">The local copy has been kept.</string>
+    <string name="subscription_detach">Detach from subscription</string>
+    <string name="subscription_nodes_empty">No parsed servers are available yet. Refresh the subscription.</string>
+    <string name="subscription_linked_to">Linked to %1$s · %2$s / %3$s</string>
+    <string name="subscription_add_to_target">Add to %1$s</string>
+    <string name="subscription_unsupported_node">This server type can be viewed but is not supported for import.</string>
+    <string name="subscription_import_title">Import into %1$s</string>
+    <string name="subscription_choose_profile">Choose a profile</string>
+    <string name="subscription_no_target_profiles">Create a target profile first.</string>
+    <string name="subscription_local_server_name">Local server name</string>
+    <string name="subscription_server_name_hint">English letters, digits, underscore and hyphen</string>
+    <string name="subscription_import_action">Import</string>
+    <string name="subscription_import_success">Server imported and linked to the subscription</string>
+    <string name="subscription_import_failed">Could not import this server</string>
+    <string name="subscription_detach_failed">Could not detach the server</string>
+    <string name="subscription_link_active">Linked to a subscription and synchronized automatically</string>
 </resources>

@@ -2379,4 +2379,26 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="mihomo_profile_subscriptions_empty_desc">Créez d’abord des abonnements dans l’écran Abonnements de Mihomo.</string>
     <string name="mihomo_profile_subscription_servers">%1$d serveurs</string>
     <string name="mihomo_profile_subscription_disabled_hint">Cet abonnement est désactivé globalement.</string>
+    <string name="subscriptions_title">Abonnements</string>
+    <string name="subscriptions_entry_desc">Gérez les sources partagées et importez des serveurs individuels.</string>
+    <string name="subscriptions_badge">Bibliothèque</string>
+    <string name="subscription_view_servers">Voir les serveurs</string>
+    <string name="subscription_servers_count">%1$d serveurs</string>
+    <string name="subscription_missing_title">Le serveur n’est plus présent dans l’abonnement</string>
+    <string name="subscription_local_copy_saved">La copie locale a été conservée.</string>
+    <string name="subscription_detach">Dissocier de l’abonnement</string>
+    <string name="subscription_nodes_empty">Aucun serveur analysé. Actualisez l’abonnement.</string>
+    <string name="subscription_linked_to">Lié à %1$s · %2$s / %3$s</string>
+    <string name="subscription_add_to_target">Ajouter à %1$s</string>
+    <string name="subscription_unsupported_node">Ce type de serveur n’est pas encore pris en charge pour l’importation.</string>
+    <string name="subscription_import_title">Importer dans %1$s</string>
+    <string name="subscription_choose_profile">Choisir un profil</string>
+    <string name="subscription_no_target_profiles">Créez d’abord un profil de destination.</string>
+    <string name="subscription_local_server_name">Nom du serveur local</string>
+    <string name="subscription_server_name_hint">Lettres anglaises, chiffres, tiret bas et trait d’union</string>
+    <string name="subscription_import_action">Importer</string>
+    <string name="subscription_import_success">Serveur importé et lié à l’abonnement</string>
+    <string name="subscription_import_failed">Impossible d’importer le serveur</string>
+    <string name="subscription_detach_failed">Impossible de dissocier le serveur</string>
+    <string name="subscription_link_active">Lié à un abonnement et synchronisé automatiquement</string>
 </resources>

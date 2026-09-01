@@ -2378,4 +2378,26 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="mihomo_profile_subscriptions_empty_desc">先にMihomoのサブスクリプション画面でサブスクリプションを作成してください。</string>
     <string name="mihomo_profile_subscription_servers">%1$d 台のサーバー</string>
     <string name="mihomo_profile_subscription_disabled_hint">このサブスクリプションは全体で無効になっています。</string>
+    <string name="subscriptions_title">サブスクリプション</string>
+    <string name="subscriptions_entry_desc">共有ソースを管理し、個別のサーバーをインポートします。</string>
+    <string name="subscriptions_badge">ライブラリ</string>
+    <string name="subscription_view_servers">サーバーを表示</string>
+    <string name="subscription_servers_count">%1$d 台のサーバー</string>
+    <string name="subscription_missing_title">サーバーはサブスクリプションに存在しなくなりました</string>
+    <string name="subscription_local_copy_saved">ローカルコピーは保持されています。</string>
+    <string name="subscription_detach">サブスクリプションから切り離す</string>
+    <string name="subscription_nodes_empty">解析済みサーバーがありません。更新してください。</string>
+    <string name="subscription_linked_to">%1$s · %2$s / %3$s にリンク済み</string>
+    <string name="subscription_add_to_target">%1$s に追加</string>
+    <string name="subscription_unsupported_node">このサーバー形式はまだインポートできません。</string>
+    <string name="subscription_import_title">%1$s にインポート</string>
+    <string name="subscription_choose_profile">プロファイルを選択</string>
+    <string name="subscription_no_target_profiles">先に対象プロファイルを作成してください。</string>
+    <string name="subscription_local_server_name">ローカルサーバー名</string>
+    <string name="subscription_server_name_hint">英字、数字、アンダースコア、ハイフン</string>
+    <string name="subscription_import_action">インポート</string>
+    <string name="subscription_import_success">サーバーをインポートしてリンクしました</string>
+    <string name="subscription_import_failed">サーバーをインポートできませんでした</string>
+    <string name="subscription_detach_failed">サーバーを切り離せませんでした</string>
+    <string name="subscription_link_active">サブスクリプションにリンクされ自動同期されます</string>
 </resources>

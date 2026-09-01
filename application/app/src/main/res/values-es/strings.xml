@@ -2379,4 +2379,26 @@ La causa restante probablemente está en el daemon/API. Revisa los registros del
     <string name="mihomo_profile_subscriptions_empty_desc">Primero crea suscripciones en la pantalla general de Mihomo.</string>
     <string name="mihomo_profile_subscription_servers">%1$d servidores</string>
     <string name="mihomo_profile_subscription_disabled_hint">Esta suscripción está desactivada globalmente.</string>
+    <string name="subscriptions_title">Suscripciones</string>
+    <string name="subscriptions_entry_desc">Gestiona fuentes compartidas e importa servidores individuales.</string>
+    <string name="subscriptions_badge">Biblioteca</string>
+    <string name="subscription_view_servers">Ver servidores</string>
+    <string name="subscription_servers_count">%1$d servidores</string>
+    <string name="subscription_missing_title">El servidor ya no está en la suscripción</string>
+    <string name="subscription_local_copy_saved">Se conservó la copia local.</string>
+    <string name="subscription_detach">Desvincular de la suscripción</string>
+    <string name="subscription_nodes_empty">Aún no hay servidores analizados. Actualiza la suscripción.</string>
+    <string name="subscription_linked_to">Vinculado a %1$s · %2$s / %3$s</string>
+    <string name="subscription_add_to_target">Añadir a %1$s</string>
+    <string name="subscription_unsupported_node">Este tipo de servidor aún no admite importación.</string>
+    <string name="subscription_import_title">Importar en %1$s</string>
+    <string name="subscription_choose_profile">Elige un perfil</string>
+    <string name="subscription_no_target_profiles">Primero crea un perfil de destino.</string>
+    <string name="subscription_local_server_name">Nombre del servidor local</string>
+    <string name="subscription_server_name_hint">Letras inglesas, números, guion bajo y guion</string>
+    <string name="subscription_import_action">Importar</string>
+    <string name="subscription_import_success">Servidor importado y vinculado a la suscripción</string>
+    <string name="subscription_import_failed">No se pudo importar el servidor</string>
+    <string name="subscription_detach_failed">No se pudo desvincular el servidor</string>
+    <string name="subscription_link_active">Vinculado a una suscripción y sincronizado automáticamente</string>
 </resources>

@@ -55,7 +55,7 @@ fun AppsHost(
   onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
-  onOpenMihomoSubscriptions: () -> Unit,
+  onOpenSubscriptions: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   tproxyEnabled: Boolean = false,
@@ -95,7 +95,7 @@ fun AppsHost(
     AppsRoute.ConstructionStudio -> 2
     AppsRoute.DpiDetector -> 2
     AppsRoute.NfqwsTester -> 2
-    AppsRoute.MihomoSubscriptions -> 2
+    AppsRoute.Subscriptions -> 1
     is AppsRoute.Program -> 1
     is AppsRoute.Profile -> 2
   }
@@ -125,6 +125,7 @@ fun AppsHost(
         onOpenAnalysisTools = onOpenAnalysisTools,
         onOpenOptionalTools = onOpenOptionalTools,
         onOpenVpsServers = onOpenVpsServers,
+        onOpenSubscriptions = onOpenSubscriptions,
         listState = listState,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
@@ -204,7 +205,7 @@ fun AppsHost(
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
       )
-      AppsRoute.MihomoSubscriptions -> MihomoSubscriptionsScreen(
+      AppsRoute.Subscriptions -> SubscriptionsScreen(
         actions = actions,
         snackHost = snackHost,
         topContentPadding = topContentPadding,
@@ -252,7 +253,6 @@ fun AppsHost(
         "mihomo" -> MihomoProgramScreen(
           programs = programs,
           onOpenProfile = onOpenProfile,
-          onOpenSubscriptions = onOpenMihomoSubscriptions,
           actions = actions,
           snackHost = snackHost,
           topContentPadding = topContentPadding,

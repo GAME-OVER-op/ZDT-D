@@ -2379,4 +2379,26 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="mihomo_profile_subscriptions_empty_desc">Crie primeiro as assinaturas na tela de assinaturas do Mihomo.</string>
     <string name="mihomo_profile_subscription_servers">%1$d servidores</string>
     <string name="mihomo_profile_subscription_disabled_hint">Esta assinatura está desativada globalmente.</string>
+    <string name="subscriptions_title">Assinaturas</string>
+    <string name="subscriptions_entry_desc">Gerencie fontes compartilhadas e importe servidores individuais.</string>
+    <string name="subscriptions_badge">Biblioteca</string>
+    <string name="subscription_view_servers">Ver servidores</string>
+    <string name="subscription_servers_count">%1$d servidores</string>
+    <string name="subscription_missing_title">O servidor não está mais presente na assinatura</string>
+    <string name="subscription_local_copy_saved">A cópia local foi mantida.</string>
+    <string name="subscription_detach">Desvincular da assinatura</string>
+    <string name="subscription_nodes_empty">Ainda não há servidores analisados. Atualize a assinatura.</string>
+    <string name="subscription_linked_to">Vinculado a %1$s · %2$s / %3$s</string>
+    <string name="subscription_add_to_target">Adicionar ao %1$s</string>
+    <string name="subscription_unsupported_node">Este tipo de servidor ainda não é compatível com importação.</string>
+    <string name="subscription_import_title">Importar para %1$s</string>
+    <string name="subscription_choose_profile">Escolha um perfil</string>
+    <string name="subscription_no_target_profiles">Crie primeiro um perfil de destino.</string>
+    <string name="subscription_local_server_name">Nome do servidor local</string>
+    <string name="subscription_server_name_hint">Letras inglesas, números, sublinhado e hífen</string>
+    <string name="subscription_import_action">Importar</string>
+    <string name="subscription_import_success">Servidor importado e vinculado à assinatura</string>
+    <string name="subscription_import_failed">Não foi possível importar o servidor</string>
+    <string name="subscription_detach_failed">Não foi possível desvincular o servidor</string>
+    <string name="subscription_link_active">Vinculado a uma assinatura e sincronizado automaticamente</string>
 </resources>

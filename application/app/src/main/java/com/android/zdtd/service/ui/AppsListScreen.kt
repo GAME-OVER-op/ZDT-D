@@ -71,6 +71,7 @@ fun AppsListScreen(
   onOpenAnalysisTools: () -> Unit,
   onOpenOptionalTools: () -> Unit,
   onOpenVpsServers: () -> Unit,
+  onOpenSubscriptions: () -> Unit,
   listState: LazyListState,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
@@ -162,6 +163,13 @@ fun AppsListScreen(
       VpsServersEntryCard(
         compact = compactCards,
         onClick = onOpenVpsServers,
+      )
+    }
+
+    item(key = "subscriptions_entry") {
+      SubscriptionsEntryCard(
+        compact = compactCards,
+        onClick = onOpenSubscriptions,
       )
     }
 
@@ -388,6 +396,57 @@ private fun VpsServersEntryCard(
         )
         ProgramBadgeRow(
           label = stringResource(R.string.vps_servers_badge),
+          containerColor = accentColor.copy(alpha = 0.14f),
+          contentColor = accentColor,
+        )
+      }
+      Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f), modifier = Modifier.size(22.dp))
+    }
+  }
+}
+
+@Composable
+private fun SubscriptionsEntryCard(
+  compact: Boolean,
+  onClick: () -> Unit,
+) {
+  val accentColor = MaterialTheme.colorScheme.primary
+  Card(
+    onClick = onClick,
+    modifier = Modifier.fillMaxWidth().padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp),
+    shape = RoundedCornerShape(18.dp),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)),
+    border = BorderStroke(1.dp, accentColor.copy(alpha = 0.34f)),
+  ) {
+    Row(
+      modifier = Modifier.fillMaxWidth()
+        .background(Brush.horizontalGradient(listOf(accentColor.copy(alpha = 0.16f), MaterialTheme.colorScheme.surface.copy(alpha = 0.64f))))
+        .padding(horizontal = if (compact) 11.dp else 13.dp, vertical = if (compact) 10.dp else 12.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+      Surface(
+        modifier = Modifier.size(if (compact) 48.dp else 54.dp),
+        shape = CircleShape,
+        color = accentColor.copy(alpha = 0.14f),
+        contentColor = accentColor,
+        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.36f)),
+      ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+          Icon(Icons.Outlined.Public, contentDescription = null, modifier = Modifier.size(if (compact) 24.dp else 27.dp))
+        }
+      }
+      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(stringResource(R.string.subscriptions_title), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Text(
+          stringResource(R.string.subscriptions_entry_desc),
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+          style = MaterialTheme.typography.bodySmall,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
+        )
+        ProgramBadgeRow(
+          label = stringResource(R.string.subscriptions_badge),
           containerColor = accentColor.copy(alpha = 0.14f),
           contentColor = accentColor,
         )

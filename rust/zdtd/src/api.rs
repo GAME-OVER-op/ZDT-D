@@ -4073,14 +4073,14 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
         }
 
 
-        // --- Mihomo managed subscriptions (global library)
-        ("GET", ["api", "programs", "mihomo", "subscriptions"]) => {
+        // --- Global subscription library (shared by Mihomo/sing-box/Hysteria2/WireProxy)
+        ("GET", ["api", "subscriptions"]) => {
             match crate::programs::mihomo_subscription::list_view() {
                 Ok(v) => write_json(stream, 200, v),
                 Err(e) => write_err(stream, e),
             }
         }
-        ("POST", ["api", "programs", "mihomo", "subscriptions"]) => {
+        ("POST", ["api", "subscriptions"]) => {
             let res = (|| -> Result<serde_json::Value> {
                 let req: crate::programs::mihomo_subscription::SubscriptionInput = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
@@ -4089,19 +4089,19 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
             })();
             match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
         }
-        ("POST", ["api", "programs", "mihomo", "subscriptions", "refresh-all"]) => {
+        ("POST", ["api", "subscriptions", "refresh-all"]) => {
             match crate::programs::mihomo_subscription::enqueue_refresh_all() {
                 Ok(queued) => write_json(stream, 200, json!({"ok": true, "queued": queued})),
                 Err(e) => write_err(stream, e),
             }
         }
-        ("GET", ["api", "programs", "mihomo", "subscriptions", id]) => {
+        ("GET", ["api", "subscriptions", id]) => {
             match crate::programs::mihomo_subscription::full_view(id) {
                 Ok(v) => write_json(stream, 200, v),
                 Err(e) => write_err(stream, e),
             }
         }
-        ("PUT", ["api", "programs", "mihomo", "subscriptions", id]) => {
+        ("PUT", ["api", "subscriptions", id]) => {
             let res = (|| -> Result<serde_json::Value> {
                 let req: crate::programs::mihomo_subscription::SubscriptionInput = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
@@ -4110,19 +4110,19 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
             })();
             match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
         }
-        ("DELETE", ["api", "programs", "mihomo", "subscriptions", id]) => {
+        ("DELETE", ["api", "subscriptions", id]) => {
             match crate::programs::mihomo_subscription::delete(id) {
                 Ok(()) => write_ok(stream),
                 Err(e) => write_err(stream, e),
             }
         }
-        ("POST", ["api", "programs", "mihomo", "subscriptions", id, "refresh"]) => {
+        ("POST", ["api", "subscriptions", id, "refresh"]) => {
             match crate::programs::mihomo_subscription::enqueue_refresh(id) {
                 Ok(queued) => write_json(stream, 200, json!({"ok": true, "queued": queued})),
                 Err(e) => write_err(stream, e),
             }
         }
-        ("PUT", ["api", "programs", "mihomo", "subscriptions", id, "enabled"]) => {
+        ("PUT", ["api", "subscriptions", id, "enabled"]) => {
             let res = (|| -> Result<serde_json::Value> {
                 let req: EnabledReq = serde_json::from_slice(body)
                     .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
@@ -4237,6 +4237,36 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
             })();
             match res {
                 Ok(content) => write_json(stream, 200, json!({"ok": true, "content": content})),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "subscriptions", id, "nodes"]) => {
+            match crate::programs::mihomo_subscription::nodes_view(id) {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "subscriptions", id, "nodes", node_id, "import"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: crate::programs::mihomo_subscription::ImportNodeRequest = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                let link = crate::programs::mihomo_subscription::import_node(id, node_id, req)?;
+                Ok(json!({"ok": true, "link": link}))
+            })();
+            match res {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("GET", ["api", "subscription-links"]) => {
+            match crate::programs::mihomo_subscription::links_view(None, None) {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("DELETE", ["api", "subscription-links", link_id]) => {
+            match crate::programs::mihomo_subscription::detach_link(link_id) {
+                Ok(()) => write_ok(stream),
                 Err(e) => write_err(stream, e),
             }
         }
@@ -4500,6 +4530,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     let dst = deleted_dir.join(format!("{profile}.{ts}"));
                     let _ = fs::rename(&src, &dst);
                 }
+                crate::programs::mihomo_subscription::remove_links_for_profile("hysteria2", profile);
                 Ok(())
             })();
             match res {
@@ -4586,7 +4617,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                         if name.starts_with('.') { continue; }
                         let setting_path = path.join("setting.json");
                         let data: serde_json::Value = read_json(&setting_path).unwrap_or_else(|_| default_hysteria2_server_setting_value(11590));
-                        servers.push(json!({"name": name, "setting": data}));
+                        let subscription_link = crate::programs::mihomo_subscription::link_for_target("hysteria2", profile, name);
+                        servers.push(json!({"name": name, "setting": data, "subscription_link": subscription_link}));
                     }
                 }
                 servers.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
@@ -4628,6 +4660,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
                 let dst = deleted_dir.join(format!("{server}.{ts}"));
                 let _ = fs::rename(&src, &dst);
+                crate::programs::mihomo_subscription::remove_link_for_target("hysteria2", profile, server);
                 Ok(())
             })();
             match res {
@@ -4808,6 +4841,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     let dst = deleted_dir.join(format!("{profile}.{ts}"));
                     let _ = fs::rename(&src, &dst);
                 }
+                crate::programs::mihomo_subscription::remove_links_for_profile("sing-box", profile);
                 Ok(())
             })();
             match res {
@@ -4894,7 +4928,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                         if name.starts_with('.') { continue; }
                         let setting_path = path.join("setting.json");
                         let data: serde_json::Value = read_json(&setting_path).unwrap_or_else(|_| default_singbox_server_setting_value(1080));
-                        servers.push(json!({"name": name, "setting": data}));
+                        let subscription_link = crate::programs::mihomo_subscription::link_for_target("sing-box", profile, name);
+                        servers.push(json!({"name": name, "setting": data, "subscription_link": subscription_link}));
                     }
                 }
                 servers.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
@@ -4936,6 +4971,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
                 let dst = deleted_dir.join(format!("{server}.{ts}"));
                 let _ = fs::rename(&src, &dst);
+                crate::programs::mihomo_subscription::remove_link_for_target("sing-box", profile, server);
                 Ok(())
             })();
             match res {
@@ -5149,6 +5185,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                     let dst = deleted_dir.join(format!("{profile}.{ts}"));
                     let _ = fs::rename(&src, &dst);
                 }
+                crate::programs::mihomo_subscription::remove_links_for_profile("wireproxy", profile);
                 Ok(())
             })();
             match res {
@@ -5245,7 +5282,8 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                             .ok()
                             .and_then(|raw| crate::programs::wireproxy::parse_socks5_bind_address_str(&raw).ok())
                             .map(|v| json!({"host": v.host, "port": v.port}));
-                        servers.push(json!({"name": name, "data": data, "bind": bind}));
+                        let subscription_link = crate::programs::mihomo_subscription::link_for_target("wireproxy", profile, name);
+                        servers.push(json!({"name": name, "data": data, "bind": bind, "subscription_link": subscription_link}));
                     }
                 }
                 servers.sort_by(|a, b| a["name"].as_str().cmp(&b["name"].as_str()));
@@ -5290,6 +5328,7 @@ fn handle_programs_subroutes(stream: TcpStream, method: &str, path: &str, header
                 let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
                 let dst = deleted_dir.join(format!("{server}.{ts}"));
                 let _ = fs::rename(&src, &dst);
+                crate::programs::mihomo_subscription::remove_link_for_target("wireproxy", profile, server);
                 Ok(())
             })();
             match res {

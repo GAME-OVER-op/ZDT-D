@@ -2378,4 +2378,26 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="mihomo_profile_subscriptions_empty_desc">Buat langganan terlebih dahulu dari layar Langganan Mihomo.</string>
     <string name="mihomo_profile_subscription_servers">%1$d server</string>
     <string name="mihomo_profile_subscription_disabled_hint">Langganan ini dinonaktifkan secara global.</string>
+    <string name="subscriptions_title">Langganan</string>
+    <string name="subscriptions_entry_desc">Kelola sumber bersama dan impor server satu per satu.</string>
+    <string name="subscriptions_badge">Pustaka</string>
+    <string name="subscription_view_servers">Lihat server</string>
+    <string name="subscription_servers_count">%1$d server</string>
+    <string name="subscription_missing_title">Server tidak lagi ada dalam langganan</string>
+    <string name="subscription_local_copy_saved">Salinan lokal tetap disimpan.</string>
+    <string name="subscription_detach">Lepaskan dari langganan</string>
+    <string name="subscription_nodes_empty">Belum ada server yang diurai. Segarkan langganan.</string>
+    <string name="subscription_linked_to">Tertaut ke %1$s · %2$s / %3$s</string>
+    <string name="subscription_add_to_target">Tambahkan ke %1$s</string>
+    <string name="subscription_unsupported_node">Jenis server ini belum didukung untuk impor.</string>
+    <string name="subscription_import_title">Impor ke %1$s</string>
+    <string name="subscription_choose_profile">Pilih profil</string>
+    <string name="subscription_no_target_profiles">Buat profil tujuan terlebih dahulu.</string>
+    <string name="subscription_local_server_name">Nama server lokal</string>
+    <string name="subscription_server_name_hint">Huruf Inggris, angka, garis bawah, dan tanda hubung</string>
+    <string name="subscription_import_action">Impor</string>
+    <string name="subscription_import_success">Server diimpor dan ditautkan ke langganan</string>
+    <string name="subscription_import_failed">Server tidak dapat diimpor</string>
+    <string name="subscription_detach_failed">Server tidak dapat dilepaskan</string>
+    <string name="subscription_link_active">Tertaut ke langganan dan disinkronkan otomatis</string>
 </resources>

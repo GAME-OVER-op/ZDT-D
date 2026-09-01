@@ -2378,4 +2378,26 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="mihomo_profile_subscriptions_empty_desc">Trước tiên hãy tạo đăng ký từ màn hình Đăng ký của Mihomo.</string>
     <string name="mihomo_profile_subscription_servers">%1$d máy chủ</string>
     <string name="mihomo_profile_subscription_disabled_hint">Đăng ký này đang bị tắt trên toàn cục.</string>
+    <string name="subscriptions_title">Gói đăng ký</string>
+    <string name="subscriptions_entry_desc">Quản lý nguồn dùng chung và nhập từng máy chủ.</string>
+    <string name="subscriptions_badge">Thư viện</string>
+    <string name="subscription_view_servers">Xem máy chủ</string>
+    <string name="subscription_servers_count">%1$d máy chủ</string>
+    <string name="subscription_missing_title">Máy chủ không còn trong gói đăng ký</string>
+    <string name="subscription_local_copy_saved">Bản sao cục bộ đã được giữ lại.</string>
+    <string name="subscription_detach">Hủy liên kết gói đăng ký</string>
+    <string name="subscription_nodes_empty">Chưa có máy chủ được phân tích. Hãy làm mới gói đăng ký.</string>
+    <string name="subscription_linked_to">Đã liên kết với %1$s · %2$s / %3$s</string>
+    <string name="subscription_add_to_target">Thêm vào %1$s</string>
+    <string name="subscription_unsupported_node">Loại máy chủ này chưa hỗ trợ nhập.</string>
+    <string name="subscription_import_title">Nhập vào %1$s</string>
+    <string name="subscription_choose_profile">Chọn hồ sơ</string>
+    <string name="subscription_no_target_profiles">Hãy tạo hồ sơ đích trước.</string>
+    <string name="subscription_local_server_name">Tên máy chủ cục bộ</string>
+    <string name="subscription_server_name_hint">Chữ cái tiếng Anh, số, gạch dưới và gạch ngang</string>
+    <string name="subscription_import_action">Nhập</string>
+    <string name="subscription_import_success">Đã nhập máy chủ và liên kết với gói đăng ký</string>
+    <string name="subscription_import_failed">Không thể nhập máy chủ</string>
+    <string name="subscription_detach_failed">Không thể hủy liên kết máy chủ</string>
+    <string name="subscription_link_active">Đã liên kết với gói đăng ký và tự động đồng bộ</string>
 </resources>

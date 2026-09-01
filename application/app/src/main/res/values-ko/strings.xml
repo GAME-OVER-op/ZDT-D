@@ -2378,4 +2378,26 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="mihomo_profile_subscriptions_empty_desc">먼저 Mihomo 구독 화면에서 구독을 생성하세요.</string>
     <string name="mihomo_profile_subscription_servers">서버 %1$d개</string>
     <string name="mihomo_profile_subscription_disabled_hint">이 구독은 전역으로 비활성화되어 있습니다.</string>
+    <string name="subscriptions_title">구독</string>
+    <string name="subscriptions_entry_desc">공유 구독 소스를 관리하고 개별 서버를 가져옵니다.</string>
+    <string name="subscriptions_badge">라이브러리</string>
+    <string name="subscription_view_servers">서버 보기</string>
+    <string name="subscription_servers_count">서버 %1$d개</string>
+    <string name="subscription_missing_title">서버가 더 이상 구독에 없습니다</string>
+    <string name="subscription_local_copy_saved">로컬 복사본은 유지되었습니다.</string>
+    <string name="subscription_detach">구독에서 연결 해제</string>
+    <string name="subscription_nodes_empty">분석된 서버가 없습니다. 구독을 새로 고치세요.</string>
+    <string name="subscription_linked_to">%1$s · %2$s / %3$s에 연결됨</string>
+    <string name="subscription_add_to_target">%1$s에 추가</string>
+    <string name="subscription_unsupported_node">이 서버 유형은 아직 가져오기를 지원하지 않습니다.</string>
+    <string name="subscription_import_title">%1$s로 가져오기</string>
+    <string name="subscription_choose_profile">프로필 선택</string>
+    <string name="subscription_no_target_profiles">먼저 대상 프로필을 만드세요.</string>
+    <string name="subscription_local_server_name">로컬 서버 이름</string>
+    <string name="subscription_server_name_hint">영문자, 숫자, 밑줄 및 하이픈</string>
+    <string name="subscription_import_action">가져오기</string>
+    <string name="subscription_import_success">서버를 가져와 구독에 연결했습니다</string>
+    <string name="subscription_import_failed">서버를 가져오지 못했습니다</string>
+    <string name="subscription_detach_failed">서버 연결을 해제하지 못했습니다</string>
+    <string name="subscription_link_active">구독에 연결되어 자동으로 동기화됩니다</string>
 </resources>

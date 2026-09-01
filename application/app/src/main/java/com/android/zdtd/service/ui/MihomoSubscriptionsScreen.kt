@@ -103,6 +103,39 @@ internal data class MihomoSubscriptionItemUi(
   val status: MihomoSubscriptionStatusUi,
 )
 
+private data class SubscriptionNodeUi(
+  val id: String,
+  val name: String,
+  val protocol: String,
+  val server: String,
+  val port: Int,
+  val targets: List<String>,
+)
+
+private data class SubscriptionLinkUi(
+  val id: String,
+  val nodeId: String,
+  val target: String,
+  val profile: String,
+  val serverName: String,
+  val missing: Boolean,
+)
+
+private data class SubscriptionNodesUi(
+  val nodes: List<SubscriptionNodeUi> = emptyList(),
+  val links: List<SubscriptionLinkUi> = emptyList(),
+)
+
+private data class SubscriptionImportDraft(
+  val subscriptionId: String,
+  val node: SubscriptionNodeUi,
+  val target: String,
+  val profiles: List<String> = emptyList(),
+  val selectedProfile: String = "",
+  val serverName: String = "",
+  val loadingProfiles: Boolean = true,
+)
+
 private data class MihomoSubscriptionDraft(
   val id: String? = null,
   val name: String = "",
@@ -161,9 +194,54 @@ private fun parseSubscriptionItem(obj: JSONObject): MihomoSubscriptionItemUi {
   )
 }
 
+private fun parseStringArray(array: JSONArray?): List<String> = if (array == null) emptyList() else
+  (0 until array.length()).mapNotNull { index -> array.optString(index).takeIf { it.isNotBlank() } }
+
+private suspend fun loadSubscriptionNodes(actions: ZdtdActions, id: String): SubscriptionNodesUi? =
+  suspendCancellableCoroutine { cont ->
+    actions.loadJsonData("/api/subscriptions/${URLEncoder.encode(id, "UTF-8")}/nodes") { obj ->
+      val nodesArray = obj?.optJSONArray("nodes")
+      val importsArray = obj?.optJSONArray("imports")
+      val result = if (nodesArray == null) null else SubscriptionNodesUi(
+        nodes = (0 until nodesArray.length()).mapNotNull { index -> nodesArray.optJSONObject(index) }.map { node ->
+          SubscriptionNodeUi(
+            id = node.optString("id"),
+            name = node.optString("name"),
+            protocol = node.optString("protocol"),
+            server = node.optString("server"),
+            port = node.optInt("port"),
+            targets = parseStringArray(node.optJSONArray("targets")),
+          )
+        },
+        links = if (importsArray == null) emptyList() else (0 until importsArray.length()).mapNotNull { index -> importsArray.optJSONObject(index) }.map { link ->
+          SubscriptionLinkUi(
+            id = link.optString("id"),
+            nodeId = link.optString("node_id"),
+            target = link.optString("target"),
+            profile = link.optString("profile"),
+            serverName = link.optString("server_name"),
+            missing = link.optBoolean("missing"),
+          )
+        },
+      )
+      if (cont.isActive) cont.resume(result)
+    }
+  }
+
+private suspend fun loadTargetProfiles(actions: ZdtdActions, target: String): List<String> =
+  suspendCancellableCoroutine { cont ->
+    actions.loadJsonData("/api/programs/${URLEncoder.encode(target, "UTF-8")}/profiles") { obj ->
+      val array = obj?.optJSONArray("profiles")
+      val profiles = if (array == null) emptyList() else (0 until array.length()).mapNotNull { index ->
+        array.optJSONObject(index)?.optString("name")?.takeIf { it.isNotBlank() }
+      }
+      if (cont.isActive) cont.resume(profiles)
+    }
+  }
+
 internal suspend fun loadMihomoSubscriptionItems(actions: ZdtdActions): List<MihomoSubscriptionItemUi>? =
   suspendCancellableCoroutine { cont ->
-    actions.loadJsonData("/api/programs/mihomo/subscriptions") { obj ->
+    actions.loadJsonData("/api/subscriptions") { obj ->
       val arr = obj?.optJSONArray("items")
       val result = if (arr == null) null else (0 until arr.length()).mapNotNull { i -> arr.optJSONObject(i)?.let(::parseSubscriptionItem) }
       if (cont.isActive) cont.resume(result)
@@ -172,7 +250,7 @@ internal suspend fun loadMihomoSubscriptionItems(actions: ZdtdActions): List<Mih
 
 private suspend fun loadMihomoSubscriptionDraft(actions: ZdtdActions, id: String): MihomoSubscriptionDraft? =
   suspendCancellableCoroutine { cont ->
-    actions.loadJsonData("/api/programs/mihomo/subscriptions/${URLEncoder.encode(id, "UTF-8")}") { obj ->
+    actions.loadJsonData("/api/subscriptions/${URLEncoder.encode(id, "UTF-8")}") { obj ->
       val s = obj?.optJSONObject("subscription")
       val headers = s?.optJSONObject("custom_headers")
       val headerText = if (headers == null) "" else headers.keys().asSequence().map { key -> "$key: ${headers.optString(key)}" }.joinToString("\n")
@@ -250,7 +328,7 @@ private fun formatBytes(bytes: Long?): String? {
 private fun formatEpoch(seconds: Long): String = if (seconds <= 0L) "—" else DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT).format(Date(seconds * 1000L))
 
 @Composable
-fun MihomoSubscriptionsScreen(
+fun SubscriptionsScreen(
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   topContentPadding: Dp = 0.dp,
@@ -265,6 +343,11 @@ fun MihomoSubscriptionsScreen(
   var editorLoading by remember { mutableStateOf(false) }
   var deleting by remember { mutableStateOf<MihomoSubscriptionItemUi?>(null) }
   var busyId by remember { mutableStateOf<String?>(null) }
+  var nodesFor by remember { mutableStateOf<MihomoSubscriptionItemUi?>(null) }
+  var nodesData by remember { mutableStateOf(SubscriptionNodesUi()) }
+  var nodesLoading by remember { mutableStateOf(false) }
+  var importDraft by remember { mutableStateOf<SubscriptionImportDraft?>(null) }
+  var importSaving by remember { mutableStateOf(false) }
 
   fun snack(text: String) { scope.launch { snackHost.showSnackbar(text) } }
   fun reload() {
@@ -288,6 +371,74 @@ fun MihomoSubscriptionsScreen(
     }
   }
 
+  fun openNodes(item: MihomoSubscriptionItemUi) {
+    nodesFor = item
+    nodesLoading = true
+    scope.launch {
+      nodesData = loadSubscriptionNodes(actions, item.id) ?: SubscriptionNodesUi()
+      nodesLoading = false
+    }
+  }
+
+  fun beginImport(subscriptionId: String, node: SubscriptionNodeUi, target: String) {
+    importDraft = SubscriptionImportDraft(
+      subscriptionId = subscriptionId,
+      node = node,
+      target = target,
+      serverName = node.name,
+    )
+    scope.launch {
+      val profiles = loadTargetProfiles(actions, target)
+      importDraft = importDraft?.takeIf { it.node.id == node.id && it.target == target }?.copy(
+        profiles = profiles,
+        selectedProfile = profiles.firstOrNull().orEmpty(),
+        loadingProfiles = false,
+      )
+    }
+  }
+
+  nodesFor?.let { subscription ->
+    SubscriptionNodesDialog(
+      subscription = subscription,
+      data = nodesData,
+      loading = nodesLoading,
+      onDismiss = { if (!importSaving) nodesFor = null },
+      onImport = { node, target -> beginImport(subscription.id, node, target) },
+      onDetach = { link ->
+        actions.deleteJsonPath("/api/subscription-links/${URLEncoder.encode(link.id, "UTF-8")}") { ok ->
+          if (ok) openNodes(subscription) else snack(context.getString(R.string.subscription_detach_failed))
+        }
+      },
+    )
+  }
+
+  importDraft?.let { draft ->
+    SubscriptionImportDialog(
+      draft = draft,
+      saving = importSaving,
+      onChange = { importDraft = it },
+      onDismiss = { if (!importSaving) importDraft = null },
+      onSave = {
+        importSaving = true
+        val path = "/api/subscriptions/${URLEncoder.encode(it.subscriptionId, "UTF-8")}/nodes/${URLEncoder.encode(it.node.id, "UTF-8")}/import"
+        val payload = JSONObject()
+          .put("target", it.target)
+          .put("profile", it.selectedProfile)
+          .put("server_name", it.serverName)
+        actions.postJsonData(path, payload) { ok ->
+          importSaving = false
+          if (ok) {
+            importDraft = null
+            nodesFor?.let(::openNodes)
+            snack(context.getString(R.string.subscription_import_success))
+          } else {
+            snack(context.getString(R.string.subscription_import_failed))
+          }
+        }
+      },
+    )
+  }
+
   if (editor != null) {
     MihomoSubscriptionEditorDialog(
       draft = editor!!,
@@ -298,13 +449,13 @@ fun MihomoSubscriptionsScreen(
         val body = draftToJson(draft)
         val id = draft.id
         if (id == null) {
-          actions.postJsonData("/api/programs/mihomo/subscriptions", body) { ok ->
+          actions.postJsonData("/api/subscriptions", body) { ok ->
             editorLoading = false
             if (ok) { editor = null; reload(); snack(context.getString(R.string.mihomo_sub_saved)) }
             else snack(context.getString(R.string.save_failed))
           }
         } else {
-          actions.saveJsonData("/api/programs/mihomo/subscriptions/${URLEncoder.encode(id, "UTF-8")}", body) { ok ->
+          actions.saveJsonData("/api/subscriptions/${URLEncoder.encode(id, "UTF-8")}", body) { ok ->
             editorLoading = false
             if (ok) { editor = null; reload(); snack(context.getString(R.string.mihomo_sub_saved)) }
             else snack(context.getString(R.string.save_failed))
@@ -323,7 +474,7 @@ fun MihomoSubscriptionsScreen(
         Button(onClick = {
           busyId = item.id
           deleting = null
-          actions.deleteJsonPath("/api/programs/mihomo/subscriptions/${URLEncoder.encode(item.id, "UTF-8")}") { ok ->
+          actions.deleteJsonPath("/api/subscriptions/${URLEncoder.encode(item.id, "UTF-8")}") { ok ->
             busyId = null
             if (ok) reload() else snack(context.getString(R.string.delete_failed))
           }
@@ -344,13 +495,13 @@ fun MihomoSubscriptionsScreen(
     verticalArrangement = Arrangement.spacedBy(10.dp),
   ) {
     item {
-      MihomoSubscriptionsHeaderCard(
+      SubscriptionsHeaderCard(
         items = items,
         loading = loading,
         onAdd = { editor = MihomoSubscriptionDraft() },
         onRefreshAll = {
           busyId = "__all__"
-          actions.postJsonData("/api/programs/mihomo/subscriptions/refresh-all", JSONObject()) { _ ->
+          actions.postJsonData("/api/subscriptions/refresh-all", JSONObject()) { _ ->
             busyId = null
             reload()
           }
@@ -382,7 +533,7 @@ fun MihomoSubscriptionsScreen(
         onToggle = { enabled ->
           busyId = item.id
           actions.saveJsonData(
-            "/api/programs/mihomo/subscriptions/${URLEncoder.encode(item.id, "UTF-8")}/enabled",
+            "/api/subscriptions/${URLEncoder.encode(item.id, "UTF-8")}/enabled",
             JSONObject().put("enabled", enabled),
           ) { ok ->
             busyId = null
@@ -391,7 +542,7 @@ fun MihomoSubscriptionsScreen(
         },
         onRefresh = {
           busyId = item.id
-          actions.postJsonData("/api/programs/mihomo/subscriptions/${URLEncoder.encode(item.id, "UTF-8")}/refresh", JSONObject()) { _ ->
+          actions.postJsonData("/api/subscriptions/${URLEncoder.encode(item.id, "UTF-8")}/refresh", JSONObject()) { _ ->
             busyId = null
             reload()
           }
@@ -407,13 +558,14 @@ fun MihomoSubscriptionsScreen(
           }
         },
         onDelete = { deleting = item },
+        onOpenNodes = { openNodes(item) },
       )
     }
   }
 }
 
 @Composable
-private fun MihomoSubscriptionsHeaderCard(
+private fun SubscriptionsHeaderCard(
   items: List<MihomoSubscriptionItemUi>,
   loading: Boolean,
   onAdd: () -> Unit,
@@ -422,7 +574,7 @@ private fun MihomoSubscriptionsHeaderCard(
   val active = items.count { it.enabled }
   val servers = items.filter { it.enabled }.sumOf { it.status.serverCount }
   MihomoSectionCard(
-    title = stringResource(R.string.mihomo_subscriptions_title),
+    title = stringResource(R.string.subscriptions_title),
     desc = stringResource(R.string.mihomo_subscriptions_summary, items.size, active, servers),
     accent = MaterialTheme.colorScheme.primary,
     icon = { Icon(Icons.Filled.CloudDownload, contentDescription = null) },
@@ -450,6 +602,7 @@ private fun MihomoSubscriptionCard(
   onRefresh: () -> Unit,
   onEdit: () -> Unit,
   onDelete: () -> Unit,
+  onOpenNodes: () -> Unit,
 ) {
   val status = item.status
   val ok = status.lastError.isBlank() && status.lastUpdatedAt > 0L
@@ -530,6 +683,10 @@ private fun MihomoSubscriptionCard(
       }
 
       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+        TextButton(onClick = onOpenNodes, enabled = !busy && status.serverCount > 0) {
+          Text(stringResource(R.string.subscription_view_servers))
+        }
+        Spacer(Modifier.weight(1f))
         IconButton(onClick = onRefresh, enabled = item.enabled && !busy) { Icon(Icons.Filled.Refresh, contentDescription = stringResource(R.string.mihomo_sub_refresh)) }
         IconButton(onClick = onEdit, enabled = !busy) { Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.action_edit)) }
         IconButton(onClick = onDelete, enabled = !busy) { Icon(Icons.Filled.DeleteOutline, contentDescription = stringResource(R.string.action_delete), tint = MaterialTheme.colorScheme.error) }
@@ -546,6 +703,176 @@ private fun SubscriptionMetric(label: String, value: String, modifier: Modifier 
       Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f), maxLines = 1)
     }
   }
+}
+
+@Composable
+private fun subscriptionTargetLabel(target: String): String = when (target) {
+  "sing-box" -> "sing-box"
+  "hysteria2" -> "Hysteria2"
+  "wireproxy" -> "WireProxy"
+  else -> target
+}
+
+@Composable
+private fun SubscriptionNodesDialog(
+  subscription: MihomoSubscriptionItemUi,
+  data: SubscriptionNodesUi,
+  loading: Boolean,
+  onDismiss: () -> Unit,
+  onImport: (SubscriptionNodeUi, String) -> Unit,
+  onDetach: (SubscriptionLinkUi) -> Unit,
+) {
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = {
+      Column {
+        Text(subscription.name)
+        Text(
+          stringResource(R.string.subscription_servers_count, data.nodes.size),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+        )
+      }
+    },
+    text = {
+      if (loading) {
+        Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
+          CircularProgressIndicator()
+        }
+      } else {
+        LazyColumn(
+          modifier = Modifier.fillMaxWidth().heightIn(max = 560.dp),
+          verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+          val missing = data.links.filter { it.missing }
+          if (missing.isNotEmpty()) {
+            item(key = "missing") {
+              Surface(
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.46f),
+                shape = MaterialTheme.shapes.large,
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.22f)),
+              ) {
+                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                  Text(stringResource(R.string.subscription_missing_title), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                  missing.forEach { link ->
+                    Text(
+                      "${subscriptionTargetLabel(link.target)} · ${link.profile} / ${link.serverName}",
+                      style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(stringResource(R.string.subscription_local_copy_saved), style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { onDetach(link) }) { Text(stringResource(R.string.subscription_detach)) }
+                  }
+                }
+              }
+            }
+          }
+          if (data.nodes.isEmpty()) {
+            item { Text(stringResource(R.string.subscription_nodes_empty)) }
+          }
+          items(data.nodes, key = { it.id }) { node ->
+            val links = data.links.filter { it.nodeId == node.id && !it.missing }
+            Surface(
+              shape = MaterialTheme.shapes.large,
+              color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.42f),
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
+            ) {
+              Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Text(node.name, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(node.protocol.uppercase(Locale.ROOT), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                if (node.server.isNotBlank()) {
+                  Text(
+                    if (node.port > 0) "${node.server}:${node.port}" else node.server,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+                  )
+                }
+                links.forEach { link ->
+                  Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.38f)) {
+                    Row(
+                      Modifier.fillMaxWidth().padding(horizontal = 9.dp, vertical = 5.dp),
+                      verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                      Text(
+                        stringResource(R.string.subscription_linked_to, subscriptionTargetLabel(link.target), link.profile, link.serverName),
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.weight(1f),
+                      )
+                      TextButton(onClick = { onDetach(link) }) { Text(stringResource(R.string.subscription_detach)) }
+                    }
+                  }
+                }
+                node.targets.forEach { target ->
+                  OutlinedButton(onClick = { onImport(node, target) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.subscription_add_to_target, subscriptionTargetLabel(target)))
+                  }
+                }
+                if (node.targets.isEmpty()) {
+                  Text(
+                    stringResource(R.string.subscription_unsupported_node),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                  )
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } },
+  )
+}
+
+@Composable
+private fun SubscriptionImportDialog(
+  draft: SubscriptionImportDraft,
+  saving: Boolean,
+  onChange: (SubscriptionImportDraft) -> Unit,
+  onDismiss: () -> Unit,
+  onSave: (SubscriptionImportDraft) -> Unit,
+) {
+  val valid = !draft.loadingProfiles && draft.selectedProfile.isNotBlank() && draft.serverName.isNotBlank()
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(stringResource(R.string.subscription_import_title, subscriptionTargetLabel(draft.target))) },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text(draft.node.name, fontWeight = FontWeight.SemiBold)
+        Text(stringResource(R.string.subscription_choose_profile), style = MaterialTheme.typography.labelLarge)
+        if (draft.loadingProfiles) {
+          CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+        } else if (draft.profiles.isEmpty()) {
+          Text(stringResource(R.string.subscription_no_target_profiles), color = MaterialTheme.colorScheme.error)
+        } else {
+          LazyColumn(Modifier.fillMaxWidth().heightIn(max = 160.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            items(draft.profiles, key = { it }) { profile ->
+              FilterChip(
+                selected = profile == draft.selectedProfile,
+                onClick = { onChange(draft.copy(selectedProfile = profile)) },
+                label = { Text(profile) },
+                modifier = Modifier.fillMaxWidth(),
+              )
+            }
+          }
+        }
+        OutlinedTextField(
+          value = draft.serverName,
+          onValueChange = { onChange(draft.copy(serverName = it)) },
+          label = { Text(stringResource(R.string.subscription_local_server_name)) },
+          supportingText = { Text(stringResource(R.string.subscription_server_name_hint)) },
+          singleLine = true,
+          enabled = !saving,
+          modifier = Modifier.fillMaxWidth(),
+        )
+      }
+    },
+    confirmButton = {
+      Button(onClick = { onSave(draft) }, enabled = valid && !saving) {
+        if (saving) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Text(stringResource(R.string.subscription_import_action))
+      }
+    },
+    dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text(stringResource(R.string.action_cancel)) } },
+  )
 }
 
 @Composable
@@ -692,7 +1019,6 @@ internal fun MihomoProfileSubscriptionsTab(
   val scope = rememberCoroutineScope()
   var loading by remember { mutableStateOf(true) }
   var items by remember { mutableStateOf(emptyList<MihomoSubscriptionItemUi>()) }
-  var refreshing by remember { mutableStateOf<String?>(null) }
 
   fun reload() {
     loading = true
@@ -743,7 +1069,7 @@ internal fun MihomoProfileSubscriptionsTab(
     } else if (items.isEmpty()) {
       MihomoSectionCard(
         title = stringResource(R.string.mihomo_sub_empty_title),
-        desc = stringResource(R.string.mihomo_profile_subscriptions_empty_desc),
+        desc = stringResource(R.string.subscriptions_entry_desc),
         icon = { Icon(Icons.Filled.CloudDownload, contentDescription = null) },
       )
     } else {
@@ -770,7 +1096,6 @@ internal fun MihomoProfileSubscriptionsTab(
                   color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
                 )
               }
-              if (refreshing == item.id || item.refreshing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
               Switch(
                 checked = selected,
                 onCheckedChange = { checked ->
@@ -786,22 +1111,6 @@ internal fun MihomoProfileSubscriptionsTab(
             }
             if (item.status.lastError.isNotBlank()) {
               Text(item.status.lastError, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-              TextButton(
-                onClick = {
-                  refreshing = item.id
-                  actions.postJsonData("/api/programs/mihomo/subscriptions/${URLEncoder.encode(item.id, "UTF-8")}/refresh", JSONObject()) { _ ->
-                    refreshing = null
-                    reload()
-                  }
-                },
-                enabled = item.enabled && refreshing == null && !item.refreshing,
-              ) {
-                Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(17.dp))
-                Spacer(Modifier.width(5.dp))
-                Text(stringResource(R.string.mihomo_sub_refresh))
-              }
             }
           }
         }

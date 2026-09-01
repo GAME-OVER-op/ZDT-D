@@ -155,6 +155,7 @@ private data class Hysteria2ServerUi(
   val enabled: Boolean,
   val port: Int?,
   val logLevel: String = "info",
+  val subscriptionLink: SubscriptionServerLinkUi? = null,
 )
 
 
@@ -402,6 +403,7 @@ private fun parseHysteria2ServersUi(obj: JSONObject?): List<Hysteria2ServerUi> {
           enabled = setting?.optBoolean("enabled", false) ?: false,
           port = setting?.optInt("socks5_port", 0)?.takeIf { it in 1..65535 },
           logLevel = setting?.optString("log_level", "info")?.takeIf { it.isNotBlank() } ?: "info",
+          subscriptionLink = parseSubscriptionServerLinkUi(item.optJSONObject("subscription_link")),
         )
       )
     }
@@ -1598,6 +1600,14 @@ private fun Hysteria2ServerCard(
             )
           }
           Switch(checked = enabled, onCheckedChange = { enabled = it })
+        }
+
+        server.subscriptionLink?.let { link ->
+          SubscriptionServerLinkCard(link = link, onDetach = {
+            actions.deleteJsonPath("/api/subscription-links/${URLEncoder.encode(link.id, "UTF-8")}") { ok ->
+              if (ok) onRefresh() else showSnack(context.getString(R.string.subscription_detach_failed))
+            }
+          })
         }
 
         AnimatedVisibility(

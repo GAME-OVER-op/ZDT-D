@@ -2379,4 +2379,26 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="mihomo_profile_subscriptions_empty_desc">पहले Mihomo सब्सक्रिप्शन स्क्रीन से सब्सक्रिप्शन बनाएँ।</string>
     <string name="mihomo_profile_subscription_servers">%1$d सर्वर</string>
     <string name="mihomo_profile_subscription_disabled_hint">यह सब्सक्रिप्शन वैश्विक रूप से बंद है।</string>
+    <string name="subscriptions_title">सदस्यताएँ</string>
+    <string name="subscriptions_entry_desc">साझा सदस्यता स्रोत प्रबंधित करें और अलग-अलग सर्वर आयात करें।</string>
+    <string name="subscriptions_badge">लाइब्रेरी</string>
+    <string name="subscription_view_servers">सर्वर देखें</string>
+    <string name="subscription_servers_count">%1$d सर्वर</string>
+    <string name="subscription_missing_title">सर्वर अब सदस्यता में मौजूद नहीं है</string>
+    <string name="subscription_local_copy_saved">स्थानीय प्रति सुरक्षित रखी गई है।</string>
+    <string name="subscription_detach">सदस्यता से अलग करें</string>
+    <string name="subscription_nodes_empty">अभी कोई पार्स किया हुआ सर्वर नहीं है। सदस्यता रीफ़्रेश करें।</string>
+    <string name="subscription_linked_to">%1$s · %2$s / %3$s से जुड़ा है</string>
+    <string name="subscription_add_to_target">%1$s में जोड़ें</string>
+    <string name="subscription_unsupported_node">यह सर्वर प्रकार अभी आयात के लिए समर्थित नहीं है।</string>
+    <string name="subscription_import_title">%1$s में आयात करें</string>
+    <string name="subscription_choose_profile">प्रोफ़ाइल चुनें</string>
+    <string name="subscription_no_target_profiles">पहले लक्ष्य प्रोफ़ाइल बनाएँ।</string>
+    <string name="subscription_local_server_name">स्थानीय सर्वर नाम</string>
+    <string name="subscription_server_name_hint">अंग्रेज़ी अक्षर, अंक, अंडरस्कोर और हाइफ़न</string>
+    <string name="subscription_import_action">आयात करें</string>
+    <string name="subscription_import_success">सर्वर आयात हुआ और सदस्यता से जुड़ गया</string>
+    <string name="subscription_import_failed">सर्वर आयात नहीं हो सका</string>
+    <string name="subscription_detach_failed">सर्वर अलग नहीं किया जा सका</string>
+    <string name="subscription_link_active">सदस्यता से जुड़ा है और अपने आप सिंक होता है</string>
 </resources>

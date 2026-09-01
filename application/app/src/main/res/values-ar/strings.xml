@@ -2383,4 +2383,26 @@ APatch: ‏10700+</string>
     <string name="mihomo_profile_subscriptions_empty_desc">أنشئ الاشتراكات أولاً من شاشة اشتراكات Mihomo.</string>
     <string name="mihomo_profile_subscription_servers">%1$d خوادم</string>
     <string name="mihomo_profile_subscription_disabled_hint">هذا الاشتراك معطّل على مستوى التطبيق.</string>
+    <string name="subscriptions_title">الاشتراكات</string>
+    <string name="subscriptions_entry_desc">إدارة مصادر الاشتراك المشتركة واستيراد خوادم منفردة.</string>
+    <string name="subscriptions_badge">المكتبة</string>
+    <string name="subscription_view_servers">عرض الخوادم</string>
+    <string name="subscription_servers_count">%1$d خوادم</string>
+    <string name="subscription_missing_title">لم يعد الخادم موجودًا في الاشتراك</string>
+    <string name="subscription_local_copy_saved">تم الاحتفاظ بالنسخة المحلية.</string>
+    <string name="subscription_detach">فصل عن الاشتراك</string>
+    <string name="subscription_nodes_empty">لا توجد خوادم محللة بعد. حدّث الاشتراك.</string>
+    <string name="subscription_linked_to">مرتبط بـ %1$s · %2$s / %3$s</string>
+    <string name="subscription_add_to_target">إضافة إلى %1$s</string>
+    <string name="subscription_unsupported_node">نوع الخادم هذا غير مدعوم للاستيراد بعد.</string>
+    <string name="subscription_import_title">استيراد إلى %1$s</string>
+    <string name="subscription_choose_profile">اختر ملفًا شخصيًا</string>
+    <string name="subscription_no_target_profiles">أنشئ ملف الوجهة أولاً.</string>
+    <string name="subscription_local_server_name">اسم الخادم المحلي</string>
+    <string name="subscription_server_name_hint">أحرف إنجليزية وأرقام وشرطة سفلية وواصلة</string>
+    <string name="subscription_import_action">استيراد</string>
+    <string name="subscription_import_success">تم استيراد الخادم وربطه بالاشتراك</string>
+    <string name="subscription_import_failed">تعذر استيراد الخادم</string>
+    <string name="subscription_detach_failed">تعذر فصل الخادم</string>
+    <string name="subscription_link_active">مرتبط باشتراك وتتم مزامنته تلقائيًا</string>
 </resources>

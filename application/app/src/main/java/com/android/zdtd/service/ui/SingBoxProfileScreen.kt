@@ -158,6 +158,7 @@ private data class SingBoxServerUi(
   val port: Int?,
   val selectedSni: String? = null,
   val sniOptions: List<String> = emptyList(),
+  val subscriptionLink: SubscriptionServerLinkUi? = null,
 )
 
 private data class ServerConfigPortPlan(
@@ -424,6 +425,7 @@ private fun parseSingBoxServersUi(obj: JSONObject?): List<SingBoxServerUi> {
           port = setting?.optInt("port", 0)?.takeIf { it in 1..65535 },
           selectedSni = selectedSni,
           sniOptions = sniOptions,
+          subscriptionLink = parseSubscriptionServerLinkUi(item.optJSONObject("subscription_link")),
         )
       )
     }
@@ -2148,6 +2150,14 @@ private fun SingBoxServerCard(
             )
           }
           Switch(checked = enabled, onCheckedChange = { enabled = it })
+        }
+
+        server.subscriptionLink?.let { link ->
+          SubscriptionServerLinkCard(link = link, onDetach = {
+            actions.deleteJsonPath("/api/subscription-links/${URLEncoder.encode(link.id, "UTF-8")}") { ok ->
+              if (ok) onRefresh() else showSnack(context.getString(R.string.subscription_detach_failed))
+            }
+          })
         }
 
         AnimatedVisibility(

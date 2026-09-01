@@ -100,6 +100,7 @@ private data class WireProxyServerUi(
   val enabled: Boolean,
   val bindHost: String?,
   val bindPort: Int?,
+  val subscriptionLink: SubscriptionServerLinkUi? = null,
 )
 
 private data class WireProxyPortRegistry(
@@ -129,6 +130,7 @@ private fun parseWireProxyServersUi(obj: JSONObject?): List<WireProxyServerUi> {
           enabled = data?.optBoolean("enabled", false) ?: false,
           bindHost = bind?.optString("host", "")?.trim()?.takeIf { it.isNotEmpty() },
           bindPort = bind?.optInt("port", 0)?.takeIf { it in 1..65535 },
+          subscriptionLink = parseSubscriptionServerLinkUi(item.optJSONObject("subscription_link")),
         )
       )
     }
@@ -976,11 +978,12 @@ private fun WireProxyServerCard(
     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.54f),
     border = BorderStroke(1.dp, accent.copy(alpha = 0.26f)),
   ) {
-    Row(
-      modifier = Modifier.fillMaxWidth().padding(12.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
+    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
       Surface(
         modifier = Modifier.size(36.dp),
         shape = CircleShape,
@@ -1011,14 +1014,23 @@ private fun WireProxyServerCard(
           overflow = TextOverflow.Ellipsis,
         )
       }
-      Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-        FilledTonalIconButton(onClick = onEdit, modifier = Modifier.size(38.dp)) {
-          Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.action_edit), modifier = Modifier.size(19.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+          FilledTonalIconButton(onClick = onEdit, modifier = Modifier.size(38.dp)) {
+            Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.action_edit), modifier = Modifier.size(19.dp))
+          }
+          FilledTonalIconButton(onClick = onDelete, modifier = Modifier.size(38.dp)) {
+            Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.action_delete), modifier = Modifier.size(19.dp))
+          }
+          Switch(checked = enabled, onCheckedChange = { enabled = it })
         }
-        FilledTonalIconButton(onClick = onDelete, modifier = Modifier.size(38.dp)) {
-          Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.action_delete), modifier = Modifier.size(19.dp))
-        }
-        Switch(checked = enabled, onCheckedChange = { enabled = it })
+      }
+      server.subscriptionLink?.let { link ->
+        SubscriptionServerLinkCard(link = link, onDetach = {
+          actions.deleteJsonPath("/api/subscription-links/${URLEncoder.encode(link.id, "UTF-8")}") { ok ->
+            if (ok) onServerSaved(server.copy(subscriptionLink = null))
+            else showSnack(context.getString(R.string.subscription_detach_failed))
+          }
+        })
       }
     }
   }

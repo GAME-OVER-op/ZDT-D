@@ -2381,4 +2381,26 @@ APatch: 10700+</string>
     <string name="mihomo_profile_subscriptions_empty_desc">Спочатку створіть підписки на загальному екрані підписок Mihomo.</string>
     <string name="mihomo_profile_subscription_servers">%1$d серверів</string>
     <string name="mihomo_profile_subscription_disabled_hint">Цю підписку глобально вимкнено.</string>
+    <string name="subscriptions_title">Підписки</string>
+    <string name="subscriptions_entry_desc">Спільні джерела підписок та імпорт окремих серверів.</string>
+    <string name="subscriptions_badge">Бібліотека</string>
+    <string name="subscription_view_servers">Переглянути сервери</string>
+    <string name="subscription_servers_count">Серверів: %1$d</string>
+    <string name="subscription_missing_title">Сервер більше відсутній у підписці</string>
+    <string name="subscription_local_copy_saved">Локальну копію збережено.</string>
+    <string name="subscription_detach">Відв’язати від підписки</string>
+    <string name="subscription_nodes_empty">Розібраних серверів ще немає. Оновіть підписку.</string>
+    <string name="subscription_linked_to">Пов’язано з %1$s · %2$s / %3$s</string>
+    <string name="subscription_add_to_target">Додати до %1$s</string>
+    <string name="subscription_unsupported_node">Цей тип сервера поки не підтримується для імпорту.</string>
+    <string name="subscription_import_title">Імпорт до %1$s</string>
+    <string name="subscription_choose_profile">Виберіть профіль</string>
+    <string name="subscription_no_target_profiles">Спочатку створіть цільовий профіль.</string>
+    <string name="subscription_local_server_name">Ім’я локального сервера</string>
+    <string name="subscription_server_name_hint">Англійські літери, цифри, підкреслення та дефіс</string>
+    <string name="subscription_import_action">Імпортувати</string>
+    <string name="subscription_import_success">Сервер імпортовано й пов’язано з підпискою</string>
+    <string name="subscription_import_failed">Не вдалося імпортувати сервер</string>
+    <string name="subscription_detach_failed">Не вдалося відв’язати сервер</string>
+    <string name="subscription_link_active">Пов’язано з підпискою та синхронізується автоматично</string>
 </resources>

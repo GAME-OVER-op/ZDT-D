@@ -2377,4 +2377,26 @@ APatch: 10700+</string>
     <string name="mihomo_profile_subscriptions_empty_desc">Сначала создайте подписки на общем экране подписок Mihomo.</string>
     <string name="mihomo_profile_subscription_servers">%1$d серверов</string>
     <string name="mihomo_profile_subscription_disabled_hint">Эта подписка глобально отключена.</string>
+    <string name="subscriptions_title">Подписки</string>
+    <string name="subscriptions_entry_desc">Общие источники подписок и импорт отдельных серверов.</string>
+    <string name="subscriptions_badge">Библиотека</string>
+    <string name="subscription_view_servers">Посмотреть серверы</string>
+    <string name="subscription_servers_count">Серверов: %1$d</string>
+    <string name="subscription_missing_title">Сервер больше отсутствует в подписке</string>
+    <string name="subscription_local_copy_saved">Локальная копия сохранена.</string>
+    <string name="subscription_detach">Отвязать от подписки</string>
+    <string name="subscription_nodes_empty">Разобранных серверов пока нет. Обновите подписку.</string>
+    <string name="subscription_linked_to">Связан с %1$s · %2$s / %3$s</string>
+    <string name="subscription_add_to_target">Добавить в %1$s</string>
+    <string name="subscription_unsupported_node">Сервер можно посмотреть, но его тип пока не поддерживается для импорта.</string>
+    <string name="subscription_import_title">Импорт в %1$s</string>
+    <string name="subscription_choose_profile">Выберите профиль</string>
+    <string name="subscription_no_target_profiles">Сначала создайте профиль назначения.</string>
+    <string name="subscription_local_server_name">Имя локального сервера</string>
+    <string name="subscription_server_name_hint">Английские буквы, цифры, подчёркивание и дефис</string>
+    <string name="subscription_import_action">Импортировать</string>
+    <string name="subscription_import_success">Сервер импортирован и связан с подпиской</string>
+    <string name="subscription_import_failed">Не удалось импортировать сервер</string>
+    <string name="subscription_detach_failed">Не удалось отвязать сервер</string>
+    <string name="subscription_link_active">Связан с подпиской и синхронизируется автоматически</string>
 </resources>

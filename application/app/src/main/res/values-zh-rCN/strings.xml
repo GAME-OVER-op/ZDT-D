@@ -2378,4 +2378,26 @@ APatch：10700+</string>
     <string name="mihomo_profile_subscriptions_empty_desc">请先在 Mihomo 的订阅页面创建订阅。</string>
     <string name="mihomo_profile_subscription_servers">%1$d 个服务器</string>
     <string name="mihomo_profile_subscription_disabled_hint">此订阅已在全局禁用。</string>
+    <string name="subscriptions_title">订阅</string>
+    <string name="subscriptions_entry_desc">管理共享订阅源并导入单个服务器。</string>
+    <string name="subscriptions_badge">订阅库</string>
+    <string name="subscription_view_servers">查看服务器</string>
+    <string name="subscription_servers_count">%1$d 个服务器</string>
+    <string name="subscription_missing_title">服务器已不在订阅中</string>
+    <string name="subscription_local_copy_saved">本地副本已保留。</string>
+    <string name="subscription_detach">从订阅解绑</string>
+    <string name="subscription_nodes_empty">暂无已解析的服务器，请刷新订阅。</string>
+    <string name="subscription_linked_to">已连接到 %1$s · %2$s / %3$s</string>
+    <string name="subscription_add_to_target">添加到 %1$s</string>
+    <string name="subscription_unsupported_node">暂不支持导入此服务器类型。</string>
+    <string name="subscription_import_title">导入到 %1$s</string>
+    <string name="subscription_choose_profile">选择配置文件</string>
+    <string name="subscription_no_target_profiles">请先创建目标配置文件。</string>
+    <string name="subscription_local_server_name">本地服务器名称</string>
+    <string name="subscription_server_name_hint">英文字母、数字、下划线和连字符</string>
+    <string name="subscription_import_action">导入</string>
+    <string name="subscription_import_success">服务器已导入并连接到订阅</string>
+    <string name="subscription_import_failed">无法导入服务器</string>
+    <string name="subscription_detach_failed">无法解绑服务器</string>
+    <string name="subscription_link_active">已连接到订阅并自动同步</string>
 </resources>

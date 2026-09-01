@@ -2378,4 +2378,26 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="mihomo_profile_subscriptions_empty_desc">Önce Mihomo abonelikleri ekranından abonelik oluşturun.</string>
     <string name="mihomo_profile_subscription_servers">%1$d sunucu</string>
     <string name="mihomo_profile_subscription_disabled_hint">Bu abonelik genel olarak devre dışı.</string>
+    <string name="subscriptions_title">Abonelikler</string>
+    <string name="subscriptions_entry_desc">Paylaşılan abonelik kaynaklarını yönetin ve tek tek sunucuları içe aktarın.</string>
+    <string name="subscriptions_badge">Kitaplık</string>
+    <string name="subscription_view_servers">Sunucuları göster</string>
+    <string name="subscription_servers_count">%1$d sunucu</string>
+    <string name="subscription_missing_title">Sunucu artık abonelikte bulunmuyor</string>
+    <string name="subscription_local_copy_saved">Yerel kopya korundu.</string>
+    <string name="subscription_detach">Abonelikten ayır</string>
+    <string name="subscription_nodes_empty">Henüz ayrıştırılmış sunucu yok. Aboneliği yenileyin.</string>
+    <string name="subscription_linked_to">%1$s · %2$s / %3$s ile bağlantılı</string>
+    <string name="subscription_add_to_target">%1$s hedefine ekle</string>
+    <string name="subscription_unsupported_node">Bu sunucu türü henüz içe aktarmayı desteklemiyor.</string>
+    <string name="subscription_import_title">%1$s içine aktar</string>
+    <string name="subscription_choose_profile">Profil seçin</string>
+    <string name="subscription_no_target_profiles">Önce bir hedef profil oluşturun.</string>
+    <string name="subscription_local_server_name">Yerel sunucu adı</string>
+    <string name="subscription_server_name_hint">İngilizce harfler, rakamlar, alt çizgi ve kısa çizgi</string>
+    <string name="subscription_import_action">İçe aktar</string>
+    <string name="subscription_import_success">Sunucu içe aktarıldı ve aboneliğe bağlandı</string>
+    <string name="subscription_import_failed">Sunucu içe aktarılamadı</string>
+    <string name="subscription_detach_failed">Sunucu abonelikten ayrılamadı</string>
+    <string name="subscription_link_active">Aboneliğe bağlı ve otomatik olarak eşitleniyor</string>
 </resources>

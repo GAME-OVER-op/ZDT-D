@@ -83,7 +83,7 @@ pub fn run(_cfg: &Config) -> Result<()> {
         logging::warn(&format!("failed to init tor files: {e:#}"));
     }
     if let Err(e) = crate::programs::mihomo_subscription::ensure_layout() {
-        logging::warn(&format!("failed to init mihomo subscriptions: {e:#}"));
+        logging::warn(&format!("failed to init subscription library: {e:#}"));
     } else {
         crate::programs::mihomo_subscription::start_background_worker();
     }

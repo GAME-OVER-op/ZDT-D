@@ -55,6 +55,7 @@ fun AppsHost(
   onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
+  onOpenMihomoSubscriptions: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   tproxyEnabled: Boolean = false,
@@ -94,6 +95,7 @@ fun AppsHost(
     AppsRoute.ConstructionStudio -> 2
     AppsRoute.DpiDetector -> 2
     AppsRoute.NfqwsTester -> 2
+    AppsRoute.MihomoSubscriptions -> 2
     is AppsRoute.Program -> 1
     is AppsRoute.Profile -> 2
   }
@@ -202,6 +204,12 @@ fun AppsHost(
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
       )
+      AppsRoute.MihomoSubscriptions -> MihomoSubscriptionsScreen(
+        actions = actions,
+        snackHost = snackHost,
+        topContentPadding = topContentPadding,
+        bottomContentPadding = bottomContentPadding,
+      )
       is AppsRoute.Program -> when (r.programId) {
         "tgwsproxy" -> TgWsProxySettingsScreen(
           programs = programs,
@@ -244,6 +252,7 @@ fun AppsHost(
         "mihomo" -> MihomoProgramScreen(
           programs = programs,
           onOpenProfile = onOpenProfile,
+          onOpenSubscriptions = onOpenMihomoSubscriptions,
           actions = actions,
           snackHost = snackHost,
           topContentPadding = topContentPadding,

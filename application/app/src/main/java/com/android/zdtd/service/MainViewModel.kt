@@ -6555,6 +6555,24 @@ private fun shQuote(s: String): String {
     }
   }
 
+  override fun postJsonData(path: String, obj: JSONObject, onDone: (Boolean) -> Unit) {
+    launchIO {
+      val result = runCatching { api.postJsonData(path, obj) }
+      val ok = result.getOrDefault(false)
+      if (!ok) log("ERR", "$path: POST failed")
+      withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
+  override fun deleteJsonPath(path: String, onDone: (Boolean) -> Unit) {
+    launchIO {
+      val result = runCatching { api.deletePath(path) }
+      val ok = result.getOrDefault(false)
+      if (!ok) log("ERR", "$path: DELETE failed")
+      withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
 
 override fun listStrategicFiles(dir: String, onDone: (List<String>?) -> Unit) {
   launchIO {

@@ -1070,6 +1070,7 @@ private fun parentAppsRoute(route: AppsRoute): AppsRoute = when (route) {
   AppsRoute.ConstructionStudio -> AppsRoute.AnalysisTools
   AppsRoute.DpiDetector -> AppsRoute.AnalysisTools
   AppsRoute.NfqwsTester -> AppsRoute.AnalysisTools
+  AppsRoute.MihomoSubscriptions -> AppsRoute.Program("mihomo")
   is AppsRoute.Program -> AppsRoute.List
   is AppsRoute.Profile -> AppsRoute.Program(route.programId)
 }
@@ -1645,6 +1646,7 @@ private fun MainShell(
     tab == Tab.APPS && appsRoute == AppsRoute.ConstructionStudio -> stringResource(R.string.construction_studio_title)
     tab == Tab.APPS && appsRoute == AppsRoute.DpiDetector -> stringResource(R.string.dpi_detector_title)
     tab == Tab.APPS && appsRoute == AppsRoute.NfqwsTester -> stringResource(R.string.nfqws_tester_title)
+    tab == Tab.APPS && appsRoute == AppsRoute.MihomoSubscriptions -> stringResource(R.string.mihomo_subscriptions_title)
     tab == Tab.APPS && appsRoute is AppsRoute.Program -> {
       val route = appsRoute as AppsRoute.Program
       uiState.programs.firstOrNull { it.id == route.programId }?.name ?: route.programId
@@ -1672,6 +1674,7 @@ private fun MainShell(
         AppsRoute.ConstructionStudio -> null
         AppsRoute.DpiDetector -> null
         AppsRoute.NfqwsTester -> null
+        AppsRoute.MihomoSubscriptions -> null
         is AppsRoute.Program -> {
           val program = uiState.programs.firstOrNull { it.id == route.programId }
           if (program != null && !isProfileProgramType(program.type) && supportsProgramLogs(route.programId, profile = null)) {
@@ -1795,6 +1798,7 @@ private fun MainShell(
           onOpenConstructionStudio = { appsRoute = AppsRoute.ConstructionStudio },
           onOpenDpiDetector = { appsRoute = AppsRoute.DpiDetector },
           onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
+          onOpenMihomoSubscriptions = { appsRoute = AppsRoute.MihomoSubscriptions },
           actions = actions,
           snackHost = snackHost,
         )
@@ -1825,6 +1829,7 @@ private fun MainShell(
               onOpenConstructionStudio = { appsRoute = AppsRoute.ConstructionStudio },
               onOpenDpiDetector = { appsRoute = AppsRoute.DpiDetector },
               onOpenNfqwsTester = { appsRoute = AppsRoute.NfqwsTester },
+              onOpenMihomoSubscriptions = { appsRoute = AppsRoute.MihomoSubscriptions },
               actions = actions,
               snackHost = snackHost,
               tproxyEnabled = appUpdate.tproxyEnabled,
@@ -1970,6 +1975,7 @@ private fun LandscapeShellContent(
   onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
+  onOpenMihomoSubscriptions: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
 ) {
@@ -2013,6 +2019,7 @@ private fun LandscapeShellContent(
           onOpenConstructionStudio = onOpenConstructionStudio,
           onOpenDpiDetector = onOpenDpiDetector,
           onOpenNfqwsTester = onOpenNfqwsTester,
+          onOpenMihomoSubscriptions = onOpenMihomoSubscriptions,
           actions = actions,
           snackHost = snackHost,
           tproxyEnabled = appUpdate.tproxyEnabled,
@@ -2963,6 +2970,7 @@ private fun TabBody(
   onOpenConstructionStudio: () -> Unit,
   onOpenDpiDetector: () -> Unit,
   onOpenNfqwsTester: () -> Unit,
+  onOpenMihomoSubscriptions: () -> Unit,
   actions: ZdtdActions,
   snackHost: SnackbarHostState,
   tproxyEnabled: Boolean = false,
@@ -3009,6 +3017,7 @@ private fun TabBody(
             onOpenConstructionStudio = onOpenConstructionStudio,
             onOpenDpiDetector = onOpenDpiDetector,
             onOpenNfqwsTester = onOpenNfqwsTester,
+            onOpenMihomoSubscriptions = onOpenMihomoSubscriptions,
             actions = actions,
             snackHost = snackHost,
             tproxyEnabled = tproxyEnabled,

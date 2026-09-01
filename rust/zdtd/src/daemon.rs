@@ -82,6 +82,11 @@ pub fn run(_cfg: &Config) -> Result<()> {
     if let Err(e) = crate::programs::tor::ensure_layout() {
         logging::warn(&format!("failed to init tor files: {e:#}"));
     }
+    if let Err(e) = crate::programs::mihomo_subscription::ensure_layout() {
+        logging::warn(&format!("failed to init mihomo subscriptions: {e:#}"));
+    } else {
+        crate::programs::mihomo_subscription::start_background_worker();
+    }
 
     // Truncate main log at each daemon start.
     logging::truncate_main_log()?;

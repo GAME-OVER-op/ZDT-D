@@ -2401,4 +2401,13 @@ APatch: 10700+</string>
     <string name="subscription_import_failed">وارد کردن سرور ممکن نشد</string>
     <string name="subscription_detach_failed">جدا کردن سرور ممکن نشد</string>
     <string name="subscription_link_active">به اشتراک متصل است و خودکار همگام می‌شود</string>
+    <string name="subscription_manual_import">وارد کردن پیکربندی</string>
+    <string name="subscription_manual_import_desc">پیوند یک سرور، JSON مربوط به sing-box/Hysteria2 یا پیکربندی WireGuard را جای‌گذاری کنید. سرور بدون پیوند اشتراک به‌صورت محلی ساخته می‌شود.</string>
+    <string name="subscription_manual_source">پیوند یا پیکربندی</string>
+    <string name="subscription_paste">جای‌گذاری</string>
+    <string name="subscription_recognize">شناسایی</string>
+    <string name="subscription_manual_unrecognized">پیکربندی شناسایی نشد یا پشتیبان نصب‌شده از آن پشتیبانی نمی‌کند.</string>
+    <string name="subscription_manual_target">مقصد: %1$s</string>
+    <string name="subscription_copy_config">کپی پیکربندی</string>
+    <string name="subscription_copy_failed">آماده‌سازی پیکربندی برای کپی ممکن نشد.</string>
 </resources>

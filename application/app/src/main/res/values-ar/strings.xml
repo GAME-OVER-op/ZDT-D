@@ -2405,4 +2405,13 @@ APatch: ‏10700+</string>
     <string name="subscription_import_failed">تعذر استيراد الخادم</string>
     <string name="subscription_detach_failed">تعذر فصل الخادم</string>
     <string name="subscription_link_active">مرتبط باشتراك وتتم مزامنته تلقائيًا</string>
+    <string name="subscription_manual_import">استيراد الإعداد</string>
+    <string name="subscription_manual_import_desc">الصق رابط خادم واحد أو JSON لـ sing-box/Hysteria2 أو إعداد WireGuard. سيُنشأ الخادم محليًا من دون ارتباط باشتراك.</string>
+    <string name="subscription_manual_source">الرابط أو الإعداد</string>
+    <string name="subscription_paste">لصق</string>
+    <string name="subscription_recognize">تعرّف</string>
+    <string name="subscription_manual_unrecognized">لم يتم التعرف على الإعداد أو لا تدعمه الواجهة الخلفية المثبتة.</string>
+    <string name="subscription_manual_target">الوجهة: %1$s</string>
+    <string name="subscription_copy_config">نسخ الإعداد</string>
+    <string name="subscription_copy_failed">تعذر تجهيز الإعداد للنسخ.</string>
 </resources>

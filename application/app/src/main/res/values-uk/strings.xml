@@ -2403,4 +2403,13 @@ APatch: 10700+</string>
     <string name="subscription_import_failed">Не вдалося імпортувати сервер</string>
     <string name="subscription_detach_failed">Не вдалося відв’язати сервер</string>
     <string name="subscription_link_active">Пов’язано з підпискою та синхронізується автоматично</string>
+    <string name="subscription_manual_import">Імпортувати конфігурацію</string>
+    <string name="subscription_manual_import_desc">Вставте посилання одного сервера, JSON sing-box/Hysteria2 або конфігурацію WireGuard. Сервер буде створено локально без зв’язку з підпискою.</string>
+    <string name="subscription_manual_source">Посилання або конфігурація</string>
+    <string name="subscription_paste">Вставити</string>
+    <string name="subscription_recognize">Розпізнати</string>
+    <string name="subscription_manual_unrecognized">Конфігурацію не розпізнано або вона не підтримується встановленим backend.</string>
+    <string name="subscription_manual_target">Призначення: %1$s</string>
+    <string name="subscription_copy_config">Копіювати конфігурацію</string>
+    <string name="subscription_copy_failed">Не вдалося підготувати конфігурацію для копіювання.</string>
 </resources>

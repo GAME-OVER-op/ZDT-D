@@ -1,5 +1,8 @@
 package com.android.zdtd.service.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.os.Build
 import android.provider.Settings
 import androidx.compose.foundation.BorderStroke
@@ -17,10 +20,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
@@ -107,9 +113,31 @@ private data class SubscriptionNodeUi(
   val id: String,
   val name: String,
   val protocol: String,
+  val transport: String,
+  val security: String,
   val server: String,
   val port: Int,
   val targets: List<String>,
+)
+
+private data class ManualImportDraft(
+  val source: String = "",
+  val node: SubscriptionNodeUi? = null,
+  val format: String = "",
+  val target: String = "",
+  val profiles: List<String> = emptyList(),
+  val selectedProfile: String = "",
+  val serverName: String = "",
+  val previewing: Boolean = false,
+  val loadingProfiles: Boolean = false,
+  val saving: Boolean = false,
+  val error: String = "",
+)
+
+private data class SubscriptionNodeExportUi(
+  val name: String,
+  val content: String,
+  val format: String,
 )
 
 private data class SubscriptionLinkUi(
@@ -197,22 +225,24 @@ private fun parseSubscriptionItem(obj: JSONObject): MihomoSubscriptionItemUi {
 private fun parseStringArray(array: JSONArray?): List<String> = if (array == null) emptyList() else
   (0 until array.length()).mapNotNull { index -> array.optString(index).takeIf { it.isNotBlank() } }
 
+private fun parseSubscriptionNode(node: JSONObject): SubscriptionNodeUi = SubscriptionNodeUi(
+  id = node.optString("id"),
+  name = node.optString("name"),
+  protocol = node.optString("protocol"),
+  transport = node.optString("transport"),
+  security = node.optString("security"),
+  server = node.optString("server"),
+  port = node.optInt("port"),
+  targets = parseStringArray(node.optJSONArray("targets")),
+)
+
 private suspend fun loadSubscriptionNodes(actions: ZdtdActions, id: String): SubscriptionNodesUi? =
   suspendCancellableCoroutine { cont ->
     actions.loadJsonData("/api/subscriptions/${URLEncoder.encode(id, "UTF-8")}/nodes") { obj ->
       val nodesArray = obj?.optJSONArray("nodes")
       val importsArray = obj?.optJSONArray("imports")
       val result = if (nodesArray == null) null else SubscriptionNodesUi(
-        nodes = (0 until nodesArray.length()).mapNotNull { index -> nodesArray.optJSONObject(index) }.map { node ->
-          SubscriptionNodeUi(
-            id = node.optString("id"),
-            name = node.optString("name"),
-            protocol = node.optString("protocol"),
-            server = node.optString("server"),
-            port = node.optInt("port"),
-            targets = parseStringArray(node.optJSONArray("targets")),
-          )
-        },
+        nodes = (0 until nodesArray.length()).mapNotNull { index -> nodesArray.optJSONObject(index) }.map(::parseSubscriptionNode),
         links = if (importsArray == null) emptyList() else (0 until importsArray.length()).mapNotNull { index -> importsArray.optJSONObject(index) }.map { link ->
           SubscriptionLinkUi(
             id = link.optString("id"),
@@ -348,6 +378,8 @@ fun SubscriptionsScreen(
   var nodesLoading by remember { mutableStateOf(false) }
   var importDraft by remember { mutableStateOf<SubscriptionImportDraft?>(null) }
   var importSaving by remember { mutableStateOf(false) }
+  var manualDraft by remember { mutableStateOf<ManualImportDraft?>(null) }
+  var nodeExport by remember { mutableStateOf<SubscriptionNodeExportUi?>(null) }
 
   fun snack(text: String) { scope.launch { snackHost.showSnackbar(text) } }
   fun reload() {
@@ -397,6 +429,91 @@ fun SubscriptionsScreen(
     }
   }
 
+  fun previewManualImport() {
+    val draft = manualDraft ?: return
+    if (draft.source.isBlank()) return
+    manualDraft = draft.copy(previewing = true, error = "", node = null, profiles = emptyList(), selectedProfile = "")
+    actions.postJsonResult(
+      "/api/subscription-import/preview",
+      JSONObject().put("content", draft.source),
+    ) { result ->
+      val node = result?.optJSONObject("node")?.let(::parseSubscriptionNode)
+      val target = node?.targets?.firstOrNull().orEmpty()
+      if (node == null || target.isBlank()) {
+        manualDraft = draft.copy(error = context.getString(R.string.subscription_manual_unrecognized))
+        return@postJsonResult
+      }
+      manualDraft = draft.copy(
+        node = node,
+        format = result.optString("format"),
+        target = target,
+        serverName = node.name,
+        previewing = false,
+        loadingProfiles = true,
+        error = "",
+      )
+      scope.launch {
+        val profiles = loadTargetProfiles(actions, target)
+        manualDraft = manualDraft?.takeIf { it.node?.id == node.id && it.target == target }?.copy(
+          profiles = profiles,
+          selectedProfile = profiles.firstOrNull().orEmpty(),
+          loadingProfiles = false,
+        )
+      }
+    }
+  }
+
+  fun openNodeConfig(subscription: MihomoSubscriptionItemUi, node: SubscriptionNodeUi) {
+    val path = "/api/subscriptions/${URLEncoder.encode(subscription.id, "UTF-8")}/nodes/${URLEncoder.encode(node.id, "UTF-8")}/export"
+    actions.loadJsonData(path) { result ->
+      val content = result?.optString("content").orEmpty()
+      if (content.isBlank()) {
+        snack(context.getString(R.string.subscription_copy_failed))
+      } else {
+        nodeExport = SubscriptionNodeExportUi(
+          name = result?.optString("name").orEmpty().ifBlank { node.name },
+          content = content,
+          format = result?.optString("format").orEmpty(),
+        )
+      }
+    }
+  }
+
+  manualDraft?.let { draft ->
+    ManualSubscriptionImportDialog(
+      draft = draft,
+      onChange = { manualDraft = it },
+      onPaste = {
+        val text = runCatching {
+          val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+          clipboard.primaryClip?.getItemAt(0)?.coerceToText(context)?.toString().orEmpty()
+        }.getOrDefault("")
+        if (text.isNotBlank()) manualDraft = ManualImportDraft(source = text)
+      },
+      onPreview = ::previewManualImport,
+      onImport = {
+        val current = manualDraft
+        if (current != null) {
+          manualDraft = current.copy(saving = true, error = "")
+          val payload = JSONObject()
+            .put("content", current.source)
+            .put("target", current.target)
+            .put("profile", current.selectedProfile)
+            .put("server_name", current.serverName)
+          actions.postJsonResult("/api/subscription-import", payload) { result ->
+            if (result != null) {
+              manualDraft = null
+              snack(context.getString(R.string.subscription_import_success))
+            } else {
+              manualDraft = current.copy(saving = false, error = context.getString(R.string.subscription_import_failed))
+            }
+          }
+        }
+      },
+      onDismiss = { if (!draft.saving && !draft.previewing) manualDraft = null },
+    )
+  }
+
   nodesFor?.let { subscription ->
     SubscriptionNodesDialog(
       subscription = subscription,
@@ -404,11 +521,29 @@ fun SubscriptionsScreen(
       loading = nodesLoading,
       onDismiss = { if (!importSaving) nodesFor = null },
       onImport = { node, target -> beginImport(subscription.id, node, target) },
+      onCopy = { node -> openNodeConfig(subscription, node) },
       onDetach = { link ->
         actions.deleteJsonPath("/api/subscription-links/${URLEncoder.encode(link.id, "UTF-8")}") { ok ->
           if (ok) openNodes(subscription) else snack(context.getString(R.string.subscription_detach_failed))
         }
       },
+    )
+  }
+
+  nodeExport?.let { exported ->
+    SubscriptionNodeExportDialog(
+      exported = exported,
+      onCopy = {
+        runCatching {
+          val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+          clipboard.setPrimaryClip(ClipData.newPlainText(exported.name, exported.content))
+        }.onSuccess {
+          snack(context.getString(R.string.copied))
+        }.onFailure {
+          snack(context.getString(R.string.subscription_copy_failed))
+        }
+      },
+      onDismiss = { nodeExport = null },
     )
   }
 
@@ -499,6 +634,7 @@ fun SubscriptionsScreen(
         items = items,
         loading = loading,
         onAdd = { editor = MihomoSubscriptionDraft() },
+        onImport = { manualDraft = ManualImportDraft() },
         onRefreshAll = {
           busyId = "__all__"
           actions.postJsonData("/api/subscriptions/refresh-all", JSONObject()) { _ ->
@@ -569,6 +705,7 @@ private fun SubscriptionsHeaderCard(
   items: List<MihomoSubscriptionItemUi>,
   loading: Boolean,
   onAdd: () -> Unit,
+  onImport: () -> Unit,
   onRefreshAll: () -> Unit,
 ) {
   val active = items.count { it.enabled }
@@ -590,6 +727,11 @@ private fun SubscriptionsHeaderCard(
         Spacer(Modifier.width(6.dp))
         Text(stringResource(R.string.mihomo_sub_refresh_all))
       }
+    }
+    OutlinedButton(onClick = onImport, modifier = Modifier.fillMaxWidth()) {
+      Icon(Icons.Filled.ContentPaste, contentDescription = null, modifier = Modifier.size(18.dp))
+      Spacer(Modifier.width(6.dp))
+      Text(stringResource(R.string.subscription_manual_import))
     }
   }
 }
@@ -720,6 +862,7 @@ private fun SubscriptionNodesDialog(
   loading: Boolean,
   onDismiss: () -> Unit,
   onImport: (SubscriptionNodeUi, String) -> Unit,
+  onCopy: (SubscriptionNodeUi) -> Unit,
   onDetach: (SubscriptionLinkUi) -> Unit,
 ) {
   AlertDialog(
@@ -778,7 +921,14 @@ private fun SubscriptionNodesDialog(
             ) {
               Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                 Text(node.name, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(node.protocol.uppercase(Locale.ROOT), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text(
+                  listOf(node.protocol, node.transport, node.security)
+                    .filter { it.isNotBlank() }
+                    .distinctBy { it.lowercase(Locale.ROOT) }
+                    .joinToString(" · ") { it.uppercase(Locale.ROOT) },
+                  style = MaterialTheme.typography.labelMedium,
+                  color = MaterialTheme.colorScheme.primary,
+                )
                 if (node.server.isNotBlank()) {
                   Text(
                     if (node.port > 0) "${node.server}:${node.port}" else node.server,
@@ -806,6 +956,11 @@ private fun SubscriptionNodesDialog(
                     Text(stringResource(R.string.subscription_add_to_target, subscriptionTargetLabel(target)))
                   }
                 }
+                OutlinedButton(onClick = { onCopy(node) }, modifier = Modifier.fillMaxWidth()) {
+                  Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                  Spacer(Modifier.width(6.dp))
+                  Text(stringResource(R.string.subscription_copy_config))
+                }
                 if (node.targets.isEmpty()) {
                   Text(
                     stringResource(R.string.subscription_unsupported_node),
@@ -820,6 +975,163 @@ private fun SubscriptionNodesDialog(
       }
     },
     confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } },
+  )
+}
+
+@Composable
+private fun ManualSubscriptionImportDialog(
+  draft: ManualImportDraft,
+  onChange: (ManualImportDraft) -> Unit,
+  onPaste: () -> Unit,
+  onPreview: () -> Unit,
+  onImport: () -> Unit,
+  onDismiss: () -> Unit,
+) {
+  val busy = draft.previewing || draft.saving
+  val valid = draft.node != null && draft.selectedProfile.isNotBlank() && draft.serverName.isNotBlank() && !draft.loadingProfiles
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(stringResource(R.string.subscription_manual_import)) },
+    text = {
+      LazyColumn(
+        modifier = Modifier.fillMaxWidth().heightIn(max = 590.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+      ) {
+        item {
+          Text(
+            stringResource(R.string.subscription_manual_import_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+          )
+        }
+        item {
+          OutlinedTextField(
+            value = draft.source,
+            onValueChange = { value ->
+              onChange(ManualImportDraft(source = value.take(4 * 1024 * 1024)))
+            },
+            label = { Text(stringResource(R.string.subscription_manual_source)) },
+            minLines = 5,
+            maxLines = 10,
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth(),
+          )
+        }
+        item {
+          Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onPaste, enabled = !busy, modifier = Modifier.weight(1f)) {
+              Icon(Icons.Filled.ContentPaste, contentDescription = null, modifier = Modifier.size(18.dp))
+              Spacer(Modifier.width(5.dp))
+              Text(stringResource(R.string.subscription_paste))
+            }
+            Button(onClick = onPreview, enabled = draft.source.isNotBlank() && !busy, modifier = Modifier.weight(1f)) {
+              if (draft.previewing) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+              else Text(stringResource(R.string.subscription_recognize))
+            }
+          }
+        }
+        if (draft.error.isNotBlank()) {
+          item { Text(draft.error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        }
+        draft.node?.let { node ->
+          item {
+            Surface(
+              shape = MaterialTheme.shapes.large,
+              color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)),
+            ) {
+              Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(node.name, fontWeight = FontWeight.Bold)
+                Text(
+                  listOf(node.protocol, node.transport, node.security).filter { it.isNotBlank() }.distinct()
+                    .joinToString(" · ") { it.uppercase(Locale.ROOT) },
+                  style = MaterialTheme.typography.labelMedium,
+                  color = MaterialTheme.colorScheme.primary,
+                )
+                if (node.server.isNotBlank()) Text("${node.server}:${node.port}", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.subscription_manual_target, subscriptionTargetLabel(draft.target)), style = MaterialTheme.typography.bodySmall)
+              }
+            }
+          }
+          item { Text(stringResource(R.string.subscription_choose_profile), style = MaterialTheme.typography.labelLarge) }
+          if (draft.loadingProfiles) {
+            item { CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) }
+          } else if (draft.profiles.isEmpty()) {
+            item { Text(stringResource(R.string.subscription_no_target_profiles), color = MaterialTheme.colorScheme.error) }
+          } else {
+            items(draft.profiles, key = { it }) { profile ->
+              FilterChip(
+                selected = profile == draft.selectedProfile,
+                onClick = { onChange(draft.copy(selectedProfile = profile)) },
+                label = { Text(profile) },
+                modifier = Modifier.fillMaxWidth(),
+              )
+            }
+          }
+          item {
+            OutlinedTextField(
+              value = draft.serverName,
+              onValueChange = { onChange(draft.copy(serverName = it)) },
+              label = { Text(stringResource(R.string.subscription_local_server_name)) },
+              singleLine = true,
+              enabled = !busy,
+              modifier = Modifier.fillMaxWidth(),
+            )
+          }
+        }
+      }
+    },
+    confirmButton = {
+      Button(onClick = onImport, enabled = valid && !busy) {
+        if (draft.saving) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+        else Text(stringResource(R.string.subscription_import_action))
+      }
+    },
+    dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text(stringResource(R.string.action_cancel)) } },
+  )
+}
+
+@Composable
+private fun SubscriptionNodeExportDialog(
+  exported: SubscriptionNodeExportUi,
+  onCopy: () -> Unit,
+  onDismiss: () -> Unit,
+) {
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = {
+      Column {
+        Text(exported.name)
+        if (exported.format.isNotBlank()) {
+          Text(
+            exported.format.uppercase(Locale.ROOT),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.primary,
+          )
+        }
+      }
+    },
+    text = {
+      Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.52f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.20f)),
+      ) {
+        SelectionContainer {
+          LazyColumn(Modifier.fillMaxWidth().heightIn(max = 500.dp).padding(12.dp)) {
+            item { Text(exported.content, style = MaterialTheme.typography.bodySmall) }
+          }
+        }
+      }
+    },
+    confirmButton = {
+      Button(onClick = onCopy) {
+        Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(stringResource(R.string.subscription_copy_config))
+      }
+    },
+    dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } },
   )
 }
 

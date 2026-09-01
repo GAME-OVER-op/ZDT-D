@@ -419,6 +419,15 @@ class ApiClient(
     return true
   }
 
+  fun postJsonResult(path: String, data: JSONObject): JSONObject {
+    val obj = requestJson("POST", path, data) ?: JSONObject()
+    if (!jsonBool(obj, "ok", true)) {
+      val error = obj.optString("error", "").trim()
+      throw IOException(error.ifBlank { "API rejected POST" })
+    }
+    return obj
+  }
+
 
   fun deletePath(path: String): Boolean {
     val obj = requestJson("DELETE", path, null)

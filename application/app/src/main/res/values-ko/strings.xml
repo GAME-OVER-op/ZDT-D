@@ -2400,4 +2400,13 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="subscription_import_failed">서버를 가져오지 못했습니다</string>
     <string name="subscription_detach_failed">서버 연결을 해제하지 못했습니다</string>
     <string name="subscription_link_active">구독에 연결되어 자동으로 동기화됩니다</string>
+    <string name="subscription_manual_import">구성 가져오기</string>
+    <string name="subscription_manual_import_desc">단일 서버 링크, sing-box/Hysteria2 JSON 또는 WireGuard 구성을 붙여넣으세요. 서버는 구독 연결 없이 로컬로 생성됩니다.</string>
+    <string name="subscription_manual_source">링크 또는 구성</string>
+    <string name="subscription_paste">붙여넣기</string>
+    <string name="subscription_recognize">인식</string>
+    <string name="subscription_manual_unrecognized">구성을 인식할 수 없거나 설치된 백엔드에서 지원하지 않습니다.</string>
+    <string name="subscription_manual_target">대상: %1$s</string>
+    <string name="subscription_copy_config">구성 복사</string>
+    <string name="subscription_copy_failed">복사할 구성을 준비하지 못했습니다.</string>
 </resources>

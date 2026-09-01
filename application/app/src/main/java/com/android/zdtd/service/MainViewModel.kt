@@ -1203,7 +1203,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     }
   }
 
-  
+
 private fun restoreCachedAppUpdateState() {
   // If checks are disabled, hide banner and clear persisted "available" flag (to avoid surprises).
   if (!root.isAppUpdateCheckEnabled()) {
@@ -6568,6 +6568,18 @@ private fun shQuote(s: String): String {
         log("ERR", if (detail.isBlank()) "$path: POST failed" else "$path: POST failed — $detail")
       }
       withContext(Dispatchers.Main.immediate) { onDone(ok) }
+    }
+  }
+
+  override fun postJsonResult(path: String, obj: JSONObject, onDone: (JSONObject?) -> Unit) {
+    launchIO {
+      val result = runCatching { api.postJsonResult(path, obj) }
+      val value = result.getOrNull()
+      if (value == null) {
+        val detail = result.exceptionOrNull()?.message?.trim().orEmpty()
+        log("ERR", if (detail.isBlank()) "$path: POST failed" else "$path: POST failed — $detail")
+      }
+      withContext(Dispatchers.Main.immediate) { onDone(value) }
     }
   }
 

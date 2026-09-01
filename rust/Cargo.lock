@@ -2140,6 +2140,7 @@ dependencies = [
  "hex",
  "libc",
  "log",
+ "percent-encoding",
  "reqwest",
  "serde",
  "serde_json",

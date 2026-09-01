@@ -2400,4 +2400,13 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="subscription_import_failed">Sunucu içe aktarılamadı</string>
     <string name="subscription_detach_failed">Sunucu abonelikten ayrılamadı</string>
     <string name="subscription_link_active">Aboneliğe bağlı ve otomatik olarak eşitleniyor</string>
+    <string name="subscription_manual_import">Yapılandırmayı içe aktar</string>
+    <string name="subscription_manual_import_desc">Tek bir sunucu bağlantısı, sing-box/Hysteria2 JSON veya WireGuard yapılandırması yapıştırın. Sunucu abonelik bağlantısı olmadan yerel olarak oluşturulur.</string>
+    <string name="subscription_manual_source">Bağlantı veya yapılandırma</string>
+    <string name="subscription_paste">Yapıştır</string>
+    <string name="subscription_recognize">Tanı</string>
+    <string name="subscription_manual_unrecognized">Yapılandırma tanınmadı veya yüklü arka uç tarafından desteklenmiyor.</string>
+    <string name="subscription_manual_target">Hedef: %1$s</string>
+    <string name="subscription_copy_config">Yapılandırmayı kopyala</string>
+    <string name="subscription_copy_failed">Yapılandırma kopyalama için hazırlanamadı.</string>
 </resources>

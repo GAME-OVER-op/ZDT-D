@@ -2401,4 +2401,13 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="subscription_import_failed">Server konnte nicht importiert werden</string>
     <string name="subscription_detach_failed">Server konnte nicht getrennt werden</string>
     <string name="subscription_link_active">Mit einem Abonnement verknüpft und automatisch synchronisiert</string>
+    <string name="subscription_manual_import">Konfiguration importieren</string>
+    <string name="subscription_manual_import_desc">Fügen Sie einen Serverlink, sing-box-/Hysteria2-JSON oder eine WireGuard-Konfiguration ein. Der Server wird lokal ohne Abonnementverknüpfung erstellt.</string>
+    <string name="subscription_manual_source">Link oder Konfiguration</string>
+    <string name="subscription_paste">Einfügen</string>
+    <string name="subscription_recognize">Erkennen</string>
+    <string name="subscription_manual_unrecognized">Die Konfiguration wurde nicht erkannt oder wird vom installierten Backend nicht unterstützt.</string>
+    <string name="subscription_manual_target">Ziel: %1$s</string>
+    <string name="subscription_copy_config">Konfiguration kopieren</string>
+    <string name="subscription_copy_failed">Die Konfiguration konnte nicht zum Kopieren vorbereitet werden.</string>
 </resources>

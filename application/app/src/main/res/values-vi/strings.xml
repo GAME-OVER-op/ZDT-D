@@ -2400,4 +2400,13 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="subscription_import_failed">Không thể nhập máy chủ</string>
     <string name="subscription_detach_failed">Không thể hủy liên kết máy chủ</string>
     <string name="subscription_link_active">Đã liên kết với gói đăng ký và tự động đồng bộ</string>
+    <string name="subscription_manual_import">Nhập cấu hình</string>
+    <string name="subscription_manual_import_desc">Dán liên kết một máy chủ, JSON sing-box/Hysteria2 hoặc cấu hình WireGuard. Máy chủ sẽ được tạo cục bộ, không liên kết với gói đăng ký.</string>
+    <string name="subscription_manual_source">Liên kết hoặc cấu hình</string>
+    <string name="subscription_paste">Dán</string>
+    <string name="subscription_recognize">Nhận dạng</string>
+    <string name="subscription_manual_unrecognized">Không nhận dạng được cấu hình hoặc backend đã cài không hỗ trợ.</string>
+    <string name="subscription_manual_target">Đích: %1$s</string>
+    <string name="subscription_copy_config">Sao chép cấu hình</string>
+    <string name="subscription_copy_failed">Không thể chuẩn bị cấu hình để sao chép.</string>
 </resources>

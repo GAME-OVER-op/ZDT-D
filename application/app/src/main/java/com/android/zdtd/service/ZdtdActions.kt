@@ -243,6 +243,7 @@ interface ZdtdActions {
   fun loadJsonData(path: String, onDone: (JSONObject?) -> Unit)
   fun saveJsonData(path: String, obj: JSONObject, onDone: (Boolean) -> Unit)
   fun postJsonData(path: String, obj: JSONObject = JSONObject(), onDone: (Boolean) -> Unit = {})
+  fun postJsonResult(path: String, obj: JSONObject = JSONObject(), onDone: (JSONObject?) -> Unit)
   fun deleteJsonPath(path: String, onDone: (Boolean) -> Unit = {})
   fun loadTrafficRules(onDone: (ApiModels.TrafficReport?) -> Unit)
 

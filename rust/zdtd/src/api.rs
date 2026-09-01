@@ -3378,6 +3378,28 @@ fn handle_subscriptions_subroutes(stream: TcpStream, method: &str, path: &str, b
                 Err(e) => write_err(stream, e),
             }
         }
+        ("GET", ["api", "subscriptions", id, "nodes", node_id, "export"]) => {
+            match crate::programs::mihomo_subscription::export_node(id, node_id) {
+                Ok(v) => write_json(stream, 200, v),
+                Err(e) => write_err(stream, e),
+            }
+        }
+        ("POST", ["api", "subscription-import", "preview"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: crate::programs::mihomo_subscription::ManualImportPreviewRequest = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                crate::programs::mihomo_subscription::preview_manual_import(req)
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
+        ("POST", ["api", "subscription-import"]) => {
+            let res = (|| -> Result<serde_json::Value> {
+                let req: crate::programs::mihomo_subscription::ManualImportRequest = serde_json::from_slice(body)
+                    .map_err(|e| anyhow::anyhow!("bad JSON body: {e}"))?;
+                crate::programs::mihomo_subscription::import_manual(req)
+            })();
+            match res { Ok(v) => write_json(stream, 200, v), Err(e) => write_err(stream, e) }
+        }
         ("GET", ["api", "subscription-links"]) => {
             match crate::programs::mihomo_subscription::links_view(None, None) {
                 Ok(v) => write_json(stream, 200, v),
@@ -7064,11 +7086,13 @@ fn handle_connection(mut stream: TcpStream, state: SharedState) -> Result<()> {
         || path.starts_with("/api/subscriptions/")
         || path == "/api/subscription-links"
         || path.starts_with("/api/subscription-links/")
+        || path == "/api/subscription-import"
+        || path.starts_with("/api/subscription-import/")
     {
         return handle_subscriptions_subroutes(stream, method.as_str(), path.as_str(), &body);
     }
 
-    
+
     // Construction Studio API
     if path.starts_with("/api/construction/") {
         return handle_construction_subroutes(stream, method.as_str(), path.as_str(), &body, services_running);

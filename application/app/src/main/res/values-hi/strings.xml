@@ -2401,4 +2401,13 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="subscription_import_failed">सर्वर आयात नहीं हो सका</string>
     <string name="subscription_detach_failed">सर्वर अलग नहीं किया जा सका</string>
     <string name="subscription_link_active">सदस्यता से जुड़ा है और अपने आप सिंक होता है</string>
+    <string name="subscription_manual_import">कॉन्फ़िगरेशन आयात करें</string>
+    <string name="subscription_manual_import_desc">एक सर्वर लिंक, sing-box/Hysteria2 JSON या WireGuard कॉन्फ़िगरेशन चिपकाएँ। सर्वर बिना सदस्यता लिंक के स्थानीय रूप से बनाया जाएगा।</string>
+    <string name="subscription_manual_source">लिंक या कॉन्फ़िगरेशन</string>
+    <string name="subscription_paste">चिपकाएँ</string>
+    <string name="subscription_recognize">पहचानें</string>
+    <string name="subscription_manual_unrecognized">कॉन्फ़िगरेशन पहचाना नहीं गया या स्थापित बैकएंड इसका समर्थन नहीं करता।</string>
+    <string name="subscription_manual_target">गंतव्य: %1$s</string>
+    <string name="subscription_copy_config">कॉन्फ़िगरेशन कॉपी करें</string>
+    <string name="subscription_copy_failed">कॉपी करने के लिए कॉन्फ़िगरेशन तैयार नहीं हो सका।</string>
 </resources>

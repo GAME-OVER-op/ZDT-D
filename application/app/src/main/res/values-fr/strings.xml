@@ -2401,4 +2401,13 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="subscription_import_failed">Impossible d’importer le serveur</string>
     <string name="subscription_detach_failed">Impossible de dissocier le serveur</string>
     <string name="subscription_link_active">Lié à un abonnement et synchronisé automatiquement</string>
+    <string name="subscription_manual_import">Importer une configuration</string>
+    <string name="subscription_manual_import_desc">Collez un lien de serveur, un JSON sing-box/Hysteria2 ou une configuration WireGuard. Le serveur sera créé localement sans lien d’abonnement.</string>
+    <string name="subscription_manual_source">Lien ou configuration</string>
+    <string name="subscription_paste">Coller</string>
+    <string name="subscription_recognize">Reconnaître</string>
+    <string name="subscription_manual_unrecognized">La configuration n’est pas reconnue ou n’est pas prise en charge par le backend installé.</string>
+    <string name="subscription_manual_target">Destination : %1$s</string>
+    <string name="subscription_copy_config">Copier la configuration</string>
+    <string name="subscription_copy_failed">Impossible de préparer la configuration à copier.</string>
 </resources>

@@ -2400,4 +2400,13 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="subscription_import_failed">サーバーをインポートできませんでした</string>
     <string name="subscription_detach_failed">サーバーを切り離せませんでした</string>
     <string name="subscription_link_active">サブスクリプションにリンクされ自動同期されます</string>
+    <string name="subscription_manual_import">設定をインポート</string>
+    <string name="subscription_manual_import_desc">1台のサーバーリンク、sing-box/Hysteria2 JSON、またはWireGuard設定を貼り付けます。サーバーは購読リンクなしでローカルに作成されます。</string>
+    <string name="subscription_manual_source">リンクまたは設定</string>
+    <string name="subscription_paste">貼り付け</string>
+    <string name="subscription_recognize">認識</string>
+    <string name="subscription_manual_unrecognized">設定を認識できないか、インストール済みバックエンドでサポートされていません。</string>
+    <string name="subscription_manual_target">インポート先：%1$s</string>
+    <string name="subscription_copy_config">設定をコピー</string>
+    <string name="subscription_copy_failed">コピー用の設定を準備できませんでした。</string>
 </resources>

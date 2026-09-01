@@ -374,7 +374,7 @@ object SingBoxOneLineImporter {
         path = query["path"]?.takeIf { it.isNotBlank() },
         host = query["host"]?.takeIf { it.isNotBlank() },
       )
-      else -> null
+      else -> error("Unsupported transport: $type")
     }
   }
 

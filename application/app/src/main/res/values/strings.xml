@@ -2400,4 +2400,13 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="subscription_import_failed">Could not import this server</string>
     <string name="subscription_detach_failed">Could not detach the server</string>
     <string name="subscription_link_active">Linked to a subscription and synchronized automatically</string>
+    <string name="subscription_manual_import">Import configuration</string>
+    <string name="subscription_manual_import_desc">Paste one server share link, sing-box/Hysteria2 JSON, or a WireGuard configuration. The server will be created locally without a subscription link.</string>
+    <string name="subscription_manual_source">Link or configuration</string>
+    <string name="subscription_paste">Paste</string>
+    <string name="subscription_recognize">Recognize</string>
+    <string name="subscription_manual_unrecognized">The configuration is not recognized or is not supported by the installed backend.</string>
+    <string name="subscription_manual_target">Destination: %1$s</string>
+    <string name="subscription_copy_config">Copy configuration</string>
+    <string name="subscription_copy_failed">Could not prepare the configuration for copying.</string>
 </resources>

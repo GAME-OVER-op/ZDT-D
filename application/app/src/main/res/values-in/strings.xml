@@ -2400,4 +2400,13 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="subscription_import_failed">Server tidak dapat diimpor</string>
     <string name="subscription_detach_failed">Server tidak dapat dilepaskan</string>
     <string name="subscription_link_active">Tertaut ke langganan dan disinkronkan otomatis</string>
+    <string name="subscription_manual_import">Impor konfigurasi</string>
+    <string name="subscription_manual_import_desc">Tempel tautan satu server, JSON sing-box/Hysteria2, atau konfigurasi WireGuard. Server dibuat secara lokal tanpa tautan langganan.</string>
+    <string name="subscription_manual_source">Tautan atau konfigurasi</string>
+    <string name="subscription_paste">Tempel</string>
+    <string name="subscription_recognize">Kenali</string>
+    <string name="subscription_manual_unrecognized">Konfigurasi tidak dikenali atau tidak didukung backend yang terpasang.</string>
+    <string name="subscription_manual_target">Tujuan: %1$s</string>
+    <string name="subscription_copy_config">Salin konfigurasi</string>
+    <string name="subscription_copy_failed">Konfigurasi tidak dapat disiapkan untuk disalin.</string>
 </resources>

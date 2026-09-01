@@ -2400,4 +2400,13 @@ APatch：10700+</string>
     <string name="subscription_import_failed">无法导入服务器</string>
     <string name="subscription_detach_failed">无法解绑服务器</string>
     <string name="subscription_link_active">已连接到订阅并自动同步</string>
+    <string name="subscription_manual_import">导入配置</string>
+    <string name="subscription_manual_import_desc">粘贴单个服务器链接、sing-box/Hysteria2 JSON 或 WireGuard 配置。服务器将在本地创建，不关联订阅。</string>
+    <string name="subscription_manual_source">链接或配置</string>
+    <string name="subscription_paste">粘贴</string>
+    <string name="subscription_recognize">识别</string>
+    <string name="subscription_manual_unrecognized">无法识别该配置，或已安装的后端不支持它。</string>
+    <string name="subscription_manual_target">目标：%1$s</string>
+    <string name="subscription_copy_config">复制配置</string>
+    <string name="subscription_copy_failed">无法准备要复制的配置。</string>
 </resources>

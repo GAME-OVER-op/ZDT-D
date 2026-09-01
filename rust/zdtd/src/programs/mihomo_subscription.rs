@@ -1,5 +1,6 @@
 use anyhow::{bail, Context, Result};
 use base64::{engine::general_purpose, Engine as _};
+use percent_encoding::percent_decode_str;
 use reqwest::{
     blocking::{Client, Response},
     header::{HeaderMap, HeaderName, HeaderValue, LOCATION, USER_AGENT},
@@ -168,6 +169,10 @@ pub struct SubscriptionNode {
     pub name: String,
     pub protocol: String,
     #[serde(default)]
+    pub transport: String,
+    #[serde(default)]
+    pub security: String,
+    #[serde(default)]
     pub server: String,
     #[serde(default)]
     pub port: u16,
@@ -177,6 +182,10 @@ pub struct SubscriptionNode {
     pub definition: JsonValue,
     #[serde(default)]
     pub targets: Vec<String>,
+    /// Original one-line share URI when the provider supplied one.  Keeping it
+    /// intact avoids losing uncommon query parameters when copying the node.
+    #[serde(default)]
+    pub share_link: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -201,6 +210,19 @@ pub struct SubscriptionLink {
 
 #[derive(Debug, Deserialize)]
 pub struct ImportNodeRequest {
+    pub target: String,
+    pub profile: String,
+    pub server_name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ManualImportPreviewRequest {
+    pub content: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ManualImportRequest {
+    pub content: String,
     pub target: String,
     pub profile: String,
     pub server_name: String,
@@ -275,6 +297,9 @@ fn read_nodes(id: &str) -> Vec<SubscriptionNode> {
         .ok()
         .and_then(|raw| serde_json::from_str(&raw).ok())
         .unwrap_or_default()
+        .into_iter()
+        .map(normalize_stored_node)
+        .collect()
 }
 
 fn write_nodes(id: &str, nodes: &[SubscriptionNode]) -> Result<()> {
@@ -282,6 +307,20 @@ fn write_nodes(id: &str, nodes: &[SubscriptionNode]) -> Result<()> {
     write_json_atomic(&path, nodes)?;
     chmod_600_best_effort(&path);
     Ok(())
+}
+
+fn preserve_existing_node_ids(subscription_id: &str, nodes: &mut [SubscriptionNode]) {
+    let existing = read_nodes(subscription_id);
+    let mut used = BTreeSet::<String>::new();
+    for node in nodes {
+        let Some(previous) = existing.iter().find(|previous| {
+            previous.protocol.eq_ignore_ascii_case(&node.protocol)
+                && previous.name.eq_ignore_ascii_case(&node.name)
+                && !used.contains(&previous.id)
+        }) else { continue; };
+        node.id = previous.id.clone();
+        used.insert(previous.id.clone());
+    }
 }
 
 fn write_store(store: &SubscriptionStore) -> Result<()> {
@@ -535,6 +574,26 @@ pub fn nodes_view(id: &str) -> Result<JsonValue> {
     Ok(json!({"ok": true, "subscription": {"id": item.id, "name": item.name}, "nodes": nodes, "imports": imports}))
 }
 
+pub fn export_node(subscription_id: &str, node_id: &str) -> Result<JsonValue> {
+    ensure_id(subscription_id)?;
+    if !node_id.starts_with("node_") { bail!("invalid node id"); }
+    let node = read_nodes(subscription_id).into_iter()
+        .find(|node| node.id == node_id)
+        .ok_or_else(|| anyhow::anyhow!("subscription node not found"))?;
+    let (content, format) = if !node.share_link.trim().is_empty() {
+        (node.share_link.clone(), "uri")
+    } else {
+        match node.protocol.as_str() {
+            "hysteria2" => (render_hysteria2_config(&node, 11590)?, "json"),
+            "wireguard" => (render_wireproxy_config(&node, 1167)?, "conf"),
+            "vless" | "vmess" | "trojan" | "shadowsocks" | "socks" =>
+                (render_singbox_config(&node, 2080)?, "json"),
+            _ => (serde_json::to_string_pretty(&node.definition)?, "json"),
+        }
+    };
+    Ok(json!({"ok": true, "content": content, "format": format, "name": node.name}))
+}
+
 pub fn links_view(target: Option<&str>, profile: Option<&str>) -> Result<JsonValue> {
     let links = read_links()?;
     let mut items: Vec<SubscriptionLink> = links.links.into_values()
@@ -722,7 +781,7 @@ pub fn refresh(id: &str) -> Result<SubscriptionStatus> {
     let old = read_status(id);
     let result = refresh_inner(&item);
     match result {
-        Ok((provider_text, mut status, nodes)) => {
+        Ok((provider_text, mut status, mut nodes)) => {
             // The URL/auth/options can be edited while the network request is in flight.
             // Never let an older request overwrite the provider produced for newer settings.
             let current = match get(id) {
@@ -744,6 +803,9 @@ pub fn refresh(id: &str) -> Result<SubscriptionStatus> {
             let path = provider_path(id);
             write_text_atomic(&path, &provider_text)?;
             chmod_600_best_effort(&path);
+            // Keep links created by older builds valid when only presentation
+            // normalization changes (for example percent-decoded node names).
+            preserve_existing_node_ids(id, &mut nodes);
             write_nodes(id, &nodes)?;
             write_status(id, &status)?;
             sync_provider_to_profiles(id);
@@ -867,17 +929,95 @@ fn normalized_protocol(raw: &str) -> String {
         "hy2" => "hysteria2".to_string(),
         "ss" => "shadowsocks".to_string(),
         "wg" => "wireguard".to_string(),
+        "socks4" | "socks4a" | "socks5" => "socks".to_string(),
         value => value.to_string(),
     }
 }
 
-fn targets_for_protocol(protocol: &str) -> Vec<String> {
+fn decode_node_name(raw: &str) -> String {
+    let decoded = percent_decode_str(raw).decode_utf8_lossy();
+    decoded.chars()
+        .filter(|c| !c.is_control() || matches!(c, '\t' | '\n'))
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+fn transport_from_definition(definition: &JsonValue) -> String {
+    let normalized = |raw: &str| {
+        raw.trim()
+            .to_ascii_lowercase()
+            .replace("websocket", "ws")
+            .replace("none", "tcp")
+    };
+    if let Some(value) = definition.get("transport") {
+        if let Some(raw) = value.as_str() { return normalized(raw); }
+        if value.is_object() {
+            let raw = json_string_any(value, &["type"]);
+            if !raw.is_empty() { return normalized(&raw); }
+        }
+    }
+    normalized(&json_string_any(definition, &["network", "net"]))
+}
+
+fn security_from_definition(definition: &JsonValue) -> String {
+    if definition.get("reality-opts").is_some()
+        || definition.get("reality_opts").is_some()
+        || !json_string_any(definition, &["pbk", "public-key", "public_key"]).is_empty()
+        || definition.get("tls").and_then(|tls| tls.get("reality")).is_some()
+    {
+        return "reality".to_string();
+    }
+    let raw = json_string_any(definition, &["security"]);
+    if !raw.is_empty() && !raw.eq_ignore_ascii_case("none") { return raw.to_ascii_lowercase(); }
+    if definition.get("tls").map(|value| value.is_object() || value.as_bool() == Some(true)).unwrap_or(false) {
+        return "tls".to_string();
+    }
+    String::new()
+}
+
+fn targets_for_protocol(protocol: &str, transport: &str) -> Vec<String> {
     match protocol {
-        "hysteria2" => vec!["sing-box".to_string(), "hysteria2".to_string()],
-        "wireguard" => vec!["sing-box".to_string(), "wireproxy".to_string()],
-        "vless" | "vmess" | "trojan" | "shadowsocks" | "socks" => vec!["sing-box".to_string()],
+        "hysteria2" => vec!["hysteria2".to_string()],
+        "wireguard" => vec!["wireproxy".to_string()],
+        // Only transports rendered by this importer are offered. The bundled
+        // sing-box 1.13.x does not implement XHTTP, so those nodes stay
+        // visible/copyable without creating a silently incomplete config.
+        "vless" | "vmess" | "trojan"
+            if matches!(transport, "" | "tcp" | "ws" | "grpc" | "http" | "httpupgrade") =>
+                vec!["sing-box".to_string()],
+        "shadowsocks" | "socks" => vec!["sing-box".to_string()],
         _ => Vec::new(),
     }
+}
+
+fn normalize_stored_node(mut node: SubscriptionNode) -> SubscriptionNode {
+    node.name = decode_node_name(&node.name);
+    node.protocol = normalized_protocol(&node.protocol);
+
+    // Compatibility repair for nodes written by the first library build: a
+    // share-link query such as `type=xhttp` overwrote `type=vless`.
+    if matches!(node.protocol.as_str(), "xhttp" | "grpc" | "ws" | "httpupgrade")
+        && node.definition.get("uuid").is_some()
+    {
+        if node.transport.is_empty() { node.transport = node.protocol.clone(); }
+        let encryption = json_string_any(&node.definition, &["encryption"]);
+        node.protocol = if encryption.eq_ignore_ascii_case("none")
+            || node.definition.get("flow").is_some()
+            || node.definition.get("pbk").is_some()
+        { "vless".to_string() } else { "vmess".to_string() };
+    }
+    if node.transport.is_empty() { node.transport = transport_from_definition(&node.definition); }
+    if node.security.is_empty() { node.security = security_from_definition(&node.definition); }
+    if node.security.is_empty() && matches!(node.protocol.as_str(), "hysteria2" | "trojan") {
+        node.security = "tls".to_string();
+    }
+    node.targets = if node.server.is_empty() || node.port == 0 {
+        Vec::new()
+    } else {
+        targets_for_protocol(&node.protocol, &node.transport)
+    };
+    node
 }
 
 fn stable_node_id(subscription_id: &str, protocol: &str, name: &str, occurrence: usize) -> String {
@@ -893,27 +1033,40 @@ fn stable_node_id(subscription_id: &str, protocol: &str, name: &str, occurrence:
     format!("node_{}", &digest[..20])
 }
 
-fn node_from_definition(subscription_id: &str, definition: JsonValue, occurrence: usize) -> Option<SubscriptionNode> {
+fn node_from_definition(subscription_id: &str, mut definition: JsonValue, occurrence: usize) -> Option<SubscriptionNode> {
+    let share_link = definition.as_object_mut()
+        .and_then(|obj| obj.remove("_zdt_share_link"))
+        .and_then(|value| value.as_str().map(str::to_string))
+        .unwrap_or_default();
     let protocol = normalized_protocol(&json_string_any(&definition, &["type", "protocol"]));
     if protocol.is_empty() { return None; }
-    let name = json_string_any(&definition, &["name", "tag", "remarks"]);
+    let name = decode_node_name(&json_string_any(&definition, &["name", "tag", "remarks"]));
     let name = if name.is_empty() { format!("{} {}", protocol, occurrence + 1) } else { name };
     let server = json_string_any(&definition, &["server", "address", "host"]);
     let port = json_u16_any(&definition, &["port", "server_port", "server-port"]);
-    let targets = if server.is_empty() || port == 0 { Vec::new() } else { targets_for_protocol(&protocol) };
-    Some(SubscriptionNode {
+    let transport = transport_from_definition(&definition);
+    let mut security = security_from_definition(&definition);
+    if security.is_empty() && matches!(protocol.as_str(), "hysteria2" | "trojan") {
+        security = "tls".to_string();
+    }
+    let targets = if server.is_empty() || port == 0 { Vec::new() } else { targets_for_protocol(&protocol, &transport) };
+    Some(normalize_stored_node(SubscriptionNode {
         id: stable_node_id(subscription_id, &protocol, &name, occurrence),
         name,
         protocol: protocol.clone(),
+        transport,
+        security,
         server,
         port,
         definition,
         targets,
-    })
+        share_link,
+    }))
 }
 
 fn definition_from_uri(line: &str) -> Option<JsonValue> {
-    let scheme = line.split_once("://")?.0.to_ascii_lowercase();
+    let original = line.trim();
+    let scheme = original.split_once("://")?.0.to_ascii_lowercase();
     if scheme == "vmess" && !line.split_once("vmess://").map(|(_, tail)| tail).unwrap_or("").contains('@') {
         let encoded = line.trim().strip_prefix("vmess://")?.split('#').next()?;
         let bytes = general_purpose::STANDARD.decode(encoded)
@@ -928,6 +1081,7 @@ fn definition_from_uri(line: &str) -> Option<JsonValue> {
         if let Some(v) = obj.remove("id") { obj.insert("uuid".to_string(), v); }
         if let Some(v) = obj.remove("aid") { obj.insert("alterId".to_string(), v); }
         if let Some(v) = obj.remove("net") { obj.insert("network".to_string(), v); }
+        obj.insert("_zdt_share_link".to_string(), json!(original));
         return Some(value);
     }
     if scheme == "ss" {
@@ -941,7 +1095,14 @@ fn definition_from_uri(line: &str) -> Option<JsonValue> {
                 .and_then(|bytes| String::from_utf8(bytes).ok())?;
             if decoded.contains('@') {
                 let fragment = line.split_once('#').map(|(_, value)| value).unwrap_or("");
-                return definition_from_uri(&format!("ss://{decoded}#{fragment}"));
+                let query = body.split_once('?').map(|(_, value)| value.split('#').next().unwrap_or(""));
+                let rebuilt = match query.filter(|value| !value.is_empty()) {
+                    Some(query) => format!("ss://{decoded}?{query}#{fragment}"),
+                    None => format!("ss://{decoded}#{fragment}"),
+                };
+                let mut value = definition_from_uri(&rebuilt)?;
+                value.as_object_mut()?.insert("_zdt_share_link".to_string(), json!(original));
+                return Some(value);
             }
         }
     }
@@ -951,15 +1112,19 @@ fn definition_from_uri(line: &str) -> Option<JsonValue> {
     obj.insert("type".to_string(), json!(normalized_protocol(&scheme)));
     if let Some(host) = url.host_str() { obj.insert("server".to_string(), json!(host)); }
     if let Some(port) = url.port() { obj.insert("port".to_string(), json!(port)); }
-    let name = url.fragment().unwrap_or("").trim();
+    let name = decode_node_name(url.fragment().unwrap_or(""));
     if !name.is_empty() { obj.insert("name".to_string(), json!(name)); }
-    let user = url.username();
-    let password = url.password().unwrap_or("");
+    let user = percent_decode_str(url.username()).decode_utf8_lossy().into_owned();
+    let password = percent_decode_str(url.password().unwrap_or("")).decode_utf8_lossy().into_owned();
     match normalized_protocol(&scheme).as_str() {
         "vless" | "vmess" => { if !user.is_empty() { obj.insert("uuid".to_string(), json!(user)); } }
-        "trojan" | "hysteria2" => {
+        "trojan" => {
             if !user.is_empty() { obj.insert("password".to_string(), json!(user)); }
             if !password.is_empty() { obj.insert("password".to_string(), json!(password)); }
+        }
+        "hysteria2" => {
+            let auth = if password.is_empty() { user.clone() } else { format!("{user}:{password}") };
+            if !auth.is_empty() { obj.insert("password".to_string(), json!(auth)); }
         }
         "wireguard" => { if !user.is_empty() { obj.insert("private-key".to_string(), json!(user)); } }
         "shadowsocks" => {
@@ -984,8 +1149,17 @@ fn definition_from_uri(line: &str) -> Option<JsonValue> {
         }
     }
     for (key, value) in url.query_pairs() {
-        obj.insert(key.into_owned(), json!(value.into_owned()));
+        let key = key.into_owned();
+        let value = value.into_owned();
+        // Xray-style links use `type` for the transport (tcp/ws/grpc/xhttp).
+        // It must never replace the actual protocol derived from the URI scheme.
+        if key.eq_ignore_ascii_case("type") && matches!(normalized_protocol(&scheme).as_str(), "vless" | "vmess" | "trojan") {
+            obj.insert("network".to_string(), json!(value));
+        } else {
+            obj.insert(key, json!(value));
+        }
     }
+    obj.insert("_zdt_share_link".to_string(), json!(original));
     Some(JsonValue::Object(obj))
 }
 
@@ -1073,7 +1247,18 @@ fn next_local_port(start: u16) -> u16 {
     (start..=u16::MAX).find(|port| !used.contains(port)).unwrap_or(start)
 }
 
+fn endpoint_text(host: &str, port: u16) -> String {
+    if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
+}
+
 fn tls_json(definition: &JsonValue, default_enabled: bool) -> Option<JsonValue> {
+    if let Some(tls) = definition.get("tls").filter(|value| value.is_object()) {
+        return Some(tls.clone());
+    }
     let security = json_string_any(definition, &["security", "tls"]);
     let enabled = default_enabled || security.eq_ignore_ascii_case("tls") || security.eq_ignore_ascii_case("reality") || bool_any(definition, &["tls"]);
     if !enabled { return None; }
@@ -1115,6 +1300,10 @@ fn singbox_outbound(node: &SubscriptionNode) -> Result<JsonValue> {
         "shadowsocks" => {
             out["method"] = json!(json_string_any(d, &["cipher", "method"]));
             out["password"] = json!(json_string_any(d, &["password"]));
+            let plugin = json_string_any(d, &["plugin"]);
+            if !plugin.is_empty() { out["plugin"] = json!(plugin); }
+            let plugin_opts = json_string_any(d, &["plugin_opts", "plugin-opts"]);
+            if !plugin_opts.is_empty() { out["plugin_opts"] = json!(plugin_opts); }
         }
         "socks" => {
             let username = json_string_any(d, &["username"]); if !username.is_empty() { out["username"] = json!(username); }
@@ -1128,12 +1317,12 @@ fn singbox_outbound(node: &SubscriptionNode) -> Result<JsonValue> {
             if !obfs.is_empty() { out["obfs"] = json!({"type": obfs, "password": obfs_password}); }
         }
         "wireguard" => {
-            out["private_key"] = json!(json_string_any(d, &["private-key", "private_key"]));
-            out["peer_public_key"] = json!(json_string_any(d, &["public-key", "public_key", "peer_public_key"]));
-            let psk = json_string_any(d, &["pre-shared-key", "pre_shared_key", "preshared-key"]);
+            out["private_key"] = json!(json_string_any(d, &["private-key", "private_key", "privatekey"]));
+            out["peer_public_key"] = json!(json_string_any(d, &["public-key", "public_key", "publickey", "peer_public_key"]));
+            let psk = json_string_any(d, &["pre-shared-key", "pre_shared_key", "preshared-key", "presharedkey"]);
             if !psk.is_empty() { out["pre_shared_key"] = json!(psk); }
             let mut addresses = Vec::<String>::new();
-            for key in ["ip", "ipv6", "address"] {
+            for key in ["ip", "ipv6", "address", "local_address"] {
                 if let Some(v) = d.get(key) {
                     if let Some(s) = v.as_str() { if !s.trim().is_empty() { addresses.push(s.trim().to_string()); } }
                     if let Some(a) = v.as_array() { addresses.extend(a.iter().filter_map(JsonValue::as_str).map(str::to_string)); }
@@ -1145,6 +1334,10 @@ fn singbox_outbound(node: &SubscriptionNode) -> Result<JsonValue> {
         _ => bail!("node type is not supported by sing-box import"),
     }
 
+    if let Some(transport) = d.get("transport").filter(|value| value.is_object()) {
+        out["transport"] = transport.clone();
+        return Ok(out);
+    }
     let network = json_string_any(d, &["network", "type"]);
     if network == "ws" {
         let opts = d.get("ws-opts").or_else(|| d.get("ws_opts"));
@@ -1159,6 +1352,19 @@ fn singbox_outbound(node: &SubscriptionNode) -> Result<JsonValue> {
         let service = opts.map(|v| json_string_any(v, &["grpc-service-name", "service-name", "service_name"]))
             .filter(|v| !v.is_empty()).unwrap_or_else(|| json_string_any(d, &["grpc-service-name", "serviceName"]));
         out["transport"] = json!({"type":"grpc", "service_name": service});
+    } else if network == "http" {
+        let opts = d.get("http-opts").or_else(|| d.get("http_opts"));
+        let path = opts.map(|v| json_string_any(v, &["path"]))
+            .filter(|v| !v.is_empty()).unwrap_or_else(|| json_string_any(d, &["path"]));
+        let host = opts.and_then(|v| v.get("headers")).map(|v| json_string_any(v, &["Host", "host"]))
+            .filter(|v| !v.is_empty()).unwrap_or_else(|| json_string_any(d, &["host"]));
+        out["transport"] = json!({"type":"http", "path": path});
+        if !host.is_empty() { out["transport"]["host"] = json!([host]); }
+    } else if network == "httpupgrade" {
+        let path = json_string_any(d, &["path"]);
+        let host = json_string_any(d, &["host"]);
+        out["transport"] = json!({"type":"httpupgrade", "path": path});
+        if !host.is_empty() { out["transport"]["host"] = json!(host); }
     }
     Ok(out)
 }
@@ -1179,7 +1385,7 @@ fn render_hysteria2_config(node: &SubscriptionNode, local_port: u16) -> Result<S
     let d = &node.definition;
     let sni = json_string_any(d, &["sni", "servername", "server-name", "peer"]);
     let mut config = json!({
-        "server": format!("{}:{}", node.server, node.port),
+        "server": endpoint_text(&node.server, node.port),
         "auth": json_string_any(d, &["password", "auth", "auth-str", "auth_str"]),
         "tls": {"insecure": bool_any(d, &["skip-cert-verify", "allowInsecure", "insecure"])},
         "socks5": {"listen": format!("127.0.0.1:{local_port}"), "disableUDP": false}
@@ -1194,22 +1400,237 @@ fn render_hysteria2_config(node: &SubscriptionNode, local_port: u16) -> Result<S
 fn render_wireproxy_config(node: &SubscriptionNode, local_port: u16) -> Result<String> {
     if node.protocol != "wireguard" { bail!("node is not WireGuard"); }
     let d = &node.definition;
-    let private_key = json_string_any(d, &["private-key", "private_key"]);
-    let public_key = json_string_any(d, &["public-key", "public_key", "peer_public_key"]);
+    let private_key = json_string_any(d, &["private-key", "private_key", "privatekey"]);
+    let public_key = json_string_any(d, &["public-key", "public_key", "publickey", "peer_public_key"]);
     if private_key.is_empty() || public_key.is_empty() { bail!("WireGuard keys are incomplete"); }
     let mut addresses = Vec::<String>::new();
-    for key in ["ip", "ipv6", "address"] {
+    for key in ["ip", "ipv6", "address", "local_address"] {
         if let Some(v) = d.get(key) {
             if let Some(s) = v.as_str() { addresses.push(s.to_string()); }
             if let Some(a) = v.as_array() { addresses.extend(a.iter().filter_map(JsonValue::as_str).map(str::to_string)); }
         }
     }
     if addresses.is_empty() { bail!("WireGuard local address is missing"); }
-    let psk = json_string_any(d, &["pre-shared-key", "pre_shared_key", "preshared-key"]);
+    let psk = json_string_any(d, &["pre-shared-key", "pre_shared_key", "preshared-key", "presharedkey"]);
     let mut text = format!("[Interface]\nPrivateKey = {private_key}\nAddress = {}\nDNS = 1.1.1.1\n\n[Peer]\nPublicKey = {public_key}\n", addresses.join(", "));
     if !psk.is_empty() { text.push_str(&format!("PresharedKey = {psk}\n")); }
-    text.push_str(&format!("Endpoint = {}:{}\nAllowedIPs = 0.0.0.0/0, ::/0\n\n[Socks5]\nBindAddress = 127.0.0.1:{local_port}\n", node.server, node.port));
+    text.push_str(&format!("Endpoint = {}\nAllowedIPs = 0.0.0.0/0, ::/0\n\n[Socks5]\nBindAddress = 127.0.0.1:{local_port}\n", endpoint_text(&node.server, node.port)));
     Ok(text)
+}
+
+struct ParsedManualSource {
+    node: SubscriptionNode,
+    exact_content: Option<String>,
+    exact_target: Option<&'static str>,
+    format: &'static str,
+}
+
+fn endpoint_parts(raw: &str) -> Option<(String, u16)> {
+    let value = raw.trim();
+    if let Some(rest) = value.strip_prefix('[') {
+        let end = rest.find(']')?;
+        let host = rest[..end].to_string();
+        let port = rest[end + 1..].strip_prefix(':')?.parse().ok()?;
+        return Some((host, port));
+    }
+    let (host, port) = value.rsplit_once(':')?;
+    Some((host.trim().to_string(), port.trim().parse().ok()?))
+}
+
+fn node_from_manual_definition(mut definition: JsonValue) -> Result<SubscriptionNode> {
+    if definition.get("port").is_none() {
+        if let Some(port) = definition.get("server_port").cloned() {
+            definition["port"] = port;
+        }
+    }
+    node_from_definition("manual", definition, 0)
+        .ok_or_else(|| anyhow::anyhow!("configuration does not contain a supported server node"))
+}
+
+fn parse_wireguard_conf(text: &str) -> Option<SubscriptionNode> {
+    let mut section = String::new();
+    let mut interface = BTreeMap::<String, String>::new();
+    let mut peer = BTreeMap::<String, String>::new();
+    let mut socks_bind = String::new();
+    for raw in text.lines() {
+        let line = raw.split('#').next().unwrap_or("").trim();
+        if line.starts_with('[') && line.ends_with(']') {
+            section = line.trim_matches(['[', ']']).trim().to_ascii_lowercase();
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else { continue; };
+        let key = key.trim().to_ascii_lowercase();
+        let value = value.trim().to_string();
+        match section.as_str() {
+            "interface" => { interface.insert(key, value); }
+            "peer" => { peer.insert(key, value); }
+            "socks5" if key == "bindaddress" => socks_bind = value,
+            _ => {}
+        }
+    }
+    let endpoint = peer.get("endpoint")?;
+    let (server, port) = endpoint_parts(endpoint)?;
+    let private_key = interface.get("privatekey")?.clone();
+    let public_key = peer.get("publickey")?.clone();
+    let address = interface.get("address")?.split(',').map(str::trim).filter(|v| !v.is_empty()).collect::<Vec<_>>();
+    if address.is_empty() { return None; }
+    let mut definition = json!({
+        "type":"wireguard", "name":"WireGuard", "server":server, "port":port,
+        "private-key":private_key, "public-key":public_key, "address":address,
+    });
+    if let Some(psk) = peer.get("presharedkey") { definition["pre-shared-key"] = json!(psk); }
+    if !socks_bind.is_empty() { definition["bind-address"] = json!(socks_bind); }
+    node_from_definition("manual", definition, 0)
+}
+
+fn parse_manual_source(raw: &str) -> Result<ParsedManualSource> {
+    let text = raw.trim();
+    if text.is_empty() { bail!("configuration is empty"); }
+    if text.len() > 4 * 1024 * 1024 { bail!("configuration is too large"); }
+
+    if !text.contains('\n') && is_supported_uri_line(text) {
+        let definition = definition_from_uri(text)
+            .ok_or_else(|| anyhow::anyhow!("unable to parse share link"))?;
+        let node = node_from_manual_definition(definition)?;
+        if node.targets.is_empty() {
+            bail!("{}{} is not supported for local import", node.protocol, if node.transport.is_empty() { String::new() } else { format!("/{}", node.transport) });
+        }
+        return Ok(ParsedManualSource { node, exact_content: None, exact_target: None, format: "uri" });
+    }
+
+    if text.starts_with('{') {
+        let value: JsonValue = serde_json::from_str(text).context("invalid JSON configuration")?;
+        if let Some(outbounds) = value.get("outbounds").and_then(JsonValue::as_array) {
+            let proxy_outbounds = outbounds.iter().filter(|item| {
+                matches!(normalized_protocol(&json_string_any(item, &["type"])).as_str(),
+                    "vless" | "vmess" | "trojan" | "shadowsocks" | "socks")
+            }).collect::<Vec<_>>();
+            if proxy_outbounds.len() != 1 {
+                bail!("sing-box JSON must contain exactly one supported proxy outbound");
+            }
+            let outbound = (*proxy_outbounds[0]).clone();
+            let node = node_from_manual_definition(outbound)?;
+            if node.targets.iter().all(|target| target != "sing-box") {
+                bail!("sing-box JSON uses an unsupported transport");
+            }
+            return Ok(ParsedManualSource {
+                node,
+                exact_content: Some(serde_json::to_string_pretty(&value)?),
+                exact_target: Some("sing-box"),
+                format: "json",
+            });
+        }
+
+        if value.get("auth").is_some() && value.get("server").and_then(JsonValue::as_str).is_some() {
+            let endpoint = value.get("server").and_then(JsonValue::as_str).unwrap_or("");
+            let (server, port) = endpoint_parts(endpoint).ok_or_else(|| anyhow::anyhow!("invalid Hysteria2 server endpoint"))?;
+            let tls = value.get("tls").cloned().unwrap_or_else(|| json!({}));
+            let name = value.get("name").and_then(JsonValue::as_str).unwrap_or("Hysteria2");
+            let definition = json!({
+                "type":"hysteria2", "name":name, "server":server, "port":port,
+                "password":value.get("auth").cloned().unwrap_or(JsonValue::Null), "tls":tls,
+            });
+            let node = node_from_manual_definition(definition)?;
+            return Ok(ParsedManualSource {
+                node,
+                exact_content: Some(serde_json::to_string_pretty(&value)?),
+                exact_target: Some("hysteria2"),
+                format: "json",
+            });
+        }
+
+        if value.get("type").is_some() {
+            let node = node_from_manual_definition(value)?;
+            if node.targets.is_empty() { bail!("JSON node type is not supported for local import"); }
+            return Ok(ParsedManualSource { node, exact_content: None, exact_target: None, format: "json" });
+        }
+        bail!("JSON format is not recognized");
+    }
+
+    if text.contains("[Interface]") && text.contains("[Peer]") {
+        let node = parse_wireguard_conf(text).ok_or_else(|| anyhow::anyhow!("invalid WireGuard configuration"))?;
+        return Ok(ParsedManualSource {
+            node,
+            // Re-render as WireProxy config so a compatible, conflict-free
+            // local Socks5 BindAddress is always present.
+            exact_content: None,
+            exact_target: None,
+            format: "conf",
+        });
+    }
+
+    bail!("unsupported configuration format")
+}
+
+pub fn preview_manual_import(request: ManualImportPreviewRequest) -> Result<JsonValue> {
+    let parsed = parse_manual_source(&request.content)?;
+    Ok(json!({"ok":true, "node":parsed.node, "format":parsed.format}))
+}
+
+pub fn import_manual(request: ManualImportRequest) -> Result<JsonValue> {
+    let parsed = parse_manual_source(&request.content)?;
+    let target = request.target.trim().to_ascii_lowercase();
+    if !targets_for_protocol(&parsed.node.protocol, &parsed.node.transport).iter().any(|value| value == &target) {
+        bail!("configuration cannot be imported into this target");
+    }
+    if let Some(exact_target) = parsed.exact_target {
+        if exact_target != target { bail!("configuration belongs to a different target"); }
+    }
+    let profile = request.profile.trim().to_string();
+    let requested_name = request.server_name.trim();
+    let server_name = if requested_name.is_empty() { safe_server_name(&parsed.node.name) } else { safe_server_name(requested_name) };
+    crate::programs::singbox::ensure_valid_profile_name(&profile)?;
+    crate::programs::singbox::ensure_valid_profile_name(&server_name)?;
+    ensure_target_accepts_new_server(&target, &profile)?;
+    let root = target_server_root(&target, &profile, &server_name)?;
+    if root.exists() { bail!("target server already exists"); }
+    fs::create_dir_all(root.join("log"))?;
+    let local_port = match target.as_str() {
+        "sing-box" => next_local_port(2080),
+        "hysteria2" => next_local_port(11590),
+        "wireproxy" => next_local_port(1167),
+        _ => bail!("unsupported import target"),
+    };
+    let result = (|| -> Result<()> {
+        match target.as_str() {
+            "sing-box" => {
+                let content = match parsed.exact_content.as_deref() {
+                    Some(content) => content.to_string(),
+                    None => render_singbox_config(&parsed.node, local_port)?,
+                };
+                write_text_atomic(&root.join("config.json"), &content)?;
+                write_json_atomic(&root.join("setting.json"), &json!({"enabled":false,"port":local_port}))?;
+                write_text_atomic(&root.join("log/sing-box.log"), "")?;
+                crate::programs::singbox::normalize_config_for_profile_server(&profile, &server_name)?;
+            }
+            "hysteria2" => {
+                let content = match parsed.exact_content.as_deref() {
+                    Some(content) => content.to_string(),
+                    None => render_hysteria2_config(&parsed.node, local_port)?,
+                };
+                write_text_atomic(&root.join("config.json"), &content)?;
+                write_json_atomic(&root.join("setting.json"), &json!({"enabled":false,"socks5_port":local_port,"log_level":"info"}))?;
+                write_text_atomic(&root.join("log/hysteria2.log"), "")?;
+                crate::programs::hysteria2::normalize_config_for_profile_server(&profile, &server_name)?;
+            }
+            "wireproxy" => {
+                let content = match parsed.exact_content.as_deref() {
+                    Some(content) => content.to_string(),
+                    None => render_wireproxy_config(&parsed.node, local_port)?,
+                };
+                write_text_atomic(&root.join("config.conf"), &content)?;
+                write_json_atomic(&root.join("setting.json"), &json!({"enabled":false}))?;
+                write_text_atomic(&root.join("log/wireproxy.log"), "")?;
+            }
+            _ => unreachable!(),
+        }
+        Ok(())
+    })();
+    if let Err(error) = result {
+        let _ = fs::remove_dir_all(&root);
+        return Err(error);
+    }
+    Ok(json!({"ok":true, "target":target, "profile":profile, "server_name":server_name}))
 }
 
 fn link_id_for(target: &str, profile: &str, server: &str) -> String {
@@ -1246,6 +1667,9 @@ fn local_port_for_link(link: &SubscriptionLink) -> u16 {
 }
 
 fn write_link_config(link: &SubscriptionLink, node: &SubscriptionNode) -> Result<()> {
+    if !targets_for_protocol(&node.protocol, &node.transport).iter().any(|target| target == &link.target) {
+        bail!("linked node is no longer compatible with target {}", link.target);
+    }
     let root = target_server_root(&link.target, &link.profile, &link.server_name)?;
     if !root.is_dir() { bail!("linked local server no longer exists"); }
     let port = local_port_for_link(link);
@@ -1267,7 +1691,9 @@ pub fn import_node(subscription_id: &str, node_id: &str, request: ImportNodeRequ
         .ok_or_else(|| anyhow::anyhow!("subscription node not found"))?;
     if node.server.is_empty() || node.port == 0 { bail!("subscription node endpoint is incomplete"); }
     let target = request.target.trim().to_ascii_lowercase();
-    if !node.targets.iter().any(|value| value == &target) { bail!("node cannot be imported into this target"); }
+    if !targets_for_protocol(&node.protocol, &node.transport).iter().any(|value| value == &target) {
+        bail!("node cannot be imported into this target");
+    }
     let profile = request.profile.trim().to_string();
     let requested_name = request.server_name.trim();
     let server_name = if requested_name.is_empty() { safe_server_name(&node.name) } else { safe_server_name(requested_name) };

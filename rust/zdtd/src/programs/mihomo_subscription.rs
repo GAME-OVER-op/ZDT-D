@@ -16,7 +16,6 @@ use std::{
     fs,
     io::Read,
     path::{Path, PathBuf},
-    str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering},
         Mutex, OnceLock,
@@ -295,7 +294,7 @@ fn write_links(links: &SubscriptionLinks) -> Result<()> {
 fn read_nodes(id: &str) -> Vec<SubscriptionNode> {
     fs::read_to_string(nodes_path(id))
         .ok()
-        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .and_then(|raw| serde_json::from_str::<Vec<SubscriptionNode>>(&raw).ok())
         .unwrap_or_default()
         .into_iter()
         .map(normalize_stored_node)

@@ -1130,10 +1130,10 @@ fn definition_from_uri(line: &str) -> Option<JsonValue> {
             let credential = if !password.is_empty() {
                 format!("{user}:{password}")
             } else {
-                general_purpose::STANDARD.decode(user)
-                    .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(user))
-                    .or_else(|_| general_purpose::URL_SAFE.decode(user))
-                    .or_else(|_| general_purpose::URL_SAFE_NO_PAD.decode(user)).ok()
+                general_purpose::STANDARD.decode(&user)
+                    .or_else(|_| general_purpose::STANDARD_NO_PAD.decode(&user))
+                    .or_else(|_| general_purpose::URL_SAFE.decode(&user))
+                    .or_else(|_| general_purpose::URL_SAFE_NO_PAD.decode(&user)).ok()
                     .and_then(|bytes| String::from_utf8(bytes).ok())
                     .unwrap_or_else(|| user.to_string())
             };

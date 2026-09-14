@@ -90,7 +90,38 @@ runtime failures immediately clear the stale warm score and apply the existing
 selection cooldown.
 
 For failover within one request, remaining GREEN backends are ordered from the
-best known latency to the worst, with unmeasured routes last.
+best known latency to the worst, with unmeasured routes last. When more than
+one GREEN backend exists, establishment is additionally hedged: if the first
+candidate has not produced a stream within `hedge_stagger_ms` (widened to
+twice the candidate's measured runtime latency, so healthy mobile RTT jitter
+never spawns duplicate connects), the next selectable candidate dials in
+parallel and the first winner is used. The losing attempt is never aborted
+mid-handshake: it resolves in the background under its own timeout window,
+where a background janitor applies the original per-attempt health bookkeeping
+(a success refreshes the runtime EWMA, a timeout marks a soft failure and
+schedules the strict Full recheck). At most two attempts run at once, so in
+the healthy case traffic volume is identical to the sequential dialer;
+duplicate connects only appear when the preferred route is actually stalling,
+and they are attempts the sequential dialer would have made anyway — just
+later.
+
+### Warm tunnels for repeated targets
+
+DNSCrypt reconnects to the same resolver addresses over and over: native
+DNSCrypt opens a fresh SOCKS CONNECT per query burst and DoH pools long-lived
+HTTP/1.1 or HTTP/2 connections to the same endpoint. With `warm_tunnels =
+true`, every established SOCKS-routed tunnel to such a repeat target is
+followed by one background replacement tunnel, and the next request for the
+same target is served from that pre-connected tunnel instead of paying the
+full backend TCP + SOCKS handshake again.
+
+The replacement dial is fully detached from the request path (it never adds
+latency), is bounded by the usual attempt timeouts, and only SOCKS-routed
+tunnels are cached — DIRECT is never pre-connected. Tunnels older than
+`warm_tunnel_ttl_secs` are closed instead of served, and the `warm_tunnel_hits`
+status counter makes the hit rate visible. In steady state the number of
+upstream connects per request is unchanged; only the final replacement before
+an idle gap can go unused.
 
 ### Recovery when no GREEN backend exists
 
@@ -129,6 +160,15 @@ verification keeps its existing long cadence.
 `idle_after_secs` is still accepted in `d2s.toml` for upgrade compatibility but
 is no longer used to suspend health checks. No configuration migration is
 required.
+
+The health scheduler itself is event-driven: instead of waking once per second,
+it sleeps until the earliest `next_probe` deadline and is woken immediately by
+runtime/relay failure signals, so failure responsiveness is unchanged while a
+fully idle D2S no longer burns periodic CPU wakeups. A GREEN backend that is
+actively serving real DNSCrypt traffic also skips its scheduled cheap Light
+check: a successful runtime CONNECT proves strictly more than a SOCKS-only
+reachability probe. Strict Full Internet verification keeps its own long
+cadence regardless of traffic.
 
 ### DIRECT health
 
@@ -176,8 +216,11 @@ the current DNSCrypt CONNECT; it does not decide backend health.
 The optional status JSON also exposes relay-lifecycle counters including active
 and peak connections, oldest active connection age, connection-limit drops,
 first-response stalls, half-close timeouts, forced closes, EOF counts, and
-client-vs-remote I/O errors. These counters make leaked or repeatedly stalled
-DNS transports visible without changing backend selection behavior.
+client-vs-remote I/O errors, plus the warm-tunnel hit counter. These counters
+make leaked or repeatedly stalled DNS transports visible without changing
+backend selection behavior. When nothing observable changes between two status
+intervals, the identical status rewrite is skipped so an idle D2S stops
+touching the status file.
 
 ## Probe targets
 

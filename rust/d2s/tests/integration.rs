@@ -1,7 +1,7 @@
 use d2s::{backend::BackendState, start, Config};
 use std::{
     net::{IpAddr, SocketAddr},
-    sync::{Arc, atomic::{AtomicBool, AtomicUsize, Ordering}},
+    sync::{Arc, atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering}},
     time::Duration,
 };
 use tokio::{
@@ -57,6 +57,7 @@ struct MockSocks {
     fail: Arc<AtomicBool>,
     fail_once: Arc<AtomicBool>,
     blackhole: Arc<AtomicBool>,
+    stall_reply_ms: Arc<AtomicU64>,
     accepts: Arc<AtomicUsize>,
     connects: Arc<AtomicUsize>,
     shutdown: watch::Sender<bool>,
@@ -70,12 +71,14 @@ impl MockSocks {
         let fail = Arc::new(AtomicBool::new(initially_failing));
         let fail_once = Arc::new(AtomicBool::new(false));
         let blackhole = Arc::new(AtomicBool::new(false));
+        let stall_reply_ms = Arc::new(AtomicU64::new(0));
         let accepts = Arc::new(AtomicUsize::new(0));
         let connects = Arc::new(AtomicUsize::new(0));
         let (shutdown, mut rx) = watch::channel(false);
         let fail_task = fail.clone();
         let fail_once_task = fail_once.clone();
         let blackhole_task = blackhole.clone();
+        let stall_task = stall_reply_ms.clone();
         let accepts_task = accepts.clone();
         let connects_task = connects.clone();
         let task = tokio::spawn(async move {
@@ -88,15 +91,16 @@ impl MockSocks {
                         let fail = fail_task.clone();
                         let fail_once = fail_once_task.clone();
                         let blackhole = blackhole_task.clone();
+                        let stall = stall_task.clone();
                         let connects = connects_task.clone();
                         tokio::spawn(async move {
-                            let _ = handle_mock_socks(stream, fail, fail_once, blackhole, connects).await;
+                            let _ = handle_mock_socks(stream, fail, fail_once, blackhole, stall, connects).await;
                         });
                     }
                 }
             }
         });
-        Self { addr, fail, fail_once, blackhole, accepts, connects, shutdown, task }
+        Self { addr, fail, fail_once, blackhole, stall_reply_ms, accepts, connects, shutdown, task }
     }
 
     fn set_failing(&self, value: bool) {
@@ -109,6 +113,10 @@ impl MockSocks {
 
     fn set_blackhole(&self, value: bool) {
         self.blackhole.store(value, Ordering::Relaxed);
+    }
+
+    fn set_stall_reply_ms(&self, ms: u64) {
+        self.stall_reply_ms.store(ms, Ordering::Relaxed);
     }
 
     fn reset_count(&self) {
@@ -138,6 +146,7 @@ async fn handle_mock_socks(
     fail: Arc<AtomicBool>,
     fail_once: Arc<AtomicBool>,
     blackhole: Arc<AtomicBool>,
+    stall_reply_ms: Arc<AtomicU64>,
     connects: Arc<AtomicUsize>,
 ) -> std::io::Result<()> {
     let mut greeting = [0u8; 2];
@@ -150,6 +159,11 @@ async fn handle_mock_socks(
     client.read_exact(&mut request).await?;
     let target = read_target(&mut client, request[3]).await?;
     connects.fetch_add(1, Ordering::Relaxed);
+
+    let stall = stall_reply_ms.load(Ordering::Relaxed);
+    if stall > 0 {
+        tokio::time::sleep(Duration::from_millis(stall)).await;
+    }
 
     if fail.load(Ordering::Relaxed) || fail_once.swap(false, Ordering::Relaxed) {
         client.write_all(&[0x05, 0x04, 0x00, 0x01, 0, 0, 0, 0, 0, 0]).await?;
@@ -224,6 +238,9 @@ fn config(backends: Vec<SocketAddr>, probe_target: SocketAddr) -> Config {
         recovery_probe_interval_secs: 1,
         failure_threshold: 1,
         runtime_cooldown_ms: 100,
+        hedge_stagger_ms: 150,
+        warm_tunnels: false,
+        warm_tunnel_ttl_secs: 60,
         idle_after_secs: None,
         probe_targets: vec![probe_target.to_string()],
         max_connections: 64,
@@ -672,6 +689,106 @@ async fn shutdown_abort_releases_active_connection_accounting() {
     assert_eq!(stats.peak_active_connections.load(Ordering::Relaxed), 1);
 
     drop(stream);
+    backend.stop().await;
+    echo.stop().await;
+}
+
+#[tokio::test]
+async fn hedged_dial_races_a_stalled_backend_instead_of_waiting_it_out() {
+    let echo = EchoServer::start().await;
+    let stalled = MockSocks::start(false).await;
+    let fast = MockSocks::start(false).await;
+    let mut cfg = config(vec![stalled.addr, fast.addr], echo.addr);
+    cfg.hedge_stagger_ms = 150;
+    let server = start(cfg).await.unwrap();
+    wait_for_green(&server, 2).await;
+    // Longer than the attempt window: without hedging, a request whose weighted
+    // pick lands on the stalled backend would burn the full sequential timeout
+    // before failing over.
+    stalled.set_stall_reply_ms(1_500);
+
+    for n in 0..10u8 {
+        let started = std::time::Instant::now();
+        roundtrip(server.listen_addr, echo.addr, &[n, b'h']).await;
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(500),
+            "request {n} waited {elapsed:?}; hedged failover did not engage"
+        );
+    }
+
+    server.shutdown().await.unwrap();
+    stalled.stop().await;
+    fast.stop().await;
+    echo.stop().await;
+}
+
+#[tokio::test]
+async fn warm_tunnel_cache_serves_repeat_targets_without_new_upstream_connects() {
+    let echo = EchoServer::start().await;
+    let backend = MockSocks::start(false).await;
+    let mut cfg = config(vec![backend.addr], echo.addr);
+    cfg.warm_tunnels = true;
+    let server = start(cfg).await.unwrap();
+    wait_for_green(&server, 1).await;
+    backend.reset_count();
+
+    roundtrip(server.listen_addr, echo.addr, b"warm-first").await;
+    // The replacement tunnel is established in the background; give it a
+    // moment to land in the cache before asserting on connect counts.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let connects_after_first = backend.count();
+    assert!(
+        connects_after_first >= 2,
+        "first request must dial plus refill one warm tunnel, got {connects_after_first}"
+    );
+
+    roundtrip(server.listen_addr, echo.addr, b"warm-second").await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(
+        server.stats.warm_tunnel_hits.load(Ordering::Relaxed),
+        1,
+        "second request to the same target must be served from the warm cache"
+    );
+    assert_eq!(
+        backend.count(),
+        connects_after_first + 1,
+        "warm hit must trigger exactly one background refill and no fresh request dial"
+    );
+    assert_eq!(server.stats.direct_connections.load(Ordering::Relaxed), 0);
+
+    server.shutdown().await.unwrap();
+    backend.stop().await;
+    echo.stop().await;
+}
+
+#[tokio::test]
+async fn expired_warm_tunnels_are_never_served() {
+    let echo = EchoServer::start().await;
+    let backend = MockSocks::start(false).await;
+    let mut cfg = config(vec![backend.addr], echo.addr);
+    cfg.warm_tunnels = true;
+    cfg.warm_tunnel_ttl_secs = 1;
+    let server = start(cfg).await.unwrap();
+    wait_for_green(&server, 1).await;
+
+    roundtrip(server.listen_addr, echo.addr, b"warm-ttl").await;
+    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    backend.reset_count();
+
+    roundtrip(server.listen_addr, echo.addr, b"warm-ttl-expired").await;
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert!(
+        backend.count() >= 1,
+        "an expired tunnel must force a fresh upstream dial"
+    );
+    assert_eq!(
+        server.stats.warm_tunnel_hits.load(Ordering::Relaxed),
+        0,
+        "an expired tunnel must not be served from the cache"
+    );
+
+    server.shutdown().await.unwrap();
     backend.stop().await;
     echo.stop().await;
 }

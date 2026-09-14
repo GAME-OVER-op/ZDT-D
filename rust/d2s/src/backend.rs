@@ -535,6 +535,20 @@ impl BackendPool {
             } else {
                 now + self.config.recovery_probe_interval()
             };
+            // A GREEN backend that is actively serving real DNSCrypt traffic
+            // skips its scheduled cheap Light check: a successful runtime
+            // CONNECT within the healthy interval proves strictly more than a
+            // SOCKS-only reachability probe. Full Internet verification keeps
+            // its own long cadence regardless of traffic.
+            if mode == ProbeMode::Light
+                && entry.state == BackendState::Green
+                && entry
+                    .last_runtime_success
+                    .map(|success| now.duration_since(success) < self.config.healthy_probe_interval())
+                    .unwrap_or(false)
+            {
+                continue;
+            }
             due.push((entry.addr, mode));
         }
         due
@@ -798,6 +812,11 @@ impl BackendPool {
             }
         }
 
+        // finish_probe always rewrites next_probe for this entry; wake the
+        // health loop so its sleep_until-based scheduler re-arms on the new
+        // deadline instead of sleeping past it.
+        self.health_wake.notify_one();
+
         if let Some((old, new, error, failures)) = transition {
             match new {
                 BackendState::Green => info!(backend = %addr, old_state = ?old, latency_ms = ?log_success, "backend is GREEN after Full Internet probe"),
@@ -824,6 +843,39 @@ impl BackendPool {
     pub async fn addresses(&self) -> Vec<SocketAddr> {
         let inner = self.inner.lock().await;
         inner.entries.iter().map(|entry| entry.addr).collect()
+    }
+
+    /// Earliest moment the health loop must run again. `None` means "wait for
+    /// an explicit wake" (all probes in flight). Backends currently being
+    /// probed are excluded: their `next_probe` is rewritten only when the
+    /// probe finishes, and `finish_probe` notifies the health wake, so the
+    /// scheduler never sleeps past a deadline.
+    pub async fn next_probe_deadline(&self) -> Option<Instant> {
+        let inner = self.inner.lock().await;
+        inner
+            .entries
+            .iter()
+            .filter(|entry| !entry.probe_in_flight)
+            .map(|entry| entry.next_probe)
+            .min()
+    }
+
+    /// Current runtime latency estimate used to widen the hedge stagger window
+    /// on mobile networks where loopback-to-loopback timeouts are dominated by
+    /// upstream RTT.
+    pub async fn runtime_ewma_ms(&self, addr: SocketAddr) -> Option<f64> {
+        let inner = self.inner.lock().await;
+        let index = inner.index.get(&addr).copied()?;
+        inner.entries[index].runtime_latency_ewma_ms
+    }
+
+    /// GREEN and outside the runtime selection cooldown: safe to hand the
+    /// backend to the hedged dialer as a candidate.
+    pub async fn backend_selectable(&self, addr: SocketAddr) -> bool {
+        let inner = self.inner.lock().await;
+        let Some(index) = inner.index.get(&addr).copied() else { return false; };
+        let entry = &inner.entries[index];
+        entry.state == BackendState::Green && entry.runtime_cooldown_until <= Instant::now()
     }
 
     pub async fn any_green(&self) -> bool {

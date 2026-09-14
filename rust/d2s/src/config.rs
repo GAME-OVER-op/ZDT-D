@@ -21,6 +21,8 @@ fn default_healthy_probe_interval_secs() -> u64 { 30 }
 fn default_recovery_probe_interval_secs() -> u64 { 5 }
 fn default_failure_threshold() -> u32 { 3 }
 fn default_runtime_cooldown_ms() -> u64 { 2_000 }
+fn default_hedge_stagger_ms() -> u64 { 150 }
+fn default_warm_tunnel_ttl_secs() -> u64 { 60 }
 fn default_max_connections() -> usize { 1_024 }
 fn default_status_interval_secs() -> u64 { 5 }
 fn default_shutdown_grace_period_ms() -> u64 { 5_000 }
@@ -90,6 +92,28 @@ pub struct Config {
 
     #[serde(default = "default_runtime_cooldown_ms")]
     pub runtime_cooldown_ms: u64,
+
+    /// Happy-Eyeballs style stagger before a second GREEN candidate is
+    /// attempted in parallel. The window is widened automatically to twice the
+    /// first candidate's measured runtime latency, so ordinary mobile RTT
+    /// jitter never spawns duplicate upstream connects. A very large value
+    /// effectively restores the original sequential failover.
+    #[serde(default = "default_hedge_stagger_ms")]
+    pub hedge_stagger_ms: u64,
+
+    /// Serve repeated SOCKS targets (native DNSCrypt reconnects to the same
+    /// resolver address) from a small cache of already-established tunnels.
+    /// A served request takes one cached tunnel and one replacement is
+    /// established in the background, so the steady-state number of upstream
+    /// connects per request is unchanged; only the last tunnel before an idle
+    /// period can go unused.
+    #[serde(default = "default_true")]
+    pub warm_tunnels: bool,
+
+    /// Maximum age of a cached warm tunnel. Older tunnels are closed instead
+    /// of served and re-established on demand by normal routing.
+    #[serde(default = "default_warm_tunnel_ttl_secs")]
+    pub warm_tunnel_ttl_secs: u64,
 
     // Compatibility-only field accepted from older d2s.toml files. Earlier
     // builds suspended health probes after this idle period; that could leave a
@@ -179,6 +203,12 @@ impl Config {
         if self.failure_threshold == 0 {
             return Err(anyhow!("failure_threshold must be greater than zero"));
         }
+        if self.hedge_stagger_ms == 0 {
+            return Err(anyhow!("hedge_stagger_ms must be greater than zero"));
+        }
+        if self.warm_tunnel_ttl_secs == 0 {
+            return Err(anyhow!("warm_tunnel_ttl_secs must be greater than zero"));
+        }
         if self.max_connections == 0 {
             return Err(anyhow!("max_connections must be greater than zero"));
         }
@@ -212,6 +242,9 @@ impl Config {
     pub fn recovery_probe_interval(&self) -> Duration { Duration::from_secs(self.recovery_probe_interval_secs) }
     pub fn runtime_cooldown(&self) -> Duration { Duration::from_millis(self.runtime_cooldown_ms) }
     pub fn shutdown_grace_period(&self) -> Duration { Duration::from_millis(self.shutdown_grace_period_ms) }
+
+    pub fn hedge_stagger(&self) -> Duration { Duration::from_millis(self.hedge_stagger_ms) }
+    pub fn warm_tunnel_ttl(&self) -> Duration { Duration::from_secs(self.warm_tunnel_ttl_secs) }
 
     /// Maximum time after the client has sent the first relay payload for the
     /// remote side to prove that the established tunnel actually carries data.

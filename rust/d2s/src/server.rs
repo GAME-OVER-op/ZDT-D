@@ -7,7 +7,7 @@ use crate::{
     status::{status_writer, RuntimeStats},
 };
 use anyhow::{Context, Result};
-use std::{net::SocketAddr, sync::{Arc, atomic::Ordering}, time::Duration};
+use std::{net::SocketAddr, sync::{Arc, atomic::Ordering}};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::{watch, Semaphore},
@@ -349,21 +349,25 @@ async fn health_loop(
     pool: BackendPool,
     mut shutdown: watch::Receiver<bool>,
 ) {
-    let mut ticker = tokio::time::interval(Duration::from_secs(1));
-    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-
-    // Do not suspend backend health checks when DNS traffic is idle. Sleeping
-    // here made the last GREEN/latency snapshot stale, so the first DNS request
-    // after a long quiet period could spend the whole backend timeout on a route
-    // that had disappeared while D2S was asleep. The normal scheduler is already
-    // inexpensive for healthy routes: Light checks use the configured healthy
-    // interval, while strict Full Internet verification stays on its long cadence.
+    // Event-driven scheduling: sleep until the earliest next_probe deadline
+    // instead of waking every second. Forced rechecks (runtime/relay failures)
+    // arrive through wait_for_health_wake, and finish_probe() always notifies
+    // after rewriting a next_probe deadline, so failure responsiveness is
+    // unchanged while a fully idle D2S no longer burns periodic CPU wakeups.
     loop {
+        let next_deadline = pool.next_probe_deadline().await;
         tokio::select! {
-            _ = ticker.tick() => {}
+            _ = async {
+                match next_deadline {
+                    Some(deadline) => {
+                        tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)).await
+                    }
+                    None => std::future::pending::<()>().await,
+                }
+            } => {}
             _ = pool.wait_for_health_wake() => {
                 // Runtime/relay failures schedule a forced Full probe and wake
-                // the loop immediately instead of waiting for the 1s ticker.
+                // the loop immediately instead of waiting for the deadline.
             }
             changed = shutdown.changed() => {
                 if changed.is_err() || *shutdown.borrow() {

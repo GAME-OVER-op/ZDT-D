@@ -20,6 +20,20 @@ recovery_probe_interval_secs = 5
 failure_threshold = 3
 runtime_cooldown_ms = 2000
 
+# Hedged route establishment: if the preferred GREEN backend has not produced
+# a stream within this window (auto-widened to 2x its measured runtime
+# latency), the next candidate dials in parallel. Max two attempts at once;
+# the loser resolves in the background under its own timeout and keeps the
+# normal health bookkeeping. Raise this to effectively restore pure
+# sequential failover.
+hedge_stagger_ms = 150
+
+# Serve repeated SOCKS CONNECTs to the same target from pre-connected tunnels.
+# One replacement tunnel is established in the background per served request,
+# so steady-state upstream connect volume is unchanged.
+warm_tunnels = true
+warm_tunnel_ttl_secs = 60
+
 # Deprecated compatibility option. Current D2S keeps health scheduling active
 # even without DNS traffic so the first request after a long pause never starts
 # from a stale GREEN snapshot. The value is accepted but ignored.

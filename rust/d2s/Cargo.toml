@@ -27,3 +27,10 @@ tokio = { version = "1.43", features = ["rt-multi-thread", "macros", "net", "io-
 toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+# Size/cache optimizations for the long-running daemon; no behavior change.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = true

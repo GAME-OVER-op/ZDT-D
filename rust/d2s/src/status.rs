@@ -32,6 +32,7 @@ pub struct RuntimeStats {
     pub relay_remote_eof: AtomicU64,
     pub relay_client_io_errors: AtomicU64,
     pub relay_remote_io_errors: AtomicU64,
+    pub warm_tunnel_hits: AtomicU64,
     next_connection_id: AtomicU64,
     active_started: StdMutex<HashMap<u64, Instant>>,
 }
@@ -69,7 +70,7 @@ pub struct BackendSnapshot {
     pub failed_connections: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct StatusSnapshot {
     pub name: &'static str,
     pub version: &'static str,
@@ -86,6 +87,7 @@ pub struct StatusSnapshot {
     pub connection_limit_drops: u64,
     pub upstream_connections: u64,
     pub direct_connections: u64,
+    pub warm_tunnel_hits: u64,
     pub client_to_remote_bytes: u64,
     pub remote_to_client_bytes: u64,
     pub relay_stalled: u64,
@@ -138,6 +140,7 @@ impl RuntimeStats {
             connection_limit_drops: self.connection_limit_drops.load(Ordering::Relaxed),
             upstream_connections: self.upstream_connections.load(Ordering::Relaxed),
             direct_connections: self.direct_connections.load(Ordering::Relaxed),
+            warm_tunnel_hits: self.warm_tunnel_hits.load(Ordering::Relaxed),
             client_to_remote_bytes: self.client_to_remote_bytes.load(Ordering::Relaxed),
             remote_to_client_bytes: self.remote_to_client_bytes.load(Ordering::Relaxed),
             relay_stalled: self.relay_stalled.load(Ordering::Relaxed),
@@ -171,13 +174,25 @@ pub async fn status_writer(
     let Some(path) = config.status_file.clone() else { return; };
     let mut interval = tokio::time::interval(std::time::Duration::from_secs(config.status_interval_secs));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut last_written: Option<Vec<u8>> = None;
 
     loop {
         tokio::select! {
             _ = interval.tick() => {
                 let snapshot = stats.snapshot(&config, pool.snapshots().await, true);
-                if let Err(error) = write_atomic_json(&path, &snapshot).await {
-                    warn!(path = %path.display(), %error, "unable to update D2S status file");
+                // Skip identical rewrites: with the generation timestamp
+                // normalized away, an idle D2S produces a stable fingerprint
+                // and the periodic status rewrite (flash writes + CPU) stops
+                // instead of rewriting byte-identical content every interval.
+                let mut fingerprint = snapshot.clone();
+                fingerprint.generated_unix = 0;
+                let Ok(fingerprint) = serde_json::to_vec(&fingerprint) else { continue };
+                if last_written.as_deref() == Some(fingerprint.as_slice()) {
+                    continue;
+                }
+                match write_atomic_json(&path, &snapshot).await {
+                    Ok(()) => last_written = Some(fingerprint),
+                    Err(error) => warn!(path = %path.display(), %error, "unable to update D2S status file"),
                 }
             }
             changed = shutdown.changed() => {

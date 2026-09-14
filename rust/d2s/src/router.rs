@@ -1,12 +1,13 @@
 use crate::{
     backend::BackendPool,
     config::Config,
-    socks5::{connect_via_socks5, RuntimeFailureClass},
+    socks5::{connect_via_socks5, RuntimeFailureClass, SocksClientError},
     status::RuntimeStats,
     target::TargetAddr,
 };
 use anyhow::{anyhow, Context, Result};
 use std::{
+    collections::{HashMap, VecDeque},
     net::SocketAddr,
     sync::{
         Arc,
@@ -14,11 +15,37 @@ use std::{
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tokio::{net::TcpStream, time::Instant as TokioInstant};
+use tokio::{
+    net::TcpStream,
+    sync::Mutex as TokioMutex,
+    task::JoinSet,
+    time::Instant as TokioInstant,
+};
 use tracing::{debug, info, warn};
 
 const DIRECT_FAILURE_THRESHOLD: u32 = 3;
 const DIRECT_FAILURE_COOLDOWN_MS: u64 = 5_000;
+
+/// Cached pre-connected tunnels per target. Each warm hit consumes one tunnel
+/// and schedules exactly one background replacement, so steady-state upstream
+/// connect volume is unchanged; only the final tunnel before an idle gap can
+/// go unused.
+const WARM_TUNNELS_PER_TARGET: usize = 4;
+
+struct WarmTunnel {
+    created: Instant,
+    stream: TcpStream,
+    backend: Option<SocketAddr>,
+}
+
+/// One hedged dial attempt, resolved by its own timeout window inside the
+/// spawned task so the coordinator never blocks on a single backend.
+struct AttemptOutcome {
+    backend: SocketAddr,
+    started: Instant,
+    window_ms: u64,
+    result: Result<TcpStream, SocksClientError>,
+}
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum RouteKind {
@@ -64,6 +91,7 @@ pub struct Router {
     stats: Arc<RuntimeStats>,
     direct_fallback_active: Arc<AtomicBool>,
     direct_health: Arc<DirectHealth>,
+    warm_cache: Arc<TokioMutex<HashMap<TargetAddr, VecDeque<WarmTunnel>>>>,
 }
 
 impl Router {
@@ -74,17 +102,383 @@ impl Router {
             stats,
             direct_fallback_active: Arc::new(AtomicBool::new(false)),
             direct_health: Arc::new(DirectHealth::default()),
+            warm_cache: Arc::new(TokioMutex::new(HashMap::new())),
         }
     }
 
     pub async fn connect(&self, target: &TargetAddr) -> Result<RoutedStream> {
         self.reject_recursive_target(target)?;
 
+        if let Some(routed) = self.try_take_warm_tunnel(target).await {
+            self.schedule_warm_refill(target.clone());
+            return Ok(routed);
+        }
+
         // dnscrypt-proxy uses a plain SOCKS Dialer in several paths and that
         // dial can outlive the caller context. Keep route establishment inside
         // DNSCrypt's own query timeout.
         let deadline = TokioInstant::now() + self.config.route_budget();
         let candidates = self.pool.candidate_order().await;
+        let routed = if candidates.len() > 1 {
+            self.connect_hedged(candidates, target, deadline).await?
+        } else {
+            self.connect_sequential(candidates, target, deadline).await?
+        };
+
+        if self.warm_eligible(&routed) {
+            self.schedule_warm_refill(target.clone());
+        }
+        Ok(routed)
+    }
+
+    /// A cached tunnel is served only while it is younger than
+    /// `warm_tunnel_ttl_secs` and its backend is still selectable; older
+    /// entries and tunnels of degraded backends are closed instead of reused
+    /// because a half-open upstream session would otherwise turn the first
+    /// DNS request after a quiet period into a guaranteed stall.
+    async fn try_take_warm_tunnel(&self, target: &TargetAddr) -> Option<RoutedStream> {
+        if !self.config.warm_tunnels {
+            return None;
+        }
+        let ttl = self.config.warm_tunnel_ttl();
+        let mut cache = self.warm_cache.lock().await;
+        let queue = cache.get_mut(target)?;
+        // Front is the oldest entry: if it expired, every entry expired.
+        let expired = queue
+            .front()
+            .map(|tunnel| tunnel.created.elapsed() > ttl)
+            .unwrap_or(true);
+        if expired {
+            queue.clear();
+            cache.remove(target);
+            return None;
+        }
+        let tunnel = queue.pop_front().expect("front checked above");
+        let queue_emptied = queue.is_empty();
+        if queue_emptied {
+            cache.remove(target);
+        }
+        drop(cache);
+
+        let backend = tunnel.backend?;
+        if !self.pool.backend_selectable(backend).await {
+            debug!(%target, %backend, "discarded warm tunnel of a degraded backend");
+            return None;
+        }
+
+        self.stats.warm_tunnel_hits.fetch_add(1, Ordering::Relaxed);
+        self.note_socks_restored();
+        debug!(%target, %backend, "served request from a warm pre-connected tunnel");
+        Some(RoutedStream {
+            stream: tunnel.stream,
+            route: RouteKind::Socks,
+            backend: Some(backend),
+        })
+    }
+
+    fn warm_eligible(&self, routed: &RoutedStream) -> bool {
+        // DNSCrypt reconnects to the same resolver addresses repeatedly (native
+        // DNSCrypt on 443/8443, DoH keep-alive pools), so any SOCKS-routed
+        // target is worth one pre-connected replacement tunnel. DIRECT streams
+        // are never cached: they skip SOCKS accounting and have their own
+        // cooldown semantics.
+        self.config.warm_tunnels && routed.backend.is_some()
+    }
+
+    /// Replace a consumed (or newly created) warm tunnel in the background so
+    /// the request path never waits for the replacement dial. The spawned task
+    /// owns its sockets and every dial step is timeout-bounded, so a dropped
+    /// or cancelled refill simply closes its half-open connection; it cannot
+    /// leak relay workers the way a detached relay copy could.
+    fn schedule_warm_refill(&self, target: TargetAddr) {
+        let router = self.clone();
+        tokio::spawn(async move {
+            router.refill_warm_tunnel(&target).await;
+        });
+    }
+
+    async fn refill_warm_tunnel(&self, target: &TargetAddr) {
+        let candidates = self.pool.candidate_order().await;
+        if candidates.is_empty() {
+            // No GREEN backend: a background refill must never manufacture a
+            // DIRECT connection on its own.
+            return;
+        }
+        let deadline = TokioInstant::now() + self.config.route_budget();
+        let routed = if candidates.len() > 1 {
+            self.connect_hedged(candidates, target, deadline).await
+        } else {
+            self.connect_sequential(candidates, target, deadline).await
+        };
+        let Ok(routed) = routed else { return };
+        if routed.backend.is_none() {
+            // Never cache DIRECT streams: they skip SOCKS accounting and the
+            // direct path has its own cooldown semantics.
+            return;
+        }
+
+        let ttl = self.config.warm_tunnel_ttl();
+        let mut cache = self.warm_cache.lock().await;
+        // Opportunistic sweep: drop expired tunnels of other targets that no
+        // request has touched since their TTL elapsed.
+        for queue in cache.values_mut() {
+            while queue.front().is_some_and(|tunnel| tunnel.created.elapsed() > ttl) {
+                queue.pop_front();
+            }
+        }
+        let queue = cache.entry(target.clone()).or_default();
+        queue.push_back(WarmTunnel {
+            created: Instant::now(),
+            stream: routed.stream,
+            backend: routed.backend,
+        });
+        while queue.len() > WARM_TUNNELS_PER_TARGET {
+            queue.pop_front();
+        }
+    }
+
+    /// Hedged route establishment (Happy-Eyeballs style), used when several
+    /// GREEN candidates exist. The first candidate starts immediately; if it
+    /// is still unresolved after the stagger window (widened by the
+    /// candidate's own measured runtime latency, so healthy mobile RTT jitter
+    /// never spawns duplicate connects), the next selectable candidate dials
+    /// in parallel. At most two attempts run at once and the first winner is
+    /// used. A losing attempt is never aborted mid-handshake: it is handed to
+    /// a bounded janitor that applies the original per-attempt health
+    /// bookkeeping (success refreshes the runtime EWMA, timeout marks a soft
+    /// failure and schedules the strict Full recheck), so backend health
+    /// semantics are identical to the sequential dialer.
+    async fn connect_hedged(
+        &self,
+        candidates: Vec<SocketAddr>,
+        target: &TargetAddr,
+        deadline: TokioInstant,
+    ) -> Result<RoutedStream> {
+        const BUDGET_EXHAUSTED: &str =
+            "dnscrypt route budget exhausted before trying all backends";
+
+        let mut failures = Vec::new();
+        if TokioInstant::now() >= deadline {
+            failures.push(BUDGET_EXHAUSTED.to_string());
+            return self.finish_with_direct(target, failures, deadline).await;
+        }
+
+        let mut next_candidate = 1usize;
+        let mut in_flight: JoinSet<AttemptOutcome> = JoinSet::new();
+        let head = candidates[0];
+        self.start_hedged_attempt(&mut in_flight, head, target, deadline)
+            .await;
+
+        // One hedge window per request, anchored to the first dial.
+        let stagger = self.hedge_window(head).await;
+        let stagger_at = TokioInstant::now() + stagger;
+        let mut stagger_armed = true;
+
+        // The join_next() future borrows `in_flight` for the whole select, so
+        // every mutation of the set (spawning the hedge, the sequential tail,
+        // the janitor handoff) happens after the select resolves.
+        enum Step {
+            Joined(Option<Result<AttemptOutcome, tokio::task::JoinError>>),
+            Staggered,
+        }
+
+        loop {
+            let step = tokio::select! {
+                joined = in_flight.join_next() => Step::Joined(joined),
+                _ = tokio::time::sleep_until(stagger_at), if stagger_armed => Step::Staggered,
+            };
+
+            match step {
+                Step::Joined(Some(Ok(outcome))) => {
+                    // Any completion closes the single hedge window.
+                    stagger_armed = false;
+                    let AttemptOutcome { backend, started, window_ms, result } = outcome;
+                    match result {
+                        Ok(stream) => {
+                            self.pool
+                                .mark_runtime_success(backend, started.elapsed())
+                                .await;
+                            self.stats
+                                .upstream_connections
+                                .fetch_add(1, Ordering::Relaxed);
+                            self.note_socks_restored();
+                            debug!(backend = %backend, %target, "hedged dial won");
+
+                            if !in_flight.is_empty() {
+                                // Losing attempts keep their own timeout window
+                                // and original health bookkeeping; the janitor
+                                // outlives this request by at most one window.
+                                let mut leftover =
+                                    std::mem::replace(&mut in_flight, JoinSet::new());
+                                let router = self.clone();
+                                tokio::spawn(async move {
+                                    while let Some(joined) = leftover.join_next().await {
+                                        if let Ok(AttemptOutcome {
+                                            backend,
+                                            started,
+                                            window_ms,
+                                            result,
+                                        }) = joined
+                                        {
+                                            router
+                                                .settle_attempt(backend, started, window_ms, result)
+                                                .await;
+                                        }
+                                    }
+                                });
+                            }
+                            return Ok(RoutedStream {
+                                stream,
+                                route: RouteKind::Socks,
+                                backend: Some(backend),
+                            });
+                        }
+                        Err(error) => {
+                            if let Some(message) = self
+                                .settle_attempt(backend, started, window_ms, Err(error))
+                                .await
+                            {
+                                failures.push(message);
+                            }
+                        }
+                    }
+                }
+                Step::Joined(Some(Err(error))) => {
+                    failures.push(format!("attempt task failed: {error}"));
+                }
+                // Defensive: the sequential tail below always keeps one attempt
+                // in flight or exits the loop.
+                Step::Joined(None) => break,
+                Step::Staggered => {
+                    stagger_armed = false;
+                    if let Some(&candidate) = candidates.get(next_candidate) {
+                        if self.pool.backend_selectable(candidate).await {
+                            self.start_hedged_attempt(&mut in_flight, candidate, target, deadline)
+                                .await;
+                            next_candidate += 1;
+                        }
+                    }
+                }
+            }
+
+            // Sequential failover tail: whenever no attempt is pending, start
+            // the next candidate immediately. This preserves the original
+            // behavior of exhausting the GREEN candidate list within the
+            // dnscrypt route budget.
+            if in_flight.is_empty() {
+                if let Some(&candidate) = candidates.get(next_candidate) {
+                    if TokioInstant::now() >= deadline {
+                        failures.push(BUDGET_EXHAUSTED.to_string());
+                        break;
+                    }
+                    self.start_hedged_attempt(&mut in_flight, candidate, target, deadline)
+                        .await;
+                    next_candidate += 1;
+                } else {
+                    break;
+                }
+            }
+        }
+
+        self.finish_with_direct(target, failures, deadline).await
+    }
+
+    async fn start_hedged_attempt(
+        &self,
+        in_flight: &mut JoinSet<AttemptOutcome>,
+        backend: SocketAddr,
+        target: &TargetAddr,
+        deadline: TokioInstant,
+    ) {
+        let now = TokioInstant::now();
+        if now >= deadline {
+            return;
+        }
+        let window = self.config.backend_attempt_timeout().min(deadline - now);
+        self.pool.mark_attempt(backend).await;
+        let connect_timeout = self.config.connect_timeout();
+        let handshake_timeout = self.config.upstream_handshake_timeout();
+        let tcp_nodelay = self.config.tcp_nodelay;
+        let window_ms = window.as_millis() as u64;
+        let target = target.clone();
+        in_flight.spawn(async move {
+            let started = Instant::now();
+            let result = match tokio::time::timeout(
+                window,
+                connect_via_socks5(
+                    backend,
+                    &target,
+                    connect_timeout,
+                    handshake_timeout,
+                    tcp_nodelay,
+                ),
+            )
+            .await
+            {
+                Ok(inner) => inner,
+                Err(_) => Err(SocksClientError::Timeout("hedged backend attempt")),
+            };
+            AttemptOutcome { backend, started, window_ms, result }
+        });
+    }
+
+    /// Stagger delay before a second candidate is dialed in parallel. The base
+    /// window is widened to twice the first candidate's runtime EWMA so a
+    /// merely slow-but-healthy route is not raced by redundant connects.
+    async fn hedge_window(&self, backend: SocketAddr) -> Duration {
+        let base = self.config.hedge_stagger();
+        match self.pool.runtime_ewma_ms(backend).await {
+            Some(ewma) if ewma.is_finite() && ewma > 0.0 => {
+                let widened = Duration::from_secs_f64(ewma / 1000.0).saturating_mul(2);
+                base.max(widened)
+            }
+            _ => base,
+        }
+    }
+
+    /// Health/stat bookkeeping for one finished attempt, shared by the request
+    /// loop and the janitor that settles losing attempts. Returns the failure
+    /// summary line when the attempt failed.
+    async fn settle_attempt(
+        &self,
+        backend: SocketAddr,
+        started: Instant,
+        window_ms: u64,
+        result: Result<TcpStream, SocksClientError>,
+    ) -> Option<String> {
+        match result {
+            Ok(stream) => {
+                // A slow loser that eventually connected is real evidence: its
+                // slower sample naturally raises the runtime EWMA.
+                drop(stream);
+                self.pool.mark_runtime_success(backend, started.elapsed()).await;
+                self.stats.upstream_connections.fetch_add(1, Ordering::Relaxed);
+                None
+            }
+            Err(error) => {
+                let class = error.runtime_failure_class();
+                let message = match &error {
+                    SocksClientError::Timeout("hedged backend attempt") => {
+                        format!("backend attempt exceeded {window_ms} ms")
+                    }
+                    other => other.to_string(),
+                };
+                self.pool
+                    .mark_runtime_failure(backend, class, &message)
+                    .await;
+                Some(format!("{backend}: {message}"))
+            }
+        }
+    }
+
+    /// Original sequential dialer, used verbatim for zero/one candidate (the
+    /// single-backend case keeps its one-shot transient retry).
+    async fn connect_sequential(
+        &self,
+        candidates: Vec<SocketAddr>,
+        target: &TargetAddr,
+        deadline: TokioInstant,
+    ) -> Result<RoutedStream> {
         let single_backend_mode = candidates.len() == 1;
         let mut failures = Vec::new();
 
@@ -204,6 +598,15 @@ impl Router {
             }
         }
 
+        self.finish_with_direct(target, failures, deadline).await
+    }
+
+    async fn finish_with_direct(
+        &self,
+        target: &TargetAddr,
+        failures: Vec<String>,
+        deadline: TokioInstant,
+    ) -> Result<RoutedStream> {
         if !self.config.direct_fallback {
             return Err(anyhow!(
                 "no SOCKS5 backend could reach {target}; direct fallback is disabled; failures: {}",

@@ -1,4 +1,6 @@
 mod cli;
+mod coord;
+mod peer;
 mod socks5;
 mod transparent;
 mod udp;
@@ -47,6 +49,16 @@ fn sniff_thresholds(max_conns: u32) -> (usize, usize) {
 }
 
 fn sniff_mode_for(state: &AppState) -> SniffMode {
+    // Sniffing is policy/observability metadata only: it feeds host rules and
+    // the UI domain column. With no host rules and no UI clients it cannot
+    // affect any decision, so skip it entirely — server-first protocols
+    // (SSH, SMTP, IMAP...) then pay no peek budget at all.
+    if !state.rules.has_host_rules()
+        && state.runtime.ui_clients.load(std::sync::atomic::Ordering::Relaxed) == 0
+    {
+        return SniffMode::Skip;
+    }
+
     let active = state.conns.len();
     let (busy_threshold, overload_threshold) = sniff_thresholds(state.args.max_conns);
 
@@ -188,6 +200,13 @@ fn main() -> Result<()> {
 
 async fn async_main(workers: usize) -> Result<()> {
     let args = Args::parse_and_normalize().context("parse args")?;
+    // Cross-instance backend handshake serialization must be configured before
+    // any listener or health loop can dial a backend.
+    coord::init_dial_coordination(
+        &args.api_dir,
+        !args.no_serialize_backend_connects,
+        args.connect_stagger_ms,
+    );
     let started_at = stats::now_ts();
     let api = Arc::new(api_runtime::ApiRuntime::new(&args, started_at).context("init t2s api runtime")?);
     let tproxy_enabled = transparent::tproxy_enabled_from_settings();
@@ -239,6 +258,11 @@ async fn async_main(workers: usize) -> Result<()> {
             stats::backend_health_loop(st).await;
         });
     }
+
+    // Background: t2s-to-t2s coordination. Instances forwarding to the same
+    // backend set elect one health leader; followers import its backend
+    // snapshot instead of probing the same proxies themselves.
+    peer::spawn_peer_loop(state.clone());
 
     // Background: enforce "no bypass while GREEN backends exist" and auto-kill stale connections after recovery
     {
@@ -1024,7 +1048,12 @@ async fn ensure_direct_path_ready(state: &AppState, wait: Duration) -> bool {
     if !state.runtime.direct_allowed() {
         return false;
     }
-    if state.runtime.direct_internet_fresh_healthy(5) {
+    // 30s freshness: a 5s window forced a fresh direct TLS probe after every
+    // short idle gap, adding a full probe round trip to each new connection in
+    // DirectFirst mode. Successful direct connections keep refreshing the
+    // health loop's view in the background; 30s only bounds how stale the
+    // accepted evidence may be.
+    if state.runtime.direct_internet_fresh_healthy(30) {
         return true;
     }
 

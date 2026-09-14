@@ -327,6 +327,45 @@ Each active connection is tracked with metadata such as connection ID, target,
 backend, state and traffic counters. The web UI/API uses this registry to display
 runtime state and kill selected connections.
 
+## Multiple t2s instances sharing one backend
+
+Several ZDT-D profiles can run their own t2s instance while all of them forward
+to the same local SOCKS5 proxy. Some such proxies cannot accept two clients at
+the same moment: two overlapping TCP+SOCKS handshakes break the requests. t2s
+instances now coordinate through the metadata they already publish under
+`<api-dir>/t2s`:
+
+### Shared backend health
+
+Instances whose backend sets intersect form a coordination group (discovered
+via `instances/*.json` and each peer's authenticated `/api/v1/backends`). The
+group leader is deterministic — the lowest `instance_id` — and keeps running
+its normal health loop. Followers suspend their own backend probing and import
+the leader's backend snapshot every scan (10s when peers are active, 30s when
+quiet), so all instances agree on GREEN/YELLOW/RED and a fragile proxy is
+probed by one instance instead of N. Observations newer than the imported ones
+(such as a follower's own runtime suspect recheck) always win. If the leader
+disappears, followers resume their own probing automatically; a solo instance
+behaves exactly as before.
+
+### Serialized backend handshakes
+
+Every dial to a backend (client CONNECT, health probe, wrapped-remote
+handshake, UDP ASSOCIATE) takes a per-backend cross-process `flock` on
+`<api-dir>/t2s/locks/backend-<ip>-<port>.lock` for the duration of the TCP
+connect + SOCKS handshake, then optionally holds it for
+`--connect-stagger-ms` (default 100) after success. Concurrent handshakes to
+the same backend — from peers or from a burst inside one instance — therefore
+never overlap, while established relays and different backends stay fully
+parallel. The lock is released by the kernel if a process dies, and every
+coordination failure fails open (dials proceed unsynchronized) so coordination
+can never cause an outage.
+
+Flags: `--no-peer-coordination`, `--no-serialize-backend-connects`,
+`--connect-stagger-ms <MS>`. Coordination assumes instances sharing a backend
+also share its credentials; when the shared API token file is missing, peer
+health sharing is disabled and each instance keeps probing independently.
+
 ## Limitations
 
 - TCP proxying is always available;

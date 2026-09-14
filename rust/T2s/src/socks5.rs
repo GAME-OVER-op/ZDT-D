@@ -28,6 +28,22 @@ pub async fn connect_via_socks5(
     auth: Option<(String, String)>,
     timeout: Duration,
 ) -> Result<TcpStream> {
+    // Serialize the whole TCP connect + SOCKS handshake against other dials to
+    // the same backend, including dials from cooperating t2s instances (the
+    // lock is a cross-process flock; see coord.rs). Established relays are
+    // never serialized.
+    let dial_lock = crate::coord::acquire_dial_lock(backend).await;
+    let result = connect_via_socks5_inner(backend, target, auth, timeout).await;
+    crate::coord::release_dial_lock(dial_lock).await;
+    result
+}
+
+async fn connect_via_socks5_inner(
+    backend: SocketAddr,
+    target: TargetAddr,
+    auth: Option<(String, String)>,
+    timeout: Duration,
+) -> Result<TcpStream> {
     let mut stream = tokio::time::timeout(timeout, TcpStream::connect(backend))
         .await
         .context("socks tcp connect timeout")?
@@ -133,12 +149,30 @@ pub async fn connect_via_socks5_wrapped(
     let tunnel = connect_via_socks5(wrapper, TargetAddr::Ip(remote_socks), wrapper_auth, timeout)
         .await
         .with_context(|| format!("wrapped SOCKS5: connect wrapper {} -> remote socks {}", wrapper, remote_socks))?;
-    connect_via_socks5_on_stream(tunnel, target, remote_auth, timeout)
+    // The remote backend handshake happens on the established tunnel; it is
+    // the dial that must be serialized against the fragile shared backend.
+    let dial_lock = crate::coord::acquire_dial_lock(remote_socks).await;
+    let result = connect_via_socks5_on_stream(tunnel, target, remote_auth, timeout)
         .await
-        .with_context(|| format!("wrapped SOCKS5: remote socks CONNECT through {}", remote_socks))
+        .with_context(|| format!("wrapped SOCKS5: remote socks CONNECT through {}", remote_socks));
+    crate::coord::release_dial_lock(dial_lock).await;
+    result
 }
 
 pub async fn connect_to_socks5_server(
+    backend: SocketAddr,
+    auth: Option<(String, String)>,
+    timeout: Duration,
+) -> Result<TcpStream> {
+    // Health probes and UDP ASSOCIATE control dials use the same backend
+    // handshake serialization as client dials.
+    let dial_lock = crate::coord::acquire_dial_lock(backend).await;
+    let result = connect_to_socks5_server_inner(backend, auth, timeout).await;
+    crate::coord::release_dial_lock(dial_lock).await;
+    result
+}
+
+async fn connect_to_socks5_server_inner(
     backend: SocketAddr,
     auth: Option<(String, String)>,
     timeout: Duration,
@@ -160,9 +194,12 @@ pub async fn connect_to_socks5_server_wrapped(
     let tunnel = connect_via_socks5(wrapper, TargetAddr::Ip(remote_socks), wrapper_auth, timeout)
         .await
         .with_context(|| format!("wrapped SOCKS5: connect wrapper {} -> remote socks {}", wrapper, remote_socks))?;
-    socks5_greeting_on_stream(tunnel, remote_auth, timeout)
+    let dial_lock = crate::coord::acquire_dial_lock(remote_socks).await;
+    let result = socks5_greeting_on_stream(tunnel, remote_auth, timeout)
         .await
-        .with_context(|| format!("wrapped SOCKS5: remote socks greeting {}", remote_socks))
+        .with_context(|| format!("wrapped SOCKS5: remote socks greeting {}", remote_socks));
+    crate::coord::release_dial_lock(dial_lock).await;
+    result
 }
 
 async fn socks5_greeting_on_stream(
@@ -263,7 +300,22 @@ pub async fn udp_associate(
     timeout: Duration,
     client_udp_addr: SocketAddr,
 ) -> Result<(TcpStream, SocketAddr)> {
-    let mut stream = connect_to_socks5_server(backend, auth, timeout).await?;
+    // The UDP ASSOCIATE request/reply is another backend handshake phase and
+    // must be serialized against concurrent CONNECTs like any other. The inner
+    // helper dials without re-acquiring the same lock.
+    let dial_lock = crate::coord::acquire_dial_lock(backend).await;
+    let result = udp_associate_inner(backend, auth, timeout, client_udp_addr).await;
+    crate::coord::release_dial_lock(dial_lock).await;
+    result
+}
+
+async fn udp_associate_inner(
+    backend: SocketAddr,
+    auth: Option<(String, String)>,
+    timeout: Duration,
+    client_udp_addr: SocketAddr,
+) -> Result<(TcpStream, SocketAddr)> {
+    let mut stream = connect_to_socks5_server_inner(backend, auth, timeout).await?;
     let hs_timeout = handshake_timeout(timeout);
     let client_udp_addr = if client_udp_addr.ip().is_unspecified() {
         SocketAddr::new(

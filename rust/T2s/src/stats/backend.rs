@@ -13,7 +13,7 @@ enum RuntimeFailureClass {
     Auth,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BackendStatus {
     pub addr: String,
     pub state: BackendState,
@@ -1042,6 +1042,39 @@ impl SocksBackends {
             }).collect();
         }
         self.status.clone()
+    }
+
+    /// Merge a coordination peer's (health leader's) backend snapshot into the
+    /// local state. Only observations fresher than the local ones (by
+    /// last_check) are applied, so a follower's own just-finished suspect
+    /// recheck is never clobbered by an older leader sample. Returns true when
+    /// any state/health/error field actually changed (callers wake waiters).
+    pub fn import_peer_states(&mut self, statuses: Vec<BackendStatus>) -> bool {
+        let mut changed = false;
+        for status in statuses {
+            let Some(idx) = self.addrs.iter().position(|a| a.to_string() == status.addr) else {
+                continue;
+            };
+            let Some(mine) = self.status.get_mut(idx) else {
+                continue;
+            };
+            if status.last_check <= mine.last_check {
+                continue;
+            }
+            if mine.state != status.state
+                || mine.healthy != status.healthy
+                || mine.last_error != status.last_error
+            {
+                changed = true;
+            }
+            mine.state = status.state;
+            mine.healthy = status.healthy;
+            mine.last_check = status.last_check;
+            mine.last_error = status.last_error.clone();
+            mine.socks_ping_ms = status.socks_ping_ms;
+            mine.internet_ping_ms = status.internet_ping_ms;
+        }
+        changed
     }
 
     pub fn add(&mut self, addr: SocketAddr, auth: Option<(String, String)>) {

@@ -695,7 +695,12 @@ pub async fn backend_health_loop(state: crate::AppState) {
             || urgent_work
             || quiet_for < Duration::from_secs(2 * 60)
             || priority_active_refresh;
-        if allow_refresh {
+        // While a coordination peer is the authoritative health source for our
+        // backend set, suspend local probing: its snapshot is imported by the
+        // peer loop instead. force_full_sweep stays set so that on any
+        // leadership change the instance returns to a full sweep immediately.
+        let following_peer = crate::peer::following_leader();
+        if allow_refresh && !following_peer {
             let green_available = state.backends.lock().any_green();
             let refresh_mode = if priority_active_refresh || force_full_sweep || !green_available || woke_from_quiet {
                 HealthRefreshMode::FullSweep

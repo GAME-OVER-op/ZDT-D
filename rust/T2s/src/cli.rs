@@ -118,6 +118,27 @@ pub struct Args {
     #[arg(long, default_value_t=0.0, help="Download throttling in Mbit/s (0 disables)")]
     pub download_limit_mbit: f64,
 
+    /// Disable t2s-to-t2s coordination. By default, instances that forward to
+    /// the same backend set (seen via the shared ZDT-D API metadata) elect one
+    /// health leader and followers import its backend snapshot instead of
+    /// probing the same proxies themselves.
+    #[arg(long, default_value_t=false)]
+    pub no_peer_coordination: bool,
+
+    /// Disable cross-instance backend dial serialization. By default the TCP
+    /// connect + SOCKS handshake phase to each backend is serialized across
+    /// cooperating t2s instances (and concurrent dials in this process) with a
+    /// filesystem flock, because some local proxies break when they must accept
+    /// two clients at the same moment. Established relays are never serialized.
+    #[arg(long, default_value_t=false)]
+    pub no_serialize_backend_connects: bool,
+
+    /// Extra hold time (ms) on the per-backend dial lock after a successful
+    /// handshake, so two handshakes to the same fragile backend never overlap
+    /// even approximately. 0 disables the stagger.
+    #[arg(long, default_value_t=100)]
+    pub connect_stagger_ms: u64,
+
     #[arg(long, default_value="/data/adb/modules/ZDT-D/api", help="ZDT-D API root directory. t2s metadata is written under <api-dir>/t2s.")]
     pub api_dir: String,
     #[arg(long, default_value="", help="Stable t2s instance id for metadata/API responses. Auto-generated when omitted.")]

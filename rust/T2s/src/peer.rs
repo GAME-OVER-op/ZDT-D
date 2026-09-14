@@ -117,7 +117,7 @@ async fn peer_loop(state: crate::AppState) {
             };
             let Some(states) = value
                 .get("backends")
-                .and_then(|v| serde_json::from_value::<Vec<BackendStatus>>(v).ok())
+                .and_then(|v| serde_json::from_value::<Vec<BackendStatus>>(v.clone()).ok())
                 .filter(|states| !states.is_empty())
             else {
                 continue;

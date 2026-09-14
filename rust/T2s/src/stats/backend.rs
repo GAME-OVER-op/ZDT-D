@@ -1,4 +1,4 @@
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BackendState {
     Green,
@@ -13,7 +13,7 @@ enum RuntimeFailureClass {
     Auth,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, serde::Deserialize)]
 pub struct BackendStatus {
     pub addr: String,
     pub state: BackendState,

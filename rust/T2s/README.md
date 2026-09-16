@@ -367,18 +367,34 @@ A network switch (Wi-Fi <-> mobile) can leave most of a 10-backend pool
 suddenly dead while the states are still stale-GREEN: the no-GREEN recovery
 ladder does not trigger, and the normal health cadence under traffic is
 45-60s, which is why a full API-poked recheck used to be needed. t2s now
-detects the mass-failure signature itself: when at least 3 distinct backends
-report runtime/relay failures within 6 seconds, one accelerated full sweep
-starts immediately (throttled to once per 10s). The sweep full-probes all
-backends in parallel with a concurrency cap of 3 — different backends hold
-different dial locks, so a fragile proxy still never sees two simultaneous
-handshakes, but 10 backends now cost ~3-4 probe rounds instead of 10
-sequential ones. The total probe volume per event is one sweep, so rare
-network changes add no background energy; idle cadences are unchanged.
+detects the switch deterministically and reacts in seconds:
 
-Followers never run this sweep against shared backends themselves: they ask
-the health leader to recheck (`POST /api/v1/backends/recheck`) and import its
-fresh snapshot, so two instances probing one proxy remains impossible.
+- **Egress-IP detection**: the kernel-chosen source IP for outbound traffic is
+  sampled with a UDP `connect` (no packet is sent) on every accepted
+  connection and on every health-loop pass. A changed IP - or the route
+  disappearing and reappearing - is an unambiguous network change, even when
+  local proxy engines keep answering and no failure signature would assemble.
+- **Mass-failure signature**: at least 3 distinct backends reporting failures
+  of ANY class within 15s starts the same sweep (dead upstreams trickle
+  failures slowly, so the window matches real timings).
+- **Accelerated parallel sweep**: on either signal one immediate full sweep
+  runs (throttled to once per 10s), full-probing every backend in parallel
+  with a concurrency cap of 3 - different backends hold different dial locks,
+  so a fragile proxy still never sees two simultaneous handshakes, but 10
+  backends cost ~3-4 probe rounds instead of 10 sequential ones. The total
+  probe volume per event is one sweep, so rare network changes add no
+  background energy; idle cadences are unchanged.
+- **Internet re-verification for non-GREEN backends**: Light probes only prove
+  the local engine is alive. A Yellow backend whose upstream recovered is now
+  re-verified with a full Internet probe as soon as the probe backoff allows
+  (30s -> 900s escalation), instead of waiting for the 15-minute full-probe
+  cycle that used to leave it unusable for many minutes.
+
+Coordination followers first delegate the sweep to the health leader
+(`POST /api/v1/backends/recheck`) and import its snapshot; if the leader does
+not confirm working backends, the follower fails open and sweeps locally -
+cross-process dial locks make concurrent probing safe, only the double-probe
+energy saving is lost.
 
 Flags: `--no-peer-coordination`, `--no-serialize-backend-connects`,
 `--connect-stagger-ms <MS>`. Coordination assumes instances sharing a backend

@@ -167,7 +167,12 @@ fn choose_probe_mode(
     let probe_allowed = b.internet_probe_due_idx(idx, now);
     if state_at == BackendState::Green && !full_probe_due {
         ProbeMode::Light
-    } else if full_probe_due && probe_allowed {
+    } else if probe_allowed {
+        // Non-Green backends re-verify the Internet data plane as soon as the
+        // probe backoff allows. Gating this behind the 15-minute full-probe
+        // cycle left a recovered Yellow backend unusable for many minutes
+        // while Light probes only proved the local engine was alive — and the
+        // user cares about Internet availability, not engine liveness.
         ProbeMode::Full
     } else {
         ProbeMode::Light
@@ -404,13 +409,21 @@ pub fn spawn_network_change_sweep(state: crate::AppState) {
 }
 
 async fn network_change_sweep_once(state: crate::AppState) {
-    // A coordination follower never probes shared backends itself: ask the
-    // health leader to recheck and import its fresh snapshot instead, so two
-    // instances never double-probe the same proxy.
+    // A coordination follower first asks the health leader to recheck and
+    // imports its fresh snapshot. But a leader without its own traffic may
+    // still hold stale Light-probe states and be in no hurry, and the leader
+    // may simply be gone - so fail open: if the delegation did not produce
+    // GREEN backends, sweep locally. Cross-process dial locks (coord.rs) make
+    // concurrent probing safe; only the double-probe energy saving is lost.
     if crate::peer::following_leader() {
         crate::peer::request_leader_recheck().await;
         crate::peer::sync_once(&state).await;
-        return;
+        if state.backends.lock().any_green() {
+            return;
+        }
+        tracing::debug!(
+            "leader delegation did not confirm working backends; falling back to a local sweep"
+        );
     }
     tracing::debug!("mass backend failure signature; starting accelerated parallel full sweep");
     let timeout = health_timeout(&state);
@@ -699,6 +712,10 @@ pub async fn backend_health_loop(state: crate::AppState) {
     let mut cadence_streak: u8 = 0;
 
     loop {
+        // Deterministic network-change detection runs on every health-loop
+        // pass too, so a switch is caught even with zero client traffic.
+        crate::check_egress_ip_change(&state).await;
+
         let now = tokio::time::Instant::now();
         let total_bytes = total_traffic_bytes(&state);
         let delta_bytes = total_bytes.saturating_sub(last_total_bytes);

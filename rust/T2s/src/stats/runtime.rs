@@ -163,6 +163,9 @@ pub struct RuntimeConfig {
     pub recent_backend_failures_ms: Mutex<VecDeque<(u64, SocketAddr)>>,
     /// Throttle accelerated network-change sweeps.
     pub next_network_sweep_after_ms: AtomicU64,
+    /// Last observed outbound local IP; a change is a deterministic
+    /// network-change signal (no traffic, no probing needed to see it).
+    pub last_egress_ip: Mutex<Option<IpAddr>>,
 
     /// Throttle priority speed-aware stream recycling so a flaky backend cannot
     /// cause repeated reconnect loops.
@@ -198,6 +201,7 @@ impl Default for RuntimeConfig {
             all_green_failure_recheck_active: AtomicU64::new(0),
             recent_backend_failures_ms: Mutex::new(VecDeque::with_capacity(32)),
             next_network_sweep_after_ms: AtomicU64::new(0),
+            last_egress_ip: Mutex::new(None),
             next_priority_stream_recycle_after_ts: AtomicU64::new(0),
         }
     }
@@ -585,6 +589,18 @@ impl RuntimeConfig {
                 Err(_) => continue,
             }
         }
+    }
+
+    /// Record the current outbound local IP; returns true when it changed.
+    /// A changed source IP (or route disappearing/reappearing) is a
+    /// deterministic network-change signal that needs no failure counting.
+    pub fn note_egress_ip(&self, current: Option<IpAddr>) -> bool {
+        let mut last = self.last_egress_ip.lock();
+        if *last == current {
+            return false;
+        }
+        *last = current;
+        true
     }
 }
 

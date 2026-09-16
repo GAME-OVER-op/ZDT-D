@@ -138,8 +138,15 @@ fn is_proxy_zero_down_suspect(info: &stats::ConnInfo) -> bool {
 /// still-working backends immediately instead of waiting for the normal
 /// 45-60s health cadence.
 fn maybe_start_network_change_sweep(state: &AppState, backend: SocketAddr) {
-    // While the existing burst recovery ladder is running it already sweeps
-    // the pool at its own cadence; another sweep would only duplicate probing.
+    if state.runtime.note_backend_failure_signal(backend) {
+        start_network_change_sweep(state);
+    }
+}
+
+/// Start one accelerated parallel full sweep unless the burst recovery ladder
+/// is already sweeping the pool at its own cadence. Called both from the
+/// mass-failure detector and directly on a deterministic egress-IP change.
+fn start_network_change_sweep(state: &AppState) {
     if state
         .runtime
         .burst_recovery_ladder_active
@@ -148,10 +155,25 @@ fn maybe_start_network_change_sweep(state: &AppState, backend: SocketAddr) {
     {
         return;
     }
-    if state.runtime.note_backend_failure_signal(backend)
-        && state.runtime.try_begin_network_sweep(10_000)
-    {
+    if state.runtime.try_begin_network_sweep(10_000) {
         stats::spawn_network_change_sweep(state.clone());
+    }
+}
+
+/// Deterministic network-change detection: the kernel's chosen source IP for
+/// outbound traffic. A UDP connect only picks the route (no packet is sent),
+/// so this costs a couple of syscalls and catches Wi-Fi <-> mobile switches
+/// instantly, including the case where the local proxy engines keep answering
+/// and no failure signature would ever assemble.
+async fn check_egress_ip_change(state: &AppState) {
+    let current = net_utils::local_outbound_ip().await;
+    if state.runtime.note_egress_ip(current) {
+        tracing::info!(
+            "outbound local IP changed to {:?}; network change detected, re-verifying the whole backend pool",
+            current
+        );
+        start_network_change_sweep(state);
+        state.runtime.backend_wake();
     }
 }
 
@@ -288,6 +310,12 @@ async fn async_main(workers: usize) -> Result<()> {
     // snapshot instead of probing the same proxies themselves.
     peer::spawn_peer_loop(state.clone());
 
+    // Seed the egress-IP baseline so the first background check does not
+    // mistake startup for a network change.
+    state
+        .runtime
+        .note_egress_ip(net_utils::local_outbound_ip().await);
+
     // Background: enforce "no bypass while GREEN backends exist" and auto-kill stale connections after recovery
     {
         let st = state.clone();
@@ -390,7 +418,12 @@ async fn run_tcp_on(state: AppState, addr: SocketAddr, ingress: stats::Ingress) 
 
     loop {
         let (sock, peer) = match listener.accept().await {
-            Ok(v) => v,
+            Ok(v) => {
+                // Cheapest deterministic network-change probe point: new
+                // connections are exactly when a stale pool hurts.
+                check_egress_ip_change(&state).await;
+                v
+            }
             Err(e) => {
                 if is_transient_accept_error(&e) {
                     let backoff = accept_error_backoff(&e);

@@ -541,7 +541,11 @@ impl RuntimeConfig {
     /// enough DISTINCT backends failed within the detection window to look
     /// like a network change rather than a single dead proxy.
     pub fn note_backend_failure_signal(&self, addr: SocketAddr) -> bool {
-        const WINDOW_MS: u64 = 6_000;
+        // A dead upstream does not fail instantly: each attempt burns ~1.5-3s
+        // of handshake timeout, so the failure events of a network change
+        // trickle in over many seconds. 15s still never sees 3 distinct
+        // backends fail in normal operation, but reliably catches a change.
+        const WINDOW_MS: u64 = 15_000;
         const DISTINCT_BACKENDS: usize = 3;
         let now = now_ms();
         let mut q = self.recent_backend_failures_ms.lock();

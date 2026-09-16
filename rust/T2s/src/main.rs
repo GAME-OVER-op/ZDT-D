@@ -138,6 +138,16 @@ fn is_proxy_zero_down_suspect(info: &stats::ConnInfo) -> bool {
 /// still-working backends immediately instead of waiting for the normal
 /// 45-60s health cadence.
 fn maybe_start_network_change_sweep(state: &AppState, backend: SocketAddr) {
+    // While the existing burst recovery ladder is running it already sweeps
+    // the pool at its own cadence; another sweep would only duplicate probing.
+    if state
+        .runtime
+        .burst_recovery_ladder_active
+        .load(std::sync::atomic::Ordering::Relaxed)
+        != 0
+    {
+        return;
+    }
     if state.runtime.note_backend_failure_signal(backend)
         && state.runtime.try_begin_network_sweep(10_000)
     {
@@ -1289,7 +1299,6 @@ async fn connect_socks(
                     if wake_backend {
                         state.runtime.backend_wake_throttled(2500);
                     }
-                    maybe_start_network_change_sweep(&state, backend);
                 } else {
                     tracing::debug!(
                         "backend {} target-level SOCKS failure for cid {} ignored for health: {}",
@@ -1298,6 +1307,12 @@ async fn connect_socks(
                         err_text
                     );
                 }
+                // A network change fails every backend through every failure
+                // class (a local engine stays reachable and answers with
+                // target-level SOCKS replies or stalls), so feed ALL attempt
+                // failures into the mass-failure detector; the health
+                // classification above stays untouched.
+                maybe_start_network_change_sweep(&state, backend);
                 state.conns.set_mode(cid, "pending");
                 // try next backend
             }

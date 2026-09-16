@@ -362,6 +362,29 @@ async fn refresh_backends_with_limit(state: crate::AppState, timeout: Duration, 
     let _ = refresh_direct_internet_once_unlocked(state.clone(), timeout).await;
 }
 
+/// Run a probe plan with bounded parallelism (see PROBE_PARALLELISM). A
+/// fragile shared proxy never receives two simultaneous handshakes because
+/// different backends hold different dial locks, but a full pool sweep no
+/// longer walks backends one by one.
+async fn refresh_plan_parallel(
+    state: crate::AppState,
+    timeout: Duration,
+    plan: Vec<(usize, Option<(String, String)>)>,
+    probe_mode: ProbeMode,
+) {
+    use futures::stream::{self, StreamExt};
+    stream::iter(plan)
+        .map(|(idx, auth)| {
+            let st = state.clone();
+            async move {
+                let _ = refresh_backend_index_once(st, idx, timeout, None, auth, probe_mode).await;
+            }
+        })
+        .buffer_unordered(PROBE_PARALLELISM)
+        .for_each(|()| async {})
+        .await;
+}
+
 /// Immediate accelerated sweep after a mass-failure signature (likely a network
 /// change): full-probe every backend in parallel instead of waiting for the
 /// normal 45-60s health cadence. The caller throttles via
@@ -456,9 +479,20 @@ async fn all_green_failure_recheck_once(state: crate::AppState, reason: String) 
         reason
     );
 
-    for (idx, backend, auth) in plan {
-        let before_state = state.backends.lock().raw_state_at(idx);
-        let _ = refresh_backend_index_once(state.clone(), idx, timeout, None, auth, ProbeMode::Full).await;
+    // Parallel sweep: walking stale-GREEN backends one by one used to cost
+    // N x timeout right when every second of downtime hurts.
+    let before: Vec<(usize, SocketAddr, Option<BackendState>)> = plan
+        .iter()
+        .map(|(idx, backend, _)| (*idx, *backend, state.backends.lock().raw_state_at(*idx)))
+        .collect();
+    refresh_plan_parallel(
+        state.clone(),
+        timeout,
+        plan.into_iter().map(|(idx, _backend, auth)| (idx, auth)).collect(),
+        ProbeMode::Full,
+    )
+    .await;
+    for (idx, backend, before_state) in before {
         let after_state = state.backends.lock().raw_state_at(idx);
         if before_state == Some(BackendState::Green) && after_state != Some(BackendState::Green) {
             tracing::debug!(
@@ -525,12 +559,9 @@ async fn suspect_backend_recheck_once(state: crate::AppState, backend: SocketAdd
                 .map(|other_idx| (other_idx, b.effective_auth_at(other_idx, global_auth.as_ref())))
                 .collect()
         };
-        for (other_idx, other_auth) in followup {
-            let _ = refresh_backend_index_once(state.clone(), other_idx, timeout, None, other_auth, ProbeMode::Full).await;
-            if state.backends.lock().any_green() {
-                break;
-            }
-        }
+        // Parallel: the suspect followup sweep is exactly the "probing stage by
+        // stage" a network change used to look like.
+        refresh_plan_parallel(state.clone(), timeout, followup, ProbeMode::Full).await;
     }
 
     state.runtime.leave_suspect_recheck();
@@ -557,14 +588,8 @@ pub async fn burst_recheck_one_backend(state: crate::AppState) -> bool {
             return false;
         }
         let timeout = health_timeout(&state);
-        let mut checked_any = false;
-        for (idx, auth) in plan {
-            if state.backends.lock().any_green() {
-                break;
-            }
-            checked_any |= refresh_backend_index_once(state.clone(), idx, timeout, None, auth, ProbeMode::Full).await;
-        }
-        checked_any
+        refresh_plan_parallel(state.clone(), timeout, plan, ProbeMode::Full).await;
+        state.backends.lock().any_green()
     }.await;
 
     state.runtime.leave_burst_recheck();

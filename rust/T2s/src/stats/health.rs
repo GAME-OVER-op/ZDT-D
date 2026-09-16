@@ -307,7 +307,18 @@ async fn refresh_backend_index_once(
     true
 }
 
+/// Upper bound on concurrently probing backends during one sweep. Different
+/// backends hold different dial locks (see coord.rs), so this parallelism never
+/// puts two handshakes on the same fragile proxy; it only shortens the
+/// wall-clock of a full sweep after network changes (10 backends used to cost
+/// 10 sequential probe rounds).
+const PROBE_PARALLELISM: usize = 3;
+
 pub async fn refresh_backends_once(state: crate::AppState, timeout: Duration) {
+    refresh_backends_with_limit(state, timeout, false).await
+}
+
+async fn refresh_backends_with_limit(state: crate::AppState, timeout: Duration, force_full_all: bool) {
     let _guard = state.runtime.refresh_lock.lock().await;
     let global_auth = global_backend_auth(&state.args);
     let refresh_plan: Vec<(usize, Option<(String, String)>, ProbeMode)> = {
@@ -320,7 +331,7 @@ pub async fn refresh_backends_once(state: crate::AppState, timeout: Duration) {
             if b.addr_at(idx).is_none() {
                 continue;
             }
-            let probe_mode = if no_green_recovery {
+            let probe_mode = if no_green_recovery || force_full_all {
                 ProbeMode::Full
             } else if full_idx.is_none() {
                 let pm = choose_probe_mode(&b, idx, now, false);
@@ -336,18 +347,54 @@ pub async fn refresh_backends_once(state: crate::AppState, timeout: Duration) {
         plan
     };
 
-    for (idx, auth, probe_mode) in refresh_plan {
-        let _ = refresh_backend_index_once(
-            state.clone(),
-            idx,
-            timeout,
-            None,
-            auth,
-            probe_mode,
-        ).await;
-    }
+    use futures::stream::{self, StreamExt};
+    stream::iter(refresh_plan)
+        .map(|(idx, auth, probe_mode)| {
+            let st = state.clone();
+            async move {
+                let _ = refresh_backend_index_once(st, idx, timeout, None, auth, probe_mode).await;
+            }
+        })
+        .buffer_unordered(PROBE_PARALLELISM)
+        .for_each(|()| async {})
+        .await;
 
     let _ = refresh_direct_internet_once_unlocked(state.clone(), timeout).await;
+}
+
+/// Immediate accelerated sweep after a mass-failure signature (likely a network
+/// change): full-probe every backend in parallel instead of waiting for the
+/// normal 45-60s health cadence. The caller throttles via
+/// try_begin_network_sweep(); the total probe volume per event is one full
+/// sweep, so a rare network change costs no extra energy, and the background
+/// cadence stays untouched.
+pub fn spawn_network_change_sweep(state: crate::AppState) {
+    std::thread::spawn(move || {
+        let rt = match tokio::runtime::Builder::new_current_thread().enable_all().build() {
+            Ok(rt) => rt,
+            Err(_) => return,
+        };
+        rt.block_on(async move {
+            network_change_sweep_once(state).await;
+        });
+    });
+}
+
+async fn network_change_sweep_once(state: crate::AppState) {
+    // A coordination follower never probes shared backends itself: ask the
+    // health leader to recheck and import its fresh snapshot instead, so two
+    // instances never double-probe the same proxy.
+    if crate::peer::following_leader() {
+        crate::peer::request_leader_recheck().await;
+        crate::peer::sync_once(&state).await;
+        return;
+    }
+    tracing::debug!("mass backend failure signature; starting accelerated parallel full sweep");
+    let timeout = health_timeout(&state);
+    refresh_backends_with_limit(state.clone(), timeout, true).await;
+    if !state.backends.lock().any_green() && state.runtime.try_enter_burst_recovery_ladder() {
+        spawn_burst_recovery_ladder(state);
+    }
 }
 
 pub async fn refresh_one_backend_once_rr(state: crate::AppState, timeout: Duration) -> bool {
@@ -597,16 +644,19 @@ pub async fn refresh_backends_for_ui(state: crate::AppState, timeout: Duration) 
             .collect()
     };
 
-    for (idx, auth) in refresh_plan {
-        let _ = refresh_backend_index_once(
-            state.clone(),
-            idx,
-            timeout,
-            internet_ttl,
-            auth,
-            ProbeMode::Full,
-        ).await;
-    }
+    // Bounded parallel execution: peer followers delegate their rechecks to
+    // this endpoint, so the sweep latency directly gates their recovery.
+    use futures::stream::{self, StreamExt};
+    stream::iter(refresh_plan)
+        .map(|(idx, auth)| {
+            let st = state.clone();
+            async move {
+                let _ = refresh_backend_index_once(st, idx, timeout, internet_ttl, auth, ProbeMode::Full).await;
+            }
+        })
+        .buffer_unordered(PROBE_PARALLELISM)
+        .for_each(|()| async {})
+        .await;
 
     let _ = refresh_direct_internet_once_unlocked(state.clone(), timeout).await;
 }
@@ -1377,7 +1427,13 @@ pub async fn wait_for_backend_recovery(state: crate::AppState, max_wait: Duratio
         }
 
         if recovery_leader && state.runtime.try_begin_forced_refresh(4000) {
-            refresh_backends_once(state.clone(), refresh_timeout).await;
+            if crate::peer::following_leader() {
+                // Followers import the health leader's snapshot instead of
+                // probing shared backends a second time.
+                crate::peer::sync_once(&state).await;
+            } else {
+                refresh_backends_once(state.clone(), refresh_timeout).await;
+            }
             if state.backends.lock().any_healthy() {
                 state.runtime.leave_recovery_waiter();
                 return true;

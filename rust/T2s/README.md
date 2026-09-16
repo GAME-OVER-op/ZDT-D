@@ -361,6 +361,25 @@ parallel. The lock is released by the kernel if a process dies, and every
 coordination failure fails open (dials proceed unsynchronized) so coordination
 can never cause an outage.
 
+### Accelerated recovery after network changes
+
+A network switch (Wi-Fi <-> mobile) can leave most of a 10-backend pool
+suddenly dead while the states are still stale-GREEN: the no-GREEN recovery
+ladder does not trigger, and the normal health cadence under traffic is
+45-60s, which is why a full API-poked recheck used to be needed. t2s now
+detects the mass-failure signature itself: when at least 3 distinct backends
+report runtime/relay failures within 6 seconds, one accelerated full sweep
+starts immediately (throttled to once per 10s). The sweep full-probes all
+backends in parallel with a concurrency cap of 3 — different backends hold
+different dial locks, so a fragile proxy still never sees two simultaneous
+handshakes, but 10 backends now cost ~3-4 probe rounds instead of 10
+sequential ones. The total probe volume per event is one sweep, so rare
+network changes add no background energy; idle cadences are unchanged.
+
+Followers never run this sweep against shared backends themselves: they ask
+the health leader to recheck (`POST /api/v1/backends/recheck`) and import its
+fresh snapshot, so two instances probing one proxy remains impossible.
+
 Flags: `--no-peer-coordination`, `--no-serialize-backend-connects`,
 `--connect-stagger-ms <MS>`. Coordination assumes instances sharing a backend
 also share its credentials; when the shared API token file is missing, peer

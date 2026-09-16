@@ -157,6 +157,13 @@ pub struct RuntimeConfig {
     /// Only one aggregate all-GREEN failure recheck may run at a time.
     pub all_green_failure_recheck_active: AtomicU64,
 
+    /// Recent runtime failure events per backend, used to detect the
+    /// mass-failure signature of a network change (many distinct backends
+    /// failing within a few seconds).
+    pub recent_backend_failures_ms: Mutex<VecDeque<(u64, SocketAddr)>>,
+    /// Throttle accelerated network-change sweeps.
+    pub next_network_sweep_after_ms: AtomicU64,
+
     /// Throttle priority speed-aware stream recycling so a flaky backend cannot
     /// cause repeated reconnect loops.
     pub next_priority_stream_recycle_after_ts: AtomicU64,
@@ -189,6 +196,8 @@ impl Default for RuntimeConfig {
             recent_all_green_failures_ms: Mutex::new(VecDeque::with_capacity(8)),
             next_all_green_failure_recheck_after_ms: AtomicU64::new(0),
             all_green_failure_recheck_active: AtomicU64::new(0),
+            recent_backend_failures_ms: Mutex::new(VecDeque::with_capacity(32)),
+            next_network_sweep_after_ms: AtomicU64::new(0),
             next_priority_stream_recycle_after_ts: AtomicU64::new(0),
         }
     }
@@ -517,6 +526,52 @@ impl RuntimeConfig {
             }
             let new_next = now.saturating_add(cooldown_secs.max(1));
             match self.next_priority_stream_recycle_after_ts.compare_exchange(
+                next_allowed,
+                new_next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return true,
+                Err(_) => continue,
+            }
+        }
+    }
+
+    /// Record a runtime failure signal for one backend. Returns true when
+    /// enough DISTINCT backends failed within the detection window to look
+    /// like a network change rather than a single dead proxy.
+    pub fn note_backend_failure_signal(&self, addr: SocketAddr) -> bool {
+        const WINDOW_MS: u64 = 6_000;
+        const DISTINCT_BACKENDS: usize = 3;
+        let now = now_ms();
+        let mut q = self.recent_backend_failures_ms.lock();
+        q.push_back((now, addr));
+        let cutoff = now.saturating_sub(WINDOW_MS);
+        while let Some((ts, _)) = q.front().copied() {
+            if ts < cutoff {
+                q.pop_front();
+            } else {
+                break;
+            }
+        }
+        let mut distinct: Vec<SocketAddr> = Vec::with_capacity(8);
+        for (_, failed) in q.iter() {
+            if !distinct.contains(failed) {
+                distinct.push(*failed);
+            }
+        }
+        distinct.len() >= DISTINCT_BACKENDS
+    }
+
+    pub fn try_begin_network_sweep(&self, min_interval_ms: u64) -> bool {
+        let now = now_ms();
+        loop {
+            let next_allowed = self.next_network_sweep_after_ms.load(Ordering::Relaxed);
+            if next_allowed > now {
+                return false;
+            }
+            let new_next = now.saturating_add(min_interval_ms.max(1));
+            match self.next_network_sweep_after_ms.compare_exchange(
                 next_allowed,
                 new_next,
                 Ordering::Relaxed,

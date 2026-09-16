@@ -131,6 +131,20 @@ fn is_proxy_zero_down_suspect(info: &stats::ConnInfo) -> bool {
         && stats::now_ts().saturating_sub(info.started_ts) >= 3
 }
 
+/// Many distinct backends failing within a few seconds is the signature of a
+/// network change, not of one dead proxy. Feed every runtime failure signal
+/// into the detector and, on a mass-failure signature, start one accelerated
+/// parallel full sweep (throttled to once per 10s) so traffic moves to the
+/// still-working backends immediately instead of waiting for the normal
+/// 45-60s health cadence.
+fn maybe_start_network_change_sweep(state: &AppState, backend: SocketAddr) {
+    if state.runtime.note_backend_failure_signal(backend)
+        && state.runtime.try_begin_network_sweep(10_000)
+    {
+        stats::spawn_network_change_sweep(state.clone());
+    }
+}
+
 async fn sniff_client_host(client: &tokio::net::TcpStream, mode: SniffMode) -> Option<crate::sniff::SniffResult> {
     use crate::sniff::SniffProgress;
     use tokio::time::{Duration, Instant};
@@ -934,6 +948,7 @@ async fn proxy_tcp(
     if let (Some(backend), Some(reason)) = (chosen_backend, suspect_reason) {
         if chosen_mode == "socks" {
             stats::spawn_suspect_backend_recheck(state.clone(), backend, reason);
+            maybe_start_network_change_sweep(&state, backend);
         }
     }
 
@@ -1274,6 +1289,7 @@ async fn connect_socks(
                     if wake_backend {
                         state.runtime.backend_wake_throttled(2500);
                     }
+                    maybe_start_network_change_sweep(&state, backend);
                 } else {
                     tracing::debug!(
                         "backend {} target-level SOCKS failure for cid {} ignored for health: {}",

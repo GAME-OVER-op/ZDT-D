@@ -112,7 +112,8 @@ impl BackendEntry {
     fn note_dns_path_failure(&mut self) -> u32 {
         self.dns_failure_streak = self.dns_failure_streak.saturating_add(1);
         if self.dns_failure_streak >= 2 {
-            let index = (self.dns_failure_streak - 2).min(DNS_UNFIT_COOLDOWNS_SECS.len() - 1);
+            let index = (self.dns_failure_streak - 2)
+                .min((DNS_UNFIT_COOLDOWNS_SECS.len() - 1) as u32) as usize;
             self.dns_unfit_until =
                 Instant::now() + Duration::from_secs(DNS_UNFIT_COOLDOWNS_SECS[index]);
         }
@@ -126,7 +127,7 @@ pub struct BackendPool {
     config: Arc<Config>,
     probe_targets: Arc<Vec<TargetAddr>>,
     health_wake: Arc<Notify>,
-    green_hook: std::sync::Mutex<Option<Arc<dyn GreenTransitionHook>>>,
+    green_hook: Arc<std::sync::Mutex<Option<Arc<dyn GreenTransitionHook>>>>,
 }
 
 #[derive(Debug)]
@@ -190,7 +191,7 @@ impl BackendPool {
             config,
             probe_targets,
             health_wake: Arc::new(Notify::new()),
-            green_hook: std::sync::Mutex::new(None),
+            green_hook: Arc::new(std::sync::Mutex::new(None)),
         })
     }
 

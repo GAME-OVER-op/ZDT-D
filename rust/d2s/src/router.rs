@@ -32,6 +32,9 @@ const DIRECT_FAILURE_COOLDOWN_MS: u64 = 5_000;
 /// go unused.
 const WARM_TUNNELS_PER_TARGET: usize = 4;
 
+/// How many recently used DNS targets are remembered as warmup candidates.
+const HOT_TARGETS_CAP: usize = 8;
+
 struct WarmTunnel {
     created: Instant,
     stream: TcpStream,
@@ -92,6 +95,10 @@ pub struct Router {
     direct_fallback_active: Arc<AtomicBool>,
     direct_health: Arc<DirectHealth>,
     warm_cache: Arc<TokioMutex<HashMap<TargetAddr, VecDeque<WarmTunnel>>>>,
+    /// Recently used DNS targets, most recent last. The warmup preconnect
+    /// establishes a tunnel to the hottest one right after a backend turns
+    /// GREEN, so the first real query does not pay route establishment.
+    hot_targets: Arc<std::sync::Mutex<HashMap<TargetAddr, Instant>>>,
 }
 
 impl Router {
@@ -103,7 +110,29 @@ impl Router {
             direct_fallback_active: Arc::new(AtomicBool::new(false)),
             direct_health: Arc::new(DirectHealth::default()),
             warm_cache: Arc::new(TokioMutex::new(HashMap::new())),
+            hot_targets: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
+    }
+
+    fn note_hot_target(&self, target: &TargetAddr) {
+        let mut hot = self.hot_targets.lock().expect("hot targets lock poisoned");
+        hot.insert(target.clone(), Instant::now());
+        if hot.len() > HOT_TARGETS_CAP {
+            if let Some(oldest) = hot
+                .iter()
+                .min_by_key(|(_, at)| **at)
+                .map(|(target, _)| target.clone())
+            {
+                hot.remove(&oldest);
+            }
+        }
+    }
+
+    fn hottest_target(&self) -> Option<TargetAddr> {
+        let hot = self.hot_targets.lock().expect("hot targets lock poisoned");
+        hot.iter()
+            .max_by_key(|(_, at)| **at)
+            .map(|(target, _)| target.clone())
     }
 
     pub async fn connect(&self, target: &TargetAddr) -> Result<RoutedStream> {
@@ -166,6 +195,7 @@ impl Router {
             return None;
         }
 
+        self.note_hot_target(target);
         self.stats.warm_tunnel_hits.fetch_add(1, Ordering::Relaxed);
         self.note_socks_restored();
         debug!(%target, %backend, "served request from a warm pre-connected tunnel");
@@ -211,12 +241,16 @@ impl Router {
             self.connect_sequential(candidates, target, deadline).await
         };
         let Ok(routed) = routed else { return };
-        if routed.backend.is_none() {
-            // Never cache DIRECT streams: they skip SOCKS accounting and the
-            // direct path has its own cooldown semantics.
-            return;
-        }
+        // Never cache DIRECT streams: they skip SOCKS accounting and the
+        // direct path has its own cooldown semantics.
+        let Some(backend) = routed.backend else { return };
+        self.store_warm_tunnel(target.clone(), backend, routed.stream)
+            .await;
+    }
 
+    /// Store one pre-connected tunnel, sweeping expired entries of every
+    /// target first and capping the queue length.
+    async fn store_warm_tunnel(&self, target: TargetAddr, backend: SocketAddr, stream: TcpStream) {
         let ttl = self.config.warm_tunnel_ttl();
         let mut cache = self.warm_cache.lock().await;
         // Opportunistic sweep: drop expired tunnels of other targets that no
@@ -226,15 +260,64 @@ impl Router {
                 queue.pop_front();
             }
         }
-        let queue = cache.entry(target.clone()).or_default();
+        let queue = cache.entry(target).or_default();
         queue.push_back(WarmTunnel {
             created: Instant::now(),
-            stream: routed.stream,
-            backend: routed.backend,
+            stream,
+            backend: Some(backend),
         });
         while queue.len() > WARM_TUNNELS_PER_TARGET {
             queue.pop_front();
         }
+    }
+
+    async fn warm_cache_has_fresh(&self, target: &TargetAddr) -> bool {
+        let ttl = self.config.warm_tunnel_ttl();
+        let cache = self.warm_cache.lock().await;
+        cache
+            .get(target)
+            .and_then(|queue| queue.front())
+            .map(|tunnel| tunnel.created.elapsed() <= ttl)
+            .unwrap_or(false)
+    }
+
+    /// Proactive warmup for a freshly (re-)GREEN backend: pre-establish one
+    /// tunnel to the hottest known DNS target so the first real query does not
+    /// pay the full route establishment cost. Without this, every recovery
+    /// made the first DNS requests slow until the transport session warmed up.
+    async fn preconnect_warm_tunnel(&self, backend: SocketAddr) {
+        let Some(target) = self.hottest_target() else {
+            // No DNS target observed yet (fresh start): the first real request
+            // warms the cache the usual way.
+            return;
+        };
+        if self.warm_cache_has_fresh(&target).await {
+            return;
+        }
+        if !self.pool.backend_selectable(backend).await {
+            return;
+        }
+        let attempt = tokio::time::timeout(
+            self.config.backend_attempt_timeout(),
+            connect_via_socks5(
+                backend,
+                &target,
+                self.config.connect_timeout(),
+                self.config.upstream_handshake_timeout(),
+                self.config.tcp_nodelay,
+            ),
+        )
+        .await;
+        let Ok(Ok(stream)) = attempt else {
+            debug!(%backend, "warmup preconnect failed; the next real request warms the cache as before");
+            return;
+        };
+        // Re-check after the dial: the backend may have degraded meanwhile.
+        if !self.pool.backend_selectable(backend).await {
+            return;
+        }
+        self.store_warm_tunnel(target, backend, stream).await;
+        debug!(%backend, "warm tunnel pre-connected after GREEN transition");
     }
 
     /// Hedged route establishment (Happy-Eyeballs style), used when several
@@ -302,6 +385,7 @@ impl Router {
                                 .upstream_connections
                                 .fetch_add(1, Ordering::Relaxed);
                             self.note_socks_restored();
+                            self.note_hot_target(target);
                             debug!(backend = %backend, %target, "hedged dial won");
 
                             if !in_flight.is_empty() {
@@ -513,6 +597,7 @@ impl Router {
                         .upstream_connections
                         .fetch_add(1, Ordering::Relaxed);
                     self.note_socks_restored();
+                    self.note_hot_target(target);
                     debug!(%backend, %target, "routed connection through SOCKS5 backend");
                     return Ok(RoutedStream {
                         stream,
@@ -552,6 +637,7 @@ impl Router {
                                             .upstream_connections
                                             .fetch_add(1, Ordering::Relaxed);
                                         self.note_socks_restored();
+                                        self.note_hot_target(target);
                                         debug!(%backend, %target, "single-backend transient retry succeeded");
                                         return Ok(RoutedStream {
                                             stream,
@@ -656,13 +742,24 @@ impl Router {
     pub fn report_relay_success(
         &self,
         route: RouteKind,
-        _backend: Option<SocketAddr>,
+        backend: Option<SocketAddr>,
         remote_to_client: u64,
     ) {
         // For DIRECT, receiving actual payload is stronger evidence than TCP
         // connect alone and clears the failure cooldown.
         if route == RouteKind::Direct && remote_to_client > 0 {
             self.direct_health.note_success();
+        }
+        // A relayed DNS exchange that delivered downstream bytes is the
+        // strongest DNS-fitness proof: clear any accumulated DNS-path
+        // exclusion for the backend that served it.
+        if route == RouteKind::Socks && remote_to_client > 0 {
+            if let Some(backend) = backend {
+                let pool = self.pool.clone();
+                tokio::spawn(async move {
+                    pool.mark_dns_path_ok(backend).await;
+                });
+            }
         }
     }
 
@@ -703,6 +800,18 @@ impl Router {
             }
         }
         Ok(())
+    }
+}
+
+impl crate::backend::GreenTransitionHook for Router {
+    fn on_backend_green(&self, backend: SocketAddr) {
+        if !self.config.warm_tunnels {
+            return;
+        }
+        let router = self.clone();
+        tokio::spawn(async move {
+            router.preconnect_warm_tunnel(backend).await;
+        });
     }
 }
 

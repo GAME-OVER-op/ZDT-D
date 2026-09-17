@@ -58,6 +58,10 @@ pub async fn start(mut config: Config) -> Result<RunningServer> {
 
     let stats = Arc::new(RuntimeStats::default());
     let router = Router::new(config.clone(), pool.clone(), stats.clone());
+    // Warmup: when a backend transitions into GREEN (initial verification or
+    // recovery), the router pre-connects a tunnel to the hottest DNS target so
+    // the first real query is instant.
+    pool.set_green_hook(Arc::new(router.clone()));
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let task = tokio::spawn(run_loop(
         listener,

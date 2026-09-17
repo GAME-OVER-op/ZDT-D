@@ -33,6 +33,20 @@ const RUNTIME_EWMA_ALPHA: f64 = 0.25;
 const MIN_SELECTION_WEIGHT: f64 = 0.02;
 const SELECTION_WEIGHT_EXPONENT: f64 = 2.0;
 
+/// A backend whose tunnel cannot actually carry DNS traffic keeps answering
+/// generic TLS probes (probe_targets), so the Full probe never demotes it.
+/// Selection-level exclusion escalates from runtime DNS-path evidence
+/// (target/path SOCKS replies, relay stalls with zero downstream) instead.
+const DNS_UNFIT_COOLDOWNS_SECS: [u64; 4] = [15, 30, 60, 120];
+
+/// Notified when a backend transitions into GREEN (initial verification or
+/// recovery). D2S uses it to pre-warm a tunnel to the hottest known DNS target
+/// so the first real query after recovery does not pay the full route
+/// establishment cost (transport session setup included).
+pub trait GreenTransitionHook: Send + Sync {
+    fn on_backend_green(&self, backend: SocketAddr);
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum BackendState {
@@ -75,6 +89,13 @@ struct BackendEntry {
     force_full_probe: bool,
     next_forced_probe_after: Instant,
     runtime_cooldown_until: Instant,
+    /// Consecutive runtime signals that this backend did not actually serve
+    /// DNS traffic. Cleared by real served traffic (mark_dns_path_ok).
+    dns_failure_streak: u32,
+    /// While in the future the backend is skipped by weighted selection
+    /// (unless it is the only GREEN backend - exclusions never manufacture a
+    /// DNS outage).
+    dns_unfit_until: Instant,
 }
 
 #[derive(Debug)]
@@ -84,12 +105,28 @@ struct PoolInner {
     no_green_since: Option<Instant>,
 }
 
+impl BackendEntry {
+    /// Record one runtime signal that this backend did not actually serve DNS
+    /// traffic. Two consecutive signals start a selection-level exclusion with
+    /// an escalating cooldown; real served traffic resets everything.
+    fn note_dns_path_failure(&mut self) -> u32 {
+        self.dns_failure_streak = self.dns_failure_streak.saturating_add(1);
+        if self.dns_failure_streak >= 2 {
+            let index = (self.dns_failure_streak - 2).min(DNS_UNFIT_COOLDOWNS_SECS.len() - 1);
+            self.dns_unfit_until =
+                Instant::now() + Duration::from_secs(DNS_UNFIT_COOLDOWNS_SECS[index]);
+        }
+        self.dns_failure_streak
+    }
+}
+
 #[derive(Clone)]
 pub struct BackendPool {
     inner: Arc<Mutex<PoolInner>>,
     config: Arc<Config>,
     probe_targets: Arc<Vec<TargetAddr>>,
     health_wake: Arc<Notify>,
+    green_hook: std::sync::Mutex<Option<Arc<dyn GreenTransitionHook>>>,
 }
 
 #[derive(Debug)]
@@ -134,6 +171,8 @@ impl BackendPool {
                 force_full_probe: true,
                 next_forced_probe_after: now,
                 runtime_cooldown_until: now,
+                dns_failure_streak: 0,
+                dns_unfit_until: now,
             })
             .collect();
         let index = entries
@@ -151,7 +190,17 @@ impl BackendPool {
             config,
             probe_targets,
             health_wake: Arc::new(Notify::new()),
+            green_hook: std::sync::Mutex::new(None),
         })
+    }
+
+    /// Install the GREEN-transition hook (the router's warmup preconnect).
+    /// Called once during server startup.
+    pub fn set_green_hook(&self, hook: Arc<dyn GreenTransitionHook>) {
+        *self
+            .green_hook
+            .lock()
+            .expect("green hook mutex poisoned") = Some(hook);
     }
 
     pub async fn initial_probe(&self) {
@@ -175,13 +224,17 @@ impl BackendPool {
             return Vec::new();
         }
 
-        // Runtime failures temporarily remove a backend from the preferred path.
-        // If every GREEN backend is cooling down, retain the old single-backend-
-        // safe behaviour instead of manufacturing a DNS outage.
+        // Runtime failures and proven DNS-path failures temporarily remove a
+        // backend from the preferred path. If every GREEN backend is cooling
+        // down or DNS-unfit, retain the old single-backend-safe behaviour
+        // instead of manufacturing a DNS outage.
         let ready_green: Vec<usize> = all_green
             .iter()
             .copied()
-            .filter(|&index| inner.entries[index].runtime_cooldown_until <= now)
+            .filter(|&index| {
+                let entry = &inner.entries[index];
+                entry.runtime_cooldown_until <= now && entry.dns_unfit_until <= now
+            })
             .collect();
         let eligible = if ready_green.is_empty() { all_green } else { ready_green };
 
@@ -380,7 +433,25 @@ impl BackendPool {
                 entry.next_forced_probe_after = now + self.config.runtime_cooldown();
             }
 
-            if class != RuntimeFailureClass::TargetPath {
+            if class == RuntimeFailureClass::TargetPath {
+                // Target/path replies (SOCKS REP 0x02..0x06) are exactly how a
+                // backend that cannot carry DNS traffic fails: its generic TLS
+                // probe path still works, so the Full probe keeps it GREEN
+                // while every real query fails. Escalate a selection-level
+                // exclusion from these runtime signals; a served DNS query
+                // clears it (mark_dns_path_ok). Health state itself stays
+                // untouched - the Full probe remains the authority for
+                // GREEN/YELLOW/RED.
+                let streak = entry.note_dns_path_failure();
+                if streak >= 2 {
+                    warn!(
+                        backend = %addr,
+                        dns_path_failures = streak,
+                        error = %error,
+                        "backend keeps failing DNS-path replies; excluded from weighted selection"
+                    );
+                }
+            } else {
                 // A transport/backend failure must immediately remove stale
                 // runtime warmth so this backend cannot return to the preferred
                 // set as soon as the short cooldown expires. Full health remains
@@ -461,6 +532,19 @@ impl BackendPool {
             let entry = &mut inner.entries[index];
             entry.last_error = Some(format!("relay suspect: {error}"));
             entry.last_check_unix = Some(unix_now());
+            // A relay that forwarded client bytes and received nothing back is
+            // DNS-path evidence: the query was not served. Escalate the same
+            // selection-level exclusion as target-path replies; the forced
+            // Full probe below remains the health authority.
+            let streak = entry.note_dns_path_failure();
+            if streak >= 2 {
+                warn!(
+                    backend = %addr,
+                    dns_path_failures = streak,
+                    error = %error,
+                    "relay served no downstream; backend excluded from weighted selection"
+                );
+            }
             let now = Instant::now();
             if now >= entry.next_forced_probe_after {
                 entry.force_full_probe = true;
@@ -472,6 +556,19 @@ impl BackendPool {
         if wake {
             self.health_wake.notify_one();
             debug!(backend = %addr, error = %error, "relay error triggered Full backend recheck");
+        }
+    }
+
+    /// A relayed DNS exchange that actually delivered downstream bytes is the
+    /// strongest proof of DNS fitness; reset the DNS-path escalation.
+    pub async fn mark_dns_path_ok(&self, addr: SocketAddr) {
+        let mut inner = self.inner.lock().await;
+        let Some(index) = inner.index.get(&addr).copied() else { return; };
+        let entry = &mut inner.entries[index];
+        if entry.dns_failure_streak != 0 || entry.dns_unfit_until > Instant::now() {
+            entry.dns_failure_streak = 0;
+            entry.dns_unfit_until = Instant::now();
+            debug!(backend = %addr, "backend served real DNS traffic; DNS-path exclusion cleared");
         }
     }
 
@@ -817,6 +914,22 @@ impl BackendPool {
         // deadline instead of sleeping past it.
         self.health_wake.notify_one();
 
+        // A transition into GREEN (initial verification or recovery) is the
+        // warmup moment: let the router pre-connect a tunnel to the hottest
+        // DNS target so the first real query is instant.
+        if let Some((old, new, _, _)) = &transition {
+            if *new == BackendState::Green && *old != BackendState::Green {
+                let hook = self
+                    .green_hook
+                    .lock()
+                    .ok()
+                    .and_then(|guard| guard.clone());
+                if let Some(hook) = hook {
+                    hook.on_backend_green(addr);
+                }
+            }
+        }
+
         if let Some((old, new, error, failures)) = transition {
             match new {
                 BackendState::Green => info!(backend = %addr, old_state = ?old, latency_ms = ?log_success, "backend is GREEN after Full Internet probe"),
@@ -869,13 +982,17 @@ impl BackendPool {
         inner.entries[index].runtime_latency_ewma_ms
     }
 
-    /// GREEN and outside the runtime selection cooldown: safe to hand the
-    /// backend to the hedged dialer as a candidate.
+    /// GREEN, outside the runtime selection cooldown and not currently
+    /// excluded by DNS-path failure escalation: safe to hand the backend to
+    /// the hedged dialer, warm tunnels and warmup preconnects.
     pub async fn backend_selectable(&self, addr: SocketAddr) -> bool {
         let inner = self.inner.lock().await;
         let Some(index) = inner.index.get(&addr).copied() else { return false; };
         let entry = &inner.entries[index];
-        entry.state == BackendState::Green && entry.runtime_cooldown_until <= Instant::now()
+        let now = Instant::now();
+        entry.state == BackendState::Green
+            && entry.runtime_cooldown_until <= now
+            && entry.dns_unfit_until <= now
     }
 
     pub async fn any_green(&self) -> bool {
@@ -907,6 +1024,8 @@ impl BackendPool {
                 runtime_warm: entry.state == BackendState::Green
                     && entry.runtime_cooldown_until <= Instant::now()
                     && entry.runtime_latency_ewma_ms.is_some(),
+                dns_path_failures: entry.dns_failure_streak,
+                dns_unfit: entry.dns_unfit_until > Instant::now(),
                 selected_connections: entry.selected_connections,
                 successful_connections: entry.successful_connections,
                 failed_connections: entry.failed_connections,
@@ -1221,5 +1340,98 @@ probe_targets = ["1.1.1.1:443", "8.8.8.8:443"]
             inner.entries[1].state = BackendState::Yellow;
         }
         assert_eq!(pool.candidate_order().await, vec![first]);
+    }
+
+    #[tokio::test]
+    async fn dns_path_failures_exclude_backend_and_real_traffic_restores_it() {
+        let fast: SocketAddr = "127.0.0.1:11590".parse().unwrap();
+        let slow: SocketAddr = "127.0.0.1:11591".parse().unwrap();
+        let pool = BackendPool::new(test_config(vec![fast, slow])).unwrap();
+        {
+            let mut inner = pool.inner.lock().await;
+            for entry in &mut inner.entries {
+                entry.state = BackendState::Green;
+                entry.force_full_probe = false;
+            }
+            inner.entries[0].runtime_latency_ewma_ms = Some(10.0);
+            inner.entries[1].runtime_latency_ewma_ms = Some(50.0);
+        }
+
+        // A backend that passes generic probes but cannot carry DNS keeps
+        // failing real queries with target/path replies. One failure is not
+        // enough to exclude; repeated failures are.
+        pool.mark_runtime_failure(
+            fast,
+            RuntimeFailureClass::TargetPath,
+            "SOCKS5 CONNECT failed with reply code 0x01",
+        )
+        .await;
+        assert_eq!(
+            pool.candidate_order().await[0],
+            fast,
+            "a single DNS-path failure must not exclude the backend yet"
+        );
+        pool.mark_runtime_failure(
+            fast,
+            RuntimeFailureClass::TargetPath,
+            "SOCKS5 CONNECT failed with reply code 0x01",
+        )
+        .await;
+        assert_eq!(
+            pool.candidate_order().await[0],
+            slow,
+            "repeated DNS-path failures must exclude the backend from selection"
+        );
+
+        // Real served DNS traffic is the strongest fitness proof.
+        pool.mark_dns_path_ok(fast).await;
+        assert_eq!(
+            pool.candidate_order().await[0],
+            fast,
+            "served DNS traffic must restore the backend"
+        );
+    }
+
+    #[tokio::test]
+    async fn dns_unfit_backend_stays_selectable_when_it_is_the_only_green() {
+        let only: SocketAddr = "127.0.0.1:11590".parse().unwrap();
+        let other: SocketAddr = "127.0.0.1:11591".parse().unwrap();
+        let pool = BackendPool::new(test_config(vec![only, other])).unwrap();
+        {
+            let mut inner = pool.inner.lock().await;
+            inner.entries[0].state = BackendState::Green;
+            inner.entries[0].force_full_probe = false;
+            inner.entries[1].state = BackendState::Yellow;
+            inner.entries[1].force_full_probe = false;
+        }
+        pool.mark_runtime_failure(only, RuntimeFailureClass::TargetPath, "reply 0x04").await;
+        pool.mark_runtime_failure(only, RuntimeFailureClass::TargetPath, "reply 0x04").await;
+        assert_eq!(
+            pool.candidate_order().await,
+            vec![only],
+            "DNS-path exclusion must never manufacture a DNS outage"
+        );
+    }
+
+    #[tokio::test]
+    async fn relay_suspect_feeds_the_same_dns_path_exclusion() {
+        let first: SocketAddr = "127.0.0.1:11590".parse().unwrap();
+        let second: SocketAddr = "127.0.0.1:11591".parse().unwrap();
+        let pool = BackendPool::new(test_config(vec![first, second])).unwrap();
+        {
+            let mut inner = pool.inner.lock().await;
+            for entry in &mut inner.entries {
+                entry.state = BackendState::Green;
+                entry.force_full_probe = false;
+                entry.runtime_latency_ewma_ms = Some(30.0);
+            }
+        }
+        pool.mark_relay_suspect(first, "relay closed after 1024 upstream bytes with zero downstream").await;
+        pool.mark_relay_suspect(first, "relay closed after 2048 upstream bytes with zero downstream").await;
+        assert_eq!(
+            pool.candidate_order().await[0],
+            second,
+            "repeated zero-downstream relays must exclude the backend from selection"
+        );
     }
 }

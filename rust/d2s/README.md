@@ -123,6 +123,34 @@ status counter makes the hit rate visible. In steady state the number of
 upstream connects per request is unchanged; only the final replacement before
 an idle gap can go unused.
 
+On top of the reactive cache, a backend that transitions into GREEN (initial
+verification or recovery) immediately pre-connects one tunnel to the hottest
+recently used DNS target. Without this, every recovery made the first DNS
+requests slow until the transport session warmed up — now the warm path is
+ready before the first query arrives. The preconnect re-checks that the
+backend is still selectable after its dial and silently gives up otherwise.
+
+### DNS-path fitness of backends
+
+Some backends pass every generic health stage (SOCKS reachable, TLS data-plane
+to the probe targets) while their transport cannot actually carry DNS
+traffic. Such a backend fails real queries with target/path SOCKS replies or
+relays that send bytes upstream and never receive a response — failures the
+Full probe cannot see, so it stays GREEN. D2S now escalates a
+**selection-level exclusion** from that runtime evidence:
+
+- each target/path SOCKS reply and each zero-downstream relay suspect
+  increments the backend's DNS-path failure streak;
+- two consecutive signals exclude the backend from weighted selection for an
+  escalating cooldown (15 s -> 30 s -> 60 s -> 120 s) and also invalidate its
+  cached warm tunnels;
+- the exclusion never demotes GREEN/YELLOW/RED — the strict Full probe stays
+  the health authority — and never applies when the backend is the only GREEN
+  route, so it can never manufacture a DNS outage;
+- one relay that actually delivered downstream bytes clears the whole streak
+  immediately (`dns_path_failures` / `dns_unfit` are visible in the status
+  JSON).
+
 ### Recovery when no GREEN backend exists
 
 When the last GREEN backend is lost, D2S automatically uses an accelerated Full

@@ -792,3 +792,52 @@ async fn expired_warm_tunnels_are_never_served() {
     backend.stop().await;
     echo.stop().await;
 }
+
+#[tokio::test]
+async fn green_transition_preconnects_warm_tunnel_for_the_hot_target() {
+    let echo = EchoServer::start().await;
+    let backend = MockSocks::start(false).await;
+    let mut cfg = config(vec![backend.addr], echo.addr);
+    cfg.warm_tunnels = true;
+    let server = start(cfg).await.unwrap();
+    wait_for_green(&server, 1).await;
+
+    // Teach D2S the hot DNS target with one real request.
+    roundtrip(server.listen_addr, echo.addr, b"warmup").await;
+    let accepts_before = backend.accept_count();
+
+    // Force the backend out of GREEN and recover it: the transition must
+    // pre-connect one tunnel to the hot target without any client traffic.
+    backend.set_failing(true);
+    server
+        .pool
+        .request_full_probe(backend.addr, "test demotion")
+        .await;
+    wait_for_state(&server, backend.addr, BackendState::Yellow).await;
+    backend.set_failing(false);
+    server
+        .pool
+        .request_full_probe(backend.addr, "test recovery")
+        .await;
+    wait_for_green(&server, 1).await;
+
+    let mut preconnected = false;
+    for _ in 0..100 {
+        if backend.accept_count() > accepts_before {
+            preconnected = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(
+        preconnected,
+        "GREEN transition did not pre-connect a warm tunnel to the hot target"
+    );
+
+    // The pre-connected tunnel must actually work end to end.
+    roundtrip(server.listen_addr, echo.addr, b"after-warmup").await;
+
+    server.shutdown().await.unwrap();
+    backend.stop().await;
+    echo.stop().await;
+}

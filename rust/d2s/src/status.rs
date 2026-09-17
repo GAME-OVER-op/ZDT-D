@@ -65,6 +65,12 @@ pub struct BackendSnapshot {
     pub internet_latency_ms: Option<f64>,
     pub runtime_latency_ewma_ms: Option<f64>,
     pub runtime_warm: bool,
+    /// Consecutive runtime signals that this backend did not actually serve
+    /// DNS traffic (target/path replies, relays with zero downstream).
+    pub dns_path_failures: u32,
+    /// True while the backend is excluded from weighted selection because of
+    /// those signals (unless it is the only GREEN backend).
+    pub dns_unfit: bool,
     pub selected_connections: u64,
     pub successful_connections: u64,
     pub failed_connections: u64,

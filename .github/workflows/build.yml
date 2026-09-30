@@ -4200,7 +4200,7 @@ jobs:
             go build \
               -trimpath \
               -buildvcs=false \
-              -ldflags="-s -w -buildid=" \
+              -ldflags="-s -w -buildid= -checklinkname=0" \
               -o "$ARTIFACT_DIR/lyrebird" \
               "$LYREBIRD_PACKAGE"
           popd > /dev/null

@@ -2160,7 +2160,7 @@ jobs:
           cache: false
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10
+        uses: astral-sh/setup-uv@v5
 
       - name: Prepare Android NDK
         run: |

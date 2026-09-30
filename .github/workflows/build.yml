@@ -1181,7 +1181,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.4'
+          go-version: 'stable'
           cache: false
 
       - name: Prepare Android SDK paths
@@ -1480,7 +1480,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.4'
+          go-version: 'stable'
           cache: false
 
       - name: Prepare Android SDK paths
@@ -1637,7 +1637,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.24.4'
+          go-version: 'stable'
           cache: false
 
       - name: Prepare Android SDK paths
@@ -1807,7 +1807,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.24.4'
+          go-version: 'stable'
           cache: false
 
       - name: Prepare Android SDK paths
@@ -1980,7 +1980,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.24.4'
+          go-version: 'stable'
           cache: false
 
       - name: Prepare Android SDK paths
@@ -2156,7 +2156,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.26.4'
+          go-version: 'stable'
           cache: false
 
       - name: Set up uv
@@ -2463,7 +2463,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.24.4'
+          go-version: 'stable'
           cache: false
 
       - name: Prepare Android SDK paths
@@ -2652,7 +2652,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.24.4'
+          go-version: 'stable'
           cache: false
 
       - name: Prepare Android SDK paths
@@ -2836,7 +2836,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.24.4'
+          go-version: 'stable'
           cache: false
 
       - name: Prepare Android SDK paths
@@ -4104,7 +4104,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.22.12'
+          go-version: 'stable'
           cache: false
 
       - name: Prepare Android SDK paths

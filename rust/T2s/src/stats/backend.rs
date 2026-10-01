@@ -206,6 +206,7 @@ impl SocksBackends {
             priority_speed_last_probe_ts: 0,
             priority_speed_probe_rr: 0,
             backend_mode: args.backend_mode,
+            allow_root_protector_mode: !args.non_root,
             priority_groups,
             priority_rr,
             rr: 0,

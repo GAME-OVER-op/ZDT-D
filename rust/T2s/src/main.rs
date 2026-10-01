@@ -246,6 +246,11 @@ fn main() -> Result<()> {
 
 async fn async_main(workers: usize) -> Result<()> {
     let args = Args::parse_and_normalize().context("parse args")?;
+    let tproxy_enabled = if args.non_root {
+        false
+    } else {
+        transparent::tproxy_enabled_from_settings()
+    };
     // Cross-instance backend handshake serialization must be configured before
     // any listener or health loop can dial a backend.
     coord::init_dial_coordination(
@@ -254,8 +259,7 @@ async fn async_main(workers: usize) -> Result<()> {
         args.connect_stagger_ms,
     );
     let started_at = stats::now_ts();
-    let api = Arc::new(api_runtime::ApiRuntime::new(&args, started_at).context("init t2s api runtime")?);
-    let tproxy_enabled = transparent::tproxy_enabled_from_settings();
+    let api = Arc::new(api_runtime::ApiRuntime::new(&args, started_at, tproxy_enabled).context("init t2s api runtime")?);
     let wrapped_socks_addr = if args.wrapped_socks_host.trim().is_empty() || args.wrapped_socks_port == 0 {
         None
     } else {
@@ -267,6 +271,10 @@ async fn async_main(workers: usize) -> Result<()> {
     };
     if tproxy_enabled {
         info!("ZDT-D tproxy_enabled=true: enabling TCP TPROXY listener and UDP TPROXY receiver");
+    } else if args.non_root {
+        info!(
+            "Non-root mode: strict authenticated SOCKS5 listener enabled; TPROXY, SO_ORIGINAL_DST, UDP TPROXY, and root settings are disabled"
+        );
     }
 
     let rules = rules::Rules::load_from_env();
@@ -354,7 +362,7 @@ async fn async_main(workers: usize) -> Result<()> {
         });
     }
 
-    // TCP listener; UDP TPROXY is started separately when enabled
+    // TCP listener; UDP TPROXY is started separately only in root mode when enabled.
     {
         let st = state.clone();
         tokio::spawn(async move {
@@ -545,10 +553,29 @@ async fn proxy_tcp(
 
     state.conns.set_mode(cid, "pending");
 
-    // Determine target. The same listen_port is mixed-aware: if the peer speaks
-    // SOCKS5, the target comes from CONNECT and we must not call SO_ORIGINAL_DST.
-    // Otherwise keep the existing transparent/explicit-target behaviour.
-    let target = if let Some(socks_target) = try_accept_socks5_inbound(&mut client).await? {
+    // Determine target. Non-root mode is deliberately strict: the listener is
+    // SOCKS5-only and requires the app token via RFC1929 username/password
+    // authentication. Root mode keeps the existing mixed SOCKS/transparent
+    // behavior for backwards compatibility.
+    let target = if state.args.non_root {
+        let token = state
+            .api
+            .token
+            .as_deref()
+            .ok_or_else(|| anyhow!("non-root SOCKS5 authentication token is unavailable"))?;
+        let timeout = Duration::from_secs((state.args.connect_timeout as u64).clamp(2, 15));
+        let target = tokio::time::timeout(
+            timeout,
+            accept_socks5_inbound(
+                &mut client,
+                Some((api_runtime::NON_ROOT_SOCKS_USERNAME, token)),
+            ),
+        )
+        .await
+        .context("non-root SOCKS5 inbound handshake timeout")??;
+        state.conns.set_mode(cid, "socks_inbound");
+        target
+    } else if let Some(socks_target) = try_accept_socks5_inbound(&mut client).await? {
         state.conns.set_mode(cid, "socks_inbound");
         socks_target
     } else if let (Some(h), Some(p)) = (state.args.target_host.clone(), state.args.target_port) {
@@ -1003,8 +1030,6 @@ async fn proxy_tcp(
 }
 
 async fn try_accept_socks5_inbound(client: &mut tokio::net::TcpStream) -> Result<Option<stats::Target>> {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
     let mut peek = [0u8; 2];
     let Ok(Ok(n)) = tokio::time::timeout(Duration::from_millis(35), client.peek(&mut peek)).await else {
         return Ok(None);
@@ -1018,16 +1043,50 @@ async fn try_accept_socks5_inbound(client: &mut tokio::net::TcpStream) -> Result
         return Ok(None);
     }
 
-    let mut greeting = vec![0u8; 2 + nmethods];
-    client.read_exact(&mut greeting).await.context("read SOCKS5 inbound greeting")?;
-    if greeting[0] != 0x05 {
-        return Ok(None);
+    accept_socks5_inbound(client, None).await.map(Some)
+}
+
+async fn accept_socks5_inbound(
+    client: &mut tokio::net::TcpStream,
+    required_auth: Option<(&str, &str)>,
+) -> Result<stats::Target> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut greeting_header = [0u8; 2];
+    client
+        .read_exact(&mut greeting_header)
+        .await
+        .context("read SOCKS5 inbound greeting header")?;
+    if greeting_header[0] != 0x05 {
+        return Err(anyhow!("SOCKS5 inbound: invalid greeting version {}", greeting_header[0]));
     }
-    if !greeting[2..].contains(&0x00) {
+    let nmethods = greeting_header[1] as usize;
+    if nmethods == 0 || nmethods > 16 {
         let _ = client.write_all(&[0x05, 0xFF]).await;
-        return Err(anyhow!("SOCKS5 inbound: no-auth method is required"));
+        return Err(anyhow!("SOCKS5 inbound: invalid method count {}", nmethods));
     }
-    client.write_all(&[0x05, 0x00]).await.context("write SOCKS5 inbound greeting reply")?;
+    let mut methods = vec![0u8; nmethods];
+    client
+        .read_exact(&mut methods)
+        .await
+        .context("read SOCKS5 inbound methods")?;
+
+    let selected_method = if required_auth.is_some() { 0x02 } else { 0x00 };
+    if !methods.contains(&selected_method) {
+        let _ = client.write_all(&[0x05, 0xFF]).await;
+        return Err(anyhow!(
+            "SOCKS5 inbound: required authentication method {:#x} was not offered",
+            selected_method
+        ));
+    }
+    client
+        .write_all(&[0x05, selected_method])
+        .await
+        .context("write SOCKS5 inbound greeting reply")?;
+
+    if let Some((expected_user, expected_password)) = required_auth {
+        authenticate_socks5_inbound(client, expected_user, expected_password).await?;
+    }
 
     let mut hdr = [0u8; 4];
     client.read_exact(&mut hdr).await.context("read SOCKS5 inbound request header")?;
@@ -1081,7 +1140,68 @@ async fn try_accept_socks5_inbound(client: &mut tokio::net::TcpStream) -> Result
     };
 
     write_socks5_inbound_reply(client, 0x00).await?;
-    Ok(Some(target))
+    Ok(target)
+}
+
+async fn authenticate_socks5_inbound(
+    client: &mut tokio::net::TcpStream,
+    expected_user: &str,
+    expected_password: &str,
+) -> Result<()> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let mut header = [0u8; 2];
+    client
+        .read_exact(&mut header)
+        .await
+        .context("read SOCKS5 inbound auth header")?;
+    if header[0] != 0x01 || header[1] == 0 {
+        let _ = client.write_all(&[0x01, 0x01]).await;
+        return Err(anyhow!("SOCKS5 inbound: invalid username/password auth request"));
+    }
+
+    let mut username = vec![0u8; header[1] as usize];
+    client
+        .read_exact(&mut username)
+        .await
+        .context("read SOCKS5 inbound username")?;
+
+    let mut password_len = [0u8; 1];
+    client
+        .read_exact(&mut password_len)
+        .await
+        .context("read SOCKS5 inbound password length")?;
+    if password_len[0] == 0 {
+        let _ = client.write_all(&[0x01, 0x01]).await;
+        return Err(anyhow!("SOCKS5 inbound: empty password is not allowed"));
+    }
+    let mut password = vec![0u8; password_len[0] as usize];
+    client
+        .read_exact(&mut password)
+        .await
+        .context("read SOCKS5 inbound password")?;
+
+    let valid = constant_time_eq(&username, expected_user.as_bytes())
+        & constant_time_eq(&password, expected_password.as_bytes());
+    client
+        .write_all(&[0x01, if valid { 0x00 } else { 0x01 }])
+        .await
+        .context("write SOCKS5 inbound auth reply")?;
+    if !valid {
+        return Err(anyhow!("SOCKS5 inbound: authentication failed"));
+    }
+    Ok(())
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    let mut diff = left.len() ^ right.len();
+    let max_len = left.len().max(right.len());
+    for idx in 0..max_len {
+        let l = left.get(idx).copied().unwrap_or(0);
+        let r = right.get(idx).copied().unwrap_or(0);
+        diff |= (l ^ r) as usize;
+    }
+    diff == 0
 }
 
 async fn write_socks5_inbound_reply(client: &mut tokio::net::TcpStream, rep: u8) -> Result<()> {

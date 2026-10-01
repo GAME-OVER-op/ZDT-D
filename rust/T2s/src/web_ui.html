@@ -393,7 +393,7 @@ hr.sep{border:0;border-top:1px solid rgba(255,255,255,.06); margin:12px 0}
     const el = $('build_tag');
     if(el){
       el.textContent = 'build: …';
-      fetch('/api/version').then(r=>r.json()).then(j=>{
+      fetch('/api/version', {cache:'no-store', headers:authHeaders()}).then(r=>r.json()).then(j=>{
         el.textContent = 'build: ' + (j.build || '?');
       }).catch(()=>{ el.textContent = 'build: (version unavailable)'; });
     }

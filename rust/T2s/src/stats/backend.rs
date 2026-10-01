@@ -70,6 +70,7 @@ pub struct SocksBackends {
     priority_speed_last_probe_ts: u64,
     priority_speed_probe_rr: usize,
     backend_mode: BackendMode,
+    allow_root_protector_mode: bool,
     /// Priority groups by SOCKS5 port. In priority mode each inner Vec is one priority level.
     /// Multiple ports in one level are balanced with round-robin; the next level is used only
     /// when the previous level has no selectable GREEN backend.
@@ -108,6 +109,7 @@ impl SocksBackends {
             priority_speed_last_probe_ts: 0,
             priority_speed_probe_rr: 0,
             backend_mode: args.backend_mode,
+            allow_root_protector_mode: !args.non_root,
             priority_groups: Vec::new(),
             priority_rr: Vec::new(),
             rr: 0,
@@ -281,7 +283,9 @@ impl SocksBackends {
     }
 
     fn protector_mode_enabled(&self) -> bool {
-        self.backend_mode != BackendMode::Priority && protector_mode_forced_green()
+        self.allow_root_protector_mode
+            && self.backend_mode != BackendMode::Priority
+            && protector_mode_forced_green()
     }
 
     fn healthy_indices_by_ports(&self, ports: &[u16], now: u64, respect_cooldown: bool) -> Vec<usize> {

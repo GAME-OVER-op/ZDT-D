@@ -42,7 +42,7 @@ impl DialCoordination {
     fn disabled() -> Self {
         Self {
             enabled: false,
-            locks_dir: PathBuf::from("/data/local/tmp"),
+            locks_dir: PathBuf::new(),
             stagger: Duration::ZERO,
         }
     }

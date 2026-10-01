@@ -1,8 +1,9 @@
-# t2s — transparent TCP to SOCKS5 helper
+# t2s — TCP to SOCKS5 helper/router
 
 `t2s` is a Rust helper bundled with ZDT-D. It receives TCP connections from a
 local listener and forwards them through one or more upstream SOCKS5 backends, or
-optionally directly when policy allows it.
+optionally directly when policy allows it. Root deployments can use transparent
+redirection; non-root deployments can use the authenticated SOCKS5 listener.
 
 In ZDT-D, `t2s` is the common bridge between UID-based `iptables` transparent
 redirection and proxy engines that expose SOCKS5-compatible local ports.
@@ -46,6 +47,68 @@ selected app UID -> iptables REDIRECT -> t2s listener -> SOCKS5 backend -> upstr
 ```
 
 ## Modes
+
+### Non-root SOCKS router mode
+
+`--non-root` is intended for the Android app-owned `VpnService -> tun2socks ->
+t2s` pipeline. It deliberately does not emulate transparent/root routing. The
+internal listener becomes a strict SOCKS5 CONNECT endpoint and requires RFC1929
+username/password authentication.
+
+In this mode:
+
+- `TPROXY`, `IP_TRANSPARENT`, `SO_ORIGINAL_DST` and UDP TPROXY are disabled;
+- `/data/adb/modules/ZDT-D` settings and token paths are never read;
+- `protector_mode` root settings are ignored;
+- the listener and web/API bind addresses must be loopback addresses;
+- `--external-port` and fixed `--target-host/--target-port` are rejected;
+- `--api-dir` must point to app-owned storage;
+- the token is required and defaults to `<api-dir>/token`;
+- API and WebSocket access require the same token even on loopback;
+- inbound SOCKS5 authentication uses username `zdtd` and the app token as the
+  password;
+- inbound UDP ASSOCIATE is not implemented yet, so the non-root router path is
+  TCP-only at this stage.
+
+Example app-owned layout:
+
+```text
+<filesDir>/nonroot/
+  api/
+    token
+    t2s/
+      info.json
+      instances/
+      ports/
+      locks/
+```
+
+Example startup:
+
+```bash
+t2s \
+  --non-root \
+  --api-dir /data/user/0/com.android.zdtd.service/files/nonroot/api \
+  --listen-addr 127.0.0.1 \
+  --listen-port 11290 \
+  --socks-host 127.0.0.1 \
+  --socks-port 1080,1081 \
+  --backend-mode balance \
+  --web-socket \
+  --web-addr 127.0.0.1 \
+  --web-port 8000
+```
+
+The upstream tun2socks client must connect to `127.0.0.1:11290` with:
+
+```text
+username = zdtd
+password = <contents of <api-dir>/token>
+```
+
+The Android application should pass its real private `filesDir` path rather
+than relying on the example package path above, because Android user/profile
+IDs can change the absolute path.
 
 ### Transparent mode
 
@@ -220,6 +283,21 @@ Both must be used together. If both are omitted, transparent mode is used.
 - `--max-conns <COUNT>` — maximum concurrent connections. Default: `100`.
 - `--download-limit-mbit <MBIT>` — download throttling in Mbit/s. `0` disables
   throttling. Default: `0`.
+
+### Runtime ownership and authentication
+
+- `--non-root` — enable app-owned strict SOCKS5 router mode described above.
+- `--api-dir <DIR>` — root API directory. Root default:
+  `/data/adb/modules/ZDT-D/api`. With `--non-root`, an app-owned directory must
+  be supplied explicitly; t2s metadata is stored below `<api-dir>/t2s`.
+- `--token-file <FILE>` — override the API/SOCKS authentication token file.
+  Root default: `/data/adb/modules/ZDT-D/api/token`. Non-root default:
+  `<api-dir>/token`.
+
+The non-root token must exist before t2s starts, be non-empty, and be at most
+255 UTF-8 bytes because the same value is used as the RFC1929 SOCKS5 password.
+Missing/invalid token or an unwritable app runtime directory is a startup error
+in non-root mode.
 
 ### Web UI/API
 
@@ -401,10 +479,15 @@ Flags: `--no-peer-coordination`, `--no-serialize-backend-connects`,
 also share its credentials; when the shared API token file is missing, peer
 health sharing is disabled and each instance keeps probing independently.
 
+In non-root mode the same coordination data lives entirely under the app-owned
+`<api-dir>/t2s` directory and uses the app token. No `/data/local/tmp` fallback
+is used.
+
 ## Limitations
 
 - TCP proxying is always available;
 - UDP relay is enabled only by ZDT-D `tproxy_enabled`; without it, only TCP is started;
+- non-root mode accepts SOCKS5 CONNECT only; inbound UDP ASSOCIATE is planned separately;
 - no internal DNS server;
 - `--enable-http2` is a compatibility flag, not a separate HTTP/2 engine;
 - host detection is best-effort and depends on early traffic bytes;

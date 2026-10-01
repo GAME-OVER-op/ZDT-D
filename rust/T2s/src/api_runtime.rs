@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 use std::{fs, path::{Path, PathBuf}, time::{Duration, SystemTime, UNIX_EPOCH}};
 
-pub const SHARED_TOKEN_FILE: &str = "/data/adb/modules/ZDT-D/api/token";
+pub const NON_ROOT_SOCKS_USERNAME: &str = "zdtd";
 
 #[derive(Clone, Debug, Serialize)]
 pub struct InstanceMeta {
@@ -23,8 +23,10 @@ pub struct InstanceMeta {
     pub external_port: u16,
     pub backend_mode: String,
     pub priority_speed_aware: bool,
+    pub runtime_mode: String,
     pub token_file: String,
     pub tproxy_enabled: bool,
+    pub socks_auth_required: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -36,14 +38,29 @@ pub struct ApiRuntime {
 }
 
 impl ApiRuntime {
-    pub fn new(args: &crate::cli::Args, started_at: u64) -> Result<Self> {
+    pub fn new(args: &crate::cli::Args, started_at: u64, tproxy_enabled: bool) -> Result<Self> {
         let api_dir = PathBuf::from(args.api_dir.trim()).join("t2s");
-        let token_file = PathBuf::from(SHARED_TOKEN_FILE);
+        let token_file = args.token_file_path();
         let token = fs::read_to_string(&token_file)
             .ok()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
-        if token.is_none() {
+        if args.non_root && token.is_none() {
+            anyhow::bail!(
+                "non-root mode requires a non-empty app token file: {}",
+                token_file.display()
+            );
+        }
+        if args.non_root {
+            let token_len = token.as_deref().map(|s| s.as_bytes().len()).unwrap_or(0);
+            if token_len > u8::MAX as usize {
+                anyhow::bail!(
+                    "non-root app token is too long for SOCKS5 username/password authentication ({} bytes, max 255): {}",
+                    token_len,
+                    token_file.display()
+                );
+            }
+        } else if token.is_none() {
             tracing::warn!("t2s extended API auth disabled: missing {}", token_file.display());
         }
 
@@ -82,11 +99,16 @@ impl ApiRuntime {
             external_port: args.external_port,
             backend_mode: format!("{:?}", args.backend_mode).to_ascii_lowercase(),
             priority_speed_aware: args.priority_speed_aware,
-            token_file: SHARED_TOKEN_FILE.to_string(),
-            tproxy_enabled: crate::transparent::tproxy_enabled_from_settings(),
+            runtime_mode: args.runtime_mode().to_string(),
+            token_file: token_file.to_string_lossy().to_string(),
+            tproxy_enabled,
+            socks_auth_required: args.non_root,
         };
         let rt = Self { api_dir, token_file, token, instance };
         if let Err(e) = rt.write_metadata() {
+            if args.non_root {
+                return Err(e).context("write non-root t2s API metadata");
+            }
             tracing::warn!("failed to write t2s API metadata: {:#}", e);
         }
         Ok(rt)
@@ -143,7 +165,10 @@ impl ApiRuntime {
             "profile": meta.profile,
             "pid": meta.pid,
             "updated_at": meta.updated_at,
-            "token_file": SHARED_TOKEN_FILE,
+            "runtime_mode": &meta.runtime_mode,
+            "token_file": &meta.token_file,
+            "socks_auth_required": meta.socks_auth_required,
+            "socks_auth_username": if meta.socks_auth_required { NON_ROOT_SOCKS_USERNAME } else { "" },
         });
         write_json_atomic(&self.port_file(), &port_index, durable)?;
         let info = serde_json::json!({
@@ -151,8 +176,11 @@ impl ApiRuntime {
             "api_name": "t2s",
             "api_version": 1,
             "api_dir": self.api_dir.to_string_lossy(),
-            "token_file": SHARED_TOKEN_FILE,
-            "public_web": true,
+            "runtime_mode": &meta.runtime_mode,
+            "token_file": self.token_file.to_string_lossy(),
+            "public_web": !meta.socks_auth_required,
+            "socks_auth_required": meta.socks_auth_required,
+            "socks_auth_username": if meta.socks_auth_required { NON_ROOT_SOCKS_USERNAME } else { "" },
             "extended_api_prefix": "/api/v1",
             "instances_dir": self.instances_dir().to_string_lossy(),
             "ports_dir": self.ports_dir().to_string_lossy(),

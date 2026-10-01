@@ -1,5 +1,9 @@
 use anyhow::{anyhow, Result};
 use clap::{Parser, ValueEnum};
+use std::{net::IpAddr, path::{Path, PathBuf}};
+
+pub const ROOT_API_DIR: &str = "/data/adb/modules/ZDT-D/api";
+pub const ROOT_TOKEN_FILE: &str = "/data/adb/modules/ZDT-D/api/token";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
 pub enum BackendMode {
@@ -24,15 +28,23 @@ pub enum PriorityZeroMode {
 #[derive(Clone, Debug, Parser)]
 #[command(
     name = "t2s",
-    about = "Transparent -> SOCKS5 proxy (Rust port)",
-    long_about = "t2s routes TCP traffic to one or more upstream SOCKS5 backends. It can work in explicit target mode (\
---target-host/--target-port) or in transparent mode (SO_ORIGINAL_DST via iptables REDIRECT/TPROXY).",
+    about = "TCP -> SOCKS5 router for ZDT-D",
+    long_about = "t2s routes TCP traffic to one or more upstream SOCKS5 backends. Root mode supports explicit targets and transparent SO_ORIGINAL_DST/TPROXY traffic. --non-root turns the listener into an app-owned authenticated SOCKS5 router for Android VpnService/tun2socks pipelines.",
     after_help = r#"QUICK START (Android, transparent mode)
   1) Run t2s (transparent mode usually requires root):
        t2s --socks-host 1.2.3.4 --socks-port 1080 --web-socket
 
   2) Redirect local traffic to the internal listener (example; adapt to your setup):
        iptables -t nat -A OUTPUT -p tcp -j REDIRECT --to-ports 11290
+
+QUICK START (Android, non-root router mode)
+  The app creates <api-dir>/token first, then starts:
+       t2s --non-root --api-dir <app-private-api-dir> \
+           --socks-host 127.0.0.1 --socks-port 1080 --web-socket
+
+  The inbound SOCKS5 listener then requires RFC1929 credentials:
+       username: zdtd
+       password: contents of <api-dir>/token
 
 PORTS
   Internal listener:
@@ -49,11 +61,19 @@ NOTES
   * Power save: when there are no active connections and no UI clients, background checks go to sleep
     and poll backends every 1-3 minutes (wakes instantly on new connection).
   * TCP is always available. UDP TPROXY is started when ZDT-D setting tproxy_enabled=true.
+  * --non-root is TCP-only for now: inbound UDP ASSOCIATE is not accepted.
+  * --non-root never reads ZDT-D root module/runtime paths.
   * t2s does not implement a DNS resolver; DNS policy is managed externally.
 "#,
     arg_required_else_help = true
 )]
 pub struct Args {
+    /// Run as an app-owned non-root SOCKS router. In this mode t2s accepts
+    /// authenticated SOCKS5 CONNECT traffic only and never uses TPROXY,
+    /// SO_ORIGINAL_DST, ZDT-D root settings, or root-owned runtime paths.
+    #[arg(long, default_value_t=false)]
+    pub non_root: bool,
+
     #[arg(long, default_value="127.0.0.1")]
     pub listen_addr: String,
     #[arg(long, default_value_t=11290)]
@@ -139,8 +159,10 @@ pub struct Args {
     #[arg(long, default_value_t=100)]
     pub connect_stagger_ms: u64,
 
-    #[arg(long, default_value="/data/adb/modules/ZDT-D/api", help="ZDT-D API root directory. t2s metadata is written under <api-dir>/t2s.")]
+    #[arg(long, default_value="/data/adb/modules/ZDT-D/api", help="ZDT-D API root directory. t2s metadata is written under <api-dir>/t2s. In --non-root mode this must be an app-owned directory.")]
     pub api_dir: String,
+    #[arg(long, default_value="", help="API token file. Root default: /data/adb/modules/ZDT-D/api/token. Non-root default: <api-dir>/token.")]
+    pub token_file: String,
     #[arg(long, default_value="", help="Stable t2s instance id for metadata/API responses. Auto-generated when omitted.")]
     pub instance_id: String,
     #[arg(long, default_value="", help="Owning ZDT-D program id, e.g. sing-box, wireproxy, myproxy.")]
@@ -172,7 +194,42 @@ impl Args {
         if !a.socks_ports().is_empty() && a.socks_hosts().is_empty() {
             return Err(anyhow!("--socks-host is required when --socks-port contains SOCKS5 backend ports"));
         }
+        if a.non_root {
+            a.validate_non_root()?;
+        }
         Ok(a)
+    }
+
+    fn validate_non_root(&self) -> Result<()> {
+        if self.target_host.is_some() || self.target_port.is_some() {
+            return Err(anyhow!("--target-host/--target-port are not available with --non-root; the target must come from SOCKS5 CONNECT"));
+        }
+        if self.external_port != 0 {
+            return Err(anyhow!("--external-port is not available with --non-root"));
+        }
+        ensure_loopback_addr("--listen-addr", &self.listen_addr)?;
+        ensure_loopback_addr("--web-addr", &self.web_addr)?;
+
+        let api_dir = self.api_dir.trim();
+        if api_dir.is_empty() {
+            return Err(anyhow!("--api-dir is required with --non-root"));
+        }
+        if !Path::new(api_dir).is_absolute() {
+            return Err(anyhow!("--api-dir must be an absolute app-owned path with --non-root"));
+        }
+        if is_root_owned_runtime_path(api_dir) {
+            return Err(anyhow!("--api-dir must point to app-owned storage with --non-root, got {api_dir}"));
+        }
+        let token_file = self.token_file.trim();
+        if !token_file.is_empty() {
+            if !Path::new(token_file).is_absolute() {
+                return Err(anyhow!("--token-file must be an absolute app-owned path with --non-root"));
+            }
+            if is_root_owned_runtime_path(token_file) {
+                return Err(anyhow!("--token-file must point to app-owned storage with --non-root"));
+            }
+        }
+        Ok(())
     }
 
     fn socks_port_tokens(&self) -> Vec<&str> {
@@ -254,4 +311,38 @@ impl Args {
             _ => None,
         }
     }
+
+    pub fn token_file_path(&self) -> PathBuf {
+        let explicit = self.token_file.trim();
+        if !explicit.is_empty() {
+            return PathBuf::from(explicit);
+        }
+        if self.non_root {
+            return PathBuf::from(self.api_dir.trim()).join("token");
+        }
+        PathBuf::from(ROOT_TOKEN_FILE)
+    }
+
+    pub fn runtime_mode(&self) -> &'static str {
+        if self.non_root { "non-root" } else { "root" }
+    }
+}
+
+fn ensure_loopback_addr(flag: &str, raw: &str) -> Result<()> {
+    let ip: IpAddr = raw
+        .trim()
+        .parse()
+        .map_err(|_| anyhow!("{flag} must be a numeric loopback IP address with --non-root"))?;
+    if !ip.is_loopback() {
+        return Err(anyhow!("{flag} must be loopback-only with --non-root, got {raw}"));
+    }
+    Ok(())
+}
+
+fn is_root_owned_runtime_path(raw: &str) -> bool {
+    let path = raw.trim();
+    path == ROOT_API_DIR
+        || path == ROOT_TOKEN_FILE
+        || path.starts_with("/data/adb/")
+        || path.starts_with("/data/local/")
 }

@@ -12,7 +12,7 @@ use std::{collections::HashMap, hash::{Hash, Hasher}, net::SocketAddr, time::Dur
 use tokio::time::Instant;
 
 const INDEX_HTML: &str = include_str!("web_ui.html");
-const BUILD_TAG: &str = "tcp-udp-tproxy-green-only-smart-energy-v4";
+const BUILD_TAG: &str = "tcp-udp-tproxy-green-only-smart-energy-nonroot-v5";
 
 #[derive(Clone, Debug, Deserialize)]
 struct DownloadLimitReq {
@@ -55,7 +55,7 @@ fn is_loopback_web_addr(addr: &str) -> bool {
 }
 
 fn legacy_api_requires_auth(state: &AppState) -> bool {
-    !is_loopback_web_addr(&state.args.web_addr)
+    state.args.non_root || !is_loopback_web_addr(&state.args.web_addr)
 }
 
 fn authorize_legacy_http(state: &AppState, headers: &HeaderMap) -> bool {
@@ -171,8 +171,9 @@ async fn index() -> impl IntoResponse {
     (StatusCode::OK, headers, Html(INDEX_HTML))
 }
 
-async fn api_version() -> impl IntoResponse {
-    (StatusCode::OK, Json(serde_json::json!({"build": BUILD_TAG})))
+async fn api_version(headers: HeaderMap, State(state): State<AppState>) -> Response {
+    if !authorize_legacy_http(&state, &headers) { return legacy_unauthorized(); }
+    json_response(StatusCode::OK, serde_json::json!({"build": BUILD_TAG}))
 }
 
 async fn api_state(headers: HeaderMap, State(state): State<AppState>) -> Response {

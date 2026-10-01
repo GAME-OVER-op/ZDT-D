@@ -22,4 +22,4 @@ socket2 = "0.5"
 libc = "0.2"
 futures = "0.3"
 once_cell = "1"
-# No built-in DNS/DoH client; UDP relay is enabled by ZDT-D TPROXY settings.
+# No built-in DNS/DoH client; root UDP follows ZDT-D TPROXY settings, while non-root uses SOCKS5 UDP ASSOCIATE.

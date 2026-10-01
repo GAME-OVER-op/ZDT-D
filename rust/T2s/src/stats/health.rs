@@ -231,11 +231,12 @@ async fn refresh_backend_index_once(
     let (err, socks_ping_ms, internet_ping_ms, ttl) =
         probe_backend_once(backend, timeout, auth.clone(), internet_ttl, probe_mode, wrapper, wrapper_auth).await;
 
-    let udp_probe_supported = state.tproxy_enabled && state.wrapped_socks_addr.is_none();
+    let udp_routing_enabled = state.tproxy_enabled || state.args.non_root;
+    let udp_probe_supported = udp_routing_enabled && state.wrapped_socks_addr.is_none();
     let udp_ping_ms = if udp_probe_supported && socks_ping_ms.is_some() {
         crate::socks5::check_udp_associate(backend, auth.clone(), timeout.min(Duration::from_secs(3))).await
     } else { None };
-    let udp_err = if state.tproxy_enabled && state.wrapped_socks_addr.is_some() {
+    let udp_err = if udp_routing_enabled && state.wrapped_socks_addr.is_some() {
         Some("UDP ASSOCIATE through wrapped SOCKS is unsupported; UDP will use direct fallback".to_string())
     } else if udp_probe_supported && socks_ping_ms.is_some() && udp_ping_ms.is_none() {
         Some("SOCKS5 UDP data-plane probe failed or unsupported".to_string())
@@ -248,7 +249,7 @@ async fn refresh_backend_index_once(
     let simple_success_is_green = !backend_requires_full_internet_probe(backend);
     let full_probe = probe_mode == ProbeMode::Full && backend_requires_full_internet_probe(backend);
     let mut changed = b.update(idx, socks_ping_ms.is_some(), err, socks_ping_ms, internet_ping_ms, ttl, full_probe, simple_success_is_green);
-    if state.tproxy_enabled { changed |= b.update_udp(idx, udp_ping_ms, udp_err); }
+    if udp_routing_enabled { changed |= b.update_udp(idx, udp_ping_ms, udp_err); }
     let after_state = b.raw_state_at(idx);
     let kill_unhealthy_backend = changed
         && before_state == Some(BackendState::Green)

@@ -14,7 +14,8 @@ use std::{
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
-use tokio::{io::unix::AsyncFd, sync::Notify};
+use tokio::{io::unix::AsyncFd, sync::{mpsc, Notify}};
+use tokio_util::sync::CancellationToken;
 
 const IP_TRANSPARENT_OPT: libc::c_int = 19;
 const IP_RECVORIGDSTADDR_OPT: libc::c_int = 20;
@@ -34,6 +35,7 @@ const UDP_MEDIUM_PAYLOAD_CAPACITY: usize = 8_192;
 const UDP_PAYLOAD_POOL_MAX_PER_CLASS: usize = 256;
 
 static NEXT_UDP_SESSION_ID: AtomicU64 = AtomicU64::new(1);
+static NEXT_NON_ROOT_UDP_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -488,6 +490,559 @@ impl SpoofSocketCache {
                 || now.saturating_sub(entry.last_used_ms.load(Ordering::Relaxed)) <= idle_ms
         });
     }
+}
+
+
+#[derive(Clone)]
+struct NonRootUdpSessionHandle {
+    id: u64,
+    sender: mpsc::Sender<Vec<u8>>,
+}
+
+type NonRootUdpSessions = Arc<Mutex<HashMap<socks5::TargetAddr, NonRootUdpSessionHandle>>>;
+
+enum NonRootUdpTransport {
+    Direct {
+        socket: tokio::net::UdpSocket,
+        target: SocketAddr,
+    },
+    Socks {
+        backend_index: usize,
+        backend: SocketAddr,
+        _control: tokio::net::TcpStream,
+        socket: tokio::net::UdpSocket,
+    },
+}
+
+/// RFC1928 UDP ASSOCIATE data plane used only by the app-owned `--non-root`
+/// listener. The UDP relay is loopback-only and lives exactly as long as the
+/// authenticated TCP control connection from HEV.
+pub async fn run_non_root_udp_associate(
+    state: AppState,
+    control: &mut tokio::net::TcpStream,
+    control_peer: SocketAddr,
+    cid: u64,
+    cancel: CancellationToken,
+) -> Result<()> {
+    use tokio::io::AsyncReadExt;
+
+    let relay = Arc::new(
+        tokio::net::UdpSocket::bind(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0))
+            .await
+            .context("bind non-root SOCKS5 UDP relay")?,
+    );
+    let relay_addr = relay.local_addr().context("read non-root UDP relay address")?;
+    crate::write_socks5_inbound_bound_reply(control, 0x00, relay_addr).await?;
+
+    tracing::info!(
+        "Non-root SOCKS5 UDP ASSOCIATE relay listening on {} for control peer {}",
+        relay_addr,
+        control_peer
+    );
+
+    let sessions: NonRootUdpSessions = Arc::new(Mutex::new(HashMap::new()));
+    let association_cancel = cancel.child_token();
+    let mut udp_buf = vec![0u8; UDP_RECV_BUF_SIZE];
+    let mut control_buf = [0u8; 64];
+    let mut client_udp_peer: Option<SocketAddr> = None;
+
+    loop {
+        tokio::select! {
+            _ = association_cancel.cancelled() => break,
+            read = control.read(&mut control_buf) => {
+                match read {
+                    Ok(0) => break,
+                    Ok(_) => {
+                        // RFC1928 keeps the control connection open but carries no
+                        // data after UDP ASSOCIATE. Ignore unexpected bytes rather
+                        // than treating them as a second unauthenticated request.
+                    }
+                    Err(e) => return Err(e).context("read non-root UDP control connection"),
+                }
+            }
+            packet = relay.recv_from(&mut udp_buf) => {
+                let (n, peer) = packet.context("recv non-root SOCKS5 UDP packet")?;
+                if !peer.ip().is_loopback() || peer.ip() != control_peer.ip() {
+                    tracing::debug!("ignoring non-root UDP packet from unrelated peer {}", peer);
+                    continue;
+                }
+                match client_udp_peer {
+                    Some(expected) if expected != peer => {
+                        tracing::debug!(
+                            "ignoring non-root UDP packet from {} because association is bound to {}",
+                            peer,
+                            expected
+                        );
+                        continue;
+                    }
+                    None => client_udp_peer = Some(peer),
+                    _ => {}
+                }
+
+                let (target, payload) = match socks5::decode_udp_packet(&udp_buf[..n]) {
+                    Ok(decoded) => decoded,
+                    Err(e) => {
+                        tracing::debug!("dropping invalid non-root SOCKS5 UDP packet from {}: {:#}", peer, e);
+                        continue;
+                    }
+                };
+                dispatch_non_root_udp_packet(
+                    state.clone(),
+                    sessions.clone(),
+                    relay.clone(),
+                    peer,
+                    cid,
+                    association_cancel.clone(),
+                    target,
+                    payload.to_vec(),
+                );
+            }
+        }
+    }
+
+    association_cancel.cancel();
+    sessions.lock().clear();
+    Ok(())
+}
+
+fn dispatch_non_root_udp_packet(
+    state: AppState,
+    sessions: NonRootUdpSessions,
+    relay: Arc<tokio::net::UdpSocket>,
+    client_peer: SocketAddr,
+    cid: u64,
+    cancel: CancellationToken,
+    target: socks5::TargetAddr,
+    payload: Vec<u8>,
+) {
+    let mut pending = payload;
+
+    loop {
+        let existing = sessions.lock().get(&target).cloned();
+        if let Some(handle) = existing {
+            match handle.sender.try_send(pending) {
+                Ok(()) => return,
+                Err(mpsc::error::TrySendError::Full(_)) => {
+                    state.stats.inc_policy_drop();
+                    return;
+                }
+                Err(mpsc::error::TrySendError::Closed(returned)) => {
+                    pending = returned;
+                    let mut guard = sessions.lock();
+                    if guard.get(&target).map(|entry| entry.id) == Some(handle.id) {
+                        guard.remove(&target);
+                    }
+                    continue;
+                }
+            }
+        }
+
+        let id = NEXT_NON_ROOT_UDP_SESSION_ID.fetch_add(1, Ordering::Relaxed);
+        let (sender, receiver) = mpsc::channel(64);
+        sessions.lock().insert(
+            target.clone(),
+            NonRootUdpSessionHandle {
+                id,
+                sender: sender.clone(),
+            },
+        );
+
+        let st = state.clone();
+        let map = sessions.clone();
+        let relay_socket = relay.clone();
+        let session_target = target.clone();
+        let session_cancel = cancel.child_token();
+        tokio::spawn(async move {
+            let result = run_non_root_udp_target_session(
+                st.clone(),
+                relay_socket,
+                client_peer,
+                cid,
+                session_target.clone(),
+                receiver,
+                session_cancel,
+            )
+            .await;
+
+            let mut guard = map.lock();
+            if guard.get(&session_target).map(|entry| entry.id) == Some(id) {
+                guard.remove(&session_target);
+            }
+            drop(guard);
+
+            if let Err(e) = result {
+                tracing::debug!(
+                    "non-root UDP session ended target={:?}: {:#}",
+                    session_target,
+                    e
+                );
+            }
+        });
+
+        if sender.try_send(pending).is_err() {
+            state.stats.inc_policy_drop();
+        }
+        return;
+    }
+}
+
+async fn run_non_root_udp_target_session(
+    state: AppState,
+    relay: Arc<tokio::net::UdpSocket>,
+    client_peer: SocketAddr,
+    cid: u64,
+    target: socks5::TargetAddr,
+    mut receiver: mpsc::Receiver<Vec<u8>>,
+    cancel: CancellationToken,
+) -> Result<()> {
+    let Some(transport) = open_non_root_udp_transport(&state, &target).await? else {
+        return Ok(());
+    };
+
+    match transport {
+        NonRootUdpTransport::Direct { socket, target: resolved } => {
+            run_non_root_direct_udp_session(
+                state,
+                relay,
+                client_peer,
+                cid,
+                resolved,
+                socket,
+                &mut receiver,
+                cancel,
+            )
+            .await
+        }
+        NonRootUdpTransport::Socks {
+            backend_index,
+            backend,
+            _control,
+            socket,
+        } => {
+            let result = run_non_root_socks_udp_session(
+                state.clone(),
+                relay,
+                client_peer,
+                cid,
+                target,
+                backend,
+                _control,
+                socket,
+                &mut receiver,
+                cancel,
+            )
+            .await;
+            if let Err(e) = &result {
+                mark_udp_backend_failure(
+                    &state,
+                    backend_index,
+                    format!("non-root UDP data-plane failure: {:#}", e),
+                );
+            }
+            result
+        }
+    }
+}
+
+async fn open_non_root_udp_transport(
+    state: &AppState,
+    target: &socks5::TargetAddr,
+) -> Result<Option<NonRootUdpTransport>> {
+    let stats_target = match target {
+        socks5::TargetAddr::Ip(addr) => stats::Target::SockAddr(*addr),
+        socks5::TargetAddr::Domain(host, port) => stats::Target::HostPort(host.clone(), *port),
+    };
+    let (target_host, target_port) = stats_target.to_host_port_string();
+    let proto = rules::classify_protocol(target_port);
+    let mut udp_socks_available = state.backends.lock().udp_available();
+    let action = state
+        .rules
+        .decide(&proto, &target_host, target_port, udp_socks_available, true);
+
+    match action {
+        Some(rules::Action::Drop) | Some(rules::Action::Reset) => {
+            state.stats.inc_policy_drop();
+            return Ok(None);
+        }
+        Some(rules::Action::Wait) => {
+            if !wait_for_udp_backend(state, UDP_BACKEND_WAIT).await {
+                state.stats.inc_policy_drop();
+                return Ok(None);
+            }
+            udp_socks_available = true;
+        }
+        Some(rules::Action::Direct) => {
+            return prepare_non_root_direct_udp_transport(&stats_target).await.map(Some);
+        }
+        Some(rules::Action::Socks) | None => {}
+    }
+
+    let priority_zero_mode = state.args.priority_zero_mode();
+    if priority_zero_mode == PriorityZeroMode::DirectOnly {
+        return prepare_non_root_direct_udp_transport(&stats_target).await.map(Some);
+    }
+    if priority_zero_mode == PriorityZeroMode::DirectFirst
+        && state.runtime.udp_direct_allowed()
+        && state.runtime.direct_path_available()
+    {
+        return prepare_non_root_direct_udp_transport(&stats_target).await.map(Some);
+    }
+
+    if !udp_socks_available {
+        udp_socks_available = wait_for_udp_backend(state, UDP_BACKEND_WAIT).await;
+    }
+
+    if udp_socks_available {
+        if state.wrapped_socks_addr.is_some() {
+            tracing::debug!("non-root UDP through wrapped SOCKS is unsupported; considering fallback");
+        } else {
+            let backend_count = state.backends.lock().len().max(1);
+            for _ in 0..backend_count {
+                let selected = {
+                    let mut backends = state.backends.lock();
+                    backends.select_udp_with_auth(global_auth(state), true)
+                };
+                let Some((idx, backend, auth)) = selected else { break; };
+                match prepare_non_root_socks_udp_transport(state, idx, backend, auth).await {
+                    Ok(transport) => return Ok(Some(transport)),
+                    Err(e) => {
+                        mark_udp_backend_failure(
+                            state,
+                            idx,
+                            format!("non-root UDP session setup failed: {:#}", e),
+                        );
+                        tracing::debug!(
+                            "non-root UDP setup failed for backend {} target={:?}: {:#}",
+                            backend,
+                            target,
+                            e
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    if matches!(action, Some(rules::Action::Socks) | Some(rules::Action::Wait))
+        || priority_zero_mode == PriorityZeroMode::BlockDirectFallback
+    {
+        state.stats.inc_policy_drop();
+        return Ok(None);
+    }
+    if priority_zero_mode == PriorityZeroMode::DirectFirst && !state.runtime.udp_direct_allowed() {
+        return Ok(None);
+    }
+
+    prepare_non_root_direct_udp_transport(&stats_target).await.map(Some)
+}
+
+async fn prepare_non_root_direct_udp_transport(
+    target: &stats::Target,
+) -> Result<NonRootUdpTransport> {
+    let resolved = target.resolve_socket_addr().await?;
+    let socket = tokio::net::UdpSocket::bind(if resolved.is_ipv4() {
+        "0.0.0.0:0"
+    } else {
+        "[::]:0"
+    })
+    .await
+    .context("bind non-root direct UDP socket")?;
+    socket
+        .connect(resolved)
+        .await
+        .context("connect non-root direct UDP socket")?;
+    Ok(NonRootUdpTransport::Direct {
+        socket,
+        target: resolved,
+    })
+}
+
+async fn prepare_non_root_socks_udp_transport(
+    state: &AppState,
+    backend_index: usize,
+    backend: SocketAddr,
+    auth: Option<(String, String)>,
+) -> Result<NonRootUdpTransport> {
+    let timeout = Duration::from_secs(state.args.connect_timeout as u64)
+        .min(Duration::from_secs(5))
+        .max(Duration::from_millis(800));
+    let socket = tokio::net::UdpSocket::bind(if backend.is_ipv4() {
+        "0.0.0.0:0"
+    } else {
+        "[::]:0"
+    })
+    .await
+    .context("bind non-root upstream SOCKS UDP socket")?;
+    let local_addr = socket
+        .local_addr()
+        .context("read non-root upstream UDP local address")?;
+    let (control, relay) = socks5::udp_associate(backend, auth, timeout, local_addr).await?;
+    socket
+        .connect(relay)
+        .await
+        .context("connect non-root upstream SOCKS UDP relay")?;
+    Ok(NonRootUdpTransport::Socks {
+        backend_index,
+        backend,
+        _control: control,
+        socket,
+    })
+}
+
+async fn run_non_root_socks_udp_session(
+    state: AppState,
+    relay: Arc<tokio::net::UdpSocket>,
+    client_peer: SocketAddr,
+    cid: u64,
+    target: socks5::TargetAddr,
+    backend: SocketAddr,
+    _control: tokio::net::TcpStream,
+    socket: tokio::net::UdpSocket,
+    receiver: &mut mpsc::Receiver<Vec<u8>>,
+    cancel: CancellationToken,
+) -> Result<()> {
+    let mut recv_buf = vec![0u8; UDP_RECV_BUF_SIZE];
+    let mut encoded = Vec::with_capacity(UDP_SMALL_PAYLOAD_CAPACITY + 22);
+    let mut idle_sleep = Box::pin(tokio::time::sleep(UDP_SESSION_IDLE));
+    let mut response_deadline: Option<tokio::time::Instant> = None;
+    let mut received_any = false;
+
+    loop {
+        let deadline_snapshot = response_deadline;
+        let response_wait = async move {
+            if let Some(deadline) = deadline_snapshot {
+                tokio::time::sleep_until(deadline).await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        };
+        tokio::pin!(response_wait);
+
+        tokio::select! {
+            _ = cancel.cancelled() => break,
+            maybe_data = receiver.recv() => {
+                let Some(data) = maybe_data else { break; };
+                socks5::encode_udp_packet_into(&mut encoded, target.clone(), &data)?;
+                socket.send(&encoded).await.context("send non-root SOCKS UDP packet")?;
+                state.stats.add_up(data.len() as u64);
+                state.conns.add_bytes_up(cid, data.len() as u64);
+                state.backends.lock().add_bytes(backend, data.len() as u64);
+                touch_session(&mut idle_sleep);
+                if response_deadline.is_none() {
+                    response_deadline = Some(
+                        tokio::time::Instant::now()
+                            + if received_any { UDP_RESPONSE_STALL_TIMEOUT } else { UDP_FIRST_RESPONSE_TIMEOUT }
+                    );
+                }
+            }
+            response = socket.recv(&mut recv_buf) => {
+                let n = response.context("recv non-root SOCKS UDP response")?;
+                let (_, payload) = socks5::decode_udp_packet(&recv_buf[..n])?;
+                relay
+                    .send_to(&recv_buf[..n], client_peer)
+                    .await
+                    .context("send non-root SOCKS UDP response to HEV")?;
+                state.stats.add_down(payload.len() as u64);
+                state.conns.add_bytes_down(cid, payload.len() as u64);
+                state.backends.lock().add_bytes(backend, payload.len() as u64);
+                received_any = true;
+                response_deadline = None;
+                touch_session(&mut idle_sleep);
+            }
+            _ = &mut response_wait => {
+                return Err(anyhow::anyhow!(
+                    "no non-root UDP response from SOCKS relay within {}s",
+                    if received_any { UDP_RESPONSE_STALL_TIMEOUT.as_secs() } else { UDP_FIRST_RESPONSE_TIMEOUT.as_secs() }
+                ));
+            }
+            _ = &mut idle_sleep => break,
+        }
+    }
+    Ok(())
+}
+
+async fn run_non_root_direct_udp_session(
+    state: AppState,
+    relay: Arc<tokio::net::UdpSocket>,
+    client_peer: SocketAddr,
+    cid: u64,
+    resolved_target: SocketAddr,
+    socket: tokio::net::UdpSocket,
+    receiver: &mut mpsc::Receiver<Vec<u8>>,
+    cancel: CancellationToken,
+) -> Result<()> {
+    let mut recv_buf = vec![0u8; UDP_RECV_BUF_SIZE];
+    let mut encoded = Vec::with_capacity(UDP_SMALL_PAYLOAD_CAPACITY + 22);
+    let mut idle_sleep = Box::pin(tokio::time::sleep(UDP_SESSION_IDLE));
+    let mut response_deadline: Option<tokio::time::Instant> = None;
+    let mut received_any = false;
+
+    loop {
+        let deadline_snapshot = response_deadline;
+        let response_wait = async move {
+            if let Some(deadline) = deadline_snapshot {
+                tokio::time::sleep_until(deadline).await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        };
+        tokio::pin!(response_wait);
+
+        tokio::select! {
+            _ = cancel.cancelled() => break,
+            maybe_data = receiver.recv() => {
+                let Some(data) = maybe_data else { break; };
+                if let Err(e) = socket.send(&data).await {
+                    state.runtime.note_udp_direct_failure(20);
+                    return Err(e).context("send non-root direct UDP packet");
+                }
+                state.stats.add_up(data.len() as u64);
+                state.conns.add_bytes_up(cid, data.len() as u64);
+                touch_session(&mut idle_sleep);
+                if response_deadline.is_none() {
+                    response_deadline = Some(
+                        tokio::time::Instant::now()
+                            + if received_any { UDP_RESPONSE_STALL_TIMEOUT } else { UDP_FIRST_RESPONSE_TIMEOUT }
+                    );
+                }
+            }
+            response = socket.recv(&mut recv_buf) => {
+                let n = match response {
+                    Ok(n) => n,
+                    Err(e) => {
+                        state.runtime.note_udp_direct_failure(20);
+                        return Err(e).context("recv non-root direct UDP response");
+                    }
+                };
+                // A direct domain target resolves to an IP before sending, so the
+                // response source is reported as that concrete endpoint.
+                socks5::encode_udp_packet_into(
+                    &mut encoded,
+                    socks5::TargetAddr::Ip(resolved_target),
+                    &recv_buf[..n],
+                )?;
+                relay
+                    .send_to(&encoded, client_peer)
+                    .await
+                    .context("send non-root direct UDP response to HEV")?;
+                state.stats.add_down(n as u64);
+                state.conns.add_bytes_down(cid, n as u64);
+                received_any = true;
+                state.runtime.clear_udp_direct_cooldown();
+                response_deadline = None;
+                touch_session(&mut idle_sleep);
+            }
+            _ = &mut response_wait => {
+                state.runtime.note_udp_direct_failure(20);
+                return Err(anyhow::anyhow!(
+                    "no non-root direct UDP response within {}s",
+                    if received_any { UDP_RESPONSE_STALL_TIMEOUT.as_secs() } else { UDP_FIRST_RESPONSE_TIMEOUT.as_secs() }
+                ));
+            }
+            _ = &mut idle_sleep => break,
+        }
+    }
+    Ok(())
 }
 
 pub async fn run_udp_tproxy(state: AppState) -> Result<()> {

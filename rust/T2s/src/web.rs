@@ -12,7 +12,7 @@ use std::{collections::HashMap, hash::{Hash, Hasher}, net::SocketAddr, time::Dur
 use tokio::time::Instant;
 
 const INDEX_HTML: &str = include_str!("web_ui.html");
-const BUILD_TAG: &str = "tcp-udp-tproxy-green-only-smart-energy-nonroot-v5";
+const BUILD_TAG: &str = "tcp-udp-tproxy-green-only-smart-energy-nonroot-v6";
 
 #[derive(Clone, Debug, Deserialize)]
 struct DownloadLimitReq {

@@ -273,7 +273,7 @@ async fn async_main(workers: usize) -> Result<()> {
         info!("ZDT-D tproxy_enabled=true: enabling TCP TPROXY listener and UDP TPROXY receiver");
     } else if args.non_root {
         info!(
-            "Non-root mode: strict authenticated SOCKS5 listener enabled; TPROXY, SO_ORIGINAL_DST, UDP TPROXY, and root settings are disabled"
+            "Non-root mode: authenticated SOCKS5 CONNECT + UDP ASSOCIATE enabled on loopback; TPROXY, SO_ORIGINAL_DST, and root settings are disabled"
         );
     }
 
@@ -564,17 +564,33 @@ async fn proxy_tcp(
             .as_deref()
             .ok_or_else(|| anyhow!("non-root SOCKS5 authentication token is unavailable"))?;
         let timeout = Duration::from_secs((state.args.connect_timeout as u64).clamp(2, 15));
-        let target = tokio::time::timeout(
+        let request = tokio::time::timeout(
             timeout,
             accept_socks5_inbound(
                 &mut client,
                 Some((api_runtime::NON_ROOT_SOCKS_USERNAME, token)),
+                true,
             ),
         )
         .await
         .context("non-root SOCKS5 inbound handshake timeout")??;
-        state.conns.set_mode(cid, "socks_inbound");
-        target
+        match request {
+            Socks5InboundRequest::Connect(target) => {
+                state.conns.set_mode(cid, "socks_inbound");
+                target
+            }
+            Socks5InboundRequest::UdpAssociate => {
+                state.conns.set_mode(cid, "udp_associate");
+                return udp::run_non_root_udp_associate(
+                    state,
+                    &mut client,
+                    _peer,
+                    cid,
+                    cancel,
+                )
+                .await;
+            }
+        }
     } else if let Some(socks_target) = try_accept_socks5_inbound(&mut client).await? {
         state.conns.set_mode(cid, "socks_inbound");
         socks_target
@@ -1029,6 +1045,12 @@ async fn proxy_tcp(
     Ok(())
 }
 
+#[derive(Clone, Debug)]
+enum Socks5InboundRequest {
+    Connect(stats::Target),
+    UdpAssociate,
+}
+
 async fn try_accept_socks5_inbound(client: &mut tokio::net::TcpStream) -> Result<Option<stats::Target>> {
     let mut peek = [0u8; 2];
     let Ok(Ok(n)) = tokio::time::timeout(Duration::from_millis(35), client.peek(&mut peek)).await else {
@@ -1043,13 +1065,17 @@ async fn try_accept_socks5_inbound(client: &mut tokio::net::TcpStream) -> Result
         return Ok(None);
     }
 
-    accept_socks5_inbound(client, None).await.map(Some)
+    match accept_socks5_inbound(client, None, false).await? {
+        Socks5InboundRequest::Connect(target) => Ok(Some(target)),
+        Socks5InboundRequest::UdpAssociate => unreachable!("root SOCKS listener does not enable UDP ASSOCIATE"),
+    }
 }
 
 async fn accept_socks5_inbound(
     client: &mut tokio::net::TcpStream,
     required_auth: Option<(&str, &str)>,
-) -> Result<stats::Target> {
+    allow_udp_associate: bool,
+) -> Result<Socks5InboundRequest> {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let mut greeting_header = [0u8; 2];
@@ -1093,13 +1119,18 @@ async fn accept_socks5_inbound(
     if hdr[0] != 0x05 {
         return Err(anyhow!("SOCKS5 inbound: invalid request version {}", hdr[0]));
     }
-    if hdr[1] != 0x01 {
-        let _ = write_socks5_inbound_reply(client, 0x07).await;
-        return Err(anyhow!("SOCKS5 inbound: only CONNECT is supported"));
-    }
     if hdr[2] != 0x00 {
         let _ = write_socks5_inbound_reply(client, 0x01).await;
         return Err(anyhow!("SOCKS5 inbound: invalid reserved byte"));
+    }
+
+    let command = hdr[1];
+    if command != 0x01 && !(command == 0x03 && allow_udp_associate) {
+        let _ = write_socks5_inbound_reply(client, 0x07).await;
+        return Err(anyhow!(
+            "SOCKS5 inbound: command {:#x} is not supported in this mode",
+            command
+        ));
     }
 
     let target = match hdr[3] {
@@ -1139,8 +1170,14 @@ async fn accept_socks5_inbound(
         }
     };
 
-    write_socks5_inbound_reply(client, 0x00).await?;
-    Ok(target)
+    match command {
+        0x01 => {
+            write_socks5_inbound_reply(client, 0x00).await?;
+            Ok(Socks5InboundRequest::Connect(target))
+        }
+        0x03 => Ok(Socks5InboundRequest::UdpAssociate),
+        _ => unreachable!("SOCKS5 command was validated above"),
+    }
 }
 
 async fn authenticate_socks5_inbound(
@@ -1205,9 +1242,35 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
 }
 
 async fn write_socks5_inbound_reply(client: &mut tokio::net::TcpStream, rep: u8) -> Result<()> {
+    write_socks5_inbound_bound_reply(
+        client,
+        rep,
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0),
+    )
+    .await
+}
+
+pub(crate) async fn write_socks5_inbound_bound_reply(
+    client: &mut tokio::net::TcpStream,
+    rep: u8,
+    bound: SocketAddr,
+) -> Result<()> {
     use tokio::io::AsyncWriteExt;
-    // VER, REP, RSV, ATYP=IPv4, BND.ADDR=0.0.0.0, BND.PORT=0
-    client.write_all(&[0x05, rep, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+
+    let mut reply = vec![0x05, rep, 0x00];
+    match bound.ip() {
+        IpAddr::V4(ip) => {
+            reply.push(0x01);
+            reply.extend_from_slice(&ip.octets());
+        }
+        IpAddr::V6(ip) => {
+            reply.push(0x04);
+            reply.extend_from_slice(&ip.octets());
+        }
+    }
+    reply.extend_from_slice(&bound.port().to_be_bytes());
+    client
+        .write_all(&reply)
         .await
         .context("write SOCKS5 inbound reply")
 }

@@ -197,7 +197,7 @@ class NonRootVpnService : VpnService() {
 
     val token = runtimeStore.ensureApiToken().readText().trim()
     check(token.isNotEmpty()) { "Non-root API token is empty" }
-    return SocksTarget(port = listenPort, username = "zdtd", password = token)
+    return SocksTarget(port = listenPort, username = "zdtd", password = token, udpMode = "udp")
   }
 
   private suspend fun startOperaProfile(
@@ -374,7 +374,7 @@ class NonRootVpnService : VpnService() {
       "socks5:",
       "  address: ${NonRootPortRegistry.LOOPBACK}",
       "  port: ${target.port}",
-      "  udp: 'tcp'",
+      "  udp: '${target.udpMode}'",
     )
     target.username?.let { lines += "  username: '${yamlQuote(it)}'" }
     target.password?.let { lines += "  password: '${yamlQuote(it)}'" }
@@ -568,6 +568,7 @@ class NonRootVpnService : VpnService() {
     val port: Int,
     val username: String? = null,
     val password: String? = null,
+    val udpMode: String = "tcp",
   )
 
   private data class ManagedProcess(val name: String, val process: Process)

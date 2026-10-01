@@ -28,8 +28,8 @@ pub enum PriorityZeroMode {
 #[derive(Clone, Debug, Parser)]
 #[command(
     name = "t2s",
-    about = "TCP -> SOCKS5 router for ZDT-D",
-    long_about = "t2s routes TCP traffic to one or more upstream SOCKS5 backends. Root mode supports explicit targets and transparent SO_ORIGINAL_DST/TPROXY traffic. --non-root turns the listener into an app-owned authenticated SOCKS5 router for Android VpnService/tun2socks pipelines.",
+    about = "TCP/UDP -> SOCKS5 router for ZDT-D",
+    long_about = "t2s routes TCP and UDP traffic to one or more upstream SOCKS5 backends. Root mode supports explicit targets and transparent SO_ORIGINAL_DST/TPROXY traffic. --non-root turns the listener into an app-owned authenticated SOCKS5 router for Android VpnService/tun2socks pipelines.",
     after_help = r#"QUICK START (Android, transparent mode)
   1) Run t2s (transparent mode usually requires root):
        t2s --socks-host 1.2.3.4 --socks-port 1080 --web-socket
@@ -61,7 +61,7 @@ NOTES
   * Power save: when there are no active connections and no UI clients, background checks go to sleep
     and poll backends every 1-3 minutes (wakes instantly on new connection).
   * TCP is always available. UDP TPROXY is started when ZDT-D setting tproxy_enabled=true.
-  * --non-root is TCP-only for now: inbound UDP ASSOCIATE is not accepted.
+  * --non-root accepts authenticated SOCKS5 CONNECT and UDP ASSOCIATE on loopback.
   * --non-root never reads ZDT-D root module/runtime paths.
   * t2s does not implement a DNS resolver; DNS policy is managed externally.
 "#,
@@ -69,8 +69,9 @@ NOTES
 )]
 pub struct Args {
     /// Run as an app-owned non-root SOCKS router. In this mode t2s accepts
-    /// authenticated SOCKS5 CONNECT traffic only and never uses TPROXY,
-    /// SO_ORIGINAL_DST, ZDT-D root settings, or root-owned runtime paths.
+    /// authenticated SOCKS5 CONNECT and UDP ASSOCIATE traffic on loopback and
+    /// never uses TPROXY, SO_ORIGINAL_DST, ZDT-D root settings, or root-owned
+    /// runtime paths.
     #[arg(long, default_value_t=false)]
     pub non_root: bool,
 

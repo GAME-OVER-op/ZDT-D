@@ -16,7 +16,7 @@ fn handshake_timeout(total_timeout: Duration) -> Duration {
     total_timeout.min(Duration::from_secs(3)).max(Duration::from_millis(800))
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum TargetAddr {
     Ip(SocketAddr),
     Domain(String, u16),

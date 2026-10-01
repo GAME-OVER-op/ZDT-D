@@ -52,8 +52,8 @@ selected app UID -> iptables REDIRECT -> t2s listener -> SOCKS5 backend -> upstr
 
 `--non-root` is intended for the Android app-owned `VpnService -> tun2socks ->
 t2s` pipeline. It deliberately does not emulate transparent/root routing. The
-internal listener becomes a strict SOCKS5 CONNECT endpoint and requires RFC1929
-username/password authentication.
+internal listener becomes a strict SOCKS5 CONNECT/UDP ASSOCIATE endpoint and requires
+RFC1929 username/password authentication.
 
 In this mode:
 
@@ -67,8 +67,8 @@ In this mode:
 - API and WebSocket access require the same token even on loopback;
 - inbound SOCKS5 authentication uses username `zdtd` and the app token as the
   password;
-- inbound UDP ASSOCIATE is not implemented yet, so the non-root router path is
-  TCP-only at this stage.
+- inbound UDP ASSOCIATE is enabled by default for the app-owned VpnService path;
+  the UDP relay is bound to loopback and lives only for the authenticated control connection.
 
 Example app-owned layout:
 
@@ -486,8 +486,8 @@ is used.
 ## Limitations
 
 - TCP proxying is always available;
-- UDP relay is enabled only by ZDT-D `tproxy_enabled`; without it, only TCP is started;
-- non-root mode accepts SOCKS5 CONNECT only; inbound UDP ASSOCIATE is planned separately;
+- root transparent UDP relay is enabled only by ZDT-D `tproxy_enabled`; non-root UDP ASSOCIATE is enabled by default;
+- non-root mode accepts authenticated SOCKS5 CONNECT and UDP ASSOCIATE on the app-owned loopback listener;
 - no internal DNS server;
 - `--enable-http2` is a compatibility flag, not a separate HTTP/2 engine;
 - host detection is best-effort and depends on early traffic bytes;

@@ -1,6 +1,6 @@
 // Top-level build file.
 plugins {
-  // AGP 9.2.x uses Gradle 9.4.1; 9.4.1 is the Gradle runtime, not an AGP artifact.
-  id 'com.android.application' version '9.2.1' apply false
-  id 'org.jetbrains.kotlin.plugin.compose' version '2.3.21' apply false
+  // AGP 9.4.x uses Gradle 9.6.x and supports compileSdk 37.
+  id 'com.android.application' version '9.4.0' apply false
+  id 'org.jetbrains.kotlin.plugin.compose' version '2.4.20' apply false
 }

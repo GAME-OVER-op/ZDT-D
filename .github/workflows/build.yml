@@ -20,43 +20,45 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  ANDROID_API_LEVEL: 36
-  ZDT_COMPILE_SDK: 36
+  ANDROID_API_LEVEL: 37
+  ZDT_COMPILE_SDK: 37
   ANDROID_BUILD_TOOLS_VERSION: "36.0.0"
-  GRADLE_VERSION: "9.4.1"
+  GRADLE_VERSION: "9.6.0"
+  NATIVE_NDK_VERSION: "30.0.16248370"
+  GO_VERSION: "1.26.8"
   CARGO_PROFILE: release
   CARGO_BUILD_TARGET: aarch64-linux-android
   BUILD_TYPE: ${{ github.event.inputs.build_type || 'Release' }}
   NO_DASHBOARD: "1"
-  OPENVPN_VERSION: "2.7.4"
-  MBEDTLS_VERSION: "3.6.6"
-  MBEDTLS_SHA256: "8fb65fae8dcae5840f793c0a334860a411f884cc537ea290ce1c52bb64ca007a"
+  OPENVPN_VERSION: "2.7.7"
+  MBEDTLS_VERSION: "3.6.7"
+  MBEDTLS_SHA256: "a7e8bcbec0e6f761b4af24f25677626b35f762f68eef79c08677a363212d11f6"
   LZO_VERSION: "2.10"
   LZ4_VERSION: "1.10.0"
   OPENVPN_ANDROID_API_LEVEL: 24
-  AMNEZIAWG_GO_REF: "v3.1.20260814"
+  AMNEZIAWG_GO_REF: "v3.1.20260828"
   AMNEZIAWG_TOOLS_REF: "v3.1.20260812"
   AMNEZIAWG_ANDROID_API_LEVEL: 24
   AMNEZIAWG_UAPI_RUN_DIR: "/data/adb/modules/ZDT-D/working_folder/amneziawg/run"
   AMNEZIAWG_UAPI_SOCKET_DIR: "/data/adb/modules/ZDT-D/working_folder/amneziawg/run/amneziawg"
   AMNEZIAWG_GO_UAPI_SOCKET_DIR: "run/amneziawg"
-  WIREPROXY_REF: "v1.1.2"
-  TUN2SOCKS_REF: "v2.6.0"
-  MIHOMO_REF: "v1.19.27"
-  SING_BOX_REF: "v1.13.14"
-  HYSTERIA_REF: "v2.10.0"
+  WIREPROXY_REF: "v1.1.3"
+  TUN2SOCKS_REF: "v2.7.0"
+  MIHOMO_REF: "v1.19.30"
+  SING_BOX_REF: "v1.14.1"
+  HYSTERIA_REF: "v2.12.3"
   BYEDPI_REF: "v0.17.3"
   BYEDPI_ANDROID_API_LEVEL: 24
-  DNSCRYPT_PROXY_REF: "2.1.16"
-  MIERU_REF: "v3.34.0"
-  OPERA_PROXY_REF: "v1.26.0"
+  DNSCRYPT_PROXY_REF: "2.1.18"
+  MIERU_REF: "v3.38.0"
+  OPERA_PROXY_REF: "v1.28.0"
   DPITUNNEL_REF: "main"
   DPITUNNEL_ANDROID_API_LEVEL: 24
-  DPITUNNEL_OPENSSL_REF: "openssl-3.3.2"
-  TOR_REF: "tor-0.4.9.9"
+  DPITUNNEL_OPENSSL_REF: "openssl-3.5.9"
+  TOR_REF: "tor-0.4.9.13"
   TOR_ANDROID_API_LEVEL: 24
-  TOR_OPENSSL_REF: "openssl-3.5.7"
-  TOR_LIBEVENT_REF: "release-2.1.12-stable"
+  TOR_OPENSSL_REF: "openssl-3.5.9"
+  TOR_LIBEVENT_REF: "release-2.1.13-stable"
   TOR_ZLIB_REF: "v1.3.2"
   TOR_ZSTD_REF: "v1.5.7"
   LYREBIRD_REF: "main"
@@ -76,7 +78,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -153,7 +155,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -304,7 +306,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -401,7 +403,7 @@ jobs:
           EOF2
 
       - name: Cache Cargo registry and zdtd target
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -489,7 +491,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -586,7 +588,7 @@ jobs:
           EOF2
 
       - name: Cache Cargo registry and t2s target
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -674,7 +676,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -771,7 +773,7 @@ jobs:
           EOF2
 
       - name: Cache Cargo registry and d2s target
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -875,7 +877,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -916,7 +918,7 @@ jobs:
             pkg-config \
             xz-utils
 
-          NDK_VERSION="27.2.12479018"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           install_sdk_package() {
             local pkg="$1"
@@ -1174,14 +1176,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: 'stable'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Prepare Android SDK paths
@@ -1209,7 +1211,7 @@ jobs:
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
-          NDK_VERSION="27.2.12479018"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           install_sdk_package() {
             local pkg="$1"
@@ -1277,7 +1279,7 @@ jobs:
             git \
             make
 
-          NDK_VERSION="27.2.12479018"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           install_sdk_package() {
             local pkg="$1"
@@ -1473,14 +1475,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: 'stable'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Prepare Android SDK paths
@@ -1508,7 +1510,7 @@ jobs:
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
-          NDK_VERSION="27.2.12479018"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           install_sdk_package() {
             local pkg="$1"
@@ -1630,14 +1632,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: 'stable'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Prepare Android SDK paths
@@ -1665,7 +1667,7 @@ jobs:
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
-          NDK_VERSION="27.2.12479018"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           install_sdk_package() {
             local pkg="$1"
@@ -1800,14 +1802,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: 'stable'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Prepare Android SDK paths
@@ -1835,7 +1837,7 @@ jobs:
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
-          NDK_VERSION="27.2.12479018"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           install_sdk_package() {
             local pkg="$1"
@@ -1973,14 +1975,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: '1.25.7'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Prepare Android SDK paths
@@ -2008,7 +2010,7 @@ jobs:
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
-          NDK_VERSION="27.2.12479018"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           install_sdk_package() {
             local pkg="$1"
@@ -2149,18 +2151,18 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: 'stable'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v10.2.0
 
       - name: Prepare Android NDK
         run: |
@@ -2173,7 +2175,7 @@ jobs:
           fi
           test -x "$SDKMANAGER" || { echo "::error::sdkmanager not found"; exit 1; }
           yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-          NDK_VERSION="29.0.13846066"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
             "$SDKMANAGER" "ndk;$NDK_VERSION"
           fi
@@ -2276,7 +2278,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -2311,7 +2313,7 @@ jobs:
             git \
             make
 
-          NDK_VERSION="27.2.12479018"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           install_sdk_package() {
             local pkg="$1"
@@ -2456,14 +2458,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: 'stable'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Prepare Android SDK paths
@@ -2491,7 +2493,7 @@ jobs:
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
-          NDK_VERSION="27.2.12479018"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           install_sdk_package() {
             local pkg="$1"
@@ -2645,14 +2647,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: 'stable'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Prepare Android SDK paths
@@ -2680,7 +2682,7 @@ jobs:
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
-          NDK_VERSION="27.2.12479018"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           install_sdk_package() {
             local pkg="$1"
@@ -2829,14 +2831,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: 'stable'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Prepare Android SDK paths
@@ -2864,7 +2866,7 @@ jobs:
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
-          NDK_VERSION="27.2.12479018"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           install_sdk_package() {
             local pkg="$1"
@@ -2999,7 +3001,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -3035,7 +3037,7 @@ jobs:
             ninja-build \
             perl
 
-          NDK_VERSION="27.2.12479018"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           install_sdk_package() {
             local pkg="$1"
             local attempt
@@ -3237,7 +3239,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -3282,7 +3284,7 @@ jobs:
             gcc-multilib \
             g++-multilib
 
-          NDK_VERSION="27.2.12479018"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           install_sdk_package() {
             local pkg="$1"
@@ -3499,7 +3501,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -3548,7 +3550,7 @@ jobs:
             gcc-multilib \
             g++-multilib
 
-          NDK_VERSION="27.2.12479018"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           install_sdk_package() {
             local pkg="$1"
@@ -3814,7 +3816,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -3859,7 +3861,7 @@ jobs:
             pkg-config \
             python3
 
-          NDK_VERSION="27.2.12479018"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           install_sdk_package() {
             local pkg="$1"
@@ -4097,14 +4099,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version: 'stable'
+          go-version: '${{ env.GO_VERSION }}'
           cache: false
 
       - name: Prepare Android SDK paths
@@ -4132,7 +4134,7 @@ jobs:
       - name: Install Android NDK for Go cgo
         run: |
           set -euo pipefail
-          NDK_VERSION="27.2.12479018"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           install_sdk_package() {
             local pkg="$1"
@@ -4315,7 +4317,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -4344,7 +4346,7 @@ jobs:
       - name: Install Android NDK
         run: |
           set -euo pipefail
-          NDK_VERSION="27.2.12479018"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           install_sdk_package() {
             local pkg="$1"
@@ -4423,7 +4425,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -4479,202 +4481,202 @@ jobs:
           echo "[ZDT-D] Build identity: ${BUILD_CHANNEL} v${VERSION_NAME} #${GITHUB_RUN_NUMBER} (versionCode=${VERSION_CODE})"
 
       - name: Download zdtd arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: zdtd-arm64
           path: out/artifacts/zdtd/arm64
       - name: Download t2s arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: t2s-arm64
           path: out/artifacts/t2s/arm64
       - name: Download d2s arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: d2s-arm64
           path: out/artifacts/d2s/arm64
       - name: Download zygisk arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: zygisk-arm64
           path: out/artifacts/zygisk/arm64
       - name: Download openvpn arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: openvpn-arm64
           path: out/artifacts/openvpn/arm64
       - name: Download amneziawg arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: amneziawg-arm64
           path: out/artifacts/amneziawg/arm64
       - name: Download wireproxy arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: wireproxy-arm64
           path: out/artifacts/wireproxy/arm64
       - name: Download tun2socks arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: tun2socks-arm64
           path: out/artifacts/tun2socks/arm64
       - name: Download mihomo arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: mihomo-arm64
           path: out/artifacts/mihomo/arm64
       - name: Download sing-box arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: sing-box-arm64
           path: out/artifacts/sing-box/arm64
       - name: Download hysteria2 arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: hysteria2-arm64
           path: out/artifacts/hysteria2/arm64
       - name: Download byedpi arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: byedpi-arm64
           path: out/artifacts/byedpi/arm64
       - name: Download dnscrypt arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: dnscrypt-arm64
           path: out/artifacts/dnscrypt/arm64
       - name: Download mieru arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: mieru-arm64
           path: out/artifacts/mieru/arm64
       - name: Download opera-proxy arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: opera-proxy-arm64
           path: out/artifacts/opera-proxy/arm64
       - name: Download dpitunnel arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: dpitunnel-arm64
           path: out/artifacts/dpitunnel/arm64
       - name: Download torproxy arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: torproxy-arm64
           path: out/artifacts/torproxy/arm64
       - name: Download lyrebird arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: lyrebird-arm64
           path: out/artifacts/lyrebird/arm64
       - name: Download nfqws arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: nfqws-arm64
           path: out/artifacts/nfqws/arm64
       - name: Download nfqws2 arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: nfqws2-arm64
           path: out/artifacts/nfqws2/arm64
       - name: Download zdtd arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: zdtd-arm32
           path: out/artifacts/zdtd/arm32
       - name: Download t2s arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: t2s-arm32
           path: out/artifacts/t2s/arm32
       - name: Download d2s arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: d2s-arm32
           path: out/artifacts/d2s/arm32
       - name: Download zygisk arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: zygisk-arm32
           path: out/artifacts/zygisk/arm32
       - name: Download openvpn arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: openvpn-arm32
           path: out/artifacts/openvpn/arm32
       - name: Download amneziawg arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: amneziawg-arm32
           path: out/artifacts/amneziawg/arm32
       - name: Download wireproxy arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: wireproxy-arm32
           path: out/artifacts/wireproxy/arm32
       - name: Download tun2socks arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: tun2socks-arm32
           path: out/artifacts/tun2socks/arm32
       - name: Download mihomo arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: mihomo-arm32
           path: out/artifacts/mihomo/arm32
       - name: Download sing-box arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: sing-box-arm32
           path: out/artifacts/sing-box/arm32
       - name: Download hysteria2 arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: hysteria2-arm32
           path: out/artifacts/hysteria2/arm32
       - name: Download byedpi arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: byedpi-arm32
           path: out/artifacts/byedpi/arm32
       - name: Download dnscrypt arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: dnscrypt-arm32
           path: out/artifacts/dnscrypt/arm32
       - name: Download mieru arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: mieru-arm32
           path: out/artifacts/mieru/arm32
       - name: Download opera-proxy arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: opera-proxy-arm32
           path: out/artifacts/opera-proxy/arm32
       - name: Download dpitunnel arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: dpitunnel-arm32
           path: out/artifacts/dpitunnel/arm32
       - name: Download torproxy arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: torproxy-arm32
           path: out/artifacts/torproxy/arm32
       - name: Download lyrebird arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: lyrebird-arm32
           path: out/artifacts/lyrebird/arm32
       - name: Download nfqws arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: nfqws-arm32
           path: out/artifacts/nfqws/arm32
       - name: Download nfqws2 arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: nfqws2-arm32
           path: out/artifacts/nfqws2/arm32
@@ -4861,7 +4863,7 @@ jobs:
 
     steps:
       - name: Checkout tg-ws-proxy-rs
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: valnesfjord/tg-ws-proxy-rs
           fetch-depth: 1
@@ -5002,13 +5004,13 @@ jobs:
 
     steps:
       - name: Download tg-ws-proxy arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: tg-ws-proxy-arm64
           path: out/tg-ws-proxy/arm64-v8a
 
       - name: Download tg-ws-proxy arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: tg-ws-proxy-arm32
           path: out/tg-ws-proxy/armeabi-v7a
@@ -5094,7 +5096,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -5191,7 +5193,7 @@ jobs:
           EOF2
 
       - name: Cache Cargo registry and dpi-detector target
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -5279,7 +5281,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -5376,7 +5378,7 @@ jobs:
           EOF2
 
       - name: Cache Cargo registry and nfqws-tester target
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -5464,7 +5466,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -5493,7 +5495,7 @@ jobs:
       - name: Install Android NDK
         run: |
           set -euo pipefail
-          NDK_VERSION="27.2.12479018"
+          NDK_VERSION="$NATIVE_NDK_VERSION"
           yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
           install_sdk_package() {
             local pkg="$1"
@@ -5622,7 +5624,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -5675,10 +5677,10 @@ jobs:
           install_sdk_package "platform-tools"
           install_sdk_package "platforms;android-${{ env.ANDROID_API_LEVEL }}"
           install_sdk_package "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}"
-          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/27.2.12479018" ]]; then
-            install_sdk_package "ndk;27.2.12479018"
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NATIVE_NDK_VERSION" ]]; then
+            install_sdk_package "ndk;$NATIVE_NDK_VERSION"
           fi
-          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/27.2.12479018"
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NATIVE_NDK_VERSION"
           if [[ ! -d "$NDK_ROOT" ]]; then
             echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
             NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
@@ -5694,43 +5696,43 @@ jobs:
           cache-read-only: false
 
       - name: Download module archive
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: zdt-module-zip
           path: out/module
 
       - name: Download dpi-detector arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: dpi-detector-arm64
           path: out/artifacts/dpi-detector/arm64
 
       - name: Download dpi-detector arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: dpi-detector-arm32
           path: out/artifacts/dpi-detector/arm32
 
       - name: Download nfqws-tester arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: nfqws-tester-arm64
           path: out/artifacts/nfqws-tester/arm64
 
       - name: Download nfqws-tester arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: nfqws-tester-arm32
           path: out/artifacts/nfqws-tester/arm32
 
       - name: Download BusyBox arm64
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: busybox-arm64
           path: prebuilt/bin/arm64-v8a
 
       - name: Download BusyBox arm32
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: busybox-arm32
           path: prebuilt/bin/arm-v7a
@@ -5909,19 +5911,19 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Download APK artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: zdt-apk
           path: out/dist
 
       - name: Download tg_ws_proxy.zip artifact
         if: needs.package_tg_ws_proxy_asset.result == 'success'
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: tg-ws-proxy-technical-asset
           path: out/technical

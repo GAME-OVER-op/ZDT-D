@@ -26,6 +26,7 @@ def moduleVersionCode = (moduleProps.getProperty('versionCode') ?: '1').trim().t
 def moduleVersionName = (moduleProps.getProperty('version') ?: '1.0').trim()
 def generatedAssetsDir = file("$buildDir/generated/zdt-assets/main")
 def zdtCompileSdk = (findProperty('zdtCompileSdk') ?: System.getenv('ZDT_COMPILE_SDK') ?: '37').toString().trim().toInteger()
+def zdtCompileSdkMinor = (findProperty('zdtCompileSdkMinor') ?: System.getenv('ZDT_COMPILE_SDK_MINOR') ?: '0').toString().trim().toInteger()
 def generatedModuleZip = file('../../out/module/zdt_module.zip')
 def generatedModuleProp = file('../../out/module/module.prop')
 def zdtModuleZip = file("$generatedAssetsDir/zdt_module.zip")
@@ -114,6 +115,10 @@ def ensurePrebuiltBusyBox = { String arch, File prebuiltBusyBox ->
 android {
   namespace 'com.android.zdtd.service'
   compileSdk zdtCompileSdk
+  if (zdtCompileSdk >= 37) {
+    // API 37 is published as a minor-versioned SDK platform (android-37.0).
+    compileSdkMinor zdtCompileSdkMinor
+  }
 
   defaultConfig {
     applicationId 'com.android.zdtd.service'

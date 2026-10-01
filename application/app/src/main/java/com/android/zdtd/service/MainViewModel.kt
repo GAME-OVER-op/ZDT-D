@@ -63,6 +63,7 @@ import java.net.InetSocketAddress
 import java.net.Proxy
 import java.io.IOException
 import java.security.MessageDigest
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import kotlin.math.max
@@ -475,6 +476,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   private var appUpdateCheckedThisSession: Boolean = false
   private var appUpdateDownloadJob: Job? = null
   private var appReleaseBuildPollJob: Job? = null
+  private var lastReleaseBuildApiFallbackAtMs: Long = 0L
+  private var lastReleaseReadyApiCheckAtMs: Long = 0L
+  private var lastReleaseReadyRunId: Long? = null
 
   private var pendingEnableDaemonNotification: Boolean = false
 
@@ -822,13 +826,65 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     AppReleaseBuildStageUi("ready", R.string.app_update_stage_ready, AppReleaseStageStatus.WAITING),
   )
 
-  private suspend fun fetchModulePropCommitSha(): String? {
-    val body = httpGetText("https://api.github.com/repos/GAME-OVER-op/ZDT-D/commits?path=module.prop&sha=main&per_page=1") ?: return null
-    val arr = runCatching { JSONArray(body) }.getOrNull() ?: return null
-    return arr.optJSONObject(0)?.optString("sha")?.takeIf { it.isNotBlank() }
+  private data class PublishedBuildStatus(
+    val overall: String,
+    val headSha: String?,
+    val versionCode: Int?,
+    val updatedAtMs: Long?,
+    val ui: AppReleaseBuildUi,
+  )
+
+  private fun parsePublishedStageStatus(value: String?): AppReleaseStageStatus = when (value?.lowercase(Locale.ROOT)) {
+    "running" -> AppReleaseStageStatus.RUNNING
+    "done" -> AppReleaseStageStatus.DONE
+    "failed" -> AppReleaseStageStatus.FAILED
+    else -> AppReleaseStageStatus.WAITING
   }
 
-  private suspend fun fetchRelevantBuildRun(expectedSha: String?, publishedSha: String?): WorkflowRunInfo? {
+  private suspend fun fetchPublishedBuildStatus(expectedVersionCode: Int?): PublishedBuildStatus? {
+    val cacheBust = System.currentTimeMillis()
+    val url = "https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/zdt-build-status.json?ts=$cacheBust"
+    val body = httpGetText(url) ?: return null
+    val js = runCatching { JSONObject(body) }.getOrNull() ?: return null
+    if (js.optInt("schema", 0) != 1 || js.optString("workflow") != "build.yml") return null
+
+    val versionCode = js.optInt("versionCode", 0).takeIf { it > 0 }
+    if (expectedVersionCode != null && versionCode != expectedVersionCode) return null
+
+    val stagesJson = js.optJSONObject("stages") ?: return null
+    val stages = listOf(
+      AppReleaseBuildStageUi("binaries", R.string.app_update_stage_binaries, parsePublishedStageStatus(stagesJson.optString("binaries"))),
+      AppReleaseBuildStageUi("archives", R.string.app_update_stage_archives, parsePublishedStageStatus(stagesJson.optString("archives"))),
+      AppReleaseBuildStageUi("apk", R.string.app_update_stage_apk, parsePublishedStageStatus(stagesJson.optString("apk"))),
+      AppReleaseBuildStageUi("release", R.string.app_update_stage_release, parsePublishedStageStatus(stagesJson.optString("release"))),
+      AppReleaseBuildStageUi("ready", R.string.app_update_stage_ready, parsePublishedStageStatus(stagesJson.optString("ready"))),
+    )
+    val overall = js.optString("status").lowercase(Locale.ROOT)
+    if (overall !in setOf("preparing", "ready", "failed")) return null
+    val failed = overall == "failed" || stages.any { it.status == AppReleaseStageStatus.FAILED }
+    val runId = js.optLong("runId", 0L).takeIf { it > 0L }
+    val runUrl = js.optString("runUrl").takeIf { it.isNotBlank() }
+
+    return PublishedBuildStatus(
+      overall = overall,
+      headSha = js.optString("headSha").takeIf { it.isNotBlank() },
+      versionCode = versionCode,
+      updatedAtMs = js.optString("updatedAt").takeIf { it.isNotBlank() }?.let { raw ->
+        runCatching { Instant.parse(raw).toEpochMilli() }.getOrNull()
+      },
+      ui = AppReleaseBuildUi(
+        // "ready" in the workflow asset is only a signal to re-check stable release metadata.
+        // The update button is enabled only after the APK asset itself is confirmed.
+        status = if (failed) AppReleaseBuildStatus.FAILED else AppReleaseBuildStatus.PREPARING,
+        runId = runId,
+        runUrl = runUrl,
+        messageRes = if (failed) R.string.app_update_release_failed_body else R.string.app_update_release_preparing_body,
+        stages = stages,
+      ),
+    )
+  }
+
+  private suspend fun fetchRelevantBuildRun(publishedSha: String?): WorkflowRunInfo? {
     val body = httpGetText("https://api.github.com/repos/GAME-OVER-op/ZDT-D/actions/workflows/build.yml/runs?branch=main&per_page=10") ?: return null
     val arr = runCatching { JSONObject(body).optJSONArray("workflow_runs") }.getOrNull() ?: return null
     val runs = buildList {
@@ -843,13 +899,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
         ))
       }
     }.filter { it.id > 0L }
-    return runs.firstOrNull { expectedSha != null && it.headSha.equals(expectedSha, ignoreCase = true) }
-      ?: runs.firstOrNull { publishedSha == null || !it.headSha.equals(publishedSha, ignoreCase = true) }
+
+    // Prefer the newest active run on main. Release rebuilds often do not touch module.prop,
+    // so the live workflow must not be tied to the commit that last changed module.prop.
+    return runs.firstOrNull {
+      it.status in setOf("queued", "in_progress", "waiting", "requested", "pending") &&
+        (publishedSha == null || !it.headSha.equals(publishedSha, ignoreCase = true))
+    } ?: runs.firstOrNull { publishedSha == null || !it.headSha.equals(publishedSha, ignoreCase = true) }
       ?: runs.firstOrNull()
   }
 
   private suspend fun fetchWorkflowJobs(runId: Long): List<WorkflowJobInfo> {
-    val body = httpGetText("https" + "://api.github.com/repos/GAME-OVER-op/ZDT-D/actions/runs/${runId}/jobs?per_page=100") ?: return emptyList()
+    val body = httpGetText("https://api.github.com/repos/GAME-OVER-op/ZDT-D/actions/runs/${runId}/jobs?per_page=100") ?: return emptyList()
     val arr = runCatching { JSONObject(body).optJSONArray("jobs") }.getOrNull() ?: return emptyList()
     return buildList {
       for (i in 0 until arr.length()) {
@@ -875,14 +936,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     return AppReleaseStageStatus.WAITING
   }
 
-  private suspend fun fetchReleaseBuildUi(expectedSha: String?, publishedSha: String?): AppReleaseBuildUi {
-    val run = fetchRelevantBuildRun(expectedSha, publishedSha)
-      ?: return AppReleaseBuildUi(
-        status = AppReleaseBuildStatus.PREPARING,
-        messageRes = R.string.app_update_release_preparing_body,
-        stages = defaultReleaseBuildStages(AppReleaseStageStatus.RUNNING),
-      )
+  private suspend fun fetchReleaseBuildUi(publishedSha: String?): AppReleaseBuildUi? {
+    val run = fetchRelevantBuildRun(publishedSha) ?: return null
     val jobs = fetchWorkflowJobs(run.id)
+    // If the jobs endpoint is temporarily unavailable/rate-limited, preserve the last UI state.
+    if (jobs.isEmpty() && run.status != "queued") return null
 
     fun named(predicate: (String) -> Boolean): List<WorkflowJobInfo> = jobs.filter { predicate(it.name.lowercase(Locale.ROOT)) }
 
@@ -900,12 +958,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     val apk = named { it.contains("build apk") }
     val release = named { it.contains("publish service") }
 
-    fun stageStatus(jobsForStage: List<WorkflowJobInfo>): AppReleaseStageStatus = stageStatusForJobs(jobsForStage)
-
-    var binariesStatus = stageStatus(binaries)
-    var archivesStatus = stageStatus(archives)
-    var apkStatus = stageStatus(apk)
-    var releaseStatus = stageStatus(release)
+    var binariesStatus = stageStatusForJobs(binaries)
+    var archivesStatus = stageStatusForJobs(archives)
+    var apkStatus = stageStatusForJobs(apk)
+    var releaseStatus = stageStatusForJobs(release)
     val readyStatus = AppReleaseStageStatus.WAITING
 
     fun promotePreviousStages() {
@@ -923,9 +979,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
       }
     }
 
-    if (run.status == "queued" && binariesStatus == AppReleaseStageStatus.WAITING) {
-      binariesStatus = AppReleaseStageStatus.RUNNING
-    }
+    if (run.status == "queued" && binariesStatus == AppReleaseStageStatus.WAITING) binariesStatus = AppReleaseStageStatus.RUNNING
     promotePreviousStages()
     if (run.status in setOf("queued", "in_progress") &&
       listOf(binariesStatus, archivesStatus, apkStatus, releaseStatus).none { it == AppReleaseStageStatus.RUNNING || it == AppReleaseStageStatus.FAILED }
@@ -971,12 +1025,49 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     )
   }
 
+  private suspend fun refreshReleaseBuildStatus() {
+    val current = _appUpdate.value
+    val published = fetchPublishedBuildStatus(current.remoteVersionCode)
+    val now = System.currentTimeMillis()
+
+    if (published != null) {
+      _appUpdate.update { state ->
+        if (!state.bannerVisible || state.downloadUrl != null) state else state.copy(releaseBuild = published.ui)
+      }
+
+      if (published.overall == "ready") {
+        val shouldConfirmRelease = lastReleaseReadyRunId != published.ui.runId ||
+          now - lastReleaseReadyApiCheckAtMs >= 90_000L
+        if (shouldConfirmRelease) {
+          lastReleaseReadyRunId = published.ui.runId
+          lastReleaseReadyApiCheckAtMs = now
+          checkAppUpdateInternal(force = true, silent = true)
+        }
+      }
+
+      val ageMs = published.updatedAtMs?.let { now - it }
+      if (ageMs == null || ageMs in 0..180_000L) return
+      // A milestone can legitimately take several minutes. Once the published document
+      // becomes stale, use REST only as a slow fallback so a missed status upload cannot
+      // leave the UI stuck forever.
+    }
+
+    // REST is only a fallback. Unauthenticated GitHub REST requests have a low per-IP
+    // quota, so never poll workflow runs/jobs every few seconds.
+    if (now - lastReleaseBuildApiFallbackAtMs < 90_000L) return
+    lastReleaseBuildApiFallbackAtMs = now
+    val fallback = fetchReleaseBuildUi(publishedSha = null) ?: return
+    _appUpdate.update { state ->
+      if (!state.bannerVisible || state.downloadUrl != null) state else state.copy(releaseBuild = fallback)
+    }
+  }
+
   private fun startReleaseBuildPolling() {
     appReleaseBuildPollJob?.cancel()
     appReleaseBuildPollJob = viewModelScope.launch(Dispatchers.IO + ceh) {
       while (isActive && _appUpdate.value.bannerVisible && _appUpdate.value.releaseBuild.status in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED)) {
-        delay(15_000L)
-        checkAppUpdateInternal(force = true, silent = true)
+        delay(20_000L)
+        refreshReleaseBuildStatus()
       }
     }
   }
@@ -1148,8 +1239,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     root.setCachedAppUpdateFoundTs(now)
 
     if (!releaseReady) {
-      val expectedSha = fetchModulePropCommitSha()
-      val buildUi = fetchReleaseBuildUi(expectedSha = expectedSha, publishedSha = releaseMeta?.commit)
+      val publishedStatus = fetchPublishedBuildStatus(rc)
+      val buildUi = publishedStatus?.ui
+        ?: fetchReleaseBuildUi(publishedSha = releaseMeta?.commit)
+        ?: _appUpdate.value.releaseBuild.takeIf { it.status in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED) }
+        ?: AppReleaseBuildUi(
+          status = AppReleaseBuildStatus.PREPARING,
+          messageRes = R.string.app_update_release_preparing_body,
+          stages = defaultReleaseBuildStages(AppReleaseStageStatus.RUNNING),
+        )
       root.setCachedAppUpdateDownloadUrl(null)
       _appUpdate.update { it.copy(
         enabled = root.isAppUpdateCheckEnabled(),
@@ -1279,8 +1377,14 @@ private fun restoreCachedAppUpdateState() {
 fun onAppResumed() {
   // Re-sync banner state first so cached preparing states immediately enter live polling.
   restoreCachedAppUpdateState()
-  // Re-check in background on resume if cooldown is over, or force when a release build is visible.
-  maybeCheckAppUpdate(force = _appUpdate.value.bannerVisible && _appUpdate.value.releaseBuild.status in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED))
+  val liveBuildVisible = _appUpdate.value.bannerVisible &&
+    _appUpdate.value.releaseBuild.status in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED)
+  if (liveBuildVisible) {
+    // Refresh the workflow-published HTTPS status immediately without spending REST API quota.
+    launchIO { refreshReleaseBuildStatus() }
+  } else {
+    maybeCheckAppUpdate(force = false)
+  }
 }
 
 private fun clearDownloadedUpdateApk() {

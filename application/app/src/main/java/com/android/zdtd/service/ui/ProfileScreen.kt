@@ -220,6 +220,7 @@ internal fun StrategicProfileTabs(
   tabs: List<Pair<Int, String>>,
   selected: Int,
   onSelect: (Int) -> Unit,
+  activeTextColor: Color = Color(0xFF7DD3FC),
 ) {
   val compact = rememberIsCompactWidth()
   Surface(
@@ -240,7 +241,7 @@ internal fun StrategicProfileTabs(
             .clickable { onSelect(index) },
           shape = RoundedCornerShape(16.dp),
           color = if (active) Color(0xFF38BDF8).copy(alpha = 0.18f) else Color.Transparent,
-          contentColor = if (active) Color(0xFF7DD3FC) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
+          contentColor = if (active) activeTextColor else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.70f),
           border = if (active) BorderStroke(1.dp, Color(0xFF38BDF8).copy(alpha = 0.28f)) else null,
         ) {
           Box(

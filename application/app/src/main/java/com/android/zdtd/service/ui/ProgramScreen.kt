@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -194,6 +195,11 @@ fun ProgramScreen(
           ),
           selected = dnscryptTab,
           onSelect = { dnscryptTab = it },
+          activeTextColor = if (MaterialTheme.colorScheme.background.luminance() > 0.5f) {
+            Color.Black
+          } else {
+            Color(0xFF7DD3FC)
+          },
         )
       }
     } else if (program.id == "operaproxy") {

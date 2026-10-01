@@ -2480,6 +2480,13 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
 
     <!-- Non-root VPN lifecycle progress -->
     <string name="non_root_runtime_logs_title">VPN の開始 / 停止</string>
+    <string name="non_root_service_state_running">サービス: 実行中</string>
+    <string name="non_root_service_state_starting">サービス: 起動中</string>
+    <string name="non_root_service_state_stopping">サービス: 停止中</string>
+    <string name="non_root_service_state_stopped">サービス: 停止</string>
+    <string name="non_root_service_state_error">サービス: エラー</string>
+    <string name="non_root_switch_root_title">root モードに切り替えますか？</string>
+    <string name="non_root_switch_root_body">root モードに切り替えますか？ 既存のセットアップウィザードが root アクセス要求の手順から開きます。</string>
     <string name="non_root_log_preparing_runtime">非 root ランタイムを準備しています…</string>
     <string name="non_root_log_start_mode">%1$s モードを開始しています…</string>
     <string name="non_root_log_start_component">%1$s を開始しています…</string>

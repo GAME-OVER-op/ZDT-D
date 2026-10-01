@@ -2481,6 +2481,13 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
 
     <!-- Non-root VPN lifecycle progress -->
     <string name="non_root_runtime_logs_title">VPN-Start / -Stopp</string>
+    <string name="non_root_service_state_running">Dienst: läuft</string>
+    <string name="non_root_service_state_starting">Dienst: startet</string>
+    <string name="non_root_service_state_stopping">Dienst: wird beendet</string>
+    <string name="non_root_service_state_stopped">Dienst: gestoppt</string>
+    <string name="non_root_service_state_error">Dienst: Fehler</string>
+    <string name="non_root_switch_root_title">In den Root-Modus wechseln?</string>
+    <string name="non_root_switch_root_body">Möchten Sie in den Root-Modus wechseln? Der vorhandene Einrichtungsassistent wird beim Schritt zur Anforderung des Root-Zugriffs geöffnet.</string>
     <string name="non_root_log_preparing_runtime">Non-Root-Laufzeit wird vorbereitet…</string>
     <string name="non_root_log_start_mode">Modus %1$s wird gestartet…</string>
     <string name="non_root_log_start_component">%1$s wird gestartet…</string>

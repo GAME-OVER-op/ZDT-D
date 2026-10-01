@@ -4,6 +4,7 @@ import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandHorizontally
@@ -72,6 +73,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -106,6 +108,7 @@ import com.android.zdtd.service.NonRootVpnState
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ui.settings.SettingsScreen
 import kotlin.math.abs
+import kotlinx.coroutines.delay
 
 /** Dedicated shell for the app-owned non-root path. */
 @Composable
@@ -120,6 +123,7 @@ fun NonRootApp(
   vpnLogs: List<NonRootRuntimeLogEntry>,
   onVpnStart: () -> Unit,
   onVpnStop: () -> Unit,
+  onRequestRootMode: () -> Unit,
   onLanguageModeChange: (String) -> Unit,
   onThemeModeChange: (String) -> Unit,
   onWorkModeChange: (NonRootWorkMode) -> Unit,
@@ -166,8 +170,14 @@ fun NonRootApp(
     AnimatedContent(
       targetState = pageKey,
       transitionSpec = {
-        (fadeIn(tween(180)) + slideInHorizontally(tween(220)) { width -> width / 14 }) togetherWith
-          (fadeOut(tween(140)) + slideOutHorizontally(tween(180)) { width -> -width / 14 })
+        val forward = nonRootPageOrder(targetState) > nonRootPageOrder(initialState)
+        val enter = fadeIn(tween(160)) + slideInHorizontally(tween(220)) { width ->
+          if (forward) width / 6 else -width / 6
+        }
+        val exit = fadeOut(tween(160)) + slideOutHorizontally(tween(220)) { width ->
+          if (forward) -width / 6 else width / 6
+        }
+        (enter togetherWith exit).using(SizeTransform(clip = false))
       },
       label = "nonRootPageTransition",
     ) { page ->
@@ -196,12 +206,12 @@ fun NonRootApp(
         page == "tab:HOME" -> NonRootHomeScreen(
           topContentPadding = topContentPadding,
           bottomContentPadding = bottomContentPadding,
-          workMode = workMode,
           vpnState = vpnState,
           vpnLastError = vpnLastError,
           vpnLogs = vpnLogs,
           onVpnStart = onVpnStart,
           onVpnStop = onVpnStop,
+          onRequestRootMode = onRequestRootMode,
         )
         page == "tab:STATS" -> NonRootStatsScreen(
           topContentPadding = topContentPadding,
@@ -277,20 +287,38 @@ fun NonRootApp(
   }
 }
 
+private fun nonRootPageOrder(page: String): Int = when {
+  page == "tab:HOME" -> 0
+  page == "tab:STATS" -> 10
+  page == "tab:APPS" -> 20
+  page == "t2s" -> 30
+  page.startsWith("profile:") -> 30
+  page == "tab:SUPPORT" -> 40
+  else -> 20
+}
+
 @Composable
 private fun NonRootHomeScreen(
   topContentPadding: Dp,
   bottomContentPadding: Dp,
-  workMode: NonRootWorkMode,
   vpnState: NonRootVpnState,
   vpnLastError: String?,
   vpnLogs: List<NonRootRuntimeLogEntry>,
   onVpnStart: () -> Unit,
   onVpnStop: () -> Unit,
+  onRequestRootMode: () -> Unit,
 ) {
   val screenPadding = rememberAdaptiveScreenPadding()
   val compact = rememberIsShortHeight()
   val busy = vpnState == NonRootVpnState.STARTING || vpnState == NonRootVpnState.STOPPING
+  var showRootSwitchConfirm by remember { mutableStateOf(false) }
+  val visualState = when (vpnState) {
+    NonRootVpnState.RUNNING -> HomeServiceVisualState.RUNNING
+    NonRootVpnState.STARTING -> HomeServiceVisualState.STARTING
+    NonRootVpnState.STOPPING -> HomeServiceVisualState.STOPPING
+    NonRootVpnState.STOPPED -> HomeServiceVisualState.STOPPED
+    NonRootVpnState.ERROR -> HomeServiceVisualState.UNAVAILABLE
+  }
   val accent = when (vpnState) {
     NonRootVpnState.RUNNING -> Color(0xFF20C96B)
     NonRootVpnState.STARTING -> MaterialTheme.colorScheme.secondary
@@ -328,7 +356,8 @@ private fun NonRootHomeScreen(
     Surface(
       modifier = Modifier
         .fillMaxWidth()
-        .animateContentSize(animationSpec = tween(220)),
+        .animateContentSize(animationSpec = tween(220))
+        .clickable(onClick = { showRootSwitchConfirm = true }),
       shape = RoundedCornerShape(if (compact) 22.dp else 28.dp),
       color = MaterialTheme.colorScheme.surfaceContainerLow,
       border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
@@ -375,57 +404,6 @@ private fun NonRootHomeScreen(
           }
         }
 
-        Surface(
-          modifier = Modifier.fillMaxWidth(),
-          shape = RoundedCornerShape(18.dp),
-          color = MaterialTheme.colorScheme.surfaceContainer,
-        ) {
-          Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-          ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-              Text(
-                text = stringResource(R.string.non_root_current_mode),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-              AnimatedContent(targetState = workMode, label = "nonRootMode") { mode ->
-                Text(
-                  text = stringResource(
-                    if (mode == NonRootWorkMode.DIRECT) R.string.non_root_mode_direct
-                    else R.string.non_root_mode_cascade,
-                  ),
-                  style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.SemiBold,
-                )
-              }
-            }
-            Surface(
-              shape = RoundedCornerShape(100.dp),
-              color = accent.copy(alpha = 0.10f),
-              border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
-            ) {
-              Text(
-                text = stringResource(
-                  when (vpnState) {
-                    NonRootVpnState.STOPPED -> R.string.home_power_stopped
-                    NonRootVpnState.STARTING -> R.string.home_power_starting
-                    NonRootVpnState.RUNNING -> R.string.home_power_running
-                    NonRootVpnState.STOPPING -> R.string.home_power_stopping
-                    NonRootVpnState.ERROR -> R.string.common_error
-                  }
-                ),
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = accent,
-              )
-            }
-          }
-        }
-
         AnimatedVisibility(visible = vpnState == NonRootVpnState.ERROR && !vpnLastError.isNullOrBlank()) {
           Text(
             text = vpnLastError.orEmpty(),
@@ -438,15 +416,24 @@ private fun NonRootHomeScreen(
 
     Spacer(Modifier.height(if (compact) 12.dp else 16.dp))
 
-    ServiceActionButton(
-      text = actionText,
-      accent = accent,
+    AnimatedPowerDial(
+      visualState = visualState,
       busy = busy,
+      accent = accent,
+      size = if (compact) 184.dp else 214.dp,
       enabled = !busy,
-      compact = compact,
+      contentDescription = actionText,
       onClick = {
         if (vpnState == NonRootVpnState.RUNNING) onVpnStop() else onVpnStart()
       },
+    )
+
+    Spacer(Modifier.height(if (compact) 10.dp else 12.dp))
+
+    NonRootServiceStateCard(
+      vpnState = vpnState,
+      accent = accent,
+      compact = compact,
     )
 
     Spacer(Modifier.height(if (compact) 12.dp else 16.dp))
@@ -457,9 +444,70 @@ private fun NonRootHomeScreen(
       compact = compact,
       shortHeight = compact,
       fillHeight = false,
-      titleText = stringResource(R.string.non_root_runtime_logs_title),
+      titleText = stringResource(R.string.logs_title),
       showSourceSelector = false,
     )
+  }
+
+  if (showRootSwitchConfirm) {
+    AlertDialog(
+      onDismissRequest = { showRootSwitchConfirm = false },
+      title = { Text(stringResource(R.string.non_root_switch_root_title)) },
+      text = { Text(stringResource(R.string.non_root_switch_root_body)) },
+      confirmButton = {
+        TextButton(
+          onClick = {
+            showRootSwitchConfirm = false
+            onRequestRootMode()
+          },
+        ) { Text(stringResource(R.string.common_yes)) }
+      },
+      dismissButton = {
+        TextButton(onClick = { showRootSwitchConfirm = false }) {
+          Text(stringResource(R.string.common_cancel))
+        }
+      },
+    )
+  }
+}
+
+@Composable
+private fun NonRootServiceStateCard(
+  vpnState: NonRootVpnState,
+  accent: Color,
+  compact: Boolean,
+) {
+  val text = stringResource(
+    when (vpnState) {
+      NonRootVpnState.RUNNING -> R.string.non_root_service_state_running
+      NonRootVpnState.STARTING -> R.string.non_root_service_state_starting
+      NonRootVpnState.STOPPING -> R.string.non_root_service_state_stopping
+      NonRootVpnState.STOPPED -> R.string.non_root_service_state_stopped
+      NonRootVpnState.ERROR -> R.string.non_root_service_state_error
+    }
+  )
+  Surface(
+    modifier = Modifier
+      .fillMaxWidth(if (compact) 0.70f else 0.58f)
+      .animateContentSize(animationSpec = tween(180)),
+    shape = RoundedCornerShape(999.dp),
+    color = accent.copy(alpha = 0.09f),
+    border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
+  ) {
+    AnimatedContent(
+      targetState = text,
+      transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
+      label = "nonRootServiceState",
+    ) { value ->
+      Text(
+        text = value,
+        modifier = Modifier.padding(horizontal = 14.dp, vertical = if (compact) 7.dp else 8.dp),
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = FontWeight.SemiBold,
+        color = accent,
+        maxLines = 1,
+      )
+    }
   }
 }
 
@@ -484,6 +532,26 @@ private fun NonRootToolsScreen(
   val byId = remember(cascadeState.profiles) { cascadeState.profiles.associateBy { it.id } }
   var showCreateDialog by remember { mutableStateOf(false) }
   var deleteProfileId by remember { mutableStateOf<String?>(null) }
+  var cascadeModeCardVisible by remember { mutableStateOf(workMode == NonRootWorkMode.CASCADE) }
+  var t2sSettingsButtonVisible by remember { mutableStateOf(workMode == NonRootWorkMode.CASCADE) }
+  var lastAnimatedWorkMode by remember { mutableStateOf(workMode) }
+
+  LaunchedEffect(workMode) {
+    if (workMode != lastAnimatedWorkMode) {
+      lastAnimatedWorkMode = workMode
+      if (workMode == NonRootWorkMode.CASCADE) {
+        t2sSettingsButtonVisible = false
+        cascadeModeCardVisible = true
+        delay(250)
+        t2sSettingsButtonVisible = true
+      } else {
+        t2sSettingsButtonVisible = false
+        delay(150)
+        cascadeModeCardVisible = false
+      }
+    }
+  }
+
   val visibleRoute = remember(cascadeState.route, workMode) {
     cascadeState.route.withIndex().filter { indexed ->
       when (indexed.value.type) {
@@ -515,7 +583,7 @@ private fun NonRootToolsScreen(
 
     item {
       AnimatedVisibility(
-        visible = workMode == NonRootWorkMode.CASCADE,
+        visible = cascadeModeCardVisible,
         enter = expandVertically(animationSpec = tween(220)) + fadeIn(animationSpec = tween(180)),
         exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(animationSpec = tween(140)),
       ) {
@@ -543,7 +611,7 @@ private fun NonRootToolsScreen(
           Text(stringResource(R.string.non_root_create_profile))
         }
         AnimatedVisibility(
-          visible = workMode == NonRootWorkMode.CASCADE,
+          visible = t2sSettingsButtonVisible,
           enter = expandHorizontally(expandFrom = Alignment.End, animationSpec = tween(220)) + fadeIn(tween(160)),
           exit = shrinkHorizontally(shrinkTowards = Alignment.End, animationSpec = tween(180)) + fadeOut(tween(120)),
         ) {

@@ -606,7 +606,7 @@ private fun TransitionDash(
 }
 
 @Composable
-private fun AnimatedPowerDial(
+internal fun AnimatedPowerDial(
   visualState: HomeServiceVisualState,
   busy: Boolean,
   accent: Color,
@@ -1556,7 +1556,7 @@ private data class HomeLayoutMetrics(
   val dialSize: Dp,
 )
 
-private enum class HomeServiceVisualState {
+internal enum class HomeServiceVisualState {
   RUNNING,
   STARTING,
   STOPPING,

@@ -2483,6 +2483,13 @@ APatch: 10700+</string>
 
     <!-- Non-root VPN lifecycle progress -->
     <string name="non_root_runtime_logs_title">Запуск / зупинка VPN</string>
+    <string name="non_root_service_state_running">Служба: запущена</string>
+    <string name="non_root_service_state_starting">Служба: запускається</string>
+    <string name="non_root_service_state_stopping">Служба: зупиняється</string>
+    <string name="non_root_service_state_stopped">Служба: зупинена</string>
+    <string name="non_root_service_state_error">Служба: помилка</string>
+    <string name="non_root_switch_root_title">Перейти в root-режим?</string>
+    <string name="non_root_switch_root_body">Бажаєте перейти в root-режим? Відкриється наявний майстер встановлення на екрані запиту root-доступу.</string>
     <string name="non_root_log_preparing_runtime">Підготовка non-root runtime…</string>
     <string name="non_root_log_start_mode">Запуск режиму %1$s…</string>
     <string name="non_root_log_start_component">Запуск %1$s…</string>

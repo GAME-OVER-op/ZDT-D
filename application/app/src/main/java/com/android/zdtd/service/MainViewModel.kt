@@ -569,13 +569,33 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     }
   }
 
-  fun onAppStart(fromLauncher: Boolean) {
+  fun openRootSetup() {
+    startupJob?.cancel()
+    startupCompleted = false
+    _rootState.value = RootState.DENIED
+    _setup.update { state ->
+      state.copy(
+        step = SetupStep.ROOT,
+        installing = false,
+        installLog = "",
+        installProgressPercent = 0,
+        installProgressLabel = "",
+      )
+    }
+  }
+
+  fun onAppStart(fromLauncher: Boolean, forceRootSetup: Boolean = false) {
     if (didInit) return
     didInit = true
     startedFromLauncher = fromLauncher
 
     // Restore cached app-update banner state (persists across restarts).
     restoreCachedAppUpdateState()
+
+    if (forceRootSetup) {
+      openRootSetup()
+      return
+    }
 
     // If the user has already accepted the welcome screen (or completed setup earlier),
     // kick off a root check automatically on app start.

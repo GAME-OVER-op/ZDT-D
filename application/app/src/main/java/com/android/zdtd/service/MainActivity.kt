@@ -28,6 +28,10 @@ import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
+  companion object {
+    const val EXTRA_OPEN_ROOT_SETUP = "com.android.zdtd.service.extra.OPEN_ROOT_SETUP"
+  }
+
   private val vm: MainViewModel by viewModels()
   private var redirectedToNonRoot = false
 
@@ -78,7 +82,8 @@ class MainActivity : AppCompatActivity() {
 
     // Detect a true cold start from launcher (to show the optional module update prompt).
     val fromLauncher = intent?.action == Intent.ACTION_MAIN && (intent?.categories?.contains(Intent.CATEGORY_LAUNCHER) == true)
-    vm.onAppStart(fromLauncher)
+    val openRootSetup = intent?.getBooleanExtra(EXTRA_OPEN_ROOT_SETUP, false) == true
+    vm.onAppStart(fromLauncher, forceRootSetup = openRootSetup)
     handleIncomingBackupIntent(intent)
 
     // Handle update events (open browser / request permission / install APK).

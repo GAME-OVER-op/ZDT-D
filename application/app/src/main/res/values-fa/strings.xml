@@ -2481,6 +2481,13 @@ APatch: 10700+</string>
 
     <!-- Non-root VPN lifecycle progress -->
     <string name="non_root_runtime_logs_title">راه‌اندازی / توقف VPN</string>
+    <string name="non_root_service_state_running">سرویس: در حال اجرا</string>
+    <string name="non_root_service_state_starting">سرویس: در حال راه‌اندازی</string>
+    <string name="non_root_service_state_stopping">سرویس: در حال توقف</string>
+    <string name="non_root_service_state_stopped">سرویس: متوقف</string>
+    <string name="non_root_service_state_error">سرویس: خطا</string>
+    <string name="non_root_switch_root_title">به حالت روت تغییر کند؟</string>
+    <string name="non_root_switch_root_body">می‌خواهید به حالت روت تغییر دهید؟ راه‌انداز موجود در مرحله درخواست دسترسی روت باز می‌شود.</string>
     <string name="non_root_log_preparing_runtime">در حال آماده‌سازی محیط بدون روت…</string>
     <string name="non_root_log_start_mode">در حال راه‌اندازی حالت %1$s…</string>
     <string name="non_root_log_start_component">در حال راه‌اندازی %1$s…</string>

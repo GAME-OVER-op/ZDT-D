@@ -2485,6 +2485,13 @@ APatch: ‏10700+</string>
 
     <!-- Non-root VPN lifecycle progress -->
     <string name="non_root_runtime_logs_title">بدء / إيقاف VPN</string>
+    <string name="non_root_service_state_running">الخدمة: قيد التشغيل</string>
+    <string name="non_root_service_state_starting">الخدمة: قيد البدء</string>
+    <string name="non_root_service_state_stopping">الخدمة: قيد الإيقاف</string>
+    <string name="non_root_service_state_stopped">الخدمة: متوقفة</string>
+    <string name="non_root_service_state_error">الخدمة: خطأ</string>
+    <string name="non_root_switch_root_title">التبديل إلى وضع الروت؟</string>
+    <string name="non_root_switch_root_body">هل تريد التبديل إلى وضع الروت؟ سيفتح معالج الإعداد الحالي عند خطوة طلب صلاحية الروت.</string>
     <string name="non_root_log_preparing_runtime">جارٍ تجهيز بيئة التشغيل دون root…</string>
     <string name="non_root_log_start_mode">جارٍ بدء وضع %1$s…</string>
     <string name="non_root_log_start_component">جارٍ بدء %1$s…</string>

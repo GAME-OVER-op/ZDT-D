@@ -2480,6 +2480,13 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
 
     <!-- Non-root VPN lifecycle progress -->
     <string name="non_root_runtime_logs_title">Khởi động / dừng VPN</string>
+    <string name="non_root_service_state_running">Dịch vụ: đang chạy</string>
+    <string name="non_root_service_state_starting">Dịch vụ: đang khởi động</string>
+    <string name="non_root_service_state_stopping">Dịch vụ: đang dừng</string>
+    <string name="non_root_service_state_stopped">Dịch vụ: đã dừng</string>
+    <string name="non_root_service_state_error">Dịch vụ: lỗi</string>
+    <string name="non_root_switch_root_title">Chuyển sang chế độ root?</string>
+    <string name="non_root_switch_root_body">Bạn có muốn chuyển sang chế độ root không? Trình hướng dẫn thiết lập hiện có sẽ mở ở bước yêu cầu quyền root.</string>
     <string name="non_root_log_preparing_runtime">Đang chuẩn bị môi trường không root…</string>
     <string name="non_root_log_start_mode">Đang khởi động chế độ %1$s…</string>
     <string name="non_root_log_start_component">Đang khởi động %1$s…</string>

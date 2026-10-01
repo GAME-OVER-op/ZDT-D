@@ -2480,6 +2480,13 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 
     <!-- Non-root VPN lifecycle progress -->
     <string name="non_root_runtime_logs_title">VPN startup / shutdown</string>
+    <string name="non_root_service_state_running">Service: running</string>
+    <string name="non_root_service_state_starting">Service: starting</string>
+    <string name="non_root_service_state_stopping">Service: stopping</string>
+    <string name="non_root_service_state_stopped">Service: stopped</string>
+    <string name="non_root_service_state_error">Service: error</string>
+    <string name="non_root_switch_root_title">Switch to root mode?</string>
+    <string name="non_root_switch_root_body">Do you want to switch to root mode? The existing setup wizard will open at the root access request step.</string>
     <string name="non_root_log_preparing_runtime">Preparing non-root runtime…</string>
     <string name="non_root_log_start_mode">Starting %1$s mode…</string>
     <string name="non_root_log_start_component">Starting %1$s…</string>

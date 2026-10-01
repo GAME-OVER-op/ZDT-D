@@ -1,6 +1,7 @@
 package com.android.zdtd.service
 
 import android.app.Activity
+import android.content.Intent
 import android.content.res.Configuration
 import android.net.VpnService
 import android.os.Build
@@ -64,6 +65,7 @@ class NonRootActivity : AppCompatActivity() {
             vpnLogs = vpnLogs,
             onVpnStart = ::requestNonRootVpnStart,
             onVpnStop = { NonRootVpnService.stop(this@NonRootActivity) },
+            onRequestRootMode = ::switchToRootSetup,
             onLanguageModeChange = vm::setLanguageMode,
             onThemeModeChange = vm::setThemeMode,
             onWorkModeChange = vm::setWorkMode,
@@ -80,6 +82,17 @@ class NonRootActivity : AppCompatActivity() {
         }
       }
     }
+  }
+
+
+  private fun switchToRootSetup() {
+    NonRootVpnService.stop(this)
+    RootConfigManager(applicationContext).setRuntimeMode("root")
+    startActivity(
+      Intent(this, MainActivity::class.java)
+        .putExtra(MainActivity.EXTRA_OPEN_ROOT_SETUP, true)
+    )
+    finish()
   }
 
   private fun requestNonRootVpnStart() {

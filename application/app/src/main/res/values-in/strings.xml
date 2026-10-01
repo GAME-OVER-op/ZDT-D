@@ -2480,6 +2480,13 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
 
     <!-- Non-root VPN lifecycle progress -->
     <string name="non_root_runtime_logs_title">Mulai / hentikan VPN</string>
+    <string name="non_root_service_state_running">Layanan: berjalan</string>
+    <string name="non_root_service_state_starting">Layanan: memulai</string>
+    <string name="non_root_service_state_stopping">Layanan: berhenti</string>
+    <string name="non_root_service_state_stopped">Layanan: dihentikan</string>
+    <string name="non_root_service_state_error">Layanan: error</string>
+    <string name="non_root_switch_root_title">Beralih ke mode root?</string>
+    <string name="non_root_switch_root_body">Ingin beralih ke mode root? Wizard penyiapan yang ada akan terbuka pada langkah permintaan akses root.</string>
     <string name="non_root_log_preparing_runtime">Menyiapkan runtime tanpa root…</string>
     <string name="non_root_log_start_mode">Memulai mode %1$s…</string>
     <string name="non_root_log_start_component">Memulai %1$s…</string>

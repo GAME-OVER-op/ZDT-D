@@ -2480,6 +2480,13 @@ APatch：10700+</string>
 
     <!-- Non-root VPN lifecycle progress -->
     <string name="non_root_runtime_logs_title">VPN 启动 / 停止</string>
+    <string name="non_root_service_state_running">服务：运行中</string>
+    <string name="non_root_service_state_starting">服务：正在启动</string>
+    <string name="non_root_service_state_stopping">服务：正在停止</string>
+    <string name="non_root_service_state_stopped">服务：已停止</string>
+    <string name="non_root_service_state_error">服务：错误</string>
+    <string name="non_root_switch_root_title">切换到 Root 模式？</string>
+    <string name="non_root_switch_root_body">是否切换到 Root 模式？现有设置向导将从请求 Root 权限的步骤打开。</string>
     <string name="non_root_log_preparing_runtime">正在准备免 Root 运行环境…</string>
     <string name="non_root_log_start_mode">正在启动 %1$s 模式…</string>
     <string name="non_root_log_start_component">正在启动 %1$s…</string>

@@ -2481,6 +2481,13 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
 
     <!-- Non-root VPN lifecycle progress -->
     <string name="non_root_runtime_logs_title">Inicialização / parada da VPN</string>
+    <string name="non_root_service_state_running">Serviço: em execução</string>
+    <string name="non_root_service_state_starting">Serviço: iniciando</string>
+    <string name="non_root_service_state_stopping">Serviço: parando</string>
+    <string name="non_root_service_state_stopped">Serviço: parado</string>
+    <string name="non_root_service_state_error">Serviço: erro</string>
+    <string name="non_root_switch_root_title">Mudar para o modo root?</string>
+    <string name="non_root_switch_root_body">Deseja mudar para o modo root? O assistente de configuração existente será aberto na etapa de solicitação de acesso root.</string>
     <string name="non_root_log_preparing_runtime">Preparando o ambiente sem root…</string>
     <string name="non_root_log_start_mode">Iniciando o modo %1$s…</string>
     <string name="non_root_log_start_component">Iniciando %1$s…</string>

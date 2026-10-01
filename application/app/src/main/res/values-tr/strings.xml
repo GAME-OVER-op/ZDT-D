@@ -2480,6 +2480,13 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
 
     <!-- Non-root VPN lifecycle progress -->
     <string name="non_root_runtime_logs_title">VPN başlatma / durdurma</string>
+    <string name="non_root_service_state_running">Hizmet: çalışıyor</string>
+    <string name="non_root_service_state_starting">Hizmet: başlatılıyor</string>
+    <string name="non_root_service_state_stopping">Hizmet: durduruluyor</string>
+    <string name="non_root_service_state_stopped">Hizmet: durduruldu</string>
+    <string name="non_root_service_state_error">Hizmet: hata</string>
+    <string name="non_root_switch_root_title">Root moduna geçilsin mi?</string>
+    <string name="non_root_switch_root_body">Root moduna geçmek istiyor musunuz? Mevcut kurulum sihirbazı root erişimi isteme adımında açılacaktır.</string>
     <string name="non_root_log_preparing_runtime">Root olmadan çalışma ortamı hazırlanıyor…</string>
     <string name="non_root_log_start_mode">%1$s modu başlatılıyor…</string>
     <string name="non_root_log_start_component">%1$s başlatılıyor…</string>

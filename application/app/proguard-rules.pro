@@ -22,3 +22,6 @@
 -dontwarn com.jcraft.jsch.**
 -keep class org.bouncycastle.** { *; }
 -dontwarn org.bouncycastle.**
+
+# Non-root VPN bridge JNI entry point from the self-built hev-socks5-tunnel AAR.
+-keep class hev.htproxy.TProxyService { *; }

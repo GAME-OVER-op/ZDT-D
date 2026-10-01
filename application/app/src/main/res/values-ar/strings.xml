@@ -2414,4 +2414,12 @@ APatch: ‏10700+</string>
     <string name="subscription_manual_target">الوجهة: %1$s</string>
     <string name="subscription_copy_config">نسخ الإعداد</string>
     <string name="subscription_copy_failed">تعذر تجهيز الإعداد للنسخ.</string>
+
+    <!-- Non-root runtime -->
+    <string name="setup_continue_without_root">المتابعة بدون روت</string>
+    <string name="setup_non_root_warning_title">وضع محدود</string>
+    <string name="setup_non_root_warning_body">أنت على وشك المتابعة بدون صلاحيات الروت. ستتوفر فقط الميزات التي تعمل عبر VPN الخاص بأندرويد وخدمات الوكيل المحلية.\n\nلن تتوفر ميزات الحماية والأمان والوظائف الأخرى التي تتطلب وصولًا إلى النظام. كما سيكون التشغيل التلقائي لمكونات النظام والتكامل المتقدم للأدوات محدودًا.</string>
+    <string name="non_root_home_title">وضع بدون روت</string>
+    <string name="non_root_home_body">يعمل ZDT-D بدون وصول إلى النظام. سيتم إعداد عناصر تحكم VPN والوكيل هنا.</string>
+    <string name="non_root_home_restrictions">الحماية على مستوى النظام وميزات الأمان والتشغيل التلقائي والتكامل المتقدم للأدوات غير متاحة في هذا الوضع.</string>
 </resources>

@@ -319,15 +319,31 @@ fun WelcomeScreen(onAccept: () -> Unit) {
 }
 
 @Composable
-fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit, onRemoteSetup: () -> Unit) {
+fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit, onRemoteSetup: () -> Unit, onContinueWithoutRoot: () -> Unit) {
   val arm64Ok = remember { isArm64OnlySupported() }
   val compact = rememberIsCompactWidth()
   val tablet = rememberIsTabletLayout()
   val shortSetupHeight = rememberIsShortHeight()
   val screenPadding = rememberAdaptiveScreenPadding()
+  var showNonRootWarning by rememberSaveable { mutableStateOf(false) }
   val rootDescription = stringResource(R.string.setup_root_body)
   val rootHeroBody = rootDescription.substringBefore("\n\n")
   val rootDetailsBody = rootDescription.substringAfter("\n\n", "")
+
+  if (showNonRootWarning) {
+    SetupAlertDialog(
+      onDismissRequest = { showNonRootWarning = false },
+      titleText = stringResource(R.string.setup_non_root_warning_title),
+      bodyText = stringResource(R.string.setup_non_root_warning_body),
+      confirmButtonText = stringResource(R.string.common_continue),
+      onConfirm = {
+        showNonRootWarning = false
+        onContinueWithoutRoot()
+      },
+      dismissButtonText = stringResource(R.string.action_cancel),
+      onDismiss = { showNonRootWarning = false },
+    )
+  }
 
   SetupScaffold { padding ->
     Box(
@@ -425,6 +441,14 @@ fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit, onRemoteSetup: (
                 modifier = Modifier.fillMaxWidth(),
                 text = stringResource(R.string.setup_request_root),
               )
+              OutlinedButton(
+                onClick = { showNonRootWarning = true },
+                enabled = arm64Ok,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+              ) {
+                Text(stringResource(R.string.setup_continue_without_root), fontWeight = FontWeight.SemiBold)
+              }
               if (REMOTE_SETUP_ENTRY_ENABLED) {
                 OutlinedButton(onClick = onRemoteSetup, modifier = Modifier.fillMaxWidth()) {
                   Text("Удалённая настройка")
@@ -500,6 +524,15 @@ fun RootInfoScreen(rootState: RootState, onRequest: () -> Unit, onRemoteSetup: (
                 modifier = Modifier.fillMaxWidth(),
                 text = stringResource(R.string.setup_request_root),
               )
+
+              OutlinedButton(
+                onClick = { showNonRootWarning = true },
+                enabled = arm64Ok,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+              ) {
+                Text(stringResource(R.string.setup_continue_without_root), fontWeight = FontWeight.SemiBold)
+              }
 
               if (REMOTE_SETUP_ENTRY_ENABLED) {
                 OutlinedButton(onClick = onRemoteSetup, modifier = Modifier.fillMaxWidth()) {

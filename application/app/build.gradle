@@ -27,6 +27,11 @@ def moduleVersionName = (moduleProps.getProperty('version') ?: '1.0').trim()
 def generatedAssetsDir = file("$buildDir/generated/zdt-assets/main")
 def zdtCompileSdk = (findProperty('zdtCompileSdk') ?: System.getenv('ZDT_COMPILE_SDK') ?: '37').toString().trim().toInteger()
 def zdtCompileSdkMinor = (findProperty('zdtCompileSdkMinor') ?: System.getenv('ZDT_COMPILE_SDK_MINOR') ?: '0').toString().trim().toInteger()
+def hevSocks5TunnelAar = file('libs/hev-socks5-tunnel.aar')
+def zdtRequireHevAar = (findProperty('zdtRequireHevAar') ?: 'false').toString().toBoolean()
+if (zdtRequireHevAar && (!hevSocks5TunnelAar.exists() || hevSocks5TunnelAar.length() == 0L)) {
+  throw new GradleException("Required hev-socks5-tunnel AAR is missing: ${hevSocks5TunnelAar}")
+}
 def generatedModuleZip = file('../../out/module/zdt_module.zip')
 def generatedModuleProp = file('../../out/module/module.prop')
 def zdtModuleZip = file("$generatedAssetsDir/zdt_module.zip")
@@ -365,6 +370,11 @@ dependencies {
   implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.11.0'
   implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0'
   implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.11.0'
+
+  // Non-root VPN bridge. GitHub Actions builds this AAR from upstream source.
+  if (hevSocks5TunnelAar.exists()) {
+    implementation files(hevSocks5TunnelAar)
+  }
 
   // Networking
   implementation 'com.squareup.okhttp3:okhttp:5.5.0'

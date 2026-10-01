@@ -68,6 +68,35 @@ import kotlin.math.roundToInt
 // Same package (com.android.zdtd.service.ui) — no call-site import changes needed.
 
 @Composable
+fun NonRootSettingsContent(
+  languageMode: String,
+  onLanguageModeChange: (String) -> Unit,
+  themeMode: String,
+  onThemeModeChange: (String) -> Unit,
+) {
+  val compactWidth = rememberIsCompactWidth()
+  Column(
+    modifier = Modifier
+      .fillMaxSize()
+      .verticalScroll(rememberScrollState())
+      .padding(16.dp),
+    verticalArrangement = Arrangement.spacedBy(18.dp),
+  ) {
+    SettingsLanguageSection(
+      languageMode = languageMode,
+      compactWidth = compactWidth,
+      onLanguageModeChange = onLanguageModeChange,
+    )
+    SettingsThemeSection(
+      themeMode = themeMode,
+      compactWidth = compactWidth,
+      onThemeModeChange = onThemeModeChange,
+    )
+    Spacer(Modifier.height(8.dp))
+  }
+}
+
+@Composable
 fun AppUpdateSettings(
   enabled: Boolean,
   onToggle: (Boolean) -> Unit,

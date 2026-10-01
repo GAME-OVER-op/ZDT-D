@@ -2410,4 +2410,12 @@ APatch: 10700+</string>
     <string name="subscription_manual_target">مقصد: %1$s</string>
     <string name="subscription_copy_config">کپی پیکربندی</string>
     <string name="subscription_copy_failed">آماده‌سازی پیکربندی برای کپی ممکن نشد.</string>
+
+    <!-- Non-root runtime -->
+    <string name="setup_continue_without_root">ادامه بدون روت</string>
+    <string name="setup_non_root_warning_title">حالت محدود</string>
+    <string name="setup_non_root_warning_body">در آستانه ادامه بدون دسترسی روت هستید. فقط قابلیت‌هایی که از طریق VPN اندروید و سرویس‌های پراکسی محلی کار می‌کنند در دسترس خواهند بود.\n\nقابلیت‌های حفاظتی، امنیتی و سایر امکاناتی که به دسترسی سیستمی نیاز دارند در دسترس نخواهند بود. اجرای خودکار مؤلفه‌های سیستم و یکپارچه‌سازی پیشرفته ابزارها نیز محدود می‌شود.</string>
+    <string name="non_root_home_title">حالت بدون روت</string>
+    <string name="non_root_home_body">ZDT-D بدون دسترسی سیستمی در حال اجرا است. کنترل‌های VPN و پراکسی در اینجا پیکربندی می‌شوند.</string>
+    <string name="non_root_home_restrictions">حفاظت سطح سیستم، قابلیت‌های امنیتی، اجرای خودکار و یکپارچه‌سازی پیشرفته ابزارها در این حالت در دسترس نیستند.</string>
 </resources>

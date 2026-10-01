@@ -64,6 +64,7 @@ env:
   TOR_ZSTD_REF: "v1.5.7"
   LYREBIRD_REF: "main"
   TG_WS_PROXY_REF: "v1.6.4"
+  HEV_SOCKS5_TUNNEL_REF: "2.18.0"
 
 permissions:
   contents: write
@@ -5620,21 +5621,126 @@ jobs:
             prebuilt/bin/${{ matrix.module_arch }}/busybox.source
           retention-days: 1
 
+  build_hev_socks5_tunnel:
+    name: Build hev-socks5-tunnel Android AAR
+    runs-on: ubuntu-latest
+    needs: build_gate
+    if: needs.build_gate.outputs.should_build == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Prepare Android NDK
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          test -x "$SDKMANAGER" || { echo "::error::sdkmanager not found"; exit 1; }
+          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NATIVE_NDK_VERSION" ]]; then
+            "$SDKMANAGER" "ndk;$NATIVE_NDK_VERSION"
+          fi
+          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NATIVE_NDK_VERSION"
+          test -x "$NDK_ROOT/ndk-build" || { echo "::error::ndk-build not found: $NDK_ROOT"; exit 1; }
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "ANDROID_NDK_ROOT=$NDK_ROOT"
+            echo "ANDROID_NDK_HOME=$NDK_ROOT"
+          } >> "$GITHUB_ENV"
+
+      - name: Build hev-socks5-tunnel from source
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/hev-socks5-tunnel-android"
+          rm -rf "$WORK"
+          mkdir -p "$WORK"
+          git clone --recursive --depth 1 --branch "$HEV_SOCKS5_TUNNEL_REF" \
+            https://github.com/heiher/hev-socks5-tunnel.git "$WORK/jni"
+
+          "$ANDROID_NDK_ROOT/ndk-build" \
+            -C "$WORK" \
+            APP_PLATFORM=android-26 \
+            APP_ABI="arm64-v8a armeabi-v7a" \
+            -j"$(nproc)"
+
+          for abi in arm64-v8a armeabi-v7a; do
+            so="$WORK/libs/$abi/libhev-socks5-tunnel.so"
+            test -s "$so" || { echo "::error::hev native library missing: $so"; exit 1; }
+            file "$so"
+          done
+
+          BINDING_SRC="$(find "$WORK/jni/android" -path '*/hev/htproxy/TProxyService.java' -type f -print -quit)"
+          test -n "$BINDING_SRC" -a -s "$BINDING_SRC" || {
+            echo "::error::Default hev.htproxy.TProxyService Java binding was not found"
+            exit 1
+          }
+
+          AAR_ROOT="$RUNNER_TEMP/hev-aar"
+          CLASS_ROOT="$RUNNER_TEMP/hev-classes"
+          OUT="$GITHUB_WORKSPACE/out/hev/hev-socks5-tunnel.aar"
+          rm -rf "$AAR_ROOT" "$CLASS_ROOT"
+          mkdir -p "$AAR_ROOT/jni/arm64-v8a" "$AAR_ROOT/jni/armeabi-v7a" "$CLASS_ROOT" "$(dirname "$OUT")"
+          cp -f "$WORK/libs/arm64-v8a/libhev-socks5-tunnel.so" "$AAR_ROOT/jni/arm64-v8a/"
+          cp -f "$WORK/libs/armeabi-v7a/libhev-socks5-tunnel.so" "$AAR_ROOT/jni/armeabi-v7a/"
+
+          javac --release 8 -d "$CLASS_ROOT" "$BINDING_SRC"
+          jar --create --file "$AAR_ROOT/classes.jar" -C "$CLASS_ROOT" .
+          cat > "$AAR_ROOT/AndroidManifest.xml" <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android" package="hev.htproxy" />
+          EOF
+          : > "$AAR_ROOT/R.txt"
+          cat > "$AAR_ROOT/proguard.txt" <<'EOF'
+          -keep class hev.htproxy.TProxyService { *; }
+          EOF
+          mkdir -p "$AAR_ROOT/assets"
+          cp -f "$WORK/jni/LICENSE" "$AAR_ROOT/assets/hev-socks5-tunnel-LICENSE.txt"
+
+          (cd "$AAR_ROOT" && zip -q -9 -r "$OUT" .)
+          test -s "$OUT"
+          unzip -Z1 "$OUT" | grep -Fx 'classes.jar'
+          unzip -Z1 "$OUT" | grep -Fx 'jni/arm64-v8a/libhev-socks5-tunnel.so'
+          unzip -Z1 "$OUT" | grep -Fx 'jni/armeabi-v7a/libhev-socks5-tunnel.so'
+          jar tf "$AAR_ROOT/classes.jar" | grep -Fx 'hev/htproxy/TProxyService.class'
+          ls -lh "$OUT"
+
+      - name: Upload hev-socks5-tunnel AAR
+        uses: actions/upload-artifact@v7
+        with:
+          name: hev-socks5-tunnel-aar
+          path: out/hev/hev-socks5-tunnel.aar
+          retention-days: 1
+
   apk_tools_ready:
-    name: 4 APK tools ready (dpi-detector + nfqws-tester + BusyBox)
+    name: APK support components ready
     runs-on: ubuntu-latest
     needs:
       - build_dpi_detector
       - build_nfqws_tester
       - build_busybox
+      - build_hev_socks5_tunnel
     if: >-
       needs.build_dpi_detector.result == 'success' &&
       needs.build_nfqws_tester.result == 'success' &&
-      needs.build_busybox.result == 'success'
+      needs.build_busybox.result == 'success' &&
+      needs.build_hev_socks5_tunnel.result == 'success'
 
     steps:
       - name: Mark APK tools ready
-        run: echo "APK tool artifacts are ready for APK packaging"
+        run: echo "APK helper artifacts and hev AAR are ready for APK packaging"
 
   build_apk:
     name: build APK with module ZIP
@@ -5777,6 +5883,25 @@ jobs:
           name: busybox-arm32
           path: prebuilt/bin/arm-v7a
 
+      - name: Download hev-socks5-tunnel AAR
+        uses: actions/download-artifact@v8
+        with:
+          name: hev-socks5-tunnel-aar
+          path: out/artifacts/hev
+
+      - name: Prepare hev-socks5-tunnel app library
+        run: |
+          set -euo pipefail
+          SRC="out/artifacts/hev/hev-socks5-tunnel.aar"
+          DST="application/app/libs/hev-socks5-tunnel.aar"
+          test -s "$SRC" || { echo "::error::hev AAR artifact missing: $SRC"; exit 1; }
+          mkdir -p "$(dirname "$DST")"
+          cp -f "$SRC" "$DST"
+          unzip -Z1 "$DST" | grep -Fx 'classes.jar' >/dev/null
+          unzip -Z1 "$DST" | grep -Fx 'jni/arm64-v8a/libhev-socks5-tunnel.so' >/dev/null
+          unzip -Z1 "$DST" | grep -Fx 'jni/armeabi-v7a/libhev-socks5-tunnel.so' >/dev/null
+          ls -lh "$DST"
+
       - name: Verify BusyBox artifacts
         run: |
           set -euo pipefail
@@ -5882,6 +6007,7 @@ jobs:
             --max-workers=$(nproc) \
             "-PzdtCompileSdk=${{ env.ZDT_COMPILE_SDK }}" \
             "-PzdtCompileSdkMinor=${{ env.ZDT_COMPILE_SDK_MINOR }}" \
+            "-PzdtRequireHevAar=true" \
             "assemble${{ env.BUILD_TYPE }}"
 
       - name: Collect final artifacts
@@ -5903,6 +6029,8 @@ jobs:
             assets/dpi-detector/armeabi-v7a/dpi-detector \
             assets/nfqws-tester/arm64-v8a/nfqws_tester \
             assets/nfqws-tester/armeabi-v7a/nfqws_tester \
+            lib/arm64-v8a/libhev-socks5-tunnel.so \
+            lib/armeabi-v7a/libhev-socks5-tunnel.so \
             assets/busybox/busybox-arm64 \
             assets/busybox/busybox-arm64.sha256 \
             assets/busybox/busybox-arm64.source \

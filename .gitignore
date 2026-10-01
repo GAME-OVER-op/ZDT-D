@@ -29,6 +29,7 @@
 !/keystores/.gitkeep
 
 # Binary artifacts
+/application/app/libs/*.aar
 *.apk
 *.aab
 *.ap_

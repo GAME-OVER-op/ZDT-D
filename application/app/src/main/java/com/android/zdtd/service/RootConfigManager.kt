@@ -92,6 +92,18 @@ class RootConfigManager(private val context: Context) {
         prefs.edit().putString("app_theme_mode", safe).apply()
     }
 
+    // ----- App runtime mode -----
+    /** "root" | "non_root". Root remains the default for existing installations. */
+    fun getRuntimeMode(): String = prefs.getString("app_runtime_mode", "root") ?: "root"
+
+    fun setRuntimeMode(mode: String) {
+        val safe = if (mode.trim().lowercase() == "non_root") "non_root" else "root"
+        // Persist immediately because changing mode switches activities right away.
+        prefs.edit().putString("app_runtime_mode", safe).commit()
+    }
+
+    fun isNonRootRuntimeMode(): Boolean = getRuntimeMode() == "non_root"
+
     fun getAppUpdateLastCheckTs(): Long = prefs.getLong("app_update_last_check_ts", 0L)
 
     fun setAppUpdateLastCheckTs(ts: Long) {

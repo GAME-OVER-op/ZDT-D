@@ -2409,4 +2409,12 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="subscription_manual_target">Destination: %1$s</string>
     <string name="subscription_copy_config">Copy configuration</string>
     <string name="subscription_copy_failed">Could not prepare the configuration for copying.</string>
+
+    <!-- Non-root runtime -->
+    <string name="setup_continue_without_root">Continue without root</string>
+    <string name="setup_non_root_warning_title">Limited mode</string>
+    <string name="setup_non_root_warning_body">You are about to continue without root access. Only features that work through Android VPN and local proxy services will be available.\n\nProtection, security features, and other functions that require system access will be unavailable. Automatic startup of system components and advanced tool integration will also be limited.</string>
+    <string name="non_root_home_title">Non-root mode</string>
+    <string name="non_root_home_body">ZDT-D is running without system access. VPN and proxy controls will be configured here.</string>
+    <string name="non_root_home_restrictions">System-level protection, security features, automatic startup, and advanced tool integration are unavailable in this mode.</string>
 </resources>

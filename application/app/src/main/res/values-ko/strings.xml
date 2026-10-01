@@ -2409,4 +2409,12 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="subscription_manual_target">대상: %1$s</string>
     <string name="subscription_copy_config">구성 복사</string>
     <string name="subscription_copy_failed">복사할 구성을 준비하지 못했습니다.</string>
+
+    <!-- Non-root runtime -->
+    <string name="setup_continue_without_root">루트 없이 계속</string>
+    <string name="setup_non_root_warning_title">제한 모드</string>
+    <string name="setup_non_root_warning_body">루트 권한 없이 계속합니다. Android VPN 및 로컬 프록시 서비스를 통해 동작하는 기능만 사용할 수 있습니다.\n\n시스템 접근이 필요한 보호, 보안 및 기타 기능은 사용할 수 없습니다. 시스템 구성 요소 자동 시작과 고급 도구 연동도 제한됩니다.</string>
+    <string name="non_root_home_title">비루트 모드</string>
+    <string name="non_root_home_body">ZDT-D가 시스템 접근 없이 실행 중입니다. VPN 및 프록시 제어는 여기에서 구성됩니다.</string>
+    <string name="non_root_home_restrictions">시스템 수준 보호, 보안 기능, 자동 시작 및 고급 도구 연동은 이 모드에서 사용할 수 없습니다.</string>
 </resources>

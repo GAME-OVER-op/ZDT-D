@@ -97,6 +97,11 @@
         </activity>
 
         <activity
+            android:name=".NonRootActivity"
+            android:exported="false"
+            android:launchMode="singleTask" />
+
+        <activity
             android:name=".RemoteSetupActivity"
             android:exported="false" />
 

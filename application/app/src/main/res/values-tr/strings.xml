@@ -2409,4 +2409,12 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="subscription_manual_target">Hedef: %1$s</string>
     <string name="subscription_copy_config">Yapılandırmayı kopyala</string>
     <string name="subscription_copy_failed">Yapılandırma kopyalama için hazırlanamadı.</string>
+
+    <!-- Non-root runtime -->
+    <string name="setup_continue_without_root">Root olmadan devam et</string>
+    <string name="setup_non_root_warning_title">Sınırlı mod</string>
+    <string name="setup_non_root_warning_body">Root erişimi olmadan devam etmek üzeresiniz. Yalnızca Android VPN ve yerel proxy hizmetleri üzerinden çalışan özellikler kullanılabilir olacaktır.\n\nSistem erişimi gerektiren koruma, güvenlik ve diğer özellikler kullanılamayacaktır. Sistem bileşenlerinin otomatik başlatılması ve gelişmiş araç entegrasyonu da sınırlı olacaktır.</string>
+    <string name="non_root_home_title">Root olmayan mod</string>
+    <string name="non_root_home_body">ZDT-D sistem erişimi olmadan çalışıyor. VPN ve proxy denetimleri burada yapılandırılacaktır.</string>
+    <string name="non_root_home_restrictions">Sistem düzeyinde koruma, güvenlik özellikleri, otomatik başlatma ve gelişmiş araç entegrasyonu bu modda kullanılamaz.</string>
 </resources>

@@ -2409,4 +2409,12 @@ APatch：10700+</string>
     <string name="subscription_manual_target">目标：%1$s</string>
     <string name="subscription_copy_config">复制配置</string>
     <string name="subscription_copy_failed">无法准备要复制的配置。</string>
+
+    <!-- Non-root runtime -->
+    <string name="setup_continue_without_root">无 Root 继续</string>
+    <string name="setup_non_root_warning_title">受限模式</string>
+    <string name="setup_non_root_warning_body">您将以无 Root 权限的方式继续。此模式仅提供通过 Android VPN 和本地代理服务工作的功能。\n\n需要系统访问权限的保护、安全及其他功能将不可用。系统组件自动启动和高级工具集成也会受到限制。</string>
+    <string name="non_root_home_title">无 Root 模式</string>
+    <string name="non_root_home_body">ZDT-D 正在无系统访问权限的模式下运行。VPN 和代理控制将在此处配置。</string>
+    <string name="non_root_home_restrictions">此模式下不提供系统级保护、安全功能、自动启动和高级工具集成。</string>
 </resources>

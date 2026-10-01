@@ -2409,4 +2409,12 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="subscription_manual_target">Đích: %1$s</string>
     <string name="subscription_copy_config">Sao chép cấu hình</string>
     <string name="subscription_copy_failed">Không thể chuẩn bị cấu hình để sao chép.</string>
+
+    <!-- Non-root runtime -->
+    <string name="setup_continue_without_root">Tiếp tục không cần root</string>
+    <string name="setup_non_root_warning_title">Chế độ giới hạn</string>
+    <string name="setup_non_root_warning_body">Bạn sắp tiếp tục mà không có quyền root. Chỉ các tính năng hoạt động qua VPN Android và dịch vụ proxy cục bộ mới khả dụng.\n\nCác tính năng bảo vệ, bảo mật và chức năng khác cần quyền truy cập hệ thống sẽ không khả dụng. Việc tự động khởi chạy thành phần hệ thống và tích hợp công cụ nâng cao cũng sẽ bị hạn chế.</string>
+    <string name="non_root_home_title">Chế độ không root</string>
+    <string name="non_root_home_body">ZDT-D đang chạy mà không có quyền truy cập hệ thống. Điều khiển VPN và proxy sẽ được cấu hình tại đây.</string>
+    <string name="non_root_home_restrictions">Bảo vệ cấp hệ thống, tính năng bảo mật, tự động khởi chạy và tích hợp công cụ nâng cao không khả dụng trong chế độ này.</string>
 </resources>

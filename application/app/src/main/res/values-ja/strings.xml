@@ -2409,4 +2409,12 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="subscription_manual_target">インポート先：%1$s</string>
     <string name="subscription_copy_config">設定をコピー</string>
     <string name="subscription_copy_failed">コピー用の設定を準備できませんでした。</string>
+
+    <!-- Non-root runtime -->
+    <string name="setup_continue_without_root">root なしで続行</string>
+    <string name="setup_non_root_warning_title">制限モード</string>
+    <string name="setup_non_root_warning_body">root アクセスなしで続行します。このモードでは Android VPN とローカルプロキシサービスを使用する機能のみ利用できます。\n\nシステムアクセスを必要とする保護機能、セキュリティ機能、その他の機能は利用できません。システムコンポーネントの自動起動と高度なツール連携も制限されます。</string>
+    <string name="non_root_home_title">非 root モード</string>
+    <string name="non_root_home_body">ZDT-D はシステムアクセスなしで動作しています。VPN とプロキシの操作はここで設定されます。</string>
+    <string name="non_root_home_restrictions">システムレベルの保護、セキュリティ機能、自動起動、高度なツール連携はこのモードでは利用できません。</string>
 </resources>

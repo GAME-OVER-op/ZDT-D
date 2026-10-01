@@ -2412,4 +2412,12 @@ APatch: 10700+</string>
     <string name="subscription_manual_target">Призначення: %1$s</string>
     <string name="subscription_copy_config">Копіювати конфігурацію</string>
     <string name="subscription_copy_failed">Не вдалося підготувати конфігурацію для копіювання.</string>
+
+    <!-- Non-root runtime -->
+    <string name="setup_continue_without_root">Продовжити без root</string>
+    <string name="setup_non_root_warning_title">Обмежений режим</string>
+    <string name="setup_non_root_warning_body">Ви збираєтеся продовжити без root-доступу. Будуть доступні лише функції, що працюють через Android VPN і локальні проксі-сервіси.\n\nЗахист, функції безпеки та інші можливості, що потребують системного доступу, будуть недоступні. Автоматичний запуск системних компонентів і розширена інтеграція інструментів також будуть обмежені.</string>
+    <string name="non_root_home_title">Режим без root</string>
+    <string name="non_root_home_body">ZDT-D працює без системного доступу. Тут буде налаштовано керування VPN і проксі.</string>
+    <string name="non_root_home_restrictions">Системний захист, функції безпеки, автоматичний запуск і розширена інтеграція інструментів у цьому режимі недоступні.</string>
 </resources>

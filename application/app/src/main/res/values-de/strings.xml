@@ -2410,4 +2410,12 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="subscription_manual_target">Ziel: %1$s</string>
     <string name="subscription_copy_config">Konfiguration kopieren</string>
     <string name="subscription_copy_failed">Die Konfiguration konnte nicht zum Kopieren vorbereitet werden.</string>
+
+    <!-- Non-root runtime -->
+    <string name="setup_continue_without_root">Ohne Root fortfahren</string>
+    <string name="setup_non_root_warning_title">Eingeschränkter Modus</string>
+    <string name="setup_non_root_warning_body">Sie fahren ohne Root-Zugriff fort. Es sind nur Funktionen verfügbar, die über Android VPN und lokale Proxy-Dienste arbeiten.\n\nSchutz-, Sicherheits- und andere Funktionen, die Systemzugriff benötigen, sind nicht verfügbar. Auch der automatische Start von Systemkomponenten und die erweiterte Werkzeugintegration sind eingeschränkt.</string>
+    <string name="non_root_home_title">Modus ohne Root</string>
+    <string name="non_root_home_body">ZDT-D läuft ohne Systemzugriff. VPN- und Proxy-Steuerung wird hier eingerichtet.</string>
+    <string name="non_root_home_restrictions">Systemschutz, Sicherheitsfunktionen, automatischer Start und erweiterte Werkzeugintegration sind in diesem Modus nicht verfügbar.</string>
 </resources>

@@ -145,6 +145,7 @@ fun ZdtdApp(
   backupFlow: StateFlow<BackupUiState>,
   programUpdatesFlow: StateFlow<ProgramUpdatesUiState>,
   actions: ZdtdActions,
+  onContinueWithoutRoot: () -> Unit,
 ) {
   val setup by setupFlow.collectAsStateWithLifecycle()
 
@@ -170,7 +171,7 @@ fun ZdtdApp(
   ) { setupStep ->
     when (setupStep) {
       SetupStep.WELCOME -> WelcomeScreen(onAccept = actions::acceptWelcome)
-      SetupStep.ROOT -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
+      SetupStep.ROOT -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup, onContinueWithoutRoot = onContinueWithoutRoot)
       SetupStep.INSTALL -> InstallModuleScreen(
         rootState = rootState,
         setup = setup,
@@ -192,7 +193,7 @@ fun ZdtdApp(
       SetupStep.REBOOT -> {
         when (rootState) {
           RootState.CHECKING -> SplashScreen()
-          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
+          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup, onContinueWithoutRoot = onContinueWithoutRoot)
           RootState.GRANTED -> RebootRequiredScreen(
             setup = setup,
             text = setup.rebootRequiredText,
@@ -203,7 +204,7 @@ fun ZdtdApp(
       SetupStep.DONE -> {
         when (rootState) {
           RootState.CHECKING -> SplashScreen()
-          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup)
+          RootState.DENIED -> RootInfoScreen(rootState = rootState, onRequest = actions::retryRoot, onRemoteSetup = actions::openRemoteSetup, onContinueWithoutRoot = onContinueWithoutRoot)
           RootState.GRANTED -> {
             MainShell(
               setup = setup,

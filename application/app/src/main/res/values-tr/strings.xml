@@ -2417,4 +2417,65 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="non_root_home_title">Root olmayan mod</string>
     <string name="non_root_home_body">ZDT-D sistem erişimi olmadan çalışıyor. VPN ve proxy denetimleri burada yapılandırılacaktır.</string>
     <string name="non_root_home_restrictions">Sistem düzeyinde koruma, güvenlik özellikleri, otomatik başlatma ve gelişmiş araç entegrasyonu bu modda kullanılamaz.</string>
+
+    <string name="non_root_current_mode">Geçerli mod</string>
+    <string name="non_root_work_mode_title">Çalışma modu</string>
+    <string name="non_root_mode_direct">Araç</string>
+    <string name="non_root_mode_cascade">Kaskad</string>
+    <string name="non_root_mode_direct_desc">Seçilen proxy programına doğrudan bağlan.</string>
+    <string name="non_root_mode_cascade_desc">HEV trafiği T2S üzerinden etkin proxy profillerine gönderir.</string>
+    <string name="non_root_direct_opera_desc">Doğrudan non-root proxy. Adres 127.0.0.1 olarak sabittir.</string>
+    <string name="non_root_loopback_port_hint">Yalnızca yerel 127.0.0.1 adresi kullanılır. Portlar 10000’den başlar.</string>
+    <string name="non_root_port_error">10000 ile 65535 arasında boş bir port seçin.</string>
+    <string name="non_root_cascade_intro">T2S kaskad yönlendiricisidir. Profil oluşturma ve rota ayarları burada görünecek.</string>
+
+    <string name="non_root_byedpi_restart_after_opera">Opera başladıktan sonra yeniden başlat</string>
+    <string name="non_root_byedpi_restart_after_opera_desc">Opera Proxy hazır olduğunda ByeDPI’yi yeniden başlatma argümanlarıyla yeniden başlatır. Kapalıysa ByeDPI yalnızca bir kez başlatılır.</string>
+
+    <string name="non_root_create_profile">Profil oluştur</string>
+    <string name="non_root_profile_tool_label">Araç</string>
+    <string name="non_root_profile_name">Profil adı</string>
+    <string name="non_root_profile_settings">Profil ayarları</string>
+    <string name="non_root_profile_enabled">Etkin</string>
+    <string name="non_root_profile_enabled_desc">Bu profili Cascade rotasında tut ve Cascade çalışırken başlat.</string>
+    <string name="non_root_profile_title_fmt">%1$s — %2$s</string>
+    <string name="non_root_delete_profile_title">Profil silinsin mi?</string>
+    <string name="non_root_delete_profile_body">“%1$s” profili ve kayıtlı ayarları silinecek.</string>
+    <string name="non_root_cascade_opera_desc">Bu Cascade profili için Opera Proxy ayarları.</string>
+    <string name="non_root_t2s_settings">T2S ayarları</string>
+    <string name="non_root_t2s_backend_mode">Backend modu</string>
+    <string name="non_root_t2s_route_title">Cascade rotası</string>
+    <string name="non_root_t2s_route_hint">Sırayı değiştirmek için ≡ simgesini basılı tutup sürükleyin. Devre dışı profiller yerini korur.</string>
+    <string name="non_root_t2s_route_empty">Cascade rotası oluşturmak için en az bir proxy profili oluşturun.</string>
+    <string name="non_root_t2s_palette_title">Rota öğeleri</string>
+    <string name="non_root_t2s_palette_hint">Bir öğeyi rotaya eklemek için ≡ simgesini basılı tutup yukarı sürükleyin. Eklenmiş hizmet öğesini kaldırmak için aşağı sürükleyin.</string>
+    <string name="non_root_t2s_group">Grup ;</string>
+    <string name="non_root_t2s_direct">Doğrudan mod 0</string>
+    <string name="non_root_t2s_block_direct">Doğrudanı engelle 0</string>
+    <string name="non_root_t2s_group_short">; · Grup</string>
+    <string name="non_root_t2s_direct_short">0 · Doğrudan mod</string>
+    <string name="non_root_t2s_block_direct_short">0 · Doğrudanı engelle</string>
+    <string name="non_root_t2s_group_help">Noktalı virgül backend öncelik gruplarını ayırır. İki proxy profili arasına yerleştirin.</string>
+    <string name="non_root_t2s_direct_help">Doğrudan mod, rotanın başında T2S 0 değerini kullanır.</string>
+    <string name="non_root_t2s_block_direct_help">Doğrudanı engelleme, rotanın sonunda T2S 0 değerini kullanır.</string>
+    <string name="non_root_t2s_group_position">İki proxy profili arasına yerleştirin. Kaldırmak için aşağı sürükleyin.</string>
+    <string name="non_root_t2s_direct_position">Yalnızca rotanın başında. Kaldırmak için aşağı sürükleyin.</string>
+    <string name="non_root_t2s_block_direct_position">Yalnızca rotanın sonunda. Kaldırmak için aşağı sürükleyin.</string>
+    <string name="non_root_t2s_drag_handle">Sürükle</string>
+    <string name="non_root_t2s_help">Yardım</string>
+    <string name="non_root_t2s_stats_title">T2S istatistikleri</string>
+    <string name="non_root_direct_stats_empty">Doğrudan mod için henüz ayrı bir istatistik paneli yok.</string>
+    <!-- Non-root T2S runtime settings -->
+    <string name="non_root_t2s_runtime_settings">T2S çalışma ayarları</string>
+    <string name="non_root_t2s_idle_timeout">Boşta kalma zaman aşımı (saniye)</string>
+    <string name="non_root_t2s_buffer_size">Arabellek boyutu (bayt)</string>
+    <string name="non_root_t2s_download_limit">İndirme sınırı (Mbit/sn, 0 = sınırsız)</string>
+    <string name="non_root_t2s_peer_coordination">Örnek koordinasyonu</string>
+    <string name="non_root_t2s_peer_coordination_desc">Aynı backendleri kullanan T2S örnekleri arasında sağlık kontrollerini koordine eder.</string>
+    <string name="non_root_t2s_serialize_connects">Backend bağlantılarını sırala</string>
+    <string name="non_root_t2s_serialize_connects_desc">Aynı hassas backende eşzamanlı el sıkışmalarını önler.</string>
+    <string name="non_root_t2s_connect_stagger">Backend bağlantı gecikmesi (ms)</string>
+
+    <string name="non_root_t2s_stopped">T2S durduruldu. API istatistiklerini görmek için kaskadı başlatın.</string>
+
 </resources>

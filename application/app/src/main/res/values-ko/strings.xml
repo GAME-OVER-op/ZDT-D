@@ -2417,4 +2417,65 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="non_root_home_title">비루트 모드</string>
     <string name="non_root_home_body">ZDT-D가 시스템 접근 없이 실행 중입니다. VPN 및 프록시 제어는 여기에서 구성됩니다.</string>
     <string name="non_root_home_restrictions">시스템 수준 보호, 보안 기능, 자동 시작 및 고급 도구 연동은 이 모드에서 사용할 수 없습니다.</string>
+
+    <string name="non_root_current_mode">현재 모드</string>
+    <string name="non_root_work_mode_title">작동 모드</string>
+    <string name="non_root_mode_direct">도구</string>
+    <string name="non_root_mode_cascade">캐스케이드</string>
+    <string name="non_root_mode_direct_desc">선택한 프록시 프로그램에 직접 연결합니다.</string>
+    <string name="non_root_mode_cascade_desc">HEV가 T2S를 통해 활성화된 프록시 프로필로 트래픽을 보냅니다.</string>
+    <string name="non_root_direct_opera_desc">직접 non-root 프록시입니다. 주소는 127.0.0.1로 고정됩니다.</string>
+    <string name="non_root_loopback_port_hint">로컬 주소 127.0.0.1만 사용합니다. 포트는 10000부터 시작합니다.</string>
+    <string name="non_root_port_error">10000~65535 사이의 비어 있는 포트를 선택하세요.</string>
+    <string name="non_root_cascade_intro">T2S는 캐스케이드 라우터입니다. 프로필 생성과 경로 설정이 여기에 표시됩니다.</string>
+
+    <string name="non_root_byedpi_restart_after_opera">Opera 시작 후 다시 시작</string>
+    <string name="non_root_byedpi_restart_after_opera_desc">Opera Proxy가 준비되면 재시작 인수로 ByeDPI를 다시 시작합니다. 끄면 ByeDPI는 한 번만 시작됩니다.</string>
+
+    <string name="non_root_create_profile">프로필 만들기</string>
+    <string name="non_root_profile_tool_label">도구</string>
+    <string name="non_root_profile_name">프로필 이름</string>
+    <string name="non_root_profile_settings">프로필 설정</string>
+    <string name="non_root_profile_enabled">사용</string>
+    <string name="non_root_profile_enabled_desc">이 프로필을 Cascade 경로에 유지하고 Cascade 실행 시 시작합니다.</string>
+    <string name="non_root_profile_title_fmt">%1$s — %2$s</string>
+    <string name="non_root_delete_profile_title">프로필을 삭제할까요?</string>
+    <string name="non_root_delete_profile_body">“%1$s” 프로필과 저장된 설정이 삭제됩니다.</string>
+    <string name="non_root_cascade_opera_desc">이 Cascade 프로필의 Opera Proxy 설정입니다.</string>
+    <string name="non_root_t2s_settings">T2S 설정</string>
+    <string name="non_root_t2s_backend_mode">Backend 모드</string>
+    <string name="non_root_t2s_route_title">Cascade 경로</string>
+    <string name="non_root_t2s_route_hint">≡를 길게 눌러 드래그하면 순서를 바꿀 수 있습니다. 비활성화된 프로필도 위치를 유지합니다.</string>
+    <string name="non_root_t2s_route_empty">Cascade 경로를 만들려면 proxy 프로필을 하나 이상 만드세요.</string>
+    <string name="non_root_t2s_palette_title">경로 요소</string>
+    <string name="non_root_t2s_palette_hint">≡를 길게 누르고 위로 드래그하면 경로에 추가됩니다. 추가된 서비스 요소를 아래로 드래그하면 제거됩니다.</string>
+    <string name="non_root_t2s_group">그룹 ;</string>
+    <string name="non_root_t2s_direct">직접 모드 0</string>
+    <string name="non_root_t2s_block_direct">직접 연결 차단 0</string>
+    <string name="non_root_t2s_group_short">; · 그룹</string>
+    <string name="non_root_t2s_direct_short">0 · 직접 모드</string>
+    <string name="non_root_t2s_block_direct_short">0 · 직접 연결 차단</string>
+    <string name="non_root_t2s_group_help">세미콜론은 backend 우선순위 그룹을 구분합니다. 두 proxy 프로필 사이에 배치하세요.</string>
+    <string name="non_root_t2s_direct_help">직접 모드는 경로 시작 부분에서 T2S 값 0을 사용합니다.</string>
+    <string name="non_root_t2s_block_direct_help">직접 연결 차단은 경로 끝에서 T2S 값 0을 사용합니다.</string>
+    <string name="non_root_t2s_group_position">두 proxy 프로필 사이에 배치합니다. 아래로 드래그하면 제거됩니다.</string>
+    <string name="non_root_t2s_direct_position">경로 시작 부분에만 배치합니다. 아래로 드래그하면 제거됩니다.</string>
+    <string name="non_root_t2s_block_direct_position">경로 끝에만 배치합니다. 아래로 드래그하면 제거됩니다.</string>
+    <string name="non_root_t2s_drag_handle">드래그</string>
+    <string name="non_root_t2s_help">도움말</string>
+    <string name="non_root_t2s_stats_title">T2S 통계</string>
+    <string name="non_root_direct_stats_empty">직접 모드에는 아직 별도의 통계 패널이 없습니다.</string>
+    <!-- Non-root T2S runtime settings -->
+    <string name="non_root_t2s_runtime_settings">T2S 실행 설정</string>
+    <string name="non_root_t2s_idle_timeout">유휴 시간 제한(초)</string>
+    <string name="non_root_t2s_buffer_size">버퍼 크기(바이트)</string>
+    <string name="non_root_t2s_download_limit">다운로드 제한(Mbit/s, 0 = 무제한)</string>
+    <string name="non_root_t2s_peer_coordination">인스턴스 조정</string>
+    <string name="non_root_t2s_peer_coordination_desc">같은 백엔드를 사용하는 T2S 인스턴스 간 상태 검사를 조정합니다.</string>
+    <string name="non_root_t2s_serialize_connects">백엔드 연결 직렬화</string>
+    <string name="non_root_t2s_serialize_connects_desc">같은 취약한 백엔드에 대한 동시 핸드셰이크를 방지합니다.</string>
+    <string name="non_root_t2s_connect_stagger">백엔드 연결 간격(ms)</string>
+
+    <string name="non_root_t2s_stopped">T2S가 중지되었습니다. API 통계를 보려면 캐스케이드를 시작하세요.</string>
+
 </resources>

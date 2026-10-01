@@ -102,6 +102,8 @@ fun T2sPanelScreen(
   port: Int,
   client: T2sApiClient,
   onClose: () -> Unit,
+  showTopBar: Boolean = true,
+  outerPadding: PaddingValues = PaddingValues(0.dp),
 ) {
   val snackHost = remember { SnackbarHostState() }
   val coroutineScope = rememberCoroutineScope()
@@ -201,24 +203,26 @@ fun T2sPanelScreen(
     snackbarHost = { SnackbarHost(snackHost) },
     containerColor = MaterialTheme.colorScheme.background,
     topBar = {
-      Surface(
-        tonalElevation = 3.dp,
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
-      ) {
-        Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(WindowInsets.statusBars.asPaddingValues())
-            .padding(horizontal = 8.dp, vertical = 10.dp),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(8.dp),
+      if (showTopBar) {
+        Surface(
+          tonalElevation = 3.dp,
+          color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
         ) {
-          IconButton(onClick = onClose) { Icon(Icons.Filled.ArrowBack, contentDescription = null) }
-          Column(Modifier.weight(1f)) {
-            Text(title.ifBlank { "t2s" }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(scope.ifBlank { "127.0.0.1:$port" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+          Row(
+            modifier = Modifier
+              .fillMaxWidth()
+              .padding(WindowInsets.statusBars.asPaddingValues())
+              .padding(horizontal = 8.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            IconButton(onClick = onClose) { Icon(Icons.Filled.ArrowBack, contentDescription = null) }
+            Column(Modifier.weight(1f)) {
+              Text(title.ifBlank { "t2s" }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+              Text(scope.ifBlank { "127.0.0.1:$port" }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            StatusPill(text = statusText, color = statusColor)
           }
-          StatusPill(text = statusText, color = statusColor)
         }
       }
     },
@@ -235,7 +239,8 @@ fun T2sPanelScreen(
             )
           )
         )
-        .padding(padding),
+        .padding(padding)
+        .padding(outerPadding),
     ) {
       ScrollableTabRow(selectedTabIndex = selectedTab, edgePadding = 12.dp) {
         listOf("Обзор", "Соединения", "Backends", "Настройки").forEachIndexed { index, text ->

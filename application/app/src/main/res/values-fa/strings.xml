@@ -2418,4 +2418,65 @@ APatch: 10700+</string>
     <string name="non_root_home_title">حالت بدون روت</string>
     <string name="non_root_home_body">ZDT-D بدون دسترسی سیستمی در حال اجرا است. کنترل‌های VPN و پراکسی در اینجا پیکربندی می‌شوند.</string>
     <string name="non_root_home_restrictions">حفاظت سطح سیستم، قابلیت‌های امنیتی، اجرای خودکار و یکپارچه‌سازی پیشرفته ابزارها در این حالت در دسترس نیستند.</string>
+
+    <string name="non_root_current_mode">حالت فعلی</string>
+    <string name="non_root_work_mode_title">حالت کار</string>
+    <string name="non_root_mode_direct">ابزار</string>
+    <string name="non_root_mode_cascade">زنجیره</string>
+    <string name="non_root_mode_direct_desc">اتصال مستقیم به برنامه پراکسی انتخاب‌شده.</string>
+    <string name="non_root_mode_cascade_desc">HEV ترافیک را از طریق T2S به پروفایل‌های پراکسی فعال می‌فرستد.</string>
+    <string name="non_root_direct_opera_desc">پراکسی مستقیم non-root. نشانی روی 127.0.0.1 ثابت است.</string>
+    <string name="non_root_loopback_port_hint">فقط نشانی محلی 127.0.0.1 استفاده می‌شود. پورت‌ها از 10000 شروع می‌شوند.</string>
+    <string name="non_root_port_error">یک پورت آزاد بین 10000 تا 65535 انتخاب کنید.</string>
+    <string name="non_root_cascade_intro">T2S مسیریاب زنجیره است. ساخت پروفایل و تنظیمات مسیر در اینجا نمایش داده می‌شود.</string>
+
+    <string name="non_root_byedpi_restart_after_opera">راه‌اندازی مجدد پس از اجرای Opera</string>
+    <string name="non_root_byedpi_restart_after_opera_desc">پس از آماده شدن Opera Proxy، ByeDPI را با آرگومان‌های راه‌اندازی مجدد اجرا می‌کند. در حالت خاموش، ByeDPI فقط یک‌بار اجرا می‌شود.</string>
+
+    <string name="non_root_create_profile">ایجاد پروفایل</string>
+    <string name="non_root_profile_tool_label">ابزار</string>
+    <string name="non_root_profile_name">نام پروفایل</string>
+    <string name="non_root_profile_settings">تنظیمات پروفایل</string>
+    <string name="non_root_profile_enabled">فعال</string>
+    <string name="non_root_profile_enabled_desc">این پروفایل را در مسیر Cascade نگه دارید و هنگام اجرای Cascade آن را راه‌اندازی کنید.</string>
+    <string name="non_root_profile_title_fmt">%1$s — %2$s</string>
+    <string name="non_root_delete_profile_title">پروفایل حذف شود؟</string>
+    <string name="non_root_delete_profile_body">پروفایل «%1$s» و تنظیمات ذخیره‌شده آن حذف می‌شوند.</string>
+    <string name="non_root_cascade_opera_desc">تنظیمات Opera Proxy برای این پروفایل Cascade.</string>
+    <string name="non_root_t2s_settings">تنظیمات T2S</string>
+    <string name="non_root_t2s_backend_mode">حالت backend</string>
+    <string name="non_root_t2s_route_title">مسیر Cascade</string>
+    <string name="non_root_t2s_route_hint">≡ را نگه دارید و بکشید تا ترتیب تغییر کند. پروفایل‌های غیرفعال جای خود را حفظ می‌کنند.</string>
+    <string name="non_root_t2s_route_empty">برای ساخت مسیر Cascade حداقل یک پروفایل proxy ایجاد کنید.</string>
+    <string name="non_root_t2s_palette_title">عناصر مسیر</string>
+    <string name="non_root_t2s_palette_hint">≡ را نگه دارید و عنصر را به بالا بکشید تا به مسیر اضافه شود. عنصر سرویس افزوده‌شده را برای حذف به پایین بکشید.</string>
+    <string name="non_root_t2s_group">گروه ;</string>
+    <string name="non_root_t2s_direct">حالت مستقیم 0</string>
+    <string name="non_root_t2s_block_direct">مسدود کردن مستقیم 0</string>
+    <string name="non_root_t2s_group_short">; · گروه</string>
+    <string name="non_root_t2s_direct_short">0 · حالت مستقیم</string>
+    <string name="non_root_t2s_block_direct_short">0 · مسدود کردن مستقیم</string>
+    <string name="non_root_t2s_group_help">نقطه‌ویرگول گروه‌های اولویت backend را جدا می‌کند. آن را بین دو پروفایل proxy قرار دهید.</string>
+    <string name="non_root_t2s_direct_help">حالت مستقیم از مقدار T2S برابر 0 در ابتدای مسیر استفاده می‌کند.</string>
+    <string name="non_root_t2s_block_direct_help">مسدود کردن مستقیم از مقدار T2S برابر 0 در انتهای مسیر استفاده می‌کند.</string>
+    <string name="non_root_t2s_group_position">بین دو پروفایل proxy قرار دهید. برای حذف به پایین بکشید.</string>
+    <string name="non_root_t2s_direct_position">فقط در ابتدای مسیر. برای حذف به پایین بکشید.</string>
+    <string name="non_root_t2s_block_direct_position">فقط در انتهای مسیر. برای حذف به پایین بکشید.</string>
+    <string name="non_root_t2s_drag_handle">کشیدن</string>
+    <string name="non_root_t2s_help">راهنما</string>
+    <string name="non_root_t2s_stats_title">آمار T2S</string>
+    <string name="non_root_direct_stats_empty">حالت مستقیم هنوز پنل آمار جداگانه ندارد.</string>
+    <!-- Non-root T2S runtime settings -->
+    <string name="non_root_t2s_runtime_settings">تنظیمات اجرای T2S</string>
+    <string name="non_root_t2s_idle_timeout">مهلت بیکاری (ثانیه)</string>
+    <string name="non_root_t2s_buffer_size">اندازه بافر (بایت)</string>
+    <string name="non_root_t2s_download_limit">محدودیت دانلود (Mbit/s، 0 = نامحدود)</string>
+    <string name="non_root_t2s_peer_coordination">هماهنگی نمونه‌ها</string>
+    <string name="non_root_t2s_peer_coordination_desc">بررسی سلامت بین نمونه‌های T2S با بک‌اندهای یکسان هماهنگ شود.</string>
+    <string name="non_root_t2s_serialize_connects">سری‌سازی اتصال‌های بک‌اند</string>
+    <string name="non_root_t2s_serialize_connects_desc">از هم‌پوشانی handshake با یک بک‌اند حساس جلوگیری می‌کند.</string>
+    <string name="non_root_t2s_connect_stagger">فاصله اتصال بک‌اند (میلی‌ثانیه)</string>
+
+    <string name="non_root_t2s_stopped">T2S متوقف است. برای دیدن آمار API حالت Cascade را اجرا کنید.</string>
+
 </resources>

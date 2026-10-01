@@ -2417,4 +2417,65 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="non_root_home_title">Non-root mode</string>
     <string name="non_root_home_body">ZDT-D is running without system access. VPN and proxy controls will be configured here.</string>
     <string name="non_root_home_restrictions">System-level protection, security features, automatic startup, and advanced tool integration are unavailable in this mode.</string>
+
+    <string name="non_root_current_mode">Current mode</string>
+    <string name="non_root_work_mode_title">Work mode</string>
+    <string name="non_root_mode_direct">Tool</string>
+    <string name="non_root_mode_cascade">Cascade</string>
+    <string name="non_root_mode_direct_desc">Connect directly to the selected proxy program.</string>
+    <string name="non_root_mode_cascade_desc">HEV sends traffic through T2S to enabled proxy profiles.</string>
+    <string name="non_root_direct_opera_desc">Direct non-root proxy. The address is fixed to 127.0.0.1.</string>
+    <string name="non_root_loopback_port_hint">Only the local address 127.0.0.1 is used. Ports start at 10000.</string>
+    <string name="non_root_port_error">Choose a free port from 10000 to 65535.</string>
+    <string name="non_root_cascade_intro">T2S is the cascade router. Profile creation and route settings will appear here.</string>
+
+    <string name="non_root_byedpi_restart_after_opera">Restart after Opera starts</string>
+    <string name="non_root_byedpi_restart_after_opera_desc">Restart ByeDPI with the restart arguments after Opera Proxy is ready. If disabled, ByeDPI starts only once.</string>
+
+    <string name="non_root_create_profile">Create profile</string>
+    <string name="non_root_profile_tool_label">Tool</string>
+    <string name="non_root_profile_name">Profile name</string>
+    <string name="non_root_profile_settings">Profile settings</string>
+    <string name="non_root_profile_enabled">Enabled</string>
+    <string name="non_root_profile_enabled_desc">Keep this profile in the Cascade route and start it when Cascade is running.</string>
+    <string name="non_root_profile_title_fmt">%1$s — %2$s</string>
+    <string name="non_root_delete_profile_title">Delete profile?</string>
+    <string name="non_root_delete_profile_body">Profile “%1$s” and its saved settings will be deleted.</string>
+    <string name="non_root_cascade_opera_desc">Opera Proxy settings for this Cascade profile.</string>
+    <string name="non_root_t2s_settings">T2S settings</string>
+    <string name="non_root_t2s_backend_mode">Backend mode</string>
+    <string name="non_root_t2s_route_title">Cascade route</string>
+    <string name="non_root_t2s_route_hint">Hold the ≡ handle and drag to change the order. Disabled profiles keep their place.</string>
+    <string name="non_root_t2s_route_empty">Create at least one proxy profile to build a Cascade route.</string>
+    <string name="non_root_t2s_palette_title">Route elements</string>
+    <string name="non_root_t2s_palette_hint">Hold ≡ and drag an element upward to add it to the route. Drag an inserted service element downward to remove it.</string>
+    <string name="non_root_t2s_group">Group ;</string>
+    <string name="non_root_t2s_direct">Direct mode 0</string>
+    <string name="non_root_t2s_block_direct">Block direct 0</string>
+    <string name="non_root_t2s_group_short">; · Group</string>
+    <string name="non_root_t2s_direct_short">0 · Direct mode</string>
+    <string name="non_root_t2s_block_direct_short">0 · Block direct</string>
+    <string name="non_root_t2s_group_help">The semicolon separates backend priority groups. Place it between two proxy profiles.</string>
+    <string name="non_root_t2s_direct_help">Direct mode uses T2S value 0 at the beginning of the route.</string>
+    <string name="non_root_t2s_block_direct_help">Block direct uses T2S value 0 at the end of the route.</string>
+    <string name="non_root_t2s_group_position">Place between two proxy profiles. Drag downward to remove.</string>
+    <string name="non_root_t2s_direct_position">Only at the beginning of the route. Drag downward to remove.</string>
+    <string name="non_root_t2s_block_direct_position">Only at the end of the route. Drag downward to remove.</string>
+    <string name="non_root_t2s_drag_handle">Drag</string>
+    <string name="non_root_t2s_help">Help</string>
+    <string name="non_root_t2s_stats_title">T2S statistics</string>
+    <string name="non_root_direct_stats_empty">Direct mode does not have a separate statistics panel yet.</string>
+    <!-- Non-root T2S runtime settings -->
+    <string name="non_root_t2s_runtime_settings">T2S runtime settings</string>
+    <string name="non_root_t2s_idle_timeout">Idle timeout (seconds)</string>
+    <string name="non_root_t2s_buffer_size">Buffer size (bytes)</string>
+    <string name="non_root_t2s_download_limit">Download limit (Mbit/s, 0 = unlimited)</string>
+    <string name="non_root_t2s_peer_coordination">Peer coordination</string>
+    <string name="non_root_t2s_peer_coordination_desc">Coordinate health checks between T2S instances using the same backends.</string>
+    <string name="non_root_t2s_serialize_connects">Serialize backend connects</string>
+    <string name="non_root_t2s_serialize_connects_desc">Avoid overlapping handshakes to the same fragile backend.</string>
+    <string name="non_root_t2s_connect_stagger">Backend connect stagger (ms)</string>
+
+    <string name="non_root_t2s_stopped">T2S is stopped. Start Cascade to view API statistics.</string>
+
 </resources>

@@ -2420,4 +2420,65 @@ APatch: 10700+</string>
     <string name="non_root_home_title">Режим без root</string>
     <string name="non_root_home_body">ZDT-D працює без системного доступу. Тут буде налаштовано керування VPN і проксі.</string>
     <string name="non_root_home_restrictions">Системний захист, функції безпеки, автоматичний запуск і розширена інтеграція інструментів у цьому режимі недоступні.</string>
+
+    <string name="non_root_current_mode">Поточний режим</string>
+    <string name="non_root_work_mode_title">Режим роботи</string>
+    <string name="non_root_mode_direct">Інструмент</string>
+    <string name="non_root_mode_cascade">Каскад</string>
+    <string name="non_root_mode_direct_desc">Підключення напряму до вибраної proxy-програми.</string>
+    <string name="non_root_mode_cascade_desc">HEV спрямовує трафік через T2S до ввімкнених proxy-профілів.</string>
+    <string name="non_root_direct_opera_desc">Прямий non-root proxy. Адресу зафіксовано: 127.0.0.1.</string>
+    <string name="non_root_loopback_port_hint">Використовується лише локальна адреса 127.0.0.1. Порти починаються з 10000.</string>
+    <string name="non_root_port_error">Виберіть вільний порт від 10000 до 65535.</string>
+    <string name="non_root_cascade_intro">T2S — маршрутизатор каскаду. Тут з’являться створення профілів і налаштування маршруту.</string>
+
+    <string name="non_root_byedpi_restart_after_opera">Перезапускати після запуску Opera</string>
+    <string name="non_root_byedpi_restart_after_opera_desc">Перезапускати ByeDPI з аргументами перезапуску після готовності Opera Proxy. Якщо вимкнено, ByeDPI запускається лише один раз.</string>
+
+    <string name="non_root_create_profile">Створити профіль</string>
+    <string name="non_root_profile_tool_label">Інструмент</string>
+    <string name="non_root_profile_name">Назва профілю</string>
+    <string name="non_root_profile_settings">Налаштування профілю</string>
+    <string name="non_root_profile_enabled">Увімкнено</string>
+    <string name="non_root_profile_enabled_desc">Зберігати цей профіль у маршруті Cascade і запускати його під час роботи Cascade.</string>
+    <string name="non_root_profile_title_fmt">%1$s — %2$s</string>
+    <string name="non_root_delete_profile_title">Видалити профіль?</string>
+    <string name="non_root_delete_profile_body">Профіль «%1$s» і його збережені налаштування буде видалено.</string>
+    <string name="non_root_cascade_opera_desc">Налаштування Opera Proxy для цього профілю Cascade.</string>
+    <string name="non_root_t2s_settings">Налаштування T2S</string>
+    <string name="non_root_t2s_backend_mode">Режим backend</string>
+    <string name="non_root_t2s_route_title">Маршрут Cascade</string>
+    <string name="non_root_t2s_route_hint">Утримуйте ≡ і перетягуйте, щоб змінити порядок. Вимкнені профілі зберігають своє місце.</string>
+    <string name="non_root_t2s_route_empty">Створіть принаймні один proxy-профіль, щоб побудувати маршрут Cascade.</string>
+    <string name="non_root_t2s_palette_title">Елементи маршруту</string>
+    <string name="non_root_t2s_palette_hint">Утримуйте ≡ і перетягніть елемент угору, щоб додати його до маршруту. Доданий службовий елемент перетягніть униз для видалення.</string>
+    <string name="non_root_t2s_group">Група ;</string>
+    <string name="non_root_t2s_direct">Прямий режим 0</string>
+    <string name="non_root_t2s_block_direct">Блокування прямого 0</string>
+    <string name="non_root_t2s_group_short">; · Група</string>
+    <string name="non_root_t2s_direct_short">0 · Прямий режим</string>
+    <string name="non_root_t2s_block_direct_short">0 · Блокування прямого</string>
+    <string name="non_root_t2s_group_help">Крапка з комою розділяє priority-групи backend. Розміщуйте її між двома proxy-профілями.</string>
+    <string name="non_root_t2s_direct_help">Прямий режим використовує значення T2S 0 на початку маршруту.</string>
+    <string name="non_root_t2s_block_direct_help">Блокування прямого використовує значення T2S 0 наприкінці маршруту.</string>
+    <string name="non_root_t2s_group_position">Розміщується між двома proxy-профілями. Перетягніть униз для видалення.</string>
+    <string name="non_root_t2s_direct_position">Лише на початку маршруту. Перетягніть униз для видалення.</string>
+    <string name="non_root_t2s_block_direct_position">Лише наприкінці маршруту. Перетягніть униз для видалення.</string>
+    <string name="non_root_t2s_drag_handle">Перетягнути</string>
+    <string name="non_root_t2s_help">Довідка</string>
+    <string name="non_root_t2s_stats_title">Статистика T2S</string>
+    <string name="non_root_direct_stats_empty">Для прямого режиму окрему панель статистики ще не додано.</string>
+    <!-- Non-root T2S runtime settings -->
+    <string name="non_root_t2s_runtime_settings">Параметри роботи T2S</string>
+    <string name="non_root_t2s_idle_timeout">Тайм-аут простою (секунди)</string>
+    <string name="non_root_t2s_buffer_size">Розмір буфера (байти)</string>
+    <string name="non_root_t2s_download_limit">Обмеження завантаження (Мбіт/с, 0 = без обмеження)</string>
+    <string name="non_root_t2s_peer_coordination">Координація екземплярів</string>
+    <string name="non_root_t2s_peer_coordination_desc">Координувати перевірки стану між екземплярами T2S з однаковими backend-ами.</string>
+    <string name="non_root_t2s_serialize_connects">Послідовні підключення до backend</string>
+    <string name="non_root_t2s_serialize_connects_desc">Не допускати одночасних SOCKS-рукостискань з одним нестабільним backend.</string>
+    <string name="non_root_t2s_connect_stagger">Затримка між підключеннями до backend (мс)</string>
+
+    <string name="non_root_t2s_stopped">T2S зупинено. Запустіть каскад, щоб переглянути статистику API.</string>
+
 </resources>

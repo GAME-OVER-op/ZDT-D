@@ -5899,6 +5899,24 @@ jobs:
           name: hev-socks5-tunnel-aar
           path: out/artifacts/hev
 
+      - name: Download non-root T2S binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: t2s-*
+          path: out/artifacts/nonroot/t2s
+
+      - name: Download non-root ByeDPI binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: byedpi-*
+          path: out/artifacts/nonroot/byedpi
+
+      - name: Download non-root Opera Proxy binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: opera-proxy-*
+          path: out/artifacts/nonroot/opera-proxy
+
       - name: Prepare hev-socks5-tunnel app library
         run: |
           set -euo pipefail
@@ -5911,6 +5929,29 @@ jobs:
           unzip -Z1 "$DST" | grep -Fx 'jni/arm64-v8a/libhev-socks5-tunnel.so' >/dev/null
           unzip -Z1 "$DST" | grep -Fx 'jni/armeabi-v7a/libhev-socks5-tunnel.so' >/dev/null
           ls -lh "$DST"
+
+      - name: Prepare non-root native executables for APK
+        run: |
+          set -euo pipefail
+          JNI_ROOT="application/app/build/generated/zdt-nonroot-jni/main"
+          rm -rf "$JNI_ROOT"
+          mkdir -p "$JNI_ROOT/arm64-v8a" "$JNI_ROOT/armeabi-v7a"
+
+          copy_helper() {
+            local src="$1"
+            local dst="$2"
+            test -s "$src" || { echo "::error::non-root native artifact missing: $src"; exit 1; }
+            cp -f "$src" "$dst"
+            chmod 755 "$dst"
+            file "$dst"
+          }
+
+          copy_helper "out/artifacts/nonroot/t2s/t2s-arm64/t2s" "$JNI_ROOT/arm64-v8a/libzdt_t2s.so"
+          copy_helper "out/artifacts/nonroot/t2s/t2s-arm32/t2s" "$JNI_ROOT/armeabi-v7a/libzdt_t2s.so"
+          copy_helper "out/artifacts/nonroot/byedpi/byedpi-arm64/byedpi" "$JNI_ROOT/arm64-v8a/libzdt_byedpi.so"
+          copy_helper "out/artifacts/nonroot/byedpi/byedpi-arm32/byedpi" "$JNI_ROOT/armeabi-v7a/libzdt_byedpi.so"
+          copy_helper "out/artifacts/nonroot/opera-proxy/opera-proxy-arm64/opera-proxy" "$JNI_ROOT/arm64-v8a/libzdt_operaproxy.so"
+          copy_helper "out/artifacts/nonroot/opera-proxy/opera-proxy-arm32/opera-proxy" "$JNI_ROOT/armeabi-v7a/libzdt_operaproxy.so"
 
       - name: Verify BusyBox artifacts
         run: |
@@ -6041,6 +6082,12 @@ jobs:
             assets/nfqws-tester/armeabi-v7a/nfqws_tester \
             lib/arm64-v8a/libhev-socks5-tunnel.so \
             lib/armeabi-v7a/libhev-socks5-tunnel.so \
+            lib/arm64-v8a/libzdt_t2s.so \
+            lib/armeabi-v7a/libzdt_t2s.so \
+            lib/arm64-v8a/libzdt_operaproxy.so \
+            lib/armeabi-v7a/libzdt_operaproxy.so \
+            lib/arm64-v8a/libzdt_byedpi.so \
+            lib/armeabi-v7a/libzdt_byedpi.so \
             assets/busybox/busybox-arm64 \
             assets/busybox/busybox-arm64.sha256 \
             assets/busybox/busybox-arm64.source \

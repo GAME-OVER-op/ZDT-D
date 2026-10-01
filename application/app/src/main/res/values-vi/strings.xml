@@ -2417,4 +2417,65 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="non_root_home_title">Chế độ không root</string>
     <string name="non_root_home_body">ZDT-D đang chạy mà không có quyền truy cập hệ thống. Điều khiển VPN và proxy sẽ được cấu hình tại đây.</string>
     <string name="non_root_home_restrictions">Bảo vệ cấp hệ thống, tính năng bảo mật, tự động khởi chạy và tích hợp công cụ nâng cao không khả dụng trong chế độ này.</string>
+
+    <string name="non_root_current_mode">Chế độ hiện tại</string>
+    <string name="non_root_work_mode_title">Chế độ hoạt động</string>
+    <string name="non_root_mode_direct">Công cụ</string>
+    <string name="non_root_mode_cascade">Chuỗi</string>
+    <string name="non_root_mode_direct_desc">Kết nối trực tiếp với chương trình proxy đã chọn.</string>
+    <string name="non_root_mode_cascade_desc">HEV chuyển lưu lượng qua T2S tới các hồ sơ proxy đang bật.</string>
+    <string name="non_root_direct_opera_desc">Proxy non-root trực tiếp. Địa chỉ được cố định ở 127.0.0.1.</string>
+    <string name="non_root_loopback_port_hint">Chỉ dùng địa chỉ cục bộ 127.0.0.1. Cổng bắt đầu từ 10000.</string>
+    <string name="non_root_port_error">Chọn một cổng trống từ 10000 đến 65535.</string>
+    <string name="non_root_cascade_intro">T2S là bộ định tuyến cho chuỗi. Tạo hồ sơ và cài đặt tuyến sẽ xuất hiện tại đây.</string>
+
+    <string name="non_root_byedpi_restart_after_opera">Khởi động lại sau khi Opera chạy</string>
+    <string name="non_root_byedpi_restart_after_opera_desc">Khởi động lại ByeDPI bằng đối số khởi động lại sau khi Opera Proxy sẵn sàng. Nếu tắt, ByeDPI chỉ khởi động một lần.</string>
+
+    <string name="non_root_create_profile">Tạo hồ sơ</string>
+    <string name="non_root_profile_tool_label">Công cụ</string>
+    <string name="non_root_profile_name">Tên hồ sơ</string>
+    <string name="non_root_profile_settings">Cài đặt hồ sơ</string>
+    <string name="non_root_profile_enabled">Đã bật</string>
+    <string name="non_root_profile_enabled_desc">Giữ hồ sơ này trong tuyến Cascade và khởi chạy khi Cascade hoạt động.</string>
+    <string name="non_root_profile_title_fmt">%1$s — %2$s</string>
+    <string name="non_root_delete_profile_title">Xóa hồ sơ?</string>
+    <string name="non_root_delete_profile_body">Hồ sơ “%1$s” và các cài đặt đã lưu sẽ bị xóa.</string>
+    <string name="non_root_cascade_opera_desc">Cài đặt Opera Proxy cho hồ sơ Cascade này.</string>
+    <string name="non_root_t2s_settings">Cài đặt T2S</string>
+    <string name="non_root_t2s_backend_mode">Chế độ backend</string>
+    <string name="non_root_t2s_route_title">Tuyến Cascade</string>
+    <string name="non_root_t2s_route_hint">Nhấn giữ ≡ và kéo để đổi thứ tự. Hồ sơ bị tắt vẫn giữ nguyên vị trí.</string>
+    <string name="non_root_t2s_route_empty">Tạo ít nhất một hồ sơ proxy để xây dựng tuyến Cascade.</string>
+    <string name="non_root_t2s_palette_title">Phần tử tuyến</string>
+    <string name="non_root_t2s_palette_hint">Nhấn giữ ≡ và kéo phần tử lên trên để thêm vào tuyến. Kéo phần tử dịch vụ đã chèn xuống dưới để xóa.</string>
+    <string name="non_root_t2s_group">Nhóm ;</string>
+    <string name="non_root_t2s_direct">Chế độ trực tiếp 0</string>
+    <string name="non_root_t2s_block_direct">Chặn trực tiếp 0</string>
+    <string name="non_root_t2s_group_short">; · Nhóm</string>
+    <string name="non_root_t2s_direct_short">0 · Chế độ trực tiếp</string>
+    <string name="non_root_t2s_block_direct_short">0 · Chặn trực tiếp</string>
+    <string name="non_root_t2s_group_help">Dấu chấm phẩy phân tách các nhóm ưu tiên backend. Đặt giữa hai hồ sơ proxy.</string>
+    <string name="non_root_t2s_direct_help">Chế độ trực tiếp dùng giá trị T2S 0 ở đầu tuyến.</string>
+    <string name="non_root_t2s_block_direct_help">Chặn trực tiếp dùng giá trị T2S 0 ở cuối tuyến.</string>
+    <string name="non_root_t2s_group_position">Đặt giữa hai hồ sơ proxy. Kéo xuống để xóa.</string>
+    <string name="non_root_t2s_direct_position">Chỉ ở đầu tuyến. Kéo xuống để xóa.</string>
+    <string name="non_root_t2s_block_direct_position">Chỉ ở cuối tuyến. Kéo xuống để xóa.</string>
+    <string name="non_root_t2s_drag_handle">Kéo</string>
+    <string name="non_root_t2s_help">Trợ giúp</string>
+    <string name="non_root_t2s_stats_title">Thống kê T2S</string>
+    <string name="non_root_direct_stats_empty">Chế độ trực tiếp chưa có bảng thống kê riêng.</string>
+    <!-- Non-root T2S runtime settings -->
+    <string name="non_root_t2s_runtime_settings">Cài đặt chạy T2S</string>
+    <string name="non_root_t2s_idle_timeout">Thời gian chờ nhàn rỗi (giây)</string>
+    <string name="non_root_t2s_buffer_size">Kích thước bộ đệm (byte)</string>
+    <string name="non_root_t2s_download_limit">Giới hạn tải xuống (Mbit/s, 0 = không giới hạn)</string>
+    <string name="non_root_t2s_peer_coordination">Điều phối phiên bản</string>
+    <string name="non_root_t2s_peer_coordination_desc">Điều phối kiểm tra sức khỏe giữa các phiên bản T2S dùng cùng backend.</string>
+    <string name="non_root_t2s_serialize_connects">Tuần tự hóa kết nối backend</string>
+    <string name="non_root_t2s_serialize_connects_desc">Tránh handshake đồng thời tới cùng backend nhạy cảm.</string>
+    <string name="non_root_t2s_connect_stagger">Độ trễ kết nối backend (ms)</string>
+
+    <string name="non_root_t2s_stopped">T2S đã dừng. Hãy chạy Cascade để xem thống kê API.</string>
+
 </resources>

@@ -2417,4 +2417,65 @@ APatch：10700+</string>
     <string name="non_root_home_title">无 Root 模式</string>
     <string name="non_root_home_body">ZDT-D 正在无系统访问权限的模式下运行。VPN 和代理控制将在此处配置。</string>
     <string name="non_root_home_restrictions">此模式下不提供系统级保护、安全功能、自动启动和高级工具集成。</string>
+
+    <string name="non_root_current_mode">当前模式</string>
+    <string name="non_root_work_mode_title">工作模式</string>
+    <string name="non_root_mode_direct">工具</string>
+    <string name="non_root_mode_cascade">级联</string>
+    <string name="non_root_mode_direct_desc">直接连接到所选代理程序。</string>
+    <string name="non_root_mode_cascade_desc">HEV 通过 T2S 将流量发送到已启用的代理配置。</string>
+    <string name="non_root_direct_opera_desc">直接 non-root 代理。地址固定为 127.0.0.1。</string>
+    <string name="non_root_loopback_port_hint">仅使用本地地址 127.0.0.1。端口从 10000 开始。</string>
+    <string name="non_root_port_error">请选择 10000 到 65535 之间的空闲端口。</string>
+    <string name="non_root_cascade_intro">T2S 是级联路由器。配置创建和路由设置将显示在这里。</string>
+
+    <string name="non_root_byedpi_restart_after_opera">Opera 启动后重启</string>
+    <string name="non_root_byedpi_restart_after_opera_desc">Opera Proxy 就绪后使用重启参数重新启动 ByeDPI。关闭时，ByeDPI 只启动一次。</string>
+
+    <string name="non_root_create_profile">创建配置文件</string>
+    <string name="non_root_profile_tool_label">工具</string>
+    <string name="non_root_profile_name">配置文件名称</string>
+    <string name="non_root_profile_settings">配置文件设置</string>
+    <string name="non_root_profile_enabled">已启用</string>
+    <string name="non_root_profile_enabled_desc">将此配置文件保留在 Cascade 路由中，并在 Cascade 运行时启动。</string>
+    <string name="non_root_profile_title_fmt">%1$s — %2$s</string>
+    <string name="non_root_delete_profile_title">删除配置文件？</string>
+    <string name="non_root_delete_profile_body">配置文件“%1$s”及其已保存设置将被删除。</string>
+    <string name="non_root_cascade_opera_desc">此 Cascade 配置文件的 Opera Proxy 设置。</string>
+    <string name="non_root_t2s_settings">T2S 设置</string>
+    <string name="non_root_t2s_backend_mode">Backend 模式</string>
+    <string name="non_root_t2s_route_title">Cascade 路由</string>
+    <string name="non_root_t2s_route_hint">长按 ≡ 并拖动可更改顺序。已禁用的配置文件仍保留原位置。</string>
+    <string name="non_root_t2s_route_empty">至少创建一个 proxy 配置文件才能构建 Cascade 路由。</string>
+    <string name="non_root_t2s_palette_title">路由元素</string>
+    <string name="non_root_t2s_palette_hint">长按 ≡ 并向上拖动元素以添加到路由。将已插入的服务元素向下拖动即可删除。</string>
+    <string name="non_root_t2s_group">组 ;</string>
+    <string name="non_root_t2s_direct">直连模式 0</string>
+    <string name="non_root_t2s_block_direct">阻止直连 0</string>
+    <string name="non_root_t2s_group_short">; · 组</string>
+    <string name="non_root_t2s_direct_short">0 · 直连模式</string>
+    <string name="non_root_t2s_block_direct_short">0 · 阻止直连</string>
+    <string name="non_root_t2s_group_help">分号用于分隔 backend 优先级组。请放在两个 proxy 配置文件之间。</string>
+    <string name="non_root_t2s_direct_help">直连模式在路由开头使用 T2S 值 0。</string>
+    <string name="non_root_t2s_block_direct_help">阻止直连在路由末尾使用 T2S 值 0。</string>
+    <string name="non_root_t2s_group_position">放在两个 proxy 配置文件之间。向下拖动可删除。</string>
+    <string name="non_root_t2s_direct_position">仅可放在路由开头。向下拖动可删除。</string>
+    <string name="non_root_t2s_block_direct_position">仅可放在路由末尾。向下拖动可删除。</string>
+    <string name="non_root_t2s_drag_handle">拖动</string>
+    <string name="non_root_t2s_help">帮助</string>
+    <string name="non_root_t2s_stats_title">T2S 统计</string>
+    <string name="non_root_direct_stats_empty">直连模式暂时没有单独的统计面板。</string>
+    <!-- Non-root T2S runtime settings -->
+    <string name="non_root_t2s_runtime_settings">T2S 运行设置</string>
+    <string name="non_root_t2s_idle_timeout">空闲超时（秒）</string>
+    <string name="non_root_t2s_buffer_size">缓冲区大小（字节）</string>
+    <string name="non_root_t2s_download_limit">下载限制（Mbit/s，0 = 不限）</string>
+    <string name="non_root_t2s_peer_coordination">实例协调</string>
+    <string name="non_root_t2s_peer_coordination_desc">在使用相同后端的 T2S 实例之间协调健康检查。</string>
+    <string name="non_root_t2s_serialize_connects">串行后端连接</string>
+    <string name="non_root_t2s_serialize_connects_desc">避免同时与同一个不稳定后端进行握手。</string>
+    <string name="non_root_t2s_connect_stagger">后端连接间隔（毫秒）</string>
+
+    <string name="non_root_t2s_stopped">T2S 已停止。启动级联后可查看 API 统计信息。</string>
+
 </resources>

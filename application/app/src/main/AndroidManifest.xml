@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- Needed to list all installed apps (incl. system) for the app picker on Android 11+. -->
     <uses-permission
         android:name="android.permission.QUERY_ALL_PACKAGES"
@@ -100,6 +101,19 @@
             android:name=".NonRootActivity"
             android:exported="false"
             android:launchMode="singleTask" />
+
+        <service
+            android:name=".NonRootVpnService"
+            android:exported="false"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:foregroundServiceType="specialUse">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-initiated non-root VPN tunnel through app-owned proxy backends" />
+        </service>
 
         <activity
             android:name=".RemoteSetupActivity"

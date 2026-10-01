@@ -2422,4 +2422,65 @@ APatch: ‏10700+</string>
     <string name="non_root_home_title">وضع بدون روت</string>
     <string name="non_root_home_body">يعمل ZDT-D بدون وصول إلى النظام. سيتم إعداد عناصر تحكم VPN والوكيل هنا.</string>
     <string name="non_root_home_restrictions">الحماية على مستوى النظام وميزات الأمان والتشغيل التلقائي والتكامل المتقدم للأدوات غير متاحة في هذا الوضع.</string>
+
+    <string name="non_root_current_mode">الوضع الحالي</string>
+    <string name="non_root_work_mode_title">وضع العمل</string>
+    <string name="non_root_mode_direct">أداة</string>
+    <string name="non_root_mode_cascade">تسلسل</string>
+    <string name="non_root_mode_direct_desc">اتصال مباشر ببرنامج الوكيل المحدد.</string>
+    <string name="non_root_mode_cascade_desc">يرسل HEV حركة المرور عبر T2S إلى ملفات الوكيل المفعلة.</string>
+    <string name="non_root_direct_opera_desc">وكيل non-root مباشر. العنوان ثابت على 127.0.0.1.</string>
+    <string name="non_root_loopback_port_hint">يُستخدم العنوان المحلي 127.0.0.1 فقط. تبدأ المنافذ من 10000.</string>
+    <string name="non_root_port_error">اختر منفذًا متاحًا من 10000 إلى 65535.</string>
+    <string name="non_root_cascade_intro">T2S هو موجّه التسلسل. ستظهر هنا عملية إنشاء الملفات وإعدادات المسار.</string>
+
+    <string name="non_root_byedpi_restart_after_opera">إعادة التشغيل بعد بدء Opera</string>
+    <string name="non_root_byedpi_restart_after_opera_desc">أعد تشغيل ByeDPI باستخدام وسيطات إعادة التشغيل بعد أن يصبح Opera Proxy جاهزًا. عند التعطيل، يبدأ ByeDPI مرة واحدة فقط.</string>
+
+    <string name="non_root_create_profile">إنشاء ملف شخصي</string>
+    <string name="non_root_profile_tool_label">الأداة</string>
+    <string name="non_root_profile_name">اسم الملف الشخصي</string>
+    <string name="non_root_profile_settings">إعدادات الملف الشخصي</string>
+    <string name="non_root_profile_enabled">مفعّل</string>
+    <string name="non_root_profile_enabled_desc">احتفظ بهذا الملف في مسار Cascade وشغّله عند تشغيل Cascade.</string>
+    <string name="non_root_profile_title_fmt">%1$s — %2$s</string>
+    <string name="non_root_delete_profile_title">حذف الملف الشخصي؟</string>
+    <string name="non_root_delete_profile_body">سيتم حذف الملف “%1$s” وإعداداته المحفوظة.</string>
+    <string name="non_root_cascade_opera_desc">إعدادات Opera Proxy لهذا الملف في Cascade.</string>
+    <string name="non_root_t2s_settings">إعدادات T2S</string>
+    <string name="non_root_t2s_backend_mode">وضع backend</string>
+    <string name="non_root_t2s_route_title">مسار Cascade</string>
+    <string name="non_root_t2s_route_hint">اضغط مطولاً على ≡ واسحب لتغيير الترتيب. الملفات المعطلة تحتفظ بمكانها.</string>
+    <string name="non_root_t2s_route_empty">أنشئ ملف proxy واحداً على الأقل لبناء مسار Cascade.</string>
+    <string name="non_root_t2s_palette_title">عناصر المسار</string>
+    <string name="non_root_t2s_palette_hint">اضغط مطولاً على ≡ واسحب العنصر لأعلى لإضافته إلى المسار. اسحب عنصر الخدمة المضاف لأسفل لإزالته.</string>
+    <string name="non_root_t2s_group">مجموعة ;</string>
+    <string name="non_root_t2s_direct">الوضع المباشر 0</string>
+    <string name="non_root_t2s_block_direct">حظر المباشر 0</string>
+    <string name="non_root_t2s_group_short">; · مجموعة</string>
+    <string name="non_root_t2s_direct_short">0 · الوضع المباشر</string>
+    <string name="non_root_t2s_block_direct_short">0 · حظر المباشر</string>
+    <string name="non_root_t2s_group_help">تفصل الفاصلة المنقوطة مجموعات أولوية backend. ضعها بين ملفي proxy.</string>
+    <string name="non_root_t2s_direct_help">يستخدم الوضع المباشر قيمة T2S ‏0 في بداية المسار.</string>
+    <string name="non_root_t2s_block_direct_help">يستخدم حظر المباشر قيمة T2S ‏0 في نهاية المسار.</string>
+    <string name="non_root_t2s_group_position">ضعها بين ملفي proxy. اسحب لأسفل للإزالة.</string>
+    <string name="non_root_t2s_direct_position">في بداية المسار فقط. اسحب لأسفل للإزالة.</string>
+    <string name="non_root_t2s_block_direct_position">في نهاية المسار فقط. اسحب لأسفل للإزالة.</string>
+    <string name="non_root_t2s_drag_handle">سحب</string>
+    <string name="non_root_t2s_help">مساعدة</string>
+    <string name="non_root_t2s_stats_title">إحصاءات T2S</string>
+    <string name="non_root_direct_stats_empty">لا توجد حتى الآن لوحة إحصاءات منفصلة للوضع المباشر.</string>
+    <!-- Non-root T2S runtime settings -->
+    <string name="non_root_t2s_runtime_settings">إعدادات تشغيل T2S</string>
+    <string name="non_root_t2s_idle_timeout">مهلة الخمول (ثوانٍ)</string>
+    <string name="non_root_t2s_buffer_size">حجم المخزن المؤقت (بايت)</string>
+    <string name="non_root_t2s_download_limit">حد التنزيل (Mbit/s، 0 = غير محدود)</string>
+    <string name="non_root_t2s_peer_coordination">تنسيق النسخ</string>
+    <string name="non_root_t2s_peer_coordination_desc">تنسيق فحوصات الصحة بين نسخ T2S التي تستخدم الخلفيات نفسها.</string>
+    <string name="non_root_t2s_serialize_connects">تسلسل اتصالات الخلفية</string>
+    <string name="non_root_t2s_serialize_connects_desc">منع المصافحات المتزامنة مع الخلفية الحساسة نفسها.</string>
+    <string name="non_root_t2s_connect_stagger">تأخير اتصال الخلفية (مللي ثانية)</string>
+
+    <string name="non_root_t2s_stopped">T2S متوقف. شغّل التسلسل لعرض إحصاءات API.</string>
+
 </resources>

@@ -11,9 +11,13 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 class T2sApiClient(
-  private val rootManager: RootConfigManager,
   private val port: Int,
+  private val tokenProvider: () -> String,
 ) {
+  constructor(rootManager: RootConfigManager, port: Int) : this(
+    port = port,
+    tokenProvider = { rootManager.readApiToken() },
+  )
   private val http = OkHttpClient.Builder()
     .connectTimeout(900, TimeUnit.MILLISECONDS)
     .readTimeout(1800, TimeUnit.MILLISECONDS)
@@ -58,7 +62,7 @@ class T2sApiClient(
   }
 
   private fun requestJson(method: String, path: String, body: JSONObject?): JSONObject {
-    val token = rootManager.readApiToken().trim()
+    val token = tokenProvider().trim()
     val builder = Request.Builder().url(baseUrl + path)
     if (token.isNotEmpty()) {
       builder.header("Authorization", "Bearer $token")

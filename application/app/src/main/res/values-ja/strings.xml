@@ -2417,4 +2417,65 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="non_root_home_title">非 root モード</string>
     <string name="non_root_home_body">ZDT-D はシステムアクセスなしで動作しています。VPN とプロキシの操作はここで設定されます。</string>
     <string name="non_root_home_restrictions">システムレベルの保護、セキュリティ機能、自動起動、高度なツール連携はこのモードでは利用できません。</string>
+
+    <string name="non_root_current_mode">現在のモード</string>
+    <string name="non_root_work_mode_title">動作モード</string>
+    <string name="non_root_mode_direct">ツール</string>
+    <string name="non_root_mode_cascade">カスケード</string>
+    <string name="non_root_mode_direct_desc">選択したプロキシプログラムへ直接接続します。</string>
+    <string name="non_root_mode_cascade_desc">HEV は T2S 経由で有効なプロキシプロファイルへ通信を送ります。</string>
+    <string name="non_root_direct_opera_desc">直接 non-root プロキシ。アドレスは 127.0.0.1 固定です。</string>
+    <string name="non_root_loopback_port_hint">ローカルアドレス 127.0.0.1 のみを使用します。ポートは 10000 から始まります。</string>
+    <string name="non_root_port_error">10000～65535 の空きポートを選択してください。</string>
+    <string name="non_root_cascade_intro">T2S がカスケードのルーターです。プロファイル作成とルート設定はここに表示されます。</string>
+
+    <string name="non_root_byedpi_restart_after_opera">Opera 起動後に再起動</string>
+    <string name="non_root_byedpi_restart_after_opera_desc">Opera Proxy の準備完了後、再起動引数で ByeDPI を再起動します。無効の場合、ByeDPI は一度だけ起動します。</string>
+
+    <string name="non_root_create_profile">プロファイルを作成</string>
+    <string name="non_root_profile_tool_label">ツール</string>
+    <string name="non_root_profile_name">プロファイル名</string>
+    <string name="non_root_profile_settings">プロファイル設定</string>
+    <string name="non_root_profile_enabled">有効</string>
+    <string name="non_root_profile_enabled_desc">このプロファイルを Cascade ルートに保持し、Cascade 実行時に起動します。</string>
+    <string name="non_root_profile_title_fmt">%1$s — %2$s</string>
+    <string name="non_root_delete_profile_title">プロファイルを削除しますか？</string>
+    <string name="non_root_delete_profile_body">プロファイル「%1$s」と保存済み設定を削除します。</string>
+    <string name="non_root_cascade_opera_desc">この Cascade プロファイルの Opera Proxy 設定。</string>
+    <string name="non_root_t2s_settings">T2S 設定</string>
+    <string name="non_root_t2s_backend_mode">Backend モード</string>
+    <string name="non_root_t2s_route_title">Cascade ルート</string>
+    <string name="non_root_t2s_route_hint">≡ を長押ししてドラッグすると順序を変更できます。無効なプロファイルも位置を保持します。</string>
+    <string name="non_root_t2s_route_empty">Cascade ルートを作成するには、少なくとも 1 つの proxy プロファイルを作成してください。</string>
+    <string name="non_root_t2s_palette_title">ルート要素</string>
+    <string name="non_root_t2s_palette_hint">≡ を長押しして上へドラッグするとルートに追加できます。追加済みのサービス要素は下へドラッグすると削除できます。</string>
+    <string name="non_root_t2s_group">グループ ;</string>
+    <string name="non_root_t2s_direct">直接モード 0</string>
+    <string name="non_root_t2s_block_direct">直接通信をブロック 0</string>
+    <string name="non_root_t2s_group_short">; · グループ</string>
+    <string name="non_root_t2s_direct_short">0 · 直接モード</string>
+    <string name="non_root_t2s_block_direct_short">0 · 直接通信をブロック</string>
+    <string name="non_root_t2s_group_help">セミコロンは backend の優先度グループを区切ります。2 つの proxy プロファイルの間に配置します。</string>
+    <string name="non_root_t2s_direct_help">直接モードはルート先頭で T2S 値 0 を使用します。</string>
+    <string name="non_root_t2s_block_direct_help">直接通信のブロックはルート末尾で T2S 値 0 を使用します。</string>
+    <string name="non_root_t2s_group_position">2 つの proxy プロファイルの間に配置します。下へドラッグすると削除できます。</string>
+    <string name="non_root_t2s_direct_position">ルート先頭のみ。下へドラッグすると削除できます。</string>
+    <string name="non_root_t2s_block_direct_position">ルート末尾のみ。下へドラッグすると削除できます。</string>
+    <string name="non_root_t2s_drag_handle">ドラッグ</string>
+    <string name="non_root_t2s_help">ヘルプ</string>
+    <string name="non_root_t2s_stats_title">T2S 統計</string>
+    <string name="non_root_direct_stats_empty">直接モードにはまだ専用の統計パネルがありません。</string>
+    <!-- Non-root T2S runtime settings -->
+    <string name="non_root_t2s_runtime_settings">T2S 実行設定</string>
+    <string name="non_root_t2s_idle_timeout">アイドルタイムアウト（秒）</string>
+    <string name="non_root_t2s_buffer_size">バッファサイズ（バイト）</string>
+    <string name="non_root_t2s_download_limit">ダウンロード制限（Mbit/s、0 = 無制限）</string>
+    <string name="non_root_t2s_peer_coordination">インスタンス連携</string>
+    <string name="non_root_t2s_peer_coordination_desc">同じバックエンドを使う T2S インスタンス間でヘルスチェックを調整します。</string>
+    <string name="non_root_t2s_serialize_connects">バックエンド接続を直列化</string>
+    <string name="non_root_t2s_serialize_connects_desc">同じ不安定なバックエンドへの同時ハンドシェイクを避けます。</string>
+    <string name="non_root_t2s_connect_stagger">バックエンド接続間隔（ms）</string>
+
+    <string name="non_root_t2s_stopped">T2S は停止しています。API 統計を表示するにはカスケードを開始してください。</string>
+
 </resources>

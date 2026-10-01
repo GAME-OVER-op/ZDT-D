@@ -2418,4 +2418,65 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="non_root_home_title">Modo sem root</string>
     <string name="non_root_home_body">O ZDT-D está sendo executado sem acesso ao sistema. Os controles de VPN e proxy serão configurados aqui.</string>
     <string name="non_root_home_restrictions">Proteção em nível de sistema, recursos de segurança, inicialização automática e integração avançada de ferramentas não estão disponíveis neste modo.</string>
+
+    <string name="non_root_current_mode">Modo atual</string>
+    <string name="non_root_work_mode_title">Modo de trabalho</string>
+    <string name="non_root_mode_direct">Ferramenta</string>
+    <string name="non_root_mode_cascade">Cascata</string>
+    <string name="non_root_mode_direct_desc">Conexão direta ao programa proxy selecionado.</string>
+    <string name="non_root_mode_cascade_desc">O HEV envia o tráfego pelo T2S aos perfis de proxy ativados.</string>
+    <string name="non_root_direct_opera_desc">Proxy non-root direto. O endereço é fixo em 127.0.0.1.</string>
+    <string name="non_root_loopback_port_hint">Somente o endereço local 127.0.0.1 é usado. As portas começam em 10000.</string>
+    <string name="non_root_port_error">Escolha uma porta livre entre 10000 e 65535.</string>
+    <string name="non_root_cascade_intro">O T2S é o roteador da cascata. A criação de perfis e as configurações de rota aparecerão aqui.</string>
+
+    <string name="non_root_byedpi_restart_after_opera">Reiniciar após iniciar o Opera</string>
+    <string name="non_root_byedpi_restart_after_opera_desc">Reinicia o ByeDPI com os argumentos de reinício quando o Opera Proxy estiver pronto. Se desativado, o ByeDPI inicia apenas uma vez.</string>
+
+    <string name="non_root_create_profile">Criar perfil</string>
+    <string name="non_root_profile_tool_label">Ferramenta</string>
+    <string name="non_root_profile_name">Nome do perfil</string>
+    <string name="non_root_profile_settings">Configurações do perfil</string>
+    <string name="non_root_profile_enabled">Ativado</string>
+    <string name="non_root_profile_enabled_desc">Mantenha este perfil na rota Cascade e inicie-o quando o Cascade estiver em execução.</string>
+    <string name="non_root_profile_title_fmt">%1$s — %2$s</string>
+    <string name="non_root_delete_profile_title">Excluir perfil?</string>
+    <string name="non_root_delete_profile_body">O perfil “%1$s” e suas configurações salvas serão excluídos.</string>
+    <string name="non_root_cascade_opera_desc">Configurações do Opera Proxy para este perfil Cascade.</string>
+    <string name="non_root_t2s_settings">Configurações do T2S</string>
+    <string name="non_root_t2s_backend_mode">Modo de backend</string>
+    <string name="non_root_t2s_route_title">Rota Cascade</string>
+    <string name="non_root_t2s_route_hint">Segure ≡ e arraste para alterar a ordem. Perfis desativados mantêm sua posição.</string>
+    <string name="non_root_t2s_route_empty">Crie pelo menos um perfil de proxy para montar uma rota Cascade.</string>
+    <string name="non_root_t2s_palette_title">Elementos da rota</string>
+    <string name="non_root_t2s_palette_hint">Segure ≡ e arraste um elemento para cima para adicioná-lo à rota. Arraste um elemento de serviço inserido para baixo para removê-lo.</string>
+    <string name="non_root_t2s_group">Grupo ;</string>
+    <string name="non_root_t2s_direct">Modo direto 0</string>
+    <string name="non_root_t2s_block_direct">Bloquear direto 0</string>
+    <string name="non_root_t2s_group_short">; · Grupo</string>
+    <string name="non_root_t2s_direct_short">0 · Modo direto</string>
+    <string name="non_root_t2s_block_direct_short">0 · Bloquear direto</string>
+    <string name="non_root_t2s_group_help">O ponto e vírgula separa grupos de prioridade de backend. Coloque-o entre dois perfis de proxy.</string>
+    <string name="non_root_t2s_direct_help">O modo direto usa o valor T2S 0 no início da rota.</string>
+    <string name="non_root_t2s_block_direct_help">Bloquear direto usa o valor T2S 0 no fim da rota.</string>
+    <string name="non_root_t2s_group_position">Coloque entre dois perfis de proxy. Arraste para baixo para remover.</string>
+    <string name="non_root_t2s_direct_position">Somente no início da rota. Arraste para baixo para remover.</string>
+    <string name="non_root_t2s_block_direct_position">Somente no fim da rota. Arraste para baixo para remover.</string>
+    <string name="non_root_t2s_drag_handle">Arrastar</string>
+    <string name="non_root_t2s_help">Ajuda</string>
+    <string name="non_root_t2s_stats_title">Estatísticas do T2S</string>
+    <string name="non_root_direct_stats_empty">O modo direto ainda não possui um painel de estatísticas separado.</string>
+    <!-- Non-root T2S runtime settings -->
+    <string name="non_root_t2s_runtime_settings">Configurações de execução do T2S</string>
+    <string name="non_root_t2s_idle_timeout">Tempo limite ocioso (segundos)</string>
+    <string name="non_root_t2s_buffer_size">Tamanho do buffer (bytes)</string>
+    <string name="non_root_t2s_download_limit">Limite de download (Mbit/s, 0 = ilimitado)</string>
+    <string name="non_root_t2s_peer_coordination">Coordenação entre instâncias</string>
+    <string name="non_root_t2s_peer_coordination_desc">Coordena verificações de integridade entre instâncias T2S com os mesmos backends.</string>
+    <string name="non_root_t2s_serialize_connects">Serializar conexões ao backend</string>
+    <string name="non_root_t2s_serialize_connects_desc">Evita handshakes simultâneos com o mesmo backend sensível.</string>
+    <string name="non_root_t2s_connect_stagger">Intervalo entre conexões ao backend (ms)</string>
+
+    <string name="non_root_t2s_stopped">O T2S está parado. Inicie a cascata para ver as estatísticas da API.</string>
+
 </resources>

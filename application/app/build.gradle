@@ -25,6 +25,7 @@ rootModuleProp.withInputStream { moduleProps.load(it) }
 def moduleVersionCode = (moduleProps.getProperty('versionCode') ?: '1').trim().toInteger()
 def moduleVersionName = (moduleProps.getProperty('version') ?: '1.0').trim()
 def generatedAssetsDir = file("$buildDir/generated/zdt-assets/main")
+def generatedNonRootJniDir = file("$buildDir/generated/zdt-nonroot-jni/main")
 def zdtCompileSdk = (findProperty('zdtCompileSdk') ?: System.getenv('ZDT_COMPILE_SDK') ?: '37').toString().trim().toInteger()
 def zdtCompileSdkMinor = (findProperty('zdtCompileSdkMinor') ?: System.getenv('ZDT_COMPILE_SDK_MINOR') ?: '0').toString().trim().toInteger()
 def hevSocks5TunnelAar = file('libs/hev-socks5-tunnel.aar')
@@ -181,6 +182,16 @@ android {
   sourceSets {
     main {
       assets.srcDirs += generatedAssetsDir
+      jniLibs.srcDirs += generatedNonRootJniDir
+    }
+  }
+
+  packaging {
+    jniLibs {
+      // Non-root helper executables are packaged under lib/<abi> so Android extracts
+      // them into the app-owned nativeLibraryDir, where ProcessBuilder can execute them.
+      useLegacyPackaging = true
+      keepDebugSymbols += ['**/libzdt_t2s.so', '**/libzdt_operaproxy.so', '**/libzdt_byedpi.so']
     }
   }
 }

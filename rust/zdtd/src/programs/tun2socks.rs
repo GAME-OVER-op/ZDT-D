@@ -498,11 +498,11 @@ fn spawn_tun2socks(plan: &ProfilePlan) -> Result<()> {
     let logf_err = logf.try_clone().context("clone tun2socks log")?;
 
     let mut cmd = Command::new(TUN2SOCKS_BIN);
-    cmd.arg("-device")
+    cmd.arg("--device")
         .arg(format!("tun://{}", plan.setting.tun))
-        .arg("-proxy")
+        .arg("--proxy")
         .arg(&plan.setting.proxy)
-        .arg("-loglevel")
+        .arg("--loglevel")
         .arg(&plan.setting.loglevel)
         .current_dir(&plan.profile_dir)
         .stdin(Stdio::null())
@@ -511,15 +511,15 @@ fn spawn_tun2socks(plan: &ProfilePlan) -> Result<()> {
 
     if let Some(v) = &plan.setting.udp_timeout {
         if !v.trim().is_empty() {
-            cmd.arg("-udp-timeout").arg(v);
+            cmd.arg("--udp-timeout").arg(v);
         }
     }
     if let Some(v) = plan.setting.fwmark {
-        cmd.arg("-fwmark").arg(v.to_string());
+        cmd.arg("--fwmark").arg(v.to_string());
     }
     if let Some(v) = &plan.setting.restapi {
         if !v.trim().is_empty() {
-            cmd.arg("-restapi").arg(v);
+            cmd.arg("--restapi").arg(v);
         }
     }
 
@@ -550,7 +550,7 @@ fn spawn_tun2socks(plan: &ProfilePlan) -> Result<()> {
 
 fn tun2socks_profile_process_running(tun: &str, proxy: &str) -> bool {
     let pattern = format!(
-        "{} -device tun://{} -proxy {}",
+        "{} --device tun://{} --proxy {}",
         TUN2SOCKS_BIN,
         tun,
         proxy
@@ -651,12 +651,12 @@ fn write_json_pretty<T: Serialize>(path: &Path, v: &T) -> Result<()> {
 
 pub fn main_pids_exact() -> Vec<i32> {
     let mut pids = Vec::new();
-    let cmd = r#"sh -c "pgrep -f '^/data/adb/modules/ZDT-D/bin/tun2socks -device tun://.* -proxy .*$' 2>/dev/null || true""#;
+    let cmd = r#"sh -c "pgrep -f '^/data/adb/modules/ZDT-D/bin/tun2socks --device tun://.* --proxy .*$' 2>/dev/null || true""#;
     if let Ok(out) = shell::capture_quiet(cmd) {
         pids.extend(parse_pid_lines(&out));
     }
     if pids.is_empty() {
-        let ps_cmd = r#"sh -c "ps -ef 2>/dev/null | grep -F '/data/adb/modules/ZDT-D/bin/tun2socks' | grep -F -- '-device tun://' | grep -F ' -proxy ' | grep -v grep || true""#;
+        let ps_cmd = r#"sh -c "ps -ef 2>/dev/null | grep -F '/data/adb/modules/ZDT-D/bin/tun2socks' | grep -F -- '--device tun://' | grep -F ' --proxy ' | grep -v grep || true""#;
         if let Ok(out) = shell::capture_quiet(ps_cmd) {
             for line in out.lines() {
                 let cols: Vec<&str> = line.split_whitespace().collect();

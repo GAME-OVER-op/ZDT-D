@@ -933,14 +933,14 @@ fn spawn_tun2proxy(plan: &ProfilePlan) -> Result<()> {
         .with_context(|| format!("open log {}", plan.tun2proxy_log_path.display()))?;
     let logf_err = logf.try_clone().context("clone mieru tun2proxy log")?;
     let mut cmd = Command::new(TUN2PROXY_BIN);
-    cmd.arg("-device")
+    cmd.arg("--device")
         .arg(format!("tun://{}", plan.setting.tun))
-        .arg("-proxy")
+        .arg("--proxy")
         .arg(&proxy)
-        .arg("-loglevel")
+        .arg("--loglevel")
         .arg(&plan.setting.tun2proxy_loglevel);
     if let Some(mtu) = plan.setting.mtu {
-        cmd.arg("-mtu").arg(mtu.to_string());
+        cmd.arg("--mtu").arg(mtu.to_string());
     }
     cmd.current_dir(&plan.profile_dir)
         .stdin(Stdio::null())
@@ -961,7 +961,7 @@ fn mieru_profile_process_running(runtime_config: &Path) -> bool {
 }
 
 fn tun2proxy_profile_process_running(tun: &str, proxy: &str) -> bool {
-    let pattern = format!("{} -device tun://{} -proxy {}", TUN2PROXY_BIN, tun, proxy);
+    let pattern = format!("{} --device tun://{} --proxy {}", TUN2PROXY_BIN, tun, proxy);
     let cmd = format!("ps -ef 2>/dev/null | grep -F {} | grep -v grep >/dev/null 2>&1", shell_quote_for_sh(&pattern));
     shell::ok_sh(&cmd).is_ok()
 }
@@ -1034,7 +1034,7 @@ pub fn main_pids_exact() -> Vec<i32> {
 
 pub fn tun2proxy_pids_exact() -> Vec<i32> {
     let mut pids = Vec::new();
-    let cmd = r#"sh -c "pgrep -f '^/data/adb/modules/ZDT-D/bin/tun2socks -device tun://.* -proxy socks5://127\.0\.0\.1:[0-9]+.*$' 2>/dev/null || true""#;
+    let cmd = r#"sh -c "pgrep -f '^/data/adb/modules/ZDT-D/bin/tun2socks --device tun://.* --proxy socks5://127\.0\.0\.1:[0-9]+.*$' 2>/dev/null || true""#;
     if let Ok(out) = shell::capture_quiet(cmd) { pids.extend(parse_pid_lines(&out)); }
     pids.sort_unstable();
     pids.dedup();

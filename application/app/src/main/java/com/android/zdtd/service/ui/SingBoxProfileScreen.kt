@@ -92,7 +92,7 @@ import java.net.URLEncoder
 private const val SINGBOX_MODE_T2S = "t2s"
 private const val SINGBOX_MODE_VPN = "vpn"
 
-private val SINGBOX_TUN2SOCKS_LOG_LEVELS = listOf("trace", "debug", "info", "warn", "error", "silent")
+private val SINGBOX_TUN2SOCKS_LOG_LEVELS = listOf("debug", "info", "warn", "error", "silent")
 
 private fun normalizeSingBoxMode(raw: String?): String {
   return when (raw?.trim()?.lowercase()) {

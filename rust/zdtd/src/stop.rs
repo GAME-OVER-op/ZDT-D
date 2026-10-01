@@ -214,12 +214,12 @@ pub fn stop_services_and_restore_iptables() -> Result<()> {
     kill_exact_pids("amneziawg-go -f <profile tun>", &crate::programs::amneziawg::main_pids_exact())?;
     crate::programs::amneziawg::cleanup_all_interfaces();
     kill_exact_pids("mihomo -d <profile>/work -f config.runtime.yaml", &crate::programs::mihomo::main_pids_exact())?;
-    kill_exact_pids("mihomo tun2socks -device tun://<profile tun>", &crate::programs::mihomo::tun2socks_pids_exact())?;
+    kill_exact_pids("mihomo tun2socks --device tun://<profile tun>", &crate::programs::mihomo::tun2socks_pids_exact())?;
     kill_exact_pids("mieru run <profile config>", &crate::programs::mieru::main_pids_exact())?;
-    kill_exact_pids("mieru tun2proxy -device tun://<profile tun>", &crate::programs::mieru::tun2proxy_pids_exact())?;
+    kill_exact_pids("mieru tun2proxy --device tun://<profile tun>", &crate::programs::mieru::tun2proxy_pids_exact())?;
     kill_exact_pids("hysteria2 client <profile config>", &crate::programs::hysteria2::main_pids_exact())?;
-    kill_exact_pids("hysteria2 tun2socks -device tun://<profile tun>", &crate::programs::hysteria2::tun2socks_pids_exact())?;
-    kill_exact_pids("tun2socks -device tun://<profile tun>", &crate::programs::tun2socks::main_pids_exact())?;
+    kill_exact_pids("hysteria2 tun2socks --device tun://<profile tun>", &crate::programs::hysteria2::tun2socks_pids_exact())?;
+    kill_exact_pids("tun2socks --device tun://<profile tun>", &crate::programs::tun2socks::main_pids_exact())?;
 
     // IMPORTANT: do not stop plain substring/name matches for Tor.
     // Some Android systems have unrelated processes containing "tor".

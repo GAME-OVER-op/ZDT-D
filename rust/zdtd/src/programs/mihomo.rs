@@ -1113,11 +1113,11 @@ fn spawn_tun2socks(plan: &ProfilePlan) -> Result<()> {
     let logf_err = logf.try_clone().context("clone mihomo tun2socks log")?;
 
     let mut cmd = Command::new(TUN2SOCKS_BIN);
-    cmd.arg("-device")
+    cmd.arg("--device")
         .arg(format!("tun://{}", plan.setting.tun))
-        .arg("-proxy")
+        .arg("--proxy")
         .arg(&proxy)
-        .arg("-loglevel")
+        .arg("--loglevel")
         .arg(&plan.setting.tun2socks_loglevel)
         .current_dir(&plan.profile_dir)
         .stdin(Stdio::null())
@@ -1159,7 +1159,7 @@ fn mihomo_profile_process_running(work_dir: &Path, runtime_config: &Path) -> boo
 
 fn tun2socks_profile_process_running(tun: &str, proxy: &str) -> bool {
     let pattern = format!(
-        "{} -device tun://{} -proxy {}",
+        "{} --device tun://{} --proxy {}",
         TUN2SOCKS_BIN,
         tun,
         proxy
@@ -1251,7 +1251,7 @@ pub fn main_pids_exact() -> Vec<i32> {
 
 pub fn tun2socks_pids_exact() -> Vec<i32> {
     let mut pids = Vec::new();
-    let cmd = r#"sh -c "pgrep -f '^/data/adb/modules/ZDT-D/bin/tun2socks -device tun://.* -proxy socks5://127\.0\.0\.1:[0-9]+.*$' 2>/dev/null || true""#;
+    let cmd = r#"sh -c "pgrep -f '^/data/adb/modules/ZDT-D/bin/tun2socks --device tun://.* --proxy socks5://127\.0\.0\.1:[0-9]+.*$' 2>/dev/null || true""#;
     if let Ok(out) = shell::capture_quiet(cmd) { pids.extend(parse_pid_lines(&out)); }
     pids.sort_unstable();
     pids.dedup();

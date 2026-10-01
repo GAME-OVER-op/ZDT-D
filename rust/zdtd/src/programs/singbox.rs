@@ -2047,11 +2047,11 @@ fn spawn_tun2socks_for_vpn(bin: &Path, plan: &VpnProfilePlan) -> Result<()> {
     let logf_err = logf.try_clone().with_context(|| "clone sing-box tun2socks log")?;
 
     let mut cmd = Command::new(bin);
-    cmd.arg("-device")
+    cmd.arg("--device")
         .arg(format!("tun://{}", plan.tun))
-        .arg("-proxy")
+        .arg("--proxy")
         .arg(&proxy)
-        .arg("-loglevel")
+        .arg("--loglevel")
         .arg(&plan.setting.tun2socks_loglevel)
         .current_dir(profile_root(&plan.name))
         .stdin(Stdio::null())
@@ -2079,7 +2079,7 @@ fn spawn_tun2socks_for_vpn(bin: &Path, plan: &VpnProfilePlan) -> Result<()> {
 
 fn tun2socks_profile_process_running(tun: &str, proxy: &str) -> bool {
     let pattern = format!(
-        "{} -device tun://{} -proxy {}",
+        "{} --device tun://{} --proxy {}",
         TUN2SOCKS_BIN,
         tun,
         proxy

@@ -1740,6 +1740,16 @@ jobs:
           TUN2SOCKS_COMMIT_SHORT="$(git -C "$SRC/tun2socks" rev-parse --short HEAD)"
           printf '%s\n' "$TUN2SOCKS_COMMIT" | tee "$ARTIFACT_DIR/tun2socks.commit"
 
+          echo "=== Verify tun2socks CLI contract ==="
+          TUN2SOCKS_MAIN="$SRC/tun2socks/main.go"
+          test -s "$TUN2SOCKS_MAIN" || { echo "::error::tun2socks main.go missing"; exit 1; }
+          grep -Fq '"device", "d"' "$TUN2SOCKS_MAIN" || { echo "::error::tun2socks --device/-d flag contract changed"; exit 1; }
+          grep -Fq '"proxy", "p"' "$TUN2SOCKS_MAIN" || { echo "::error::tun2socks --proxy/-p flag contract changed"; exit 1; }
+          for flag in loglevel udp-timeout fwmark restapi mtu; do
+            grep -Fq "\"$flag\"" "$TUN2SOCKS_MAIN" || { echo "::error::tun2socks --$flag flag missing"; exit 1; }
+          done
+          grep -Fq 'Log level [debug|info|warn|error|silent]' "$TUN2SOCKS_MAIN" || { echo "::error::tun2socks loglevel contract changed"; exit 1; }
+
           echo "=== Build tun2socks (${TUN2SOCKS_REF}) ==="
           pushd "$SRC/tun2socks" > /dev/null
           GOOS=android \
@@ -1768,7 +1778,7 @@ jobs:
           file "$ARTIFACT_DIR/tun2socks"
           readelf -h "$ARTIFACT_DIR/tun2socks" | grep -E 'Class:|Machine:'
           readelf -d "$ARTIFACT_DIR/tun2socks" | tee "$ARTIFACT_DIR/tun2socks.dynamic.txt" || true
-          "$ARTIFACT_DIR/tun2socks" -version || true
+          "$ARTIFACT_DIR/tun2socks" --version || true
           "$ARTIFACT_DIR/tun2socks" --help | head -60 || true
           ls -lh "$ARTIFACT_DIR"
           cat "$ARTIFACT_DIR/tun2socks.version"

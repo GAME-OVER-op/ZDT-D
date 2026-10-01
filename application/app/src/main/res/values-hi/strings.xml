@@ -2479,4 +2479,20 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
 
     <string name="non_root_t2s_stopped">T2S बंद है। API आँकड़े देखने के लिए कैस्केड शुरू करें।</string>
 
+    <!-- Non-root VPN lifecycle progress -->
+    <string name="non_root_runtime_logs_title">VPN शुरू / बंद</string>
+    <string name="non_root_log_preparing_runtime">बिना root रनटाइम तैयार किया जा रहा है…</string>
+    <string name="non_root_log_start_mode">%1$s मोड शुरू किया जा रहा है…</string>
+    <string name="non_root_log_start_component">%1$s शुरू किया जा रहा है…</string>
+    <string name="non_root_log_component_ready">%1$s तैयार है।</string>
+    <string name="non_root_log_restart_component">%1$s फिर से शुरू किया जा रहा है…</string>
+    <string name="non_root_log_create_vpn_interface">VPN इंटरफ़ेस बनाया जा रहा है…</string>
+    <string name="non_root_log_vpn_running">VPN चल रहा है।</string>
+    <string name="non_root_log_stop_requested">VPN बंद किया जा रहा है…</string>
+    <string name="non_root_log_stop_component">%1$s बंद किया जा रहा है…</string>
+    <string name="non_root_log_close_vpn_interface">VPN इंटरफ़ेस बंद किया जा रहा है…</string>
+    <string name="non_root_log_stop_proxy_processes">प्रॉक्सी प्रक्रियाएँ बंद की जा रही हैं…</string>
+    <string name="non_root_log_vpn_stopped">VPN बंद है।</string>
+    <string name="non_root_log_error">त्रुटि: %1$s</string>
+
 </resources>

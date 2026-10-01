@@ -2478,4 +2478,20 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
 
     <string name="non_root_t2s_stopped">T2S durduruldu. API istatistiklerini görmek için kaskadı başlatın.</string>
 
+    <!-- Non-root VPN lifecycle progress -->
+    <string name="non_root_runtime_logs_title">VPN başlatma / durdurma</string>
+    <string name="non_root_log_preparing_runtime">Root olmadan çalışma ortamı hazırlanıyor…</string>
+    <string name="non_root_log_start_mode">%1$s modu başlatılıyor…</string>
+    <string name="non_root_log_start_component">%1$s başlatılıyor…</string>
+    <string name="non_root_log_component_ready">%1$s hazır.</string>
+    <string name="non_root_log_restart_component">%1$s yeniden başlatılıyor…</string>
+    <string name="non_root_log_create_vpn_interface">VPN arayüzü oluşturuluyor…</string>
+    <string name="non_root_log_vpn_running">VPN çalışıyor.</string>
+    <string name="non_root_log_stop_requested">VPN durduruluyor…</string>
+    <string name="non_root_log_stop_component">%1$s durduruluyor…</string>
+    <string name="non_root_log_close_vpn_interface">VPN arayüzü kapatılıyor…</string>
+    <string name="non_root_log_stop_proxy_processes">Proxy işlemleri durduruluyor…</string>
+    <string name="non_root_log_vpn_stopped">VPN durduruldu.</string>
+    <string name="non_root_log_error">Hata: %1$s</string>
+
 </resources>

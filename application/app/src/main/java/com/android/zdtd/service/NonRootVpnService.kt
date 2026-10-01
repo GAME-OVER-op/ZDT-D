@@ -77,15 +77,25 @@ class NonRootVpnService : VpnService() {
     startForegroundCompat(buildNotification())
     runtimeJob?.cancel()
     runtimeJob = serviceScope.launch {
+      NonRootVpnRuntime.clearLogs()
       NonRootVpnRuntime.update(NonRootVpnState.STARTING)
+      NonRootVpnRuntime.log(getString(R.string.non_root_log_preparing_runtime))
       try {
         startNativeRuntime()
-        if (!stopRequested) NonRootVpnRuntime.update(NonRootVpnState.RUNNING)
+        if (!stopRequested) {
+          NonRootVpnRuntime.update(NonRootVpnState.RUNNING)
+          NonRootVpnRuntime.log(getString(R.string.non_root_log_vpn_running))
+        }
       } catch (_: CancellationException) {
         if (!stopRequested) throw CancellationException()
       } catch (t: Throwable) {
         stopNativeRuntime()
-        NonRootVpnRuntime.update(NonRootVpnState.ERROR, t.message ?: t.javaClass.simpleName)
+        val message = t.message ?: t.javaClass.simpleName
+        NonRootVpnRuntime.log(
+          getString(R.string.non_root_log_error, message),
+          NonRootRuntimeLogLevel.ERROR,
+        )
+        NonRootVpnRuntime.update(NonRootVpnState.ERROR, message)
         stopForegroundCompat()
         stopSelf()
       }
@@ -96,10 +106,12 @@ class NonRootVpnService : VpnService() {
     if (stopRequested) return
     stopRequested = true
     NonRootVpnRuntime.update(NonRootVpnState.STOPPING)
+    NonRootVpnRuntime.log(getString(R.string.non_root_log_stop_requested))
     runtimeJob?.cancel()
     runtimeJob = serviceScope.launch {
-      stopNativeRuntime()
+      stopNativeRuntime(reportProgress = true)
       NonRootVpnRuntime.update(NonRootVpnState.STOPPED)
+      NonRootVpnRuntime.log(getString(R.string.non_root_log_vpn_stopped))
       stopForegroundCompat()
       stopSelf()
     }
@@ -111,17 +123,29 @@ class NonRootVpnService : VpnService() {
 
     val settings = NonRootSettingsStore(applicationContext)
     val mode = settings.getWorkMode()
+    NonRootVpnRuntime.log(
+      getString(
+        R.string.non_root_log_start_mode,
+        getString(
+          if (mode == NonRootWorkMode.DIRECT) R.string.non_root_mode_direct
+          else R.string.non_root_mode_cascade,
+        ),
+      )
+    )
     val socksTarget = when (mode) {
       NonRootWorkMode.DIRECT -> startDirect()
       NonRootWorkMode.CASCADE -> startCascade()
     }
 
+    NonRootVpnRuntime.log(getString(R.string.non_root_log_create_vpn_interface))
     val established = establishVpnInterface()
       ?: error("VpnService.Builder.establish() returned null")
     tun = established
     val hevConfig = writeHevConfig(socksTarget)
+    NonRootVpnRuntime.log(getString(R.string.non_root_log_start_component, "HEV"))
     startHev(hevConfig, established.fd)
     waitForHevRunning()
+    NonRootVpnRuntime.log(getString(R.string.non_root_log_component_ready, "HEV"))
   }
 
   private suspend fun startDirect(): SocksTarget {
@@ -130,6 +154,7 @@ class NonRootVpnService : VpnService() {
     val byedpiPort = portRegistry.getOrAllocate(NonRootPortRegistry.DIRECT_BYEDPI_KEY)
     startOperaProfile(
       label = "direct",
+      displayName = getString(R.string.non_root_mode_direct),
       port = operaPort,
       byedpiPort = byedpiPort,
       config = config,
@@ -150,6 +175,7 @@ class NonRootVpnService : VpnService() {
     for (profile in orderedProfiles) {
       startOperaProfile(
         label = "cascade-${safeFileName(profile.id)}",
+        displayName = profile.name,
         port = profile.port,
         byedpiPort = profile.byedpiPort,
         config = profile.operaConfig,
@@ -159,6 +185,7 @@ class NonRootVpnService : VpnService() {
     val listenPort = portRegistry.getOrAllocate(NonRootPortRegistry.T2S_LISTEN_KEY)
     val apiPort = portRegistry.getOrAllocate(NonRootPortRegistry.T2S_API_KEY)
     val args = buildT2sArgs(state, enabled, listenPort, apiPort)
+    NonRootVpnRuntime.log(getString(R.string.non_root_log_start_component, "T2S"))
     startProcess(
       name = "t2s",
       executable = nativeExecutable("libzdt_t2s.so"),
@@ -166,6 +193,7 @@ class NonRootVpnService : VpnService() {
       logFile = File(runtimeStore.logsDir, "t2s.log"),
     )
     waitForLoopbackPort(listenPort, "T2S", "t2s")
+    NonRootVpnRuntime.log(getString(R.string.non_root_log_component_ready, "T2S"))
 
     val token = runtimeStore.ensureApiToken().readText().trim()
     check(token.isNotEmpty()) { "Non-root API token is empty" }
@@ -174,6 +202,7 @@ class NonRootVpnService : VpnService() {
 
   private suspend fun startOperaProfile(
     label: String,
+    displayName: String,
     port: Int,
     byedpiPort: Int,
     config: NonRootDirectOperaConfig,
@@ -183,8 +212,10 @@ class NonRootVpnService : VpnService() {
     val useByeDpi = sni.useByedpi
 
     if (useByeDpi) {
+      NonRootVpnRuntime.log(getString(R.string.non_root_log_start_component, "ByeDPI · $displayName"))
       startByeDpi(label, byedpiPort, config.byedpiStartArgs)
       waitForLoopbackPort(byedpiPort, "ByeDPI", "byedpi-$label")
+      NonRootVpnRuntime.log(getString(R.string.non_root_log_component_ready, "ByeDPI · $displayName"))
     }
 
     val caFile = ensureOperaCaBundle()
@@ -206,6 +237,7 @@ class NonRootVpnService : VpnService() {
       "-verbosity", config.verbosity.ifBlank { defaults.verbosity },
       "-server-selection-test-url", config.serverSelectionTestUrl.ifBlank { defaults.serverSelectionTestUrl },
     )
+    NonRootVpnRuntime.log(getString(R.string.non_root_log_start_component, "Opera Proxy · $displayName"))
     val selectedApiProxy = NonRootOperaApiProxyResolver.resolve(
       raw = config.apiProxy,
       cacheFile = File(runtimeStore.configsDir, "api_proxy_list.txt"),
@@ -224,11 +256,14 @@ class NonRootVpnService : VpnService() {
       logFile = File(runtimeStore.logsDir, "opera-$label.log"),
     )
     waitForLoopbackPort(port, "Opera Proxy", "opera-$label")
+    NonRootVpnRuntime.log(getString(R.string.non_root_log_component_ready, "Opera Proxy · $displayName"))
 
     if (useByeDpi && config.restartByedpiAfterOpera) {
+      NonRootVpnRuntime.log(getString(R.string.non_root_log_restart_component, "ByeDPI · $displayName"))
       stopProcess("byedpi-$label")
       startByeDpi(label, byedpiPort, config.byedpiRestartArgs)
       waitForLoopbackPort(byedpiPort, "ByeDPI", "byedpi-$label")
+      NonRootVpnRuntime.log(getString(R.string.non_root_log_component_ready, "ByeDPI · $displayName"))
     }
   }
 
@@ -382,10 +417,12 @@ class NonRootVpnService : VpnService() {
         .onFailure { failureMessage = it.message ?: "HEV failed" }
       hevStarted = false
       if (!stopRequested && NonRootVpnRuntime.state.value == NonRootVpnState.RUNNING) {
-        NonRootVpnRuntime.update(
-          NonRootVpnState.ERROR,
-          failureMessage ?: "HEV stopped unexpectedly",
+        val message = failureMessage ?: "HEV stopped unexpectedly"
+        NonRootVpnRuntime.log(
+          getString(R.string.non_root_log_error, message),
+          NonRootRuntimeLogLevel.ERROR,
         )
+        NonRootVpnRuntime.update(NonRootVpnState.ERROR, message)
         stopNativeRuntime()
         stopForegroundCompat()
         stopSelf()
@@ -416,15 +453,22 @@ class NonRootVpnService : VpnService() {
   }
 
   @Synchronized
-  private fun stopNativeRuntime() {
+  private fun stopNativeRuntime(reportProgress: Boolean = false) {
     if (hevStarted || runCatching { HevBridge.isRunning() }.getOrDefault(false)) {
+      if (reportProgress) NonRootVpnRuntime.log(getString(R.string.non_root_log_stop_component, "HEV"))
       runCatching { HevBridge.stop() }
     }
     hevStarted = false
-    runCatching { tun?.close() }
-    tun = null
-    processes.asReversed().forEach { terminateProcess(it.process) }
-    processes.clear()
+    if (tun != null) {
+      if (reportProgress) NonRootVpnRuntime.log(getString(R.string.non_root_log_close_vpn_interface))
+      runCatching { tun?.close() }
+      tun = null
+    }
+    if (processes.isNotEmpty()) {
+      if (reportProgress) NonRootVpnRuntime.log(getString(R.string.non_root_log_stop_proxy_processes))
+      processes.asReversed().forEach { terminateProcess(it.process) }
+      processes.clear()
+    }
   }
 
   private fun terminateProcess(process: Process) {

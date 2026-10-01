@@ -2478,4 +2478,20 @@ APatch：10700+</string>
 
     <string name="non_root_t2s_stopped">T2S 已停止。启动级联后可查看 API 统计信息。</string>
 
+    <!-- Non-root VPN lifecycle progress -->
+    <string name="non_root_runtime_logs_title">VPN 启动 / 停止</string>
+    <string name="non_root_log_preparing_runtime">正在准备免 Root 运行环境…</string>
+    <string name="non_root_log_start_mode">正在启动 %1$s 模式…</string>
+    <string name="non_root_log_start_component">正在启动 %1$s…</string>
+    <string name="non_root_log_component_ready">%1$s 已就绪。</string>
+    <string name="non_root_log_restart_component">正在重启 %1$s…</string>
+    <string name="non_root_log_create_vpn_interface">正在创建 VPN 接口…</string>
+    <string name="non_root_log_vpn_running">VPN 已运行。</string>
+    <string name="non_root_log_stop_requested">正在停止 VPN…</string>
+    <string name="non_root_log_stop_component">正在停止 %1$s…</string>
+    <string name="non_root_log_close_vpn_interface">正在关闭 VPN 接口…</string>
+    <string name="non_root_log_stop_proxy_processes">正在停止代理进程…</string>
+    <string name="non_root_log_vpn_stopped">VPN 已停止。</string>
+    <string name="non_root_log_error">错误：%1$s</string>
+
 </resources>

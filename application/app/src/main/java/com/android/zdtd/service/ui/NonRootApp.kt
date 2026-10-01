@@ -1,5 +1,6 @@
 package com.android.zdtd.service.ui
 
+import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -28,7 +29,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -76,6 +79,7 @@ import com.android.zdtd.service.NonRootCascadeRouteItem
 import com.android.zdtd.service.NonRootCascadeState
 import com.android.zdtd.service.NonRootDirectOperaConfig
 import com.android.zdtd.service.NonRootPortRegistry
+import com.android.zdtd.service.NonRootRuntimeLogEntry
 import com.android.zdtd.service.NonRootSniEntry
 import com.android.zdtd.service.NonRootT2sConfig
 import com.android.zdtd.service.NonRootWorkMode
@@ -96,6 +100,7 @@ fun NonRootApp(
   t2sApiPort: Int,
   vpnState: NonRootVpnState,
   vpnLastError: String?,
+  vpnLogs: List<NonRootRuntimeLogEntry>,
   onVpnStart: () -> Unit,
   onVpnStop: () -> Unit,
   onLanguageModeChange: (String) -> Unit,
@@ -167,6 +172,7 @@ fun NonRootApp(
           workMode = workMode,
           vpnState = vpnState,
           vpnLastError = vpnLastError,
+          vpnLogs = vpnLogs,
           onVpnStart = onVpnStart,
           onVpnStop = onVpnStop,
         )
@@ -253,145 +259,182 @@ private fun NonRootHomeScreen(
   workMode: NonRootWorkMode,
   vpnState: NonRootVpnState,
   vpnLastError: String?,
+  vpnLogs: List<NonRootRuntimeLogEntry>,
   onVpnStart: () -> Unit,
   onVpnStop: () -> Unit,
 ) {
   val screenPadding = rememberAdaptiveScreenPadding()
-  LazyColumn(
-    modifier = Modifier.fillMaxSize(),
-    contentPadding = PaddingValues(
-      start = screenPadding,
-      top = topContentPadding + 8.dp,
-      end = screenPadding,
-      bottom = bottomContentPadding + 8.dp,
-    ),
-    verticalArrangement = Arrangement.spacedBy(12.dp),
+  val compact = rememberIsShortHeight()
+  val busy = vpnState == NonRootVpnState.STARTING || vpnState == NonRootVpnState.STOPPING
+  val accent = when (vpnState) {
+    NonRootVpnState.RUNNING -> Color(0xFF20C96B)
+    NonRootVpnState.STARTING -> MaterialTheme.colorScheme.secondary
+    NonRootVpnState.STOPPING -> MaterialTheme.colorScheme.tertiary
+    NonRootVpnState.ERROR -> MaterialTheme.colorScheme.error
+    NonRootVpnState.STOPPED -> MaterialTheme.colorScheme.primary
+  }
+  val actionText = stringResource(
+    when (vpnState) {
+      NonRootVpnState.RUNNING -> R.string.home_action_stop_service
+      NonRootVpnState.STARTING -> R.string.home_power_starting
+      NonRootVpnState.STOPPING -> R.string.home_power_stopping
+      NonRootVpnState.ERROR,
+      NonRootVpnState.STOPPED -> R.string.home_action_start_service
+    }
+  )
+  val logTail = remember(vpnLogs) {
+    vpnLogs.joinToString("\n") { entry ->
+      val time = DateFormat.format("HH:mm:ss", entry.timestampMillis)
+      "[${entry.level.name}] $time · ${entry.message}"
+    }
+  }
+
+  Column(
+    modifier = Modifier
+      .fillMaxSize()
+      .verticalScroll(rememberScrollState())
+      .padding(horizontal = screenPadding)
+      .padding(
+        top = topContentPadding + 8.dp,
+        bottom = bottomContentPadding + 8.dp,
+      ),
+    horizontalAlignment = Alignment.CenterHorizontally,
   ) {
-    item {
-      Surface(
-        modifier = Modifier
-          .fillMaxWidth()
-          .animateContentSize(animationSpec = tween(220)),
-        shape = RoundedCornerShape(26.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
-        tonalElevation = 0.dp,
-        shadowElevation = 0.dp,
+    Surface(
+      modifier = Modifier
+        .fillMaxWidth()
+        .animateContentSize(animationSpec = tween(220)),
+      shape = RoundedCornerShape(if (compact) 22.dp else 28.dp),
+      color = MaterialTheme.colorScheme.surfaceContainerLow,
+      border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
+      tonalElevation = 0.dp,
+      shadowElevation = 0.dp,
+    ) {
+      Column(
+        modifier = Modifier.padding(if (compact) 14.dp else 18.dp),
+        verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 16.dp),
       ) {
-        Column(
-          modifier = Modifier.padding(18.dp),
-          verticalArrangement = Arrangement.spacedBy(16.dp),
+        Row(
+          horizontalArrangement = Arrangement.spacedBy(14.dp),
+          verticalAlignment = Alignment.Top,
         ) {
-          Row(
-            horizontalArrangement = Arrangement.spacedBy(14.dp),
-            verticalAlignment = Alignment.Top,
+          Surface(
+            modifier = Modifier.size(if (compact) 44.dp else 48.dp),
+            shape = RoundedCornerShape(15.dp),
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+            contentColor = MaterialTheme.colorScheme.primary,
           ) {
-            Surface(
-              modifier = Modifier.size(48.dp),
-              shape = RoundedCornerShape(15.dp),
-              color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
-              contentColor = MaterialTheme.colorScheme.primary,
-            ) {
-              Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Security, contentDescription = null, modifier = Modifier.size(25.dp))
-              }
-            }
-            Column(
-              modifier = Modifier.weight(1f),
-              verticalArrangement = Arrangement.spacedBy(7.dp),
-            ) {
-              Text(
-                text = stringResource(R.string.non_root_home_title),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-              )
-              Text(
-                text = stringResource(R.string.non_root_home_body),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
-              )
-              Text(
-                text = stringResource(R.string.non_root_home_restrictions),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+              Icon(Icons.Filled.Security, contentDescription = null, modifier = Modifier.size(25.dp))
             }
           }
-
-          Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(18.dp),
-            color = MaterialTheme.colorScheme.surfaceContainer,
+          Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
           ) {
-            Row(
-              modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-              verticalAlignment = Alignment.CenterVertically,
-              horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-              Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                  text = stringResource(R.string.non_root_current_mode),
-                  style = MaterialTheme.typography.labelMedium,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                AnimatedContent(targetState = workMode, label = "nonRootMode") { mode ->
-                  Text(
-                    text = stringResource(
-                      if (mode == NonRootWorkMode.DIRECT) R.string.non_root_mode_direct
-                      else R.string.non_root_mode_cascade,
-                    ),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                  )
-                }
-              }
-              Surface(
-                shape = RoundedCornerShape(100.dp),
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.06f),
-              ) {
+            Text(
+              text = stringResource(R.string.non_root_home_title),
+              style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge,
+              fontWeight = FontWeight.Bold,
+            )
+            Text(
+              text = stringResource(R.string.non_root_home_body),
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.74f),
+            )
+            Text(
+              text = stringResource(R.string.non_root_home_restrictions),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+        }
+
+        Surface(
+          modifier = Modifier.fillMaxWidth(),
+          shape = RoundedCornerShape(18.dp),
+          color = MaterialTheme.colorScheme.surfaceContainer,
+        ) {
+          Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+              Text(
+                text = stringResource(R.string.non_root_current_mode),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+              AnimatedContent(targetState = workMode, label = "nonRootMode") { mode ->
                 Text(
                   text = stringResource(
-                    when (vpnState) {
-                      NonRootVpnState.STOPPED -> R.string.home_power_stopped
-                      NonRootVpnState.STARTING -> R.string.home_power_starting
-                      NonRootVpnState.RUNNING -> R.string.home_power_running
-                      NonRootVpnState.STOPPING -> R.string.home_power_stopping
-                      NonRootVpnState.ERROR -> R.string.common_error
-                    }
+                    if (mode == NonRootWorkMode.DIRECT) R.string.non_root_mode_direct
+                    else R.string.non_root_mode_cascade,
                   ),
-                  modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                  style = MaterialTheme.typography.labelMedium,
+                  style = MaterialTheme.typography.titleMedium,
                   fontWeight = FontWeight.SemiBold,
                 )
               }
             }
+            Surface(
+              shape = RoundedCornerShape(100.dp),
+              color = accent.copy(alpha = 0.10f),
+              border = BorderStroke(1.dp, accent.copy(alpha = 0.30f)),
+            ) {
+              Text(
+                text = stringResource(
+                  when (vpnState) {
+                    NonRootVpnState.STOPPED -> R.string.home_power_stopped
+                    NonRootVpnState.STARTING -> R.string.home_power_starting
+                    NonRootVpnState.RUNNING -> R.string.home_power_running
+                    NonRootVpnState.STOPPING -> R.string.home_power_stopping
+                    NonRootVpnState.ERROR -> R.string.common_error
+                  }
+                ),
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = accent,
+              )
+            }
           }
+        }
 
-          AnimatedVisibility(visible = vpnState == NonRootVpnState.ERROR && !vpnLastError.isNullOrBlank()) {
-            Text(
-              text = vpnLastError.orEmpty(),
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.error,
-            )
-          }
-
-          Button(
-            onClick = {
-              if (vpnState == NonRootVpnState.RUNNING) onVpnStop() else onVpnStart()
-            },
-            enabled = vpnState != NonRootVpnState.STARTING && vpnState != NonRootVpnState.STOPPING,
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-          ) {
-            Icon(Icons.Filled.Power, contentDescription = null, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.size(8.dp))
-            Text(
-              stringResource(if (vpnState == NonRootVpnState.RUNNING) R.string.widget_action_stop else R.string.widget_action_start),
-              fontWeight = FontWeight.SemiBold,
-            )
-          }
+        AnimatedVisibility(visible = vpnState == NonRootVpnState.ERROR && !vpnLastError.isNullOrBlank()) {
+          Text(
+            text = vpnLastError.orEmpty(),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+          )
         }
       }
     }
+
+    Spacer(Modifier.height(if (compact) 12.dp else 16.dp))
+
+    ServiceActionButton(
+      text = actionText,
+      accent = accent,
+      busy = busy,
+      enabled = !busy,
+      compact = compact,
+      onClick = {
+        if (vpnState == NonRootVpnState.RUNNING) onVpnStop() else onVpnStart()
+      },
+    )
+
+    Spacer(Modifier.height(if (compact) 12.dp else 16.dp))
+
+    HomeLogsCard(
+      logTail = logTail,
+      detailedLogTail = "",
+      compact = compact,
+      shortHeight = compact,
+      fillHeight = false,
+      titleText = stringResource(R.string.non_root_runtime_logs_title),
+      showSourceSelector = false,
+    )
   }
 }
 

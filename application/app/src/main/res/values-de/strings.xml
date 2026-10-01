@@ -2479,4 +2479,20 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
 
     <string name="non_root_t2s_stopped">T2S ist gestoppt. Starten Sie die Kaskade, um API-Statistiken anzuzeigen.</string>
 
+    <!-- Non-root VPN lifecycle progress -->
+    <string name="non_root_runtime_logs_title">VPN-Start / -Stopp</string>
+    <string name="non_root_log_preparing_runtime">Non-Root-Laufzeit wird vorbereitet…</string>
+    <string name="non_root_log_start_mode">Modus %1$s wird gestartet…</string>
+    <string name="non_root_log_start_component">%1$s wird gestartet…</string>
+    <string name="non_root_log_component_ready">%1$s ist bereit.</string>
+    <string name="non_root_log_restart_component">%1$s wird neu gestartet…</string>
+    <string name="non_root_log_create_vpn_interface">VPN-Schnittstelle wird erstellt…</string>
+    <string name="non_root_log_vpn_running">VPN läuft.</string>
+    <string name="non_root_log_stop_requested">VPN wird beendet…</string>
+    <string name="non_root_log_stop_component">%1$s wird beendet…</string>
+    <string name="non_root_log_close_vpn_interface">VPN-Schnittstelle wird geschlossen…</string>
+    <string name="non_root_log_stop_proxy_processes">Proxy-Prozesse werden beendet…</string>
+    <string name="non_root_log_vpn_stopped">VPN ist beendet.</string>
+    <string name="non_root_log_error">Fehler: %1$s</string>
+
 </resources>

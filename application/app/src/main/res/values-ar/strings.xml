@@ -2483,4 +2483,20 @@ APatch: ‏10700+</string>
 
     <string name="non_root_t2s_stopped">T2S متوقف. شغّل التسلسل لعرض إحصاءات API.</string>
 
+    <!-- Non-root VPN lifecycle progress -->
+    <string name="non_root_runtime_logs_title">بدء / إيقاف VPN</string>
+    <string name="non_root_log_preparing_runtime">جارٍ تجهيز بيئة التشغيل دون root…</string>
+    <string name="non_root_log_start_mode">جارٍ بدء وضع %1$s…</string>
+    <string name="non_root_log_start_component">جارٍ بدء %1$s…</string>
+    <string name="non_root_log_component_ready">%1$s جاهز.</string>
+    <string name="non_root_log_restart_component">جارٍ إعادة تشغيل %1$s…</string>
+    <string name="non_root_log_create_vpn_interface">جارٍ إنشاء واجهة VPN…</string>
+    <string name="non_root_log_vpn_running">VPN قيد التشغيل.</string>
+    <string name="non_root_log_stop_requested">جارٍ إيقاف VPN…</string>
+    <string name="non_root_log_stop_component">جارٍ إيقاف %1$s…</string>
+    <string name="non_root_log_close_vpn_interface">جارٍ إغلاق واجهة VPN…</string>
+    <string name="non_root_log_stop_proxy_processes">جارٍ إيقاف عمليات الوكيل…</string>
+    <string name="non_root_log_vpn_stopped">تم إيقاف VPN.</string>
+    <string name="non_root_log_error">خطأ: %1$s</string>
+
 </resources>

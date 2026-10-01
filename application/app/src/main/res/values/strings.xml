@@ -2478,4 +2478,20 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
 
     <string name="non_root_t2s_stopped">T2S is stopped. Start Cascade to view API statistics.</string>
 
+    <!-- Non-root VPN lifecycle progress -->
+    <string name="non_root_runtime_logs_title">VPN startup / shutdown</string>
+    <string name="non_root_log_preparing_runtime">Preparing non-root runtime…</string>
+    <string name="non_root_log_start_mode">Starting %1$s mode…</string>
+    <string name="non_root_log_start_component">Starting %1$s…</string>
+    <string name="non_root_log_component_ready">%1$s is ready.</string>
+    <string name="non_root_log_restart_component">Restarting %1$s…</string>
+    <string name="non_root_log_create_vpn_interface">Creating VPN interface…</string>
+    <string name="non_root_log_vpn_running">VPN is running.</string>
+    <string name="non_root_log_stop_requested">Stopping VPN…</string>
+    <string name="non_root_log_stop_component">Stopping %1$s…</string>
+    <string name="non_root_log_close_vpn_interface">Closing VPN interface…</string>
+    <string name="non_root_log_stop_proxy_processes">Stopping proxy processes…</string>
+    <string name="non_root_log_vpn_stopped">VPN is stopped.</string>
+    <string name="non_root_log_error">Error: %1$s</string>
+
 </resources>

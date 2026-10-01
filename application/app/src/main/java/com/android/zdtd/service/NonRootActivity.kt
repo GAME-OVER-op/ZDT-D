@@ -46,6 +46,7 @@ class NonRootActivity : AppCompatActivity() {
       val t2sApiPort by vm.t2sApiPort.collectAsStateWithLifecycle()
       val vpnState by vm.vpnState.collectAsStateWithLifecycle()
       val vpnLastError by vm.vpnLastError.collectAsStateWithLifecycle()
+      val vpnLogs by vm.vpnLogs.collectAsStateWithLifecycle()
       ZdtdTheme(themeMode = ZdtdThemeMode.fromStorage(themeMode)) {
         val lightBars = MaterialTheme.colorScheme.background.luminance() > 0.5f
         SideEffect {
@@ -66,6 +67,7 @@ class NonRootActivity : AppCompatActivity() {
             t2sApiPort = t2sApiPort,
             vpnState = vpnState,
             vpnLastError = vpnLastError,
+            vpnLogs = vpnLogs,
             onVpnStart = ::requestNonRootVpnStart,
             onVpnStop = { NonRootVpnService.stop(this@NonRootActivity) },
             onLanguageModeChange = vm::setLanguageMode,

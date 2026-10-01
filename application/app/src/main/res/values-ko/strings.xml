@@ -2478,4 +2478,20 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
 
     <string name="non_root_t2s_stopped">T2S가 중지되었습니다. API 통계를 보려면 캐스케이드를 시작하세요.</string>
 
+    <!-- Non-root VPN lifecycle progress -->
+    <string name="non_root_runtime_logs_title">VPN 시작 / 중지</string>
+    <string name="non_root_log_preparing_runtime">루트 없는 런타임을 준비하는 중…</string>
+    <string name="non_root_log_start_mode">%1$s 모드를 시작하는 중…</string>
+    <string name="non_root_log_start_component">%1$s 시작 중…</string>
+    <string name="non_root_log_component_ready">%1$s 준비 완료.</string>
+    <string name="non_root_log_restart_component">%1$s 다시 시작 중…</string>
+    <string name="non_root_log_create_vpn_interface">VPN 인터페이스 생성 중…</string>
+    <string name="non_root_log_vpn_running">VPN이 실행 중입니다.</string>
+    <string name="non_root_log_stop_requested">VPN 중지 중…</string>
+    <string name="non_root_log_stop_component">%1$s 중지 중…</string>
+    <string name="non_root_log_close_vpn_interface">VPN 인터페이스 닫는 중…</string>
+    <string name="non_root_log_stop_proxy_processes">프록시 프로세스 중지 중…</string>
+    <string name="non_root_log_vpn_stopped">VPN이 중지되었습니다.</string>
+    <string name="non_root_log_error">오류: %1$s</string>
+
 </resources>

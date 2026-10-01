@@ -2479,4 +2479,20 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
 
     <string name="non_root_t2s_stopped">O T2S está parado. Inicie a cascata para ver as estatísticas da API.</string>
 
+    <!-- Non-root VPN lifecycle progress -->
+    <string name="non_root_runtime_logs_title">Inicialização / parada da VPN</string>
+    <string name="non_root_log_preparing_runtime">Preparando o ambiente sem root…</string>
+    <string name="non_root_log_start_mode">Iniciando o modo %1$s…</string>
+    <string name="non_root_log_start_component">Iniciando %1$s…</string>
+    <string name="non_root_log_component_ready">%1$s está pronto.</string>
+    <string name="non_root_log_restart_component">Reiniciando %1$s…</string>
+    <string name="non_root_log_create_vpn_interface">Criando a interface VPN…</string>
+    <string name="non_root_log_vpn_running">A VPN está ativa.</string>
+    <string name="non_root_log_stop_requested">Parando a VPN…</string>
+    <string name="non_root_log_stop_component">Parando %1$s…</string>
+    <string name="non_root_log_close_vpn_interface">Fechando a interface VPN…</string>
+    <string name="non_root_log_stop_proxy_processes">Parando os processos de proxy…</string>
+    <string name="non_root_log_vpn_stopped">A VPN está parada.</string>
+    <string name="non_root_log_error">Erro: %1$s</string>
+
 </resources>

@@ -2478,4 +2478,20 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
 
     <string name="non_root_t2s_stopped">T2S đã dừng. Hãy chạy Cascade để xem thống kê API.</string>
 
+    <!-- Non-root VPN lifecycle progress -->
+    <string name="non_root_runtime_logs_title">Khởi động / dừng VPN</string>
+    <string name="non_root_log_preparing_runtime">Đang chuẩn bị môi trường không root…</string>
+    <string name="non_root_log_start_mode">Đang khởi động chế độ %1$s…</string>
+    <string name="non_root_log_start_component">Đang khởi động %1$s…</string>
+    <string name="non_root_log_component_ready">%1$s đã sẵn sàng.</string>
+    <string name="non_root_log_restart_component">Đang khởi động lại %1$s…</string>
+    <string name="non_root_log_create_vpn_interface">Đang tạo giao diện VPN…</string>
+    <string name="non_root_log_vpn_running">VPN đang chạy.</string>
+    <string name="non_root_log_stop_requested">Đang dừng VPN…</string>
+    <string name="non_root_log_stop_component">Đang dừng %1$s…</string>
+    <string name="non_root_log_close_vpn_interface">Đang đóng giao diện VPN…</string>
+    <string name="non_root_log_stop_proxy_processes">Đang dừng các tiến trình proxy…</string>
+    <string name="non_root_log_vpn_stopped">VPN đã dừng.</string>
+    <string name="non_root_log_error">Lỗi: %1$s</string>
+
 </resources>

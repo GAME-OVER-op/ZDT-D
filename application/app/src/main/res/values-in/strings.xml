@@ -2478,4 +2478,20 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
 
     <string name="non_root_t2s_stopped">T2S berhenti. Jalankan Cascade untuk melihat statistik API.</string>
 
+    <!-- Non-root VPN lifecycle progress -->
+    <string name="non_root_runtime_logs_title">Mulai / hentikan VPN</string>
+    <string name="non_root_log_preparing_runtime">Menyiapkan runtime tanpa root…</string>
+    <string name="non_root_log_start_mode">Memulai mode %1$s…</string>
+    <string name="non_root_log_start_component">Memulai %1$s…</string>
+    <string name="non_root_log_component_ready">%1$s siap.</string>
+    <string name="non_root_log_restart_component">Memulai ulang %1$s…</string>
+    <string name="non_root_log_create_vpn_interface">Membuat antarmuka VPN…</string>
+    <string name="non_root_log_vpn_running">VPN sedang berjalan.</string>
+    <string name="non_root_log_stop_requested">Menghentikan VPN…</string>
+    <string name="non_root_log_stop_component">Menghentikan %1$s…</string>
+    <string name="non_root_log_close_vpn_interface">Menutup antarmuka VPN…</string>
+    <string name="non_root_log_stop_proxy_processes">Menghentikan proses proxy…</string>
+    <string name="non_root_log_vpn_stopped">VPN telah berhenti.</string>
+    <string name="non_root_log_error">Kesalahan: %1$s</string>
+
 </resources>

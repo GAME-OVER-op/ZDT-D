@@ -2481,4 +2481,20 @@ APatch: 10700+</string>
 
     <string name="non_root_t2s_stopped">T2S зупинено. Запустіть каскад, щоб переглянути статистику API.</string>
 
+    <!-- Non-root VPN lifecycle progress -->
+    <string name="non_root_runtime_logs_title">Запуск / зупинка VPN</string>
+    <string name="non_root_log_preparing_runtime">Підготовка non-root runtime…</string>
+    <string name="non_root_log_start_mode">Запуск режиму %1$s…</string>
+    <string name="non_root_log_start_component">Запуск %1$s…</string>
+    <string name="non_root_log_component_ready">%1$s готовий.</string>
+    <string name="non_root_log_restart_component">Перезапуск %1$s…</string>
+    <string name="non_root_log_create_vpn_interface">Створення VPN-інтерфейсу…</string>
+    <string name="non_root_log_vpn_running">VPN запущено.</string>
+    <string name="non_root_log_stop_requested">Зупинка VPN…</string>
+    <string name="non_root_log_stop_component">Зупинка %1$s…</string>
+    <string name="non_root_log_close_vpn_interface">Закриття VPN-інтерфейсу…</string>
+    <string name="non_root_log_stop_proxy_processes">Зупинка proxy-процесів…</string>
+    <string name="non_root_log_vpn_stopped">VPN зупинено.</string>
+    <string name="non_root_log_error">Помилка: %1$s</string>
+
 </resources>

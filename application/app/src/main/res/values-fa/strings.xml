@@ -2479,4 +2479,20 @@ APatch: 10700+</string>
 
     <string name="non_root_t2s_stopped">T2S متوقف است. برای دیدن آمار API حالت Cascade را اجرا کنید.</string>
 
+    <!-- Non-root VPN lifecycle progress -->
+    <string name="non_root_runtime_logs_title">راه‌اندازی / توقف VPN</string>
+    <string name="non_root_log_preparing_runtime">در حال آماده‌سازی محیط بدون روت…</string>
+    <string name="non_root_log_start_mode">در حال راه‌اندازی حالت %1$s…</string>
+    <string name="non_root_log_start_component">در حال راه‌اندازی %1$s…</string>
+    <string name="non_root_log_component_ready">%1$s آماده است.</string>
+    <string name="non_root_log_restart_component">در حال راه‌اندازی مجدد %1$s…</string>
+    <string name="non_root_log_create_vpn_interface">در حال ایجاد رابط VPN…</string>
+    <string name="non_root_log_vpn_running">VPN در حال اجرا است.</string>
+    <string name="non_root_log_stop_requested">در حال توقف VPN…</string>
+    <string name="non_root_log_stop_component">در حال توقف %1$s…</string>
+    <string name="non_root_log_close_vpn_interface">در حال بستن رابط VPN…</string>
+    <string name="non_root_log_stop_proxy_processes">در حال توقف فرایندهای پروکسی…</string>
+    <string name="non_root_log_vpn_stopped">VPN متوقف شد.</string>
+    <string name="non_root_log_error">خطا: %1$s</string>
+
 </resources>

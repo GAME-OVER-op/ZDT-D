@@ -48,7 +48,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
@@ -297,13 +296,13 @@ private fun OptionalToolsEntryCard(
       .fillMaxWidth()
       .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp),
     shape = RoundedCornerShape(18.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     border = BorderStroke(1.dp, accentColor.copy(alpha = 0.34f)),
   ) {
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .background(Brush.horizontalGradient(listOf(accentColor.copy(alpha = 0.16f), MaterialTheme.colorScheme.surface.copy(alpha = 0.64f))))
         .padding(horizontal = if (compact) 11.dp else 13.dp, vertical = if (compact) 10.dp else 12.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -357,13 +356,13 @@ private fun VpsServersEntryCard(
       .fillMaxWidth()
       .padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp),
     shape = RoundedCornerShape(18.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     border = BorderStroke(1.dp, accentColor.copy(alpha = 0.34f)),
   ) {
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .background(Brush.horizontalGradient(listOf(accentColor.copy(alpha = 0.16f), MaterialTheme.colorScheme.surface.copy(alpha = 0.64f))))
         .padding(horizontal = if (compact) 11.dp else 13.dp, vertical = if (compact) 10.dp else 12.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -415,12 +414,12 @@ private fun SubscriptionsEntryCard(
     onClick = onClick,
     modifier = Modifier.fillMaxWidth().padding(horizontal = if (compact) 8.dp else 12.dp, vertical = 2.dp),
     shape = RoundedCornerShape(18.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f)),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     border = BorderStroke(1.dp, accentColor.copy(alpha = 0.34f)),
   ) {
     Row(
       modifier = Modifier.fillMaxWidth()
-        .background(Brush.horizontalGradient(listOf(accentColor.copy(alpha = 0.16f), MaterialTheme.colorScheme.surface.copy(alpha = 0.64f))))
         .padding(horizontal = if (compact) 11.dp else 13.dp, vertical = if (compact) 10.dp else 12.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -765,14 +764,8 @@ private fun ProgramCard(
     isActive -> activeAccent
     else -> idleAccent
   }
-  val containerColor = when {
-    isActive -> MaterialTheme.colorScheme.surface.copy(alpha = 0.78f)
-    isProfiles -> MaterialTheme.colorScheme.surface.copy(alpha = 0.70f)
-    else -> MaterialTheme.colorScheme.surface.copy(alpha = 0.62f)
-  }
+  val containerColor = MaterialTheme.colorScheme.surfaceContainerLow
   val shape = RoundedCornerShape(16.dp)
-  val gradientStart = if (isActive) accentColor.copy(alpha = 0.18f) else accentColor.copy(alpha = 0.04f)
-  val gradientEnd = containerColor.copy(alpha = 0.72f)
 
   Card(
     onClick = onClick,
@@ -781,96 +774,91 @@ private fun ProgramCard(
       .padding(horizontal = horizontalPadding),
     shape = shape,
     colors = CardDefaults.cardColors(containerColor = containerColor),
+    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     border = BorderStroke(1.dp, accentColor.copy(alpha = if (isActive) 0.62f else 0.22f)),
   ) {
-    Box(
+    Row(
       modifier = Modifier
         .fillMaxWidth()
-        .background(Brush.horizontalGradient(listOf(gradientStart, gradientEnd))),
+        .padding(horizontal = if (compact) 10.dp else 12.dp, vertical = if (compact) 9.dp else 11.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp),
     ) {
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = if (compact) 10.dp else 12.dp, vertical = if (compact) 9.dp else 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 12.dp),
+      Surface(
+        modifier = Modifier.size(if (compact) 50.dp else 56.dp),
+        color = accentColor.copy(alpha = if (isActive) 0.16f else 0.10f),
+        contentColor = accentColor,
+        shape = CircleShape,
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp,
+        border = BorderStroke(1.dp, accentColor.copy(alpha = if (isActive) 0.42f else 0.24f)),
       ) {
-        Surface(
-          modifier = Modifier.size(if (compact) 50.dp else 56.dp),
-          color = accentColor.copy(alpha = if (isActive) 0.16f else 0.10f),
-          contentColor = accentColor,
-          shape = CircleShape,
-          tonalElevation = 0.dp,
-          shadowElevation = 0.dp,
-          border = BorderStroke(1.dp, accentColor.copy(alpha = if (isActive) 0.42f else 0.24f)),
-        ) {
-          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            val iconSize = if (compact) 28.dp else 31.dp
-            val iconRes = programIconRes(program.id)
-            if (iconRes != null) {
-              Icon(
-                painter = painterResource(iconRes),
-                contentDescription = null,
-                modifier = Modifier.size(iconSize),
-              )
-            } else {
-              Icon(
-                imageVector = programIcon(program.id),
-                contentDescription = null,
-                modifier = Modifier.size(if (compact) 23.dp else 25.dp),
-              )
-            }
-          }
-        }
-
-        Column(
-          modifier = Modifier.weight(1f),
-          verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-          Text(
-            title,
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            maxLines = if (compact) 2 else 1,
-            overflow = TextOverflow.Ellipsis,
-          )
-          Text(
-            subtitle,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
-            style = MaterialTheme.typography.bodySmall,
-            maxLines = if (compact) 2 else 1,
-            overflow = TextOverflow.Ellipsis,
-          )
-
-          Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-            ProgramBadgeRow(
-              label = primaryChip,
-              containerColor = if (isProfiles) {
-                profileAccent.copy(alpha = 0.15f)
-              } else if (isActive) {
-                Color(0xFF22C55E).copy(alpha = 0.16f)
-              } else {
-                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f)
-              },
-              contentColor = if (isProfiles) profileAccent else if (isActive) Color(0xFF22C55E) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+          val iconSize = if (compact) 28.dp else 31.dp
+          val iconRes = programIconRes(program.id)
+          if (iconRes != null) {
+            Icon(
+              painter = painterResource(iconRes),
+              contentDescription = null,
+              modifier = Modifier.size(iconSize),
             )
-            if (!secondaryChip.isNullOrBlank()) {
-              ProgramBadgeRow(
-                label = secondaryChip,
-                containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                contentColor = MaterialTheme.colorScheme.primary,
-              )
-            }
+          } else {
+            Icon(
+              imageVector = programIcon(program.id),
+              contentDescription = null,
+              modifier = Modifier.size(if (compact) 23.dp else 25.dp),
+            )
           }
         }
-
-        Icon(
-          imageVector = Icons.Outlined.ChevronRight,
-          contentDescription = null,
-          tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
-          modifier = Modifier.size(22.dp),
-        )
       }
+
+      Column(
+        modifier = Modifier.weight(1f),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+      ) {
+        Text(
+          title,
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.Bold,
+          maxLines = if (compact) 2 else 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          subtitle,
+          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.68f),
+          style = MaterialTheme.typography.bodySmall,
+          maxLines = if (compact) 2 else 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+
+        Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+          ProgramBadgeRow(
+            label = primaryChip,
+            containerColor = if (isProfiles) {
+              profileAccent.copy(alpha = 0.15f)
+            } else if (isActive) {
+              Color(0xFF22C55E).copy(alpha = 0.16f)
+            } else {
+              MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.46f)
+            },
+            contentColor = if (isProfiles) profileAccent else if (isActive) Color(0xFF22C55E) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.62f),
+          )
+          if (!secondaryChip.isNullOrBlank()) {
+            ProgramBadgeRow(
+              label = secondaryChip,
+              containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+              contentColor = MaterialTheme.colorScheme.primary,
+            )
+          }
+        }
+      }
+
+      Icon(
+        imageVector = Icons.Outlined.ChevronRight,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.60f),
+        modifier = Modifier.size(22.dp),
+      )
     }
   }
 }

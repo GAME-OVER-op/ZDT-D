@@ -1,7 +1,6 @@
 package com.android.zdtd.service.ui
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,7 +31,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -105,47 +103,38 @@ private fun AnalysisIntroCard(compact: Boolean) {
     modifier = Modifier.fillMaxWidth(),
     shape = RoundedCornerShape(24.dp),
     colors = CardDefaults.cardColors(
-      containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+      containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     ),
+    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.20f)),
   ) {
-    Box(
+    Column(
       modifier = Modifier
         .fillMaxWidth()
-        .background(
-          Brush.linearGradient(
-            listOf(
-              MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-              Color.Transparent,
-              MaterialTheme.colorScheme.tertiary.copy(alpha = 0.10f),
-            ),
-          ),
-        )
         .padding(if (compact) 16.dp else 18.dp),
+      verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Surface(
-          shape = CircleShape,
-          color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-          contentColor = MaterialTheme.colorScheme.primary,
-        ) {
-          Icon(
-            imageVector = Icons.Outlined.Speed,
-            contentDescription = null,
-            modifier = Modifier.padding(10.dp).size(22.dp),
-          )
-        }
-        Text(
-          text = stringResource(R.string.analysis_tools_header_title),
-          style = MaterialTheme.typography.titleLarge,
-          fontWeight = FontWeight.Bold,
-        )
-        Text(
-          text = stringResource(R.string.analysis_tools_header_desc),
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+      Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+        contentColor = MaterialTheme.colorScheme.primary,
+      ) {
+        Icon(
+          imageVector = Icons.Outlined.Speed,
+          contentDescription = null,
+          modifier = Modifier.padding(10.dp).size(22.dp),
         )
       }
+      Text(
+        text = stringResource(R.string.analysis_tools_header_title),
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.Bold,
+      )
+      Text(
+        text = stringResource(R.string.analysis_tools_header_desc),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+      )
     }
   }
 }
@@ -160,9 +149,7 @@ private fun AnalysisToolCard(
   onClick: (() -> Unit)?,
 ) {
   val enabled = onClick != null
-  val containerAlpha = if (enabled) 0.70f else 0.48f
   val accentBorderAlpha = if (enabled) 0.34f else 0.14f
-  val accentGradientAlpha = if (enabled) 0.13f else 0.06f
   val accentSurfaceAlpha = if (enabled) 0.18f else 0.10f
   val subtitleAlpha = if (enabled) 0.70f else 0.48f
   Card(
@@ -172,18 +159,14 @@ private fun AnalysisToolCard(
       .then(if (enabled) Modifier.clickable { onClick?.invoke() } else Modifier),
     shape = RoundedCornerShape(20.dp),
     colors = CardDefaults.cardColors(
-      containerColor = MaterialTheme.colorScheme.surface.copy(alpha = containerAlpha),
+      containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
     ),
+    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     border = BorderStroke(1.dp, accent.copy(alpha = accentBorderAlpha)),
   ) {
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .background(
-          Brush.horizontalGradient(
-            listOf(accent.copy(alpha = accentGradientAlpha), Color.Transparent),
-          ),
-        )
         .padding(14.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.spacedBy(12.dp),

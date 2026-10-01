@@ -1,7 +1,6 @@
 package com.android.zdtd.service.ui
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,7 +34,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -117,13 +115,13 @@ private fun TgWsProxyUtilityCard(
       .fillMaxWidth()
       .padding(horizontal = 12.dp),
     shape = RoundedCornerShape(22.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     border = BorderStroke(1.dp, accentColor.copy(alpha = 0.40f)),
   ) {
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .background(Brush.horizontalGradient(listOf(accentColor.copy(alpha = 0.15f), MaterialTheme.colorScheme.surface.copy(alpha = 0.68f))))
         .padding(horizontal = 14.dp, vertical = 14.dp),
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {

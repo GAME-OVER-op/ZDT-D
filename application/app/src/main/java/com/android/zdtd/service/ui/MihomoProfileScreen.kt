@@ -258,9 +258,9 @@ internal fun MihomoSectionCard(
   Surface(
     modifier = Modifier.fillMaxWidth(),
     shape = MaterialTheme.shapes.extraLarge,
-    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f),
-    tonalElevation = 2.dp,
-    shadowElevation = 1.dp,
+    color = MaterialTheme.colorScheme.surfaceContainerLow,
+    tonalElevation = 0.dp,
+    shadowElevation = 0.dp,
     border = BorderStroke(1.dp, accent.copy(alpha = 0.18f)),
   ) {
     Column(

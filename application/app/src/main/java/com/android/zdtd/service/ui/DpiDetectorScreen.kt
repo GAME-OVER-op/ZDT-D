@@ -69,7 +69,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -529,50 +528,41 @@ private fun DpiDetectorHeroCard(compact: Boolean) {
   Card(
     modifier = Modifier.fillMaxWidth(),
     shape = RoundedCornerShape(26.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.74f)),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.32f)),
   ) {
-    Box(
+    Column(
       modifier = Modifier
         .fillMaxWidth()
-        .background(
-          Brush.linearGradient(
-            listOf(
-              MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
-              Color.Transparent,
-              MaterialTheme.colorScheme.error.copy(alpha = 0.08f),
-            ),
-          ),
-        )
         .padding(if (compact) 16.dp else 18.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-      Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Surface(
-          shape = RoundedCornerShape(20.dp),
-          color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
-          contentColor = MaterialTheme.colorScheme.primary,
-        ) {
-          Icon(
-            imageVector = Icons.Outlined.Tune,
-            contentDescription = null,
-            modifier = Modifier.padding(13.dp).size(32.dp),
-          )
-        }
-        Text(
-          text = stringResource(R.string.dpi_detector_title),
-          style = MaterialTheme.typography.headlineSmall,
-          fontWeight = FontWeight.Bold,
+      Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f),
+        contentColor = MaterialTheme.colorScheme.primary,
+      ) {
+        Icon(
+          imageVector = Icons.Outlined.Tune,
+          contentDescription = null,
+          modifier = Modifier.padding(13.dp).size(32.dp),
         )
-        Text(
-          text = stringResource(R.string.dpi_detector_desc),
-          style = MaterialTheme.typography.bodyMedium,
-          color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          DpiChip(text = stringResource(R.string.dpi_detector_chip_dpi))
-          DpiChip(text = stringResource(R.string.dpi_detector_chip_blocking))
-          DpiChip(text = stringResource(R.string.dpi_detector_chip_analysis))
-        }
+      }
+      Text(
+        text = stringResource(R.string.dpi_detector_title),
+        style = MaterialTheme.typography.headlineSmall,
+        fontWeight = FontWeight.Bold,
+      )
+      Text(
+        text = stringResource(R.string.dpi_detector_desc),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+      )
+      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        DpiChip(text = stringResource(R.string.dpi_detector_chip_dpi))
+        DpiChip(text = stringResource(R.string.dpi_detector_chip_blocking))
+        DpiChip(text = stringResource(R.string.dpi_detector_chip_analysis))
       }
     }
   }

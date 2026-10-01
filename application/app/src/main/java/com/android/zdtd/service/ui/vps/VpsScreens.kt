@@ -18,7 +18,6 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -85,9 +84,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
@@ -1028,19 +1025,17 @@ private fun VpsServerCard(server: VpsServer, metrics: VpsMetrics, onClick: () ->
   val online = metrics.reachability == VpsReachability.ONLINE
   val hasSnapshot = metrics.osName.isNotBlank() || metrics.ramTotalBytes > 0L
   val metricAlpha = if (metrics.reachability == VpsReachability.OFFLINE && hasSnapshot) 0.62f else 1f
-  val lightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
-  val gradientEnd = if (lightTheme) Color.Transparent else MaterialTheme.colorScheme.surface.copy(alpha = 0.66f)
 
   Card(
     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).heightIn(min = 194.dp),
     shape = RoundedCornerShape(22.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f)),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     border = BorderStroke(1.dp, accent.copy(alpha = 0.45f)),
   ) {
     Column(
       modifier = Modifier
         .fillMaxWidth()
-        .background(Brush.horizontalGradient(listOf(accent.copy(alpha = 0.14f), gradientEnd)))
         .padding(14.dp),
       verticalArrangement = Arrangement.spacedBy(9.dp),
     ) {
@@ -1165,16 +1160,15 @@ private fun VpsServerSummaryCard(
 @Composable
 private fun VpsServiceCard(kind: VpsServiceKind, state: VpsServiceState, enabled: Boolean, onOpen: () -> Unit, onInstall: () -> Unit, onRestart: () -> Unit, onLogs: () -> Unit, onRemove: () -> Unit) {
   val accent = if (state.installed && state.active) Color(0xFF22C55E) else if (state.installed) Color(0xFFF59E0B) else MaterialTheme.colorScheme.primary
-  val lightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
-  val gradientEnd = if (lightTheme) Color.Transparent else MaterialTheme.colorScheme.surface.copy(alpha = 0.68f)
   var menu by remember { mutableStateOf(false) }
   Card(
     modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp).clickable(enabled = state.installed && enabled, onClick = onOpen),
     shape = RoundedCornerShape(20.dp),
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.75f)),
+    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     border = BorderStroke(1.dp, accent.copy(alpha = 0.38f)),
   ) {
-    Row(modifier = Modifier.background(Brush.horizontalGradient(listOf(accent.copy(alpha = 0.12f), gradientEnd))).padding(13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+    Row(modifier = Modifier.padding(13.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
       ServiceIcon(kind, accent)
       Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(serviceTitle(kind), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)

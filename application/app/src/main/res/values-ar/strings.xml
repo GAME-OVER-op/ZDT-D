@@ -2499,4 +2499,14 @@ APatch: ‏10700+</string>
     <string name="non_root_log_vpn_stopped">تم إيقاف VPN.</string>
     <string name="non_root_log_error">خطأ: %1$s</string>
 
+    <string name="non_root_t2s_advanced_settings">إعدادات T2S المتقدمة</string>
+    <string name="non_root_profiles_empty_title">لا توجد ملفات تعريف بعد</string>
+    <string name="non_root_profiles_empty_body">أنشئ ملف تعريف Opera Proxy. تُستخدم الملفات نفسها في وضعي الأداة والتسلسل.</string>
+    <string name="non_root_opera_server_title">خادم Opera</string>
+    <string name="non_root_opera_server_desc">يستخدم كل ملف تعريف خادم Opera Proxy واحدًا وSNI واحدًا.</string>
+    <string name="non_root_profile_opera_desc">إعدادات خادم Opera Proxy لهذا الملف.</string>
+    <string name="non_root_group_name_title">تسمية المجموعة</string>
+    <string name="non_root_group_name_label">اسم المجموعة</string>
+    <string name="non_root_group_rename">إعادة تسمية المجموعة</string>
+    <string name="non_root_t2s_group_unnamed">مجموعة</string>
 </resources>

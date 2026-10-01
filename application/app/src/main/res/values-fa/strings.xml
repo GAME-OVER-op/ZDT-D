@@ -2495,4 +2495,14 @@ APatch: 10700+</string>
     <string name="non_root_log_vpn_stopped">VPN متوقف شد.</string>
     <string name="non_root_log_error">خطا: %1$s</string>
 
+    <string name="non_root_t2s_advanced_settings">T2S پیشرفته</string>
+    <string name="non_root_profiles_empty_title">هنوز نمایه‌ای وجود ندارد</string>
+    <string name="non_root_profiles_empty_body">یک نمایه Opera Proxy بسازید. همان نمایه‌ها در حالت ابزار و آبشاری استفاده می‌شوند.</string>
+    <string name="non_root_opera_server_title">سرور Opera</string>
+    <string name="non_root_opera_server_desc">هر نمایه برنامه از یک سرور Opera Proxy و یک SNI استفاده می‌کند.</string>
+    <string name="non_root_profile_opera_desc">تنظیمات سرور Opera Proxy برای این نمایه.</string>
+    <string name="non_root_group_name_title">نام‌گذاری گروه</string>
+    <string name="non_root_group_name_label">نام گروه</string>
+    <string name="non_root_group_rename">تغییر نام گروه</string>
+    <string name="non_root_t2s_group_unnamed">گروه</string>
 </resources>

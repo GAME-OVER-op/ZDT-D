@@ -4,11 +4,23 @@ import android.text.format.DateFormat
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +43,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -39,17 +52,20 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -57,15 +73,18 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -76,16 +95,17 @@ import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.NonRootCascadeBackendMode
 import com.android.zdtd.service.NonRootCascadeProfile
 import com.android.zdtd.service.NonRootCascadeRouteItem
+import com.android.zdtd.service.NonRootCascadeRouteItemType
 import com.android.zdtd.service.NonRootCascadeState
 import com.android.zdtd.service.NonRootDirectOperaConfig
 import com.android.zdtd.service.NonRootPortRegistry
 import com.android.zdtd.service.NonRootRuntimeLogEntry
-import com.android.zdtd.service.NonRootSniEntry
 import com.android.zdtd.service.NonRootT2sConfig
 import com.android.zdtd.service.NonRootWorkMode
 import com.android.zdtd.service.NonRootVpnState
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ui.settings.SettingsScreen
+import kotlin.math.abs
 
 /** Dedicated shell for the app-owned non-root path. */
 @Composable
@@ -93,9 +113,6 @@ fun NonRootApp(
   languageMode: String,
   themeMode: String,
   workMode: NonRootWorkMode,
-  directOperaPort: Int,
-  directByeDpiPort: Int,
-  directOperaConfig: NonRootDirectOperaConfig,
   cascadeState: NonRootCascadeState,
   t2sApiPort: Int,
   vpnState: NonRootVpnState,
@@ -106,9 +123,7 @@ fun NonRootApp(
   onLanguageModeChange: (String) -> Unit,
   onThemeModeChange: (String) -> Unit,
   onWorkModeChange: (NonRootWorkMode) -> Unit,
-  onDirectOperaPortChange: (Int) -> Boolean,
-  onDirectByeDpiPortChange: (Int) -> Boolean,
-  onDirectOperaConfigChange: (NonRootDirectOperaConfig) -> Unit,
+  onDirectSelectedProfileChange: (String?) -> Unit,
   onCreateCascadeProfile: (String) -> Unit,
   onUpdateCascadeProfile: (NonRootCascadeProfile) -> Unit,
   onCascadeProfilePortChange: (String, Int) -> Boolean,
@@ -143,30 +158,42 @@ fun NonRootApp(
       .background(MaterialTheme.colorScheme.background),
   ) {
     val editedProfile = cascadeProfileId?.let { id -> cascadeState.profiles.firstOrNull { it.id == id } }
-    when {
-      editedProfile != null -> NonRootCascadeProfileEditorScreen(
-        topContentPadding = topContentPadding,
-        bottomContentPadding = bottomInset + 16.dp,
-        profile = editedProfile,
-        onUpdateProfile = onUpdateCascadeProfile,
-        onPortChange = onCascadeProfilePortChange,
-        onByeDpiPortChange = onCascadeProfileByeDpiPortChange,
-        onDelete = { id ->
-          onDeleteCascadeProfile(id)
-          cascadeProfileId = null
-        },
-      )
-      showT2sSettings -> NonRootT2sSettingsScreen(
-        topContentPadding = topContentPadding,
-        bottomContentPadding = bottomInset + 16.dp,
-        state = cascadeState,
-        onBackendModeChange = onCascadeBackendModeChange,
-        onT2sConfigChange = onT2sConfigChange,
-        onRouteChange = onCascadeRouteChange,
-        onUpdateProfile = onUpdateCascadeProfile,
-      )
-      else -> when (tab) {
-        Tab.HOME -> NonRootHomeScreen(
+    val pageKey = when {
+      editedProfile != null -> "profile:${editedProfile.id}"
+      showT2sSettings -> "t2s"
+      else -> "tab:${tab.name}"
+    }
+    AnimatedContent(
+      targetState = pageKey,
+      transitionSpec = {
+        (fadeIn(tween(180)) + slideInHorizontally(tween(220)) { width -> width / 14 }) togetherWith
+          (fadeOut(tween(140)) + slideOutHorizontally(tween(180)) { width -> -width / 14 })
+      },
+      label = "nonRootPageTransition",
+    ) { page ->
+      when {
+        page.startsWith("profile:") -> {
+          val id = page.substringAfter("profile:")
+          cascadeState.profiles.firstOrNull { it.id == id }?.let { profile ->
+            NonRootCascadeProfileEditorScreen(
+              topContentPadding = topContentPadding,
+              bottomContentPadding = bottomInset + 16.dp,
+              profile = profile,
+              onUpdateProfile = onUpdateCascadeProfile,
+              onPortChange = onCascadeProfilePortChange,
+              onByeDpiPortChange = onCascadeProfileByeDpiPortChange,
+            )
+          }
+        }
+        page == "t2s" -> NonRootT2sSettingsScreen(
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomInset + 16.dp,
+          state = cascadeState,
+          onT2sConfigChange = onT2sConfigChange,
+          onRouteChange = onCascadeRouteChange,
+          onUpdateProfile = onUpdateCascadeProfile,
+        )
+        page == "tab:HOME" -> NonRootHomeScreen(
           topContentPadding = topContentPadding,
           bottomContentPadding = bottomContentPadding,
           workMode = workMode,
@@ -176,32 +203,30 @@ fun NonRootApp(
           onVpnStart = onVpnStart,
           onVpnStop = onVpnStop,
         )
-        Tab.STATS -> NonRootStatsScreen(
+        page == "tab:STATS" -> NonRootStatsScreen(
           topContentPadding = topContentPadding,
           bottomContentPadding = bottomContentPadding,
           workMode = workMode,
           t2sApiPort = t2sApiPort,
           vpnState = vpnState,
         )
-        Tab.APPS -> NonRootToolsScreen(
+        page == "tab:APPS" -> NonRootToolsScreen(
           topContentPadding = topContentPadding,
           bottomContentPadding = bottomContentPadding,
           workMode = workMode,
-          directOperaPort = directOperaPort,
-          directByeDpiPort = directByeDpiPort,
-          directOperaConfig = directOperaConfig,
           cascadeState = cascadeState,
           configurationEnabled = vpnState == NonRootVpnState.STOPPED || vpnState == NonRootVpnState.ERROR,
           onWorkModeChange = onWorkModeChange,
-          onDirectOperaPortChange = onDirectOperaPortChange,
-          onDirectByeDpiPortChange = onDirectByeDpiPortChange,
-          onDirectOperaConfigChange = onDirectOperaConfigChange,
+          onDirectSelectedProfileChange = onDirectSelectedProfileChange,
           onCreateCascadeProfile = onCreateCascadeProfile,
           onUpdateCascadeProfile = onUpdateCascadeProfile,
+          onDeleteCascadeProfile = onDeleteCascadeProfile,
+          onCascadeBackendModeChange = onCascadeBackendModeChange,
+          onCascadeRouteChange = onCascadeRouteChange,
           onOpenCascadeProfile = { cascadeProfileId = it },
           onOpenT2sSettings = { showT2sSettings = true },
         )
-        Tab.SUPPORT -> Box(Modifier.fillMaxSize().padding(bottom = bottomContentPadding)) {
+        else -> Box(Modifier.fillMaxSize().padding(bottom = bottomContentPadding)) {
           SupportScreen(topContentPadding = topContentPadding)
         }
       }
@@ -443,22 +468,33 @@ private fun NonRootToolsScreen(
   topContentPadding: Dp,
   bottomContentPadding: Dp,
   workMode: NonRootWorkMode,
-  directOperaPort: Int,
-  directByeDpiPort: Int,
-  directOperaConfig: NonRootDirectOperaConfig,
   cascadeState: NonRootCascadeState,
   configurationEnabled: Boolean,
   onWorkModeChange: (NonRootWorkMode) -> Unit,
-  onDirectOperaPortChange: (Int) -> Boolean,
-  onDirectByeDpiPortChange: (Int) -> Boolean,
-  onDirectOperaConfigChange: (NonRootDirectOperaConfig) -> Unit,
+  onDirectSelectedProfileChange: (String?) -> Unit,
   onCreateCascadeProfile: (String) -> Unit,
   onUpdateCascadeProfile: (NonRootCascadeProfile) -> Unit,
+  onDeleteCascadeProfile: (String) -> Unit,
+  onCascadeBackendModeChange: (NonRootCascadeBackendMode) -> Unit,
+  onCascadeRouteChange: (List<NonRootCascadeRouteItem>) -> Unit,
   onOpenCascadeProfile: (String) -> Unit,
   onOpenT2sSettings: () -> Unit,
 ) {
-
   val screenPadding = rememberAdaptiveScreenPadding()
+  val byId = remember(cascadeState.profiles) { cascadeState.profiles.associateBy { it.id } }
+  var showCreateDialog by remember { mutableStateOf(false) }
+  var deleteProfileId by remember { mutableStateOf<String?>(null) }
+  val visibleRoute = remember(cascadeState.route, workMode) {
+    cascadeState.route.withIndex().filter { indexed ->
+      when (indexed.value.type) {
+        NonRootCascadeRouteItemType.PROFILE,
+        NonRootCascadeRouteItemType.GROUP -> true
+        NonRootCascadeRouteItemType.DIRECT_START,
+        NonRootCascadeRouteItemType.DIRECT_BLOCK -> workMode == NonRootWorkMode.CASCADE
+      }
+    }
+  }
+
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
     contentPadding = PaddingValues(
@@ -476,27 +512,162 @@ private fun NonRootToolsScreen(
         onWorkModeChange = onWorkModeChange,
       )
     }
+
     item {
-      AnimatedContent(targetState = workMode, label = "nonRootToolsMode") { mode ->
-        if (mode == NonRootWorkMode.DIRECT) {
-          NonRootDirectToolsCard(
-            port = directOperaPort,
-            byedpiPort = directByeDpiPort,
-            config = directOperaConfig,
-            onPortChange = onDirectOperaPortChange,
-            onByeDpiPortChange = onDirectByeDpiPortChange,
-            onConfigChange = onDirectOperaConfigChange,
+      AnimatedVisibility(
+        visible = workMode == NonRootWorkMode.CASCADE,
+        enter = expandVertically(animationSpec = tween(220)) + fadeIn(animationSpec = tween(180)),
+        exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(animationSpec = tween(140)),
+      ) {
+        NonRootT2sModeCard(
+          mode = cascadeState.backendMode,
+          enabled = configurationEnabled,
+          onModeChange = onCascadeBackendModeChange,
+        )
+      }
+    }
+
+    item {
+      Row(
+        modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec = tween(220)),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+      ) {
+        OutlinedButton(
+          onClick = { showCreateDialog = true },
+          modifier = Modifier.weight(1f),
+          enabled = configurationEnabled,
+        ) {
+          Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(Modifier.size(6.dp))
+          Text(stringResource(R.string.non_root_create_profile))
+        }
+        AnimatedVisibility(
+          visible = workMode == NonRootWorkMode.CASCADE,
+          enter = expandHorizontally(expandFrom = Alignment.End, animationSpec = tween(220)) + fadeIn(tween(160)),
+          exit = shrinkHorizontally(shrinkTowards = Alignment.End, animationSpec = tween(180)) + fadeOut(tween(120)),
+        ) {
+          Button(
+            onClick = onOpenT2sSettings,
+            enabled = configurationEnabled,
+          ) {
+            Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.size(6.dp))
+            Text(stringResource(R.string.non_root_t2s_advanced_settings))
+          }
+        }
+      }
+    }
+
+    if (cascadeState.profiles.isEmpty()) {
+      item {
+        Surface(
+          modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec = tween(180)),
+          shape = RoundedCornerShape(20.dp),
+          color = MaterialTheme.colorScheme.surfaceContainerLow,
+          border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
+        ) {
+          Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(stringResource(R.string.non_root_profiles_empty_title), fontWeight = FontWeight.Bold)
+            Text(
+              stringResource(R.string.non_root_profiles_empty_body),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+        }
+      }
+    } else {
+      itemsIndexed(
+        items = visibleRoute,
+        key = { _, indexed -> nonRootToolsRouteKey(indexed.value, indexed.index) },
+      ) { _, indexed ->
+        val routeIndex = indexed.index
+        val item = indexed.value
+        when (item.type) {
+          NonRootCascadeRouteItemType.PROFILE -> byId[item.profileId]?.let { profile ->
+            val checked = if (workMode == NonRootWorkMode.DIRECT) {
+              cascadeState.directSelectedProfileId == profile.id
+            } else {
+              profile.enabled
+            }
+            NonRootToolsProfileCard(
+              modifier = Modifier.animateItem(),
+              profile = profile,
+              checked = checked,
+              enabled = configurationEnabled,
+              onCheckedChange = { selected ->
+                if (workMode == NonRootWorkMode.DIRECT) {
+                  onDirectSelectedProfileChange(profile.id.takeIf { selected })
+                } else {
+                  onUpdateCascadeProfile(profile.copy(enabled = selected))
+                }
+              },
+              onOpen = { onOpenCascadeProfile(profile.id) },
+              onDelete = { deleteProfileId = profile.id },
+              onMove = { current, direction ->
+                val moved = moveToolsRouteItem(cascadeState.route, current, direction)
+                if (moved == null) null else {
+                  onCascadeRouteChange(moved.first)
+                  moved.second
+                }
+              },
+              routeIndex = routeIndex,
+            )
+          }
+          NonRootCascadeRouteItemType.GROUP -> NonRootToolsGroupRow(
+            modifier = Modifier.animateItem(),
+            item = item,
+            routeIndex = routeIndex,
+            enabled = configurationEnabled,
+            onMove = { current, direction ->
+              val moved = moveToolsRouteItem(cascadeState.route, current, direction)
+              if (moved == null) null else {
+                onCascadeRouteChange(moved.first)
+                moved.second
+              }
+            },
           )
-        } else {
-          NonRootCascadeToolsContent(
-            state = cascadeState,
-            onCreateProfile = onCreateCascadeProfile,
-            onUpdateProfile = onUpdateCascadeProfile,
-            onOpenProfile = onOpenCascadeProfile,
-            onOpenT2sSettings = onOpenT2sSettings,
+          NonRootCascadeRouteItemType.DIRECT_START -> NonRootToolsServiceRow(
+            modifier = Modifier.animateItem(),
+            title = stringResource(R.string.non_root_t2s_direct_short),
+          )
+          NonRootCascadeRouteItemType.DIRECT_BLOCK -> NonRootToolsServiceRow(
+            modifier = Modifier.animateItem(),
+            title = stringResource(R.string.non_root_t2s_block_direct_short),
           )
         }
       }
+    }
+  }
+
+  if (showCreateDialog) {
+    NonRootCreateProfileDialog(
+      onDismiss = { showCreateDialog = false },
+      onCreate = { name ->
+        onCreateCascadeProfile(name)
+        showCreateDialog = false
+      },
+    )
+  }
+
+  deleteProfileId?.let { id ->
+    val profile = cascadeState.profiles.firstOrNull { it.id == id }
+    if (profile != null) {
+      AlertDialog(
+        onDismissRequest = { deleteProfileId = null },
+        title = { Text(stringResource(R.string.non_root_delete_profile_title)) },
+        text = { Text(stringResource(R.string.non_root_delete_profile_body, profile.name)) },
+        confirmButton = {
+          TextButton(onClick = {
+            onDeleteCascadeProfile(profile.id)
+            deleteProfileId = null
+          }) { Text(stringResource(R.string.action_delete)) }
+        },
+        dismissButton = {
+          TextButton(onClick = { deleteProfileId = null }) { Text(stringResource(R.string.common_cancel)) }
+        },
+      )
     }
   }
 }
@@ -508,44 +679,134 @@ private fun NonRootModeCard(
   onWorkModeChange: (NonRootWorkMode) -> Unit,
 ) {
   Surface(
-    modifier = Modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(24.dp),
+    modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec = tween(220)),
+    shape = RoundedCornerShape(22.dp),
     color = MaterialTheme.colorScheme.surfaceContainerLow,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.14f)),
+    tonalElevation = 1.dp,
   ) {
     Column(
-      modifier = Modifier.padding(16.dp),
+      modifier = Modifier.padding(14.dp),
       verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-      Text(
-        text = stringResource(R.string.non_root_work_mode_title),
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-      )
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(11.dp),
+      ) {
+        Surface(
+          modifier = Modifier.size(42.dp),
+          shape = RoundedCornerShape(14.dp),
+          color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f),
+          contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        ) {
+          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(23.dp))
+          }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+          Text(
+            text = stringResource(R.string.non_root_work_mode_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+          )
+          AnimatedContent(
+            targetState = workMode,
+            transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
+            label = "nonRootModeDescription",
+          ) { mode ->
+            Text(
+              text = stringResource(
+                if (mode == NonRootWorkMode.DIRECT) R.string.non_root_mode_direct_desc
+                else R.string.non_root_mode_cascade_desc,
+              ),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+        }
+      }
+
+      Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+      ) {
+        Row(
+          modifier = Modifier.padding(4.dp),
+          horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+          NonRootModeChoice(
+            modifier = Modifier.weight(1f),
+            selected = workMode == NonRootWorkMode.DIRECT,
+            enabled = enabled,
+            title = stringResource(R.string.non_root_mode_direct),
+            onClick = { onWorkModeChange(NonRootWorkMode.DIRECT) },
+          )
+          NonRootModeChoice(
+            modifier = Modifier.weight(1f),
+            selected = workMode == NonRootWorkMode.CASCADE,
+            enabled = enabled,
+            title = stringResource(R.string.non_root_mode_cascade),
+            onClick = { onWorkModeChange(NonRootWorkMode.CASCADE) },
+          )
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun NonRootT2sModeCard(
+  mode: NonRootCascadeBackendMode,
+  enabled: Boolean,
+  onModeChange: (NonRootCascadeBackendMode) -> Unit,
+) {
+  Surface(
+    modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec = tween(200)),
+    shape = RoundedCornerShape(20.dp),
+    color = MaterialTheme.colorScheme.surfaceContainerLow,
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
+  ) {
+    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+      Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+        Icon(Icons.Filled.Equalizer, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Text(
+          stringResource(R.string.non_root_t2s_backend_mode),
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.Bold,
+        )
+      }
       Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         NonRootModeChoice(
           modifier = Modifier.weight(1f),
-          selected = workMode == NonRootWorkMode.DIRECT,
+          selected = mode == NonRootCascadeBackendMode.BALANCE,
           enabled = enabled,
-          title = stringResource(R.string.non_root_mode_direct),
-          onClick = { onWorkModeChange(NonRootWorkMode.DIRECT) },
+          title = stringResource(R.string.myproxy_backend_mode_balance),
+          onClick = { onModeChange(NonRootCascadeBackendMode.BALANCE) },
         )
         NonRootModeChoice(
           modifier = Modifier.weight(1f),
-          selected = workMode == NonRootWorkMode.CASCADE,
+          selected = mode == NonRootCascadeBackendMode.PRIORITY,
           enabled = enabled,
-          title = stringResource(R.string.non_root_mode_cascade),
-          onClick = { onWorkModeChange(NonRootWorkMode.CASCADE) },
+          title = stringResource(R.string.myproxy_backend_mode_priority),
+          onClick = { onModeChange(NonRootCascadeBackendMode.PRIORITY) },
         )
       }
-      Text(
-        text = stringResource(
-          if (workMode == NonRootWorkMode.DIRECT) R.string.non_root_mode_direct_desc
-          else R.string.non_root_mode_cascade_desc,
-        ),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
+      AnimatedContent(
+        targetState = mode,
+        transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
+        label = "nonRootT2sModeDescription",
+      ) { selected ->
+        Text(
+          text = stringResource(
+            if (selected == NonRootCascadeBackendMode.PRIORITY) R.string.myproxy_backend_mode_priority_desc
+            else R.string.myproxy_backend_mode_balance_desc,
+          ),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
     }
   }
 }
@@ -558,54 +819,265 @@ private fun NonRootModeChoice(
   title: String,
   onClick: () -> Unit,
 ) {
-  val shape = RoundedCornerShape(18.dp)
+  val shape = RoundedCornerShape(13.dp)
+  val background by animateColorAsState(
+    targetValue = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent,
+    animationSpec = tween(180),
+    label = "nonRootModeChoiceBackground",
+  )
+  val foreground by animateColorAsState(
+    targetValue = (if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+      .copy(alpha = if (enabled) 1f else 0.55f),
+    animationSpec = tween(180),
+    label = "nonRootModeChoiceForeground",
+  )
+  val borderColor by animateColorAsState(
+    targetValue = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.30f) else Color.Transparent,
+    animationSpec = tween(180),
+    label = "nonRootModeChoiceBorder",
+  )
   Surface(
     modifier = modifier
       .clip(shape)
       .clickable(enabled = enabled, onClick = onClick),
     shape = shape,
-    color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
-    contentColor = (if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
-      .copy(alpha = if (enabled) 1f else 0.55f),
-    border = BorderStroke(
-      1.dp,
-      if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.45f)
-      else MaterialTheme.colorScheme.outline.copy(alpha = 0.16f),
-    ),
+    color = background,
+    contentColor = foreground,
+    border = BorderStroke(1.dp, borderColor),
+  ) {
+    Box(
+      modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
+      contentAlignment = Alignment.Center,
+    ) {
+      Text(
+        text = title,
+        style = MaterialTheme.typography.labelLarge,
+        fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
+        maxLines = 1,
+      )
+    }
+  }
+}
+
+@Composable
+private fun NonRootToolsProfileCard(
+  modifier: Modifier = Modifier,
+  profile: NonRootCascadeProfile,
+  checked: Boolean,
+  enabled: Boolean,
+  routeIndex: Int,
+  onCheckedChange: (Boolean) -> Unit,
+  onOpen: () -> Unit,
+  onDelete: () -> Unit,
+  onMove: (Int, Int) -> Int?,
+) {
+  val borderColor by animateColorAsState(
+    targetValue = if (checked) MaterialTheme.colorScheme.primary.copy(alpha = 0.34f)
+    else MaterialTheme.colorScheme.outline.copy(alpha = 0.16f),
+    animationSpec = tween(180),
+    label = "nonRootProfileBorder",
+  )
+  Surface(
+    modifier = modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(20.dp),
+    color = MaterialTheme.colorScheme.surfaceContainerLow,
+    border = BorderStroke(1.dp, borderColor),
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 8.dp, vertical = 9.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      NonRootToolsDragHandle(
+        stableKey = profile.id,
+        routeIndex = routeIndex,
+        enabled = enabled,
+        onMove = onMove,
+      )
+      Surface(
+        modifier = Modifier.size(44.dp).clickable(enabled = enabled, onClick = onOpen),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+        contentColor = MaterialTheme.colorScheme.primary,
+      ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+          val icon = programIconRes(profile.toolId)
+          if (icon != null) Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(25.dp))
+          else Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(23.dp))
+        }
+      }
+      Column(
+        modifier = Modifier.weight(1f).clickable(enabled = enabled, onClick = onOpen),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+      ) {
+        Text(
+          text = stringResource(R.string.non_root_profile_title_fmt, stringResource(R.string.opera_proxy_title), profile.name),
+          style = MaterialTheme.typography.titleSmall,
+          fontWeight = FontWeight.Bold,
+          maxLines = 1,
+          overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+          text = "${NonRootPortRegistry.LOOPBACK}:${profile.port}",
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+      Switch(
+        checked = checked,
+        enabled = enabled,
+        onCheckedChange = onCheckedChange,
+      )
+      IconButton(onClick = onDelete, enabled = enabled) {
+        Icon(
+          Icons.Filled.Delete,
+          contentDescription = stringResource(R.string.action_delete),
+          tint = MaterialTheme.colorScheme.error,
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun NonRootToolsGroupRow(
+  modifier: Modifier = Modifier,
+  item: NonRootCascadeRouteItem,
+  routeIndex: Int,
+  enabled: Boolean,
+  onMove: (Int, Int) -> Int?,
+) {
+  val title = item.name.ifBlank { stringResource(R.string.non_root_t2s_group_unnamed) }
+  Surface(
+    modifier = modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(15.dp),
+    color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.72f),
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 8.dp, vertical = 7.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+      NonRootToolsDragHandle(
+        stableKey = item.markerId,
+        routeIndex = routeIndex,
+        enabled = enabled,
+        onMove = onMove,
+      )
+      Box(Modifier.weight(1f).height(1.dp)) {
+        Surface(Modifier.fillMaxWidth().height(1.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)) {}
+      }
+      Text(
+        text = title,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+      Box(Modifier.weight(1f).height(1.dp)) {
+        Surface(Modifier.fillMaxWidth().height(1.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.22f)) {}
+      }
+    }
+  }
+}
+
+@Composable
+private fun NonRootToolsServiceRow(
+  modifier: Modifier = Modifier,
+  title: String,
+) {
+  Surface(
+    modifier = modifier.fillMaxWidth(),
+    shape = RoundedCornerShape(14.dp),
+    color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.66f),
   ) {
     Text(
       text = title,
-      modifier = Modifier.padding(horizontal = 10.dp, vertical = 12.dp),
-      style = MaterialTheme.typography.labelLarge,
+      modifier = Modifier.padding(horizontal = 13.dp, vertical = 8.dp),
+      style = MaterialTheme.typography.labelMedium,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
       fontWeight = FontWeight.SemiBold,
-      maxLines = 1,
     )
   }
 }
 
 @Composable
-private fun NonRootDirectToolsCard(
-  port: Int,
-  byedpiPort: Int,
-  config: NonRootDirectOperaConfig,
-  onPortChange: (Int) -> Boolean,
-  onByeDpiPortChange: (Int) -> Boolean,
-  onConfigChange: (NonRootDirectOperaConfig) -> Unit,
+private fun NonRootToolsDragHandle(
+  stableKey: String,
+  routeIndex: Int,
+  enabled: Boolean,
+  onMove: (Int, Int) -> Int?,
 ) {
-  Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-    NonRootByeDpiCard(
-      port = byedpiPort,
-      config = config,
-      onPortChange = onByeDpiPortChange,
-      onConfigChange = onConfigChange,
-    )
-    NonRootOperaProxyCard(
-      port = port,
-      config = config,
-      onPortChange = onPortChange,
-      onConfigChange = onConfigChange,
-    )
+  val latestOnMove by rememberUpdatedState(onMove)
+  var gestureIndex by remember(stableKey) { mutableIntStateOf(routeIndex) }
+  var dragTotal by remember(stableKey) { mutableFloatStateOf(0f) }
+  Icon(
+    imageVector = Icons.Filled.DragHandle,
+    contentDescription = stringResource(R.string.non_root_t2s_drag_handle),
+    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.4f),
+    modifier = Modifier
+      .size(32.dp)
+      .pointerInput(stableKey, enabled) {
+        if (!enabled) return@pointerInput
+        detectDragGesturesAfterLongPress(
+          onDragStart = {
+            gestureIndex = routeIndex
+            dragTotal = 0f
+          },
+          onDragCancel = { dragTotal = 0f },
+          onDragEnd = { dragTotal = 0f },
+          onDrag = { change, amount ->
+            change.consume()
+            dragTotal += amount.y
+            if (abs(dragTotal) >= 46.dp.toPx()) {
+              val direction = if (dragTotal > 0f) 1 else -1
+              latestOnMove(gestureIndex, direction)?.let { gestureIndex = it }
+              dragTotal = 0f
+            }
+          },
+        )
+      },
+  )
+}
+
+private fun nonRootToolsRouteKey(item: NonRootCascadeRouteItem, index: Int): String = when (item.type) {
+  NonRootCascadeRouteItemType.PROFILE -> "profile:${item.profileId}"
+  NonRootCascadeRouteItemType.GROUP -> "group:${item.markerId.ifBlank { index.toString() }}"
+  NonRootCascadeRouteItemType.DIRECT_START -> "direct-start:${item.markerId.ifBlank { "single" }}"
+  NonRootCascadeRouteItemType.DIRECT_BLOCK -> "direct-block:${item.markerId.ifBlank { "single" }}"
+}
+
+private fun moveToolsRouteItem(
+  route: List<NonRootCascadeRouteItem>,
+  from: Int,
+  direction: Int,
+): Pair<List<NonRootCascadeRouteItem>, Int>? {
+  if (from !in route.indices || direction == 0) return null
+  val movable = route.indices.filter { index ->
+    route[index].type == NonRootCascadeRouteItemType.PROFILE || route[index].type == NonRootCascadeRouteItemType.GROUP
   }
+  val position = movable.indexOf(from)
+  if (position < 0) return null
+  val targetPosition = position + if (direction > 0) 1 else -1
+  if (targetPosition !in movable.indices) return null
+  val target = movable[targetPosition]
+  val updated = route.toMutableList()
+  val item = updated.removeAt(from)
+  updated.add(target, item)
+  if (!isValidToolsRoute(updated)) return null
+  return updated to target
+}
+
+private fun isValidToolsRoute(route: List<NonRootCascadeRouteItem>): Boolean {
+  route.forEachIndexed { index, item ->
+    if (item.type == NonRootCascadeRouteItemType.GROUP) {
+      if (index == 0 || index == route.lastIndex) return false
+      if (route[index - 1].type != NonRootCascadeRouteItemType.PROFILE) return false
+      if (route[index + 1].type != NonRootCascadeRouteItemType.PROFILE) return false
+    }
+  }
+  return true
 }
 
 @Composable
@@ -724,26 +1196,15 @@ internal fun NonRootOperaProxyCard(
   onConfigChange: (NonRootDirectOperaConfig) -> Unit,
   descriptionRes: Int = R.string.non_root_direct_opera_desc,
 ) {
-  var portText by remember { mutableStateOf(port.toString()) }
-  var portError by remember { mutableStateOf(false) }
+  var portText by remember(port) { mutableStateOf(port.toString()) }
+  var portError by remember(port) { mutableStateOf(false) }
   var advancedExpanded by remember { mutableStateOf(false) }
-  LaunchedEffect(port) {
-    if (!portError) portText = port.toString()
-  }
-
-  fun updateSni(index: Int, item: NonRootSniEntry) {
-    val updated = config.sniEntries.toMutableList()
-    if (index in updated.indices) {
-      updated[index] = item
-      onConfigChange(config.copy(sniEntries = updated))
-    }
-  }
 
   Surface(
     modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec = tween(220)),
     shape = RoundedCornerShape(24.dp),
     color = MaterialTheme.colorScheme.surfaceContainerLow,
-    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
   ) {
     Column(
       modifier = Modifier.padding(16.dp),
@@ -776,6 +1237,70 @@ internal fun NonRootOperaProxyCard(
         }
       }
 
+      Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+      ) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          Text(
+            text = stringResource(R.string.non_root_opera_server_title),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+          )
+          Text(
+            text = stringResource(R.string.non_root_opera_server_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("EU" to R.string.region_europe, "AS" to R.string.region_asia, "AM" to R.string.region_america).forEach { (code, label) ->
+              NonRootSmallChoice(
+                modifier = Modifier.weight(1f),
+                selected = config.serverRegion == code,
+                label = stringResource(label),
+                onClick = { onConfigChange(config.copy(serverRegion = code)) },
+              )
+            }
+          }
+          OutlinedTextField(
+            value = config.serverSni,
+            onValueChange = { onConfigChange(config.copy(serverSni = it)) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("SNI") },
+            placeholder = { Text(stringResource(R.string.operaproxy_sni_placeholder)) },
+            singleLine = true,
+          )
+          OutlinedTextField(
+            value = config.overrideProxyAddress,
+            onValueChange = { onConfigChange(config.copy(overrideProxyAddress = it)) },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text(stringResource(R.string.operaproxy_sni_server_address)) },
+            placeholder = { Text(stringResource(R.string.operaproxy_sni_server_address_placeholder)) },
+            supportingText = { Text(stringResource(R.string.operaproxy_sni_server_address_hint)) },
+            singleLine = true,
+          )
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+              Text(stringResource(R.string.operaproxy_sni_use_byedpi), fontWeight = FontWeight.SemiBold)
+              Text(
+                stringResource(R.string.operaproxy_sni_use_byedpi_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+            Switch(
+              checked = config.useByedpi,
+              onCheckedChange = { onConfigChange(config.copy(useByedpi = it)) },
+            )
+          }
+        }
+      }
+
       OutlinedTextField(
         value = portText,
         onValueChange = { raw ->
@@ -800,177 +1325,96 @@ internal fun NonRootOperaProxyCard(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
       )
 
-      Text(
-        text = stringResource(R.string.tab_servers),
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.SemiBold,
-      )
-      Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        listOf("EU" to R.string.region_europe, "AS" to R.string.region_asia, "AM" to R.string.region_america).forEach { (code, label) ->
-          NonRootSmallChoice(
-            modifier = Modifier.weight(1f),
-            selected = config.serverRegion == code,
-            label = stringResource(label),
-            onClick = { onConfigChange(config.copy(serverRegion = code)) },
-          )
-        }
+      TextButton(onClick = { advancedExpanded = !advancedExpanded }) {
+        Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.size(6.dp))
+        Text(stringResource(R.string.settings_advanced_title))
       }
-
-      Text(
-        text = stringResource(R.string.tab_sni),
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.SemiBold,
-      )
-      Text(
-        text = stringResource(R.string.operaproxy_sni_section_desc),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-      config.sniEntries.forEachIndexed { index, entry ->
+      AnimatedVisibility(
+        visible = advancedExpanded,
+        enter = expandVertically(animationSpec = tween(200)) + fadeIn(tween(160)),
+        exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(tween(120)),
+      ) {
         Surface(
           modifier = Modifier.fillMaxWidth(),
           shape = RoundedCornerShape(18.dp),
-          color = MaterialTheme.colorScheme.surfaceContainer,
+          color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.72f),
         ) {
-          Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Text(
-                text = stringResource(R.string.operaproxy_sni_entry_title_fmt, index + 1),
+          Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            OutlinedTextField(
+              value = config.apiProxy,
+              onValueChange = { onConfigChange(config.copy(apiProxy = it)) },
+              modifier = Modifier.fillMaxWidth(),
+              label = { Text("-api-proxy") },
+              supportingText = { Text(stringResource(R.string.opera_args_api_proxy_hint)) },
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              NonRootSmallChoice(
                 modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = FontWeight.SemiBold,
+                selected = config.serverSelection == "fastest",
+                label = "fastest",
+                onClick = { onConfigChange(config.copy(serverSelection = "fastest")) },
               )
-              IconButton(
-                onClick = {
-                  val updated = config.sniEntries.toMutableList().also { it.removeAt(index) }
-                  onConfigChange(config.copy(sniEntries = updated))
-                },
-              ) {
-                Icon(Icons.Filled.Delete, contentDescription = null)
-              }
+              NonRootSmallChoice(
+                modifier = Modifier.weight(1f),
+                selected = config.serverSelection == "random",
+                label = "random",
+                onClick = { onConfigChange(config.copy(serverSelection = "random")) },
+              )
             }
             OutlinedTextField(
-              value = entry.sni,
-              onValueChange = { updateSni(index, entry.copy(sni = it)) },
+              value = config.serverSelectionDlLimit,
+              onValueChange = { onConfigChange(config.copy(serverSelectionDlLimit = it)) },
               modifier = Modifier.fillMaxWidth(),
-              label = { Text("SNI") },
-              placeholder = { Text(stringResource(R.string.operaproxy_sni_placeholder)) },
+              label = { Text("-server-selection-dl-limit") },
+              supportingText = { Text(stringResource(R.string.opera_args_dl_limit_hint)) },
+              singleLine = true,
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            )
+            OutlinedTextField(
+              value = config.serverSelectionTestUrl,
+              onValueChange = { onConfigChange(config.copy(serverSelectionTestUrl = it)) },
+              modifier = Modifier.fillMaxWidth(),
+              label = { Text("-server-selection-test-url") },
+              singleLine = true,
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            )
+            OutlinedTextField(
+              value = config.initRetryInterval,
+              onValueChange = { onConfigChange(config.copy(initRetryInterval = it)) },
+              modifier = Modifier.fillMaxWidth(),
+              label = { Text("-init-retry-interval") },
+              supportingText = { Text(stringResource(R.string.opera_args_init_retry_hint)) },
               singleLine = true,
             )
             OutlinedTextField(
-              value = entry.overrideProxyAddress,
-              onValueChange = { updateSni(index, entry.copy(overrideProxyAddress = it)) },
+              value = config.verbosity,
+              onValueChange = { onConfigChange(config.copy(verbosity = it)) },
               modifier = Modifier.fillMaxWidth(),
-              label = { Text(stringResource(R.string.operaproxy_sni_server_address)) },
-              placeholder = { Text(stringResource(R.string.operaproxy_sni_server_address_placeholder)) },
-              supportingText = { Text(stringResource(R.string.operaproxy_sni_server_address_hint)) },
+              label = { Text("-verbosity") },
+              supportingText = { Text(stringResource(R.string.opera_args_verbosity_hint)) },
+              singleLine = true,
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            )
+            OutlinedTextField(
+              value = config.apiUserAgent,
+              onValueChange = { onConfigChange(config.copy(apiUserAgent = it)) },
+              modifier = Modifier.fillMaxWidth(),
+              label = { Text(stringResource(R.string.opera_args_ua_title)) },
+              supportingText = { Text(stringResource(R.string.opera_args_ua_desc)) },
               singleLine = true,
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.operaproxy_sni_use_byedpi), fontWeight = FontWeight.Medium)
-                Text(
-                  stringResource(R.string.operaproxy_sni_use_byedpi_desc),
-                  style = MaterialTheme.typography.bodySmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
-              Switch(
-                checked = entry.useByedpi,
-                onCheckedChange = { updateSni(index, entry.copy(useByedpi = it)) },
-              )
-            }
-          }
-        }
-      }
-      TextButton(
-        onClick = { onConfigChange(config.copy(sniEntries = config.sniEntries + NonRootSniEntry())) },
-      ) {
-        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.size(6.dp))
-        Text(stringResource(R.string.operaproxy_sni_create_new))
-      }
-
-      TextButton(onClick = { advancedExpanded = !advancedExpanded }) {
-        Text(stringResource(R.string.settings_advanced_title))
-      }
-      AnimatedVisibility(visible = advancedExpanded) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-          OutlinedTextField(
-            value = config.apiProxy,
-            onValueChange = { onConfigChange(config.copy(apiProxy = it)) },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("-api-proxy") },
-            supportingText = { Text(stringResource(R.string.opera_args_api_proxy_hint)) },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-          )
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            NonRootSmallChoice(
-              modifier = Modifier.weight(1f),
-              selected = config.serverSelection == "fastest",
-              label = "fastest",
-              onClick = { onConfigChange(config.copy(serverSelection = "fastest")) },
-            )
-            NonRootSmallChoice(
-              modifier = Modifier.weight(1f),
-              selected = config.serverSelection == "random",
-              label = "random",
-              onClick = { onConfigChange(config.copy(serverSelection = "random")) },
+            OutlinedTextField(
+              value = config.bootstrapDns.joinToString("\n"),
+              onValueChange = { raw -> onConfigChange(config.copy(bootstrapDns = raw.lines().map { it.trim() })) },
+              modifier = Modifier.fillMaxWidth(),
+              label = { Text(stringResource(R.string.opera_args_bootstrap_dns_title)) },
+              supportingText = { Text(stringResource(R.string.opera_args_bootstrap_dns_desc)) },
+              minLines = 2,
+              maxLines = 5,
             )
           }
-          OutlinedTextField(
-            value = config.serverSelectionDlLimit,
-            onValueChange = { onConfigChange(config.copy(serverSelectionDlLimit = it)) },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("-server-selection-dl-limit") },
-            supportingText = { Text(stringResource(R.string.opera_args_dl_limit_hint)) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-          )
-          OutlinedTextField(
-            value = config.serverSelectionTestUrl,
-            onValueChange = { onConfigChange(config.copy(serverSelectionTestUrl = it)) },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("-server-selection-test-url") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-          )
-          OutlinedTextField(
-            value = config.initRetryInterval,
-            onValueChange = { onConfigChange(config.copy(initRetryInterval = it)) },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("-init-retry-interval") },
-            supportingText = { Text(stringResource(R.string.opera_args_init_retry_hint)) },
-            singleLine = true,
-          )
-          OutlinedTextField(
-            value = config.verbosity,
-            onValueChange = { onConfigChange(config.copy(verbosity = it)) },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("-verbosity") },
-            supportingText = { Text(stringResource(R.string.opera_args_verbosity_hint)) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-          )
-          OutlinedTextField(
-            value = config.apiUserAgent,
-            onValueChange = { onConfigChange(config.copy(apiUserAgent = it)) },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.opera_args_ua_title)) },
-            supportingText = { Text(stringResource(R.string.opera_args_ua_desc)) },
-            singleLine = true,
-          )
-          OutlinedTextField(
-            value = config.bootstrapDns.joinToString("\n"),
-            onValueChange = { raw ->
-              onConfigChange(config.copy(bootstrapDns = raw.lines().map { it.trim() }))
-            },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text(stringResource(R.string.opera_args_bootstrap_dns_title)) },
-            supportingText = { Text(stringResource(R.string.opera_args_bootstrap_dns_desc)) },
-            minLines = 2,
-            maxLines = 5,
-          )
         }
       }
     }
@@ -1040,6 +1484,11 @@ private fun NonRootTopBarCard(
   onOpenSettings: () -> Unit,
 ) {
   val shape = RoundedCornerShape(24.dp)
+  val startPadding by animateDpAsState(
+    targetValue = if (onBack == null) 16.dp else 6.dp,
+    animationSpec = tween(180),
+    label = "nonRootTopBarStartPadding",
+  )
   Box(
     modifier = modifier
       .fillMaxWidth()
@@ -1061,22 +1510,32 @@ private fun NonRootTopBarCard(
       Row(
         modifier = Modifier
           .fillMaxSize()
-          .padding(start = if (onBack == null) 16.dp else 6.dp, end = 6.dp),
+          .padding(start = startPadding, end = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        if (onBack != null) {
-          IconButton(onClick = onBack, modifier = Modifier.size(46.dp)) {
+        AnimatedVisibility(
+          visible = onBack != null,
+          enter = expandHorizontally(expandFrom = Alignment.Start, animationSpec = tween(180)) + fadeIn(tween(140)),
+          exit = shrinkHorizontally(shrinkTowards = Alignment.Start, animationSpec = tween(160)) + fadeOut(tween(100)),
+        ) {
+          IconButton(onClick = { onBack?.invoke() }, modifier = Modifier.size(46.dp)) {
             Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
           }
         }
-        Text(
-          text = title,
+        AnimatedContent(
+          targetState = title,
           modifier = Modifier.weight(1f),
-          style = MaterialTheme.typography.titleMedium,
-          fontWeight = FontWeight.SemiBold,
-          maxLines = 1,
-          overflow = TextOverflow.Ellipsis,
-        )
+          transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
+          label = "nonRootTopBarTitle",
+        ) { value ->
+          Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
         IconButton(onClick = onOpenSettings, modifier = Modifier.size(46.dp)) {
           Icon(
             imageVector = Icons.Filled.Settings,
@@ -1150,8 +1609,26 @@ private fun RowScope.NonRootBottomNavItem(
   label: String,
   icon: @Composable () -> Unit,
 ) {
-  val itemColor = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f)
-  val indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+  val itemColor by animateColorAsState(
+    targetValue = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+    animationSpec = tween(180),
+    label = "nonRootBottomItemColor",
+  )
+  val indicatorColor by animateColorAsState(
+    targetValue = if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f) else Color.Transparent,
+    animationSpec = tween(180),
+    label = "nonRootBottomIndicatorColor",
+  )
+  val indicatorHorizontalPadding by animateDpAsState(
+    targetValue = if (selected) 16.dp else 6.dp,
+    animationSpec = tween(180),
+    label = "nonRootBottomIndicatorPadding",
+  )
+  val indicatorVerticalPadding by animateDpAsState(
+    targetValue = if (selected) 5.dp else 3.dp,
+    animationSpec = tween(180),
+    label = "nonRootBottomIndicatorVerticalPadding",
+  )
   val itemShape = RoundedCornerShape(20.dp)
 
   Column(
@@ -1170,10 +1647,10 @@ private fun RowScope.NonRootBottomNavItem(
     Box(
       modifier = Modifier
         .clip(RoundedCornerShape(18.dp))
-        .background(if (selected) indicatorColor else Color.Transparent)
+        .background(indicatorColor)
         .padding(
-          horizontal = if (selected) 16.dp else 6.dp,
-          vertical = if (selected) 5.dp else 3.dp,
+          horizontal = indicatorHorizontalPadding,
+          vertical = indicatorVerticalPadding,
         ),
       contentAlignment = Alignment.Center,
     ) {

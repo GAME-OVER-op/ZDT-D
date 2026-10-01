@@ -35,21 +35,14 @@ private val DEFAULT_BOOTSTRAP_DNS = listOf(
   "https://adfreedns.top/dns-query",
 )
 
-data class NonRootSniEntry(
-  val sni: String = "",
-  val useByedpi: Boolean = false,
-  val overrideProxyAddress: String = "",
-)
-
 data class NonRootDirectOperaConfig(
   val byedpiStartArgs: String = DEFAULT_BYEDPI_START_ARGS,
   val byedpiRestartArgs: String = DEFAULT_BYEDPI_RESTART_ARGS,
   val restartByedpiAfterOpera: Boolean = false,
   val serverRegion: String = "EU",
-  val sniEntries: List<NonRootSniEntry> = listOf(
-    NonRootSniEntry(sni = "m.vk.com", useByedpi = true),
-    NonRootSniEntry(sni = "vk.com", useByedpi = false),
-  ),
+  val serverSni: String = "m.vk.com",
+  val useByedpi: Boolean = true,
+  val overrideProxyAddress: String = "",
   val apiProxy: String = DEFAULT_API_PROXY,
   val apiUserAgent: String = DEFAULT_API_USER_AGENT,
   val initRetryInterval: String = "3s",
@@ -63,21 +56,23 @@ data class NonRootDirectOperaConfig(
 internal fun nonRootOperaConfigFromJson(obj: JSONObject): NonRootDirectOperaConfig {
   if (obj.length() == 0) return NonRootDirectOperaConfig()
   val defaults = NonRootDirectOperaConfig()
-  val sni = obj.optJSONArray("sni")
-  val sniEntries = if (sni == null) {
-    defaults.sniEntries
-  } else buildList {
-    for (i in 0 until sni.length()) {
-      val item = sni.optJSONObject(i) ?: continue
-      add(
-        NonRootSniEntry(
-          sni = item.optString("sni", ""),
-          useByedpi = item.optBoolean("use_byedpi", false),
-          overrideProxyAddress = item.optString("override_proxy_address", ""),
-        )
-      )
-    }
+
+  // New format stores exactly one Opera server/SNI per app profile. Older
+  // builds persisted an array even though runtime used only its first entry;
+  // read that first entry once so upgrades keep the same effective server.
+  val legacyEntry = obj.optJSONArray("sni")?.optJSONObject(0)
+  val serverSni = obj.optString("server_sni", "").trim().ifEmpty {
+    legacyEntry?.optString("sni", "")?.trim().orEmpty().ifEmpty { defaults.serverSni }
   }
+  val useByedpi = if (obj.has("server_use_byedpi")) {
+    obj.optBoolean("server_use_byedpi", defaults.useByedpi)
+  } else {
+    legacyEntry?.optBoolean("use_byedpi", defaults.useByedpi) ?: defaults.useByedpi
+  }
+  val overrideProxyAddress = obj.optString("server_override_proxy_address", "").ifEmpty {
+    legacyEntry?.optString("override_proxy_address", "").orEmpty()
+  }
+
   val dns = obj.optJSONArray("bootstrap_dns")
   val bootstrapDns = if (dns == null) {
     defaults.bootstrapDns
@@ -92,7 +87,9 @@ internal fun nonRootOperaConfigFromJson(obj: JSONObject): NonRootDirectOperaConf
     byedpiRestartArgs = obj.optString("byedpi_restart_args", defaults.byedpiRestartArgs),
     restartByedpiAfterOpera = obj.optBoolean("restart_byedpi_after_opera", false),
     serverRegion = region,
-    sniEntries = sniEntries,
+    serverSni = serverSni,
+    useByedpi = useByedpi,
+    overrideProxyAddress = overrideProxyAddress,
     apiProxy = obj.optString("api_proxy", defaults.apiProxy),
     apiUserAgent = obj.optString("api_user_agent", defaults.apiUserAgent),
     initRetryInterval = obj.optString("init_retry_interval", "3s"),
@@ -109,15 +106,9 @@ internal fun nonRootOperaConfigToJson(config: NonRootDirectOperaConfig): JSONObj
   put("byedpi_restart_args", config.byedpiRestartArgs)
   put("restart_byedpi_after_opera", config.restartByedpiAfterOpera)
   put("server_region", config.serverRegion)
-  put("sni", JSONArray().apply {
-    config.sniEntries.forEach { item ->
-      put(JSONObject().apply {
-        put("sni", item.sni)
-        put("use_byedpi", item.useByedpi)
-        put("override_proxy_address", item.overrideProxyAddress)
-      })
-    }
-  })
+  put("server_sni", config.serverSni)
+  put("server_use_byedpi", config.useByedpi)
+  put("server_override_proxy_address", config.overrideProxyAddress)
   put("api_proxy", config.apiProxy)
   put("api_user_agent", config.apiUserAgent)
   put("init_retry_interval", config.initRetryInterval)
@@ -128,9 +119,11 @@ internal fun nonRootOperaConfigToJson(config: NonRootDirectOperaConfig): JSONObj
   put("bootstrap_dns", JSONArray().apply { config.bootstrapDns.forEach { put(it) } })
 }
 
-/** Persistent Direct-mode configuration, kept separate from Cascade profiles. */
+/** Legacy Direct-mode storage used only to import pre-unified non-root settings. */
 class NonRootDirectConfigStore(context: Context) {
   private val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+  fun hasSavedConfig(): Boolean = prefs.contains(KEY_CONFIG)
 
   fun load(): NonRootDirectOperaConfig {
     val raw = prefs.getString(KEY_CONFIG, null)?.takeIf { it.isNotBlank() } ?: return NonRootDirectOperaConfig()

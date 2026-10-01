@@ -2494,4 +2494,14 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="non_root_log_vpn_stopped">VPN đã dừng.</string>
     <string name="non_root_log_error">Lỗi: %1$s</string>
 
+    <string name="non_root_t2s_advanced_settings">T2S nâng cao</string>
+    <string name="non_root_profiles_empty_title">Chưa có hồ sơ</string>
+    <string name="non_root_profiles_empty_body">Tạo hồ sơ Opera Proxy. Cùng một danh sách hồ sơ được dùng cho chế độ Công cụ và Cascade.</string>
+    <string name="non_root_opera_server_title">Máy chủ Opera</string>
+    <string name="non_root_opera_server_desc">Mỗi hồ sơ ứng dụng dùng một máy chủ Opera Proxy và một SNI.</string>
+    <string name="non_root_profile_opera_desc">Cài đặt máy chủ Opera Proxy cho hồ sơ này.</string>
+    <string name="non_root_group_name_title">Đặt tên nhóm</string>
+    <string name="non_root_group_name_label">Tên nhóm</string>
+    <string name="non_root_group_rename">Đổi tên nhóm</string>
+    <string name="non_root_t2s_group_unnamed">Nhóm</string>
 </resources>

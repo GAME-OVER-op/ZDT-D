@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapHoriz
@@ -158,7 +159,7 @@ internal fun NonRootCascadeToolsContent(
 }
 
 @Composable
-private fun NonRootCreateProfileDialog(
+internal fun NonRootCreateProfileDialog(
   onDismiss: () -> Unit,
   onCreate: (String) -> Unit,
 ) {
@@ -298,11 +299,9 @@ internal fun NonRootCascadeProfileEditorScreen(
   onUpdateProfile: (NonRootCascadeProfile) -> Unit,
   onPortChange: (String, Int) -> Boolean,
   onByeDpiPortChange: (String, Int) -> Boolean,
-  onDelete: (String) -> Unit,
 ) {
   val screenPadding = rememberAdaptiveScreenPadding()
   var nameText by remember(profile.id) { mutableStateOf(profile.name) }
-  var deleteConfirm by remember { mutableStateOf(false) }
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
@@ -316,17 +315,45 @@ internal fun NonRootCascadeProfileEditorScreen(
   ) {
     item {
       Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec = tween(200)),
         shape = RoundedCornerShape(24.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
       ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-          Text(
-            text = stringResource(R.string.non_root_profile_settings),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-          )
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+          ) {
+            Surface(
+              modifier = Modifier.size(48.dp),
+              shape = RoundedCornerShape(15.dp),
+              color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+              contentColor = MaterialTheme.colorScheme.primary,
+            ) {
+              Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                val icon = programIconRes(profile.toolId)
+                if (icon != null) Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(27.dp))
+                else Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(24.dp))
+              }
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+              Text(
+                text = stringResource(R.string.non_root_profile_title_fmt, stringResource(R.string.opera_proxy_title), profile.name),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+              )
+              Text(
+                text = "${NonRootPortRegistry.LOOPBACK}:${profile.port}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+          }
+
           OutlinedTextField(
             value = nameText,
             onValueChange = { nameText = it },
@@ -334,75 +361,41 @@ internal fun NonRootCascadeProfileEditorScreen(
             label = { Text(stringResource(R.string.non_root_profile_name)) },
             singleLine = true,
           )
-          Row(
+          Button(
+            onClick = { onUpdateProfile(profile.copy(name = nameText)) },
+            enabled = nameText.trim().isNotEmpty() && nameText.trim() != profile.name,
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
           ) {
-            Column(Modifier.weight(1f)) {
-              Text(stringResource(R.string.non_root_profile_enabled), fontWeight = FontWeight.SemiBold)
-              Text(
-                stringResource(R.string.non_root_profile_enabled_desc),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-            }
-            Switch(
-              checked = profile.enabled,
-              onCheckedChange = { onUpdateProfile(profile.copy(enabled = it)) },
-            )
-          }
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-              onClick = { onUpdateProfile(profile.copy(name = nameText)) },
-              enabled = nameText.trim().isNotEmpty(),
-              modifier = Modifier.weight(1f),
-            ) { Text(stringResource(R.string.action_save)) }
-            OutlinedButton(
-              onClick = { deleteConfirm = true },
-              modifier = Modifier.weight(1f),
-            ) {
-              Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-              Spacer(Modifier.size(6.dp))
-              Text(stringResource(R.string.action_delete))
-            }
+            Text(stringResource(R.string.action_save))
           }
         }
       }
     }
-    item {
-      NonRootByeDpiCard(
-        port = profile.byedpiPort,
-        config = profile.operaConfig,
-        onPortChange = { onByeDpiPortChange(profile.id, it) },
-        onConfigChange = { onUpdateProfile(profile.copy(operaConfig = it)) },
-      )
-    }
+
     item {
       NonRootOperaProxyCard(
         port = profile.port,
         config = profile.operaConfig,
         onPortChange = { onPortChange(profile.id, it) },
         onConfigChange = { onUpdateProfile(profile.copy(operaConfig = it)) },
-        descriptionRes = R.string.non_root_cascade_opera_desc,
+        descriptionRes = R.string.non_root_profile_opera_desc,
       )
     }
-  }
 
-  if (deleteConfirm) {
-    AlertDialog(
-      onDismissRequest = { deleteConfirm = false },
-      title = { Text(stringResource(R.string.non_root_delete_profile_title)) },
-      text = { Text(stringResource(R.string.non_root_delete_profile_body, profile.name)) },
-      confirmButton = {
-        TextButton(onClick = { onDelete(profile.id); deleteConfirm = false }) {
-          Text(stringResource(R.string.action_delete))
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = { deleteConfirm = false }) { Text(stringResource(R.string.common_cancel)) }
-      },
-    )
+    item {
+      AnimatedVisibility(
+        visible = profile.operaConfig.useByedpi,
+        enter = androidx.compose.animation.expandVertically(animationSpec = tween(200)) + androidx.compose.animation.fadeIn(tween(150)),
+        exit = androidx.compose.animation.shrinkVertically(animationSpec = tween(180)) + androidx.compose.animation.fadeOut(tween(120)),
+      ) {
+        NonRootByeDpiCard(
+          port = profile.byedpiPort,
+          config = profile.operaConfig,
+          onPortChange = { onByeDpiPortChange(profile.id, it) },
+          onConfigChange = { onUpdateProfile(profile.copy(operaConfig = it)) },
+        )
+      }
+    }
   }
 }
 
@@ -411,7 +404,6 @@ internal fun NonRootT2sSettingsScreen(
   topContentPadding: Dp,
   bottomContentPadding: Dp,
   state: NonRootCascadeState,
-  onBackendModeChange: (NonRootCascadeBackendMode) -> Unit,
   onT2sConfigChange: (NonRootT2sConfig) -> Unit,
   onRouteChange: (List<NonRootCascadeRouteItem>) -> Unit,
   onUpdateProfile: (NonRootCascadeProfile) -> Unit,
@@ -420,6 +412,8 @@ internal fun NonRootT2sSettingsScreen(
   val byId = remember(state.profiles) { state.profiles.associateBy { it.id } }
   var helpType by remember { mutableStateOf<NonRootCascadeRouteItemType?>(null) }
   var deleteZoneActive by remember { mutableStateOf(false) }
+  var createGroupNameDialog by remember { mutableStateOf(false) }
+  var renameGroupMarkerId by remember { mutableStateOf<String?>(null) }
 
   Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
@@ -432,50 +426,6 @@ internal fun NonRootT2sSettingsScreen(
     ),
     verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
-    item {
-      Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(24.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
-      ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-          Text(
-            text = stringResource(R.string.non_root_t2s_backend_mode),
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-          )
-          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            NonRootSmallChoice(
-              modifier = Modifier.weight(1f),
-              selected = state.backendMode == NonRootCascadeBackendMode.BALANCE,
-              label = stringResource(R.string.myproxy_backend_mode_balance),
-              onClick = {
-                if (state.route.any { it.type == NonRootCascadeRouteItemType.DIRECT_START || it.type == NonRootCascadeRouteItemType.DIRECT_BLOCK }) {
-                  onRouteChange(state.route.filterNot { it.type == NonRootCascadeRouteItemType.DIRECT_START || it.type == NonRootCascadeRouteItemType.DIRECT_BLOCK })
-                }
-                onBackendModeChange(NonRootCascadeBackendMode.BALANCE)
-              },
-            )
-            NonRootSmallChoice(
-              modifier = Modifier.weight(1f),
-              selected = state.backendMode == NonRootCascadeBackendMode.PRIORITY,
-              label = stringResource(R.string.myproxy_backend_mode_priority),
-              onClick = { onBackendModeChange(NonRootCascadeBackendMode.PRIORITY) },
-            )
-          }
-          Text(
-            text = stringResource(
-              if (state.backendMode == NonRootCascadeBackendMode.PRIORITY) R.string.myproxy_backend_mode_priority_desc
-              else R.string.myproxy_backend_mode_balance_desc,
-            ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-        }
-      }
-    }
-
     item {
       NonRootT2sRuntimeSettingsCard(
         mode = state.backendMode,
@@ -542,6 +492,7 @@ internal fun NonRootT2sSettingsScreen(
         onEnabledChange = { enabled ->
           byId[item.profileId]?.let { onUpdateProfile(it.copy(enabled = enabled)) }
         },
+        onRenameGroup = { markerId -> renameGroupMarkerId = markerId },
       )
     }
 
@@ -565,9 +516,7 @@ internal fun NonRootT2sSettingsScreen(
           type = NonRootCascadeRouteItemType.GROUP,
           enabled = state.route.count { it.type == NonRootCascadeRouteItemType.PROFILE } >= 2,
           onHelp = { helpType = NonRootCascadeRouteItemType.GROUP },
-          onDragIntoRoute = {
-            defaultSpecialInsertion(state.route, NonRootCascadeRouteItemType.GROUP)?.let(onRouteChange)
-          },
+          onDragIntoRoute = { createGroupNameDialog = true },
         )
         NonRootPaletteItem(
           title = stringResource(R.string.non_root_t2s_direct),
@@ -620,6 +569,35 @@ internal fun NonRootT2sSettingsScreen(
     }
   }
 
+  if (createGroupNameDialog) {
+    NonRootGroupNameDialog(
+      title = stringResource(R.string.non_root_group_name_title),
+      initialName = "",
+      onDismiss = { createGroupNameDialog = false },
+      onSave = { name ->
+        defaultSpecialInsertion(state.route, NonRootCascadeRouteItemType.GROUP, name)?.let(onRouteChange)
+        createGroupNameDialog = false
+      },
+    )
+  }
+
+  renameGroupMarkerId?.let { markerId ->
+    val group = state.route.firstOrNull { it.type == NonRootCascadeRouteItemType.GROUP && it.markerId == markerId }
+    if (group != null) {
+      NonRootGroupNameDialog(
+        title = stringResource(R.string.non_root_group_rename),
+        initialName = group.name,
+        onDismiss = { renameGroupMarkerId = null },
+        onSave = { name ->
+          onRouteChange(state.route.map { item ->
+            if (item.type == NonRootCascadeRouteItemType.GROUP && item.markerId == markerId) item.copy(name = name.trim()) else item
+          })
+          renameGroupMarkerId = null
+        },
+      )
+    }
+  }
+
   helpType?.let { type ->
     AlertDialog(
       onDismissRequest = { helpType = null },
@@ -643,6 +621,7 @@ private fun NonRootT2sRouteRow(
   onRemoveSpecial: (Int) -> Unit,
   onDeleteZoneActiveChange: (Boolean) -> Unit,
   onEnabledChange: (Boolean) -> Unit,
+  onRenameGroup: (String) -> Unit,
 ) {
   val stableKey = routeItemKey(item, index)
   val latestOnMove by rememberUpdatedState(onMove)
@@ -743,17 +722,58 @@ private fun NonRootT2sRouteRow(
         }
         else -> {
           Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(specialTitle(item.type), fontWeight = FontWeight.SemiBold)
+            Text(
+              if (item.type == NonRootCascadeRouteItemType.GROUP) item.name.ifBlank { stringResource(R.string.non_root_t2s_group_unnamed) }
+              else specialTitle(item.type),
+              fontWeight = FontWeight.SemiBold,
+            )
             Text(
               if (removeOnEnd) stringResource(R.string.action_delete) else specialPositionHint(item.type),
               style = MaterialTheme.typography.bodySmall,
               color = if (removeOnEnd) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             )
           }
+          if (item.type == NonRootCascadeRouteItemType.GROUP && item.markerId.isNotBlank()) {
+            IconButton(onClick = { onRenameGroup(item.markerId) }) {
+              Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.non_root_group_rename))
+            }
+          }
         }
       }
     }
   }
+}
+
+@Composable
+private fun NonRootGroupNameDialog(
+  title: String,
+  initialName: String,
+  onDismiss: () -> Unit,
+  onSave: (String) -> Unit,
+) {
+  var name by remember(initialName) { mutableStateOf(initialName) }
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(title) },
+    text = {
+      OutlinedTextField(
+        value = name,
+        onValueChange = { name = it },
+        modifier = Modifier.fillMaxWidth(),
+        label = { Text(stringResource(R.string.non_root_group_name_label)) },
+        singleLine = true,
+      )
+    },
+    confirmButton = {
+      TextButton(
+        onClick = { onSave(name.trim()) },
+        enabled = name.trim().isNotEmpty(),
+      ) { Text(stringResource(R.string.action_save)) }
+    },
+    dismissButton = {
+      TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+    },
+  )
 }
 
 @Composable
@@ -972,6 +992,7 @@ private fun isValidRouteLayout(route: List<NonRootCascadeRouteItem>): Boolean {
 private fun defaultSpecialInsertion(
   route: List<NonRootCascadeRouteItem>,
   type: NonRootCascadeRouteItemType,
+  groupName: String = "",
 ): List<NonRootCascadeRouteItem>? {
   val updated = route.toMutableList()
   when (type) {
@@ -989,7 +1010,7 @@ private fun defaultSpecialInsertion(
           route[index].type == NonRootCascadeRouteItemType.PROFILE &&
           route[index + 1].type == NonRootCascadeRouteItemType.PROFILE
       } ?: return null
-      updated.add(insertion + 1, newSpecialRouteItem(type))
+      updated.add(insertion + 1, newSpecialRouteItem(type, groupName))
     }
     NonRootCascadeRouteItemType.PROFILE -> return null
   }
@@ -997,8 +1018,14 @@ private fun defaultSpecialInsertion(
 }
 
 
-private fun newSpecialRouteItem(type: NonRootCascadeRouteItemType): NonRootCascadeRouteItem =
-  NonRootCascadeRouteItem(type = type, markerId = UUID.randomUUID().toString())
+private fun newSpecialRouteItem(
+  type: NonRootCascadeRouteItemType,
+  name: String = "",
+): NonRootCascadeRouteItem = NonRootCascadeRouteItem(
+  type = type,
+  markerId = UUID.randomUUID().toString(),
+  name = if (type == NonRootCascadeRouteItemType.GROUP) name.trim() else "",
+)
 
 @Composable
 private fun specialTitle(type: NonRootCascadeRouteItemType): String = when (type) {

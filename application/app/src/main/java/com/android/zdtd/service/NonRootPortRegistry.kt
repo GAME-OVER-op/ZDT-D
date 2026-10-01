@@ -30,6 +30,9 @@ class NonRootPortRegistry(context: Context) {
   }
 
   @Synchronized
+  fun getPersisted(key: String): Int? = prefs.getInt(key, 0).takeIf { it in MIN_PORT..MAX_PORT }
+
+  @Synchronized
   fun set(key: String, port: Int): Boolean {
     if (port !in MIN_PORT..MAX_PORT) return false
     if (prefs.getInt(key, 0) == port) return true

@@ -2495,4 +2495,14 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="non_root_log_vpn_stopped">VPN बंद है।</string>
     <string name="non_root_log_error">त्रुटि: %1$s</string>
 
+    <string name="non_root_t2s_advanced_settings">उन्नत T2S</string>
+    <string name="non_root_profiles_empty_title">अभी कोई प्रोफ़ाइल नहीं</string>
+    <string name="non_root_profiles_empty_body">Opera Proxy प्रोफ़ाइल बनाएँ। वही प्रोफ़ाइल टूल और कैस्केड मोड में उपयोग होती हैं।</string>
+    <string name="non_root_opera_server_title">Opera सर्वर</string>
+    <string name="non_root_opera_server_desc">एक ऐप प्रोफ़ाइल एक Opera Proxy सर्वर और एक SNI का उपयोग करती है।</string>
+    <string name="non_root_profile_opera_desc">इस प्रोफ़ाइल के लिए Opera Proxy सर्वर सेटिंग।</string>
+    <string name="non_root_group_name_title">समूह का नाम दें</string>
+    <string name="non_root_group_name_label">समूह नाम</string>
+    <string name="non_root_group_rename">समूह का नाम बदलें</string>
+    <string name="non_root_t2s_group_unnamed">समूह</string>
 </resources>

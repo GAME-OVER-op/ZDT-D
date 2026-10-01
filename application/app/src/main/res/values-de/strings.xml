@@ -2495,4 +2495,14 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="non_root_log_vpn_stopped">VPN ist beendet.</string>
     <string name="non_root_log_error">Fehler: %1$s</string>
 
+    <string name="non_root_t2s_advanced_settings">Erweitertes T2S</string>
+    <string name="non_root_profiles_empty_title">Noch keine Profile</string>
+    <string name="non_root_profiles_empty_body">Erstelle ein Opera-Proxy-Profil. Dieselben Profile werden im Werkzeug- und Kaskadenmodus verwendet.</string>
+    <string name="non_root_opera_server_title">Opera-Server</string>
+    <string name="non_root_opera_server_desc">Ein App-Profil verwendet einen Opera-Proxy-Server und eine SNI.</string>
+    <string name="non_root_profile_opera_desc">Opera-Proxy-Servereinstellungen für dieses Profil.</string>
+    <string name="non_root_group_name_title">Gruppe benennen</string>
+    <string name="non_root_group_name_label">Gruppenname</string>
+    <string name="non_root_group_rename">Gruppe umbenennen</string>
+    <string name="non_root_t2s_group_unnamed">Gruppe</string>
 </resources>

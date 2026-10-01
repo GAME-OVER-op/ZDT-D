@@ -149,17 +149,17 @@ class NonRootVpnService : VpnService() {
   }
 
   private suspend fun startDirect(): SocksTarget {
-    val config = NonRootDirectConfigStore(applicationContext).load()
-    val operaPort = portRegistry.getOrAllocate(NonRootPortRegistry.DIRECT_OPERA_KEY)
-    val byedpiPort = portRegistry.getOrAllocate(NonRootPortRegistry.DIRECT_BYEDPI_KEY)
+    val state = NonRootCascadeStore(applicationContext).load()
+    val profile = state.profiles.firstOrNull { it.id == state.directSelectedProfileId }
+      ?: error("Direct mode has no selected proxy profile")
     startOperaProfile(
-      label = "direct",
-      displayName = getString(R.string.non_root_mode_direct),
-      port = operaPort,
-      byedpiPort = byedpiPort,
-      config = config,
+      label = "direct-${safeFileName(profile.id)}",
+      displayName = profile.name,
+      port = profile.port,
+      byedpiPort = profile.byedpiPort,
+      config = profile.operaConfig,
     )
-    return SocksTarget(port = operaPort)
+    return SocksTarget(port = profile.port)
   }
 
   private suspend fun startCascade(): SocksTarget {
@@ -207,9 +207,9 @@ class NonRootVpnService : VpnService() {
     byedpiPort: Int,
     config: NonRootDirectOperaConfig,
   ) {
-    val sni = config.sniEntries.firstOrNull { it.sni.isNotBlank() }
+    val sni = config.serverSni.trim().takeIf { it.isNotEmpty() }
       ?: error("Opera Proxy requires an SNI")
-    val useByeDpi = sni.useByedpi
+    val useByeDpi = config.useByedpi
 
     if (useByeDpi) {
       NonRootVpnRuntime.log(getString(R.string.non_root_log_start_component, "ByeDPI · $displayName"))
@@ -227,7 +227,7 @@ class NonRootVpnService : VpnService() {
       "-bind-address", "${NonRootPortRegistry.LOOPBACK}:$port",
       "-socks-mode",
       "-cafile", caFile.absolutePath,
-      "-fake-SNI", sni.sni.trim(),
+      "-fake-SNI", sni,
       "-bootstrap-dns", bootstrapDns,
       "-api-user-agent", config.apiUserAgent.ifBlank { defaults.apiUserAgent },
       "-country", config.serverRegion.ifBlank { defaults.serverRegion },
@@ -245,8 +245,8 @@ class NonRootVpnService : VpnService() {
     )
     if (!selectedApiProxy.isNullOrBlank()) operaArgs += listOf("-api-proxy", selectedApiProxy)
     if (useByeDpi) operaArgs += listOf("-proxy", "socks5://${NonRootPortRegistry.LOOPBACK}:$byedpiPort")
-    if (sni.overrideProxyAddress.isNotBlank()) {
-      operaArgs += listOf("-override-proxy-address", sni.overrideProxyAddress.trim())
+    if (config.overrideProxyAddress.isNotBlank()) {
+      operaArgs += listOf("-override-proxy-address", config.overrideProxyAddress.trim())
     }
 
     startProcess(

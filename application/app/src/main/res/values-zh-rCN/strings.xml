@@ -2494,4 +2494,14 @@ APatch：10700+</string>
     <string name="non_root_log_vpn_stopped">VPN 已停止。</string>
     <string name="non_root_log_error">错误：%1$s</string>
 
+    <string name="non_root_t2s_advanced_settings">高级 T2S</string>
+    <string name="non_root_profiles_empty_title">暂无配置文件</string>
+    <string name="non_root_profiles_empty_body">创建 Opera Proxy 配置文件。工具模式和级联模式使用同一组配置文件。</string>
+    <string name="non_root_opera_server_title">Opera 服务器</string>
+    <string name="non_root_opera_server_desc">每个应用配置文件仅使用一个 Opera Proxy 服务器和一个 SNI。</string>
+    <string name="non_root_profile_opera_desc">此配置文件的 Opera Proxy 服务器设置。</string>
+    <string name="non_root_group_name_title">命名分组</string>
+    <string name="non_root_group_name_label">分组名称</string>
+    <string name="non_root_group_rename">重命名分组</string>
+    <string name="non_root_t2s_group_unnamed">分组</string>
 </resources>

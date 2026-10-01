@@ -2494,4 +2494,14 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="non_root_log_vpn_stopped">VPN이 중지되었습니다.</string>
     <string name="non_root_log_error">오류: %1$s</string>
 
+    <string name="non_root_t2s_advanced_settings">고급 T2S</string>
+    <string name="non_root_profiles_empty_title">아직 프로필이 없습니다</string>
+    <string name="non_root_profiles_empty_body">Opera Proxy 프로필을 만드세요. 동일한 프로필을 도구 및 캐스케이드 모드에서 사용합니다.</string>
+    <string name="non_root_opera_server_title">Opera 서버</string>
+    <string name="non_root_opera_server_desc">앱 프로필 하나는 Opera Proxy 서버 하나와 SNI 하나를 사용합니다.</string>
+    <string name="non_root_profile_opera_desc">이 프로필의 Opera Proxy 서버 설정입니다.</string>
+    <string name="non_root_group_name_title">그룹 이름 지정</string>
+    <string name="non_root_group_name_label">그룹 이름</string>
+    <string name="non_root_group_rename">그룹 이름 변경</string>
+    <string name="non_root_t2s_group_unnamed">그룹</string>
 </resources>

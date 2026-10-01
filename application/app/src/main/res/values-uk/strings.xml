@@ -2497,4 +2497,14 @@ APatch: 10700+</string>
     <string name="non_root_log_vpn_stopped">VPN зупинено.</string>
     <string name="non_root_log_error">Помилка: %1$s</string>
 
+    <string name="non_root_t2s_advanced_settings">Розширені T2S</string>
+    <string name="non_root_profiles_empty_title">Профілів поки немає</string>
+    <string name="non_root_profiles_empty_body">Створіть профіль Opera Proxy. Ті самі профілі використовуються в режимах «Інструмент» і «Каскад».</string>
+    <string name="non_root_opera_server_title">Сервер Opera</string>
+    <string name="non_root_opera_server_desc">Один профіль застосунку використовує один сервер Opera Proxy і один SNI.</string>
+    <string name="non_root_profile_opera_desc">Налаштування сервера Opera Proxy для цього профілю.</string>
+    <string name="non_root_group_name_title">Назва групи</string>
+    <string name="non_root_group_name_label">Ім’я групи</string>
+    <string name="non_root_group_rename">Перейменувати групу</string>
+    <string name="non_root_t2s_group_unnamed">Група</string>
 </resources>

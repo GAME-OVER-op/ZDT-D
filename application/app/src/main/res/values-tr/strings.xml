@@ -2494,4 +2494,14 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="non_root_log_vpn_stopped">VPN durduruldu.</string>
     <string name="non_root_log_error">Hata: %1$s</string>
 
+    <string name="non_root_t2s_advanced_settings">Gelişmiş T2S</string>
+    <string name="non_root_profiles_empty_title">Henüz profil yok</string>
+    <string name="non_root_profiles_empty_body">Bir Opera Proxy profili oluşturun. Aynı profiller Araç ve Kaskad modlarında kullanılır.</string>
+    <string name="non_root_opera_server_title">Opera sunucusu</string>
+    <string name="non_root_opera_server_desc">Bir uygulama profili bir Opera Proxy sunucusu ve bir SNI kullanır.</string>
+    <string name="non_root_profile_opera_desc">Bu profil için Opera Proxy sunucu ayarları.</string>
+    <string name="non_root_group_name_title">Grubu adlandır</string>
+    <string name="non_root_group_name_label">Grup adı</string>
+    <string name="non_root_group_rename">Grubu yeniden adlandır</string>
+    <string name="non_root_t2s_group_unnamed">Grup</string>
 </resources>

@@ -2495,4 +2495,14 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="non_root_log_vpn_stopped">Le VPN est arrêté.</string>
     <string name="non_root_log_error">Erreur : %1$s</string>
 
+    <string name="non_root_t2s_advanced_settings">T2S avancé</string>
+    <string name="non_root_profiles_empty_title">Aucun profil</string>
+    <string name="non_root_profiles_empty_body">Créez un profil Opera Proxy. Les mêmes profils sont utilisés en modes Outil et Cascade.</string>
+    <string name="non_root_opera_server_title">Serveur Opera</string>
+    <string name="non_root_opera_server_desc">Un profil d’application utilise un serveur Opera Proxy et un SNI.</string>
+    <string name="non_root_profile_opera_desc">Paramètres du serveur Opera Proxy pour ce profil.</string>
+    <string name="non_root_group_name_title">Nommer le groupe</string>
+    <string name="non_root_group_name_label">Nom du groupe</string>
+    <string name="non_root_group_rename">Renommer le groupe</string>
+    <string name="non_root_t2s_group_unnamed">Groupe</string>
 </resources>

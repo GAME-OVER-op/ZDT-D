@@ -21,6 +21,7 @@ data class NonRootCascadeRouteItem(
   val type: NonRootCascadeRouteItemType,
   val profileId: String = "",
   val markerId: String = "",
+  val name: String = "",
 )
 
 data class NonRootCascadeProfile(
@@ -51,16 +52,18 @@ data class NonRootT2sConfig(
 
 data class NonRootCascadeState(
   val profiles: List<NonRootCascadeProfile> = emptyList(),
+  val directSelectedProfileId: String = "",
   val backendMode: NonRootCascadeBackendMode = NonRootCascadeBackendMode.BALANCE,
   val route: List<NonRootCascadeRouteItem> = emptyList(),
   val t2s: NonRootT2sConfig = NonRootT2sConfig(),
 )
 
 /**
- * Persistent non-root Cascade configuration.
+ * Persistent non-root profile and Cascade configuration.
  *
- * Each profile owns one Opera Proxy configuration and one loopback port. The
- * T2S route is stored separately so disabling a profile never loses its place.
+ * Tool and Cascade modes share the same ordered profile list. Direct keeps one
+ * selected profile ID, while Cascade keeps its independent enabled flags. The
+ * T2S route is stored separately so switching modes never destroys either set.
  */
 class NonRootCascadeStore(context: Context) {
   private val appContext = context.applicationContext
@@ -90,7 +93,54 @@ class NonRootCascadeStore(context: Context) {
     val route = current.route.toMutableList().apply {
       add(insertAt, NonRootCascadeRouteItem(NonRootCascadeRouteItemType.PROFILE, id))
     }
-    return persist(current.copy(profiles = current.profiles + profile, route = normalizeRoute(route, current.profiles + profile)))
+    return persist(current.copy(
+      profiles = current.profiles + profile,
+      directSelectedProfileId = current.directSelectedProfileId.ifBlank { id },
+      route = normalizeRoute(route, current.profiles + profile),
+    ))
+  }
+
+  @Synchronized
+  fun importLegacyDirectProfileIfNeeded(config: NonRootDirectOperaConfig?): NonRootCascadeState {
+    val current = load()
+    if (config == null || prefs.getBoolean(KEY_LEGACY_DIRECT_IMPORTED, false)) return current
+
+    val id = UUID.randomUUID().toString()
+    val legacyPort = portRegistry.getPersisted(NonRootPortRegistry.DIRECT_OPERA_KEY)
+    val legacyByeDpiPort = portRegistry.getPersisted(NonRootPortRegistry.DIRECT_BYEDPI_KEY)
+    portRegistry.clear(NonRootPortRegistry.DIRECT_OPERA_KEY)
+    portRegistry.clear(NonRootPortRegistry.DIRECT_BYEDPI_KEY)
+    val profilePort = legacyPort?.takeIf { portRegistry.set(portKey(id), it) }
+      ?: portRegistry.getOrAllocate(portKey(id))
+    val profileByeDpiPort = legacyByeDpiPort?.takeIf { portRegistry.set(byedpiPortKey(id), it) }
+      ?: portRegistry.getOrAllocate(byedpiPortKey(id))
+    val profile = NonRootCascadeProfile(
+      id = id,
+      name = DEFAULT_DIRECT_PROFILE_NAME,
+      enabled = false,
+      port = profilePort,
+      byedpiPort = profileByeDpiPort,
+      operaConfig = config,
+    )
+    val profiles = current.profiles + profile
+    val insertAt = current.route.indexOfLast { it.type == NonRootCascadeRouteItemType.DIRECT_BLOCK }
+      .takeIf { it >= 0 } ?: current.route.size
+    val route = current.route.toMutableList().apply {
+      add(insertAt, NonRootCascadeRouteItem(NonRootCascadeRouteItemType.PROFILE, id))
+    }
+    prefs.edit().putBoolean(KEY_LEGACY_DIRECT_IMPORTED, true).apply()
+    return persist(current.copy(
+      profiles = profiles,
+      directSelectedProfileId = current.directSelectedProfileId.ifBlank { id },
+      route = normalizeRoute(route, profiles),
+    ))
+  }
+
+  @Synchronized
+  fun setDirectSelectedProfile(profileId: String?): NonRootCascadeState {
+    val current = load()
+    val selected = profileId.orEmpty().takeIf { id -> current.profiles.any { it.id == id } }.orEmpty()
+    return persist(current.copy(directSelectedProfileId = selected))
   }
 
   @Synchronized
@@ -133,7 +183,11 @@ class NonRootCascadeStore(context: Context) {
     portRegistry.clear(byedpiPortKey(profileId))
     val profiles = current.profiles.filterNot { it.id == profileId }
     val route = current.route.filterNot { it.type == NonRootCascadeRouteItemType.PROFILE && it.profileId == profileId }
-    return persist(current.copy(profiles = profiles, route = normalizeRoute(route, profiles)))
+    return persist(current.copy(
+      profiles = profiles,
+      directSelectedProfileId = current.directSelectedProfileId.takeUnless { it == profileId }.orEmpty(),
+      route = normalizeRoute(route, profiles),
+    ))
   }
 
   @Synchronized
@@ -195,6 +249,7 @@ class NonRootCascadeStore(context: Context) {
             type = type,
             profileId = item.optString("profile_id", ""),
             markerId = item.optString("marker_id", ""),
+            name = item.optString("name", ""),
           )
         )
       }
@@ -207,6 +262,8 @@ class NonRootCascadeStore(context: Context) {
     }
     return NonRootCascadeState(
       profiles = profiles,
+      directSelectedProfileId = obj.optString("direct_selected_profile_id", "")
+        .takeIf { selected -> profiles.any { it.id == selected } }.orEmpty(),
       backendMode = mode,
       route = normalizeRoute(routeForMode, profiles),
       t2s = t2sFromJson(obj.optJSONObject("t2s") ?: JSONObject()),
@@ -219,12 +276,17 @@ class NonRootCascadeStore(context: Context) {
     } else {
       state.route
     }
-    val normalized = state.copy(route = normalizeRoute(routeForMode, state.profiles))
+    val normalized = state.copy(
+      directSelectedProfileId = state.directSelectedProfileId
+        .takeIf { selected -> state.profiles.any { it.id == selected } }.orEmpty(),
+      route = normalizeRoute(routeForMode, state.profiles),
+    )
     prefs.edit().putString(KEY_STATE, toJson(normalized).toString()).apply()
     return normalized
   }
 
   private fun toJson(state: NonRootCascadeState): JSONObject = JSONObject().apply {
+    put("direct_selected_profile_id", state.directSelectedProfileId)
     put("backend_mode", state.backendMode.name.lowercase())
     put("t2s", t2sToJson(state.t2s))
     put("profiles", JSONArray().apply {
@@ -244,8 +306,11 @@ class NonRootCascadeStore(context: Context) {
           put("type", routeItem.type.name.lowercase())
           if (routeItem.type == NonRootCascadeRouteItemType.PROFILE) {
             put("profile_id", routeItem.profileId)
-          } else if (routeItem.markerId.isNotBlank()) {
-            put("marker_id", routeItem.markerId)
+          } else {
+            if (routeItem.markerId.isNotBlank()) put("marker_id", routeItem.markerId)
+            if (routeItem.type == NonRootCascadeRouteItemType.GROUP && routeItem.name.isNotBlank()) {
+              put("name", routeItem.name)
+            }
           }
         })
       }
@@ -363,7 +428,9 @@ class NonRootCascadeStore(context: Context) {
   companion object {
     private const val PREFS_NAME = "non_root_cascade"
     private const val KEY_STATE = "cascade_state"
+    private const val KEY_LEGACY_DIRECT_IMPORTED = "legacy_direct_imported"
     private const val DEFAULT_PROFILE_NAME = "Opera"
+    private const val DEFAULT_DIRECT_PROFILE_NAME = "Direct"
 
     fun portKey(profileId: String): String = "cascade.$profileId.operaproxy"
     fun byedpiPortKey(profileId: String): String = "cascade.$profileId.byedpi"

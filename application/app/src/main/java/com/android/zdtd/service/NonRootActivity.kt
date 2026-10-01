@@ -39,9 +39,6 @@ class NonRootActivity : AppCompatActivity() {
       val languageMode by vm.languageMode.collectAsStateWithLifecycle()
       val themeMode by vm.themeMode.collectAsStateWithLifecycle()
       val workMode by vm.workMode.collectAsStateWithLifecycle()
-      val directOperaPort by vm.directOperaPort.collectAsStateWithLifecycle()
-      val directByeDpiPort by vm.directByeDpiPort.collectAsStateWithLifecycle()
-      val directOperaConfig by vm.directOperaConfig.collectAsStateWithLifecycle()
       val cascadeState by vm.cascadeState.collectAsStateWithLifecycle()
       val t2sApiPort by vm.t2sApiPort.collectAsStateWithLifecycle()
       val vpnState by vm.vpnState.collectAsStateWithLifecycle()
@@ -60,9 +57,6 @@ class NonRootActivity : AppCompatActivity() {
             languageMode = languageMode,
             themeMode = themeMode,
             workMode = workMode,
-            directOperaPort = directOperaPort,
-            directByeDpiPort = directByeDpiPort,
-            directOperaConfig = directOperaConfig,
             cascadeState = cascadeState,
             t2sApiPort = t2sApiPort,
             vpnState = vpnState,
@@ -73,9 +67,7 @@ class NonRootActivity : AppCompatActivity() {
             onLanguageModeChange = vm::setLanguageMode,
             onThemeModeChange = vm::setThemeMode,
             onWorkModeChange = vm::setWorkMode,
-            onDirectOperaPortChange = vm::setDirectOperaPort,
-            onDirectByeDpiPortChange = vm::setDirectByeDpiPort,
-            onDirectOperaConfigChange = vm::setDirectOperaConfig,
+            onDirectSelectedProfileChange = vm::setDirectSelectedProfile,
             onCreateCascadeProfile = vm::createCascadeProfile,
             onUpdateCascadeProfile = vm::updateCascadeProfile,
             onCascadeProfilePortChange = vm::setCascadeProfilePort,

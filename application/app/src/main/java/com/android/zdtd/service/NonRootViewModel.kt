@@ -12,7 +12,7 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
   private val config = RootConfigManager(application.applicationContext)
   private val nonRootSettings = NonRootSettingsStore(application.applicationContext)
   private val portRegistry = NonRootPortRegistry(application.applicationContext)
-  private val directConfigStore = NonRootDirectConfigStore(application.applicationContext)
+  private val legacyDirectConfigStore = NonRootDirectConfigStore(application.applicationContext)
   private val cascadeStore = NonRootCascadeStore(application.applicationContext)
 
   private val _languageMode = MutableStateFlow(config.getAppLanguageMode())
@@ -24,16 +24,11 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
   private val _workMode = MutableStateFlow(nonRootSettings.getWorkMode())
   val workMode: StateFlow<NonRootWorkMode> = _workMode.asStateFlow()
 
-  private val _directOperaPort = MutableStateFlow(portRegistry.getOrAllocate(NonRootPortRegistry.DIRECT_OPERA_KEY))
-  val directOperaPort: StateFlow<Int> = _directOperaPort.asStateFlow()
+  private val initialCascadeState = cascadeStore.importLegacyDirectProfileIfNeeded(
+    legacyDirectConfigStore.load().takeIf { legacyDirectConfigStore.hasSavedConfig() }
+  )
 
-  private val _directByeDpiPort = MutableStateFlow(portRegistry.getOrAllocate(NonRootPortRegistry.DIRECT_BYEDPI_KEY))
-  val directByeDpiPort: StateFlow<Int> = _directByeDpiPort.asStateFlow()
-
-  private val _directOperaConfig = MutableStateFlow(directConfigStore.load())
-  val directOperaConfig: StateFlow<NonRootDirectOperaConfig> = _directOperaConfig.asStateFlow()
-
-  private val _cascadeState = MutableStateFlow(cascadeStore.load())
+  private val _cascadeState = MutableStateFlow(initialCascadeState)
   val cascadeState: StateFlow<NonRootCascadeState> = _cascadeState.asStateFlow()
 
   private val _t2sListenPort = MutableStateFlow(portRegistry.getOrAllocate(NonRootPortRegistry.T2S_LISTEN_KEY))
@@ -74,21 +69,8 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
     _workMode.value = mode
   }
 
-  fun setDirectOperaPort(port: Int): Boolean {
-    val saved = portRegistry.set(NonRootPortRegistry.DIRECT_OPERA_KEY, port)
-    if (saved) _directOperaPort.value = port
-    return saved
-  }
-
-  fun setDirectByeDpiPort(port: Int): Boolean {
-    val saved = portRegistry.set(NonRootPortRegistry.DIRECT_BYEDPI_KEY, port)
-    if (saved) _directByeDpiPort.value = port
-    return saved
-  }
-
-  fun setDirectOperaConfig(config: NonRootDirectOperaConfig) {
-    directConfigStore.save(config)
-    _directOperaConfig.value = config
+  fun setDirectSelectedProfile(profileId: String?) {
+    _cascadeState.value = cascadeStore.setDirectSelectedProfile(profileId)
   }
 
   fun createCascadeProfile(name: String) {

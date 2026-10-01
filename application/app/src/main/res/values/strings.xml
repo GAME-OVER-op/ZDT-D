@@ -2494,4 +2494,14 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="non_root_log_vpn_stopped">VPN is stopped.</string>
     <string name="non_root_log_error">Error: %1$s</string>
 
+    <string name="non_root_t2s_advanced_settings">Advanced T2S</string>
+    <string name="non_root_profiles_empty_title">No profiles yet</string>
+    <string name="non_root_profiles_empty_body">Create an Opera Proxy profile. The same profiles are used in Tool and Cascade modes.</string>
+    <string name="non_root_opera_server_title">Opera server</string>
+    <string name="non_root_opera_server_desc">One app profile uses one Opera Proxy server and one SNI.</string>
+    <string name="non_root_profile_opera_desc">Opera Proxy server settings for this profile.</string>
+    <string name="non_root_group_name_title">Name the group</string>
+    <string name="non_root_group_name_label">Group name</string>
+    <string name="non_root_group_rename">Rename group</string>
+    <string name="non_root_t2s_group_unnamed">Group</string>
 </resources>

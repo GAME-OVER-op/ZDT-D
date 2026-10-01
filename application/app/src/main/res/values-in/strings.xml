@@ -2494,4 +2494,14 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="non_root_log_vpn_stopped">VPN telah berhenti.</string>
     <string name="non_root_log_error">Kesalahan: %1$s</string>
 
+    <string name="non_root_t2s_advanced_settings">T2S lanjutan</string>
+    <string name="non_root_profiles_empty_title">Belum ada profil</string>
+    <string name="non_root_profiles_empty_body">Buat profil Opera Proxy. Profil yang sama digunakan dalam mode Alat dan Cascade.</string>
+    <string name="non_root_opera_server_title">Server Opera</string>
+    <string name="non_root_opera_server_desc">Satu profil aplikasi memakai satu server Opera Proxy dan satu SNI.</string>
+    <string name="non_root_profile_opera_desc">Pengaturan server Opera Proxy untuk profil ini.</string>
+    <string name="non_root_group_name_title">Beri nama grup</string>
+    <string name="non_root_group_name_label">Nama grup</string>
+    <string name="non_root_group_rename">Ganti nama grup</string>
+    <string name="non_root_t2s_group_unnamed">Grup</string>
 </resources>

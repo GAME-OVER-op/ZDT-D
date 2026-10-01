@@ -2495,4 +2495,14 @@ La causa restante probablemente está en el daemon/API. Revisa los registros del
     <string name="non_root_log_vpn_stopped">La VPN está detenida.</string>
     <string name="non_root_log_error">Error: %1$s</string>
 
+    <string name="non_root_t2s_advanced_settings">T2S avanzado</string>
+    <string name="non_root_profiles_empty_title">Aún no hay perfiles</string>
+    <string name="non_root_profiles_empty_body">Crea un perfil de Opera Proxy. Los mismos perfiles se usan en los modos Herramienta y Cascada.</string>
+    <string name="non_root_opera_server_title">Servidor Opera</string>
+    <string name="non_root_opera_server_desc">Un perfil de la aplicación usa un servidor Opera Proxy y un SNI.</string>
+    <string name="non_root_profile_opera_desc">Ajustes del servidor Opera Proxy para este perfil.</string>
+    <string name="non_root_group_name_title">Nombrar el grupo</string>
+    <string name="non_root_group_name_label">Nombre del grupo</string>
+    <string name="non_root_group_rename">Renombrar grupo</string>
+    <string name="non_root_t2s_group_unnamed">Grupo</string>
 </resources>

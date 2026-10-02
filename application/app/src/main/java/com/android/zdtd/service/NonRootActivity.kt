@@ -32,7 +32,9 @@ class NonRootActivity : AppCompatActivity() {
   private val vpsVm: com.android.zdtd.service.vps.VpsViewModel by viewModels()
   private val pluginInstallPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()) {
-      vm.installOrUpdateTgWsPlugin()
+      vm.installDownloadedTgWsPlugin()
+    } else {
+      vm.onTgWsPluginInstallPermissionDenied()
     }
   }
   private val vpnPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -126,13 +128,18 @@ class NonRootActivity : AppCompatActivity() {
   }
 
   private fun requestTgWsPluginInstall() {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
-      pluginInstallPermissionLauncher.launch(
-        Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
-      )
-      return
+    lifecycleScope.launch {
+      if (!vm.downloadTgWsPlugin()) return@launch
+
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+        pluginInstallPermissionLauncher.launch(
+          Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
+        )
+        return@launch
+      }
+
+      vm.installDownloadedTgWsPlugin()
     }
-    vm.installOrUpdateTgWsPlugin()
   }
 
   private fun switchToRootSetup() {

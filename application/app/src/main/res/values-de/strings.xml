@@ -2568,7 +2568,8 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="non_root_app_routing_only_selected_empty_error">Wähle bei „Nur ausgewählte Apps“ mindestens eine installierte App aus.</string>
 
     <string name="non_root_tgws_plugin_title">TGWS-Plugin</string>
-    <string name="non_root_tgws_plugin_not_installed">Das TGWS-Plugin ist nicht installiert. Installiere die signierte Komponente aus Technical Assets.</string>
+    <string name="non_root_tgws_plugin_not_installed">Das TGWS-Plugin ist nicht installiert. Tippe auf Installieren, um es direkt über ZDT-D herunterzuladen und zu installieren.</string>
+    <string name="non_root_tgws_plugin_install_permission_required">Erlaube ZDT-D die Installation unbekannter Apps, um mit der Installation des TGWS-Plugins fortzufahren.</string>
     <string name="non_root_tgws_plugin_installed_fmt">Installiertes Plugin: %1$s</string>
     <string name="non_root_tgws_plugin_latest_fmt">Verfügbares Plugin: %1$s</string>
 </resources>

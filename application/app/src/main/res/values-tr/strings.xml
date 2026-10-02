@@ -2567,7 +2567,8 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="non_root_app_routing_only_selected_empty_error">“Yalnızca seçilenler” modunda en az bir yüklü uygulama seçin.</string>
 
     <string name="non_root_tgws_plugin_title">TGWS eklentisi</string>
-    <string name="non_root_tgws_plugin_not_installed">TGWS eklentisi yüklü değil. Technical Assets içindeki imzalı bileşeni yükleyin.</string>
+    <string name="non_root_tgws_plugin_not_installed">TGWS eklentisi yüklü değil. Doğrudan ZDT-D üzerinden indirip yüklemek için Yükle’ye dokunun.</string>
+    <string name="non_root_tgws_plugin_install_permission_required">TGWS eklentisinin kurulumuna devam etmek için ZDT-D’ye bilinmeyen uygulamaları yükleme izni verin.</string>
     <string name="non_root_tgws_plugin_installed_fmt">Yüklü eklenti: %1$s</string>
     <string name="non_root_tgws_plugin_latest_fmt">Kullanılabilir eklenti: %1$s</string>
 </resources>

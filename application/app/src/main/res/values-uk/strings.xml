@@ -2570,7 +2570,8 @@ APatch: 10700+</string>
     <string name="non_root_app_routing_only_selected_empty_error">У режимі «Лише вибрані» виберіть хоча б один встановлений застосунок.</string>
 
     <string name="non_root_tgws_plugin_title">Плагін TGWS</string>
-    <string name="non_root_tgws_plugin_not_installed">Плагін TGWS не встановлено. Встановіть підписаний компонент із Technical Assets.</string>
+    <string name="non_root_tgws_plugin_not_installed">Плагін TGWS не встановлено. Натисніть «Встановити», щоб завантажити й установити його безпосередньо із ZDT-D.</string>
+    <string name="non_root_tgws_plugin_install_permission_required">Дозвольте ZDT-D встановлювати програми з невідомих джерел, щоб продовжити встановлення плагіна TGWS.</string>
     <string name="non_root_tgws_plugin_installed_fmt">Встановлений плагін: %1$s</string>
     <string name="non_root_tgws_plugin_latest_fmt">Доступний плагін: %1$s</string>
 </resources>

@@ -8,6 +8,7 @@ import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Build
 import android.net.Uri
+import com.android.zdtd.service.R
 import java.io.File
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
@@ -99,12 +100,12 @@ class TgWsPluginManager(private val context: Context) {
     TgWsPluginStateBus.state.value
   }
 
-  suspend fun downloadAndInstall(): TgWsPluginState = withContext(Dispatchers.IO) {
+  suspend fun downloadPlugin(): TgWsPluginState = withContext(Dispatchers.IO) {
     TgWsPluginStateBus.update { it.copy(downloading = true, installing = false, progressPercent = 0, errorMessage = null) }
     runCatching {
       val manifest = fetchManifest()
       TgWsPluginStateBus.update { it.copy(latestVersionName = manifest.versionName, latestVersionCode = manifest.versionCode) }
-      val apkFile = File(appContext.cacheDir, "tgws-plugin/${TgWsPluginContract.APK_ASSET}").apply {
+      val apkFile = preparedApkFile().apply {
         parentFile?.mkdirs()
         delete()
       }
@@ -114,14 +115,38 @@ class TgWsPluginManager(private val context: Context) {
         "TGWS plugin SHA-256 mismatch"
       }
       validateApk(apkFile, manifest)
-      commitInstall(apkFile)
-      TgWsPluginStateBus.update { it.copy(downloading = false, installing = true, progressPercent = 100) }
+      TgWsPluginStateBus.update { it.copy(downloading = false, installing = false, progressPercent = 100, errorMessage = null) }
     }.onFailure { error ->
+      preparedApkFile().delete()
       TgWsPluginStateBus.update {
         it.copy(downloading = false, installing = false, progressPercent = 0, errorMessage = error.message ?: error.javaClass.simpleName)
       }
     }
     TgWsPluginStateBus.state.value
+  }
+
+  fun installDownloadedPlugin(): TgWsPluginState {
+    return runCatching {
+      val apkFile = preparedApkFile()
+      check(apkFile.isFile && apkFile.length() > 0L) { "TGWS plugin APK has not been downloaded" }
+      validatePreparedApk(apkFile)
+      TgWsPluginStateBus.update { it.copy(downloading = false, installing = true, progressPercent = 100, errorMessage = null) }
+      commitInstall(apkFile)
+      TgWsPluginStateBus.state.value
+    }.getOrElse { error ->
+      TgWsPluginStateBus.update {
+        it.copy(downloading = false, installing = false, progressPercent = 0, errorMessage = error.message ?: error.javaClass.simpleName)
+      }
+      TgWsPluginStateBus.state.value
+    }
+  }
+
+  fun hasDownloadedPlugin(): Boolean = preparedApkFile().let { it.isFile && it.length() > 0L }
+
+  fun markInstallPermissionDenied() {
+    TgWsPluginStateBus.update {
+      it.copy(downloading = false, installing = false, errorMessage = appContext.getString(R.string.non_root_tgws_plugin_install_permission_required))
+    }
   }
 
   fun requestUninstall(): TgWsPluginState {
@@ -188,6 +213,21 @@ class TgWsPluginManager(private val context: Context) {
     }
   }
 
+  private fun preparedApkFile(): File =
+    File(appContext.cacheDir, "tgws-plugin/${TgWsPluginContract.APK_ASSET}")
+
+  private fun validatePreparedApk(apk: File): PackageInfo {
+    val info = packageManager.getPackageArchiveInfo(apk.absolutePath, signingFlags())
+      ?: error("Unable to inspect TGWS plugin APK")
+    check(info.packageName == TgWsPluginContract.PACKAGE_NAME) { "TGWS plugin package mismatch" }
+    val hostDigests = signerDigests(packageManager.getPackageInfo(appContext.packageName, signingFlags())).toSet()
+    val pluginDigests = signerDigests(info).toSet()
+    check(hostDigests.isNotEmpty()) { "Unable to read ZDT-D signing certificate" }
+    check(pluginDigests.isNotEmpty()) { "TGWS plugin APK is unsigned" }
+    check(hostDigests.intersect(pluginDigests).isNotEmpty()) { "TGWS plugin signature does not match ZDT-D" }
+    return info
+  }
+
   private fun downloadApk(destination: File) {
     val request = Request.Builder()
       .url("${TgWsPluginContract.TECHNICAL_BASE_URL}/${TgWsPluginContract.APK_ASSET}")
@@ -218,15 +258,9 @@ class TgWsPluginManager(private val context: Context) {
   }
 
   private fun validateApk(apk: File, manifest: RemoteManifest) {
-    val info = packageManager.getPackageArchiveInfo(apk.absolutePath, signingFlags())
-      ?: error("Unable to inspect TGWS plugin APK")
+    val info = validatePreparedApk(apk)
     check(info.packageName == manifest.packageName) { "TGWS plugin package mismatch" }
     check(info.longVersionCodeCompat() == manifest.versionCode) { "TGWS plugin versionCode mismatch" }
-    val hostDigests = signerDigests(packageManager.getPackageInfo(appContext.packageName, signingFlags())).toSet()
-    val pluginDigests = signerDigests(info).toSet()
-    check(hostDigests.isNotEmpty()) { "Unable to read ZDT-D signing certificate" }
-    check(pluginDigests.isNotEmpty()) { "TGWS plugin APK is unsigned" }
-    check(hostDigests.intersect(pluginDigests).isNotEmpty()) { "TGWS plugin signature does not match ZDT-D" }
   }
 
   private fun commitInstall(apk: File) {

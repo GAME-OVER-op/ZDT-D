@@ -2567,7 +2567,8 @@ APatch：10700+</string>
     <string name="non_root_app_routing_only_selected_empty_error">使用“仅所选应用”时，请至少选择一个已安装应用。</string>
 
     <string name="non_root_tgws_plugin_title">TGWS 插件</string>
-    <string name="non_root_tgws_plugin_not_installed">未安装 TGWS 插件。请从 Technical Assets 安装已签名组件。</string>
+    <string name="non_root_tgws_plugin_not_installed">尚未安装 TGWS 插件。点按“安装”即可由 ZDT-D 直接下载并安装。</string>
+    <string name="non_root_tgws_plugin_install_permission_required">请允许 ZDT-D 安装未知应用，以继续安装 TGWS 插件。</string>
     <string name="non_root_tgws_plugin_installed_fmt">已安装插件：%1$s</string>
     <string name="non_root_tgws_plugin_latest_fmt">可用插件：%1$s</string>
 </resources>

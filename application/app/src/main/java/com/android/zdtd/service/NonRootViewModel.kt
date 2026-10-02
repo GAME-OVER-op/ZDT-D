@@ -192,10 +192,17 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
     if (checkRemote) viewModelScope.launch { tgWsPluginManager.refreshRemote() }
   }
 
-  fun installOrUpdateTgWsPlugin() {
-    viewModelScope.launch {
-      tgWsPluginManager.downloadAndInstall()
-    }
+  suspend fun downloadTgWsPlugin(): Boolean {
+    val state = tgWsPluginManager.downloadPlugin()
+    return state.errorMessage == null && tgWsPluginManager.hasDownloadedPlugin()
+  }
+
+  fun installDownloadedTgWsPlugin() {
+    tgWsPluginManager.installDownloadedPlugin()
+  }
+
+  fun onTgWsPluginInstallPermissionDenied() {
+    tgWsPluginManager.markInstallPermissionDenied()
   }
 
   fun removeTgWsPlugin() {

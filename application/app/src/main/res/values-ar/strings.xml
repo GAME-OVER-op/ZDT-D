@@ -2572,7 +2572,8 @@ APatch: ‏10700+</string>
     <string name="non_root_app_routing_only_selected_empty_error">عند استخدام «التطبيقات المحددة فقط»، اختر تطبيقًا مثبتًا واحدًا على الأقل.</string>
 
     <string name="non_root_tgws_plugin_title">إضافة TGWS</string>
-    <string name="non_root_tgws_plugin_not_installed">إضافة TGWS غير مثبتة. ثبّت المكوّن الموقّع من Technical Assets.</string>
+    <string name="non_root_tgws_plugin_not_installed">إضافة TGWS غير مثبتة. اضغط على تثبيت لتنزيلها وتثبيتها مباشرة من ZDT-D.</string>
+    <string name="non_root_tgws_plugin_install_permission_required">اسمح لـ ZDT-D بتثبيت التطبيقات غير المعروفة لمتابعة تثبيت إضافة TGWS.</string>
     <string name="non_root_tgws_plugin_installed_fmt">الإضافة المثبتة: %1$s</string>
     <string name="non_root_tgws_plugin_latest_fmt">الإضافة المتاحة: %1$s</string>
 </resources>

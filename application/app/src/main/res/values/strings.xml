@@ -2567,7 +2567,8 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="non_root_app_routing_only_selected_empty_error">Select at least one installed app when using “Only selected apps”.</string>
 
     <string name="non_root_tgws_plugin_title">TGWS plugin</string>
-    <string name="non_root_tgws_plugin_not_installed">TGWS plugin is not installed. Install the signed component from Technical Assets.</string>
+    <string name="non_root_tgws_plugin_not_installed">TGWS plugin is not installed. Tap Install to download and install it directly from ZDT-D.</string>
+    <string name="non_root_tgws_plugin_install_permission_required">Allow ZDT-D to install unknown apps to continue installing the TGWS plugin.</string>
     <string name="non_root_tgws_plugin_installed_fmt">Installed plugin: %1$s</string>
     <string name="non_root_tgws_plugin_latest_fmt">Available plugin: %1$s</string>
 </resources>

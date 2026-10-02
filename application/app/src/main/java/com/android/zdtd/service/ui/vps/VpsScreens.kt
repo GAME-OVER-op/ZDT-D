@@ -12,9 +12,11 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -94,6 +96,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -1585,21 +1588,50 @@ private fun VpsOperationScreen(
       }
     }
 
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+    val finishedActionsProgress by animateFloatAsState(
+      targetValue = if (consolePresentationFinished) 1f else 0f,
+      animationSpec = tween(durationMillis = 380, easing = FastOutSlowInEasing),
+      label = "vpsConsoleFinishedActions",
+    )
+    val closeButtonWeight = finishedActionsProgress.coerceAtLeast(0.001f)
+    val copyButtonWeight = 2f - finishedActionsProgress
+
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
       OutlinedButton(
         onClick = {
           (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
             .setPrimaryClip(ClipData.newPlainText("VPS log", consoleText))
           Toast.makeText(context, R.string.copied, Toast.LENGTH_SHORT).show()
         },
-        modifier = Modifier.weight(1f),
+        modifier = Modifier.weight(copyButtonWeight),
       ) {
         Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(17.dp))
         Spacer(Modifier.width(6.dp))
         Text(stringResource(R.string.action_copy))
       }
-      if (consolePresentationFinished) {
-        Button(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.action_close)) }
+
+      Spacer(Modifier.width((8f * finishedActionsProgress).dp))
+
+      Box(
+        modifier = Modifier
+          .weight(closeButtonWeight)
+          .clipToBounds(),
+        contentAlignment = Alignment.CenterEnd,
+      ) {
+        if (consolePresentationFinished || finishedActionsProgress > 0.001f) {
+          Button(
+            onClick = onDismiss,
+            enabled = consolePresentationFinished,
+            modifier = Modifier
+              .fillMaxWidth()
+              .graphicsLayer {
+                alpha = ((finishedActionsProgress - 0.08f) / 0.92f).coerceIn(0f, 1f)
+                translationX = (1f - finishedActionsProgress) * 32f
+              },
+          ) {
+            Text(stringResource(R.string.action_close))
+          }
+        }
       }
     }
   }

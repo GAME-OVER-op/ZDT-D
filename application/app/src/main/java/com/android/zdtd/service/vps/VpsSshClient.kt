@@ -177,6 +177,35 @@ class VpsSshClient {
     val output = ByteArrayOutputStream()
     val lineBuffer = StringBuilder()
     val buffer = ByteArray(8 * 1024)
+    var pendingProgressLine: String? = null
+    var lastProgressEmitAtMs = 0L
+
+    fun emitStreamLine(raw: String, carriageReturn: Boolean) {
+      val callback = onLine ?: return
+      val line = raw.trimEnd('\r', '\n')
+      if (!carriageReturn) {
+        val pending = pendingProgressLine
+        pendingProgressLine = null
+        if (line.isBlank()) {
+          pending?.let(callback)
+          return
+        }
+        pending?.takeIf { it != line }?.let(callback)
+        callback(line)
+        return
+      }
+      if (line.isBlank()) return
+
+      // Programs such as curl and apt update one terminal row with carriage returns.
+      // Keep those updates live without flooding the Compose typing queue.
+      pendingProgressLine = line
+      val now = TimeUnit.NANOSECONDS.toMillis(System.nanoTime())
+      if (now - lastProgressEmitAtMs >= 140L) {
+        callback(line)
+        pendingProgressLine = null
+        lastProgressEmitAtMs = now
+      }
+    }
 
     fun drainAvailable() {
       while (input.available() > 0) {
@@ -187,9 +216,16 @@ class VpsSshClient {
           lineBuffer.append(buffer.copyOfRange(0, count).toString(Charsets.UTF_8))
           while (true) {
             val newline = lineBuffer.indexOf("\n")
-            if (newline < 0) break
-            onLine(lineBuffer.substring(0, newline).trimEnd('\r'))
-            lineBuffer.delete(0, newline + 1)
+            val carriage = lineBuffer.indexOf("\r")
+            val delimiter = when {
+              newline < 0 -> carriage
+              carriage < 0 -> newline
+              else -> minOf(newline, carriage)
+            }
+            if (delimiter < 0) break
+            val isCarriageReturn = lineBuffer[delimiter] == '\r'
+            emitStreamLine(lineBuffer.substring(0, delimiter), isCarriageReturn)
+            lineBuffer.delete(0, delimiter + 1)
           }
         }
       }
@@ -205,7 +241,10 @@ class VpsSshClient {
       Thread.sleep(20)
     }
     drainAvailable()
-    if (onLine != null && lineBuffer.isNotEmpty()) onLine(lineBuffer.toString().trimEnd('\r'))
+    if (onLine != null) {
+      if (lineBuffer.isNotEmpty()) emitStreamLine(lineBuffer.toString(), carriageReturn = false)
+      pendingProgressLine?.let(onLine)
+    }
     val code = channel.exitStatus
     channel.disconnect()
     return VpsCommandResult(code, output.toByteArray().toString(Charsets.UTF_8).trim())

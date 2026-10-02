@@ -105,8 +105,10 @@ restore_managed_units() {
 }
 
 begin_tx() {
+  stage 'Creating safety backup before changes'
   ensure_dirs
   TX_BACKUP="$ZDT_BACKUP/$(date +%Y%m%d_%H%M%S)_$RANDOM"
+  info "Transaction backup: $TX_BACKUP"
   mkdir -p "$TX_BACKUP"
   : > "$TX_BACKUP/external-units.env"
   record_unit_state systemd-resolved.service
@@ -127,6 +129,7 @@ begin_tx() {
   if (( ${#paths[@]} > 0 )); then tar -czpf "$TX_BACKUP/state.tar.gz" "${paths[@]}" 2>/dev/null || true; fi
   TX_ACTIVE=1
   printf 'ZDT_BACKUP=%s\n' "$TX_BACKUP"
+  info 'Safety backup completed'
 }
 
 cleanup_managed_files() {
@@ -154,6 +157,8 @@ rollback() {
   if (( TX_ACTIVE == 1 )); then
     set +e
     printf 'ZDT_ROLLBACK=started\n'
+    stage 'Rolling back failed changes'
+    info 'Stopping managed services and restoring the previous server state'
     cleanup_managed_files
     rollback_certificates
     if [[ -f $TX_BACKUP/state.tar.gz ]]; then tar -xzpf "$TX_BACKUP/state.tar.gz" -C / >/dev/null 2>&1 || true; fi
@@ -161,6 +166,7 @@ rollback() {
     if [[ -f $TX_BACKUP/resolv.tar.gz ]]; then tar -xzpf "$TX_BACKUP/resolv.tar.gz" -C / >/dev/null 2>&1 || true; fi
     restore_unit_states "$TX_BACKUP/external-units.env"
     restore_managed_units
+    info 'Previous server state restored'
     printf 'ZDT_ROLLBACK=completed\n'
   fi
   printf 'ZDT_FAILED_STAGE=%s\n' "$CURRENT_STAGE" >&2
@@ -169,8 +175,10 @@ rollback() {
 trap rollback ERR
 
 commit_tx() {
+  stage 'Finalizing changes'
   TX_ACTIVE=0
   printf 'ZDT_COMMIT=ok\n'
+  info 'Operation completed successfully'
   find "$ZDT_BACKUP" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' 2>/dev/null | sort -nr | awk 'NR>10 {print $2}' | xargs -r rm -rf
 }
 
@@ -258,8 +266,15 @@ check_platform() {
   esac
   command -v systemctl >/dev/null || die 'systemd is required'
   command -v apt-get >/dev/null || die 'apt is required'
+  info "Platform verified: ${PRETTY_NAME:-$ID $VERSION_ID}, architecture $arch"
 }
-apt_install() { run_visible apt-get update -y; run_visible apt-get install -y --no-install-recommends "$@"; }
+apt_install() {
+  info "Updating package metadata"
+  run_visible apt-get update -y
+  info "Installing packages: $*"
+  run_visible apt-get install -y --no-install-recommends "$@"
+  info 'Package installation completed'
+}
 
 port_free() {
   local proto=$1 port=$2
@@ -381,21 +396,25 @@ WantedBy=multi-user.target
 UNIT
 }
 refresh_firewall() {
+  info 'Refreshing ZDT-D firewall rules'
   if any_managed_service; then
     write_firewall_script
-    systemctl daemon-reload
-    systemctl enable zdt-vps-firewall.service >/dev/null 2>&1 || true
-    systemctl restart zdt-vps-firewall.service
+    run_visible systemctl daemon-reload
+    run_visible systemctl enable zdt-vps-firewall.service || true
+    run_visible systemctl restart zdt-vps-firewall.service
+    info 'Managed firewall rules are active'
   else
-    systemctl disable --now zdt-vps-firewall.service >/dev/null 2>&1 || true
+    info 'No managed services remain; removing ZDT-D firewall rules'
+    run_visible systemctl disable --now zdt-vps-firewall.service || true
     while iptables -w 5 -D INPUT -j "$FIREWALL_CHAIN" 2>/dev/null; do :; done
     iptables -w 5 -F "$FIREWALL_CHAIN" 2>/dev/null || true
     iptables -w 5 -X "$FIREWALL_CHAIN" 2>/dev/null || true
     for iface in 'zdtun+' 'zdtwg+'; do while iptables -w 5 -t nat -D PREROUTING -i "$iface" -j ZDT_VPS_DNS 2>/dev/null; do :; done; done
     iptables -w 5 -t nat -F ZDT_VPS_DNS 2>/dev/null || true
     iptables -w 5 -t nat -X ZDT_VPS_DNS 2>/dev/null || true
-    rm -f "$SYSTEMD_DIR/zdt-vps-firewall.service" "$ZDT_ROOT/bin/rebuild-firewall"
-    systemctl daemon-reload
+    run_visible rm -f "$SYSTEMD_DIR/zdt-vps-firewall.service" "$ZDT_ROOT/bin/rebuild-firewall"
+    run_visible systemctl daemon-reload
+    info 'Managed firewall rules removed'
   fi
 }
 
@@ -407,6 +426,7 @@ persist_dns_original_state() {
   cp -f "$TX_BACKUP/resolv.tar.gz" "$dir/resolv.tar.gz" 2>/dev/null || true
 }
 write_temporary_resolv() {
+  info 'Writing temporary bootstrap DNS resolver configuration'
   rm -f /etc/resolv.conf
   cat > /etc/resolv.conf <<'RESOLV'
 nameserver 1.1.1.1
@@ -432,9 +452,10 @@ ensure_download_dns() {
 }
 prepare_dns_port() {
   persist_dns_original_state
-  systemctl stop zdt-dnscrypt.service >/dev/null 2>&1 || true
+  info 'Stopping services that may occupy DNS port 53'
+  run_visible systemctl stop zdt-dnscrypt.service || true
   for unit in systemd-resolved.service dnscrypt-proxy.socket dnscrypt-proxy-resolvconf.service dnscrypt-proxy.service; do
-    systemctl disable --now "$unit" >/dev/null 2>&1 || true
+    run_visible systemctl disable --now "$unit" || true
   done
   sleep 1
   write_temporary_resolv
@@ -462,16 +483,19 @@ install_dnscrypt() {
   tmp=$(mktemp -d)
   config_template="$tmp/example-dnscrypt-proxy.toml"
   stage 'Downloading DNSCrypt files'
+  info "Downloading DNSCrypt $version binary and configuration template"
   run_visible curl -fL --retry 4 --retry-delay 2 --connect-timeout 15 \
     "https://github.com/DNSCrypt/dnscrypt-proxy/releases/download/${version}/${archive}" -o "$tmp/$archive"
   run_visible curl -fL --retry 4 --retry-delay 2 --connect-timeout 15 \
     "https://raw.githubusercontent.com/DNSCrypt/dnscrypt-proxy/${version}/dnscrypt-proxy/example-dnscrypt-proxy.toml" -o "$config_template"
-  tar -xzf "$tmp/$archive" -C "$tmp"
+  run_visible tar -xzf "$tmp/$archive" -C "$tmp"
   [[ -x $tmp/linux-x86_64/dnscrypt-proxy ]] || die 'The DNSCrypt archive does not contain the expected x86_64 binary'
+  info 'DNSCrypt archive extracted successfully'
 
   stage 'Preparing local DNS port'
   prepare_dns_port
-  install -m 0755 "$tmp/linux-x86_64/dnscrypt-proxy" "$ZDT_ROOT/bin/dnscrypt-proxy"
+  run_visible install -m 0755 "$tmp/linux-x86_64/dnscrypt-proxy" "$ZDT_ROOT/bin/dnscrypt-proxy"
+  info 'DNSCrypt binary installed'
 
   stage 'Configuring DNSCrypt on TCP/UDP 53'
   mkdir -p "$ZDT_ETC/dnscrypt" "$ZDT_STATE/dnscrypt-cache"
@@ -520,7 +544,9 @@ for key,value in values.items():
             lines.insert(insert,f'{key} = {value}\n')
 with open(path,'w',encoding='utf-8') as f: f.writelines(lines)
 PYCONF
-  "$ZDT_ROOT/bin/dnscrypt-proxy" -check -config "$ZDT_ETC/dnscrypt/dnscrypt-proxy.toml" || die 'DNSCrypt configuration validation failed'
+  info 'Validating DNSCrypt configuration'
+  run_visible "$ZDT_ROOT/bin/dnscrypt-proxy" -check -config "$ZDT_ETC/dnscrypt/dnscrypt-proxy.toml" || die 'DNSCrypt configuration validation failed'
+  info 'DNSCrypt configuration is valid'
 
   cat > "$SYSTEMD_DIR/zdt-dnscrypt.service" <<UNIT
 [Unit]
@@ -571,18 +597,21 @@ UNIT
     journalctl -u zdt-dnscrypt.service -n 180 --no-pager >&2 || true
     die "DNSCrypt is listening, but DNS verification failed (UDP=$dns_udp_ok TCP=$dns_tcp_ok)"
   fi
+  info 'DNSCrypt listener and DNS queries verified over UDP and TCP'
   rm -f /etc/resolv.conf
   cat > /etc/resolv.conf <<'RESOLV'
 nameserver 127.0.0.1
 options edns0 timeout:3 attempts:2
 RESOLV
-  rm -rf "$tmp"
+  run_visible rm -rf "$tmp"
+  info 'DNSCrypt installation completed'
 }
 
 enable_ip_forward() {
   if [[ ! -f $ZDT_STATE/original-ip-forward ]]; then cat /proc/sys/net/ipv4/ip_forward > "$ZDT_STATE/original-ip-forward"; fi
   printf 'net.ipv4.ip_forward=1\n' > "$SYSCTL_FILE"
-  sysctl -w net.ipv4.ip_forward=1 >/dev/null
+  info 'Enabling IPv4 forwarding for managed VPN profiles'
+  run_visible sysctl -w net.ipv4.ip_forward=1
 }
 restore_ip_forward_if_unused() {
   local has=0 p
@@ -699,10 +728,14 @@ install_openvpn() {
   external_service_warning openvpn
   stage 'Installing OpenVPN and Easy-RSA'
   apt_install openvpn easy-rsa openssl iptables iproute2 python3
+  stage 'Preparing OpenVPN managed files'
   ensure_dirs; mkdir -p "$ZDT_STATE/profiles/openvpn" "$OPENVPN_DIR"
+  info 'Installing OpenVPN traffic accounting helpers'
   install_openvpn_traffic_helpers
   openvpn --version | head -1 > "$ZDT_STATE/services/openvpn.version" || echo managed > "$ZDT_STATE/services/openvpn.version"
+  info "Installed OpenVPN: $(head -1 "$ZDT_STATE/services/openvpn.version" 2>/dev/null || echo managed)"
   refresh_firewall
+  info 'OpenVPN installation completed'
 }
 create_openvpn_profile() {
   local id=$1 name=$2 port=$3 proto=$4 host=$5
@@ -721,6 +754,7 @@ create_openvpn_profile() {
   show_cmd easyrsa init-pki / build-ca / gen-req / sign-req / gen-crl
   (cd "$pki"; EASYRSA_BATCH=1 EASYRSA_REQ_CN="zdt-$id-ca" ./easyrsa init-pki; EASYRSA_BATCH=1 EASYRSA_REQ_CN="zdt-$id-ca" ./easyrsa build-ca nopass; EASYRSA_BATCH=1 ./easyrsa gen-req "$server_cn" nopass; EASYRSA_BATCH=1 ./easyrsa sign-req server "$server_cn"; EASYRSA_BATCH=1 ./easyrsa gen-crl)
   generate_openvpn_tls_key "$dir/ta.key"
+  info 'OpenVPN CA, server certificate and TLS key generated'
   cp "$pki/pki/ca.crt" "$dir/ca.crt"
   cp "$pki/pki/issued/$server_cn.crt" "$dir/server.crt"
   cp "$pki/pki/private/$server_cn.key" "$dir/server.key"
@@ -739,6 +773,8 @@ TUN=$tun
 INDEX=$index
 SERVER_CN=$(q "$server_cn")
 META
+  stage 'Writing OpenVPN server configuration'
+  info "Profile $id: protocol=$proto port=$port interface=$tun subnet=$subnet/24"
   local server_proto=$proto
   [[ $proto == tcp ]] && server_proto=tcp-server
   cat > "$OPENVPN_DIR/zdt-$id.conf" <<CONF
@@ -793,6 +829,7 @@ UNIT
   unit_is_active "openvpn-server@zdt-$id.service" || { journalctl -u "openvpn-server@zdt-$id.service" -n 120 --no-pager >&2 || true; die 'OpenVPN profile failed to start'; }
   ip link show "$tun" >/dev/null 2>&1 || { journalctl -u "openvpn-server@zdt-$id.service" -n 120 --no-pager >&2 || true; die "OpenVPN started without creating interface $tun"; }
   if [[ $proto == tcp ]]; then ss -H -lnt "sport = :$port" | grep -q . || die "OpenVPN is not listening on TCP port $port"; else ss -H -lnu "sport = :$port" | grep -q . || die "OpenVPN is not listening on UDP port $port"; fi
+  info "OpenVPN profile $id is active and listening on $proto/$port"
 }
 create_openvpn_client() {
   local profile=$1 client=$2 display=${3:-$2}
@@ -833,6 +870,7 @@ $(cat "$dir/ta.key")
 </tls-crypt>
 CONF
   chmod 600 "$cdir/client.ovpn"
+  info "OpenVPN client $client created; configuration file is ready"
   # Creating a certificate does not restart OpenVPN, so keep the runtime CN map
   # in sync without resetting the daemon-lifetime traffic counters.
   local runtime="/run/zdt-vps/openvpn/$profile"
@@ -852,8 +890,9 @@ delete_openvpn_client() {
   show_cmd easyrsa revoke "$cn" / gen-crl
   (cd "$pki"; EASYRSA_BATCH=1 ./easyrsa revoke "$cn"; EASYRSA_BATCH=1 ./easyrsa gen-crl)
   cp "$pki/pki/crl.pem" "$dir/crl.pem"; chmod 644 "$dir/crl.pem"
-  rm -rf "$cdir"
-  systemctl restart "openvpn-server@zdt-$profile.service"
+  run_visible rm -rf "$cdir"
+  run_visible systemctl restart "openvpn-server@zdt-$profile.service"
+  info "OpenVPN client $client revoked and removed"
 }
 
 install_wireproxy() {
@@ -862,10 +901,14 @@ install_wireproxy() {
   apt_install wireguard-tools iptables iproute2 qrencode
   ensure_dirs; mkdir -p "$ZDT_STATE/profiles/wireproxy" "$WIREGUARD_DIR"
   wg --version | head -1 > "$ZDT_STATE/services/wireproxy.version" || echo managed > "$ZDT_STATE/services/wireproxy.version"
+  info "Installed WireGuard tools: $(head -1 "$ZDT_STATE/services/wireproxy.version" 2>/dev/null || echo managed)"
   refresh_firewall
+  info 'WireGuard tools installation completed'
 }
 rebuild_wireproxy() {
   local profile=$1; load_meta wireproxy "$profile"; local dir; dir=$(profile_dir wireproxy "$profile")
+  stage "Applying WireGuard profile $profile"
+  info "Writing $IFACE configuration and applying peer list"
   cat > "$WIREGUARD_DIR/$IFACE.conf" <<CONF
 [Interface]
 Address = $GATEWAY/24
@@ -888,10 +931,10 @@ CONF
   done
   chmod 600 "$WIREGUARD_DIR/$IFACE.conf"
   run_visible systemctl daemon-reload
-  show_cmd systemctl enable "wg-quick@$IFACE.service"
-  systemctl enable "wg-quick@$IFACE.service" >/dev/null 2>&1 || true
+  run_visible systemctl enable "wg-quick@$IFACE.service" || true
   run_visible systemctl restart "wg-quick@$IFACE.service"
   unit_is_active "wg-quick@$IFACE.service" || { journalctl -u "wg-quick@$IFACE.service" -n 100 --no-pager >&2 || true; die 'WireGuard server profile failed to start'; }
+  info "WireGuard profile $profile is active on interface $IFACE and UDP port $PORT"
 }
 create_wireproxy_profile() {
   local id=$1 name=$2 port=$3 host=$4
@@ -902,6 +945,8 @@ create_wireproxy_profile() {
   local index; index=$(next_index wireproxy)
   local subnet="10.91.$index.0" gateway="10.91.$index.1" iface="zdtwg$index"
   local dir; dir=$(profile_dir wireproxy "$id"); mkdir -p "$dir/clients"
+  stage 'Generating WireGuard server keys'
+  info "Profile $id: UDP port $port, interface $iface, subnet $subnet/24"
   show_cmd wg genkey / wg pubkey
   umask 077; wg genkey | tee "$dir/server_private" | wg pubkey > "$dir/server_public"
   cat > "$dir/meta.env" <<META
@@ -926,6 +971,7 @@ create_wireproxy_client() {
   local dir; dir=$(profile_dir wireproxy "$profile"); [[ ! -d $dir/clients/$client ]] || die 'Client name already exists in this profile'
   local number; number=$(next_wire_client_octet "$dir")
   local cdir=$dir/clients/$client; mkdir -p "$cdir"
+  stage 'Generating WireGuard client keys'
   show_cmd wg genkey / wg pubkey / wg genpsk
   umask 077; wg genkey | tee "$cdir/private" | wg pubkey > "$cdir/public"; wg genpsk > "$cdir/psk"
   echo "${SUBNET%.*}.$number" > "$cdir/ip"; date +%s > "$cdir/created_at"; printf '%s\n' "$display" > "$cdir/name"
@@ -947,12 +993,16 @@ PersistentKeepalive = 25
 BindAddress = 127.0.0.1:$socks
 CONF
   chmod 600 "$cdir/client.conf"
+  info "WireGuard client $client configuration generated"
   rebuild_wireproxy "$profile"
 }
 delete_wireproxy_client() {
   local profile=$1 client=$2 dir; dir=$(profile_dir wireproxy "$profile")
   [[ -d $dir/clients/$client ]] || die 'Client not found'
-  rm -rf "$dir/clients/$client"; rebuild_wireproxy "$profile"
+  stage 'Removing WireGuard client'
+  run_visible rm -rf "$dir/clients/$client"
+  rebuild_wireproxy "$profile"
+  info "WireGuard client $client removed"
 }
 
 write_tls_reload_hook() {
@@ -974,6 +1024,7 @@ ensure_certificate() {
   if [[ -s /etc/letsencrypt/live/$domain/fullchain.pem && -s /etc/letsencrypt/live/$domain/privkey.pem ]]; then
     had_certificate=1
     if openssl x509 -checkend 604800 -noout -in "/etc/letsencrypt/live/$domain/fullchain.pem" >/dev/null 2>&1; then
+      info "Existing TLS certificate for $domain is valid; reusing it"
       [[ -f $state ]] || printf 'DOMAIN=%q\nOWNED=0\n' "$domain" > "$state"
       write_tls_reload_hook
       return 0
@@ -982,7 +1033,8 @@ ensure_certificate() {
   backup_certificate_for_tx "$domain"
   port_free tcp 80 || die 'TCP port 80 must be free while requesting a Let’s Encrypt certificate'
   stage 'Requesting TLS certificate with Let’s Encrypt'
-  write_firewall_script; systemctl daemon-reload; systemctl enable --now zdt-vps-firewall.service >/dev/null 2>&1 || true
+  info "Opening TCP port 80 temporarily for ACME validation of $domain"
+  write_firewall_script; run_visible systemctl daemon-reload; run_visible systemctl enable --now zdt-vps-firewall.service || true
   iptables -w 5 -I "$FIREWALL_CHAIN" 1 -p tcp --dport 80 -j ACCEPT
   local rc=0
   local contact_args=()
@@ -992,6 +1044,7 @@ ensure_certificate() {
   iptables -w 5 -D "$FIREWALL_CHAIN" -p tcp --dport 80 -j ACCEPT 2>/dev/null || true
   (( rc == 0 )) || die 'Let’s Encrypt certificate request failed'
   [[ -s /etc/letsencrypt/live/$domain/fullchain.pem && -s /etc/letsencrypt/live/$domain/privkey.pem ]] || die 'Let’s Encrypt did not create the expected certificate files'
+  info "TLS certificate for $domain obtained successfully"
   (( had_certificate == 0 )) && owned=1
   printf 'DOMAIN=%q\nOWNED=%s\n' "$domain" "$owned" > "$state"
   write_tls_reload_hook
@@ -1004,16 +1057,21 @@ install_xray() {
   ensure_dirs
   local tmp
   tmp=$(mktemp -d)
+  stage 'Downloading Xray'
   run_visible curl -fL --retry 3 "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip" -o "$tmp/xray.zip"
-  unzip -q "$tmp/xray.zip" -d "$tmp/xray"
-  install -m 0755 "$tmp/xray/xray" "$ZDT_ROOT/bin/xray"
-  rm -rf "$tmp"
+  stage 'Installing Xray binary'
+  run_visible unzip -q "$tmp/xray.zip" -d "$tmp/xray"
+  run_visible install -m 0755 "$tmp/xray/xray" "$ZDT_ROOT/bin/xray"
+  run_visible rm -rf "$tmp"
   "$ZDT_ROOT/bin/xray" version | head -1 > "$ZDT_STATE/services/xray.version" || echo managed > "$ZDT_STATE/services/xray.version"
+  info "Installed Xray: $(head -1 "$ZDT_STATE/services/xray.version" 2>/dev/null || echo managed)"
   mkdir -p "$ZDT_STATE/profiles/xray"
   refresh_firewall
+  info 'Xray installation completed'
 }
 rebuild_xray() {
   local profile=$1 dir stats_port snis
+  stage "Applying Xray profile $profile"
   dir=$(profile_dir xray "$profile")
   unset STATS_PORT SNIS
   load_meta xray "$profile"
@@ -1075,10 +1133,12 @@ NoNewPrivileges=true
 [Install]
 WantedBy=multi-user.target
 UNIT
+  info 'Xray server configuration generated; validating it before restart'
   show_cmd "$ZDT_ROOT/bin/xray" run -test -config "$dir/server.json"
   "$ZDT_ROOT/bin/xray" run -test -config "$dir/server.json"
   run_visible systemctl daemon-reload; run_visible systemctl enable --now "zdt-xray-$profile.service"; run_visible systemctl restart "zdt-xray-$profile.service"
   unit_is_active "zdt-xray-$profile.service" || { journalctl -u "zdt-xray-$profile.service" -n 100 --no-pager >&2 || true; die 'Xray profile failed to start'; }
+  info "Xray profile $profile is active on TCP port $PORT"
 }
 create_xray_profile() {
   local id=$1 name=$2 port=$3 mode=$4 host=$5 domain=$6 email=$7 snis_raw=$8
@@ -1089,6 +1149,8 @@ create_xray_profile() {
   require_free_port tcp "$port"
   local dir endpoint=$host sni='' snis='' stats_port
   dir=$(profile_dir xray "$id"); mkdir -p "$dir/clients"
+  stage 'Preparing Xray profile'
+  info "Profile $id: mode=$mode TCP port=$port"
   stats_port=$(next_stats_port)
   if [[ $mode == reality ]]; then
     local candidate
@@ -1111,6 +1173,7 @@ create_xray_profile() {
     short=$(openssl rand -hex 8)
     [[ -n $private && -n $public ]] || die 'Unable to generate Reality keys'
     printf 'PRIVATE=%s\nPUBLIC=%s\nSHORT=%s\n' "$private" "$public" "$short" > "$dir/reality.env"
+    info 'Reality key pair and short ID generated'
   else
     ensure_certificate "$domain" "$email"
     endpoint=$domain
@@ -1135,18 +1198,23 @@ create_xray_client() {
   valid_id "$client" || die 'Invalid client identifier'; load_meta xray "$profile"
   local dir; dir=$(profile_dir xray "$profile"); [[ ! -d $dir/clients/$client ]] || die 'Client name already exists in this profile'
   local uuid; uuid=$($ZDT_ROOT/bin/xray uuid)
+  stage 'Creating Xray client'
   mkdir -p "$dir/clients/$client"
   python3 - "$dir/clients/$client/client.json" "$display" "$uuid" "$(date +%s)" <<'PY'
 import json,sys
 path,name,uuid,created=sys.argv[1:]
 with open(path,'w',encoding='utf-8') as h: json.dump({'name':name,'uuid':uuid,'created_at':int(created)},h)
 PY
+  info "Xray client $client credentials generated"
   rebuild_xray "$profile"
 }
 delete_xray_client() {
   local profile=$1 client=$2 dir; dir=$(profile_dir xray "$profile")
   [[ -d $dir/clients/$client ]] || die 'Client not found'
-  rm -rf "$dir/clients/$client"; rebuild_xray "$profile"
+  stage 'Removing Xray client'
+  run_visible rm -rf "$dir/clients/$client"
+  rebuild_xray "$profile"
+  info "Xray client $client removed"
 }
 
 install_hysteria2() {
@@ -1154,11 +1222,14 @@ install_hysteria2() {
   stage 'Installing Hysteria2 dependencies'
   apt_install curl ca-certificates python3 openssl
   ensure_dirs
+  stage 'Downloading Hysteria2'
   run_visible curl -fL --retry 3 https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -o "$ZDT_ROOT/bin/hysteria"
-  chmod 0755 "$ZDT_ROOT/bin/hysteria"
+  run_visible chmod 0755 "$ZDT_ROOT/bin/hysteria"
   "$ZDT_ROOT/bin/hysteria" version | head -1 > "$ZDT_STATE/services/hysteria2.version" || echo managed > "$ZDT_STATE/services/hysteria2.version"
+  info "Installed Hysteria2: $(head -1 "$ZDT_STATE/services/hysteria2.version" 2>/dev/null || echo managed)"
   mkdir -p "$ZDT_STATE/profiles/hysteria2"
   refresh_firewall
+  info 'Hysteria2 installation completed'
 }
 ensure_hysteria2_local_certificate() {
   local dir=$1 tls_name=$2 san
@@ -1181,10 +1252,12 @@ ensure_hysteria2_local_certificate() {
   chmod 600 "$dir/tls.key"
   chmod 644 "$dir/tls.crt"
   openssl x509 -in "$dir/tls.crt" -noout -checkend 86400 >/dev/null 2>&1 || die 'Generated Hysteria2 certificate is invalid'
+  info "Local TLS certificate generated for $tls_name"
 }
 
 rebuild_hysteria2() {
   local profile=$1 dir stats_port stats_secret
+  stage "Applying Hysteria2 profile $profile"
   dir=$(profile_dir hysteria2 "$profile")
   unset STATS_PORT STATS_SECRET
   load_meta hysteria2 "$profile"
@@ -1242,8 +1315,10 @@ AmbientCapabilities=CAP_NET_BIND_SERVICE
 [Install]
 WantedBy=multi-user.target
 UNIT
+  info 'Hysteria2 server configuration generated'
   run_visible systemctl daemon-reload; run_visible systemctl enable --now "zdt-hysteria2-$profile.service"; run_visible systemctl restart "zdt-hysteria2-$profile.service"
   unit_is_active "zdt-hysteria2-$profile.service" || { journalctl -u "zdt-hysteria2-$profile.service" -n 100 --no-pager >&2 || true; die 'Hysteria2 profile failed to start'; }
+  info "Hysteria2 profile $profile is active on UDP port $PORT"
 }
 create_hysteria2_profile() {
   local id=$1 name=$2 port=$3 host=$4 domain=${5:-} email=${6:-} requested_sni=${7:-}
@@ -1254,6 +1329,8 @@ create_hysteria2_profile() {
   require_free_port udp "$port"
   local dir stats_port stats_secret
   dir=$(profile_dir hysteria2 "$id"); mkdir -p "$dir/clients"
+  stage 'Preparing Hysteria2 profile'
+  info "Profile $id: UDP port=$port SNI=$tls_name"
   stats_port=$(next_stats_port); stats_secret=$(openssl rand -hex 16)
   ensure_hysteria2_local_certificate "$dir" "$tls_name"
   cat > "$dir/meta.env" <<META
@@ -1275,16 +1352,21 @@ create_hysteria2_client() {
   local profile=$1 client=$2 display=${3:-$2}
   valid_id "$client" || die 'Invalid client identifier'
   local dir; dir=$(profile_dir hysteria2 "$profile"); [[ ! -d $dir/clients/$client ]] || die 'Client name already exists in this profile'
+  stage 'Creating Hysteria2 client'
   mkdir -p "$dir/clients/$client"
   openssl rand -hex 16 > "$dir/clients/$client/password"
   date +%s > "$dir/clients/$client/created_at"
   printf '%s\n' "$display" > "$dir/clients/$client/name"
+  info "Hysteria2 client $client credentials generated"
   rebuild_hysteria2 "$profile"
 }
 delete_hysteria2_client() {
   local profile=$1 client=$2 dir; dir=$(profile_dir hysteria2 "$profile")
   [[ -d $dir/clients/$client ]] || die 'Client not found'
-  rm -rf "$dir/clients/$client"; rebuild_hysteria2 "$profile"
+  stage 'Removing Hysteria2 client'
+  run_visible rm -rf "$dir/clients/$client"
+  rebuild_hysteria2 "$profile"
+  info "Hysteria2 client $client removed"
 }
 
 has_active_profile_unit() {
@@ -1552,49 +1634,57 @@ PY
 
 delete_profile() {
   local kind=$1 profile=$2 dir unit='' certificate_domain=''
+  stage "Removing $kind profile $profile"
   dir=$(profile_dir "$kind" "$profile"); [[ -d $dir && -f $dir/meta.env ]] || die 'Profile not found'
+  info 'Stopping profile service and removing managed configuration'
   source "$dir/meta.env"
   [[ $kind == xray && ${MODE:-} == ws ]] && certificate_domain=${DOMAIN:-}
   case "$kind" in
     openvpn)
-      systemctl disable --now "zdt-openvpn-net-$profile.service" "openvpn-server@zdt-$profile.service" >/dev/null 2>&1 || true
-      rm -f "$SYSTEMD_DIR/zdt-openvpn-net-$profile.service" "$OPENVPN_DIR/zdt-$profile.conf"
-      rm -rf "$SYSTEMD_DIR/openvpn-server@zdt-$profile.service.d" "/run/zdt-vps/openvpn/$profile" ;;
+      run_visible systemctl disable --now "zdt-openvpn-net-$profile.service" "openvpn-server@zdt-$profile.service" || true
+      run_visible rm -f "$SYSTEMD_DIR/zdt-openvpn-net-$profile.service" "$OPENVPN_DIR/zdt-$profile.conf"
+      run_visible rm -rf "$SYSTEMD_DIR/openvpn-server@zdt-$profile.service.d" "/run/zdt-vps/openvpn/$profile" ;;
     xray)
-      systemctl disable --now "zdt-xray-$profile.service" >/dev/null 2>&1 || true; rm -f "$SYSTEMD_DIR/zdt-xray-$profile.service" ;;
+      run_visible systemctl disable --now "zdt-xray-$profile.service" || true; run_visible rm -f "$SYSTEMD_DIR/zdt-xray-$profile.service" ;;
     hysteria2)
-      systemctl disable --now "zdt-hysteria2-$profile.service" >/dev/null 2>&1 || true; rm -f "$SYSTEMD_DIR/zdt-hysteria2-$profile.service" ;;
+      run_visible systemctl disable --now "zdt-hysteria2-$profile.service" || true; run_visible rm -f "$SYSTEMD_DIR/zdt-hysteria2-$profile.service" ;;
     wireproxy)
-      systemctl disable --now "wg-quick@$IFACE.service" >/dev/null 2>&1 || true; rm -f "$WIREGUARD_DIR/$IFACE.conf" ;;
+      run_visible systemctl disable --now "wg-quick@$IFACE.service" || true; run_visible rm -f "$WIREGUARD_DIR/$IFACE.conf" ;;
     *) die 'Unknown profile service' ;;
   esac
-  rm -rf "$dir"
-  [[ -n $certificate_domain ]] && release_certificate "$certificate_domain"
+  run_visible rm -rf "$dir"
+  [[ -n $certificate_domain ]] && { info "Checking whether TLS certificate $certificate_domain can be released"; release_certificate "$certificate_domain"; }
   restore_ip_forward_if_unused
   refresh_firewall
-  systemctl daemon-reload
+  run_visible systemctl daemon-reload
+  info "$kind profile $profile removed"
 }
 remove_service() {
   local kind=$1 p
-  service_installed "$kind" || return 0
+  stage "Removing $kind service"
+  if ! service_installed "$kind"; then
+    info "$kind is not installed; nothing to remove"
+    return 0
+  fi
   if [[ $kind != dnscrypt ]]; then
     for p in "$ZDT_STATE/profiles/$kind"/*; do [[ -d $p ]] && delete_profile "$kind" "$(basename "$p")"; done
   fi
   case "$kind" in
     dnscrypt)
-      systemctl disable --now zdt-dnscrypt.service >/dev/null 2>&1 || true
-      rm -f "$SYSTEMD_DIR/zdt-dnscrypt.service" "$ZDT_ROOT/bin/dnscrypt-proxy"
-      rm -rf "$ZDT_ETC/dnscrypt" "$ZDT_STATE/dnscrypt-cache"
-      rm -f "$ZDT_STATE/services/dnscrypt.version"
+      run_visible systemctl disable --now zdt-dnscrypt.service || true
+      run_visible rm -f "$SYSTEMD_DIR/zdt-dnscrypt.service" "$ZDT_ROOT/bin/dnscrypt-proxy"
+      run_visible rm -rf "$ZDT_ETC/dnscrypt" "$ZDT_STATE/dnscrypt-cache"
+      run_visible rm -f "$ZDT_STATE/services/dnscrypt.version"
+      info 'Restoring DNS configuration that existed before ZDT-D'
       restore_dns_original_state ;;
     openvpn)
-      rm -rf "$ZDT_STATE/profiles/openvpn"; rm -f "$ZDT_STATE/services/openvpn.version" ;;
+      run_visible rm -rf "$ZDT_STATE/profiles/openvpn"; run_visible rm -f "$ZDT_STATE/services/openvpn.version" ;;
     xray)
-      rm -rf "$ZDT_STATE/profiles/xray"; rm -f "$ZDT_STATE/services/xray.version" "$ZDT_ROOT/bin/xray" ;;
+      run_visible rm -rf "$ZDT_STATE/profiles/xray"; run_visible rm -f "$ZDT_STATE/services/xray.version" "$ZDT_ROOT/bin/xray" ;;
     hysteria2)
-      rm -rf "$ZDT_STATE/profiles/hysteria2"; rm -f "$ZDT_STATE/services/hysteria2.version" "$ZDT_ROOT/bin/hysteria" ;;
+      run_visible rm -rf "$ZDT_STATE/profiles/hysteria2"; run_visible rm -f "$ZDT_STATE/services/hysteria2.version" "$ZDT_ROOT/bin/hysteria" ;;
     wireproxy)
-      rm -rf "$ZDT_STATE/profiles/wireproxy"; rm -f "$ZDT_STATE/services/wireproxy.version" ;;
+      run_visible rm -rf "$ZDT_STATE/profiles/wireproxy"; run_visible rm -f "$ZDT_STATE/services/wireproxy.version" ;;
     *) die 'Unknown service' ;;
   esac
   restore_ip_forward_if_unused
@@ -1602,11 +1692,13 @@ remove_service() {
   if [[ ! -d $ZDT_STATE/profiles/xray || -z $(find "$ZDT_STATE/profiles/xray" -mindepth 1 -maxdepth 1 -type d -print -quit 2>/dev/null) ]]; then
     rm -f /etc/letsencrypt/renewal-hooks/deploy/zdt-vps-reload
   fi
-  systemctl daemon-reload
+  run_visible systemctl daemon-reload
+  info "$kind service removed successfully"
 }
 
 restart_service() {
   local kind=$1 profile=${2:-}
+  stage "Restarting $kind${profile:+ profile $profile}"
   case "$kind" in
     dnscrypt) run_visible systemctl restart zdt-dnscrypt.service ;;
     openvpn) [[ -n $profile ]] || die 'Profile is required'; ensure_openvpn_traffic_config "$profile"; run_visible systemctl daemon-reload; run_visible systemctl restart "openvpn-server@zdt-$profile.service" "zdt-openvpn-net-$profile.service" ;;
@@ -1615,6 +1707,7 @@ restart_service() {
     wireproxy) [[ -n $profile ]] || die 'Profile is required'; load_meta wireproxy "$profile"; run_visible systemctl restart "wg-quick@$IFACE.service" ;;
     *) die 'Unknown service' ;;
   esac
+  info "$kind restart completed"
 }
 reboot_server() {
   stage 'Scheduling server reboot'

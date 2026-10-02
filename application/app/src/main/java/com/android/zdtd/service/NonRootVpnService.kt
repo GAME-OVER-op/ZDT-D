@@ -24,6 +24,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Foreground VpnService for the app-owned non-root path.
@@ -148,18 +150,30 @@ class NonRootVpnService : VpnService() {
     NonRootVpnRuntime.log(getString(R.string.non_root_log_component_ready, "HEV"))
   }
 
+
   private suspend fun startDirect(): SocksTarget {
-    val state = NonRootCascadeStore(applicationContext).load()
+    val store = NonRootCascadeStore(applicationContext)
+    val state = store.load()
     val profile = state.profiles.firstOrNull { it.id == state.directSelectedProfileId }
       ?: error("Direct mode has no selected proxy profile")
-    startOperaProfile(
-      label = "direct-${safeFileName(profile.id)}",
-      displayName = profile.name,
-      port = profile.port,
-      byedpiPort = profile.byedpiPort,
-      config = profile.operaConfig,
-    )
-    return SocksTarget(port = profile.port)
+    check(profile.directEligible) { "Profiles with multiple servers are available only in Cascade mode" }
+    return when (profile.toolId) {
+      NonRootCascadeProfile.TOOL_OPERA_PROXY -> {
+        startOperaProfile(
+          label = "direct-${safeFileName(profile.id)}",
+          displayName = profile.name,
+          port = profile.port,
+          byedpiPort = profile.byedpiPort,
+          config = profile.operaConfig,
+        )
+        SocksTarget(port = profile.port)
+      }
+      else -> {
+        val server = profile.servers.singleOrNull() ?: error("Direct profile must contain exactly one server")
+        startBackendServer(profile, server, "direct-${safeFileName(profile.id)}-${safeFileName(server.id)}")
+        SocksTarget(port = server.port, udpMode = "udp")
+      }
+    }
   }
 
   private suspend fun startCascade(): SocksTarget {
@@ -168,18 +182,28 @@ class NonRootVpnService : VpnService() {
     val orderedProfiles = state.route.mapNotNull { item ->
       if (item.type == NonRootCascadeRouteItemType.PROFILE) enabled[item.profileId] else null
     }
-    if (orderedProfiles.isEmpty() && state.route.none { it.type == NonRootCascadeRouteItemType.DIRECT_START }) {
-      error("Cascade has no enabled proxy profile")
+    val hasBackend = orderedProfiles.any { cascadePorts(it).isNotEmpty() }
+    if (!hasBackend && state.route.none { it.type == NonRootCascadeRouteItemType.DIRECT_START }) {
+      error("Cascade has no enabled proxy server")
     }
 
     for (profile in orderedProfiles) {
-      startOperaProfile(
-        label = "cascade-${safeFileName(profile.id)}",
-        displayName = profile.name,
-        port = profile.port,
-        byedpiPort = profile.byedpiPort,
-        config = profile.operaConfig,
-      )
+      when (profile.toolId) {
+        NonRootCascadeProfile.TOOL_OPERA_PROXY -> startOperaProfile(
+          label = "cascade-${safeFileName(profile.id)}",
+          displayName = profile.name,
+          port = profile.port,
+          byedpiPort = profile.byedpiPort,
+          config = profile.operaConfig,
+        )
+        else -> profile.servers.filter { it.enabled }.forEachIndexed { index, server ->
+          startBackendServer(
+            profile = profile,
+            server = server,
+            label = "cascade-${safeFileName(profile.id)}-${index + 1}-${safeFileName(server.id)}",
+          )
+        }
+      }
     }
 
     val listenPort = portRegistry.getOrAllocate(NonRootPortRegistry.T2S_LISTEN_KEY)
@@ -198,6 +222,116 @@ class NonRootVpnService : VpnService() {
     val token = runtimeStore.ensureApiToken().readText().trim()
     check(token.isNotEmpty()) { "Non-root API token is empty" }
     return SocksTarget(port = listenPort, username = "zdtd", password = token, udpMode = "udp")
+  }
+
+  private suspend fun startBackendServer(
+    profile: NonRootCascadeProfile,
+    server: NonRootBackendServer,
+    label: String,
+  ) {
+    val display = "${nonRootBackendName(profile.toolId)} · ${profile.name} / ${server.name}"
+    NonRootVpnRuntime.log(getString(R.string.non_root_log_start_component, display))
+    when (profile.toolId) {
+      NonRootCascadeProfile.TOOL_HYSTERIA2 -> startHysteria2Server(server, label)
+      NonRootCascadeProfile.TOOL_SING_BOX -> startSingBoxServer(server, label)
+      NonRootCascadeProfile.TOOL_MIERU -> startMieruServer(server, label)
+      NonRootCascadeProfile.TOOL_WIREPROXY -> startWireProxyServer(server, label)
+      else -> error("Unsupported non-root backend: ${profile.toolId}")
+    }
+    waitForLoopbackPort(server.port, nonRootBackendName(profile.toolId), label)
+    NonRootVpnRuntime.log(getString(R.string.non_root_log_component_ready, display))
+  }
+
+  private fun startHysteria2Server(server: NonRootBackendServer, label: String) {
+    val obj = JSONObject(server.configText.ifBlank { "{}" })
+    check(obj.optString("server").isNotBlank()) { "Hysteria2 config requires server" }
+    listOf("http", "tcpForwarding", "udpForwarding", "tcpTProxy", "udpTProxy", "tcpRedirect", "tun", "inbounds", "outbounds", "route", "dns").forEach(obj::remove)
+    val socks = obj.optJSONObject("socks5") ?: JSONObject()
+    socks.put("listen", "${NonRootPortRegistry.LOOPBACK}:${server.port}")
+    socks.put("disableUDP", false)
+    obj.put("socks5", socks)
+    val config = runtimeConfigFile("hysteria2-$label.json", obj.toString(2))
+    startProcess(
+      name = label,
+      executable = nativeExecutable("libzdt_hysteria2.so"),
+      args = listOf("--disable-update-check", "-f", "console", "-l", server.logLevel.ifBlank { "info" }, "-c", config.absolutePath, "client"),
+      logFile = File(runtimeStore.logsDir, "$label.log"),
+    )
+  }
+
+  private fun startSingBoxServer(server: NonRootBackendServer, label: String) {
+    val obj = JSONObject(server.configText.ifBlank { "{}" })
+    val inbound = JSONObject()
+      .put("type", "mixed")
+      .put("tag", "mixed-in")
+      .put("listen", NonRootPortRegistry.LOOPBACK)
+      .put("listen_port", server.port)
+    obj.put("inbounds", JSONArray().put(inbound))
+    val config = runtimeConfigFile("sing-box-$label.json", obj.toString(2))
+    startProcess(
+      name = label,
+      executable = nativeExecutable("libzdt_singbox.so"),
+      args = listOf("run", "-c", config.absolutePath),
+      logFile = File(runtimeStore.logsDir, "$label.log"),
+    )
+  }
+
+  private fun startMieruServer(server: NonRootBackendServer, label: String) {
+    val obj = JSONObject(server.configText.ifBlank { "{}" })
+    val rpcPort = server.auxPort.takeIf { it in NonRootPortRegistry.MIN_PORT..65535 }
+      ?: error("Mieru RPC port is invalid")
+    val profiles = obj.optJSONArray("profiles")
+    if (obj.optString("activeProfile").isBlank() && profiles != null) {
+      for (index in 0 until profiles.length()) {
+        val profileName = profiles.optJSONObject(index)?.optString("profileName").orEmpty().trim()
+        if (profileName.isNotEmpty()) {
+          obj.put("activeProfile", profileName)
+          break
+        }
+      }
+    }
+    obj.put("socks5Port", server.port)
+    obj.put("rpcPort", rpcPort)
+    obj.put("loggingLevel", server.logLevel.ifBlank { "info" }.uppercase())
+    obj.put("socks5ListenLAN", false)
+    obj.remove("httpProxyPort")
+    obj.remove("httpProxyListenLAN")
+    val config = runtimeConfigFile("mieru-$label.json", obj.toString(2))
+    startProcess(
+      name = label,
+      executable = nativeExecutable("libzdt_mieru.so"),
+      args = listOf("run"),
+      logFile = File(runtimeStore.logsDir, "$label.log"),
+      environment = mapOf("MIERU_CONFIG_JSON_FILE" to config.absolutePath),
+    )
+  }
+
+  private fun startWireProxyServer(server: NonRootBackendServer, label: String) {
+    val config = runtimeConfigFile("wireproxy-$label.conf", upsertWireProxySocks5Bind(server.configText, server.port))
+    startProcess(
+      name = label,
+      executable = nativeExecutable("libzdt_wireproxy.so"),
+      args = listOf("-c", config.absolutePath),
+      logFile = File(runtimeStore.logsDir, "$label.log"),
+    )
+  }
+
+  private fun runtimeConfigFile(name: String, content: String): File = File(runtimeStore.configsDir, name).apply {
+    parentFile?.mkdirs()
+    writeText(content)
+  }
+
+  private fun nonRootBackendName(toolId: String): String = when (toolId) {
+    NonRootCascadeProfile.TOOL_HYSTERIA2 -> "Hysteria2"
+    NonRootCascadeProfile.TOOL_SING_BOX -> "sing-box"
+    NonRootCascadeProfile.TOOL_MIERU -> "Mieru"
+    NonRootCascadeProfile.TOOL_WIREPROXY -> "WireProxy"
+    else -> "Opera Proxy"
+  }
+
+  private fun cascadePorts(profile: NonRootCascadeProfile): List<Int> = when (profile.toolId) {
+    NonRootCascadeProfile.TOOL_OPERA_PROXY -> listOf(profile.port)
+    else -> profile.servers.filter { it.enabled }.map { it.port }
   }
 
   private suspend fun startOperaProfile(
@@ -284,8 +418,10 @@ class NonRootVpnService : VpnService() {
     listenPort: Int,
     apiPort: Int,
   ): List<String> {
-    val actualPorts = state.route.mapNotNull { item ->
-      if (item.type == NonRootCascadeRouteItemType.PROFILE) enabledProfiles[item.profileId]?.port else null
+    val actualPorts = state.route.flatMap { item ->
+      if (item.type == NonRootCascadeRouteItemType.PROFILE) {
+        enabledProfiles[item.profileId]?.let(::cascadePorts).orEmpty()
+      } else emptyList()
     }
     val directFirst = state.backendMode == NonRootCascadeBackendMode.PRIORITY &&
       state.route.firstOrNull()?.type == NonRootCascadeRouteItemType.DIRECT_START
@@ -339,7 +475,7 @@ class NonRootVpnService : VpnService() {
     val groups = mutableListOf<MutableList<Int>>(mutableListOf())
     route.forEach { item ->
       when (item.type) {
-        NonRootCascadeRouteItemType.PROFILE -> profiles[item.profileId]?.port?.let { groups.last() += it }
+        NonRootCascadeRouteItemType.PROFILE -> profiles[item.profileId]?.let { groups.last() += cascadePorts(it) }
         NonRootCascadeRouteItemType.GROUP -> if (groups.last().isNotEmpty()) groups.add(mutableListOf())
         NonRootCascadeRouteItemType.DIRECT_START,
         NonRootCascadeRouteItemType.DIRECT_BLOCK -> Unit
@@ -431,16 +567,23 @@ class NonRootVpnService : VpnService() {
   }
 
   @Synchronized
-  private fun startProcess(name: String, executable: File, args: List<String>, logFile: File): Process {
+  private fun startProcess(
+    name: String,
+    executable: File,
+    args: List<String>,
+    logFile: File,
+    environment: Map<String, String> = emptyMap(),
+  ): Process {
     check(processes.none { it.name == name && it.process.isAlive }) { "$name is already running" }
     check(executable.isFile) { "Native executable missing: ${executable.absolutePath}" }
     check(executable.canExecute()) { "Native executable is not executable: ${executable.absolutePath}" }
     logFile.parentFile?.mkdirs()
-    val process = ProcessBuilder(listOf(executable.absolutePath) + args)
+    val builder = ProcessBuilder(listOf(executable.absolutePath) + args)
       .directory(runtimeStore.runtimeDir)
       .redirectErrorStream(true)
       .redirectOutput(ProcessBuilder.Redirect.to(logFile))
-      .start()
+    builder.environment().putAll(environment)
+    val process = builder.start()
     processes += ManagedProcess(name, process)
     return process
   }
@@ -582,6 +725,40 @@ class NonRootVpnService : VpnService() {
     fun start(configPath: String, fd: Int): Boolean = startMethod.invoke(null, configPath, fd) as? Boolean ?: false
     fun stop(): Boolean = stopMethod.invoke(null) as? Boolean ?: false
     fun isRunning(): Boolean = runningMethod.invoke(null) as? Boolean ?: false
+  }
+
+  private fun upsertWireProxySocks5Bind(configText: String, port: Int): String {
+    val line = "BindAddress = ${NonRootPortRegistry.LOOPBACK}:$port"
+    val lines = configText.lines().toMutableList()
+    var sectionStart = -1
+    var sectionEnd = lines.size
+    for (i in lines.indices) {
+      val trimmed = lines[i].trim()
+      if (trimmed.startsWith("[") && trimmed.endsWith("]") && trimmed.equals("[Socks5]", ignoreCase = true)) {
+        sectionStart = i
+        var j = i + 1
+        while (j < lines.size && !(lines[j].trim().startsWith("[") && lines[j].trim().endsWith("]"))) j++
+        sectionEnd = j
+        break
+      }
+    }
+    if (sectionStart >= 0) {
+      for (i in sectionStart + 1 until sectionEnd) {
+        if (lines[i].trim().startsWith("BindAddress", ignoreCase = true)) {
+          lines[i] = line
+          return lines.joinToString("\n")
+        }
+      }
+      lines.add(sectionEnd, line)
+      return lines.joinToString("\n")
+    }
+    return buildString {
+      append(configText.trimEnd())
+      if (isNotEmpty()) append("\n\n")
+      append("[Socks5]\n")
+      append(line)
+      append('\n')
+    }
   }
 
   companion object {

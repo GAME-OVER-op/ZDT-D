@@ -24,6 +24,7 @@ import com.android.zdtd.service.ui.theme.ZdtdThemeMode
 
 class NonRootActivity : AppCompatActivity() {
   private val vm: NonRootViewModel by viewModels()
+  private val vpsVm: com.android.zdtd.service.vps.VpsViewModel by viewModels()
   private val vpnPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
     if (result.resultCode == Activity.RESULT_OK) startNonRootVpnService()
   }
@@ -45,6 +46,7 @@ class NonRootActivity : AppCompatActivity() {
       val vpnState by vm.vpnState.collectAsStateWithLifecycle()
       val vpnLastError by vm.vpnLastError.collectAsStateWithLifecycle()
       val vpnLogs by vm.vpnLogs.collectAsStateWithLifecycle()
+      val tgWsConfig by vm.tgWsConfig.collectAsStateWithLifecycle()
       ZdtdTheme(themeMode = ZdtdThemeMode.fromStorage(themeMode)) {
         val lightBars = MaterialTheme.colorScheme.background.luminance() > 0.5f
         SideEffect {
@@ -63,6 +65,8 @@ class NonRootActivity : AppCompatActivity() {
             vpnState = vpnState,
             vpnLastError = vpnLastError,
             vpnLogs = vpnLogs,
+            tgWsConfig = tgWsConfig,
+            vpsViewModel = vpsVm,
             onVpnStart = ::requestNonRootVpnStart,
             onVpnStop = { NonRootVpnService.stop(this@NonRootActivity) },
             onRequestRootMode = ::switchToRootSetup,
@@ -72,12 +76,21 @@ class NonRootActivity : AppCompatActivity() {
             onDirectSelectedProfileChange = vm::setDirectSelectedProfile,
             onCreateCascadeProfile = vm::createCascadeProfile,
             onUpdateCascadeProfile = vm::updateCascadeProfile,
+            onAddCascadeServer = vm::addCascadeServer,
+            onUpdateCascadeServer = vm::updateCascadeServer,
+            onMoveCascadeServer = vm::moveCascadeServer,
+            onDeleteCascadeServer = vm::deleteCascadeServer,
+            onCascadeServerPortChange = vm::setCascadeServerPort,
+            onCascadeServerAuxPortChange = vm::setCascadeServerAuxPort,
             onCascadeProfilePortChange = vm::setCascadeProfilePort,
             onCascadeProfileByeDpiPortChange = vm::setCascadeProfileByeDpiPort,
             onDeleteCascadeProfile = vm::deleteCascadeProfile,
             onCascadeBackendModeChange = vm::setCascadeBackendMode,
             onT2sConfigChange = vm::setT2sConfig,
             onCascadeRouteChange = vm::setCascadeRoute,
+            onTgWsConfigChange = vm::setTgWsConfig,
+            onTgWsPortChange = vm::setTgWsPort,
+            onImportVpsConfig = vm::importVpsConfig,
           )
         }
       }
@@ -86,6 +99,7 @@ class NonRootActivity : AppCompatActivity() {
 
 
   private fun switchToRootSetup() {
+    NonRootTgWsService.stop(applicationContext, persistDisabled = false)
     NonRootVpnService.stop(this)
     RootConfigManager(applicationContext).setRuntimeMode("root")
     startActivity(

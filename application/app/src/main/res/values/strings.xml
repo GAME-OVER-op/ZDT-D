@@ -2511,4 +2511,37 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="non_root_group_name_label">Group name</string>
     <string name="non_root_group_rename">Rename group</string>
     <string name="non_root_t2s_group_unnamed">Group</string>
+
+    <string name="non_root_server_count_fmt">%1$d servers</string>
+    <string name="non_root_servers_title">Servers</string>
+    <string name="non_root_servers_desc">Servers in this profile become local SOCKS5 backends for T2S.</string>
+    <string name="non_root_add_server">Add server</string>
+    <string name="non_root_servers_empty">No servers yet. Add a server to use this profile.</string>
+    <string name="non_root_delete_server_title">Delete server?</string>
+    <string name="non_root_delete_server_body">Delete “%1$s” from this profile?</string>
+    <string name="non_root_server_name">Server name</string>
+    <string name="non_root_local_socks_port">Local SOCKS5 port</string>
+    <string name="non_root_mieru_rpc_port">Mieru RPC port</string>
+    <string name="non_root_log_level">Log level</string>
+    <string name="non_root_singbox_import">Import sing-box configuration</string>
+    <string name="non_root_singbox_import_source">Link or JSON</string>
+    <string name="non_root_import_config">Import configuration</string>
+    <string name="non_root_direct_multi_server_disabled">Several servers · use Cascade</string>
+    <string name="non_root_additional_tools">Additional tools</string>
+    <string name="non_root_tgws_title">Telegram WS Proxy</string>
+    <string name="non_root_vps_desc">Manage VPS servers and import generated clients into profiles.</string>
+
+    <string name="non_root_vps_import_title">Add VPS client to ZDT-D</string>
+    <string name="non_root_vps_import_new_profile">Create new profile</string>
+    <string name="non_root_vps_import_existing">Add server to existing profile</string>
+    <string name="non_root_vps_import_unsupported">This VPS service cannot be imported into a non-root backend profile.</string>
+
+    <string name="non_root_error_hysteria_server_required">Hysteria2 config must specify a server.</string>
+    <string name="non_root_error_wireproxy_empty">WireProxy config cannot be empty.</string>
+    <string name="non_root_error_import_failed">Unable to import the configuration.</string>
+    <string name="non_root_error_invalid_socks_port">Choose a valid SOCKS5 port from 10000 to 65535.</string>
+    <string name="non_root_error_invalid_rpc_port">Choose a valid Mieru RPC port from 10000 to 65535.</string>
+    <string name="non_root_error_rpc_port_conflict">Mieru RPC port must differ from the SOCKS5 port.</string>
+    <string name="non_root_tgws_secret_error">Secret must contain exactly 32 hexadecimal characters.</string>
+    <string name="non_root_tgws_faketls_error">FakeTLS SNI domain is required.</string>
 </resources>

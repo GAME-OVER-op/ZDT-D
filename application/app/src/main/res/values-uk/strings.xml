@@ -2514,4 +2514,37 @@ APatch: 10700+</string>
     <string name="non_root_group_name_label">Ім’я групи</string>
     <string name="non_root_group_rename">Перейменувати групу</string>
     <string name="non_root_t2s_group_unnamed">Група</string>
+
+    <string name="non_root_server_count_fmt">Серверів: %1$d</string>
+    <string name="non_root_servers_title">Сервери</string>
+    <string name="non_root_servers_desc">Сервери цього профілю стають локальними SOCKS5 backend для T2S.</string>
+    <string name="non_root_add_server">Додати сервер</string>
+    <string name="non_root_servers_empty">Серверів ще немає. Додайте сервер, щоб використовувати профіль.</string>
+    <string name="non_root_delete_server_title">Видалити сервер?</string>
+    <string name="non_root_delete_server_body">Видалити «%1$s» із цього профілю?</string>
+    <string name="non_root_server_name">Назва сервера</string>
+    <string name="non_root_local_socks_port">Локальний порт SOCKS5</string>
+    <string name="non_root_mieru_rpc_port">RPC-порт Mieru</string>
+    <string name="non_root_log_level">Рівень журналу</string>
+    <string name="non_root_singbox_import">Імпорт конфігурації sing-box</string>
+    <string name="non_root_singbox_import_source">Посилання або JSON</string>
+    <string name="non_root_import_config">Імпортувати конфігурацію</string>
+    <string name="non_root_direct_multi_server_disabled">Кілька серверів · використовуйте Каскад</string>
+    <string name="non_root_additional_tools">Додаткові інструменти</string>
+    <string name="non_root_tgws_title">Telegram WS Proxy</string>
+    <string name="non_root_vps_desc">Керуйте VPS-серверами та імпортуйте створені клієнти у профілі.</string>
+
+    <string name="non_root_vps_import_title">Додати VPS-клієнт у ZDT-D</string>
+    <string name="non_root_vps_import_new_profile">Створити новий профіль</string>
+    <string name="non_root_vps_import_existing">Додати сервер до наявного профілю</string>
+    <string name="non_root_vps_import_unsupported">Цю службу VPS не можна імпортувати в backend-профіль non-root.</string>
+
+    <string name="non_root_error_hysteria_server_required">У конфігурації Hysteria2 потрібно вказати сервер.</string>
+    <string name="non_root_error_wireproxy_empty">Конфігурація WireProxy не може бути порожньою.</string>
+    <string name="non_root_error_import_failed">Не вдалося імпортувати конфігурацію.</string>
+    <string name="non_root_error_invalid_socks_port">Виберіть коректний порт SOCKS5 від 10000 до 65535.</string>
+    <string name="non_root_error_invalid_rpc_port">Виберіть коректний RPC-порт Mieru від 10000 до 65535.</string>
+    <string name="non_root_error_rpc_port_conflict">RPC-порт Mieru має відрізнятися від порту SOCKS5.</string>
+    <string name="non_root_tgws_secret_error">Секрет має містити рівно 32 шістнадцяткові символи.</string>
+    <string name="non_root_tgws_faketls_error">Потрібно вказати SNI-домен FakeTLS.</string>
 </resources>

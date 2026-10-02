@@ -2511,4 +2511,37 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="non_root_group_name_label">Nama grup</string>
     <string name="non_root_group_rename">Ganti nama grup</string>
     <string name="non_root_t2s_group_unnamed">Grup</string>
+
+    <string name="non_root_server_count_fmt">%1$d server</string>
+    <string name="non_root_servers_title">Server</string>
+    <string name="non_root_servers_desc">Server dalam profil ini menjadi backend SOCKS5 lokal untuk T2S.</string>
+    <string name="non_root_add_server">Tambah server</string>
+    <string name="non_root_servers_empty">Belum ada server. Tambahkan server untuk menggunakan profil ini.</string>
+    <string name="non_root_delete_server_title">Hapus server?</string>
+    <string name="non_root_delete_server_body">Hapus “%1$s” dari profil ini?</string>
+    <string name="non_root_server_name">Nama server</string>
+    <string name="non_root_local_socks_port">Port SOCKS5 lokal</string>
+    <string name="non_root_mieru_rpc_port">Mieru RPC port</string>
+    <string name="non_root_log_level">Log level</string>
+    <string name="non_root_singbox_import">Impor konfigurasi sing-box</string>
+    <string name="non_root_singbox_import_source">Tautan atau JSON</string>
+    <string name="non_root_import_config">Impor konfigurasi</string>
+    <string name="non_root_direct_multi_server_disabled">Beberapa server · gunakan Cascade</string>
+    <string name="non_root_additional_tools">Alat tambahan</string>
+    <string name="non_root_tgws_title">Telegram WS Proxy</string>
+    <string name="non_root_vps_desc">Kelola server VPS dan impor klien yang dibuat ke profil.</string>
+
+    <string name="non_root_vps_import_title">Tambahkan klien VPS ke ZDT-D</string>
+    <string name="non_root_vps_import_new_profile">Buat profil baru</string>
+    <string name="non_root_vps_import_existing">Tambahkan server ke profil yang ada</string>
+    <string name="non_root_vps_import_unsupported">Layanan VPS ini tidak dapat diimpor ke profil backend non-root.</string>
+
+    <string name="non_root_error_hysteria_server_required">Konfigurasi Hysteria2 harus menentukan server.</string>
+    <string name="non_root_error_wireproxy_empty">Konfigurasi WireProxy tidak boleh kosong.</string>
+    <string name="non_root_error_import_failed">Konfigurasi tidak dapat diimpor.</string>
+    <string name="non_root_error_invalid_socks_port">Pilih port SOCKS5 yang valid dari 10000 hingga 65535.</string>
+    <string name="non_root_error_invalid_rpc_port">Pilih port RPC Mieru yang valid dari 10000 hingga 65535.</string>
+    <string name="non_root_error_rpc_port_conflict">Port RPC Mieru harus berbeda dari port SOCKS5.</string>
+    <string name="non_root_tgws_secret_error">Secret harus berisi tepat 32 karakter heksadesimal.</string>
+    <string name="non_root_tgws_faketls_error">Domain SNI FakeTLS wajib diisi.</string>
 </resources>

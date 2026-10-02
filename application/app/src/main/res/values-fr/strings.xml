@@ -2512,4 +2512,37 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="non_root_group_name_label">Nom du groupe</string>
     <string name="non_root_group_rename">Renommer le groupe</string>
     <string name="non_root_t2s_group_unnamed">Groupe</string>
+
+    <string name="non_root_server_count_fmt">%1$d serveurs</string>
+    <string name="non_root_servers_title">Serveurs</string>
+    <string name="non_root_servers_desc">Les serveurs de ce profil deviennent des backends SOCKS5 locaux pour T2S.</string>
+    <string name="non_root_add_server">Ajouter un serveur</string>
+    <string name="non_root_servers_empty">Aucun serveur. Ajoutez-en un pour utiliser ce profil.</string>
+    <string name="non_root_delete_server_title">Supprimer le serveur ?</string>
+    <string name="non_root_delete_server_body">Supprimer « %1$s » de ce profil ?</string>
+    <string name="non_root_server_name">Nom du serveur</string>
+    <string name="non_root_local_socks_port">Port SOCKS5 local</string>
+    <string name="non_root_mieru_rpc_port">Port RPC Mieru</string>
+    <string name="non_root_log_level">Niveau de journalisation</string>
+    <string name="non_root_singbox_import">Importer une configuration sing-box</string>
+    <string name="non_root_singbox_import_source">Lien ou JSON</string>
+    <string name="non_root_import_config">Importer la configuration</string>
+    <string name="non_root_direct_multi_server_disabled">Plusieurs serveurs · utilisez Cascade</string>
+    <string name="non_root_additional_tools">Outils supplémentaires</string>
+    <string name="non_root_tgws_title">Telegram WS Proxy</string>
+    <string name="non_root_vps_desc">Gérez les serveurs VPS et importez les clients générés dans les profils.</string>
+
+    <string name="non_root_vps_import_title">Ajouter le client VPS à ZDT-D</string>
+    <string name="non_root_vps_import_new_profile">Créer un nouveau profil</string>
+    <string name="non_root_vps_import_existing">Ajouter le serveur à un profil existant</string>
+    <string name="non_root_vps_import_unsupported">Ce service VPS ne peut pas être importé dans un profil backend sans root.</string>
+
+    <string name="non_root_error_hysteria_server_required">La configuration Hysteria2 doit indiquer un serveur.</string>
+    <string name="non_root_error_wireproxy_empty">La configuration WireProxy ne peut pas être vide.</string>
+    <string name="non_root_error_import_failed">Impossible d’importer la configuration.</string>
+    <string name="non_root_error_invalid_socks_port">Choisissez un port SOCKS5 valide entre 10000 et 65535.</string>
+    <string name="non_root_error_invalid_rpc_port">Choisissez un port RPC Mieru valide entre 10000 et 65535.</string>
+    <string name="non_root_error_rpc_port_conflict">Le port RPC Mieru doit être différent du port SOCKS5.</string>
+    <string name="non_root_tgws_secret_error">Le secret doit contenir exactement 32 caractères hexadécimaux.</string>
+    <string name="non_root_tgws_faketls_error">Un domaine SNI FakeTLS est requis.</string>
 </resources>

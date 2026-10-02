@@ -2512,4 +2512,37 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="non_root_group_name_label">समूह नाम</string>
     <string name="non_root_group_rename">समूह का नाम बदलें</string>
     <string name="non_root_t2s_group_unnamed">समूह</string>
+
+    <string name="non_root_server_count_fmt">%1$d सर्वर</string>
+    <string name="non_root_servers_title">सर्वर</string>
+    <string name="non_root_servers_desc">इस प्रोफ़ाइल के सर्वर T2S के लिए स्थानीय SOCKS5 बैकएंड बनते हैं।</string>
+    <string name="non_root_add_server">सर्वर जोड़ें</string>
+    <string name="non_root_servers_empty">अभी कोई सर्वर नहीं है। इस प्रोफ़ाइल का उपयोग करने के लिए सर्वर जोड़ें।</string>
+    <string name="non_root_delete_server_title">सर्वर हटाएँ?</string>
+    <string name="non_root_delete_server_body">क्या इस प्रोफ़ाइल से “%1$s” हटाएँ?</string>
+    <string name="non_root_server_name">सर्वर नाम</string>
+    <string name="non_root_local_socks_port">स्थानीय SOCKS5 पोर्ट</string>
+    <string name="non_root_mieru_rpc_port">Mieru RPC port</string>
+    <string name="non_root_log_level">Log level</string>
+    <string name="non_root_singbox_import">sing-box कॉन्फ़िगरेशन आयात करें</string>
+    <string name="non_root_singbox_import_source">लिंक या JSON</string>
+    <string name="non_root_import_config">कॉन्फ़िगरेशन आयात करें</string>
+    <string name="non_root_direct_multi_server_disabled">कई सर्वर · Cascade का उपयोग करें</string>
+    <string name="non_root_additional_tools">अतिरिक्त उपकरण</string>
+    <string name="non_root_tgws_title">Telegram WS Proxy</string>
+    <string name="non_root_vps_desc">VPS सर्वर प्रबंधित करें और बनाए गए क्लाइंट को प्रोफ़ाइल में आयात करें।</string>
+
+    <string name="non_root_vps_import_title">VPS क्लाइंट को ZDT-D में जोड़ें</string>
+    <string name="non_root_vps_import_new_profile">नई प्रोफ़ाइल बनाएँ</string>
+    <string name="non_root_vps_import_existing">मौजूदा प्रोफ़ाइल में सर्वर जोड़ें</string>
+    <string name="non_root_vps_import_unsupported">इस VPS सेवा को non-root backend प्रोफ़ाइल में आयात नहीं किया जा सकता।</string>
+
+    <string name="non_root_error_hysteria_server_required">Hysteria2 कॉन्फ़िगरेशन में सर्वर निर्दिष्ट होना चाहिए।</string>
+    <string name="non_root_error_wireproxy_empty">WireProxy कॉन्फ़िगरेशन खाली नहीं हो सकता।</string>
+    <string name="non_root_error_import_failed">कॉन्फ़िगरेशन आयात नहीं किया जा सका।</string>
+    <string name="non_root_error_invalid_socks_port">10000 से 65535 तक मान्य SOCKS5 पोर्ट चुनें।</string>
+    <string name="non_root_error_invalid_rpc_port">10000 से 65535 तक मान्य Mieru RPC पोर्ट चुनें।</string>
+    <string name="non_root_error_rpc_port_conflict">Mieru RPC पोर्ट SOCKS5 पोर्ट से अलग होना चाहिए।</string>
+    <string name="non_root_tgws_secret_error">सीक्रेट में ठीक 32 हेक्साडेसिमल अक्षर होने चाहिए।</string>
+    <string name="non_root_tgws_faketls_error">FakeTLS SNI डोमेन आवश्यक है।</string>
 </resources>

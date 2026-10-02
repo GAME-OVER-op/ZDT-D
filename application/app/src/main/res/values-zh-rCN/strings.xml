@@ -2511,4 +2511,37 @@ APatch：10700+</string>
     <string name="non_root_group_name_label">分组名称</string>
     <string name="non_root_group_rename">重命名分组</string>
     <string name="non_root_t2s_group_unnamed">分组</string>
+
+    <string name="non_root_server_count_fmt">%1$d 个服务器</string>
+    <string name="non_root_servers_title">服务器</string>
+    <string name="non_root_servers_desc">此配置文件中的服务器会成为 T2S 的本地 SOCKS5 后端。</string>
+    <string name="non_root_add_server">添加服务器</string>
+    <string name="non_root_servers_empty">暂无服务器。添加服务器后即可使用此配置文件。</string>
+    <string name="non_root_delete_server_title">删除服务器？</string>
+    <string name="non_root_delete_server_body">从此配置文件中删除“%1$s”？</string>
+    <string name="non_root_server_name">服务器名称</string>
+    <string name="non_root_local_socks_port">本地 SOCKS5 端口</string>
+    <string name="non_root_mieru_rpc_port">Mieru RPC 端口</string>
+    <string name="non_root_log_level">日志级别</string>
+    <string name="non_root_singbox_import">导入 sing-box 配置</string>
+    <string name="non_root_singbox_import_source">链接或 JSON</string>
+    <string name="non_root_import_config">导入配置</string>
+    <string name="non_root_direct_multi_server_disabled">多个服务器 · 请使用级联</string>
+    <string name="non_root_additional_tools">附加工具</string>
+    <string name="non_root_tgws_title">Telegram WS Proxy</string>
+    <string name="non_root_vps_desc">管理 VPS 服务器并将生成的客户端导入配置文件。</string>
+
+    <string name="non_root_vps_import_title">将 VPS 客户端添加到 ZDT-D</string>
+    <string name="non_root_vps_import_new_profile">创建新配置文件</string>
+    <string name="non_root_vps_import_existing">将服务器添加到现有配置文件</string>
+    <string name="non_root_vps_import_unsupported">此 VPS 服务无法导入 non-root 后端配置文件。</string>
+
+    <string name="non_root_error_hysteria_server_required">Hysteria2 配置必须指定服务器。</string>
+    <string name="non_root_error_wireproxy_empty">WireProxy 配置不能为空。</string>
+    <string name="non_root_error_import_failed">无法导入配置。</string>
+    <string name="non_root_error_invalid_socks_port">请选择 10000 到 65535 之间的有效 SOCKS5 端口。</string>
+    <string name="non_root_error_invalid_rpc_port">请选择 10000 到 65535 之间的有效 Mieru RPC 端口。</string>
+    <string name="non_root_error_rpc_port_conflict">Mieru RPC 端口必须与 SOCKS5 端口不同。</string>
+    <string name="non_root_tgws_secret_error">密钥必须正好包含 32 个十六进制字符。</string>
+    <string name="non_root_tgws_faketls_error">必须填写 FakeTLS SNI 域名。</string>
 </resources>

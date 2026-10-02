@@ -2516,4 +2516,37 @@ APatch: ‏10700+</string>
     <string name="non_root_group_name_label">اسم المجموعة</string>
     <string name="non_root_group_rename">إعادة تسمية المجموعة</string>
     <string name="non_root_t2s_group_unnamed">مجموعة</string>
+
+    <string name="non_root_server_count_fmt">%1$d خوادم</string>
+    <string name="non_root_servers_title">الخوادم</string>
+    <string name="non_root_servers_desc">تتحول الخوادم في هذا الملف الشخصي إلى واجهات SOCKS5 محلية لـ T2S.</string>
+    <string name="non_root_add_server">إضافة خادم</string>
+    <string name="non_root_servers_empty">لا توجد خوادم بعد. أضف خادمًا لاستخدام هذا الملف الشخصي.</string>
+    <string name="non_root_delete_server_title">حذف الخادم؟</string>
+    <string name="non_root_delete_server_body">حذف «%1$s» من هذا الملف الشخصي؟</string>
+    <string name="non_root_server_name">اسم الخادم</string>
+    <string name="non_root_local_socks_port">منفذ SOCKS5 المحلي</string>
+    <string name="non_root_mieru_rpc_port">Mieru RPC port</string>
+    <string name="non_root_log_level">Log level</string>
+    <string name="non_root_singbox_import">استيراد إعداد sing-box</string>
+    <string name="non_root_singbox_import_source">رابط أو JSON</string>
+    <string name="non_root_import_config">استيراد الإعداد</string>
+    <string name="non_root_direct_multi_server_disabled">عدة خوادم · استخدم Cascade</string>
+    <string name="non_root_additional_tools">أدوات إضافية</string>
+    <string name="non_root_tgws_title">Telegram WS Proxy</string>
+    <string name="non_root_vps_desc">إدارة خوادم VPS واستيراد العملاء المُنشأة إلى الملفات الشخصية.</string>
+
+    <string name="non_root_vps_import_title">إضافة عميل VPS إلى ZDT-D</string>
+    <string name="non_root_vps_import_new_profile">إنشاء ملف شخصي جديد</string>
+    <string name="non_root_vps_import_existing">إضافة الخادم إلى ملف شخصي موجود</string>
+    <string name="non_root_vps_import_unsupported">لا يمكن استيراد خدمة VPS هذه إلى ملف backend بدون root.</string>
+
+    <string name="non_root_error_hysteria_server_required">يجب أن يحدد إعداد Hysteria2 خادمًا.</string>
+    <string name="non_root_error_wireproxy_empty">لا يمكن أن يكون إعداد WireProxy فارغًا.</string>
+    <string name="non_root_error_import_failed">تعذر استيراد الإعداد.</string>
+    <string name="non_root_error_invalid_socks_port">اختر منفذ SOCKS5 صالحًا من 10000 إلى 65535.</string>
+    <string name="non_root_error_invalid_rpc_port">اختر منفذ Mieru RPC صالحًا من 10000 إلى 65535.</string>
+    <string name="non_root_error_rpc_port_conflict">يجب أن يختلف منفذ Mieru RPC عن منفذ SOCKS5.</string>
+    <string name="non_root_tgws_secret_error">يجب أن يحتوي السر على 32 محرفًا سداسيًا عشريًا بالضبط.</string>
+    <string name="non_root_tgws_faketls_error">نطاق SNI لـ FakeTLS مطلوب.</string>
 </resources>

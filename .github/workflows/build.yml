@@ -5742,11 +5742,13 @@ jobs:
       - build_nfqws_tester
       - build_busybox
       - build_hev_socks5_tunnel
+      - build_tg_ws_proxy
     if: >-
       needs.build_dpi_detector.result == 'success' &&
       needs.build_nfqws_tester.result == 'success' &&
       needs.build_busybox.result == 'success' &&
-      needs.build_hev_socks5_tunnel.result == 'success'
+      needs.build_hev_socks5_tunnel.result == 'success' &&
+      needs.build_tg_ws_proxy.result == 'success'
 
     steps:
       - name: Mark APK tools ready
@@ -5917,6 +5919,36 @@ jobs:
           pattern: opera-proxy-*
           path: out/artifacts/nonroot/opera-proxy
 
+      - name: Download non-root Hysteria2 binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: hysteria2-*
+          path: out/artifacts/nonroot/hysteria2
+
+      - name: Download non-root sing-box binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: sing-box-*
+          path: out/artifacts/nonroot/sing-box
+
+      - name: Download non-root Mieru binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: mieru-*
+          path: out/artifacts/nonroot/mieru
+
+      - name: Download non-root WireProxy binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: wireproxy-*
+          path: out/artifacts/nonroot/wireproxy
+
+      - name: Download non-root Telegram WS Proxy binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: tg-ws-proxy-*
+          path: out/artifacts/nonroot/tgwsproxy
+
       - name: Prepare hev-socks5-tunnel app library
         run: |
           set -euo pipefail
@@ -5952,6 +5984,16 @@ jobs:
           copy_helper "out/artifacts/nonroot/byedpi/byedpi-arm32/byedpi" "$JNI_ROOT/armeabi-v7a/libzdt_byedpi.so"
           copy_helper "out/artifacts/nonroot/opera-proxy/opera-proxy-arm64/opera-proxy" "$JNI_ROOT/arm64-v8a/libzdt_operaproxy.so"
           copy_helper "out/artifacts/nonroot/opera-proxy/opera-proxy-arm32/opera-proxy" "$JNI_ROOT/armeabi-v7a/libzdt_operaproxy.so"
+          copy_helper "out/artifacts/nonroot/hysteria2/hysteria2-arm64/hysteria2" "$JNI_ROOT/arm64-v8a/libzdt_hysteria2.so"
+          copy_helper "out/artifacts/nonroot/hysteria2/hysteria2-arm32/hysteria2" "$JNI_ROOT/armeabi-v7a/libzdt_hysteria2.so"
+          copy_helper "out/artifacts/nonroot/sing-box/sing-box-arm64/sing-box" "$JNI_ROOT/arm64-v8a/libzdt_singbox.so"
+          copy_helper "out/artifacts/nonroot/sing-box/sing-box-arm32/sing-box" "$JNI_ROOT/armeabi-v7a/libzdt_singbox.so"
+          copy_helper "out/artifacts/nonroot/mieru/mieru-arm64/mieru" "$JNI_ROOT/arm64-v8a/libzdt_mieru.so"
+          copy_helper "out/artifacts/nonroot/mieru/mieru-arm32/mieru" "$JNI_ROOT/armeabi-v7a/libzdt_mieru.so"
+          copy_helper "out/artifacts/nonroot/wireproxy/wireproxy-arm64/wireproxy" "$JNI_ROOT/arm64-v8a/libzdt_wireproxy.so"
+          copy_helper "out/artifacts/nonroot/wireproxy/wireproxy-arm32/wireproxy" "$JNI_ROOT/armeabi-v7a/libzdt_wireproxy.so"
+          copy_helper "out/artifacts/nonroot/tgwsproxy/tg-ws-proxy-arm64/tg-ws-proxy" "$JNI_ROOT/arm64-v8a/libzdt_tgwsproxy.so"
+          copy_helper "out/artifacts/nonroot/tgwsproxy/tg-ws-proxy-arm32/tg-ws-proxy" "$JNI_ROOT/armeabi-v7a/libzdt_tgwsproxy.so"
 
       - name: Verify BusyBox artifacts
         run: |
@@ -6088,6 +6130,16 @@ jobs:
             lib/armeabi-v7a/libzdt_operaproxy.so \
             lib/arm64-v8a/libzdt_byedpi.so \
             lib/armeabi-v7a/libzdt_byedpi.so \
+            lib/arm64-v8a/libzdt_hysteria2.so \
+            lib/armeabi-v7a/libzdt_hysteria2.so \
+            lib/arm64-v8a/libzdt_singbox.so \
+            lib/armeabi-v7a/libzdt_singbox.so \
+            lib/arm64-v8a/libzdt_mieru.so \
+            lib/armeabi-v7a/libzdt_mieru.so \
+            lib/arm64-v8a/libzdt_wireproxy.so \
+            lib/armeabi-v7a/libzdt_wireproxy.so \
+            lib/arm64-v8a/libzdt_tgwsproxy.so \
+            lib/armeabi-v7a/libzdt_tgwsproxy.so \
             assets/busybox/busybox-arm64 \
             assets/busybox/busybox-arm64.sha256 \
             assets/busybox/busybox-arm64.source \

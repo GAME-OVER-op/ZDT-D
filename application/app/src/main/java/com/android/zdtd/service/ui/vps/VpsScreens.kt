@@ -470,7 +470,8 @@ fun VpsProfileScreen(
   kind: VpsServiceKind,
   profileId: String,
   viewModel: VpsViewModel,
-  actions: ZdtdActions,
+  actions: ZdtdActions? = null,
+  onNonRootImport: ((VpsServer?, VpsServiceProfile?, VpsConfigResult) -> Unit)? = null,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
 ) {
@@ -546,7 +547,10 @@ fun VpsProfileScreen(
       onShare = { shareConfig(context, result) },
       onOpenExternal = { openConfigExternally(context, result) },
       onImport = {
-        importConfigIntoZdtd(context, actions, server, profile, result) { message -> snack = message }
+        when {
+          onNonRootImport != null -> onNonRootImport(server, profile, result)
+          actions != null -> importConfigIntoZdtd(context, actions, server, profile, result) { message -> snack = message }
+        }
       },
     )
   }

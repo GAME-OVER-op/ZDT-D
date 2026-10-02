@@ -103,6 +103,15 @@
             android:launchMode="singleTask" />
 
         <service
+            android:name=".NonRootTgWsService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-enabled non-root Telegram WS Proxy bound to the app-owned loopback interface" />
+        </service>
+
+        <service
             android:name=".NonRootVpnService"
             android:exported="false"
             android:permission="android.permission.BIND_VPN_SERVICE"

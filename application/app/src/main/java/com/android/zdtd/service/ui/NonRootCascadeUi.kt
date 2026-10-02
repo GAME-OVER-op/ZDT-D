@@ -72,7 +72,7 @@ import kotlin.math.abs
 @Composable
 internal fun NonRootCascadeToolsContent(
   state: NonRootCascadeState,
-  onCreateProfile: (String) -> Unit,
+  onCreateProfile: (String, String) -> Unit,
   onUpdateProfile: (NonRootCascadeProfile) -> Unit,
   onOpenProfile: (String) -> Unit,
   onOpenT2sSettings: () -> Unit,
@@ -150,8 +150,8 @@ internal fun NonRootCascadeToolsContent(
   if (showCreateDialog) {
     NonRootCreateProfileDialog(
       onDismiss = { showCreateDialog = false },
-      onCreate = { name ->
-        onCreateProfile(name)
+      onCreate = { name, toolId ->
+        onCreateProfile(name, toolId)
         showCreateDialog = false
       },
     )
@@ -161,9 +161,10 @@ internal fun NonRootCascadeToolsContent(
 @Composable
 internal fun NonRootCreateProfileDialog(
   onDismiss: () -> Unit,
-  onCreate: (String) -> Unit,
+  onCreate: (String, String) -> Unit,
 ) {
   var name by remember { mutableStateOf("") }
+  var toolId by remember { mutableStateOf(NonRootCascadeProfile.TOOL_OPERA_PROXY) }
   AlertDialog(
     onDismissRequest = onDismiss,
     title = { Text(stringResource(R.string.non_root_create_profile)) },
@@ -174,20 +175,32 @@ internal fun NonRootCreateProfileDialog(
           style = MaterialTheme.typography.labelMedium,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Surface(
-          modifier = Modifier.fillMaxWidth(),
-          shape = RoundedCornerShape(16.dp),
-          color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
-        ) {
-          Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        NonRootCascadeProfile.SUPPORTED_TOOLS.forEach { candidate ->
+          val selected = toolId == candidate
+          Surface(
+            modifier = Modifier
+              .fillMaxWidth()
+              .clickable { toolId = candidate },
+            shape = RoundedCornerShape(16.dp),
+            color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f)
+              else MaterialTheme.colorScheme.surfaceContainer,
+            border = BorderStroke(
+              1.dp,
+              if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.48f)
+              else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+            ),
           ) {
-            val icon = programIconRes(NonRootCascadeProfile.TOOL_OPERA_PROXY)
-            if (icon != null) Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(24.dp))
-            else Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(22.dp))
-            Text(stringResource(R.string.opera_proxy_title), fontWeight = FontWeight.SemiBold)
+            Row(
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+              val icon = programIconRes(candidate)
+              if (icon != null) Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(24.dp))
+              else Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(22.dp))
+              Text(nonRootToolTitle(candidate), fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+              if (selected) Text("✓", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            }
           }
         }
         OutlinedTextField(
@@ -200,7 +213,7 @@ internal fun NonRootCreateProfileDialog(
       }
     },
     confirmButton = {
-      TextButton(onClick = { onCreate(name) }) { Text(stringResource(R.string.action_create)) }
+      TextButton(onClick = { onCreate(name, toolId) }) { Text(stringResource(R.string.action_create)) }
     },
     dismissButton = {
       TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
@@ -243,14 +256,18 @@ private fun NonRootCascadeProfileCard(
       }
       Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
         Text(
-          text = stringResource(R.string.non_root_profile_title_fmt, stringResource(R.string.opera_proxy_title), profile.name),
+          text = stringResource(R.string.non_root_profile_title_fmt, nonRootToolTitle(profile.toolId), profile.name),
           style = MaterialTheme.typography.titleSmall,
           fontWeight = FontWeight.Bold,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
         Text(
-          text = "${NonRootPortRegistry.LOOPBACK}:${profile.port}",
+          text = if (profile.toolId == NonRootCascadeProfile.TOOL_OPERA_PROXY) {
+            "${NonRootPortRegistry.LOOPBACK}:${profile.port}"
+          } else {
+            stringResource(R.string.non_root_server_count_fmt, profile.serverCount)
+          },
           style = MaterialTheme.typography.bodySmall,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -297,9 +314,30 @@ internal fun NonRootCascadeProfileEditorScreen(
   bottomContentPadding: Dp,
   profile: NonRootCascadeProfile,
   onUpdateProfile: (NonRootCascadeProfile) -> Unit,
+  onAddServer: (String, String) -> Unit,
+  onUpdateServer: (String, com.android.zdtd.service.NonRootBackendServer) -> Unit,
+  onMoveServer: (String, Int, Int) -> Unit,
+  onDeleteServer: (String, String) -> Unit,
+  onServerPortChange: (String, String, Int) -> Boolean,
+  onServerAuxPortChange: (String, String, Int) -> Boolean,
   onPortChange: (String, Int) -> Boolean,
   onByeDpiPortChange: (String, Int) -> Boolean,
 ) {
+  if (profile.toolId != NonRootCascadeProfile.TOOL_OPERA_PROXY) {
+    NonRootMultiServerProfileEditorScreen(
+      topContentPadding = topContentPadding,
+      bottomContentPadding = bottomContentPadding,
+      profile = profile,
+      onUpdateProfile = onUpdateProfile,
+      onAddServer = onAddServer,
+      onUpdateServer = onUpdateServer,
+      onMoveServer = onMoveServer,
+      onDeleteServer = onDeleteServer,
+      onServerPortChange = onServerPortChange,
+      onServerAuxPortChange = onServerAuxPortChange,
+    )
+    return
+  }
   val screenPadding = rememberAdaptiveScreenPadding()
   var nameText by remember(profile.id) { mutableStateOf(profile.name) }
 
@@ -340,7 +378,7 @@ internal fun NonRootCascadeProfileEditorScreen(
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
               Text(
-                text = stringResource(R.string.non_root_profile_title_fmt, stringResource(R.string.opera_proxy_title), profile.name),
+                text = stringResource(R.string.non_root_profile_title_fmt, nonRootToolTitle(profile.toolId), profile.name),
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
                 maxLines = 1,
@@ -705,14 +743,18 @@ private fun NonRootT2sRouteRow(
             else Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(25.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
               Text(
-                text = stringResource(R.string.non_root_profile_title_fmt, stringResource(R.string.opera_proxy_title), value.name),
+                text = stringResource(R.string.non_root_profile_title_fmt, nonRootToolTitle(value.toolId), value.name),
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
               )
               Text(
-                text = "${NonRootPortRegistry.LOOPBACK}:${value.port}",
+                text = if (value.toolId == NonRootCascadeProfile.TOOL_OPERA_PROXY) {
+                  "${NonRootPortRegistry.LOOPBACK}:${value.port}"
+                } else {
+                  stringResource(R.string.non_root_server_count_fmt, value.serverCount)
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )

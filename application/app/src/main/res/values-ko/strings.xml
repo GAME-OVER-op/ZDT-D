@@ -2511,4 +2511,37 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="non_root_group_name_label">그룹 이름</string>
     <string name="non_root_group_rename">그룹 이름 변경</string>
     <string name="non_root_t2s_group_unnamed">그룹</string>
+
+    <string name="non_root_server_count_fmt">서버 %1$d개</string>
+    <string name="non_root_servers_title">서버</string>
+    <string name="non_root_servers_desc">이 프로필의 서버는 T2S용 로컬 SOCKS5 백엔드가 됩니다.</string>
+    <string name="non_root_add_server">서버 추가</string>
+    <string name="non_root_servers_empty">서버가 없습니다. 이 프로필을 사용하려면 서버를 추가하세요.</string>
+    <string name="non_root_delete_server_title">서버를 삭제할까요?</string>
+    <string name="non_root_delete_server_body">이 프로필에서 “%1$s”을(를) 삭제할까요?</string>
+    <string name="non_root_server_name">서버 이름</string>
+    <string name="non_root_local_socks_port">로컬 SOCKS5 포트</string>
+    <string name="non_root_mieru_rpc_port">Mieru RPC 포트</string>
+    <string name="non_root_log_level">로그 수준</string>
+    <string name="non_root_singbox_import">sing-box 구성 가져오기</string>
+    <string name="non_root_singbox_import_source">링크 또는 JSON</string>
+    <string name="non_root_import_config">구성 가져오기</string>
+    <string name="non_root_direct_multi_server_disabled">여러 서버 · 캐스케이드 사용</string>
+    <string name="non_root_additional_tools">추가 도구</string>
+    <string name="non_root_tgws_title">Telegram WS Proxy</string>
+    <string name="non_root_vps_desc">VPS 서버를 관리하고 생성된 클라이언트를 프로필로 가져옵니다.</string>
+
+    <string name="non_root_vps_import_title">VPS 클라이언트를 ZDT-D에 추가</string>
+    <string name="non_root_vps_import_new_profile">새 프로필 만들기</string>
+    <string name="non_root_vps_import_existing">기존 프로필에 서버 추가</string>
+    <string name="non_root_vps_import_unsupported">이 VPS 서비스는 non-root 백엔드 프로필로 가져올 수 없습니다.</string>
+
+    <string name="non_root_error_hysteria_server_required">Hysteria2 구성에 서버를 지정해야 합니다.</string>
+    <string name="non_root_error_wireproxy_empty">WireProxy 구성은 비워 둘 수 없습니다.</string>
+    <string name="non_root_error_import_failed">구성을 가져올 수 없습니다.</string>
+    <string name="non_root_error_invalid_socks_port">10000~65535 범위의 올바른 SOCKS5 포트를 선택하세요.</string>
+    <string name="non_root_error_invalid_rpc_port">10000~65535 범위의 올바른 Mieru RPC 포트를 선택하세요.</string>
+    <string name="non_root_error_rpc_port_conflict">Mieru RPC 포트는 SOCKS5 포트와 달라야 합니다.</string>
+    <string name="non_root_tgws_secret_error">시크릿은 정확히 32개의 16진수 문자여야 합니다.</string>
+    <string name="non_root_tgws_faketls_error">FakeTLS SNI 도메인이 필요합니다.</string>
 </resources>

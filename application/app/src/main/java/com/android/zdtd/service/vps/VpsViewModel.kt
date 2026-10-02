@@ -483,11 +483,28 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
           val safeFile = sanitizeFileName(result.fileName)
           val dir = "/storage/emulated/0/ZDT-D_Files/VPS/$safeServer/$safeKind"
           val path = "$dir/$safeFile"
-          val encoded = Base64.encodeToString(result.content.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-          val script = "mkdir -p '${escapeSingle(dir)}'; printf '%s' '$encoded' | base64 -d > '${escapeSingle(path)}'; chmod 0664 '${escapeSingle(path)}'; chown 1023:1023 '${escapeSingle(path)}' 2>/dev/null || true"
-          val shellResult = root.execRootSh(script)
-          check(shellResult.isSuccess) { shellResult.err.joinToString("\n").ifBlank { "Unable to save file" } }
-          path
+          if (root.isNonRootRuntimeMode()) {
+            val base = getApplication<Application>().getExternalFilesDir(null)
+              ?: error("Unable to access app external storage")
+            val fallbackDir = java.io.File(base, "VPS/$safeServer/$safeKind").apply { mkdirs() }
+            val fallback = java.io.File(fallbackDir, safeFile)
+            fallback.writeText(result.content)
+            fallback.absolutePath
+          } else {
+            val encoded = Base64.encodeToString(result.content.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+            val script = "mkdir -p '${escapeSingle(dir)}'; printf '%s' '$encoded' | base64 -d > '${escapeSingle(path)}'; chmod 0664 '${escapeSingle(path)}'; chown 1023:1023 '${escapeSingle(path)}' 2>/dev/null || true"
+            val shellResult = root.execRootSh(script)
+            if (shellResult.isSuccess) {
+              path
+            } else {
+              val base = getApplication<Application>().getExternalFilesDir(null)
+                ?: error(shellResult.err.joinToString("\n").ifBlank { "Unable to save file" })
+              val fallbackDir = java.io.File(base, "VPS/$safeServer/$safeKind").apply { mkdirs() }
+              val fallback = java.io.File(fallbackDir, safeFile)
+              fallback.writeText(result.content)
+              fallback.absolutePath
+            }
+          }
         }
       }
       outcome.getOrNull()?.let { path ->

@@ -2511,4 +2511,37 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="non_root_group_name_label">グループ名</string>
     <string name="non_root_group_rename">グループ名を変更</string>
     <string name="non_root_t2s_group_unnamed">グループ</string>
+
+    <string name="non_root_server_count_fmt">サーバー %1$d 台</string>
+    <string name="non_root_servers_title">サーバー</string>
+    <string name="non_root_servers_desc">このプロファイルのサーバーは T2S のローカル SOCKS5 バックエンドになります。</string>
+    <string name="non_root_add_server">サーバーを追加</string>
+    <string name="non_root_servers_empty">サーバーがありません。このプロファイルを使うには追加してください。</string>
+    <string name="non_root_delete_server_title">サーバーを削除しますか？</string>
+    <string name="non_root_delete_server_body">このプロファイルから「%1$s」を削除しますか？</string>
+    <string name="non_root_server_name">サーバー名</string>
+    <string name="non_root_local_socks_port">ローカル SOCKS5 ポート</string>
+    <string name="non_root_mieru_rpc_port">Mieru RPC ポート</string>
+    <string name="non_root_log_level">ログレベル</string>
+    <string name="non_root_singbox_import">sing-box 設定をインポート</string>
+    <string name="non_root_singbox_import_source">リンクまたは JSON</string>
+    <string name="non_root_import_config">設定をインポート</string>
+    <string name="non_root_direct_multi_server_disabled">複数サーバー · カスケードを使用</string>
+    <string name="non_root_additional_tools">追加ツール</string>
+    <string name="non_root_tgws_title">Telegram WS Proxy</string>
+    <string name="non_root_vps_desc">VPS サーバーを管理し、生成したクライアントをプロファイルへインポートします。</string>
+
+    <string name="non_root_vps_import_title">VPS クライアントを ZDT-D に追加</string>
+    <string name="non_root_vps_import_new_profile">新しいプロファイルを作成</string>
+    <string name="non_root_vps_import_existing">既存プロファイルにサーバーを追加</string>
+    <string name="non_root_vps_import_unsupported">この VPS サービスは non-root バックエンドプロファイルへインポートできません。</string>
+
+    <string name="non_root_error_hysteria_server_required">Hysteria2 設定にはサーバーの指定が必要です。</string>
+    <string name="non_root_error_wireproxy_empty">WireProxy 設定を空にすることはできません。</string>
+    <string name="non_root_error_import_failed">設定をインポートできませんでした。</string>
+    <string name="non_root_error_invalid_socks_port">10000～65535 の有効な SOCKS5 ポートを指定してください。</string>
+    <string name="non_root_error_invalid_rpc_port">10000～65535 の有効な Mieru RPC ポートを指定してください。</string>
+    <string name="non_root_error_rpc_port_conflict">Mieru RPC ポートは SOCKS5 ポートと異なる必要があります。</string>
+    <string name="non_root_tgws_secret_error">シークレットは正確に 32 文字の16進数である必要があります。</string>
+    <string name="non_root_tgws_faketls_error">FakeTLS の SNI ドメインが必要です。</string>
 </resources>

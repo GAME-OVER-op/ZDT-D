@@ -2511,4 +2511,37 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="non_root_group_name_label">Tên nhóm</string>
     <string name="non_root_group_rename">Đổi tên nhóm</string>
     <string name="non_root_t2s_group_unnamed">Nhóm</string>
+
+    <string name="non_root_server_count_fmt">%1$d máy chủ</string>
+    <string name="non_root_servers_title">Máy chủ</string>
+    <string name="non_root_servers_desc">Các máy chủ trong hồ sơ này trở thành backend SOCKS5 cục bộ cho T2S.</string>
+    <string name="non_root_add_server">Thêm máy chủ</string>
+    <string name="non_root_servers_empty">Chưa có máy chủ. Hãy thêm máy chủ để sử dụng hồ sơ này.</string>
+    <string name="non_root_delete_server_title">Xóa máy chủ?</string>
+    <string name="non_root_delete_server_body">Xóa “%1$s” khỏi hồ sơ này?</string>
+    <string name="non_root_server_name">Tên máy chủ</string>
+    <string name="non_root_local_socks_port">Cổng SOCKS5 cục bộ</string>
+    <string name="non_root_mieru_rpc_port">Mieru RPC port</string>
+    <string name="non_root_log_level">Log level</string>
+    <string name="non_root_singbox_import">Nhập cấu hình sing-box</string>
+    <string name="non_root_singbox_import_source">Liên kết hoặc JSON</string>
+    <string name="non_root_import_config">Nhập cấu hình</string>
+    <string name="non_root_direct_multi_server_disabled">Nhiều máy chủ · dùng Cascade</string>
+    <string name="non_root_additional_tools">Công cụ bổ sung</string>
+    <string name="non_root_tgws_title">Telegram WS Proxy</string>
+    <string name="non_root_vps_desc">Quản lý máy chủ VPS và nhập các client đã tạo vào hồ sơ.</string>
+
+    <string name="non_root_vps_import_title">Thêm client VPS vào ZDT-D</string>
+    <string name="non_root_vps_import_new_profile">Tạo hồ sơ mới</string>
+    <string name="non_root_vps_import_existing">Thêm máy chủ vào hồ sơ hiện có</string>
+    <string name="non_root_vps_import_unsupported">Dịch vụ VPS này không thể nhập vào hồ sơ backend non-root.</string>
+
+    <string name="non_root_error_hysteria_server_required">Cấu hình Hysteria2 phải chỉ định máy chủ.</string>
+    <string name="non_root_error_wireproxy_empty">Cấu hình WireProxy không được để trống.</string>
+    <string name="non_root_error_import_failed">Không thể nhập cấu hình.</string>
+    <string name="non_root_error_invalid_socks_port">Chọn cổng SOCKS5 hợp lệ từ 10000 đến 65535.</string>
+    <string name="non_root_error_invalid_rpc_port">Chọn cổng RPC Mieru hợp lệ từ 10000 đến 65535.</string>
+    <string name="non_root_error_rpc_port_conflict">Cổng RPC Mieru phải khác cổng SOCKS5.</string>
+    <string name="non_root_tgws_secret_error">Secret phải có đúng 32 ký tự thập lục phân.</string>
+    <string name="non_root_tgws_faketls_error">Cần có miền SNI FakeTLS.</string>
 </resources>

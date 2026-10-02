@@ -58,6 +58,8 @@ import androidx.compose.material.icons.filled.Equalizer
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Power
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
@@ -94,6 +96,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.android.zdtd.service.NonRootBackendServer
 import com.android.zdtd.service.NonRootCascadeBackendMode
 import com.android.zdtd.service.NonRootCascadeProfile
 import com.android.zdtd.service.NonRootCascadeRouteItem
@@ -103,10 +106,18 @@ import com.android.zdtd.service.NonRootDirectOperaConfig
 import com.android.zdtd.service.NonRootPortRegistry
 import com.android.zdtd.service.NonRootRuntimeLogEntry
 import com.android.zdtd.service.NonRootT2sConfig
+import com.android.zdtd.service.NonRootTgWsConfig
 import com.android.zdtd.service.NonRootWorkMode
 import com.android.zdtd.service.NonRootVpnState
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ui.settings.SettingsScreen
+import com.android.zdtd.service.ui.vps.VpsProfileScreen
+import com.android.zdtd.service.ui.vps.VpsServerDetailsScreen
+import com.android.zdtd.service.ui.vps.VpsServersScreen
+import com.android.zdtd.service.ui.vps.VpsServiceScreen
+import com.android.zdtd.service.vps.VpsServiceKind
+import com.android.zdtd.service.vps.VpsViewModel
+import com.android.zdtd.service.vps.VpsConfigResult
 import kotlin.math.abs
 import kotlinx.coroutines.delay
 
@@ -121,6 +132,8 @@ fun NonRootApp(
   vpnState: NonRootVpnState,
   vpnLastError: String?,
   vpnLogs: List<NonRootRuntimeLogEntry>,
+  tgWsConfig: NonRootTgWsConfig,
+  vpsViewModel: VpsViewModel,
   onVpnStart: () -> Unit,
   onVpnStop: () -> Unit,
   onRequestRootMode: () -> Unit,
@@ -128,30 +141,50 @@ fun NonRootApp(
   onThemeModeChange: (String) -> Unit,
   onWorkModeChange: (NonRootWorkMode) -> Unit,
   onDirectSelectedProfileChange: (String?) -> Unit,
-  onCreateCascadeProfile: (String) -> Unit,
+  onCreateCascadeProfile: (String, String) -> Unit,
   onUpdateCascadeProfile: (NonRootCascadeProfile) -> Unit,
+  onAddCascadeServer: (String, String) -> Unit,
+  onUpdateCascadeServer: (String, NonRootBackendServer) -> Unit,
+  onMoveCascadeServer: (String, Int, Int) -> Unit,
+  onDeleteCascadeServer: (String, String) -> Unit,
+  onCascadeServerPortChange: (String, String, Int) -> Boolean,
+  onCascadeServerAuxPortChange: (String, String, Int) -> Boolean,
   onCascadeProfilePortChange: (String, Int) -> Boolean,
   onCascadeProfileByeDpiPortChange: (String, Int) -> Boolean,
   onDeleteCascadeProfile: (String) -> Unit,
   onCascadeBackendModeChange: (NonRootCascadeBackendMode) -> Unit,
   onT2sConfigChange: (NonRootT2sConfig) -> Unit,
   onCascadeRouteChange: (List<NonRootCascadeRouteItem>) -> Unit,
+  onTgWsConfigChange: (NonRootTgWsConfig) -> Unit,
+  onTgWsPortChange: (Int) -> Boolean,
+  onImportVpsConfig: (VpsConfigResult, String, String?) -> Unit,
 ) {
   var tab by remember { mutableStateOf(Tab.HOME) }
   var showSettings by remember { mutableStateOf(false) }
   var cascadeProfileId by remember { mutableStateOf<String?>(null) }
   var showT2sSettings by remember { mutableStateOf(false) }
+  var showTgWsSettings by remember { mutableStateOf(false) }
+  var showVps by remember { mutableStateOf(false) }
+  var vpsServerId by remember { mutableStateOf<String?>(null) }
+  var vpsServiceKind by remember { mutableStateOf<VpsServiceKind?>(null) }
+  var vpsProfileId by remember { mutableStateOf<String?>(null) }
+  var pendingVpsImport by remember { mutableStateOf<Pair<VpsConfigResult, String>?>(null) }
   val compactBottomBar = rememberUseScrollableTabs() || rememberIsShortHeight()
   val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
   val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
   val topContentPadding = topInset + 78.dp
   val bottomContentPadding = bottomInset + if (compactBottomBar) 78.dp else 88.dp
 
-  BackHandler(enabled = showSettings || cascadeProfileId != null || showT2sSettings || tab != Tab.HOME) {
+  BackHandler(enabled = showSettings || cascadeProfileId != null || showT2sSettings || showTgWsSettings || showVps || tab != Tab.HOME) {
     when {
       showSettings -> showSettings = false
       cascadeProfileId != null -> cascadeProfileId = null
       showT2sSettings -> showT2sSettings = false
+      showTgWsSettings -> showTgWsSettings = false
+      vpsProfileId != null -> vpsProfileId = null
+      vpsServiceKind != null -> vpsServiceKind = null
+      vpsServerId != null -> vpsServerId = null
+      showVps -> showVps = false
       else -> tab = Tab.HOME
     }
   }
@@ -165,6 +198,11 @@ fun NonRootApp(
     val pageKey = when {
       editedProfile != null -> "profile:${editedProfile.id}"
       showT2sSettings -> "t2s"
+      showTgWsSettings -> "tgws"
+      showVps && vpsProfileId != null && vpsServerId != null && vpsServiceKind != null -> "vps-profile:${vpsServerId}:${vpsServiceKind!!.wireId}:${vpsProfileId}"
+      showVps && vpsServiceKind != null && vpsServerId != null -> "vps-service:${vpsServerId}:${vpsServiceKind!!.wireId}"
+      showVps && vpsServerId != null -> "vps-server:${vpsServerId}"
+      showVps -> "vps"
       else -> "tab:${tab.name}"
     }
     AnimatedContent(
@@ -190,6 +228,12 @@ fun NonRootApp(
               bottomContentPadding = bottomInset + 16.dp,
               profile = profile,
               onUpdateProfile = onUpdateCascadeProfile,
+              onAddServer = onAddCascadeServer,
+              onUpdateServer = onUpdateCascadeServer,
+              onMoveServer = onMoveCascadeServer,
+              onDeleteServer = onDeleteCascadeServer,
+              onServerPortChange = onCascadeServerPortChange,
+              onServerAuxPortChange = onCascadeServerAuxPortChange,
               onPortChange = onCascadeProfilePortChange,
               onByeDpiPortChange = onCascadeProfileByeDpiPortChange,
             )
@@ -202,6 +246,46 @@ fun NonRootApp(
           onT2sConfigChange = onT2sConfigChange,
           onRouteChange = onCascadeRouteChange,
           onUpdateProfile = onUpdateCascadeProfile,
+        )
+        page == "tgws" -> NonRootTgWsSettingsScreen(
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomInset + 16.dp,
+          config = tgWsConfig,
+          onConfigChange = onTgWsConfigChange,
+          onPortChange = onTgWsPortChange,
+        )
+        page == "vps" -> VpsServersScreen(
+          viewModel = vpsViewModel,
+          onOpenServer = { vpsServerId = it },
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomInset + 16.dp,
+        )
+        page.startsWith("vps-server:") -> VpsServerDetailsScreen(
+          serverId = vpsServerId.orEmpty(),
+          viewModel = vpsViewModel,
+          onOpenService = { vpsServiceKind = it },
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomInset + 16.dp,
+        )
+        page.startsWith("vps-service:") -> VpsServiceScreen(
+          serverId = vpsServerId.orEmpty(),
+          kind = vpsServiceKind ?: VpsServiceKind.HYSTERIA2,
+          viewModel = vpsViewModel,
+          onOpenProfile = { vpsProfileId = it },
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomInset + 16.dp,
+        )
+        page.startsWith("vps-profile:") -> VpsProfileScreen(
+          serverId = vpsServerId.orEmpty(),
+          kind = vpsServiceKind ?: VpsServiceKind.HYSTERIA2,
+          profileId = vpsProfileId.orEmpty(),
+          viewModel = vpsViewModel,
+          onNonRootImport = { server, profile, result ->
+            pendingVpsImport = result to listOfNotNull(server?.name, profile?.name)
+              .joinToString(" · ").ifBlank { result.fileName }
+          },
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomInset + 16.dp,
         )
         page == "tab:HOME" -> NonRootHomeScreen(
           topContentPadding = topContentPadding,
@@ -225,6 +309,7 @@ fun NonRootApp(
           bottomContentPadding = bottomContentPadding,
           workMode = workMode,
           cascadeState = cascadeState,
+          tgWsConfig = tgWsConfig,
           configurationEnabled = vpnState == NonRootVpnState.STOPPED || vpnState == NonRootVpnState.ERROR,
           onWorkModeChange = onWorkModeChange,
           onDirectSelectedProfileChange = onDirectSelectedProfileChange,
@@ -235,6 +320,9 @@ fun NonRootApp(
           onCascadeRouteChange = onCascadeRouteChange,
           onOpenCascadeProfile = { cascadeProfileId = it },
           onOpenT2sSettings = { showT2sSettings = true },
+          onOpenTgWs = { showTgWsSettings = true },
+          onOpenVps = { showVps = true },
+          onTgWsEnabledChange = { onTgWsConfigChange(tgWsConfig.copy(enabled = it)) },
         )
         else -> Box(Modifier.fillMaxSize().padding(bottom = bottomContentPadding)) {
           SupportScreen(topContentPadding = topContentPadding)
@@ -247,6 +335,8 @@ fun NonRootApp(
       title = when {
         editedProfile != null -> stringResource(R.string.non_root_profile_settings)
         showT2sSettings -> stringResource(R.string.non_root_t2s_settings)
+        showTgWsSettings -> stringResource(R.string.tgws_basic_title)
+        showVps -> stringResource(R.string.vps_servers_title)
         else -> when (tab) {
           Tab.HOME -> stringResource(R.string.app_name)
           Tab.STATS -> stringResource(R.string.nav_stats)
@@ -257,12 +347,17 @@ fun NonRootApp(
       onBack = when {
         editedProfile != null -> ({ cascadeProfileId = null })
         showT2sSettings -> ({ showT2sSettings = false })
+        showTgWsSettings -> ({ showTgWsSettings = false })
+        vpsProfileId != null -> ({ vpsProfileId = null })
+        vpsServiceKind != null -> ({ vpsServiceKind = null })
+        vpsServerId != null -> ({ vpsServerId = null })
+        showVps -> ({ showVps = false })
         else -> null
       },
       onOpenSettings = { showSettings = true },
     )
 
-    if (editedProfile == null && !showT2sSettings) {
+    if (editedProfile == null && !showT2sSettings && !showTgWsSettings && !showVps) {
       NonRootBottomNavigationCard(
         modifier = Modifier.align(Alignment.BottomCenter),
         compact = compactBottomBar,
@@ -270,6 +365,59 @@ fun NonRootApp(
         onTabChange = { tab = it },
       )
     }
+  }
+
+  pendingVpsImport?.let { (result, sourceName) ->
+    val toolId = when (result.kind) {
+      VpsServiceKind.HYSTERIA2 -> NonRootCascadeProfile.TOOL_HYSTERIA2
+      VpsServiceKind.WIREPROXY -> NonRootCascadeProfile.TOOL_WIREPROXY
+      VpsServiceKind.XRAY -> NonRootCascadeProfile.TOOL_SING_BOX
+      else -> null
+    }
+    val candidates = toolId?.let { wanted -> cascadeState.profiles.filter { it.toolId == wanted } }.orEmpty()
+    AlertDialog(
+      onDismissRequest = { pendingVpsImport = null },
+      title = { Text(stringResource(R.string.non_root_vps_import_title)) },
+      text = {
+        if (toolId == null) {
+          Text(stringResource(R.string.non_root_vps_import_unsupported))
+        } else {
+          LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            item {
+              OutlinedButton(
+                onClick = {
+                  onImportVpsConfig(result, sourceName, null)
+                  vpsViewModel.clearConfigResult()
+                  pendingVpsImport = null
+                },
+                modifier = Modifier.fillMaxWidth(),
+              ) { Text(stringResource(R.string.non_root_vps_import_new_profile)) }
+            }
+            if (candidates.isNotEmpty()) {
+              item {
+                Text(
+                  stringResource(R.string.non_root_vps_import_existing),
+                  style = MaterialTheme.typography.labelLarge,
+                  fontWeight = FontWeight.SemiBold,
+                )
+              }
+              itemsIndexed(candidates, key = { _, profile -> profile.id }) { _, profile ->
+                OutlinedButton(
+                  onClick = {
+                    onImportVpsConfig(result, sourceName, profile.id)
+                    vpsViewModel.clearConfigResult()
+                    pendingVpsImport = null
+                  },
+                  modifier = Modifier.fillMaxWidth(),
+                ) { Text("${nonRootToolTitle(profile.toolId)} — ${profile.name}") }
+              }
+            }
+          }
+        }
+      },
+      confirmButton = {},
+      dismissButton = { TextButton(onClick = { pendingVpsImport = null }) { Text(stringResource(R.string.common_cancel)) } },
+    )
   }
 
   if (showSettings) {
@@ -292,6 +440,11 @@ private fun nonRootPageOrder(page: String): Int = when {
   page == "tab:STATS" -> 10
   page == "tab:APPS" -> 20
   page == "t2s" -> 30
+  page == "tgws" -> 30
+  page == "vps" -> 30
+  page.startsWith("vps-server:") -> 31
+  page.startsWith("vps-service:") -> 32
+  page.startsWith("vps-profile:") -> 33
   page.startsWith("profile:") -> 30
   page == "tab:SUPPORT" -> 40
   else -> 20
@@ -517,16 +670,20 @@ private fun NonRootToolsScreen(
   bottomContentPadding: Dp,
   workMode: NonRootWorkMode,
   cascadeState: NonRootCascadeState,
+  tgWsConfig: NonRootTgWsConfig,
   configurationEnabled: Boolean,
   onWorkModeChange: (NonRootWorkMode) -> Unit,
   onDirectSelectedProfileChange: (String?) -> Unit,
-  onCreateCascadeProfile: (String) -> Unit,
+  onCreateCascadeProfile: (String, String) -> Unit,
   onUpdateCascadeProfile: (NonRootCascadeProfile) -> Unit,
   onDeleteCascadeProfile: (String) -> Unit,
   onCascadeBackendModeChange: (NonRootCascadeBackendMode) -> Unit,
   onCascadeRouteChange: (List<NonRootCascadeRouteItem>) -> Unit,
   onOpenCascadeProfile: (String) -> Unit,
   onOpenT2sSettings: () -> Unit,
+  onOpenTgWs: () -> Unit,
+  onOpenVps: () -> Unit,
+  onTgWsEnabledChange: (Boolean) -> Unit,
 ) {
   val screenPadding = rememberAdaptiveScreenPadding()
   val byId = remember(cascadeState.profiles) { cascadeState.profiles.associateBy { it.id } }
@@ -664,9 +821,11 @@ private fun NonRootToolsScreen(
               profile = profile,
               checked = checked,
               enabled = configurationEnabled,
+              switchEnabled = configurationEnabled && (workMode != NonRootWorkMode.DIRECT || profile.directEligible),
+              directBlocked = workMode == NonRootWorkMode.DIRECT && !profile.directEligible,
               onCheckedChange = { selected ->
                 if (workMode == NonRootWorkMode.DIRECT) {
-                  onDirectSelectedProfileChange(profile.id.takeIf { selected })
+                  if (profile.directEligible) onDirectSelectedProfileChange(profile.id.takeIf { selected })
                 } else {
                   onUpdateCascadeProfile(profile.copy(enabled = selected))
                 }
@@ -707,13 +866,44 @@ private fun NonRootToolsScreen(
         }
       }
     }
+
+    item {
+      Spacer(Modifier.height(2.dp))
+      Text(
+        text = stringResource(R.string.non_root_additional_tools),
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Bold,
+      )
+    }
+    item {
+      NonRootStandaloneToolCard(
+        icon = { Icon(Icons.Filled.Send, contentDescription = null) },
+        title = stringResource(R.string.non_root_tgws_title),
+        subtitle = "${NonRootPortRegistry.LOOPBACK}:${tgWsConfig.port}",
+        checked = tgWsConfig.enabled,
+        enabled = configurationEnabled,
+        onCheckedChange = onTgWsEnabledChange,
+        onOpen = onOpenTgWs,
+      )
+    }
+    item {
+      NonRootStandaloneToolCard(
+        icon = { Icon(Icons.Filled.Cloud, contentDescription = null) },
+        title = stringResource(R.string.vps_servers_title),
+        subtitle = stringResource(R.string.non_root_vps_desc),
+        checked = null,
+        enabled = true,
+        onCheckedChange = {},
+        onOpen = onOpenVps,
+      )
+    }
   }
 
   if (showCreateDialog) {
     NonRootCreateProfileDialog(
       onDismiss = { showCreateDialog = false },
-      onCreate = { name ->
-        onCreateCascadeProfile(name)
+      onCreate = { name, toolId ->
+        onCreateCascadeProfile(name, toolId)
         showCreateDialog = false
       },
     )
@@ -736,6 +926,44 @@ private fun NonRootToolsScreen(
           TextButton(onClick = { deleteProfileId = null }) { Text(stringResource(R.string.common_cancel)) }
         },
       )
+    }
+  }
+}
+
+@Composable
+private fun NonRootStandaloneToolCard(
+  icon: @Composable () -> Unit,
+  title: String,
+  subtitle: String,
+  checked: Boolean?,
+  enabled: Boolean,
+  onCheckedChange: (Boolean) -> Unit,
+  onOpen: () -> Unit,
+) {
+  Surface(
+    modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onOpen),
+    shape = RoundedCornerShape(20.dp),
+    color = MaterialTheme.colorScheme.surfaceContainerLow,
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(11.dp),
+    ) {
+      Surface(
+        modifier = Modifier.size(44.dp),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+        contentColor = MaterialTheme.colorScheme.primary,
+      ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { icon() }
+      }
+      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      }
+      checked?.let { Switch(checked = it, enabled = enabled, onCheckedChange = onCheckedChange) }
     }
   }
 }
@@ -933,6 +1161,8 @@ private fun NonRootToolsProfileCard(
   profile: NonRootCascadeProfile,
   checked: Boolean,
   enabled: Boolean,
+  switchEnabled: Boolean,
+  directBlocked: Boolean,
   routeIndex: Int,
   onCheckedChange: (Boolean) -> Unit,
   onOpen: () -> Unit,
@@ -979,21 +1209,26 @@ private fun NonRootToolsProfileCard(
         verticalArrangement = Arrangement.spacedBy(2.dp),
       ) {
         Text(
-          text = stringResource(R.string.non_root_profile_title_fmt, stringResource(R.string.opera_proxy_title), profile.name),
+          text = stringResource(R.string.non_root_profile_title_fmt, nonRootToolTitle(profile.toolId), profile.name),
           style = MaterialTheme.typography.titleSmall,
           fontWeight = FontWeight.Bold,
           maxLines = 1,
           overflow = TextOverflow.Ellipsis,
         )
         Text(
-          text = "${NonRootPortRegistry.LOOPBACK}:${profile.port}",
+          text = when {
+            directBlocked -> stringResource(R.string.non_root_direct_multi_server_disabled)
+            profile.toolId == NonRootCascadeProfile.TOOL_OPERA_PROXY -> "${NonRootPortRegistry.LOOPBACK}:${profile.port}"
+            profile.serverCount == 1 -> profile.servers.singleOrNull()?.let { "${NonRootPortRegistry.LOOPBACK}:${it.port}" }.orEmpty()
+            else -> stringResource(R.string.non_root_server_count_fmt, profile.serverCount)
+          },
           style = MaterialTheme.typography.bodySmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          color = if (directBlocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }
       Switch(
         checked = checked,
-        enabled = enabled,
+        enabled = switchEnabled,
         onCheckedChange = onCheckedChange,
       )
       IconButton(onClick = onDelete, enabled = enabled) {

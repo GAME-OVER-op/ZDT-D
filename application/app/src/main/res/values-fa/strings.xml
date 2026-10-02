@@ -2512,4 +2512,37 @@ APatch: 10700+</string>
     <string name="non_root_group_name_label">نام گروه</string>
     <string name="non_root_group_rename">تغییر نام گروه</string>
     <string name="non_root_t2s_group_unnamed">گروه</string>
+
+    <string name="non_root_server_count_fmt">%1$d سرور</string>
+    <string name="non_root_servers_title">سرورها</string>
+    <string name="non_root_servers_desc">سرورهای این پروفایل به backendهای محلی SOCKS5 برای T2S تبدیل می‌شوند.</string>
+    <string name="non_root_add_server">افزودن سرور</string>
+    <string name="non_root_servers_empty">هنوز سروری وجود ندارد. برای استفاده از این پروفایل یک سرور اضافه کنید.</string>
+    <string name="non_root_delete_server_title">سرور حذف شود؟</string>
+    <string name="non_root_delete_server_body">«%1$s» از این پروفایل حذف شود؟</string>
+    <string name="non_root_server_name">نام سرور</string>
+    <string name="non_root_local_socks_port">پورت محلی SOCKS5</string>
+    <string name="non_root_mieru_rpc_port">Mieru RPC port</string>
+    <string name="non_root_log_level">Log level</string>
+    <string name="non_root_singbox_import">درون‌ریزی پیکربندی sing-box</string>
+    <string name="non_root_singbox_import_source">پیوند یا JSON</string>
+    <string name="non_root_import_config">درون‌ریزی پیکربندی</string>
+    <string name="non_root_direct_multi_server_disabled">چند سرور · از Cascade استفاده کنید</string>
+    <string name="non_root_additional_tools">ابزارهای اضافی</string>
+    <string name="non_root_tgws_title">Telegram WS Proxy</string>
+    <string name="non_root_vps_desc">مدیریت سرورهای VPS و درون‌ریزی کلاینت‌های ساخته‌شده به پروفایل‌ها.</string>
+
+    <string name="non_root_vps_import_title">افزودن کلاینت VPS به ZDT-D</string>
+    <string name="non_root_vps_import_new_profile">ایجاد پروفایل جدید</string>
+    <string name="non_root_vps_import_existing">افزودن سرور به پروفایل موجود</string>
+    <string name="non_root_vps_import_unsupported">این سرویس VPS را نمی‌توان به پروفایل backend بدون root درون‌ریزی کرد.</string>
+
+    <string name="non_root_error_hysteria_server_required">در پیکربندی Hysteria2 باید سرور مشخص شود.</string>
+    <string name="non_root_error_wireproxy_empty">پیکربندی WireProxy نمی‌تواند خالی باشد.</string>
+    <string name="non_root_error_import_failed">وارد کردن پیکربندی ممکن نشد.</string>
+    <string name="non_root_error_invalid_socks_port">یک پورت معتبر SOCKS5 بین 10000 تا 65535 انتخاب کنید.</string>
+    <string name="non_root_error_invalid_rpc_port">یک پورت معتبر Mieru RPC بین 10000 تا 65535 انتخاب کنید.</string>
+    <string name="non_root_error_rpc_port_conflict">پورت Mieru RPC باید با پورت SOCKS5 متفاوت باشد.</string>
+    <string name="non_root_tgws_secret_error">کلید باید دقیقاً 32 نویسهٔ هگزادسیمال داشته باشد.</string>
+    <string name="non_root_tgws_faketls_error">دامنهٔ SNI برای FakeTLS الزامی است.</string>
 </resources>

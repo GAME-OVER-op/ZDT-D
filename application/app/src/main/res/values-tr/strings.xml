@@ -2511,4 +2511,37 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="non_root_group_name_label">Grup adı</string>
     <string name="non_root_group_rename">Grubu yeniden adlandır</string>
     <string name="non_root_t2s_group_unnamed">Grup</string>
+
+    <string name="non_root_server_count_fmt">%1$d sunucu</string>
+    <string name="non_root_servers_title">Sunucular</string>
+    <string name="non_root_servers_desc">Bu profildeki sunucular T2S için yerel SOCKS5 arka uçlarına dönüşür.</string>
+    <string name="non_root_add_server">Sunucu ekle</string>
+    <string name="non_root_servers_empty">Henüz sunucu yok. Bu profili kullanmak için bir sunucu ekleyin.</string>
+    <string name="non_root_delete_server_title">Sunucu silinsin mi?</string>
+    <string name="non_root_delete_server_body">“%1$s” bu profilden silinsin mi?</string>
+    <string name="non_root_server_name">Sunucu adı</string>
+    <string name="non_root_local_socks_port">Yerel SOCKS5 portu</string>
+    <string name="non_root_mieru_rpc_port">Mieru RPC port</string>
+    <string name="non_root_log_level">Log level</string>
+    <string name="non_root_singbox_import">sing-box yapılandırmasını içe aktar</string>
+    <string name="non_root_singbox_import_source">Bağlantı veya JSON</string>
+    <string name="non_root_import_config">Yapılandırmayı içe aktar</string>
+    <string name="non_root_direct_multi_server_disabled">Birden fazla sunucu · Kaskad kullanın</string>
+    <string name="non_root_additional_tools">Ek araçlar</string>
+    <string name="non_root_tgws_title">Telegram WS Proxy</string>
+    <string name="non_root_vps_desc">VPS sunucularını yönetin ve oluşturulan istemcileri profillere aktarın.</string>
+
+    <string name="non_root_vps_import_title">VPS istemcisini ZDT-D’ye ekle</string>
+    <string name="non_root_vps_import_new_profile">Yeni profil oluştur</string>
+    <string name="non_root_vps_import_existing">Sunucuyu mevcut profile ekle</string>
+    <string name="non_root_vps_import_unsupported">Bu VPS hizmeti root olmayan bir backend profiline aktarılamaz.</string>
+
+    <string name="non_root_error_hysteria_server_required">Hysteria2 yapılandırmasında bir sunucu belirtilmelidir.</string>
+    <string name="non_root_error_wireproxy_empty">WireProxy yapılandırması boş olamaz.</string>
+    <string name="non_root_error_import_failed">Yapılandırma içe aktarılamadı.</string>
+    <string name="non_root_error_invalid_socks_port">10000 ile 65535 arasında geçerli bir SOCKS5 bağlantı noktası seçin.</string>
+    <string name="non_root_error_invalid_rpc_port">10000 ile 65535 arasında geçerli bir Mieru RPC bağlantı noktası seçin.</string>
+    <string name="non_root_error_rpc_port_conflict">Mieru RPC bağlantı noktası SOCKS5 bağlantı noktasından farklı olmalıdır.</string>
+    <string name="non_root_tgws_secret_error">Gizli anahtar tam olarak 32 onaltılık karakter içermelidir.</string>
+    <string name="non_root_tgws_faketls_error">FakeTLS SNI etki alanı gereklidir.</string>
 </resources>

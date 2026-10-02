@@ -3,7 +3,9 @@ package com.android.zdtd.service
 import android.app.Activity
 import android.content.Intent
 import android.content.res.Configuration
+import android.net.Uri
 import android.net.VpnService
+import android.provider.Settings
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.setContent
@@ -28,6 +30,11 @@ import kotlinx.coroutines.launch
 class NonRootActivity : AppCompatActivity() {
   private val vm: NonRootViewModel by viewModels()
   private val vpsVm: com.android.zdtd.service.vps.VpsViewModel by viewModels()
+  private val pluginInstallPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()) {
+      vm.installOrUpdateTgWsPlugin()
+    }
+  }
   private val vpnPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
     if (result.resultCode == Activity.RESULT_OK) startNonRootVpnService()
   }
@@ -52,6 +59,7 @@ class NonRootActivity : AppCompatActivity() {
       val vpnLastError by vm.vpnLastError.collectAsStateWithLifecycle()
       val vpnLogs by vm.vpnLogs.collectAsStateWithLifecycle()
       val tgWsConfig by vm.tgWsConfig.collectAsStateWithLifecycle()
+      val tgWsPluginState by vm.tgWsPluginState.collectAsStateWithLifecycle()
       ZdtdTheme(themeMode = ZdtdThemeMode.fromStorage(themeMode)) {
         val lightBars = MaterialTheme.colorScheme.background.luminance() > 0.5f
         SideEffect {
@@ -73,6 +81,7 @@ class NonRootActivity : AppCompatActivity() {
             vpnLastError = vpnLastError,
             vpnLogs = vpnLogs,
             tgWsConfig = tgWsConfig,
+            tgWsPluginState = tgWsPluginState,
             vpsViewModel = vpsVm,
             onVpnStart = ::requestNonRootVpnStart,
             onVpnStop = { NonRootVpnService.stop(this@NonRootActivity) },
@@ -100,6 +109,9 @@ class NonRootActivity : AppCompatActivity() {
             onCascadeRouteChange = vm::setCascadeRoute,
             onTgWsConfigChange = vm::setTgWsConfig,
             onTgWsPortChange = vm::setTgWsPort,
+            onInstallOrUpdateTgWsPlugin = ::requestTgWsPluginInstall,
+            onRemoveTgWsPlugin = vm::removeTgWsPlugin,
+            onRefreshTgWsPlugin = { vm.refreshTgWsPlugin(checkRemote = true) },
             onImportVpsConfig = vm::importVpsConfig,
           )
         }
@@ -107,6 +119,21 @@ class NonRootActivity : AppCompatActivity() {
     }
   }
 
+
+  override fun onResume() {
+    super.onResume()
+    vm.refreshTgWsPlugin(checkRemote = false)
+  }
+
+  private fun requestTgWsPluginInstall() {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+      pluginInstallPermissionLauncher.launch(
+        Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
+      )
+      return
+    }
+    vm.installOrUpdateTgWsPlugin()
+  }
 
   private fun switchToRootSetup() {
     NonRootTgWsService.stop(applicationContext, persistDisabled = false)

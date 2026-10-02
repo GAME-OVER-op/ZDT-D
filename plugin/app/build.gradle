@@ -1,0 +1,90 @@
+plugins {
+  id 'com.android.application'
+}
+
+def rootModuleProp = file('../../module.prop')
+def moduleProps = new Properties()
+if (!rootModuleProp.exists()) {
+  throw new GradleException("Root module.prop not found: ${rootModuleProp}")
+}
+rootModuleProp.withInputStream { moduleProps.load(it) }
+
+def moduleVersionCode = (moduleProps.getProperty('versionCode') ?: '1').trim().toInteger()
+def moduleVersionName = (moduleProps.getProperty('version') ?: '1.0').trim()
+def zdtCompileSdk = (findProperty('zdtCompileSdk') ?: System.getenv('ZDT_COMPILE_SDK') ?: '37').toString().trim().toInteger()
+def zdtCompileSdkMinor = (findProperty('zdtCompileSdkMinor') ?: System.getenv('ZDT_COMPILE_SDK_MINOR') ?: '0').toString().trim().toInteger()
+def generatedJniDir = file("$buildDir/generated/tgws-jni/main")
+
+def keystorePropsFile = file('../keystore.properties')
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+  keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+
+android {
+  namespace 'com.android.zdtd.service.plugin.com'
+  compileSdk zdtCompileSdk
+  if (zdtCompileSdk >= 37) {
+    compileSdkMinor zdtCompileSdkMinor
+  }
+
+  defaultConfig {
+    applicationId 'com.android.zdtd.service.plugin.com'
+    minSdk 26
+    targetSdk 36
+    versionCode moduleVersionCode
+    versionName moduleVersionName
+  }
+
+  signingConfigs {
+    zdt {
+      def resolvedStoreFile = keystoreProps.getProperty('storeFile')
+      if (!resolvedStoreFile) {
+        throw new GradleException('plugin/keystore.properties is required for TGWS plugin signing')
+      }
+      storeFile file(resolvedStoreFile)
+      storePassword keystoreProps.getProperty('storePassword')
+      keyAlias keystoreProps.getProperty('keyAlias')
+      keyPassword keystoreProps.getProperty('keyPassword')
+      enableV1Signing true
+      enableV2Signing true
+      enableV3Signing true
+    }
+  }
+
+  buildTypes {
+    debug {
+      signingConfig signingConfigs.zdt
+      debuggable true
+      minifyEnabled false
+    }
+    release {
+      signingConfig signingConfigs.zdt
+      debuggable false
+      minifyEnabled false
+    }
+  }
+
+  compileOptions {
+    sourceCompatibility JavaVersion.VERSION_17
+    targetCompatibility JavaVersion.VERSION_17
+  }
+
+  buildFeatures {
+    aidl true
+    buildConfig true
+  }
+
+  sourceSets {
+    main {
+      jniLibs.srcDirs += generatedJniDir
+    }
+  }
+
+  packaging {
+    jniLibs {
+      useLegacyPackaging = true
+      keepDebugSymbols += ['**/libzdt_tgwsproxy.so']
+    }
+  }
+}

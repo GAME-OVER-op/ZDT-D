@@ -4,12 +4,17 @@ import android.app.Application
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import com.android.zdtd.service.singbox.importer.SingBoxOneLineImporter
 import com.android.zdtd.service.vps.VpsConfigResult
 import com.android.zdtd.service.vps.VpsServiceKind
+import com.android.zdtd.service.tgwsplugin.TgWsPluginManager
+import com.android.zdtd.service.tgwsplugin.TgWsPluginState
+import com.android.zdtd.service.tgwsplugin.TgWsPluginStateBus
 
 class NonRootViewModel(application: Application) : AndroidViewModel(application) {
   private val config = RootConfigManager(application.applicationContext)
@@ -18,6 +23,7 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
   private val legacyDirectConfigStore = NonRootDirectConfigStore(application.applicationContext)
   private val cascadeStore = NonRootCascadeStore(application.applicationContext)
   private val tgWsStore = NonRootTgWsStore(application.applicationContext)
+  private val tgWsPluginManager = TgWsPluginManager(application.applicationContext)
 
   private val _languageMode = MutableStateFlow(config.getAppLanguageMode())
   val languageMode: StateFlow<String> = _languageMode.asStateFlow()
@@ -49,6 +55,7 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
 
   private val _tgWsConfig = MutableStateFlow(tgWsStore.load())
   val tgWsConfig: StateFlow<NonRootTgWsConfig> = _tgWsConfig.asStateFlow()
+  val tgWsPluginState: StateFlow<TgWsPluginState> = TgWsPluginStateBus.state
 
   val vpnState: StateFlow<NonRootVpnState> = NonRootVpnRuntime.state
   val vpnLastError: StateFlow<String?> = NonRootVpnRuntime.lastError
@@ -58,9 +65,14 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
     // Create the private runtime/token now so T2S and proxy backends can rely on
     // one application-owned identity as soon as non-root mode is chosen.
     NonRootRuntimeStore(application.applicationContext).ensureLayout()
-    if (_tgWsConfig.value.enabled) {
+    val pluginInstalled = tgWsPluginManager.refreshLocal().installed
+    if (_tgWsConfig.value.enabled && pluginInstalled) {
       NonRootTgWsService.start(application.applicationContext)
+    } else if (_tgWsConfig.value.enabled && !pluginInstalled) {
+      val disabled = tgWsStore.save(_tgWsConfig.value.copy(enabled = false))
+      _tgWsConfig.value = disabled
     }
+    viewModelScope.launch { tgWsPluginManager.refreshRemote() }
   }
 
   fun setLanguageMode(mode: String) {
@@ -164,13 +176,33 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
   }
 
   fun setTgWsConfig(config: NonRootTgWsConfig) {
-    val saved = tgWsStore.save(config)
+    val pluginInstalled = tgWsPluginManager.refreshLocal().installed
+    val safeConfig = if (config.enabled && !pluginInstalled) config.copy(enabled = false) else config
+    val saved = tgWsStore.save(safeConfig)
     _tgWsConfig.value = saved
     if (saved.enabled) {
       NonRootTgWsService.restart(getApplication<Application>().applicationContext)
     } else {
       NonRootTgWsService.stop(getApplication<Application>().applicationContext, persistDisabled = false)
     }
+  }
+
+  fun refreshTgWsPlugin(checkRemote: Boolean = true) {
+    tgWsPluginManager.refreshLocal()
+    if (checkRemote) viewModelScope.launch { tgWsPluginManager.refreshRemote() }
+  }
+
+  fun installOrUpdateTgWsPlugin() {
+    viewModelScope.launch {
+      tgWsPluginManager.downloadAndInstall()
+    }
+  }
+
+  fun removeTgWsPlugin() {
+    if (_tgWsConfig.value.enabled) {
+      setTgWsConfig(_tgWsConfig.value.copy(enabled = false))
+    }
+    tgWsPluginManager.requestUninstall()
   }
 
   fun setTgWsPort(port: Int): Boolean {

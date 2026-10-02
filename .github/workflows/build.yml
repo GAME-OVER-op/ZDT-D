@@ -117,7 +117,7 @@ jobs:
               changed_files="$(git diff-tree --no-commit-id --name-only -r "$head" || true)"
             fi
 
-            if printf '%s\n' "$changed_files" | grep -Eq '^(application/|zygisk/|rust/|module_template/|prebuilt/|scripts/module/|\.github/workflows/build\.yml$|module\.prop$)'; then
+            if printf '%s\n' "$changed_files" | grep -Eq '^(application/|plugin/|zygisk/|rust/|module_template/|prebuilt/|scripts/module/|\.github/workflows/build\.yml$|module\.prop$)'; then
               paths_changed=true
               reason="Tracked build paths changed"
             fi
@@ -131,6 +131,7 @@ jobs:
             echo
             echo "Tracked paths:"
             echo "- application/**"
+            echo "- plugin/**"
             echo "- zygisk/**"
             echo "- rust/**"
             echo "- module_template/**"
@@ -5094,6 +5095,164 @@ jobs:
           retention-days: 1
 
 
+  build_tgws_plugin_apk:
+    name: build TGWS plugin APK
+    runs-on: ubuntu-latest
+    needs:
+      - build_tg_ws_proxy
+    if: needs.build_tg_ws_proxy.result == 'success'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Prepare Android SDK paths
+        run: |
+          set -euo pipefail
+          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          ANDROID_HOME="$ANDROID_SDK_ROOT"
+          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$SDKMANAGER" ]]; then
+            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
+          fi
+          test -x "$SDKMANAGER" || { echo "::error::sdkmanager not found"; exit 1; }
+          {
+            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
+            echo "ANDROID_HOME=$ANDROID_HOME"
+            echo "SDKMANAGER=$SDKMANAGER"
+          } >> "$GITHUB_ENV"
+          yes 2>/dev/null | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+
+      - name: Install Android SDK packages
+        run: |
+          set -euo pipefail
+          install_sdk_package() {
+            local pkg="$1"
+            for attempt in 1 2 3 4 5; do
+              if "$SDKMANAGER" "$pkg"; then return 0; fi
+              if [[ "$pkg" == platforms\;android-37.* ]]; then
+                "$SDKMANAGER" --channel=3 "$pkg" && return 0 || true
+              fi
+              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
+              sleep $((attempt * 8))
+            done
+            return 1
+          }
+          install_sdk_package "platform-tools"
+          install_sdk_package "platforms;android-${{ env.ANDROID_API_LEVEL }}"
+          install_sdk_package "build-tools;${{ env.ANDROID_BUILD_TOOLS_VERSION }}"
+
+      - name: Setup Gradle ${{ env.GRADLE_VERSION }}
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: ${{ env.GRADLE_VERSION }}
+          cache-read-only: false
+
+      - name: Download tg-ws-proxy arm64
+        uses: actions/download-artifact@v8
+        with:
+          name: tg-ws-proxy-arm64
+          path: out/plugin/tgws/tg-ws-proxy-arm64
+
+      - name: Download tg-ws-proxy arm32
+        uses: actions/download-artifact@v8
+        with:
+          name: tg-ws-proxy-arm32
+          path: out/plugin/tgws/tg-ws-proxy-arm32
+
+      - name: Prepare TGWS plugin native libraries
+        run: |
+          set -euo pipefail
+          JNI_ROOT="plugin/app/build/generated/tgws-jni/main"
+          rm -rf "$JNI_ROOT"
+          mkdir -p "$JNI_ROOT/arm64-v8a" "$JNI_ROOT/armeabi-v7a"
+          cp -f out/plugin/tgws/tg-ws-proxy-arm64/tg-ws-proxy "$JNI_ROOT/arm64-v8a/libzdt_tgwsproxy.so"
+          cp -f out/plugin/tgws/tg-ws-proxy-arm32/tg-ws-proxy "$JNI_ROOT/armeabi-v7a/libzdt_tgwsproxy.so"
+          chmod 755 "$JNI_ROOT/arm64-v8a/libzdt_tgwsproxy.so" "$JNI_ROOT/armeabi-v7a/libzdt_tgwsproxy.so"
+          file "$JNI_ROOT/arm64-v8a/libzdt_tgwsproxy.so"
+          file "$JNI_ROOT/armeabi-v7a/libzdt_tgwsproxy.so"
+
+      - name: Restore plugin signing keystore
+        env:
+          ZDT_KEYSTORE_BASE64: ${{ secrets.ZDT_KEYSTORE_BASE64 }}
+          ZDT_KEYSTORE_PASSWORD: ${{ secrets.ZDT_KEYSTORE_PASSWORD }}
+          ZDT_KEY_ALIAS: ${{ secrets.ZDT_KEY_ALIAS }}
+          ZDT_KEY_PASSWORD: ${{ secrets.ZDT_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in ZDT_KEYSTORE_BASE64 ZDT_KEYSTORE_PASSWORD ZDT_KEY_ALIAS ZDT_KEY_PASSWORD; do
+            [[ -n "${!name:-}" ]] || { echo "::error::$name GitHub Actions secret is missing or empty"; exit 1; }
+          done
+          KEYSTORE_PATH="$(pwd)/keystores/zdt-plugin.keystore"
+          mkdir -p "$(dirname "$KEYSTORE_PATH")"
+          printf '%s' "$ZDT_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+          keytool -list -keystore "$KEYSTORE_PATH" -storepass "$ZDT_KEYSTORE_PASSWORD" -alias "$ZDT_KEY_ALIAS" >/dev/null
+          {
+            echo "storeFile=$KEYSTORE_PATH"
+            echo "storePassword=$ZDT_KEYSTORE_PASSWORD"
+            echo "keyAlias=$ZDT_KEY_ALIAS"
+            echo "keyPassword=$ZDT_KEY_PASSWORD"
+          } > plugin/keystore.properties
+
+      - name: Build signed TGWS plugin APK
+        run: |
+          set -euo pipefail
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > plugin/local.properties
+          gradle \
+            --no-daemon \
+            --max-workers=$(nproc) \
+            -p plugin \
+            "-PzdtCompileSdk=${{ env.ZDT_COMPILE_SDK }}" \
+            "-PzdtCompileSdkMinor=${{ env.ZDT_COMPILE_SDK_MINOR }}" \
+            assembleRelease
+
+      - name: Verify and package TGWS plugin technical assets
+        run: |
+          set -euo pipefail
+          APK="plugin/app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK" || { echo "::error::TGWS plugin APK missing: $APK"; exit 1; }
+          ENTRIES="$(unzip -Z1 "$APK")"
+          printf '%s\n' "$ENTRIES" | grep -Fx 'lib/arm64-v8a/libzdt_tgwsproxy.so'
+          printf '%s\n' "$ENTRIES" | grep -Fx 'lib/armeabi-v7a/libzdt_tgwsproxy.so'
+          APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${{ env.ANDROID_BUILD_TOOLS_VERSION }}/apksigner"
+          "$APKSIGNER" verify --verbose "$APK"
+          mkdir -p out/technical/tgws-plugin
+          cp -f "$APK" out/technical/tgws-plugin/zdt-d-tgws-plugin.apk
+          VERSION_NAME="$(sed -n 's/^version=//p' module.prop | head -1 | tr -d '\r')"
+          VERSION_CODE="$(sed -n 's/^versionCode=//p' module.prop | head -1 | tr -d '\r')"
+          SHA256="$(sha256sum out/technical/tgws-plugin/zdt-d-tgws-plugin.apk | cut -d ' ' -f1)"
+          cat > out/technical/tgws-plugin/tgws-plugin.json <<EOF_PLUGIN_JSON
+          {
+            "packageName": "com.android.zdtd.service.plugin.com",
+            "versionName": "$VERSION_NAME",
+            "versionCode": $VERSION_CODE,
+            "apiVersion": 1,
+            "asset": "zdt-d-tgws-plugin.apk",
+            "sha256": "$SHA256",
+            "source": "https://github.com/valnesfjord/tg-ws-proxy-rs",
+            "tgwsRef": "$TG_WS_PROXY_REF"
+          }
+          EOF_PLUGIN_JSON
+          cat out/technical/tgws-plugin/tgws-plugin.json
+          ls -lh out/technical/tgws-plugin/
+
+      - name: Upload TGWS plugin technical assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: tgws-plugin-technical-assets
+          path: out/technical/tgws-plugin/
+          retention-days: 1
+
+
   build_dpi_detector:
     name: build dpi-detector ${{ matrix.abi }}
     runs-on: ubuntu-latest
@@ -5742,13 +5901,11 @@ jobs:
       - build_nfqws_tester
       - build_busybox
       - build_hev_socks5_tunnel
-      - build_tg_ws_proxy
     if: >-
       needs.build_dpi_detector.result == 'success' &&
       needs.build_nfqws_tester.result == 'success' &&
       needs.build_busybox.result == 'success' &&
-      needs.build_hev_socks5_tunnel.result == 'success' &&
-      needs.build_tg_ws_proxy.result == 'success'
+      needs.build_hev_socks5_tunnel.result == 'success'
 
     steps:
       - name: Mark APK tools ready
@@ -5943,12 +6100,6 @@ jobs:
           pattern: wireproxy-*
           path: out/artifacts/nonroot/wireproxy
 
-      - name: Download non-root Telegram WS Proxy binaries
-        uses: actions/download-artifact@v8
-        with:
-          pattern: tg-ws-proxy-*
-          path: out/artifacts/nonroot/tgwsproxy
-
       - name: Prepare hev-socks5-tunnel app library
         run: |
           set -euo pipefail
@@ -5992,8 +6143,6 @@ jobs:
           copy_helper "out/artifacts/nonroot/mieru/mieru-arm32/mieru" "$JNI_ROOT/armeabi-v7a/libzdt_mieru.so"
           copy_helper "out/artifacts/nonroot/wireproxy/wireproxy-arm64/wireproxy" "$JNI_ROOT/arm64-v8a/libzdt_wireproxy.so"
           copy_helper "out/artifacts/nonroot/wireproxy/wireproxy-arm32/wireproxy" "$JNI_ROOT/armeabi-v7a/libzdt_wireproxy.so"
-          copy_helper "out/artifacts/nonroot/tgwsproxy/tg-ws-proxy-arm64/tg-ws-proxy" "$JNI_ROOT/arm64-v8a/libzdt_tgwsproxy.so"
-          copy_helper "out/artifacts/nonroot/tgwsproxy/tg-ws-proxy-arm32/tg-ws-proxy" "$JNI_ROOT/armeabi-v7a/libzdt_tgwsproxy.so"
 
       - name: Verify BusyBox artifacts
         run: |
@@ -6138,8 +6287,6 @@ jobs:
             lib/armeabi-v7a/libzdt_mieru.so \
             lib/arm64-v8a/libzdt_wireproxy.so \
             lib/armeabi-v7a/libzdt_wireproxy.so \
-            lib/arm64-v8a/libzdt_tgwsproxy.so \
-            lib/armeabi-v7a/libzdt_tgwsproxy.so \
             assets/busybox/busybox-arm64 \
             assets/busybox/busybox-arm64.sha256 \
             assets/busybox/busybox-arm64.source \
@@ -6191,6 +6338,7 @@ jobs:
       - build_gate
       - build_apk
       - package_tg_ws_proxy_asset
+      - build_tgws_plugin_apk
     if: always() && github.ref == 'refs/heads/main' && needs.build_apk.result == 'success'
 
     steps:
@@ -6218,6 +6366,13 @@ jobs:
           name: tg-ws-proxy-technical-asset
           path: out/technical
 
+      - name: Download TGWS plugin technical assets
+        if: needs.build_tgws_plugin_apk.result == 'success'
+        uses: actions/download-artifact@v8
+        with:
+          name: tgws-plugin-technical-assets
+          path: out/technical/tgws-plugin
+
       - name: Set up Node.js for GitHub Copilot CLI
         uses: actions/setup-node@v7
         with:
@@ -6232,6 +6387,7 @@ jobs:
           COPILOT_GITHUB_TOKEN: ${{ github.token }}
           BUILD_START_TS: ${{ needs.build_gate.outputs.build_start_ts }}
           TG_WS_PROXY_PACKAGE_RESULT: ${{ needs.package_tg_ws_proxy_asset.result }}
+          TGWS_PLUGIN_BUILD_RESULT: ${{ needs.build_tgws_plugin_apk.result }}
         run: |
           set -euo pipefail
 
@@ -6575,6 +6731,10 @@ jobs:
           TG_WS_PROXY_ASSET="out/technical/tg_ws_proxy.zip"
           TG_WS_PROXY_UPLOAD_MODE="skipped"
           TG_WS_PROXY_UPLOAD_ATTEMPTS="0"
+          TGWS_PLUGIN_APK="out/technical/tgws-plugin/zdt-d-tgws-plugin.apk"
+          TGWS_PLUGIN_MANIFEST="out/technical/tgws-plugin/tgws-plugin.json"
+          TGWS_PLUGIN_UPLOAD_MODE="skipped"
+          TGWS_PLUGIN_UPLOAD_ATTEMPTS="0"
 
           if [[ "${TG_WS_PROXY_PACKAGE_RESULT:-skipped}" != "success" ]]; then
             echo "::warning::tg-ws-proxy technical asset was not rebuilt: package job result=${TG_WS_PROXY_PACKAGE_RESULT:-unknown}. Existing Technical_Assets/tg_ws_proxy.zip is left untouched."
@@ -6594,6 +6754,28 @@ jobs:
               TG_WS_PROXY_UPLOAD_MODE="failed-clobber-only"
               TG_WS_PROXY_UPLOAD_ATTEMPTS="$OPTIONAL_UPLOAD_ATTEMPTS"
               echo "::warning::Existing Technical_Assets/tg_ws_proxy.zip was not deleted or replaced by fallback."
+            fi
+          fi
+
+
+          if [[ "${TGWS_PLUGIN_BUILD_RESULT:-skipped}" != "success" ]]; then
+            echo "::warning::TGWS plugin APK was not rebuilt: job result=${TGWS_PLUGIN_BUILD_RESULT:-unknown}. Existing Technical_Assets plugin assets are left untouched."
+          elif [[ ! -s "$TGWS_PLUGIN_APK" || ! -s "$TGWS_PLUGIN_MANIFEST" ]]; then
+            echo "::error::TGWS plugin technical assets are missing after successful build"
+          else
+            if gh release view "$TECHNICAL_TAG" >/dev/null 2>&1; then
+              gh release edit "$TECHNICAL_TAG" --title "$TECHNICAL_TITLE" --prerelease --latest=false
+            else
+              gh release create "$TECHNICAL_TAG" --target "$FULL_SHA" --title "$TECHNICAL_TITLE" --notes "Technical assets used by ZDT-D optional components." --prerelease --latest=false
+            fi
+            if upload_optional_asset_clobber_only "$TECHNICAL_TAG" "$TGWS_PLUGIN_APK#zdt-d-tgws-plugin.apk" "zdt-d-tgws-plugin.apk"; then
+              TGWS_PLUGIN_UPLOAD_MODE="$OPTIONAL_UPLOAD_MODE"
+              TGWS_PLUGIN_UPLOAD_ATTEMPTS="$OPTIONAL_UPLOAD_ATTEMPTS"
+            else
+              TGWS_PLUGIN_UPLOAD_MODE="failed-apk"
+            fi
+            if ! upload_optional_asset_clobber_only "$TECHNICAL_TAG" "$TGWS_PLUGIN_MANIFEST#tgws-plugin.json" "tgws-plugin.json"; then
+              TGWS_PLUGIN_UPLOAD_MODE="failed-manifest"
             fi
           fi
 
@@ -6820,6 +7002,7 @@ jobs:
       - pack_module
       - apk_tools_ready
       - build_apk
+      - build_tgws_plugin_apk
       - publish_service
     if: >-
       always() &&
@@ -6831,6 +7014,7 @@ jobs:
        needs.pack_module.result != 'success' ||
        needs.apk_tools_ready.result != 'success' ||
        needs.build_apk.result != 'success' ||
+       needs.build_tgws_plugin_apk.result != 'success' ||
        needs.publish_service.result != 'success')
 
     steps:
@@ -6846,6 +7030,7 @@ jobs:
           PACK_RESULT: ${{ needs.pack_module.result }}
           APK_TOOLS_RESULT: ${{ needs.apk_tools_ready.result }}
           APK_RESULT: ${{ needs.build_apk.result }}
+          TGWS_PLUGIN_RESULT: ${{ needs.build_tgws_plugin_apk.result }}
           RELEASE_RESULT: ${{ needs.publish_service.result }}
         run: |
           set -euo pipefail
@@ -6858,6 +7043,9 @@ jobs:
             elif [[ "$APK_RESULT" != "success" ]]; then
               stage="apk"
               message="Android application build failed"
+            elif [[ "$TGWS_PLUGIN_RESULT" != "success" ]]; then
+              stage="apk"
+              message="TGWS plugin APK build failed"
             elif [[ "$RELEASE_RESULT" != "success" ]]; then
               stage="release"
               message="GitHub release publishing failed"

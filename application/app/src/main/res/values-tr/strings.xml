@@ -2565,4 +2565,9 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="non_root_app_routing_restart_later">Daha sonra</string>
     <string name="non_root_app_routing_restart_now">Yeniden bağlan</string>
     <string name="non_root_app_routing_only_selected_empty_error">“Yalnızca seçilenler” modunda en az bir yüklü uygulama seçin.</string>
+
+    <string name="non_root_tgws_plugin_title">TGWS eklentisi</string>
+    <string name="non_root_tgws_plugin_not_installed">TGWS eklentisi yüklü değil. Technical Assets içindeki imzalı bileşeni yükleyin.</string>
+    <string name="non_root_tgws_plugin_installed_fmt">Yüklü eklenti: %1$s</string>
+    <string name="non_root_tgws_plugin_latest_fmt">Kullanılabilir eklenti: %1$s</string>
 </resources>

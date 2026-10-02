@@ -1,12 +1,17 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <permission
+        android:name="com.android.zdtd.service.plugin.com.permission.CONTROL_TGWS"
+        android:protectionLevel="signature" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- Needed to request installing APK updates downloaded by the app (online update). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="com.android.zdtd.service.plugin.com.permission.CONTROL_TGWS" />
     <!-- Android 13+ runtime permission (requested only when user enables notifications). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -18,6 +23,10 @@
         android:name="android.permission.QUERY_ALL_PACKAGES"
         tools:ignore="QueryAllPackagesPermission" />
 
+
+    <queries>
+        <package android:name="com.android.zdtd.service.plugin.com" />
+    </queries>
 
     <application
         android:allowBackup="true"
@@ -101,6 +110,11 @@
             android:name=".NonRootActivity"
             android:exported="false"
             android:launchMode="singleTask" />
+
+
+        <receiver
+            android:name=".tgwsplugin.TgWsPluginInstallReceiver"
+            android:exported="false" />
 
         <service
             android:name=".NonRootTgWsService"

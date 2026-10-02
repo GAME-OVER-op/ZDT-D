@@ -2566,4 +2566,9 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="non_root_app_routing_restart_later">बाद में</string>
     <string name="non_root_app_routing_restart_now">दोबारा कनेक्ट करें</string>
     <string name="non_root_app_routing_only_selected_empty_error">“केवल चुने हुए ऐप” मोड में कम से कम एक इंस्टॉल किया हुआ ऐप चुनें।</string>
+
+    <string name="non_root_tgws_plugin_title">TGWS प्लगइन</string>
+    <string name="non_root_tgws_plugin_not_installed">TGWS प्लगइन इंस्टॉल नहीं है। Technical Assets से हस्ताक्षरित घटक इंस्टॉल करें।</string>
+    <string name="non_root_tgws_plugin_installed_fmt">इंस्टॉल प्लगइन: %1$s</string>
+    <string name="non_root_tgws_plugin_latest_fmt">उपलब्ध प्लगइन: %1$s</string>
 </resources>

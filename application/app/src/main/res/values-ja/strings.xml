@@ -2565,4 +2565,9 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="non_root_app_routing_restart_later">後で</string>
     <string name="non_root_app_routing_restart_now">再接続</string>
     <string name="non_root_app_routing_only_selected_empty_error">「選択したアプリのみ」では、インストール済みアプリを少なくとも 1 つ選択してください。</string>
+
+    <string name="non_root_tgws_plugin_title">TGWSプラグイン</string>
+    <string name="non_root_tgws_plugin_not_installed">TGWSプラグインがインストールされていません。Technical Assets から署名済みコンポーネントをインストールしてください。</string>
+    <string name="non_root_tgws_plugin_installed_fmt">インストール済みプラグイン: %1$s</string>
+    <string name="non_root_tgws_plugin_latest_fmt">利用可能なプラグイン: %1$s</string>
 </resources>

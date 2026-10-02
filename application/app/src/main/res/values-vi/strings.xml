@@ -2565,4 +2565,9 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="non_root_app_routing_restart_later">Để sau</string>
     <string name="non_root_app_routing_restart_now">Kết nối lại</string>
     <string name="non_root_app_routing_only_selected_empty_error">Hãy chọn ít nhất một ứng dụng đã cài đặt khi dùng “Chỉ ứng dụng đã chọn”.</string>
+
+    <string name="non_root_tgws_plugin_title">Plugin TGWS</string>
+    <string name="non_root_tgws_plugin_not_installed">Plugin TGWS chưa được cài đặt. Hãy cài thành phần đã ký từ Technical Assets.</string>
+    <string name="non_root_tgws_plugin_installed_fmt">Plugin đã cài: %1$s</string>
+    <string name="non_root_tgws_plugin_latest_fmt">Plugin khả dụng: %1$s</string>
 </resources>

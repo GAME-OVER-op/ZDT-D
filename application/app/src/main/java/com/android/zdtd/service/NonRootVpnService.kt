@@ -1,5 +1,6 @@
 package com.android.zdtd.service
 
+import com.android.zdtd.service.tgwsplugin.TgWsPluginContract
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -505,6 +506,7 @@ class NonRootVpnService : VpnService() {
     when (appRoutingMode) {
       NonRootAppRoutingMode.ALL -> {
         runCatching { builder.addDisallowedApplication(packageName) }
+        runCatching { builder.addDisallowedApplication(TgWsPluginContract.PACKAGE_NAME) }
       }
       NonRootAppRoutingMode.ONLY_SELECTED -> {
         // Android forbids mixing allowed and disallowed application lists.
@@ -518,6 +520,7 @@ class NonRootVpnService : VpnService() {
       }
       NonRootAppRoutingMode.EXCLUDE_SELECTED -> {
         runCatching { builder.addDisallowedApplication(packageName) }
+        runCatching { builder.addDisallowedApplication(TgWsPluginContract.PACKAGE_NAME) }
         appRoutingPackages.forEach { candidate ->
           runCatching { builder.addDisallowedApplication(candidate) }
         }
@@ -529,7 +532,9 @@ class NonRootVpnService : VpnService() {
   @Suppress("DEPRECATION")
   private fun installedRoutingPackages(packages: Set<String>): Set<String> =
     packages.filterTo(linkedSetOf()) { candidate ->
-      candidate != packageName && runCatching { packageManager.getApplicationInfo(candidate, 0) }.isSuccess
+      candidate != packageName &&
+        candidate != TgWsPluginContract.PACKAGE_NAME &&
+        runCatching { packageManager.getApplicationInfo(candidate, 0) }.isSuccess
     }
 
   private fun writeHevConfig(target: SocksTarget): File {

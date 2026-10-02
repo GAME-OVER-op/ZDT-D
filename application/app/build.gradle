@@ -177,6 +177,7 @@ android {
     buildConfig true
     viewBinding false
     compose true
+    aidl true
   }
 
   sourceSets {

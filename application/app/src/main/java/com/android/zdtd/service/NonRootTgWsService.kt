@@ -5,18 +5,24 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import com.android.zdtd.service.plugin.com.ipc.ITgWsPlugin
+import com.android.zdtd.service.plugin.com.ipc.ITgWsPluginCallback
+import com.android.zdtd.service.tgwsplugin.TgWsPluginContract
+import com.android.zdtd.service.tgwsplugin.TgWsPluginManager
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.Socket
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -24,13 +30,59 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 
-/** Standalone app-owned lifecycle for Telegram WS Proxy in non-root mode. */
+/** Foreground controller for the optional headless TGWS plugin in non-root mode. */
 class NonRootTgWsService : Service() {
   private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
   private val runtimeStore by lazy { NonRootRuntimeStore(applicationContext) }
   private var runtimeJob: Job? = null
-  private var process: Process? = null
+  @Volatile private var plugin: ITgWsPlugin? = null
+  @Volatile private var pluginBound = false
+  @Volatile private var connectDeferred: CompletableDeferred<ITgWsPlugin>? = null
+  private val logLock = Any()
+
+  private val pluginCallback = object : ITgWsPluginCallback.Stub() {
+    override fun onLog(line: String?) {
+      val text = line.orEmpty()
+      if (text.isBlank()) return
+      runCatching {
+        synchronized(logLock) {
+          File(runtimeStore.logsDir, "tgwsproxy.log").appendText("$text\n")
+        }
+      }
+    }
+
+    override fun onStateChanged(state: Int, message: String?) {
+      runCatching {
+        File(runtimeStore.logsDir, "tgwsproxy-service.log").appendText(
+          "${System.currentTimeMillis()} plugin_state=$state ${message.orEmpty()}\n"
+        )
+      }
+    }
+  }
+
+  private val pluginConnection = object : ServiceConnection {
+    override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+      val service = ITgWsPlugin.Stub.asInterface(binder)
+      plugin = service
+      if (service != null) connectDeferred?.complete(service)
+    }
+
+    override fun onServiceDisconnected(name: ComponentName?) {
+      plugin = null
+    }
+
+    override fun onBindingDied(name: ComponentName?) {
+      plugin = null
+      connectDeferred?.completeExceptionally(IllegalStateException("TGWS plugin binding died"))
+    }
+
+    override fun onNullBinding(name: ComponentName?) {
+      plugin = null
+      connectDeferred?.completeExceptionally(IllegalStateException("TGWS plugin returned a null binder"))
+    }
+  }
 
   override fun onCreate() {
     super.onCreate()
@@ -58,7 +110,7 @@ class NonRootTgWsService : Service() {
 
   override fun onDestroy() {
     runtimeJob?.cancel()
-    stopProcess()
+    disconnectPlugin(stop = true)
     serviceScope.cancel()
     stopForegroundCompat()
     super.onDestroy()
@@ -71,32 +123,38 @@ class NonRootTgWsService : Service() {
       return
     }
     startForegroundCompat(buildNotification())
-    if (!restart && process?.isAlive == true) return
     runtimeJob?.cancel()
     runtimeJob = serviceScope.launch {
       try {
-        stopProcess()
-        startProcess(config)
+        if (!TgWsPluginManager(applicationContext).isInstalled()) {
+          error("TGWS plugin is not installed")
+        }
+        val remote = connectPlugin()
+        if (!restart && runCatching { remote.isRunning }.getOrDefault(false)) return@launch
+        runCatching { remote.stop() }
+        startPlugin(config, remote)
       } catch (_: CancellationException) {
         throw CancellationException()
       } catch (t: Throwable) {
         File(runtimeStore.logsDir, "tgwsproxy-service.log").appendText(
           "${System.currentTimeMillis()} ERROR ${t.message ?: t.javaClass.simpleName}\n"
         )
-        stopProcess()
+        disconnectPlugin(stop = true)
         stopForegroundCompat()
         stopSelf()
       }
     }
   }
 
-  private suspend fun startProcess(config: NonRootTgWsConfig) {
+  private suspend fun startPlugin(config: NonRootTgWsConfig, remote: ITgWsPlugin) {
     check(NonRootTgWsStore.isValidSecret(config.secret)) { "Telegram WS Proxy secret is invalid" }
+    check(remote.apiVersion == TgWsPluginContract.API_VERSION) {
+      "TGWS plugin API mismatch: ${remote.apiVersion}"
+    }
     val args = mutableListOf(
       "--port", config.port.toString(),
       "--host", NonRootPortRegistry.LOOPBACK,
       "--secret", NonRootTgWsStore.normalizeSecret(config.secret),
-      "--log-file", File(runtimeStore.logsDir, "tgwsproxy.log").absolutePath,
     )
     if (config.fakeTlsEnabled) {
       check(config.fakeTlsDomain.isNotBlank()) { "Telegram WS Proxy FakeTLS domain is required" }
@@ -121,41 +179,54 @@ class NonRootTgWsService : Service() {
     if (config.noOutboundProxy) args += "--no-outbound-proxy"
     if (config.noProxy.isNotBlank()) args += listOf("--no-proxy", config.noProxy.trim())
 
-    val executable = nativeExecutable("libzdt_tgwsproxy.so")
-    check(executable.isFile) { "Native executable missing: ${executable.absolutePath}" }
-    val processLog = File(runtimeStore.logsDir, "tgwsproxy-process.log").apply { parentFile?.mkdirs() }
-    process = ProcessBuilder(listOf(executable.absolutePath) + args)
-      .directory(runtimeStore.runtimeDir)
-      .redirectErrorStream(true)
-      .redirectOutput(ProcessBuilder.Redirect.appendTo(processLog))
-      .start()
+    File(runtimeStore.logsDir, "tgwsproxy.log").apply {
+      parentFile?.mkdirs()
+      appendText("${System.currentTimeMillis()} plugin=${runCatching { remote.pluginVersion }.getOrDefault("unknown")} start\n")
+    }
+    remote.start(args.toTypedArray(), pluginCallback)
 
     repeat(100) {
-      if (process?.isAlive != true) error("Telegram WS Proxy exited before becoming ready")
+      if (!runCatching { remote.isRunning }.getOrDefault(false)) {
+        error("Telegram WS Proxy plugin process exited before becoming ready")
+      }
       if (canConnect(config.port)) return
       delay(100)
     }
     error("Telegram WS Proxy did not open ${NonRootPortRegistry.LOOPBACK}:${config.port}")
   }
 
+  private suspend fun connectPlugin(): ITgWsPlugin {
+    plugin?.let { return it }
+    val deferred = CompletableDeferred<ITgWsPlugin>()
+    connectDeferred = deferred
+    val intent = Intent(TgWsPluginContract.BIND_ACTION).apply {
+      component = ComponentName(TgWsPluginContract.PACKAGE_NAME, TgWsPluginContract.SERVICE_CLASS)
+    }
+    pluginBound = bindService(intent, pluginConnection, Context.BIND_AUTO_CREATE)
+    check(pluginBound) { "Unable to bind TGWS plugin service" }
+    return try {
+      withTimeout(10_000L) { deferred.await() }
+    } finally {
+      connectDeferred = null
+    }
+  }
+
   private fun stopRuntimeAndSelf() {
     runtimeJob?.cancel()
     runtimeJob = null
-    stopProcess()
+    disconnectPlugin(stop = true)
     stopForegroundCompat()
     stopSelf()
   }
 
   @Synchronized
-  private fun stopProcess() {
-    val child = process ?: return
-    process = null
-    runCatching {
-      child.destroy()
-      if (!child.waitFor(2, TimeUnit.SECONDS)) {
-        child.destroyForcibly()
-        child.waitFor(1, TimeUnit.SECONDS)
-      }
+  private fun disconnectPlugin(stop: Boolean) {
+    val remote = plugin
+    plugin = null
+    if (stop && remote != null) runCatching { remote.stop() }
+    if (pluginBound) {
+      pluginBound = false
+      runCatching { unbindService(pluginConnection) }
     }
   }
 
@@ -165,8 +236,6 @@ class NonRootTgWsService : Service() {
     }
     true
   }.getOrDefault(false)
-
-  private fun nativeExecutable(name: String): File = File(applicationInfo.nativeLibraryDir, name)
 
   private fun buildNotification(): Notification {
     val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -214,15 +283,11 @@ class NonRootTgWsService : Service() {
     private const val NOTIFICATION_ID = 92042
 
     fun start(context: Context) {
-      context.startForegroundService(
-        Intent(context, NonRootTgWsService::class.java).setAction(ACTION_START),
-      )
+      context.startForegroundService(Intent(context, NonRootTgWsService::class.java).setAction(ACTION_START))
     }
 
     fun restart(context: Context) {
-      context.startForegroundService(
-        Intent(context, NonRootTgWsService::class.java).setAction(ACTION_RESTART),
-      )
+      context.startForegroundService(Intent(context, NonRootTgWsService::class.java).setAction(ACTION_RESTART))
     }
 
     fun stop(context: Context, persistDisabled: Boolean = true) {

@@ -16,6 +16,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -36,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.NonRootPortRegistry
 import com.android.zdtd.service.NonRootTgWsConfig
 import com.android.zdtd.service.NonRootTgWsStore
+import com.android.zdtd.service.tgwsplugin.TgWsPluginState
 import com.android.zdtd.service.R
 
 @Composable
@@ -43,10 +45,15 @@ internal fun NonRootTgWsSettingsScreen(
   topContentPadding: Dp,
   bottomContentPadding: Dp,
   config: NonRootTgWsConfig,
+  pluginState: TgWsPluginState,
   onConfigChange: (NonRootTgWsConfig) -> Unit,
   onPortChange: (Int) -> Boolean,
+  onInstallOrUpdatePlugin: () -> Unit,
+  onRemovePlugin: () -> Unit,
+  onRefreshPlugin: () -> Unit,
 ) {
   val screenPadding = rememberAdaptiveScreenPadding()
+  val compactWidth = rememberIsCompactWidth()
   var draft by remember(config) { mutableStateOf(config) }
   var portText by remember(config.port) { mutableStateOf(config.port.toString()) }
   var advanced by remember { mutableStateOf(false) }
@@ -88,6 +95,75 @@ internal fun NonRootTgWsSettingsScreen(
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
       ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+          Text(stringResource(R.string.non_root_tgws_plugin_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+          Text(
+            text = if (pluginState.installed) {
+              stringResource(R.string.non_root_tgws_plugin_installed_fmt, pluginState.installedVersionName.ifBlank { "?" })
+            } else {
+              stringResource(R.string.non_root_tgws_plugin_not_installed)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          if (pluginState.latestVersionName.isNotBlank()) {
+            Text(
+              stringResource(R.string.non_root_tgws_plugin_latest_fmt, pluginState.latestVersionName),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+          if (pluginState.busy) {
+            LinearProgressIndicator(
+              progress = { pluginState.progressPercent.coerceIn(0, 100) / 100f },
+              modifier = Modifier.fillMaxWidth(),
+            )
+          }
+          pluginState.errorMessage?.takeIf { it.isNotBlank() }?.let { message ->
+            Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+          }
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+              if (!pluginState.signatureMismatch) {
+                Button(
+                  onClick = onInstallOrUpdatePlugin,
+                  enabled = !pluginState.busy && !config.enabled,
+                  modifier = Modifier.weight(1f),
+                ) {
+                  Text(stringResource(if (pluginState.installed) R.string.common_update else R.string.common_install))
+                }
+              }
+              OutlinedButton(
+                onClick = onRefreshPlugin,
+                enabled = !pluginState.busy,
+                modifier = Modifier.weight(1f),
+              ) { Text(stringResource(R.string.action_refresh)) }
+              if (!compactWidth && (pluginState.installed || pluginState.signatureMismatch)) {
+                OutlinedButton(
+                  onClick = onRemovePlugin,
+                  enabled = !pluginState.busy && !config.enabled,
+                ) { Text(stringResource(R.string.setup_install_conflict_remove)) }
+              }
+            }
+            if (compactWidth && (pluginState.installed || pluginState.signatureMismatch)) {
+              OutlinedButton(
+                onClick = onRemovePlugin,
+                enabled = !pluginState.busy && !config.enabled,
+                modifier = Modifier.fillMaxWidth(),
+              ) { Text(stringResource(R.string.setup_install_conflict_remove)) }
+            }
+          }
+        }
+      }
+    }
+
+    item {
+      Surface(
+        modifier = Modifier.fillMaxWidth().animateContentSize(tween(200)),
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
+      ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
           Text(stringResource(R.string.tgws_basic_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
           Text(stringResource(R.string.tgws_basic_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -96,7 +172,7 @@ internal fun NonRootTgWsSettingsScreen(
               Text(stringResource(R.string.tgws_enable_title), fontWeight = FontWeight.SemiBold)
               Text(stringResource(R.string.tgws_host_local_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Switch(checked = draft.enabled, onCheckedChange = { draft = draft.copy(enabled = it) })
+            Switch(checked = draft.enabled && pluginState.installed, enabled = pluginState.installed, onCheckedChange = { draft = draft.copy(enabled = it) })
           }
           OutlinedTextField(
             value = portText,

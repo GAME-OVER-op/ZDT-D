@@ -2564,4 +2564,9 @@ APatch: 10700+</string>
     <string name="non_root_app_routing_restart_later">Позже</string>
     <string name="non_root_app_routing_restart_now">Переподключить</string>
     <string name="non_root_app_routing_only_selected_empty_error">В режиме «Только выбранные» выберите хотя бы одно установленное приложение.</string>
+
+    <string name="non_root_tgws_plugin_title">Плагин TGWS</string>
+    <string name="non_root_tgws_plugin_not_installed">Плагин TGWS не установлен. Установите подписанный компонент из Technical Assets.</string>
+    <string name="non_root_tgws_plugin_installed_fmt">Установленный плагин: %1$s</string>
+    <string name="non_root_tgws_plugin_latest_fmt">Доступный плагин: %1$s</string>
 </resources>

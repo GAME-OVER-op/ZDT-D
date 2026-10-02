@@ -58,6 +58,7 @@ import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.NonRootAppRoutingMode
 import com.android.zdtd.service.NonRootVpnState
 import com.android.zdtd.service.R
+import com.android.zdtd.service.tgwsplugin.TgWsPluginContract
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
@@ -287,7 +288,7 @@ private fun NonRootRoutingAppPicker(
     loading = true
     apps = withContext(Dispatchers.IO) {
       runCatching { loadInstalledAppsCached(context.packageManager) }.getOrDefault(emptyList())
-    }.filterNot { it.packageName == ZDTD_APP_PACKAGE_NAME }
+    }.filterNot { it.packageName == ZDTD_APP_PACKAGE_NAME || it.packageName == TgWsPluginContract.PACKAGE_NAME }
     loading = false
   }
 

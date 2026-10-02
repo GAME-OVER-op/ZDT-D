@@ -2566,4 +2566,9 @@ APatch: 10700+</string>
     <string name="non_root_app_routing_restart_later">بعداً</string>
     <string name="non_root_app_routing_restart_now">اتصال دوباره</string>
     <string name="non_root_app_routing_only_selected_empty_error">در حالت «فقط برنامه‌های انتخاب‌شده» حداقل یک برنامه نصب‌شده را انتخاب کنید.</string>
+
+    <string name="non_root_tgws_plugin_title">افزونه TGWS</string>
+    <string name="non_root_tgws_plugin_not_installed">افزونه TGWS نصب نشده است. مؤلفه امضاشده را از Technical Assets نصب کنید.</string>
+    <string name="non_root_tgws_plugin_installed_fmt">افزونه نصب‌شده: %1$s</string>
+    <string name="non_root_tgws_plugin_latest_fmt">افزونه موجود: %1$s</string>
 </resources>

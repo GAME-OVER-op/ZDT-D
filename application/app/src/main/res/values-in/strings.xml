@@ -2565,4 +2565,9 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="non_root_app_routing_restart_later">Nanti</string>
     <string name="non_root_app_routing_restart_now">Sambungkan ulang</string>
     <string name="non_root_app_routing_only_selected_empty_error">Pilih setidaknya satu aplikasi terpasang saat menggunakan “Hanya yang dipilih”.</string>
+
+    <string name="non_root_tgws_plugin_title">Plugin TGWS</string>
+    <string name="non_root_tgws_plugin_not_installed">Plugin TGWS belum terpasang. Pasang komponen bertanda tangan dari Technical Assets.</string>
+    <string name="non_root_tgws_plugin_installed_fmt">Plugin terpasang: %1$s</string>
+    <string name="non_root_tgws_plugin_latest_fmt">Plugin tersedia: %1$s</string>
 </resources>

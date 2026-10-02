@@ -2566,4 +2566,9 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="non_root_app_routing_restart_later">Depois</string>
     <string name="non_root_app_routing_restart_now">Reconectar</string>
     <string name="non_root_app_routing_only_selected_empty_error">Selecione pelo menos um aplicativo instalado ao usar “Somente selecionados”.</string>
+
+    <string name="non_root_tgws_plugin_title">Plugin TGWS</string>
+    <string name="non_root_tgws_plugin_not_installed">O plugin TGWS não está instalado. Instale o componente assinado de Technical Assets.</string>
+    <string name="non_root_tgws_plugin_installed_fmt">Plugin instalado: %1$s</string>
+    <string name="non_root_tgws_plugin_latest_fmt">Plugin disponível: %1$s</string>
 </resources>

@@ -1380,11 +1380,14 @@ private fun VpsOperationScreen(
   var unseenCount by remember(operation.startedAt) { mutableStateOf(0) }
   var now by remember(operation.startedAt) { mutableStateOf(System.currentTimeMillis()) }
 
+  val hasPendingConsoleEntries = operation.console.lastOrNull()?.id?.let { it > lastRenderedId } == true
+  val consolePresentationBusy = operation.running || typingEntryId != null || hasPendingConsoleEntries
+  val consolePresentationFinished = !consolePresentationBusy
+
   BackHandler(enabled = operation.shouldShowConsole()) {
-    // The console is a temporary foreground scene. Never let Android Back reach the VPS screen
-    // underneath it. While a remote operation is running Back is consumed; after completion it is
-    // equivalent to the visible Close button and only dismisses the console.
-    if (!operation.running) onDismiss()
+    // Never let Android Back reach the VPS scene underneath this foreground console. Dismiss only
+    // after both the remote operation and the visual console queue have completely finished.
+    if (consolePresentationFinished) onDismiss()
   }
 
   LaunchedEffect(operation.running, operation.startedAt) {
@@ -1411,10 +1414,10 @@ private fun VpsOperationScreen(
 
   val latestOperation by rememberUpdatedState(operation)
   LaunchedEffect(operation.startedAt) {
-    while (latestOperation.running || latestOperation.console.any { it.id > lastRenderedId }) {
+    while (latestOperation.running || latestOperation.console.lastOrNull()?.id?.let { it > lastRenderedId } == true) {
       val next = latestOperation.console.firstOrNull { it.id > lastRenderedId }
       if (next == null) {
-        delay(20L)
+        delay(8L)
         continue
       }
 
@@ -1429,22 +1432,43 @@ private fun VpsOperationScreen(
         unseenCount = 0
       }
 
-      val charDelay = if (next.type == VpsConsoleEntryType.COMMAND) 36L else 12L
-      fullText.forEachIndexed { index, char ->
+      // Keep the terminal effect while live, but catch up aggressively when output has already
+      // accumulated or the remote operation has finished. This prevents the UI animation itself
+      // from creating a long fake "executing" pause after the command/result is already available.
+      var visibleLength = 0
+      while (visibleLength < fullText.length) {
+        // Re-evaluate catch-up continuously so a long line speeds up immediately when the server
+        // has finished or another console entry is already waiting behind this one.
+        val catchUp = !latestOperation.running || latestOperation.console.lastOrNull()?.id?.let { it > next.id } == true
+        val chunkSize = when {
+          !catchUp -> 1
+          next.type == VpsConsoleEntryType.COMMAND -> 3
+          else -> 8
+        }
+        val nextLength = (visibleLength + chunkSize).coerceAtMost(fullText.length)
+        val chunk = fullText.substring(visibleLength, nextLength)
         renderedEntries[renderIndex] = renderedEntries[renderIndex].copy(
-          visibleText = fullText.substring(0, index + 1),
+          visibleText = fullText.substring(0, nextLength),
         )
 
-        if (autoFollow && (index % 4 == 0 || char == '\n' || index == fullText.lastIndex)) {
+        if (autoFollow && (nextLength % 4 == 0 || '\n' in chunk || nextLength == fullText.length)) {
           listState.scrollToItem(renderedEntries.size)
         }
-        delay(if (char == '\n') 60L else charDelay)
+
+        val frameDelay = when {
+          !catchUp && next.type == VpsConsoleEntryType.COMMAND -> 36L
+          !catchUp -> 12L
+          next.type == VpsConsoleEntryType.COMMAND -> 8L
+          else -> 2L
+        }
+        delay(if ('\n' in chunk) (if (catchUp) 8L else 40L) else frameDelay)
+        visibleLength = nextLength
       }
 
-      if (next.type == VpsConsoleEntryType.COMMAND) delay(220L)
-
-      typingEntryId = null
+      // Do not add an artificial hold after a command. If the server has not produced output yet,
+      // the caret itself represents the genuine wait; if output is already queued, render it now.
       lastRenderedId = next.id
+      typingEntryId = null
       while (renderedEntries.size > 1_200) renderedEntries.removeAt(0)
 
       if (!autoFollow) unseenCount += 1
@@ -1521,14 +1545,18 @@ private fun VpsOperationScreen(
             )
           }
           itemsIndexed(renderedEntries, key = { _, entry -> entry.source.id }) { _, rendered ->
-            val caretEntryId = typingEntryId ?: renderedEntries.lastOrNull()?.source?.id
+            val caretEntryId = when {
+              typingEntryId != null -> typingEntryId
+              consolePresentationBusy -> renderedEntries.lastOrNull()?.source?.id
+              else -> null
+            }
             VpsConsoleLine(
               entry = rendered.source,
               visibleText = rendered.visibleText,
               showCaret = rendered.source.id == caretEntryId,
             )
           }
-          if (renderedEntries.isEmpty()) {
+          if (renderedEntries.isEmpty() && consolePresentationBusy) {
             item(key = "console-waiting-caret") {
               VpsConsoleCaretOnlyLine()
             }
@@ -1570,7 +1598,7 @@ private fun VpsOperationScreen(
         Spacer(Modifier.width(6.dp))
         Text(stringResource(R.string.action_copy))
       }
-      if (!operation.running) {
+      if (consolePresentationFinished) {
         Button(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.action_close)) }
       }
     }

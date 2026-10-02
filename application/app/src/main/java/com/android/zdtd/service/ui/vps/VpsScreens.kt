@@ -7,15 +7,12 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -43,7 +40,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
@@ -102,6 +101,9 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -1368,20 +1370,21 @@ private fun VpsOperationScreen(
   val scope = rememberCoroutineScope()
   val listState = rememberLazyListState()
   val renderedEntries = remember(operation.startedAt) {
-    mutableStateListOf<VpsConsoleEntry>().apply { addAll(operation.console) }
+    mutableStateListOf<VpsRenderedConsoleEntry>()
   }
   var lastRenderedId by remember(operation.startedAt) {
-    mutableStateOf(renderedEntries.lastOrNull()?.id ?: 0L)
+    mutableStateOf(0L)
   }
+  var typingEntryId by remember(operation.startedAt) { mutableStateOf<Long?>(null) }
   var autoFollow by remember(operation.startedAt) { mutableStateOf(true) }
   var unseenCount by remember(operation.startedAt) { mutableStateOf(0) }
   var now by remember(operation.startedAt) { mutableStateOf(System.currentTimeMillis()) }
 
-  LaunchedEffect(operation.startedAt) {
-    if (renderedEntries.isNotEmpty()) {
-      delay(1L)
-      listState.scrollToItem(renderedEntries.size)
-    }
+  BackHandler(enabled = operation.shouldShowConsole()) {
+    // The console is a temporary foreground scene. Never let Android Back reach the VPS screen
+    // underneath it. While a remote operation is running Back is consumed; after completion it is
+    // equivalent to the visible Close button and only dismisses the console.
+    if (!operation.running) onDismiss()
   }
 
   LaunchedEffect(operation.running, operation.startedAt) {
@@ -1409,45 +1412,42 @@ private fun VpsOperationScreen(
   val latestOperation by rememberUpdatedState(operation)
   LaunchedEffect(operation.startedAt) {
     while (latestOperation.running || latestOperation.console.any { it.id > lastRenderedId }) {
-      var pending = latestOperation.console.filter { it.id > lastRenderedId }
-      if (pending.isEmpty()) {
+      val next = latestOperation.console.firstOrNull { it.id > lastRenderedId }
+      if (next == null) {
         delay(20L)
         continue
       }
 
-      // A short render buffer lets output that arrived together appear together. It never delays the
-      // remote command itself; it only makes the console presentation follow the real SSH cadence.
-      delay(24L)
-      pending = latestOperation.console.filter { it.id > lastRenderedId }
-      if (pending.isEmpty()) continue
-
-      val first = pending.first()
-      val batch = if (first.type == VpsConsoleEntryType.COMMAND) {
-        listOf(first)
-      } else {
-        buildList {
-          var previous = first
-          for (entry in pending) {
-            if (entry.type == VpsConsoleEntryType.COMMAND) break
-            if (isNotEmpty() && entry.receivedAt - previous.receivedAt > 90L) break
-            add(entry)
-            previous = entry
-          }
-        }
-      }
-
-      if (first.type == VpsConsoleEntryType.COMMAND && renderedEntries.isNotEmpty()) delay(45L)
-      renderedEntries.addAll(batch)
-      lastRenderedId = batch.last().id
-      while (renderedEntries.size > 1_200) renderedEntries.removeAt(0)
+      val fullText = next.consoleDisplayText()
+      val renderIndex = renderedEntries.size
+      renderedEntries.add(VpsRenderedConsoleEntry(source = next, visibleText = ""))
+      typingEntryId = next.id
 
       if (autoFollow) {
         delay(1L)
         listState.scrollToItem(renderedEntries.size)
         unseenCount = 0
-      } else {
-        unseenCount += batch.size
       }
+
+      val charDelay = if (next.type == VpsConsoleEntryType.COMMAND) 36L else 12L
+      fullText.forEachIndexed { index, char ->
+        renderedEntries[renderIndex] = renderedEntries[renderIndex].copy(
+          visibleText = fullText.substring(0, index + 1),
+        )
+
+        if (autoFollow && (index % 4 == 0 || char == '\n' || index == fullText.lastIndex)) {
+          listState.scrollToItem(renderedEntries.size)
+        }
+        delay(if (char == '\n') 60L else charDelay)
+      }
+
+      if (next.type == VpsConsoleEntryType.COMMAND) delay(220L)
+
+      typingEntryId = null
+      lastRenderedId = next.id
+      while (renderedEntries.size > 1_200) renderedEntries.removeAt(0)
+
+      if (!autoFollow) unseenCount += 1
     }
   }
 
@@ -1520,8 +1520,18 @@ private fun VpsOperationScreen(
               modifier = Modifier.padding(bottom = 4.dp),
             )
           }
-          itemsIndexed(renderedEntries, key = { _, entry -> entry.id }) { _, entry ->
-            VpsConsoleLine(entry)
+          itemsIndexed(renderedEntries, key = { _, entry -> entry.source.id }) { _, rendered ->
+            val caretEntryId = typingEntryId ?: renderedEntries.lastOrNull()?.source?.id
+            VpsConsoleLine(
+              entry = rendered.source,
+              visibleText = rendered.visibleText,
+              showCaret = rendered.source.id == caretEntryId,
+            )
+          }
+          if (renderedEntries.isEmpty()) {
+            item(key = "console-waiting-caret") {
+              VpsConsoleCaretOnlyLine()
+            }
           }
         }
 
@@ -1567,9 +1577,20 @@ private fun VpsOperationScreen(
   }
 }
 
+private data class VpsRenderedConsoleEntry(
+  val source: VpsConsoleEntry,
+  val visibleText: String,
+)
+
+private fun VpsConsoleEntry.consoleDisplayText(): String =
+  if (type == VpsConsoleEntryType.COMMAND) "~Root $ $text" else text
+
 @Composable
-private fun VpsConsoleLine(entry: VpsConsoleEntry) {
-  val visibleState = remember(entry.id) { MutableTransitionState(false).apply { targetState = true } }
+private fun VpsConsoleLine(
+  entry: VpsConsoleEntry,
+  visibleText: String,
+  showCaret: Boolean,
+) {
   val color = when (entry.type) {
     VpsConsoleEntryType.COMMAND -> Color(0xFF9BE8FF)
     VpsConsoleEntryType.OUTPUT -> Color(0xFFD6F9FF)
@@ -1578,20 +1599,83 @@ private fun VpsConsoleLine(entry: VpsConsoleEntry) {
     VpsConsoleEntryType.ERROR -> Color(0xFFFF9EA8)
     VpsConsoleEntryType.ROLLBACK -> Color(0xFF86EFAC)
   }
-  val text = if (entry.type == VpsConsoleEntryType.COMMAND) "~Root $ ${entry.text}" else entry.text
-  AnimatedVisibility(
-    visibleState = visibleState,
-    enter = fadeIn(tween(130)) + slideInVertically(tween(130)) { it / 3 },
-  ) {
-    Text(
-      text,
-      color = color,
-      fontFamily = FontFamily.Monospace,
-      fontSize = 12.sp,
-      lineHeight = 16.sp,
-      fontWeight = if (entry.type == VpsConsoleEntryType.COMMAND) FontWeight.SemiBold else FontWeight.Normal,
-      modifier = Modifier.fillMaxWidth(),
+  val caretId = "vps-console-caret"
+  val annotatedText = buildAnnotatedString {
+    append(visibleText)
+    if (showCaret) appendInlineContent(caretId, "▮")
+  }
+  val inlineContent = if (showCaret) {
+    mapOf(
+      caretId to InlineTextContent(
+        placeholder = Placeholder(
+          width = 7.sp,
+          height = 14.sp,
+          placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter,
+        ),
+      ) {
+        VpsConsoleCaret()
+      },
     )
+  } else {
+    emptyMap()
+  }
+
+  Text(
+    text = annotatedText,
+    inlineContent = inlineContent,
+    color = color,
+    fontFamily = FontFamily.Monospace,
+    fontSize = 12.sp,
+    lineHeight = 16.sp,
+    fontWeight = if (entry.type == VpsConsoleEntryType.COMMAND) FontWeight.SemiBold else FontWeight.Normal,
+    modifier = Modifier.fillMaxWidth(),
+  )
+}
+
+@Composable
+private fun VpsConsoleCaretOnlyLine() {
+  val caretId = "vps-console-waiting-caret"
+  Text(
+    text = buildAnnotatedString { appendInlineContent(caretId, "▮") },
+    inlineContent = mapOf(
+      caretId to InlineTextContent(
+        placeholder = Placeholder(
+          width = 7.sp,
+          height = 14.sp,
+          placeholderVerticalAlign = PlaceholderVerticalAlign.TextCenter,
+        ),
+      ) {
+        VpsConsoleCaret()
+      },
+    ),
+    fontFamily = FontFamily.Monospace,
+    fontSize = 12.sp,
+    lineHeight = 16.sp,
+    color = Color(0xFF9BE8FF),
+    modifier = Modifier.fillMaxWidth(),
+  )
+}
+
+@Composable
+private fun VpsConsoleCaret() {
+  val transition = rememberInfiniteTransition(label = "vps-console-caret")
+  val blinkPhase by transition.animateFloat(
+    initialValue = 0f,
+    targetValue = 1f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(durationMillis = 1_000, easing = LinearEasing),
+      repeatMode = RepeatMode.Restart,
+    ),
+    label = "vps-console-caret-blink",
+  )
+  Surface(
+    modifier = Modifier
+      .fillMaxSize()
+      .graphicsLayer { alpha = if (blinkPhase < 0.5f) 1f else 0f },
+    color = Color(0xFF9BE8FF),
+    shape = RoundedCornerShape(1.dp),
+  ) {
+    Spacer(Modifier.fillMaxSize())
   }
 }
 

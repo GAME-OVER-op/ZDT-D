@@ -116,6 +116,7 @@ import com.android.zdtd.service.NonRootRuntimeLogEntry
 import com.android.zdtd.service.NonRootRuntimeStore
 import com.android.zdtd.service.NonRootT2sConfig
 import com.android.zdtd.service.NonRootTgWsConfig
+import com.android.zdtd.service.NonRootTgWsRuntimeState
 import com.android.zdtd.service.tgwsplugin.TgWsPluginState
 import com.android.zdtd.service.NonRootWorkMode
 import com.android.zdtd.service.NonRootVpnState
@@ -148,6 +149,8 @@ fun NonRootApp(
   vpnLogs: List<NonRootRuntimeLogEntry>,
   tgWsConfig: NonRootTgWsConfig,
   tgWsPluginState: TgWsPluginState,
+  tgWsRuntimeState: NonRootTgWsRuntimeState,
+  tgWsRuntimeLastError: String?,
   vpsViewModel: VpsViewModel,
   onVpnStart: () -> Unit,
   onVpnStop: () -> Unit,
@@ -176,7 +179,6 @@ fun NonRootApp(
   onTgWsConfigChange: (NonRootTgWsConfig) -> Unit,
   onTgWsPortChange: (Int) -> Boolean,
   onInstallOrUpdateTgWsPlugin: () -> Unit,
-  onRemoveTgWsPlugin: () -> Unit,
   onRefreshTgWsPlugin: () -> Unit,
   onImportVpsConfig: (VpsConfigResult, String, String?) -> Unit,
 ) {
@@ -276,10 +278,11 @@ fun NonRootApp(
           bottomContentPadding = bottomInset + 16.dp,
           config = tgWsConfig,
           pluginState = tgWsPluginState,
+          runtimeState = tgWsRuntimeState,
+          runtimeLastError = tgWsRuntimeLastError,
           onConfigChange = onTgWsConfigChange,
           onPortChange = onTgWsPortChange,
           onInstallOrUpdatePlugin = onInstallOrUpdateTgWsPlugin,
-          onRemovePlugin = onRemoveTgWsPlugin,
           onRefreshPlugin = onRefreshTgWsPlugin,
         )
         page == "vps" -> VpsServersScreen(
@@ -339,6 +342,7 @@ fun NonRootApp(
           cascadeState = cascadeState,
           tgWsConfig = tgWsConfig,
           tgWsPluginState = tgWsPluginState,
+          tgWsRuntimeState = tgWsRuntimeState,
           configurationEnabled = vpnState == NonRootVpnState.STOPPED || vpnState == NonRootVpnState.ERROR,
           onWorkModeChange = onWorkModeChange,
           onDirectSelectedProfileChange = onDirectSelectedProfileChange,
@@ -812,6 +816,7 @@ private fun NonRootToolsScreen(
   cascadeState: NonRootCascadeState,
   tgWsConfig: NonRootTgWsConfig,
   tgWsPluginState: TgWsPluginState,
+  tgWsRuntimeState: NonRootTgWsRuntimeState,
   configurationEnabled: Boolean,
   onWorkModeChange: (NonRootWorkMode) -> Unit,
   onDirectSelectedProfileChange: (String?) -> Unit,
@@ -1032,7 +1037,13 @@ private fun NonRootToolsScreen(
         icon = { Icon(Icons.Filled.Send, contentDescription = null) },
         title = stringResource(R.string.non_root_tgws_title),
         subtitle = if (tgWsPluginState.installed) {
-          "${NonRootPortRegistry.LOOPBACK}:${tgWsConfig.port} · ${tgWsPluginState.installedVersionName.ifBlank { "?" }}"
+          val runtimeText = when (tgWsRuntimeState) {
+            NonRootTgWsRuntimeState.STOPPED -> stringResource(R.string.non_root_service_state_stopped)
+            NonRootTgWsRuntimeState.STARTING -> stringResource(R.string.non_root_service_state_starting)
+            NonRootTgWsRuntimeState.RUNNING -> stringResource(R.string.non_root_service_state_running)
+            NonRootTgWsRuntimeState.ERROR -> stringResource(R.string.non_root_service_state_error)
+          }
+          "${NonRootPortRegistry.LOOPBACK}:${tgWsConfig.port} · ${tgWsPluginState.installedVersionName.ifBlank { "?" }} · $runtimeText"
         } else {
           stringResource(R.string.non_root_tgws_plugin_not_installed)
         },

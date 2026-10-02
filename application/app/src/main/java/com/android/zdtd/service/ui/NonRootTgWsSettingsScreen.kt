@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.NonRootPortRegistry
 import com.android.zdtd.service.NonRootTgWsConfig
 import com.android.zdtd.service.NonRootTgWsStore
+import com.android.zdtd.service.NonRootTgWsRuntimeState
 import com.android.zdtd.service.tgwsplugin.TgWsPluginState
 import com.android.zdtd.service.R
 
@@ -46,14 +47,14 @@ internal fun NonRootTgWsSettingsScreen(
   bottomContentPadding: Dp,
   config: NonRootTgWsConfig,
   pluginState: TgWsPluginState,
+  runtimeState: NonRootTgWsRuntimeState,
+  runtimeLastError: String?,
   onConfigChange: (NonRootTgWsConfig) -> Unit,
   onPortChange: (Int) -> Boolean,
   onInstallOrUpdatePlugin: () -> Unit,
-  onRemovePlugin: () -> Unit,
   onRefreshPlugin: () -> Unit,
 ) {
   val screenPadding = rememberAdaptiveScreenPadding()
-  val compactWidth = rememberIsCompactWidth()
   var draft by remember(config) { mutableStateOf(config) }
   var portText by remember(config.port) { mutableStateOf(config.port.toString()) }
   var advanced by remember { mutableStateOf(false) }
@@ -113,6 +114,24 @@ internal fun NonRootTgWsSettingsScreen(
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
           }
+          if (pluginState.installed) {
+            val runtimeText = when (runtimeState) {
+              NonRootTgWsRuntimeState.STOPPED -> stringResource(R.string.non_root_service_state_stopped)
+              NonRootTgWsRuntimeState.STARTING -> stringResource(R.string.non_root_service_state_starting)
+              NonRootTgWsRuntimeState.RUNNING -> stringResource(R.string.non_root_service_state_running)
+              NonRootTgWsRuntimeState.ERROR -> stringResource(R.string.non_root_service_state_error)
+            }
+            Text(
+              runtimeText,
+              style = MaterialTheme.typography.bodySmall,
+              color = if (runtimeState == NonRootTgWsRuntimeState.ERROR) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (runtimeState == NonRootTgWsRuntimeState.ERROR) {
+              runtimeLastError?.takeIf { it.isNotBlank() }?.let { message ->
+                Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+              }
+            }
+          }
           if (pluginState.busy) {
             LinearProgressIndicator(
               progress = { pluginState.progressPercent.coerceIn(0, 100) / 100f },
@@ -138,19 +157,6 @@ internal fun NonRootTgWsSettingsScreen(
                 enabled = !pluginState.busy,
                 modifier = Modifier.weight(1f),
               ) { Text(stringResource(R.string.action_refresh)) }
-              if (!compactWidth && (pluginState.installed || pluginState.signatureMismatch)) {
-                OutlinedButton(
-                  onClick = onRemovePlugin,
-                  enabled = !pluginState.busy && !config.enabled,
-                ) { Text(stringResource(R.string.setup_install_conflict_remove)) }
-              }
-            }
-            if (compactWidth && (pluginState.installed || pluginState.signatureMismatch)) {
-              OutlinedButton(
-                onClick = onRemovePlugin,
-                enabled = !pluginState.busy && !config.enabled,
-                modifier = Modifier.fillMaxWidth(),
-              ) { Text(stringResource(R.string.setup_install_conflict_remove)) }
             }
           }
         }

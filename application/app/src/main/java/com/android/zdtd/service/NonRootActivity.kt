@@ -62,6 +62,8 @@ class NonRootActivity : AppCompatActivity() {
       val vpnLogs by vm.vpnLogs.collectAsStateWithLifecycle()
       val tgWsConfig by vm.tgWsConfig.collectAsStateWithLifecycle()
       val tgWsPluginState by vm.tgWsPluginState.collectAsStateWithLifecycle()
+      val tgWsRuntimeState by vm.tgWsRuntimeState.collectAsStateWithLifecycle()
+      val tgWsRuntimeLastError by vm.tgWsRuntimeLastError.collectAsStateWithLifecycle()
       ZdtdTheme(themeMode = ZdtdThemeMode.fromStorage(themeMode)) {
         val lightBars = MaterialTheme.colorScheme.background.luminance() > 0.5f
         SideEffect {
@@ -84,6 +86,8 @@ class NonRootActivity : AppCompatActivity() {
             vpnLogs = vpnLogs,
             tgWsConfig = tgWsConfig,
             tgWsPluginState = tgWsPluginState,
+            tgWsRuntimeState = tgWsRuntimeState,
+            tgWsRuntimeLastError = tgWsRuntimeLastError,
             vpsViewModel = vpsVm,
             onVpnStart = ::requestNonRootVpnStart,
             onVpnStop = { NonRootVpnService.stop(this@NonRootActivity) },
@@ -112,7 +116,6 @@ class NonRootActivity : AppCompatActivity() {
             onTgWsConfigChange = vm::setTgWsConfig,
             onTgWsPortChange = vm::setTgWsPort,
             onInstallOrUpdateTgWsPlugin = ::requestTgWsPluginInstall,
-            onRemoveTgWsPlugin = vm::removeTgWsPlugin,
             onRefreshTgWsPlugin = { vm.refreshTgWsPlugin(checkRemote = true) },
             onImportVpsConfig = vm::importVpsConfig,
           )

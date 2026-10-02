@@ -56,6 +56,8 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
   private val _tgWsConfig = MutableStateFlow(tgWsStore.load())
   val tgWsConfig: StateFlow<NonRootTgWsConfig> = _tgWsConfig.asStateFlow()
   val tgWsPluginState: StateFlow<TgWsPluginState> = TgWsPluginStateBus.state
+  val tgWsRuntimeState: StateFlow<NonRootTgWsRuntimeState> = NonRootTgWsRuntime.state
+  val tgWsRuntimeLastError: StateFlow<String?> = NonRootTgWsRuntime.lastError
 
   val vpnState: StateFlow<NonRootVpnState> = NonRootVpnRuntime.state
   val vpnLastError: StateFlow<String?> = NonRootVpnRuntime.lastError

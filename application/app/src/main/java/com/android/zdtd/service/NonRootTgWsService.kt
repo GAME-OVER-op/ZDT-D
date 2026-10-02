@@ -40,6 +40,9 @@ class NonRootTgWsService : Service() {
   @Volatile private var plugin: ITgWsPlugin? = null
   @Volatile private var pluginBound = false
   @Volatile private var connectDeferred: CompletableDeferred<ITgWsPlugin>? = null
+  @Volatile private var startupDeferred: CompletableDeferred<PluginStartupResult>? = null
+  @Volatile private var startupSawStarting = false
+  private val startupLock = Any()
   private val logLock = Any()
 
   private val pluginCallback = object : ITgWsPluginCallback.Stub() {
@@ -54,10 +57,44 @@ class NonRootTgWsService : Service() {
     }
 
     override fun onStateChanged(state: Int, message: String?) {
+      val text = message.orEmpty()
       runCatching {
         File(runtimeStore.logsDir, "tgwsproxy-service.log").appendText(
-          "${System.currentTimeMillis()} plugin_state=$state ${message.orEmpty()}\n"
+          "${System.currentTimeMillis()} plugin_state=$state $text\n"
         )
+      }
+      var handledByStartup = false
+      synchronized(startupLock) {
+        val deferred = startupDeferred
+        if (deferred != null) {
+          handledByStartup = true
+          when (state) {
+            PLUGIN_STATE_STARTING -> startupSawStarting = true
+            PLUGIN_STATE_RUNNING -> if (startupSawStarting && !deferred.isCompleted) {
+              deferred.complete(PluginStartupResult.Running)
+            }
+            PLUGIN_STATE_ERROR -> if (startupSawStarting && !deferred.isCompleted) {
+              deferred.complete(PluginStartupResult.Error(text.ifBlank { "TGWS plugin failed to start" }))
+            }
+            PLUGIN_STATE_STOPPED -> if (startupSawStarting && !deferred.isCompleted) {
+              deferred.complete(PluginStartupResult.Error(text.ifBlank { "TGWS plugin stopped during startup" }))
+            }
+          }
+        }
+      }
+      if (!handledByStartup) {
+        when (state) {
+          PLUGIN_STATE_ERROR -> {
+            val errorMessage = text.ifBlank { "TGWS plugin process failed" }
+            NonRootTgWsRuntime.update(NonRootTgWsRuntimeState.ERROR, errorMessage)
+            stopAfterPluginExit()
+          }
+          PLUGIN_STATE_STOPPED -> if (NonRootTgWsRuntime.state.value == NonRootTgWsRuntimeState.RUNNING) {
+            val errorMessage = text.ifBlank { "TGWS plugin stopped unexpectedly" }
+            NonRootTgWsRuntime.update(NonRootTgWsRuntimeState.ERROR, errorMessage)
+            stopAfterPluginExit()
+          }
+        }
       }
     }
   }
@@ -111,6 +148,9 @@ class NonRootTgWsService : Service() {
   override fun onDestroy() {
     runtimeJob?.cancel()
     disconnectPlugin(stop = true)
+    if (NonRootTgWsRuntime.state.value != NonRootTgWsRuntimeState.ERROR) {
+      NonRootTgWsRuntime.update(NonRootTgWsRuntimeState.STOPPED)
+    }
     serviceScope.cancel()
     stopForegroundCompat()
     super.onDestroy()
@@ -122,6 +162,7 @@ class NonRootTgWsService : Service() {
       stopRuntimeAndSelf()
       return
     }
+    NonRootTgWsRuntime.update(NonRootTgWsRuntimeState.STARTING)
     startForegroundCompat(buildNotification())
     runtimeJob?.cancel()
     runtimeJob = serviceScope.launch {
@@ -130,15 +171,21 @@ class NonRootTgWsService : Service() {
           error("TGWS plugin is not installed")
         }
         val remote = connectPlugin()
-        if (!restart && runCatching { remote.isRunning }.getOrDefault(false)) return@launch
+        if (!restart && runCatching { remote.isRunning }.getOrDefault(false) && canConnect(config.port)) {
+          NonRootTgWsRuntime.update(NonRootTgWsRuntimeState.RUNNING)
+          return@launch
+        }
         runCatching { remote.stop() }
         startPlugin(config, remote)
+        NonRootTgWsRuntime.update(NonRootTgWsRuntimeState.RUNNING)
       } catch (_: CancellationException) {
         throw CancellationException()
       } catch (t: Throwable) {
+        val errorMessage = t.message ?: t.javaClass.simpleName
         File(runtimeStore.logsDir, "tgwsproxy-service.log").appendText(
-          "${System.currentTimeMillis()} ERROR ${t.message ?: t.javaClass.simpleName}\n"
+          "${System.currentTimeMillis()} ERROR $errorMessage\n"
         )
+        NonRootTgWsRuntime.update(NonRootTgWsRuntimeState.ERROR, errorMessage)
         disconnectPlugin(stop = true)
         stopForegroundCompat()
         stopSelf()
@@ -183,16 +230,34 @@ class NonRootTgWsService : Service() {
       parentFile?.mkdirs()
       appendText("${System.currentTimeMillis()} plugin=${runCatching { remote.pluginVersion }.getOrDefault("unknown")} start\n")
     }
-    remote.start(args.toTypedArray(), pluginCallback)
-
-    repeat(100) {
-      if (!runCatching { remote.isRunning }.getOrDefault(false)) {
-        error("Telegram WS Proxy plugin process exited before becoming ready")
-      }
-      if (canConnect(config.port)) return
-      delay(100)
+    val startup = CompletableDeferred<PluginStartupResult>()
+    synchronized(startupLock) {
+      startupSawStarting = false
+      startupDeferred = startup
     }
-    error("Telegram WS Proxy did not open ${NonRootPortRegistry.LOOPBACK}:${config.port}")
+    try {
+      remote.start(args.toTypedArray(), pluginCallback)
+      when (val result = withTimeout(START_CALLBACK_TIMEOUT_MS) { startup.await() }) {
+        PluginStartupResult.Running -> Unit
+        is PluginStartupResult.Error -> error(result.message)
+      }
+    } finally {
+      synchronized(startupLock) {
+        if (startupDeferred === startup) {
+          startupDeferred = null
+          startupSawStarting = false
+        }
+      }
+    }
+
+    repeat(READY_CHECK_ATTEMPTS) {
+      if (canConnect(config.port)) return
+      if (!runCatching { remote.isRunning }.getOrDefault(false)) {
+        error("Telegram WS Proxy plugin process exited before opening ${NonRootPortRegistry.LOOPBACK}:${config.port}")
+      }
+      delay(READY_CHECK_INTERVAL_MS)
+    }
+    error("Telegram WS Proxy did not open ${NonRootPortRegistry.LOOPBACK}:${config.port} within ${READY_TIMEOUT_MS / 1_000}s")
   }
 
   private suspend fun connectPlugin(): ITgWsPlugin {
@@ -211,9 +276,23 @@ class NonRootTgWsService : Service() {
     }
   }
 
+  private fun stopAfterPluginExit() {
+    serviceScope.launch {
+      disconnectPlugin(stop = false)
+      stopForegroundCompat()
+      stopSelf()
+    }
+  }
+
   private fun stopRuntimeAndSelf() {
     runtimeJob?.cancel()
     runtimeJob = null
+    synchronized(startupLock) {
+      startupDeferred?.cancel()
+      startupDeferred = null
+      startupSawStarting = false
+    }
+    NonRootTgWsRuntime.update(NonRootTgWsRuntimeState.STOPPED)
     disconnectPlugin(stop = true)
     stopForegroundCompat()
     stopSelf()
@@ -274,7 +353,21 @@ class NonRootTgWsService : Service() {
     ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
   }
 
+  private sealed interface PluginStartupResult {
+    object Running : PluginStartupResult
+    data class Error(val message: String) : PluginStartupResult
+  }
+
   companion object {
+    private const val PLUGIN_STATE_STOPPED = 0
+    private const val PLUGIN_STATE_STARTING = 1
+    private const val PLUGIN_STATE_RUNNING = 2
+    private const val PLUGIN_STATE_ERROR = 3
+    private const val START_CALLBACK_TIMEOUT_MS = 10_000L
+    private const val READY_CHECK_INTERVAL_MS = 200L
+    private const val READY_TIMEOUT_MS = 30_000L
+    private const val READY_CHECK_ATTEMPTS = 150
+
     private const val ACTION_START = "com.android.zdtd.service.action.NON_ROOT_TGWS_START"
     private const val ACTION_RESTART = "com.android.zdtd.service.action.NON_ROOT_TGWS_RESTART"
     private const val ACTION_STOP = "com.android.zdtd.service.action.NON_ROOT_TGWS_STOP"

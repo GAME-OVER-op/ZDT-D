@@ -145,11 +145,30 @@ data class VpsLoadState(
   val error: String? = null,
 )
 
+enum class VpsConsoleEntryType {
+  COMMAND,
+  OUTPUT,
+  INFO,
+  WARNING,
+  ERROR,
+  ROLLBACK,
+}
+
+data class VpsConsoleEntry(
+  val id: Long,
+  val text: String,
+  val type: VpsConsoleEntryType,
+  val receivedAt: Long,
+)
+
 data class VpsOperationState(
   val running: Boolean = false,
   val title: String = "",
   val stage: String = "",
   val log: List<String> = emptyList(),
+  val console: List<VpsConsoleEntry> = emptyList(),
   val error: String? = null,
   val rolledBack: Boolean = false,
+  val startedAt: Long = 0L,
+  val finishedAt: Long = 0L,
 )

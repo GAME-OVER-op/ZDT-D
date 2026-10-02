@@ -10,8 +10,12 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.Crossfade
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -33,6 +37,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -41,6 +47,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.Cloud
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
@@ -79,9 +86,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -91,12 +102,14 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.LifecycleStartEffect
 import com.android.zdtd.service.R
@@ -104,6 +117,8 @@ import com.android.zdtd.service.ZdtdActions
 import com.android.zdtd.service.singbox.importer.SingBoxOneLineImporter
 import com.android.zdtd.service.vps.VpsAuthType
 import com.android.zdtd.service.vps.VpsClientConfig
+import com.android.zdtd.service.vps.VpsConsoleEntry
+import com.android.zdtd.service.vps.VpsConsoleEntryType
 import com.android.zdtd.service.vps.VpsConfigResult
 import com.android.zdtd.service.vps.VpsLoadState
 import com.android.zdtd.service.vps.VpsMetrics
@@ -120,6 +135,8 @@ import java.net.URLEncoder
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -196,7 +213,15 @@ fun VpsServersScreen(
     )
   }
 
-  VpsOperationDialog(operation = operation, onDismiss = viewModel::clearOperation)
+  if (operation.shouldShowConsole()) {
+    VpsOperationScreen(
+      operation = operation,
+      onDismiss = viewModel::clearOperation,
+      topContentPadding = topContentPadding,
+      bottomContentPadding = bottomContentPadding,
+    )
+    return
+  }
 
   LazyColumn(
     modifier = Modifier.fillMaxSize(),
@@ -249,7 +274,15 @@ fun VpsServerDetailsScreen(
     onStopOrDispose { viewModel.stopServerDetailsMonitoring(serverId) }
   }
 
-  VpsOperationDialog(operation = operation, onDismiss = viewModel::clearOperation)
+  if (operation.shouldShowConsole()) {
+    VpsOperationScreen(
+      operation = operation,
+      onDismiss = viewModel::clearOperation,
+      topContentPadding = topContentPadding,
+      bottomContentPadding = bottomContentPadding,
+    )
+    return
+  }
   logs?.let { text -> VpsTextDialog(stringResource(R.string.vps_logs_title), text, onDismiss = { logs = null }) }
   if (showRebootConfirm && server != null) {
     AlertDialog(
@@ -379,7 +412,15 @@ fun VpsServiceScreen(
     onStopOrDispose { viewModel.stopServiceMonitoring(serverId, kind) }
   }
 
-  VpsOperationDialog(operation = operation, onDismiss = viewModel::clearOperation)
+  if (operation.shouldShowConsole()) {
+    VpsOperationScreen(
+      operation = operation,
+      onDismiss = viewModel::clearOperation,
+      topContentPadding = topContentPadding,
+      bottomContentPadding = bottomContentPadding,
+    )
+    return
+  }
   logs?.let { VpsTextDialog(stringResource(R.string.vps_logs_title), it, onDismiss = { logs = null }) }
 
   if (showCreate) {
@@ -502,7 +543,15 @@ fun VpsProfileScreen(
     onStopOrDispose { viewModel.stopProfileMonitoring(serverId, kind, profileId) }
   }
 
-  VpsOperationDialog(operation = operation, onDismiss = viewModel::clearOperation)
+  if (operation.shouldShowConsole()) {
+    VpsOperationScreen(
+      operation = operation,
+      onDismiss = viewModel::clearOperation,
+      topContentPadding = topContentPadding,
+      bottomContentPadding = bottomContentPadding,
+    )
+    return
+  }
 
   if (showCreateClient) {
     CreateClientDialog(
@@ -1309,52 +1358,245 @@ private fun VpsConfigResultDialog(result: VpsConfigResult, onDismiss: () -> Unit
 }
 
 @Composable
-private fun VpsOperationDialog(operation: VpsOperationState, onDismiss: () -> Unit) {
-  if (!operation.running && operation.error == null && operation.log.isEmpty()) return
+private fun VpsOperationScreen(
+  operation: VpsOperationState,
+  onDismiss: () -> Unit,
+  topContentPadding: Dp,
+  bottomContentPadding: Dp,
+) {
   val context = LocalContext.current
-  var showFullLog by remember(operation.title, operation.running) { mutableStateOf(false) }
-  val visibleLog = if (showFullLog) operation.log else operation.log.takeLast(12)
-  AlertDialog(
-    onDismissRequest = { if (!operation.running) onDismiss() },
-    icon = {
-      if (operation.running) CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
-      else Icon(if (operation.error == null) Icons.Outlined.Security else Icons.Outlined.ErrorOutline, contentDescription = null)
-    },
-    title = { Text(operation.title.ifBlank { stringResource(R.string.vps_operation_title) }) },
-    text = {
-      Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-        if (operation.running) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        Text(operation.stage, fontWeight = FontWeight.SemiBold)
-        operation.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        if (operation.rolledBack) Text(stringResource(R.string.vps_rollback_completed), color = Color(0xFF22C55E), fontWeight = FontWeight.SemiBold)
-        if (operation.log.isNotEmpty()) {
-          Surface(shape = RoundedCornerShape(10.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)) {
-            Text(
-              visibleLog.joinToString("\n"),
-              modifier = Modifier.padding(10.dp).heightIn(max = if (showFullLog) 380.dp else 190.dp).verticalScroll(rememberScrollState()),
-              style = MaterialTheme.typography.bodySmall,
-            )
-          }
-          Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            TextButton(onClick = { showFullLog = !showFullLog }) {
-              Text(stringResource(if (showFullLog) R.string.vps_hide_full_log else R.string.vps_show_full_log))
-            }
-            TextButton(onClick = {
-              (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
-                .setPrimaryClip(ClipData.newPlainText("VPS log", operation.log.joinToString("\n")))
-              Toast.makeText(context, R.string.copied, Toast.LENGTH_SHORT).show()
-            }) {
-              Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(17.dp))
-              Spacer(Modifier.width(5.dp))
-              Text(stringResource(R.string.action_copy))
-            }
+  val scope = rememberCoroutineScope()
+  val listState = rememberLazyListState()
+  val renderedEntries = remember(operation.startedAt) {
+    mutableStateListOf<VpsConsoleEntry>().apply { addAll(operation.console) }
+  }
+  var lastRenderedId by remember(operation.startedAt) {
+    mutableStateOf(renderedEntries.lastOrNull()?.id ?: 0L)
+  }
+  var autoFollow by remember(operation.startedAt) { mutableStateOf(true) }
+  var unseenCount by remember(operation.startedAt) { mutableStateOf(0) }
+  var now by remember(operation.startedAt) { mutableStateOf(System.currentTimeMillis()) }
+
+  LaunchedEffect(operation.startedAt) {
+    if (renderedEntries.isNotEmpty()) {
+      delay(1L)
+      listState.scrollToItem(renderedEntries.size)
+    }
+  }
+
+  LaunchedEffect(operation.running, operation.startedAt) {
+    while (operation.running) {
+      now = System.currentTimeMillis()
+      delay(1_000L)
+    }
+    now = operation.finishedAt.takeIf { it > 0L } ?: System.currentTimeMillis()
+  }
+
+  LaunchedEffect(listState) {
+    snapshotFlow {
+      val layout = listState.layoutInfo
+      val lastVisible = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+      Triple(listState.isScrollInProgress, lastVisible, layout.totalItemsCount)
+    }.collect { (scrolling, lastVisible, total) ->
+      if (scrolling) {
+        val atBottom = total == 0 || lastVisible >= total - 2
+        autoFollow = atBottom
+        if (atBottom) unseenCount = 0
+      }
+    }
+  }
+
+  val latestOperation by rememberUpdatedState(operation)
+  LaunchedEffect(operation.startedAt) {
+    while (latestOperation.running || latestOperation.console.any { it.id > lastRenderedId }) {
+      var pending = latestOperation.console.filter { it.id > lastRenderedId }
+      if (pending.isEmpty()) {
+        delay(20L)
+        continue
+      }
+
+      // A short render buffer lets output that arrived together appear together. It never delays the
+      // remote command itself; it only makes the console presentation follow the real SSH cadence.
+      delay(24L)
+      pending = latestOperation.console.filter { it.id > lastRenderedId }
+      if (pending.isEmpty()) continue
+
+      val first = pending.first()
+      val batch = if (first.type == VpsConsoleEntryType.COMMAND) {
+        listOf(first)
+      } else {
+        buildList {
+          var previous = first
+          for (entry in pending) {
+            if (entry.type == VpsConsoleEntryType.COMMAND) break
+            if (isNotEmpty() && entry.receivedAt - previous.receivedAt > 90L) break
+            add(entry)
+            previous = entry
           }
         }
       }
-    },
-    confirmButton = { if (!operation.running) TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_close)) } },
-  )
+
+      if (first.type == VpsConsoleEntryType.COMMAND && renderedEntries.isNotEmpty()) delay(45L)
+      renderedEntries.addAll(batch)
+      lastRenderedId = batch.last().id
+      while (renderedEntries.size > 1_200) renderedEntries.removeAt(0)
+
+      if (autoFollow) {
+        delay(1L)
+        listState.scrollToItem(renderedEntries.size)
+        unseenCount = 0
+      } else {
+        unseenCount += batch.size
+      }
+    }
+  }
+
+  val endAt = if (operation.running) now else operation.finishedAt.takeIf { it > 0L } ?: now
+  val elapsedMs = (endAt - operation.startedAt).coerceAtLeast(0L)
+  val elapsed = String.format(Locale.ROOT, "%02d:%02d", elapsedMs / 60_000L, (elapsedMs / 1_000L) % 60L)
+  val consoleText = operation.log.joinToString("\n")
+
+  Column(
+    modifier = Modifier
+      .fillMaxSize()
+      .padding(top = topContentPadding + 8.dp, bottom = bottomContentPadding + 12.dp)
+      .padding(horizontal = 12.dp),
+    verticalArrangement = Arrangement.spacedBy(10.dp),
+  ) {
+    Card(
+      modifier = Modifier.fillMaxWidth(),
+      shape = RoundedCornerShape(14.dp),
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+    ) {
+      Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+          if (operation.running) {
+            CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.5.dp)
+          } else {
+            Icon(
+              if (operation.error == null) Icons.Outlined.Security else Icons.Outlined.ErrorOutline,
+              contentDescription = null,
+              tint = if (operation.error == null) Color(0xFF22C55E) else MaterialTheme.colorScheme.error,
+            )
+          }
+          Column(Modifier.weight(1f)) {
+            Text(
+              operation.title.ifBlank { stringResource(R.string.vps_operation_title) },
+              style = MaterialTheme.typography.titleLarge,
+              fontWeight = FontWeight.Bold,
+            )
+            Text(operation.stage, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+          }
+          Text(elapsed, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (operation.running) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        operation.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        if (operation.rolledBack) {
+          Text(stringResource(R.string.vps_rollback_completed), color = Color(0xFF22C55E), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+        }
+      }
+    }
+
+    Surface(
+      modifier = Modifier.fillMaxWidth().weight(1f),
+      shape = RoundedCornerShape(12.dp),
+      color = Color(0xFF020208),
+      border = BorderStroke(1.dp, Color.White.copy(alpha = 0.06f)),
+    ) {
+      Box(Modifier.fillMaxSize()) {
+        LazyColumn(
+          state = listState,
+          modifier = Modifier.fillMaxSize(),
+          contentPadding = PaddingValues(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 32.dp),
+          verticalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+          item(key = "console-title") {
+            Text(
+              stringResource(R.string.vps_logs_title).uppercase(Locale.getDefault()),
+              fontFamily = FontFamily.Monospace,
+              fontSize = 11.sp,
+              fontWeight = FontWeight.Bold,
+              color = Color(0xFF9AA9B1),
+              modifier = Modifier.padding(bottom = 4.dp),
+            )
+          }
+          itemsIndexed(renderedEntries, key = { _, entry -> entry.id }) { _, entry ->
+            VpsConsoleLine(entry)
+          }
+        }
+
+        if (!autoFollow && unseenCount > 0) {
+          FilledTonalButton(
+            onClick = {
+              autoFollow = true
+              unseenCount = 0
+              if (renderedEntries.isNotEmpty()) {
+                scope.launch {
+                  listState.animateScrollToItem(renderedEntries.size)
+                }
+              }
+            },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+          ) {
+            Icon(Icons.Outlined.ArrowDownward, contentDescription = null, modifier = Modifier.size(17.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(unseenCount.toString(), fontFamily = FontFamily.Monospace)
+          }
+        }
+      }
+    }
+
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+      OutlinedButton(
+        onClick = {
+          (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+            .setPrimaryClip(ClipData.newPlainText("VPS log", consoleText))
+          Toast.makeText(context, R.string.copied, Toast.LENGTH_SHORT).show()
+        },
+        modifier = Modifier.weight(1f),
+      ) {
+        Icon(Icons.Outlined.ContentCopy, contentDescription = null, modifier = Modifier.size(17.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(stringResource(R.string.action_copy))
+      }
+      if (!operation.running) {
+        Button(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.action_close)) }
+      }
+    }
+  }
 }
+
+@Composable
+private fun VpsConsoleLine(entry: VpsConsoleEntry) {
+  val visibleState = remember(entry.id) { MutableTransitionState(false).apply { targetState = true } }
+  val color = when (entry.type) {
+    VpsConsoleEntryType.COMMAND -> Color(0xFF9BE8FF)
+    VpsConsoleEntryType.OUTPUT -> Color(0xFFD6F9FF)
+    VpsConsoleEntryType.INFO -> Color(0xFF9AA9B1)
+    VpsConsoleEntryType.WARNING -> Color(0xFFFACC15)
+    VpsConsoleEntryType.ERROR -> Color(0xFFFF9EA8)
+    VpsConsoleEntryType.ROLLBACK -> Color(0xFF86EFAC)
+  }
+  val text = if (entry.type == VpsConsoleEntryType.COMMAND) "~Root $ ${entry.text}" else entry.text
+  AnimatedVisibility(
+    visibleState = visibleState,
+    enter = fadeIn(tween(130)) + slideInVertically(tween(130)) { it / 3 },
+  ) {
+    Text(
+      text,
+      color = color,
+      fontFamily = FontFamily.Monospace,
+      fontSize = 12.sp,
+      lineHeight = 16.sp,
+      fontWeight = if (entry.type == VpsConsoleEntryType.COMMAND) FontWeight.SemiBold else FontWeight.Normal,
+      modifier = Modifier.fillMaxWidth(),
+    )
+  }
+}
+
+private fun VpsOperationState.shouldShowConsole(): Boolean =
+  running || error != null || console.isNotEmpty() || log.isNotEmpty()
 
 @Composable
 private fun VpsTextDialog(title: String, text: String, onDismiss: () -> Unit) {

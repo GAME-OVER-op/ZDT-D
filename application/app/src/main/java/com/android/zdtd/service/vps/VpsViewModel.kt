@@ -58,6 +58,7 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
 
   private val _operation = MutableStateFlow(VpsOperationState())
   val operation: StateFlow<VpsOperationState> = _operation.asStateFlow()
+  private var nextConsoleEntryId = 1L
 
   private val _configResult = MutableStateFlow<VpsConfigResult?>(null)
   val configResult: StateFlow<VpsConfigResult?> = _configResult.asStateFlow()
@@ -87,8 +88,8 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
       startOperation("Checking SSH connection")
       runCatching { ssh.probe(host.trim(), port, username.trim(), auth) }
         .onSuccess { probe ->
-          appendLine("SSH connection established")
-          appendLine("Host key: ${probe.fingerprint}")
+          appendConsole("SSH connection established", VpsConsoleEntryType.INFO)
+          appendConsole("Host key: ${probe.fingerprint}", VpsConsoleEntryType.INFO)
           _pendingProbe.value = PendingServerProbe(name.trim().ifBlank { host.trim() }, host.trim(), port, username.trim(), auth, probe)
           _operation.value = VpsOperationState()
         }
@@ -327,7 +328,7 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     val server = server(serverId) ?: return
     runRemoteOperation(
       title = "Deleting profile",
-      block = { controller.deleteProfile(server, kind, profileId) },
+      block = { onLine -> controller.deleteProfile(server, kind, profileId, onLine) },
       onSuccess = {
         loadProfiles(serverId, kind)
         val key = clientKey(serverId, kind, profileId)
@@ -377,7 +378,7 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     val server = server(serverId) ?: return
     runRemoteOperation(
       title = "Revoking client access",
-      block = { controller.deleteClient(server, kind, profileId, clientId) },
+      block = { onLine -> controller.deleteClient(server, kind, profileId, clientId, onLine) },
       onSuccess = {
         loadClients(serverId, kind, profileId)
         loadProfiles(serverId, kind)
@@ -404,6 +405,7 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       startOperation(app.getString(R.string.vps_rebooting))
       updateStage(app.getString(R.string.vps_rebooting))
+      appendConsole("reboot", VpsConsoleEntryType.COMMAND)
       val scheduled = runCatching { controller.reboot(server) }.getOrElse { error ->
         failOperation(error.message ?: app.getString(R.string.vps_reboot_failed))
         return@launch
@@ -413,7 +415,7 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
         return@launch
       }
 
-      appendLine(app.getString(R.string.vps_reboot_scheduled))
+      appendConsole(app.getString(R.string.vps_reboot_scheduled), VpsConsoleEntryType.INFO)
       updateStage(app.getString(R.string.vps_waiting_for_server))
       val startedAt = System.currentTimeMillis()
       val deadline = startedAt + REBOOT_WAIT_TIMEOUT_MS
@@ -431,7 +433,7 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
           }
           store.saveServers(_servers.value)
           lastServerStatePersistAt = now
-          appendLine(app.getString(R.string.vps_server_online_again))
+          appendConsole(app.getString(R.string.vps_server_online_again), VpsConsoleEntryType.INFO)
           finishOperation()
           loadServices(serverId, silent = true)
           return@launch
@@ -459,7 +461,7 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     val server = server(serverId) ?: return
     runRemoteOperation(
       title = "Restarting ${kind.wireId}",
-      block = { controller.restart(server, kind, profileId) },
+      block = { onLine -> controller.restart(server, kind, profileId, onLine) },
       onSuccess = {
         loadServices(serverId)
         if (profileId != null) loadProfiles(serverId, kind)
@@ -526,11 +528,16 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
         block { line ->
           when {
             line.startsWith("ZDT_STAGE=") -> updateStage(line.substringAfter('='))
+            line.startsWith("ZDT_CMD=") -> appendConsole(line.substringAfter('='), VpsConsoleEntryType.COMMAND)
+            line.startsWith("ZDT_INFO=") -> appendConsole(line.substringAfter('='), VpsConsoleEntryType.INFO)
+            line.startsWith("ZDT_WARNING=") -> appendConsole(line.substringAfter('='), VpsConsoleEntryType.WARNING)
+            line.startsWith("ZDT_ERROR=") -> appendConsole(line.substringAfter('='), VpsConsoleEntryType.ERROR)
             line.startsWith("ZDT_ROLLBACK=") -> {
-              appendLine(line.substringAfter('='))
+              appendConsole(line.substringAfter('='), VpsConsoleEntryType.ROLLBACK)
               _operation.value = _operation.value.copy(rolledBack = true)
             }
-            else -> appendLine(line.removePrefix("ZDT_INFO=").removePrefix("ZDT_WARNING="))
+            line.startsWith("ZDT_FAILED_STAGE=") || line.startsWith("ZDT_COMMIT=") || line.startsWith("ZDT_BACKUP=") -> Unit
+            else -> appendConsole(line, VpsConsoleEntryType.OUTPUT)
           }
         }
       }.getOrElse {
@@ -575,15 +582,49 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
-  private fun startOperation(title: String) { _operation.value = VpsOperationState(running = true, title = title, stage = title) }
-  private fun updateStage(stage: String) { _operation.value = _operation.value.copy(stage = stage) }
-  private fun appendLine(line: String) {
-    if (line.isBlank()) return
-    _operation.value = _operation.value.copy(log = (_operation.value.log + line).takeLast(250))
+  private fun startOperation(title: String) {
+    _operation.value = VpsOperationState(
+      running = true,
+      title = title,
+      stage = title,
+      startedAt = System.currentTimeMillis(),
+    )
   }
-  private fun finishOperation() { _operation.value = _operation.value.copy(running = false) }
+
+  private fun updateStage(stage: String) { _operation.value = _operation.value.copy(stage = stage) }
+
+  private fun appendConsole(line: String, type: VpsConsoleEntryType) {
+    if (line.isBlank()) return
+    val now = System.currentTimeMillis()
+    val display = if (type == VpsConsoleEntryType.COMMAND) "~Root $ $line" else line
+    val entry = VpsConsoleEntry(
+      id = nextConsoleEntryId++,
+      text = line,
+      type = type,
+      receivedAt = now,
+    )
+    _operation.value = _operation.value.copy(
+      log = (_operation.value.log + display).takeLast(MAX_CONSOLE_LINES),
+      console = (_operation.value.console + entry).takeLast(MAX_CONSOLE_LINES),
+    )
+  }
+
+  private fun finishOperation() {
+    _operation.value = _operation.value.copy(running = false, finishedAt = System.currentTimeMillis())
+  }
+
   private fun failOperation(error: String, stage: String? = null) {
-    _operation.value = _operation.value.copy(running = false, error = error, stage = stage ?: _operation.value.stage)
+    if (_operation.value.console.lastOrNull()?.let { it.type == VpsConsoleEntryType.ERROR && it.text == error } != true) {
+      appendConsole(error, VpsConsoleEntryType.ERROR)
+    }
+    val now = System.currentTimeMillis()
+    _operation.value = _operation.value.copy(
+      running = false,
+      error = error,
+      stage = stage ?: _operation.value.stage,
+      startedAt = _operation.value.startedAt.takeIf { it > 0L } ?: now,
+      finishedAt = now,
+    )
   }
   fun clearOperation() { if (!_operation.value.running) _operation.value = VpsOperationState() }
 
@@ -595,6 +636,7 @@ class VpsViewModel(application: Application) : AndroidViewModel(application) {
     private const val REBOOT_POLL_INTERVAL_MS = 3_000L
     private const val REBOOT_MIN_RETURN_MS = 12_000L
     private const val REBOOT_WAIT_TIMEOUT_MS = 3 * 60_000L
+    private const val MAX_CONSOLE_LINES = 1_200
     fun profileKey(serverId: String, kind: VpsServiceKind) = "$serverId:${kind.wireId}"
     fun clientKey(serverId: String, kind: VpsServiceKind, profileId: String) = "$serverId:${kind.wireId}:$profileId"
     private fun sanitizePath(value: String) = value.replace(Regex("[^A-Za-z0-9._ -]"), "_").trim().take(60).ifBlank { "server" }

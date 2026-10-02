@@ -79,8 +79,13 @@ class VpsRemoteController(
     timeoutMs = 10 * 60_000L,
   )
 
-  suspend fun deleteProfile(server: VpsServer, kind: VpsServiceKind, profileId: String): VpsCommandResult =
-    run(server, listOf("delete-profile", kind.wireId, profileId), timeoutMs = 120_000L)
+  suspend fun deleteProfile(
+    server: VpsServer,
+    kind: VpsServiceKind,
+    profileId: String,
+    onLine: ((String) -> Unit)? = null,
+  ): VpsCommandResult =
+    run(server, listOf("delete-profile", kind.wireId, profileId), timeoutMs = 120_000L, onLine = onLine)
 
   suspend fun listClients(server: VpsServer, kind: VpsServiceKind, profileId: String): List<VpsClientConfig> {
     val result = run(server, listOf("list-clients", kind.wireId, profileId))
@@ -115,8 +120,14 @@ class VpsRemoteController(
     timeoutMs = 5 * 60_000L,
   )
 
-  suspend fun deleteClient(server: VpsServer, kind: VpsServiceKind, profileId: String, clientId: String): VpsCommandResult =
-    run(server, listOf("delete-client", kind.wireId, profileId, clientId), timeoutMs = 3 * 60_000L)
+  suspend fun deleteClient(
+    server: VpsServer,
+    kind: VpsServiceKind,
+    profileId: String,
+    clientId: String,
+    onLine: ((String) -> Unit)? = null,
+  ): VpsCommandResult =
+    run(server, listOf("delete-client", kind.wireId, profileId, clientId), timeoutMs = 3 * 60_000L, onLine = onLine)
 
   suspend fun getConfig(server: VpsServer, kind: VpsServiceKind, profileId: String, clientId: String): VpsConfigResult {
     val result = run(server, listOf("get-config", kind.wireId, profileId, clientId), timeoutMs = 60_000L)
@@ -154,10 +165,15 @@ class VpsRemoteController(
   suspend fun reboot(server: VpsServer): VpsCommandResult =
     run(server, listOf("reboot"), timeoutMs = 30_000L)
 
-  suspend fun restart(server: VpsServer, kind: VpsServiceKind, profileId: String?): VpsCommandResult {
+  suspend fun restart(
+    server: VpsServer,
+    kind: VpsServiceKind,
+    profileId: String?,
+    onLine: ((String) -> Unit)? = null,
+  ): VpsCommandResult {
     val args = mutableListOf("restart", kind.wireId)
     if (!profileId.isNullOrBlank()) args += profileId
-    return run(server, args, timeoutMs = 90_000L)
+    return run(server, args, timeoutMs = 90_000L, onLine = onLine)
   }
 
   suspend fun logs(server: VpsServer, kind: VpsServiceKind, profileId: String?): String {
@@ -178,6 +194,7 @@ class VpsRemoteController(
       append("bash ").append(VpsSshClient.shellQuote(remotePath))
       args.forEach { append(' ').append(VpsSshClient.shellQuote(it)) }
     }
+    onLine?.invoke("ZDT_CMD=$command")
     ssh.execute(server, command, timeoutMs, onLine)
   }
 

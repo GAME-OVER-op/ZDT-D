@@ -21,6 +21,12 @@ stage() { CURRENT_STAGE="$*"; printf 'ZDT_STAGE=%s\n' "$CURRENT_STAGE"; }
 info() { printf 'ZDT_INFO=%s\n' "$*"; }
 warn() { printf 'ZDT_WARNING=%s\n' "$*"; }
 die() { printf 'ZDT_ERROR=%s\n' "$*" >&2; return 1; }
+show_cmd() {
+  printf 'ZDT_CMD='
+  printf '%q ' "$@"
+  printf '\n'
+}
+run_visible() { show_cmd "$@"; "$@"; }
 b64() { printf '%s' "$1" | base64 -w0; }
 valid_id() { [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$ ]]; }
 valid_port() { [[ "$1" =~ ^[0-9]+$ ]] && (( 10#$1 >= 1 && 10#$1 <= 65535 )); }
@@ -253,7 +259,7 @@ check_platform() {
   command -v systemctl >/dev/null || die 'systemd is required'
   command -v apt-get >/dev/null || die 'apt is required'
 }
-apt_install() { apt-get update -y; apt-get install -y --no-install-recommends "$@"; }
+apt_install() { run_visible apt-get update -y; run_visible apt-get install -y --no-install-recommends "$@"; }
 
 port_free() {
   local proto=$1 port=$2
@@ -456,9 +462,9 @@ install_dnscrypt() {
   tmp=$(mktemp -d)
   config_template="$tmp/example-dnscrypt-proxy.toml"
   stage 'Downloading DNSCrypt files'
-  curl -fL --retry 4 --retry-delay 2 --connect-timeout 15 \
+  run_visible curl -fL --retry 4 --retry-delay 2 --connect-timeout 15 \
     "https://github.com/DNSCrypt/dnscrypt-proxy/releases/download/${version}/${archive}" -o "$tmp/$archive"
-  curl -fL --retry 4 --retry-delay 2 --connect-timeout 15 \
+  run_visible curl -fL --retry 4 --retry-delay 2 --connect-timeout 15 \
     "https://raw.githubusercontent.com/DNSCrypt/dnscrypt-proxy/${version}/dnscrypt-proxy/example-dnscrypt-proxy.toml" -o "$config_template"
   tar -xzf "$tmp/$archive" -C "$tmp"
   [[ -x $tmp/linux-x86_64/dnscrypt-proxy ]] || die 'The DNSCrypt archive does not contain the expected x86_64 binary'
@@ -536,8 +542,8 @@ UNIT
   printf '%s\n' "$version" > "$ZDT_STATE/services/dnscrypt.version"
   refresh_firewall
   stage 'Starting and verifying DNSCrypt'
-  systemctl daemon-reload
-  systemctl enable --now zdt-dnscrypt.service
+  run_visible systemctl daemon-reload
+  run_visible systemctl enable --now zdt-dnscrypt.service
 
   local listener_ok=0 dns_udp_ok=0 dns_tcp_ok=0 host
   for _ in $(seq 1 30); do
@@ -710,7 +716,9 @@ create_openvpn_profile() {
   local dir; dir=$(profile_dir openvpn "$id"); mkdir -p "$dir/clients"
   local pki=$dir/easy-rsa server_cn="zdt-${id}-server-$(date +%s)-$RANDOM"
   stage 'Creating an isolated OpenVPN PKI'
+  show_cmd make-cadir "$pki"
   make-cadir "$pki"
+  show_cmd easyrsa init-pki / build-ca / gen-req / sign-req / gen-crl
   (cd "$pki"; EASYRSA_BATCH=1 EASYRSA_REQ_CN="zdt-$id-ca" ./easyrsa init-pki; EASYRSA_BATCH=1 EASYRSA_REQ_CN="zdt-$id-ca" ./easyrsa build-ca nopass; EASYRSA_BATCH=1 ./easyrsa gen-req "$server_cn" nopass; EASYRSA_BATCH=1 ./easyrsa sign-req server "$server_cn"; EASYRSA_BATCH=1 ./easyrsa gen-crl)
   generate_openvpn_tls_key "$dir/ta.key"
   cp "$pki/pki/ca.crt" "$dir/ca.crt"
@@ -780,8 +788,8 @@ UNIT
   enable_ip_forward
   refresh_firewall
   stage 'Starting and verifying OpenVPN profile'
-  systemctl daemon-reload
-  systemctl enable --now "openvpn-server@zdt-$id.service" "zdt-openvpn-net-$id.service"
+  run_visible systemctl daemon-reload
+  run_visible systemctl enable --now "openvpn-server@zdt-$id.service" "zdt-openvpn-net-$id.service"
   unit_is_active "openvpn-server@zdt-$id.service" || { journalctl -u "openvpn-server@zdt-$id.service" -n 120 --no-pager >&2 || true; die 'OpenVPN profile failed to start'; }
   ip link show "$tun" >/dev/null 2>&1 || { journalctl -u "openvpn-server@zdt-$id.service" -n 120 --no-pager >&2 || true; die "OpenVPN started without creating interface $tun"; }
   if [[ $proto == tcp ]]; then ss -H -lnt "sport = :$port" | grep -q . || die "OpenVPN is not listening on TCP port $port"; else ss -H -lnu "sport = :$port" | grep -q . || die "OpenVPN is not listening on UDP port $port"; fi
@@ -793,6 +801,7 @@ create_openvpn_client() {
   local dir; dir=$(profile_dir openvpn "$profile"); [[ ! -d $dir/clients/$client ]] || die 'Client name already exists in this profile'
   local pki=$dir/easy-rsa cn="zdt-${profile}-${client}-$(date +%s)-$RANDOM" cdir=$dir/clients/$client
   stage 'Creating OpenVPN client certificate'
+  show_cmd easyrsa gen-req "$cn" / sign-req client "$cn"
   (cd "$pki"; EASYRSA_BATCH=1 ./easyrsa gen-req "$cn" nopass; EASYRSA_BATCH=1 ./easyrsa sign-req client "$cn")
   mkdir -p "$cdir"
   printf '%s\n' "$cn" > "$cdir/cn"; printf '%s\n' "$display" > "$cdir/name"; date +%s > "$cdir/created_at"
@@ -840,6 +849,7 @@ delete_openvpn_client() {
   [[ -d $cdir ]] || die 'Client not found'
   local pki=$dir/easy-rsa cn; cn=$(cat "$cdir/cn")
   stage 'Revoking OpenVPN certificate'
+  show_cmd easyrsa revoke "$cn" / gen-crl
   (cd "$pki"; EASYRSA_BATCH=1 ./easyrsa revoke "$cn"; EASYRSA_BATCH=1 ./easyrsa gen-crl)
   cp "$pki/pki/crl.pem" "$dir/crl.pem"; chmod 644 "$dir/crl.pem"
   rm -rf "$cdir"
@@ -877,9 +887,10 @@ AllowedIPs = $(cat "$c/ip")/32
 CONF
   done
   chmod 600 "$WIREGUARD_DIR/$IFACE.conf"
-  systemctl daemon-reload
+  run_visible systemctl daemon-reload
+  show_cmd systemctl enable "wg-quick@$IFACE.service"
   systemctl enable "wg-quick@$IFACE.service" >/dev/null 2>&1 || true
-  systemctl restart "wg-quick@$IFACE.service"
+  run_visible systemctl restart "wg-quick@$IFACE.service"
   unit_is_active "wg-quick@$IFACE.service" || { journalctl -u "wg-quick@$IFACE.service" -n 100 --no-pager >&2 || true; die 'WireGuard server profile failed to start'; }
 }
 create_wireproxy_profile() {
@@ -891,6 +902,7 @@ create_wireproxy_profile() {
   local index; index=$(next_index wireproxy)
   local subnet="10.91.$index.0" gateway="10.91.$index.1" iface="zdtwg$index"
   local dir; dir=$(profile_dir wireproxy "$id"); mkdir -p "$dir/clients"
+  show_cmd wg genkey / wg pubkey
   umask 077; wg genkey | tee "$dir/server_private" | wg pubkey > "$dir/server_public"
   cat > "$dir/meta.env" <<META
 ID=$(q "$id")
@@ -914,6 +926,7 @@ create_wireproxy_client() {
   local dir; dir=$(profile_dir wireproxy "$profile"); [[ ! -d $dir/clients/$client ]] || die 'Client name already exists in this profile'
   local number; number=$(next_wire_client_octet "$dir")
   local cdir=$dir/clients/$client; mkdir -p "$cdir"
+  show_cmd wg genkey / wg pubkey / wg genpsk
   umask 077; wg genkey | tee "$cdir/private" | wg pubkey > "$cdir/public"; wg genpsk > "$cdir/psk"
   echo "${SUBNET%.*}.$number" > "$cdir/ip"; date +%s > "$cdir/created_at"; printf '%s\n' "$display" > "$cdir/name"
   local socks=$((25300 + number))
@@ -974,6 +987,7 @@ ensure_certificate() {
   local rc=0
   local contact_args=()
   if [[ -n $email ]]; then contact_args=(--email "$email"); else contact_args=(--register-unsafely-without-email); fi
+  show_cmd certbot certonly --standalone --non-interactive --agree-tos --keep-until-expiring -d "$domain"
   certbot certonly --standalone --non-interactive --agree-tos --keep-until-expiring "${contact_args[@]}" -d "$domain" || rc=$?
   iptables -w 5 -D "$FIREWALL_CHAIN" -p tcp --dport 80 -j ACCEPT 2>/dev/null || true
   (( rc == 0 )) || die 'Let’s Encrypt certificate request failed'
@@ -990,7 +1004,7 @@ install_xray() {
   ensure_dirs
   local tmp
   tmp=$(mktemp -d)
-  curl -fL --retry 3 "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip" -o "$tmp/xray.zip"
+  run_visible curl -fL --retry 3 "https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip" -o "$tmp/xray.zip"
   unzip -q "$tmp/xray.zip" -d "$tmp/xray"
   install -m 0755 "$tmp/xray/xray" "$ZDT_ROOT/bin/xray"
   rm -rf "$tmp"
@@ -1061,8 +1075,9 @@ NoNewPrivileges=true
 [Install]
 WantedBy=multi-user.target
 UNIT
+  show_cmd "$ZDT_ROOT/bin/xray" run -test -config "$dir/server.json"
   "$ZDT_ROOT/bin/xray" run -test -config "$dir/server.json"
-  systemctl daemon-reload; systemctl enable --now "zdt-xray-$profile.service"; systemctl restart "zdt-xray-$profile.service"
+  run_visible systemctl daemon-reload; run_visible systemctl enable --now "zdt-xray-$profile.service"; run_visible systemctl restart "zdt-xray-$profile.service"
   unit_is_active "zdt-xray-$profile.service" || { journalctl -u "zdt-xray-$profile.service" -n 100 --no-pager >&2 || true; die 'Xray profile failed to start'; }
 }
 create_xray_profile() {
@@ -1139,7 +1154,7 @@ install_hysteria2() {
   stage 'Installing Hysteria2 dependencies'
   apt_install curl ca-certificates python3 openssl
   ensure_dirs
-  curl -fL --retry 3 https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -o "$ZDT_ROOT/bin/hysteria"
+  run_visible curl -fL --retry 3 https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -o "$ZDT_ROOT/bin/hysteria"
   chmod 0755 "$ZDT_ROOT/bin/hysteria"
   "$ZDT_ROOT/bin/hysteria" version | head -1 > "$ZDT_STATE/services/hysteria2.version" || echo managed > "$ZDT_STATE/services/hysteria2.version"
   mkdir -p "$ZDT_STATE/profiles/hysteria2"
@@ -1156,6 +1171,7 @@ ensure_hysteria2_local_certificate() {
     die 'Invalid Hysteria2 SNI name'
   fi
   stage 'Generating local TLS certificate for Hysteria2'
+  show_cmd openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 3650 -keyout "$dir/tls.key" -out "$dir/tls.crt" -subj "/CN=$tls_name"
   openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 3650 \
     -keyout "$dir/tls.key" -out "$dir/tls.crt" \
     -subj "/CN=$tls_name" \
@@ -1226,7 +1242,7 @@ AmbientCapabilities=CAP_NET_BIND_SERVICE
 [Install]
 WantedBy=multi-user.target
 UNIT
-  systemctl daemon-reload; systemctl enable --now "zdt-hysteria2-$profile.service"; systemctl restart "zdt-hysteria2-$profile.service"
+  run_visible systemctl daemon-reload; run_visible systemctl enable --now "zdt-hysteria2-$profile.service"; run_visible systemctl restart "zdt-hysteria2-$profile.service"
   unit_is_active "zdt-hysteria2-$profile.service" || { journalctl -u "zdt-hysteria2-$profile.service" -n 100 --no-pager >&2 || true; die 'Hysteria2 profile failed to start'; }
 }
 create_hysteria2_profile() {
@@ -1592,11 +1608,11 @@ remove_service() {
 restart_service() {
   local kind=$1 profile=${2:-}
   case "$kind" in
-    dnscrypt) systemctl restart zdt-dnscrypt.service ;;
-    openvpn) [[ -n $profile ]] || die 'Profile is required'; ensure_openvpn_traffic_config "$profile"; systemctl daemon-reload; systemctl restart "openvpn-server@zdt-$profile.service" "zdt-openvpn-net-$profile.service" ;;
+    dnscrypt) run_visible systemctl restart zdt-dnscrypt.service ;;
+    openvpn) [[ -n $profile ]] || die 'Profile is required'; ensure_openvpn_traffic_config "$profile"; run_visible systemctl daemon-reload; run_visible systemctl restart "openvpn-server@zdt-$profile.service" "zdt-openvpn-net-$profile.service" ;;
     xray) [[ -n $profile ]] || die 'Profile is required'; rebuild_xray "$profile" ;;
     hysteria2) [[ -n $profile ]] || die 'Profile is required'; rebuild_hysteria2 "$profile" ;;
-    wireproxy) [[ -n $profile ]] || die 'Profile is required'; load_meta wireproxy "$profile"; systemctl restart "wg-quick@$IFACE.service" ;;
+    wireproxy) [[ -n $profile ]] || die 'Profile is required'; load_meta wireproxy "$profile"; run_visible systemctl restart "wg-quick@$IFACE.service" ;;
     *) die 'Unknown service' ;;
   esac
 }

@@ -70,6 +70,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -349,6 +350,7 @@ fun NonRootApp(
           onOpenCascadeProfile = { cascadeProfileId = it },
           onOpenT2sSettings = { showT2sSettings = true },
           onOpenTgWs = { showTgWsSettings = true },
+          onInstallOrUpdateTgWsPlugin = onInstallOrUpdateTgWsPlugin,
           onOpenVps = { showVps = true },
           onTgWsEnabledChange = { onTgWsConfigChange(tgWsConfig.copy(enabled = it)) },
         )
@@ -821,6 +823,7 @@ private fun NonRootToolsScreen(
   onOpenCascadeProfile: (String) -> Unit,
   onOpenT2sSettings: () -> Unit,
   onOpenTgWs: () -> Unit,
+  onInstallOrUpdateTgWsPlugin: () -> Unit,
   onOpenVps: () -> Unit,
   onTgWsEnabledChange: (Boolean) -> Unit,
 ) {
@@ -1015,6 +1018,16 @@ private fun NonRootToolsScreen(
       )
     }
     item {
+      val pluginActionLabel = when {
+        tgWsPluginState.downloading -> stringResource(
+          R.string.prog_update_status_downloading_pct_fmt,
+          tgWsPluginState.progressPercent.coerceIn(0, 100),
+        )
+        tgWsPluginState.installing -> stringResource(R.string.common_installing)
+        !tgWsPluginState.installed && !tgWsPluginState.signatureMismatch -> stringResource(R.string.common_install)
+        tgWsPluginState.updateAvailable -> stringResource(R.string.common_update)
+        else -> null
+      }
       NonRootStandaloneToolCard(
         icon = { Icon(Icons.Filled.Send, contentDescription = null) },
         title = stringResource(R.string.non_root_tgws_title),
@@ -1024,9 +1037,18 @@ private fun NonRootToolsScreen(
           stringResource(R.string.non_root_tgws_plugin_not_installed)
         },
         checked = tgWsConfig.enabled && tgWsPluginState.installed,
-        enabled = configurationEnabled && tgWsPluginState.installed,
+        openEnabled = true,
+        switchEnabled = configurationEnabled && tgWsPluginState.installed && !tgWsPluginState.busy,
         onCheckedChange = onTgWsEnabledChange,
         onOpen = onOpenTgWs,
+        actionLabel = pluginActionLabel,
+        actionEnabled = !tgWsPluginState.busy && configurationEnabled && !tgWsConfig.enabled && !tgWsPluginState.signatureMismatch,
+        onAction = onInstallOrUpdateTgWsPlugin,
+        progress = if (tgWsPluginState.downloading) {
+          tgWsPluginState.progressPercent.coerceIn(0, 100) / 100f
+        } else {
+          null
+        },
       )
     }
     item {
@@ -1035,7 +1057,8 @@ private fun NonRootToolsScreen(
         title = stringResource(R.string.vps_servers_title),
         subtitle = stringResource(R.string.non_root_vps_desc),
         checked = null,
-        enabled = true,
+        openEnabled = true,
+        switchEnabled = false,
         onCheckedChange = {},
         onOpen = onOpenVps,
       )
@@ -1079,34 +1102,58 @@ private fun NonRootStandaloneToolCard(
   title: String,
   subtitle: String,
   checked: Boolean?,
-  enabled: Boolean,
+  openEnabled: Boolean,
+  switchEnabled: Boolean,
   onCheckedChange: (Boolean) -> Unit,
   onOpen: () -> Unit,
+  actionLabel: String? = null,
+  actionEnabled: Boolean = false,
+  onAction: (() -> Unit)? = null,
+  progress: Float? = null,
 ) {
   Surface(
-    modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onOpen),
+    modifier = Modifier.fillMaxWidth().clickable(enabled = openEnabled, onClick = onOpen),
     shape = RoundedCornerShape(20.dp),
     color = MaterialTheme.colorScheme.surfaceContainerLow,
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
   ) {
-    Row(
+    Column(
       modifier = Modifier.padding(horizontal = 12.dp, vertical = 11.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.spacedBy(11.dp),
+      verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-      Surface(
-        modifier = Modifier.size(44.dp),
-        shape = RoundedCornerShape(14.dp),
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
-        contentColor = MaterialTheme.colorScheme.primary,
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(11.dp),
       ) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { icon() }
+        Surface(
+          modifier = Modifier.size(44.dp),
+          shape = RoundedCornerShape(14.dp),
+          color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
+          contentColor = MaterialTheme.colorScheme.primary,
+        ) {
+          Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { icon() }
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+          Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+          Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        checked?.let { Switch(checked = it, enabled = switchEnabled, onCheckedChange = onCheckedChange) }
       }
-      Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-        Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+      progress?.let { value ->
+        LinearProgressIndicator(
+          progress = { value.coerceIn(0f, 1f) },
+          modifier = Modifier.fillMaxWidth(),
+        )
       }
-      checked?.let { Switch(checked = it, enabled = enabled, onCheckedChange = onCheckedChange) }
+      if (actionLabel != null && onAction != null) {
+        Button(
+          onClick = onAction,
+          enabled = actionEnabled,
+          modifier = Modifier.fillMaxWidth(),
+        ) {
+          Text(actionLabel)
+        }
+      }
     }
   }
 }

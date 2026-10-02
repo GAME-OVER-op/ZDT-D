@@ -1,13 +1,12 @@
 package com.android.zdtd.service.tgwsplugin
 
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
-import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Build
-import android.net.Uri
+import androidx.core.content.FileProvider
+import com.android.zdtd.service.BuildConfig
 import com.android.zdtd.service.R
 import java.io.File
 import java.security.MessageDigest
@@ -264,28 +263,17 @@ class TgWsPluginManager(private val context: Context) {
   }
 
   private fun commitInstall(apk: File) {
-    val installer = packageManager.packageInstaller
-    val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
-      setAppPackageName(TgWsPluginContract.PACKAGE_NAME)
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_REQUIRED)
-      }
+    val uri = FileProvider.getUriForFile(
+      appContext,
+      "${BuildConfig.APPLICATION_ID}.fileprovider",
+      apk,
+    )
+    val installIntent = Intent(Intent.ACTION_VIEW).apply {
+      setDataAndType(uri, "application/vnd.android.package-archive")
+      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
-    val sessionId = installer.createSession(params)
-    installer.openSession(sessionId).use { session ->
-      apk.inputStream().use { input ->
-        session.openWrite("base.apk", 0L, apk.length()).use { output ->
-          input.copyTo(output)
-          session.fsync(output)
-        }
-      }
-      val callback = Intent(appContext, TgWsPluginInstallReceiver::class.java)
-        .setAction(TgWsPluginInstallReceiver.ACTION_INSTALL_RESULT)
-        .putExtra("session_id", sessionId)
-      val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
-      val pending = PendingIntent.getBroadcast(appContext, 99031, callback, flags)
-      session.commit(pending.intentSender)
-    }
+    appContext.startActivity(installIntent)
   }
 
   private fun sha256(file: File): String {

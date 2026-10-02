@@ -42,6 +42,7 @@ class NonRootTgWsService : Service() {
   @Volatile private var connectDeferred: CompletableDeferred<ITgWsPlugin>? = null
   @Volatile private var startupDeferred: CompletableDeferred<PluginStartupResult>? = null
   @Volatile private var startupSawStarting = false
+  @Volatile private var acceptingPluginEvents = true
   private val startupLock = Any()
   private val logLock = Any()
 
@@ -63,6 +64,8 @@ class NonRootTgWsService : Service() {
           "${System.currentTimeMillis()} plugin_state=$state $text\n"
         )
       }
+      if (!acceptingPluginEvents) return
+
       var handledByStartup = false
       synchronized(startupLock) {
         val deferred = startupDeferred
@@ -146,6 +149,7 @@ class NonRootTgWsService : Service() {
   }
 
   override fun onDestroy() {
+    acceptingPluginEvents = false
     runtimeJob?.cancel()
     disconnectPlugin(stop = true)
     if (NonRootTgWsRuntime.state.value != NonRootTgWsRuntimeState.ERROR) {
@@ -157,6 +161,7 @@ class NonRootTgWsService : Service() {
   }
 
   private fun requestStart(restart: Boolean) {
+    acceptingPluginEvents = true
     val config = NonRootTgWsStore(applicationContext).load()
     if (!config.enabled) {
       stopRuntimeAndSelf()
@@ -186,6 +191,7 @@ class NonRootTgWsService : Service() {
           "${System.currentTimeMillis()} ERROR $errorMessage\n"
         )
         NonRootTgWsRuntime.update(NonRootTgWsRuntimeState.ERROR, errorMessage)
+        acceptingPluginEvents = false
         disconnectPlugin(stop = true)
         stopForegroundCompat()
         stopSelf()
@@ -277,6 +283,7 @@ class NonRootTgWsService : Service() {
   }
 
   private fun stopAfterPluginExit() {
+    acceptingPluginEvents = false
     serviceScope.launch {
       disconnectPlugin(stop = false)
       stopForegroundCompat()
@@ -285,6 +292,7 @@ class NonRootTgWsService : Service() {
   }
 
   private fun stopRuntimeAndSelf() {
+    acceptingPluginEvents = false
     runtimeJob?.cancel()
     runtimeJob = null
     synchronized(startupLock) {

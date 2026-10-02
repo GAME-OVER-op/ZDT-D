@@ -107,8 +107,13 @@ public final class TgWsPluginService extends Service {
       notifyState((stopRequested || exitCode == 0) ? STATE_STOPPED : STATE_ERROR, "exit=" + exitCode);
     } catch (Throwable t) {
       synchronized (processLock) { process = null; }
-      notifyLog("ERROR " + (t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage()));
-      notifyState(STATE_ERROR, t.getMessage() == null ? "start failed" : t.getMessage());
+      if (stopRequested) {
+        if (t instanceof InterruptedException) Thread.currentThread().interrupt();
+        notifyState(STATE_STOPPED, "stopped");
+      } else {
+        notifyLog("ERROR " + (t.getMessage() == null ? t.getClass().getSimpleName() : t.getMessage()));
+        notifyState(STATE_ERROR, t.getMessage() == null ? "start failed" : t.getMessage());
+      }
     }
   }
 

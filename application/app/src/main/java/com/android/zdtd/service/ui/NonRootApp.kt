@@ -89,12 +89,14 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -127,6 +129,7 @@ import com.android.zdtd.service.vps.VpsViewModel
 import com.android.zdtd.service.vps.VpsConfigResult
 import java.io.File
 import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 /** Dedicated shell for the app-owned non-root path. */
@@ -681,38 +684,122 @@ private fun NonRootServiceStateCard(
   accent: Color,
   compact: Boolean,
 ) {
-  val text = stringResource(
-    when (vpnState) {
-      NonRootVpnState.RUNNING -> R.string.non_root_service_state_running
-      NonRootVpnState.STARTING -> R.string.non_root_service_state_starting
-      NonRootVpnState.STOPPING -> R.string.non_root_service_state_stopping
-      NonRootVpnState.STOPPED -> R.string.non_root_service_state_stopped
-      NonRootVpnState.ERROR -> R.string.non_root_service_state_error
-    }
+  val fullStateTexts = listOf(
+    stringResource(R.string.non_root_service_state_running),
+    stringResource(R.string.non_root_service_state_starting),
+    stringResource(R.string.non_root_service_state_stopping),
+    stringResource(R.string.non_root_service_state_stopped),
+    stringResource(R.string.non_root_service_state_error),
   )
+  val parsedStateTexts = fullStateTexts.map(::splitNonRootServiceStateText)
+  val serviceLabel = parsedStateTexts.firstOrNull()?.first.orEmpty()
+  val statusTexts = parsedStateTexts.map { it.second }
+  val targetStatusText = when (vpnState) {
+    NonRootVpnState.RUNNING -> statusTexts[0]
+    NonRootVpnState.STARTING -> statusTexts[1]
+    NonRootVpnState.STOPPING -> statusTexts[2]
+    NonRootVpnState.STOPPED -> statusTexts[3]
+    NonRootVpnState.ERROR -> statusTexts[4]
+  }
+
+  var displayedStatusText by remember(statusTexts) { mutableStateOf(targetStatusText) }
+  var animationTargetText by remember(statusTexts) { mutableStateOf(targetStatusText) }
+
+  LaunchedEffect(targetStatusText, statusTexts) {
+    if (targetStatusText == animationTargetText) {
+      displayedStatusText = targetStatusText
+      return@LaunchedEffect
+    }
+
+    val previousText = displayedStatusText
+    animationTargetText = targetStatusText
+    val revealLength = targetStatusText.length.coerceAtLeast(1)
+    displayedStatusText = previousText
+    delay(52)
+    for (revealedChars in 1..revealLength) {
+      displayedStatusText = blendNonRootServiceStateText(
+        previous = previousText,
+        target = targetStatusText,
+        revealedChars = revealedChars,
+      )
+      if (revealedChars < revealLength) delay(52)
+    }
+    displayedStatusText = targetStatusText
+  }
+
   Surface(
-    modifier = Modifier
-      .fillMaxWidth(if (compact) 0.70f else 0.58f)
-      .animateContentSize(animationSpec = tween(180)),
+    modifier = Modifier.fillMaxWidth(if (compact) 0.70f else 0.58f),
     shape = RoundedCornerShape(999.dp),
     color = accent.copy(alpha = 0.09f),
     border = BorderStroke(1.dp, accent.copy(alpha = 0.34f)),
   ) {
-    AnimatedContent(
-      targetState = text,
-      transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
-      label = "nonRootServiceState",
-    ) { value ->
-      Text(
-        text = value,
-        modifier = Modifier.padding(horizontal = 14.dp, vertical = if (compact) 7.dp else 8.dp),
-        style = MaterialTheme.typography.labelLarge,
-        fontWeight = FontWeight.SemiBold,
-        color = accent,
-        maxLines = 1,
-      )
+    Row(
+      modifier = Modifier
+        .fillMaxWidth()
+        .padding(horizontal = 14.dp, vertical = if (compact) 7.dp else 8.dp),
+      horizontalArrangement = Arrangement.Center,
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      if (serviceLabel.isNotBlank()) {
+        Text(
+          text = serviceLabel,
+          style = MaterialTheme.typography.labelLarge,
+          fontWeight = FontWeight.SemiBold,
+          color = accent,
+          maxLines = 1,
+        )
+        Spacer(Modifier.size(4.dp))
+      }
+
+      // Every localized status is measured here, but only the active one is visible.
+      // This keeps both the label and the status origin fixed when the word changes.
+      Box(contentAlignment = Alignment.CenterStart) {
+        statusTexts.distinct().forEach { candidate ->
+          Text(
+            text = candidate,
+            modifier = Modifier
+              .alpha(0f)
+              .clearAndSetSemantics { },
+            style = MaterialTheme.typography.labelLarge,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+          )
+        }
+        Text(
+          text = displayedStatusText,
+          style = MaterialTheme.typography.labelLarge,
+          fontWeight = FontWeight.SemiBold,
+          color = accent,
+          maxLines = 1,
+        )
+      }
     }
   }
+}
+
+private fun blendNonRootServiceStateText(
+  previous: String,
+  target: String,
+  revealedChars: Int,
+): String {
+  if (target.isEmpty()) return ""
+  val revealed = revealedChars.coerceIn(0, target.length)
+  if (revealed == target.length) return target
+
+  val progress = revealed.toFloat() / target.length.toFloat()
+  val easedProgress = progress * progress * (3f - 2f * progress)
+  val previousCut = (previous.length * easedProgress)
+    .roundToInt()
+    .coerceIn(0, previous.length)
+  return target.take(revealed) + previous.drop(previousCut)
+}
+
+private fun splitNonRootServiceStateText(text: String): Pair<String, String> {
+  val separatorIndex = text.indexOfFirst { it == ':' || it == '：' }
+  if (separatorIndex < 0) return "" to text.trim()
+  val label = text.substring(0, separatorIndex + 1).trim()
+  val state = text.substring(separatorIndex + 1).trim()
+  return label to state
 }
 
 @Composable

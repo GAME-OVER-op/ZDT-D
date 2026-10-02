@@ -53,6 +53,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DragHandle
@@ -109,6 +110,7 @@ import com.android.zdtd.service.NonRootCascadeState
 import com.android.zdtd.service.NonRootDirectOperaConfig
 import com.android.zdtd.service.NonRootPortRegistry
 import com.android.zdtd.service.NonRootRuntimeLogEntry
+import com.android.zdtd.service.NonRootRuntimeStore
 import com.android.zdtd.service.NonRootT2sConfig
 import com.android.zdtd.service.NonRootTgWsConfig
 import com.android.zdtd.service.NonRootWorkMode
@@ -169,8 +171,11 @@ fun NonRootApp(
   onTgWsPortChange: (Int) -> Boolean,
   onImportVpsConfig: (VpsConfigResult, String, String?) -> Unit,
 ) {
+  val context = LocalContext.current
+  val nonRootLogsDir = remember(context) { NonRootRuntimeStore(context.applicationContext).logsDir.absolutePath }
   var tab by remember { mutableStateOf(Tab.HOME) }
   var showSettings by remember { mutableStateOf(false) }
+  var programLogTarget by remember { mutableStateOf<ProgramLogTarget?>(null) }
   var cascadeProfileId by remember { mutableStateOf<String?>(null) }
   var showT2sSettings by remember { mutableStateOf(false) }
   var showTgWsSettings by remember { mutableStateOf(false) }
@@ -364,6 +369,19 @@ fun NonRootApp(
         showVps -> ({ showVps = false })
         else -> null
       },
+      onOpenLogs = editedProfile?.let { profile ->
+        {
+          programLogTarget = ProgramLogTarget(
+            programId = profile.toolId,
+            profile = profile.id,
+            title = "${nonRootToolTitle(profile.toolId)} — ${profile.name}",
+            source = ProgramLogSource.Local(
+              directoryPath = nonRootLogsDir,
+              fileNameToken = profile.id,
+            ),
+          )
+        }
+      },
       onOpenSettings = { showSettings = true },
     )
 
@@ -427,6 +445,13 @@ fun NonRootApp(
       },
       confirmButton = {},
       dismissButton = { TextButton(onClick = { pendingVpsImport = null }) { Text(stringResource(R.string.common_cancel)) } },
+    )
+  }
+
+  programLogTarget?.let { target ->
+    ProgramLogsBrowserSheet(
+      target = target,
+      onDismiss = { programLogTarget = null },
     )
   }
 
@@ -1854,6 +1879,7 @@ private fun NonRootTopBarCard(
   modifier: Modifier = Modifier,
   title: String,
   onBack: (() -> Unit)? = null,
+  onOpenLogs: (() -> Unit)? = null,
   onOpenSettings: () -> Unit,
 ) {
   val shape = RoundedCornerShape(24.dp)
@@ -1908,6 +1934,19 @@ private fun NonRootTopBarCard(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
           )
+        }
+        AnimatedVisibility(
+          visible = onOpenLogs != null,
+          enter = expandHorizontally(expandFrom = Alignment.End, animationSpec = tween(210)) + fadeIn(tween(150)),
+          exit = shrinkHorizontally(shrinkTowards = Alignment.End, animationSpec = tween(180)) + fadeOut(tween(120)),
+        ) {
+          IconButton(onClick = { onOpenLogs?.invoke() }, modifier = Modifier.size(46.dp)) {
+            Icon(
+              imageVector = Icons.Filled.BugReport,
+              contentDescription = stringResource(R.string.cd_logs),
+              tint = MaterialTheme.colorScheme.error,
+            )
+          }
         }
         IconButton(onClick = onOpenSettings, modifier = Modifier.size(46.dp)) {
           Icon(

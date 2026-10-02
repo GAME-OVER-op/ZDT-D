@@ -1,5 +1,7 @@
 package com.android.zdtd.service.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -44,9 +46,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
@@ -85,14 +89,29 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
+import java.io.File
+import java.util.ArrayDeque
 import kotlin.math.max
+
+internal sealed interface ProgramLogSource {
+  object Root : ProgramLogSource
+  data class Local(
+    val directoryPath: String,
+    val fileNameToken: String,
+  ) : ProgramLogSource
+}
 
 internal data class ProgramLogTarget(
   val programId: String,
   val profile: String? = null,
   val title: String,
+  val source: ProgramLogSource = ProgramLogSource.Root,
 ) {
-  val key: String = if (profile == null) "program/$programId" else "profile/$programId/$profile"
+  val key: String = buildString {
+    append(if (profile == null) "program/$programId" else "profile/$programId/$profile")
+    append('/')
+    append(source.hashCode())
+  }
 }
 
 private data class ProgramLogFileUi(
@@ -159,7 +178,7 @@ internal fun ProgramLogsBrowserSheet(
             onOpen = { selected = it },
           )
         } else {
-          ProgramLogTailViewer(file = currentFile)
+          ProgramLogTailViewer(file = currentFile, source = target.source)
         }
       }
 
@@ -436,18 +455,22 @@ private fun ProgramLogFileCard(
 }
 
 @Composable
-private fun ProgramLogTailViewer(file: ProgramLogFileUi) {
+private fun ProgramLogTailViewer(
+  file: ProgramLogFileUi,
+  source: ProgramLogSource,
+) {
   val context = LocalContext.current
   val root = remember(context) { RootConfigManager(context.applicationContext) }
+  val compactActions = rememberIsCompactWidth() || rememberIsShortHeight()
   var text by remember(file.path) { mutableStateOf("") }
   var loading by remember(file.path) { mutableStateOf(true) }
   val lines = remember(text) { text.lines().filter { it.isNotBlank() }.takeLast(260) }
   val listState = rememberLazyListState()
 
-  LaunchedEffect(file.path) {
+  LaunchedEffect(file.path, source) {
     while (true) {
       val next = withContext(Dispatchers.IO) {
-        runCatching { root.readLogTail(file.path, 320) }.getOrDefault("")
+        readProgramLogTail(root = root, file = file, source = source, lines = 320)
       }
       text = next
       loading = false
@@ -459,6 +482,11 @@ private fun ProgramLogTailViewer(file: ProgramLogFileUi) {
     if (lines.isNotEmpty() && !listState.isScrollInProgress) {
       runCatching { listState.animateScrollToItem(0) }
     }
+  }
+
+  fun copyVisibleLog() {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText(file.title, text))
   }
 
   Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -480,9 +508,25 @@ private fun ProgramLogTailViewer(file: ProgramLogFileUi) {
       Spacer(Modifier.width(4.dp))
       Text(
         text = formatBytes(file.sizeBytes),
+        modifier = Modifier.weight(1f),
         style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.52f),
       )
+      if (compactActions) {
+        FilledTonalIconButton(
+          onClick = ::copyVisibleLog,
+          enabled = text.isNotEmpty(),
+          modifier = Modifier.size(40.dp),
+        ) {
+          Icon(Icons.Filled.ContentCopy, contentDescription = stringResource(R.string.action_copy))
+        }
+      } else {
+        Button(onClick = ::copyVisibleLog, enabled = text.isNotEmpty()) {
+          Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+          Spacer(Modifier.width(7.dp))
+          Text(stringResource(R.string.action_copy))
+        }
+      }
     }
 
     Card(
@@ -515,12 +559,38 @@ private fun ProgramLogTailViewer(file: ProgramLogFileUi) {
   }
 }
 
+private fun readProgramLogTail(
+  root: RootConfigManager,
+  file: ProgramLogFileUi,
+  source: ProgramLogSource,
+  lines: Int,
+): String = runCatching {
+  when (source) {
+    ProgramLogSource.Root -> root.readLogTail(file.path, lines)
+    is ProgramLogSource.Local -> {
+      val tail = ArrayDeque<String>(lines.coerceAtLeast(1))
+      File(file.path).forEachLine { line ->
+        if (tail.size >= lines.coerceAtLeast(1)) tail.removeFirst()
+        tail.addLast(line)
+      }
+      tail.joinToString("\n")
+    }
+  }
+}.getOrDefault("")
+
 private suspend fun loadProgramLogFiles(context: Context, target: ProgramLogTarget): List<ProgramLogFileUi> = withContext(Dispatchers.IO) {
+  when (val source = target.source) {
+    ProgramLogSource.Root -> loadRootProgramLogFiles(context, target)
+    is ProgramLogSource.Local -> loadLocalProgramLogFiles(source)
+  }
+}
+
+private fun loadRootProgramLogFiles(context: Context, target: ProgramLogTarget): List<ProgramLogFileUi> {
   val root = RootConfigManager(context.applicationContext)
   val script = buildProgramLogsListScript(target)
-  if (script.isBlank()) return@withContext emptyList()
+  if (script.isBlank()) return emptyList()
   val raw = runCatching { root.execRootSh(script).out.joinToString("\n") }.getOrDefault("")
-  raw.lineSequence()
+  return raw.lineSequence()
     .mapNotNull { line ->
       val parts = line.split('\t', limit = 3)
       if (parts.size != 3) return@mapNotNull null
@@ -531,6 +601,19 @@ private suspend fun loadProgramLogFiles(context: Context, target: ProgramLogTarg
       ProgramLogFileUi(title = title, path = path, sizeBytes = max(0L, size))
     }
     .distinctBy { it.path }
+    .sortedWith(compareBy<ProgramLogFileUi> { it.title.lowercase() }.thenBy { it.path })
+    .toList()
+}
+
+private fun loadLocalProgramLogFiles(source: ProgramLogSource.Local): List<ProgramLogFileUi> {
+  val directory = File(source.directoryPath)
+  if (!directory.isDirectory) return emptyList()
+  val token = source.fileNameToken.trim()
+  if (token.isEmpty()) return emptyList()
+  return directory.listFiles().orEmpty()
+    .asSequence()
+    .filter { it.isFile && it.extension.equals("log", ignoreCase = true) && it.name.contains(token, ignoreCase = false) }
+    .map { file -> ProgramLogFileUi(title = file.name, path = file.absolutePath, sizeBytes = max(0L, file.length())) }
     .sortedWith(compareBy<ProgramLogFileUi> { it.title.lowercase() }.thenBy { it.path })
     .toList()
 }

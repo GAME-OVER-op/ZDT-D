@@ -744,7 +744,7 @@ internal fun AppPickerSheet(
 }
 
 @Composable
-private fun AppPickerRow(
+internal fun AppPickerRow(
   app: InstalledApp,
   selected: Boolean,
   compactWidth: Boolean,

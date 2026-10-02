@@ -96,6 +96,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.android.zdtd.service.NonRootAppRoutingMode
 import com.android.zdtd.service.NonRootBackendServer
 import com.android.zdtd.service.NonRootCascadeBackendMode
 import com.android.zdtd.service.NonRootCascadeProfile
@@ -127,6 +128,8 @@ fun NonRootApp(
   languageMode: String,
   themeMode: String,
   workMode: NonRootWorkMode,
+  appRoutingMode: NonRootAppRoutingMode,
+  appRoutingPackages: Set<String>,
   cascadeState: NonRootCascadeState,
   t2sApiPort: Int,
   vpnState: NonRootVpnState,
@@ -140,6 +143,9 @@ fun NonRootApp(
   onLanguageModeChange: (String) -> Unit,
   onThemeModeChange: (String) -> Unit,
   onWorkModeChange: (NonRootWorkMode) -> Unit,
+  onAppRoutingModeChange: (NonRootAppRoutingMode) -> Unit,
+  onAppRoutingPackagesChange: (Set<String>) -> Unit,
+  onRestartVpn: () -> Unit,
   onDirectSelectedProfileChange: (String?) -> Unit,
   onCreateCascadeProfile: (String, String) -> Unit,
   onUpdateCascadeProfile: (NonRootCascadeProfile) -> Unit,
@@ -430,6 +436,12 @@ fun NonRootApp(
         onLanguageModeChange = onLanguageModeChange,
         themeMode = themeMode,
         onThemeModeChange = onThemeModeChange,
+        appRoutingMode = appRoutingMode,
+        appRoutingPackages = appRoutingPackages,
+        vpnState = vpnState,
+        onAppRoutingModeChange = onAppRoutingModeChange,
+        onAppRoutingPackagesChange = onAppRoutingPackagesChange,
+        onRestartVpn = onRestartVpn,
       )
     }
   }

@@ -28,6 +28,12 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
   private val _workMode = MutableStateFlow(nonRootSettings.getWorkMode())
   val workMode: StateFlow<NonRootWorkMode> = _workMode.asStateFlow()
 
+  private val _appRoutingMode = MutableStateFlow(nonRootSettings.getAppRoutingMode())
+  val appRoutingMode: StateFlow<NonRootAppRoutingMode> = _appRoutingMode.asStateFlow()
+
+  private val _appRoutingPackages = MutableStateFlow(nonRootSettings.getAppRoutingPackages())
+  val appRoutingPackages: StateFlow<Set<String>> = _appRoutingPackages.asStateFlow()
+
   private val initialCascadeState = cascadeStore.importLegacyDirectProfileIfNeeded(
     legacyDirectConfigStore.load().takeIf { legacyDirectConfigStore.hasSavedConfig() }
   )
@@ -77,6 +83,16 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
   fun setWorkMode(mode: NonRootWorkMode) {
     nonRootSettings.setWorkMode(mode)
     _workMode.value = mode
+  }
+
+  fun setAppRoutingMode(mode: NonRootAppRoutingMode) {
+    nonRootSettings.setAppRoutingMode(mode)
+    _appRoutingMode.value = mode
+  }
+
+  fun setAppRoutingPackages(packages: Set<String>) {
+    nonRootSettings.setAppRoutingPackages(packages)
+    _appRoutingPackages.value = nonRootSettings.getAppRoutingPackages()
   }
 
   fun setDirectSelectedProfile(profileId: String?) {

@@ -2544,4 +2544,23 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="non_root_error_rpc_port_conflict">Mieru RPC ポートは SOCKS5 ポートと異なる必要があります。</string>
     <string name="non_root_tgws_secret_error">シークレットは正確に 32 文字の16進数である必要があります。</string>
     <string name="non_root_tgws_faketls_error">FakeTLS の SNI ドメインが必要です。</string>
+
+    <string name="non_root_app_routing_title">アプリのルーティング</string>
+    <string name="non_root_app_routing_body">ZDT-D VPN ルートを使用するアプリを選択します。</string>
+    <string name="non_root_app_routing_all">すべてのアプリ</string>
+    <string name="non_root_app_routing_all_desc">ZDT-D 自身を除くすべてのアプリ通信を VPN 経由にします。</string>
+    <string name="non_root_app_routing_only_selected">選択したアプリのみ</string>
+    <string name="non_root_app_routing_only_selected_desc">チェックしたアプリだけが VPN ルートを使用します。</string>
+    <string name="non_root_app_routing_exclude_selected">選択したアプリを除くすべて</string>
+    <string name="non_root_app_routing_exclude_selected_desc">チェックしたアプリは VPN ルートをバイパスします。</string>
+    <string name="non_root_app_routing_select_apps">アプリを選択</string>
+    <string name="non_root_app_routing_selected_count">選択済み: %1$d</string>
+    <string name="non_root_app_routing_only_selected_empty_hint">VPN を開始する前に少なくとも 1 つのアプリを選択してください。</string>
+    <string name="non_root_app_routing_self_excluded">ZDT-D は常に自身の VPN ルートから除外されます。</string>
+    <string name="non_root_app_routing_picker_title">アプリを選択</string>
+    <string name="non_root_app_routing_restart_title">VPN を再接続しますか？</string>
+    <string name="non_root_app_routing_restart_body">アプリのルーティング設定が変更されました。現在の接続に適用するには VPN を再接続してください。</string>
+    <string name="non_root_app_routing_restart_later">後で</string>
+    <string name="non_root_app_routing_restart_now">再接続</string>
+    <string name="non_root_app_routing_only_selected_empty_error">「選択したアプリのみ」では、インストール済みアプリを少なくとも 1 つ選択してください。</string>
 </resources>

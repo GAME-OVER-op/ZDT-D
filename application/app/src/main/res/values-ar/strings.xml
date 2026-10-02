@@ -2549,4 +2549,23 @@ APatch: ‏10700+</string>
     <string name="non_root_error_rpc_port_conflict">يجب أن يختلف منفذ Mieru RPC عن منفذ SOCKS5.</string>
     <string name="non_root_tgws_secret_error">يجب أن يحتوي السر على 32 محرفًا سداسيًا عشريًا بالضبط.</string>
     <string name="non_root_tgws_faketls_error">نطاق SNI لـ FakeTLS مطلوب.</string>
+
+    <string name="non_root_app_routing_title">توجيه التطبيقات</string>
+    <string name="non_root_app_routing_body">اختر التطبيقات التي ستستخدم مسار VPN الخاص بـ ZDT-D.</string>
+    <string name="non_root_app_routing_all">كل التطبيقات</string>
+    <string name="non_root_app_routing_all_desc">يمر كل مرور التطبيقات عبر VPN باستثناء ZDT-D نفسه.</string>
+    <string name="non_root_app_routing_only_selected">التطبيقات المحددة فقط</string>
+    <string name="non_root_app_routing_only_selected_desc">تستخدم التطبيقات المحددة فقط مسار VPN.</string>
+    <string name="non_root_app_routing_exclude_selected">الكل باستثناء المحدد</string>
+    <string name="non_root_app_routing_exclude_selected_desc">تتجاوز التطبيقات المحددة مسار VPN.</string>
+    <string name="non_root_app_routing_select_apps">اختيار التطبيقات</string>
+    <string name="non_root_app_routing_selected_count">المحدد: %1$d</string>
+    <string name="non_root_app_routing_only_selected_empty_hint">اختر تطبيقًا واحدًا على الأقل قبل تشغيل VPN.</string>
+    <string name="non_root_app_routing_self_excluded">يُستثنى ZDT-D دائمًا من مسار VPN الخاص به.</string>
+    <string name="non_root_app_routing_picker_title">اختيار التطبيقات</string>
+    <string name="non_root_app_routing_restart_title">إعادة اتصال VPN؟</string>
+    <string name="non_root_app_routing_restart_body">تغيّرت إعدادات توجيه التطبيقات. أعد اتصال VPN لتطبيقها على الاتصال الحالي.</string>
+    <string name="non_root_app_routing_restart_later">لاحقًا</string>
+    <string name="non_root_app_routing_restart_now">إعادة الاتصال</string>
+    <string name="non_root_app_routing_only_selected_empty_error">عند استخدام «التطبيقات المحددة فقط»، اختر تطبيقًا مثبتًا واحدًا على الأقل.</string>
 </resources>

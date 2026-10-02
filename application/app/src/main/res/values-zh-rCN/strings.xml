@@ -2544,4 +2544,23 @@ APatch：10700+</string>
     <string name="non_root_error_rpc_port_conflict">Mieru RPC 端口必须与 SOCKS5 端口不同。</string>
     <string name="non_root_tgws_secret_error">密钥必须正好包含 32 个十六进制字符。</string>
     <string name="non_root_tgws_faketls_error">必须填写 FakeTLS SNI 域名。</string>
+
+    <string name="non_root_app_routing_title">应用路由</string>
+    <string name="non_root_app_routing_body">选择哪些应用使用 ZDT-D VPN 路由。</string>
+    <string name="non_root_app_routing_all">所有应用</string>
+    <string name="non_root_app_routing_all_desc">除 ZDT-D 本身外，所有应用流量都通过 VPN。</string>
+    <string name="non_root_app_routing_only_selected">仅所选应用</string>
+    <string name="non_root_app_routing_only_selected_desc">只有勾选的应用使用 VPN 路由。</string>
+    <string name="non_root_app_routing_exclude_selected">除所选应用外全部</string>
+    <string name="non_root_app_routing_exclude_selected_desc">勾选的应用绕过 VPN 路由。</string>
+    <string name="non_root_app_routing_select_apps">选择应用</string>
+    <string name="non_root_app_routing_selected_count">已选择：%1$d</string>
+    <string name="non_root_app_routing_only_selected_empty_hint">启动 VPN 前请至少选择一个应用。</string>
+    <string name="non_root_app_routing_self_excluded">ZDT-D 始终排除在自身 VPN 路由之外。</string>
+    <string name="non_root_app_routing_picker_title">选择应用</string>
+    <string name="non_root_app_routing_restart_title">重新连接 VPN？</string>
+    <string name="non_root_app_routing_restart_body">应用路由设置已更改。请重新连接 VPN，以将其应用到当前连接。</string>
+    <string name="non_root_app_routing_restart_later">稍后</string>
+    <string name="non_root_app_routing_restart_now">重新连接</string>
+    <string name="non_root_app_routing_only_selected_empty_error">使用“仅所选应用”时，请至少选择一个已安装应用。</string>
 </resources>

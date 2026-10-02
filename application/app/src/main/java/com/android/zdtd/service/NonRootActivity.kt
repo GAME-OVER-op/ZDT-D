@@ -18,9 +18,12 @@ import androidx.compose.ui.graphics.luminance
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import com.android.zdtd.service.ui.NonRootApp
 import com.android.zdtd.service.ui.theme.ZdtdTheme
 import com.android.zdtd.service.ui.theme.ZdtdThemeMode
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class NonRootActivity : AppCompatActivity() {
   private val vm: NonRootViewModel by viewModels()
@@ -41,6 +44,8 @@ class NonRootActivity : AppCompatActivity() {
       val languageMode by vm.languageMode.collectAsStateWithLifecycle()
       val themeMode by vm.themeMode.collectAsStateWithLifecycle()
       val workMode by vm.workMode.collectAsStateWithLifecycle()
+      val appRoutingMode by vm.appRoutingMode.collectAsStateWithLifecycle()
+      val appRoutingPackages by vm.appRoutingPackages.collectAsStateWithLifecycle()
       val cascadeState by vm.cascadeState.collectAsStateWithLifecycle()
       val t2sApiPort by vm.t2sApiPort.collectAsStateWithLifecycle()
       val vpnState by vm.vpnState.collectAsStateWithLifecycle()
@@ -60,6 +65,8 @@ class NonRootActivity : AppCompatActivity() {
             languageMode = languageMode,
             themeMode = themeMode,
             workMode = workMode,
+            appRoutingMode = appRoutingMode,
+            appRoutingPackages = appRoutingPackages,
             cascadeState = cascadeState,
             t2sApiPort = t2sApiPort,
             vpnState = vpnState,
@@ -73,6 +80,9 @@ class NonRootActivity : AppCompatActivity() {
             onLanguageModeChange = vm::setLanguageMode,
             onThemeModeChange = vm::setThemeMode,
             onWorkModeChange = vm::setWorkMode,
+            onAppRoutingModeChange = vm::setAppRoutingMode,
+            onAppRoutingPackagesChange = vm::setAppRoutingPackages,
+            onRestartVpn = ::restartNonRootVpn,
             onDirectSelectedProfileChange = vm::setDirectSelectedProfile,
             onCreateCascadeProfile = vm::createCascadeProfile,
             onUpdateCascadeProfile = vm::updateCascadeProfile,
@@ -107,6 +117,20 @@ class NonRootActivity : AppCompatActivity() {
         .putExtra(MainActivity.EXTRA_OPEN_ROOT_SETUP, true)
     )
     finish()
+  }
+
+  private fun restartNonRootVpn() {
+    lifecycleScope.launch {
+      NonRootVpnService.stop(this@NonRootActivity)
+      var attempts = 0
+      while (attempts < 60) {
+        val state = NonRootVpnRuntime.state.value
+        if (state == NonRootVpnState.STOPPED || state == NonRootVpnState.ERROR) break
+        attempts += 1
+        delay(100L)
+      }
+      requestNonRootVpnStart()
+    }
   }
 
   private fun requestNonRootVpnStart() {

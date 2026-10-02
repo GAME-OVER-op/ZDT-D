@@ -2544,4 +2544,23 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="non_root_error_rpc_port_conflict">Port RPC Mieru harus berbeda dari port SOCKS5.</string>
     <string name="non_root_tgws_secret_error">Secret harus berisi tepat 32 karakter heksadesimal.</string>
     <string name="non_root_tgws_faketls_error">Domain SNI FakeTLS wajib diisi.</string>
+
+    <string name="non_root_app_routing_title">Perutean aplikasi</string>
+    <string name="non_root_app_routing_body">Pilih aplikasi yang menggunakan rute VPN ZDT-D.</string>
+    <string name="non_root_app_routing_all">Semua aplikasi</string>
+    <string name="non_root_app_routing_all_desc">Rutekan semua lalu lintas aplikasi melalui VPN kecuali ZDT-D.</string>
+    <string name="non_root_app_routing_only_selected">Hanya yang dipilih</string>
+    <string name="non_root_app_routing_only_selected_desc">Hanya aplikasi yang dicentang menggunakan rute VPN.</string>
+    <string name="non_root_app_routing_exclude_selected">Semua kecuali yang dipilih</string>
+    <string name="non_root_app_routing_exclude_selected_desc">Aplikasi yang dicentang melewati rute VPN.</string>
+    <string name="non_root_app_routing_select_apps">Pilih aplikasi</string>
+    <string name="non_root_app_routing_selected_count">Dipilih: %1$d</string>
+    <string name="non_root_app_routing_only_selected_empty_hint">Pilih setidaknya satu aplikasi sebelum memulai VPN.</string>
+    <string name="non_root_app_routing_self_excluded">ZDT-D selalu dikecualikan dari rute VPN miliknya sendiri.</string>
+    <string name="non_root_app_routing_picker_title">Pilih aplikasi</string>
+    <string name="non_root_app_routing_restart_title">Sambungkan ulang VPN?</string>
+    <string name="non_root_app_routing_restart_body">Pengaturan perutean aplikasi berubah. Sambungkan ulang VPN untuk menerapkannya ke koneksi saat ini.</string>
+    <string name="non_root_app_routing_restart_later">Nanti</string>
+    <string name="non_root_app_routing_restart_now">Sambungkan ulang</string>
+    <string name="non_root_app_routing_only_selected_empty_error">Pilih setidaknya satu aplikasi terpasang saat menggunakan “Hanya yang dipilih”.</string>
 </resources>

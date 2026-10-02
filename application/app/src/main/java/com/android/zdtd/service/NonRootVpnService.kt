@@ -125,6 +125,11 @@ class NonRootVpnService : VpnService() {
 
     val settings = NonRootSettingsStore(applicationContext)
     val mode = settings.getWorkMode()
+    val appRoutingMode = settings.getAppRoutingMode()
+    val appRoutingPackages = installedRoutingPackages(settings.getAppRoutingPackages())
+    if (appRoutingMode == NonRootAppRoutingMode.ONLY_SELECTED && appRoutingPackages.isEmpty()) {
+      error(getString(R.string.non_root_app_routing_only_selected_empty_error))
+    }
     NonRootVpnRuntime.log(
       getString(
         R.string.non_root_log_start_mode,
@@ -140,7 +145,7 @@ class NonRootVpnService : VpnService() {
     }
 
     NonRootVpnRuntime.log(getString(R.string.non_root_log_create_vpn_interface))
-    val established = establishVpnInterface()
+    val established = establishVpnInterface(appRoutingMode, appRoutingPackages)
       ?: error("VpnService.Builder.establish() returned null")
     tun = established
     val hevConfig = writeHevConfig(socksTarget)
@@ -484,7 +489,10 @@ class NonRootVpnService : VpnService() {
     return groups.filter { it.isNotEmpty() }.joinToString(";") { it.joinToString(",") }
   }
 
-  private fun establishVpnInterface(): ParcelFileDescriptor? {
+  private fun establishVpnInterface(
+    appRoutingMode: NonRootAppRoutingMode,
+    appRoutingPackages: Set<String>,
+  ): ParcelFileDescriptor? {
     val builder = Builder()
       .setSession(getString(R.string.app_name))
       .setMtu(VPN_MTU)
@@ -493,9 +501,36 @@ class NonRootVpnService : VpnService() {
       .addRoute("0.0.0.0", 0)
       .addRoute("::", 0)
       .addDnsServer("198.18.0.2")
-    runCatching { builder.addDisallowedApplication(packageName) }
+
+    when (appRoutingMode) {
+      NonRootAppRoutingMode.ALL -> {
+        runCatching { builder.addDisallowedApplication(packageName) }
+      }
+      NonRootAppRoutingMode.ONLY_SELECTED -> {
+        // Android forbids mixing allowed and disallowed application lists.
+        // ZDT-D is never added to this allowlist, which keeps its own backend
+        // sockets outside the VPN and prevents routing loops.
+        var added = 0
+        appRoutingPackages.forEach { candidate ->
+          if (runCatching { builder.addAllowedApplication(candidate) }.isSuccess) added += 1
+        }
+        check(added > 0) { getString(R.string.non_root_app_routing_only_selected_empty_error) }
+      }
+      NonRootAppRoutingMode.EXCLUDE_SELECTED -> {
+        runCatching { builder.addDisallowedApplication(packageName) }
+        appRoutingPackages.forEach { candidate ->
+          runCatching { builder.addDisallowedApplication(candidate) }
+        }
+      }
+    }
     return builder.establish()
   }
+
+  @Suppress("DEPRECATION")
+  private fun installedRoutingPackages(packages: Set<String>): Set<String> =
+    packages.filterTo(linkedSetOf()) { candidate ->
+      candidate != packageName && runCatching { packageManager.getApplicationInfo(candidate, 0) }.isSuccess
+    }
 
   private fun writeHevConfig(target: SocksTarget): File {
     val file = File(runtimeStore.configsDir, "hev.yml")

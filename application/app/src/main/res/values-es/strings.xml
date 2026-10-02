@@ -2545,4 +2545,23 @@ La causa restante probablemente está en el daemon/API. Revisa los registros del
     <string name="non_root_error_rpc_port_conflict">El puerto RPC de Mieru debe ser distinto del puerto SOCKS5.</string>
     <string name="non_root_tgws_secret_error">El secreto debe contener exactamente 32 caracteres hexadecimales.</string>
     <string name="non_root_tgws_faketls_error">Se requiere un dominio SNI de FakeTLS.</string>
+
+    <string name="non_root_app_routing_title">Enrutamiento de aplicaciones</string>
+    <string name="non_root_app_routing_body">Elige qué aplicaciones usan la ruta VPN de ZDT-D.</string>
+    <string name="non_root_app_routing_all">Todas las aplicaciones</string>
+    <string name="non_root_app_routing_all_desc">Envía todo el tráfico de aplicaciones por la VPN excepto ZDT-D.</string>
+    <string name="non_root_app_routing_only_selected">Solo las seleccionadas</string>
+    <string name="non_root_app_routing_only_selected_desc">Solo las aplicaciones marcadas usan la ruta VPN.</string>
+    <string name="non_root_app_routing_exclude_selected">Todas excepto las seleccionadas</string>
+    <string name="non_root_app_routing_exclude_selected_desc">Las aplicaciones marcadas omiten la ruta VPN.</string>
+    <string name="non_root_app_routing_select_apps">Seleccionar aplicaciones</string>
+    <string name="non_root_app_routing_selected_count">Seleccionadas: %1$d</string>
+    <string name="non_root_app_routing_only_selected_empty_hint">Selecciona al menos una aplicación antes de iniciar la VPN.</string>
+    <string name="non_root_app_routing_self_excluded">ZDT-D siempre queda fuera de su propia ruta VPN.</string>
+    <string name="non_root_app_routing_picker_title">Elegir aplicaciones</string>
+    <string name="non_root_app_routing_restart_title">¿Reconectar la VPN?</string>
+    <string name="non_root_app_routing_restart_body">Cambió el enrutamiento de aplicaciones. Reconecta la VPN para aplicarlo a la conexión actual.</string>
+    <string name="non_root_app_routing_restart_later">Más tarde</string>
+    <string name="non_root_app_routing_restart_now">Reconectar</string>
+    <string name="non_root_app_routing_only_selected_empty_error">Selecciona al menos una aplicación instalada al usar «Solo las seleccionadas».</string>
 </resources>

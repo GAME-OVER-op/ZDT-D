@@ -2545,4 +2545,23 @@ APatch: 10700+</string>
     <string name="non_root_error_rpc_port_conflict">پورت Mieru RPC باید با پورت SOCKS5 متفاوت باشد.</string>
     <string name="non_root_tgws_secret_error">کلید باید دقیقاً 32 نویسهٔ هگزادسیمال داشته باشد.</string>
     <string name="non_root_tgws_faketls_error">دامنهٔ SNI برای FakeTLS الزامی است.</string>
+
+    <string name="non_root_app_routing_title">مسیریابی برنامه‌ها</string>
+    <string name="non_root_app_routing_body">انتخاب کنید کدام برنامه‌ها از مسیر VPN ‏ZDT-D استفاده کنند.</string>
+    <string name="non_root_app_routing_all">همه برنامه‌ها</string>
+    <string name="non_root_app_routing_all_desc">تمام ترافیک برنامه‌ها به‌جز خود ZDT-D از VPN عبور می‌کند.</string>
+    <string name="non_root_app_routing_only_selected">فقط برنامه‌های انتخاب‌شده</string>
+    <string name="non_root_app_routing_only_selected_desc">فقط برنامه‌های علامت‌خورده از مسیر VPN استفاده می‌کنند.</string>
+    <string name="non_root_app_routing_exclude_selected">همه به‌جز انتخاب‌شده‌ها</string>
+    <string name="non_root_app_routing_exclude_selected_desc">برنامه‌های علامت‌خورده مسیر VPN را دور می‌زنند.</string>
+    <string name="non_root_app_routing_select_apps">انتخاب برنامه‌ها</string>
+    <string name="non_root_app_routing_selected_count">انتخاب‌شده: %1$d</string>
+    <string name="non_root_app_routing_only_selected_empty_hint">پیش از شروع VPN حداقل یک برنامه را انتخاب کنید.</string>
+    <string name="non_root_app_routing_self_excluded">ZDT-D همیشه از مسیر VPN خودش مستثنا است.</string>
+    <string name="non_root_app_routing_picker_title">انتخاب برنامه‌ها</string>
+    <string name="non_root_app_routing_restart_title">اتصال دوباره VPN؟</string>
+    <string name="non_root_app_routing_restart_body">تنظیمات مسیریابی برنامه‌ها تغییر کرده است. برای اعمال روی اتصال فعلی، VPN را دوباره متصل کنید.</string>
+    <string name="non_root_app_routing_restart_later">بعداً</string>
+    <string name="non_root_app_routing_restart_now">اتصال دوباره</string>
+    <string name="non_root_app_routing_only_selected_empty_error">در حالت «فقط برنامه‌های انتخاب‌شده» حداقل یک برنامه نصب‌شده را انتخاب کنید.</string>
 </resources>

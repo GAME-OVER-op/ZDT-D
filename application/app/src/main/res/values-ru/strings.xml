@@ -2543,4 +2543,23 @@ APatch: 10700+</string>
     <string name="non_root_error_rpc_port_conflict">RPC-порт Mieru должен отличаться от порта SOCKS5.</string>
     <string name="non_root_tgws_secret_error">Секрет должен содержать ровно 32 шестнадцатеричных символа.</string>
     <string name="non_root_tgws_faketls_error">Необходимо указать SNI-домен FakeTLS.</string>
+
+    <string name="non_root_app_routing_title">Маршрутизация приложений</string>
+    <string name="non_root_app_routing_body">Выберите, какие приложения будут использовать VPN-маршрут ZDT-D.</string>
+    <string name="non_root_app_routing_all">Все приложения</string>
+    <string name="non_root_app_routing_all_desc">Весь трафик приложений проходит через VPN, кроме самого ZDT-D.</string>
+    <string name="non_root_app_routing_only_selected">Только выбранные</string>
+    <string name="non_root_app_routing_only_selected_desc">Через VPN проходят только отмеченные приложения.</string>
+    <string name="non_root_app_routing_exclude_selected">Все кроме выбранных</string>
+    <string name="non_root_app_routing_exclude_selected_desc">Отмеченные приложения обходят VPN-маршрут.</string>
+    <string name="non_root_app_routing_select_apps">Выбрать приложения</string>
+    <string name="non_root_app_routing_selected_count">Выбрано: %1$d</string>
+    <string name="non_root_app_routing_only_selected_empty_hint">Перед запуском VPN выберите хотя бы одно приложение.</string>
+    <string name="non_root_app_routing_self_excluded">ZDT-D всегда исключён из собственного VPN-маршрута.</string>
+    <string name="non_root_app_routing_picker_title">Выбор приложений</string>
+    <string name="non_root_app_routing_restart_title">Переподключить VPN?</string>
+    <string name="non_root_app_routing_restart_body">Настройки маршрутизации приложений изменены. Для применения к текущему подключению нужно переподключить VPN.</string>
+    <string name="non_root_app_routing_restart_later">Позже</string>
+    <string name="non_root_app_routing_restart_now">Переподключить</string>
+    <string name="non_root_app_routing_only_selected_empty_error">В режиме «Только выбранные» выберите хотя бы одно установленное приложение.</string>
 </resources>

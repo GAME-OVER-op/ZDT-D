@@ -2545,4 +2545,23 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="non_root_error_rpc_port_conflict">Der Mieru-RPC-Port muss sich vom SOCKS5-Port unterscheiden.</string>
     <string name="non_root_tgws_secret_error">Das Secret muss genau 32 Hexadezimalzeichen enthalten.</string>
     <string name="non_root_tgws_faketls_error">Eine FakeTLS-SNI-Domain ist erforderlich.</string>
+
+    <string name="non_root_app_routing_title">App-Routing</string>
+    <string name="non_root_app_routing_body">Wähle aus, welche Apps die ZDT-D-VPN-Route verwenden.</string>
+    <string name="non_root_app_routing_all">Alle Apps</string>
+    <string name="non_root_app_routing_all_desc">Leitet den gesamten App-Verkehr durch das VPN, außer ZDT-D selbst.</string>
+    <string name="non_root_app_routing_only_selected">Nur ausgewählte Apps</string>
+    <string name="non_root_app_routing_only_selected_desc">Nur markierte Apps verwenden die VPN-Route.</string>
+    <string name="non_root_app_routing_exclude_selected">Alle außer ausgewählten</string>
+    <string name="non_root_app_routing_exclude_selected_desc">Markierte Apps umgehen die VPN-Route.</string>
+    <string name="non_root_app_routing_select_apps">Apps auswählen</string>
+    <string name="non_root_app_routing_selected_count">Ausgewählt: %1$d</string>
+    <string name="non_root_app_routing_only_selected_empty_hint">Wähle vor dem Start des VPN mindestens eine App aus.</string>
+    <string name="non_root_app_routing_self_excluded">ZDT-D ist immer von seiner eigenen VPN-Route ausgeschlossen.</string>
+    <string name="non_root_app_routing_picker_title">Apps auswählen</string>
+    <string name="non_root_app_routing_restart_title">VPN neu verbinden?</string>
+    <string name="non_root_app_routing_restart_body">Die App-Routing-Einstellungen wurden geändert. Verbinde das VPN neu, um sie auf die aktuelle Verbindung anzuwenden.</string>
+    <string name="non_root_app_routing_restart_later">Später</string>
+    <string name="non_root_app_routing_restart_now">Neu verbinden</string>
+    <string name="non_root_app_routing_only_selected_empty_error">Wähle bei „Nur ausgewählte Apps“ mindestens eine installierte App aus.</string>
 </resources>

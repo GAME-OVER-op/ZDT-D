@@ -2544,4 +2544,23 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="non_root_error_rpc_port_conflict">Mieru RPC bağlantı noktası SOCKS5 bağlantı noktasından farklı olmalıdır.</string>
     <string name="non_root_tgws_secret_error">Gizli anahtar tam olarak 32 onaltılık karakter içermelidir.</string>
     <string name="non_root_tgws_faketls_error">FakeTLS SNI etki alanı gereklidir.</string>
+
+    <string name="non_root_app_routing_title">Uygulama yönlendirme</string>
+    <string name="non_root_app_routing_body">ZDT-D VPN yolunu hangi uygulamaların kullanacağını seçin.</string>
+    <string name="non_root_app_routing_all">Tüm uygulamalar</string>
+    <string name="non_root_app_routing_all_desc">ZDT-D hariç tüm uygulama trafiğini VPN üzerinden yönlendirir.</string>
+    <string name="non_root_app_routing_only_selected">Yalnızca seçilenler</string>
+    <string name="non_root_app_routing_only_selected_desc">Yalnızca işaretlenen uygulamalar VPN yolunu kullanır.</string>
+    <string name="non_root_app_routing_exclude_selected">Seçilenler hariç tümü</string>
+    <string name="non_root_app_routing_exclude_selected_desc">İşaretlenen uygulamalar VPN yolunu atlar.</string>
+    <string name="non_root_app_routing_select_apps">Uygulamaları seç</string>
+    <string name="non_root_app_routing_selected_count">Seçilen: %1$d</string>
+    <string name="non_root_app_routing_only_selected_empty_hint">VPN’i başlatmadan önce en az bir uygulama seçin.</string>
+    <string name="non_root_app_routing_self_excluded">ZDT-D her zaman kendi VPN yolunun dışında tutulur.</string>
+    <string name="non_root_app_routing_picker_title">Uygulamaları seç</string>
+    <string name="non_root_app_routing_restart_title">VPN yeniden bağlansın mı?</string>
+    <string name="non_root_app_routing_restart_body">Uygulama yönlendirme ayarları değişti. Geçerli bağlantıya uygulamak için VPN’i yeniden bağlayın.</string>
+    <string name="non_root_app_routing_restart_later">Daha sonra</string>
+    <string name="non_root_app_routing_restart_now">Yeniden bağlan</string>
+    <string name="non_root_app_routing_only_selected_empty_error">“Yalnızca seçilenler” modunda en az bir yüklü uygulama seçin.</string>
 </resources>

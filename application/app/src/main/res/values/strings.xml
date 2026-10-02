@@ -2544,4 +2544,23 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="non_root_error_rpc_port_conflict">Mieru RPC port must differ from the SOCKS5 port.</string>
     <string name="non_root_tgws_secret_error">Secret must contain exactly 32 hexadecimal characters.</string>
     <string name="non_root_tgws_faketls_error">FakeTLS SNI domain is required.</string>
+
+    <string name="non_root_app_routing_title">App routing</string>
+    <string name="non_root_app_routing_body">Choose which apps use the ZDT-D VPN route.</string>
+    <string name="non_root_app_routing_all">All apps</string>
+    <string name="non_root_app_routing_all_desc">Route all app traffic through the VPN except ZDT-D itself.</string>
+    <string name="non_root_app_routing_only_selected">Only selected apps</string>
+    <string name="non_root_app_routing_only_selected_desc">Only checked apps use the VPN route.</string>
+    <string name="non_root_app_routing_exclude_selected">All except selected</string>
+    <string name="non_root_app_routing_exclude_selected_desc">Checked apps bypass the VPN route.</string>
+    <string name="non_root_app_routing_select_apps">Select apps</string>
+    <string name="non_root_app_routing_selected_count">Selected: %1$d</string>
+    <string name="non_root_app_routing_only_selected_empty_hint">Select at least one app before starting the VPN.</string>
+    <string name="non_root_app_routing_self_excluded">ZDT-D is always excluded from its own VPN route.</string>
+    <string name="non_root_app_routing_picker_title">Choose apps</string>
+    <string name="non_root_app_routing_restart_title">Reconnect VPN?</string>
+    <string name="non_root_app_routing_restart_body">App routing settings changed. Reconnect the VPN to apply them to the current connection.</string>
+    <string name="non_root_app_routing_restart_later">Later</string>
+    <string name="non_root_app_routing_restart_now">Reconnect</string>
+    <string name="non_root_app_routing_only_selected_empty_error">Select at least one installed app when using “Only selected apps”.</string>
 </resources>

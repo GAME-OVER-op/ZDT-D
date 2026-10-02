@@ -2545,4 +2545,23 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="non_root_error_rpc_port_conflict">Mieru RPC पोर्ट SOCKS5 पोर्ट से अलग होना चाहिए।</string>
     <string name="non_root_tgws_secret_error">सीक्रेट में ठीक 32 हेक्साडेसिमल अक्षर होने चाहिए।</string>
     <string name="non_root_tgws_faketls_error">FakeTLS SNI डोमेन आवश्यक है।</string>
+
+    <string name="non_root_app_routing_title">ऐप रूटिंग</string>
+    <string name="non_root_app_routing_body">चुनें कि कौन-से ऐप ZDT-D VPN रूट का उपयोग करेंगे।</string>
+    <string name="non_root_app_routing_all">सभी ऐप</string>
+    <string name="non_root_app_routing_all_desc">ZDT-D को छोड़कर सभी ऐप ट्रैफ़िक VPN से भेजें।</string>
+    <string name="non_root_app_routing_only_selected">केवल चुने हुए ऐप</string>
+    <string name="non_root_app_routing_only_selected_desc">केवल चिह्नित ऐप VPN रूट का उपयोग करते हैं।</string>
+    <string name="non_root_app_routing_exclude_selected">चुने हुए ऐप को छोड़कर सभी</string>
+    <string name="non_root_app_routing_exclude_selected_desc">चिह्नित ऐप VPN रूट को बायपास करते हैं।</string>
+    <string name="non_root_app_routing_select_apps">ऐप चुनें</string>
+    <string name="non_root_app_routing_selected_count">चुने गए: %1$d</string>
+    <string name="non_root_app_routing_only_selected_empty_hint">VPN शुरू करने से पहले कम से कम एक ऐप चुनें।</string>
+    <string name="non_root_app_routing_self_excluded">ZDT-D हमेशा अपने VPN रूट से बाहर रहता है।</string>
+    <string name="non_root_app_routing_picker_title">ऐप चुनें</string>
+    <string name="non_root_app_routing_restart_title">VPN दोबारा कनेक्ट करें?</string>
+    <string name="non_root_app_routing_restart_body">ऐप रूटिंग सेटिंग बदल गई है। मौजूदा कनेक्शन पर लागू करने के लिए VPN दोबारा कनेक्ट करें।</string>
+    <string name="non_root_app_routing_restart_later">बाद में</string>
+    <string name="non_root_app_routing_restart_now">दोबारा कनेक्ट करें</string>
+    <string name="non_root_app_routing_only_selected_empty_error">“केवल चुने हुए ऐप” मोड में कम से कम एक इंस्टॉल किया हुआ ऐप चुनें।</string>
 </resources>

@@ -2547,4 +2547,23 @@ APatch: 10700+</string>
     <string name="non_root_error_rpc_port_conflict">RPC-порт Mieru має відрізнятися від порту SOCKS5.</string>
     <string name="non_root_tgws_secret_error">Секрет має містити рівно 32 шістнадцяткові символи.</string>
     <string name="non_root_tgws_faketls_error">Потрібно вказати SNI-домен FakeTLS.</string>
+
+    <string name="non_root_app_routing_title">Маршрутизація застосунків</string>
+    <string name="non_root_app_routing_body">Виберіть, які застосунки використовуватимуть VPN-маршрут ZDT-D.</string>
+    <string name="non_root_app_routing_all">Усі застосунки</string>
+    <string name="non_root_app_routing_all_desc">Увесь трафік застосунків проходить через VPN, крім самого ZDT-D.</string>
+    <string name="non_root_app_routing_only_selected">Лише вибрані</string>
+    <string name="non_root_app_routing_only_selected_desc">Через VPN проходять лише позначені застосунки.</string>
+    <string name="non_root_app_routing_exclude_selected">Усі, крім вибраних</string>
+    <string name="non_root_app_routing_exclude_selected_desc">Позначені застосунки обходять VPN-маршрут.</string>
+    <string name="non_root_app_routing_select_apps">Вибрати застосунки</string>
+    <string name="non_root_app_routing_selected_count">Вибрано: %1$d</string>
+    <string name="non_root_app_routing_only_selected_empty_hint">Перед запуском VPN виберіть хоча б один застосунок.</string>
+    <string name="non_root_app_routing_self_excluded">ZDT-D завжди виключено з власного VPN-маршруту.</string>
+    <string name="non_root_app_routing_picker_title">Вибір застосунків</string>
+    <string name="non_root_app_routing_restart_title">Перепідключити VPN?</string>
+    <string name="non_root_app_routing_restart_body">Налаштування маршрутизації застосунків змінено. Перепідключіть VPN, щоб застосувати їх до поточного з’єднання.</string>
+    <string name="non_root_app_routing_restart_later">Пізніше</string>
+    <string name="non_root_app_routing_restart_now">Перепідключити</string>
+    <string name="non_root_app_routing_only_selected_empty_error">У режимі «Лише вибрані» виберіть хоча б один встановлений застосунок.</string>
 </resources>

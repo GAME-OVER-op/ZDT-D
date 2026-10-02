@@ -2544,4 +2544,23 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="non_root_error_rpc_port_conflict">Cổng RPC Mieru phải khác cổng SOCKS5.</string>
     <string name="non_root_tgws_secret_error">Secret phải có đúng 32 ký tự thập lục phân.</string>
     <string name="non_root_tgws_faketls_error">Cần có miền SNI FakeTLS.</string>
+
+    <string name="non_root_app_routing_title">Định tuyến ứng dụng</string>
+    <string name="non_root_app_routing_body">Chọn ứng dụng nào sẽ sử dụng tuyến VPN ZDT-D.</string>
+    <string name="non_root_app_routing_all">Tất cả ứng dụng</string>
+    <string name="non_root_app_routing_all_desc">Định tuyến toàn bộ lưu lượng ứng dụng qua VPN, trừ chính ZDT-D.</string>
+    <string name="non_root_app_routing_only_selected">Chỉ ứng dụng đã chọn</string>
+    <string name="non_root_app_routing_only_selected_desc">Chỉ các ứng dụng được đánh dấu mới dùng tuyến VPN.</string>
+    <string name="non_root_app_routing_exclude_selected">Tất cả trừ ứng dụng đã chọn</string>
+    <string name="non_root_app_routing_exclude_selected_desc">Các ứng dụng được đánh dấu sẽ bỏ qua tuyến VPN.</string>
+    <string name="non_root_app_routing_select_apps">Chọn ứng dụng</string>
+    <string name="non_root_app_routing_selected_count">Đã chọn: %1$d</string>
+    <string name="non_root_app_routing_only_selected_empty_hint">Chọn ít nhất một ứng dụng trước khi khởi động VPN.</string>
+    <string name="non_root_app_routing_self_excluded">ZDT-D luôn được loại khỏi tuyến VPN của chính nó.</string>
+    <string name="non_root_app_routing_picker_title">Chọn ứng dụng</string>
+    <string name="non_root_app_routing_restart_title">Kết nối lại VPN?</string>
+    <string name="non_root_app_routing_restart_body">Cài đặt định tuyến ứng dụng đã thay đổi. Hãy kết nối lại VPN để áp dụng cho kết nối hiện tại.</string>
+    <string name="non_root_app_routing_restart_later">Để sau</string>
+    <string name="non_root_app_routing_restart_now">Kết nối lại</string>
+    <string name="non_root_app_routing_only_selected_empty_error">Hãy chọn ít nhất một ứng dụng đã cài đặt khi dùng “Chỉ ứng dụng đã chọn”.</string>
 </resources>

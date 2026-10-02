@@ -1,6 +1,5 @@
 package com.android.zdtd.service
 
-import androidx.core.content.ContextCompat
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -11,7 +10,6 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
-import androidx.core.app.ContextCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import java.io.File
@@ -216,15 +214,13 @@ class NonRootTgWsService : Service() {
     private const val NOTIFICATION_ID = 92042
 
     fun start(context: Context) {
-      ContextCompat.startForegroundService(
-        context,
+      context.startForegroundService(
         Intent(context, NonRootTgWsService::class.java).setAction(ACTION_START),
       )
     }
 
     fun restart(context: Context) {
-      ContextCompat.startForegroundService(
-        context,
+      context.startForegroundService(
         Intent(context, NonRootTgWsService::class.java).setAction(ACTION_RESTART),
       )
     }

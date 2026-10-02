@@ -60,6 +60,14 @@ internal fun NonRootTgWsSettingsScreen(
   val secretErrorText = stringResource(R.string.non_root_tgws_secret_error)
   val fakeTlsErrorText = stringResource(R.string.non_root_tgws_faketls_error)
 
+  val hasChanges =
+    draft != config ||
+      portText != config.port.toString() ||
+      frontingCooldownText != config.frontingCooldown.toString() ||
+      bufKbText != config.bufKb.toString() ||
+      poolSizeText != config.poolSize.toString() ||
+      maxConnectionsText != config.maxConnections.takeIf { it > 0 }?.toString().orEmpty()
+
   fun lines(value: List<String>) = value.joinToString("\n")
   fun parse(value: String) = value.replace(',', '\n').lines().map(String::trim).filter(String::isNotEmpty).distinct()
 
@@ -148,6 +156,7 @@ internal fun NonRootTgWsSettingsScreen(
                 )
               }
             },
+            enabled = hasChanges,
             modifier = Modifier.fillMaxWidth(),
           ) { Text(stringResource(R.string.action_save)) }
         }

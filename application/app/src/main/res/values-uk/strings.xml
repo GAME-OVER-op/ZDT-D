@@ -1122,6 +1122,8 @@ APatch: 10700+</string>
     <string name="opera_args_api_proxy_desc">Проксі SOCKS5/HTTP(S), який opera-proxy використовує для доступу до бекенд-API Opera. Можна вказати одну URL-адресу проксі, кілька URL через кому, URL текстового списку проксі або абсолютний шлях до файлу списку проксі, уже збереженого на пристрої.</string>
     <string name="opera_args_api_proxy_invalid">Використовуйте URL проксі зі схемою: http://, https://, socks5:// або socks5h://. Також можна використати http(s)-URL текстового списку проксі або абсолютний шлях до локального файлу, що починається з /.</string>
     <string name="opera_args_api_proxy_hint">Формат: http://, https://, socks5:// або socks5h://[login:password@]host[:port]. Кілька проксі можна розділити комами. Також можна вставити http(s)-URL текстового списку або абсолютний локальний шлях, наприклад /sdcard/proxies.txt чи /storage/emulated/0/proxies.txt. Локальні файли зчитуються з пристрою під час кожного запуску Opera-proxy. Адреси без схеми не підтримуються, якщо це не абсолютні шляхи до файлів. Якщо робочий проксі не знайдено або список неможливо завантажити/прочитати, Opera-proxy запускається без api-proxy.</string>
+    <string name="non_root_opera_api_proxy_choose_file">Вибрати локальний файл списку проксі</string>
+    <string name="non_root_opera_api_proxy_import_failed">Не вдалося імпортувати вибраний список проксі. Переконайтеся, що це читабельний текстовий файл розміром не більше 1 МБ.</string>
     <string name="opera_args_server_selection_title">Вибір сервера</string>
     <string name="opera_args_dl_limit_hint">Ліміт завантаження в байтах для тесту швидкості сервера. Типово: 204800 (200 KB)</string>
     <string name="opera_args_misc_title">Часові параметри й деталізація</string>

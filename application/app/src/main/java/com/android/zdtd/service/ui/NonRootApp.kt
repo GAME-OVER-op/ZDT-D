@@ -1,6 +1,8 @@
 package com.android.zdtd.service.ui
 
 import android.text.format.DateFormat
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -89,6 +91,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -119,6 +122,7 @@ import com.android.zdtd.service.ui.vps.VpsServiceScreen
 import com.android.zdtd.service.vps.VpsServiceKind
 import com.android.zdtd.service.vps.VpsViewModel
 import com.android.zdtd.service.vps.VpsConfigResult
+import java.io.File
 import kotlin.math.abs
 import kotlinx.coroutines.delay
 
@@ -1514,6 +1518,42 @@ internal fun NonRootOperaProxyCard(
   var portText by remember(port) { mutableStateOf(port.toString()) }
   var portError by remember(port) { mutableStateOf(false) }
   var advancedExpanded by remember { mutableStateOf(false) }
+  var apiProxyImportFailed by remember { mutableStateOf(false) }
+  val context = LocalContext.current
+  val apiProxyFilePicker = rememberLauncherForActivityResult(
+    contract = ActivityResultContracts.OpenDocument(),
+  ) { uri ->
+    if (uri == null) return@rememberLauncherForActivityResult
+    apiProxyImportFailed = false
+    val importDir = File(context.filesDir, "nonroot/configs/api_proxy_imports").apply { mkdirs() }
+    val target = File(importDir, "api_proxy_${System.currentTimeMillis()}.txt")
+    runCatching {
+      val input = context.contentResolver.openInputStream(uri)
+        ?: error("Cannot open selected API proxy list")
+      input.use { source ->
+        target.outputStream().use { output ->
+          val buffer = ByteArray(8192)
+          var total = 0
+          while (true) {
+            val read = source.read(buffer)
+            if (read < 0) break
+            total += read
+            if (total > 1024 * 1024) error("API proxy list is too large")
+            output.write(buffer, 0, read)
+          }
+        }
+      }
+      if (target.length() <= 0L) error("API proxy list is empty")
+      val previous = config.apiProxy.trim()
+      if (previous.startsWith(importDir.absolutePath + File.separator)) {
+        runCatching { File(previous).delete() }
+      }
+      onConfigChange(config.copy(apiProxy = target.absolutePath))
+    }.onFailure {
+      target.delete()
+      apiProxyImportFailed = true
+    }
+  }
 
   Surface(
     modifier = Modifier.fillMaxWidth().animateContentSize(animationSpec = tween(220)),
@@ -1658,12 +1698,30 @@ internal fun NonRootOperaProxyCard(
           Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             OutlinedTextField(
               value = config.apiProxy,
-              onValueChange = { onConfigChange(config.copy(apiProxy = it)) },
+              onValueChange = {
+                apiProxyImportFailed = false
+                onConfigChange(config.copy(apiProxy = it))
+              },
               modifier = Modifier.fillMaxWidth(),
               label = { Text("-api-proxy") },
-              supportingText = { Text(stringResource(R.string.opera_args_api_proxy_hint)) },
+              supportingText = {
+                Text(
+                  if (apiProxyImportFailed) {
+                    stringResource(R.string.non_root_opera_api_proxy_import_failed)
+                  } else {
+                    stringResource(R.string.opera_args_api_proxy_hint)
+                  }
+                )
+              },
+              isError = apiProxyImportFailed,
               keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
             )
+            OutlinedButton(
+              onClick = { apiProxyFilePicker.launch(arrayOf("text/*", "application/octet-stream")) },
+              modifier = Modifier.fillMaxWidth(),
+            ) {
+              Text(stringResource(R.string.non_root_opera_api_proxy_choose_file))
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
               NonRootSmallChoice(
                 modifier = Modifier.weight(1f),

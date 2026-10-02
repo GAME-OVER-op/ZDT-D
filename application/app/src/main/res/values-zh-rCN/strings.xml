@@ -1122,6 +1122,8 @@ APatch：10700+</string>
     <string name="opera_args_api_proxy_desc">opera-proxy 用于访问 Opera 后端 API 的 SOCKS5/HTTP(S) 代理。您可以指定一个代理 URL、多个用逗号分隔的代理 URL、纯文本代理列表 URL，或设备上已有代理列表文件的绝对路径。</string>
     <string name="opera_args_api_proxy_invalid">请使用带协议的代理 URL：http://、https://、socks5:// 或 socks5h://。也可使用指向纯文本代理列表的 http(s) URL，或以 / 开头的本地文件绝对路径。</string>
     <string name="opera_args_api_proxy_hint">格式：http://、https://、socks5:// 或 socks5h://[login:password@]host[:port]。多个代理可用逗号分隔。也可粘贴纯文本列表的 http(s) URL，或 /sdcard/proxies.txt、/storage/emulated/0/proxies.txt 等本地绝对路径。每次启动 Opera-proxy 时都会从设备读取本地文件。除绝对文件路径外，不支持无协议的地址。如果找不到可用代理，或无法下载/读取列表，Opera-proxy 将在不使用 api-proxy 的情况下启动。</string>
+    <string name="non_root_opera_api_proxy_choose_file">选择本地代理列表文件</string>
+    <string name="non_root_opera_api_proxy_import_failed">无法导入所选代理列表。请确保它是可读取且不超过 1 MB 的文本文件。</string>
     <string name="opera_args_server_selection_title">服务器选择</string>
     <string name="opera_args_dl_limit_hint">服务器测速的下载字节限制。默认：204800（200 KB）</string>
     <string name="opera_args_misc_title">时序与详细程度</string>

@@ -1122,6 +1122,8 @@ APatch: 10700+</string>
     <string name="opera_args_api_proxy_desc">پروکسی SOCKS5/HTTP(S) که opera-proxy برای دسترسی به API بک‌اند Opera استفاده می‌کند. می‌توانید یک URL پروکسی، چند URL جداشده با ویرگول، URL فهرست متنی پروکسی یا مسیر مطلق فایل فهرست پروکسی ذخیره‌شده روی دستگاه را مشخص کنید.</string>
     <string name="opera_args_api_proxy_invalid">از URL پروکسی با طرح http://، https://، socks5:// یا socks5h:// استفاده کنید. همچنین می‌توانید URL ‏http(s) فهرست متنی پروکسی یا مسیر مطلق فایل محلی که با / شروع می‌شود استفاده کنید.</string>
     <string name="opera_args_api_proxy_hint">قالب: http://، https://، socks5:// یا socks5h://[login:password@]host[:port]. چند پروکسی را می‌توان با ویرگول جدا کرد. همچنین می‌توانید URL ‏http(s) فهرست متنی یا مسیر محلی مطلق مانند /sdcard/proxies.txt یا /storage/emulated/0/proxies.txt را بچسبانید. فایل‌های محلی در هر بار شروع Opera-proxy از دستگاه خوانده می‌شوند. آدرس‌های بدون طرح پشتیبانی نمی‌شوند مگر اینکه مسیر مطلق فایل باشند. اگر پروکسی سالمی پیدا نشود یا فهرست قابل دانلود/خواندن نباشد، Opera-proxy بدون api-proxy شروع می‌شود.</string>
+    <string name="non_root_opera_api_proxy_choose_file">انتخاب فایل محلی فهرست پراکسی</string>
+    <string name="non_root_opera_api_proxy_import_failed">وارد کردن فهرست پراکسی انتخاب‌شده ممکن نشد. مطمئن شوید فایل متنی قابل‌خواندن و حداکثر ۱ مگابایت است.</string>
     <string name="opera_args_server_selection_title">انتخاب سرور</string>
     <string name="opera_args_dl_limit_hint">حد دانلود بر حسب بایت برای آزمون سرعت سرور. پیش‌فرض: 204800 ‏(200 KB)</string>
     <string name="opera_args_misc_title">زمان‌بندی و جزئیات</string>

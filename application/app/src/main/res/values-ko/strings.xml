@@ -1122,6 +1122,8 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="opera_args_api_proxy_desc">opera-proxy가 Opera 백엔드 API에 연결할 때 사용하는 SOCKS5/HTTP(S) 프록시입니다. 프록시 URL 하나, 쉼표로 구분된 여러 URL, 일반 텍스트 프록시 목록 URL 또는 기기에 저장된 프록시 목록 파일의 절대 경로를 지정할 수 있습니다.</string>
     <string name="opera_args_api_proxy_invalid">스킴이 포함된 프록시 URL을 사용하세요: http://, https://, socks5:// 또는 socks5h://. 일반 텍스트 프록시 목록의 http(s) URL이나 /로 시작하는 로컬 파일의 절대 경로도 사용할 수 있습니다.</string>
     <string name="opera_args_api_proxy_hint">형식: http://, https://, socks5:// 또는 socks5h://[login:password@]host[:port]. 여러 프록시는 쉼표로 구분할 수 있습니다. 일반 텍스트 목록의 http(s) URL이나 /sdcard/proxies.txt 또는 /storage/emulated/0/proxies.txt 같은 로컬 절대 경로도 붙여넣을 수 있습니다. 로컬 파일은 Opera-proxy가 시작될 때마다 기기에서 읽습니다. 스킴이 없는 주소는 절대 파일 경로가 아니면 지원되지 않습니다. 작동하는 프록시를 찾지 못하거나 목록을 다운로드/읽을 수 없으면 Opera-proxy는 api-proxy 없이 시작됩니다.</string>
+    <string name="non_root_opera_api_proxy_choose_file">로컬 프록시 목록 파일 선택</string>
+    <string name="non_root_opera_api_proxy_import_failed">선택한 프록시 목록을 가져올 수 없습니다. 1MB 이하의 읽을 수 있는 텍스트 파일인지 확인하세요.</string>
     <string name="opera_args_server_selection_title">서버 선택</string>
     <string name="opera_args_dl_limit_hint">서버 속도 테스트의 다운로드 제한(바이트). 기본값: 204800(200 KB)</string>
     <string name="opera_args_misc_title">타이밍 및 상세도</string>

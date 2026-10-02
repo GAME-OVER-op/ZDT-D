@@ -1122,6 +1122,8 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="opera_args_api_proxy_desc">opera-proxyがOperaバックエンドAPIへ接続するために使用するSOCKS5/HTTP(S)プロキシ。プロキシURLを1つ、カンマ区切りで複数、プレーンテキストのプロキシリストURL、またはデバイスに保存済みのプロキシリストファイルへの絶対パスを指定できます。</string>
     <string name="opera_args_api_proxy_invalid">スキーム付きのプロキシURLを使用してください: http://、https://、socks5://、socks5h://。プレーンテキストのプロキシリストへのhttp(s) URL、または/で始まるローカルファイルの絶対パスも使用できます。</string>
     <string name="opera_args_api_proxy_hint">形式: http://、https://、socks5://、socks5h://[login:password@]host[:port]。複数のプロキシはカンマで区切れます。プレーンテキストリストのhttp(s) URL、または/sdcard/proxies.txtや/storage/emulated/0/proxies.txtなどのローカル絶対パスも貼り付けられます。ローカルファイルはOpera-proxy起動のたびにデバイスから読み込まれます。スキームなしのアドレスは絶対ファイルパスでない限りサポートされません。動作するプロキシが見つからない、またはリストをダウンロード/読み込みできない場合、Opera-proxyはapi-proxyなしで起動します。</string>
+    <string name="non_root_opera_api_proxy_choose_file">ローカルのプロキシリストファイルを選択</string>
+    <string name="non_root_opera_api_proxy_import_failed">選択したプロキシリストをインポートできませんでした。1 MB 以下の読み取り可能なテキストファイルであることを確認してください。</string>
     <string name="opera_args_server_selection_title">サーバー選択</string>
     <string name="opera_args_dl_limit_hint">サーバー速度テストのダウンロード上限（バイト）。デフォルト: 204800（200 KB）</string>
     <string name="opera_args_misc_title">タイミングと詳細度</string>

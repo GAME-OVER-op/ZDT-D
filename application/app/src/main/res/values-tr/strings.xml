@@ -1122,6 +1122,8 @@ Koruma erişim noktası modunda çalışmaz. Erişim noktası etkin ve sing-box 
     <string name="opera_args_api_proxy_desc">opera-proxy’nin Opera arka uç API’sine ulaşmak için kullandığı SOCKS5/HTTP(S) proxy’si. Bir proxy URL’si, virgülle ayrılmış birden fazla proxy URL’si, düz metin proxy listesi URL’si veya cihazda depolanan proxy listesi dosyasının mutlak yolunu belirtebilirsiniz.</string>
     <string name="opera_args_api_proxy_invalid">Şemalı proxy URL’leri kullanın: http://, https://, socks5:// veya socks5h://. Düz metin proxy listesine ait bir http(s) URL’si veya / ile başlayan mutlak yerel dosya yolu da kullanabilirsiniz.</string>
     <string name="opera_args_api_proxy_hint">Biçim: http://, https://, socks5:// veya socks5h://[login:password@]host[:port]. Birden fazla proxy virgülle ayrılabilir. Düz metin listesine ait http(s) URL’si veya /sdcard/proxies.txt ya da /storage/emulated/0/proxies.txt gibi mutlak yerel yol da yapıştırabilirsiniz. Yerel dosyalar Opera-proxy her başlatıldığında cihazdan okunur. Şemasız adresler, mutlak dosya yolu olmadıkça desteklenmez. Çalışan proxy bulunamaz veya liste indirilemez/okunamazsa Opera-proxy api-proxy olmadan başlar.</string>
+    <string name="non_root_opera_api_proxy_choose_file">Yerel proxy listesi dosyası seç</string>
+    <string name="non_root_opera_api_proxy_import_failed">Seçilen proxy listesi içe aktarılamadı. Dosyanın okunabilir bir metin dosyası ve en fazla 1 MB olduğundan emin olun.</string>
     <string name="opera_args_server_selection_title">Sunucu seçimi</string>
     <string name="opera_args_dl_limit_hint">Sunucu hız testi için bayt cinsinden indirme sınırı. Varsayılan: 204800 (200 KB)</string>
     <string name="opera_args_misc_title">Zamanlama ve ayrıntı düzeyi</string>

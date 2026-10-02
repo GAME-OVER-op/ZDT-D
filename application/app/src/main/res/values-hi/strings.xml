@@ -1122,6 +1122,8 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="opera_args_api_proxy_desc">SOCKS5/HTTP(S) प्रॉक्सी जिसका उपयोग opera-proxy Opera बैकएंड API तक पहुँचने के लिए करता है। आप एक प्रॉक्सी URL, कॉमा से अलग कई URL, सादा टेक्स्ट प्रॉक्सी सूची का URL या डिवाइस पर पहले से मौजूद प्रॉक्सी सूची फ़ाइल का पूर्ण पथ दे सकते हैं।</string>
     <string name="opera_args_api_proxy_invalid">स्कीम वाले प्रॉक्सी URL उपयोग करें: http://, https://, socks5:// या socks5h://। सादा टेक्स्ट प्रॉक्सी सूची का http(s) URL या / से शुरू होने वाला पूर्ण लोकल फ़ाइल पथ भी उपयोग कर सकते हैं।</string>
     <string name="opera_args_api_proxy_hint">प्रारूप: http://, https://, socks5:// या socks5h://[login:password@]host[:port]। कई प्रॉक्सी कॉमा से अलग किए जा सकते हैं। सादा टेक्स्ट सूची का http(s) URL या /sdcard/proxies.txt अथवा /storage/emulated/0/proxies.txt जैसा पूर्ण लोकल पथ भी पेस्ट कर सकते हैं। लोकल फ़ाइलें हर Opera-proxy शुरुआत पर डिवाइस से पढ़ी जाती हैं। बिना स्कीम वाले पते समर्थित नहीं हैं, जब तक वे पूर्ण फ़ाइल पथ न हों। कोई कार्यशील प्रॉक्सी न मिलने या सूची डाउनलोड/पढ़ी न जा सकने पर Opera-proxy api-proxy के बिना शुरू होता है।</string>
+    <string name="non_root_opera_api_proxy_choose_file">स्थानीय प्रॉक्सी सूची फ़ाइल चुनें</string>
+    <string name="non_root_opera_api_proxy_import_failed">चुनी गई प्रॉक्सी सूची आयात नहीं की जा सकी। सुनिश्चित करें कि यह 1 MB तक की पढ़ने योग्य टेक्स्ट फ़ाइल है।</string>
     <string name="opera_args_server_selection_title">सर्वर चयन</string>
     <string name="opera_args_dl_limit_hint">सर्वर गति परीक्षण के लिए डाउनलोड सीमा, बाइट में। डिफ़ॉल्ट: 204800 (200 KB)</string>
     <string name="opera_args_misc_title">समय और विवरण स्तर</string>

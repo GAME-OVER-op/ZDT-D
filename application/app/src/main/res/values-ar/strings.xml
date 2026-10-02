@@ -1122,6 +1122,8 @@ APatch: ‏10700+</string>
     <string name="opera_args_api_proxy_desc">وكيل SOCKS5/HTTP(S) يستخدمه opera-proxy للوصول إلى واجهة Opera الخلفية API. يمكنك تحديد رابط وكيل واحد، أو عدة روابط مفصولة بفواصل، أو رابطًا لقائمة وكلاء بنص عادي، أو مسارًا مطلقًا إلى ملف قائمة وكلاء مخزّن بالفعل على الجهاز.</string>
     <string name="opera_args_api_proxy_invalid">استخدم روابط وكيل تحتوي على مخطط: http:// أو https:// أو socks5:// أو socks5h://. ويمكنك أيضًا استخدام رابط http(s) لقائمة وكلاء بنص عادي، أو مسار ملف محلي مطلق يبدأ بـ /.</string>
     <string name="opera_args_api_proxy_hint">التنسيق: http:// أو https:// أو socks5:// أو socks5h://[login:password@]host[:port]. يمكن فصل عدة وكلاء بفواصل. ويمكنك أيضًا لصق رابط http(s) لقائمة نصية عادية، أو مسار محلي مطلق مثل /sdcard/proxies.txt أو /storage/emulated/0/proxies.txt. تُقرأ الملفات المحلية من الجهاز عند كل تشغيل لـ Opera-proxy. العناوين بلا مخطط غير مدعومة إلا إذا كانت مسارات ملفات مطلقة. إذا لم يُعثر على وكيل يعمل أو تعذّر تنزيل/قراءة القائمة، يبدأ Opera-proxy دون api-proxy.</string>
+    <string name="non_root_opera_api_proxy_choose_file">اختيار ملف محلي لقائمة البروكسي</string>
+    <string name="non_root_opera_api_proxy_import_failed">تعذّر استيراد قائمة البروكسي المحددة. تأكد من أنه ملف نصي قابل للقراءة بحجم لا يتجاوز 1 ميجابايت.</string>
     <string name="opera_args_server_selection_title">اختيار الخادم</string>
     <string name="opera_args_dl_limit_hint">حد التنزيل بالبايت لاختبار سرعة الخادم. الافتراضي: 204800 ‏(200 KB)</string>
     <string name="opera_args_misc_title">التوقيت ومستوى التفاصيل</string>

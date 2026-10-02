@@ -6422,9 +6422,9 @@ jobs:
 
           FULL_SHA="$(git rev-parse HEAD)"
           SHORT_SHA="$(git rev-parse --short=7 HEAD)"
-          REPO_URL="https://github.com/${{ github.repository }}"
-          RUN_URL="${REPO_URL}/actions/runs/${{ github.run_id }}"
-          BUILD_TYPE="${{ env.BUILD_TYPE }}"
+          REPO_URL="https://github.com/${GITHUB_REPOSITORY}"
+          RUN_URL="${REPO_URL}/actions/runs/${GITHUB_RUN_ID}"
+          BUILD_TYPE="${BUILD_TYPE:-Release}"
           BRANCH_NAME="${GITHUB_REF_NAME:-main}"
 
           git fetch --tags --force >/dev/null 2>&1 || true
@@ -6599,7 +6599,7 @@ jobs:
             local asset_id=""
             asset_id="$(gh release view "$tag" --json assets --jq ".assets[] | select(.name==\"${asset_name}\") | .id" | head -n1 || true)"
             if [[ -n "$asset_id" ]]; then
-              gh api -X DELETE "repos/${{ github.repository }}/releases/assets/$asset_id"
+              gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/$asset_id"
               sleep 3
             fi
 
@@ -6702,7 +6702,7 @@ jobs:
           | Latest stable release | \`${LATEST_STABLE_TAG:-none}\` |
           | Commit | [\`${SHORT_SHA}\`](${REPO_URL}/commit/${FULL_SHA}) |
           | Branch | \`${BRANCH_NAME}\` |
-          | Workflow run | [#${{ github.run_number }}](${RUN_URL}) |
+          | Workflow run | [#${GITHUB_RUN_NUMBER}](${RUN_URL}) |
           | Build date | \`${BUILD_TIME_UTC}\` |
           | Build type | \`${BUILD_TYPE}\` |
           | APK size | \`${APK_SIZE_HUMAN}\` |
@@ -6842,7 +6842,7 @@ jobs:
           | Version code | \`${VERSION_CODE}\` |
           | Tag | \`${STABLE_TAG}\` |
           | Commit | [\`${SHORT_SHA}\`](${REPO_URL}/commit/${FULL_SHA}) |
-          | Workflow run | [#${{ github.run_number }}](${RUN_URL}) |
+          | Workflow run | [#${GITHUB_RUN_NUMBER}](${RUN_URL}) |
           | Build date | \`${BUILD_TIME_UTC}\` |
 
           <!-- ZDTD_APP_UPDATE_META_START
@@ -6913,7 +6913,7 @@ jobs:
           | Version code | \`${VERSION_CODE}\` |
           | Tag | \`${STABLE_TAG}\` |
           | Commit | [\`${SHORT_SHA}\`](${REPO_URL}/commit/${FULL_SHA}) |
-          | Workflow run | [#${{ github.run_number }}](${RUN_URL}) |
+          | Workflow run | [#${GITHUB_RUN_NUMBER}](${RUN_URL}) |
           | Build date | \`${BUILD_TIME_UTC}\` |
 
           <!-- ZDTD_APP_UPDATE_META_START

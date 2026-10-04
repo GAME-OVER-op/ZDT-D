@@ -24,7 +24,8 @@ rootModuleProp.withInputStream { moduleProps.load(it) }
 
 def moduleVersionCode = (moduleProps.getProperty('versionCode') ?: '1').trim().toInteger()
 def moduleVersionName = (moduleProps.getProperty('version') ?: '1.0').trim()
-def generatedAssetsDir = file("$buildDir/generated/zdt-assets/main")
+def generatedRootAssetsDir = file("$buildDir/generated/zdt-root-assets/main")
+def generatedBundledAssetsDir = file("$buildDir/generated/zdt-bundled-assets/main")
 def generatedNonRootJniDir = file("$buildDir/generated/zdt-nonroot-jni/main")
 def zdtCompileSdk = (findProperty('zdtCompileSdk') ?: System.getenv('ZDT_COMPILE_SDK') ?: '37').toString().trim().toInteger()
 def zdtCompileSdkMinor = (findProperty('zdtCompileSdkMinor') ?: System.getenv('ZDT_COMPILE_SDK_MINOR') ?: '0').toString().trim().toInteger()
@@ -35,15 +36,15 @@ if (zdtRequireHevAar && (!hevSocks5TunnelAar.exists() || hevSocks5TunnelAar.leng
 }
 def generatedModuleZip = file('../../out/module/zdt_module.zip')
 def generatedModuleProp = file('../../out/module/module.prop')
-def zdtModuleZip = file("$generatedAssetsDir/zdt_module.zip")
-def bundledModuleProp = file("$generatedAssetsDir/module.prop")
+def zdtModuleZip = file("$generatedBundledAssetsDir/zdt_module.zip")
+def bundledModuleProp = file("$generatedRootAssetsDir/module.prop")
 def bundledDpiDetectorAssets = [
-    file("$generatedAssetsDir/dpi-detector/arm64-v8a/dpi-detector"),
-    file("$generatedAssetsDir/dpi-detector/armeabi-v7a/dpi-detector")
+    file("$generatedRootAssetsDir/dpi-detector/arm64-v8a/dpi-detector"),
+    file("$generatedRootAssetsDir/dpi-detector/armeabi-v7a/dpi-detector")
 ]
 def bundledNfqwsTesterAssets = [
-    file("$generatedAssetsDir/nfqws-tester/arm64-v8a/nfqws_tester"),
-    file("$generatedAssetsDir/nfqws-tester/armeabi-v7a/nfqws_tester")
+    file("$generatedRootAssetsDir/nfqws-tester/arm64-v8a/nfqws_tester"),
+    file("$generatedRootAssetsDir/nfqws-tester/armeabi-v7a/nfqws_tester")
 ]
 def prebuiltBusyBoxes = [
     arm64: file('../../prebuilt/bin/arm64-v8a/busybox'),
@@ -51,19 +52,21 @@ def prebuiltBusyBoxes = [
 ]
 def busyBoxBuildScript = file('../../scripts/module/build-busybox-arm64.sh')
 def bundledBusyBoxAssets = [
-    arm64: file("$generatedAssetsDir/busybox/busybox-arm64"),
-    arm32: file("$generatedAssetsDir/busybox/busybox-arm32")
+    arm64: file("$generatedRootAssetsDir/busybox/busybox-arm64"),
+    arm32: file("$generatedRootAssetsDir/busybox/busybox-arm32")
 ]
 def bundledBusyBoxShas = [
-    arm64: file("$generatedAssetsDir/busybox/busybox-arm64.sha256"),
-    arm32: file("$generatedAssetsDir/busybox/busybox-arm32.sha256")
+    arm64: file("$generatedRootAssetsDir/busybox/busybox-arm64.sha256"),
+    arm32: file("$generatedRootAssetsDir/busybox/busybox-arm32.sha256")
 ]
 def bundledBusyBoxSources = [
-    arm64: file("$generatedAssetsDir/busybox/busybox-arm64.source"),
-    arm32: file("$generatedAssetsDir/busybox/busybox-arm32.source")
+    arm64: file("$generatedRootAssetsDir/busybox/busybox-arm64.source"),
+    arm32: file("$generatedRootAssetsDir/busybox/busybox-arm32.source")
 ]
-def bundledModuleSha = file("$generatedAssetsDir/busybox/zdt_module.sha256")
-def bundledModuleCache = file("$generatedAssetsDir/busybox/zdt_module.cache")
+def bundledModuleSha = file("$generatedRootAssetsDir/busybox/zdt_module.sha256")
+def bundledModuleCache = file("$generatedRootAssetsDir/busybox/zdt_module.cache")
+def onlineModuleAssetName = (findProperty('zdtOnlineModuleAssetName') ?: "zdt_module-${moduleVersionCode}.zip").toString().trim()
+def technicalAssetsBaseUrl = 'https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets'
 
 def sha256Hex = { File source ->
   def digest = java.security.MessageDigest.getInstance('SHA-256')
@@ -134,6 +137,37 @@ android {
     versionName moduleVersionName
   }
 
+  flavorDimensions += 'distribution'
+  productFlavors {
+    bundled {
+      dimension 'distribution'
+      proguardFile 'src/root/proguard-rules.pro'
+      buildConfigField 'String', 'DISTRIBUTION_MODE', '"bundled"'
+      buildConfigField 'boolean', 'IS_ROOT_BUILD', 'true'
+      buildConfigField 'boolean', 'IS_NON_ROOT_BUILD', 'false'
+      buildConfigField 'boolean', 'USES_ONLINE_MODULE', 'false'
+      manifestPlaceholders = [zdtDistribution: 'bundled']
+    }
+    online {
+      dimension 'distribution'
+      proguardFile 'src/root/proguard-rules.pro'
+      buildConfigField 'String', 'DISTRIBUTION_MODE', '"online"'
+      buildConfigField 'boolean', 'IS_ROOT_BUILD', 'true'
+      buildConfigField 'boolean', 'IS_NON_ROOT_BUILD', 'false'
+      buildConfigField 'boolean', 'USES_ONLINE_MODULE', 'true'
+      manifestPlaceholders = [zdtDistribution: 'online']
+    }
+    nonroot {
+      dimension 'distribution'
+      proguardFile 'src/nonroot/proguard-rules.pro'
+      buildConfigField 'String', 'DISTRIBUTION_MODE', '"nonroot"'
+      buildConfigField 'boolean', 'IS_ROOT_BUILD', 'false'
+      buildConfigField 'boolean', 'IS_NON_ROOT_BUILD', 'true'
+      buildConfigField 'boolean', 'USES_ONLINE_MODULE', 'false'
+      manifestPlaceholders = [zdtDistribution: 'nonroot']
+    }
+  }
+
   signingConfigs {
     zdt {
       def resolvedStoreFile = keystoreProps.getProperty('storeFile') ?: defaultStoreFile.absolutePath
@@ -181,8 +215,18 @@ android {
   }
 
   sourceSets {
-    main {
-      assets.srcDirs += generatedAssetsDir
+    bundled {
+      manifest.srcFile 'src/root/AndroidManifest.xml'
+      assets.srcDirs += 'src/root/assets'
+      assets.srcDirs += generatedRootAssetsDir
+      assets.srcDirs += generatedBundledAssetsDir
+    }
+    online {
+      manifest.srcFile 'src/root/AndroidManifest.xml'
+      assets.srcDirs += 'src/root/assets'
+      assets.srcDirs += generatedRootAssetsDir
+    }
+    nonroot {
       jniLibs.srcDirs += generatedNonRootJniDir
     }
   }
@@ -202,7 +246,7 @@ android {
 // the same generated zdt_module.zip in parallel. On GitHub Actions this sometimes
 // failed inside Ant copy with a cryptic "1 >= 1" error. Keep all writes to the
 // generated assets directory inside one task and use java.nio copy operations.
-tasks.register('prepareZdtGeneratedAssets') {
+tasks.register('prepareZdtRootAssets') {
   inputs.file(rootModuleProp).withPathSensitivity(PathSensitivity.RELATIVE)
   inputs.file(generatedModuleZip).optional().withPathSensitivity(PathSensitivity.RELATIVE)
   inputs.file(generatedModuleProp).optional().withPathSensitivity(PathSensitivity.RELATIVE)
@@ -217,7 +261,8 @@ tasks.register('prepareZdtGeneratedAssets') {
   outputs.file(bundledModuleCache)
 
   doLast {
-    generatedAssetsDir.mkdirs()
+    generatedRootAssetsDir.mkdirs()
+    generatedBundledAssetsDir.mkdirs()
 
     if (generatedModuleZip.exists()) {
       if (generatedModuleZip.canonicalPath != zdtModuleZip.canonicalPath) {
@@ -299,6 +344,8 @@ size=${zdtModuleZip.length()}
 moduleVersion=${moduleVersionName}
 moduleVersionCode=${moduleVersionCode}
 protection=fake-central-directory-encrypt
+onlineAsset=${onlineModuleAssetName}
+onlineUrl=${technicalAssetsBaseUrl}/${onlineModuleAssetName}
 busyboxArm64Asset=${busyBoxMeta.arm64.asset}
 busyboxArm64Sha256=${busyBoxMeta.arm64.sha}
 busyboxArm64Source=${busyBoxMeta.arm64.source}
@@ -313,22 +360,15 @@ busyboxArm32Source=${busyBoxMeta.arm32.source}
 // Compatibility task names for manual Gradle usage. They only depend on the
 // single writer task above and do not touch generated files themselves.
 tasks.register('syncGeneratedModuleAssets') {
-  dependsOn('prepareZdtGeneratedAssets')
+  dependsOn('prepareZdtRootAssets')
 }
 
 tasks.register('ensureZdtModuleZip') {
-  dependsOn('prepareZdtGeneratedAssets')
+  dependsOn('prepareZdtRootAssets')
 }
-
-// Run before building so generated assets are always present.
-tasks.named('preBuild') {
-  dependsOn('prepareZdtGeneratedAssets')
-  dependsOn('verifyBundledHelperAssets')
-}
-
 
 tasks.register('verifyBundledHelperAssets') {
-  dependsOn('prepareZdtGeneratedAssets')
+  dependsOn('prepareZdtRootAssets')
 
   bundledDpiDetectorAssets.each { inputs.file(it).withPathSensitivity(PathSensitivity.RELATIVE) }
   bundledNfqwsTesterAssets.each { inputs.file(it).withPathSensitivity(PathSensitivity.RELATIVE) }
@@ -363,6 +403,14 @@ tasks.register('verifyBundledHelperAssets') {
   }
 }
 
+// Root distributions need module metadata and installer helpers. The non-root
+// distribution deliberately has no dependency on the module archive.
+tasks.configureEach { task ->
+  if (task.name in ['preBundledDebugBuild', 'preBundledReleaseBuild', 'preOnlineDebugBuild', 'preOnlineReleaseBuild']) {
+    task.dependsOn('verifyBundledHelperAssets')
+  }
+}
+
 dependencies {
   implementation 'androidx.core:core-ktx:1.19.1'
   implementation 'androidx.appcompat:appcompat:1.8.0'
@@ -383,9 +431,10 @@ dependencies {
   implementation 'androidx.lifecycle:lifecycle-viewmodel-compose:2.11.0'
   implementation 'androidx.lifecycle:lifecycle-runtime-compose:2.11.0'
 
-  // Non-root VPN bridge. GitHub Actions builds this AAR from upstream source.
+  // Non-root VPN bridge. Root-only distributions must not package this AAR.
   if (hevSocks5TunnelAar.exists()) {
-    implementation files(hevSocks5TunnelAar)
+    compileOnly files(hevSocks5TunnelAar)
+    nonrootImplementation files(hevSocks5TunnelAar)
   }
 
   // Networking

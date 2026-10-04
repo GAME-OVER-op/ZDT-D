@@ -58,6 +58,7 @@ import java.io.RandomAccessFile
 import java.util.zip.GZIPInputStream
 import java.nio.charset.StandardCharsets
 import java.util.Locale
+import java.util.Properties
 import java.net.URLEncoder
 import java.net.InetSocketAddress
 import java.net.Proxy
@@ -720,9 +721,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
   }
 
   private fun releaseApkUrl(tag: String): String {
-    // Asset name is stable by design.
-    return "https" + "://github.com/GAME-OVER-op/ZDT-D/releases/download/${tag}/app-release.apk"
+    return "https" + "://github.com/GAME-OVER-op/ZDT-D/releases/download/${tag}/${releaseApkAssetName()}"
   }
+
+  private fun releaseApkAssetName(): String =
+    if (BuildConfig.USES_ONLINE_MODULE) "app-release-online.apk" else "app-release.apk"
 
   private suspend fun httpGetMaybeCached(
     url: String,
@@ -801,7 +804,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     val assets = js?.optJSONArray("assets") ?: return true
     for (i in 0 until assets.length()) {
       val asset = assets.optJSONObject(i) ?: continue
-      if (asset.optString("name") == "app-release.apk") return true
+      if (asset.optString("name") == releaseApkAssetName()) return true
     }
     return false
   }
@@ -4988,11 +4991,11 @@ if (mf.isNotBlank()) {
   }
 
   private suspend fun exportModuleZipToSdcard(): Triple<Boolean, String, String> {
-    val (cacheZip, copyError) = copyBundledModuleZipToCache()
+    val (cacheZip, copyError) = acquireModuleZipToCache()
     if (copyError != null || cacheZip == null) {
       return Triple(false, copyError ?: "asset zdt_module.zip missing", "")
     }
-    val verify = verifyBundledModuleZip(cacheZip)
+    val verify = verifyModuleZip(cacheZip)
     if (!verify.ok) return Triple(false, verify.message, "")
 
     val normalizeLog = runCatching { clearFakeEncryptedCentralDirectoryFlagsInPlace(cacheZip) }.getOrElse {
@@ -5019,10 +5022,10 @@ if (mf.isNotBlank()) {
     // Copy assets/zdt_module.zip to cache, verify the protected archive,
     // optionally normalize the same temporary copy for strict ZIP parsers,
     // then stage it for the selected root manager.
-    val (cacheZip, copyError) = copyBundledModuleZipToCache()
+    val (cacheZip, copyError) = acquireModuleZipToCache()
     if (copyError != null || cacheZip == null) return false to (copyError ?: "asset zdt_module.zip missing")
 
-    val verify = verifyBundledModuleZip(cacheZip)
+    val verify = verifyModuleZip(cacheZip)
     if (!verify.ok) return false to verify.message
 
     val normalizeLog = if (normalizeForStrictZipInstaller) {
@@ -5049,9 +5052,9 @@ if (mf.isNotBlank()) {
     runCatching { unpackDir.deleteRecursively() }
     unpackDir.mkdirs()
 
-    val (cacheZip, copyError) = copyBundledModuleZipToCache()
+    val (cacheZip, copyError) = acquireModuleZipToCache()
     if (copyError != null || cacheZip == null) return false to (copyError ?: "asset zdt_module.zip missing")
-    val verify = verifyBundledModuleZip(cacheZip)
+    val verify = verifyModuleZip(cacheZip)
     if (!verify.ok) return false to verify.message
 
     val extractLog = StringBuilder()
@@ -5512,19 +5515,100 @@ private fun shQuote(s: String): String {
 
   private data class ModuleZipVerification(val ok: Boolean, val message: String)
 
-  private fun copyBundledModuleZipToCache(): Pair<File?, String?> {
+  private suspend fun acquireModuleZipToCache(): Pair<File?, String?> {
     val cacheZip = File(ctx.cacheDir, "zdt_module.zip")
-    runCatching {
-      ctx.assets.open("zdt_module.zip").use { input ->
-        cacheZip.outputStream().use { out -> input.copyTo(out) }
+    if (!BuildConfig.USES_ONLINE_MODULE) {
+      runCatching {
+        ctx.assets.open("zdt_module.zip").use { input ->
+          cacheZip.outputStream().use { out -> input.copyTo(out) }
+        }
+      }.getOrElse {
+        return null to "asset zdt_module.zip missing: ${it.message ?: it}"
       }
-    }.getOrElse {
-      return null to "asset zdt_module.zip missing: ${it.message ?: it}"
+      return cacheZip to null
+    }
+
+    val metadata = readOnlineModuleMetadata()
+      ?: return null to "online module metadata is missing or invalid"
+
+    if (cacheZip.isFile && cacheZip.length() == metadata.size) {
+      val cachedSha = runCatching { sha256Hex(cacheZip) }.getOrNull()
+      if (cachedSha.equals(metadata.sha256, ignoreCase = true)) {
+        return cacheZip to null
+      }
+    }
+
+    val part = File(ctx.cacheDir, "zdt_module.zip.part")
+    runCatching { part.delete() }
+    updateInstallProgress(22, str(R.string.mv_auto_056))
+
+    val request = Request.Builder()
+      .url(metadata.url)
+      .header("User-Agent", "ZDT-D-Android")
+      .header("Cache-Control", "no-cache")
+      .build()
+
+    val downloadError = runCatching {
+      githubHttp.newCall(request).execute().use { response ->
+        check(response.isSuccessful) { "module download HTTP ${response.code}" }
+        val body = response.body
+        val reportedSize = body.contentLength()
+        if (reportedSize > 0L) check(reportedSize == metadata.size) {
+          "module size mismatch: expected=${metadata.size} remote=$reportedSize"
+        }
+        body.byteStream().use { input ->
+          part.outputStream().buffered().use { output ->
+            val buffer = ByteArray(64 * 1024)
+            var copied = 0L
+            while (true) {
+              currentCoroutineContext().ensureActive()
+              val read = input.read(buffer)
+              if (read < 0) break
+              output.write(buffer, 0, read)
+              copied += read
+              val percent = ((copied * 100L) / metadata.size.coerceAtLeast(1L)).toInt().coerceIn(0, 100)
+              updateInstallProgress(
+                percent = 22 + ((percent * 20) / 100),
+                label = str(R.string.prog_update_status_downloading_pct_fmt, percent),
+              )
+            }
+          }
+        }
+      }
+      check(part.length() == metadata.size) {
+        "module size mismatch: expected=${metadata.size} actual=${part.length()}"
+      }
+      val actualSha = sha256Hex(part)
+      check(actualSha.equals(metadata.sha256, ignoreCase = true)) {
+        "module SHA-256 mismatch: expected=${metadata.sha256} actual=$actualSha"
+      }
+      if (cacheZip.exists()) check(cacheZip.delete()) { "unable to replace cached module archive" }
+      check(part.renameTo(cacheZip)) { "unable to finalize downloaded module archive" }
+    }.exceptionOrNull()
+
+    if (downloadError != null) {
+      runCatching { part.delete() }
+      if (downloadError is CancellationException) throw downloadError
+      return null to (downloadError.message ?: downloadError.toString())
     }
     return cacheZip to null
   }
 
-  private fun verifyBundledModuleZip(zipFile: File): ModuleZipVerification {
+  private data class OnlineModuleMetadata(val url: String, val sha256: String, val size: Long)
+
+  private fun readOnlineModuleMetadata(): OnlineModuleMetadata? = runCatching {
+    val props = Properties()
+    ctx.assets.open("busybox/zdt_module.cache").use { input -> props.load(input) }
+    val url = props.getProperty("onlineUrl")?.trim().orEmpty()
+    val sha = props.getProperty("sha256")?.trim()?.lowercase(Locale.US).orEmpty()
+    val size = props.getProperty("size")?.trim()?.toLongOrNull() ?: 0L
+    check(url.startsWith("https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/"))
+    check(sha.matches(Regex("[0-9a-f]{64}")))
+    check(size > 0L)
+    OnlineModuleMetadata(url, sha, size)
+  }.getOrNull()
+
+  private fun verifyModuleZip(zipFile: File): ModuleZipVerification {
     val expected = readSha256Asset("busybox/zdt_module.sha256")
       ?: return ModuleZipVerification(false, "asset busybox/zdt_module.sha256 missing or invalid")
     val actual = runCatching { sha256Hex(zipFile) }.getOrElse {

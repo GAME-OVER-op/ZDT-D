@@ -1,0 +1,42 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <permission
+        android:name="com.android.zdtd.service.plugin.com.permission.CONTROL_TGWS"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="com.android.zdtd.service.plugin.com.permission.CONTROL_TGWS" />
+    <queries>
+        <package android:name="com.android.zdtd.service.plugin.com" />
+    </queries>
+    <application>
+        <activity
+            android:name=".NonRootLauncherActivity"
+            android:exported="true"
+            android:launchMode="singleTop">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity android:name=".NonRootActivity" android:exported="false" android:launchMode="singleTask" />
+        <receiver android:name=".tgwsplugin.TgWsPluginInstallReceiver" android:exported="false" />
+        <service
+            android:name=".NonRootTgWsService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-enabled non-root Telegram WS Proxy bound to the app-owned loopback interface" />
+        </service>
+        <service
+            android:name=".NonRootVpnService"
+            android:exported="false"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:foregroundServiceType="specialUse">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-initiated non-root VPN tunnel through app-owned proxy backends" />
+        </service>
+    </application>
+</manifest>

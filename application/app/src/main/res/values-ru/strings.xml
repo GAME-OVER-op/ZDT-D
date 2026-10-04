@@ -2486,8 +2486,8 @@ APatch: 10700+</string>
     <string name="non_root_service_state_stopping">Служба: останавливается</string>
     <string name="non_root_service_state_stopped">Служба: остановлена</string>
     <string name="non_root_service_state_error">Служба: ошибка</string>
-    <string name="non_root_switch_root_title">Переключиться в root-режим?</string>
-    <string name="non_root_switch_root_body">Желаете переключиться в root-режим? Откроется существующий мастер установки на экране запроса root-доступа.</string>
+    <string name="non_root_switch_root_title">Установить полную root-версию?</string>
+    <string name="non_root_switch_root_body">ZDT-D загрузит app-release.apk из последнего стабильного релиза, проверит пакет и подпись, а затем откроет установщик Android. Текущие настройки сохранятся.</string>
     <string name="non_root_log_preparing_runtime">Подготовка non-root runtime…</string>
     <string name="non_root_log_start_mode">Запуск режима %1$s…</string>
     <string name="non_root_log_start_component">Запуск %1$s…</string>

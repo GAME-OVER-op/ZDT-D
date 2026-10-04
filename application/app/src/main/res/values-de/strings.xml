@@ -2488,8 +2488,8 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="non_root_service_state_stopping">Dienst: wird beendet</string>
     <string name="non_root_service_state_stopped">Dienst: gestoppt</string>
     <string name="non_root_service_state_error">Dienst: Fehler</string>
-    <string name="non_root_switch_root_title">In den Root-Modus wechseln?</string>
-    <string name="non_root_switch_root_body">Möchten Sie in den Root-Modus wechseln? Der vorhandene Einrichtungsassistent wird beim Schritt zur Anforderung des Root-Zugriffs geöffnet.</string>
+    <string name="non_root_switch_root_title">Vollständige Root-Version installieren?</string>
+    <string name="non_root_switch_root_body">ZDT-D lädt app-release.apk aus der neuesten stabilen Version herunter, prüft Paket und Signatur und öffnet anschließend das Android-Installationsprogramm. Ihre aktuellen Einstellungen bleiben erhalten.</string>
     <string name="non_root_log_preparing_runtime">Non-Root-Laufzeit wird vorbereitet…</string>
     <string name="non_root_log_start_mode">Modus %1$s wird gestartet…</string>
     <string name="non_root_log_start_component">%1$s wird gestartet…</string>

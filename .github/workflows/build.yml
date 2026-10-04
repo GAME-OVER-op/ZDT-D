@@ -5912,7 +5912,7 @@ jobs:
         run: echo "APK helper artifacts and hev AAR are ready for APK packaging"
 
   build_apk:
-    name: build APK with module ZIP
+    name: build bundled, online and non-root APKs
     runs-on: ubuntu-latest
     needs:
       - pack_module
@@ -6213,7 +6213,7 @@ jobs:
           )
           for abi in arm64-v8a armeabi-v7a; do
             SRC="${SRC_BY_ABI[$abi]}"
-            DST="application/app/build/generated/zdt-assets/main/dpi-detector/$abi/dpi-detector"
+            DST="application/app/build/generated/zdt-root-assets/main/dpi-detector/$abi/dpi-detector"
             test -s "$SRC" || { echo "::error::dpi-detector artifact missing: $SRC"; exit 1; }
             mkdir -p "$(dirname "$DST")"
             cp -f "$SRC" "$DST"
@@ -6230,7 +6230,7 @@ jobs:
           )
           for abi in arm64-v8a armeabi-v7a; do
             SRC="${SRC_BY_ABI[$abi]}"
-            DST="application/app/build/generated/zdt-assets/main/nfqws-tester/$abi/nfqws_tester"
+            DST="application/app/build/generated/zdt-root-assets/main/nfqws-tester/$abi/nfqws_tester"
             test -s "$SRC" || { echo "::error::nfqws_tester artifact missing: $SRC"; exit 1; }
             mkdir -p "$(dirname "$DST")"
             cp -f "$SRC" "$DST"
@@ -6238,39 +6238,60 @@ jobs:
             ls -lh "$DST"
           done
 
-      - name: Build APK assemble${{ env.BUILD_TYPE }}
+      - name: Build bundled, online and non-root APKs
         working-directory: ${{ env.GRADLE_PROJECT_DIR }}
         env:
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
         run: |
+          set -euo pipefail
+          VERSION_CODE="$(grep -m1 '^versionCode=' ../module.prop | cut -d'=' -f2 | tr -d '[:space:]')"
+          MODULE_ASSET="zdt_module-${VERSION_CODE}-${GITHUB_RUN_NUMBER}.zip"
           gradle \
             --no-daemon \
             --max-workers=$(nproc) \
             "-PzdtCompileSdk=${{ env.ZDT_COMPILE_SDK }}" \
             "-PzdtCompileSdkMinor=${{ env.ZDT_COMPILE_SDK_MINOR }}" \
             "-PzdtRequireHevAar=true" \
-            "assemble${{ env.BUILD_TYPE }}"
+            "-PzdtOnlineModuleAssetName=${MODULE_ASSET}" \
+            "assembleBundled${{ env.BUILD_TYPE }}" \
+            "assembleOnline${{ env.BUILD_TYPE }}" \
+            "assembleNonroot${{ env.BUILD_TYPE }}"
 
       - name: Collect final artifacts
         run: |
           set -euo pipefail
           mkdir -p out/dist
 
-          APK=$(find "$GRADLE_PROJECT_DIR" -path '*/build/outputs/apk/*.apk' -type f | sort | tail -1)
-          [[ -n "$APK" ]] || { echo "::error::APK does not exist"; exit 1; }
+          BUILD_TYPE_LOWER="$(printf '%s' "$BUILD_TYPE" | tr '[:upper:]' '[:lower:]')"
+          find_variant_apk() {
+            local flavor="$1"
+            find "$GRADLE_PROJECT_DIR" -path "*/build/outputs/apk/${flavor}/${BUILD_TYPE_LOWER}/*.apk" -type f | sort | tail -1
+          }
+          BUNDLED_APK="$(find_variant_apk bundled)"
+          ONLINE_APK="$(find_variant_apk online)"
+          NONROOT_APK="$(find_variant_apk nonroot)"
+          for apk in "$BUNDLED_APK" "$ONLINE_APK" "$NONROOT_APK"; do
+            test -s "$apk" || { echo "::error::Expected APK does not exist: $apk"; exit 1; }
+            unzip -Z1 "$apk" | grep -Fx 'AndroidManifest.xml' >/dev/null || { echo "::error::Invalid APK: $apk"; exit 1; }
+          done
 
-          APK_ENTRIES="$(unzip -Z1 "$APK" 2>/dev/null)" || { echo "::error::Unable to read APK: $APK"; exit 1; }
-          if ! printf '%s\n' "$APK_ENTRIES" | grep -Fx 'AndroidManifest.xml' >/dev/null; then
-            echo "::error::Gradle output is not an installable APK or AndroidManifest.xml is missing: $APK"
-            printf '%s\n' "$APK_ENTRIES" | head -80 || true
-            exit 1
-          fi
-          for entry in \
+          ROOT_REQUIRED=(
             assets/dpi-detector/arm64-v8a/dpi-detector \
             assets/dpi-detector/armeabi-v7a/dpi-detector \
             assets/nfqws-tester/arm64-v8a/nfqws_tester \
             assets/nfqws-tester/armeabi-v7a/nfqws_tester \
+            assets/busybox/busybox-arm64 \
+            assets/busybox/busybox-arm64.sha256 \
+            assets/busybox/busybox-arm64.source \
+            assets/busybox/busybox-arm32 \
+            assets/busybox/busybox-arm32.sha256 \
+            assets/busybox/busybox-arm32.source \
+            assets/busybox/zdt_module.sha256 \
+            assets/busybox/zdt_module.cache \
+            assets/module.prop
+          )
+          NONROOT_REQUIRED=(
             lib/arm64-v8a/libhev-socks5-tunnel.so \
             lib/armeabi-v7a/libhev-socks5-tunnel.so \
             lib/arm64-v8a/libzdt_t2s.so \
@@ -6286,27 +6307,58 @@ jobs:
             lib/arm64-v8a/libzdt_mieru.so \
             lib/armeabi-v7a/libzdt_mieru.so \
             lib/arm64-v8a/libzdt_wireproxy.so \
-            lib/armeabi-v7a/libzdt_wireproxy.so \
-            assets/busybox/busybox-arm64 \
-            assets/busybox/busybox-arm64.sha256 \
-            assets/busybox/busybox-arm64.source \
-            assets/busybox/busybox-arm32 \
-            assets/busybox/busybox-arm32.sha256 \
-            assets/busybox/busybox-arm32.source; do
-            printf '%s\n' "$APK_ENTRIES" | grep -Fx "$entry" >/dev/null || { echo "::error::APK asset missing: $entry"; exit 1; }
+            lib/armeabi-v7a/libzdt_wireproxy.so
+          )
+
+          require_entries() {
+            local apk="$1"
+            shift
+            local entries
+            entries="$(unzip -Z1 "$apk")"
+            for entry in "$@"; do
+              printf '%s\n' "$entries" | grep -Fx "$entry" >/dev/null || { echo "::error::APK entry missing in $apk: $entry"; exit 1; }
+            done
+          }
+          forbid_entries() {
+            local apk="$1"
+            shift
+            local entries
+            entries="$(unzip -Z1 "$apk")"
+            for entry in "$@"; do
+              if printf '%s\n' "$entries" | grep -Fx "$entry" >/dev/null; then
+                echo "::error::Forbidden APK entry in $apk: $entry"
+                exit 1
+              fi
+            done
+          }
+
+          require_entries "$BUNDLED_APK" "${ROOT_REQUIRED[@]}" assets/xposed_init assets/zdt_module.zip
+          require_entries "$ONLINE_APK" "${ROOT_REQUIRED[@]}" assets/xposed_init
+          require_entries "$NONROOT_APK" "${NONROOT_REQUIRED[@]}" assets/nonroot/ca.bundle
+          forbid_entries "$BUNDLED_APK" "${NONROOT_REQUIRED[@]}" assets/nonroot/ca.bundle
+          forbid_entries "$ONLINE_APK" "${NONROOT_REQUIRED[@]}" assets/nonroot/ca.bundle assets/zdt_module.zip
+          forbid_entries "$NONROOT_APK" "${ROOT_REQUIRED[@]}" assets/xposed_init assets/zdt_module.zip
+
+          for apk in "$BUNDLED_APK" "$ONLINE_APK"; do
+            APK_MODULE_PROP="$(unzip -p "$apk" assets/module.prop)"
+            printf '%s\n' "$APK_MODULE_PROP" | grep -Eq '^buildType=(release|service)$' || { echo "::error::buildType missing from $apk module.prop"; exit 1; }
+            printf '%s\n' "$APK_MODULE_PROP" | grep -Eq '^buildNumber=[0-9]+$' || { echo "::error::buildNumber missing from $apk module.prop"; exit 1; }
           done
-          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/busybox/zdt_module.sha256' >/dev/null || { echo "::error::module SHA-256 APK asset missing"; exit 1; }
-          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/busybox/zdt_module.cache' >/dev/null || { echo "::error::module cache APK asset missing"; exit 1; }
-          printf '%s\n' "$APK_ENTRIES" | grep -Fx 'assets/module.prop' >/dev/null || { echo "::error::module.prop APK asset missing"; exit 1; }
-          APK_MODULE_PROP="$(unzip -p "$APK" assets/module.prop)"
-          printf '%s\n' "$APK_MODULE_PROP" | grep -Eq '^buildType=(release|service)$' || { echo "::error::buildType missing from APK module.prop"; exit 1; }
-          printf '%s\n' "$APK_MODULE_PROP" | grep -Eq '^buildNumber=[0-9]+$' || { echo "::error::buildNumber missing from APK module.prop"; exit 1; }
+          VERSION_CODE="$(grep -m1 '^versionCode=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')"
+          MODULE_ASSET="zdt_module-${VERSION_CODE}-${GITHUB_RUN_NUMBER}.zip"
+          ONLINE_MODULE_META="$(unzip -p "$ONLINE_APK" assets/busybox/zdt_module.cache)"
+          printf '%s\n' "$ONLINE_MODULE_META" | grep -Fx "onlineAsset=${MODULE_ASSET}" >/dev/null || { echo "::error::Online APK module asset binding is invalid"; exit 1; }
+          printf '%s\n' "$ONLINE_MODULE_META" | grep -Fx "onlineUrl=https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/${MODULE_ASSET}" >/dev/null || { echo "::error::Online APK module URL binding is invalid"; exit 1; }
 
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${{ env.ANDROID_BUILD_TOOLS_VERSION }}/apksigner"
           [[ -x "$APKSIGNER" ]] || { echo "::error::apksigner not found: $APKSIGNER"; exit 1; }
-          "$APKSIGNER" verify --verbose "$APK"
+          "$APKSIGNER" verify --verbose "$BUNDLED_APK"
+          "$APKSIGNER" verify --verbose "$ONLINE_APK"
+          "$APKSIGNER" verify --verbose "$NONROOT_APK"
 
-          cp -f "$APK" out/dist/app-release.apk
+          cp -f "$BUNDLED_APK" out/dist/app-release.apk
+          cp -f "$ONLINE_APK" out/dist/app-release-online.apk
+          cp -f "$NONROOT_APK" out/dist/app-release-nonroot.apk
           cp -f out/module/zdt_module.zip out/dist/zdt_module.zip
 
           ls -lh out/dist/
@@ -6315,7 +6367,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: zdt-apk
-          path: out/dist/app-release.apk
+          path: |
+            out/dist/app-release.apk
+            out/dist/app-release-online.apk
+            out/dist/app-release-nonroot.apk
           retention-days: 30
 
       - name: Upload module artifact
@@ -6359,6 +6414,12 @@ jobs:
           name: zdt-apk
           path: out/dist
 
+      - name: Download module archive for online installer
+        uses: actions/download-artifact@v8
+        with:
+          name: zdt-module-final
+          path: out/module-online
+
       - name: Download tg_ws_proxy.zip artifact
         if: needs.package_tg_ws_proxy_asset.result == 'success'
         uses: actions/download-artifact@v8
@@ -6394,11 +6455,21 @@ jobs:
           SERVICE_TAG="service-build"
           SERVICE_TITLE="ZDT-D Service Build"
           APK_SOURCE="out/dist/app-release.apk"
+          ONLINE_APK_SOURCE="out/dist/app-release-online.apk"
+          NONROOT_APK_SOURCE="out/dist/app-release-nonroot.apk"
           SERVICE_APK="out/dist/ZDT-D-service-build.apk"
+          SERVICE_ONLINE_APK="out/dist/ZDT-D-service-build-online.apk"
+          SERVICE_NONROOT_APK="out/dist/ZDT-D-service-build-nonroot.apk"
           STABLE_ASSET_SPEC="${APK_SOURCE}#app-release.apk"
+          STABLE_ONLINE_ASSET_SPEC="${ONLINE_APK_SOURCE}#app-release-online.apk"
+          STABLE_NONROOT_ASSET_SPEC="${NONROOT_APK_SOURCE}#app-release-nonroot.apk"
 
           test -s "$APK_SOURCE" || { echo "::error::APK does not exist: $APK_SOURCE"; exit 1; }
+          test -s "$ONLINE_APK_SOURCE" || { echo "::error::Online APK does not exist: $ONLINE_APK_SOURCE"; exit 1; }
+          test -s "$NONROOT_APK_SOURCE" || { echo "::error::Non-root APK does not exist: $NONROOT_APK_SOURCE"; exit 1; }
           cp -f "$APK_SOURCE" "$SERVICE_APK"
+          cp -f "$ONLINE_APK_SOURCE" "$SERVICE_ONLINE_APK"
+          cp -f "$NONROOT_APK_SOURCE" "$SERVICE_NONROOT_APK"
 
           VERSION_CODE="$(grep -m1 '^versionCode=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')"
           VERSION_NAME="$(grep -m1 '^version=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')"
@@ -6714,6 +6785,21 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          TECHNICAL_TAG="Technical_Assets"
+          TECHNICAL_TITLE="ZDT-D Technical Assets"
+          MODULE_TECHNICAL_SOURCE="out/module-online/zdt_module.zip"
+          MODULE_TECHNICAL_NAME="zdt_module-${VERSION_CODE}-${GITHUB_RUN_NUMBER}.zip"
+          test -s "$MODULE_TECHNICAL_SOURCE" || { echo "::error::Online module archive is missing: $MODULE_TECHNICAL_SOURCE"; exit 1; }
+          if gh release view "$TECHNICAL_TAG" >/dev/null 2>&1; then
+            gh release edit "$TECHNICAL_TAG" --title "$TECHNICAL_TITLE" --prerelease --latest=false
+          else
+            gh release create "$TECHNICAL_TAG" --target "$FULL_SHA" --title "$TECHNICAL_TITLE" --notes "Technical assets used by ZDT-D optional components." --prerelease --latest=false
+          fi
+          upload_asset_with_retry "$TECHNICAL_TAG" "$MODULE_TECHNICAL_SOURCE#$MODULE_TECHNICAL_NAME" "$MODULE_TECHNICAL_NAME"
+          MODULE_UPLOAD_MODE="$UPLOAD_MODE"
+          MODULE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
+
           git tag -f "$SERVICE_TAG" "$FULL_SHA"
           git push -f origin "refs/tags/${SERVICE_TAG}"
 
@@ -6725,9 +6811,13 @@ jobs:
           upload_asset_with_retry "$SERVICE_TAG" "$SERVICE_APK" "ZDT-D-service-build.apk"
           SERVICE_UPLOAD_MODE="$UPLOAD_MODE"
           SERVICE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
+          upload_asset_with_retry "$SERVICE_TAG" "$SERVICE_ONLINE_APK" "ZDT-D-service-build-online.apk"
+          SERVICE_ONLINE_UPLOAD_MODE="$UPLOAD_MODE"
+          SERVICE_ONLINE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
+          upload_asset_with_retry "$SERVICE_TAG" "$SERVICE_NONROOT_APK" "ZDT-D-service-build-nonroot.apk"
+          SERVICE_NONROOT_UPLOAD_MODE="$UPLOAD_MODE"
+          SERVICE_NONROOT_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
 
-          TECHNICAL_TAG="Technical_Assets"
-          TECHNICAL_TITLE="ZDT-D Technical Assets"
           TG_WS_PROXY_ASSET="out/technical/tg_ws_proxy.zip"
           TG_WS_PROXY_UPLOAD_MODE="skipped"
           TG_WS_PROXY_UPLOAD_ATTEMPTS="0"
@@ -6785,6 +6875,10 @@ jobs:
           STABLE_TITLE="V ${VERSION_NAME}"
           STABLE_UPLOAD_MODE=""
           STABLE_UPLOAD_ATTEMPTS=""
+          STABLE_ONLINE_UPLOAD_MODE=""
+          STABLE_ONLINE_UPLOAD_ATTEMPTS=""
+          STABLE_NONROOT_UPLOAD_MODE=""
+          STABLE_NONROOT_UPLOAD_ATTEMPTS=""
           STABLE_RELEASE_EXISTS=false
           STABLE_PUBLISHED_VERSION_CODE=""
 
@@ -6797,12 +6891,21 @@ jobs:
             STABLE_RELEASE_EXISTS=true
             STABLE_BODY="$(gh release view "$STABLE_TAG" --json body --jq '.body // ""')"
             STABLE_PUBLISHED_VERSION_CODE="$(printf '%s\n' "$STABLE_BODY" | parse_version_code_from_body || true)"
+            STABLE_ASSET_NAMES="$(gh release view "$STABLE_TAG" --json assets --jq '.assets[].name' || true)"
+            STABLE_ALL_VARIANTS_PRESENT=true
+            for required_asset in app-release.apk app-release-online.apk app-release-nonroot.apk; do
+              if ! printf '%s\n' "$STABLE_ASSET_NAMES" | grep -Fx "$required_asset" >/dev/null; then
+                STABLE_ALL_VARIANTS_PRESENT=false
+              fi
+            done
 
-            if [[ -n "$STABLE_PUBLISHED_VERSION_CODE" && "$STABLE_PUBLISHED_VERSION_CODE" =~ ^[0-9]+$ ]] && (( VERSION_CODE <= STABLE_PUBLISHED_VERSION_CODE )); then
+            if [[ "$STABLE_ALL_VARIANTS_PRESENT" == "true" && -n "$STABLE_PUBLISHED_VERSION_CODE" && "$STABLE_PUBLISHED_VERSION_CODE" =~ ^[0-9]+$ ]] && (( VERSION_CODE <= STABLE_PUBLISHED_VERSION_CODE )); then
               STABLE_ACTION="skipped"
-              STABLE_REASON="stable release ${STABLE_TAG} already has versionCode ${STABLE_PUBLISHED_VERSION_CODE}; current versionCode ${VERSION_CODE} is not newer, so app-release.apk was preserved"
+              STABLE_REASON="stable release ${STABLE_TAG} already has all three APK variants and versionCode ${STABLE_PUBLISHED_VERSION_CODE}; current versionCode ${VERSION_CODE} is not newer, so release assets were preserved"
             else
-              if [[ -n "$STABLE_PUBLISHED_VERSION_CODE" && "$STABLE_PUBLISHED_VERSION_CODE" =~ ^[0-9]+$ ]]; then
+              if [[ "$STABLE_ALL_VARIANTS_PRESENT" != "true" ]]; then
+                STABLE_REASON="updated existing stable release ${STABLE_TAG}: one or more APK variants were missing"
+              elif [[ -n "$STABLE_PUBLISHED_VERSION_CODE" && "$STABLE_PUBLISHED_VERSION_CODE" =~ ^[0-9]+$ ]]; then
                 STABLE_REASON="updated existing stable release ${STABLE_TAG}: versionCode ${VERSION_CODE} is newer than published ${STABLE_PUBLISHED_VERSION_CODE}"
               else
                 STABLE_REASON="updated existing stable release ${STABLE_TAG}: published versionCode is missing or unreadable"
@@ -6857,6 +6960,11 @@ jobs:
             "workflowRunId": ${GITHUB_RUN_ID},
             "workflowRunNumber": ${GITHUB_RUN_NUMBER},
             "asset": "app-release.apk",
+            "assets": {
+              "bundled": "app-release.apk",
+              "online": "app-release-online.apk",
+              "nonroot": "app-release-nonroot.apk"
+            },
             "assetReady": true,
             "updatedAt": "${BUILD_TIME_UTC}"
           }
@@ -6874,6 +6982,12 @@ jobs:
               upload_asset_with_retry "$STABLE_TAG" "$STABLE_ASSET_SPEC" "app-release.apk"
               STABLE_UPLOAD_MODE="$UPLOAD_MODE"
               STABLE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
+              upload_asset_with_retry "$STABLE_TAG" "$STABLE_ONLINE_ASSET_SPEC" "app-release-online.apk"
+              STABLE_ONLINE_UPLOAD_MODE="$UPLOAD_MODE"
+              STABLE_ONLINE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
+              upload_asset_with_retry "$STABLE_TAG" "$STABLE_NONROOT_ASSET_SPEC" "app-release-nonroot.apk"
+              STABLE_NONROOT_UPLOAD_MODE="$UPLOAD_MODE"
+              STABLE_NONROOT_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
 
               gh release edit "$STABLE_TAG" --title "$STABLE_TITLE" --notes-file stable_release_notes.md
               STABLE_ACTION="updated"
@@ -6928,6 +7042,11 @@ jobs:
             "workflowRunId": ${GITHUB_RUN_ID},
             "workflowRunNumber": ${GITHUB_RUN_NUMBER},
             "asset": "app-release.apk",
+            "assets": {
+              "bundled": "app-release.apk",
+              "online": "app-release-online.apk",
+              "nonroot": "app-release-nonroot.apk"
+            },
             "assetReady": true,
             "updatedAt": "${BUILD_TIME_UTC}"
           }
@@ -6946,6 +7065,12 @@ jobs:
             upload_asset_with_retry "$STABLE_TAG" "$STABLE_ASSET_SPEC" "app-release.apk"
             STABLE_UPLOAD_MODE="$UPLOAD_MODE"
             STABLE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
+            upload_asset_with_retry "$STABLE_TAG" "$STABLE_ONLINE_ASSET_SPEC" "app-release-online.apk"
+            STABLE_ONLINE_UPLOAD_MODE="$UPLOAD_MODE"
+            STABLE_ONLINE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
+            upload_asset_with_retry "$STABLE_TAG" "$STABLE_NONROOT_ASSET_SPEC" "app-release-nonroot.apk"
+            STABLE_NONROOT_UPLOAD_MODE="$UPLOAD_MODE"
+            STABLE_NONROOT_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
             STABLE_ACTION="created"
             STABLE_REASON="created new stable release ${STABLE_TAG}"
           fi
@@ -6958,6 +7083,15 @@ jobs:
             echo "Service APK asset updated: \`ZDT-D-service-build.apk\`"
             echo "Service upload mode: \`${SERVICE_UPLOAD_MODE}\`"
             echo "Service upload attempts: \`${SERVICE_UPLOAD_ATTEMPTS}\`"
+            echo "Service online APK asset updated: \`ZDT-D-service-build-online.apk\`"
+            echo "Service online upload mode: \`${SERVICE_ONLINE_UPLOAD_MODE}\`"
+            echo "Service online upload attempts: \`${SERVICE_ONLINE_UPLOAD_ATTEMPTS}\`"
+            echo "Service non-root APK asset updated: \`ZDT-D-service-build-nonroot.apk\`"
+            echo "Service non-root upload mode: \`${SERVICE_NONROOT_UPLOAD_MODE}\`"
+            echo "Service non-root upload attempts: \`${SERVICE_NONROOT_UPLOAD_ATTEMPTS}\`"
+            echo "Online module asset: \`${MODULE_TECHNICAL_NAME}\`"
+            echo "Online module upload mode: \`${MODULE_UPLOAD_MODE}\`"
+            echo "Online module upload attempts: \`${MODULE_UPLOAD_ATTEMPTS}\`"
             echo "Service changelog baseline: \`${LATEST_STABLE_TAG:-none}\`"
             echo "Service compare: ${SERVICE_COMPARE_URL}"
             echo "GitHub Models AI summary: \`attempted\`"
@@ -6982,6 +7116,10 @@ jobs:
             if [[ -n "$STABLE_UPLOAD_MODE" ]]; then
               echo "Stable upload mode: \`${STABLE_UPLOAD_MODE}\`"
               echo "Stable upload attempts: \`${STABLE_UPLOAD_ATTEMPTS}\`"
+              echo "Stable online upload mode: \`${STABLE_ONLINE_UPLOAD_MODE}\`"
+              echo "Stable online upload attempts: \`${STABLE_ONLINE_UPLOAD_ATTEMPTS}\`"
+              echo "Stable non-root upload mode: \`${STABLE_NONROOT_UPLOAD_MODE}\`"
+              echo "Stable non-root upload attempts: \`${STABLE_NONROOT_UPLOAD_ATTEMPTS}\`"
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 

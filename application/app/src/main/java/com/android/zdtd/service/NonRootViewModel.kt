@@ -24,6 +24,7 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
   private val cascadeStore = NonRootCascadeStore(application.applicationContext)
   private val tgWsStore = NonRootTgWsStore(application.applicationContext)
   private val tgWsPluginManager = TgWsPluginManager(application.applicationContext)
+  private val fullAppUpgradeManager = FullAppUpgradeManager(application.applicationContext)
 
   private val _languageMode = MutableStateFlow(config.getAppLanguageMode())
   val languageMode: StateFlow<String> = _languageMode.asStateFlow()
@@ -58,6 +59,7 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
   val tgWsPluginState: StateFlow<TgWsPluginState> = TgWsPluginStateBus.state
   val tgWsRuntimeState: StateFlow<NonRootTgWsRuntimeState> = NonRootTgWsRuntime.state
   val tgWsRuntimeLastError: StateFlow<String?> = NonRootTgWsRuntime.lastError
+  val fullAppUpgradeState: StateFlow<FullAppUpgradeState> = fullAppUpgradeManager.state
 
   val vpnState: StateFlow<NonRootVpnState> = NonRootVpnRuntime.state
   val vpnLastError: StateFlow<String?> = NonRootVpnRuntime.lastError
@@ -207,6 +209,14 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
     tgWsPluginManager.markInstallPermissionDenied()
   }
 
+  suspend fun downloadLatestFullApp(): Boolean = fullAppUpgradeManager.downloadLatestBundledApk()
+
+  fun installDownloadedFullApp(): Boolean = fullAppUpgradeManager.installDownloadedApk()
+
+  fun onFullAppInstallPermissionDenied() {
+    fullAppUpgradeManager.markInstallPermissionDenied()
+  }
+
   fun removeTgWsPlugin() {
     if (_tgWsConfig.value.enabled) {
       setTgWsConfig(_tgWsConfig.value.copy(enabled = false))
@@ -260,5 +270,4 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
   }
 
 }
-
 

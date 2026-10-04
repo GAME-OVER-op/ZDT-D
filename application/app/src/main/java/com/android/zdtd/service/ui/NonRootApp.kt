@@ -120,6 +120,8 @@ import com.android.zdtd.service.NonRootTgWsRuntimeState
 import com.android.zdtd.service.tgwsplugin.TgWsPluginState
 import com.android.zdtd.service.NonRootWorkMode
 import com.android.zdtd.service.NonRootVpnState
+import com.android.zdtd.service.FullAppUpgradeState
+import com.android.zdtd.service.FullAppUpgradeStatus
 import com.android.zdtd.service.R
 import com.android.zdtd.service.ui.settings.SettingsScreen
 import com.android.zdtd.service.ui.vps.VpsProfileScreen
@@ -151,10 +153,11 @@ fun NonRootApp(
   tgWsPluginState: TgWsPluginState,
   tgWsRuntimeState: NonRootTgWsRuntimeState,
   tgWsRuntimeLastError: String?,
+  fullAppUpgradeState: FullAppUpgradeState,
   vpsViewModel: VpsViewModel,
   onVpnStart: () -> Unit,
   onVpnStop: () -> Unit,
-  onRequestRootMode: () -> Unit,
+  onRequestFullVersion: () -> Unit,
   onLanguageModeChange: (String) -> Unit,
   onThemeModeChange: (String) -> Unit,
   onWorkModeChange: (NonRootWorkMode) -> Unit,
@@ -324,9 +327,10 @@ fun NonRootApp(
           vpnState = vpnState,
           vpnLastError = vpnLastError,
           vpnLogs = vpnLogs,
+          fullAppUpgradeState = fullAppUpgradeState,
           onVpnStart = onVpnStart,
           onVpnStop = onVpnStop,
-          onRequestRootMode = onRequestRootMode,
+          onRequestFullVersion = onRequestFullVersion,
         )
         page == "tab:STATS" -> NonRootStatsScreen(
           topContentPadding = topContentPadding,
@@ -517,9 +521,10 @@ private fun NonRootHomeScreen(
   vpnState: NonRootVpnState,
   vpnLastError: String?,
   vpnLogs: List<NonRootRuntimeLogEntry>,
+  fullAppUpgradeState: FullAppUpgradeState,
   onVpnStart: () -> Unit,
   onVpnStop: () -> Unit,
-  onRequestRootMode: () -> Unit,
+  onRequestFullVersion: () -> Unit,
 ) {
   val screenPadding = rememberAdaptiveScreenPadding()
   val compact = rememberIsShortHeight()
@@ -614,6 +619,26 @@ private fun NonRootHomeScreen(
               style = MaterialTheme.typography.bodySmall,
               color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            AnimatedVisibility(visible = fullAppUpgradeState.status != FullAppUpgradeStatus.IDLE) {
+              val upgradeText = when (fullAppUpgradeState.status) {
+                FullAppUpgradeStatus.CHECKING -> stringResource(R.string.common_loading)
+                FullAppUpgradeStatus.DOWNLOADING -> stringResource(
+                  R.string.prog_update_status_downloading_pct_fmt,
+                  fullAppUpgradeState.progressPercent,
+                )
+                FullAppUpgradeStatus.READY,
+                FullAppUpgradeStatus.INSTALLING -> stringResource(R.string.setup_install_progress_preparing)
+                FullAppUpgradeStatus.ERROR -> fullAppUpgradeState.errorMessage.orEmpty()
+                FullAppUpgradeStatus.IDLE -> ""
+              }
+              Text(
+                text = upgradeText,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (fullAppUpgradeState.status == FullAppUpgradeStatus.ERROR) {
+                  MaterialTheme.colorScheme.error
+                } else MaterialTheme.colorScheme.primary,
+              )
+            }
           }
         }
 
@@ -669,9 +694,10 @@ private fun NonRootHomeScreen(
       text = { Text(stringResource(R.string.non_root_switch_root_body)) },
       confirmButton = {
         TextButton(
+          enabled = !fullAppUpgradeState.busy,
           onClick = {
             showRootSwitchConfirm = false
-            onRequestRootMode()
+            onRequestFullVersion()
           },
         ) { Text(stringResource(R.string.common_yes)) }
       },

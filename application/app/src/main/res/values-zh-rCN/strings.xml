@@ -2487,8 +2487,8 @@ APatch：10700+</string>
     <string name="non_root_service_state_stopping">服务：正在停止</string>
     <string name="non_root_service_state_stopped">服务：已停止</string>
     <string name="non_root_service_state_error">服务：错误</string>
-    <string name="non_root_switch_root_title">切换到 Root 模式？</string>
-    <string name="non_root_switch_root_body">是否切换到 Root 模式？现有设置向导将从请求 Root 权限的步骤打开。</string>
+    <string name="non_root_switch_root_title">安装完整 Root 版本？</string>
+    <string name="non_root_switch_root_body">ZDT-D 将从最新稳定版下载 app-release.apk，验证软件包和签名，然后打开 Android 安装程序。当前设置将保留。</string>
     <string name="non_root_log_preparing_runtime">正在准备免 Root 运行环境…</string>
     <string name="non_root_log_start_mode">正在启动 %1$s 模式…</string>
     <string name="non_root_log_start_component">正在启动 %1$s…</string>

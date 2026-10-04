@@ -2488,8 +2488,8 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="non_root_service_state_stopping">सेवा: रुक रही है</string>
     <string name="non_root_service_state_stopped">सेवा: रुकी हुई है</string>
     <string name="non_root_service_state_error">सेवा: त्रुटि</string>
-    <string name="non_root_switch_root_title">रूट मोड पर स्विच करें?</string>
-    <string name="non_root_switch_root_body">क्या आप रूट मोड पर स्विच करना चाहते हैं? मौजूदा सेटअप विज़ार्ड रूट एक्सेस अनुरोध चरण पर खुलेगा।</string>
+    <string name="non_root_switch_root_title">पूरा रूट संस्करण इंस्टॉल करें?</string>
+    <string name="non_root_switch_root_body">ZDT-D नवीनतम स्थिर रिलीज़ से app-release.apk डाउनलोड करेगा, पैकेज और हस्ताक्षर की पुष्टि करेगा और फिर Android इंस्टॉलर खोलेगा। आपकी मौजूदा सेटिंग सुरक्षित रहेंगी।</string>
     <string name="non_root_log_preparing_runtime">बिना root रनटाइम तैयार किया जा रहा है…</string>
     <string name="non_root_log_start_mode">%1$s मोड शुरू किया जा रहा है…</string>
     <string name="non_root_log_start_component">%1$s शुरू किया जा रहा है…</string>

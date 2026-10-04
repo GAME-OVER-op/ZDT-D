@@ -37,6 +37,13 @@ class NonRootActivity : AppCompatActivity() {
       vm.onTgWsPluginInstallPermissionDenied()
     }
   }
+  private val fullAppInstallPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()) {
+      vm.installDownloadedFullApp()
+    } else {
+      vm.onFullAppInstallPermissionDenied()
+    }
+  }
   private val vpnPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
     if (result.resultCode == Activity.RESULT_OK) startNonRootVpnService()
   }
@@ -64,6 +71,7 @@ class NonRootActivity : AppCompatActivity() {
       val tgWsPluginState by vm.tgWsPluginState.collectAsStateWithLifecycle()
       val tgWsRuntimeState by vm.tgWsRuntimeState.collectAsStateWithLifecycle()
       val tgWsRuntimeLastError by vm.tgWsRuntimeLastError.collectAsStateWithLifecycle()
+      val fullAppUpgradeState by vm.fullAppUpgradeState.collectAsStateWithLifecycle()
       ZdtdTheme(themeMode = ZdtdThemeMode.fromStorage(themeMode)) {
         val lightBars = MaterialTheme.colorScheme.background.luminance() > 0.5f
         SideEffect {
@@ -88,10 +96,11 @@ class NonRootActivity : AppCompatActivity() {
             tgWsPluginState = tgWsPluginState,
             tgWsRuntimeState = tgWsRuntimeState,
             tgWsRuntimeLastError = tgWsRuntimeLastError,
+            fullAppUpgradeState = fullAppUpgradeState,
             vpsViewModel = vpsVm,
             onVpnStart = ::requestNonRootVpnStart,
             onVpnStop = { NonRootVpnService.stop(this@NonRootActivity) },
-            onRequestRootMode = ::switchToRootSetup,
+            onRequestFullVersion = ::requestFullVersionInstall,
             onLanguageModeChange = vm::setLanguageMode,
             onThemeModeChange = vm::setThemeMode,
             onWorkModeChange = vm::setWorkMode,
@@ -145,15 +154,17 @@ class NonRootActivity : AppCompatActivity() {
     }
   }
 
-  private fun switchToRootSetup() {
-    NonRootTgWsService.stop(applicationContext, persistDisabled = false)
-    NonRootVpnService.stop(this)
-    RootConfigManager(applicationContext).setRuntimeMode("root")
-    startActivity(
-      Intent(this, MainActivity::class.java)
-        .putExtra(MainActivity.EXTRA_OPEN_ROOT_SETUP, true)
-    )
-    finish()
+  private fun requestFullVersionInstall() {
+    lifecycleScope.launch {
+      if (!vm.downloadLatestFullApp()) return@launch
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
+        fullAppInstallPermissionLauncher.launch(
+          Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
+        )
+      } else {
+        vm.installDownloadedFullApp()
+      }
+    }
   }
 
   private fun restartNonRootVpn() {

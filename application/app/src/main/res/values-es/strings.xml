@@ -2488,8 +2488,8 @@ La causa restante probablemente está en el daemon/API. Revisa los registros del
     <string name="non_root_service_state_stopping">Servicio: deteniéndose</string>
     <string name="non_root_service_state_stopped">Servicio: detenido</string>
     <string name="non_root_service_state_error">Servicio: error</string>
-    <string name="non_root_switch_root_title">¿Cambiar al modo root?</string>
-    <string name="non_root_switch_root_body">¿Deseas cambiar al modo root? El asistente de configuración existente se abrirá en el paso de solicitud de acceso root.</string>
+    <string name="non_root_switch_root_title">¿Instalar la versión root completa?</string>
+    <string name="non_root_switch_root_body">ZDT-D descargará app-release.apk de la última versión estable, verificará el paquete y la firma y abrirá el instalador de Android. Se conservarán tus ajustes actuales.</string>
     <string name="non_root_log_preparing_runtime">Preparando el entorno sin root…</string>
     <string name="non_root_log_start_mode">Iniciando el modo %1$s…</string>
     <string name="non_root_log_start_component">Iniciando %1$s…</string>

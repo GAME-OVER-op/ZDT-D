@@ -2487,8 +2487,8 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="non_root_service_state_stopping">Layanan: berhenti</string>
     <string name="non_root_service_state_stopped">Layanan: dihentikan</string>
     <string name="non_root_service_state_error">Layanan: error</string>
-    <string name="non_root_switch_root_title">Beralih ke mode root?</string>
-    <string name="non_root_switch_root_body">Ingin beralih ke mode root? Wizard penyiapan yang ada akan terbuka pada langkah permintaan akses root.</string>
+    <string name="non_root_switch_root_title">Instal versi root lengkap?</string>
+    <string name="non_root_switch_root_body">ZDT-D akan mengunduh app-release.apk dari rilis stabil terbaru, memverifikasi paket dan tanda tangan, lalu membuka penginstal Android. Pengaturan Anda saat ini akan tetap tersimpan.</string>
     <string name="non_root_log_preparing_runtime">Menyiapkan runtime tanpa root…</string>
     <string name="non_root_log_start_mode">Memulai mode %1$s…</string>
     <string name="non_root_log_start_component">Memulai %1$s…</string>

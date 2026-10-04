@@ -2281,6 +2281,7 @@ private fun clearDownloadedUpdateApk() {
       }
 
       if (ok) {
+        cleanupModuleZipAfterSuccessfulInstall()
         // Mark setup as completed so we don't show the installer again after reboot.
         root.setSetupDone(true)
         rememberPendingModuleAction(pendingAction)
@@ -5986,41 +5987,81 @@ private fun shQuote(s: String): String {
 
   /**
    * The module ZIP intentionally has a fake encrypted flag in its central directory.
-   * Inspect it with the bundled BusyBox implementation, which reads the usable local
-   * entry, instead of Android/Java ZIP APIs that can reject the protected archive.
+   * Keep the downloaded archive byte-identical for its SHA-256 check and installation.
+   * Clear only the fake flag in a disposable copy, then use the bundled BusyBox to
+   * extract module.prop from that copy instead of using Android/Java ZIP APIs.
    */
   private suspend fun readModuleBuildInfoWithBundledBusyBox(
     zipFile: File,
   ): Pair<ModuleBuildInfo?, String?> {
-    val (busyBoxOk, busyBoxLog) = stageBundledBusyBoxToTmp()
-    if (!busyBoxOk) return null to busyBoxLog
-
+    val inspectionZip = File(ctx.cacheDir, "zdt_module_version_check.zip")
     val stagedZip = "/data/local/tmp/zdt_module_version_check.zip"
-    val script = buildString {
-      append("rm -f ").append(shQuote(stagedZip)).append("; ")
-      append("cp ").append(shQuote(zipFile.absolutePath)).append(" ").append(shQuote(stagedZip))
-      append(" || exit 1; ")
-      append("/data/local/tmp/zdt_busybox unzip -p ").append(shQuote(stagedZip)).append(" module.prop; ")
-      append("rc=${'$'}?; rm -f ").append(shQuote(stagedZip)).append("; exit ${'$'}rc")
+    runCatching { inspectionZip.delete() }
+    return try {
+      val normalizeLog = runCatching {
+        zipFile.copyTo(inspectionZip, overwrite = true)
+        clearFakeEncryptedCentralDirectoryFlagsInPlace(inspectionZip)
+      }.getOrElse {
+        return null to "Unable to prepare the protected module archive for BusyBox inspection: ${it.message ?: it}"
+      }
+
+      val (busyBoxOk, busyBoxLog) = stageBundledBusyBoxToTmp()
+      if (!busyBoxOk) return null to busyBoxLog
+
+      val script = buildString {
+        append("rm -f ").append(shQuote(stagedZip)).append("; ")
+        append("cp ").append(shQuote(inspectionZip.absolutePath)).append(" ").append(shQuote(stagedZip))
+        append(" || exit 1; ")
+        append("/data/local/tmp/zdt_busybox unzip -p ").append(shQuote(stagedZip)).append(" module.prop; ")
+        append("rc=${'$'}?; rm -f ").append(shQuote(stagedZip)).append("; exit ${'$'}rc")
+      }
+      val result = root.execRootSh(script)
+      val moduleProp = result.out.joinToString("\n").trim()
+      if (!result.isSuccess || moduleProp.isBlank()) {
+        val detail = (result.err + result.out).joinToString("\n").trim()
+        return null to listOf(
+          normalizeLog,
+          busyBoxLog,
+          detail.ifBlank { "BusyBox could not read module.prop" },
+        ).filter { it.isNotBlank() }.joinToString("\n")
+      }
+      val build = parseModuleBuildInfo(moduleProp)
+      if (
+        build.versionName.isNullOrBlank() ||
+        build.versionCode == null ||
+        build.buildType.isNullOrBlank() ||
+        build.buildNumber == null
+      ) {
+        return null to "Downloaded module.prop has no valid version, versionCode, buildType or buildNumber"
+      }
+      build to null
+    } finally {
+      runCatching { inspectionZip.delete() }
+      runCatching { root.execRootSh("rm -f ${shQuote(stagedZip)} 2>/dev/null || true") }
     }
-    val result = root.execRootSh(script)
-    val moduleProp = result.out.joinToString("\n").trim()
-    if (!result.isSuccess || moduleProp.isBlank()) {
-      val detail = (result.err + result.out).joinToString("\n").trim()
-      return null to listOf(busyBoxLog, detail.ifBlank { "BusyBox could not read module.prop" })
-        .filter { it.isNotBlank() }
-        .joinToString("\n")
+  }
+
+  private fun cleanupModuleZipAfterSuccessfulInstall() {
+    if (BuildConfig.USES_ONLINE_MODULE) {
+      listOf(
+        File(ctx.cacheDir, "zdt_module.zip"),
+        File(ctx.cacheDir, "zdt_module.zip.part"),
+        File(ctx.cacheDir, "zdt_module_version_check.zip"),
+      ).forEach { file ->
+        if (file.exists() && !runCatching { file.delete() }.getOrDefault(false)) {
+          log("WARN", "Unable to delete temporary online module archive: ${file.absolutePath}")
+        }
+      }
     }
-    val build = parseModuleBuildInfo(moduleProp)
-    if (
-      build.versionName.isNullOrBlank() ||
-      build.versionCode == null ||
-      build.buildType.isNullOrBlank() ||
-      build.buildNumber == null
-    ) {
-      return null to "Downloaded module.prop has no valid version, versionCode, buildType or buildNumber"
+
+    val cleanup = runCatching {
+      root.execRootSh(
+        "rm -f /data/local/tmp/zdt_module.zip /data/local/tmp/zdt_module_version_check.zip 2>/dev/null || true"
+      )
     }
-    return build to null
+    if (cleanup.isFailure || cleanup.getOrNull()?.isSuccess != true) {
+      log("WARN", "Unable to delete staged module archive after successful installation")
+    }
   }
 
   private fun verifyModuleZip(zipFile: File): ModuleZipVerification {

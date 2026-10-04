@@ -258,6 +258,7 @@ PY
   [[ "$oldconfig_rc" -eq 0 ]] || fail "BusyBox oldconfig failed"
 
   grep -q '^CONFIG_UNZIP=y$' "$BUILD_DIR/.config" || fail "BusyBox config did not enable CONFIG_UNZIP"
+  grep -q '^# CONFIG_FEATURE_UNZIP_CDF is not set$' "$BUILD_DIR/.config" || fail "BusyBox config unexpectedly enabled Central Directory parsing"
   grep -q '^# CONFIG_STATIC is not set$' "$BUILD_DIR/.config" || fail "BusyBox config still enables static linking"
 }
 

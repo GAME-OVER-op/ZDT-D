@@ -215,18 +215,23 @@ android {
   }
 
   sourceSets {
+    // Never read assets from src/main/assets. Old repositories may still have
+    // the pre-flavor nonroot/ca.bundle or xposed_init there after extracting an
+    // update over the existing tree, because ZIP extraction does not delete
+    // obsolete files. Shared assets live in src/common/assets instead.
+    main {
+      assets.setSrcDirs(['src/common/assets'])
+    }
     bundled {
       manifest.srcFile 'src/root/AndroidManifest.xml'
-      assets.srcDirs += 'src/root/assets'
-      assets.srcDirs += generatedRootAssetsDir
-      assets.srcDirs += generatedBundledAssetsDir
+      assets.setSrcDirs(['src/root/assets', generatedRootAssetsDir, generatedBundledAssetsDir])
     }
     online {
       manifest.srcFile 'src/root/AndroidManifest.xml'
-      assets.srcDirs += 'src/root/assets'
-      assets.srcDirs += generatedRootAssetsDir
+      assets.setSrcDirs(['src/root/assets', generatedRootAssetsDir])
     }
     nonroot {
+      assets.setSrcDirs(['src/nonroot/assets'])
       jniLibs.srcDirs += generatedNonRootJniDir
     }
   }

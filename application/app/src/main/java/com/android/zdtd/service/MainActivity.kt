@@ -219,16 +219,16 @@ class MainActivity : AppCompatActivity() {
 
   override fun onStart() {
     super.onStart()
-    if (!redirectedToNonRoot) vm.setAppVisible(true)
+    vm.setAppVisible(true)
   }
 
   override fun onStop() {
-    if (!redirectedToNonRoot) vm.setAppVisible(false)
+    vm.setAppVisible(false)
     super.onStop()
   }
 
   override fun onResume() {
     super.onResume()
-    if (!redirectedToNonRoot) vm.onAppResumed()
+    vm.onAppResumed()
   }
 }

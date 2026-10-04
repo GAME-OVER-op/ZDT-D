@@ -129,7 +129,7 @@ class FullAppUpgradeManager(context: Context) {
     }
   }
 
-  private fun download(url: String, destination: File, versionName: String) {
+  private suspend fun download(url: String, destination: File, versionName: String) {
     val request = Request.Builder().url(url).header("User-Agent", "ZDT-D-Android").build()
     http.newCall(request).execute().use { response ->
       check(response.isSuccessful) { "Full APK download HTTP ${response.code}" }

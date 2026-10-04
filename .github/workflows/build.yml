@@ -6247,16 +6247,20 @@ jobs:
           set -euo pipefail
           VERSION_CODE="$(grep -m1 '^versionCode=' ../module.prop | cut -d'=' -f2 | tr -d '[:space:]')"
           MODULE_ASSET="zdt_module-${VERSION_CODE}-${GITHUB_RUN_NUMBER}.zip"
-          gradle \
-            --no-daemon \
-            --max-workers=$(nproc) \
-            "-PzdtCompileSdk=${{ env.ZDT_COMPILE_SDK }}" \
-            "-PzdtCompileSdkMinor=${{ env.ZDT_COMPILE_SDK_MINOR }}" \
-            "-PzdtRequireHevAar=true" \
-            "-PzdtOnlineModuleAssetName=${MODULE_ASSET}" \
-            "assembleBundled${{ env.BUILD_TYPE }}" \
-            "assembleOnline${{ env.BUILD_TYPE }}" \
-            "assembleNonroot${{ env.BUILD_TYPE }}"
+          GRADLE_ARGS=(
+            --no-daemon
+            --no-parallel
+            --max-workers=2
+            "-PzdtCompileSdk=${{ env.ZDT_COMPILE_SDK }}"
+            "-PzdtCompileSdkMinor=${{ env.ZDT_COMPILE_SDK_MINOR }}"
+            "-PzdtRequireHevAar=true"
+            "-PzdtOnlineModuleAssetName=${MODULE_ASSET}"
+          )
+          # Compile one distribution at a time. Running three Kotlin/FIR
+          # compilations together can exhaust the GitHub runner heap.
+          gradle "${GRADLE_ARGS[@]}" "assembleBundled${{ env.BUILD_TYPE }}"
+          gradle "${GRADLE_ARGS[@]}" "assembleOnline${{ env.BUILD_TYPE }}"
+          gradle "${GRADLE_ARGS[@]}" "assembleNonroot${{ env.BUILD_TYPE }}"
 
       - name: Collect final artifacts
         run: |

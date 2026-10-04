@@ -38,6 +38,7 @@ def generatedModuleZip = file('../../out/module/zdt_module.zip')
 def generatedModuleProp = file('../../out/module/module.prop')
 def zdtModuleZip = file("$generatedBundledAssetsDir/zdt_module.zip")
 def bundledModuleProp = file("$generatedRootAssetsDir/module.prop")
+def legacyBusyBoxAssetsDir = new File(generatedRootAssetsDir, 'busybox')
 def bundledDpiDetectorAssets = [
     file("$generatedRootAssetsDir/dpi-detector/arm64-v8a/dpi-detector"),
     file("$generatedRootAssetsDir/dpi-detector/armeabi-v7a/dpi-detector")
@@ -202,13 +203,16 @@ tasks.register('prepareZdtRootAssets') {
   outputs.file(bundledModuleProp)
   outputs.file(bundledModuleSha)
   outputs.file(bundledModuleCache)
+  outputs.upToDateWhen { !legacyBusyBoxAssetsDir.exists() }
 
   doLast {
     generatedRootAssetsDir.mkdirs()
     generatedBundledAssetsDir.mkdirs()
     // Remove assets produced by older builds so BusyBox cannot leak into an APK
     // through a reused Gradle build directory.
-    project.delete(file("$generatedRootAssetsDir/busybox"))
+    if (legacyBusyBoxAssetsDir.exists() && !legacyBusyBoxAssetsDir.deleteDir()) {
+      throw new GradleException("Unable to remove legacy BusyBox assets: ${legacyBusyBoxAssetsDir}")
+    }
 
     if (generatedModuleZip.exists()) {
       if (generatedModuleZip.canonicalPath != zdtModuleZip.canonicalPath) {

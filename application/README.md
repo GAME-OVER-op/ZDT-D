@@ -92,9 +92,10 @@ The APK can bundle generated assets such as:
 - `module.prop` — module metadata copied from the repository root;
 - `dpi-detector` — native DPI diagnostic helper;
 - `nfqws-tester` — native NFQWS strategy tester helper;
-- BusyBox asset and checksums used by installer/runtime helpers.
+- `metadata/zdt_module.sha256` and `metadata/zdt_module.cache` — module download
+  integrity and version metadata used by bundled and online installers.
 
-The Gradle task `prepareZdtGeneratedAssets` prepares these files before Android
+The Gradle task `prepareZdtRootAssets` prepares these files before Android
 build tasks use them.
 
 ## Source tree overview

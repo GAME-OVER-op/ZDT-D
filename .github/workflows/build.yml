@@ -5623,173 +5623,6 @@ jobs:
           path: out/artifacts/nfqws-tester/nfqws-tester
           retention-days: 1
 
-  build_busybox:
-    name: build BusyBox ${{ matrix.abi }}
-    runs-on: ubuntu-latest
-    needs: build_gate
-    if: needs.build_gate.outputs.should_build == 'true'
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - abi: arm64-v8a
-            module_arch: arm64-v8a
-            artifact_suffix: arm64
-            rust_target: aarch64-linux-android
-            clang_prefix: aarch64-linux-android
-            clang_target_api21: aarch64-linux-android21
-            goarch: arm64
-            goarm: "7"
-            cgo_enabled: "0"
-            android_abi: arm64-v8a
-            openssl_target: android-arm64
-            tor_host: aarch64-linux-android
-          - abi: armeabi-v7a
-            module_arch: arm-v7a
-            artifact_suffix: arm32
-            rust_target: armv7-linux-androideabi
-            clang_prefix: armv7a-linux-androideabi
-            clang_target_api21: armv7a-linux-androideabi21
-            goarch: arm
-            goarm: "7"
-            cgo_enabled: "1"
-            android_abi: armeabi-v7a
-            openssl_target: android-arm
-            tor_host: arm-linux-androideabi
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Prepare Android SDK paths
-        run: |
-          set -euo pipefail
-          ANDROID_SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
-          ANDROID_HOME="$ANDROID_SDK_ROOT"
-          SDKMANAGER="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            SDKMANAGER="$(find "$ANDROID_SDK_ROOT/cmdline-tools" -path '*/bin/sdkmanager' -type f | sort -V | tail -1)"
-          fi
-          if [[ ! -x "$SDKMANAGER" ]]; then
-            echo "::error::sdkmanager not found under $ANDROID_SDK_ROOT"
-            exit 1
-          fi
-          SDKMANAGER_BIN_DIR="$(dirname "$SDKMANAGER")"
-          {
-            echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-            echo "ANDROID_HOME=$ANDROID_HOME"
-            echo "SDKMANAGER=$SDKMANAGER"
-            echo "PATH=$SDKMANAGER_BIN_DIR:$PATH"
-          } >> "$GITHUB_ENV"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
-
-      - name: Install Android NDK
-        run: |
-          set -euo pipefail
-          NDK_VERSION="$NATIVE_NDK_VERSION"
-          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
-          install_sdk_package() {
-            local pkg="$1"
-            local attempt
-            for attempt in 1 2 3 4 5; do
-              echo "sdkmanager install $pkg: attempt $attempt/5"
-              if "$SDKMANAGER" "$pkg"; then
-                return 0
-              fi
-              rm -rf "$ANDROID_SDK_ROOT/.temp" "$ANDROID_SDK_ROOT/.downloadIntermediates" 2>/dev/null || true
-              sleep $((attempt * 8))
-            done
-            echo "::error::Unable to install Android SDK package: $pkg"
-            return 1
-          }
-          if [[ ! -d "$ANDROID_SDK_ROOT/ndk/$NDK_VERSION" ]]; then
-            install_sdk_package "ndk;$NDK_VERSION"
-          fi
-          NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$NDK_VERSION"
-          if [[ ! -d "$NDK_ROOT" ]]; then
-            echo "::warning::Expected NDK not found at $NDK_ROOT, falling back to latest installed NDK"
-            NDK_ROOT="$ANDROID_SDK_ROOT/ndk/$(ls "$ANDROID_SDK_ROOT/ndk" | sort -V | tail -1)"
-          fi
-          echo "NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_ROOT=$NDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_NDK_HOME=$NDK_ROOT" >> "$GITHUB_ENV"
-
-      - name: Download BusyBox source with fallback mirrors
-        timeout-minutes: 5
-        run: |
-          set -euo pipefail
-          VERSION="1.37.0"
-          TARBALL="busybox-${VERSION}.tar.bz2"
-          EXPECTED_SHA256="3311dff32e746499f4df0d5df04d7eb396382d7e108bb9250e7b519b837043a4"
-          DOWNLOAD_DIR=".tools/busybox/downloads"
-          DEST="$DOWNLOAD_DIR/$TARBALL"
-          TMP="$DEST.tmp"
-          mkdir -p "$DOWNLOAD_DIR"
-
-          sha256_file() {
-            sha256sum "$1" | awk '{print $1}'
-          }
-
-          if [[ -s "$DEST" ]] && [[ "$(sha256_file "$DEST")" == "$EXPECTED_SHA256" ]]; then
-            echo "[ZDT-D][BusyBox] cached source sha256 OK"
-            exit 0
-          fi
-          rm -f "$DEST" "$TMP"
-
-          URLS=(
-            "https://busybox.net/downloads/$TARBALL"
-            "https://mirror.slackbuilds.org/slackware/slackware64-current/source/a/mkinitrd/$TARBALL"
-            "https://plug-mirror.rcac.purdue.edu/slackware/slackware64-current/source/a/mkinitrd/$TARBALL"
-          )
-
-          for url in "${URLS[@]}"; do
-            echo "[ZDT-D][BusyBox] trying source: $url"
-            rm -f "$TMP"
-            if curl -fL --http1.1 \
-              --connect-timeout 10 \
-              --max-time 75 \
-              --speed-limit 1024 \
-              --speed-time 20 \
-              --retry 2 \
-              --retry-delay 2 \
-              --retry-all-errors \
-              -o "$TMP" "$url"; then
-              actual="$(sha256_file "$TMP")"
-              if [[ "$actual" == "$EXPECTED_SHA256" ]]; then
-                mv -f "$TMP" "$DEST"
-                echo "ZDT_BUSYBOX_SOURCE_URL=$url" >> "$GITHUB_ENV"
-                echo "[ZDT-D][BusyBox] source downloaded and verified: $actual"
-                exit 0
-              fi
-              echo "::warning::BusyBox SHA-256 mismatch from $url: expected=$EXPECTED_SHA256 actual=$actual"
-            else
-              echo "::warning::BusyBox download failed or timed out: $url"
-            fi
-          done
-
-          rm -f "$TMP"
-          echo "::error::Unable to download verified BusyBox $VERSION source from all configured mirrors"
-          exit 1
-
-      - name: Build BusyBox ${{ matrix.abi }} from source
-        run: |
-          set -euo pipefail
-          bash scripts/module/build-busybox-arm64.sh prebuilt/bin/${{ matrix.module_arch }}/busybox
-          ls -lh prebuilt/bin/${{ matrix.module_arch }}/busybox
-          test -s prebuilt/bin/${{ matrix.module_arch }}/busybox
-
-      - name: Upload BusyBox binary
-        uses: actions/upload-artifact@v7
-        with:
-          name: busybox-${{ matrix.artifact_suffix }}
-          path: |
-            prebuilt/bin/${{ matrix.module_arch }}/busybox
-            prebuilt/bin/${{ matrix.module_arch }}/busybox.source
-          retention-days: 1
-
   build_hev_socks5_tunnel:
     name: Build hev-socks5-tunnel Android AAR
     runs-on: ubuntu-latest
@@ -5899,12 +5732,10 @@ jobs:
     needs:
       - build_dpi_detector
       - build_nfqws_tester
-      - build_busybox
       - build_hev_socks5_tunnel
     if: >-
       needs.build_dpi_detector.result == 'success' &&
       needs.build_nfqws_tester.result == 'success' &&
-      needs.build_busybox.result == 'success' &&
       needs.build_hev_socks5_tunnel.result == 'success'
 
     steps:
@@ -6040,18 +5871,6 @@ jobs:
           name: nfqws-tester-arm32
           path: out/artifacts/nfqws-tester/arm32
 
-      - name: Download BusyBox arm64
-        uses: actions/download-artifact@v8
-        with:
-          name: busybox-arm64
-          path: prebuilt/bin/arm64-v8a
-
-      - name: Download BusyBox arm32
-        uses: actions/download-artifact@v8
-        with:
-          name: busybox-arm32
-          path: prebuilt/bin/arm-v7a
-
       - name: Download hev-socks5-tunnel AAR
         uses: actions/download-artifact@v8
         with:
@@ -6143,15 +5962,6 @@ jobs:
           copy_helper "out/artifacts/nonroot/mieru/mieru-arm32/mieru" "$JNI_ROOT/armeabi-v7a/libzdt_mieru.so"
           copy_helper "out/artifacts/nonroot/wireproxy/wireproxy-arm64/wireproxy" "$JNI_ROOT/arm64-v8a/libzdt_wireproxy.so"
           copy_helper "out/artifacts/nonroot/wireproxy/wireproxy-arm32/wireproxy" "$JNI_ROOT/armeabi-v7a/libzdt_wireproxy.so"
-
-      - name: Verify BusyBox artifacts
-        run: |
-          set -euo pipefail
-          for path in prebuilt/bin/arm64-v8a/busybox prebuilt/bin/arm-v7a/busybox; do
-            test -s "$path"
-            chmod 755 "$path"
-            ls -lh "$path"
-          done
 
       - name: Locate Android project root
         run: |
@@ -6282,14 +6092,8 @@ jobs:
             assets/dpi-detector/armeabi-v7a/dpi-detector \
             assets/nfqws-tester/arm64-v8a/nfqws_tester \
             assets/nfqws-tester/armeabi-v7a/nfqws_tester \
-            assets/busybox/busybox-arm64 \
-            assets/busybox/busybox-arm64.sha256 \
-            assets/busybox/busybox-arm64.source \
-            assets/busybox/busybox-arm32 \
-            assets/busybox/busybox-arm32.sha256 \
-            assets/busybox/busybox-arm32.source \
-            assets/busybox/zdt_module.sha256 \
-            assets/busybox/zdt_module.cache \
+            assets/metadata/zdt_module.sha256 \
+            assets/metadata/zdt_module.cache \
             assets/module.prop
           )
           NONROOT_REQUIRED=(
@@ -6332,6 +6136,16 @@ jobs:
               fi
             done
           }
+          forbid_prefix() {
+            local apk="$1"
+            local prefix="$2"
+            local entries
+            entries="$(unzip -Z1 "$apk")"
+            if printf '%s\n' "$entries" | grep -F "${prefix}" >/dev/null; then
+              echo "::error::Forbidden APK entry prefix in $apk: $prefix"
+              exit 1
+            fi
+          }
 
           require_entries "$BUNDLED_APK" "${ROOT_REQUIRED[@]}" assets/xposed_init assets/zdt_module.zip
           require_entries "$ONLINE_APK" "${ROOT_REQUIRED[@]}" assets/xposed_init
@@ -6339,6 +6153,9 @@ jobs:
           forbid_entries "$BUNDLED_APK" "${NONROOT_REQUIRED[@]}" assets/nonroot/ca.bundle
           forbid_entries "$ONLINE_APK" "${NONROOT_REQUIRED[@]}" assets/nonroot/ca.bundle assets/zdt_module.zip
           forbid_entries "$NONROOT_APK" "${ROOT_REQUIRED[@]}" assets/xposed_init assets/zdt_module.zip
+          forbid_prefix "$BUNDLED_APK" assets/busybox/
+          forbid_prefix "$ONLINE_APK" assets/busybox/
+          forbid_prefix "$NONROOT_APK" assets/busybox/
 
           for apk in "$BUNDLED_APK" "$ONLINE_APK"; do
             APK_MODULE_PROP="$(unzip -p "$apk" assets/module.prop)"
@@ -6348,7 +6165,7 @@ jobs:
           VERSION_CODE="$(grep -m1 '^versionCode=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')"
           VERSION_NAME="$(grep -m1 '^version=' module.prop | cut -d'=' -f2- | tr -d '\r' | xargs)"
           MODULE_ASSET="zdt_module.zip"
-          ONLINE_MODULE_META="$(unzip -p "$ONLINE_APK" assets/busybox/zdt_module.cache)"
+          ONLINE_MODULE_META="$(unzip -p "$ONLINE_APK" assets/metadata/zdt_module.cache)"
           printf '%s\n' "$ONLINE_MODULE_META" | grep -Fx "moduleVersion=${VERSION_NAME}" >/dev/null || { echo "::error::Online APK module version binding is invalid"; exit 1; }
           printf '%s\n' "$ONLINE_MODULE_META" | grep -Fx "moduleVersionCode=${VERSION_CODE}" >/dev/null || { echo "::error::Online APK module versionCode binding is invalid"; exit 1; }
           printf '%s\n' "$ONLINE_MODULE_META" | grep -Fx "onlineAsset=${MODULE_ASSET}" >/dev/null || { echo "::error::Online APK module asset binding is invalid"; exit 1; }

@@ -3,8 +3,8 @@
 
 This intentionally only sets the traditional ZIP encrypted bit in Central
 Directory headers. Local File Headers and file data are not modified. Tools that
-trust Central Directory may refuse extraction; local-header readers such as
-BusyBox unzip can still extract the archive.
+trust Central Directory may refuse extraction. ZDT-D clears the artificial flag
+in a temporary copy before inspecting or passing the archive to strict installers.
 """
 
 from __future__ import annotations

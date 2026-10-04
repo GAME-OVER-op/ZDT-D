@@ -2567,10 +2567,18 @@ private fun clearDownloadedUpdateApk() {
     }
   }
 
-  private fun readModuleBuildInfoFromApk(apk: File): ModuleBuildInfo = ZipFile(apk).use { zip ->
-    val entry = zip.getEntry("assets/module.prop")
-      ?: error("Full root APK has no internal module.prop")
-    check(entry.size in 1..(128L * 1024L)) { "Full root APK module.prop has an invalid size" }
+  private fun readModuleBuildInfoFromApk(apk: File): ModuleBuildInfo =
+    readModuleBuildInfoFromZip(apk, "assets/module.prop", "Full root APK")
+
+  private fun readModuleBuildInfoFromZip(
+    zipFile: File,
+    entryName: String,
+    sourceLabel: String,
+  ): ModuleBuildInfo = ZipFile(zipFile).use { zip ->
+    val entry = zip.getEntry(entryName)
+      ?: error("$sourceLabel has no $entryName")
+    check(!entry.isDirectory) { "$sourceLabel $entryName is a directory" }
+    check(entry.size in 1..(128L * 1024L)) { "$sourceLabel $entryName has an invalid size" }
     val text = zip.getInputStream(entry).bufferedReader().use { it.readText() }
     val build = parseModuleBuildInfo(text)
     check(
@@ -2578,7 +2586,7 @@ private fun clearDownloadedUpdateApk() {
         build.versionCode != null &&
         !build.buildType.isNullOrBlank() &&
         build.buildNumber != null
-    ) { "Full root APK internal module.prop is invalid" }
+    ) { "$sourceLabel $entryName is invalid" }
     build
   }
 
@@ -5389,14 +5397,11 @@ if (mf.isNotBlank()) {
       str(R.string.module_zip_patch_protection_kept_magisk)
     }
 
-    val (busyBoxOk, busyBoxLog) = stageBundledBusyBoxToTmp()
-    if (!busyBoxOk) return false to busyBoxLog
-
     val src = cacheZip.absolutePath
     updateInstallProgress(42, str(R.string.setup_install_progress_copying))
     val copyRes = root.execRoot("sh -c 'cp ${shQuote(src)} /data/local/tmp/zdt_module.zip && chmod 644 /data/local/tmp/zdt_module.zip'")
     val out1 = (copyRes.out + copyRes.err).joinToString("\n")
-    val log = listOf(verify.message, normalizeLog, busyBoxLog, out1.trim()).filter { it.isNotBlank() }.joinToString("\n")
+    val log = listOf(verify.message, normalizeLog, out1.trim()).filter { it.isNotBlank() }.joinToString("\n")
     return copyRes.isSuccess to log
   }
 
@@ -5927,7 +5932,7 @@ private fun shQuote(s: String): String {
         }
       }
       check(part.isFile && part.length() > 0L) { "downloaded online module archive is empty" }
-      val (moduleBuild, inspectError) = readModuleBuildInfoWithBundledBusyBox(part)
+      val (moduleBuild, inspectError) = readModuleBuildInfoFromNormalizedModuleCopy(part)
       check(moduleBuild != null) { inspectError ?: "module.prop is missing from the downloaded module archive" }
       val appBuild = readBundledModuleBuildInfo()
         ?: error("online installer internal module.prop is missing or invalid")
@@ -5971,7 +5976,7 @@ private fun shQuote(s: String): String {
 
   private fun readOnlineModuleMetadata(): OnlineModuleMetadata? = runCatching {
     val props = Properties()
-    ctx.assets.open("busybox/zdt_module.cache").use { input -> props.load(input) }
+    ctx.assets.open("metadata/zdt_module.cache").use { input -> props.load(input) }
     val url = props.getProperty("onlineUrl")?.trim().orEmpty()
     val sha = props.getProperty("sha256")?.trim()?.lowercase(Locale.US).orEmpty()
     val size = props.getProperty("size")?.trim()?.toLongOrNull() ?: 0L
@@ -5988,63 +5993,30 @@ private fun shQuote(s: String): String {
   /**
    * The module ZIP intentionally has a fake encrypted flag in its central directory.
    * Keep the downloaded archive byte-identical for its SHA-256 check and installation.
-   * Clear only the fake flag in a disposable copy, then use the bundled BusyBox to
-   * extract module.prop from that copy instead of using Android/Java ZIP APIs.
+   * Clear only the fake flag in a disposable copy, then inspect module.prop with
+   * the platform ZIP implementation. The downloaded archive remains byte-identical
+   * for its SHA-256 verification and for Magisk installation.
    */
-  private suspend fun readModuleBuildInfoWithBundledBusyBox(
+  private fun readModuleBuildInfoFromNormalizedModuleCopy(
     zipFile: File,
   ): Pair<ModuleBuildInfo?, String?> {
     val inspectionZip = File(ctx.cacheDir, "zdt_module_version_check.zip")
-    val stagedZip = "/data/local/tmp/zdt_module_version_check.zip"
     runCatching { inspectionZip.delete() }
     return try {
-      val normalizeLog = runCatching {
+      runCatching {
         zipFile.copyTo(inspectionZip, overwrite = true)
         clearFakeEncryptedCentralDirectoryFlagsInPlace(inspectionZip)
       }.getOrElse {
-        return null to "Unable to prepare the protected module archive for BusyBox inspection: ${it.message ?: it}"
+        return null to "Unable to prepare the protected module archive for version inspection: ${it.message ?: it}"
       }
-
-      val (busyBoxOk, busyBoxLog) = stageBundledBusyBoxToTmp()
-      if (!busyBoxOk) return null to busyBoxLog
-
-      val script = buildString {
-        append("rm -f ").append(shQuote(stagedZip)).append("; ")
-        append("cp ").append(shQuote(inspectionZip.absolutePath)).append(" ").append(shQuote(stagedZip))
-        append(" || exit 1; ")
-        append("test -x /data/local/tmp/zdt_busybox")
-        append(" || { echo 'Bundled BusyBox is not executable' >&2; rm -f ")
-        append(shQuote(stagedZip)).append("; exit 126; }; ")
-        append("/data/local/tmp/zdt_busybox unzip -p ").append(shQuote(stagedZip)).append(" module.prop; ")
-        append("rc=${'$'}?; echo busybox_unzip_rc=${'$'}rc >&2; rm -f ")
-        append(shQuote(stagedZip)).append("; exit ${'$'}rc")
-      }
-      // libsu Shell.cmd(String...) treats every String as a separate shell command.
-      // Pass the complete script as one command instead of using execRootSh(), which
-      // currently supplies "sh", "-c" and the script as three separate commands.
-      val result = root.execRoot(script)
-      val moduleProp = result.out.joinToString("\n").trim()
-      if (!result.isSuccess || moduleProp.isBlank()) {
-        val detail = (result.err + result.out).joinToString("\n").trim()
-        return null to listOf(
-          normalizeLog,
-          busyBoxLog,
-          detail.ifBlank { "BusyBox could not read module.prop" },
-        ).filter { it.isNotBlank() }.joinToString("\n")
-      }
-      val build = parseModuleBuildInfo(moduleProp)
-      if (
-        build.versionName.isNullOrBlank() ||
-        build.versionCode == null ||
-        build.buildType.isNullOrBlank() ||
-        build.buildNumber == null
-      ) {
-        return null to "Downloaded module.prop has no valid version, versionCode, buildType or buildNumber"
-      }
-      build to null
+      runCatching {
+        readModuleBuildInfoFromZip(inspectionZip, "module.prop", "Downloaded module archive")
+      }.fold(
+        onSuccess = { it to null },
+        onFailure = { null to (it.message ?: it.toString()) },
+      )
     } finally {
       runCatching { inspectionZip.delete() }
-      runCatching { root.execRootSh("rm -f ${shQuote(stagedZip)} 2>/dev/null || true") }
     }
   }
 
@@ -6063,7 +6035,7 @@ private fun shQuote(s: String): String {
 
     val cleanup = runCatching {
       root.execRootSh(
-        "rm -f /data/local/tmp/zdt_module.zip /data/local/tmp/zdt_module_version_check.zip 2>/dev/null || true"
+        "rm -f /data/local/tmp/zdt_module.zip /data/local/tmp/zdt_module_version_check.zip /data/local/tmp/zdt_busybox 2>/dev/null || true"
       )
     }
     if (cleanup.isFailure || cleanup.getOrNull()?.isSuccess != true) {
@@ -6072,8 +6044,8 @@ private fun shQuote(s: String): String {
   }
 
   private fun verifyModuleZip(zipFile: File): ModuleZipVerification {
-    val expected = readSha256Asset("busybox/zdt_module.sha256")
-      ?: return ModuleZipVerification(false, "asset busybox/zdt_module.sha256 missing or invalid")
+    val expected = readSha256Asset("metadata/zdt_module.sha256")
+      ?: return ModuleZipVerification(false, "asset metadata/zdt_module.sha256 missing or invalid")
     val actual = runCatching { sha256Hex(zipFile) }.getOrElse {
       return ModuleZipVerification(false, "module zip SHA-256 failed: ${it.message ?: it}")
     }
@@ -6267,38 +6239,6 @@ private fun shQuote(s: String): String {
     require(offset >= 0 && offset + 2 <= data.size) { "ZIP write out of bounds at offset $offset" }
     data[offset] = (value and 0xff).toByte()
     data[offset + 1] = ((value shr 8) and 0xff).toByte()
-  }
-
-  private fun preferredNativeAssetAbi(): String = when {
-    Build.SUPPORTED_ABIS.any { it == "arm64-v8a" } -> "arm64"
-    Build.SUPPORTED_ABIS.any { it == "armeabi-v7a" } -> "arm32"
-    else -> "arm64"
-  }
-
-  private suspend fun stageBundledBusyBoxToTmp(): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-    val busyBoxAbi = preferredNativeAssetAbi()
-    val busyBoxAssetName = if (busyBoxAbi == "arm32") "busybox-arm32" else "busybox-arm64"
-    val expected = readSha256Asset("busybox/${busyBoxAssetName}.sha256")
-      ?: return@withContext (false to "asset busybox/${busyBoxAssetName}.sha256 missing or invalid")
-    val cacheBusyBox = File(ctx.cacheDir, busyBoxAssetName)
-    runCatching {
-      ctx.assets.open("busybox/${busyBoxAssetName}").use { input ->
-        cacheBusyBox.outputStream().use { out -> input.copyTo(out) }
-      }
-    }.getOrElse {
-      return@withContext (false to "asset busybox/${busyBoxAssetName} missing: ${it.message ?: it}")
-    }
-    val actual = runCatching { sha256Hex(cacheBusyBox) }.getOrElse {
-      return@withContext (false to "busybox SHA-256 failed: ${it.message ?: it}")
-    }
-    if (!actual.equals(expected, ignoreCase = true)) {
-      return@withContext (false to "busybox SHA-256 mismatch: expected=$expected actual=$actual")
-    }
-    val src = cacheBusyBox.absolutePath
-    val r = root.execRoot("sh -c 'cp ${shQuote(src)} /data/local/tmp/zdt_busybox && chmod 755 /data/local/tmp/zdt_busybox'")
-    val out = (r.out + r.err).joinToString("\n").trim()
-    if (!r.isSuccess) return@withContext (false to out)
-    true to listOf("busybox SHA-256 verified: $actual", out).filter { it.isNotBlank() }.joinToString("\n")
   }
 
   private fun readSha256Asset(assetName: String): String? = runCatching {

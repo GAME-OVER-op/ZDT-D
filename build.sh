@@ -17,7 +17,6 @@ DPI_DETECTOR_APK_ASSET="$DPI_DETECTOR_APK_ASSET_DIR/dpi-detector"
 NFQWS_TESTER_APK_ASSET_DIR="$APP_MODULE_DIR/build/generated/zdt-assets/main/nfqws-tester/arm64-v8a"
 NFQWS_TESTER_APK_ASSET="$NFQWS_TESTER_APK_ASSET_DIR/nfqws_tester"
 MODULE_ZIP_FAKE_ENCRYPT_SCRIPT="$ROOT_DIR/scripts/module/fake-encrypt-central-directory.py"
-BUSYBOX_ARM64_BUILD_SCRIPT="$ROOT_DIR/scripts/module/build-busybox-arm64.sh"
 ZDT_MODULE_FAKE_ENCRYPT="${ZDT_MODULE_FAKE_ENCRYPT:-1}"
 APK_OUT_DIR="$OUT_DIR/apk"
 DIST_DIR="$OUT_DIR/dist"
@@ -77,7 +76,7 @@ DASHBOARD_REFRESH_INTERVAL="${DASHBOARD_REFRESH_INTERVAL:-0.25}"
 declare -a DASHBOARD_LAST_LINES=()
 DASHBOARD_REFRESH_INTERVAL="${DASHBOARD_REFRESH_INTERVAL:-0.25}"
 declare -a DASHBOARD_LAST_LINES=()
-STAGE_KEYS=(env keystore rustcheck zdtd t2s d2s dpidetector nfqwstester extbin zygisk modulezip busybox assets android apk final)
+STAGE_KEYS=(env keystore rustcheck zdtd t2s d2s dpidetector nfqwstester extbin zygisk modulezip assets android apk final)
 STAGE_NAMES=(
   "Environment checks"
   "Keystore check"
@@ -90,7 +89,6 @@ STAGE_NAMES=(
   "External binaries"
   "Build Zygisk"
   "Package module zip"
-  "Build BusyBox"
   "Prepare APK inputs"
   "Android prereqs"
   "Build APK"
@@ -1252,19 +1250,6 @@ run_gradle_stage() {
   rm -f "$fifo" "$log_file"
 }
 
-ensure_busybox_arm64_prebuilt() {
-  local busybox_path="$PREBUILT_BIN_DIR/busybox"
-  if [[ -s "$busybox_path" ]]; then
-    chmod 755 "$busybox_path" 2>/dev/null || true
-    return 0
-  fi
-
-  [[ -x "$BUSYBOX_ARM64_BUILD_SCRIPT" ]] || fail "Не найден скрипт сборки BusyBox: $BUSYBOX_ARM64_BUILD_SCRIPT"
-  ensure_android_sdk_ready
-  mkdir -p "$PREBUILT_BIN_DIR"
-  bash "$BUSYBOX_ARM64_BUILD_SCRIPT" "$busybox_path"
-}
-
 require_external_bins() {
   mkdir -p "$PREBUILT_BIN_DIR"
 
@@ -1389,16 +1374,6 @@ validate_protected_module_zip() {
   [[ -f "$MODULE_ZIP" ]] || fail "Не найден модульный zip: $MODULE_ZIP"
   if [[ "$ZDT_MODULE_FAKE_ENCRYPT" == "1" ]]; then
     python3 "$MODULE_ZIP_FAKE_ENCRYPT_SCRIPT" --check "$MODULE_ZIP"
-    if command -v busybox >/dev/null 2>&1; then
-      local tmp_dir="$OUT_DIR/module_busybox_check"
-      rm -rf "$tmp_dir"
-      mkdir -p "$tmp_dir"
-      busybox unzip "$MODULE_ZIP" -d "$tmp_dir" >/dev/null
-      [[ -f "$tmp_dir/module.prop" ]] || fail 'busybox unzip check failed: module.prop missing'
-      rm -rf "$tmp_dir"
-    else
-      warn 'busybox не найден в окружении сборки; пропускаю busybox unzip проверку protected zip.'
-    fi
   else
     validate_module_zip
   fi
@@ -1453,11 +1428,13 @@ validate_apk_artifacts() {
   [[ -n "$apk_path" ]] || fail 'APK не найден после сборки'
   unzip -Z1 "$apk_path" | grep -Fx 'assets/dpi-detector/arm64-v8a/dpi-detector' >/dev/null || fail 'В APK отсутствует assets/dpi-detector/arm64-v8a/dpi-detector'
   unzip -Z1 "$apk_path" | grep -Fx 'assets/nfqws-tester/arm64-v8a/nfqws_tester' >/dev/null || fail 'В APK отсутствует assets/nfqws-tester/arm64-v8a/nfqws_tester'
-  unzip -Z1 "$apk_path" | grep -Fx 'assets/busybox/busybox-arm64' >/dev/null || fail 'В APK отсутствует assets/busybox/busybox-arm64'
-  unzip -Z1 "$apk_path" | grep -Fx 'assets/busybox/busybox-arm64.sha256' >/dev/null || fail 'В APK отсутствует assets/busybox/busybox-arm64.sha256'
-  unzip -Z1 "$apk_path" | grep -Fx 'assets/busybox/busybox-arm64.source' >/dev/null || fail 'В APK отсутствует assets/busybox/busybox-arm64.source'
-  unzip -Z1 "$apk_path" | grep -Fx 'assets/busybox/zdt_module.sha256' >/dev/null || fail 'В APK отсутствует assets/busybox/zdt_module.sha256'
-  unzip -Z1 "$apk_path" | grep -Fx 'assets/busybox/zdt_module.cache' >/dev/null || fail 'В APK отсутствует assets/busybox/zdt_module.cache'
+  unzip -Z1 "$apk_path" | grep -Fx 'assets/metadata/zdt_module.sha256' >/dev/null || fail 'В APK отсутствует assets/metadata/zdt_module.sha256'
+  unzip -Z1 "$apk_path" | grep -Fx 'assets/metadata/zdt_module.cache' >/dev/null || fail 'В APK отсутствует assets/metadata/zdt_module.cache'
+  local apk_entries
+  apk_entries="$(unzip -Z1 "$apk_path")"
+  if printf '%s\n' "$apk_entries" | grep -F 'assets/busybox/' >/dev/null; then
+    fail 'В APK не должны попадать устаревшие assets/busybox/*'
+  fi
   mkdir -p "$APK_OUT_DIR" "$DIST_DIR"
   dist_apk="$APK_OUT_DIR/app-release.apk"
   cp -f "$apk_path" "$dist_apk"
@@ -1467,7 +1444,6 @@ validate_apk_artifacts() {
 
 build_apk() {
   prepare_module_root
-  run_simple_stage busybox 'Build BusyBox' ensure_busybox_arm64_prebuilt
   run_simple_stage assets 'Prepare APK inputs' prepare_android_inputs
   run_simple_stage android 'Android prereqs' ensure_android_sdk_ready
   local gradle_cmd java_home aapt2_override gradle_workers

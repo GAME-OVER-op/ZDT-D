@@ -79,6 +79,7 @@ private const val LSPOSED_HIDE_PREF_ENABLED = "enabled"
 private const val LSPOSED_HIDE_PREF_PACKAGES = "packages"
 private const val LSPOSED_HIDE_PREF_UIDS = "uids"
 private const val LSPOSED_HIDE_PREF_UPDATED_AT = "updated_at"
+private const val APP_DISTRIBUTION_META_DATA = "com.android.zdtd.service.DISTRIBUTION"
 
 enum class RootState {
   CHECKING,
@@ -724,8 +725,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     return "https" + "://github.com/GAME-OVER-op/ZDT-D/releases/download/${tag}/${releaseApkAssetName()}"
   }
 
-  private fun releaseApkAssetName(): String =
-    if (BuildConfig.USES_ONLINE_MODULE) "app-release-online.apk" else "app-release.apk"
+  private fun releaseDistribution(): String = when (BuildConfig.DISTRIBUTION_MODE) {
+    "bundled" -> "bundled"
+    "online" -> "online"
+    else -> error("App updates are unavailable for ${BuildConfig.DISTRIBUTION_MODE}")
+  }
+
+  private fun releaseApkAssetName(): String = when (releaseDistribution()) {
+    "online" -> "app-release-online.apk"
+    else -> "app-release.apk"
+  }
+
+  private fun isExpectedReleaseApkUrl(url: String): Boolean = runCatching {
+    val uri = Uri.parse(url)
+    uri.scheme.equals("https", ignoreCase = true) &&
+      uri.host.equals("github.com", ignoreCase = true) &&
+      uri.lastPathSegment == releaseApkAssetName()
+  }.getOrDefault(false)
 
   private suspend fun httpGetMaybeCached(
     url: String,
@@ -1340,7 +1356,19 @@ private fun restoreCachedAppUpdateState() {
   val remoteVer = root.getCachedAppUpdateRemoteVersion()
   val tag = root.getCachedAppUpdateReleaseTag()
   val htmlUrl = root.getCachedAppUpdateReleaseHtmlUrl()
-  val downloadUrl = root.getCachedAppUpdateDownloadUrl()
+  val cachedDownloadUrl = root.getCachedAppUpdateDownloadUrl()
+  // Full-root and online builds share the same package/preferences. Rebuild a
+  // persisted URL from the release tag so installing one flavor over the other
+  // can never reuse the previous flavor's APK URL.
+  val downloadUrl = when {
+    cachedDownloadUrl.isNullOrBlank() -> null
+    !tag.isNullOrBlank() -> releaseApkUrl(tag)
+    isExpectedReleaseApkUrl(cachedDownloadUrl) -> cachedDownloadUrl
+    else -> null
+  }
+  if (downloadUrl != cachedDownloadUrl) {
+    root.setCachedAppUpdateDownloadUrl(downloadUrl)
+  }
   val urgent = root.getCachedAppUpdateUrgent()
 
   // Local comparison is based on bundled module.prop in the APK.
@@ -1451,6 +1479,9 @@ private fun clearDownloadedUpdateApk() {
   }
 
   private suspend fun downloadLatestApk(url: String): String? {
+    check(isExpectedReleaseApkUrl(url)) {
+      "Unexpected update APK URL for ${releaseDistribution()} distribution"
+    }
     val dest = File(ctx.cacheDir, "zdt_app_update.apk")
     runCatching { dest.delete() }
 
@@ -1500,7 +1531,24 @@ private fun clearDownloadedUpdateApk() {
         }
       }
     }
+    validateDownloadedAppUpdateApk(dest)
     return dest.absolutePath
+  }
+
+  @Suppress("DEPRECATION")
+  private fun validateDownloadedAppUpdateApk(apk: File) {
+    check(apk.isFile && apk.length() > 0L) { "Downloaded update APK is empty" }
+    val info = ctx.packageManager.getPackageArchiveInfo(
+      apk.absolutePath,
+      PackageManager.GET_META_DATA,
+    ) ?: error("Unable to inspect downloaded update APK")
+    check(info.packageName == BuildConfig.APPLICATION_ID) { "Update APK package mismatch" }
+    val distribution = info.applicationInfo?.metaData
+      ?.getString(APP_DISTRIBUTION_META_DATA)
+      .orEmpty()
+    check(distribution == releaseDistribution()) {
+      "Update APK distribution mismatch: expected=${releaseDistribution()} actual=$distribution"
+    }
   }
 
   private suspend fun readBootIdRoot(): String {
@@ -7947,8 +7995,20 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
   }
 
   override fun startAppUpdateDownload() {
-    val url = _appUpdate.value.downloadUrl
-    val releaseUrl = _appUpdate.value.releaseHtmlUrl ?: "https://github.com/GAME-OVER-op/ZDT-D/releases"
+    val state = _appUpdate.value
+    val cachedUrl = state.downloadUrl
+    val releaseTag = state.releaseTag
+    val url = when {
+      cachedUrl.isNullOrBlank() -> null
+      !releaseTag.isNullOrBlank() -> releaseApkUrl(releaseTag)
+      isExpectedReleaseApkUrl(cachedUrl) -> cachedUrl
+      else -> null
+    }
+    if (url != cachedUrl) {
+      root.setCachedAppUpdateDownloadUrl(url)
+      _appUpdate.update { it.copy(downloadUrl = url) }
+    }
+    val releaseUrl = state.releaseHtmlUrl ?: "https://github.com/GAME-OVER-op/ZDT-D/releases"
     if (url.isNullOrBlank()) {
       if (_appUpdate.value.releaseBuild.status !in setOf(AppReleaseBuildStatus.PREPARING, AppReleaseBuildStatus.FAILED)) {
         _appUpdateEvents.tryEmit(AppUpdateEvent.OpenUrl(releaseUrl))

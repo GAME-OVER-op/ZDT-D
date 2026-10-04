@@ -6012,10 +6012,17 @@ private fun shQuote(s: String): String {
         append("rm -f ").append(shQuote(stagedZip)).append("; ")
         append("cp ").append(shQuote(inspectionZip.absolutePath)).append(" ").append(shQuote(stagedZip))
         append(" || exit 1; ")
+        append("test -x /data/local/tmp/zdt_busybox")
+        append(" || { echo 'Bundled BusyBox is not executable' >&2; rm -f ")
+        append(shQuote(stagedZip)).append("; exit 126; }; ")
         append("/data/local/tmp/zdt_busybox unzip -p ").append(shQuote(stagedZip)).append(" module.prop; ")
-        append("rc=${'$'}?; rm -f ").append(shQuote(stagedZip)).append("; exit ${'$'}rc")
+        append("rc=${'$'}?; echo busybox_unzip_rc=${'$'}rc >&2; rm -f ")
+        append(shQuote(stagedZip)).append("; exit ${'$'}rc")
       }
-      val result = root.execRootSh(script)
+      // libsu Shell.cmd(String...) treats every String as a separate shell command.
+      // Pass the complete script as one command instead of using execRootSh(), which
+      // currently supplies "sh", "-c" and the script as three separate commands.
+      val result = root.execRoot(script)
       val moduleProp = result.out.joinToString("\n").trim()
       if (!result.isSuccess || moduleProp.isBlank()) {
         val detail = (result.err + result.out).joinToString("\n").trim()

@@ -138,11 +138,11 @@ CONFIG_LONG_OPTS=y
 CONFIG_PIE=y
 CONFIG_SHOW_USAGE=y
 CONFIG_FEATURE_VERBOSE_USAGE=y
-# Keep the applet set intentionally small. ZDT-D needs BusyBox primarily for
-# local-header ZIP extraction of protected module archives.
+# Keep the applet set intentionally small. ZDT-D uses BusyBox to inspect a
+# normalized temporary copy of the protected module archive.
 CONFIG_BUSYBOX=y
 CONFIG_UNZIP=y
-CONFIG_FEATURE_UNZIP_CDF=n
+CONFIG_FEATURE_UNZIP_CDF=y
 CONFIG_FEATURE_UNZIP_BZIP2=n
 CONFIG_FEATURE_UNZIP_LZMA=n
 CONFIG_FEATURE_UNZIP_XZ=n
@@ -198,7 +198,7 @@ values = {
     "CONFIG_SHOW_USAGE": "y",
     "CONFIG_FEATURE_VERBOSE_USAGE": "y",
     "CONFIG_UNZIP": "y",
-    "CONFIG_FEATURE_UNZIP_CDF": "n",
+    "CONFIG_FEATURE_UNZIP_CDF": "y",
     "CONFIG_FEATURE_UNZIP_BZIP2": "n",
     "CONFIG_FEATURE_UNZIP_LZMA": "n",
     "CONFIG_FEATURE_UNZIP_XZ": "n",
@@ -258,7 +258,7 @@ PY
   [[ "$oldconfig_rc" -eq 0 ]] || fail "BusyBox oldconfig failed"
 
   grep -q '^CONFIG_UNZIP=y$' "$BUILD_DIR/.config" || fail "BusyBox config did not enable CONFIG_UNZIP"
-  grep -q '^# CONFIG_FEATURE_UNZIP_CDF is not set$' "$BUILD_DIR/.config" || fail "BusyBox config unexpectedly enabled Central Directory parsing"
+  grep -q '^CONFIG_FEATURE_UNZIP_CDF=y$' "$BUILD_DIR/.config" || fail "BusyBox config did not enable Central Directory parsing"
   grep -q '^# CONFIG_STATIC is not set$' "$BUILD_DIR/.config" || fail "BusyBox config still enables static linking"
 }
 

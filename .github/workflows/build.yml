@@ -6245,8 +6245,6 @@ jobs:
           ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
         run: |
           set -euo pipefail
-          VERSION_CODE="$(grep -m1 '^versionCode=' ../module.prop | cut -d'=' -f2 | tr -d '[:space:]')"
-          MODULE_ASSET="zdt_module-${VERSION_CODE}-${GITHUB_RUN_NUMBER}.zip"
           GRADLE_ARGS=(
             --no-daemon
             --no-parallel
@@ -6254,7 +6252,6 @@ jobs:
             "-PzdtCompileSdk=${{ env.ZDT_COMPILE_SDK }}"
             "-PzdtCompileSdkMinor=${{ env.ZDT_COMPILE_SDK_MINOR }}"
             "-PzdtRequireHevAar=true"
-            "-PzdtOnlineModuleAssetName=${MODULE_ASSET}"
           )
           # Compile one distribution at a time. Running three Kotlin/FIR
           # compilations together can exhaust the GitHub runner heap.
@@ -6350,7 +6347,7 @@ jobs:
           done
           VERSION_CODE="$(grep -m1 '^versionCode=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')"
           VERSION_NAME="$(grep -m1 '^version=' module.prop | cut -d'=' -f2- | tr -d '\r' | xargs)"
-          MODULE_ASSET="zdt_module-${VERSION_CODE}-${GITHUB_RUN_NUMBER}.zip"
+          MODULE_ASSET="zdt_module.zip"
           ONLINE_MODULE_META="$(unzip -p "$ONLINE_APK" assets/busybox/zdt_module.cache)"
           printf '%s\n' "$ONLINE_MODULE_META" | grep -Fx "moduleVersion=${VERSION_NAME}" >/dev/null || { echo "::error::Online APK module version binding is invalid"; exit 1; }
           printf '%s\n' "$ONLINE_MODULE_META" | grep -Fx "moduleVersionCode=${VERSION_CODE}" >/dev/null || { echo "::error::Online APK module versionCode binding is invalid"; exit 1; }
@@ -6796,14 +6793,14 @@ jobs:
           TECHNICAL_TAG="Technical_Assets"
           TECHNICAL_TITLE="ZDT-D Technical Assets"
           MODULE_TECHNICAL_SOURCE="out/module-online/zdt_module.zip"
-          MODULE_TECHNICAL_NAME="zdt_module-${VERSION_CODE}-${GITHUB_RUN_NUMBER}.zip"
+          MODULE_TECHNICAL_NAME="zdt_module.zip"
           test -s "$MODULE_TECHNICAL_SOURCE" || { echo "::error::Online module archive is missing: $MODULE_TECHNICAL_SOURCE"; exit 1; }
           if gh release view "$TECHNICAL_TAG" >/dev/null 2>&1; then
             gh release edit "$TECHNICAL_TAG" --title "$TECHNICAL_TITLE" --prerelease --latest=false
           else
             gh release create "$TECHNICAL_TAG" --target "$FULL_SHA" --title "$TECHNICAL_TITLE" --notes "Technical assets used by ZDT-D optional components." --prerelease --latest=false
           fi
-          upload_asset_with_retry "$TECHNICAL_TAG" "$MODULE_TECHNICAL_SOURCE#$MODULE_TECHNICAL_NAME" "$MODULE_TECHNICAL_NAME"
+          upload_asset_with_retry "$TECHNICAL_TAG" "$MODULE_TECHNICAL_SOURCE" "$MODULE_TECHNICAL_NAME"
           MODULE_UPLOAD_MODE="$UPLOAD_MODE"
           MODULE_UPLOAD_ATTEMPTS="$UPLOAD_ATTEMPTS"
 

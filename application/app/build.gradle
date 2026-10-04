@@ -65,7 +65,7 @@ def bundledBusyBoxSources = [
 ]
 def bundledModuleSha = file("$generatedRootAssetsDir/busybox/zdt_module.sha256")
 def bundledModuleCache = file("$generatedRootAssetsDir/busybox/zdt_module.cache")
-def onlineModuleAssetName = (findProperty('zdtOnlineModuleAssetName') ?: "zdt_module-${moduleVersionCode}.zip").toString().trim()
+def onlineModuleAssetName = 'zdt_module.zip'
 def technicalAssetsBaseUrl = 'https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets'
 
 def sha256Hex = { File source ->

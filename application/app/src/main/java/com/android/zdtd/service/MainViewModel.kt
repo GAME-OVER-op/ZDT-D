@@ -57,6 +57,7 @@ import java.io.FileOutputStream
 import java.io.InputStream
 import java.io.RandomAccessFile
 import java.util.zip.GZIPInputStream
+import java.util.zip.ZipFile
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 import java.util.Properties
@@ -83,7 +84,9 @@ private const val LSPOSED_HIDE_PREF_UPDATED_AT = "updated_at"
 private const val APP_DISTRIBUTION_META_DATA = "com.android.zdtd.service.DISTRIBUTION"
 private const val ONLINE_MODULE_VERSION_MISMATCH_MARKER = "ZDTD_ONLINE_MODULE_VERSION_MISMATCH"
 private const val FULL_ROOT_APK_ASSET_NAME = "app-release.apk"
+private const val SERVICE_FULL_ROOT_APK_ASSET_NAME = "ZDT-D-service-build.apk"
 private const val MAX_FULL_ROOT_APK_BYTES = 1024L * 1024L * 1024L
+private const val MAX_ONLINE_MODULE_BYTES = 1024L * 1024L * 1024L
 
 enum class RootState {
   CHECKING,
@@ -2331,8 +2334,10 @@ private fun clearDownloadedUpdateApk() {
   private fun showOnlineModuleVersionMismatch(error: String): Boolean {
     if (error.trim() != ONLINE_MODULE_VERSION_MISMATCH_MARKER) return false
     val module = pendingOnlineModuleMismatch ?: return false
-    val moduleVersion = module.versionName ?: "?"
+    val moduleVersion = formatModuleBuildVersion(module)
     val moduleVersionCode = module.versionCode?.toString() ?: "?"
+    val appBuild = readBundledModuleBuildInfo()
+    val appVersion = appBuild?.let(::formatModuleBuildVersion) ?: BuildConfig.VERSION_NAME
     _setup.update {
       it.copy(
         installing = false,
@@ -2346,7 +2351,7 @@ private fun clearDownloadedUpdateApk() {
           R.string.setup_online_module_version_mismatch_body,
           moduleVersion,
           moduleVersionCode,
-          BuildConfig.VERSION_NAME,
+          appVersion,
           BuildConfig.VERSION_CODE,
         ),
         onlineModuleFullApkDownloading = false,
@@ -2356,6 +2361,18 @@ private fun clearDownloadedUpdateApk() {
     }
     return true
   }
+
+  private fun formatModuleBuildVersion(build: ModuleBuildInfo): String {
+    val version = build.versionName?.takeIf { it.isNotBlank() } ?: "?"
+    val buildNumber = build.buildNumber
+    return if (buildNumber != null) "$version #$buildNumber" else version
+  }
+
+  private fun moduleBuildsMatch(first: ModuleBuildInfo, second: ModuleBuildInfo): Boolean =
+    normalizeTagToVersion(first.versionName.orEmpty()) == normalizeTagToVersion(second.versionName.orEmpty()) &&
+      first.versionCode == second.versionCode &&
+      first.buildType?.lowercase(Locale.US) == second.buildType?.lowercase(Locale.US) &&
+      first.buildNumber == second.buildNumber
 
   override fun dismissOnlineModuleVersionMismatchDialog() {
     if (_setup.value.onlineModuleFullApkDownloading) return
@@ -2373,8 +2390,7 @@ private fun clearDownloadedUpdateApk() {
     if (!BuildConfig.USES_ONLINE_MODULE || _setup.value.onlineModuleFullApkDownloading) return
     val target = pendingOnlineModuleMismatch ?: return
     val targetVersion = target.versionName?.trim().orEmpty()
-    val targetVersionCode = target.versionCode ?: return
-    if (targetVersion.isBlank()) return
+    if (targetVersion.isBlank() || target.versionCode == null || target.buildType.isNullOrBlank() || target.buildNumber == null) return
 
     fullRootFallbackDownloadJob?.cancel()
     fullRootFallbackDownloadJob = viewModelScope.launch(Dispatchers.IO + ceh) {
@@ -2386,9 +2402,9 @@ private fun clearDownloadedUpdateApk() {
         )
       }
       try {
-        val downloadUrl = findBundledRootApkForVersion(targetVersion)
-        val apk = downloadFullRootFallbackApk(downloadUrl)
-        validateFullRootFallbackApk(apk, targetVersion, targetVersionCode)
+        val releaseAsset = findBundledRootApkForBuild(target)
+        val apk = downloadFullRootFallbackApk(releaseAsset.downloadUrl, releaseAsset.assetName)
+        validateFullRootFallbackApk(apk, target)
         pendingFullRootFallbackApkPath = apk.absolutePath
         _setup.update {
           it.copy(
@@ -2430,7 +2446,16 @@ private fun clearDownloadedUpdateApk() {
     }
   }
 
-  private fun findBundledRootApkForVersion(versionName: String): String {
+  private data class FullRootReleaseAsset(
+    val assetName: String,
+    val downloadUrl: String,
+  )
+
+  private fun findBundledRootApkForBuild(target: ModuleBuildInfo): FullRootReleaseAsset {
+    val versionName = target.versionName?.trim().orEmpty()
+    val serviceBuild = target.buildType.equals("service", ignoreCase = true)
+    val expectedTag = if (serviceBuild) "service-build" else "V${normalizeTagToVersion(versionName)}"
+    val expectedAssetName = if (serviceBuild) SERVICE_FULL_ROOT_APK_ASSET_NAME else FULL_ROOT_APK_ASSET_NAME
     val request = Request.Builder()
       .url("https://api.github.com/repos/GAME-OVER-op/ZDT-D/releases?per_page=100")
       .header("User-Agent", "ZDT-D-Android")
@@ -2439,34 +2464,33 @@ private fun clearDownloadedUpdateApk() {
     githubHttp.newCall(request).execute().use { response ->
       check(response.isSuccessful) { "GitHub releases HTTP ${response.code}" }
       val releases = JSONArray(response.body.string())
-      val expectedVersion = normalizeTagToVersion(versionName)
       for (releaseIndex in 0 until releases.length()) {
         val release = releases.optJSONObject(releaseIndex) ?: continue
         if (release.optBoolean("draft", false)) continue
-        if (normalizeTagToVersion(release.optString("tag_name")) != expectedVersion) continue
+        if (!release.optString("tag_name").equals(expectedTag, ignoreCase = true)) continue
         val assets = release.optJSONArray("assets") ?: continue
         for (assetIndex in 0 until assets.length()) {
           val asset = assets.optJSONObject(assetIndex) ?: continue
-          if (asset.optString("name") != FULL_ROOT_APK_ASSET_NAME) continue
+          if (asset.optString("name") != expectedAssetName) continue
           val url = asset.optString("browser_download_url").trim()
-          check(isExpectedBundledRootApkUrl(url)) { "Unexpected full root APK download URL" }
-          return url
+          check(isExpectedBundledRootApkUrl(url, expectedAssetName)) { "Unexpected full root APK download URL" }
+          return FullRootReleaseAsset(expectedAssetName, url)
         }
       }
-      error("$FULL_ROOT_APK_ASSET_NAME for version $versionName was not found")
+      error("$expectedAssetName for build ${formatModuleBuildVersion(target)} was not found")
     }
   }
 
-  private fun isExpectedBundledRootApkUrl(url: String): Boolean = runCatching {
+  private fun isExpectedBundledRootApkUrl(url: String, assetName: String): Boolean = runCatching {
     val uri = Uri.parse(url)
     uri.scheme.equals("https", ignoreCase = true) &&
       uri.host.equals("github.com", ignoreCase = true) &&
       uri.path.orEmpty().startsWith("/GAME-OVER-op/ZDT-D/releases/download/") &&
-      uri.lastPathSegment == FULL_ROOT_APK_ASSET_NAME
+      uri.lastPathSegment == assetName
   }.getOrDefault(false)
 
-  private suspend fun downloadFullRootFallbackApk(url: String): File {
-    check(isExpectedBundledRootApkUrl(url)) { "Unexpected full root APK download URL" }
+  private suspend fun downloadFullRootFallbackApk(url: String, assetName: String): File {
+    check(isExpectedBundledRootApkUrl(url, assetName)) { "Unexpected full root APK download URL" }
     val destination = fullRootFallbackApkFile().apply {
       parentFile?.mkdirs()
       delete()
@@ -2508,9 +2532,10 @@ private fun clearDownloadedUpdateApk() {
 
   private fun validateFullRootFallbackApk(
     apk: File,
-    expectedVersionName: String,
-    expectedVersionCode: Int,
+    expectedBuild: ModuleBuildInfo,
   ) {
+    val expectedVersionName = expectedBuild.versionName.orEmpty()
+    val expectedVersionCode = expectedBuild.versionCode ?: error("Expected module versionCode is missing")
     val packageManager = ctx.packageManager
     val archive = packageManager.getPackageArchiveInfo(apk.absolutePath, apkPackageInfoFlags())
       ?: error("Unable to inspect downloaded full root APK")
@@ -2535,6 +2560,25 @@ private fun clearDownloadedUpdateApk() {
     check(installedSigners.intersect(archiveSigners).isNotEmpty()) {
       "Full root APK signature does not match ZDT-D"
     }
+    val embeddedBuild = readModuleBuildInfoFromApk(apk)
+    check(moduleBuildsMatch(embeddedBuild, expectedBuild)) {
+      "Full root APK internal module build does not match ${formatModuleBuildVersion(expectedBuild)}"
+    }
+  }
+
+  private fun readModuleBuildInfoFromApk(apk: File): ModuleBuildInfo = ZipFile(apk).use { zip ->
+    val entry = zip.getEntry("assets/module.prop")
+      ?: error("Full root APK has no internal module.prop")
+    check(entry.size in 1..(128L * 1024L)) { "Full root APK module.prop has an invalid size" }
+    val text = zip.getInputStream(entry).bufferedReader().use { it.readText() }
+    val build = parseModuleBuildInfo(text)
+    check(
+      !build.versionName.isNullOrBlank() &&
+        build.versionCode != null &&
+        !build.buildType.isNullOrBlank() &&
+        build.buildNumber != null
+    ) { "Full root APK internal module.prop is invalid" }
+    build
   }
 
   private fun apkPackageInfoFlags(): Int = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -5854,8 +5898,8 @@ private fun shQuote(s: String): String {
         check(response.isSuccessful) { "module download HTTP ${response.code}" }
         val body = response.body
         val reportedSize = body.contentLength()
-        if (reportedSize > 0L) check(reportedSize == metadata.size) {
-          "module size mismatch: expected=${metadata.size} remote=$reportedSize"
+        check(reportedSize <= 0L || reportedSize <= MAX_ONLINE_MODULE_BYTES) {
+          "online module archive exceeds the size limit: $reportedSize"
         }
         body.byteStream().use { input ->
           part.outputStream().buffered().use { output ->
@@ -5867,7 +5911,12 @@ private fun shQuote(s: String): String {
               if (read < 0) break
               output.write(buffer, 0, read)
               copied += read
-              val percent = ((copied * 100L) / metadata.size.coerceAtLeast(1L)).toInt().coerceIn(0, 100)
+              check(copied <= MAX_ONLINE_MODULE_BYTES) { "online module archive exceeds the size limit" }
+              val percent = if (reportedSize > 0L) {
+                ((copied * 100L) / reportedSize).toInt().coerceIn(0, 100)
+              } else {
+                0
+              }
               updateInstallProgress(
                 percent = 22 + ((percent * 20) / 100),
                 label = str(R.string.prog_update_status_downloading_pct_fmt, percent),
@@ -5876,6 +5925,17 @@ private fun shQuote(s: String): String {
           }
         }
       }
+      check(part.isFile && part.length() > 0L) { "downloaded online module archive is empty" }
+      val (moduleBuild, inspectError) = readModuleBuildInfoWithBundledBusyBox(part)
+      check(moduleBuild != null) { inspectError ?: "module.prop is missing from the downloaded module archive" }
+      val appBuild = readBundledModuleBuildInfo()
+        ?: error("online installer internal module.prop is missing or invalid")
+      if (!moduleBuildsMatch(moduleBuild, appBuild)) {
+        throw OnlineModuleVersionMismatchException(moduleBuild)
+      }
+      check(moduleBuild.versionName == metadata.moduleVersion && moduleBuild.versionCode == metadata.moduleVersionCode) {
+        "downloaded module version does not match online installer metadata"
+      }
       check(part.length() == metadata.size) {
         "module size mismatch: expected=${metadata.size} actual=${part.length()}"
       }
@@ -5883,15 +5943,6 @@ private fun shQuote(s: String): String {
       check(actualSha.equals(metadata.sha256, ignoreCase = true)) {
         "module SHA-256 mismatch: expected=${metadata.sha256} actual=$actualSha"
       }
-      val (moduleBuild, inspectError) = readModuleBuildInfoWithBundledBusyBox(part)
-      check(moduleBuild != null) { inspectError ?: "module.prop is missing from the downloaded module archive" }
-      check(moduleBuild.versionName == metadata.moduleVersion && moduleBuild.versionCode == metadata.moduleVersionCode) {
-        "downloaded module version does not match its signed APK metadata"
-      }
-      val matchesApp = normalizeTagToVersion(moduleBuild.versionName.orEmpty()) ==
-        normalizeTagToVersion(BuildConfig.VERSION_NAME) &&
-        moduleBuild.versionCode == BuildConfig.VERSION_CODE
-      if (!matchesApp) throw OnlineModuleVersionMismatchException(moduleBuild)
       pendingOnlineModuleMismatch = null
       if (cacheZip.exists()) check(cacheZip.delete()) { "unable to replace cached module archive" }
       check(part.renameTo(cacheZip)) { "unable to finalize downloaded module archive" }
@@ -5925,7 +5976,7 @@ private fun shQuote(s: String): String {
     val size = props.getProperty("size")?.trim()?.toLongOrNull() ?: 0L
     val moduleVersion = props.getProperty("moduleVersion")?.trim().orEmpty()
     val moduleVersionCode = props.getProperty("moduleVersionCode")?.trim()?.toIntOrNull() ?: 0
-    check(url.startsWith("https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/"))
+    check(url == "https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/zdt_module.zip")
     check(sha.matches(Regex("[0-9a-f]{64}")))
     check(size > 0L)
     check(moduleVersion.isNotBlank())
@@ -5961,8 +6012,13 @@ private fun shQuote(s: String): String {
         .joinToString("\n")
     }
     val build = parseModuleBuildInfo(moduleProp)
-    if (build.versionName.isNullOrBlank() || build.versionCode == null) {
-      return null to "Downloaded module.prop has no valid version or versionCode"
+    if (
+      build.versionName.isNullOrBlank() ||
+      build.versionCode == null ||
+      build.buildType.isNullOrBlank() ||
+      build.buildNumber == null
+    ) {
+      return null to "Downloaded module.prop has no valid version, versionCode, buildType or buildNumber"
     }
     return build to null
   }

@@ -2574,4 +2574,8 @@ APatch: 10700+</string>
     <string name="non_root_tgws_plugin_install_permission_required">Дозвольте ZDT-D встановлювати програми з невідомих джерел, щоб продовжити встановлення плагіна TGWS.</string>
     <string name="non_root_tgws_plugin_installed_fmt">Встановлений плагін: %1$s</string>
     <string name="non_root_tgws_plugin_latest_fmt">Доступний плагін: %1$s</string>
+    <string name="setup_online_module_version_mismatch_title">Версії модуля й застосунку не збігаються</string>
+    <string name="setup_online_module_version_mismatch_body">Завантажений модуль має версію %1$s (versionCode %2$s), а онлайн-інсталятор — версію %3$s (versionCode %4$d). Цей модуль неможливо встановити цим інсталятором. Натомість можна завантажити повний root APK версії %1$s.</string>
+    <string name="setup_online_module_download_full_apk">Завантажити повний APK</string>
+    <string name="setup_online_full_apk_download_failed">Не вдалося завантажити повний APK: %1$s</string>
 </resources>

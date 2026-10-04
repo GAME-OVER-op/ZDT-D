@@ -2576,4 +2576,8 @@ APatch: ‏10700+</string>
     <string name="non_root_tgws_plugin_install_permission_required">اسمح لـ ZDT-D بتثبيت التطبيقات غير المعروفة لمتابعة تثبيت إضافة TGWS.</string>
     <string name="non_root_tgws_plugin_installed_fmt">الإضافة المثبتة: %1$s</string>
     <string name="non_root_tgws_plugin_latest_fmt">الإضافة المتاحة: %1$s</string>
+    <string name="setup_online_module_version_mismatch_title">إصدار الوحدة غير متطابق</string>
+    <string name="setup_online_module_version_mismatch_body">إصدار الوحدة التي تم تنزيلها هو %1$s ‏(versionCode %2$s)، بينما إصدار المثبت عبر الإنترنت هو %3$s ‏(versionCode %4$d). لا يمكن تثبيت هذه الوحدة بهذا المثبت. يمكنك بدلاً من ذلك تنزيل ملف APK الكامل بصلاحيات root للإصدار %1$s.</string>
+    <string name="setup_online_module_download_full_apk">تنزيل APK الكامل</string>
+    <string name="setup_online_full_apk_download_failed">تعذر تنزيل ملف APK الكامل: %1$s</string>
 </resources>

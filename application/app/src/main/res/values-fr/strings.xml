@@ -2572,4 +2572,8 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="non_root_tgws_plugin_install_permission_required">Autorisez ZDT-D à installer des applications inconnues pour poursuivre l’installation du plugin TGWS.</string>
     <string name="non_root_tgws_plugin_installed_fmt">Plugin installé : %1$s</string>
     <string name="non_root_tgws_plugin_latest_fmt">Plugin disponible : %1$s</string>
+    <string name="setup_online_module_version_mismatch_title">Version du module incompatible</string>
+    <string name="setup_online_module_version_mismatch_body">Le module téléchargé est en version %1$s (versionCode %2$s), mais cet installateur en ligne est en version %3$s (versionCode %4$d). Ce module ne peut pas être installé avec cet installateur. Vous pouvez télécharger à la place l’APK root complet de la version %1$s.</string>
+    <string name="setup_online_module_download_full_apk">Télécharger l’APK complet</string>
+    <string name="setup_online_full_apk_download_failed">Impossible de télécharger l’APK complet : %1$s</string>
 </resources>

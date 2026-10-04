@@ -23,6 +23,8 @@ interface ZdtdActions {
   fun dismissZygiskInstallRecoveryDialog()
   fun dismissMetamoduleInstallBlockedDialog()
   fun retryInstallWithoutZygisk()
+  fun downloadFullRootApkForMismatchedModule()
+  fun dismissOnlineModuleVersionMismatchDialog()
 
   /** Remove module and uninstall the app (with reboot after uninstall). */
   fun beginModuleRemoval()

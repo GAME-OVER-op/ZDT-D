@@ -2571,4 +2571,8 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="non_root_tgws_plugin_install_permission_required">Izinkan ZDT-D memasang aplikasi tidak dikenal untuk melanjutkan pemasangan plugin TGWS.</string>
     <string name="non_root_tgws_plugin_installed_fmt">Plugin terpasang: %1$s</string>
     <string name="non_root_tgws_plugin_latest_fmt">Plugin tersedia: %1$s</string>
+    <string name="setup_online_module_version_mismatch_title">Versi modul tidak cocok</string>
+    <string name="setup_online_module_version_mismatch_body">Modul yang diunduh adalah versi %1$s (versionCode %2$s), sedangkan penginstal online ini adalah versi %3$s (versionCode %4$d). Modul ini tidak dapat dipasang dengan penginstal ini. Anda dapat mengunduh APK root lengkap versi %1$s sebagai gantinya.</string>
+    <string name="setup_online_module_download_full_apk">Unduh APK lengkap</string>
+    <string name="setup_online_full_apk_download_failed">APK lengkap tidak dapat diunduh: %1$s</string>
 </resources>

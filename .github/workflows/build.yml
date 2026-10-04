@@ -6349,8 +6349,11 @@ jobs:
             printf '%s\n' "$APK_MODULE_PROP" | grep -Eq '^buildNumber=[0-9]+$' || { echo "::error::buildNumber missing from $apk module.prop"; exit 1; }
           done
           VERSION_CODE="$(grep -m1 '^versionCode=' module.prop | cut -d'=' -f2 | tr -d '[:space:]')"
+          VERSION_NAME="$(grep -m1 '^version=' module.prop | cut -d'=' -f2- | tr -d '\r' | xargs)"
           MODULE_ASSET="zdt_module-${VERSION_CODE}-${GITHUB_RUN_NUMBER}.zip"
           ONLINE_MODULE_META="$(unzip -p "$ONLINE_APK" assets/busybox/zdt_module.cache)"
+          printf '%s\n' "$ONLINE_MODULE_META" | grep -Fx "moduleVersion=${VERSION_NAME}" >/dev/null || { echo "::error::Online APK module version binding is invalid"; exit 1; }
+          printf '%s\n' "$ONLINE_MODULE_META" | grep -Fx "moduleVersionCode=${VERSION_CODE}" >/dev/null || { echo "::error::Online APK module versionCode binding is invalid"; exit 1; }
           printf '%s\n' "$ONLINE_MODULE_META" | grep -Fx "onlineAsset=${MODULE_ASSET}" >/dev/null || { echo "::error::Online APK module asset binding is invalid"; exit 1; }
           printf '%s\n' "$ONLINE_MODULE_META" | grep -Fx "onlineUrl=https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/${MODULE_ASSET}" >/dev/null || { echo "::error::Online APK module URL binding is invalid"; exit 1; }
 

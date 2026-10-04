@@ -188,6 +188,8 @@ fun ZdtdApp(
         onDismissZygiskInstallRecovery = actions::dismissZygiskInstallRecoveryDialog,
         onDismissMetamoduleInstallBlocked = actions::dismissMetamoduleInstallBlockedDialog,
         onRetryInstallWithoutZygisk = actions::retryInstallWithoutZygisk,
+        onDownloadFullRootApk = actions::downloadFullRootApkForMismatchedModule,
+        onDismissOnlineModuleVersionMismatch = actions::dismissOnlineModuleVersionMismatchDialog,
       )
       SetupStep.REBOOT -> {
         when (rootState) {

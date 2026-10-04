@@ -2571,4 +2571,8 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="non_root_tgws_plugin_install_permission_required">TGWS eklentisinin kurulumuna devam etmek için ZDT-D’ye bilinmeyen uygulamaları yükleme izni verin.</string>
     <string name="non_root_tgws_plugin_installed_fmt">Yüklü eklenti: %1$s</string>
     <string name="non_root_tgws_plugin_latest_fmt">Kullanılabilir eklenti: %1$s</string>
+    <string name="setup_online_module_version_mismatch_title">Modül sürümü eşleşmiyor</string>
+    <string name="setup_online_module_version_mismatch_body">İndirilen modül %1$s sürümüdür (versionCode %2$s), ancak bu çevrimiçi yükleyici %3$s sürümüdür (versionCode %4$d). Bu modül bu yükleyiciyle kurulamaz. Bunun yerine %1$s sürümünün tam root APK dosyasını indirebilirsiniz.</string>
+    <string name="setup_online_module_download_full_apk">Tam APK dosyasını indir</string>
+    <string name="setup_online_full_apk_download_failed">Tam APK indirilemedi: %1$s</string>
 </resources>

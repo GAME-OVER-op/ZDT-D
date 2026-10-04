@@ -2572,4 +2572,8 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="non_root_tgws_plugin_install_permission_required">Erlaube ZDT-D die Installation unbekannter Apps, um mit der Installation des TGWS-Plugins fortzufahren.</string>
     <string name="non_root_tgws_plugin_installed_fmt">Installiertes Plugin: %1$s</string>
     <string name="non_root_tgws_plugin_latest_fmt">Verfügbares Plugin: %1$s</string>
+    <string name="setup_online_module_version_mismatch_title">Modulversion stimmt nicht überein</string>
+    <string name="setup_online_module_version_mismatch_body">Das heruntergeladene Modul hat Version %1$s (versionCode %2$s), dieser Online-Installer jedoch Version %3$s (versionCode %4$d). Dieses Modul kann damit nicht installiert werden. Stattdessen kann die vollständige Root-APK für Version %1$s heruntergeladen werden.</string>
+    <string name="setup_online_module_download_full_apk">Vollständige APK laden</string>
+    <string name="setup_online_full_apk_download_failed">Die vollständige APK konnte nicht geladen werden: %1$s</string>
 </resources>

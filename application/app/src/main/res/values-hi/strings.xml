@@ -2572,4 +2572,8 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="non_root_tgws_plugin_install_permission_required">TGWS प्लगइन की स्थापना जारी रखने के लिए ZDT-D को अज्ञात ऐप इंस्टॉल करने की अनुमति दें।</string>
     <string name="non_root_tgws_plugin_installed_fmt">इंस्टॉल प्लगइन: %1$s</string>
     <string name="non_root_tgws_plugin_latest_fmt">उपलब्ध प्लगइन: %1$s</string>
+    <string name="setup_online_module_version_mismatch_title">मॉड्यूल संस्करण मेल नहीं खाता</string>
+    <string name="setup_online_module_version_mismatch_body">डाउनलोड किया गया मॉड्यूल संस्करण %1$s (versionCode %2$s) है, लेकिन यह ऑनलाइन इंस्टॉलर संस्करण %3$s (versionCode %4$d) है। यह मॉड्यूल इस इंस्टॉलर से इंस्टॉल नहीं किया जा सकता। इसके बजाय आप संस्करण %1$s का पूरा root APK डाउनलोड कर सकते हैं।</string>
+    <string name="setup_online_module_download_full_apk">पूरा APK डाउनलोड करें</string>
+    <string name="setup_online_full_apk_download_failed">पूरा APK डाउनलोड नहीं हो सका: %1$s</string>
 </resources>

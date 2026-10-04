@@ -2571,4 +2571,8 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="non_root_tgws_plugin_install_permission_required">TGWS 플러그인 설치를 계속하려면 ZDT-D에 알 수 없는 앱 설치 권한을 허용하세요.</string>
     <string name="non_root_tgws_plugin_installed_fmt">설치된 플러그인: %1$s</string>
     <string name="non_root_tgws_plugin_latest_fmt">사용 가능한 플러그인: %1$s</string>
+    <string name="setup_online_module_version_mismatch_title">모듈 버전이 일치하지 않음</string>
+    <string name="setup_online_module_version_mismatch_body">다운로드한 모듈은 버전 %1$s(versionCode %2$s)이지만 이 온라인 설치 프로그램은 버전 %3$s(versionCode %4$d)입니다. 이 설치 프로그램으로 해당 모듈을 설치할 수 없습니다. 대신 버전 %1$s의 전체 root APK를 다운로드할 수 있습니다.</string>
+    <string name="setup_online_module_download_full_apk">전체 APK 다운로드</string>
+    <string name="setup_online_full_apk_download_failed">전체 APK를 다운로드할 수 없습니다: %1$s</string>
 </resources>

@@ -2571,4 +2571,8 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="non_root_tgws_plugin_install_permission_required">Cho phép ZDT-D cài đặt ứng dụng không xác định để tiếp tục cài đặt plugin TGWS.</string>
     <string name="non_root_tgws_plugin_installed_fmt">Plugin đã cài: %1$s</string>
     <string name="non_root_tgws_plugin_latest_fmt">Plugin khả dụng: %1$s</string>
+    <string name="setup_online_module_version_mismatch_title">Phiên bản mô-đun không khớp</string>
+    <string name="setup_online_module_version_mismatch_body">Mô-đun đã tải xuống là phiên bản %1$s (versionCode %2$s), nhưng trình cài đặt trực tuyến này là phiên bản %3$s (versionCode %4$d). Không thể cài mô-đun này bằng trình cài đặt hiện tại. Bạn có thể tải APK root đầy đủ của phiên bản %1$s.</string>
+    <string name="setup_online_module_download_full_apk">Tải APK đầy đủ</string>
+    <string name="setup_online_full_apk_download_failed">Không thể tải APK đầy đủ: %1$s</string>
 </resources>

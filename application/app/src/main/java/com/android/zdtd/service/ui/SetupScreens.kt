@@ -147,6 +147,7 @@ private fun SetupAlertDialog(
   bodyText: String,
   confirmButtonText: String,
   onConfirm: () -> Unit,
+  confirmEnabled: Boolean = true,
   dismissButtonText: String? = null,
   onDismiss: (() -> Unit)? = null,
 ) {
@@ -155,7 +156,7 @@ private fun SetupAlertDialog(
     title = { Text(titleText) },
     text = { Text(bodyText) },
     confirmButton = {
-      TextButton(onClick = onConfirm) { Text(confirmButtonText) }
+      TextButton(onClick = onConfirm, enabled = confirmEnabled) { Text(confirmButtonText) }
     },
     dismissButton = {
       if (dismissButtonText != null && onDismiss != null) {
@@ -824,6 +825,8 @@ fun InstallModuleScreen(
   onDismissZygiskInstallRecovery: () -> Unit,
   onDismissMetamoduleInstallBlocked: () -> Unit,
   onRetryInstallWithoutZygisk: () -> Unit,
+  onDownloadFullRootApk: () -> Unit,
+  onDismissOnlineModuleVersionMismatch: () -> Unit,
 ) {
   val arm64Ok = remember { isArm64OnlySupported() }
   val compact = rememberIsCompactWidth()
@@ -878,6 +881,27 @@ fun InstallModuleScreen(
       onConfirm = onManualConfirm,
       dismissButtonText = stringResource(R.string.common_cancel),
       onDismiss = onManualDismiss,
+    )
+  }
+
+  if (setup.showOnlineModuleVersionMismatchDialog) {
+    val downloadStatus = when {
+      setup.onlineModuleFullApkDownloading -> "\n\n" + stringResource(
+        R.string.prog_update_status_downloading_pct_fmt,
+        setup.onlineModuleFullApkDownloadPercent,
+      )
+      !setup.onlineModuleFullApkError.isNullOrBlank() -> "\n\n" + setup.onlineModuleFullApkError
+      else -> ""
+    }
+    SetupAlertDialog(
+      onDismissRequest = onDismissOnlineModuleVersionMismatch,
+      titleText = stringResource(R.string.setup_online_module_version_mismatch_title),
+      bodyText = setup.onlineModuleVersionMismatchText + downloadStatus,
+      confirmButtonText = stringResource(R.string.setup_online_module_download_full_apk),
+      onConfirm = onDownloadFullRootApk,
+      confirmEnabled = !setup.onlineModuleFullApkDownloading,
+      dismissButtonText = stringResource(R.string.common_cancel),
+      onDismiss = onDismissOnlineModuleVersionMismatch,
     )
   }
 

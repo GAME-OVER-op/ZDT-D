@@ -2571,4 +2571,8 @@ APatch：10700+</string>
     <string name="non_root_tgws_plugin_install_permission_required">请允许 ZDT-D 安装未知应用，以继续安装 TGWS 插件。</string>
     <string name="non_root_tgws_plugin_installed_fmt">已安装插件：%1$s</string>
     <string name="non_root_tgws_plugin_latest_fmt">可用插件：%1$s</string>
+    <string name="setup_online_module_version_mismatch_title">模块版本不匹配</string>
+    <string name="setup_online_module_version_mismatch_body">下载的模块版本为 %1$s（versionCode %2$s），但此在线安装器版本为 %3$s（versionCode %4$d）。此安装器无法安装该模块。你可以改为下载版本 %1$s 的完整 root APK。</string>
+    <string name="setup_online_module_download_full_apk">下载完整 APK</string>
+    <string name="setup_online_full_apk_download_failed">无法下载完整 APK：%1$s</string>
 </resources>

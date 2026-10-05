@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import androidx.core.content.FileProvider
+import com.android.zdtd.service.AppStorageMaintenance
 import com.android.zdtd.service.BuildConfig
 import com.android.zdtd.service.R
 import java.io.File
@@ -134,6 +135,7 @@ class TgWsPluginManager(private val context: Context) {
       commitInstall(apkFile)
       TgWsPluginStateBus.state.value
     }.getOrElse { error ->
+      AppStorageMaintenance.deleteCacheArtifact(appContext, preparedApkFile().absolutePath)
       TgWsPluginStateBus.update {
         it.copy(downloading = false, installing = false, progressPercent = 0, errorMessage = error.message ?: error.javaClass.simpleName)
       }
@@ -141,9 +143,16 @@ class TgWsPluginManager(private val context: Context) {
     }
   }
 
+  fun onInstallerReturned(): TgWsPluginState {
+    val apk = preparedApkFile()
+    AppStorageMaintenance.deleteCacheArtifact(appContext, apk.absolutePath)
+    return refreshLocal(clearError = true)
+  }
+
   fun hasDownloadedPlugin(): Boolean = preparedApkFile().let { it.isFile && it.length() > 0L }
 
   fun markInstallPermissionDenied() {
+    AppStorageMaintenance.deleteCacheArtifact(appContext, preparedApkFile().absolutePath)
     TgWsPluginStateBus.update {
       it.copy(downloading = false, installing = false, errorMessage = appContext.getString(R.string.non_root_tgws_plugin_install_permission_required))
     }
@@ -274,6 +283,7 @@ class TgWsPluginManager(private val context: Context) {
       addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
+    AppStorageMaintenance.markInstallerArtifact(appContext, apk.absolutePath)
     appContext.startActivity(installIntent)
   }
 

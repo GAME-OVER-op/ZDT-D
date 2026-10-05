@@ -52,7 +52,7 @@ class NonRootTgWsService : Service() {
       if (text.isBlank()) return
       runCatching {
         synchronized(logLock) {
-          File(runtimeStore.logsDir, "tgwsproxy.log").appendText("$text\n")
+          BoundedLogWriter.appendLine(File(runtimeStore.logsDir, "tgwsproxy.log"), text)
         }
       }
     }
@@ -60,8 +60,9 @@ class NonRootTgWsService : Service() {
     override fun onStateChanged(state: Int, message: String?) {
       val text = message.orEmpty()
       runCatching {
-        File(runtimeStore.logsDir, "tgwsproxy-service.log").appendText(
-          "${System.currentTimeMillis()} plugin_state=$state $text\n"
+        BoundedLogWriter.appendLine(
+          File(runtimeStore.logsDir, "tgwsproxy-service.log"),
+          "${System.currentTimeMillis()} plugin_state=$state $text",
         )
       }
       if (!acceptingPluginEvents) return
@@ -127,6 +128,8 @@ class NonRootTgWsService : Service() {
   override fun onCreate() {
     super.onCreate()
     runtimeStore.ensureLayout()
+    AppStorageMaintenance.trimLogFile(File(runtimeStore.logsDir, "tgwsproxy.log"))
+    AppStorageMaintenance.trimLogFile(File(runtimeStore.logsDir, "tgwsproxy-service.log"))
     ensureNotificationChannel()
   }
 
@@ -187,8 +190,9 @@ class NonRootTgWsService : Service() {
         throw CancellationException()
       } catch (t: Throwable) {
         val errorMessage = t.message ?: t.javaClass.simpleName
-        File(runtimeStore.logsDir, "tgwsproxy-service.log").appendText(
-          "${System.currentTimeMillis()} ERROR $errorMessage\n"
+        BoundedLogWriter.appendLine(
+          File(runtimeStore.logsDir, "tgwsproxy-service.log"),
+          "${System.currentTimeMillis()} ERROR $errorMessage",
         )
         NonRootTgWsRuntime.update(NonRootTgWsRuntimeState.ERROR, errorMessage)
         acceptingPluginEvents = false
@@ -232,10 +236,10 @@ class NonRootTgWsService : Service() {
     if (config.noOutboundProxy) args += "--no-outbound-proxy"
     if (config.noProxy.isNotBlank()) args += listOf("--no-proxy", config.noProxy.trim())
 
-    File(runtimeStore.logsDir, "tgwsproxy.log").apply {
-      parentFile?.mkdirs()
-      appendText("${System.currentTimeMillis()} plugin=${runCatching { remote.pluginVersion }.getOrDefault("unknown")} start\n")
-    }
+    BoundedLogWriter.appendLine(
+      File(runtimeStore.logsDir, "tgwsproxy.log"),
+      "${System.currentTimeMillis()} plugin=${runCatching { remote.pluginVersion }.getOrDefault("unknown")} start",
+    )
     val startup = CompletableDeferred<PluginStartupResult>()
     synchronized(startupLock) {
       startupSawStarting = false

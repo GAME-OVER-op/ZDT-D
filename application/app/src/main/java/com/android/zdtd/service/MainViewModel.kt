@@ -1457,10 +1457,29 @@ fun onAppResumed() {
   }
 }
 
+fun onApkInstallerReturned(filePath: String?) {
+  if (filePath.isNullOrBlank()) return
+  AppStorageMaintenance.deleteCacheArtifact(ctx, filePath)
+  if (_appUpdate.value.downloadedPath == filePath) {
+    _appUpdate.update {
+      it.copy(
+        downloadedPath = null,
+        needsUnknownSourcesPermission = false,
+        downloading = false,
+        downloadPercent = 0,
+        downloadSpeedBytesPerSec = 0,
+      )
+    }
+  }
+  if (pendingFullRootFallbackApkPath == filePath) {
+    pendingFullRootFallbackApkPath = null
+  }
+}
+
 private fun clearDownloadedUpdateApk() {
     val p = _appUpdate.value.downloadedPath
     if (!p.isNullOrBlank()) {
-      runCatching { File(p).delete() }
+      AppStorageMaintenance.deleteCacheArtifact(ctx, p)
     }
     _appUpdate.update { it.copy(downloadedPath = null, needsUnknownSourcesPermission = false) }
   }
@@ -2422,6 +2441,7 @@ private fun clearDownloadedUpdateApk() {
           _appUpdateEvents.tryEmit(AppUpdateEvent.OpenUnknownSourcesSettings)
         }
       } catch (_: CancellationException) {
+        fullRootFallbackApkFile().delete()
         _setup.update {
           it.copy(
             onlineModuleFullApkDownloading = false,
@@ -3420,9 +3440,11 @@ if (mf.isNotBlank()) {
         toast(str(R.string.mv_auto_051))
         return@launchIO
       }
+      AppStorageMaintenance.deleteBackupShareCopies(ctx)
       val outFile = File(ctx.cacheDir, "zdtb_share_${System.currentTimeMillis()}.zdtb")
       val r = root.execRootSh("cp -f ${shQuote(src)} ${shQuote(outFile.absolutePath)} 2>/dev/null || cat ${shQuote(src)} > ${shQuote(outFile.absolutePath)}; chmod 0644 ${shQuote(outFile.absolutePath)} 2>/dev/null || true")
       if (!r.isSuccess) {
+        runCatching { outFile.delete() }
         toast(str(R.string.mv_auto_052))
         return@launchIO
       }
@@ -4037,6 +4059,7 @@ if (mf.isNotBlank()) {
 
     val zipFile = File(ctx.cacheDir, "zapret_target.zip")
     val extracted = File(ctx.cacheDir, "zapret_nfqws_${System.currentTimeMillis()}")
+    AppStorageMaintenance.deleteCacheEntriesWithPrefix(ctx, "zapret_nfqws_")
     runCatching { zipFile.delete() }
     runCatching { extracted.delete() }
 
@@ -4048,6 +4071,8 @@ if (mf.isNotBlank()) {
     }
     if (!okDl) {
       _programUpdates.update { st -> st.copy(zapret = st.zapret.copy(updating = false, errorText = str(R.string.prog_update_error_download_failed), statusText = "")) }
+      runCatching { zipFile.delete() }
+      runCatching { extracted.delete() }
       return
     }
 
@@ -4056,6 +4081,7 @@ if (mf.isNotBlank()) {
     if (!okExtract) {
       _programUpdates.update { st -> st.copy(zapret = st.zapret.copy(updating = false, errorText = str(R.string.prog_update_error_archive_changed), statusText = "")) }
       runCatching { zipFile.delete() }
+      runCatching { extracted.delete() }
       return
     }
 
@@ -4109,6 +4135,7 @@ if (mf.isNotBlank()) {
 
     val zipFile = File(ctx.cacheDir, "zapret2_target.zip")
     val extractDir = File(ctx.cacheDir, "zapret2_extract_${System.currentTimeMillis()}")
+    AppStorageMaintenance.deleteCacheEntriesWithPrefix(ctx, "zapret2_extract_")
     runCatching { zipFile.delete() }
     runCatching { extractDir.deleteRecursively() }
     extractDir.mkdirs()
@@ -4121,6 +4148,8 @@ if (mf.isNotBlank()) {
     }
     if (!okDl) {
       _programUpdates.update { st -> st.copy(zapret2 = st.zapret2.copy(updating = false, errorText = str(R.string.prog_update_error_download_failed), statusText = "")) }
+      runCatching { zipFile.delete() }
+      runCatching { extractDir.deleteRecursively() }
       return
     }
 
@@ -4149,8 +4178,8 @@ if (mf.isNotBlank()) {
         str(R.string.prog_update_error_install_failed) + "\n" + detail
       }
       _programUpdates.update { st -> st.copy(zapret2 = st.zapret2.copy(updating = false, errorText = message, statusText = "")) }
-      // Keep the downloaded archive/extracted payload after a failed install for diagnostics.
-      // They are removed automatically at the start of the next nfqws2 update attempt.
+      runCatching { zipFile.delete() }
+      runCatching { extractDir.deleteRecursively() }
       return
     }
     runCatching { zipFile.delete() }
@@ -4196,6 +4225,7 @@ if (mf.isNotBlank()) {
 
     val gzFile = File(ctx.cacheDir, "mihomo_target.gz")
     val extracted = File(ctx.cacheDir, "mihomo_${System.currentTimeMillis()}")
+    AppStorageMaintenance.deleteCacheEntriesWithPrefix(ctx, "mihomo_")
     runCatching { gzFile.delete() }
     runCatching { extracted.delete() }
 
@@ -4207,6 +4237,8 @@ if (mf.isNotBlank()) {
     }
     if (!okDl) {
       _programUpdates.update { st -> st.copy(mihomo = st.mihomo.copy(updating = false, errorText = str(R.string.prog_update_error_download_failed), statusText = "")) }
+      runCatching { gzFile.delete() }
+      runCatching { extracted.delete() }
       return
     }
 
@@ -4215,6 +4247,7 @@ if (mf.isNotBlank()) {
     if (!okExtract) {
       _programUpdates.update { st -> st.copy(mihomo = st.mihomo.copy(updating = false, errorText = str(R.string.prog_update_error_archive_changed), statusText = "")) }
       runCatching { gzFile.delete() }
+      runCatching { extracted.delete() }
       return
     }
 
@@ -4268,6 +4301,7 @@ if (mf.isNotBlank()) {
 
     val tarGzFile = File(ctx.cacheDir, "mieru_target.tar.gz")
     val extracted = File(ctx.cacheDir, "mieru_${System.currentTimeMillis()}")
+    AppStorageMaintenance.deleteCacheEntriesWithPrefix(ctx, "mieru_")
     runCatching { tarGzFile.delete() }
     runCatching { extracted.delete() }
 
@@ -4279,6 +4313,8 @@ if (mf.isNotBlank()) {
     }
     if (!okDl) {
       _programUpdates.update { st -> st.copy(mieru = st.mieru.copy(updating = false, errorText = str(R.string.prog_update_error_download_failed), statusText = "")) }
+      runCatching { tarGzFile.delete() }
+      runCatching { extracted.delete() }
       return
     }
 
@@ -4287,6 +4323,7 @@ if (mf.isNotBlank()) {
     if (!okExtract) {
       _programUpdates.update { st -> st.copy(mieru = st.mieru.copy(updating = false, errorText = str(R.string.prog_update_error_archive_changed), statusText = "")) }
       runCatching { tarGzFile.delete() }
+      runCatching { extracted.delete() }
       return
     }
 
@@ -4339,6 +4376,7 @@ if (mf.isNotBlank()) {
     }
 
     val binFile = File(ctx.cacheDir, "opera_proxy_${System.currentTimeMillis()}")
+    AppStorageMaintenance.deleteCacheEntriesWithPrefix(ctx, "opera_proxy_")
     runCatching { binFile.delete() }
 
     val okDl = downloadToFileWithProgress(url, binFile) { pct ->
@@ -6021,15 +6059,19 @@ private fun shQuote(s: String): String {
   }
 
   private fun cleanupModuleZipAfterSuccessfulInstall() {
-    if (BuildConfig.USES_ONLINE_MODULE) {
-      listOf(
-        File(ctx.cacheDir, "zdt_module.zip"),
-        File(ctx.cacheDir, "zdt_module.zip.part"),
-        File(ctx.cacheDir, "zdt_module_version_check.zip"),
-      ).forEach { file ->
-        if (file.exists() && !runCatching { file.delete() }.getOrDefault(false)) {
-          log("WARN", "Unable to delete temporary online module archive: ${file.absolutePath}")
-        }
+    listOf(
+      File(ctx.cacheDir, "zdt_module.zip"),
+      File(ctx.cacheDir, "zdt_module.zip.part"),
+      File(ctx.cacheDir, "zdt_module_version_check.zip"),
+      File(ctx.cacheDir, "module_unpack"),
+    ).forEach { file ->
+      val deleted = if (file.isDirectory) {
+        runCatching { file.deleteRecursively() }.getOrDefault(false)
+      } else {
+        runCatching { file.delete() }.getOrDefault(false)
+      }
+      if (file.exists() && !deleted) {
+        log("WARN", "Unable to delete temporary module artifact: ${file.absolutePath}")
       }
     }
 
@@ -8380,6 +8422,7 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
         val path = downloadLatestApk(url)
         if (!currentCoroutineContext().isActive) return@launch
         if (path.isNullOrBlank()) {
+          runCatching { File(ctx.cacheDir, "zdt_app_update.apk").delete() }
           updateDownloadUi(downloading = false, percent = 0, speedBps = 0, path = null, err = str(R.string.mv_auto_075))
           return@launch
         }
@@ -8391,9 +8434,10 @@ override fun applyStrategicVariant(programId: String, profile: String, file: Str
           _appUpdate.update { it.copy(needsUnknownSourcesPermission = true) }
         }
       } catch (_: CancellationException) {
-        // cancelled
+        runCatching { File(ctx.cacheDir, "zdt_app_update.apk").delete() }
         updateDownloadUi(downloading = false, percent = 0, speedBps = 0, path = null, err = null)
       } catch (e: Throwable) {
+        runCatching { File(ctx.cacheDir, "zdt_app_update.apk").delete() }
         updateDownloadUi(downloading = false, percent = 0, speedBps = 0, path = null, err = str(R.string.mv_error_with_detail, (e.message ?: e.toString())))
       }
     }

@@ -332,7 +332,7 @@ internal object NonRootOperaApiProxyResolver {
   }
 
   private fun appendLog(file: File, line: String) {
-    runCatching { file.appendText(line + "\n") }
+    runCatching { BoundedLogWriter.appendLine(file, line) }
   }
 
   private fun mask(value: String): String {

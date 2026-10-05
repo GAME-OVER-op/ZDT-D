@@ -122,9 +122,13 @@ private fun copyUriToTempFile(context: Context, uri: Uri, displayName: String): 
   val suffix = safeName.substringAfterLast('.', "bin").let { if (it.isBlank()) ".bin" else ".${it.take(16)}" }
   val tmp = kotlin.runCatching { File.createTempFile("myprogram_upload_", suffix, context.cacheDir) }.getOrNull() ?: return null
   return try {
-    context.contentResolver.openInputStream(uri)?.use { input ->
-      tmp.outputStream().use { output -> input.copyTo(output, 1024 * 1024) }
-    } ?: return null
+    val input = context.contentResolver.openInputStream(uri) ?: run {
+      tmp.delete()
+      return null
+    }
+    input.use {
+      tmp.outputStream().use { output -> it.copyTo(output, 1024 * 1024) }
+    }
     tmp
   } catch (_: Throwable) {
     kotlin.runCatching { tmp.delete() }

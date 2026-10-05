@@ -85,9 +85,11 @@ class FullAppUpgradeManager(context: Context) {
       addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
+    AppStorageMaintenance.markInstallerArtifact(appContext, apk.absolutePath)
     appContext.startActivity(intent)
     true
   }.getOrElse { error ->
+    AppStorageMaintenance.deleteCacheArtifact(appContext, downloadedApk().absolutePath)
     _state.value = _state.value.copy(
       status = FullAppUpgradeStatus.ERROR,
       errorMessage = error.message ?: error.javaClass.simpleName,
@@ -95,7 +97,16 @@ class FullAppUpgradeManager(context: Context) {
     false
   }
 
+  fun onInstallerReturned() {
+    val apk = downloadedApk()
+    AppStorageMaintenance.deleteCacheArtifact(appContext, apk.absolutePath)
+    if (_state.value.status == FullAppUpgradeStatus.INSTALLING) {
+      _state.value = FullAppUpgradeState()
+    }
+  }
+
   fun markInstallPermissionDenied() {
+    AppStorageMaintenance.deleteCacheArtifact(appContext, downloadedApk().absolutePath)
     _state.value = _state.value.copy(
       status = FullAppUpgradeStatus.ERROR,
       errorMessage = appContext.getString(R.string.permission_required_body),

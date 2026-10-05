@@ -28,18 +28,26 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 class NonRootActivity : AppCompatActivity() {
+  private companion object {
+    const val STATE_PLUGIN_INSTALLER = "storage.plugin_installer"
+    const val STATE_FULL_APP_INSTALLER = "storage.full_app_installer"
+  }
+
   private val vm: NonRootViewModel by viewModels()
   private val vpsVm: com.android.zdtd.service.vps.VpsViewModel by viewModels()
+  private var pendingPluginInstaller = false
+  private var pendingFullAppInstaller = false
+  private var installerPausedActivity = false
   private val pluginInstallPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()) {
-      vm.installDownloadedTgWsPlugin()
+      launchDownloadedTgWsPluginInstaller()
     } else {
       vm.onTgWsPluginInstallPermissionDenied()
     }
   }
   private val fullAppInstallPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O || packageManager.canRequestPackageInstalls()) {
-      vm.installDownloadedFullApp()
+      launchDownloadedFullAppInstaller()
     } else {
       vm.onFullAppInstallPermissionDenied()
     }
@@ -50,6 +58,11 @@ class NonRootActivity : AppCompatActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+
+    AppStorageMaintenance.cleanupOnAppStart(applicationContext)
+    pendingPluginInstaller = savedInstanceState?.getBoolean(STATE_PLUGIN_INSTALLER, false) == true
+    pendingFullAppInstaller = savedInstanceState?.getBoolean(STATE_FULL_APP_INSTALLER, false) == true
+    installerPausedActivity = pendingPluginInstaller || pendingFullAppInstaller
 
     AppLanguageSupport.applyPersistedAppLocale(applicationContext)
     CrashLogger.install(applicationContext)
@@ -134,8 +147,28 @@ class NonRootActivity : AppCompatActivity() {
   }
 
 
+  override fun onPause() {
+    if (pendingPluginInstaller || pendingFullAppInstaller) installerPausedActivity = true
+    super.onPause()
+  }
+
+  override fun onSaveInstanceState(outState: Bundle) {
+    outState.putBoolean(STATE_PLUGIN_INSTALLER, pendingPluginInstaller)
+    outState.putBoolean(STATE_FULL_APP_INSTALLER, pendingFullAppInstaller)
+    super.onSaveInstanceState(outState)
+  }
+
   override fun onResume() {
     super.onResume()
+    if (installerPausedActivity) {
+      vm.onApkInstallersReturned(
+        plugin = pendingPluginInstaller,
+        fullApp = pendingFullAppInstaller,
+      )
+      pendingPluginInstaller = false
+      pendingFullAppInstaller = false
+      installerPausedActivity = false
+    }
     vm.refreshTgWsPlugin(checkRemote = false)
   }
 
@@ -150,7 +183,7 @@ class NonRootActivity : AppCompatActivity() {
         return@launch
       }
 
-      vm.installDownloadedTgWsPlugin()
+      launchDownloadedTgWsPluginInstaller()
     }
   }
 
@@ -162,8 +195,22 @@ class NonRootActivity : AppCompatActivity() {
           Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
         )
       } else {
-        vm.installDownloadedFullApp()
+        launchDownloadedFullAppInstaller()
       }
+    }
+  }
+
+  private fun launchDownloadedTgWsPluginInstaller() {
+    if (vm.installDownloadedTgWsPlugin()) {
+      pendingPluginInstaller = true
+      installerPausedActivity = false
+    }
+  }
+
+  private fun launchDownloadedFullAppInstaller() {
+    if (vm.installDownloadedFullApp()) {
+      pendingFullAppInstaller = true
+      installerPausedActivity = false
     }
   }
 

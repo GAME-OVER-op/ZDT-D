@@ -270,8 +270,9 @@ internal object DpiDetectorReportExporter {
 
   private fun cleanupOldBundles(context: Context) {
     val root = File(context.cacheDir, "dpi-detector-reports")
-    val cutoff = System.currentTimeMillis() - 24L * 60L * 60L * 1000L
-    root.listFiles()?.filter { it.lastModified() < cutoff }?.forEach { it.deleteRecursively() }
+    // The UI keeps only the current report bundle. Remove previous source files
+    // and their duplicate ZIP before creating the replacement.
+    root.listFiles()?.forEach { it.deleteRecursively() }
   }
 
   private fun shellQuote(value: String): String = "'" + value.replace("'", "'\\''") + "'"

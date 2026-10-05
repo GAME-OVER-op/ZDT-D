@@ -201,9 +201,8 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
     return state.errorMessage == null && tgWsPluginManager.hasDownloadedPlugin()
   }
 
-  fun installDownloadedTgWsPlugin() {
-    tgWsPluginManager.installDownloadedPlugin()
-  }
+  fun installDownloadedTgWsPlugin(): Boolean =
+    tgWsPluginManager.installDownloadedPlugin().let { it.installing && it.errorMessage == null }
 
   fun onTgWsPluginInstallPermissionDenied() {
     tgWsPluginManager.markInstallPermissionDenied()
@@ -212,6 +211,11 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
   suspend fun downloadLatestFullApp(): Boolean = fullAppUpgradeManager.downloadLatestBundledApk()
 
   fun installDownloadedFullApp(): Boolean = fullAppUpgradeManager.installDownloadedApk()
+
+  fun onApkInstallersReturned(plugin: Boolean, fullApp: Boolean) {
+    if (plugin) tgWsPluginManager.onInstallerReturned()
+    if (fullApp) fullAppUpgradeManager.onInstallerReturned()
+  }
 
   fun onFullAppInstallPermissionDenied() {
     fullAppUpgradeManager.markInstallPermissionDenied()
@@ -270,4 +274,3 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
   }
 
 }
-

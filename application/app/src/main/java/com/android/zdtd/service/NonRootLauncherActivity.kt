@@ -18,6 +18,7 @@ class NonRootLauncherActivity : AppCompatActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    AppStorageMaintenance.cleanupOnAppStart(applicationContext)
     config = RootConfigManager(applicationContext)
     AppLanguageSupport.applyPersistedAppLocale(applicationContext)
     CrashLogger.install(applicationContext)

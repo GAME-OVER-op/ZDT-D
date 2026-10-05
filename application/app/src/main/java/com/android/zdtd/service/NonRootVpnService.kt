@@ -47,6 +47,7 @@ class NonRootVpnService : VpnService() {
   override fun onCreate() {
     super.onCreate()
     runtimeStore.ensureLayout()
+    AppStorageMaintenance.trimNonRootVpnLogs(applicationContext)
     ensureNotificationChannel()
   }
 
@@ -621,17 +622,23 @@ class NonRootVpnService : VpnService() {
     val builder = ProcessBuilder(listOf(executable.absolutePath) + args)
       .directory(runtimeStore.runtimeDir)
       .redirectErrorStream(true)
-      .redirectOutput(ProcessBuilder.Redirect.to(logFile))
+      .redirectOutput(ProcessBuilder.Redirect.PIPE)
     builder.environment().putAll(environment)
     val process = builder.start()
-    processes += ManagedProcess(name, process)
+    val logJob = serviceScope.launch(Dispatchers.IO) {
+      runCatching { BoundedLogWriter.copyProcessOutput(process.inputStream, logFile) }
+    }
+    processes += ManagedProcess(name, process, logJob)
     return process
   }
 
   @Synchronized
   private fun stopProcess(name: String) {
     val matches = processes.filter { it.name == name }
-    matches.forEach { terminateProcess(it.process) }
+    matches.forEach {
+      terminateProcess(it.process)
+      it.logJob.cancel()
+    }
     processes.removeAll(matches.toSet())
   }
 
@@ -649,9 +656,14 @@ class NonRootVpnService : VpnService() {
     }
     if (processes.isNotEmpty()) {
       if (reportProgress) NonRootVpnRuntime.log(getString(R.string.non_root_log_stop_proxy_processes))
-      processes.asReversed().forEach { terminateProcess(it.process) }
+      processes.asReversed().forEach {
+        terminateProcess(it.process)
+        it.logJob.cancel()
+      }
       processes.clear()
     }
+    AppStorageMaintenance.trimNonRootVpnLogs(applicationContext)
+    AppStorageMaintenance.cleanupNonRootRuntimeWorkspace(applicationContext)
   }
 
   private fun terminateProcess(process: Process) {
@@ -754,7 +766,7 @@ class NonRootVpnService : VpnService() {
     val udpMode: String = "tcp",
   )
 
-  private data class ManagedProcess(val name: String, val process: Process)
+  private data class ManagedProcess(val name: String, val process: Process, val logJob: Job)
 
   private object HevBridge {
     private val clazz by lazy { Class.forName("hev.htproxy.TProxyService") }

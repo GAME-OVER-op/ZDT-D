@@ -366,28 +366,26 @@ fn random_payload(len: usize) -> String {
     rand::thread_rng().sample_iter(&Alphanumeric).take(len).map(char::from).collect()
 }
 
+macro_rules! probe_many_domains {
+    ($resolver:path, $server:expr, $domains:expr, $timeout_d:expr) => {{
+        let mut count = 0;
+        for domain in $domains {
+            if $resolver($server, domain, $timeout_d).await.is_ok() { count += 1; }
+        }
+        count
+    }};
+}
+
 async fn probe_dns_udp_many(server: &str, domains: &[&str], timeout_d: Duration) -> usize {
-    let mut count = 0;
-    for domain in domains {
-        if resolve_udp(server, domain, timeout_d).await.is_ok() { count += 1; }
-    }
-    count
+    probe_many_domains!(resolve_udp, server, domains, timeout_d)
 }
 
 async fn probe_doh_wire_many(server: &str, domains: &[&str], timeout_d: Duration) -> usize {
-    let mut count = 0;
-    for domain in domains {
-        if resolve_doh_wire(server, domain, timeout_d).await.is_ok() { count += 1; }
-    }
-    count
+    probe_many_domains!(resolve_doh_wire, server, domains, timeout_d)
 }
 
 async fn probe_doh_json_many(server: &str, domains: &[&str], timeout_d: Duration) -> usize {
-    let mut count = 0;
-    for domain in domains {
-        if resolve_doh_json(server, domain, timeout_d).await.is_ok() { count += 1; }
-    }
-    count
+    probe_many_domains!(resolve_doh_json, server, domains, timeout_d)
 }
 
 async fn resolve_udp(server: &str, domain: &str, timeout_d: Duration) -> Result<Vec<String>> {

@@ -2575,4 +2575,19 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="setup_online_module_version_mismatch_body">ダウンロードしたモジュールはバージョン %1$s（versionCode %2$s）ですが、このオンラインインストーラーはバージョン %3$s（versionCode %4$d）です。このモジュールはこのインストーラーではインストールできません。代わりにバージョン %1$s の完全な root APK をダウンロードできます。</string>
     <string name="setup_online_module_download_full_apk">完全版 APK をダウンロード</string>
     <string name="setup_online_full_apk_download_failed">完全版 APK をダウンロードできませんでした: %1$s</string>
+
+    <string name="vps_open_terminal">ターミナルを開く</string>
+    <string name="vps_terminal_title">ターミナル</string>
+    <string name="vps_terminal_paste">貼り付け</string>
+    <string name="vps_terminal_preparing">ターミナルを準備しています</string>
+    <string name="vps_terminal_retry">再試行</string>
+    <string name="vps_terminal_check_tmux">tmux を確認しています</string>
+    <string name="vps_terminal_install_tmux">tmux をインストールしています</string>
+    <string name="vps_terminal_check_session">zdt-d_console を確認しています</string>
+    <string name="vps_terminal_create_session">zdt-d_console を作成しています</string>
+    <string name="vps_terminal_connect">ターミナルに接続しています</string>
+    <string name="vps_terminal_error_tmux">tmux をインストールできませんでした</string>
+    <string name="vps_terminal_error_session">zdt-d_console を準備できませんでした</string>
+    <string name="vps_terminal_error_connect">ターミナルに接続できませんでした</string>
+    <string name="vps_terminal_error_disconnected">ターミナル接続が閉じられました</string>
 </resources>

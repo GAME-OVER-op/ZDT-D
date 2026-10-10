@@ -33,6 +33,7 @@ import com.android.zdtd.service.ui.vps.VpsProfileScreen
 import com.android.zdtd.service.ui.vps.VpsServerDetailsScreen
 import com.android.zdtd.service.ui.vps.VpsServersScreen
 import com.android.zdtd.service.ui.vps.VpsServiceScreen
+import com.android.zdtd.service.ui.vps.VpsTerminalScreen
 import com.android.zdtd.service.vps.VpsServiceKind
 import com.android.zdtd.service.vps.VpsViewModel
 import com.android.zdtd.service.vps.VpsViewModelFactory
@@ -50,6 +51,7 @@ fun AppsHost(
   onOpenOptionalTools: () -> Unit,
   onOpenVpsServers: () -> Unit,
   onOpenVpsServer: (String) -> Unit,
+  onOpenVpsTerminal: (String) -> Unit,
   onOpenVpsService: (String, String) -> Unit,
   onOpenVpsProfile: (String, String, String) -> Unit,
   onOpenConstructionStudio: () -> Unit,
@@ -90,6 +92,7 @@ fun AppsHost(
     AppsRoute.OptionalTools -> 1
     AppsRoute.VpsServers -> 1
     is AppsRoute.VpsServer -> 2
+    is AppsRoute.VpsTerminal -> 3
     is AppsRoute.VpsService -> 3
     is AppsRoute.VpsProfile -> 4
     AppsRoute.ConstructionStudio -> 2
@@ -140,6 +143,13 @@ fun AppsHost(
         serverId = r.serverId,
         viewModel = vpsViewModel,
         onOpenService = { onOpenVpsService(r.serverId, it.wireId) },
+        onOpenTerminal = { onOpenVpsTerminal(r.serverId) },
+        topContentPadding = topContentPadding,
+        bottomContentPadding = bottomContentPadding,
+      )
+      is AppsRoute.VpsTerminal -> VpsTerminalScreen(
+        serverId = r.serverId,
+        viewModel = vpsViewModel,
         topContentPadding = topContentPadding,
         bottomContentPadding = bottomContentPadding,
       )

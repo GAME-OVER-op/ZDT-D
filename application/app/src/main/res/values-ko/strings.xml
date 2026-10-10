@@ -2575,4 +2575,19 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="setup_online_module_version_mismatch_body">다운로드한 모듈은 버전 %1$s(versionCode %2$s)이지만 이 온라인 설치 프로그램은 버전 %3$s(versionCode %4$d)입니다. 이 설치 프로그램으로 해당 모듈을 설치할 수 없습니다. 대신 버전 %1$s의 전체 root APK를 다운로드할 수 있습니다.</string>
     <string name="setup_online_module_download_full_apk">전체 APK 다운로드</string>
     <string name="setup_online_full_apk_download_failed">전체 APK를 다운로드할 수 없습니다: %1$s</string>
+
+    <string name="vps_open_terminal">터미널 열기</string>
+    <string name="vps_terminal_title">터미널</string>
+    <string name="vps_terminal_paste">붙여넣기</string>
+    <string name="vps_terminal_preparing">터미널 준비 중</string>
+    <string name="vps_terminal_retry">다시 시도</string>
+    <string name="vps_terminal_check_tmux">tmux 확인 중</string>
+    <string name="vps_terminal_install_tmux">tmux 설치 중</string>
+    <string name="vps_terminal_check_session">zdt-d_console 확인 중</string>
+    <string name="vps_terminal_create_session">zdt-d_console 생성 중</string>
+    <string name="vps_terminal_connect">터미널 연결 중</string>
+    <string name="vps_terminal_error_tmux">tmux를 설치할 수 없습니다</string>
+    <string name="vps_terminal_error_session">zdt-d_console을 준비할 수 없습니다</string>
+    <string name="vps_terminal_error_connect">터미널에 연결할 수 없습니다</string>
+    <string name="vps_terminal_error_disconnected">터미널 연결이 종료되었습니다</string>
 </resources>

@@ -2576,4 +2576,19 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="setup_online_module_version_mismatch_body">O módulo baixado é a versão %1$s (versionCode %2$s), mas este instalador online é a versão %3$s (versionCode %4$d). Este módulo não pode ser instalado por este instalador. Você pode baixar o APK root completo da versão %1$s.</string>
     <string name="setup_online_module_download_full_apk">Baixar APK completo</string>
     <string name="setup_online_full_apk_download_failed">Não foi possível baixar o APK completo: %1$s</string>
+
+    <string name="vps_open_terminal">Abrir terminal</string>
+    <string name="vps_terminal_title">Terminal</string>
+    <string name="vps_terminal_paste">Colar</string>
+    <string name="vps_terminal_preparing">Preparando terminal</string>
+    <string name="vps_terminal_retry">Tentar novamente</string>
+    <string name="vps_terminal_check_tmux">Verificando tmux</string>
+    <string name="vps_terminal_install_tmux">Instalando tmux</string>
+    <string name="vps_terminal_check_session">Verificando zdt-d_console</string>
+    <string name="vps_terminal_create_session">Criando zdt-d_console</string>
+    <string name="vps_terminal_connect">Conectando ao terminal</string>
+    <string name="vps_terminal_error_tmux">Não foi possível instalar o tmux</string>
+    <string name="vps_terminal_error_session">Não foi possível preparar zdt-d_console</string>
+    <string name="vps_terminal_error_connect">Não foi possível conectar ao terminal</string>
+    <string name="vps_terminal_error_disconnected">A conexão do terminal foi encerrada</string>
 </resources>

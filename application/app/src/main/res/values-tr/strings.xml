@@ -2575,4 +2575,19 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="setup_online_module_version_mismatch_body">İndirilen modül %1$s sürümüdür (versionCode %2$s), ancak bu çevrimiçi yükleyici %3$s sürümüdür (versionCode %4$d). Bu modül bu yükleyiciyle kurulamaz. Bunun yerine %1$s sürümünün tam root APK dosyasını indirebilirsiniz.</string>
     <string name="setup_online_module_download_full_apk">Tam APK dosyasını indir</string>
     <string name="setup_online_full_apk_download_failed">Tam APK indirilemedi: %1$s</string>
+
+    <string name="vps_open_terminal">Terminali aç</string>
+    <string name="vps_terminal_title">Terminal</string>
+    <string name="vps_terminal_paste">Yapıştır</string>
+    <string name="vps_terminal_preparing">Terminal hazırlanıyor</string>
+    <string name="vps_terminal_retry">Yeniden dene</string>
+    <string name="vps_terminal_check_tmux">tmux kontrol ediliyor</string>
+    <string name="vps_terminal_install_tmux">tmux kuruluyor</string>
+    <string name="vps_terminal_check_session">zdt-d_console kontrol ediliyor</string>
+    <string name="vps_terminal_create_session">zdt-d_console oluşturuluyor</string>
+    <string name="vps_terminal_connect">Terminale bağlanılıyor</string>
+    <string name="vps_terminal_error_tmux">tmux kurulamadı</string>
+    <string name="vps_terminal_error_session">zdt-d_console hazırlanamadı</string>
+    <string name="vps_terminal_error_connect">Terminale bağlanılamadı</string>
+    <string name="vps_terminal_error_disconnected">Terminal bağlantısı kapatıldı</string>
 </resources>

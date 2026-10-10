@@ -2574,4 +2574,19 @@ APatch: 10700+</string>
     <string name="setup_online_module_version_mismatch_body">Скачанный модуль имеет версию %1$s (versionCode %2$s), а онлайн-установщик — версию %3$s (versionCode %4$d). Установка этого модуля через данную версию онлайн-установщика невозможна. Вместо этого можно скачать полный root APK версии %1$s.</string>
     <string name="setup_online_module_download_full_apk">Скачать полный APK</string>
     <string name="setup_online_full_apk_download_failed">Не удалось скачать полный APK: %1$s</string>
+
+    <string name="vps_open_terminal">Открыть терминал</string>
+    <string name="vps_terminal_title">Терминал</string>
+    <string name="vps_terminal_paste">Вставить</string>
+    <string name="vps_terminal_preparing">Подготовка терминала</string>
+    <string name="vps_terminal_retry">Повторить</string>
+    <string name="vps_terminal_check_tmux">Проверка tmux</string>
+    <string name="vps_terminal_install_tmux">Установка tmux</string>
+    <string name="vps_terminal_check_session">Проверка zdt-d_console</string>
+    <string name="vps_terminal_create_session">Создание zdt-d_console</string>
+    <string name="vps_terminal_connect">Подключение терминала</string>
+    <string name="vps_terminal_error_tmux">Не удалось установить tmux</string>
+    <string name="vps_terminal_error_session">Не удалось подготовить zdt-d_console</string>
+    <string name="vps_terminal_error_connect">Не удалось подключиться к терминалу</string>
+    <string name="vps_terminal_error_disconnected">Соединение с терминалом закрыто</string>
 </resources>

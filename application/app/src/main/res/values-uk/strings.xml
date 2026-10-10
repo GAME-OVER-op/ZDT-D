@@ -2578,4 +2578,19 @@ APatch: 10700+</string>
     <string name="setup_online_module_version_mismatch_body">Завантажений модуль має версію %1$s (versionCode %2$s), а онлайн-інсталятор — версію %3$s (versionCode %4$d). Цей модуль неможливо встановити цим інсталятором. Натомість можна завантажити повний root APK версії %1$s.</string>
     <string name="setup_online_module_download_full_apk">Завантажити повний APK</string>
     <string name="setup_online_full_apk_download_failed">Не вдалося завантажити повний APK: %1$s</string>
+
+    <string name="vps_open_terminal">Відкрити термінал</string>
+    <string name="vps_terminal_title">Термінал</string>
+    <string name="vps_terminal_paste">Вставити</string>
+    <string name="vps_terminal_preparing">Підготовка термінала</string>
+    <string name="vps_terminal_retry">Повторити</string>
+    <string name="vps_terminal_check_tmux">Перевірка tmux</string>
+    <string name="vps_terminal_install_tmux">Встановлення tmux</string>
+    <string name="vps_terminal_check_session">Перевірка zdt-d_console</string>
+    <string name="vps_terminal_create_session">Створення zdt-d_console</string>
+    <string name="vps_terminal_connect">Підключення термінала</string>
+    <string name="vps_terminal_error_tmux">Не вдалося встановити tmux</string>
+    <string name="vps_terminal_error_session">Не вдалося підготувати zdt-d_console</string>
+    <string name="vps_terminal_error_connect">Не вдалося підключитися до термінала</string>
+    <string name="vps_terminal_error_disconnected">З’єднання з терміналом закрито</string>
 </resources>

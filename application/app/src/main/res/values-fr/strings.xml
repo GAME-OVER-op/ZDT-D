@@ -2576,4 +2576,19 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="setup_online_module_version_mismatch_body">Le module téléchargé est en version %1$s (versionCode %2$s), mais cet installateur en ligne est en version %3$s (versionCode %4$d). Ce module ne peut pas être installé avec cet installateur. Vous pouvez télécharger à la place l’APK root complet de la version %1$s.</string>
     <string name="setup_online_module_download_full_apk">Télécharger l’APK complet</string>
     <string name="setup_online_full_apk_download_failed">Impossible de télécharger l’APK complet : %1$s</string>
+
+    <string name="vps_open_terminal">Ouvrir le terminal</string>
+    <string name="vps_terminal_title">Terminal</string>
+    <string name="vps_terminal_paste">Coller</string>
+    <string name="vps_terminal_preparing">Préparation du terminal</string>
+    <string name="vps_terminal_retry">Réessayer</string>
+    <string name="vps_terminal_check_tmux">Vérification de tmux</string>
+    <string name="vps_terminal_install_tmux">Installation de tmux</string>
+    <string name="vps_terminal_check_session">Vérification de zdt-d_console</string>
+    <string name="vps_terminal_create_session">Création de zdt-d_console</string>
+    <string name="vps_terminal_connect">Connexion au terminal</string>
+    <string name="vps_terminal_error_tmux">Impossible d’installer tmux</string>
+    <string name="vps_terminal_error_session">Impossible de préparer zdt-d_console</string>
+    <string name="vps_terminal_error_connect">Impossible de se connecter au terminal</string>
+    <string name="vps_terminal_error_disconnected">La connexion au terminal a été fermée</string>
 </resources>

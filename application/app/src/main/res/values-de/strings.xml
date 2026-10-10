@@ -2576,4 +2576,19 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="setup_online_module_version_mismatch_body">Das heruntergeladene Modul hat Version %1$s (versionCode %2$s), dieser Online-Installer jedoch Version %3$s (versionCode %4$d). Dieses Modul kann damit nicht installiert werden. Stattdessen kann die vollständige Root-APK für Version %1$s heruntergeladen werden.</string>
     <string name="setup_online_module_download_full_apk">Vollständige APK laden</string>
     <string name="setup_online_full_apk_download_failed">Die vollständige APK konnte nicht geladen werden: %1$s</string>
+
+    <string name="vps_open_terminal">Terminal öffnen</string>
+    <string name="vps_terminal_title">Terminal</string>
+    <string name="vps_terminal_paste">Einfügen</string>
+    <string name="vps_terminal_preparing">Terminal wird vorbereitet</string>
+    <string name="vps_terminal_retry">Erneut versuchen</string>
+    <string name="vps_terminal_check_tmux">tmux wird geprüft</string>
+    <string name="vps_terminal_install_tmux">tmux wird installiert</string>
+    <string name="vps_terminal_check_session">zdt-d_console wird geprüft</string>
+    <string name="vps_terminal_create_session">zdt-d_console wird erstellt</string>
+    <string name="vps_terminal_connect">Terminal wird verbunden</string>
+    <string name="vps_terminal_error_tmux">tmux konnte nicht installiert werden</string>
+    <string name="vps_terminal_error_session">zdt-d_console konnte nicht vorbereitet werden</string>
+    <string name="vps_terminal_error_connect">Verbindung zum Terminal fehlgeschlagen</string>
+    <string name="vps_terminal_error_disconnected">Terminalverbindung wurde geschlossen</string>
 </resources>

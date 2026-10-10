@@ -2576,4 +2576,19 @@ APatch: 10700+</string>
     <string name="setup_online_module_version_mismatch_body">ماژول دانلودشده نسخه %1$s است (versionCode %2$s)، اما این نصب‌کننده آنلاین نسخه %3$s است (versionCode %4$d). نصب این ماژول با این نصب‌کننده ممکن نیست. می‌توانید به‌جای آن APK کامل root نسخه %1$s را دانلود کنید.</string>
     <string name="setup_online_module_download_full_apk">دانلود APK کامل</string>
     <string name="setup_online_full_apk_download_failed">دانلود APK کامل انجام نشد: %1$s</string>
+
+    <string name="vps_open_terminal">باز کردن ترمینال</string>
+    <string name="vps_terminal_title">ترمینال</string>
+    <string name="vps_terminal_paste">چسباندن</string>
+    <string name="vps_terminal_preparing">در حال آماده‌سازی ترمینال</string>
+    <string name="vps_terminal_retry">تلاش دوباره</string>
+    <string name="vps_terminal_check_tmux">در حال بررسی tmux</string>
+    <string name="vps_terminal_install_tmux">در حال نصب tmux</string>
+    <string name="vps_terminal_check_session">در حال بررسی zdt-d_console</string>
+    <string name="vps_terminal_create_session">در حال ایجاد zdt-d_console</string>
+    <string name="vps_terminal_connect">در حال اتصال ترمینال</string>
+    <string name="vps_terminal_error_tmux">نصب tmux ممکن نشد</string>
+    <string name="vps_terminal_error_session">آماده‌سازی zdt-d_console ممکن نشد</string>
+    <string name="vps_terminal_error_connect">اتصال به ترمینال ممکن نشد</string>
+    <string name="vps_terminal_error_disconnected">اتصال ترمینال بسته شد</string>
 </resources>

@@ -1067,6 +1067,7 @@ private fun parentAppsRoute(route: AppsRoute): AppsRoute = when (route) {
   AppsRoute.OptionalTools -> AppsRoute.List
   AppsRoute.VpsServers -> AppsRoute.List
   is AppsRoute.VpsServer -> AppsRoute.VpsServers
+  is AppsRoute.VpsTerminal -> AppsRoute.VpsServer(route.serverId)
   is AppsRoute.VpsService -> AppsRoute.VpsServer(route.serverId)
   is AppsRoute.VpsProfile -> AppsRoute.VpsService(route.serverId, route.serviceId)
   AppsRoute.ConstructionStudio -> AppsRoute.AnalysisTools
@@ -1634,6 +1635,10 @@ private fun MainShell(
   }
 
   val canGoBack = tab == Tab.APPS && appsRoute != AppsRoute.List
+  val vpsTerminalActive = tab == Tab.APPS && appsRoute is AppsRoute.VpsTerminal
+  val terminalBottomReserve = WindowInsets.navigationBars
+    .asPaddingValues()
+    .calculateBottomPadding() + 8.dp
   val title = when {
     tab == Tab.HOME -> stringResource(R.string.app_name)
     tab == Tab.STATS -> stringResource(R.string.nav_stats)
@@ -1643,6 +1648,7 @@ private fun MainShell(
     tab == Tab.APPS && appsRoute == AppsRoute.OptionalTools -> stringResource(R.string.optional_tools_title)
     tab == Tab.APPS && appsRoute == AppsRoute.VpsServers -> stringResource(R.string.vps_servers_title)
     tab == Tab.APPS && appsRoute is AppsRoute.VpsServer -> stringResource(R.string.vps_server_title)
+    tab == Tab.APPS && appsRoute is AppsRoute.VpsTerminal -> stringResource(R.string.vps_terminal_title)
     tab == Tab.APPS && appsRoute is AppsRoute.VpsService -> stringResource(R.string.vps_service_title)
     tab == Tab.APPS && appsRoute is AppsRoute.VpsProfile -> stringResource(R.string.vps_profile_title)
     tab == Tab.APPS && appsRoute == AppsRoute.ConstructionStudio -> stringResource(R.string.construction_studio_title)
@@ -1671,6 +1677,7 @@ private fun MainShell(
         AppsRoute.OptionalTools -> null
         AppsRoute.VpsServers -> null
         is AppsRoute.VpsServer -> null
+        is AppsRoute.VpsTerminal -> null
         is AppsRoute.VpsService -> null
         is AppsRoute.VpsProfile -> null
         AppsRoute.ConstructionStudio -> null
@@ -1795,6 +1802,7 @@ private fun MainShell(
           onOpenOptionalTools = { appsRoute = AppsRoute.OptionalTools },
           onOpenVpsServers = { appsRoute = AppsRoute.VpsServers },
           onOpenVpsServer = { serverId -> appsRoute = AppsRoute.VpsServer(serverId) },
+          onOpenVpsTerminal = { serverId -> appsRoute = AppsRoute.VpsTerminal(serverId) },
           onOpenVpsService = { serverId, serviceId -> appsRoute = AppsRoute.VpsService(serverId, serviceId) },
           onOpenVpsProfile = { serverId, serviceId, profileId -> appsRoute = AppsRoute.VpsProfile(serverId, serviceId, profileId) },
           onOpenConstructionStudio = { appsRoute = AppsRoute.ConstructionStudio },
@@ -1826,6 +1834,7 @@ private fun MainShell(
               onOpenOptionalTools = { appsRoute = AppsRoute.OptionalTools },
               onOpenVpsServers = { appsRoute = AppsRoute.VpsServers },
               onOpenVpsServer = { serverId -> appsRoute = AppsRoute.VpsServer(serverId) },
+              onOpenVpsTerminal = { serverId -> appsRoute = AppsRoute.VpsTerminal(serverId) },
               onOpenVpsService = { serverId, serviceId -> appsRoute = AppsRoute.VpsService(serverId, serviceId) },
               onOpenVpsProfile = { serverId, serviceId, profileId -> appsRoute = AppsRoute.VpsProfile(serverId, serviceId, profileId) },
               onOpenConstructionStudio = { appsRoute = AppsRoute.ConstructionStudio },
@@ -1837,7 +1846,7 @@ private fun MainShell(
               tproxyEnabled = appUpdate.tproxyEnabled,
               landscapeControl = false,
               topContentPadding = floatingTopBarReserve,
-              bottomContentPadding = floatingBottomBarReserve + 18.dp,
+              bottomContentPadding = if (vpsTerminalActive) terminalBottomReserve else floatingBottomBarReserve + 18.dp,
             )
 
             Box(
@@ -1887,20 +1896,24 @@ private fun MainShell(
           onRemoteDisconnect = actions::exitRemoteControl,
         )
 
-        FloatingBottomNavigationCard(
-          modifier = Modifier.align(Alignment.BottomCenter),
-          compact = compactBottomBar,
-          tab = tab,
-          onTabChange = { tab = it },
-          homeTabLabel = homeTabLabel,
-          statsTabLabel = statsTabLabel,
-          appsTabLabel = appsTabLabel,
-          supportTabLabel = supportTabLabel,
-        )
+        if (!vpsTerminalActive) {
+          FloatingBottomNavigationCard(
+            modifier = Modifier.align(Alignment.BottomCenter),
+            compact = compactBottomBar,
+            tab = tab,
+            onTabChange = { tab = it },
+            homeTabLabel = homeTabLabel,
+            statsTabLabel = statsTabLabel,
+            appsTabLabel = appsTabLabel,
+            supportTabLabel = supportTabLabel,
+          )
+        }
       }
 
       val notificationBottomPadding = if (landscapeControl) {
         WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 18.dp
+      } else if (vpsTerminalActive) {
+        terminalBottomReserve + 10.dp
       } else {
         floatingBottomBarReserve + 10.dp
       }
@@ -1972,6 +1985,7 @@ private fun LandscapeShellContent(
   onOpenOptionalTools: () -> Unit,
   onOpenVpsServers: () -> Unit,
   onOpenVpsServer: (String) -> Unit,
+  onOpenVpsTerminal: (String) -> Unit,
   onOpenVpsService: (String, String) -> Unit,
   onOpenVpsProfile: (String, String, String) -> Unit,
   onOpenConstructionStudio: () -> Unit,
@@ -2016,6 +2030,7 @@ private fun LandscapeShellContent(
           onOpenOptionalTools = onOpenOptionalTools,
           onOpenVpsServers = onOpenVpsServers,
           onOpenVpsServer = onOpenVpsServer,
+          onOpenVpsTerminal = onOpenVpsTerminal,
           onOpenVpsService = onOpenVpsService,
           onOpenVpsProfile = onOpenVpsProfile,
           onOpenConstructionStudio = onOpenConstructionStudio,
@@ -2967,6 +2982,7 @@ private fun TabBody(
   onOpenOptionalTools: () -> Unit,
   onOpenVpsServers: () -> Unit,
   onOpenVpsServer: (String) -> Unit,
+  onOpenVpsTerminal: (String) -> Unit,
   onOpenVpsService: (String, String) -> Unit,
   onOpenVpsProfile: (String, String, String) -> Unit,
   onOpenConstructionStudio: () -> Unit,
@@ -3014,6 +3030,7 @@ private fun TabBody(
             onOpenOptionalTools = onOpenOptionalTools,
             onOpenVpsServers = onOpenVpsServers,
             onOpenVpsServer = onOpenVpsServer,
+            onOpenVpsTerminal = onOpenVpsTerminal,
             onOpenVpsService = onOpenVpsService,
             onOpenVpsProfile = onOpenVpsProfile,
             onOpenConstructionStudio = onOpenConstructionStudio,

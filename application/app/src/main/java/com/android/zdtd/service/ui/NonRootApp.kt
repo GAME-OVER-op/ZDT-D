@@ -128,6 +128,7 @@ import com.android.zdtd.service.ui.vps.VpsProfileScreen
 import com.android.zdtd.service.ui.vps.VpsServerDetailsScreen
 import com.android.zdtd.service.ui.vps.VpsServersScreen
 import com.android.zdtd.service.ui.vps.VpsServiceScreen
+import com.android.zdtd.service.ui.vps.VpsTerminalScreen
 import com.android.zdtd.service.vps.VpsServiceKind
 import com.android.zdtd.service.vps.VpsViewModel
 import com.android.zdtd.service.vps.VpsConfigResult
@@ -195,6 +196,7 @@ fun NonRootApp(
   var showTgWsSettings by remember { mutableStateOf(false) }
   var showVps by remember { mutableStateOf(false) }
   var vpsServerId by remember { mutableStateOf<String?>(null) }
+  var showVpsTerminal by remember { mutableStateOf(false) }
   var vpsServiceKind by remember { mutableStateOf<VpsServiceKind?>(null) }
   var vpsProfileId by remember { mutableStateOf<String?>(null) }
   var pendingVpsImport by remember { mutableStateOf<Pair<VpsConfigResult, String>?>(null) }
@@ -212,6 +214,7 @@ fun NonRootApp(
       showTgWsSettings -> showTgWsSettings = false
       vpsProfileId != null -> vpsProfileId = null
       vpsServiceKind != null -> vpsServiceKind = null
+      showVpsTerminal -> showVpsTerminal = false
       vpsServerId != null -> vpsServerId = null
       showVps -> showVps = false
       else -> tab = Tab.HOME
@@ -230,6 +233,7 @@ fun NonRootApp(
       showTgWsSettings -> "tgws"
       showVps && vpsProfileId != null && vpsServerId != null && vpsServiceKind != null -> "vps-profile:${vpsServerId}:${vpsServiceKind!!.wireId}:${vpsProfileId}"
       showVps && vpsServiceKind != null && vpsServerId != null -> "vps-service:${vpsServerId}:${vpsServiceKind!!.wireId}"
+      showVps && showVpsTerminal && vpsServerId != null -> "vps-terminal:${vpsServerId}"
       showVps && vpsServerId != null -> "vps-server:${vpsServerId}"
       showVps -> "vps"
       else -> "tab:${tab.name}"
@@ -298,6 +302,13 @@ fun NonRootApp(
           serverId = vpsServerId.orEmpty(),
           viewModel = vpsViewModel,
           onOpenService = { vpsServiceKind = it },
+          onOpenTerminal = { showVpsTerminal = true },
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomInset + 16.dp,
+        )
+        page.startsWith("vps-terminal:") -> VpsTerminalScreen(
+          serverId = vpsServerId.orEmpty(),
+          viewModel = vpsViewModel,
           topContentPadding = topContentPadding,
           bottomContentPadding = bottomInset + 16.dp,
         )
@@ -374,6 +385,7 @@ fun NonRootApp(
         editedProfile != null -> stringResource(R.string.non_root_profile_settings)
         showT2sSettings -> stringResource(R.string.non_root_t2s_settings)
         showTgWsSettings -> stringResource(R.string.tgws_basic_title)
+        showVps && showVpsTerminal -> stringResource(R.string.vps_terminal_title)
         showVps -> stringResource(R.string.vps_servers_title)
         else -> when (tab) {
           Tab.HOME -> stringResource(R.string.app_name)
@@ -388,6 +400,7 @@ fun NonRootApp(
         showTgWsSettings -> ({ showTgWsSettings = false })
         vpsProfileId != null -> ({ vpsProfileId = null })
         vpsServiceKind != null -> ({ vpsServiceKind = null })
+        showVpsTerminal -> ({ showVpsTerminal = false })
         vpsServerId != null -> ({ vpsServerId = null })
         showVps -> ({ showVps = false })
         else -> null
@@ -507,6 +520,7 @@ private fun nonRootPageOrder(page: String): Int = when {
   page == "tgws" -> 30
   page == "vps" -> 30
   page.startsWith("vps-server:") -> 31
+  page.startsWith("vps-terminal:") -> 32
   page.startsWith("vps-service:") -> 32
   page.startsWith("vps-profile:") -> 33
   page.startsWith("profile:") -> 30

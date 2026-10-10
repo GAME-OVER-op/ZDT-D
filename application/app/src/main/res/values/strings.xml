@@ -2575,4 +2575,19 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="setup_online_module_version_mismatch_body">The downloaded module is version %1$s (versionCode %2$s), but this online installer is version %3$s (versionCode %4$d). This module cannot be installed by this online installer. You can download the full root APK for version %1$s instead.</string>
     <string name="setup_online_module_download_full_apk">Download full APK</string>
     <string name="setup_online_full_apk_download_failed">Could not download the full APK: %1$s</string>
+
+    <string name="vps_open_terminal">Open terminal</string>
+    <string name="vps_terminal_title">Terminal</string>
+    <string name="vps_terminal_paste">Paste</string>
+    <string name="vps_terminal_preparing">Preparing terminal</string>
+    <string name="vps_terminal_retry">Try again</string>
+    <string name="vps_terminal_check_tmux">Checking tmux</string>
+    <string name="vps_terminal_install_tmux">Installing tmux</string>
+    <string name="vps_terminal_check_session">Checking zdt-d_console</string>
+    <string name="vps_terminal_create_session">Creating zdt-d_console</string>
+    <string name="vps_terminal_connect">Connecting terminal</string>
+    <string name="vps_terminal_error_tmux">Unable to install tmux</string>
+    <string name="vps_terminal_error_session">Unable to prepare zdt-d_console</string>
+    <string name="vps_terminal_error_connect">Unable to connect to terminal</string>
+    <string name="vps_terminal_error_disconnected">Terminal connection was closed</string>
 </resources>

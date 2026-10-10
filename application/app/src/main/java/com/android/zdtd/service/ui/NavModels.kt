@@ -13,6 +13,7 @@ sealed class AppsRoute {
   data object OptionalTools : AppsRoute()
   data object VpsServers : AppsRoute()
   data class VpsServer(val serverId: String) : AppsRoute()
+  data class VpsTerminal(val serverId: String) : AppsRoute()
   data class VpsService(val serverId: String, val serviceId: String) : AppsRoute()
   data class VpsProfile(val serverId: String, val serviceId: String, val profileId: String) : AppsRoute()
   data object ConstructionStudio : AppsRoute()

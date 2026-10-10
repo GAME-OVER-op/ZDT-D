@@ -2575,4 +2575,19 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="setup_online_module_version_mismatch_body">Modul yang diunduh adalah versi %1$s (versionCode %2$s), sedangkan penginstal online ini adalah versi %3$s (versionCode %4$d). Modul ini tidak dapat dipasang dengan penginstal ini. Anda dapat mengunduh APK root lengkap versi %1$s sebagai gantinya.</string>
     <string name="setup_online_module_download_full_apk">Unduh APK lengkap</string>
     <string name="setup_online_full_apk_download_failed">APK lengkap tidak dapat diunduh: %1$s</string>
+
+    <string name="vps_open_terminal">Buka terminal</string>
+    <string name="vps_terminal_title">Terminal</string>
+    <string name="vps_terminal_paste">Tempel</string>
+    <string name="vps_terminal_preparing">Menyiapkan terminal</string>
+    <string name="vps_terminal_retry">Coba lagi</string>
+    <string name="vps_terminal_check_tmux">Memeriksa tmux</string>
+    <string name="vps_terminal_install_tmux">Menginstal tmux</string>
+    <string name="vps_terminal_check_session">Memeriksa zdt-d_console</string>
+    <string name="vps_terminal_create_session">Membuat zdt-d_console</string>
+    <string name="vps_terminal_connect">Menghubungkan terminal</string>
+    <string name="vps_terminal_error_tmux">Tidak dapat menginstal tmux</string>
+    <string name="vps_terminal_error_session">Tidak dapat menyiapkan zdt-d_console</string>
+    <string name="vps_terminal_error_connect">Tidak dapat terhubung ke terminal</string>
+    <string name="vps_terminal_error_disconnected">Koneksi terminal ditutup</string>
 </resources>

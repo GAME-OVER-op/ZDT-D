@@ -1,6 +1,7 @@
 package com.android.zdtd.service.vps
 
 import com.jcraft.jsch.ChannelExec
+import com.jcraft.jsch.ChannelShell
 import com.jcraft.jsch.HostKey
 import com.jcraft.jsch.HostKeyRepository
 import com.jcraft.jsch.JSch
@@ -10,10 +11,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.io.OutputStream
 import java.security.MessageDigest
 import java.util.Base64
 import java.util.Properties
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 class VpsSshClient {
   private val connectTimeoutMs = 12_000
@@ -69,6 +73,46 @@ class VpsSshClient {
       executeOnSession(session, command, timeoutMs, onLine)
     } finally {
       session.disconnect()
+    }
+  }
+
+  suspend fun openInteractiveTerminal(
+    server: VpsServer,
+    initialColumns: Int = 80,
+    initialRows: Int = 24,
+    initialWidthPixels: Int = 0,
+    initialHeightPixels: Int = 0,
+    onData: (ByteArray) -> Unit,
+    onClosed: (Throwable?) -> Unit,
+  ): VpsInteractiveTerminalConnection = withContext(Dispatchers.IO) {
+    val session = openSession(server.host, server.port, server.username, server.sshAuth(), server.pinnedHostKey)
+    try {
+      val channel = session.openChannel("shell") as ChannelShell
+      channel.setPty(true)
+      channel.setPtyType(
+        "xterm-256color",
+        initialColumns.coerceAtLeast(4),
+        initialRows.coerceAtLeast(4),
+        initialWidthPixels.coerceAtLeast(0),
+        initialHeightPixels.coerceAtLeast(0),
+      )
+      channel.setEnv("TERM", "xterm-256color")
+      channel.setEnv("COLORTERM", "truecolor")
+      val input = channel.inputStream
+      val output = channel.outputStream
+      channel.connect(connectTimeoutMs)
+
+      VpsInteractiveTerminalConnection(
+        session = session,
+        channel = channel,
+        input = input,
+        output = output,
+        onData = onData,
+        onClosed = onClosed,
+      )
+    } catch (error: Throwable) {
+      session.disconnect()
+      throw error
     }
   }
 
@@ -359,5 +403,86 @@ class VpsSshClient {
         emptyArray()
       }
     }
+  }
+}
+
+class VpsInteractiveTerminalConnection internal constructor(
+  private val session: Session,
+  private val channel: ChannelShell,
+  private val input: InputStream,
+  private val output: OutputStream,
+  private val onData: (ByteArray) -> Unit,
+  private val onClosed: (Throwable?) -> Unit,
+) {
+  private val closed = AtomicBoolean(false)
+  private val outputLock = Any()
+  private var readerThread: Thread? = null
+
+  fun start() {
+    if (closed.get()) return
+    readerThread = Thread({
+      var failure: Throwable? = null
+      try {
+        val buffer = ByteArray(16 * 1024)
+        while (!closed.get() && channel.isConnected) {
+          val count = input.read(buffer)
+          if (count < 0) break
+          if (count == 0) continue
+          onData(buffer.copyOf(count))
+        }
+      } catch (error: Throwable) {
+        if (!closed.get()) failure = error
+      } finally {
+        val notify = closed.compareAndSet(false, true)
+        runCatching { channel.disconnect() }
+        runCatching { session.disconnect() }
+        if (notify) onClosed(failure)
+      }
+    }, "zdt-vps-terminal-reader").apply {
+      isDaemon = true
+      start()
+    }
+
+    write("exec tmux new-session -A -s $SESSION_NAME\r".toByteArray(Charsets.UTF_8))
+  }
+
+  fun write(data: ByteArray) {
+    if (closed.get() || data.isEmpty()) return
+    synchronized(outputLock) {
+      if (closed.get()) return
+      try {
+        output.write(data)
+        output.flush()
+      } catch (error: Throwable) {
+        disconnect(error)
+      }
+    }
+  }
+
+  fun resize(columns: Int, rows: Int, widthPixels: Int = 0, heightPixels: Int = 0) {
+    if (closed.get() || !channel.isConnected) return
+    runCatching {
+      channel.setPtySize(
+        columns.coerceAtLeast(4),
+        rows.coerceAtLeast(4),
+        widthPixels.coerceAtLeast(0),
+        heightPixels.coerceAtLeast(0),
+      )
+    }
+  }
+
+  fun disconnect() = disconnect(null)
+
+  private fun disconnect(error: Throwable?) {
+    val notify = closed.compareAndSet(false, true)
+    runCatching { input.close() }
+    runCatching { output.close() }
+    runCatching { channel.disconnect() }
+    runCatching { session.disconnect() }
+    if (notify && error != null) onClosed(error)
+  }
+
+  companion object {
+    const val SESSION_NAME = "zdt-d_console"
   }
 }

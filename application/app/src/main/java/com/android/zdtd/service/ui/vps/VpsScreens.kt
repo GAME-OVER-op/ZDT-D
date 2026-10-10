@@ -66,6 +66,7 @@ import androidx.compose.material.icons.outlined.Security
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Storage
+import androidx.compose.material.icons.outlined.Terminal
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -262,6 +263,7 @@ fun VpsServerDetailsScreen(
   serverId: String,
   viewModel: VpsViewModel,
   onOpenService: (VpsServiceKind) -> Unit,
+  onOpenTerminal: () -> Unit,
   topContentPadding: Dp = 0.dp,
   bottomContentPadding: Dp = 0.dp,
 ) {
@@ -340,8 +342,10 @@ fun VpsServerDetailsScreen(
       VpsServerSummaryCard(
         server = server,
         metrics = currentMetrics,
+        terminalEnabled = currentMetrics.reachability == VpsReachability.ONLINE && !operation.running,
         rebootEnabled = currentMetrics.reachability == VpsReachability.ONLINE && !operation.running,
         onRefresh = { viewModel.refreshServer(serverId); viewModel.loadServices(serverId) },
+        onOpenTerminal = onOpenTerminal,
         onReboot = { showRebootConfirm = true },
       )
     }
@@ -1152,8 +1156,10 @@ private fun VpsServerCard(server: VpsServer, metrics: VpsMetrics, onClick: () ->
 private fun VpsServerSummaryCard(
   server: VpsServer,
   metrics: VpsMetrics,
+  terminalEnabled: Boolean,
   rebootEnabled: Boolean,
   onRefresh: () -> Unit,
+  onOpenTerminal: () -> Unit,
   onReboot: () -> Unit,
 ) {
   val targetAccent = when (metrics.reachability) {
@@ -1202,6 +1208,15 @@ private fun VpsServerSummaryCard(
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.58f),
       )
+      Button(
+        enabled = terminalEnabled,
+        onClick = onOpenTerminal,
+        modifier = Modifier.fillMaxWidth(),
+      ) {
+        Icon(Icons.Outlined.Terminal, contentDescription = null)
+        Spacer(Modifier.width(8.dp))
+        Text(stringResource(R.string.vps_open_terminal))
+      }
       OutlinedButton(
         enabled = rebootEnabled,
         onClick = onReboot,

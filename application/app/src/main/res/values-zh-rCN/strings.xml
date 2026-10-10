@@ -2575,4 +2575,19 @@ APatch：10700+</string>
     <string name="setup_online_module_version_mismatch_body">下载的模块版本为 %1$s（versionCode %2$s），但此在线安装器版本为 %3$s（versionCode %4$d）。此安装器无法安装该模块。你可以改为下载版本 %1$s 的完整 root APK。</string>
     <string name="setup_online_module_download_full_apk">下载完整 APK</string>
     <string name="setup_online_full_apk_download_failed">无法下载完整 APK：%1$s</string>
+
+    <string name="vps_open_terminal">打开终端</string>
+    <string name="vps_terminal_title">终端</string>
+    <string name="vps_terminal_paste">粘贴</string>
+    <string name="vps_terminal_preparing">正在准备终端</string>
+    <string name="vps_terminal_retry">重试</string>
+    <string name="vps_terminal_check_tmux">正在检查 tmux</string>
+    <string name="vps_terminal_install_tmux">正在安装 tmux</string>
+    <string name="vps_terminal_check_session">正在检查 zdt-d_console</string>
+    <string name="vps_terminal_create_session">正在创建 zdt-d_console</string>
+    <string name="vps_terminal_connect">正在连接终端</string>
+    <string name="vps_terminal_error_tmux">无法安装 tmux</string>
+    <string name="vps_terminal_error_session">无法准备 zdt-d_console</string>
+    <string name="vps_terminal_error_connect">无法连接到终端</string>
+    <string name="vps_terminal_error_disconnected">终端连接已关闭</string>
 </resources>

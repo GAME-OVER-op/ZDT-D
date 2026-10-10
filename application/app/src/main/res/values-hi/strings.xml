@@ -2576,4 +2576,19 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="setup_online_module_version_mismatch_body">डाउनलोड किया गया मॉड्यूल संस्करण %1$s (versionCode %2$s) है, लेकिन यह ऑनलाइन इंस्टॉलर संस्करण %3$s (versionCode %4$d) है। यह मॉड्यूल इस इंस्टॉलर से इंस्टॉल नहीं किया जा सकता। इसके बजाय आप संस्करण %1$s का पूरा root APK डाउनलोड कर सकते हैं।</string>
     <string name="setup_online_module_download_full_apk">पूरा APK डाउनलोड करें</string>
     <string name="setup_online_full_apk_download_failed">पूरा APK डाउनलोड नहीं हो सका: %1$s</string>
+
+    <string name="vps_open_terminal">टर्मिनल खोलें</string>
+    <string name="vps_terminal_title">टर्मिनल</string>
+    <string name="vps_terminal_paste">पेस्ट करें</string>
+    <string name="vps_terminal_preparing">टर्मिनल तैयार किया जा रहा है</string>
+    <string name="vps_terminal_retry">फिर कोशिश करें</string>
+    <string name="vps_terminal_check_tmux">tmux की जाँच हो रही है</string>
+    <string name="vps_terminal_install_tmux">tmux इंस्टॉल हो रहा है</string>
+    <string name="vps_terminal_check_session">zdt-d_console की जाँच हो रही है</string>
+    <string name="vps_terminal_create_session">zdt-d_console बनाया जा रहा है</string>
+    <string name="vps_terminal_connect">टर्मिनल से कनेक्ट हो रहा है</string>
+    <string name="vps_terminal_error_tmux">tmux इंस्टॉल नहीं किया जा सका</string>
+    <string name="vps_terminal_error_session">zdt-d_console तैयार नहीं किया जा सका</string>
+    <string name="vps_terminal_error_connect">टर्मिनल से कनेक्ट नहीं हो सका</string>
+    <string name="vps_terminal_error_disconnected">टर्मिनल कनेक्शन बंद हो गया</string>
 </resources>

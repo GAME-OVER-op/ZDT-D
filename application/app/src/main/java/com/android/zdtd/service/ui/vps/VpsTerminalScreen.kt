@@ -2,10 +2,23 @@ package com.android.zdtd.service.ui.vps
 
 import android.content.ClipboardManager
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -56,8 +69,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -158,9 +173,31 @@ fun VpsTerminalScreen(
     }
   }
 
-  Crossfade(
+  AnimatedContent(
     targetState = state.ready,
-    animationSpec = tween(260, easing = FastOutSlowInEasing),
+    transitionSpec = {
+      if (targetState) {
+        (
+          fadeIn(tween(260, easing = FastOutSlowInEasing)) +
+            slideInVertically(tween(360, easing = FastOutSlowInEasing)) { -it / 14 } +
+            scaleIn(
+              initialScale = 0.985f,
+              transformOrigin = TransformOrigin(0.5f, 0f),
+              animationSpec = tween(360, easing = FastOutSlowInEasing),
+            )
+          ) togetherWith (
+          fadeOut(tween(190)) +
+            slideOutVertically(tween(300, easing = FastOutSlowInEasing)) { it / 22 } +
+            scaleOut(
+              targetScale = 0.98f,
+              transformOrigin = TransformOrigin(0.5f, 0f),
+              animationSpec = tween(300, easing = FastOutSlowInEasing),
+            )
+          )
+      } else {
+        (fadeIn(tween(220)) + scaleIn(initialScale = 0.985f)) togetherWith fadeOut(tween(180))
+      }.using(SizeTransform(clip = false))
+    },
     label = "vpsTerminalReady",
   ) { ready ->
     if (ready) {
@@ -499,7 +536,12 @@ private fun VpsTerminalPreparation(
       colors = CardDefaults.cardColors(containerColor = TerminalBackground),
       border = BorderStroke(1.dp, TerminalBorder),
     ) {
-      Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+      Column(
+        Modifier
+          .animateContentSize(animationSpec = tween(280, easing = FastOutSlowInEasing))
+          .padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+      ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
           Surface(modifier = Modifier.size(44.dp), shape = CircleShape, color = Color(0xFF152033)) {
             Box(contentAlignment = Alignment.Center) {
@@ -514,41 +556,104 @@ private fun VpsTerminalPreparation(
         }
 
         Surface(shape = RoundedCornerShape(16.dp), color = TerminalPanel, border = BorderStroke(1.dp, TerminalBorder)) {
-          Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+          Column(Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             state.steps.forEach { step ->
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                when (step.state) {
-                  VpsTerminalStageState.DONE -> Icon(Icons.Outlined.CheckCircle, contentDescription = null, tint = TerminalGreen, modifier = Modifier.size(18.dp))
-                  VpsTerminalStageState.RUNNING -> Icon(Icons.Outlined.Refresh, contentDescription = null, tint = TerminalAmber, modifier = Modifier.size(18.dp).rotate(rotation))
-                  VpsTerminalStageState.PENDING -> Surface(modifier = Modifier.size(14.dp).alpha(0.6f), shape = CircleShape, border = BorderStroke(1.dp, TerminalMuted), color = Color.Transparent) {}
+              val active = step.state == VpsTerminalStageState.RUNNING
+              val rowColor by animateColorAsState(
+                targetValue = if (active) TerminalAmber.copy(alpha = 0.09f) else Color.Transparent,
+                animationSpec = tween(220, easing = FastOutSlowInEasing),
+                label = "terminalStageBackground_${step.stage}",
+              )
+              val textColor by animateColorAsState(
+                targetValue = if (step.state == VpsTerminalStageState.PENDING) TerminalMuted else TerminalForeground,
+                animationSpec = tween(200, easing = FastOutSlowInEasing),
+                label = "terminalStageText_${step.stage}",
+              )
+              val rowScale by animateFloatAsState(
+                targetValue = if (active) 1.018f else 1f,
+                animationSpec = tween(240, easing = FastOutSlowInEasing),
+                label = "terminalStageScale_${step.stage}",
+              )
+
+              Surface(
+                modifier = Modifier.fillMaxWidth().scale(rowScale),
+                shape = RoundedCornerShape(9.dp),
+                color = rowColor,
+              ) {
+                Row(
+                  modifier = Modifier.padding(horizontal = 5.dp, vertical = 4.dp),
+                  verticalAlignment = Alignment.CenterVertically,
+                ) {
+                  AnimatedContent(
+                    targetState = step.state,
+                    modifier = Modifier.size(20.dp),
+                    contentAlignment = Alignment.Center,
+                    transitionSpec = {
+                      (fadeIn(tween(150)) + scaleIn(initialScale = 0.62f, animationSpec = tween(190, easing = FastOutSlowInEasing))) togetherWith
+                        (fadeOut(tween(110)) + scaleOut(targetScale = 0.78f, animationSpec = tween(150)))
+                    },
+                    label = "terminalStageIcon_${step.stage}",
+                  ) { stageState ->
+                    when (stageState) {
+                      VpsTerminalStageState.DONE -> Icon(
+                        Icons.Outlined.CheckCircle,
+                        contentDescription = null,
+                        tint = TerminalGreen,
+                        modifier = Modifier.size(18.dp),
+                      )
+                      VpsTerminalStageState.RUNNING -> Icon(
+                        Icons.Outlined.Refresh,
+                        contentDescription = null,
+                        tint = TerminalAmber,
+                        modifier = Modifier.size(18.dp).rotate(rotation),
+                      )
+                      VpsTerminalStageState.PENDING -> Surface(
+                        modifier = Modifier.size(14.dp).alpha(0.6f),
+                        shape = CircleShape,
+                        border = BorderStroke(1.dp, TerminalMuted),
+                        color = Color.Transparent,
+                      ) {}
+                    }
+                  }
+                  Spacer(Modifier.width(10.dp))
+                  Text(
+                    text = terminalStageText(step.stage),
+                    color = textColor,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontFamily = FontFamily.Monospace,
+                  )
                 }
-                Spacer(Modifier.width(10.dp))
-                Text(
-                  text = terminalStageText(step.stage),
-                  color = if (step.state == VpsTerminalStageState.PENDING) TerminalMuted else TerminalForeground,
-                  style = MaterialTheme.typography.bodyMedium,
-                  fontFamily = FontFamily.Monospace,
-                )
               }
             }
           }
         }
 
-        state.error?.let { error ->
-          Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.17f), border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.42f))) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-              Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(19.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(terminalErrorText(error), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
-              }
-              state.errorDetail?.takeIf { it.isNotBlank() }?.let { detail ->
-                Text(detail, color = TerminalMuted, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, maxLines = 8, overflow = TextOverflow.Ellipsis)
-              }
-              Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Outlined.Refresh, contentDescription = null)
-                Spacer(Modifier.width(7.dp))
-                Text(stringResource(R.string.vps_terminal_retry))
+        val terminalError = state.error
+        AnimatedVisibility(
+          visible = terminalError != null,
+          enter = fadeIn(tween(180)) + expandVertically(tween(260, easing = FastOutSlowInEasing)),
+          exit = fadeOut(tween(140)) + shrinkVertically(tween(220, easing = FastOutSlowInEasing)),
+        ) {
+          terminalError?.let { error ->
+            Surface(
+              shape = RoundedCornerShape(14.dp),
+              color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.17f),
+              border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.42f)),
+            ) {
+              Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                  Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(19.dp))
+                  Spacer(Modifier.width(8.dp))
+                  Text(terminalErrorText(error), color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
+                }
+                state.errorDetail?.takeIf { it.isNotBlank() }?.let { detail ->
+                  Text(detail, color = TerminalMuted, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, maxLines = 8, overflow = TextOverflow.Ellipsis)
+                }
+                Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
+                  Icon(Icons.Outlined.Refresh, contentDescription = null)
+                  Spacer(Modifier.width(7.dp))
+                  Text(stringResource(R.string.vps_terminal_retry))
+                }
               }
             }
           }

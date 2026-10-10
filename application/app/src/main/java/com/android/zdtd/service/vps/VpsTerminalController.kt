@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
@@ -74,35 +75,35 @@ class VpsTerminalController(
 
     preparationJob = scope.launch {
       try {
-        setRunning(VpsTerminalStage.CHECK_TMUX)
+        val checkTmuxStarted = setRunning(VpsTerminalStage.CHECK_TMUX)
         val tmuxCheck = ssh.execute(server, "command -v tmux >/dev/null 2>&1", timeoutMs = 20_000L)
         if (runGeneration != generation.get() || destroyed) return@launch
-        setDone(VpsTerminalStage.CHECK_TMUX)
+        setDoneAfter(VpsTerminalStage.CHECK_TMUX, checkTmuxStarted)
 
         if (!tmuxCheck.successful) {
-          setRunning(VpsTerminalStage.INSTALL_TMUX)
+          val installTmuxStarted = setRunning(VpsTerminalStage.INSTALL_TMUX)
           val install = ssh.execute(server, TMUX_INSTALL_COMMAND, timeoutMs = 300_000L)
           if (runGeneration != generation.get() || destroyed) return@launch
           if (!install.successful) {
             fail(VpsTerminalError.TMUX_INSTALL, install.output)
             return@launch
           }
-          setDone(VpsTerminalStage.INSTALL_TMUX)
+          setDoneAfter(VpsTerminalStage.INSTALL_TMUX, installTmuxStarted)
         } else {
           skipAsDone(VpsTerminalStage.INSTALL_TMUX)
         }
 
-        setRunning(VpsTerminalStage.CHECK_SESSION)
+        val checkSessionStarted = setRunning(VpsTerminalStage.CHECK_SESSION)
         val sessionCheck = ssh.execute(
           server,
           "tmux has-session -t ${VpsInteractiveTerminalConnection.SESSION_NAME} >/dev/null 2>&1",
           timeoutMs = 20_000L,
         )
         if (runGeneration != generation.get() || destroyed) return@launch
-        setDone(VpsTerminalStage.CHECK_SESSION)
+        setDoneAfter(VpsTerminalStage.CHECK_SESSION, checkSessionStarted)
 
         if (!sessionCheck.successful) {
-          setRunning(VpsTerminalStage.CREATE_SESSION)
+          val createSessionStarted = setRunning(VpsTerminalStage.CREATE_SESSION)
           val create = ssh.execute(
             server,
             "tmux new-session -d -s ${VpsInteractiveTerminalConnection.SESSION_NAME}",
@@ -113,12 +114,12 @@ class VpsTerminalController(
             fail(VpsTerminalError.SESSION_PREPARE, create.output)
             return@launch
           }
-          setDone(VpsTerminalStage.CREATE_SESSION)
+          setDoneAfter(VpsTerminalStage.CREATE_SESSION, createSessionStarted)
         } else {
           skipAsDone(VpsTerminalStage.CREATE_SESSION)
         }
 
-        setRunning(VpsTerminalStage.CONNECT)
+        val connectStarted = setRunning(VpsTerminalStage.CONNECT)
         val opened = ssh.openInteractiveTerminal(
           server = server,
           onData = onTerminalData,
@@ -139,9 +140,10 @@ class VpsTerminalController(
         }
         connection = opened
         onConnectionReady(opened)
-        setDone(VpsTerminalStage.CONNECT)
-        _state.value = _state.value.copy(ready = true, error = null, errorDetail = null)
         opened.start()
+        setDoneAfter(VpsTerminalStage.CONNECT, connectStarted, minVisibleMs = 190L)
+        if (runGeneration != generation.get() || destroyed || connection !== opened || _state.value.error != null) return@launch
+        _state.value = _state.value.copy(ready = true, error = null, errorDetail = null)
       } catch (error: Throwable) {
         if (runGeneration == generation.get() && !destroyed) {
           fail(VpsTerminalError.CONNECT, error.message)
@@ -161,7 +163,7 @@ class VpsTerminalController(
     connection = null
   }
 
-  private fun setRunning(stage: VpsTerminalStage) {
+  private fun setRunning(stage: VpsTerminalStage): Long {
     _state.value = _state.value.copy(
       steps = _state.value.steps.map {
         if (it.stage == stage) it.copy(state = VpsTerminalStageState.RUNNING) else it
@@ -169,6 +171,18 @@ class VpsTerminalController(
       error = null,
       errorDetail = null,
     )
+    return System.nanoTime()
+  }
+
+  private suspend fun setDoneAfter(
+    stage: VpsTerminalStage,
+    startedAtNanos: Long,
+    minVisibleMs: Long = 165L,
+  ) {
+    val elapsedMs = (System.nanoTime() - startedAtNanos) / 1_000_000L
+    val remainingMs = minVisibleMs - elapsedMs
+    if (remainingMs > 0L) delay(remainingMs)
+    setDone(stage)
   }
 
   private fun setDone(stage: VpsTerminalStage) {
@@ -179,7 +193,12 @@ class VpsTerminalController(
     )
   }
 
-  private fun skipAsDone(stage: VpsTerminalStage) = setDone(stage)
+  private suspend fun skipAsDone(stage: VpsTerminalStage) {
+    // Give the previous stage enough time to settle visually before a skipped
+    // step changes state; this avoids several checks snapping to green at once.
+    delay(90L)
+    setDone(stage)
+  }
 
   private fun fail(error: VpsTerminalError, detail: String?) {
     _state.value = _state.value.copy(

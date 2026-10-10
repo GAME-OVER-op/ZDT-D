@@ -3005,10 +3005,46 @@ private fun TabBody(
     keyboardController?.hide()
   }
 
-  Crossfade(
+  AnimatedContent(
     targetState = tab,
-    animationSpec = tween(durationMillis = 160),
-    label = "main_tab_crossfade",
+    transitionSpec = {
+      val forward = targetState.ordinal > initialState.ordinal
+      val side = if (forward) 1 else -1
+      val origin = TransformOrigin(0.5f, 0f)
+      val enterScale = if (landscapeControl) 0.982f else 0.966f
+      val underScale = if (landscapeControl) 0.975f else 0.958f
+
+      val enter =
+        fadeIn(tween(220)) +
+          slideInVertically(tween(430, easing = FastOutSlowInEasing)) {
+            -it / if (landscapeControl) 20 else 13
+          } +
+          slideInHorizontally(tween(430, easing = FastOutSlowInEasing)) {
+            side * (it / if (landscapeControl) 34 else 24)
+          } +
+          scaleIn(
+            initialScale = enterScale,
+            transformOrigin = origin,
+            animationSpec = tween(430, easing = FastOutSlowInEasing),
+          )
+
+      val exit =
+        fadeOut(tween(240)) +
+          slideOutVertically(tween(390, easing = FastOutSlowInEasing)) {
+            it / if (landscapeControl) 26 else 19
+          } +
+          slideOutHorizontally(tween(390, easing = FastOutSlowInEasing)) {
+            -side * (it / if (landscapeControl) 48 else 38)
+          } +
+          scaleOut(
+            targetScale = underScale,
+            transformOrigin = origin,
+            animationSpec = tween(390, easing = FastOutSlowInEasing),
+          )
+
+      (enter togetherWith exit).using(SizeTransform(clip = false))
+    },
+    label = "mainTabCardDeck",
   ) { currentTab ->
     stateHolder.SaveableStateProvider(currentTab.name) {
       Box(Modifier.fillMaxSize()) {
@@ -3040,6 +3076,7 @@ private fun TabBody(
             actions = actions,
             snackHost = snackHost,
             tproxyEnabled = tproxyEnabled,
+            landscapeControl = landscapeControl,
             topContentPadding = topContentPadding,
             bottomContentPadding = bottomContentPadding,
           )

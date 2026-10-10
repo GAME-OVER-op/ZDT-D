@@ -16,6 +16,8 @@ import java.io.OutputStream
 import java.security.MessageDigest
 import java.util.Base64
 import java.util.Properties
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -101,6 +103,9 @@ class VpsSshClient {
       val input = channel.inputStream
       val output = channel.outputStream
       channel.connect(connectTimeoutMs)
+      // The connect timeout must not become an idle read timeout for an
+      // interactive shell; tmux sessions are expected to stay open while idle.
+      session.timeout = 0
 
       VpsInteractiveTerminalConnection(
         session = session,
@@ -415,11 +420,15 @@ class VpsInteractiveTerminalConnection internal constructor(
   private val onClosed: (Throwable?) -> Unit,
 ) {
   private val closed = AtomicBoolean(false)
-  private val outputLock = Any()
+  private val ioExecutor = Executors.newSingleThreadExecutor { runnable ->
+    Thread(runnable, "zdt-vps-terminal-writer").apply { isDaemon = true }
+  }
   private var readerThread: Thread? = null
 
   fun start() {
     if (closed.get()) return
+    if (readerThread != null) return
+
     readerThread = Thread({
       var failure: Throwable? = null
       try {
@@ -433,53 +442,100 @@ class VpsInteractiveTerminalConnection internal constructor(
       } catch (error: Throwable) {
         if (!closed.get()) failure = error
       } finally {
-        val notify = closed.compareAndSet(false, true)
-        runCatching { channel.disconnect() }
-        runCatching { session.disconnect() }
-        if (notify) onClosed(failure)
+        if (!closed.get()) {
+          closeFromRemote(failure)
+        }
       }
     }, "zdt-vps-terminal-reader").apply {
       isDaemon = true
       start()
     }
 
+    // Never write to the SSH socket from the Compose/UI thread. The same
+    // serialized writer is used for the initial tmux attach and all later input.
     write("exec tmux new-session -A -s $SESSION_NAME\r".toByteArray(Charsets.UTF_8))
   }
 
   fun write(data: ByteArray) {
     if (closed.get() || data.isEmpty()) return
-    synchronized(outputLock) {
-      if (closed.get()) return
+    val payload = data.copyOf()
+    submitIo {
+      if (closed.get()) return@submitIo
       try {
-        output.write(data)
+        output.write(payload)
         output.flush()
       } catch (error: Throwable) {
-        disconnect(error)
+        closeFromIo(error)
       }
     }
   }
 
   fun resize(columns: Int, rows: Int, widthPixels: Int = 0, heightPixels: Int = 0) {
-    if (closed.get() || !channel.isConnected) return
-    runCatching {
-      channel.setPtySize(
-        columns.coerceAtLeast(4),
-        rows.coerceAtLeast(4),
-        widthPixels.coerceAtLeast(0),
-        heightPixels.coerceAtLeast(0),
-      )
+    if (closed.get()) return
+    val safeColumns = columns.coerceAtLeast(4)
+    val safeRows = rows.coerceAtLeast(4)
+    val safeWidth = widthPixels.coerceAtLeast(0)
+    val safeHeight = heightPixels.coerceAtLeast(0)
+    submitIo {
+      if (closed.get() || !channel.isConnected) return@submitIo
+      try {
+        channel.setPtySize(safeColumns, safeRows, safeWidth, safeHeight)
+      } catch (error: Throwable) {
+        closeFromIo(error)
+      }
     }
   }
 
-  fun disconnect() = disconnect(null)
+  fun disconnect() {
+    if (!closed.compareAndSet(false, true)) return
+    submitClose(notify = false, error = null)
+  }
 
-  private fun disconnect(error: Throwable?) {
-    val notify = closed.compareAndSet(false, true)
+  private fun closeFromRemote(error: Throwable?) {
+    if (!closed.compareAndSet(false, true)) return
+    submitClose(notify = true, error = error)
+  }
+
+  private fun closeFromIo(error: Throwable) {
+    if (!closed.compareAndSet(false, true)) return
+    closeResources()
+    ioExecutor.shutdownNow()
+    onClosed(error)
+  }
+
+  private fun submitClose(notify: Boolean, error: Throwable?) {
+    try {
+      ioExecutor.execute {
+        closeResources()
+        ioExecutor.shutdown()
+        if (notify) onClosed(error)
+      }
+    } catch (_: RejectedExecutionException) {
+      // Keep socket teardown off the caller as well; disconnect() is commonly
+      // triggered by Compose disposal on the main thread.
+      Thread({
+        closeResources()
+        if (notify) onClosed(error)
+      }, "zdt-vps-terminal-closer").apply {
+        isDaemon = true
+        start()
+      }
+    }
+  }
+
+  private inline fun submitIo(crossinline block: () -> Unit) {
+    try {
+      ioExecutor.execute { block() }
+    } catch (_: RejectedExecutionException) {
+      // Closing won the race; there is no work left to send to the terminal.
+    }
+  }
+
+  private fun closeResources() {
     runCatching { input.close() }
     runCatching { output.close() }
     runCatching { channel.disconnect() }
     runCatching { session.disconnect() }
-    if (notify && error != null) onClosed(error)
   }
 
   companion object {

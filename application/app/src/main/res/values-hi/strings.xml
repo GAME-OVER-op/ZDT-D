@@ -2575,6 +2575,8 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="setup_online_module_version_mismatch_title">मॉड्यूल संस्करण मेल नहीं खाता</string>
     <string name="setup_online_module_version_mismatch_body">डाउनलोड किया गया मॉड्यूल संस्करण %1$s (versionCode %2$s) है, लेकिन यह ऑनलाइन इंस्टॉलर संस्करण %3$s (versionCode %4$d) है। यह मॉड्यूल इस इंस्टॉलर से इंस्टॉल नहीं किया जा सकता। इसके बजाय आप संस्करण %1$s का पूरा root APK डाउनलोड कर सकते हैं।</string>
     <string name="setup_online_module_download_full_apk">पूरा APK डाउनलोड करें</string>
+    <string name="setup_online_module_download_failed">ZDT-D मॉड्यूल डाउनलोड नहीं हो सका। संभव है कि GitHub उपलब्ध न हो या नेटवर्क कनेक्शन में समस्या हो। बाद में फिर प्रयास करें या ZDT-D का पूर्ण संस्करण डाउनलोड करें, जिसमें मॉड्यूल पहले से शामिल है।</string>
+    <string name="setup_online_module_installer_missing">Magisk, KernelSU या APatch नहीं मिला। ऑनलाइन संस्करण में मॉड्यूल आर्काइव शामिल नहीं है और इसे मैन्युअल इंस्टॉलेशन के लिए सहेजा नहीं जा सकता। समर्थित root manager का उपयोग करें या ZDT-D का पूर्ण संस्करण डाउनलोड करें।</string>
     <string name="setup_online_full_apk_download_failed">पूरा APK डाउनलोड नहीं हो सका: %1$s</string>
 
     <string name="vps_open_terminal">टर्मिनल खोलें</string>

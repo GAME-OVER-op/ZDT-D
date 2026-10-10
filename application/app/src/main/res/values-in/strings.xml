@@ -2574,6 +2574,8 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="setup_online_module_version_mismatch_title">Versi modul tidak cocok</string>
     <string name="setup_online_module_version_mismatch_body">Modul yang diunduh adalah versi %1$s (versionCode %2$s), sedangkan penginstal online ini adalah versi %3$s (versionCode %4$d). Modul ini tidak dapat dipasang dengan penginstal ini. Anda dapat mengunduh APK root lengkap versi %1$s sebagai gantinya.</string>
     <string name="setup_online_module_download_full_apk">Unduh APK lengkap</string>
+    <string name="setup_online_module_download_failed">Modul ZDT-D tidak dapat diunduh. GitHub mungkin tidak tersedia atau ada masalah jaringan. Coba lagi nanti atau unduh versi lengkap ZDT-D yang sudah menyertakan modul.</string>
+    <string name="setup_online_module_installer_missing">Magisk, KernelSU, atau APatch tidak terdeteksi. Versi online tidak menyertakan arsip modul dan tidak dapat menyimpannya untuk pemasangan manual. Gunakan pengelola root yang didukung atau unduh versi lengkap ZDT-D.</string>
     <string name="setup_online_full_apk_download_failed">APK lengkap tidak dapat diunduh: %1$s</string>
 
     <string name="vps_open_terminal">Buka terminal</string>

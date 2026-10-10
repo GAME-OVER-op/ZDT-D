@@ -2573,6 +2573,8 @@ APatch: 10700+</string>
     <string name="setup_online_module_version_mismatch_title">Версии модуля и приложения различаются</string>
     <string name="setup_online_module_version_mismatch_body">Скачанный модуль имеет версию %1$s (versionCode %2$s), а онлайн-установщик — версию %3$s (versionCode %4$d). Установка этого модуля через данную версию онлайн-установщика невозможна. Вместо этого можно скачать полный root APK версии %1$s.</string>
     <string name="setup_online_module_download_full_apk">Скачать полный APK</string>
+    <string name="setup_online_module_download_failed">Не удалось загрузить модуль ZDT-D. Возможно, GitHub недоступен или возникла проблема с подключением. Попробуйте позже либо скачайте полную версию ZDT-D, в которой модуль уже встроен.</string>
+    <string name="setup_online_module_installer_missing">Не удалось определить Magisk, KernelSU или APatch. Онлайн-версия не содержит архив модуля и не может сохранить его для ручной установки. Используйте поддерживаемый root-менеджер либо скачайте полную версию ZDT-D.</string>
     <string name="setup_online_full_apk_download_failed">Не удалось скачать полный APK: %1$s</string>
 
     <string name="vps_open_terminal">Открыть терминал</string>

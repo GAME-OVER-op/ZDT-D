@@ -2574,6 +2574,8 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="setup_online_module_version_mismatch_title">모듈 버전이 일치하지 않음</string>
     <string name="setup_online_module_version_mismatch_body">다운로드한 모듈은 버전 %1$s(versionCode %2$s)이지만 이 온라인 설치 프로그램은 버전 %3$s(versionCode %4$d)입니다. 이 설치 프로그램으로 해당 모듈을 설치할 수 없습니다. 대신 버전 %1$s의 전체 root APK를 다운로드할 수 있습니다.</string>
     <string name="setup_online_module_download_full_apk">전체 APK 다운로드</string>
+    <string name="setup_online_module_download_failed">ZDT-D 모듈을 다운로드하지 못했습니다. GitHub에 접속할 수 없거나 네트워크 연결에 문제가 있을 수 있습니다. 나중에 다시 시도하거나 모듈이 포함된 ZDT-D 전체 버전을 다운로드하세요.</string>
+    <string name="setup_online_module_installer_missing">Magisk, KernelSU 또는 APatch를 찾지 못했습니다. 온라인 버전에는 모듈 아카이브가 포함되어 있지 않아 수동 설치용으로 저장할 수 없습니다. 지원되는 root 관리자를 사용하거나 ZDT-D 전체 버전을 다운로드하세요.</string>
     <string name="setup_online_full_apk_download_failed">전체 APK를 다운로드할 수 없습니다: %1$s</string>
 
     <string name="vps_open_terminal">터미널 열기</string>

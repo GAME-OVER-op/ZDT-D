@@ -2574,6 +2574,8 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="setup_online_module_version_mismatch_title">Modül sürümü eşleşmiyor</string>
     <string name="setup_online_module_version_mismatch_body">İndirilen modül %1$s sürümüdür (versionCode %2$s), ancak bu çevrimiçi yükleyici %3$s sürümüdür (versionCode %4$d). Bu modül bu yükleyiciyle kurulamaz. Bunun yerine %1$s sürümünün tam root APK dosyasını indirebilirsiniz.</string>
     <string name="setup_online_module_download_full_apk">Tam APK dosyasını indir</string>
+    <string name="setup_online_module_download_failed">ZDT-D modülü indirilemedi. GitHub erişilemiyor olabilir veya ağ bağlantısında bir sorun olabilir. Daha sonra tekrar deneyin ya da modülün gömülü olduğu tam ZDT-D sürümünü indirin.</string>
+    <string name="setup_online_module_installer_missing">Magisk, KernelSU veya APatch algılanamadı. Çevrimiçi sürüm modül arşivini içermez ve elle kurulum için kaydedemez. Desteklenen bir root yöneticisi kullanın veya tam ZDT-D sürümünü indirin.</string>
     <string name="setup_online_full_apk_download_failed">Tam APK indirilemedi: %1$s</string>
 
     <string name="vps_open_terminal">Terminali aç</string>

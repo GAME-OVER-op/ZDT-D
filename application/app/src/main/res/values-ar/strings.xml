@@ -2579,6 +2579,8 @@ APatch: ‏10700+</string>
     <string name="setup_online_module_version_mismatch_title">إصدار الوحدة غير متطابق</string>
     <string name="setup_online_module_version_mismatch_body">إصدار الوحدة التي تم تنزيلها هو %1$s ‏(versionCode %2$s)، بينما إصدار المثبت عبر الإنترنت هو %3$s ‏(versionCode %4$d). لا يمكن تثبيت هذه الوحدة بهذا المثبت. يمكنك بدلاً من ذلك تنزيل ملف APK الكامل بصلاحيات root للإصدار %1$s.</string>
     <string name="setup_online_module_download_full_apk">تنزيل APK الكامل</string>
+    <string name="setup_online_module_download_failed">تعذر تنزيل وحدة ZDT-D. قد يكون GitHub غير متاح أو قد توجد مشكلة في اتصال الشبكة. حاول مرة أخرى لاحقًا أو نزّل الإصدار الكامل من ZDT-D الذي يتضمن الوحدة مسبقًا.</string>
+    <string name="setup_online_module_installer_missing">لم يتم اكتشاف Magisk أو KernelSU أو APatch. الإصدار عبر الإنترنت لا يتضمن أرشيف الوحدة ولا يمكنه حفظه للتثبيت اليدوي. استخدم مدير root مدعومًا أو نزّل الإصدار الكامل من ZDT-D.</string>
     <string name="setup_online_full_apk_download_failed">تعذر تنزيل ملف APK الكامل: %1$s</string>
 
     <string name="vps_open_terminal">فتح الطرفية</string>

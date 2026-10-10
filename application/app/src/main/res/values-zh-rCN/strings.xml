@@ -2574,6 +2574,8 @@ APatch：10700+</string>
     <string name="setup_online_module_version_mismatch_title">模块版本不匹配</string>
     <string name="setup_online_module_version_mismatch_body">下载的模块版本为 %1$s（versionCode %2$s），但此在线安装器版本为 %3$s（versionCode %4$d）。此安装器无法安装该模块。你可以改为下载版本 %1$s 的完整 root APK。</string>
     <string name="setup_online_module_download_full_apk">下载完整 APK</string>
+    <string name="setup_online_module_download_failed">无法下载 ZDT-D 模块。GitHub 可能暂时无法访问，或网络连接存在问题。请稍后重试，或下载已内置模块的 ZDT-D 完整版。</string>
+    <string name="setup_online_module_installer_missing">未检测到 Magisk、KernelSU 或 APatch。在线版不包含模块压缩包，因此无法保存该压缩包进行手动安装。请使用受支持的 root 管理器，或下载 ZDT-D 完整版。</string>
     <string name="setup_online_full_apk_download_failed">无法下载完整 APK：%1$s</string>
 
     <string name="vps_open_terminal">打开终端</string>

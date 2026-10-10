@@ -6171,8 +6171,28 @@ jobs:
           printf '%s\n' "$ONLINE_MODULE_META" | grep -Fx "onlineAsset=${MODULE_ASSET}" >/dev/null || { echo "::error::Online APK module asset binding is invalid"; exit 1; }
           printf '%s\n' "$ONLINE_MODULE_META" | grep -Fx "onlineUrl=https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/${MODULE_ASSET}" >/dev/null || { echo "::error::Online APK module URL binding is invalid"; exit 1; }
 
+          AAPT="$ANDROID_SDK_ROOT/build-tools/${{ env.ANDROID_BUILD_TOOLS_VERSION }}/aapt"
           APKSIGNER="$ANDROID_SDK_ROOT/build-tools/${{ env.ANDROID_BUILD_TOOLS_VERSION }}/apksigner"
+          [[ -x "$AAPT" ]] || { echo "::error::aapt not found: $AAPT"; exit 1; }
           [[ -x "$APKSIGNER" ]] || { echo "::error::apksigner not found: $APKSIGNER"; exit 1; }
+
+          require_distribution() {
+            local apk="$1"
+            local expected="$2"
+            local dump block
+            dump="$("$AAPT" dump xmltree "$apk" AndroidManifest.xml)"
+            block="$(printf '%s\n' "$dump" | grep -A2 -F 'com.android.zdtd.service.DISTRIBUTION' | head -3 || true)"
+            if [[ -z "$block" ]] || ! printf '%s\n' "$block" | grep -Eq "android:value.*(Raw: \"${expected}\"|=\"${expected}\")"; then
+              echo "::error::APK distribution metadata mismatch in $apk: expected=$expected"
+              printf '%s\n' "$block"
+              exit 1
+            fi
+          }
+
+          require_distribution "$BUNDLED_APK" bundled
+          require_distribution "$ONLINE_APK" online
+          require_distribution "$NONROOT_APK" nonroot
+
           "$APKSIGNER" verify --verbose "$BUNDLED_APK"
           "$APKSIGNER" verify --verbose "$ONLINE_APK"
           "$APKSIGNER" verify --verbose "$NONROOT_APK"
@@ -6612,6 +6632,25 @@ jobs:
           MODULE_TECHNICAL_SOURCE="out/module-online/zdt_module.zip"
           MODULE_TECHNICAL_NAME="zdt_module.zip"
           test -s "$MODULE_TECHNICAL_SOURCE" || { echo "::error::Online module archive is missing: $MODULE_TECHNICAL_SOURCE"; exit 1; }
+
+          ONLINE_MODULE_META="$(unzip -p "$ONLINE_APK_SOURCE" assets/metadata/zdt_module.cache)"
+          EXPECTED_MODULE_SHA="$(printf '%s\n' "$ONLINE_MODULE_META" | sed -n 's/^sha256=//p' | head -1 | tr -d '[:space:]')"
+          EXPECTED_MODULE_SIZE="$(printf '%s\n' "$ONLINE_MODULE_META" | sed -n 's/^size=//p' | head -1 | tr -d '[:space:]')"
+          ACTUAL_MODULE_SHA="$(sha256sum "$MODULE_TECHNICAL_SOURCE" | awk '{print $1}')"
+          ACTUAL_MODULE_SIZE="$(stat -c%s "$MODULE_TECHNICAL_SOURCE")"
+          [[ "$EXPECTED_MODULE_SHA" =~ ^[0-9a-fA-F]{64}$ ]] || { echo "::error::Online APK module SHA metadata is missing or invalid"; exit 1; }
+          [[ "$EXPECTED_MODULE_SIZE" =~ ^[0-9]+$ ]] || { echo "::error::Online APK module size metadata is missing or invalid"; exit 1; }
+          [[ "${ACTUAL_MODULE_SHA,,}" == "${EXPECTED_MODULE_SHA,,}" ]] || {
+            echo "::error::Technical_Assets module SHA does not match the online APK metadata"
+            echo "expected=$EXPECTED_MODULE_SHA actual=$ACTUAL_MODULE_SHA"
+            exit 1
+          }
+          [[ "$ACTUAL_MODULE_SIZE" == "$EXPECTED_MODULE_SIZE" ]] || {
+            echo "::error::Technical_Assets module size does not match the online APK metadata"
+            echo "expected=$EXPECTED_MODULE_SIZE actual=$ACTUAL_MODULE_SIZE"
+            exit 1
+          }
+
           if gh release view "$TECHNICAL_TAG" >/dev/null 2>&1; then
             gh release edit "$TECHNICAL_TAG" --title "$TECHNICAL_TITLE" --prerelease --latest=false
           else

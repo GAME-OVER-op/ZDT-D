@@ -2574,6 +2574,8 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="setup_online_module_version_mismatch_title">Module version mismatch</string>
     <string name="setup_online_module_version_mismatch_body">The downloaded module is version %1$s (versionCode %2$s), but this online installer is version %3$s (versionCode %4$d). This module cannot be installed by this online installer. You can download the full root APK for version %1$s instead.</string>
     <string name="setup_online_module_download_full_apk">Download full APK</string>
+    <string name="setup_online_module_download_failed">Could not download the ZDT-D module. GitHub may be unavailable or there may be a network problem. Try again later or download the full ZDT-D version, which already includes the module.</string>
+    <string name="setup_online_module_installer_missing">Magisk, KernelSU, or APatch was not detected. The online version does not include the module archive and cannot save it for manual installation. Use a supported root manager or download the full ZDT-D version.</string>
     <string name="setup_online_full_apk_download_failed">Could not download the full APK: %1$s</string>
 
     <string name="vps_open_terminal">Open terminal</string>

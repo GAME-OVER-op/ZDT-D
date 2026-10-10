@@ -2574,6 +2574,8 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="setup_online_module_version_mismatch_title">モジュールのバージョンが一致しません</string>
     <string name="setup_online_module_version_mismatch_body">ダウンロードしたモジュールはバージョン %1$s（versionCode %2$s）ですが、このオンラインインストーラーはバージョン %3$s（versionCode %4$d）です。このモジュールはこのインストーラーではインストールできません。代わりにバージョン %1$s の完全な root APK をダウンロードできます。</string>
     <string name="setup_online_module_download_full_apk">完全版 APK をダウンロード</string>
+    <string name="setup_online_module_download_failed">ZDT-D モジュールをダウンロードできませんでした。GitHub にアクセスできないか、ネットワーク接続に問題がある可能性があります。後でもう一度試すか、モジュールが組み込まれている ZDT-D の完全版をダウンロードしてください。</string>
+    <string name="setup_online_module_installer_missing">Magisk、KernelSU、APatch を検出できませんでした。オンライン版にはモジュールアーカイブが含まれていないため、手動インストール用に保存できません。対応する root マネージャーを使用するか、ZDT-D の完全版をダウンロードしてください。</string>
     <string name="setup_online_full_apk_download_failed">完全版 APK をダウンロードできませんでした: %1$s</string>
 
     <string name="vps_open_terminal">ターミナルを開く</string>

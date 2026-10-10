@@ -83,6 +83,8 @@ private const val LSPOSED_HIDE_PREF_UIDS = "uids"
 private const val LSPOSED_HIDE_PREF_UPDATED_AT = "updated_at"
 private const val APP_DISTRIBUTION_META_DATA = "com.android.zdtd.service.DISTRIBUTION"
 private const val ONLINE_MODULE_VERSION_MISMATCH_MARKER = "ZDTD_ONLINE_MODULE_VERSION_MISMATCH"
+private const val ONLINE_MODULE_DOWNLOAD_FAILED_MARKER = "ZDTD_ONLINE_MODULE_DOWNLOAD_FAILED"
+private const val ONLINE_MODULE_URL = "https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/zdt_module.zip"
 private const val FULL_ROOT_APK_ASSET_NAME = "app-release.apk"
 private const val SERVICE_FULL_ROOT_APK_ASSET_NAME = "ZDT-D-service-build.apk"
 private const val MAX_FULL_ROOT_APK_BYTES = 1024L * 1024L * 1024L
@@ -744,10 +746,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app), ZdtdActions {
     return "https" + "://github.com/GAME-OVER-op/ZDT-D/releases/download/${tag}/${releaseApkAssetName()}"
   }
 
-  private fun releaseDistribution(): String = when (BuildConfig.DISTRIBUTION_MODE) {
-    "bundled" -> "bundled"
-    "online" -> "online"
-    else -> error("App updates are unavailable for ${BuildConfig.DISTRIBUTION_MODE}")
+  private fun releaseDistribution(): String {
+    val distribution = moduleDistributionSnapshot()
+    return when {
+      distribution.usesOnlineModule -> "online"
+      distribution.buildMode == "bundled" || distribution.manifestMode == "bundled" -> "bundled"
+      else -> error(
+        "App updates are unavailable for build=${distribution.buildMode} manifest=${distribution.manifestMode}",
+      )
+    }
   }
 
   private fun releaseApkAssetName(): String = when (releaseDistribution()) {
@@ -2247,20 +2254,41 @@ private fun clearDownloadedUpdateApk() {
       val showZygiskWarning = installer == RootConfigManager.ModuleInstaller.KSU || installer == RootConfigManager.ModuleInstaller.APATCH
       val zygiskRequestedAtStart = readZygiskInstallMarker()
 
-      // If we can't detect an installer, ask the user and export the zip to /sdcard.
+      // The bundled build can export its embedded module when no root-manager installer is detected.
+      // The online build intentionally has no local module archive, so never offer a ZIP export there.
       if (installer == RootConfigManager.ModuleInstaller.UNKNOWN) {
-        _setup.update {
-          it.copy(
-            installing = false,
-            installerLabel = label,
-            showKsuApatchZygiskWarning = showZygiskWarning,
-            manualZipSaved = false,
-            manualZipPath = "",
-            showManualDialog = true,
-            oldVersionDetected = oldVer,
-            manualDialogText = str(R.string.mv_auto_015) +
-              str(R.string.mv_auto_016),
-          )
+        if (isOnlineModuleDistribution()) {
+          _setup.update {
+            it.copy(
+              installing = false,
+              installError = str(R.string.setup_online_module_installer_missing),
+              installOk = false,
+              installLog = moduleDistributionDiagnosticLine(),
+              installProgressPercent = 100,
+              installProgressLabel = str(R.string.setup_install_progress_failed),
+              installerLabel = label,
+              showKsuApatchZygiskWarning = showZygiskWarning,
+              manualZipSaved = false,
+              manualZipPath = "",
+              showManualDialog = false,
+              manualDialogText = "",
+              oldVersionDetected = oldVer,
+            )
+          }
+        } else {
+          _setup.update {
+            it.copy(
+              installing = false,
+              installerLabel = label,
+              showKsuApatchZygiskWarning = showZygiskWarning,
+              manualZipSaved = false,
+              manualZipPath = "",
+              showManualDialog = true,
+              oldVersionDetected = oldVer,
+              manualDialogText = str(R.string.mv_auto_015) +
+                str(R.string.mv_auto_016),
+            )
+          }
         }
         return@launchIO
       }
@@ -2290,7 +2318,14 @@ private fun clearDownloadedUpdateApk() {
         else -> RootConfigManager.PendingModuleAction.INSTALL
       }
 
-      updateInstallProgress(18, str(R.string.setup_install_progress_copying))
+      updateInstallProgress(
+        18,
+        if (isOnlineModuleDistribution()) {
+          str(R.string.prog_update_status_downloading_pct_fmt, 0)
+        } else {
+          str(R.string.setup_install_progress_copying)
+        },
+      )
 
       val (ok, out) = when (installer) {
         RootConfigManager.ModuleInstaller.MAGISK -> installViaMagisk()
@@ -2300,7 +2335,7 @@ private fun clearDownloadedUpdateApk() {
       }
 
       if (ok) {
-        cleanupModuleZipAfterSuccessfulInstall()
+        cleanupTemporaryModuleArtifacts()
         // Mark setup as completed so we don't show the installer again after reboot.
         root.setSetupDone(true)
         rememberPendingModuleAction(pendingAction)
@@ -2315,9 +2350,12 @@ private fun clearDownloadedUpdateApk() {
           )
         }
       } else {
+        cleanupTemporaryModuleArtifacts()
         if (showOnlineModuleVersionMismatch(out)) return@launchIO
+        if (showOnlineModuleDownloadFailure(out)) return@launchIO
         val metamoduleInstallBlocked = hasMetamoduleInstallBlockedMarker(out)
         val zygiskInstallError = !metamoduleInstallBlocked && zygiskRequestedAtStart && hasZygiskInstallErrorMarker(out)
+        val manualExportAllowed = !isOnlineModuleDistribution() && !metamoduleInstallBlocked && !zygiskInstallError
         _setup.update {
           it.copy(
             installing = false,
@@ -2325,14 +2363,16 @@ private fun clearDownloadedUpdateApk() {
             installLog = out,
             installProgressPercent = 100,
             installProgressLabel = str(R.string.setup_install_progress_failed),
-            showManualDialog = !metamoduleInstallBlocked && !zygiskInstallError,
+            showManualDialog = manualExportAllowed,
             showZygiskInstallRecoveryDialog = zygiskInstallError,
             showMetamoduleInstallBlockedDialog = metamoduleInstallBlocked,
             manualZipSaved = false,
             manualZipPath = "",
-            manualDialogText = if (metamoduleInstallBlocked || zygiskInstallError) "" else str(R.string.mv_auto_018) +
-              str(R.string.mv_auto_019) +
-              str(R.string.mv_auto_020),
+            manualDialogText = if (manualExportAllowed) {
+              str(R.string.mv_auto_018) + str(R.string.mv_auto_019) + str(R.string.mv_auto_020)
+            } else {
+              ""
+            },
           )
         }
       }
@@ -2349,6 +2389,27 @@ private fun clearDownloadedUpdateApk() {
 
   override fun dismissMetamoduleInstallBlockedDialog() {
     _setup.update { it.copy(showMetamoduleInstallBlockedDialog = false) }
+  }
+
+  private fun showOnlineModuleDownloadFailure(error: String): Boolean {
+    if (!error.startsWith(ONLINE_MODULE_DOWNLOAD_FAILED_MARKER)) return false
+    val technical = error.removePrefix(ONLINE_MODULE_DOWNLOAD_FAILED_MARKER).trimStart('\n', '\r', ' ', '\t')
+    _setup.update {
+      it.copy(
+        installing = false,
+        installError = str(R.string.setup_online_module_download_failed),
+        installLog = technical.ifBlank { moduleDistributionDiagnosticLine() },
+        installProgressPercent = 100,
+        installProgressLabel = str(R.string.setup_install_progress_failed),
+        showManualDialog = false,
+        manualDialogText = "",
+        showOnlineModuleVersionMismatchDialog = false,
+        onlineModuleVersionMismatchText = "",
+        manualZipSaved = false,
+        manualZipPath = "",
+      )
+    }
+    return true
   }
 
   private fun showOnlineModuleVersionMismatch(error: String): Boolean {
@@ -2407,7 +2468,7 @@ private fun clearDownloadedUpdateApk() {
   }
 
   override fun downloadFullRootApkForMismatchedModule() {
-    if (!BuildConfig.USES_ONLINE_MODULE || _setup.value.onlineModuleFullApkDownloading) return
+    if (!isOnlineModuleDistribution() || _setup.value.onlineModuleFullApkDownloading) return
     val target = pendingOnlineModuleMismatch ?: return
     val targetVersion = target.versionName?.trim().orEmpty()
     if (targetVersion.isBlank() || target.versionCode == null || target.buildType.isNullOrBlank() || target.buildNumber == null) return
@@ -2756,6 +2817,23 @@ private fun clearDownloadedUpdateApk() {
   override fun confirmManualInstall() {
     if (_rootState.value != RootState.GRANTED) {
       log("ERR", "root required")
+      return
+    }
+    if (isOnlineModuleDistribution()) {
+      _setup.update {
+        it.copy(
+          installing = false,
+          installError = str(R.string.setup_online_module_installer_missing),
+          installOk = false,
+          installLog = moduleDistributionDiagnosticLine(),
+          installProgressPercent = 100,
+          installProgressLabel = str(R.string.setup_install_progress_failed),
+          showManualDialog = false,
+          manualDialogText = "",
+          manualZipSaved = false,
+          manualZipPath = "",
+        )
+      }
       return
     }
     if (_setup.value.installing) return
@@ -5390,9 +5468,12 @@ if (mf.isNotBlank()) {
   }
 
   private suspend fun exportModuleZipToSdcard(): Triple<Boolean, String, String> {
+    if (isOnlineModuleDistribution()) {
+      return Triple(false, "manual module export is disabled for the online distribution\n${moduleDistributionDiagnosticLine()}", "")
+    }
     val (cacheZip, copyError) = acquireModuleZipToCache()
     if (copyError != null || cacheZip == null) {
-      return Triple(false, copyError ?: "asset zdt_module.zip missing", "")
+      return Triple(false, copyError ?: "module archive acquisition failed without details", "")
     }
     val verify = verifyModuleZip(cacheZip)
     if (!verify.ok) return Triple(false, verify.message, "")
@@ -5417,12 +5498,19 @@ if (mf.isNotBlank()) {
   private suspend fun stageModuleZipToTmp(
     normalizeForStrictZipInstaller: Boolean = false,
   ): Pair<Boolean, String> {
-    updateInstallProgress(22, str(R.string.setup_install_progress_copying))
+    updateInstallProgress(
+      22,
+      if (isOnlineModuleDistribution()) {
+        str(R.string.prog_update_status_downloading_pct_fmt, 0)
+      } else {
+        str(R.string.setup_install_progress_copying)
+      },
+    )
     // Copy assets/zdt_module.zip to cache, verify the protected archive,
     // optionally normalize the same temporary copy for strict ZIP parsers,
     // then stage it for the selected root manager.
     val (cacheZip, copyError) = acquireModuleZipToCache()
-    if (copyError != null || cacheZip == null) return false to (copyError ?: "asset zdt_module.zip missing")
+    if (copyError != null || cacheZip == null) return false to (copyError ?: "module archive acquisition failed without details")
 
     val verify = verifyModuleZip(cacheZip)
     if (!verify.ok) return false to verify.message
@@ -5449,7 +5537,7 @@ if (mf.isNotBlank()) {
     unpackDir.mkdirs()
 
     val (cacheZip, copyError) = acquireModuleZipToCache()
-    if (copyError != null || cacheZip == null) return false to (copyError ?: "asset zdt_module.zip missing")
+    if (copyError != null || cacheZip == null) return false to (copyError ?: "module archive acquisition failed without details")
     val verify = verifyModuleZip(cacheZip)
     if (!verify.ok) return false to verify.message
 
@@ -5911,30 +5999,134 @@ private fun shQuote(s: String): String {
 
   private data class ModuleZipVerification(val ok: Boolean, val message: String)
 
+  private data class ModuleDistributionSnapshot(
+    val buildMode: String,
+    val manifestMode: String,
+    val buildUsesOnlineModule: Boolean,
+  ) {
+    val usesOnlineModule: Boolean
+      get() = buildUsesOnlineModule || buildMode == "online" || manifestMode == "online"
+  }
+
+  @Suppress("DEPRECATION")
+  private fun moduleDistributionSnapshot(): ModuleDistributionSnapshot {
+    val buildMode = BuildConfig.DISTRIBUTION_MODE.trim().lowercase(Locale.US)
+    val manifestMode = runCatching {
+      ctx.packageManager
+        .getApplicationInfo(ctx.packageName, PackageManager.GET_META_DATA)
+        .metaData
+        ?.getString(APP_DISTRIBUTION_META_DATA)
+        .orEmpty()
+        .trim()
+        .lowercase(Locale.US)
+    }.getOrDefault("")
+    return ModuleDistributionSnapshot(
+      buildMode = buildMode,
+      manifestMode = manifestMode,
+      buildUsesOnlineModule = BuildConfig.USES_ONLINE_MODULE,
+    )
+  }
+
+  private fun isOnlineModuleDistribution(): Boolean {
+    val snapshot = moduleDistributionSnapshot()
+    if (snapshot.manifestMode.isNotBlank() && snapshot.manifestMode != snapshot.buildMode) {
+      log(
+        "WARN",
+        "APK distribution mismatch: build=${snapshot.buildMode} manifest=${snapshot.manifestMode} " +
+          "usesOnline=${snapshot.buildUsesOnlineModule}",
+      )
+    }
+    if (snapshot.buildUsesOnlineModule != (snapshot.buildMode == "online")) {
+      log(
+        "WARN",
+        "BuildConfig online-module mismatch: distribution=${snapshot.buildMode} " +
+          "usesOnline=${snapshot.buildUsesOnlineModule}",
+      )
+    }
+    return snapshot.usesOnlineModule
+  }
+
+  private fun moduleDistributionDiagnosticLine(snapshot: ModuleDistributionSnapshot = moduleDistributionSnapshot()): String =
+    "distribution build=${snapshot.buildMode.ifBlank { "?" }} " +
+      "manifest=${snapshot.manifestMode.ifBlank { "?" }} " +
+      "usesOnline=${snapshot.buildUsesOnlineModule} effectiveOnline=${snapshot.usesOnlineModule}"
+
+  private fun onlineModuleFailure(
+    detail: String,
+    snapshot: ModuleDistributionSnapshot = moduleDistributionSnapshot(),
+  ): Pair<File?, String?> {
+    val technical = buildString {
+      append(ONLINE_MODULE_DOWNLOAD_FAILED_MARKER)
+      append('\n')
+      append("Online module acquisition failed: ")
+      append(detail.ifBlank { "unknown error" })
+      append('\n')
+      append(moduleDistributionDiagnosticLine(snapshot))
+      append('\n')
+      append("source=")
+      append(ONLINE_MODULE_URL)
+    }
+    return null to technical
+  }
+
   private suspend fun acquireModuleZipToCache(): Pair<File?, String?> {
     val cacheZip = File(ctx.cacheDir, "zdt_module.zip")
-    if (!BuildConfig.USES_ONLINE_MODULE) {
-      runCatching {
-        ctx.assets.open("zdt_module.zip").use { input ->
-          cacheZip.outputStream().use { out -> input.copyTo(out) }
+    val distribution = moduleDistributionSnapshot()
+    if (!distribution.usesOnlineModule) {
+      runCatching { cacheZip.delete() }
+      val input = runCatching { ctx.assets.open("zdt_module.zip") }.getOrElse { error ->
+        return null to buildString {
+          append("bundled module asset zdt_module.zip is unavailable: ")
+          append(error.message ?: error.toString())
+          append('\n')
+          append(moduleDistributionDiagnosticLine(distribution))
         }
-      }.getOrElse {
-        return null to "asset zdt_module.zip missing: ${it.message ?: it}"
+      }
+      val copyError = runCatching {
+        input.use { source ->
+          cacheZip.outputStream().buffered().use { output -> source.copyTo(output) }
+        }
+        check(cacheZip.isFile && cacheZip.length() > 0L) { "cached bundled module archive is empty" }
+      }.exceptionOrNull()
+      if (copyError != null) {
+        runCatching { cacheZip.delete() }
+        return null to buildString {
+          append("unable to copy bundled module archive to app cache: ")
+          append(copyError.message ?: copyError.toString())
+          append('\n')
+          append(moduleDistributionDiagnosticLine(distribution))
+        }
       }
       return cacheZip to null
     }
 
-    val metadata = readOnlineModuleMetadata()
-      ?: return null to "online module metadata is missing or invalid"
+    if (distribution.buildMode != "online" || distribution.manifestMode != "online" || !distribution.buildUsesOnlineModule) {
+      log("WARN", "Online module fallback selected because distribution markers disagree: ${moduleDistributionDiagnosticLine(distribution)}")
+    }
+    pendingOnlineModuleMismatch = null
 
+    val (metadata, metadataError) = readOnlineModuleMetadata()
+    if (metadata == null) {
+      return onlineModuleFailure(
+        "online module metadata is missing or invalid: ${metadataError ?: "unknown metadata error"}",
+        distribution,
+      )
+    }
+
+    runCatching { cacheZip.delete() }
     val part = File(ctx.cacheDir, "zdt_module.zip.part")
     runCatching { part.delete() }
-    updateInstallProgress(22, str(R.string.mv_auto_056))
+    updateInstallProgress(22, str(R.string.prog_update_status_downloading_pct_fmt, 0))
 
+    // Technical_Assets keeps a stable asset name across builds. Add a cache buster so an
+    // intermediate CDN/proxy cannot hand an older zdt_module.zip to a newer online APK.
+    val downloadUrl = "${metadata.url}?ts=${System.currentTimeMillis()}"
     val request = Request.Builder()
-      .url(metadata.url)
+      .url(downloadUrl)
       .header("User-Agent", "ZDT-D-Android")
-      .header("Cache-Control", "no-cache")
+      .header("Accept", "application/octet-stream")
+      .header("Cache-Control", "no-cache, no-store")
+      .header("Pragma", "no-cache")
       .build()
 
     val downloadError = runCatching {
@@ -5945,13 +6137,13 @@ private fun shQuote(s: String): String {
         check(reportedSize <= 0L || reportedSize <= MAX_ONLINE_MODULE_BYTES) {
           "online module archive exceeds the size limit: $reportedSize"
         }
-        body.byteStream().use { input ->
+        body.byteStream().use { inputStream ->
           part.outputStream().buffered().use { output ->
             val buffer = ByteArray(64 * 1024)
             var copied = 0L
             while (true) {
               currentCoroutineContext().ensureActive()
-              val read = input.read(buffer)
+              val read = inputStream.read(buffer)
               if (read < 0) break
               output.write(buffer, 0, read)
               copied += read
@@ -5999,7 +6191,7 @@ private fun shQuote(s: String): String {
         pendingOnlineModuleMismatch = downloadError.moduleBuild
         return null to ONLINE_MODULE_VERSION_MISMATCH_MARKER
       }
-      return null to (downloadError.message ?: downloadError.toString())
+      return onlineModuleFailure(downloadError.message ?: downloadError.toString(), distribution)
     }
     return cacheZip to null
   }
@@ -6012,7 +6204,7 @@ private fun shQuote(s: String): String {
     val moduleVersionCode: Int,
   )
 
-  private fun readOnlineModuleMetadata(): OnlineModuleMetadata? = runCatching {
+  private fun readOnlineModuleMetadata(): Pair<OnlineModuleMetadata?, String?> = runCatching {
     val props = Properties()
     ctx.assets.open("metadata/zdt_module.cache").use { input -> props.load(input) }
     val url = props.getProperty("onlineUrl")?.trim().orEmpty()
@@ -6020,13 +6212,18 @@ private fun shQuote(s: String): String {
     val size = props.getProperty("size")?.trim()?.toLongOrNull() ?: 0L
     val moduleVersion = props.getProperty("moduleVersion")?.trim().orEmpty()
     val moduleVersionCode = props.getProperty("moduleVersionCode")?.trim()?.toIntOrNull() ?: 0
-    check(url == "https://github.com/GAME-OVER-op/ZDT-D/releases/download/Technical_Assets/zdt_module.zip")
-    check(sha.matches(Regex("[0-9a-f]{64}")))
-    check(size > 0L)
-    check(moduleVersion.isNotBlank())
-    check(moduleVersionCode > 0)
+    check(url == ONLINE_MODULE_URL) {
+      "unexpected or missing onlineUrl"
+    }
+    check(sha.matches(Regex("[0-9a-f]{64}"))) { "invalid or missing sha256" }
+    check(size > 0L) { "invalid or missing size" }
+    check(moduleVersion.isNotBlank()) { "moduleVersion is missing" }
+    check(moduleVersionCode > 0) { "moduleVersionCode is missing or invalid" }
     OnlineModuleMetadata(url, sha, size, moduleVersion, moduleVersionCode)
-  }.getOrNull()
+  }.fold(
+    onSuccess = { it to null },
+    onFailure = { null to (it.message ?: it.toString()) },
+  )
 
   /**
    * The module ZIP intentionally has a fake encrypted flag in its central directory.
@@ -6058,7 +6255,7 @@ private fun shQuote(s: String): String {
     }
   }
 
-  private fun cleanupModuleZipAfterSuccessfulInstall() {
+  private fun cleanupTemporaryModuleArtifacts() {
     listOf(
       File(ctx.cacheDir, "zdt_module.zip"),
       File(ctx.cacheDir, "zdt_module.zip.part"),
@@ -6081,7 +6278,7 @@ private fun shQuote(s: String): String {
       )
     }
     if (cleanup.isFailure || cleanup.getOrNull()?.isSuccess != true) {
-      log("WARN", "Unable to delete staged module archive after successful installation")
+      log("WARN", "Unable to delete staged module archive after module installation attempt")
     }
   }
 

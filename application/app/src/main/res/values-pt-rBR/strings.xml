@@ -2575,6 +2575,8 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="setup_online_module_version_mismatch_title">Versão do módulo incompatível</string>
     <string name="setup_online_module_version_mismatch_body">O módulo baixado é a versão %1$s (versionCode %2$s), mas este instalador online é a versão %3$s (versionCode %4$d). Este módulo não pode ser instalado por este instalador. Você pode baixar o APK root completo da versão %1$s.</string>
     <string name="setup_online_module_download_full_apk">Baixar APK completo</string>
+    <string name="setup_online_module_download_failed">Não foi possível baixar o módulo ZDT-D. O GitHub pode estar indisponível ou pode haver um problema de conexão. Tente novamente mais tarde ou baixe a versão completa do ZDT-D, que já inclui o módulo.</string>
+    <string name="setup_online_module_installer_missing">Magisk, KernelSU ou APatch não foi detectado. A versão online não inclui o arquivo do módulo e não pode salvá-lo para instalação manual. Use um gerenciador root compatível ou baixe a versão completa do ZDT-D.</string>
     <string name="setup_online_full_apk_download_failed">Não foi possível baixar o APK completo: %1$s</string>
 
     <string name="vps_open_terminal">Abrir terminal</string>

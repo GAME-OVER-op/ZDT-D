@@ -2594,4 +2594,15 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="vps_terminal_error_disconnected">ターミナル接続が閉じられました</string>
     <string name="non_root_log_cascade_backend_skipped">カスケード: 起動エラーのため %1$s をスキップしました: %2$s</string>
     <string name="non_root_profile_failure_open_log">起動エラーログを開く</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">アップストリームプロキシ</string>
+    <string name="operaproxy_upstream_desc">Opera Proxy の外向き接続方法を選択します。既定では ByeDPI が選択されています。</string>
+    <string name="operaproxy_upstream_direct">プロキシなし</string>
+    <string name="operaproxy_upstream_custom">カスタムプロキシ</string>
+    <string name="operaproxy_custom_proxy_title">カスタムアップストリームプロキシ</string>
+    <string name="operaproxy_custom_proxy_desc">完全なプロキシ URL を入力してください。インターネット上のリモートサーバーも使用できます。形式: http://、https://、socks5://、socks5h://。認証情報を URL に含めることもできます。</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">ホストとポートを含む有効な HTTP、HTTPS、SOCKS5、SOCKS5H プロキシ URL を入力してください。</string>
+    <string name="non_root_log_opera_upstream">Opera アップストリーム: %1$s</string>
 </resources>

@@ -2594,4 +2594,15 @@ Protection does not work in hotspot mode. If hotspot is enabled and sing-box is 
     <string name="vps_terminal_error_disconnected">Terminal connection was closed</string>
     <string name="non_root_log_cascade_backend_skipped">Cascade: %1$s was skipped after a startup error: %2$s</string>
     <string name="non_root_profile_failure_open_log">Open startup error log</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">Upstream proxy</string>
+    <string name="operaproxy_upstream_desc">Choose how Opera Proxy connects to the network. ByeDPI is selected by default.</string>
+    <string name="operaproxy_upstream_direct">No proxy</string>
+    <string name="operaproxy_upstream_custom">Custom proxy</string>
+    <string name="operaproxy_custom_proxy_title">Custom upstream proxy</string>
+    <string name="operaproxy_custom_proxy_desc">Enter the full proxy URL. Remote Internet servers are supported. Formats: http://, https://, socks5://, socks5h://. Credentials may be included in the URL.</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">Enter a valid HTTP, HTTPS, SOCKS5, or SOCKS5H proxy URL with host and port.</string>
+    <string name="non_root_log_opera_upstream">Opera upstream: %1$s</string>
 </resources>

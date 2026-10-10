@@ -2594,4 +2594,15 @@ APatch：10700+</string>
     <string name="vps_terminal_error_disconnected">终端连接已关闭</string>
     <string name="non_root_log_cascade_backend_skipped">级联：%1$s 因启动错误被跳过：%2$s</string>
     <string name="non_root_profile_failure_open_log">打开启动错误日志</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">上游代理</string>
+    <string name="operaproxy_upstream_desc">选择 Opera Proxy 连接网络的方式。默认选择 ByeDPI。</string>
+    <string name="operaproxy_upstream_direct">不使用代理</string>
+    <string name="operaproxy_upstream_custom">自定义代理</string>
+    <string name="operaproxy_custom_proxy_title">自定义上游代理</string>
+    <string name="operaproxy_custom_proxy_desc">请输入完整的代理 URL。支持互联网远程服务器。格式：http://、https://、socks5://、socks5h://。用户名和密码也可以直接写在 URL 中。</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">请输入包含主机和端口的有效 HTTP、HTTPS、SOCKS5 或 SOCKS5H 代理 URL。</string>
+    <string name="non_root_log_opera_upstream">Opera 上游代理：%1$s</string>
 </resources>

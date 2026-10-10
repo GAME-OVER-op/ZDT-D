@@ -2593,4 +2593,15 @@ APatch: 10700+</string>
     <string name="vps_terminal_error_disconnected">Соединение с терминалом закрыто</string>
     <string name="non_root_log_cascade_backend_skipped">Каскад: %1$s пропущен из-за ошибки запуска: %2$s</string>
     <string name="non_root_profile_failure_open_log">Открыть лог ошибки запуска</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">Внешний прокси</string>
+    <string name="operaproxy_upstream_desc">Выберите, через что Opera Proxy подключается к сети. По умолчанию выбран ByeDPI.</string>
+    <string name="operaproxy_upstream_direct">Без прокси</string>
+    <string name="operaproxy_upstream_custom">Свой прокси</string>
+    <string name="operaproxy_custom_proxy_title">Свой внешний прокси</string>
+    <string name="operaproxy_custom_proxy_desc">Введите полный адрес прокси. Можно использовать удалённый сервер из интернета. Поддерживаются http://, https://, socks5:// и socks5h://; логин и пароль можно указать прямо в URL.</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">Укажите корректный HTTP, HTTPS, SOCKS5 или SOCKS5H прокси с адресом и портом.</string>
+    <string name="non_root_log_opera_upstream">Внешний прокси Opera: %1$s</string>
 </resources>

@@ -2595,4 +2595,15 @@ APatch: 10700+</string>
     <string name="vps_terminal_error_disconnected">اتصال ترمینال بسته شد</string>
     <string name="non_root_log_cascade_backend_skipped">آبشاری: %1$s به‌دلیل خطای راه‌اندازی رد شد: %2$s</string>
     <string name="non_root_profile_failure_open_log">باز کردن گزارش خطای راه‌اندازی</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">پراکسی بالادستی</string>
+    <string name="operaproxy_upstream_desc">روش اتصال Opera Proxy به شبکه را انتخاب کنید. به‌صورت پیش‌فرض ByeDPI انتخاب است.</string>
+    <string name="operaproxy_upstream_direct">بدون پراکسی</string>
+    <string name="operaproxy_upstream_custom">پراکسی دلخواه</string>
+    <string name="operaproxy_custom_proxy_title">پراکسی بالادستی دلخواه</string>
+    <string name="operaproxy_custom_proxy_desc">نشانی کامل پراکسی را وارد کنید. سرورهای راه‌دور اینترنتی پشتیبانی می‌شوند. قالب‌ها: http://، https://، socks5:// و socks5h://. نام کاربری و رمز عبور می‌توانند در URL باشند.</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">یک URL معتبر HTTP، HTTPS، SOCKS5 یا SOCKS5H همراه میزبان و پورت وارد کنید.</string>
+    <string name="non_root_log_opera_upstream">پراکسی بالادستی Opera: %1$s</string>
 </resources>

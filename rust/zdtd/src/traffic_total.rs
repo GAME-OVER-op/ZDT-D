@@ -783,8 +783,15 @@ fn operaproxy_sni_entries(root: &Path) -> Vec<OperaproxySniView> {
     let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { return Vec::new(); };
     let arr = v.as_array().or_else(|| v.get("items").and_then(|x| x.as_array()));
     let Some(arr) = arr else { return Vec::new(); };
-    arr.iter().map(|item| OperaproxySniView {
-        use_byedpi: item.get("use_byedpi").and_then(|x| x.as_bool()).unwrap_or(false),
+    arr.iter().map(|item| {
+        let legacy = item.get("use_byedpi").and_then(|x| x.as_bool()).unwrap_or(false);
+        let mode = item.get("proxy_mode").and_then(|x| x.as_str()).unwrap_or("").trim();
+        let use_byedpi = if mode.is_empty() {
+            legacy
+        } else {
+            mode.eq_ignore_ascii_case("byedpi")
+        };
+        OperaproxySniView { use_byedpi }
     }).collect()
 }
 

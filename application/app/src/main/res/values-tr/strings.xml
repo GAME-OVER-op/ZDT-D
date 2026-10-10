@@ -2594,4 +2594,15 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="vps_terminal_error_disconnected">Terminal bağlantısı kapatıldı</string>
     <string name="non_root_log_cascade_backend_skipped">Kaskad: %1$s başlatma hatası nedeniyle atlandı: %2$s</string>
     <string name="non_root_profile_failure_open_log">Başlatma hatası günlüğünü aç</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">Üst proxy</string>
+    <string name="operaproxy_upstream_desc">Opera Proxy’nin ağa nasıl bağlanacağını seçin. Varsayılan olarak ByeDPI seçilidir.</string>
+    <string name="operaproxy_upstream_direct">Proxy yok</string>
+    <string name="operaproxy_upstream_custom">Özel proxy</string>
+    <string name="operaproxy_custom_proxy_title">Özel üst proxy</string>
+    <string name="operaproxy_custom_proxy_desc">Tam proxy URL’sini girin. İnternetteki uzak sunucular desteklenir. Biçimler: http://, https://, socks5:// ve socks5h://. Kullanıcı adı ve parola URL içinde belirtilebilir.</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">Ana bilgisayar ve bağlantı noktası içeren geçerli bir HTTP, HTTPS, SOCKS5 veya SOCKS5H proxy URL’si girin.</string>
+    <string name="non_root_log_opera_upstream">Opera üst proxy: %1$s</string>
 </resources>

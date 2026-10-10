@@ -430,7 +430,12 @@ class NonRootVpnService : VpnService() {
   ) {
     val sni = config.serverSni.trim().takeIf { it.isNotEmpty() }
       ?: error("Opera Proxy requires an SNI")
-    val useByeDpi = config.useByedpi
+    val upstreamMode = normalizeOperaUpstreamMode(config.upstreamMode, config.useByedpi)
+    val useByeDpi = upstreamMode == OPERA_UPSTREAM_BYEDPI
+    val customUpstream = config.customUpstreamProxy.trim()
+    if (upstreamMode == OPERA_UPSTREAM_CUSTOM && !isValidOperaCustomProxy(customUpstream)) {
+      error(getString(R.string.operaproxy_custom_proxy_error))
+    }
 
     if (useByeDpi) {
       NonRootVpnRuntime.log(getString(R.string.non_root_log_start_component, "ByeDPI · $displayName"))
@@ -465,7 +470,17 @@ class NonRootVpnService : VpnService() {
       logFile = File(runtimeStore.logsDir, "api_proxy_check-$label.log"),
     )
     if (!selectedApiProxy.isNullOrBlank()) operaArgs += listOf("-api-proxy", selectedApiProxy)
-    if (useByeDpi) operaArgs += listOf("-proxy", "socks5://${NonRootPortRegistry.LOOPBACK}:$byedpiPort")
+    val upstreamProxy = when (upstreamMode) {
+      OPERA_UPSTREAM_BYEDPI -> "socks5://${NonRootPortRegistry.LOOPBACK}:$byedpiPort"
+      OPERA_UPSTREAM_CUSTOM -> customUpstream
+      else -> null
+    }
+    if (!upstreamProxy.isNullOrBlank()) {
+      operaArgs += listOf("-proxy", upstreamProxy)
+      NonRootVpnRuntime.log(
+        getString(R.string.non_root_log_opera_upstream, maskOperaProxyForLog(upstreamProxy)),
+      )
+    }
     if (config.overrideProxyAddress.isNotBlank()) {
       operaArgs += listOf("-override-proxy-address", config.overrideProxyAddress.trim())
     }

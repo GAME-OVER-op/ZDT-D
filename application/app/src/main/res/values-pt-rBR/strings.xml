@@ -2595,4 +2595,15 @@ O motivo restante provavelmente está no daemon/API. Verifique os logs do daemon
     <string name="vps_terminal_error_disconnected">A conexão do terminal foi encerrada</string>
     <string name="non_root_log_cascade_backend_skipped">Cascata: %1$s foi ignorado após um erro de inicialização: %2$s</string>
     <string name="non_root_profile_failure_open_log">Abrir log do erro de inicialização</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">Proxy de saída</string>
+    <string name="operaproxy_upstream_desc">Escolha como o Opera Proxy se conecta à rede. ByeDPI é selecionado por padrão.</string>
+    <string name="operaproxy_upstream_direct">Sem proxy</string>
+    <string name="operaproxy_upstream_custom">Proxy próprio</string>
+    <string name="operaproxy_custom_proxy_title">Proxy de saída personalizado</string>
+    <string name="operaproxy_custom_proxy_desc">Informe a URL completa do proxy. Servidores remotos na Internet são aceitos. Formatos: http://, https://, socks5:// e socks5h://. Usuário e senha podem ser incluídos na URL.</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">Informe uma URL de proxy HTTP, HTTPS, SOCKS5 ou SOCKS5H válida com host e porta.</string>
+    <string name="non_root_log_opera_upstream">Proxy de saída do Opera: %1$s</string>
 </resources>

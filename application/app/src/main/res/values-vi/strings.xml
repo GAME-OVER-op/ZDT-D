@@ -2594,4 +2594,15 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="vps_terminal_error_disconnected">Kết nối terminal đã đóng</string>
     <string name="non_root_log_cascade_backend_skipped">Chuỗi: đã bỏ qua %1$s sau lỗi khởi động: %2$s</string>
     <string name="non_root_profile_failure_open_log">Mở nhật ký lỗi khởi động</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">Proxy đầu ra</string>
+    <string name="operaproxy_upstream_desc">Chọn cách Opera Proxy kết nối ra mạng. ByeDPI được chọn mặc định.</string>
+    <string name="operaproxy_upstream_direct">Không dùng proxy</string>
+    <string name="operaproxy_upstream_custom">Proxy tùy chọn</string>
+    <string name="operaproxy_custom_proxy_title">Proxy đầu ra tùy chọn</string>
+    <string name="operaproxy_custom_proxy_desc">Nhập URL proxy đầy đủ. Hỗ trợ máy chủ từ xa trên Internet. Định dạng: http://, https://, socks5:// và socks5h://. Có thể ghi tên đăng nhập và mật khẩu trong URL.</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">Nhập URL proxy HTTP, HTTPS, SOCKS5 hoặc SOCKS5H hợp lệ kèm máy chủ và cổng.</string>
+    <string name="non_root_log_opera_upstream">Proxy đầu ra Opera: %1$s</string>
 </resources>

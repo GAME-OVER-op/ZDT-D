@@ -2595,4 +2595,15 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="vps_terminal_error_disconnected">टर्मिनल कनेक्शन बंद हो गया</string>
     <string name="non_root_log_cascade_backend_skipped">कैस्केड: स्टार्टअप त्रुटि के बाद %1$s को छोड़ दिया गया: %2$s</string>
     <string name="non_root_profile_failure_open_log">स्टार्टअप त्रुटि लॉग खोलें</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">अपस्ट्रीम प्रॉक्सी</string>
+    <string name="operaproxy_upstream_desc">चुनें कि Opera Proxy नेटवर्क से कैसे जुड़े। डिफ़ॉल्ट रूप से ByeDPI चुना गया है।</string>
+    <string name="operaproxy_upstream_direct">बिना प्रॉक्सी</string>
+    <string name="operaproxy_upstream_custom">अपना प्रॉक्सी</string>
+    <string name="operaproxy_custom_proxy_title">अपना अपस्ट्रीम प्रॉक्सी</string>
+    <string name="operaproxy_custom_proxy_desc">पूरा प्रॉक्सी URL दर्ज करें। इंटरनेट पर दूरस्थ सर्वर समर्थित हैं। प्रारूप: http://, https://, socks5:// और socks5h://। URL में यूज़रनेम और पासवर्ड भी दिए जा सकते हैं।</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">होस्ट और पोर्ट के साथ मान्य HTTP, HTTPS, SOCKS5 या SOCKS5H प्रॉक्सी URL दर्ज करें।</string>
+    <string name="non_root_log_opera_upstream">Opera अपस्ट्रीम: %1$s</string>
 </resources>

@@ -41,7 +41,8 @@ data class NonRootDirectOperaConfig(
   val restartByedpiAfterOpera: Boolean = false,
   val serverRegion: String = "EU",
   val serverSni: String = "m.vk.com",
-  val useByedpi: Boolean = true,
+  val upstreamMode: String = OPERA_UPSTREAM_BYEDPI,
+  val customUpstreamProxy: String = "",
   val overrideProxyAddress: String = "",
   val apiProxy: String = DEFAULT_API_PROXY,
   val apiUserAgent: String = DEFAULT_API_USER_AGENT,
@@ -51,7 +52,9 @@ data class NonRootDirectOperaConfig(
   val serverSelectionTestUrl: String = "https://ajax.googleapis.com/ajax/libs/angularjs/1.8.2/angular.min.js",
   val verbosity: String = "50",
   val bootstrapDns: List<String> = DEFAULT_BOOTSTRAP_DNS,
-)
+) {
+  val useByedpi: Boolean get() = upstreamMode == OPERA_UPSTREAM_BYEDPI
+}
 
 internal fun nonRootOperaConfigFromJson(obj: JSONObject): NonRootDirectOperaConfig {
   if (obj.length() == 0) return NonRootDirectOperaConfig()
@@ -64,10 +67,17 @@ internal fun nonRootOperaConfigFromJson(obj: JSONObject): NonRootDirectOperaConf
   val serverSni = obj.optString("server_sni", "").trim().ifEmpty {
     legacyEntry?.optString("sni", "")?.trim().orEmpty().ifEmpty { defaults.serverSni }
   }
-  val useByedpi = if (obj.has("server_use_byedpi")) {
+  val legacyUseByedpi = if (obj.has("server_use_byedpi")) {
     obj.optBoolean("server_use_byedpi", defaults.useByedpi)
   } else {
     legacyEntry?.optBoolean("use_byedpi", defaults.useByedpi) ?: defaults.useByedpi
+  }
+  val upstreamMode = normalizeOperaUpstreamMode(
+    raw = obj.optString("server_proxy_mode", legacyEntry?.optString("proxy_mode", "").orEmpty()),
+    legacyUseByedpi = legacyUseByedpi,
+  )
+  val customUpstreamProxy = obj.optString("server_custom_proxy", "").trim().ifEmpty {
+    legacyEntry?.optString("custom_proxy", "")?.trim().orEmpty()
   }
   val overrideProxyAddress = obj.optString("server_override_proxy_address", "").ifEmpty {
     legacyEntry?.optString("override_proxy_address", "").orEmpty()
@@ -88,7 +98,8 @@ internal fun nonRootOperaConfigFromJson(obj: JSONObject): NonRootDirectOperaConf
     restartByedpiAfterOpera = obj.optBoolean("restart_byedpi_after_opera", false),
     serverRegion = region,
     serverSni = serverSni,
-    useByedpi = useByedpi,
+    upstreamMode = upstreamMode,
+    customUpstreamProxy = customUpstreamProxy,
     overrideProxyAddress = overrideProxyAddress,
     apiProxy = obj.optString("api_proxy", defaults.apiProxy),
     apiUserAgent = obj.optString("api_user_agent", defaults.apiUserAgent),
@@ -107,6 +118,9 @@ internal fun nonRootOperaConfigToJson(config: NonRootDirectOperaConfig): JSONObj
   put("restart_byedpi_after_opera", config.restartByedpiAfterOpera)
   put("server_region", config.serverRegion)
   put("server_sni", config.serverSni)
+  put("server_proxy_mode", normalizeOperaUpstreamMode(config.upstreamMode, config.useByedpi))
+  put("server_custom_proxy", config.customUpstreamProxy.trim())
+  // Keep the legacy flag so older builds still preserve the effective ByeDPI choice.
   put("server_use_byedpi", config.useByedpi)
   put("server_override_proxy_address", config.overrideProxyAddress)
   put("api_proxy", config.apiProxy)

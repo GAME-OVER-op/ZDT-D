@@ -2594,4 +2594,15 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="vps_terminal_error_disconnected">Koneksi terminal ditutup</string>
     <string name="non_root_log_cascade_backend_skipped">Kaskade: %1$s dilewati setelah kesalahan saat memulai: %2$s</string>
     <string name="non_root_profile_failure_open_log">Buka log kesalahan saat memulai</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">Proxy upstream</string>
+    <string name="operaproxy_upstream_desc">Pilih cara Opera Proxy terhubung ke jaringan. ByeDPI dipilih secara default.</string>
+    <string name="operaproxy_upstream_direct">Tanpa proxy</string>
+    <string name="operaproxy_upstream_custom">Proxy sendiri</string>
+    <string name="operaproxy_custom_proxy_title">Proxy upstream khusus</string>
+    <string name="operaproxy_custom_proxy_desc">Masukkan URL proxy lengkap. Server jarak jauh di Internet didukung. Format: http://, https://, socks5://, dan socks5h://. Nama pengguna dan kata sandi dapat disertakan dalam URL.</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">Masukkan URL proxy HTTP, HTTPS, SOCKS5, atau SOCKS5H yang valid dengan host dan port.</string>
+    <string name="non_root_log_opera_upstream">Upstream Opera: %1$s</string>
 </resources>

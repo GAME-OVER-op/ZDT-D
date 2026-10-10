@@ -128,6 +128,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.NonRootAppRoutingMode
+import com.android.zdtd.service.OPERA_UPSTREAM_BYEDPI
+import com.android.zdtd.service.OPERA_UPSTREAM_CUSTOM
+import com.android.zdtd.service.OPERA_UPSTREAM_DIRECT
+import com.android.zdtd.service.isValidOperaCustomProxy
 import com.android.zdtd.service.NonRootBackendServer
 import com.android.zdtd.service.NonRootCascadeBackendMode
 import com.android.zdtd.service.NonRootCascadeProfile
@@ -2216,23 +2220,61 @@ internal fun NonRootOperaProxyCard(
             supportingText = { Text(stringResource(R.string.operaproxy_sni_server_address_hint)) },
             singleLine = true,
           )
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-          ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-              Text(stringResource(R.string.operaproxy_sni_use_byedpi), fontWeight = FontWeight.SemiBold)
-              Text(
-                stringResource(R.string.operaproxy_sni_use_byedpi_desc),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+              text = stringResource(R.string.operaproxy_upstream_title),
+              style = MaterialTheme.typography.bodyMedium,
+              fontWeight = FontWeight.SemiBold,
+            )
+            Text(
+              text = stringResource(R.string.operaproxy_upstream_desc),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+              NonRootSmallChoice(
+                modifier = Modifier.weight(1f),
+                selected = config.upstreamMode == OPERA_UPSTREAM_DIRECT,
+                label = stringResource(R.string.operaproxy_upstream_direct),
+                onClick = { onConfigChange(config.copy(upstreamMode = OPERA_UPSTREAM_DIRECT)) },
+              )
+              NonRootSmallChoice(
+                modifier = Modifier.weight(1f),
+                selected = config.upstreamMode == OPERA_UPSTREAM_BYEDPI,
+                label = stringResource(R.string.tab_byedpi),
+                onClick = { onConfigChange(config.copy(upstreamMode = OPERA_UPSTREAM_BYEDPI)) },
+              )
+              NonRootSmallChoice(
+                modifier = Modifier.weight(1f),
+                selected = config.upstreamMode == OPERA_UPSTREAM_CUSTOM,
+                label = stringResource(R.string.operaproxy_upstream_custom),
+                onClick = { onConfigChange(config.copy(upstreamMode = OPERA_UPSTREAM_CUSTOM)) },
               )
             }
-            Switch(
-              checked = config.useByedpi,
-              onCheckedChange = { onConfigChange(config.copy(useByedpi = it)) },
-            )
+            androidx.compose.animation.AnimatedVisibility(
+              visible = config.upstreamMode == OPERA_UPSTREAM_CUSTOM,
+              enter = expandVertically(animationSpec = tween(200)) + fadeIn(tween(150)),
+              exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(tween(120)),
+            ) {
+              val customProxyInvalid = config.customUpstreamProxy.isNotBlank() &&
+                !isValidOperaCustomProxy(config.customUpstreamProxy)
+              OutlinedTextField(
+                value = config.customUpstreamProxy,
+                onValueChange = { onConfigChange(config.copy(customUpstreamProxy = it)) },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(stringResource(R.string.operaproxy_custom_proxy_title)) },
+                placeholder = { Text(stringResource(R.string.operaproxy_custom_proxy_placeholder)) },
+                supportingText = {
+                  Text(
+                    if (customProxyInvalid) stringResource(R.string.operaproxy_custom_proxy_error)
+                    else stringResource(R.string.operaproxy_custom_proxy_desc)
+                  )
+                },
+                isError = customProxyInvalid,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+              )
+            }
           }
         }
       }
@@ -2741,7 +2783,7 @@ private fun NonRootBottomNavigationCard(
         ) { Icon(Icons.Filled.Power, contentDescription = homeLabel, modifier = Modifier.size(22.dp)) }
 
         Box(modifier = Modifier.weight(statsWeight).fillMaxHeight()) {
-          AnimatedVisibility(
+          androidx.compose.animation.AnimatedVisibility(
             visible = showStats,
             modifier = Modifier.fillMaxSize(),
             enter = expandHorizontally(animationSpec = tween(240)) + fadeIn(tween(170)),

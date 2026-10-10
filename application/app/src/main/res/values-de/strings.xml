@@ -2595,4 +2595,15 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="vps_terminal_error_disconnected">Terminalverbindung wurde geschlossen</string>
     <string name="non_root_log_cascade_backend_skipped">Kaskade: %1$s wurde nach einem Startfehler übersprungen: %2$s</string>
     <string name="non_root_profile_failure_open_log">Protokoll des Startfehlers öffnen</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">Upstream-Proxy</string>
+    <string name="operaproxy_upstream_desc">Wähle, wie Opera Proxy die Netzwerkverbindung aufbaut. ByeDPI ist standardmäßig ausgewählt.</string>
+    <string name="operaproxy_upstream_direct">Kein Proxy</string>
+    <string name="operaproxy_upstream_custom">Eigener Proxy</string>
+    <string name="operaproxy_custom_proxy_title">Eigener Upstream-Proxy</string>
+    <string name="operaproxy_custom_proxy_desc">Gib die vollständige Proxy-URL ein. Entfernte Server im Internet werden unterstützt. Formate: http://, https://, socks5:// und socks5h://. Zugangsdaten können in der URL stehen.</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">Gib eine gültige HTTP-, HTTPS-, SOCKS5- oder SOCKS5H-Proxy-URL mit Host und Port ein.</string>
+    <string name="non_root_log_opera_upstream">Opera-Upstream: %1$s</string>
 </resources>

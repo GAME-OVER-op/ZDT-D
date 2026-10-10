@@ -61,6 +61,11 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import com.android.zdtd.service.R
+import com.android.zdtd.service.OPERA_UPSTREAM_BYEDPI
+import com.android.zdtd.service.OPERA_UPSTREAM_CUSTOM
+import com.android.zdtd.service.OPERA_UPSTREAM_DIRECT
+import com.android.zdtd.service.isValidOperaCustomProxy
+import com.android.zdtd.service.normalizeOperaUpstreamMode
 import androidx.compose.material.icons.filled.Edit
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -2310,9 +2315,12 @@ private fun OperaMiniBadge(
 
 private data class OperaSniItemUi(
   val sni: String = "",
-  val useByedpi: Boolean = false,
+  val proxyMode: String = OPERA_UPSTREAM_BYEDPI,
+  val customProxy: String = "",
   val overrideProxyAddress: String = "",
-)
+) {
+  val useByedpi: Boolean get() = proxyMode == OPERA_UPSTREAM_BYEDPI
+}
 
 private fun isValidOverrideProxyAddress(value: String): Boolean {
   val text = value.trim()
@@ -2354,7 +2362,11 @@ private fun OperaSniJsonSection(
           add(
             OperaSniItemUi(
               sni = sni,
-              useByedpi = o.optBoolean("use_byedpi", false),
+              proxyMode = normalizeOperaUpstreamMode(
+                raw = o.optString("proxy_mode", ""),
+                legacyUseByedpi = o.optBoolean("use_byedpi", false),
+              ),
+              customProxy = o.optString("custom_proxy", "").trim(),
               overrideProxyAddress = o.optString("override_proxy_address", "").trim(),
             )
           )
@@ -2370,7 +2382,12 @@ private fun OperaSniJsonSection(
       if (sni.isEmpty()) return@forEach
       arr.put(JSONObject().apply {
         put("sni", sni)
-        put("use_byedpi", item.useByedpi)
+        put("proxy_mode", item.proxyMode)
+        put("use_byedpi", item.useByedpi) // backwards compatibility with older service builds
+        val customProxy = item.customProxy.trim()
+        if (customProxy.isNotEmpty()) {
+          put("custom_proxy", customProxy)
+        }
         val overrideAddress = item.overrideProxyAddress.trim()
         if (overrideAddress.isNotEmpty()) {
           put("override_proxy_address", overrideAddress)
@@ -2560,9 +2577,19 @@ private fun OperaSniJsonSection(
               overflow = TextOverflow.Ellipsis,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+              val upstreamLabel = when (item.proxyMode) {
+                OPERA_UPSTREAM_BYEDPI -> stringResource(R.string.tab_byedpi)
+                OPERA_UPSTREAM_CUSTOM -> stringResource(R.string.operaproxy_upstream_custom)
+                else -> stringResource(R.string.operaproxy_upstream_direct)
+              }
+              val upstreamAccent = when (item.proxyMode) {
+                OPERA_UPSTREAM_BYEDPI -> Color(0xFF22C55E)
+                OPERA_UPSTREAM_CUSTOM -> MaterialTheme.colorScheme.tertiary
+                else -> accent
+              }
               OperaMiniBadge(
-                text = if (item.useByedpi) stringResource(R.string.tab_byedpi) else stringResource(R.string.opera_proxy_title),
-                accent = if (item.useByedpi) Color(0xFF22C55E) else accent,
+                text = upstreamLabel,
+                accent = upstreamAccent,
               )
               Text(
                 text = item.overrideProxyAddress.ifBlank { stringResource(R.string.operaproxy_sni_address_not_set) },
@@ -2608,7 +2635,8 @@ private fun OperaSniServerDialog(
   onSave: (OperaSniItemUi) -> Unit,
 ) {
   var sni by remember(initial) { mutableStateOf(initial.sni) }
-  var useByedpi by remember(initial) { mutableStateOf(initial.useByedpi) }
+  var proxyMode by remember(initial) { mutableStateOf(initial.proxyMode) }
+  var customProxy by remember(initial) { mutableStateOf(initial.customProxy) }
   var address by remember(initial) { mutableStateOf(initial.overrideProxyAddress) }
   var attemptedSave by remember { mutableStateOf(false) }
   val shortHeight = rememberIsShortHeight()
@@ -2619,14 +2647,18 @@ private fun OperaSniServerDialog(
 
   val currentItem = OperaSniItemUi(
     sni = sni.trim(),
-    useByedpi = useByedpi,
+    proxyMode = proxyMode,
+    customProxy = customProxy.trim(),
     overrideProxyAddress = address.trim(),
   )
-  val inputValid = currentItem.sni.isNotEmpty() && isValidOverrideProxyAddress(address)
+  val customProxyValid = proxyMode != OPERA_UPSTREAM_CUSTOM || isValidOperaCustomProxy(customProxy)
+  val inputValid = currentItem.sni.isNotEmpty() && isValidOverrideProxyAddress(address) && customProxyValid
   val hasChanges = !isEditing || currentItem != initial
   val canSave = inputValid && hasChanges
   val sniError = attemptedSave && currentItem.sni.isEmpty()
   val addressError = attemptedSave && !isValidOverrideProxyAddress(address)
+  val customProxyError = proxyMode == OPERA_UPSTREAM_CUSTOM && customProxy.isNotBlank() &&
+    !isValidOperaCustomProxy(customProxy)
 
   fun attemptSave() {
     attemptedSave = true
@@ -2726,20 +2758,55 @@ private fun OperaSniServerDialog(
           },
         )
 
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Column(modifier = Modifier.weight(1f)) {
-            Text(stringResource(R.string.operaproxy_sni_use_byedpi), fontWeight = FontWeight.Medium)
-            Text(
-              stringResource(R.string.operaproxy_sni_use_byedpi_desc),
-              style = MaterialTheme.typography.bodySmall,
-              color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          Text(stringResource(R.string.operaproxy_upstream_title), fontWeight = FontWeight.Medium)
+          Text(
+            stringResource(R.string.operaproxy_upstream_desc),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+          )
+          Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+          ) {
+            FilterChip(
+              selected = proxyMode == OPERA_UPSTREAM_DIRECT,
+              onClick = { proxyMode = OPERA_UPSTREAM_DIRECT },
+              label = { Text(stringResource(R.string.operaproxy_upstream_direct)) },
+            )
+            FilterChip(
+              selected = proxyMode == OPERA_UPSTREAM_BYEDPI,
+              onClick = { proxyMode = OPERA_UPSTREAM_BYEDPI },
+              label = { Text(stringResource(R.string.tab_byedpi)) },
+            )
+            FilterChip(
+              selected = proxyMode == OPERA_UPSTREAM_CUSTOM,
+              onClick = { proxyMode = OPERA_UPSTREAM_CUSTOM },
+              label = { Text(stringResource(R.string.operaproxy_upstream_custom)) },
             )
           }
-          Switch(checked = useByedpi, onCheckedChange = { useByedpi = it })
+          AnimatedVisibility(
+            visible = proxyMode == OPERA_UPSTREAM_CUSTOM,
+            enter = expandVertically(animationSpec = tween(200)) + fadeIn(tween(150)),
+            exit = shrinkVertically(animationSpec = tween(180)) + fadeOut(tween(120)),
+          ) {
+            OutlinedTextField(
+              value = customProxy,
+              onValueChange = { customProxy = it },
+              modifier = Modifier.fillMaxWidth(),
+              singleLine = true,
+              label = { Text(stringResource(R.string.operaproxy_custom_proxy_title)) },
+              placeholder = { Text(stringResource(R.string.operaproxy_custom_proxy_placeholder)) },
+              isError = customProxyError,
+              supportingText = {
+                Text(
+                  if (customProxyError) stringResource(R.string.operaproxy_custom_proxy_error)
+                  else stringResource(R.string.operaproxy_custom_proxy_desc)
+                )
+              },
+              keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            )
+          }
         }
 
         OutlinedTextField(

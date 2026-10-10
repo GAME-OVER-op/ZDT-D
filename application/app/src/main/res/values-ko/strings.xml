@@ -2594,4 +2594,15 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="vps_terminal_error_disconnected">터미널 연결이 종료되었습니다</string>
     <string name="non_root_log_cascade_backend_skipped">캐스케이드: 시작 오류로 %1$s을(를) 건너뜀: %2$s</string>
     <string name="non_root_profile_failure_open_log">시작 오류 로그 열기</string>
+
+    <!-- Opera Proxy upstream routing -->
+    <string name="operaproxy_upstream_title">업스트림 프록시</string>
+    <string name="operaproxy_upstream_desc">Opera Proxy가 네트워크에 연결하는 방식을 선택합니다. 기본값은 ByeDPI입니다.</string>
+    <string name="operaproxy_upstream_direct">프록시 없음</string>
+    <string name="operaproxy_upstream_custom">사용자 프록시</string>
+    <string name="operaproxy_custom_proxy_title">사용자 업스트림 프록시</string>
+    <string name="operaproxy_custom_proxy_desc">전체 프록시 URL을 입력하세요. 인터넷의 원격 서버도 사용할 수 있습니다. 형식: http://, https://, socks5://, socks5h://. URL에 사용자 이름과 비밀번호를 포함할 수 있습니다.</string>
+    <string name="operaproxy_custom_proxy_placeholder">socks5://user:password@proxy.example.com:1080</string>
+    <string name="operaproxy_custom_proxy_error">호스트와 포트가 포함된 올바른 HTTP, HTTPS, SOCKS5 또는 SOCKS5H 프록시 URL을 입력하세요.</string>
+    <string name="non_root_log_opera_upstream">Opera 업스트림: %1$s</string>
 </resources>

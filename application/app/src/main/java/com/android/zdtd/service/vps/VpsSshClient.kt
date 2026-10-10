@@ -17,9 +17,11 @@ import java.security.MessageDigest
 import java.util.Base64
 import java.util.Properties
 import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class VpsSshClient {
   private val connectTimeoutMs = 12_000
@@ -423,12 +425,16 @@ class VpsInteractiveTerminalConnection internal constructor(
   private val ioExecutor = Executors.newSingleThreadExecutor { runnable ->
     Thread(runnable, "zdt-vps-terminal-writer").apply { isDaemon = true }
   }
+  private val displayQueue = LinkedBlockingQueue<ByteArray>()
+  private val pendingDisplayBytes = AtomicInteger(0)
   private var readerThread: Thread? = null
+  private var displayThread: Thread? = null
 
   fun start() {
     if (closed.get()) return
     if (readerThread != null) return
 
+    startDisplayPump()
     readerThread = Thread({
       var failure: Throwable? = null
       try {
@@ -437,7 +443,7 @@ class VpsInteractiveTerminalConnection internal constructor(
           val count = input.read(buffer)
           if (count < 0) break
           if (count == 0) continue
-          onData(buffer.copyOf(count))
+          enqueueDisplay(buffer.copyOf(count))
         }
       } catch (error: Throwable) {
         if (!closed.get()) failure = error
@@ -453,7 +459,7 @@ class VpsInteractiveTerminalConnection internal constructor(
 
     // Never write to the SSH socket from the Compose/UI thread. The same
     // serialized writer is used for the initial tmux attach and all later input.
-    write("exec tmux new-session -A -s $SESSION_NAME\r".toByteArray(Charsets.UTF_8))
+    write("printf '\\033[1 q'; exec tmux new-session -A -s $SESSION_NAME\r".toByteArray(Charsets.UTF_8))
   }
 
   fun write(data: ByteArray) {
@@ -489,6 +495,56 @@ class VpsInteractiveTerminalConnection internal constructor(
   fun disconnect() {
     if (!closed.compareAndSet(false, true)) return
     submitClose(notify = false, error = null)
+  }
+
+  private fun enqueueDisplay(data: ByteArray) {
+    if (closed.get() || data.isEmpty()) return
+    pendingDisplayBytes.addAndGet(data.size)
+    displayQueue.offer(data)
+  }
+
+  private fun startDisplayPump() {
+    if (displayThread != null) return
+    displayThread = Thread({
+      try {
+        while (!closed.get() || pendingDisplayBytes.get() > 0) {
+          val packet = displayQueue.poll(100L, TimeUnit.MILLISECONDS) ?: continue
+          var offset = 0
+          while (offset < packet.size && !Thread.currentThread().isInterrupted) {
+            val backlog = pendingDisplayBytes.get().coerceAtLeast(packet.size - offset)
+            val chunkSize = when {
+              backlog > 64 * 1024 -> 4096
+              backlog > 16 * 1024 -> 1024
+              backlog > 4 * 1024 -> 256
+              else -> 48
+            }
+            val end = (offset + chunkSize).coerceAtMost(packet.size)
+            val chunk = packet.copyOfRange(offset, end)
+            onData(chunk)
+            pendingDisplayBytes.addAndGet(-(end - offset))
+            offset = end
+
+            // Small terminal bursts are intentionally paced so command output
+            // appears progressively instead of flashing in as one large frame.
+            // Large bursts automatically catch up to keep TUIs responsive.
+            val delayMs = when {
+              backlog > 64 * 1024 -> 0L
+              backlog > 16 * 1024 -> 1L
+              backlog > 4 * 1024 -> 3L
+              else -> 6L
+            }
+            if (delayMs > 0L && offset < packet.size) Thread.sleep(delayMs)
+          }
+        }
+      } catch (_: InterruptedException) {
+        // Normal shutdown path.
+      } catch (error: Throwable) {
+        if (!closed.get()) closeFromRemote(error)
+      }
+    }, "zdt-vps-terminal-display").apply {
+      isDaemon = true
+      start()
+    }
   }
 
   private fun closeFromRemote(error: Throwable?) {
@@ -532,6 +588,10 @@ class VpsInteractiveTerminalConnection internal constructor(
   }
 
   private fun closeResources() {
+    displayThread?.interrupt()
+    readerThread?.interrupt()
+    displayQueue.clear()
+    pendingDisplayBytes.set(0)
     runCatching { input.close() }
     runCatching { output.close() }
     runCatching { channel.disconnect() }

@@ -4,7 +4,6 @@ import android.content.ClipboardManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.expandVertically
@@ -13,8 +12,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloat
@@ -72,7 +69,6 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLifecycleOwner
@@ -92,7 +88,9 @@ import com.android.zdtd.service.vps.VpsTerminalController
 import com.android.zdtd.service.vps.VpsTerminalError
 import com.android.zdtd.service.vps.VpsTerminalStage
 import com.android.zdtd.service.vps.VpsTerminalStageState
+import com.android.zdtd.service.vps.VpsTerminalViewport
 import com.android.zdtd.service.vps.VpsViewModel
+import kotlinx.coroutines.delay
 import java.util.concurrent.atomic.AtomicReference
 import org.connectbot.terminal.ModifierManager
 import org.connectbot.terminal.Terminal as TerminalEmulatorView
@@ -150,6 +148,16 @@ fun VpsTerminalScreen(
       server = server,
       scope = scope,
       onTerminalData = { bytes -> emulatorRef.get()?.writeInput(bytes) },
+      initialViewport = {
+        dimensionsRef.get()?.let { dimensions ->
+          VpsTerminalViewport(
+            columns = dimensions.columns,
+            rows = dimensions.rows,
+            widthPixels = dimensions.widthPixels,
+            heightPixels = dimensions.heightPixels,
+          )
+        }
+      },
       onConnectionReady = { connection ->
         connectionRef.set(connection)
         dimensionsRef.get()?.let { dimensions ->
@@ -173,53 +181,49 @@ fun VpsTerminalScreen(
     }
   }
 
-  AnimatedContent(
-    targetState = state.ready,
-    transitionSpec = {
-      if (targetState) {
-        (
-          fadeIn(tween(260, easing = FastOutSlowInEasing)) +
-            slideInVertically(tween(360, easing = FastOutSlowInEasing)) { -it / 14 } +
-            scaleIn(
-              initialScale = 0.985f,
-              transformOrigin = TransformOrigin(0.5f, 0f),
-              animationSpec = tween(360, easing = FastOutSlowInEasing),
-            )
-          ) togetherWith (
-          fadeOut(tween(190)) +
-            slideOutVertically(tween(300, easing = FastOutSlowInEasing)) { it / 22 } +
-            scaleOut(
-              targetScale = 0.98f,
-              transformOrigin = TransformOrigin(0.5f, 0f),
-              animationSpec = tween(300, easing = FastOutSlowInEasing),
-            )
-          )
-      } else {
-        (fadeIn(tween(220)) + scaleIn(initialScale = 0.985f)) togetherWith fadeOut(tween(180))
-      }.using(SizeTransform(clip = false))
-    },
-    label = "vpsTerminalReady",
-  ) { ready ->
-    if (ready) {
-      VpsInteractiveTerminal(
-        serverName = server.name,
-        emulator = emulator,
-        modifierManager = modifierManager,
-        topContentPadding = topContentPadding,
-        bottomContentPadding = bottomContentPadding,
-      )
-    } else {
-      VpsTerminalPreparation(
-        state = state,
-        serverName = server.name,
-        topContentPadding = topContentPadding,
-        bottomContentPadding = bottomContentPadding,
-        onRetry = controller::retry,
-      )
+  val terminalAlpha by animateFloatAsState(
+    targetValue = if (state.ready) 1f else 0f,
+    animationSpec = tween(220, easing = FastOutSlowInEasing),
+    label = "vpsTerminalViewportAlpha",
+  )
+
+  Box(
+    modifier = Modifier
+      .fillMaxSize()
+      .background(TerminalBackground),
+  ) {
+    // Keep the VT surface composed while the preparation card is visible. This
+    // lets termlib establish the real viewport dimensions before tmux attaches,
+    // avoiding the initial 80x24 -> device-size redraw that used to corrupt
+    // prompts and the tmux status line.
+    VpsInteractiveTerminal(
+      serverName = server.name,
+      emulator = emulator,
+      modifierManager = modifierManager,
+      topContentPadding = topContentPadding,
+      bottomContentPadding = bottomContentPadding,
+      interactiveEnabled = state.ready,
+      modifier = Modifier.alpha(terminalAlpha),
+    )
+
+    AnimatedVisibility(
+      visible = !state.ready,
+      modifier = Modifier.fillMaxSize(),
+      enter = fadeIn(tween(180)),
+      exit = fadeOut(tween(220, easing = FastOutSlowInEasing)),
+    ) {
+      Box(Modifier.fillMaxSize().background(TerminalBackground)) {
+        VpsTerminalPreparation(
+          state = state,
+          serverName = server.name,
+          topContentPadding = topContentPadding,
+          bottomContentPadding = bottomContentPadding,
+          onRetry = controller::retry,
+        )
+      }
     }
   }
 }
-
 @Composable
 private fun VpsInteractiveTerminal(
   serverName: String,
@@ -227,6 +231,8 @@ private fun VpsInteractiveTerminal(
   modifierManager: VpsTerminalModifierManager,
   topContentPadding: Dp,
   bottomContentPadding: Dp,
+  interactiveEnabled: Boolean,
+  modifier: Modifier = Modifier,
 ) {
   val context = LocalContext.current
   val focusManager = LocalFocusManager.current
@@ -234,7 +240,34 @@ private fun VpsInteractiveTerminal(
   val lifecycleOwner = LocalLifecycleOwner.current
   val focusRequester = remember { FocusRequester() }
   var imeVisible by remember { mutableStateOf(false) }
-  var softKeyboardRequested by rememberSaveable(serverName) { mutableStateOf(true) }
+  var softKeyboardRequested by rememberSaveable(serverName) { mutableStateOf(false) }
+  var autoShowConsumed by rememberSaveable(serverName) { mutableStateOf(false) }
+  var resizeSettleGeneration by remember { mutableStateOf(0) }
+  var resizeSuspended by remember { mutableStateOf(true) }
+  var tmuxCopyMode by remember { mutableStateOf(false) }
+
+  fun settleTerminalResize() {
+    resizeSettleGeneration += 1
+  }
+
+  // termlib can deliberately hold its current grid while Android animates the
+  // IME. Only the final viewport size is then sent to tmux. Without this, the
+  // keyboard + extra-key shelf can generate several PTY resizes in a few
+  // frames, which is exactly what caused the green tmux bar to jump and prompt
+  // characters to be partially redrawn/erased.
+  LaunchedEffect(resizeSettleGeneration, interactiveEnabled) {
+    resizeSuspended = true
+    delay(if (interactiveEnabled) 430L else 180L)
+    resizeSuspended = false
+  }
+
+  LaunchedEffect(interactiveEnabled) {
+    if (interactiveEnabled && !autoShowConsumed) {
+      autoShowConsumed = true
+      softKeyboardRequested = true
+      settleTerminalResize()
+    }
+  }
 
   DisposableEffect(lifecycleOwner) {
     val observer = LifecycleEventObserver { _, event ->
@@ -243,23 +276,52 @@ private fun VpsInteractiveTerminal(
         focusManager.clearFocus(force = true)
         imeVisible = false
         softKeyboardRequested = false
+        settleTerminalResize()
       }
     }
     lifecycleOwner.lifecycle.addObserver(observer)
     onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
   }
 
-  BackHandler(enabled = imeVisible) {
+  BackHandler(enabled = interactiveEnabled && imeVisible) {
     keyboardController?.hide()
     focusManager.clearFocus(force = true)
     imeVisible = false
     softKeyboardRequested = false
+    settleTerminalResize()
   }
 
   val clipboardManager = remember(context) { context.getSystemService(ClipboardManager::class.java) }
 
+  fun sendTmuxPage(key: Int) {
+    if (key == VTermKey.PAGEUP && !tmuxCopyMode) {
+      // Enter tmux copy-mode using its default prefix, then page through tmux's
+      // own pane history. Local terminal scrollback cannot expose the full pane
+      // history while tmux owns the alternate screen.
+      emulator.dispatchCharacter(0x04, 'b'.code) // Ctrl+B
+      emulator.dispatchCharacter(0, '['.code)
+      tmuxCopyMode = true
+    }
+    emulator.dispatchKey(0, key)
+  }
+
+  fun sendEscape() {
+    dispatchTerminalKey(emulator, modifierManager, VTermKey.ESCAPE)
+    tmuxCopyMode = false
+  }
+
+  val pageGestureHandler: ((Int) -> Unit)? = if (interactiveEnabled) {
+    { key ->
+      when (key) {
+        VTermKey.PAGEUP, VTermKey.PAGEDOWN -> sendTmuxPage(key)
+      }
+    }
+  } else {
+    null
+  }
+
   Column(
-    modifier = Modifier
+    modifier = modifier
       .fillMaxSize()
       .padding(top = topContentPadding, bottom = bottomContentPadding)
       .imePadding()
@@ -280,14 +342,20 @@ private fun VpsInteractiveTerminal(
         maxFontSize = 20.sp,
         backgroundColor = TerminalBackground,
         foregroundColor = TerminalForeground,
-        keyboardEnabled = true,
-        showSoftKeyboard = softKeyboardRequested,
+        keyboardEnabled = interactiveEnabled,
+        showSoftKeyboard = interactiveEnabled && softKeyboardRequested,
         focusRequester = focusRequester,
         modifierManager = modifierManager,
+        resizeSuspended = resizeSuspended,
+        onPageGesture = pageGestureHandler,
         onTerminalTap = {
-          if (!softKeyboardRequested) softKeyboardRequested = true
+          if (interactiveEnabled && !softKeyboardRequested) {
+            softKeyboardRequested = true
+            settleTerminalResize()
+          }
         },
         onImeVisibilityChanged = { visible ->
+          if (imeVisible != visible) settleTerminalResize()
           val wasVisible = imeVisible
           imeVisible = visible
           if (wasVisible && !visible) softKeyboardRequested = false
@@ -303,10 +371,17 @@ private fun VpsInteractiveTerminal(
       )
     }
 
-    AnimatedVisibility(visible = imeVisible) {
+    AnimatedVisibility(
+      visible = interactiveEnabled && imeVisible,
+      enter = fadeIn(tween(150)) + expandVertically(tween(210, easing = FastOutSlowInEasing)),
+      exit = fadeOut(tween(120)) + shrinkVertically(tween(190, easing = FastOutSlowInEasing)),
+    ) {
       VpsTerminalExtraKeys(
         emulator = emulator,
         modifierManager = modifierManager,
+        onEscape = ::sendEscape,
+        onPageUp = { sendTmuxPage(VTermKey.PAGEUP) },
+        onPageDown = { sendTmuxPage(VTermKey.PAGEDOWN) },
         onPaste = {
           val text = clipboardManager?.primaryClip
             ?.takeIf { it.itemCount > 0 }
@@ -355,6 +430,9 @@ private fun VpsTerminalStatusBar(serverName: String) {
 private fun VpsTerminalExtraKeys(
   emulator: TerminalEmulator,
   modifierManager: VpsTerminalModifierManager,
+  onEscape: () -> Unit,
+  onPageUp: () -> Unit,
+  onPageDown: () -> Unit,
   onPaste: () -> Unit,
 ) {
   val scroll = rememberScrollState()
@@ -375,10 +453,12 @@ private fun VpsTerminalExtraKeys(
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
           VpsTerminalModifierKey("CTRL", modifierManager.ctrlActive) { modifierManager.toggleCtrl() }
           VpsTerminalModifierKey("ALT", modifierManager.altActive) { modifierManager.toggleAlt() }
-          VpsTerminalKey("ESC") { dispatchTerminalKey(emulator, modifierManager, VTermKey.ESCAPE) }
+          VpsTerminalKey("ESC") { onEscape() }
           VpsTerminalKey("TAB") { dispatchTerminalKey(emulator, modifierManager, VTermKey.TAB) }
           VpsTerminalKey("HOME") { dispatchTerminalKey(emulator, modifierManager, VTermKey.HOME) }
           VpsTerminalKey("END") { dispatchTerminalKey(emulator, modifierManager, VTermKey.END) }
+          VpsTerminalKey("PGUP") { onPageUp() }
+          VpsTerminalKey("PGDN") { onPageDown() }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
           VpsTerminalModifierKey("SHIFT", modifierManager.shiftActive) { modifierManager.toggleShift() }

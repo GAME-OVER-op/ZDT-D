@@ -5,12 +5,8 @@ import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -25,7 +21,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -112,69 +107,20 @@ fun AppsHost(
   AnimatedContent(
     targetState = route,
     transitionSpec = {
+      // Match the non-root navigation motion: a short directional slide with
+      // a soft cross-fade. It stays readable on phones and wide/TV layouts
+      // without the heavier card-stack scaling that used to make root feel
+      // visually busier than non-root.
       val forward = targetState.depth() > initialState.depth()
-      val enterScale = if (landscapeControl) 0.978f else 0.962f
-      val underScale = if (landscapeControl) 0.972f else 0.955f
-      val origin = TransformOrigin(0.5f, 0f)
-
-      if (forward) {
-        val enter =
-          fadeIn(tween(220)) +
-            slideInVertically(tween(420, easing = androidx.compose.animation.core.FastOutSlowInEasing)) {
-              -it / if (landscapeControl) 18 else 12
-            } +
-            slideInHorizontally(tween(420, easing = androidx.compose.animation.core.FastOutSlowInEasing)) {
-              it / if (landscapeControl) 30 else 22
-            } +
-            scaleIn(
-              initialScale = enterScale,
-              transformOrigin = origin,
-              animationSpec = tween(420, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-            )
-        val exit =
-          fadeOut(tween(230)) +
-            slideOutVertically(tween(380, easing = androidx.compose.animation.core.FastOutSlowInEasing)) {
-              it / if (landscapeControl) 24 else 18
-            } +
-            slideOutHorizontally(tween(380, easing = androidx.compose.animation.core.FastOutSlowInEasing)) {
-              -it / if (landscapeControl) 42 else 34
-            } +
-            scaleOut(
-              targetScale = underScale,
-              transformOrigin = origin,
-              animationSpec = tween(380, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-            )
-        (enter togetherWith exit).using(SizeTransform(clip = false))
-      } else {
-        // Back removes the top card upward; the previous page is revealed from
-        // underneath instead of entering from the bottom.
-        val enter =
-          fadeIn(tween(260)) +
-            slideInHorizontally(tween(400, easing = androidx.compose.animation.core.FastOutSlowInEasing)) {
-              -it / if (landscapeControl) 46 else 38
-            } +
-            scaleIn(
-              initialScale = underScale,
-              transformOrigin = origin,
-              animationSpec = tween(400, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-            )
-        val exit =
-          fadeOut(tween(220)) +
-            slideOutVertically(tween(390, easing = androidx.compose.animation.core.FastOutSlowInEasing)) {
-              -it / if (landscapeControl) 17 else 11
-            } +
-            slideOutHorizontally(tween(390, easing = androidx.compose.animation.core.FastOutSlowInEasing)) {
-              it / if (landscapeControl) 30 else 22
-            } +
-            scaleOut(
-              targetScale = 0.992f,
-              transformOrigin = origin,
-              animationSpec = tween(390, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-            )
-        (enter togetherWith exit).using(SizeTransform(clip = false))
+      val enter = fadeIn(tween(160)) + slideInHorizontally(tween(220)) { width ->
+        if (forward) width / 6 else -width / 6
       }
+      val exit = fadeOut(tween(160)) + slideOutHorizontally(tween(220)) { width ->
+        if (forward) -width / 6 else width / 6
+      }
+      (enter togetherWith exit).using(SizeTransform(clip = false))
     },
-    label = "appsRouteCardDeck",
+    label = "appsRouteTransition",
   ) { r ->
     when (r) {
       AppsRoute.List -> AppsListScreen(

@@ -50,11 +50,19 @@ private fun defaultTerminalSteps(): List<VpsTerminalStep> = listOf(
   VpsTerminalStep(VpsTerminalStage.CONNECT, VpsTerminalStageState.PENDING),
 )
 
+data class VpsTerminalViewport(
+  val columns: Int,
+  val rows: Int,
+  val widthPixels: Int,
+  val heightPixels: Int,
+)
+
 class VpsTerminalController(
   private val server: VpsServer,
   private val scope: CoroutineScope,
   private val onTerminalData: (ByteArray) -> Unit,
   private val onConnectionReady: (VpsInteractiveTerminalConnection) -> Unit,
+  private val initialViewport: () -> VpsTerminalViewport? = { null },
   private val ssh: VpsSshClient = VpsSshClient(),
 ) {
   private val _state = MutableStateFlow(VpsTerminalUiState())
@@ -120,8 +128,24 @@ class VpsTerminalController(
         }
 
         val connectStarted = setRunning(VpsTerminalStage.CONNECT)
+        // Ask tmux to expose a real blinking block cursor to the VT renderer.
+        // Older tmux versions may not support these options, so preparation
+        // must never fail only because a cosmetic option is unavailable.
+        runCatching {
+          ssh.execute(
+            server,
+            "tmux set-option -q -w -t ${VpsInteractiveTerminalConnection.SESSION_NAME} cursor-style blinking-block >/dev/null 2>&1 || true; " +
+              "tmux set-option -q -w -t ${VpsInteractiveTerminalConnection.SESSION_NAME} scroll-on-clear on >/dev/null 2>&1 || true",
+            timeoutMs = 10_000L,
+          )
+        }
+        val viewport = initialViewport()
         val opened = ssh.openInteractiveTerminal(
           server = server,
+          initialColumns = viewport?.columns ?: 80,
+          initialRows = viewport?.rows ?: 24,
+          initialWidthPixels = viewport?.widthPixels ?: 0,
+          initialHeightPixels = viewport?.heightPixels ?: 0,
           onData = onTerminalData,
           onClosed = { error ->
             if (!destroyed && runGeneration == generation.get()) {

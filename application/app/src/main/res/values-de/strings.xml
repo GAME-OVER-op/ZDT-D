@@ -2593,4 +2593,6 @@ Die verbleibende Ursache liegt wahrscheinlich beim Daemon/der API. Prüfe die Da
     <string name="vps_terminal_error_session">zdt-d_console konnte nicht vorbereitet werden</string>
     <string name="vps_terminal_error_connect">Verbindung zum Terminal fehlgeschlagen</string>
     <string name="vps_terminal_error_disconnected">Terminalverbindung wurde geschlossen</string>
+    <string name="non_root_log_cascade_backend_skipped">Kaskade: %1$s wurde nach einem Startfehler übersprungen: %2$s</string>
+    <string name="non_root_profile_failure_open_log">Protokoll des Startfehlers öffnen</string>
 </resources>

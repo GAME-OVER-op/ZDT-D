@@ -2593,4 +2593,6 @@ ZDT-D को सही तरह इंस्टॉल करने के ल�
     <string name="vps_terminal_error_session">zdt-d_console तैयार नहीं किया जा सका</string>
     <string name="vps_terminal_error_connect">टर्मिनल से कनेक्ट नहीं हो सका</string>
     <string name="vps_terminal_error_disconnected">टर्मिनल कनेक्शन बंद हो गया</string>
+    <string name="non_root_log_cascade_backend_skipped">कैस्केड: स्टार्टअप त्रुटि के बाद %1$s को छोड़ दिया गया: %2$s</string>
+    <string name="non_root_profile_failure_open_log">स्टार्टअप त्रुटि लॉग खोलें</string>
 </resources>

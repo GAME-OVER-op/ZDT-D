@@ -2592,4 +2592,6 @@ Kalan neden muhtemelen daemon/API tarafındadır. Kesin yazma hatası için daem
     <string name="vps_terminal_error_session">zdt-d_console hazırlanamadı</string>
     <string name="vps_terminal_error_connect">Terminale bağlanılamadı</string>
     <string name="vps_terminal_error_disconnected">Terminal bağlantısı kapatıldı</string>
+    <string name="non_root_log_cascade_backend_skipped">Kaskad: %1$s başlatma hatası nedeniyle atlandı: %2$s</string>
+    <string name="non_root_profile_failure_open_log">Başlatma hatası günlüğünü aç</string>
 </resources>

@@ -64,6 +64,7 @@ class NonRootViewModel(application: Application) : AndroidViewModel(application)
   val vpnState: StateFlow<NonRootVpnState> = NonRootVpnRuntime.state
   val vpnLastError: StateFlow<String?> = NonRootVpnRuntime.lastError
   val vpnLogs: StateFlow<List<NonRootRuntimeLogEntry>> = NonRootVpnRuntime.logs
+  val vpnProfileFailures: StateFlow<List<NonRootProfileFailure>> = NonRootVpnRuntime.profileFailures
 
   init {
     // Create the private runtime/token now so T2S and proxy backends can rely on

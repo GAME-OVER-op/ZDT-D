@@ -27,6 +27,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -619,9 +620,11 @@ internal fun AnimatedPowerDial(
   val light = isLightColorScheme()
   val interaction = remember { MutableInteractionSource() }
   val pressed by interaction.collectIsPressedAsState()
+  val focused by interaction.collectIsFocusedAsState()
   val pressScale by animateFloatAsState(
     targetValue = when {
       pressed -> 0.945f
+      focused && enabled -> 1.025f
       busy -> 0.982f
       else -> 1f
     },
@@ -724,6 +727,14 @@ internal fun AnimatedPowerDial(
     val ticksR = dim * 0.355f
     val centerR = dim * 0.255f
     val px = density
+
+    if (focused && enabled) {
+      drawCircle(
+        color = scheme.primary.copy(alpha = 0.78f),
+        radius = outerR + 2.dp.toPx(),
+        style = Stroke(width = 2.dp.toPx()),
+      )
+    }
 
     // Soft ambient halo. On light theme this becomes a very restrained tint so
     // the control remains readable on white surfaces instead of looking muddy.

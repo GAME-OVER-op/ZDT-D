@@ -2592,4 +2592,6 @@ ZDT-D를 올바르게 설치하려면 metamodule이 정상 작동하거나 완�
     <string name="vps_terminal_error_session">zdt-d_console을 준비할 수 없습니다</string>
     <string name="vps_terminal_error_connect">터미널에 연결할 수 없습니다</string>
     <string name="vps_terminal_error_disconnected">터미널 연결이 종료되었습니다</string>
+    <string name="non_root_log_cascade_backend_skipped">캐스케이드: 시작 오류로 %1$s을(를) 건너뜀: %2$s</string>
+    <string name="non_root_profile_failure_open_log">시작 오류 로그 열기</string>
 </resources>

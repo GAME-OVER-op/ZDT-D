@@ -2595,4 +2595,6 @@ APatch: 10700+</string>
     <string name="vps_terminal_error_session">Не вдалося підготувати zdt-d_console</string>
     <string name="vps_terminal_error_connect">Не вдалося підключитися до термінала</string>
     <string name="vps_terminal_error_disconnected">З’єднання з терміналом закрито</string>
+    <string name="non_root_log_cascade_backend_skipped">Каскад: %1$s пропущено через помилку запуску: %2$s</string>
+    <string name="non_root_profile_failure_open_log">Відкрити журнал помилки запуску</string>
 </resources>

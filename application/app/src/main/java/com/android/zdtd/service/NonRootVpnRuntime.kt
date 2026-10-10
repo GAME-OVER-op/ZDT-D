@@ -25,6 +25,16 @@ data class NonRootRuntimeLogEntry(
   val message: String,
 )
 
+data class NonRootProfileFailure(
+  val profileId: String,
+  val toolId: String,
+  val profileName: String,
+  val serverId: String? = null,
+  val serverName: String? = null,
+  val message: String,
+  val timestampMillis: Long = System.currentTimeMillis(),
+)
+
 /** Process-local status and lifecycle progress shared by the non-root service and Compose UI. */
 object NonRootVpnRuntime {
   private const val MAX_LOG_ENTRIES = 100
@@ -39,6 +49,9 @@ object NonRootVpnRuntime {
   private val _logs = MutableStateFlow<List<NonRootRuntimeLogEntry>>(emptyList())
   val logs: StateFlow<List<NonRootRuntimeLogEntry>> = _logs.asStateFlow()
 
+  private val _profileFailures = MutableStateFlow<List<NonRootProfileFailure>>(emptyList())
+  val profileFailures: StateFlow<List<NonRootProfileFailure>> = _profileFailures.asStateFlow()
+
   internal fun update(state: NonRootVpnState, error: String? = null) {
     _state.value = state
     _lastError.value = error
@@ -47,6 +60,19 @@ object NonRootVpnRuntime {
   @Synchronized
   internal fun clearLogs() {
     _logs.value = emptyList()
+  }
+
+  @Synchronized
+  internal fun clearProfileFailures() {
+    _profileFailures.value = emptyList()
+  }
+
+  @Synchronized
+  internal fun reportProfileFailure(failure: NonRootProfileFailure) {
+    val withoutSameTarget = _profileFailures.value.filterNot { existing ->
+      existing.profileId == failure.profileId && existing.serverId == failure.serverId
+    }
+    _profileFailures.value = withoutSameTarget + failure
   }
 
   @Synchronized

@@ -1,5 +1,6 @@
 package com.android.zdtd.service.ui
 
+import android.content.res.Configuration
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxSize
@@ -37,6 +38,26 @@ internal fun rememberIsTabletLayout(): Boolean {
     // landscape even though there is ample horizontal space. Setup screens are
     // better served by the dashboard layout in that case as well.
     smallestWidth >= 600 || (width >= 600 && width > height)
+  }
+}
+
+
+@Composable
+internal fun rememberIsTelevision(): Boolean {
+  val configuration = LocalConfiguration.current
+  return remember(configuration.uiMode) {
+    configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
+  }
+}
+
+@Composable
+internal fun rememberUseNonRootWideLayout(): Boolean {
+  val configuration = LocalConfiguration.current
+  val width = configuration.screenWidthDp
+  val height = configuration.screenHeightDp
+  val television = configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
+  return remember(width, height, television) {
+    television || (width >= 640 && width > height)
   }
 }
 

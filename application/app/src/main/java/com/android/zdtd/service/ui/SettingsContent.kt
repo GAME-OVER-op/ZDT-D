@@ -81,8 +81,55 @@ fun NonRootSettingsContent(
   onAppRoutingModeChange: (NonRootAppRoutingMode) -> Unit,
   onAppRoutingPackagesChange: (Set<String>) -> Unit,
   onRestartVpn: () -> Unit,
+  landscapeColumns: Boolean = false,
 ) {
   val compactWidth = rememberIsCompactWidth()
+  if (landscapeColumns) {
+    Row(
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(16.dp),
+      horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+      Column(
+        modifier = Modifier
+          .weight(0.44f)
+          .fillMaxHeight()
+          .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+      ) {
+        SettingsLanguageSection(
+          languageMode = languageMode,
+          compactWidth = false,
+          onLanguageModeChange = onLanguageModeChange,
+        )
+        SettingsThemeSection(
+          themeMode = themeMode,
+          compactWidth = false,
+          onThemeModeChange = onThemeModeChange,
+        )
+      }
+      Column(
+        modifier = Modifier
+          .weight(0.56f)
+          .fillMaxHeight()
+          .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+      ) {
+        NonRootAppRoutingSection(
+          mode = appRoutingMode,
+          selectedPackages = appRoutingPackages,
+          vpnState = vpnState,
+          onModeChange = onAppRoutingModeChange,
+          onPackagesChange = onAppRoutingPackagesChange,
+          onRestartVpn = onRestartVpn,
+        )
+        Spacer(Modifier.height(8.dp))
+      }
+    }
+    return
+  }
+
   Column(
     modifier = Modifier
       .fillMaxSize()

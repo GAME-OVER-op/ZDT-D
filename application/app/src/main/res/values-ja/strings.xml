@@ -2592,4 +2592,6 @@ ZDT-D を正しくインストールするには、metamodule が正常に動作
     <string name="vps_terminal_error_session">zdt-d_console を準備できませんでした</string>
     <string name="vps_terminal_error_connect">ターミナルに接続できませんでした</string>
     <string name="vps_terminal_error_disconnected">ターミナル接続が閉じられました</string>
+    <string name="non_root_log_cascade_backend_skipped">カスケード: 起動エラーのため %1$s をスキップしました: %2$s</string>
+    <string name="non_root_profile_failure_open_log">起動エラーログを開く</string>
 </resources>

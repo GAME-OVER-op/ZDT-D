@@ -80,6 +80,7 @@ class NonRootActivity : AppCompatActivity() {
       val vpnState by vm.vpnState.collectAsStateWithLifecycle()
       val vpnLastError by vm.vpnLastError.collectAsStateWithLifecycle()
       val vpnLogs by vm.vpnLogs.collectAsStateWithLifecycle()
+      val vpnProfileFailures by vm.vpnProfileFailures.collectAsStateWithLifecycle()
       val tgWsConfig by vm.tgWsConfig.collectAsStateWithLifecycle()
       val tgWsPluginState by vm.tgWsPluginState.collectAsStateWithLifecycle()
       val tgWsRuntimeState by vm.tgWsRuntimeState.collectAsStateWithLifecycle()
@@ -105,6 +106,7 @@ class NonRootActivity : AppCompatActivity() {
             vpnState = vpnState,
             vpnLastError = vpnLastError,
             vpnLogs = vpnLogs,
+            vpnProfileFailures = vpnProfileFailures,
             tgWsConfig = tgWsConfig,
             tgWsPluginState = tgWsPluginState,
             tgWsRuntimeState = tgWsRuntimeState,

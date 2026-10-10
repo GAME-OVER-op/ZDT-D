@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <permission
         android:name="com.android.zdtd.service.plugin.com.permission.CONTROL_TGWS"
         android:protectionLevel="signature" />

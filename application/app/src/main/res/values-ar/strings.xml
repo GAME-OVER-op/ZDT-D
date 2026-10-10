@@ -2597,4 +2597,6 @@ APatch: ‏10700+</string>
     <string name="vps_terminal_error_session">تعذر إعداد zdt-d_console</string>
     <string name="vps_terminal_error_connect">تعذر الاتصال بالطرفية</string>
     <string name="vps_terminal_error_disconnected">تم إغلاق اتصال الطرفية</string>
+    <string name="non_root_log_cascade_backend_skipped">التسلسل: تم تخطي %1$s بعد خطأ في التشغيل: %2$s</string>
+    <string name="non_root_profile_failure_open_log">فتح سجل خطأ التشغيل</string>
 </resources>

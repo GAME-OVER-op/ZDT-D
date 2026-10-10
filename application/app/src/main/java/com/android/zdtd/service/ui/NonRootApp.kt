@@ -19,8 +19,16 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -44,6 +52,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -91,13 +102,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.composed
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -112,6 +136,7 @@ import com.android.zdtd.service.NonRootCascadeRouteItemType
 import com.android.zdtd.service.NonRootCascadeState
 import com.android.zdtd.service.NonRootDirectOperaConfig
 import com.android.zdtd.service.NonRootPortRegistry
+import com.android.zdtd.service.NonRootProfileFailure
 import com.android.zdtd.service.NonRootRuntimeLogEntry
 import com.android.zdtd.service.NonRootRuntimeStore
 import com.android.zdtd.service.NonRootT2sConfig
@@ -150,6 +175,7 @@ fun NonRootApp(
   vpnState: NonRootVpnState,
   vpnLastError: String?,
   vpnLogs: List<NonRootRuntimeLogEntry>,
+  vpnProfileFailures: List<NonRootProfileFailure>,
   tgWsConfig: NonRootTgWsConfig,
   tgWsPluginState: TgWsPluginState,
   tgWsRuntimeState: NonRootTgWsRuntimeState,
@@ -200,11 +226,20 @@ fun NonRootApp(
   var vpsServiceKind by remember { mutableStateOf<VpsServiceKind?>(null) }
   var vpsProfileId by remember { mutableStateOf<String?>(null) }
   var pendingVpsImport by remember { mutableStateOf<Pair<VpsConfigResult, String>?>(null) }
-  val compactBottomBar = rememberUseScrollableTabs() || rememberIsShortHeight()
-  val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-  val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-  val topContentPadding = topInset + 78.dp
-  val bottomContentPadding = bottomInset + if (compactBottomBar) 78.dp else 88.dp
+  val wideLayout = rememberUseNonRootWideLayout()
+  val television = rememberIsTelevision()
+  val compactBottomBar = !wideLayout && (rememberUseScrollableTabs() || rememberIsShortHeight())
+  val topInset = if (wideLayout) 0.dp else WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+  val bottomInset = if (wideLayout) 0.dp else WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+  val topContentPadding = if (wideLayout) 60.dp else topInset + 78.dp
+  val bottomContentPadding = if (wideLayout) 16.dp else bottomInset + if (compactBottomBar) 78.dp else 88.dp
+  val hasProfileFailures = vpnProfileFailures.isNotEmpty()
+  val showProfileFailureAttention = hasProfileFailures &&
+    (vpnState == NonRootVpnState.STARTING || vpnState == NonRootVpnState.RUNNING)
+
+  LaunchedEffect(workMode) {
+    if (workMode == NonRootWorkMode.DIRECT && tab == Tab.STATS) tab = Tab.HOME
+  }
 
   BackHandler(enabled = showSettings || cascadeProfileId != null || showT2sSettings || showTgWsSettings || showVps || tab != Tab.HOME) {
     when {
@@ -224,7 +259,8 @@ fun NonRootApp(
   Box(
     modifier = Modifier
       .fillMaxSize()
-      .background(MaterialTheme.colorScheme.background),
+      .background(MaterialTheme.colorScheme.background)
+      .then(if (wideLayout) Modifier.windowInsetsPadding(WindowInsets.safeDrawing) else Modifier),
   ) {
     val editedProfile = cascadeProfileId?.let { id -> cascadeState.profiles.firstOrNull { it.id == id } }
     val pageKey = when {
@@ -238,8 +274,49 @@ fun NonRootApp(
       showVps -> "vps"
       else -> "tab:${tab.name}"
     }
+    val currentTitle = when {
+      editedProfile != null -> stringResource(R.string.non_root_profile_settings)
+      showT2sSettings -> stringResource(R.string.non_root_t2s_settings)
+      showTgWsSettings -> stringResource(R.string.tgws_basic_title)
+      showVps && showVpsTerminal -> stringResource(R.string.vps_terminal_title)
+      showVps -> stringResource(R.string.vps_servers_title)
+      else -> when (tab) {
+        Tab.HOME -> stringResource(R.string.app_name)
+        Tab.STATS -> stringResource(R.string.nav_stats)
+        Tab.APPS -> stringResource(R.string.nav_programs)
+        Tab.SUPPORT -> stringResource(R.string.nav_support)
+      }
+    }
+    val currentBackAction: (() -> Unit)? = when {
+      editedProfile != null -> ({ cascadeProfileId = null })
+      showT2sSettings -> ({ showT2sSettings = false })
+      showTgWsSettings -> ({ showTgWsSettings = false })
+      vpsProfileId != null -> ({ vpsProfileId = null })
+      vpsServiceKind != null -> ({ vpsServiceKind = null })
+      showVpsTerminal -> ({ showVpsTerminal = false })
+      vpsServerId != null -> ({ vpsServerId = null })
+      showVps -> ({ showVps = false })
+      else -> null
+    }
+    val currentLogsAction: (() -> Unit)? = editedProfile?.let { profile ->
+      {
+        programLogTarget = ProgramLogTarget(
+          programId = profile.toolId,
+          profile = profile.id,
+          title = "${nonRootToolTitle(profile.toolId)} — ${profile.name}",
+          source = ProgramLogSource.Local(
+            directoryPath = nonRootLogsDir,
+            fileNameToken = profile.id,
+          ),
+        )
+      }
+    }
+    val topLevelNavigationVisible = editedProfile == null && !showT2sSettings && !showTgWsSettings && !showVps
     AnimatedContent(
       targetState = pageKey,
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(end = if (wideLayout) 104.dp else 0.dp),
       transitionSpec = {
         val forward = nonRootPageOrder(targetState) > nonRootPageOrder(initialState)
         val enter = fadeIn(tween(160)) + slideInHorizontally(tween(220)) { width ->
@@ -342,6 +419,7 @@ fun NonRootApp(
           onVpnStart = onVpnStart,
           onVpnStop = onVpnStop,
           onRequestFullVersion = onRequestFullVersion,
+          wideLayout = wideLayout,
         )
         page == "tab:STATS" -> NonRootStatsScreen(
           topContentPadding = topContentPadding,
@@ -359,6 +437,9 @@ fun NonRootApp(
           tgWsPluginState = tgWsPluginState,
           tgWsRuntimeState = tgWsRuntimeState,
           configurationEnabled = vpnState == NonRootVpnState.STOPPED || vpnState == NonRootVpnState.ERROR,
+          profileFailures = vpnProfileFailures,
+          wideLayout = wideLayout,
+          television = television,
           onWorkModeChange = onWorkModeChange,
           onDirectSelectedProfileChange = onDirectSelectedProfileChange,
           onCreateCascadeProfile = onCreateCascadeProfile,
@@ -372,6 +453,17 @@ fun NonRootApp(
           onInstallOrUpdateTgWsPlugin = onInstallOrUpdateTgWsPlugin,
           onOpenVps = { showVps = true },
           onTgWsEnabledChange = { onTgWsConfigChange(tgWsConfig.copy(enabled = it)) },
+          onOpenFailureLog = { profile ->
+            programLogTarget = ProgramLogTarget(
+              programId = profile.toolId,
+              profile = profile.id,
+              title = "${nonRootToolTitle(profile.toolId)} — ${profile.name}",
+              source = ProgramLogSource.Local(
+                directoryPath = nonRootLogsDir,
+                fileNameToken = profile.id,
+              ),
+            )
+          },
         )
         else -> Box(Modifier.fillMaxSize().padding(bottom = bottomContentPadding)) {
           SupportScreen(topContentPadding = topContentPadding)
@@ -379,55 +471,51 @@ fun NonRootApp(
       }
     }
 
-    NonRootTopBarCard(
-      modifier = Modifier.align(Alignment.TopCenter),
-      title = when {
-        editedProfile != null -> stringResource(R.string.non_root_profile_settings)
-        showT2sSettings -> stringResource(R.string.non_root_t2s_settings)
-        showTgWsSettings -> stringResource(R.string.tgws_basic_title)
-        showVps && showVpsTerminal -> stringResource(R.string.vps_terminal_title)
-        showVps -> stringResource(R.string.vps_servers_title)
-        else -> when (tab) {
-          Tab.HOME -> stringResource(R.string.app_name)
-          Tab.STATS -> stringResource(R.string.nav_stats)
-          Tab.APPS -> stringResource(R.string.nav_programs)
-          Tab.SUPPORT -> stringResource(R.string.nav_support)
-        }
-      },
-      onBack = when {
-        editedProfile != null -> ({ cascadeProfileId = null })
-        showT2sSettings -> ({ showT2sSettings = false })
-        showTgWsSettings -> ({ showTgWsSettings = false })
-        vpsProfileId != null -> ({ vpsProfileId = null })
-        vpsServiceKind != null -> ({ vpsServiceKind = null })
-        showVpsTerminal -> ({ showVpsTerminal = false })
-        vpsServerId != null -> ({ vpsServerId = null })
-        showVps -> ({ showVps = false })
-        else -> null
-      },
-      onOpenLogs = editedProfile?.let { profile ->
-        {
-          programLogTarget = ProgramLogTarget(
-            programId = profile.toolId,
-            profile = profile.id,
-            title = "${nonRootToolTitle(profile.toolId)} — ${profile.name}",
-            source = ProgramLogSource.Local(
-              directoryPath = nonRootLogsDir,
-              fileNameToken = profile.id,
-            ),
-          )
-        }
-      },
-      onOpenSettings = { showSettings = true },
-    )
-
-    if (editedProfile == null && !showT2sSettings && !showTgWsSettings && !showVps) {
-      NonRootBottomNavigationCard(
-        modifier = Modifier.align(Alignment.BottomCenter),
-        compact = compactBottomBar,
-        tab = tab,
-        onTabChange = { tab = it },
+    if (wideLayout) {
+      NonRootWideHeader(
+        modifier = Modifier
+          .align(Alignment.TopStart)
+          .padding(end = 104.dp),
+        title = currentTitle,
+        onBack = currentBackAction,
       )
+      NonRootWideQuickActions(
+        modifier = Modifier
+          .align(Alignment.TopEnd)
+          .padding(top = 8.dp, end = 10.dp),
+        onOpenLogs = currentLogsAction,
+        onOpenSettings = { showSettings = true },
+      )
+      if (topLevelNavigationVisible) {
+        NonRootWideNavigation(
+          modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(end = 12.dp, bottom = 12.dp),
+          tab = tab,
+          showStats = workMode == NonRootWorkMode.CASCADE,
+          showToolsWarning = showProfileFailureAttention && tab != Tab.APPS,
+          onTabChange = { tab = it },
+        )
+      }
+    } else {
+      NonRootTopBarCard(
+        modifier = Modifier.align(Alignment.TopCenter),
+        title = currentTitle,
+        onBack = currentBackAction,
+        onOpenLogs = currentLogsAction,
+        onOpenSettings = { showSettings = true },
+      )
+
+      if (topLevelNavigationVisible) {
+        NonRootBottomNavigationCard(
+          modifier = Modifier.align(Alignment.BottomCenter),
+          compact = compactBottomBar,
+          tab = tab,
+          showStats = workMode == NonRootWorkMode.CASCADE,
+          showToolsWarning = showProfileFailureAttention && tab != Tab.APPS,
+          onTabChange = { tab = it },
+        )
+      }
     }
   }
 
@@ -507,6 +595,7 @@ fun NonRootApp(
         onAppRoutingModeChange = onAppRoutingModeChange,
         onAppRoutingPackagesChange = onAppRoutingPackagesChange,
         onRestartVpn = onRestartVpn,
+        landscapeColumns = wideLayout,
       )
     }
   }
@@ -539,7 +628,23 @@ private fun NonRootHomeScreen(
   onVpnStart: () -> Unit,
   onVpnStop: () -> Unit,
   onRequestFullVersion: () -> Unit,
+  wideLayout: Boolean = false,
 ) {
+  if (wideLayout) {
+    NonRootWideHomeScreen(
+      topContentPadding = topContentPadding,
+      bottomContentPadding = bottomContentPadding,
+      vpnState = vpnState,
+      vpnLastError = vpnLastError,
+      vpnLogs = vpnLogs,
+      fullAppUpgradeState = fullAppUpgradeState,
+      onVpnStart = onVpnStart,
+      onVpnStop = onVpnStop,
+      onRequestFullVersion = onRequestFullVersion,
+    )
+    return
+  }
+
   val screenPadding = rememberAdaptiveScreenPadding()
   val compact = rememberIsShortHeight()
   val busy = vpnState == NonRootVpnState.STARTING || vpnState == NonRootVpnState.STOPPING
@@ -560,9 +665,9 @@ private fun NonRootHomeScreen(
   }
   val actionText = stringResource(
     when (vpnState) {
-      NonRootVpnState.RUNNING -> R.string.home_action_stop_service
-      NonRootVpnState.STARTING -> R.string.home_power_starting
-      NonRootVpnState.STOPPING -> R.string.home_power_stopping
+      NonRootVpnState.RUNNING,
+      NonRootVpnState.STARTING -> R.string.home_action_stop_service
+      NonRootVpnState.STOPPING,
       NonRootVpnState.ERROR,
       NonRootVpnState.STOPPED -> R.string.home_action_start_service
     }
@@ -589,6 +694,7 @@ private fun NonRootHomeScreen(
       modifier = Modifier
         .fillMaxWidth()
         .animateContentSize(animationSpec = tween(220))
+        .nonRootFocusHighlight(RoundedCornerShape(if (compact) 22.dp else 28.dp))
         .clickable(onClick = { showRootSwitchConfirm = true }),
       shape = RoundedCornerShape(if (compact) 22.dp else 28.dp),
       color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -673,10 +779,11 @@ private fun NonRootHomeScreen(
       busy = busy,
       accent = accent,
       size = if (compact) 184.dp else 214.dp,
-      enabled = !busy,
+      enabled = true,
       contentDescription = actionText,
       onClick = {
-        if (vpnState == NonRootVpnState.RUNNING) onVpnStop() else onVpnStart()
+        if (vpnState == NonRootVpnState.RUNNING || vpnState == NonRootVpnState.STARTING) onVpnStop()
+        else onVpnStart()
       },
     )
 
@@ -696,6 +803,191 @@ private fun NonRootHomeScreen(
       compact = compact,
       shortHeight = compact,
       fillHeight = false,
+      titleText = stringResource(R.string.logs_title),
+      showSourceSelector = false,
+    )
+  }
+
+  if (showRootSwitchConfirm) {
+    AlertDialog(
+      onDismissRequest = { showRootSwitchConfirm = false },
+      title = { Text(stringResource(R.string.non_root_switch_root_title)) },
+      text = { Text(stringResource(R.string.non_root_switch_root_body)) },
+      confirmButton = {
+        TextButton(
+          enabled = !fullAppUpgradeState.busy,
+          onClick = {
+            showRootSwitchConfirm = false
+            onRequestFullVersion()
+          },
+        ) { Text(stringResource(R.string.common_yes)) }
+      },
+      dismissButton = {
+        TextButton(onClick = { showRootSwitchConfirm = false }) {
+          Text(stringResource(R.string.common_cancel))
+        }
+      },
+    )
+  }
+}
+
+@Composable
+private fun NonRootWideHomeScreen(
+  topContentPadding: Dp,
+  bottomContentPadding: Dp,
+  vpnState: NonRootVpnState,
+  vpnLastError: String?,
+  vpnLogs: List<NonRootRuntimeLogEntry>,
+  fullAppUpgradeState: FullAppUpgradeState,
+  onVpnStart: () -> Unit,
+  onVpnStop: () -> Unit,
+  onRequestFullVersion: () -> Unit,
+) {
+  var showRootSwitchConfirm by remember { mutableStateOf(false) }
+  val busy = vpnState == NonRootVpnState.STARTING || vpnState == NonRootVpnState.STOPPING
+  val visualState = when (vpnState) {
+    NonRootVpnState.RUNNING -> HomeServiceVisualState.RUNNING
+    NonRootVpnState.STARTING -> HomeServiceVisualState.STARTING
+    NonRootVpnState.STOPPING -> HomeServiceVisualState.STOPPING
+    NonRootVpnState.STOPPED -> HomeServiceVisualState.STOPPED
+    NonRootVpnState.ERROR -> HomeServiceVisualState.UNAVAILABLE
+  }
+  val accent = when (vpnState) {
+    NonRootVpnState.RUNNING -> Color(0xFF20C96B)
+    NonRootVpnState.STARTING -> MaterialTheme.colorScheme.secondary
+    NonRootVpnState.STOPPING -> MaterialTheme.colorScheme.tertiary
+    NonRootVpnState.ERROR -> MaterialTheme.colorScheme.error
+    NonRootVpnState.STOPPED -> MaterialTheme.colorScheme.primary
+  }
+  val actionText = stringResource(
+    when (vpnState) {
+      NonRootVpnState.RUNNING,
+      NonRootVpnState.STARTING -> R.string.home_action_stop_service
+      NonRootVpnState.STOPPING,
+      NonRootVpnState.ERROR,
+      NonRootVpnState.STOPPED -> R.string.home_action_start_service
+    }
+  )
+  val logTail = remember(vpnLogs) {
+    vpnLogs.joinToString("\n") { entry ->
+      val time = DateFormat.format("HH:mm:ss", entry.timestampMillis)
+      "[${entry.level.name}] $time · ${entry.message}"
+    }
+  }
+
+  Row(
+    modifier = Modifier
+      .fillMaxSize()
+      .padding(horizontal = 16.dp)
+      .padding(top = topContentPadding + 8.dp, bottom = bottomContentPadding + 8.dp),
+    horizontalArrangement = Arrangement.spacedBy(12.dp),
+  ) {
+    Column(
+      modifier = Modifier.weight(0.44f).fillMaxHeight(),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+      Surface(
+        modifier = Modifier
+          .fillMaxWidth()
+          .nonRootFocusHighlight(RoundedCornerShape(22.dp))
+          .clickable { showRootSwitchConfirm = true },
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.24f)),
+      ) {
+        Column(
+          modifier = Modifier.padding(14.dp),
+          verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
+          ) {
+            Surface(
+              modifier = Modifier.size(44.dp),
+              shape = RoundedCornerShape(14.dp),
+              color = MaterialTheme.colorScheme.primary.copy(alpha = 0.14f),
+              contentColor = MaterialTheme.colorScheme.primary,
+            ) {
+              Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.Security, contentDescription = null, modifier = Modifier.size(24.dp))
+              }
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+              Text(
+                stringResource(R.string.non_root_home_title),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+              )
+              Text(
+                stringResource(R.string.non_root_home_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+          }
+          if (vpnState == NonRootVpnState.ERROR && !vpnLastError.isNullOrBlank()) {
+            Text(
+              vpnLastError.orEmpty(),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.error,
+            )
+          }
+          if (fullAppUpgradeState.status != FullAppUpgradeStatus.IDLE) {
+            val upgradeText = when (fullAppUpgradeState.status) {
+              FullAppUpgradeStatus.CHECKING -> stringResource(R.string.common_loading)
+              FullAppUpgradeStatus.DOWNLOADING -> stringResource(
+                R.string.prog_update_status_downloading_pct_fmt,
+                fullAppUpgradeState.progressPercent,
+              )
+              FullAppUpgradeStatus.READY,
+              FullAppUpgradeStatus.INSTALLING -> stringResource(R.string.setup_install_progress_preparing)
+              FullAppUpgradeStatus.ERROR -> fullAppUpgradeState.errorMessage.orEmpty()
+              FullAppUpgradeStatus.IDLE -> ""
+            }
+            Text(
+              upgradeText,
+              style = MaterialTheme.typography.bodySmall,
+              color = if (fullAppUpgradeState.status == FullAppUpgradeStatus.ERROR) MaterialTheme.colorScheme.error
+              else MaterialTheme.colorScheme.primary,
+            )
+          }
+        }
+      }
+
+      Box(
+        modifier = Modifier.weight(1f),
+        contentAlignment = Alignment.Center,
+      ) {
+        AnimatedPowerDial(
+          visualState = visualState,
+          busy = busy,
+          accent = accent,
+          size = 166.dp,
+          enabled = true,
+          contentDescription = actionText,
+          onClick = {
+            if (vpnState == NonRootVpnState.RUNNING || vpnState == NonRootVpnState.STARTING) onVpnStop()
+            else onVpnStart()
+          },
+        )
+      }
+
+      NonRootServiceStateCard(
+        vpnState = vpnState,
+        accent = accent,
+        compact = true,
+      )
+    }
+
+    HomeLogsCard(
+      logTail = logTail,
+      detailedLogTail = "",
+      compact = true,
+      shortHeight = true,
+      fillHeight = true,
+      modifier = Modifier.weight(0.56f).fillMaxHeight(),
       titleText = stringResource(R.string.logs_title),
       showSourceSelector = false,
     )
@@ -858,6 +1150,9 @@ private fun NonRootToolsScreen(
   tgWsPluginState: TgWsPluginState,
   tgWsRuntimeState: NonRootTgWsRuntimeState,
   configurationEnabled: Boolean,
+  profileFailures: List<NonRootProfileFailure>,
+  wideLayout: Boolean,
+  television: Boolean,
   onWorkModeChange: (NonRootWorkMode) -> Unit,
   onDirectSelectedProfileChange: (String?) -> Unit,
   onCreateCascadeProfile: (String, String) -> Unit,
@@ -871,9 +1166,11 @@ private fun NonRootToolsScreen(
   onInstallOrUpdateTgWsPlugin: () -> Unit,
   onOpenVps: () -> Unit,
   onTgWsEnabledChange: (Boolean) -> Unit,
+  onOpenFailureLog: (NonRootCascadeProfile) -> Unit,
 ) {
-  val screenPadding = rememberAdaptiveScreenPadding()
+  val screenPadding = if (wideLayout) 16.dp else rememberAdaptiveScreenPadding()
   val byId = remember(cascadeState.profiles) { cascadeState.profiles.associateBy { it.id } }
+  val failuresByProfile = remember(profileFailures) { profileFailures.groupBy { it.profileId } }
   var showCreateDialog by remember { mutableStateOf(false) }
   var deleteProfileId by remember { mutableStateOf<String?>(null) }
   var cascadeModeCardVisible by remember { mutableStateOf(workMode == NonRootWorkMode.CASCADE) }
@@ -1010,6 +1307,9 @@ private fun NonRootToolsScreen(
               enabled = configurationEnabled,
               switchEnabled = configurationEnabled && (workMode != NonRootWorkMode.DIRECT || profile.directEligible),
               directBlocked = workMode == NonRootWorkMode.DIRECT && !profile.directEligible,
+              failures = failuresByProfile[profile.id].orEmpty(),
+              television = television,
+              onOpenFailureLog = { onOpenFailureLog(profile) },
               onCheckedChange = { selected ->
                 if (workMode == NonRootWorkMode.DIRECT) {
                   if (profile.directEligible) onDirectSelectedProfileChange(profile.id.takeIf { selected })
@@ -1034,6 +1334,7 @@ private fun NonRootToolsScreen(
             item = item,
             routeIndex = routeIndex,
             enabled = configurationEnabled,
+            television = television,
             onMove = { current, direction ->
               val moved = moveToolsRouteItem(cascadeState.route, current, direction)
               if (moved == null) null else {
@@ -1163,7 +1464,10 @@ private fun NonRootStandaloneToolCard(
   progress: Float? = null,
 ) {
   Surface(
-    modifier = Modifier.fillMaxWidth().clickable(enabled = openEnabled, onClick = onOpen),
+    modifier = Modifier
+      .fillMaxWidth()
+      .nonRootFocusHighlight(RoundedCornerShape(20.dp), openEnabled)
+      .clickable(enabled = openEnabled, onClick = onOpen),
     shape = RoundedCornerShape(20.dp),
     color = MaterialTheme.colorScheme.surfaceContainerLow,
     border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.16f)),
@@ -1375,6 +1679,7 @@ private fun NonRootModeChoice(
   )
   Surface(
     modifier = modifier
+      .nonRootFocusHighlight(shape, enabled)
       .clip(shape)
       .clickable(enabled = enabled, onClick = onClick),
     shape = shape,
@@ -1404,9 +1709,12 @@ private fun NonRootToolsProfileCard(
   enabled: Boolean,
   switchEnabled: Boolean,
   directBlocked: Boolean,
+  failures: List<NonRootProfileFailure>,
+  television: Boolean,
   routeIndex: Int,
   onCheckedChange: (Boolean) -> Unit,
   onOpen: () -> Unit,
+  onOpenFailureLog: () -> Unit,
   onDelete: () -> Unit,
   onMove: (Int, Int) -> Int?,
 ) {
@@ -1417,7 +1725,10 @@ private fun NonRootToolsProfileCard(
     label = "nonRootProfileBorder",
   )
   Surface(
-    modifier = modifier.fillMaxWidth(),
+    modifier = modifier
+      .fillMaxWidth()
+      .nonRootFocusHighlight(RoundedCornerShape(20.dp), enabled)
+      .clickable(enabled = enabled, onClick = onOpen),
     shape = RoundedCornerShape(20.dp),
     color = MaterialTheme.colorScheme.surfaceContainerLow,
     border = BorderStroke(1.dp, borderColor),
@@ -1431,10 +1742,11 @@ private fun NonRootToolsProfileCard(
         stableKey = profile.id,
         routeIndex = routeIndex,
         enabled = enabled,
+        television = television,
         onMove = onMove,
       )
       Surface(
-        modifier = Modifier.size(44.dp).clickable(enabled = enabled, onClick = onOpen),
+        modifier = Modifier.size(44.dp),
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.10f),
         contentColor = MaterialTheme.colorScheme.primary,
@@ -1446,7 +1758,7 @@ private fun NonRootToolsProfileCard(
         }
       }
       Column(
-        modifier = Modifier.weight(1f).clickable(enabled = enabled, onClick = onOpen),
+        modifier = Modifier.weight(1f),
         verticalArrangement = Arrangement.spacedBy(2.dp),
       ) {
         Text(
@@ -1465,6 +1777,12 @@ private fun NonRootToolsProfileCard(
           },
           style = MaterialTheme.typography.bodySmall,
           color = if (directBlocked) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+      if (failures.isNotEmpty()) {
+        NonRootFailureButton(
+          onClick = onOpenFailureLog,
+          contentDescription = stringResource(R.string.non_root_profile_failure_open_log),
         )
       }
       Switch(
@@ -1489,6 +1807,7 @@ private fun NonRootToolsGroupRow(
   item: NonRootCascadeRouteItem,
   routeIndex: Int,
   enabled: Boolean,
+  television: Boolean,
   onMove: (Int, Int) -> Int?,
 ) {
   val title = item.name.ifBlank { stringResource(R.string.non_root_t2s_group_unnamed) }
@@ -1506,6 +1825,7 @@ private fun NonRootToolsGroupRow(
         stableKey = item.markerId,
         routeIndex = routeIndex,
         enabled = enabled,
+        television = television,
         onMove = onMove,
       )
       Box(Modifier.weight(1f).height(1.dp)) {
@@ -1551,37 +1871,73 @@ private fun NonRootToolsDragHandle(
   stableKey: String,
   routeIndex: Int,
   enabled: Boolean,
+  television: Boolean,
   onMove: (Int, Int) -> Int?,
 ) {
   val latestOnMove by rememberUpdatedState(onMove)
   var gestureIndex by remember(stableKey) { mutableIntStateOf(routeIndex) }
   var dragTotal by remember(stableKey) { mutableFloatStateOf(0f) }
+  var reorderArmed by remember(stableKey) { mutableStateOf(false) }
+
+  LaunchedEffect(routeIndex, reorderArmed) {
+    if (!reorderArmed) gestureIndex = routeIndex
+  }
+
+  val tvModifier = if (television) {
+    Modifier
+      .nonRootFocusHighlight(RoundedCornerShape(10.dp), enabled)
+      .onPreviewKeyEvent { event ->
+        if (!enabled || !reorderArmed || event.type != KeyEventType.KeyDown) {
+          false
+        } else {
+          val direction = when (event.key) {
+            Key.DirectionUp -> -1
+            Key.DirectionDown -> 1
+            else -> 0
+          }
+          if (direction == 0) {
+            false
+          } else {
+            latestOnMove(gestureIndex, direction)?.let { gestureIndex = it }
+            true
+          }
+        }
+      }
+      .clickable(enabled = enabled) { reorderArmed = !reorderArmed }
+  } else {
+    Modifier.pointerInput(stableKey, enabled) {
+      if (!enabled) return@pointerInput
+      detectDragGesturesAfterLongPress(
+        onDragStart = {
+          gestureIndex = routeIndex
+          dragTotal = 0f
+        },
+        onDragCancel = { dragTotal = 0f },
+        onDragEnd = { dragTotal = 0f },
+        onDrag = { change, amount ->
+          change.consume()
+          dragTotal += amount.y
+          if (abs(dragTotal) >= 46.dp.toPx()) {
+            val direction = if (dragTotal > 0f) 1 else -1
+            latestOnMove(gestureIndex, direction)?.let { gestureIndex = it }
+            dragTotal = 0f
+          }
+        },
+      )
+    }
+  }
+
   Icon(
     imageVector = Icons.Filled.DragHandle,
     contentDescription = stringResource(R.string.non_root_t2s_drag_handle),
-    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.4f),
+    tint = when {
+      !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+      reorderArmed -> MaterialTheme.colorScheme.primary
+      else -> MaterialTheme.colorScheme.onSurfaceVariant
+    },
     modifier = Modifier
       .size(32.dp)
-      .pointerInput(stableKey, enabled) {
-        if (!enabled) return@pointerInput
-        detectDragGesturesAfterLongPress(
-          onDragStart = {
-            gestureIndex = routeIndex
-            dragTotal = 0f
-          },
-          onDragCancel = { dragTotal = 0f },
-          onDragEnd = { dragTotal = 0f },
-          onDrag = { change, amount ->
-            change.consume()
-            dragTotal += amount.y
-            if (abs(dragTotal) >= 46.dp.toPx()) {
-              val direction = if (dragTotal > 0f) 1 else -1
-              latestOnMove(gestureIndex, direction)?.let { gestureIndex = it }
-              dragTotal = 0f
-            }
-          },
-        )
-      },
+      .then(tvModifier),
   )
 }
 
@@ -2028,7 +2384,10 @@ internal fun NonRootSmallChoice(
 ) {
   val shape = RoundedCornerShape(14.dp)
   Surface(
-    modifier = modifier.clip(shape).clickable(onClick = onClick),
+    modifier = modifier
+      .nonRootFocusHighlight(shape)
+      .clip(shape)
+      .clickable(onClick = onClick),
     shape = shape,
     color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainer,
     border = BorderStroke(
@@ -2160,10 +2519,184 @@ private fun NonRootTopBarCard(
 }
 
 @Composable
+private fun NonRootWideHeader(
+  modifier: Modifier = Modifier,
+  title: String,
+  onBack: (() -> Unit)?,
+) {
+  Row(
+    modifier = modifier
+      .fillMaxWidth()
+      .height(52.dp)
+      .padding(start = 14.dp, end = 8.dp),
+    verticalAlignment = Alignment.CenterVertically,
+    horizontalArrangement = Arrangement.spacedBy(8.dp),
+  ) {
+    AnimatedVisibility(
+      visible = onBack != null,
+      enter = expandHorizontally(expandFrom = Alignment.Start, animationSpec = tween(180)) + fadeIn(tween(140)),
+      exit = shrinkHorizontally(shrinkTowards = Alignment.Start, animationSpec = tween(160)) + fadeOut(tween(100)),
+    ) {
+      IconButton(onClick = { onBack?.invoke() }) {
+        Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
+      }
+    }
+    AnimatedContent(
+      targetState = title,
+      modifier = Modifier.weight(1f),
+      transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) },
+      label = "nonRootWideTitle",
+    ) { value ->
+      Text(
+        text = value,
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.SemiBold,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+      )
+    }
+  }
+}
+
+@Composable
+private fun NonRootWideQuickActions(
+  modifier: Modifier = Modifier,
+  onOpenLogs: (() -> Unit)?,
+  onOpenSettings: () -> Unit,
+) {
+  Surface(
+    modifier = modifier,
+    shape = RoundedCornerShape(28.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
+    tonalElevation = 3.dp,
+    shadowElevation = 8.dp,
+  ) {
+    Row(
+      modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+      AnimatedVisibility(
+        visible = onOpenLogs != null,
+        enter = expandHorizontally(expandFrom = Alignment.End, animationSpec = tween(180)) + fadeIn(tween(140)),
+        exit = shrinkHorizontally(shrinkTowards = Alignment.End, animationSpec = tween(160)) + fadeOut(tween(100)),
+      ) {
+        IconButton(onClick = { onOpenLogs?.invoke() }, modifier = Modifier.size(44.dp)) {
+          Icon(
+            Icons.Filled.BugReport,
+            contentDescription = stringResource(R.string.cd_logs),
+            tint = MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(25.dp),
+          )
+        }
+      }
+      IconButton(onClick = onOpenSettings, modifier = Modifier.size(44.dp)) {
+        Icon(
+          Icons.Filled.Settings,
+          contentDescription = stringResource(R.string.settings_title),
+          modifier = Modifier.size(26.dp),
+        )
+      }
+    }
+  }
+}
+
+@Composable
+private fun NonRootWideNavigation(
+  modifier: Modifier = Modifier,
+  tab: Tab,
+  showStats: Boolean,
+  showToolsWarning: Boolean,
+  onTabChange: (Tab) -> Unit,
+) {
+  val homeLabel = stringResource(R.string.nav_home)
+  val statsLabel = stringResource(R.string.nav_stats)
+  val toolsLabel = stringResource(R.string.nav_programs)
+  val supportLabel = stringResource(R.string.nav_support)
+  Surface(
+    modifier = modifier
+      .width(76.dp)
+      .fillMaxHeight(0.70f),
+    shape = RoundedCornerShape(38.dp),
+    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.90f),
+    tonalElevation = 3.dp,
+    shadowElevation = 8.dp,
+  ) {
+    Column(
+      modifier = Modifier.fillMaxSize().padding(vertical = 12.dp),
+      horizontalAlignment = Alignment.CenterHorizontally,
+      verticalArrangement = Arrangement.SpaceEvenly,
+    ) {
+      NonRootWideNavItem(
+        selected = tab == Tab.HOME,
+        onClick = { onTabChange(Tab.HOME) },
+      ) { Icon(Icons.Filled.Power, contentDescription = homeLabel, modifier = Modifier.size(30.dp)) }
+      AnimatedVisibility(
+        visible = showStats,
+        enter = expandVertically(animationSpec = tween(240)) + fadeIn(tween(170)),
+        exit = shrinkVertically(animationSpec = tween(220)) + fadeOut(tween(140)),
+      ) {
+        NonRootWideNavItem(
+          selected = tab == Tab.STATS,
+          onClick = { onTabChange(Tab.STATS) },
+        ) { Icon(Icons.Filled.Equalizer, contentDescription = statsLabel, modifier = Modifier.size(30.dp)) }
+      }
+      NonRootWideNavItem(
+        selected = tab == Tab.APPS,
+        onClick = { onTabChange(Tab.APPS) },
+      ) {
+        Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+          Icon(Icons.Filled.Apps, contentDescription = toolsLabel, modifier = Modifier.size(30.dp))
+          if (showToolsWarning) {
+            NonRootFailureGlyph(
+              modifier = Modifier.align(Alignment.TopEnd).size(20.dp),
+              animate = true,
+            )
+          }
+        }
+      }
+      NonRootWideNavItem(
+        selected = tab == Tab.SUPPORT,
+        onClick = { onTabChange(Tab.SUPPORT) },
+      ) { Icon(Icons.Filled.Info, contentDescription = supportLabel, modifier = Modifier.size(30.dp)) }
+    }
+  }
+}
+
+@Composable
+private fun NonRootWideNavItem(
+  selected: Boolean,
+  onClick: () -> Unit,
+  icon: @Composable () -> Unit,
+) {
+  val backgroundAlpha by animateFloatAsState(
+    targetValue = if (selected) 0.24f else 0f,
+    animationSpec = tween(180, easing = FastOutSlowInEasing),
+    label = "nonRootWideNavBackground",
+  )
+  Box(
+    modifier = Modifier
+      .size(58.dp)
+      .nonRootFocusHighlight(RoundedCornerShape(29.dp))
+      .clip(RoundedCornerShape(29.dp))
+      .background(MaterialTheme.colorScheme.primary.copy(alpha = backgroundAlpha))
+      .clickable(onClick = onClick),
+    contentAlignment = Alignment.Center,
+  ) {
+    CompositionLocalProvider(
+      LocalContentColor provides if (selected) MaterialTheme.colorScheme.primary
+      else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.72f),
+    ) { icon() }
+  }
+}
+
+@Composable
 private fun NonRootBottomNavigationCard(
   modifier: Modifier = Modifier,
   compact: Boolean,
   tab: Tab,
+  showStats: Boolean,
+  showToolsWarning: Boolean,
   onTabChange: (Tab) -> Unit,
 ) {
   val shape = RoundedCornerShape(24.dp)
@@ -2171,6 +2704,11 @@ private fun NonRootBottomNavigationCard(
   val statsLabel = stringResource(R.string.nav_stats)
   val toolsLabel = stringResource(R.string.nav_programs)
   val supportLabel = stringResource(R.string.nav_support)
+  val statsWeight by animateFloatAsState(
+    targetValue = if (showStats) 1f else 0.001f,
+    animationSpec = tween(260, easing = FastOutSlowInEasing),
+    label = "nonRootStatsNavWeight",
+  )
 
   Box(
     modifier = modifier
@@ -2191,30 +2729,66 @@ private fun NonRootBottomNavigationCard(
       border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.18f)),
     ) {
       Row(
-        modifier = Modifier
-          .fillMaxSize()
-          .padding(horizontal = 8.dp, vertical = 6.dp),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
       ) {
-        NonRootBottomNavItem(tab == Tab.HOME, { onTabChange(Tab.HOME) }, compact, homeLabel) {
-          Icon(Icons.Filled.Power, contentDescription = homeLabel, modifier = Modifier.size(22.dp))
+        NonRootBottomNavItem(
+          modifier = Modifier.weight(1f),
+          selected = tab == Tab.HOME,
+          onClick = { onTabChange(Tab.HOME) },
+          compact = compact,
+          label = homeLabel,
+        ) { Icon(Icons.Filled.Power, contentDescription = homeLabel, modifier = Modifier.size(22.dp)) }
+
+        Box(modifier = Modifier.weight(statsWeight).fillMaxHeight()) {
+          AnimatedVisibility(
+            visible = showStats,
+            modifier = Modifier.fillMaxSize(),
+            enter = expandHorizontally(animationSpec = tween(240)) + fadeIn(tween(170)),
+            exit = shrinkHorizontally(animationSpec = tween(220)) + fadeOut(tween(140)),
+          ) {
+            NonRootBottomNavItem(
+              modifier = Modifier.fillMaxSize(),
+              selected = tab == Tab.STATS,
+              onClick = { onTabChange(Tab.STATS) },
+              compact = compact,
+              label = statsLabel,
+            ) { Icon(Icons.Filled.Equalizer, contentDescription = statsLabel, modifier = Modifier.size(22.dp)) }
+          }
         }
-        NonRootBottomNavItem(tab == Tab.STATS, { onTabChange(Tab.STATS) }, compact, statsLabel) {
-          Icon(Icons.Filled.Equalizer, contentDescription = statsLabel, modifier = Modifier.size(22.dp))
+
+        NonRootBottomNavItem(
+          modifier = Modifier.weight(1f),
+          selected = tab == Tab.APPS,
+          onClick = { onTabChange(Tab.APPS) },
+          compact = compact,
+          label = toolsLabel,
+        ) {
+          Box(Modifier.size(26.dp), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.Apps, contentDescription = toolsLabel, modifier = Modifier.size(22.dp))
+            if (showToolsWarning) {
+              NonRootFailureGlyph(
+                modifier = Modifier.align(Alignment.TopEnd).size(18.dp),
+                animate = true,
+              )
+            }
+          }
         }
-        NonRootBottomNavItem(tab == Tab.APPS, { onTabChange(Tab.APPS) }, compact, toolsLabel) {
-          Icon(Icons.Filled.Apps, contentDescription = toolsLabel, modifier = Modifier.size(22.dp))
-        }
-        NonRootBottomNavItem(tab == Tab.SUPPORT, { onTabChange(Tab.SUPPORT) }, compact, supportLabel) {
-          Icon(Icons.Filled.Info, contentDescription = supportLabel, modifier = Modifier.size(22.dp))
-        }
+        NonRootBottomNavItem(
+          modifier = Modifier.weight(1f),
+          selected = tab == Tab.SUPPORT,
+          onClick = { onTabChange(Tab.SUPPORT) },
+          compact = compact,
+          label = supportLabel,
+        ) { Icon(Icons.Filled.Info, contentDescription = supportLabel, modifier = Modifier.size(22.dp)) }
       }
     }
   }
 }
 
 @Composable
-private fun RowScope.NonRootBottomNavItem(
+private fun NonRootBottomNavItem(
+  modifier: Modifier = Modifier,
   selected: Boolean,
   onClick: () -> Unit,
   compact: Boolean,
@@ -2244,9 +2818,9 @@ private fun RowScope.NonRootBottomNavItem(
   val itemShape = RoundedCornerShape(20.dp)
 
   Column(
-    modifier = Modifier
-      .weight(1f)
+    modifier = modifier
       .fillMaxHeight()
+      .nonRootFocusHighlight(itemShape)
       .clip(itemShape)
       .clickable(
         interactionSource = remember { MutableInteractionSource() },
@@ -2260,10 +2834,7 @@ private fun RowScope.NonRootBottomNavItem(
       modifier = Modifier
         .clip(RoundedCornerShape(18.dp))
         .background(indicatorColor)
-        .padding(
-          horizontal = indicatorHorizontalPadding,
-          vertical = indicatorVerticalPadding,
-        ),
+        .padding(horizontal = indicatorHorizontalPadding, vertical = indicatorVerticalPadding),
       contentAlignment = Alignment.Center,
     ) {
       CompositionLocalProvider(LocalContentColor provides itemColor) { icon() }
@@ -2280,3 +2851,103 @@ private fun RowScope.NonRootBottomNavItem(
     }
   }
 }
+
+@Composable
+private fun NonRootFailureButton(
+  onClick: () -> Unit,
+  contentDescription: String,
+) {
+  IconButton(
+    onClick = onClick,
+    modifier = Modifier
+      .size(42.dp)
+      .nonRootFocusHighlight(RoundedCornerShape(21.dp))
+      .semantics { this.contentDescription = contentDescription },
+  ) {
+    NonRootFailureGlyph(
+      modifier = Modifier.size(34.dp),
+      animate = true,
+    )
+  }
+}
+
+@Composable
+private fun NonRootFailureGlyph(
+  modifier: Modifier = Modifier,
+  animate: Boolean,
+) {
+  val color = MaterialTheme.colorScheme.error
+  val onColor = MaterialTheme.colorScheme.onError
+  val transition = rememberInfiniteTransition(label = "nonRootFailurePulse")
+  val phase by transition.animateFloat(
+    initialValue = 0f,
+    targetValue = 1f,
+    animationSpec = infiniteRepeatable(
+      animation = tween(1450, easing = FastOutSlowInEasing),
+      repeatMode = RepeatMode.Restart,
+    ),
+    label = "nonRootFailureWave",
+  )
+  val pulse = if (animate) phase else 0f
+  Canvas(modifier = modifier) {
+    val minSide = size.minDimension
+    val center = this.center
+    listOf(pulse, (pulse + 0.5f) % 1f).forEach { wave ->
+      if (animate) {
+        drawCircle(
+          color = color.copy(alpha = (1f - wave) * 0.28f),
+          radius = minSide * (0.29f + wave * 0.19f),
+          center = center,
+          style = Stroke(width = 1.25.dp.toPx()),
+        )
+      }
+    }
+
+    val r = minSide * 0.28f
+    val corner = minSide * 0.075f
+    val triangle = Path().apply {
+      moveTo(center.x, center.y - r)
+      quadraticBezierTo(center.x + corner, center.y - r, center.x + r * 0.86f, center.y + r * 0.60f)
+      quadraticBezierTo(center.x + r * 0.92f, center.y + r * 0.74f, center.x + r * 0.70f, center.y + r * 0.78f)
+      lineTo(center.x - r * 0.70f, center.y + r * 0.78f)
+      quadraticBezierTo(center.x - r * 0.92f, center.y + r * 0.74f, center.x - r * 0.86f, center.y + r * 0.60f)
+      quadraticBezierTo(center.x - corner, center.y - r, center.x, center.y - r)
+      close()
+    }
+    drawPath(triangle, color = color)
+    drawLine(
+      color = onColor,
+      start = androidx.compose.ui.geometry.Offset(center.x, center.y - r * 0.36f),
+      end = androidx.compose.ui.geometry.Offset(center.x, center.y + r * 0.20f),
+      strokeWidth = minSide * 0.075f,
+      cap = StrokeCap.Round,
+    )
+    drawCircle(
+      color = onColor,
+      radius = minSide * 0.042f,
+      center = androidx.compose.ui.geometry.Offset(center.x, center.y + r * 0.48f),
+    )
+  }
+}
+
+private fun Modifier.nonRootFocusHighlight(
+  shape: RoundedCornerShape,
+  enabled: Boolean = true,
+): Modifier = composed {
+  var focused by remember { mutableStateOf(false) }
+  val focusScale by animateFloatAsState(
+    targetValue = if (focused && enabled) 1.025f else 1f,
+    animationSpec = tween(150, easing = FastOutSlowInEasing),
+    label = "nonRootDpadFocusScale",
+  )
+  val focusBorder by animateColorAsState(
+    targetValue = if (focused && enabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.72f) else Color.Transparent,
+    animationSpec = tween(150),
+    label = "nonRootDpadFocusBorder",
+  )
+  this
+    .onFocusChanged { focused = it.isFocused }
+    .scale(focusScale)
+    .border(if (focused && enabled) 2.dp else 0.dp, focusBorder, shape)
+}
+

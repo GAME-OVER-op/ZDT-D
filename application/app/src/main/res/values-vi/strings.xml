@@ -2592,4 +2592,6 @@ Nguyên nhân còn lại có thể nằm ở phía daemon/API. Kiểm tra nhật
     <string name="vps_terminal_error_session">Không thể chuẩn bị zdt-d_console</string>
     <string name="vps_terminal_error_connect">Không thể kết nối terminal</string>
     <string name="vps_terminal_error_disconnected">Kết nối terminal đã đóng</string>
+    <string name="non_root_log_cascade_backend_skipped">Chuỗi: đã bỏ qua %1$s sau lỗi khởi động: %2$s</string>
+    <string name="non_root_profile_failure_open_log">Mở nhật ký lỗi khởi động</string>
 </resources>

@@ -2593,4 +2593,6 @@ APatch: 10700+</string>
     <string name="vps_terminal_error_session">آماده‌سازی zdt-d_console ممکن نشد</string>
     <string name="vps_terminal_error_connect">اتصال به ترمینال ممکن نشد</string>
     <string name="vps_terminal_error_disconnected">اتصال ترمینال بسته شد</string>
+    <string name="non_root_log_cascade_backend_skipped">آبشاری: %1$s به‌دلیل خطای راه‌اندازی رد شد: %2$s</string>
+    <string name="non_root_profile_failure_open_log">باز کردن گزارش خطای راه‌اندازی</string>
 </resources>

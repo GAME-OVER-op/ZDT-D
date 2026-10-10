@@ -2593,4 +2593,6 @@ La cause restante se situe probablement côté daemon/API. Consultez les journau
     <string name="vps_terminal_error_session">Impossible de préparer zdt-d_console</string>
     <string name="vps_terminal_error_connect">Impossible de se connecter au terminal</string>
     <string name="vps_terminal_error_disconnected">La connexion au terminal a été fermée</string>
+    <string name="non_root_log_cascade_backend_skipped">Cascade : %1$s a été ignoré après une erreur de démarrage : %2$s</string>
+    <string name="non_root_profile_failure_open_log">Ouvrir le journal de l’erreur de démarrage</string>
 </resources>

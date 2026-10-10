@@ -2592,4 +2592,6 @@ APatch：10700+</string>
     <string name="vps_terminal_error_session">无法准备 zdt-d_console</string>
     <string name="vps_terminal_error_connect">无法连接到终端</string>
     <string name="vps_terminal_error_disconnected">终端连接已关闭</string>
+    <string name="non_root_log_cascade_backend_skipped">级联：%1$s 因启动错误被跳过：%2$s</string>
+    <string name="non_root_profile_failure_open_log">打开启动错误日志</string>
 </resources>

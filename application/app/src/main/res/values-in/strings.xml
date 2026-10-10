@@ -2592,4 +2592,6 @@ Penyebab yang tersisa kemungkinan berada di sisi daemon/API. Periksa log daemon 
     <string name="vps_terminal_error_session">Tidak dapat menyiapkan zdt-d_console</string>
     <string name="vps_terminal_error_connect">Tidak dapat terhubung ke terminal</string>
     <string name="vps_terminal_error_disconnected">Koneksi terminal ditutup</string>
+    <string name="non_root_log_cascade_backend_skipped">Kaskade: %1$s dilewati setelah kesalahan saat memulai: %2$s</string>
+    <string name="non_root_profile_failure_open_log">Buka log kesalahan saat memulai</string>
 </resources>

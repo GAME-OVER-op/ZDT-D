@@ -25,9 +25,7 @@ class NfqwsTesterBinary(private val context: Context) {
         if (shouldRewrite) {
             val tmp = File(parent, "$BINARY_NAME.tmp")
             tmp.outputStream().use { it.write(assetBytes) }
-            tmp.setReadable(true, true)
-            tmp.setWritable(true, true)
-            tmp.setExecutable(true, true)
+            makeFileExecutable(tmp)
             if (target.exists() && !target.delete()) {
                 tmp.delete()
                 error("Unable to replace old nfqws_tester binary: $target")
@@ -37,10 +35,14 @@ class NfqwsTesterBinary(private val context: Context) {
                 error("Unable to install nfqws_tester binary: $target")
             }
         }
-        target.setReadable(true, true)
-        target.setWritable(true, true)
-        target.setExecutable(true, true)
+        makeFileExecutable(target)
         return target
+    }
+
+    private fun makeFileExecutable(file: File) {
+        file.setReadable(true, true)
+        file.setWritable(true, true)
+        file.setExecutable(true, true)
     }
 
     private fun sha256OrNull(file: File): String? = runCatching {

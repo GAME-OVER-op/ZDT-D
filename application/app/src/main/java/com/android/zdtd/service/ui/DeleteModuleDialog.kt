@@ -41,6 +41,10 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.unit.dp
 import com.android.zdtd.service.R
 
+// Color scheme for delete module dialogs
+private val DeleteModuleDangerColor = Color(0xFFFF2D55)
+private val DeleteModuleAccentColor = Color(0xFFA78BFA)
+
 @Composable
 fun DeleteModuleConfirmDialog(
   visible: Boolean,
@@ -50,8 +54,6 @@ fun DeleteModuleConfirmDialog(
   if (!visible) return
 
   val compact = rememberIsCompactWidth() || rememberIsShortHeight()
-  val danger = Color(0xFFFF2D55)
-  val accent = Color(0xFFA78BFA)
 
   Dialog(
     onDismissRequest = onDismiss,
@@ -62,7 +64,7 @@ fun DeleteModuleConfirmDialog(
       bottomActions = {
         DeleteModuleActions(
           compact = compact,
-          danger = danger,
+          danger = DeleteModuleDangerColor,
           confirmText = stringResource(R.string.delete_module_yes),
           onDismiss = onDismiss,
           onConfirm = onConfirm,
@@ -96,7 +98,7 @@ fun DeleteModuleConfirmDialog(
       Spacer(Modifier.height(if (compact) 16.dp else 20.dp))
 
       DeleteModuleInfoCard(
-        accent = danger,
+        accent = DeleteModuleDangerColor,
         title = stringResource(R.string.settings_delete_module_action),
         body = stringResource(R.string.delete_module_warning_reboot),
       )
@@ -104,7 +106,7 @@ fun DeleteModuleConfirmDialog(
       Spacer(Modifier.height(12.dp))
 
       DeleteModuleInfoCard(
-        accent = accent,
+        accent = DeleteModuleAccentColor,
         title = stringResource(R.string.common_attention),
         body = stringResource(R.string.delete_module_goodbye),
         soft = true,
@@ -121,7 +123,6 @@ fun DeleteModuleNextStepDialog(
   if (!visible) return
 
   val compact = rememberIsCompactWidth() || rememberIsShortHeight()
-  val accent = Color(0xFFA78BFA)
 
   Dialog(
     onDismissRequest = onDismiss,
@@ -135,7 +136,7 @@ fun DeleteModuleNextStepDialog(
           modifier = Modifier.fillMaxWidth(),
           shape = CircleShape,
           colors = ButtonDefaults.buttonColors(
-            containerColor = accent.copy(alpha = 0.92f),
+            containerColor = DeleteModuleAccentColor.copy(alpha = 0.92f),
             contentColor = Color.White,
           ),
         ) {
@@ -159,7 +160,7 @@ fun DeleteModuleNextStepDialog(
       Spacer(Modifier.height(14.dp))
 
       DeleteModuleInfoCard(
-        accent = accent,
+        accent = DeleteModuleAccentColor,
         title = stringResource(R.string.common_attention),
         body = stringResource(R.string.delete_module_next_body),
       )
@@ -167,7 +168,7 @@ fun DeleteModuleNextStepDialog(
       Spacer(Modifier.height(12.dp))
 
       DeleteModuleInfoCard(
-        accent = Color(0xFFFF2D55),
+        accent = DeleteModuleDangerColor,
         title = stringResource(R.string.settings_delete_module_action),
         body = stringResource(R.string.delete_module_warning_reboot),
         soft = true,
@@ -185,7 +186,7 @@ fun DeleteModulePreparingDialog(
   if (!visible && errorText == null) return
 
   val compact = rememberIsCompactWidth() || rememberIsShortHeight()
-  val accent = if (errorText == null) Color(0xFFA78BFA) else Color(0xFFFF2D55)
+  val accent = if (errorText == null) DeleteModuleAccentColor else DeleteModuleDangerColor
   val shape = RoundedCornerShape(if (compact) 26.dp else 30.dp)
 
   Dialog(

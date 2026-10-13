@@ -6193,6 +6193,73 @@ jobs:
           require_distribution "$ONLINE_APK" online
           require_distribution "$NONROOT_APK" nonroot
 
+          # Root distributions must not advertise or contain Android VpnService support.
+          # Some third-party apps inspect both the manifest and DEX strings instead of
+          # relying only on the system VPN permission UI, so validate both surfaces.
+          verify_vpn_manifest_contract() {
+            local apk="$1"
+            local expected="$2"
+            local dump
+            dump="$("$AAPT" dump xmltree "$apk" AndroidManifest.xml)"
+
+            if [[ "$expected" == "present" ]]; then
+              printf '%s\n' "$dump" | grep -F 'android.permission.BIND_VPN_SERVICE' >/dev/null || { echo "::error::VPN service permission missing from non-root APK: $apk"; exit 1; }
+              printf '%s\n' "$dump" | grep -F 'android.net.VpnService' >/dev/null || { echo "::error::VpnService intent action missing from non-root APK: $apk"; exit 1; }
+              printf '%s\n' "$dump" | grep -F 'NonRootVpnService' >/dev/null || { echo "::error::NonRootVpnService component missing from non-root APK: $apk"; exit 1; }
+            else
+              for marker in 'android.permission.BIND_VPN_SERVICE' 'android.net.VpnService' 'NonRootVpnService'; do
+                if printf '%s\n' "$dump" | grep -F "$marker" >/dev/null; then
+                  echo "::error::Root APK exposes VPN capability in AndroidManifest.xml: $apk ($marker)"
+                  exit 1
+                fi
+              done
+            fi
+          }
+
+          dex_contains_string() {
+            local apk="$1"
+            local pattern="$2"
+            local dex tmpdir dexfile stringsfile
+            tmpdir="$(mktemp -d)"
+            while IFS= read -r dex; do
+              [[ -n "$dex" ]] || continue
+              dexfile="$tmpdir/current.dex"
+              stringsfile="$tmpdir/current.strings"
+              unzip -p "$apk" "$dex" > "$dexfile"
+              strings "$dexfile" > "$stringsfile"
+              if grep -F "$pattern" "$stringsfile" >/dev/null; then
+                rm -rf "$tmpdir"
+                return 0
+              fi
+            done < <(unzip -Z1 "$apk" | grep -E '^classes([0-9]+)?\.dex$' || true)
+            rm -rf "$tmpdir"
+            return 1
+          }
+
+          verify_vpn_dex_contract() {
+            local apk="$1"
+            local expected="$2"
+            if [[ "$expected" == "present" ]]; then
+              dex_contains_string "$apk" 'android/net/VpnService' || { echo "::error::VpnService bytecode missing from non-root APK: $apk"; exit 1; }
+            else
+              if dex_contains_string "$apk" 'android/net/VpnService'; then
+                echo "::error::Root APK still contains android.net.VpnService bytecode reference: $apk"
+                exit 1
+              fi
+              if dex_contains_string "$apk" 'NonRootVpnService'; then
+                echo "::error::Root APK still contains NonRootVpnService bytecode: $apk"
+                exit 1
+              fi
+            fi
+          }
+
+          verify_vpn_manifest_contract "$BUNDLED_APK" absent
+          verify_vpn_manifest_contract "$ONLINE_APK" absent
+          verify_vpn_manifest_contract "$NONROOT_APK" present
+          verify_vpn_dex_contract "$BUNDLED_APK" absent
+          verify_vpn_dex_contract "$ONLINE_APK" absent
+          verify_vpn_dex_contract "$NONROOT_APK" present
+
           "$APKSIGNER" verify --verbose "$BUNDLED_APK"
           "$APKSIGNER" verify --verbose "$ONLINE_APK"
           "$APKSIGNER" verify --verbose "$NONROOT_APK"

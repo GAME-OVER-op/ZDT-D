@@ -107,8 +107,9 @@ internal fun rememberUseLandscapeControlLayout(): Boolean {
   val configuration = LocalConfiguration.current
   val width = configuration.screenWidthDp
   val height = configuration.screenHeightDp
-  return remember(width, height) {
-    width >= 640 && width > height
+  val television = configuration.uiMode and Configuration.UI_MODE_TYPE_MASK == Configuration.UI_MODE_TYPE_TELEVISION
+  return remember(width, height, television) {
+    television || (width >= 640 && width > height)
   }
 }
 

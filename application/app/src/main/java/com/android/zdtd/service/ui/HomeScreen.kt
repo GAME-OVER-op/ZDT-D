@@ -730,8 +730,13 @@ internal fun AnimatedPowerDial(
 
     if (focused && enabled) {
       drawCircle(
-        color = scheme.primary.copy(alpha = 0.78f),
-        radius = outerR + 2.dp.toPx(),
+        color = Color.White.copy(alpha = 0.98f),
+        radius = outerR + 3.dp.toPx(),
+        style = Stroke(width = 3.dp.toPx()),
+      )
+      drawCircle(
+        color = scheme.primary.copy(alpha = 0.96f),
+        radius = outerR + 1.dp.toPx(),
         style = Stroke(width = 2.dp.toPx()),
       )
     }

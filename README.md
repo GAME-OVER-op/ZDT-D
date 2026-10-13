@@ -23,7 +23,7 @@
 # ZDT-D: Zero DPI Tunnel - Daemon (Magisk / KernelSU / APatch)
 
 <div align="center">
-  <img src="https://github.com/GAME-OVER-op/ZDT-D/blob/main/images/module_icon.png" alt="ZDT-D Logo" width="300" />
+  <img src="images/zero-dpi-tunnel-banner.png" alt="ZDT-D Zero DPI Tunnel Banner" width="100%" />
 </div>
 
 <p align="center">

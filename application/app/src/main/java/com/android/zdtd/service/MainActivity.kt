@@ -85,7 +85,10 @@ class MainActivity : AppCompatActivity() {
     CrashLogger.install(applicationContext)
 
     // Detect a true cold start from launcher (to show the optional module update prompt).
-    val fromLauncher = intent?.action == Intent.ACTION_MAIN && (intent?.categories?.contains(Intent.CATEGORY_LAUNCHER) == true)
+    val fromLauncher = intent?.action == Intent.ACTION_MAIN && (
+      intent?.categories?.contains(Intent.CATEGORY_LAUNCHER) == true ||
+        intent?.categories?.contains(Intent.CATEGORY_LEANBACK_LAUNCHER) == true
+    )
     val openRootSetup = intent?.getBooleanExtra(EXTRA_OPEN_ROOT_SETUP, false) == true
     vm.onAppStart(fromLauncher, forceRootSetup = openRootSetup)
     handleIncomingBackupIntent(intent)

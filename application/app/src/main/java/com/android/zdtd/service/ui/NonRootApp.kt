@@ -104,10 +104,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.drawOutline
 import androidx.compose.ui.composed
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.Key
@@ -2978,18 +2980,38 @@ private fun Modifier.nonRootFocusHighlight(
 ): Modifier = composed {
   var focused by remember { mutableStateOf(false) }
   val focusScale by animateFloatAsState(
-    targetValue = if (focused && enabled) 1.025f else 1f,
+    targetValue = if (focused && enabled) 1.03f else 1f,
     animationSpec = tween(150, easing = FastOutSlowInEasing),
     label = "nonRootDpadFocusScale",
   )
-  val focusBorder by animateColorAsState(
-    targetValue = if (focused && enabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.72f) else Color.Transparent,
+  val primaryFocusBorder by animateColorAsState(
+    targetValue = if (focused && enabled) MaterialTheme.colorScheme.primary.copy(alpha = 0.96f) else Color.Transparent,
     animationSpec = tween(150),
-    label = "nonRootDpadFocusBorder",
+    label = "nonRootDpadFocusPrimaryBorder",
+  )
+  val contrastFocusBorder by animateColorAsState(
+    targetValue = if (focused && enabled) Color.White.copy(alpha = 0.98f) else Color.Transparent,
+    animationSpec = tween(150),
+    label = "nonRootDpadFocusContrastBorder",
   )
   this
     .onFocusChanged { focused = it.isFocused }
     .scale(focusScale)
-    .border(if (focused && enabled) 2.dp else 0.dp, focusBorder, shape)
+    .drawWithContent {
+      drawContent()
+      if (focused && enabled) {
+        val outline = shape.createOutline(size, layoutDirection, this)
+        drawOutline(
+          outline = outline,
+          color = contrastFocusBorder,
+          style = Stroke(width = 4.dp.toPx()),
+        )
+        drawOutline(
+          outline = outline,
+          color = primaryFocusBorder,
+          style = Stroke(width = 2.dp.toPx()),
+        )
+      }
+    }
 }
 

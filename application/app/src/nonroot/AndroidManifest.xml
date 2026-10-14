@@ -21,7 +21,22 @@
             </intent-filter>
         </activity>
         <activity android:name=".NonRootActivity" android:exported="false" android:launchMode="singleTask" />
+        <activity
+            android:name=".NonRootVpnPermissionActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@style/Theme.Zdtd.Transparent" />
         <receiver android:name=".tgwsplugin.TgWsPluginInstallReceiver" android:exported="false" />
+        <service
+            android:name=".tile.NonRootTileService"
+            android:label="@string/qs_tile_label"
+            android:icon="@drawable/ic_qs_tile"
+            android:exported="true"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
         <service
             android:name=".NonRootTgWsService"
             android:exported="false"

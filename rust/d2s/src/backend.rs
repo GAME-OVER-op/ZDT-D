@@ -1,5 +1,6 @@
 use crate::{
     config::Config,
+    coord::DialPriority,
     socks5::{
         connect_to_socks5_server, connect_via_socks5, verify_tls_data_plane,
         RuntimeFailureClass,
@@ -673,12 +674,14 @@ impl BackendPool {
 
         let stage1_started = Instant::now();
         let stage1 = tokio::time::timeout(
-            self.config.probe_timeout(),
+            self.config.coordinated_probe_timeout(),
             connect_to_socks5_server(
                 addr,
                 self.config.connect_timeout(),
                 self.config.upstream_handshake_timeout(),
                 self.config.tcp_nodelay,
+                self.config.background_coordination_wait(),
+                self.config.probe_timeout(),
             ),
         )
         .await;
@@ -689,6 +692,10 @@ impl BackendPool {
                 stage1_started.elapsed()
             }
             Ok(Err(error)) => {
+                if error.is_coordination_busy() {
+                    self.defer_probe_for_coordination(addr, revision).await;
+                    return;
+                }
                 self.finish_probe(
                     addr,
                     revision,
@@ -747,13 +754,16 @@ impl BackendPool {
         for target in self.probe_targets.iter().cloned() {
             let attempt_started = Instant::now();
             let connect = tokio::time::timeout(
-                self.config.probe_timeout(),
+                self.config.coordinated_probe_timeout(),
                 connect_via_socks5(
                     addr,
                     &target,
                     self.config.connect_timeout(),
                     self.config.upstream_handshake_timeout(),
                     self.config.tcp_nodelay,
+                    DialPriority::Background,
+                    self.config.background_coordination_wait(),
+                    self.config.probe_timeout(),
                 ),
             )
             .await;
@@ -761,6 +771,10 @@ impl BackendPool {
             let mut stream = match connect {
                 Ok(Ok(stream)) => stream,
                 Ok(Err(error)) => {
+                    if error.is_coordination_busy() {
+                        self.defer_probe_for_coordination(addr, revision).await;
+                        return;
+                    }
                     failures.push(format!("{target}: {error}"));
                     continue;
                 }
@@ -796,6 +810,24 @@ impl BackendPool {
             },
         )
         .await;
+    }
+
+    /// Shared-backend contention is not a health failure. Clear only the
+    /// in-flight probe flag and retry soon, leaving state/revision/error
+    /// counters untouched so T2S activity can never demote a healthy D2S route.
+    async fn defer_probe_for_coordination(&self, addr: SocketAddr, expected_revision: u64) {
+        {
+            let mut inner = self.inner.lock().await;
+            let Some(index) = inner.index.get(&addr).copied() else { return; };
+            let entry = &mut inner.entries[index];
+            entry.probe_in_flight = false;
+            if entry.revision != expected_revision {
+                return;
+            }
+            entry.next_probe = Instant::now() + Duration::from_millis(500);
+        }
+        debug!(backend = %addr, "health probe deferred because shared T2S/D2S dial slot is busy");
+        self.health_wake.notify_one();
     }
 
     async fn finish_probe(

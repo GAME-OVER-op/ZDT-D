@@ -1,6 +1,7 @@
 use crate::{
     backend::BackendPool,
     config::Config,
+    coord::DialPriority,
     socks5::{connect_via_socks5, RuntimeFailureClass, SocksClientError},
     status::RuntimeStats,
     target::TargetAddr,
@@ -48,6 +49,38 @@ struct AttemptOutcome {
     started: Instant,
     window_ms: u64,
     result: Result<TcpStream, SocksClientError>,
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+enum DialPurpose {
+    ForegroundDns,
+    Background,
+}
+
+impl DialPurpose {
+    fn is_foreground(self) -> bool {
+        self == Self::ForegroundDns
+    }
+
+    fn priority(self) -> DialPriority {
+        if self.is_foreground() {
+            DialPriority::ForegroundDns
+        } else {
+            DialPriority::Background
+        }
+    }
+
+    fn coordination_wait(self, config: &Config) -> Duration {
+        if self.is_foreground() {
+            config.foreground_coordination_wait()
+        } else {
+            config.background_coordination_wait()
+        }
+    }
+
+    fn attempt_timeout(self, config: &Config) -> Duration {
+        config.coordinated_attempt_timeout(self.is_foreground())
+    }
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -149,9 +182,9 @@ impl Router {
         let deadline = TokioInstant::now() + self.config.route_budget();
         let candidates = self.pool.candidate_order().await;
         let routed = if candidates.len() > 1 {
-            self.connect_hedged(candidates, target, deadline).await?
+            self.connect_hedged(candidates, target, deadline, DialPurpose::ForegroundDns).await?
         } else {
-            self.connect_sequential(candidates, target, deadline).await?
+            self.connect_sequential(candidates, target, deadline, DialPurpose::ForegroundDns).await?
         };
 
         if self.warm_eligible(&routed) {
@@ -236,9 +269,9 @@ impl Router {
         }
         let deadline = TokioInstant::now() + self.config.route_budget();
         let routed = if candidates.len() > 1 {
-            self.connect_hedged(candidates, target, deadline).await
+            self.connect_hedged(candidates, target, deadline, DialPurpose::Background).await
         } else {
-            self.connect_sequential(candidates, target, deadline).await
+            self.connect_sequential(candidates, target, deadline, DialPurpose::Background).await
         };
         let Ok(routed) = routed else { return };
         // Never cache DIRECT streams: they skip SOCKS accounting and the
@@ -298,13 +331,16 @@ impl Router {
             return;
         }
         let attempt = tokio::time::timeout(
-            self.config.backend_attempt_timeout(),
+            DialPurpose::Background.attempt_timeout(&self.config),
             connect_via_socks5(
                 backend,
                 &target,
                 self.config.connect_timeout(),
                 self.config.upstream_handshake_timeout(),
                 self.config.tcp_nodelay,
+                DialPurpose::Background.priority(),
+                DialPurpose::Background.coordination_wait(&self.config),
+                self.config.backend_attempt_timeout(),
             ),
         )
         .await;
@@ -336,6 +372,7 @@ impl Router {
         candidates: Vec<SocketAddr>,
         target: &TargetAddr,
         deadline: TokioInstant,
+        purpose: DialPurpose,
     ) -> Result<RoutedStream> {
         const BUDGET_EXHAUSTED: &str =
             "dnscrypt route budget exhausted before trying all backends";
@@ -343,13 +380,13 @@ impl Router {
         let mut failures = Vec::new();
         if TokioInstant::now() >= deadline {
             failures.push(BUDGET_EXHAUSTED.to_string());
-            return self.finish_with_direct(target, failures, deadline).await;
+            return self.finish_with_direct(target, failures, deadline, purpose.is_foreground()).await;
         }
 
         let mut next_candidate = 1usize;
         let mut in_flight: JoinSet<AttemptOutcome> = JoinSet::new();
         let head = candidates[0];
-        self.start_hedged_attempt(&mut in_flight, head, target, deadline)
+        self.start_hedged_attempt(&mut in_flight, head, target, deadline, purpose)
             .await;
 
         // One hedge window per request, anchored to the first dial.
@@ -437,7 +474,7 @@ impl Router {
                     stagger_armed = false;
                     if let Some(&candidate) = candidates.get(next_candidate) {
                         if self.pool.backend_selectable(candidate).await {
-                            self.start_hedged_attempt(&mut in_flight, candidate, target, deadline)
+                            self.start_hedged_attempt(&mut in_flight, candidate, target, deadline, purpose)
                                 .await;
                             next_candidate += 1;
                         }
@@ -455,7 +492,7 @@ impl Router {
                         failures.push(BUDGET_EXHAUSTED.to_string());
                         break;
                     }
-                    self.start_hedged_attempt(&mut in_flight, candidate, target, deadline)
+                    self.start_hedged_attempt(&mut in_flight, candidate, target, deadline, purpose)
                         .await;
                     next_candidate += 1;
                 } else {
@@ -464,7 +501,7 @@ impl Router {
             }
         }
 
-        self.finish_with_direct(target, failures, deadline).await
+        self.finish_with_direct(target, failures, deadline, purpose.is_foreground()).await
     }
 
     async fn start_hedged_attempt(
@@ -473,16 +510,20 @@ impl Router {
         backend: SocketAddr,
         target: &TargetAddr,
         deadline: TokioInstant,
+        purpose: DialPurpose,
     ) {
         let now = TokioInstant::now();
         if now >= deadline {
             return;
         }
-        let window = self.config.backend_attempt_timeout().min(deadline - now);
+        let window = purpose.attempt_timeout(&self.config).min(deadline - now);
         self.pool.mark_attempt(backend).await;
         let connect_timeout = self.config.connect_timeout();
         let handshake_timeout = self.config.upstream_handshake_timeout();
         let tcp_nodelay = self.config.tcp_nodelay;
+        let priority = purpose.priority();
+        let coordination_wait = purpose.coordination_wait(&self.config);
+        let backend_attempt_timeout = self.config.backend_attempt_timeout();
         let window_ms = window.as_millis() as u64;
         let target = target.clone();
         in_flight.spawn(async move {
@@ -495,6 +536,9 @@ impl Router {
                     connect_timeout,
                     handshake_timeout,
                     tcp_nodelay,
+                    priority,
+                    coordination_wait,
+                    backend_attempt_timeout,
                 ),
             )
             .await
@@ -540,6 +584,11 @@ impl Router {
                 None
             }
             Err(error) => {
+                if error.is_coordination_busy() {
+                    let message = error.to_string();
+                    debug!(%backend, %message, "backend dial deferred by shared T2S/D2S coordination");
+                    return Some(format!("{backend}: {message}"));
+                }
                 let class = error.runtime_failure_class();
                 let message = match &error {
                     SocksClientError::Timeout("hedged backend attempt") => {
@@ -555,13 +604,15 @@ impl Router {
         }
     }
 
-    /// Original sequential dialer, used verbatim for zero/one candidate (the
-    /// single-backend case keeps its one-shot transient retry).
+    /// Sequential dialer for zero/one candidate. Foreground DNS uses the
+    /// shared coordinator and keeps the existing one-shot transient retry;
+    /// coordination contention is retried once without poisoning backend health.
     async fn connect_sequential(
         &self,
         candidates: Vec<SocketAddr>,
         target: &TargetAddr,
         deadline: TokioInstant,
+        purpose: DialPurpose,
     ) -> Result<RoutedStream> {
         let single_backend_mode = candidates.len() == 1;
         let mut failures = Vec::new();
@@ -573,7 +624,7 @@ impl Router {
                 break;
             }
             let remaining = deadline - now;
-            let attempt_timeout = self.config.backend_attempt_timeout().min(remaining);
+            let attempt_timeout = purpose.attempt_timeout(&self.config).min(remaining);
 
             self.pool.mark_attempt(backend).await;
             let started = Instant::now();
@@ -585,6 +636,9 @@ impl Router {
                     self.config.connect_timeout(),
                     self.config.upstream_handshake_timeout(),
                     self.config.tcp_nodelay,
+                    purpose.priority(),
+                    purpose.coordination_wait(&self.config),
+                    self.config.backend_attempt_timeout(),
                 ),
             )
             .await;
@@ -606,18 +660,28 @@ impl Router {
                     });
                 }
                 Ok(Err(mut error)) => {
-                    // Keep the existing DNS-specific one-shot retry for short
-                    // Android route transitions. It changes only the current
-                    // DNSCrypt request; health is still decided by Full probe.
-                    if single_backend_mode && error.should_retry_once_on_single_backend() {
-                        let retry_delay = Duration::from_millis(75);
+                    // A busy coordination slot is not a backend failure. In the
+                    // important single-backend DNS case give the priority lease
+                    // one extra short attempt within the existing route budget.
+                    // Keep the existing Android-route retry for network/host
+                    // unreachable replies as well.
+                    let coordination_busy = error.is_coordination_busy();
+                    let should_retry = single_backend_mode
+                        && purpose.is_foreground()
+                        && (coordination_busy || error.should_retry_once_on_single_backend());
+                    if should_retry {
+                        let retry_delay = if coordination_busy {
+                            Duration::from_millis(20)
+                        } else {
+                            Duration::from_millis(75)
+                        };
                         let now = TokioInstant::now();
                         if now < deadline && deadline - now > retry_delay {
                             tokio::time::sleep(retry_delay).await;
                             let now = TokioInstant::now();
                             if now < deadline {
                                 let remaining = deadline - now;
-                                let retry_timeout = self.config.backend_attempt_timeout().min(remaining);
+                                let retry_timeout = purpose.attempt_timeout(&self.config).min(remaining);
                                 let retry_started = Instant::now();
                                 match tokio::time::timeout(
                                     retry_timeout,
@@ -627,6 +691,9 @@ impl Router {
                                         self.config.connect_timeout(),
                                         self.config.upstream_handshake_timeout(),
                                         self.config.tcp_nodelay,
+                                        purpose.priority(),
+                                        purpose.coordination_wait(&self.config),
+                                        self.config.backend_attempt_timeout(),
                                     ),
                                 )
                                 .await
@@ -638,7 +705,7 @@ impl Router {
                                             .fetch_add(1, Ordering::Relaxed);
                                         self.note_socks_restored();
                                         self.note_hot_target(target);
-                                        debug!(%backend, %target, "single-backend transient retry succeeded");
+                                        debug!(%backend, %target, "single-backend retry succeeded");
                                         return Ok(RoutedStream {
                                             stream,
                                             route: RouteKind::Socks,
@@ -666,8 +733,16 @@ impl Router {
                         }
                     }
 
-                    let class = error.runtime_failure_class();
                     let message = error.to_string();
+                    if error.is_coordination_busy() {
+                        // Another local T2S/D2S handshake owned the backend
+                        // slot. Do not poison health or cooldown for contention
+                        // that says nothing about backend reachability.
+                        debug!(%backend, %message, "SOCKS backend busy in shared dial coordinator");
+                        failures.push(format!("{backend}: {message}"));
+                        continue;
+                    }
+                    let class = error.runtime_failure_class();
                     self.pool.mark_runtime_failure(backend, class, &message).await;
                     failures.push(format!("{backend}: {message}"));
                 }
@@ -684,7 +759,7 @@ impl Router {
             }
         }
 
-        self.finish_with_direct(target, failures, deadline).await
+        self.finish_with_direct(target, failures, deadline, purpose.is_foreground()).await
     }
 
     async fn finish_with_direct(
@@ -692,7 +767,14 @@ impl Router {
         target: &TargetAddr,
         failures: Vec<String>,
         deadline: TokioInstant,
+        allow_direct: bool,
     ) -> Result<RoutedStream> {
+        if !allow_direct {
+            return Err(anyhow!(
+                "background SOCKS route deferred/failed for {target}; failures: {}",
+                failures.join(" | ")
+            ));
+        }
         if !self.config.direct_fallback {
             return Err(anyhow!(
                 "no SOCKS5 backend could reach {target}; direct fallback is disabled; failures: {}",

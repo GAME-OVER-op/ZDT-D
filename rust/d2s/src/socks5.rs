@@ -1,4 +1,7 @@
-use crate::target::TargetAddr;
+use crate::{
+    coord::{acquire_dial_lock, release_dial_lock, DialPriority},
+    target::TargetAddr,
+};
 use anyhow::{anyhow, Context, Result};
 use std::{future::Future, net::{IpAddr, Ipv4Addr, SocketAddr}, time::{Duration, SystemTime, UNIX_EPOCH}};
 use thiserror::Error;
@@ -27,6 +30,8 @@ pub enum SocksClientError {
     Protocol(String),
     #[error("SOCKS5 CONNECT failed with reply code 0x{0:02x}")]
     ConnectReply(u8),
+    #[error("SOCKS5 backend coordination remained busy for {waited_ms} ms")]
+    CoordinationBusy { waited_ms: u64 },
 }
 
 impl SocksClientError {
@@ -38,7 +43,7 @@ impl SocksClientError {
         use std::io::ErrorKind;
         match self {
             Self::ConnectReply(code) if (0x02..=0x06).contains(code) => RuntimeFailureClass::TargetPath,
-            Self::Timeout(_) => RuntimeFailureClass::Soft,
+            Self::Timeout(_) | Self::CoordinationBusy { .. } => RuntimeFailureClass::Soft,
             Self::BackendConnect(error) | Self::Io(_, error)
                 if matches!(error.kind(), ErrorKind::TimedOut | ErrorKind::WouldBlock | ErrorKind::Interrupted) =>
             {
@@ -51,6 +56,13 @@ impl SocksClientError {
 
     pub fn is_target_path_failure(&self) -> bool {
         self.runtime_failure_class() == RuntimeFailureClass::TargetPath
+    }
+
+    /// Coordination contention means another healthy local client currently
+    /// owns the shared backend handshake slot. It is not evidence that the
+    /// backend itself is unhealthy and must never demote health state.
+    pub fn is_coordination_busy(&self) -> bool {
+        matches!(self, Self::CoordinationBusy { .. })
     }
 
     /// A single reconnect is worthwhile for network/host unreachable replies:
@@ -84,6 +96,47 @@ where
 }
 
 pub async fn connect_via_socks5(
+    backend: SocketAddr,
+    target: &TargetAddr,
+    connect_timeout: Duration,
+    handshake_timeout: Duration,
+    tcp_nodelay: bool,
+    priority: DialPriority,
+    coordination_wait: Duration,
+    attempt_timeout: Duration,
+) -> std::result::Result<TcpStream, SocksClientError> {
+    let dial_lock = match acquire_dial_lock(backend, priority, coordination_wait).await {
+        Ok(lock) => lock,
+        Err(busy) => {
+            return Err(SocksClientError::CoordinationBusy {
+                waited_ms: busy.waited.as_millis().min(u64::MAX as u128) as u64,
+            });
+        }
+    };
+
+    // Preserve the configured backend-attempt budget independently of how
+    // long coordination waited. A free lock must never grant the network
+    // handshake extra time merely because coordination has an allowance.
+    let result = match tokio::time::timeout(
+        attempt_timeout,
+        connect_via_socks5_inner(
+            backend,
+            target,
+            connect_timeout,
+            handshake_timeout,
+            tcp_nodelay,
+        ),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => Err(SocksClientError::Timeout("backend attempt")),
+    };
+    release_dial_lock(dial_lock).await;
+    result
+}
+
+async fn connect_via_socks5_inner(
     backend: SocketAddr,
     target: &TargetAddr,
     connect_timeout: Duration,
@@ -128,6 +181,47 @@ pub async fn connect_via_socks5(
 /// Stage-1 health check: prove that the local SOCKS listener accepts TCP and
 /// completes a NO-AUTH greeting, without making an Internet connection.
 pub async fn connect_to_socks5_server(
+    backend: SocketAddr,
+    connect_timeout: Duration,
+    handshake_timeout: Duration,
+    tcp_nodelay: bool,
+    coordination_wait: Duration,
+    attempt_timeout: Duration,
+) -> std::result::Result<TcpStream, SocksClientError> {
+    let dial_lock = match acquire_dial_lock(
+        backend,
+        DialPriority::Background,
+        coordination_wait,
+    )
+    .await
+    {
+        Ok(lock) => lock,
+        Err(busy) => {
+            return Err(SocksClientError::CoordinationBusy {
+                waited_ms: busy.waited.as_millis().min(u64::MAX as u128) as u64,
+            });
+        }
+    };
+
+    let result = match tokio::time::timeout(
+        attempt_timeout,
+        connect_to_socks5_server_inner(
+            backend,
+            connect_timeout,
+            handshake_timeout,
+            tcp_nodelay,
+        ),
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(_) => Err(SocksClientError::Timeout("backend probe attempt")),
+    };
+    release_dial_lock(dial_lock).await;
+    result
+}
+
+async fn connect_to_socks5_server_inner(
     backend: SocketAddr,
     connect_timeout: Duration,
     handshake_timeout: Duration,
@@ -402,5 +496,9 @@ mod tests {
             .backend_unavailable_before_handshake());
         assert!(SocksClientError::Timeout("backend TCP connect").backend_unavailable_before_handshake());
         assert!(!SocksClientError::Timeout("CONNECT reply header read").backend_unavailable_before_handshake());
+        let busy = SocksClientError::CoordinationBusy { waited_ms: 250 };
+        assert!(busy.is_coordination_busy());
+        assert_eq!(busy.runtime_failure_class(), super::RuntimeFailureClass::Soft);
+        assert!(!busy.is_target_path_failure());
     }
 }

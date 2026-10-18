@@ -246,6 +246,49 @@ impl Config {
     pub fn hedge_stagger(&self) -> Duration { Duration::from_millis(self.hedge_stagger_ms) }
     pub fn warm_tunnel_ttl(&self) -> Duration { Duration::from_secs(self.warm_tunnel_ttl_secs) }
 
+    /// Foreground DNS requests may wait briefly for a T2S/D2S peer to finish
+    /// the shared backend SOCKS handshake. Keep this bounded to roughly one
+    /// quarter of DNSCrypt's route budget so DNS gets priority without
+    /// consuming the whole query deadline before a real connection attempt.
+    pub fn foreground_coordination_wait(&self) -> Duration {
+        let budget_ms = self.route_budget().as_millis().min(u64::MAX as u128) as u64;
+        Duration::from_millis((budget_ms / 4).clamp(100, 1_200))
+    }
+
+    /// Background health/warmup work yields quickly to foreground DNS and T2S.
+    /// If the shared backend remains busy, the background operation is simply
+    /// deferred without changing backend health.
+    pub fn background_coordination_wait(&self) -> Duration {
+        Duration::from_millis(200)
+    }
+
+    /// The 100 ms post-handshake lock stagger is detached and therefore does
+    /// not delay the completed DNS dial. Keep a conservative outer margin for
+    /// the 20 ms foreground priority-lease probe, scheduler jitter and timeout
+    /// cancellation boundaries.
+    pub fn coordination_release_margin(&self) -> Duration {
+        Duration::from_millis(200)
+    }
+
+    /// Outer attempt timeout includes coordination wait, the configured
+    /// backend attempt budget and the post-handshake release margin. The
+    /// caller still caps this by the overall DNS route deadline.
+    pub fn coordinated_attempt_timeout(&self, foreground: bool) -> Duration {
+        self.backend_attempt_timeout()
+            .saturating_add(if foreground {
+                self.foreground_coordination_wait()
+            } else {
+                self.background_coordination_wait()
+            })
+            .saturating_add(self.coordination_release_margin())
+    }
+
+    pub fn coordinated_probe_timeout(&self) -> Duration {
+        self.probe_timeout()
+            .saturating_add(self.background_coordination_wait())
+            .saturating_add(self.coordination_release_margin())
+    }
+
     /// Maximum time after the client has sent the first relay payload for the
     /// remote side to prove that the established tunnel actually carries data.
     /// This intentionally follows dnscrypt-proxy's own query timeout and is not
@@ -452,6 +495,18 @@ idle_after_secs = 60
         assert_eq!(config.route_budget(), Duration::from_millis(1000));
         config.dnscrypt_timeout_ms = 600;
         assert_eq!(config.route_budget(), Duration::from_millis(600));
+    }
+
+    #[test]
+    fn coordination_wait_scales_with_dnscrypt_budget_without_consuming_it() {
+        let mut config: Config = toml::from_str("backends = []\ndirect_fallback = true\n").unwrap();
+        config.dnscrypt_timeout_ms = 7000;
+        assert_eq!(config.foreground_coordination_wait(), Duration::from_millis(1200));
+        config.dnscrypt_timeout_ms = 1200;
+        assert_eq!(config.foreground_coordination_wait(), Duration::from_millis(250));
+        config.dnscrypt_timeout_ms = 600;
+        assert_eq!(config.foreground_coordination_wait(), Duration::from_millis(150));
+        assert_eq!(config.background_coordination_wait(), Duration::from_millis(200));
     }
 
 }

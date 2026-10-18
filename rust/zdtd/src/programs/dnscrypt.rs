@@ -435,6 +435,14 @@ fn spawn_d2s(dnscrypt_toml: &Path, listener: SocketAddr) -> Result<Child> {
         .arg("--dnscrypt-config")
         .arg(dnscrypt_toml)
         .arg("run")
+        // D2S and T2S coordinate only through advisory files/flocks in the
+        // same runtime tree used by root T2S. Derive it from the canonical
+        // ZDT-D API directory so a future root-path change cannot split the
+        // two coordinators. No D2S HTTP/API server is involved.
+        .env(
+            "ZDTD_BACKEND_COORD_DIR",
+            Path::new(crate::settings::API_DIR).join("t2s").join("locks"),
+        )
         .stdin(Stdio::null())
         .stdout(Stdio::from(log_file))
         .stderr(Stdio::from(log_stderr));

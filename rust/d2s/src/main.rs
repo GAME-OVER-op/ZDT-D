@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use d2s::{backend::BackendPool, config::Config, server::start};
+use d2s::{backend::BackendPool, config::Config, coord, server::start};
 use std::{path::PathBuf, sync::Arc};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
@@ -58,7 +58,11 @@ async fn main() -> Result<()> {
             let config = Config::load(&cli.config, &cli.dnscrypt_config)?;
             init_logging(&config.log_level)?;
             let server = start(config).await?;
-            info!(listen = %server.listen_addr, "D2S started");
+            info!(
+                listen = %server.listen_addr,
+                coordination = %coord::coordination_path().display(),
+                "D2S started"
+            );
             wait_for_shutdown_signal().await?;
             server.shutdown().await
         }

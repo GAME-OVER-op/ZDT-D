@@ -506,3 +506,16 @@ cargo build --release -p t2s
 When `/data/adb/modules/ZDT-D/setting/setting.json` has `"tproxy_enabled": true`, t2s opens TCP as a transparent listener and starts a UDP TPROXY receiver on the same numeric listen port. No CLI arguments are added. Firewall, mark and policy-routing rules are managed outside t2s. When `tproxy_enabled` is false, UDP is not started.
 
 UDP routing: balance mode uses a GREEN backend with SOCKS5 UDP ASSOCIATE support, otherwise direct. Priority mode first finds the first GREEN priority group; UDP may use only UDP-capable backends in that group, otherwise direct.
+## D2S DNS priority on shared SOCKS backends
+
+The per-backend handshake lock is also shared with D2S. A real D2S DNS request
+holds a shared flock-backed `backend-<ip>-<port>.dns-priority.lock` lease in the
+same `<api-dir>/t2s/locks` directory. New T2S handshakes yield to that lease for a
+bounded window (750 ms maximum), while established T2S relays are unaffected.
+The configured post-handshake stagger remains enforced by a detached lock-release
+task, so the stream that just connected can start relaying immediately.
+After the bound expires T2S may contend for the normal backend lock again, so a
+continuous DNS stream can never starve T2S. If D2S crashes, the kernel releases
+the shared lease automatically; an unlocked priority file left on disk is inert.
+No D2S HTTP/API endpoint is required.
+

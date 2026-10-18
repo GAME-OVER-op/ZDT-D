@@ -14,6 +14,38 @@ cache, routing tables, TUN state, iptables, or Android DNS settings. The D2S
 listener is read from the active local `proxy = 'socks5://127.0.0.1:PORT'`
 entry in `dnscrypt-proxy.toml`.
 
+## Shared backend coordination with T2S
+
+When D2S and one or more T2S instances use the same local SOCKS5 backend they
+coordinate **without an HTTP/API service**. Both processes use the same
+per-backend advisory `flock` under the ZDT-D runtime directory, so only the TCP
+connect + SOCKS handshake phase is serialized. Established relays continue in
+parallel and are never throttled by the coordinator. The short 100 ms
+post-handshake spacing keeps the lock alive in the background, so a successful
+DNS tunnel is returned immediately instead of paying that stagger as latency.
+
+Real DNSCrypt requests hold a shared flock-backed priority lease on
+`backend-<ip>-<port>.dns-priority.lock` before waiting for the backend lock.
+T2S probes that lease and briefly yields new
+handshakes so DNS gets first access to a fragile single-server backend. T2S's
+yield is bounded, so continuous DNS traffic cannot starve new T2S connections.
+D2S health probes, recovery probes and warm-tunnel creation are background work:
+they do not hold a priority lease and defer when a real DNS request is waiting.
+
+Coordination contention is never treated as backend health failure. A health
+probe that cannot get the shared slot is simply rescheduled, and a foreground
+DNS request can retry within DNSCrypt's existing route budget or use the
+existing DIRECT fallback. The priority lease and backend handshake lock are
+protected by `flock`; if either process crashes the kernel releases them
+automatically. Lock files may remain on disk, but unlocked files are inert and
+need no stale-state cleanup.
+Filesystem/flock failures fail open, preserving the previous routing behavior.
+
+The default coordination directory is `/data/adb/modules/ZDT-D/api/t2s/locks`.
+When D2S is spawned by `zdtd`, the same path is supplied through
+`ZDTD_BACKEND_COORD_DIR` from ZDT-D's canonical API directory; this is only a
+filesystem path override and does not enable or require any D2S API listener.
+
 ## Health model adapted from T2S
 
 A local SOCKS listener being alive is not enough to become GREEN. D2S uses two

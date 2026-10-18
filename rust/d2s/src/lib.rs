@@ -1,5 +1,6 @@
 pub mod backend;
 pub mod config;
+pub mod coord;
 pub mod router;
 mod relay;
 pub mod server;

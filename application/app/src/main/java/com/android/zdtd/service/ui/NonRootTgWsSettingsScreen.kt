@@ -147,7 +147,9 @@ internal fun NonRootTgWsSettingsScreen(
                 Button(
                   onClick = onInstallOrUpdatePlugin,
                   enabled = !pluginState.busy && !config.enabled,
-                  modifier = Modifier.weight(1f),
+                  modifier = Modifier
+                    .weight(1f)
+                    .nonRootFocusHighlight(RoundedCornerShape(20.dp), !pluginState.busy && !config.enabled),
                 ) {
                   Text(stringResource(if (pluginState.installed) R.string.common_update else R.string.common_install))
                 }
@@ -155,7 +157,9 @@ internal fun NonRootTgWsSettingsScreen(
               OutlinedButton(
                 onClick = onRefreshPlugin,
                 enabled = !pluginState.busy,
-                modifier = Modifier.weight(1f),
+                modifier = Modifier
+                  .weight(1f)
+                  .nonRootFocusHighlight(RoundedCornerShape(20.dp), !pluginState.busy),
               ) { Text(stringResource(R.string.action_refresh)) }
             }
           }
@@ -178,7 +182,12 @@ internal fun NonRootTgWsSettingsScreen(
               Text(stringResource(R.string.tgws_enable_title), fontWeight = FontWeight.SemiBold)
               Text(stringResource(R.string.tgws_host_local_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Switch(checked = draft.enabled && pluginState.installed, enabled = pluginState.installed, onCheckedChange = { draft = draft.copy(enabled = it) })
+            Switch(
+              checked = draft.enabled && pluginState.installed,
+              enabled = pluginState.installed,
+              onCheckedChange = { draft = draft.copy(enabled = it) },
+              modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp), pluginState.installed),
+            )
           }
           OutlinedTextField(
             value = portText,
@@ -197,14 +206,20 @@ internal fun NonRootTgWsSettingsScreen(
           )
           OutlinedButton(
             onClick = { draft = draft.copy(secret = NonRootTgWsStore.generateSecret()) },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+              .fillMaxWidth()
+              .nonRootFocusHighlight(RoundedCornerShape(20.dp)),
           ) { Text(stringResource(R.string.tgws_generate_secret)) }
           Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f)) {
               Text(stringResource(R.string.tgws_faketls_title), fontWeight = FontWeight.SemiBold)
               Text(stringResource(R.string.tgws_faketls_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Switch(checked = draft.fakeTlsEnabled, onCheckedChange = { draft = draft.copy(fakeTlsEnabled = it) })
+            Switch(
+              checked = draft.fakeTlsEnabled,
+              onCheckedChange = { draft = draft.copy(fakeTlsEnabled = it) },
+              modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+            )
           }
           if (draft.fakeTlsEnabled) {
             OutlinedTextField(
@@ -239,14 +254,21 @@ internal fun NonRootTgWsSettingsScreen(
               }
             },
             enabled = hasChanges,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+              .fillMaxWidth()
+              .nonRootFocusHighlight(RoundedCornerShape(20.dp), hasChanges),
           ) { Text(stringResource(R.string.action_save)) }
         }
       }
     }
 
     item {
-      OutlinedButton(onClick = { advanced = !advanced }, modifier = Modifier.fillMaxWidth()) {
+      OutlinedButton(
+        onClick = { advanced = !advanced },
+        modifier = Modifier
+          .fillMaxWidth()
+          .nonRootFocusHighlight(RoundedCornerShape(20.dp)),
+      ) {
         Text(stringResource(R.string.tgws_advanced_title))
       }
     }
@@ -316,6 +338,10 @@ internal fun NonRootTgWsSettingsScreen(
 private fun ToggleRow(title: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
   Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
     Text(title, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-    Switch(checked = checked, onCheckedChange = onCheckedChange)
+    Switch(
+      checked = checked,
+      onCheckedChange = onCheckedChange,
+      modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+    )
   }
 }

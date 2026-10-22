@@ -50,6 +50,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -130,7 +133,9 @@ internal fun NonRootCascadeToolsContent(
     ) {
       OutlinedButton(
         onClick = { showCreateDialog = true },
-        modifier = Modifier.weight(1f),
+        modifier = Modifier
+          .weight(1f)
+          .nonRootFocusHighlight(RoundedCornerShape(20.dp)),
       ) {
         Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.size(6.dp))
@@ -138,7 +143,9 @@ internal fun NonRootCascadeToolsContent(
       }
       Button(
         onClick = onOpenT2sSettings,
-        modifier = Modifier.weight(1f),
+        modifier = Modifier
+          .weight(1f)
+          .nonRootFocusHighlight(RoundedCornerShape(20.dp)),
       ) {
         Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.size(6.dp))
@@ -180,6 +187,7 @@ internal fun NonRootCreateProfileDialog(
           Surface(
             modifier = Modifier
               .fillMaxWidth()
+              .nonRootFocusHighlight(RoundedCornerShape(16.dp))
               .clickable { toolId = candidate },
             shape = RoundedCornerShape(16.dp),
             color = if (selected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.62f)
@@ -213,10 +221,16 @@ internal fun NonRootCreateProfileDialog(
       }
     },
     confirmButton = {
-      TextButton(onClick = { onCreate(name, toolId) }) { Text(stringResource(R.string.action_create)) }
+      TextButton(
+        onClick = { onCreate(name, toolId) },
+        modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+      ) { Text(stringResource(R.string.action_create)) }
     },
     dismissButton = {
-      TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+      TextButton(
+        onClick = onDismiss,
+        modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+      ) { Text(stringResource(R.string.common_cancel)) }
     },
   )
 }
@@ -228,7 +242,10 @@ private fun NonRootCascadeProfileCard(
   onOpen: () -> Unit,
 ) {
   Surface(
-    modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
+    modifier = Modifier
+      .fillMaxWidth()
+      .nonRootFocusHighlight(RoundedCornerShape(20.dp))
+      .clickable(onClick = onOpen),
     shape = RoundedCornerShape(20.dp),
     color = MaterialTheme.colorScheme.surfaceContainerLow,
     border = BorderStroke(
@@ -275,6 +292,7 @@ private fun NonRootCascadeProfileCard(
       Switch(
         checked = profile.enabled,
         onCheckedChange = onEnabledChange,
+        modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
       )
     }
   }
@@ -402,7 +420,12 @@ internal fun NonRootCascadeProfileEditorScreen(
           Button(
             onClick = { onUpdateProfile(profile.copy(name = nameText)) },
             enabled = nameText.trim().isNotEmpty() && nameText.trim() != profile.name,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+              .fillMaxWidth()
+              .nonRootFocusHighlight(
+                RoundedCornerShape(20.dp),
+                nameText.trim().isNotEmpty() && nameText.trim() != profile.name,
+              ),
           ) {
             Text(stringResource(R.string.action_save))
           }
@@ -642,7 +665,10 @@ internal fun NonRootT2sSettingsScreen(
       title = { Text(specialTitle(type)) },
       text = { Text(specialHelp(type)) },
       confirmButton = {
-        TextButton(onClick = { helpType = null }) { Text(stringResource(R.string.action_ok)) }
+        TextButton(
+          onClick = { helpType = null },
+          modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+        ) { Text(stringResource(R.string.action_ok)) }
       },
     )
   }
@@ -666,10 +692,84 @@ private fun NonRootT2sRouteRow(
   val latestOnRemoveSpecial by rememberUpdatedState(onRemoveSpecial)
   val latestOnDeleteZoneActiveChange by rememberUpdatedState(onDeleteZoneActiveChange)
   val latestRouteSize by rememberUpdatedState(route.size)
+  val television = rememberIsTelevision()
   var dragTotal by remember(stableKey) { mutableFloatStateOf(0f) }
   var downwardTotal by remember(stableKey) { mutableFloatStateOf(0f) }
   var removeOnEnd by remember(stableKey) { mutableStateOf(false) }
   var gestureIndex by remember(stableKey) { mutableIntStateOf(index) }
+  var reorderArmed by remember(stableKey) { mutableStateOf(false) }
+
+  val dragHandleModifier = if (television) {
+    Modifier
+      .nonRootFocusHighlight(RoundedCornerShape(10.dp))
+      .onPreviewKeyEvent { event ->
+        if (!reorderArmed || event.type != KeyEventType.KeyDown) {
+          false
+        } else {
+          val direction = when (event.key) {
+            Key.DirectionUp -> -1
+            Key.DirectionDown -> 1
+            else -> 0
+          }
+          if (direction == 0) {
+            false
+          } else {
+            val target = gestureIndex + direction
+            if (target in 0 until latestRouteSize && latestOnMove(gestureIndex, target)) {
+              gestureIndex = target
+            }
+            true
+          }
+        }
+      }
+      .clickable {
+        if (!reorderArmed) gestureIndex = index
+        reorderArmed = !reorderArmed
+      }
+  } else {
+    Modifier.pointerInput(stableKey, route.size) {
+      detectDragGesturesAfterLongPress(
+        onDragStart = {
+          gestureIndex = index
+          dragTotal = 0f
+          downwardTotal = 0f
+          removeOnEnd = false
+        },
+        onDragCancel = {
+          latestOnDeleteZoneActiveChange(false)
+          dragTotal = 0f
+          downwardTotal = 0f
+          removeOnEnd = false
+        },
+        onDragEnd = {
+          if (removeOnEnd && item.type != NonRootCascadeRouteItemType.PROFILE) {
+            latestOnRemoveSpecial(gestureIndex)
+          }
+          latestOnDeleteZoneActiveChange(false)
+          dragTotal = 0f
+          downwardTotal = 0f
+          removeOnEnd = false
+        },
+        onDrag = { change, dragAmount ->
+          change.consume()
+          dragTotal += dragAmount.y
+          downwardTotal = (downwardTotal + dragAmount.y).coerceAtLeast(0f)
+          if (item.type != NonRootCascadeRouteItemType.PROFILE && downwardTotal > 150.dp.toPx()) {
+            if (!removeOnEnd) latestOnDeleteZoneActiveChange(true)
+            removeOnEnd = true
+            return@detectDragGesturesAfterLongPress
+          }
+          if (!removeOnEnd && abs(dragTotal) >= 48.dp.toPx()) {
+            val target = if (dragTotal > 0f) gestureIndex + 1 else gestureIndex - 1
+            if (target in 0 until latestRouteSize && latestOnMove(gestureIndex, target)) {
+              gestureIndex = target
+            }
+            dragTotal = 0f
+          }
+        },
+      )
+    }
+  }
 
   Surface(
     modifier = modifier
@@ -689,49 +789,8 @@ private fun NonRootT2sRouteRow(
         contentDescription = stringResource(R.string.non_root_t2s_drag_handle),
         modifier = Modifier
           .size(32.dp)
-          .pointerInput(stableKey, route.size) {
-            detectDragGesturesAfterLongPress(
-              onDragStart = {
-                gestureIndex = index
-                dragTotal = 0f
-                downwardTotal = 0f
-                removeOnEnd = false
-              },
-              onDragCancel = {
-                latestOnDeleteZoneActiveChange(false)
-                dragTotal = 0f
-                downwardTotal = 0f
-                removeOnEnd = false
-              },
-              onDragEnd = {
-                if (removeOnEnd && item.type != NonRootCascadeRouteItemType.PROFILE) {
-                  latestOnRemoveSpecial(gestureIndex)
-                }
-                latestOnDeleteZoneActiveChange(false)
-                dragTotal = 0f
-                downwardTotal = 0f
-                removeOnEnd = false
-              },
-              onDrag = { change, dragAmount ->
-                change.consume()
-                dragTotal += dragAmount.y
-                downwardTotal = (downwardTotal + dragAmount.y).coerceAtLeast(0f)
-                if (item.type != NonRootCascadeRouteItemType.PROFILE && downwardTotal > 150.dp.toPx()) {
-                  if (!removeOnEnd) latestOnDeleteZoneActiveChange(true)
-                  removeOnEnd = true
-                  return@detectDragGesturesAfterLongPress
-                }
-                if (!removeOnEnd && abs(dragTotal) >= 48.dp.toPx()) {
-                  val target = if (dragTotal > 0f) gestureIndex + 1 else gestureIndex - 1
-                  if (target in 0 until latestRouteSize && latestOnMove(gestureIndex, target)) {
-                    gestureIndex = target
-                  }
-                  dragTotal = 0f
-                }
-              },
-            )
-          },
-        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+          .then(dragHandleModifier),
+        tint = if (reorderArmed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
       )
 
       when (item.type) {
@@ -759,7 +818,11 @@ private fun NonRootT2sRouteRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
               )
             }
-            Switch(checked = value.enabled, onCheckedChange = onEnabledChange)
+            Switch(
+              checked = value.enabled,
+              onCheckedChange = onEnabledChange,
+              modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+            )
           }
         }
         else -> {
@@ -776,7 +839,10 @@ private fun NonRootT2sRouteRow(
             )
           }
           if (item.type == NonRootCascadeRouteItemType.GROUP && item.markerId.isNotBlank()) {
-            IconButton(onClick = { onRenameGroup(item.markerId) }) {
+            IconButton(
+              onClick = { onRenameGroup(item.markerId) },
+              modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(22.dp)),
+            ) {
               Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.non_root_group_rename))
             }
           }
@@ -810,10 +876,14 @@ private fun NonRootGroupNameDialog(
       TextButton(
         onClick = { onSave(name.trim()) },
         enabled = name.trim().isNotEmpty(),
+        modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp), name.trim().isNotEmpty()),
       ) { Text(stringResource(R.string.action_save)) }
     },
     dismissButton = {
-      TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) }
+      TextButton(
+        onClick = onDismiss,
+        modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+      ) { Text(stringResource(R.string.common_cancel)) }
     },
   )
 }
@@ -827,10 +897,21 @@ private fun NonRootPaletteItem(
   onDragIntoRoute: () -> Unit,
 ) {
   var draggedUp by remember(type) { mutableStateOf(false) }
+  val television = rememberIsTelevision()
   val contentAlpha = if (enabled) 1f else 0.45f
+  val shape = RoundedCornerShape(16.dp)
+  val tvModifier = if (television) {
+    Modifier
+      .nonRootFocusHighlight(shape, enabled)
+      .clickable(enabled = enabled, onClick = onDragIntoRoute)
+  } else {
+    Modifier
+  }
   Surface(
-    modifier = Modifier.fillMaxWidth(),
-    shape = RoundedCornerShape(16.dp),
+    modifier = Modifier
+      .fillMaxWidth()
+      .then(tvModifier),
+    shape = shape,
     color = MaterialTheme.colorScheme.surfaceContainer,
   ) {
     Row(
@@ -843,24 +924,30 @@ private fun NonRootPaletteItem(
         contentDescription = stringResource(R.string.non_root_t2s_drag_handle),
         modifier = Modifier
           .size(32.dp)
-          .pointerInput(type, enabled) {
-            if (!enabled) return@pointerInput
-            var total = 0f
-            detectDragGesturesAfterLongPress(
-              onDragStart = { total = 0f; draggedUp = false },
-              onDragCancel = { total = 0f; draggedUp = false },
-              onDragEnd = {
-                if (draggedUp) onDragIntoRoute()
-                total = 0f
-                draggedUp = false
-              },
-              onDrag = { change, amount ->
-                change.consume()
-                total += amount.y
-                if (total < -70.dp.toPx()) draggedUp = true
-              },
-            )
-          },
+          .then(
+            if (television) {
+              Modifier
+            } else {
+              Modifier.pointerInput(type, enabled) {
+                if (!enabled) return@pointerInput
+                var total = 0f
+                detectDragGesturesAfterLongPress(
+                  onDragStart = { total = 0f; draggedUp = false },
+                  onDragCancel = { total = 0f; draggedUp = false },
+                  onDragEnd = {
+                    if (draggedUp) onDragIntoRoute()
+                    total = 0f
+                    draggedUp = false
+                  },
+                  onDrag = { change, amount ->
+                    change.consume()
+                    total += amount.y
+                    if (total < -70.dp.toPx()) draggedUp = true
+                  },
+                )
+              }
+            }
+          ),
         tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha),
       )
       Text(
@@ -869,7 +956,10 @@ private fun NonRootPaletteItem(
         color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha),
         fontWeight = FontWeight.SemiBold,
       )
-      IconButton(onClick = onHelp) {
+      IconButton(
+        onClick = onHelp,
+        modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(22.dp)),
+      ) {
         Icon(Icons.Filled.HelpOutline, contentDescription = stringResource(R.string.non_root_t2s_help))
       }
     }
@@ -967,7 +1057,11 @@ private fun NonRootT2sSwitchRow(
       Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
       Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
-    Switch(checked = checked, onCheckedChange = onCheckedChange)
+    Switch(
+      checked = checked,
+      onCheckedChange = onCheckedChange,
+      modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+    )
   }
 }
 

@@ -52,6 +52,9 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -151,7 +154,12 @@ internal fun NonRootMultiServerProfileEditorScreen(
           Button(
             onClick = { onUpdateProfile(profile.copy(name = nameText)) },
             enabled = nameText.trim().isNotEmpty() && nameText.trim() != profile.name,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+              .fillMaxWidth()
+              .nonRootFocusHighlight(
+                RoundedCornerShape(20.dp),
+                nameText.trim().isNotEmpty() && nameText.trim() != profile.name,
+              ),
           ) { Text(stringResource(R.string.action_save)) }
         }
       }
@@ -171,7 +179,10 @@ internal fun NonRootMultiServerProfileEditorScreen(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
         }
-        OutlinedButton(onClick = { addDialog = true }) {
+        OutlinedButton(
+          onClick = { addDialog = true },
+          modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(20.dp)),
+        ) {
           Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
           Spacer(Modifier.size(6.dp))
           Text(stringResource(R.string.non_root_add_server))
@@ -258,12 +269,20 @@ internal fun NonRootMultiServerProfileEditorScreen(
       title = { Text(stringResource(R.string.non_root_delete_server_title)) },
       text = { Text(stringResource(R.string.non_root_delete_server_body, server.name)) },
       confirmButton = {
-        TextButton(onClick = {
-          onDeleteServer(profile.id, server.id)
-          deleteServer = null
-        }) { Text(stringResource(R.string.action_delete)) }
+        TextButton(
+          onClick = {
+            onDeleteServer(profile.id, server.id)
+            deleteServer = null
+          },
+          modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+        ) { Text(stringResource(R.string.action_delete)) }
       },
-      dismissButton = { TextButton(onClick = { deleteServer = null }) { Text(stringResource(R.string.common_cancel)) } },
+      dismissButton = {
+        TextButton(
+          onClick = { deleteServer = null },
+          modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+        ) { Text(stringResource(R.string.common_cancel)) }
+      },
     )
   }
 }
@@ -301,7 +320,10 @@ private fun NonRootBackendServerCard(
         onMove = onMove,
       )
       Column(
-        modifier = Modifier.weight(1f).clickable(onClick = onEdit),
+        modifier = Modifier
+          .weight(1f)
+          .nonRootFocusHighlight(RoundedCornerShape(12.dp))
+          .clickable(onClick = onEdit),
         verticalArrangement = Arrangement.spacedBy(2.dp),
       ) {
         Text(server.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
@@ -311,9 +333,19 @@ private fun NonRootBackendServerCard(
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
       }
-      Switch(checked = server.enabled, onCheckedChange = onToggle)
-      IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.action_edit)) }
-      IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.action_delete), tint = MaterialTheme.colorScheme.error) }
+      Switch(
+        checked = server.enabled,
+        onCheckedChange = onToggle,
+        modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+      )
+      IconButton(
+        onClick = onEdit,
+        modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(22.dp)),
+      ) { Icon(Icons.Filled.Edit, contentDescription = stringResource(R.string.action_edit)) }
+      IconButton(
+        onClick = onDelete,
+        modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(22.dp)),
+      ) { Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.action_delete), tint = MaterialTheme.colorScheme.error) }
     }
   }
 }
@@ -326,34 +358,69 @@ private fun NonRootServerDragHandle(
   onMove: (Int, Int) -> Int?,
 ) {
   val latestOnMove by rememberUpdatedState(onMove)
+  val television = rememberIsTelevision()
   var gestureIndex by remember(stableKey) { mutableIntStateOf(index) }
   var dragTotal by remember(stableKey) { mutableFloatStateOf(0f) }
+  var reorderArmed by remember(stableKey) { mutableStateOf(false) }
+
+  val interactionModifier = if (television) {
+    Modifier
+      .nonRootFocusHighlight(RoundedCornerShape(10.dp), enabled)
+      .onPreviewKeyEvent { event ->
+        if (!enabled || !reorderArmed || event.type != KeyEventType.KeyDown) {
+          false
+        } else {
+          val direction = when (event.key) {
+            Key.DirectionUp -> -1
+            Key.DirectionDown -> 1
+            else -> 0
+          }
+          if (direction == 0) {
+            false
+          } else {
+            latestOnMove(gestureIndex, direction)?.let { gestureIndex = it }
+            true
+          }
+        }
+      }
+      .clickable(enabled = enabled) {
+        if (!reorderArmed) gestureIndex = index
+        reorderArmed = !reorderArmed
+      }
+  } else {
+    Modifier.pointerInput(stableKey, enabled) {
+      if (!enabled) return@pointerInput
+      detectDragGesturesAfterLongPress(
+        onDragStart = {
+          gestureIndex = index
+          dragTotal = 0f
+        },
+        onDragCancel = { dragTotal = 0f },
+        onDragEnd = { dragTotal = 0f },
+        onDrag = { change, amount ->
+          change.consume()
+          dragTotal += amount.y
+          if (abs(dragTotal) >= 46.dp.toPx()) {
+            val direction = if (dragTotal > 0f) 1 else -1
+            latestOnMove(gestureIndex, direction)?.let { gestureIndex = it }
+            dragTotal = 0f
+          }
+        },
+      )
+    }
+  }
+
   Icon(
     imageVector = Icons.Filled.DragHandle,
     contentDescription = stringResource(R.string.non_root_t2s_drag_handle),
-    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (enabled) 1f else 0.38f),
+    tint = when {
+      !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f)
+      reorderArmed -> MaterialTheme.colorScheme.primary
+      else -> MaterialTheme.colorScheme.onSurfaceVariant
+    },
     modifier = Modifier
       .size(30.dp)
-      .pointerInput(stableKey, enabled) {
-        if (!enabled) return@pointerInput
-        detectDragGesturesAfterLongPress(
-          onDragStart = {
-            gestureIndex = index
-            dragTotal = 0f
-          },
-          onDragCancel = { dragTotal = 0f },
-          onDragEnd = { dragTotal = 0f },
-          onDrag = { change, amount ->
-            change.consume()
-            dragTotal += amount.y
-            if (abs(dragTotal) >= 46.dp.toPx()) {
-              val direction = if (dragTotal > 0f) 1 else -1
-              latestOnMove(gestureIndex, direction)?.let { gestureIndex = it }
-              dragTotal = 0f
-            }
-          },
-        )
-      },
+      .then(interactionModifier),
   )
 }
 
@@ -380,8 +447,18 @@ private fun NonRootAddServerDialog(
         )
       }
     },
-    confirmButton = { TextButton(onClick = { onCreate(name.trim().ifBlank { "Server $index" }) }) { Text(stringResource(R.string.action_create)) } },
-    dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
+    confirmButton = {
+      TextButton(
+        onClick = { onCreate(name.trim().ifBlank { "Server $index" }) },
+        modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+      ) { Text(stringResource(R.string.action_create)) }
+    },
+    dismissButton = {
+      TextButton(
+        onClick = onDismiss,
+        modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+      ) { Text(stringResource(R.string.common_cancel)) }
+    },
   )
 }
 
@@ -474,7 +551,12 @@ private fun NonRootBackendServerConfigDialog(
         }
         if (toolId == NonRootCascadeProfile.TOOL_SING_BOX) {
           item {
-            OutlinedButton(onClick = { importExpanded = !importExpanded }, modifier = Modifier.fillMaxWidth()) {
+            OutlinedButton(
+              onClick = { importExpanded = !importExpanded },
+              modifier = Modifier
+                .fillMaxWidth()
+                .nonRootFocusHighlight(RoundedCornerShape(20.dp)),
+            ) {
               Text(stringResource(R.string.non_root_singbox_import))
             }
           }
@@ -500,7 +582,9 @@ private fun NonRootBackendServerConfigDialog(
                       .onFailure { error = it.message ?: importFailed }
                   },
                   enabled = importSource.isNotBlank(),
-                  modifier = Modifier.fillMaxWidth(),
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .nonRootFocusHighlight(RoundedCornerShape(20.dp), importSource.isNotBlank()),
                 ) { Text(stringResource(R.string.non_root_import_config)) }
               }
             }
@@ -520,25 +604,33 @@ private fun NonRootBackendServerConfigDialog(
       }
     },
     confirmButton = {
-      TextButton(onClick = {
-        val port = portText.toIntOrNull()
-        val aux = auxPortText.toIntOrNull() ?: server.auxPort
-        when {
-          port == null || port !in NonRootPortRegistry.MIN_PORT..65535 -> error = invalidSocksPort
-          toolId == NonRootCascadeProfile.TOOL_MIERU && aux !in NonRootPortRegistry.MIN_PORT..65535 -> error = invalidRpcPort
-          toolId == NonRootCascadeProfile.TOOL_MIERU && aux == port -> error = rpcPortConflict
-          !validateConfig() -> Unit
-          else -> {
-            val saved = onSave(server.copy(
-              name = name.trim().ifBlank { server.name },
-              configText = config,
-              logLevel = logLevel.trim().ifBlank { "info" },
-            ), port, aux)
-            if (!saved) error = portUnavailable
+      TextButton(
+        onClick = {
+          val port = portText.toIntOrNull()
+          val aux = auxPortText.toIntOrNull() ?: server.auxPort
+          when {
+            port == null || port !in NonRootPortRegistry.MIN_PORT..65535 -> error = invalidSocksPort
+            toolId == NonRootCascadeProfile.TOOL_MIERU && aux !in NonRootPortRegistry.MIN_PORT..65535 -> error = invalidRpcPort
+            toolId == NonRootCascadeProfile.TOOL_MIERU && aux == port -> error = rpcPortConflict
+            !validateConfig() -> Unit
+            else -> {
+              val saved = onSave(server.copy(
+                name = name.trim().ifBlank { server.name },
+                configText = config,
+                logLevel = logLevel.trim().ifBlank { "info" },
+              ), port, aux)
+              if (!saved) error = portUnavailable
+            }
           }
-        }
-      }) { Text(stringResource(R.string.action_save)) }
+        },
+        modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+      ) { Text(stringResource(R.string.action_save)) }
     },
-    dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } },
+    dismissButton = {
+      TextButton(
+        onClick = onDismiss,
+        modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+      ) { Text(stringResource(R.string.common_cancel)) }
+    },
   )
 }

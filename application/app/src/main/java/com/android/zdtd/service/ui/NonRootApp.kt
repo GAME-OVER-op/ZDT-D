@@ -546,7 +546,9 @@ fun NonRootApp(
                   vpsViewModel.clearConfigResult()
                   pendingVpsImport = null
                 },
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                  .fillMaxWidth()
+                  .nonRootFocusHighlight(RoundedCornerShape(20.dp)),
               ) { Text(stringResource(R.string.non_root_vps_import_new_profile)) }
             }
             if (candidates.isNotEmpty()) {
@@ -564,7 +566,9 @@ fun NonRootApp(
                     vpsViewModel.clearConfigResult()
                     pendingVpsImport = null
                   },
-                  modifier = Modifier.fillMaxWidth(),
+                  modifier = Modifier
+                    .fillMaxWidth()
+                    .nonRootFocusHighlight(RoundedCornerShape(20.dp)),
                 ) { Text("${nonRootToolTitle(profile.toolId)} — ${profile.name}") }
               }
             }
@@ -572,7 +576,12 @@ fun NonRootApp(
         }
       },
       confirmButton = {},
-      dismissButton = { TextButton(onClick = { pendingVpsImport = null }) { Text(stringResource(R.string.common_cancel)) } },
+      dismissButton = {
+        TextButton(
+          onClick = { pendingVpsImport = null },
+          modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+        ) { Text(stringResource(R.string.common_cancel)) }
+      },
     )
   }
 
@@ -1248,7 +1257,9 @@ private fun NonRootToolsScreen(
       ) {
         OutlinedButton(
           onClick = { showCreateDialog = true },
-          modifier = Modifier.weight(1f),
+          modifier = Modifier
+            .weight(1f)
+            .nonRootFocusHighlight(RoundedCornerShape(20.dp), configurationEnabled),
           enabled = configurationEnabled,
         ) {
           Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -1263,6 +1274,7 @@ private fun NonRootToolsScreen(
           Button(
             onClick = onOpenT2sSettings,
             enabled = configurationEnabled,
+            modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(20.dp), configurationEnabled),
           ) {
             Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.size(6.dp))
@@ -1439,13 +1451,19 @@ private fun NonRootToolsScreen(
         title = { Text(stringResource(R.string.non_root_delete_profile_title)) },
         text = { Text(stringResource(R.string.non_root_delete_profile_body, profile.name)) },
         confirmButton = {
-          TextButton(onClick = {
-            onDeleteCascadeProfile(profile.id)
-            deleteProfileId = null
-          }) { Text(stringResource(R.string.action_delete)) }
+          TextButton(
+            onClick = {
+              onDeleteCascadeProfile(profile.id)
+              deleteProfileId = null
+            },
+            modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+          ) { Text(stringResource(R.string.action_delete)) }
         },
         dismissButton = {
-          TextButton(onClick = { deleteProfileId = null }) { Text(stringResource(R.string.common_cancel)) }
+          TextButton(
+            onClick = { deleteProfileId = null },
+            modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+          ) { Text(stringResource(R.string.common_cancel)) }
         },
       )
     }
@@ -1496,7 +1514,14 @@ private fun NonRootStandaloneToolCard(
           Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
           Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        checked?.let { Switch(checked = it, enabled = switchEnabled, onCheckedChange = onCheckedChange) }
+        checked?.let {
+          Switch(
+            checked = it,
+            enabled = switchEnabled,
+            onCheckedChange = onCheckedChange,
+            modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp), switchEnabled),
+          )
+        }
       }
       progress?.let { value ->
         LinearProgressIndicator(
@@ -1508,7 +1533,9 @@ private fun NonRootStandaloneToolCard(
         Button(
           onClick = onAction,
           enabled = actionEnabled,
-          modifier = Modifier.fillMaxWidth(),
+          modifier = Modifier
+            .fillMaxWidth()
+            .nonRootFocusHighlight(RoundedCornerShape(20.dp), actionEnabled),
         ) {
           Text(actionLabel)
         }
@@ -1793,8 +1820,13 @@ private fun NonRootToolsProfileCard(
         checked = checked,
         enabled = switchEnabled,
         onCheckedChange = onCheckedChange,
+        modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp), switchEnabled),
       )
-      IconButton(onClick = onDelete, enabled = enabled) {
+      IconButton(
+        onClick = onDelete,
+        enabled = enabled,
+        modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(22.dp), enabled),
+      ) {
         Icon(
           Icons.Filled.Delete,
           contentDescription = stringResource(R.string.action_delete),
@@ -2086,6 +2118,7 @@ internal fun NonRootByeDpiCard(
         Switch(
           checked = config.restartByedpiAfterOpera,
           onCheckedChange = { onConfigChange(config.copy(restartByedpiAfterOpera = it)) },
+          modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
         )
       }
     }
@@ -2303,7 +2336,10 @@ internal fun NonRootOperaProxyCard(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
       )
 
-      TextButton(onClick = { advancedExpanded = !advancedExpanded }) {
+      TextButton(
+        onClick = { advancedExpanded = !advancedExpanded },
+        modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(18.dp)),
+      ) {
         Icon(Icons.Filled.Settings, contentDescription = null, modifier = Modifier.size(18.dp))
         Spacer(Modifier.size(6.dp))
         Text(stringResource(R.string.settings_advanced_title))
@@ -2341,7 +2377,9 @@ internal fun NonRootOperaProxyCard(
             )
             OutlinedButton(
               onClick = { apiProxyFilePicker.launch(arrayOf("text/*", "application/octet-stream")) },
-              modifier = Modifier.fillMaxWidth(),
+              modifier = Modifier
+                .fillMaxWidth()
+                .nonRootFocusHighlight(RoundedCornerShape(20.dp)),
             ) {
               Text(stringResource(R.string.non_root_opera_api_proxy_choose_file))
             }
@@ -2518,7 +2556,12 @@ private fun NonRootTopBarCard(
           enter = expandHorizontally(expandFrom = Alignment.Start, animationSpec = tween(180)) + fadeIn(tween(140)),
           exit = shrinkHorizontally(shrinkTowards = Alignment.Start, animationSpec = tween(160)) + fadeOut(tween(100)),
         ) {
-          IconButton(onClick = { onBack?.invoke() }, modifier = Modifier.size(46.dp)) {
+          IconButton(
+            onClick = { onBack?.invoke() },
+            modifier = Modifier
+              .size(46.dp)
+              .nonRootFocusHighlight(RoundedCornerShape(23.dp)),
+          ) {
             Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
           }
         }
@@ -2541,7 +2584,12 @@ private fun NonRootTopBarCard(
           enter = expandHorizontally(expandFrom = Alignment.End, animationSpec = tween(210)) + fadeIn(tween(150)),
           exit = shrinkHorizontally(shrinkTowards = Alignment.End, animationSpec = tween(180)) + fadeOut(tween(120)),
         ) {
-          IconButton(onClick = { onOpenLogs?.invoke() }, modifier = Modifier.size(46.dp)) {
+          IconButton(
+            onClick = { onOpenLogs?.invoke() },
+            modifier = Modifier
+              .size(46.dp)
+              .nonRootFocusHighlight(RoundedCornerShape(23.dp)),
+          ) {
             Icon(
               imageVector = Icons.Filled.BugReport,
               contentDescription = stringResource(R.string.cd_logs),
@@ -2549,7 +2597,12 @@ private fun NonRootTopBarCard(
             )
           }
         }
-        IconButton(onClick = onOpenSettings, modifier = Modifier.size(46.dp)) {
+        IconButton(
+          onClick = onOpenSettings,
+          modifier = Modifier
+            .size(46.dp)
+            .nonRootFocusHighlight(RoundedCornerShape(23.dp)),
+        ) {
           Icon(
             imageVector = Icons.Filled.Settings,
             contentDescription = stringResource(R.string.settings_title),
@@ -2579,7 +2632,10 @@ private fun NonRootWideHeader(
       enter = expandHorizontally(expandFrom = Alignment.Start, animationSpec = tween(180)) + fadeIn(tween(140)),
       exit = shrinkHorizontally(shrinkTowards = Alignment.Start, animationSpec = tween(160)) + fadeOut(tween(100)),
     ) {
-      IconButton(onClick = { onBack?.invoke() }) {
+      IconButton(
+        onClick = { onBack?.invoke() },
+        modifier = Modifier.nonRootFocusHighlight(RoundedCornerShape(24.dp)),
+      ) {
         Icon(Icons.Filled.ArrowBack, contentDescription = stringResource(R.string.cd_back))
       }
     }
@@ -2623,7 +2679,12 @@ private fun NonRootWideQuickActions(
         enter = expandHorizontally(expandFrom = Alignment.End, animationSpec = tween(180)) + fadeIn(tween(140)),
         exit = shrinkHorizontally(shrinkTowards = Alignment.End, animationSpec = tween(160)) + fadeOut(tween(100)),
       ) {
-        IconButton(onClick = { onOpenLogs?.invoke() }, modifier = Modifier.size(44.dp)) {
+        IconButton(
+          onClick = { onOpenLogs?.invoke() },
+          modifier = Modifier
+            .size(44.dp)
+            .nonRootFocusHighlight(RoundedCornerShape(22.dp)),
+        ) {
           Icon(
             Icons.Filled.BugReport,
             contentDescription = stringResource(R.string.cd_logs),
@@ -2632,7 +2693,12 @@ private fun NonRootWideQuickActions(
           )
         }
       }
-      IconButton(onClick = onOpenSettings, modifier = Modifier.size(44.dp)) {
+      IconButton(
+        onClick = onOpenSettings,
+        modifier = Modifier
+          .size(44.dp)
+          .nonRootFocusHighlight(RoundedCornerShape(22.dp)),
+      ) {
         Icon(
           Icons.Filled.Settings,
           contentDescription = stringResource(R.string.settings_title),
@@ -2972,7 +3038,7 @@ private fun NonRootFailureGlyph(
   }
 }
 
-private fun Modifier.nonRootFocusHighlight(
+internal fun Modifier.nonRootFocusHighlight(
   shape: RoundedCornerShape,
   enabled: Boolean = true,
 ): Modifier = composed {

@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use crate::coord::DialPurpose;
 use std::{future::Future, net::{IpAddr, Ipv4Addr, SocketAddr}, time::Duration};
 use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpStream, UdpSocket}};
 
@@ -28,11 +29,29 @@ pub async fn connect_via_socks5(
     auth: Option<(String, String)>,
     timeout: Duration,
 ) -> Result<TcpStream> {
+    connect_via_socks5_with_purpose(
+        backend,
+        target,
+        auth,
+        timeout,
+        DialPurpose::ForegroundTraffic,
+    )
+    .await
+}
+
+pub async fn connect_via_socks5_with_purpose(
+    backend: SocketAddr,
+    target: TargetAddr,
+    auth: Option<(String, String)>,
+    timeout: Duration,
+    purpose: DialPurpose,
+) -> Result<TcpStream> {
     // Serialize the whole TCP connect + SOCKS handshake against other dials to
     // the same backend, including dials from cooperating t2s instances (the
     // lock is a cross-process flock; see coord.rs). Established relays are
-    // never serialized.
-    let dial_lock = crate::coord::acquire_dial_lock(backend).await;
+    // never serialized. Foreground client traffic yields to D2S DNS only for a
+    // very short window, while health probes can yield longer.
+    let dial_lock = crate::coord::acquire_dial_lock(backend, purpose).await;
     let result = connect_via_socks5_inner(backend, target, auth, timeout).await;
     crate::coord::release_dial_lock(dial_lock).await;
     result
@@ -146,12 +165,39 @@ pub async fn connect_via_socks5_wrapped(
     remote_auth: Option<(String, String)>,
     timeout: Duration,
 ) -> Result<TcpStream> {
-    let tunnel = connect_via_socks5(wrapper, TargetAddr::Ip(remote_socks), wrapper_auth, timeout)
-        .await
-        .with_context(|| format!("wrapped SOCKS5: connect wrapper {} -> remote socks {}", wrapper, remote_socks))?;
+    connect_via_socks5_wrapped_with_purpose(
+        wrapper,
+        remote_socks,
+        target,
+        wrapper_auth,
+        remote_auth,
+        timeout,
+        DialPurpose::ForegroundTraffic,
+    )
+    .await
+}
+
+pub async fn connect_via_socks5_wrapped_with_purpose(
+    wrapper: SocketAddr,
+    remote_socks: SocketAddr,
+    target: TargetAddr,
+    wrapper_auth: Option<(String, String)>,
+    remote_auth: Option<(String, String)>,
+    timeout: Duration,
+    purpose: DialPurpose,
+) -> Result<TcpStream> {
+    let tunnel = connect_via_socks5_with_purpose(
+        wrapper,
+        TargetAddr::Ip(remote_socks),
+        wrapper_auth,
+        timeout,
+        purpose,
+    )
+    .await
+    .with_context(|| format!("wrapped SOCKS5: connect wrapper {} -> remote socks {}", wrapper, remote_socks))?;
     // The remote backend handshake happens on the established tunnel; it is
     // the dial that must be serialized against the fragile shared backend.
-    let dial_lock = crate::coord::acquire_dial_lock(remote_socks).await;
+    let dial_lock = crate::coord::acquire_dial_lock(remote_socks, purpose).await;
     let result = connect_via_socks5_on_stream(tunnel, target, remote_auth, timeout)
         .await
         .with_context(|| format!("wrapped SOCKS5: remote socks CONNECT through {}", remote_socks));
@@ -164,9 +210,22 @@ pub async fn connect_to_socks5_server(
     auth: Option<(String, String)>,
     timeout: Duration,
 ) -> Result<TcpStream> {
-    // Health probes and UDP ASSOCIATE control dials use the same backend
-    // handshake serialization as client dials.
-    let dial_lock = crate::coord::acquire_dial_lock(backend).await;
+    connect_to_socks5_server_with_purpose(
+        backend,
+        auth,
+        timeout,
+        DialPurpose::BackgroundHealth,
+    )
+    .await
+}
+
+pub async fn connect_to_socks5_server_with_purpose(
+    backend: SocketAddr,
+    auth: Option<(String, String)>,
+    timeout: Duration,
+    purpose: DialPurpose,
+) -> Result<TcpStream> {
+    let dial_lock = crate::coord::acquire_dial_lock(backend, purpose).await;
     let result = connect_to_socks5_server_inner(backend, auth, timeout).await;
     crate::coord::release_dial_lock(dial_lock).await;
     result
@@ -191,10 +250,35 @@ pub async fn connect_to_socks5_server_wrapped(
     remote_auth: Option<(String, String)>,
     timeout: Duration,
 ) -> Result<TcpStream> {
-    let tunnel = connect_via_socks5(wrapper, TargetAddr::Ip(remote_socks), wrapper_auth, timeout)
-        .await
-        .with_context(|| format!("wrapped SOCKS5: connect wrapper {} -> remote socks {}", wrapper, remote_socks))?;
-    let dial_lock = crate::coord::acquire_dial_lock(remote_socks).await;
+    connect_to_socks5_server_wrapped_with_purpose(
+        wrapper,
+        remote_socks,
+        wrapper_auth,
+        remote_auth,
+        timeout,
+        DialPurpose::BackgroundHealth,
+    )
+    .await
+}
+
+pub async fn connect_to_socks5_server_wrapped_with_purpose(
+    wrapper: SocketAddr,
+    remote_socks: SocketAddr,
+    wrapper_auth: Option<(String, String)>,
+    remote_auth: Option<(String, String)>,
+    timeout: Duration,
+    purpose: DialPurpose,
+) -> Result<TcpStream> {
+    let tunnel = connect_via_socks5_with_purpose(
+        wrapper,
+        TargetAddr::Ip(remote_socks),
+        wrapper_auth,
+        timeout,
+        purpose,
+    )
+    .await
+    .with_context(|| format!("wrapped SOCKS5: connect wrapper {} -> remote socks {}", wrapper, remote_socks))?;
+    let dial_lock = crate::coord::acquire_dial_lock(remote_socks, purpose).await;
     let result = socks5_greeting_on_stream(tunnel, remote_auth, timeout)
         .await
         .with_context(|| format!("wrapped SOCKS5: remote socks greeting {}", remote_socks));
@@ -300,10 +384,27 @@ pub async fn udp_associate(
     timeout: Duration,
     client_udp_addr: SocketAddr,
 ) -> Result<(TcpStream, SocketAddr)> {
+    udp_associate_with_purpose(
+        backend,
+        auth,
+        timeout,
+        client_udp_addr,
+        DialPurpose::ForegroundTraffic,
+    )
+    .await
+}
+
+pub async fn udp_associate_with_purpose(
+    backend: SocketAddr,
+    auth: Option<(String, String)>,
+    timeout: Duration,
+    client_udp_addr: SocketAddr,
+    purpose: DialPurpose,
+) -> Result<(TcpStream, SocketAddr)> {
     // The UDP ASSOCIATE request/reply is another backend handshake phase and
     // must be serialized against concurrent CONNECTs like any other. The inner
     // helper dials without re-acquiring the same lock.
-    let dial_lock = crate::coord::acquire_dial_lock(backend).await;
+    let dial_lock = crate::coord::acquire_dial_lock(backend, purpose).await;
     let result = udp_associate_inner(backend, auth, timeout, client_udp_addr).await;
     crate::coord::release_dial_lock(dial_lock).await;
     result
@@ -457,7 +558,15 @@ pub async fn check_udp_associate(
     let bind_addr = if backend.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" };
     let udp = UdpSocket::bind(bind_addr).await.ok()?;
     let local_addr = udp.local_addr().ok()?;
-    let (_control, relay) = udp_associate(backend, auth, timeout, local_addr).await.ok()?;
+    let (_control, relay) = udp_associate_with_purpose(
+        backend,
+        auth,
+        timeout,
+        local_addr,
+        DialPurpose::BackgroundHealth,
+    )
+    .await
+    .ok()?;
 
     // A successful UDP ASSOCIATE reply only proves the control handshake. Send
     // a real request through the relay and require a response before declaring

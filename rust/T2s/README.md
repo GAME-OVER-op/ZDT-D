@@ -510,12 +510,22 @@ UDP routing: balance mode uses a GREEN backend with SOCKS5 UDP ASSOCIATE support
 
 The per-backend handshake lock is also shared with D2S. A real D2S DNS request
 holds a shared flock-backed `backend-<ip>-<port>.dns-priority.lock` lease in the
-same `<api-dir>/t2s/locks` directory. New T2S handshakes yield to that lease for a
-bounded window (750 ms maximum), while established T2S relays are unaffected.
-The configured post-handshake stagger remains enforced by a detached lock-release
-task, so the stream that just connected can start relaying immediately.
-After the bound expires T2S may contend for the normal backend lock again, so a
+same `<api-dir>/t2s/locks` directory. Foreground client CONNECT/UDP ASSOCIATE
+handshakes yield to that lease for at most 100 ms, while background health probes
+may yield for up to 750 ms. This keeps DNS first without turning the first browser
+request after idle into a visible coordination pause. Established T2S relays are
+unaffected. The configured post-handshake stagger remains enforced by a detached
+lock-release task, so the stream that just connected can start relaying immediately.
+After the bounded yield T2S may contend for the normal backend lock again, so a
 continuous DNS stream can never starve T2S. If D2S crashes, the kernel releases
 the shared lease automatically; an unlocked priority file left on disk is inert.
 No D2S HTTP/API endpoint is required.
+
+Successful UDP/QUIC associations also use adaptive idle retention: an association
+that has never received a response is still reclaimed after 60 seconds, but once
+real return traffic proves the data plane works it stays warm for up to 300 seconds.
+The existing first-response/stall deadlines still terminate dead associations
+quickly. T2S also watches the SOCKS5 UDP ASSOCIATE TCP control connection; if
+the proxy closes it during an idle period the session is discarded immediately,
+so the longer local idle window does not preserve an already-dead relay.
 

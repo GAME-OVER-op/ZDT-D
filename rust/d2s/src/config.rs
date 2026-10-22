@@ -104,9 +104,10 @@ pub struct Config {
     /// Serve repeated SOCKS targets (native DNSCrypt reconnects to the same
     /// resolver address) from a small cache of already-established tunnels.
     /// A served request takes one cached tunnel and one replacement is
-    /// established in the background, so the steady-state number of upstream
-    /// connects per request is unchanged; only the last tunnel before an idle
-    /// period can go unused.
+    /// established in the background. While DNS remains recently active, D2S
+    /// also refreshes the hottest resolver tunnels before their TTL expires so
+    /// the first query after a short browsing pause stays warm. Long idle
+    /// periods stop proactive network work automatically.
     #[serde(default = "default_true")]
     pub warm_tunnels: bool,
 
@@ -245,6 +246,23 @@ impl Config {
 
     pub fn hedge_stagger(&self) -> Duration { Duration::from_millis(self.hedge_stagger_ms) }
     pub fn warm_tunnel_ttl(&self) -> Duration { Duration::from_secs(self.warm_tunnel_ttl_secs) }
+
+    /// Refresh a hot resolver tunnel before its TTL edge. Three quarters keeps
+    /// enough safety margin for scheduler/coordination jitter without turning
+    /// the cache into a high-frequency keepalive.
+    pub fn warm_refresh_interval(&self) -> Duration {
+        let ttl_ms = self.warm_tunnel_ttl().as_millis().min(u64::MAX as u128) as u64;
+        Duration::from_millis((ttl_ms.saturating_mul(3) / 4).max(500))
+    }
+
+    /// Proactive warm maintenance is intentionally finite. With the default
+    /// 60s TTL, the last one or two DNS resolver targets stay warm for three
+    /// minutes after real DNS activity; afterwards no network wakeup is made
+    /// until a real request arrives again.
+    pub fn warm_active_window(&self) -> Duration {
+        let ttl_ms = self.warm_tunnel_ttl().as_millis().min(u64::MAX as u128) as u64;
+        Duration::from_millis(ttl_ms.saturating_mul(3))
+    }
 
     /// Foreground DNS requests may wait briefly for a T2S/D2S peer to finish
     /// the shared backend SOCKS handshake. Keep this bounded to roughly one
@@ -495,6 +513,14 @@ idle_after_secs = 60
         assert_eq!(config.route_budget(), Duration::from_millis(1000));
         config.dnscrypt_timeout_ms = 600;
         assert_eq!(config.route_budget(), Duration::from_millis(600));
+    }
+
+    #[test]
+    fn warm_refresh_defaults_leave_margin_and_stop_after_recent_activity_window() {
+        let config: Config = toml::from_str("backends = []\ndirect_fallback = true\n").unwrap();
+        assert_eq!(config.warm_tunnel_ttl(), Duration::from_secs(60));
+        assert_eq!(config.warm_refresh_interval(), Duration::from_secs(45));
+        assert_eq!(config.warm_active_window(), Duration::from_secs(180));
     }
 
     #[test]

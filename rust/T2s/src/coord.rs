@@ -56,11 +56,28 @@ impl DialCoordination {
 
 static DIAL_COORDINATION: OnceCell<DialCoordination> = OnceCell::new();
 
-/// Prefer foreground D2S DNS handshakes for this long before normal t2s dials
-/// are allowed to contend again. Existing relays are never affected. The cap
-/// prevents a continuous DNS stream from starving new t2s connections.
-const DNS_PRIORITY_YIELD_MAX: Duration = Duration::from_millis(750);
+/// How strongly a T2S handshake should yield to a foreground D2S DNS lease.
+/// User traffic gets only a short head-start for DNS so a browser's first TCP
+/// or QUIC connection never pays a visible ~750 ms coordination delay. Health
+/// probes are background work and can yield much longer without affecting UI.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DialPurpose {
+    ForegroundTraffic,
+    BackgroundHealth,
+}
+
+const DNS_PRIORITY_FOREGROUND_YIELD_MAX: Duration = Duration::from_millis(100);
+const DNS_PRIORITY_BACKGROUND_YIELD_MAX: Duration = Duration::from_millis(750);
 const DNS_PRIORITY_POLL: Duration = Duration::from_millis(10);
+
+impl DialPurpose {
+    fn dns_priority_yield(self) -> Duration {
+        match self {
+            Self::ForegroundTraffic => DNS_PRIORITY_FOREGROUND_YIELD_MAX,
+            Self::BackgroundHealth => DNS_PRIORITY_BACKGROUND_YIELD_MAX,
+        }
+    }
+}
 
 fn backend_key(backend: SocketAddr) -> String {
     format!("backend-{}-{}", backend.ip(), backend.port())
@@ -155,7 +172,7 @@ impl Drop for DialLock {
 /// (healthy local handshakes normally release well inside that window; if a
 /// peer is wedged, proceeding unsynchronized after 4s is safer than making the
 /// client request depend forever on coordination).
-pub async fn acquire_dial_lock(backend: SocketAddr) -> Option<DialLock> {
+pub async fn acquire_dial_lock(backend: SocketAddr, purpose: DialPurpose) -> Option<DialLock> {
     let coordination = coordination();
     if !coordination.enabled {
         return None;
@@ -169,12 +186,12 @@ pub async fn acquire_dial_lock(backend: SocketAddr) -> Option<DialLock> {
 
     let started = Instant::now();
     let deadline = started + Duration::from_secs(4);
-    let priority_deadline = started + DNS_PRIORITY_YIELD_MAX;
+    let priority_deadline = started + purpose.dns_priority_yield();
     loop {
         // D2S holds a live shared priority lease before a real DNS request
-        // waits for this backend. Yield new t2s handshakes for a bounded window
-        // so DNS gets first access without allowing sustained DNS traffic to
-        // starve t2s forever.
+        // waits for this backend. Foreground T2S traffic yields only briefly;
+        // background health can yield longer. Either window is bounded so a
+        // continuous DNS stream can never starve T2S.
         if Instant::now() < priority_deadline
             && has_active_dns_priority(&coordination.locks_dir, backend)
         {
@@ -251,6 +268,18 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("t2s-coord-{}-{nonce}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn foreground_and_background_dns_yield_windows_are_distinct() {
+        assert_eq!(
+            DialPurpose::ForegroundTraffic.dns_priority_yield(),
+            Duration::from_millis(100)
+        );
+        assert_eq!(
+            DialPurpose::BackgroundHealth.dns_priority_yield(),
+            Duration::from_millis(750)
+        );
     }
 
     #[test]

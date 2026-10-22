@@ -773,7 +773,11 @@ async fn expired_warm_tunnels_are_never_served() {
     wait_for_green(&server, 1).await;
 
     roundtrip(server.listen_addr, echo.addr, b"warm-ttl").await;
-    tokio::time::sleep(Duration::from_millis(1_500)).await;
+    // Proactive maintenance now refreshes recently-used targets before their
+    // one-second test TTL expires and stops after three TTL windows. Wait past
+    // both the recent-activity window and the lifetime of its final refresh so
+    // this still verifies that genuinely expired cached sockets are never used.
+    tokio::time::sleep(Duration::from_millis(4_500)).await;
     backend.reset_count();
 
     roundtrip(server.listen_addr, echo.addr, b"warm-ttl-expired").await;

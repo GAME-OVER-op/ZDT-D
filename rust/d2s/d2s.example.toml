@@ -29,8 +29,9 @@ runtime_cooldown_ms = 2000
 hedge_stagger_ms = 150
 
 # Serve repeated SOCKS CONNECTs to the same target from pre-connected tunnels.
-# One replacement tunnel is established in the background per served request,
-# so steady-state upstream connect volume is unchanged.
+# A consumed tunnel is replaced in the background. The two hottest resolver
+# targets are also refreshed before TTL expiry while real DNS was recently
+# active; proactive refresh stops automatically after a longer idle period.
 warm_tunnels = true
 warm_tunnel_ttl_secs = 60
 

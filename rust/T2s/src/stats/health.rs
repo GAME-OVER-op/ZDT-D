@@ -887,9 +887,23 @@ async fn probe_one_target(
 ) -> Option<f64> {
     let start = Instant::now();
     let connect = if let Some(wrapper) = wrapper {
-        crate::socks5::connect_via_socks5_wrapped(wrapper, backend, target.clone(), wrapper_auth, auth, timeout).await
+        crate::socks5::connect_via_socks5_wrapped_with_purpose(
+            wrapper,
+            backend,
+            target.clone(),
+            wrapper_auth,
+            auth,
+            timeout,
+            crate::coord::DialPurpose::BackgroundHealth,
+        ).await
     } else {
-        crate::socks5::connect_via_socks5(backend, target.clone(), auth, timeout).await
+        crate::socks5::connect_via_socks5_with_purpose(
+            backend,
+            target.clone(),
+            auth,
+            timeout,
+            crate::coord::DialPurpose::BackgroundHealth,
+        ).await
     };
     let mut stream = match connect {
         Ok(stream) => stream,

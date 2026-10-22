@@ -154,6 +154,7 @@ async fn run_loop(
         }
     }
 
+    router.begin_shutdown();
     info!(active_clients = clients.len(), "D2S shutdown requested");
     let grace = tokio::time::sleep(config.shutdown_grace_period());
     tokio::pin!(grace);

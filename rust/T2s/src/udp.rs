@@ -21,7 +21,8 @@ const IP_TRANSPARENT_OPT: libc::c_int = 19;
 const IP_RECVORIGDSTADDR_OPT: libc::c_int = 20;
 const IPV6_TRANSPARENT_OPT: libc::c_int = 75;
 
-const UDP_SESSION_IDLE: Duration = Duration::from_secs(60);
+const UDP_SESSION_IDLE_COLD: Duration = Duration::from_secs(60);
+const UDP_SESSION_IDLE_PROVEN: Duration = Duration::from_secs(300);
 const UDP_FIRST_RESPONSE_TIMEOUT: Duration = Duration::from_secs(6);
 const UDP_RESPONSE_STALL_TIMEOUT: Duration = Duration::from_secs(15);
 const UDP_BACKEND_WAIT: Duration = Duration::from_millis(3500);
@@ -509,7 +510,7 @@ enum NonRootUdpTransport {
     Socks {
         backend_index: usize,
         backend: SocketAddr,
-        _control: tokio::net::TcpStream,
+        control: tokio::net::TcpStream,
         socket: tokio::net::UdpSocket,
     },
 }
@@ -716,7 +717,7 @@ async fn run_non_root_udp_target_session(
         NonRootUdpTransport::Socks {
             backend_index,
             backend,
-            _control,
+            control,
             socket,
         } => {
             let result = run_non_root_socks_udp_session(
@@ -726,7 +727,7 @@ async fn run_non_root_udp_target_session(
                 cid,
                 target,
                 backend,
-                _control,
+                control,
                 socket,
                 &mut receiver,
                 cancel,
@@ -884,7 +885,7 @@ async fn prepare_non_root_socks_udp_transport(
     Ok(NonRootUdpTransport::Socks {
         backend_index,
         backend,
-        _control: control,
+        control,
         socket,
     })
 }
@@ -896,14 +897,15 @@ async fn run_non_root_socks_udp_session(
     cid: u64,
     target: socks5::TargetAddr,
     backend: SocketAddr,
-    _control: tokio::net::TcpStream,
+    control: tokio::net::TcpStream,
     socket: tokio::net::UdpSocket,
     receiver: &mut mpsc::Receiver<Vec<u8>>,
     cancel: CancellationToken,
 ) -> Result<()> {
     let mut recv_buf = vec![0u8; UDP_RECV_BUF_SIZE];
+    let mut control_probe = [0u8; 1];
     let mut encoded = Vec::with_capacity(UDP_SMALL_PAYLOAD_CAPACITY + 22);
-    let mut idle_sleep = Box::pin(tokio::time::sleep(UDP_SESSION_IDLE));
+    let mut idle_sleep = Box::pin(tokio::time::sleep(UDP_SESSION_IDLE_COLD));
     let mut response_deadline: Option<tokio::time::Instant> = None;
     let mut received_any = false;
 
@@ -920,6 +922,16 @@ async fn run_non_root_socks_udp_session(
 
         tokio::select! {
             _ = cancel.cancelled() => break,
+            control_state = control.peek(&mut control_probe) => {
+                match control_state {
+                    Ok(0) => {
+                        tracing::debug!(%backend, "non-root SOCKS UDP control connection closed during idle/session lifetime");
+                        break;
+                    }
+                    Ok(_) => return Err(anyhow::anyhow!("unexpected data on non-root SOCKS UDP control connection")),
+                    Err(error) => return Err(error).context("monitor non-root SOCKS UDP control connection"),
+                }
+            }
             maybe_data = receiver.recv() => {
                 let Some(data) = maybe_data else { break; };
                 socks5::encode_udp_packet_into(&mut encoded, target.clone(), &data)?;
@@ -927,7 +939,7 @@ async fn run_non_root_socks_udp_session(
                 state.stats.add_up(data.len() as u64);
                 state.conns.add_bytes_up(cid, data.len() as u64);
                 state.backends.lock().add_bytes(backend, data.len() as u64);
-                touch_session(&mut idle_sleep);
+                touch_session(&mut idle_sleep, received_any);
                 if response_deadline.is_none() {
                     response_deadline = Some(
                         tokio::time::Instant::now()
@@ -947,7 +959,7 @@ async fn run_non_root_socks_udp_session(
                 state.backends.lock().add_bytes(backend, payload.len() as u64);
                 received_any = true;
                 response_deadline = None;
-                touch_session(&mut idle_sleep);
+                touch_session(&mut idle_sleep, received_any);
             }
             _ = &mut response_wait => {
                 return Err(anyhow::anyhow!(
@@ -973,7 +985,7 @@ async fn run_non_root_direct_udp_session(
 ) -> Result<()> {
     let mut recv_buf = vec![0u8; UDP_RECV_BUF_SIZE];
     let mut encoded = Vec::with_capacity(UDP_SMALL_PAYLOAD_CAPACITY + 22);
-    let mut idle_sleep = Box::pin(tokio::time::sleep(UDP_SESSION_IDLE));
+    let mut idle_sleep = Box::pin(tokio::time::sleep(UDP_SESSION_IDLE_COLD));
     let mut response_deadline: Option<tokio::time::Instant> = None;
     let mut received_any = false;
 
@@ -998,7 +1010,7 @@ async fn run_non_root_direct_udp_session(
                 }
                 state.stats.add_up(data.len() as u64);
                 state.conns.add_bytes_up(cid, data.len() as u64);
-                touch_session(&mut idle_sleep);
+                touch_session(&mut idle_sleep, received_any);
                 if response_deadline.is_none() {
                     response_deadline = Some(
                         tokio::time::Instant::now()
@@ -1030,7 +1042,7 @@ async fn run_non_root_direct_udp_session(
                 received_any = true;
                 state.runtime.clear_udp_direct_cooldown();
                 response_deadline = None;
-                touch_session(&mut idle_sleep);
+                touch_session(&mut idle_sleep, received_any);
             }
             _ = &mut response_wait => {
                 state.runtime.note_udp_direct_failure(20);
@@ -1662,13 +1674,14 @@ async fn socks_session_loop(
     spoof_cache: Arc<SpoofSocketCache>,
     key: UdpSessionKey,
     backend: SocketAddr,
-    _control: tokio::net::TcpStream,
+    control: tokio::net::TcpStream,
     udp: tokio::net::UdpSocket,
     queue: Arc<UdpSessionQueue>,
 ) -> Result<()> {
     let mut buf = vec![0u8; UDP_RECV_BUF_SIZE];
+    let mut control_probe = [0u8; 1];
     let mut encoded = Vec::with_capacity(UDP_SMALL_PAYLOAD_CAPACITY + 22);
-    let mut idle_sleep = Box::pin(tokio::time::sleep(UDP_SESSION_IDLE));
+    let mut idle_sleep = Box::pin(tokio::time::sleep(UDP_SESSION_IDLE_COLD));
     let mut response_deadline: Option<tokio::time::Instant> = None;
     let mut received_any = false;
 
@@ -1684,6 +1697,16 @@ async fn socks_session_loop(
         tokio::pin!(response_wait);
 
         tokio::select! {
+            control_state = control.peek(&mut control_probe) => {
+                match control_state {
+                    Ok(0) => {
+                        tracing::debug!(%backend, "SOCKS UDP control connection closed during idle/session lifetime");
+                        break;
+                    }
+                    Ok(_) => return Err(anyhow::anyhow!("unexpected data on SOCKS UDP control connection")),
+                    Err(error) => return Err(error).context("monitor SOCKS UDP control connection"),
+                }
+            }
             maybe_data = queue.recv() => {
                 let Some(data) = maybe_data else { break; };
                 socks5::encode_udp_packet_into(
@@ -1694,7 +1717,7 @@ async fn socks_session_loop(
                 udp.send(&encoded).await.context("send socks udp packet")?;
                 state.stats.add_up(data.len() as u64);
                 state.backends.lock().add_bytes(backend, data.len() as u64);
-                touch_session(&mut idle_sleep);
+                touch_session(&mut idle_sleep, received_any);
 
                 // Do not refresh this deadline on retransmissions. A stream of
                 // unanswered QUIC Initial packets must terminate instead of
@@ -1718,7 +1741,7 @@ async fn socks_session_loop(
                 state.backends.lock().add_bytes(backend, payload.len() as u64);
                 received_any = true;
                 response_deadline = None;
-                touch_session(&mut idle_sleep);
+                touch_session(&mut idle_sleep, received_any);
             }
             _ = &mut response_wait => {
                 return Err(anyhow::anyhow!(
@@ -1762,7 +1785,7 @@ async fn direct_session_loop(
     queue: Arc<UdpSessionQueue>,
 ) -> Result<()> {
     let mut buf = vec![0u8; UDP_RECV_BUF_SIZE];
-    let mut idle_sleep = Box::pin(tokio::time::sleep(UDP_SESSION_IDLE));
+    let mut idle_sleep = Box::pin(tokio::time::sleep(UDP_SESSION_IDLE_COLD));
     let mut response_deadline: Option<tokio::time::Instant> = None;
     let mut received_any = false;
 
@@ -1785,7 +1808,7 @@ async fn direct_session_loop(
                     return Err(e).context("send direct udp");
                 }
                 state.stats.add_up(data.len() as u64);
-                touch_session(&mut idle_sleep);
+                touch_session(&mut idle_sleep, received_any);
                 if response_deadline.is_none() {
                     response_deadline = Some(
                         tokio::time::Instant::now()
@@ -1807,7 +1830,7 @@ async fn direct_session_loop(
                 received_any = true;
                 state.runtime.clear_udp_direct_cooldown();
                 response_deadline = None;
-                touch_session(&mut idle_sleep);
+                touch_session(&mut idle_sleep, received_any);
             }
             _ = &mut response_wait => {
                 state.runtime.note_udp_direct_failure(20);
@@ -1822,10 +1845,23 @@ async fn direct_session_loop(
     Ok(())
 }
 
-fn touch_session(idle_sleep: &mut std::pin::Pin<Box<tokio::time::Sleep>>) {
+fn touch_session(
+    idle_sleep: &mut std::pin::Pin<Box<tokio::time::Sleep>>,
+    received_any: bool,
+) {
+    // Unproven associations stay short-lived so one-way/dead UDP mappings are
+    // reclaimed quickly. Once the data plane has returned a real packet, keep
+    // the association warm for intermittent QUIC/HTTP3 traffic (Chrome often
+    // pauses for more than 60s between bursts). Response deadlines still kill
+    // a proven session quickly if a later request stops receiving replies.
+    let idle = if received_any {
+        UDP_SESSION_IDLE_PROVEN
+    } else {
+        UDP_SESSION_IDLE_COLD
+    };
     idle_sleep
         .as_mut()
-        .reset(tokio::time::Instant::now() + UDP_SESSION_IDLE);
+        .reset(tokio::time::Instant::now() + idle);
 }
 
 async fn send_spoofed_udp(
